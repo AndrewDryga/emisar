@@ -126,15 +126,20 @@ packs, and logs remain under `/var/lib/emisar-admin-runner` while the
 boot-recreatable binary lives on executable tmpfs. Cloud-init also writes the
 unlisted `infra/packs/emisar-admin` pack directly from the Terraform module. The
 verified release bundle seeds a fixed host operations set on first boot:
-`linux-core`, `debugging`, `systemd-deep`, `cloud-init`, `docker`, `firewall`,
-`nic`, `time-sync`, and `elixir-beam`. Every pack in that curated host set, plus
-the public GCP and HCP packs used by this runner, is then reconciled to its exact
+`linux-core`, `debugging`, `systemd-deep`, `cloud-init`, `docker`, `nic`,
+`time-sync`, and `elixir-beam`. A runner-only bridge maps the three BEAM
+toolchain checks to fixed, read-only RPC expressions in the colocated portal
+release; it rejects every other invocation. The combined `firewall` pack is
+removed because COS has no `nft` CLI, so its complete dependency contract cannot
+be met. Service startup checks the remaining packs' declared host dependencies
+before the runner advertises them. Every pack in the curated host set, plus
+the public GCP, HCP Terraform, and Sentry packs used by this runner, is then reconciled to its exact
 version and content hash from the public registry on every service start, so
 pack updates do not wait for another runner release. The set is curated instead
 of host-detected: COS includes unused clients and shared ports that falsely
 suggest Kubernetes, Prometheus, Postgres, and Git packs. The runner advertises
 group `emisar-admin` with `purpose=emisar-admin`; local admission
-allows the private actions, those nine host packs, `hcp-terraform`, and the GCP
+allows the private actions, those eight host packs, `hcp-terraform`, and the GCP
 certificate, Cloud SQL, compute, DNS, IAM, load-balancing, monitoring,
 networking, and storage packs at every declared risk tier. The GCP credentials
 remain read-only, so mutation actions are visible but Google refuses them.

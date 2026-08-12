@@ -72,6 +72,29 @@ func forbidText(label, text string, needles ...string) error {
 	return nil
 }
 
+func requireWriteFile(document cloudInitDocument, path, permissions string) (string, error) {
+	var content string
+	for _, entry := range document.WriteFiles {
+		if entry.Path != path {
+			continue
+		}
+		if content != "" {
+			return "", fmt.Errorf("cloud-init writes %s more than once", path)
+		}
+		if entry.Permissions != permissions || entry.Encoding != "" {
+			return "", fmt.Errorf(
+				"cloud-init writes %s with permissions %s and encoding %q, want %s and plain text",
+				path, entry.Permissions, entry.Encoding, permissions,
+			)
+		}
+		content = entry.Content
+	}
+	if content == "" {
+		return "", fmt.Errorf("cloud-init does not write %s", path)
+	}
+	return content, nil
+}
+
 func extractWriteFiles(
 	document cloudInitDocument,
 	destination string,
@@ -281,6 +304,12 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	beamBridge, err := requireWriteFile(
+		renderedDocument, "/var/lib/emisar-admin-runner/beam.sh", "0444",
+	)
+	if err != nil {
+		return err
+	}
 	livebookDocument, err := parseCloudInit(livebookPath)
 	if err != nil {
 		return err
@@ -298,7 +327,7 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		"--network host --read-only --cap-drop=ALL --security-opt=no-new-privileges "+proxyImage+" --private-ip --auto-iam-authn",
 		"Wants=emisar-cloud-sql-proxy.service",
 		"runner=/run/emisar-admin-runner/bin/emisar",
-		"bundled_packs='linux-core debugging systemd-deep cloud-init docker firewall nic time-sync elixir-beam'",
+		"bundled_packs='linux-core debugging systemd-deep cloud-init docker nic time-sync elixir-beam'",
 		"emisar-admin-runner-tfe-token",
 		"inherit_env:", "- TFE_TOKEN",
 		`- "gcp.*"`, `- "tfc.*"`,
@@ -306,7 +335,6 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		"debugging=0.2.15|sha256:a36c3bbd405db33b805afbd0c03cc418e3716ae2218873d3569b2c3339bc513f",
 		"docker=0.2.17|sha256:f09ebfe9b5da673ecbfadd4d2d8a77b1ad2ec9af951c8c58ebeaaca21bdc0852",
 		"elixir-beam=0.1.4|sha256:d47cc9856e3585b20564a245d0d508237f2f5378684e7ba190db43473ebd6acd",
-		"firewall=0.1.12|sha256:0c7b40d32bb0ac8e6e017773d49c840d75566e710678bcdb5e50a7170074d854",
 		"gcp-certificates=0.1.0|sha256:da73325336f2d11cdff984948bf6f53fe34f43f1bce873c6e01e6a6fc38f792b",
 		"gcp-cloudsql=0.3.0|sha256:45cbc52c0088f28a747d80cb2c71879232cb97e95aab65e15efcdd4840c30b32",
 		"gcp-compute=0.2.0|sha256:8df5c0c0c759c0a491435e39bb00f91371f2711d54334a3114c097ad21c2c2b2",
@@ -319,11 +347,22 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		"hcp-terraform=0.6.4|sha256:c01e745b013ead4cd3b455a62874b20821d3a90d4b6f342c4f634be6be147ee6",
 		"linux-core=0.3.23|sha256:8e65576b749b0698744f708e1827c82363098cb953fb39279b2a02034fc3e97c",
 		"nic=0.1.1|sha256:fe4e1d8a7e8633d57d95197103c8260d7b1273106595bae24c70efcacf65956d",
+		"sentry=0.1.0|sha256:8a33af4a63e08318ed0aad6afefbd3f5a1c84f9636e7a0de1f6a1ad902ef18ee",
 		"systemd-deep=0.1.15|sha256:a39bcb7a8172275a5870bf1e69ee4c13b7289f36312a66778d231368e9afdfcd",
 		"time-sync=0.1.8|sha256:fa271a412ac92244b3a80c2ec8586c0e49ff2da5e83be19f958d61c2b72772d2",
 		`"$runner" pack install "$pack_ref"`,
 		`--hash "$expected_hash"`,
 		"/var/lib/emisar-admin-runner/gcloud.sh",
+		"/var/lib/emisar-admin-runner/beam.sh",
+		`install -m 0755 /var/lib/emisar-admin-runner/beam.sh "$runner_bin_dir/beam-runtime"`,
+		`ln -sfn beam-runtime "$runner_bin_dir/elixir"`,
+		`ln -sfn beam-runtime "$runner_bin_dir/erl"`,
+		`ln -sfn beam-runtime "$runner_bin_dir/epmd"`,
+		"declared_dependencies='bash cloud-init curl docker ethtool jq ps ss systemctl'",
+		`command -v "$dependency" >/dev/null`,
+		"elixir --version >/dev/null",
+		`erl -noshell -eval 'io:format("~s~n", [erlang:system_info(system_version)]), halt().' >/dev/null`,
+		"epmd -names >/dev/null",
 		"--tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m",
 		`gcloud "$@"`,
 		"x86_64|amd64) runner_arch=amd64",
@@ -339,6 +378,7 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		"emisar version 0.17.2",
 		"docker exec emisar /app/bin/emisar pid",
 		"test -r /var/lib/emisar-admin-runner/packs/emisar-admin/scripts/callback.sh",
+		"rm -rf /var/lib/emisar-admin-runner/packs/firewall",
 		`"$runner" pack list --packs-dir /var/lib/emisar-admin-runner/packs`,
 		`exec "$runner" connect --config /var/lib/emisar-admin-runner/config.yaml`,
 		"Requires=emisar.service", "PartOf=emisar.service",
@@ -349,6 +389,11 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		// portal-colocated host's own secrets. Pin the subtraction so a later
 		// allow-list edit cannot quietly restore them.
 		"deny:", `- "debugging.pid_environ"`, `- "docker.inspect"`,
+	); err != nil {
+		return err
+	}
+	if err := forbidText("Portal cloud-init", rendered,
+		"firewall=0.1.12|", `- "fw.*"`,
 	); err != nil {
 		return err
 	}
@@ -410,6 +455,9 @@ func (a *App) validateTemplates(ctx context.Context) error {
 	}
 	if len(portalScripts) == 0 {
 		return fmt.Errorf("rendered portal cloud-init delivered no .sh files to validate")
+	}
+	if err := a.validateAdminBeamBridge(ctx, temp, beamBridge); err != nil {
+		return err
 	}
 	livebookScriptsDir := filepath.Join(temp, "livebook-scripts")
 	notebooksDir := filepath.Join(temp, "livebook-notebooks")
@@ -515,6 +563,98 @@ fi
 	failure, err := command.CombinedOutput()
 	if err == nil || !strings.Contains(string(failure), `"error":"not_found"`) {
 		return fmt.Errorf("admin RPC domain error did not fail correctly: %s", failure)
+	}
+	return nil
+}
+
+func (a *App) validateAdminBeamBridge(ctx context.Context, temp, bridgeScript string) error {
+	bridgeBin := filepath.Join(temp, "beam-bridge-bin")
+	mockBin := filepath.Join(temp, "beam-bridge-mock-bin")
+	if err := os.MkdirAll(bridgeBin, 0o700); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(mockBin, 0o700); err != nil {
+		return err
+	}
+	bridge := filepath.Join(bridgeBin, "beam-runtime")
+	if err := os.WriteFile(bridge, []byte(bridgeScript), 0o755); err != nil {
+		return err
+	}
+	for _, name := range []string{"elixir", "erl", "epmd"} {
+		if err := os.Symlink("beam-runtime", filepath.Join(bridgeBin, name)); err != nil {
+			return err
+		}
+	}
+
+	mock := `#!/bin/sh
+[ "$#" -eq 5 ] && [ "$1" = exec ] && [ "$2" = emisar ] && \
+  [ "$3" = /app/bin/emisar ] && [ "$4" = rpc ] || exit 10
+printf '%s\n' "$5" >>"$BEAM_BRIDGE_CALLS"
+	case "$5" in
+	  'otp = :erlang.system_info(:otp_release) |> List.to_string(); erts = :erlang.system_info(:version) |> List.to_string(); build = System.build_info(); IO.puts("Erlang/OTP #{otp} [erts-#{erts}]"); IO.puts("Elixir #{build.build}")')
+	    printf 'Erlang/OTP 29 [erts-17.0.3]\nElixir 1.20.2 (compiled with Erlang/OTP 29)\n'
+    ;;
+  'IO.puts(:erlang.system_info(:system_version) |> List.to_string())')
+    printf 'Erlang/OTP 29 [erts-17.0.3]\n'
+    ;;
+	  'case :erl_epmd.names() do {:ok, names} -> IO.puts("epmd: up and running on port 4369 with data:"); Enum.each(names, fn {name, port} -> IO.puts("name #{List.to_string(name)} at port #{port}") end); {:error, reason} -> raise "epmd query failed: #{inspect(reason)}" end')
+	    printf 'epmd: up and running on port 4369 with data:\nname emisar at port 9100\n'
+    ;;
+  *) exit 11 ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(mockBin, "docker"), []byte(mock), 0o755); err != nil {
+		return err
+	}
+	calls := filepath.Join(temp, "beam-bridge-calls")
+	env := map[string]string{
+		"BEAM_BRIDGE_CALLS": calls,
+		"PATH":              mockBin + string(os.PathListSeparator) + "/usr/bin:/bin",
+	}
+	accepted := []struct {
+		tool string
+		args []string
+		want string
+	}{
+		{tool: "elixir", args: []string{"--version"}, want: "Elixir 1.20.2"},
+		{
+			tool: "erl",
+			args: []string{"-noshell", "-eval", `io:format("~s~n", [erlang:system_info(system_version)]), halt().`},
+			want: "Erlang/OTP 29 [erts-17.0.3]",
+		},
+		{tool: "epmd", args: []string{"-names"}, want: "name emisar at port 9100"},
+	}
+	for _, test := range accepted {
+		output, err := a.output(ctx, a.Root, env, filepath.Join(bridgeBin, test.tool), test.args...)
+		if err != nil {
+			return fmt.Errorf("admin BEAM bridge %s: %w", test.tool, err)
+		}
+		if !strings.Contains(string(output), test.want) {
+			return fmt.Errorf("admin BEAM bridge %s returned %q", test.tool, output)
+		}
+	}
+	before, err := os.ReadFile(calls)
+	if err != nil {
+		return err
+	}
+	for _, test := range []struct {
+		tool string
+		args []string
+	}{
+		{tool: "elixir", args: []string{"-e", "System.stop()"}},
+		{tool: "erl", args: []string{"-noshell", "-eval", "halt()."}},
+		{tool: "epmd", args: []string{"-kill"}},
+	} {
+		if _, err := a.output(ctx, a.Root, env, filepath.Join(bridgeBin, test.tool), test.args...); err == nil {
+			return fmt.Errorf("admin BEAM bridge accepted arbitrary %s arguments", test.tool)
+		}
+	}
+	after, err := os.ReadFile(calls)
+	if err != nil {
+		return err
+	}
+	if string(after) != string(before) {
+		return fmt.Errorf("rejected admin BEAM invocation still reached docker")
 	}
 	return nil
 }

@@ -22,7 +22,6 @@ locals {
     debugging          = { version = "0.2.16", hash = "sha256:1876dca63c11974f0900136ebe1494b60475ecaa7e1fb61689adf76f77c05ea4" }
     docker             = { version = "0.2.17", hash = "sha256:f09ebfe9b5da673ecbfadd4d2d8a77b1ad2ec9af951c8c58ebeaaca21bdc0852" }
     elixir-beam        = { version = "0.1.4", hash = "sha256:d47cc9856e3585b20564a245d0d508237f2f5378684e7ba190db43473ebd6acd" }
-    firewall           = { version = "0.1.12", hash = "sha256:0c7b40d32bb0ac8e6e017773d49c840d75566e710678bcdb5e50a7170074d854" }
     gcp-certificates   = { version = "0.1.0", hash = "sha256:da73325336f2d11cdff984948bf6f53fe34f43f1bce873c6e01e6a6fc38f792b" }
     gcp-cloudsql       = { version = "0.3.0", hash = "sha256:45cbc52c0088f28a747d80cb2c71879232cb97e95aab65e15efcdd4840c30b32" }
     gcp-compute        = { version = "0.2.0", hash = "sha256:8df5c0c0c759c0a491435e39bb00f91371f2711d54334a3114c097ad21c2c2b2" }
@@ -100,6 +99,7 @@ locals {
   admin_runner_gcloud_script = templatefile("${path.module}/runtime/admin-runner/gcloud.sh", {
     gcloud_image = local.gcloud_image
   })
+  admin_runner_beam_script = file("${path.module}/runtime/admin-runner/beam.sh")
   admin_runner_pack_files = {
     for relative_path in fileset("${path.module}/packs/emisar-admin", "**") :
     "emisar-admin/${relative_path}" => filebase64("${path.module}/packs/emisar-admin/${relative_path}")
@@ -114,6 +114,7 @@ locals {
     admin_runner_config        = local.admin_runner_config
     admin_runner_start_script  = local.admin_runner_start_script
     admin_runner_gcloud_script = local.admin_runner_gcloud_script
+    admin_runner_beam_script   = local.admin_runner_beam_script
     admin_runner_pack_files    = local.admin_runner_pack_files
   })
 

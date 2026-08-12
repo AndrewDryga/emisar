@@ -90,14 +90,26 @@ runner=/run/emisar-admin-runner/bin/emisar
 expected_version="emisar version ${runner_version}"
 # Seed from the checksum-verified release so first boot does not depend on the
 # registry; the exact-version/hash loop below owns the final installed bytes.
-bundled_packs='linux-core debugging systemd-deep cloud-init docker firewall nic time-sync elixir-beam'
+bundled_packs='linux-core debugging systemd-deep cloud-init docker nic time-sync elixir-beam'
 runner_bin_dir=$(dirname "$runner")
 install -d -m 0755 "$runner_bin_dir"
 install -m 0755 /var/lib/emisar-admin-runner/gcloud.sh "$runner_bin_dir/gcloud"
+install -m 0755 /var/lib/emisar-admin-runner/beam.sh "$runner_bin_dir/beam-runtime"
+ln -sfn beam-runtime "$runner_bin_dir/elixir"
+ln -sfn beam-runtime "$runner_bin_dir/erl"
+ln -sfn beam-runtime "$runner_bin_dir/epmd"
 export PATH="$runner_bin_dir:$PATH"
-command -v curl >/dev/null
-command -v jq >/dev/null
+declared_dependencies='bash cloud-init curl docker ethtool jq ps ss systemctl'
+for dependency in $declared_dependencies; do
+  command -v "$dependency" >/dev/null || {
+    echo "admin runner dependency is missing: $dependency" >&2
+    exit 1
+  }
+done
 gcloud version >/dev/null
+elixir --version >/dev/null
+erl -noshell -eval 'io:format("~s~n", [erlang:system_info(system_version)]), halt().' >/dev/null
+epmd -names >/dev/null
 installed_version=$($runner --version 2>/dev/null || true)
 if [ "$installed_version" != "$expected_version" ]; then
   case "$(uname -m)" in
@@ -172,6 +184,10 @@ while IFS='|' read -r pack_ref expected_hash; do
 done <<'PACKS'
 ${pinned_packs}
 PACKS
+# COS has iptables but no nft CLI. The combined firewall pack therefore cannot
+# satisfy its own declared dependency; remove a copy left by an older template
+# so none of its partially runnable actions remain advertised.
+rm -rf /var/lib/emisar-admin-runner/packs/firewall
 "$runner" pack list --packs-dir /var/lib/emisar-admin-runner/packs >/dev/null
 
 exec "$runner" connect --config /var/lib/emisar-admin-runner/config.yaml

@@ -29,7 +29,6 @@ admission:
     - "systemd.*"
     - "cloud-init.*"
     - "docker.*"
-    - "fw.*"
     - "nic.*"
     - "time.*"
     - "beam.*"
