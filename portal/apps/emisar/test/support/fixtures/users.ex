@@ -38,6 +38,16 @@ defmodule Emisar.Fixtures.Users do
     user
   end
 
+  @doc "Sets a user's global sign-in timestamp directly."
+  def set_last_sign_in_at(%User{} = user, %DateTime{} = last_sign_in_at) do
+    {:ok, updated} =
+      user
+      |> Ecto.Changeset.change(last_sign_in_at: last_sign_in_at)
+      |> Emisar.Repo.update()
+
+    updated
+  end
+
   @doc "Soft-deletes a user, returning the tombstoned row."
   def mark_user_as_deleted(%User{} = user) do
     {:ok, deleted} = user |> User.Changeset.delete() |> Emisar.Repo.update()

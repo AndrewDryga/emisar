@@ -335,13 +335,13 @@ defmodule EmisarWeb.UserAuth do
     {:cont, Phoenix.Component.assign(socket, :app_js?, true)}
   end
 
-  # Console pageview tracking. The console is a LiveView app, so in-app
+  # Console activity + pageview tracking. The console is a LiveView app, so in-app
   # navigation happens over the websocket with no controller hit — the :browser
   # pageview plug only sees the dead render, which it skips for /app. This
-  # attaches a `handle_params` lifecycle hook that fires `page_viewed` on the
-  # connected mount and on every live navigation; the `connected?` guard keeps
-  # the twice-running mount to one event. UA captured at mount (connect-info is
-  # mount-only) and closed over.
+  # attaches a `handle_params` lifecycle hook that records coarse membership
+  # activity and fires `page_viewed` on the connected mount and every live
+  # navigation; the `connected?` guard keeps the twice-running mount to one
+  # event. UA captured at mount (connect-info is mount-only) and closed over.
   def on_mount(:track_pageviews, _params, _session, socket) do
     context = RequestContext.from_socket(socket)
 
@@ -349,6 +349,7 @@ defmodule EmisarWeb.UserAuth do
       user = socket.assigns[:current_user]
 
       if user && Phoenix.LiveView.connected?(socket) do
+        touch_console_activity(socket.assigns[:current_subject])
         Analytics.track_console_pageview(user, socket.assigns[:current_account], uri, context)
       end
 
@@ -559,6 +560,18 @@ defmodule EmisarWeb.UserAuth do
        &resend_confirmation_email/3
      )}
   end
+
+  # Activity is a coarse operational hint, never an authorization dependency.
+  # A database hiccup must not turn a page navigation into an auth failure; the
+  # next navigation will retry the same conditional update.
+  defp touch_console_activity(%Subject{} = subject) do
+    _result = Accounts.touch_membership_activity(subject)
+    :ok
+  rescue
+    _error in [DBConnection.ConnectionError, Postgrex.Error] -> :ok
+  end
+
+  defp touch_console_activity(_subject), do: :ok
 
   defp enforce_mfa_requirement(%{view: EmisarWeb.ProfileLive} = socket),
     do: {:cont, socket}

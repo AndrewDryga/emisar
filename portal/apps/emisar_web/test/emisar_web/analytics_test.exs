@@ -406,8 +406,12 @@ defmodule EmisarWeb.AnalyticsTest do
   describe "console (LiveView) pageviews" do
     test "a console mount fires page_viewed — authenticated, with the path", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      assert is_nil(membership.last_active_at)
+
       {:ok, _lv, _html} = live(conn, ~p"/app/#{account.slug}")
 
+      assert %DateTime{} = Emisar.Repo.reload!(membership).last_active_at
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
       assert props["authenticated"] == true
       assert props["distinct_id"] == user.id
@@ -420,6 +424,16 @@ defmodule EmisarWeb.AnalyticsTest do
       # account_id rides every console event so Group Analytics can roll usage
       # up by account (the group key).
       assert props["account_id"] == account.id
+    end
+
+    test "the disconnected render does not touch membership activity", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      conn = get(conn, ~p"/app/#{account.slug}")
+
+      assert html_response(conn, 200)
+      assert is_nil(Emisar.Repo.reload!(membership).last_active_at)
     end
   end
 

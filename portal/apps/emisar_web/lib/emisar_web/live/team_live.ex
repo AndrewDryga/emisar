@@ -1486,7 +1486,7 @@ defmodule EmisarWeb.TeamLive do
                             id={"member-joined-#{membership.id}"}
                             value={membership.inserted_at}
                             mode={:relative}
-                          /> ·{" "}<.sign_in_status user={membership.user} />
+                          /> ·{" "}<.activity_status membership={membership} />
                         </div>
                         <% access = member.runner_access %>
                         <%!-- One labelled row per dimension, on a shared label
@@ -2457,23 +2457,30 @@ defmodule EmisarWeb.TeamLive do
     "Read-only access — they can see runs, runners, and audit, but can't dispatch or change anything."
   end
 
-  # Two cases worth surfacing to admins: "active in the last 90 days"
-  # is a no-op (don't clutter the row), "never signed in" hints at a
-  # pending invite, and a stale last-sign-in flags a candidate for
-  # cleanup. Long-form so it reads in the row's secondary line. The
-  # timestamp case renders through <.local_time> (viewer-local,
-  # hoverable, live); {" "} keeps "last sign-in" off the <time> tag.
-  attr :user, :map, default: nil
+  # Membership activity is account-specific. Until a membership has its first
+  # console touch, the user's sign-in timestamp is the conservative fallback:
+  # signing in proves activity, while a global later timestamp must never
+  # overwrite another account's durable membership value.
+  attr :membership, Accounts.Membership, required: true
 
-  defp sign_in_status(%{user: %{last_sign_in_at: %DateTime{} = ts}} = assigns) do
-    assigns = assign(assigns, :signed_in_at, ts)
+  defp activity_status(%{membership: %{last_active_at: %DateTime{} = ts}} = assigns) do
+    assigns = assign(assigns, :active_at, ts)
 
     ~H"""
-    last sign-in{" "}<.local_time id={"signin-#{@user.id}"} value={@signed_in_at} mode={:relative} />
+    last active{" "}<.local_time id={"active-#{@membership.id}"} value={@active_at} mode={:relative} />
     """
   end
 
-  defp sign_in_status(%{user: %{last_sign_in_at: nil}} = assigns), do: ~H"never signed in"
+  defp activity_status(
+         %{membership: %{last_active_at: nil, user: %{last_sign_in_at: %DateTime{} = ts}}} =
+           assigns
+       ) do
+    assigns = assign(assigns, :active_at, ts)
 
-  defp sign_in_status(assigns), do: ~H"—"
+    ~H"""
+    last active{" "}<.local_time id={"active-#{@membership.id}"} value={@active_at} mode={:relative} />
+    """
+  end
+
+  defp activity_status(assigns), do: ~H"never active"
 end

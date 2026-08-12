@@ -862,6 +862,40 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Advances the authenticated user's current membership activity timestamp when
+  its previous value is older than five minutes. Requires `view_own_account`;
+  the membership id, user id, active account, and subject account must all
+  agree. Returns `{:ok, :touched | :unchanged}` or `{:error, :unauthorized}`.
+  """
+  def touch_membership_activity(%Subject{membership_id: membership_id} = subject) do
+    user_id = Subject.user_id(subject)
+
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_own_account_permission()
+           ),
+         true <- Repo.valid_uuid?(membership_id) and Repo.valid_uuid?(user_id) do
+      now = DateTime.utc_now()
+
+      {count, _} =
+        Membership.Query.not_deleted()
+        |> Membership.Query.not_disabled()
+        |> Membership.Query.by_id(membership_id)
+        |> Membership.Query.by_user_id(user_id)
+        |> Membership.Query.with_joined_account()
+        |> Membership.Query.last_active_before(DateTime.add(now, -5, :minute))
+        |> Authorizer.for_subject(subject)
+        |> Repo.update_all(set: [last_active_at: now])
+
+      if count == 1, do: {:ok, :touched}, else: {:ok, :unchanged}
+    else
+      false -> {:ok, :unchanged}
+      {:error, :unauthorized} = error -> error
+    end
+  end
+
+  @doc """
   One page of the team roster as presentation facts: each visible membership plus
   the security state the roster renders and the member actions it may offer. Owns
   the membership page, its user preload, and ONE batched runner-scope read, so the

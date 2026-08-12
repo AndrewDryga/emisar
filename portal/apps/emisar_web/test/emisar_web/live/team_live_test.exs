@@ -1824,23 +1824,19 @@ defmodule EmisarWeb.TeamLiveTest do
       %{conn: conn, account: account}
     end
 
-    test "the joined + sign-in times are hook-driven, with the prefix space kept", %{
+    test "the joined + activity times are hook-driven, with the prefix space kept", %{
       conn: conn,
       account: account
     } do
-      # A member who HAS signed in, so the "last sign-in <time>" branch renders
-      # (the harness owner has no recorded sign-in → "never signed in").
       member = Fixtures.Users.create_user()
 
-      member
-      |> Ecto.Changeset.change(last_sign_in_at: DateTime.utc_now())
-      |> Emisar.Repo.update!()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: member.id,
-        role: "operator"
-      )
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        )
+        |> Fixtures.Memberships.set_last_active_at(DateTime.utc_now())
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -1849,18 +1845,36 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ ~s(phx-hook="LocalTime")
       assert html =~ ~s(data-format="relative")
       # Mid-sentence spacing survives the formatter's line-break (the {" "}
-      # guard): "joined <time>" and "last sign-in <time>", never abutting.
+      # guard): "joined <time>" and "last active <time>", never abutting.
       assert html =~ ~r/joined\s<time/
       refute html =~ ~r/joined<time/
-      assert html =~ ~r/last sign-in\s<time/
-      refute html =~ ~r/last sign-in<time/
+      assert html =~ ~r/last active\s<time[^>]+id="active-#{membership.id}"/
+      refute html =~ ~r/last active<time/
     end
 
-    test "a member who has never signed in shows the static 'never signed in'", %{
+    test "falls back to the global sign-in until membership activity is recorded", %{
       conn: conn,
       account: account
     } do
-      # A fresh, never-signed-in teammate — last_sign_in_at stays nil.
+      member =
+        Fixtures.Users.create_user() |> Fixtures.Users.set_last_sign_in_at(DateTime.utc_now())
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        )
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert html =~ ~r/last active\s<time[^>]+id="active-#{membership.id}"/
+    end
+
+    test "a member with no activity evidence shows the static 'never active'", %{
+      conn: conn,
+      account: account
+    } do
       member = Fixtures.Users.create_user()
 
       Fixtures.Memberships.create_membership(
@@ -1871,7 +1885,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert html =~ "never signed in"
+      assert html =~ "never active"
     end
 
     test "an email-fallback identity is not duplicated or followed by a leading separator", %{

@@ -37,6 +37,7 @@ defmodule Emisar.Accounts.Membership do
     field :directory_display_name, :string
     field :invitation_token_digest, :string, redact: true
     field :invitation_accepted_at, :utc_datetime_usec
+    field :last_active_at, :utc_datetime_usec
     field :disabled_at, :utc_datetime_usec
     field :deleted_at, :utc_datetime_usec
 

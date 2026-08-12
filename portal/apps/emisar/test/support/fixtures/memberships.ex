@@ -127,6 +127,16 @@ defmodule Emisar.Fixtures.Memberships do
     deleted
   end
 
+  @doc "Sets a membership's coarse console-activity timestamp directly."
+  def set_last_active_at(%Membership{} = membership, %DateTime{} = last_active_at) do
+    {:ok, updated} =
+      membership
+      |> Ecto.Changeset.change(last_active_at: last_active_at)
+      |> Repo.update()
+
+    updated
+  end
+
   @doc "Marks a membership directory-managed (the SCIM synced-role lock), as a sync would."
   def mark_directory_managed(%Membership{} = membership) do
     {:ok, managed} =

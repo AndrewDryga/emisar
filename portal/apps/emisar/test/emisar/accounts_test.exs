@@ -1554,6 +1554,87 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "touch_membership_activity/1" do
+    test "touches once per five-minute window and leaves updated_at alone" do
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+
+      assert is_nil(membership.last_active_at)
+      assert Accounts.touch_membership_activity(subject) == {:ok, :touched}
+
+      first = Repo.reload!(membership)
+      assert %DateTime{} = first.last_active_at
+      assert first.updated_at == membership.updated_at
+
+      assert Accounts.touch_membership_activity(subject) == {:ok, :unchanged}
+      assert Repo.reload!(membership).last_active_at == first.last_active_at
+
+      stale_at = DateTime.add(first.last_active_at, -301, :second)
+      Fixtures.Memberships.set_last_active_at(first, stale_at)
+
+      assert Accounts.touch_membership_activity(subject) == {:ok, :touched}
+      assert DateTime.after?(Repo.reload!(membership).last_active_at, stale_at)
+    end
+
+    test "requires the account-view permission" do
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+
+      no_view =
+        Fixtures.Subjects.build_subject(
+          user: owner,
+          account: account,
+          membership_id: membership.id,
+          role: :runner,
+          permissions: MapSet.new()
+        )
+
+      assert Accounts.touch_membership_activity(no_view) == {:error, :unauthorized}
+      assert is_nil(Repo.reload!(membership).last_active_at)
+    end
+
+    test "only touches the actor's current membership" do
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      owner_membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      target = Fixtures.Memberships.create_membership(account_id: account.id)
+      forged = %{subject | membership_id: target.id}
+
+      assert Accounts.touch_membership_activity(forged) == {:ok, :unchanged}
+      assert is_nil(Repo.reload!(owner_membership).last_active_at)
+      assert is_nil(Repo.reload!(target).last_active_at)
+    end
+
+    test "a cross-account membership id is an unchanged no-op" do
+      {owner_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
+      membership_a = Fixtures.Memberships.fetch_membership(account_a.id, owner_a.id)
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      forged = %{subject_b | actor: owner_a, membership_id: membership_a.id}
+
+      assert Accounts.touch_membership_activity(forged) == {:ok, :unchanged}
+      assert is_nil(Repo.reload!(membership_a).last_active_at)
+    end
+
+    test "suspended and deleted memberships are unchanged no-ops" do
+      {owner_suspended, account_suspended, suspended_subject} =
+        Fixtures.Subjects.owner_subject()
+
+      suspended =
+        Fixtures.Memberships.fetch_membership(account_suspended.id, owner_suspended.id)
+        |> Fixtures.Memberships.suspend_membership()
+
+      {owner_deleted, account_deleted, deleted_subject} = Fixtures.Subjects.owner_subject()
+
+      deleted =
+        Fixtures.Memberships.fetch_membership(account_deleted.id, owner_deleted.id)
+        |> Fixtures.Memberships.mark_membership_as_deleted()
+
+      assert Accounts.touch_membership_activity(suspended_subject) == {:ok, :unchanged}
+      assert Accounts.touch_membership_activity(deleted_subject) == {:ok, :unchanged}
+      assert is_nil(Repo.reload!(suspended).last_active_at)
+      assert is_nil(Repo.reload!(deleted).last_active_at)
+    end
+  end
+
   describe "list_team_member_facts/3" do
     setup do
       account = Fixtures.Accounts.create_account()
