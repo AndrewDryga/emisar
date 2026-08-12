@@ -425,13 +425,24 @@ defmodule EmisarWeb.DomainComponents do
     <.tooltip
       :if={@status in [:outdated, :unsupported]}
       id={@id}
-      text={version_chip_title(@kind, @status)}
+      text={version_chip_title(@kind, @status, @version)}
+      aria_label={@status == :outdated && version_chip_title(@kind, @status, @version)}
       align={:responsive}
       class={@class}
     >
-      <.chip tone={version_chip_tone(@status)} icon="hero-exclamation-triangle">
-        {version_chip_label(@status)}
+      <%!-- Below the minimum is a blocked state and keeps the labelled warning
+           chip. Merely behind the current release still runs and dispatches
+           fine, so it is quiet chrome — one arrow beside the version that
+           explains itself on hover or focus, never a badge shouting beside the
+           host's name (the Packs page words the same fact the same way). --%>
+      <.chip :if={@status == :unsupported} tone={:rose} icon="hero-exclamation-triangle">
+        unsupported
       </.chip>
+      <.icon
+        :if={@status == :outdated}
+        name="hero-arrow-up-circle"
+        class="h-3.5 w-3.5 text-zinc-500"
+      />
     </.tooltip>
     """
   end
@@ -440,29 +451,30 @@ defmodule EmisarWeb.DomainComponents do
 
   defp version_status(:mcp, version), do: Emisar.Compat.mcp_status(version)
 
-  defp version_chip_tone(:unsupported), do: :rose
-
-  defp version_chip_tone(:outdated), do: :amber
-
-  defp version_chip_label(:unsupported), do: "unsupported"
-
-  defp version_chip_label(:outdated), do: "outdated"
-
-  defp version_chip_title(:runner, :unsupported) do
+  defp version_chip_title(:runner, :unsupported, _version) do
     "Below the minimum runner version #{Emisar.Compat.runner_minimum()} — upgrade this runner."
   end
 
-  defp version_chip_title(:runner, :outdated) do
-    "Below the recommended runner version #{Emisar.Compat.runner_recommended()} — upgrade when you can."
+  # Names the release the operator would get and the one they are on, the way
+  # an update prompt should — never the requirement string that decided it.
+  defp version_chip_title(:runner, :outdated, version) do
+    "Runner #{Emisar.Compat.runner_target()} is available#{version_from(version)}. " <>
+      "Re-run the installer on this host to update; it keeps the configuration and restarts the service."
   end
 
-  defp version_chip_title(:mcp, :unsupported) do
+  defp version_chip_title(:mcp, :unsupported, _version) do
     "Below the minimum emisar-mcp version #{Emisar.Compat.mcp_minimum()} — upgrade the bridge."
   end
 
-  defp version_chip_title(:mcp, :outdated) do
-    "Below the recommended emisar-mcp version #{Emisar.Compat.mcp_recommended()} — upgrade when you can."
+  defp version_chip_title(:mcp, :outdated, version) do
+    "emisar-mcp #{Emisar.Compat.mcp_target()} is available#{version_from(version)}. " <>
+      "Re-run the installer on that machine, then restart its LLM client."
   end
+
+  defp version_from(version) when is_binary(version) and version != "",
+    do: "; this one is on #{version}"
+
+  defp version_from(_version), do: ""
 
   @doc """
   Actionable upgrade instructions for stale runner or emisar-mcp versions.
@@ -504,10 +516,14 @@ defmodule EmisarWeb.DomainComponents do
       |> assign(:command, version_upgrade_command(assigns.kind, assigns.base_url))
 
     ~H"""
+    <%!-- Amber only when something is actually below the supported range. An
+         update that has merely shipped is a convenience: what is installed still
+         runs and dispatches, so the notice stays neutral rather than putting the
+         page into a warning state nobody needs to act on today. --%>
     <.callout
       :if={@status in [:outdated, :unsupported]}
       id={@id}
-      tone={:amber}
+      tone={(@status == :unsupported && :amber) || :neutral}
       icon="hero-cloud-arrow-down"
       title={version_upgrade_title(@kind, @status, @affected_count)}
       class={@class}
@@ -553,7 +569,7 @@ defmodule EmisarWeb.DomainComponents do
   end
 
   defp version_upgrade_message(:runner, :single, 0, _outdated) do
-    "This runner is behind the recommended release (#{Emisar.Compat.runner_recommended()}). " <>
+    "This runner is behind #{Emisar.Compat.runner_target()}. " <>
       "Run the command on its host. The installer preserves its configuration and restarts the service."
   end
 
@@ -567,16 +583,16 @@ defmodule EmisarWeb.DomainComponents do
   end
 
   defp version_upgrade_message(:runner, :list, 0, outdated_count) do
-    "#{runner_count_phrase(outdated_count)} behind the recommended release " <>
-      "(#{Emisar.Compat.runner_recommended()}). Run the command once on each affected host; " <>
+    "#{runner_count_phrase(outdated_count)} behind #{Emisar.Compat.runner_target()}. " <>
+      "Run the command once on each affected host; " <>
       "the installer preserves its configuration and restarts the service."
   end
 
   defp version_upgrade_message(:runner, :list, unsupported_count, outdated_count) do
     "On this page, #{version_count_label(unsupported_count, "runner")} below the supported " <>
       "range (#{Emisar.Compat.runner_minimum()}) and " <>
-      "#{version_count_label(outdated_count, "runner")} behind the recommended release " <>
-      "(#{Emisar.Compat.runner_recommended()}). Run the command once on each affected host; " <>
+      "#{version_count_label(outdated_count, "runner")} behind #{Emisar.Compat.runner_target()}. " <>
+      "Run the command once on each affected host; " <>
       "the installer preserves its configuration and restarts the service."
   end
 
@@ -590,16 +606,15 @@ defmodule EmisarWeb.DomainComponents do
 
   defp version_upgrade_message(:mcp, _scope, 0, outdated_count) do
     "#{outdated_count} #{agent_count_label(outdated_count)} on this page last connected through a bridge behind " <>
-      "the recommended release (#{Emisar.Compat.mcp_recommended()}). Run the command once on " <>
+      "#{Emisar.Compat.mcp_target()}. Run the command once on " <>
       "each affected machine, then restart its LLM client."
   end
 
   defp version_upgrade_message(:mcp, _scope, unsupported_count, outdated_count) do
     "On this page, #{version_count_label(unsupported_count, "agent")} last connected through " <>
       "a bridge below the supported range (#{Emisar.Compat.mcp_minimum()}) and " <>
-      "#{version_count_label(outdated_count, "agent")} behind the recommended release " <>
-      "(#{Emisar.Compat.mcp_recommended()}). Run the command once on each affected machine, " <>
-      "then restart its LLM client."
+      "#{version_count_label(outdated_count, "agent")} behind #{Emisar.Compat.mcp_target()}. " <>
+      "Run the command once on each affected machine, then restart its LLM client."
   end
 
   defp version_count_label(1, noun), do: "1 #{noun} is"

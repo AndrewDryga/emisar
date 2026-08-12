@@ -690,7 +690,10 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert text_position(html, "Runner update required") < text_position(html, "1 connected")
     end
 
-    test "a below-recommended runner shows an 'outdated' chip", %{conn: conn, account: account} do
+    test "a below-recommended runner marks the row and names the release", %{
+      conn: conn,
+      account: account
+    } do
       Fixtures.Runners.create_runner(
         account_id: account.id,
         name: "stale",
@@ -698,7 +701,12 @@ defmodule EmisarWeb.RunnersLiveTest do
       )
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
-      assert html =~ "outdated"
+      # An available update is a heads-up, not a warning: the row wears a quiet
+      # arrow that names what is available and what this host is on, never the
+      # labelled "outdated" badge a blocked runner gets.
+      assert html =~ "Runner 0.1.0 is available"
+      assert html =~ "this one is on 0.0.5"
+      refute html =~ "outdated"
       assert html =~ "Runner update available"
       assert html =~ "/install.sh | sudo bash"
       # Outdated is advisory — the badge stays emerald "connected"; only a

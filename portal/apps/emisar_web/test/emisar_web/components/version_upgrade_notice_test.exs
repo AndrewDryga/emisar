@@ -28,7 +28,8 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
       refute html =~ "bg-amber-500/10"
       refute html =~ "bg-rose-500/10"
       assert html =~ "1 runner is below the supported range"
-      assert html =~ "1 runner is behind the recommended release"
+      # The available release is named, not the requirement that decided it.
+      assert html =~ "1 runner is behind 0.1.0"
       assert html =~ "space-y-4"
       assert html =~ "curl -sSL https://control.example/install.sh | sudo bash"
       assert html =~ ~s(data-copy-text="curl -sSL https://control.example/install.sh | sudo bash")

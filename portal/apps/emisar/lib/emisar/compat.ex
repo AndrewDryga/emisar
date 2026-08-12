@@ -11,10 +11,12 @@ defmodule Emisar.Compat do
 
       config :emisar, Emisar.Compat,
         runner_minimum: ">= 0.10.0",
-        runner_recommended: ">= 0.10.0",
+        runner_recommended: ">= 0.19.0",
+        runner_current: "0.19.0",
         runner_enforce: false,
         mcp_minimum: ">= 0.3.0",
-        mcp_recommended: ">= 0.3.0",
+        mcp_recommended: ">= 0.7.0",
+        mcp_current: "0.7.0",
         mcp_enforce: false
 
   `*_minimum` / `*_recommended` are Elixir `Version` requirement strings
@@ -22,6 +24,12 @@ defmodule Emisar.Compat do
   accepting every version. An omitted threshold is treated as satisfied.
   Enforcement defaults off (warn-only), and even when on it never blocks a
   `:unknown` (missing / unparseable) version — only `:unsupported`.
+
+  `*_current` is the plain version the released binaries carry, and exists
+  only so an update hint can name what the operator would get ("0.19.0 is
+  available") instead of reciting the requirement string that decided it.
+  It is bumped with the thresholds when a `runner-v*` / `mcp-v*` tag ships;
+  when unset, hints fall back to naming the requirement.
   """
 
   @type status :: :supported | :outdated | :unsupported | :unknown
@@ -41,6 +49,13 @@ defmodule Emisar.Compat do
   @doc "The configured recommended runner-version requirement string, for operator-facing messages."
   def runner_recommended, do: raw(:runner_recommended)
 
+  @doc """
+  The runner release an update hint names, or the recommended requirement
+  string when no release is configured — so copy always has something true to
+  say without reciting config at an operator.
+  """
+  def runner_target, do: raw(:runner_current) || raw(:runner_recommended)
+
   # -- MCP bridge -----------------------------------------------------
 
   @doc "Classify an observed emisar-mcp bridge version against the configured MCP policy."
@@ -55,6 +70,9 @@ defmodule Emisar.Compat do
 
   @doc "The configured recommended MCP-bridge requirement string, for operator-facing messages."
   def mcp_recommended, do: raw(:mcp_recommended)
+
+  @doc "The bridge release an update hint names; falls back to the recommended requirement."
+  def mcp_target, do: raw(:mcp_current) || raw(:mcp_recommended)
 
   # -- Evaluation -----------------------------------------------------
 

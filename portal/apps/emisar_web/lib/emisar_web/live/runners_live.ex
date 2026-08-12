@@ -380,7 +380,7 @@ defmodule EmisarWeb.RunnersLive do
               <%!-- Alerts keep a tight internal rhythm, then the stack leaves a
                    larger exit gutter before ordinary fleet counters and rows. --%>
               <div
-                :if={fleet_attention?(@fleet, @runners)}
+                :if={fleet_notices?(@fleet, @runners)}
                 id="fleet-attention"
                 class="mb-10 space-y-6"
               >
@@ -615,7 +615,11 @@ defmodule EmisarWeb.RunnersLive do
   # first) is preserved.
   defp sort_by_group(runners), do: Enum.sort_by(runners, &(&1.group || ""))
 
-  defp fleet_attention?(fleet, runners) do
+  # Whether the notice stack above the fleet has anything to say. Not all of it
+  # is attention: a dark fleet and a signed-only posture are, while an available
+  # update rides here as a neutral heads-up — the notices carry that difference
+  # in their own tone, so this only decides whether the section exists at all.
+  defp fleet_notices?(fleet, runners) do
     (fleet.counts.online == 0 and fleet.counts.offline > 0) or
       fleet.signature_mode == :signed_only or
       Enum.any?(runners, &(Compat.runner_status(&1.runner_version) in [:outdated, :unsupported]))

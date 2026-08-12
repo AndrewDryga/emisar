@@ -87,9 +87,11 @@ config :emisar, Emisar.SSO.Jobs.AuthorizationReconcile, enabled: false
 config :emisar, Emisar.Compat,
   runner_minimum: ">= 0.0.1",
   runner_recommended: ">= 0.1.0",
+  runner_current: "0.1.0",
   runner_enforce: false,
   mcp_minimum: ">= 0.0.1",
   mcp_recommended: ">= 0.1.0",
+  mcp_current: "0.1.0",
   mcp_enforce: false
 
 # Paddle is stubbed in tests so we never hit the network.
