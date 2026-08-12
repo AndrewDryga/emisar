@@ -140,6 +140,21 @@ defmodule EmisarWeb.TeamLiveTest do
       refute has_element?(lv, "#sso-provider-#{provider.id} > [aria-hidden=true]")
     end
 
+    test "SSO enforcement is a subsection above the team sign-in link", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(lv, "#single-sign-on [data-role='require-sso-section']")
+      assert has_element?(lv, "#single-sign-on [data-role='team-sign-in-section']")
+      assert {require_position, _length} = :binary.match(html, "require-sso-section")
+      assert {sign_in_position, _length} = :binary.match(html, "team-sign-in-section")
+      assert require_position < sign_in_position
+      assert has_element?(lv, "#single-sign-on #require-sso")
+    end
+
     test "a downgraded plan still shows pending requests — dismissing one needs no plan", %{
       conn: conn
     } do

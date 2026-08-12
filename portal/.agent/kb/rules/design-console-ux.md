@@ -561,6 +561,12 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     it in your identity provider" wording for the actionable edit-rejection flash, and the
     lock for the control it replaces. Sweep: per-attribute `managed by <provider>` / `synced
     from` prose on a row that already shows a provisioning badge.
+52. **A setting that qualifies another setting is its subsection, not a peer card.** Keep one
+    card for the operator's concept, then order its dependent controls as divider-led
+    subsections with the same compact heading/copy grammar. Preserve consequence copy and
+    confirmation when the qualifier is security-sensitive; reducing visual weight must not
+    reduce decision evidence. Sweep: standalone cards for enforcement, links, or defaults
+    that only make sense beneath the connection or feature card immediately before them.
 
 
 ## 8. The kit is the contract

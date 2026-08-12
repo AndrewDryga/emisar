@@ -1353,9 +1353,9 @@ defmodule EmisarWeb.TeamLive do
            opens directly under the row instead of in a bolted-on
            extra table column. --%>
       <%!-- Roster leads the main column; the Security stance rides the SIDE
-           PANEL beside it (stacks below on a phone) — 2FA, the SSO connections,
-           and Require SSO, each its own boxed card with what-it-does copy + a
-           confirm-modal control. --%>
+           PANEL beside it (stacks below on a phone) — 2FA and SSO each own one
+           boxed control. SSO enforcement is a subsection of its connection
+           setup, not a competing card. --%>
       <div
         :if={@live_action == :index and not @loading?}
         class="grid grid-cols-1 gap-x-10 gap-y-8 lg:grid-cols-3 lg:items-start"
@@ -1752,9 +1752,9 @@ defmodule EmisarWeb.TeamLive do
           </section>
         </div>
 
-        <%!-- ===== Security side panel ===== the boxed cards from the screenshot,
-             on the side: 2FA · SSO connections · Require SSO, each with its
-             what-it-does copy + a confirm-modal control. --%>
+        <%!-- ===== Security side panel ===== 2FA and SSO are the two account
+             security concerns; the SSO card contains its enforcement and
+             sign-in-link subsections in operator order. --%>
         <aside class="space-y-4 lg:col-span-1">
           <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Security</h3>
 
@@ -1905,65 +1905,74 @@ defmodule EmisarWeb.TeamLive do
                 <% true -> %>
               <% end %>
             </div>
+            <%!-- Enforcement qualifies the connections above, so it stays in
+                 their card. Match the quiet sign-in-link subsection grammar;
+                 keep the lockout consequence and confirm action intact. --%>
+            <div
+              data-role="require-sso-section"
+              class="mt-4 border-t border-zinc-800/70 pt-3"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <p class="text-[11px] font-medium text-zinc-300">Require single sign-on</p>
+                <span :if={@security_facts.sso_required?} class="text-[11px] text-zinc-400">
+                  Required
+                </span>
+              </div>
+              <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+                Members sign in through this account's identity provider. Magic-link sign-ins are
+                redirected to SSO. Needs an enabled connection.
+              </p>
+              <div class="mt-3">
+                <%= cond do %>
+                  <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
+                    <span class="text-[11px] text-zinc-400">Owner/admin only</span>
+                  <% @security_facts.sso_required? -> %>
+                    <.confirm_button
+                      id="require-sso"
+                      variant={:secondary}
+                      tone={:neutral}
+                      size={:sm}
+                      title="Stop requiring single sign-on?"
+                      confirm_label="Stop requiring"
+                      on_confirm={JS.push("toggle_require_sso")}
+                    >
+                      <:body>Members will be able to sign in with a magic link again.</:body>
+                      Stop requiring SSO
+                    </.confirm_button>
+                  <% @require_sso_available? -> %>
+                    <.confirm_button
+                      id="require-sso"
+                      variant={:secondary}
+                      tone={:neutral}
+                      size={:sm}
+                      title="Require single sign-on for everyone?"
+                      confirm_label="Require SSO"
+                      on_confirm={JS.push("toggle_require_sso")}
+                    >
+                      <:body>
+                        Members who signed in another way are stopped the next time they navigate and
+                        have to sign in again through your provider — if it's misconfigured, they're
+                        locked out. Confirm SSO works first.
+                      </:body>
+                      Require SSO
+                    </.confirm_button>
+                  <% true -> %>
+                    <span class="text-[11px] text-zinc-400">Add an enabled connection first</span>
+                <% end %>
+              </div>
+            </div>
             <%!-- The branded sign-in link to hand to members — only once there's a
                  connection to sign in through. --%>
-            <div :if={@provider_facts != []} class="mt-4 border-t border-zinc-800/70 pt-3">
+            <div
+              :if={@provider_facts != []}
+              data-role="team-sign-in-section"
+              class="mt-4 border-t border-zinc-800/70 pt-3"
+            >
               <p class="text-[11px] font-medium text-zinc-300">Team sign-in link</p>
               <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
                 Share this — it opens this team's sign-in page with your SSO connections.
               </p>
               <.code_line id="team-sso-sign-in-link" value={@sign_in_url} class="mt-2" />
-            </div>
-          </div>
-
-          <%!-- ── Require single sign-on (its own card + doc) ── --%>
-          <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
-          <div class="rounded-xl border border-zinc-800/80 p-4">
-            <div class="flex items-center justify-between gap-3">
-              <h4 class="text-sm font-medium text-zinc-100">Require single sign-on</h4>
-              <.chip :if={@security_facts.sso_required?} tone={:brand}>Required</.chip>
-            </div>
-            <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-              When required, members sign in through this account's identity provider — magic-link
-              sign-ins are bounced to SSO. Needs an enabled SSO connection.
-            </p>
-            <div class="mt-4">
-              <%= cond do %>
-                <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                  <span class="text-[11px] text-zinc-400">Owner/admin only</span>
-                <% @security_facts.sso_required? -> %>
-                  <.confirm_button
-                    id="require-sso"
-                    variant={:secondary}
-                    tone={:neutral}
-                    size={:sm}
-                    title="Stop requiring single sign-on?"
-                    confirm_label="Stop requiring"
-                    on_confirm={JS.push("toggle_require_sso")}
-                  >
-                    <:body>Members will be able to sign in with a magic link again.</:body>
-                    Stop requiring SSO
-                  </.confirm_button>
-                <% @require_sso_available? -> %>
-                  <.confirm_button
-                    id="require-sso"
-                    variant={:secondary}
-                    tone={:neutral}
-                    size={:sm}
-                    title="Require single sign-on for everyone?"
-                    confirm_label="Require SSO"
-                    on_confirm={JS.push("toggle_require_sso")}
-                  >
-                    <:body>
-                      Members who signed in another way are stopped the next time they navigate and
-                      have to sign in again through your provider — if it's misconfigured, they're
-                      locked out. Confirm SSO works first.
-                    </:body>
-                    Require SSO
-                  </.confirm_button>
-                <% true -> %>
-                  <span class="text-[11px] text-zinc-400">Add an enabled connection first</span>
-              <% end %>
             </div>
           </div>
 
