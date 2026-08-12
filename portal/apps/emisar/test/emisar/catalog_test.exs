@@ -4296,6 +4296,24 @@ defmodule Emisar.CatalogTest do
       assert projection.decision_count == 2
     end
 
+    test "current pack access scopes rows, actions, and decision counts", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+      {:ok, acme_only} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme"])
+      force_runner_access(account, subject, acme_only)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{risk: "high"}, subject)
+
+      assert Enum.map(projection.pack_versions, & &1.pack_id) == ["acme"]
+      assert Enum.map(projection.groups, & &1.id) == ["acme"]
+      assert Map.keys(projection.actions_by_pack_ref) == [{"acme", "1.0"}]
+      assert projection.pending_count == 1
+      assert projection.decision_count == 1
+    end
+
     test "a name that only matches the pack id keeps the version and highlights no action", %{
       subject: subject,
       runner: runner
@@ -4496,9 +4514,10 @@ defmodule Emisar.CatalogTest do
       assert large_queries == small_queries
       # One slim pack-version read, the pending rows' whole-row re-read, the
       # summary filter-match read, the pending pairs' whole action read, the
-      # current membership/access re-read, and one bounded subject-scoped fleet
-      # read for the pending rows' blast radius.
-      assert small_queries == 7
+      # projection's current membership + scope reads, and a bounded fleet read
+      # with its own current membership + scope reads for the pending rows'
+      # blast radius.
+      assert small_queries == 9
 
       for pack_version <- small.pack_versions do
         {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, small_subject)
@@ -4507,9 +4526,10 @@ defmodule Emisar.CatalogTest do
       _ = drain_repo_query_count()
       assert {:ok, lazy} = Catalog.list_console_packs(%{}, small_subject)
 
-      # With no filter and nothing pending, only the pack-version query remains;
-      # action contents stay lazy until the operator opens a disclosure.
-      assert drain_repo_query_count() == 1
+      # With no filter and nothing pending, only the current membership + scope
+      # reads and the pack-version query remain; action contents stay lazy until
+      # the operator opens a disclosure.
+      assert drain_repo_query_count() == 3
       assert lazy.actions_by_pack_ref == %{}
     end
 
@@ -5142,6 +5162,12 @@ defmodule Emisar.CatalogTest do
       assert Enum.map(actions, & &1.action_id) == ["acme.reload", "acme.status"]
       assert Enum.map(actions, & &1.risk) == [:critical, :low]
 
+      {:ok, other_pack_only} =
+        Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+      force_runner_access(account, subject, other_pack_only)
+      assert {:ok, []} = Catalog.list_pack_actions("acme", "2.0", subject)
+
       # Another account sees none of this account's pack actions.
       {_account, other_subject} = account_with_owner()
       assert {:ok, []} = Catalog.list_pack_actions("acme", "2.0", other_subject)
@@ -5416,6 +5442,28 @@ defmodule Emisar.CatalogTest do
 
       assert Catalog.count_pack_versions_needing_decision(subject) == 2
       assert Catalog.count_pack_versions_needing_decision(other_subject) == 1
+    end
+
+    test "counts only decisions in current pack access" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{
+              "linux-core" => %{"version" => "9.9.9", "hash" => "h1"},
+              "redis" => %{"version" => "9.9.9", "hash" => "h2"}
+            }
+          )
+        )
+
+      {:ok, linux_only} =
+        Accounts.RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
+
+      force_runner_access(account, subject, linux_only)
+      assert Catalog.count_pack_versions_needing_decision(subject) == 1
     end
 
     test "counts a retired-blocked trusted version, and stops once resolved" do

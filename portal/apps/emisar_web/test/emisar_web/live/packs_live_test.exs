@@ -13,6 +13,43 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "Packs"
       assert html =~ "No packs reported yet"
     end
+
+    test "renders only packs in the member's current pack access", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _runner} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "host-1",
+          "version" => "0.1.0",
+          "labels" => %{},
+          "actions" => [],
+          "packs" => %{
+            "acme-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("acme")
+            },
+            "hidden-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("hidden")
+            }
+          }
+        })
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      {:ok, access} =
+        Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme-tools"])
+
+      Fixtures.Memberships.force_runner_access(membership, access)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+      html = render(lv)
+
+      assert html =~ "acme-tools"
+      refute html =~ "hidden-tools"
+      assert html =~ "1 pack · 1 version"
+    end
   end
 
   describe "trust decisions" do
@@ -287,8 +324,9 @@ defmodule EmisarWeb.PacksLiveTest do
         drain_repo_query_count()
       end
 
-      # First open lazily loads the action list — exactly that one read.
-      assert toggle.() == 1
+      # First open reads current membership + scope, then exactly that action
+      # list. It still does not rebuild the account projection.
+      assert toggle.() == 3
 
       # Closing, and re-opening the already-cached list, read nothing.
       assert toggle.() == 0

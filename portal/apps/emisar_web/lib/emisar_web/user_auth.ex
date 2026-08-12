@@ -697,10 +697,10 @@ defmodule EmisarWeb.UserAuth do
   defp approval_count_for(nil), do: 0
   defp approval_count_for(subject), do: Approvals.count_pending_approval_requests(subject)
 
-  # Pack-decision badge counterpart: computed at connected mount and kept
-  # live by `refresh_pending_packs` on the account's packs topic. Counts
-  # every version awaiting a decision — pending trust reviews AND
-  # retired-blocked trusted versions.
+  # Pack-decision badge counterpart: computed at connected mount and kept live
+  # by `refresh_pending_packs` on the account's packs topic. Counts every
+  # version in current pack access awaiting a decision — pending trust reviews
+  # AND retired-blocked trusted versions.
   defp pack_pending_count_for(nil), do: 0
 
   defp pack_pending_count_for(subject),

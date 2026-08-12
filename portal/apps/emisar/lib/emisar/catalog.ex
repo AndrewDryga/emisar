@@ -2323,6 +2323,18 @@ defmodule Emisar.Catalog do
   defp scope_actions_to_packs(queryable, %Accounts.RunnerAccess{pack_mode: :restricted} = access),
     do: RunnerAction.Query.by_pack_ids(queryable, access.pack_ids)
 
+  defp scope_pack_versions_to_packs(queryable, %Accounts.RunnerAccess{mode: :none}),
+    do: PackVersion.Query.none(queryable)
+
+  defp scope_pack_versions_to_packs(queryable, %Accounts.RunnerAccess{pack_mode: :all}),
+    do: queryable
+
+  defp scope_pack_versions_to_packs(
+         queryable,
+         %Accounts.RunnerAccess{pack_mode: :restricted} = access
+       ),
+       do: PackVersion.Query.by_pack_ids(queryable, access.pack_ids)
+
   # Severity rank for `RunnerAction.risk` (an Ecto.Enum) — lets us pick the
   # WORST risk when the same action is advertised by more than one runner.
   @risk_rank %{low: 0, medium: 1, high: 2, critical: 3}
@@ -2559,16 +2571,17 @@ defmodule Emisar.Catalog do
   fleet's advertisement facts are read once, and only when some row's lifecycle
   actually depends on who is running it.
 
-  Returns `{:ok, projection}` — `pack_versions` (every account row, bounded,
-  ordered by pack id then version; browse rows omit `trusted_manifest`, and only
-  rows carrying a decision — pending trust, or an overridden retirement — come
-  back whole with the overrider preloaded), `groups` (`%{id: pack_id,
+  Returns `{:ok, projection}` — `pack_versions` (every row in the member's
+  current pack access, bounded, ordered by pack id then version; browse rows
+  omit `trusted_manifest`, and only rows carrying a decision — pending trust,
+  or an overridden retirement — come back whole with the overrider preloaded),
+  `groups` (`%{id: pack_id,
   versions: [...], update: nil | %{version, hash}}` over the visible rows,
   packs ascending and versions newest-seen first), `actions_by_pack_ref`,
   `matched_action_ids` and
   `version_facts` (see `list_console_packs/2`'s fact map) keyed by pack-version
-  id, the visible `pack_count`/`version_count`, and the account-wide
-  `pending_count`/`decision_count` — or `{:error, :unauthorized}`.
+  id, and the visible `pack_count`/`version_count`, `pending_count`, and
+  `decision_count` — or `{:error, :unauthorized}`.
 
   `version_facts` carries every lifecycle and trust judgment the console
   renders, so no caller re-derives one from raw row fields: `trust_state` and
@@ -2585,9 +2598,11 @@ defmodule Emisar.Catalog do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
       name = filters |> Map.get(:name, "") |> String.downcase()
       risk = Map.get(filters, :risk, "")
+      access = Accounts.runner_access_for_subject(subject)
 
       pack_versions =
         PackVersion.Query.all()
+        |> scope_pack_versions_to_packs(access)
         |> PackVersion.Query.ordered_by_pack()
         |> PackVersion.Query.select_without_manifest()
         |> PackVersion.Query.limit_to(@console_pack_version_limit)
@@ -2595,7 +2610,7 @@ defmodule Emisar.Catalog do
         |> Repo.all()
         |> hydrate_decision_rows(subject)
 
-      action_rows = console_action_rows(pack_versions, name, risk, subject)
+      action_rows = console_action_rows(pack_versions, name, risk, access, subject)
 
       actions_by_pack_ref =
         Map.new(action_rows, fn {pack_ref, actions} ->
@@ -2657,21 +2672,33 @@ defmodule Emisar.Catalog do
   # field, so summary rows would silently blind it. Kept as RAW rows either way
   # (no dedupe here) so a pending review can select its exact hash BEFORE the
   # most-severe dedupe collapses two hashes' rows for the same action id.
-  defp console_action_rows(pack_versions, name, risk, %Subject{} = subject) do
+  defp console_action_rows(
+         pack_versions,
+         name,
+         risk,
+         %Accounts.RunnerAccess{} = access,
+         %Subject{} = subject
+       ) do
     pending_pairs =
       for %PackVersion{trust_state: :pending} = version <- pack_versions,
           do: {version.pack_id, version.version}
 
     Map.merge(
-      filter_match_action_rows(name, risk, subject),
-      pending_decision_action_rows(pending_pairs, subject)
+      filter_match_action_rows(name, risk, access, subject),
+      pending_decision_action_rows(pending_pairs, access, subject)
     )
   end
 
-  defp filter_match_action_rows("", "", %Subject{}), do: %{}
+  defp filter_match_action_rows("", "", %Accounts.RunnerAccess{}, %Subject{}), do: %{}
 
-  defp filter_match_action_rows(_name, _risk, %Subject{} = subject) do
+  defp filter_match_action_rows(
+         _name,
+         _risk,
+         %Accounts.RunnerAccess{} = access,
+         %Subject{} = subject
+       ) do
     RunnerAction.Query.all()
+    |> scope_actions_to_packs(access)
     |> RunnerAction.Query.ordered_by_action()
     |> RunnerAction.Query.select_console_columns()
     |> Authorizer.for_subject(subject)
@@ -2679,11 +2706,16 @@ defmodule Emisar.Catalog do
     |> Enum.group_by(&{&1.pack_id, &1.pack_version})
   end
 
-  defp pending_decision_action_rows([], %Subject{}), do: %{}
+  defp pending_decision_action_rows([], %Accounts.RunnerAccess{}, %Subject{}), do: %{}
 
-  defp pending_decision_action_rows(pending_pairs, %Subject{} = subject) do
+  defp pending_decision_action_rows(
+         pending_pairs,
+         %Accounts.RunnerAccess{} = access,
+         %Subject{} = subject
+       ) do
     RunnerAction.Query.all()
     |> RunnerAction.Query.by_pack_refs(pending_pairs)
+    |> scope_actions_to_packs(access)
     |> RunnerAction.Query.ordered_by_action()
     |> Authorizer.for_subject(subject)
     |> Repo.all()
@@ -2981,9 +3013,12 @@ defmodule Emisar.Catalog do
   def list_pack_actions(pack_id, pack_version, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
+      access = Accounts.runner_access_for_subject(subject)
+
       actions =
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_pack(pack_id, pack_version)
+        |> scope_actions_to_packs(access)
         |> RunnerAction.Query.ordered_by_action()
         |> RunnerAction.Query.select_console_columns()
         |> Authorizer.for_subject(subject)
@@ -3041,8 +3076,8 @@ defmodule Emisar.Catalog do
   def trusted_manifest_for_static_reads(%PackVersion{}), do: {:error, :pack_untrusted}
 
   @doc """
-  Cheap count of pack versions awaiting an operator decision — pending trust
-  reviews PLUS retired-blocked trusted versions (see
+  Cheap count of pack versions in the member's current pack access awaiting an
+  operator decision — pending trust reviews PLUS retired-blocked trusted versions (see
   `pack_version_needs_decision?/1`) — drives the sidebar + dashboard badge.
   Same Subject gate + account scoping as `list_pack_versions/2`; returns `0`
   when the caller lacks permission so the badge silently disappears instead
@@ -3051,12 +3086,15 @@ defmodule Emisar.Catalog do
   def count_pack_versions_needing_decision(%Subject{} = subject) do
     case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
       :ok ->
+        access = Accounts.runner_access_for_subject(subject)
+
         pending =
           PackVersion.Query.pending()
+          |> scope_pack_versions_to_packs(access)
           |> Authorizer.for_subject(subject)
           |> Repo.aggregate(:count)
 
-        pending + count_retired_blocked(subject)
+        pending + count_retired_blocked(access, subject)
 
       _ ->
         0
@@ -3066,12 +3104,13 @@ defmodule Emisar.Catalog do
   # Retirement lives in the published catalog snapshot (`PackBaseline`), not in
   # a column, so the version comparison happens in Elixir over a narrow read:
   # trusted, unoverridden rows of the packs that carry a watermark at all.
-  defp count_retired_blocked(%Subject{} = subject) do
+  defp count_retired_blocked(%Accounts.RunnerAccess{} = access, %Subject{} = subject) do
     watermarked_pack_ids = Map.keys(PackBaseline.retired_below())
 
     queryable =
       PackVersion.Query.trusted_unoverridden()
       |> PackVersion.Query.by_pack_ids(watermarked_pack_ids)
+      |> scope_pack_versions_to_packs(access)
       |> PackVersion.Query.select_decision_fields()
       |> Authorizer.for_subject(subject)
 

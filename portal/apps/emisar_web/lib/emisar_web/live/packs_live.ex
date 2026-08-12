@@ -1,6 +1,6 @@
 defmodule EmisarWeb.PacksLive do
   @moduledoc """
-  Pack inventory + trust state across the account's runners.
+  Pack inventory + trust state within the member's current pack access.
 
   Each `(pack_id, version)` is one row holding the trusted hash + an
   optional pending hash. The page surfaces:
@@ -85,9 +85,10 @@ defmodule EmisarWeb.PacksLive do
         |> assign(:load_error?, false)
         |> assign(:pack_count, projection.pack_count)
         |> assign(:version_count, projection.version_count)
-        # Pending counts + the sidebar badge reflect the ACCOUNT, not the
-        # current filter — only the rendered groups narrow. The badge counts
-        # every decision (pending reviews + retired-blocked); the page's
+        # Pending counts + the sidebar badge reflect the member's current pack
+        # access, not the current search filter — only the rendered groups
+        # narrow. The badge counts every accessible decision (pending reviews
+        # + retired-blocked); the page's
         # amber callout stays trust-review-only — retired versions carry
         # their own rose notice per row.
         |> assign(:pending_count, projection.pending_count)
@@ -142,8 +143,9 @@ defmodule EmisarWeb.PacksLive do
   defp normalize_risk(risk) when risk in @risk_tiers, do: risk
   defp normalize_risk(_), do: ""
 
-  # Everything the page renders, from one Catalog read: the account's rows, the
-  # filtered groups, the actions each version advertises, and the counts.
+  # Everything the page renders, from one Catalog read: the rows in current
+  # pack access, the filtered groups, the actions each version advertises, and
+  # the counts.
   # Rejected rows stay listed (quietly — no review alert) so an admin mistake is
   # visible and reversible: the row offers Trust to adopt the refused bytes or
   # restore revoked trust. Dispatch fails closed on them either way.
@@ -1148,7 +1150,7 @@ defmodule EmisarWeb.PacksLive do
       <.page_intro>
         A pack is a versioned bundle of <span class="text-zinc-200">vetted actions</span>
         a runner may execute — the runner advertises what it has installed, and this
-        page is your account's trust ledger over it.
+        page shows the trust ledger for packs in your access.
         <.doc_link href="/docs/action-packs">Action pack docs</.doc_link>
       </.page_intro>
 

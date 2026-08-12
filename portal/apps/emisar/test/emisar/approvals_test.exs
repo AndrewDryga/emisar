@@ -464,6 +464,21 @@ defmodule Emisar.ApprovalsTest do
       assert Repo.reload!(request).status == :pending
     end
 
+    test "a stale request cannot be denied after current pack access is revoked" do
+      {subject, _key, request} = approvable_mcp_run()
+      allowed = subject_with_runner_access(subject, all_runner_pack_access(["linux-core"]))
+
+      assert {:ok, stale_request} =
+               Approvals.fetch_approval_request_by_id(request.id, allowed)
+
+      _revoked = subject_with_runner_access(allowed, all_runner_pack_access(["postgres"]))
+
+      assert {:error, :not_found} =
+               Approvals.deny_request(stale_request, allowed, "access was revoked")
+
+      assert Repo.reload!(request).status == :pending
+    end
+
     test "whole-execution approvals require every frozen runner and pack" do
       {requester, account, subject} = Fixtures.Subjects.owner_subject()
 

@@ -496,6 +496,17 @@ defmodule EmisarWeb.ApprovalDetailLive do
      )}
   end
 
+  # The request can leave this member's current runner or pack access while an
+  # approval page is already open. The context re-checks that access inside the
+  # decision transaction; once it answers as absent, remove the stale controls
+  # instead of leaving a page that keeps offering a decision it cannot record.
+  defp decision_failed(socket, :not_found, _params) do
+    {:noreply,
+     socket
+     |> put_flash(:error, "Approval is no longer available under your current access.")
+     |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/approvals")}
+  end
+
   # The approve gate re-resolved the action's trusted contract and refused. The
   # request is untouched and still deniable, so keep the panel live (and the
   # note they wrote) and flip it to the unavailable state — the same thing a

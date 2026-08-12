@@ -7,7 +7,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   handler head required `%{"reason" => reason}`.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Approvals, Audit, Repo, Runs}
+  alias Emisar.{Accounts, Approvals, Audit, Repo, Runs}
   alias Emisar.Catalog.PublishedRegistry
   alias Emisar.Runners.Runner
 
@@ -855,6 +855,29 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "expired before your decision landed"
     # The form flipped to decision-history — no interactive decision left.
     refute html =~ "Approve and send"
+  end
+
+  test "revoked pack access blocks a stale denial and leaves the approval page", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    assert html =~ "Approve and send"
+
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+    {:ok, revoked_access} =
+      Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+    Fixtures.Memberships.force_runner_access(membership, revoked_access)
+
+    lv
+    |> form("form[phx-submit='decide']", %{})
+    |> render_submit(%{"decision" => "deny"})
+
+    flash = assert_redirect(lv, ~p"/app/#{account}/approvals")
+    assert flash["error"] == "Approval is no longer available under your current access."
+    assert Repo.reload!(request).status == :pending
   end
 
   test "approving a run whose signature aged out shows the re-issue prompt", %{conn: conn} do
