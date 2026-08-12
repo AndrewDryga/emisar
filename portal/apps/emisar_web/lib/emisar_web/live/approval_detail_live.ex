@@ -1,6 +1,6 @@
 defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Approvals, Catalog, Runners, Runs}
+  alias Emisar.{Approvals, Audit, Catalog, Runners, Runs}
   alias EmisarWeb.{Permissions, RunbookWorkflowComponents}
 
   # The full grant-reuse duration menu (label + posted value), in display order.
@@ -35,6 +35,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
      |> assign(:runner_connection, :unknown)
      |> assign(:user_labels, %{})
      |> assign(:decisions, [])
+     |> assign(:approval_event_refs, %{final: nil, decisions: %{}})
      |> assign(:approved_count, 0)
      |> assign(:already_decided?, false)
      |> assign(:self_blocked?, false)
@@ -223,6 +224,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
     socket
     |> assign(:decisions, decisions)
+    |> assign(:approval_event_refs, approval_event_refs(request, subject))
     |> assign(:user_labels, user_labels_for(request, decisions, subject))
     |> assign(:approved_count, approved_count)
     |> assign(:already_decided?, Enum.any?(decisions, &(&1.decider_id == actor_id)))
@@ -231,6 +233,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
       not request.allow_self_approval and request.requested_by_id == actor_id
     )
   end
+
+  defp approval_event_refs(request, subject) do
+    case Audit.approval_event_refs([request.id], subject) do
+      {:ok, refs} -> Map.get(refs, request.id, %{final: nil, decisions: %{}})
+      {:error, _reason} -> %{final: nil, decisions: %{}}
+    end
+  end
+
+  defp decision_event_id(refs, decider_id), do: refs.decisions[decider_id]
 
   defp user_labels_for(request, decisions, subject) do
     decision_ids = Enum.map(decisions, & &1.decider_id)
@@ -820,6 +831,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   </span>
               <% end %>
             </:body>
+            <.link
+              :if={@approval_event_refs.final}
+              navigate={~p"/app/#{@current_account}/audit/#{@approval_event_refs.final}"}
+              class="group mt-3 inline-flex min-h-10 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+            >
+              View audit record <.cta_arrow />
+            </.link>
           </.event_block>
         </div>
 
@@ -971,7 +989,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 <:subtitle>{@approved_count} of {@request.min_approvals} approvals</:subtitle>
               </.section_header>
               <ul class="divide-y divide-zinc-800/70">
-                <li :for={decision <- @decisions} class="flex items-center gap-3 py-2.5 text-sm">
+                <li
+                  :for={decision <- @decisions}
+                  class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-sm"
+                >
                   <.icon
                     name={decision_icon(decision.decision)}
                     class={"h-4 w-4 flex-none " <> decision_icon_class(decision.decision)}
@@ -986,6 +1007,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
                     mode={:forensic}
                     class="text-xs tabular-nums text-zinc-400"
                   />
+                  <.link
+                    :if={decision_event_id(@approval_event_refs, decision.decider_id)}
+                    navigate={
+                      ~p"/app/#{@current_account}/audit/#{decision_event_id(@approval_event_refs, decision.decider_id)}"
+                    }
+                    class="inline-flex min-h-10 items-center text-xs font-medium text-brand-400 hover:text-brand-300"
+                  >
+                    Audit record
+                  </.link>
                 </li>
               </ul>
             </section>

@@ -1077,6 +1077,80 @@ defmodule Emisar.AuditTest do
     end
   end
 
+  describe "approval_event_refs/2" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      run = Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id)
+
+      request =
+        Fixtures.Approvals.create_request(account_id: account.id, run_id: run.id)
+
+      %{account: account, request: request, subject: subject}
+    end
+
+    test "returns the retained final receipt and each actor's latest vote", %{
+      account: account,
+      request: request,
+      subject: subject
+    } do
+      actor = Fixtures.Users.create_user()
+
+      {:ok, old_vote} =
+        Audit.log(account.id, "approval.decision_recorded",
+          actor_kind: "user",
+          actor_id: actor.id,
+          target_kind: "approval_request",
+          target_id: request.id,
+          occurred_at: DateTime.add(DateTime.utc_now(), -60, :second)
+        )
+
+      {:ok, vote} =
+        Audit.log(account.id, "approval.decision_recorded",
+          actor_kind: "user",
+          actor_id: actor.id,
+          target_kind: "approval_request",
+          target_id: request.id
+        )
+
+      {:ok, final} =
+        Audit.log(account.id, "approval.approved",
+          actor_kind: "user",
+          actor_id: actor.id,
+          target_kind: "approval_request",
+          target_id: request.id
+        )
+
+      assert {:ok, refs} = Audit.approval_event_refs([request.id, "not-a-uuid"], subject)
+      assert refs[request.id].final == final.id
+      assert refs[request.id].decisions == %{actor.id => vote.id}
+      refute refs[request.id].decisions[actor.id] == old_vote.id
+    end
+
+    test "omits another account's approval receipts", %{subject: subject} do
+      other_account = Fixtures.Accounts.create_account()
+      other_request = Fixtures.Approvals.create_request(account_id: other_account.id)
+
+      {:ok, _event} =
+        Audit.log(other_account.id, "approval.approved",
+          actor_kind: "user",
+          target_kind: "approval_request",
+          target_id: other_request.id
+        )
+
+      assert Audit.approval_event_refs([other_request.id], subject) == {:ok, %{}}
+    end
+
+    test "denies a subject without audit-view permission", %{request: request} do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      runner_subject = Subject.for_runner(runner, account)
+
+      assert Audit.approval_event_refs([request.id], runner_subject) ==
+               {:error, :unauthorized}
+    end
+  end
+
   describe "list_actor_options/3 (the dynamic actor picker)" do
     setup do
       account = Fixtures.Accounts.create_account()
@@ -1999,7 +2073,7 @@ defmodule Emisar.AuditTest do
 
       assert filter_values(:target_kind) ==
                ~w[user account runner api_key enrollment_key approval_request
-                  approval_grant runbook policy]
+                  approval_grant runbook policy pack_version identity_provider]
     end
 
     # `runbook.dispatched` is a first-class audit type: it appears in both
@@ -2033,8 +2107,7 @@ defmodule Emisar.AuditTest do
       # require_mfa_set (the account-security toggles filter as a set), so it's no
       # longer drift.
       drift = ~w[
-        user.mfa_reset_by_admin policy.scope_deleted
-        approval.decision_recorded sso.existing_user_linked
+        user.mfa_reset_by_admin sso.existing_user_linked
       ]
 
       emitted = emitted_event_types()

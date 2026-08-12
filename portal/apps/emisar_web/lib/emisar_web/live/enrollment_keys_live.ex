@@ -418,6 +418,15 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                 </.meta_line>
               </:meta>
               <:actions>
+                <.button
+                  navigate={
+                    ~p"/app/#{@current_account}/audit?#{[target_kind: "enrollment_key", target_id: key.id]}"
+                  }
+                  variant={:ghost}
+                  size={:sm}
+                >
+                  View activity
+                </.button>
                 <%!-- Plain confirm — revoking doesn't disconnect anyone (existing
                      runners keep their tokens) and is undone by issuing a fresh
                      key, so it doesn't earn a type-to-confirm. The button only

@@ -88,6 +88,7 @@ defmodule Emisar.Audit.Event.Query do
     {"membership.invitation_accepted", "Invitation accepted"},
     {"membership.runner_access_changed", "Runner access changed"},
     {"policy.updated", "Policy updated"},
+    {"policy.scope_deleted", "Policy scope deleted"},
     {"runbook.created", "Runbook created"},
     {"runbook.updated", "Runbook updated"},
     {"runbook.published", "Runbook published"},
@@ -106,6 +107,7 @@ defmodule Emisar.Audit.Event.Query do
     {"approval.approved", "Approval granted"},
     {"approval.denied", "Approval denied"},
     {"approval.expired", "Approval expired"},
+    {"approval.decision_recorded", "Approval vote recorded"},
     {"approval.grant_used", "Standing grant used"},
     {"approval.grant_revoked", "Standing grant revoked"},
     {"run.cancel_requested", "Run cancel requested"},
@@ -267,7 +269,8 @@ defmodule Emisar.Audit.Event.Query do
      ]},
     {"Policy",
      [
-       {"policy.updated", "Updated"}
+       {"policy.updated", "Updated"},
+       {"policy.scope_deleted", "Scope deleted"}
      ]},
     {"Runbook",
      [
@@ -292,6 +295,7 @@ defmodule Emisar.Audit.Event.Query do
        {"approval.approved", "Granted"},
        {"approval.denied", "Denied"},
        {"approval.expired", "Expired"},
+       {"approval.decision_recorded", "Vote recorded"},
        {"approval.grant_used", "Standing grant used"},
        {"approval.grant_revoked", "Standing grant revoked"}
      ]},
@@ -444,23 +448,53 @@ defmodule Emisar.Audit.Event.Query do
     do: where(queryable, [events: e], e.event_type == ^type)
 
   @doc """
-  Drops every runner-targeted event whose runner is outside the member's scope.
-
-  A run's audit event carries `target_kind: "runner"` plus the runner's id and
-  name, and its payload carries `executed_command` — so without this a member
-  scoped to one host (or to none) could read every host's name and command
-  lines from the audit page, and enumerate the fleet through the target picker.
-  Events with any other target are unaffected: scope narrows hosts, not the
-  account's own history.
+  Restricts runner, approval-request, and pack-version receipts to the same
+  runner-and-pack reach that governs their owning console records. Other target
+  kinds remain account-wide.
   """
-  def by_runner_target_scope_values(queryable, runner_ids, groups) do
-    where(
-      queryable,
+  def by_target_access(queryable, %Emisar.Accounts.RunnerAccess{} = access) do
+    approval_request =
+      Emisar.Approvals.Request.Query.all()
+      |> Emisar.Approvals.Request.Query.by_target_access(access)
+      |> where(
+        [requests: request],
+        request.id == parent_as(:events).target_id and
+          request.account_id == parent_as(:events).account_id
+      )
+      |> select([requests: _request], 1)
+
+    runner_allowed = runner_target_allowed(access)
+    pack_allowed = pack_target_allowed(access)
+
+    allowed =
+      dynamic(
+        [events: e],
+        is_nil(e.target_kind) or
+          e.target_kind not in ["runner", "approval_request", "pack_version"] or
+          (e.target_kind == "runner" and ^runner_allowed) or
+          (e.target_kind == "approval_request" and exists(approval_request)) or
+          (e.target_kind == "pack_version" and ^pack_allowed)
+      )
+
+    where(queryable, ^allowed)
+  end
+
+  defp runner_target_allowed(%Emisar.Accounts.RunnerAccess{mode: :none}),
+    do: dynamic([events: _event], false)
+
+  defp runner_target_allowed(%Emisar.Accounts.RunnerAccess{mode: :all}),
+    do: dynamic([events: e], not is_nil(e.target_id))
+
+  defp runner_target_allowed(%Emisar.Accounts.RunnerAccess{
+         mode: :restricted,
+         runner_ids: runner_ids,
+         groups: groups
+       }) do
+    dynamic(
       [events: e],
-      e.target_kind != "runner" or
-        is_nil(e.target_id) or
+      not is_nil(e.target_id) and
         exists(
-          from(runner in Runners.Runner.Query.all(),
+          from(runner in Runners.Runner.Query.not_deleted(),
             where:
               runner.id == parent_as(:events).target_id and
                 (runner.id in ^runner_ids or runner.group in ^groups),
@@ -470,9 +504,18 @@ defmodule Emisar.Audit.Event.Query do
     )
   end
 
-  @doc "Drops every runner-targeted event — the `mode: :none` scope."
-  def without_runner_targets(queryable),
-    do: where(queryable, [events: e], e.target_kind != "runner" or is_nil(e.target_id))
+  defp pack_target_allowed(%Emisar.Accounts.RunnerAccess{mode: :none}),
+    do: dynamic([events: _event], false)
+
+  defp pack_target_allowed(%Emisar.Accounts.RunnerAccess{pack_mode: :all}),
+    do: dynamic([events: _event], true)
+
+  defp pack_target_allowed(%Emisar.Accounts.RunnerAccess{
+         pack_mode: :restricted,
+         pack_ids: pack_ids
+       }) do
+    dynamic([events: e], fragment("?->>'pack_id'", e.payload) in ^pack_ids)
+  end
 
   @doc """
   Distinct `actor_id`s for actors of `kind` in the scoped events — the id set
@@ -506,6 +549,12 @@ defmodule Emisar.Audit.Event.Query do
 
   def by_target_id(queryable, id),
     do: where(queryable, [events: e], e.target_id == ^id)
+
+  def by_target_ids(queryable, ids) when is_list(ids),
+    do: where(queryable, [events: e], e.target_id in ^ids)
+
+  def by_target_kind(queryable, kind),
+    do: where(queryable, [events: e], e.target_kind == ^kind)
 
   def by_actor_id(queryable, id),
     do: where(queryable, [events: e], e.actor_id == ^id)
@@ -734,7 +783,9 @@ defmodule Emisar.Audit.Event.Query do
           {"approval_request", "Approval"},
           {"approval_grant", "Standing grant"},
           {"runbook", "Runbook"},
-          {"policy", "Policy"}
+          {"policy", "Policy"},
+          {"pack_version", "Pack version"},
+          {"identity_provider", "Identity provider"}
         ],
         fun: fn queryable, kinds ->
           {queryable, dynamic([events: e], e.target_kind in ^kinds)}

@@ -993,7 +993,8 @@ defmodule Emisar.RunnerAccessTest do
         owner_subject: owner_subject,
         member: member,
         member_subject: member_subject,
-        db: db
+        db: db,
+        edge: edge
       }
     end
 
@@ -1046,6 +1047,78 @@ defmodule Emisar.RunnerAccessTest do
 
       assert {:ok, _} = Audit.fetch_event_by_id(in_scope.id, member_subject)
       assert {:error, :not_found} = Audit.fetch_event_by_id(out_of_scope.id, member_subject)
+    end
+
+    test "approval receipts follow the request's runner scope", %{
+      account: account,
+      owner_subject: owner_subject,
+      member: member,
+      member_subject: member_subject,
+      db: db,
+      edge: edge
+    } do
+      db_run = Fixtures.Runs.create_run(account_id: account.id, runner_id: db.id)
+      edge_run = Fixtures.Runs.create_run(account_id: account.id, runner_id: edge.id)
+      db_request = Fixtures.Approvals.create_request(account_id: account.id, run_id: db_run.id)
+
+      edge_request =
+        Fixtures.Approvals.create_request(account_id: account.id, run_id: edge_run.id)
+
+      {:ok, db_event} =
+        Audit.log(account.id, "approval.approved",
+          target_kind: "approval_request",
+          target_id: db_request.id
+        )
+
+      {:ok, edge_event} =
+        Audit.log(account.id, "approval.approved",
+          target_kind: "approval_request",
+          target_id: edge_request.id
+        )
+
+      {:ok, restricted} = RunnerAccess.restricted(["db"], [])
+
+      {:ok, _membership} =
+        Accounts.update_membership_runner_access(member, restricted, owner_subject)
+
+      assert {:ok, refs} =
+               Audit.approval_event_refs([db_request.id, edge_request.id], member_subject)
+
+      assert refs[db_request.id].final == db_event.id
+      refute Map.has_key?(refs, edge_request.id)
+      assert {:ok, _event} = Audit.fetch_event_by_id(db_event.id, member_subject)
+      assert Audit.fetch_event_by_id(edge_event.id, member_subject) == {:error, :not_found}
+    end
+
+    test "pack receipts follow the member's pack scope", %{
+      account: account,
+      owner_subject: owner_subject,
+      member: member,
+      member_subject: member_subject
+    } do
+      {:ok, linux_event} =
+        Audit.log(account.id, "pack_trust_adopted",
+          target_kind: "pack_version",
+          target_id: Ecto.UUID.generate(),
+          payload: %{pack_id: "linux-core"}
+        )
+
+      {:ok, postgres_event} =
+        Audit.log(account.id, "pack_trust_adopted",
+          target_kind: "pack_version",
+          target_id: Ecto.UUID.generate(),
+          payload: %{pack_id: "postgres"}
+        )
+
+      {:ok, restricted} = RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
+
+      {:ok, _membership} =
+        Accounts.update_membership_runner_access(member, restricted, owner_subject)
+
+      assert {:ok, events, _metadata} = Audit.list_events(member_subject)
+      assert linux_event.id in Enum.map(events, & &1.id)
+      refute postgres_event.id in Enum.map(events, & &1.id)
+      assert Audit.fetch_event_by_id(postgres_event.id, member_subject) == {:error, :not_found}
     end
   end
 

@@ -5,7 +5,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   the next call needs fresh human approval).
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.Approvals
+  alias Emisar.{Approvals, Audit}
   alias Emisar.Catalog
   alias Emisar.Runs
 
@@ -239,6 +239,12 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals")
     assert html =~ "linux.reboot"
+    request_id = request.id
+
+    assert {:ok, %{^request_id => %{final: event_id}}} =
+             Audit.approval_event_refs([request.id], subject)
+
+    assert has_element?(lv, ~s(a[href="/app/#{account.slug}/audit/#{event_id}"]), "Audit record")
 
     html = render_click(lv, "revoke_grant", %{"id" => grant.id})
     assert html =~ "Grant revoked. New calls will require fresh approval."

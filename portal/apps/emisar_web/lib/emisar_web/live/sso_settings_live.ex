@@ -1490,14 +1490,24 @@ defmodule EmisarWeb.SSOSettingsLive do
                 <%!-- Delete lives in a danger zone at the bottom, not up here beside
                      a routine Edit — a destructive action shouldn't sit one slip
                      away from the safe one. --%>
-                <.button
-                  navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}/edit"}
-                  variant={:secondary}
-                  size={:sm}
-                  class="shrink-0"
-                >
-                  Edit
-                </.button>
+                <div class="flex shrink-0 items-center gap-2">
+                  <.button
+                    navigate={
+                      ~p"/app/#{@current_account}/audit?#{[target_kind: "identity_provider", target_id: provider.id]}"
+                    }
+                    variant={:ghost}
+                    size={:sm}
+                  >
+                    View activity
+                  </.button>
+                  <.button
+                    navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}/edit"}
+                    variant={:secondary}
+                    size={:sm}
+                  >
+                    Edit
+                  </.button>
+                </div>
               </div>
 
               <div class="mt-6 space-y-6">

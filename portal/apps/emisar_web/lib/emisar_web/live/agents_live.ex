@@ -1202,6 +1202,14 @@ defmodule EmisarWeb.AgentsLive do
                       >
                         View activity
                       </.menu_item>
+                      <.menu_item
+                        navigate={
+                          ~p"/app/#{@current_account}/audit?#{[target_kind: "api_key", target_id: key.id]}"
+                        }
+                        icon="hero-shield-check"
+                      >
+                        View audit trail
+                      </.menu_item>
                       <%!-- OAuth backing keys hide Rotate: a fresh emk- secret can't
                          reach the OAuth client (it holds tokens bound to the old
                          backing-key id), so rotation would only break the connection.
@@ -1232,6 +1240,15 @@ defmodule EmisarWeb.AgentsLive do
                       size={:sm}
                     >
                       View activity
+                    </.button>
+                    <.button
+                      navigate={
+                        ~p"/app/#{@current_account}/audit?#{[target_kind: "api_key", target_id: key.id]}"
+                      }
+                      variant={:ghost}
+                      size={:sm}
+                    >
+                      Audit trail
                     </.button>
                   <% end %>
                   <.confirm_dialog

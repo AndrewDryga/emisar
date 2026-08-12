@@ -49,7 +49,7 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "lists the pending pack with Trust/Reject for an owner", %{conn: conn, account: account} do
-      _ = observe_pending_pack!(account)
+      pack_version = observe_pending_pack!(account)
 
       {:ok, lv, _dead_html} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
@@ -62,6 +62,12 @@ defmodule EmisarWeb.PacksLiveTest do
       assert has_element?(lv, ~s([id^="trust-"]))
       assert html =~ "open_reject"
       assert has_element?(lv, "#reject-pack")
+
+      assert has_element?(
+               lv,
+               ~s(a[href="/app/#{account.slug}/audit?target_kind=pack_version&target_id=#{pack_version.id}"]),
+               "View activity"
+             )
     end
 
     test "the pending card names the runners advertising the pack (blast radius)", %{

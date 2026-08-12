@@ -1050,20 +1050,25 @@ defmodule EmisarWeb.AgentsLiveTest do
       flush_key_broadcast(lv)
     end
 
-    # Three verbs on a manager's live row is the labeled-menu threshold: one
+    # Four verbs on a manager's live row is the labeled-menu threshold: one
     # bordered `Actions ▾` trigger with the verbs as menu rows — no per-row
     # ghost buttons. The confirm ladder is unchanged behind the menu.
     test "an admin's key row carries the labeled Actions menu with all three verbs",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
 
-      {:ok, _raw, _key} =
+      {:ok, _raw, key} =
         ApiKeys.create_key(%{name: "managed-bot"}, owner_subject(user, account))
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
 
       assert has_element?(lv, "details summary", "Actions")
       assert has_element?(lv, "details a", "View activity")
+      assert has_element?(lv, "details a", "View audit trail")
+
+      assert html =~
+               "/app/#{account.slug}/audit?target_kind=api_key&amp;target_id=#{key.id}"
+
       assert has_element?(lv, "details button", "Rotate")
       assert has_element?(lv, "details button", "Revoke")
       # The menu rows still open the same confirm dialogs.
@@ -1075,10 +1080,8 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "one click"
     end
 
-    # A role that can't manage keys sees the ONE verb it holds — View
-    # activity — as a small bordered button (a visible action button wears a
-    # bordered face; no menu, no ghost), and the manage-only dialogs are not
-    # rendered at all.
+    # A role that can't manage keys keeps both read paths — run activity and the
+    # key's audit trail — while manage-only controls stay absent.
     test "an operator's row shows a bordered View activity button, no Actions menu",
          %{conn: conn} do
       {_owner_conn, owner, account} = register_and_log_in(conn)
@@ -1099,6 +1102,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       refute has_element?(lv, "details summary", "Actions")
       assert has_element?(lv, "a.border-zinc-800", "View activity")
+      assert has_element?(lv, "a", "Audit trail")
       # The manage-only dialogs aren't rendered at all for this role.
       refute has_element?(lv, "#rotate-#{key.id}")
       refute has_element?(lv, "#revoke-agent-key-#{key.id}")

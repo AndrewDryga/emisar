@@ -1,6 +1,6 @@
 defmodule EmisarWeb.RunDetailLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Approvals, Runners, Runs, Users}
+  alias Emisar.{Approvals, Audit, Runners, Runs, Users}
   alias EmisarWeb.Permissions
   alias EmisarWeb.RunStatuses
 
@@ -61,6 +61,9 @@ defmodule EmisarWeb.RunDetailLive do
         approval_request = lookup_approval(subject, run)
         approval_decider = if connected?(socket), do: approval_decider(approval_request)
 
+        approval_event_id =
+          if connected?(socket), do: approval_event_id(approval_request, subject)
+
         {:ok,
          socket
          |> assign(:page_title, "Run #{run.action_id}")
@@ -68,6 +71,7 @@ defmodule EmisarWeb.RunDetailLive do
          |> assign(:action_args, visible_action_args(run, subject))
          |> assign(:approval_request, approval_request)
          |> assign(:approval_decider, approval_decider)
+         |> assign(:approval_event_id, approval_event_id)
          |> assign(:runner_connection, runner_connection(run))
          # Whether any output was persisted — gates the output panel for an
          # errored run so "result never arrived" doesn't render an empty terminal.
@@ -98,6 +102,15 @@ defmodule EmisarWeb.RunDetailLive do
 
   defp approval_decider(_), do: nil
 
+  defp approval_event_id(%Approvals.Request{id: id}, subject) do
+    case Audit.approval_event_refs([id], subject) do
+      {:ok, %{^id => %{final: event_id}}} -> event_id
+      _ -> nil
+    end
+  end
+
+  defp approval_event_id(_, _subject), do: nil
+
   defp decider_label(%Users.User{full_name: name}, _id) when is_binary(name) and name != "",
     do: name
 
@@ -126,7 +139,11 @@ defmodule EmisarWeb.RunDetailLive do
      |> assign(:run, run)
      |> assign(:action_args, visible_action_args(run, socket.assigns.current_subject))
      |> assign(:approval_request, approval_request)
-     |> assign(:approval_decider, approval_decider(approval_request))}
+     |> assign(:approval_decider, approval_decider(approval_request))
+     |> assign(
+       :approval_event_id,
+       approval_event_id(approval_request, socket.assigns.current_subject)
+     )}
   end
 
   # A live-appending stream never evicts on its own, so a chatty run streaming
@@ -565,6 +582,14 @@ defmodule EmisarWeb.RunDetailLive do
                 class="mt-1 text-sm leading-relaxed text-zinc-300"
               >
                 “{@approval_request.decision_reason}”
+              </dd>
+              <dd :if={@approval_event_id} class="mt-2">
+                <.link
+                  navigate={~p"/app/#{@current_account}/audit/#{@approval_event_id}"}
+                  class="group inline-flex min-h-10 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                >
+                  View audit record <.cta_arrow />
+                </.link>
               </dd>
             </div>
           </dl>

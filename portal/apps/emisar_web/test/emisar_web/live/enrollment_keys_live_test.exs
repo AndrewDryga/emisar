@@ -10,7 +10,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
-    {:ok, _, _live} =
+    {:ok, _, live_key} =
       Runners.create_enrollment_key(%{reusable: true, description: "live-key-aaa"}, subject)
 
     {:ok, _, revoked} =
@@ -21,6 +21,13 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     # Default Status=active → the revoked key is hidden.
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
     assert html =~ "live-key-aaa"
+
+    assert has_element?(
+             lv,
+             ~s(a[href="/app/#{account.slug}/audit?target_kind=enrollment_key&target_id=#{live_key.id}"]),
+             "View activity"
+           )
+
     refute html =~ "dead-key-zzz"
 
     # Selecting "All" goes through the real dropdown path: phx-change "filter"

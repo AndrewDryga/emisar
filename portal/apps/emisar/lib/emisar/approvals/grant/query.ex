@@ -25,6 +25,13 @@ defmodule Emisar.Approvals.Grant.Query do
   def ordered_by_granted(queryable),
     do: order_by(queryable, [grants: g], asc: g.granted_at)
 
+  @doc "Audit label-lookup helper for standing-grant targets."
+  def select_labels(queryable, ids, field) do
+    queryable
+    |> where([grants: g], g.id in ^ids)
+    |> select([grants: g], {g.id, field(g, ^field)})
+  end
+
   def by_action_id(queryable, action_id),
     do: where(queryable, [grants: g], g.action_id == ^action_id)
 

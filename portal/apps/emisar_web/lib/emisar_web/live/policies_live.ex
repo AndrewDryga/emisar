@@ -679,6 +679,17 @@ defmodule EmisarWeb.PoliciesLive do
             <:subtitle>
               The base decision for every runner, by risk tier — unless a targeted ruleset below overrides it.
             </:subtitle>
+            <:actions :if={@account.policy}>
+              <.button
+                navigate={
+                  ~p"/app/#{@current_account}/audit?#{[target_kind: "policy", target_id: @account.policy.id]}"
+                }
+                variant={:ghost}
+                size={:sm}
+              >
+                View activity
+              </.button>
+            </:actions>
           </.section_header>
 
           <div class="grid grid-cols-1 gap-8 lg:grid-cols-4 lg:items-start">
@@ -743,6 +754,7 @@ defmodule EmisarWeb.PoliciesLive do
             <div :for={ruleset <- @rulesets}>
               <.ruleset_unit
                 ruleset={ruleset}
+                current_account={@current_account}
                 account_approval={@account.approval}
                 runners={@runners}
                 groups={@groups}
@@ -880,6 +892,7 @@ defmodule EmisarWeb.PoliciesLive do
   defp ngettext_action(_), do: "actions"
 
   attr :ruleset, :map, required: true
+  attr :current_account, :map, required: true
   attr :account_approval, :map, required: true
   attr :runners, :list, required: true
   attr :groups, :list, required: true
@@ -909,21 +922,32 @@ defmodule EmisarWeb.PoliciesLive do
                 Replaces the default policy for this {@ruleset.scope_type}.
               </p>
             </div>
-            <.confirm_button
-              :if={@can_manage}
-              id={"remove-ruleset-#{@ruleset.uid}"}
-              title="Remove this ruleset?"
-              confirm_label="Remove ruleset"
-              variant={:secondary}
-              tone={:rose}
-              size={:lg}
-              icon="hero-trash"
-              class="h-10"
-              on_confirm={JS.push("remove_ruleset", value: %{uid: @ruleset.uid})}
-            >
-              <:body>This {@ruleset.scope_type} falls back to the default policy.</:body>
-              Remove
-            </.confirm_button>
+            <div class="flex shrink-0 items-center gap-2">
+              <.button
+                navigate={
+                  ~p"/app/#{@current_account}/audit?#{[target_kind: "policy", target_id: @ruleset.policy.id]}"
+                }
+                variant={:secondary}
+                size={:sm}
+              >
+                View activity
+              </.button>
+              <.confirm_button
+                :if={@can_manage}
+                id={"remove-ruleset-#{@ruleset.uid}"}
+                title="Remove this ruleset?"
+                confirm_label="Remove ruleset"
+                variant={:secondary}
+                tone={:rose}
+                size={:lg}
+                icon="hero-trash"
+                class="h-10"
+                on_confirm={JS.push("remove_ruleset", value: %{uid: @ruleset.uid})}
+              >
+                <:body>This {@ruleset.scope_type} falls back to the default policy.</:body>
+                Remove
+              </.confirm_button>
+            </div>
           </header>
         <% else %>
           <%!-- Unsaved ruleset: the target picker with a red Remove aligned to the

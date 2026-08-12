@@ -5,7 +5,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   reason — for every run, not just the ones waiting on approval.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Repo, Runs}
+  alias Emisar.{Audit, Repo, Runs}
   alias Emisar.Runs.RunEvent
 
   defp run_with(account, attrs) do
@@ -150,19 +150,34 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     approver = Fixtures.Users.create_user(full_name: "Jordan Approver")
 
-    Fixtures.Approvals.create_request(
-      run_id: run.id,
-      account_id: account.id,
-      status: :approved,
-      decided_by_id: approver.id,
-      decision_reason: "window open, config validated"
-    )
+    request =
+      Fixtures.Approvals.create_request(
+        run_id: run.id,
+        account_id: account.id,
+        status: :approved,
+        decided_by_id: approver.id,
+        decision_reason: "window open, config validated"
+      )
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+    {:ok, event} =
+      Audit.log(account.id, "approval.approved",
+        actor_kind: "user",
+        actor_id: approver.id,
+        target_kind: "approval_request",
+        target_id: request.id
+      )
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     assert html =~ "Approval"
     assert html =~ "Approved by Jordan Approver"
     assert html =~ "window open, config validated"
+
+    assert has_element?(
+             lv,
+             ~s(a[href="/app/#{account.slug}/audit/#{event.id}"]),
+             "View audit record"
+           )
   end
 
   test "the Why cluster renders the optional evidence/expected chain, only when present",

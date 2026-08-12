@@ -213,6 +213,15 @@ defmodule EmisarWeb.RunbooksLive do
                       </.meta_line>
                     </:meta>
                     <:actions>
+                      <.button
+                        navigate={
+                          ~p"/app/#{@current_account}/audit?#{[target_kind: "runbook", target_id: runbook.id]}"
+                        }
+                        variant={:ghost}
+                        size={:sm}
+                      >
+                        View activity
+                      </.button>
                       <%!-- Secondary: the page's ONE brand fill is "New runbook" —
                        a green per row turns the fill into wallpaper. Only the
                        live release runs, so a runbook with nothing published

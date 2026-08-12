@@ -34,6 +34,14 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # the dashed composers ARE the empty states (no placeholder hints).
       assert html =~ "Add override"
       assert html =~ "Add ruleset"
+      policy = Policies.peek_policy_for_account(account.id)
+
+      assert has_element?(
+               lv,
+               ~s(a[href="/app/#{account.slug}/audit?target_kind=policy&target_id=#{policy.id}"]),
+               "View activity"
+             )
+
       assert lv |> element("#add-ruleset-row") |> render() =~ "lg:grid-cols-4"
       assert lv |> element("#add-ruleset-control") |> render() =~ "lg:col-span-3"
     end

@@ -14,7 +14,7 @@ defmodule EmisarWeb.ApprovalsLive do
     3. **Recent decisions** — last 25 approve/deny calls for history.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Approvals, Runners}
+  alias Emisar.{Approvals, Audit, Runners}
   alias EmisarWeb.{LiveTable, Permissions}
   alias Phoenix.LiveView.JS
 
@@ -168,6 +168,7 @@ defmodule EmisarWeb.ApprovalsLive do
     # (lapsed? how long left?) is Approvals', not the badge's, to decide.
     now = DateTime.utc_now()
     pending_facts = Map.new(pending, &{&1.id, Approvals.request_facts(&1, now)})
+    approval_event_refs = approval_event_refs(grants, subject)
 
     socket
     |> assign(:pending, pending)
@@ -176,6 +177,7 @@ defmodule EmisarWeb.ApprovalsLive do
     |> assign(:pending_error?, pending_error?)
     |> assign(:grants, grants)
     |> assign(:grants_metadata, grants_meta)
+    |> assign(:approval_event_refs, approval_event_refs)
     |> assign(:decided, decided)
     |> assign(:decided_metadata, decided_meta)
     |> assign(:filter_params, params)
@@ -184,6 +186,19 @@ defmodule EmisarWeb.ApprovalsLive do
     # Risk tier per pending request so the queue is triageable at a glance — an
     # approver shouldn't have to open each card to see if it's a scary one.
     |> assign(:risk_labels, risk_labels_for(pending, subject))
+  end
+
+  defp approval_event_refs(grants, subject) do
+    request_ids = grants |> Enum.map(& &1.approval_request_id) |> Enum.reject(&is_nil/1)
+
+    case Audit.approval_event_refs(request_ids, subject) do
+      {:ok, refs} -> refs
+      {:error, _reason} -> %{}
+    end
+  end
+
+  defp grant_approval_event_id(grant, refs) do
+    get_in(refs, [grant.approval_request_id, :final])
   end
 
   defp put_page_limit(opts, limit) do
@@ -606,6 +621,16 @@ defmodule EmisarWeb.ApprovalsLive do
                     </.meta_line>
                   </:meta>
                   <:actions>
+                    <.button
+                      :if={grant_approval_event_id(g, @approval_event_refs)}
+                      navigate={
+                        ~p"/app/#{@current_account}/audit/#{grant_approval_event_id(g, @approval_event_refs)}"
+                      }
+                      variant={:ghost}
+                      size={:sm}
+                    >
+                      Audit record
+                    </.button>
                     <.confirm_button
                       :if={Approvals.subject_can_manage_grants?(@current_subject)}
                       id={"revoke-grant-#{g.id}"}

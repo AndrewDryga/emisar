@@ -88,6 +88,13 @@ defmodule Emisar.Catalog.PackVersion.Query do
   def ordered_by_pack(queryable \\ all()),
     do: order_by(queryable, [packs: p], asc: p.pack_id, asc: p.version)
 
+  @doc "Audit label-lookup helper for pack-version targets."
+  def select_audit_labels(queryable, ids) do
+    queryable
+    |> where([packs: p], p.id in ^ids)
+    |> select([packs: p], {p.id, p.pack_id, p.version})
+  end
+
   def limit_to(queryable, limit), do: limit(queryable, ^limit)
 
   @doc """

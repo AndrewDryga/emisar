@@ -7,7 +7,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   handler head required `%{"reason" => reason}`.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Approvals, Repo, Runs}
+  alias Emisar.{Approvals, Audit, Repo, Runs}
   alias Emisar.Catalog.PublishedRegistry
   alias Emisar.Runners.Runner
 
@@ -139,6 +139,18 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     assert html =~ "Runbook approved. Eligible actions are being dispatched."
     assert html =~ "Approved"
+    subject = Fixtures.Subjects.subject_for(user, account)
+    request_id = request.id
+
+    assert {:ok, %{^request_id => %{final: event_id}}} =
+             Audit.approval_event_refs([request.id], subject)
+
+    assert has_element?(
+             lv,
+             ~s(a[href="/app/#{account.slug}/audit/#{event_id}"]),
+             "View audit record"
+           )
+
     refute html =~ "Approve runbook"
   end
 

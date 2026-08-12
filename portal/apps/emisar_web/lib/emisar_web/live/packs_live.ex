@@ -1234,7 +1234,7 @@ defmodule EmisarWeb.PacksLive do
               <select
                 name="risk"
                 class={[
-                  "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200",
+                  "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 pr-8 text-xs text-zinc-200",
                   (@risk_filter != "" && "border-brand-500/60 ring-1 ring-brand-500/25") ||
                     "border-zinc-700"
                 ]}
@@ -1355,13 +1355,20 @@ defmodule EmisarWeb.PacksLive do
                         class="text-zinc-400"
                       />
                     </span>
-                    <div
-                      :if={Catalog.subject_can_manage_packs?(@current_subject)}
-                      class="ml-auto flex shrink-0 items-center gap-2"
-                    >
+                    <div class="ml-auto flex shrink-0 items-center gap-2">
+                      <.button
+                        navigate={
+                          ~p"/app/#{@current_account}/audit?#{[target_kind: "pack_version", target_id: v.id]}"
+                        }
+                        variant={:ghost}
+                        size={:sm}
+                      >
+                        View activity
+                      </.button>
                       <.button
                         :if={
-                          @version_facts[v.id].trust_state == :rejected and
+                          Catalog.subject_can_manage_packs?(@current_subject) and
+                            @version_facts[v.id].trust_state == :rejected and
                             (v.pending_hash || v.hash) != nil
                         }
                         variant={:secondary}
@@ -1373,7 +1380,10 @@ defmodule EmisarWeb.PacksLive do
                         Trust
                       </.button>
                       <.button
-                        :if={@version_facts[v.id].trust_state == :trusted}
+                        :if={
+                          Catalog.subject_can_manage_packs?(@current_subject) and
+                            @version_facts[v.id].trust_state == :trusted
+                        }
                         variant={:secondary}
                         size={:sm}
                         type="button"
@@ -1382,6 +1392,7 @@ defmodule EmisarWeb.PacksLive do
                         Revoke trust
                       </.button>
                       <.button
+                        :if={Catalog.subject_can_manage_packs?(@current_subject)}
                         variant={:secondary}
                         tone={:rose}
                         size={:sm}

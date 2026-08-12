@@ -367,6 +367,58 @@ defmodule Emisar.Audit do
   end
 
   @doc """
+  The retained audit receipts for approval decisions, keyed by request id.
+  Requires audit-view permission and returns
+  `{:ok, %{request_id => %{final: event_id, decisions: %{actor_id => event_id}}}}`
+  or `{:error, :unauthorized}`. Invalid or cross-account request ids contribute
+  no entries.
+  """
+  def approval_event_refs(request_ids, %Subject{} = subject) when is_list(request_ids) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
+      ids = request_ids |> Enum.filter(&Repo.valid_uuid?/1) |> Enum.uniq() |> Enum.take(100)
+
+      events =
+        Event.Query.all()
+        |> Event.Query.by_target_kind("approval_request")
+        |> Event.Query.by_target_ids(ids)
+        |> Event.Query.by_event_types(~w[
+          approval.decision_recorded approval.approved approval.denied approval.expired
+        ])
+        |> Event.Query.ordered_by_recent()
+        |> Event.Query.limit_to(2_000)
+        |> scope_events_to_membership(subject)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      {:ok, Enum.reduce(events, %{}, &put_approval_event_ref/2)}
+    end
+  end
+
+  defp put_approval_event_ref(%Event{event_type: "approval.decision_recorded"} = event, refs) do
+    update_in(
+      refs,
+      [Access.key(event.target_id, empty_approval_refs())],
+      &update_in(&1, [:decisions], fn decisions ->
+        Map.put_new(decisions, event.actor_id, event.id)
+      end)
+    )
+  end
+
+  defp put_approval_event_ref(%Event{} = event, refs) do
+    update_in(
+      refs,
+      [Access.key(event.target_id, empty_approval_refs())],
+      fn
+        %{final: nil} = request_refs -> %{request_refs | final: event.id}
+        request_refs -> request_refs
+      end
+    )
+  end
+
+  defp empty_approval_refs, do: %{final: nil, decisions: %{}}
+
+  @doc """
   Distinct actors of `actor_kind` that appear in the account's audit log — the
   options for the page's on-demand actor filter, as `{id, label}` sorted by
   label (a bounded lookup, not a paginated list). Labels resolve cross-context
@@ -458,23 +510,12 @@ defmodule Emisar.Audit do
 
   defp filter_by_target_id(queryable, _id), do: Event.Query.none(queryable)
 
-  # Per-user runner scope applies to the audit log the same way it applies to
-  # runs, runners, and the catalog. A run's event targets its runner and carries
-  # `executed_command` in the payload, so without this a scoped-down member
-  # reads every host's command lines and can enumerate the fleet through the
-  # target picker — while `/docs/teams` promises out-of-scope runners don't
-  # appear in lists. Non-runner targets are untouched.
+  # Per-user runner + pack scope applies to the audit log the same way it
+  # applies to runs, approvals, and the catalog. The receipts can carry command,
+  # decision, or trust details, so a target kind must not become a side door to
+  # records the member cannot open on their owning page.
   defp scope_events_to_membership(queryable, %Subject{} = subject) do
-    case Accounts.runner_access_for_subject(subject) do
-      %Accounts.RunnerAccess{mode: :none} ->
-        Event.Query.without_runner_targets(queryable)
-
-      %Accounts.RunnerAccess{mode: :all} ->
-        queryable
-
-      %Accounts.RunnerAccess{mode: :restricted, runner_ids: runner_ids, groups: groups} ->
-        Event.Query.by_runner_target_scope_values(queryable, runner_ids, groups)
-    end
+    Event.Query.by_target_access(queryable, Accounts.runner_access_for_subject(subject))
   end
 
   @doc """
@@ -696,8 +737,58 @@ defmodule Emisar.Audit do
           "runbook",
           :title,
           &Emisar.Runbooks.Runbook.Query.by_account_id(&1, account_id)
-        )
+        ),
+      "approval_grant" =>
+        fetch_labels(
+          Emisar.Approvals.Grant.Query,
+          ids_by_kind,
+          "approval_grant",
+          :action_id,
+          &Emisar.Approvals.Grant.Query.by_account_id(&1, account_id)
+        ),
+      "identity_provider" =>
+        fetch_labels(
+          Emisar.SSO.IdentityProvider.Query,
+          ids_by_kind,
+          "identity_provider",
+          :name,
+          &Emisar.SSO.IdentityProvider.Query.by_account_id(&1, account_id)
+        ),
+      "pack_version" => fetch_pack_version_labels(ids_by_kind, account_id),
+      "policy" => fetch_policy_labels(ids_by_kind, account_id)
     }
+  end
+
+  defp fetch_pack_version_labels(ids_by_kind, account_id) do
+    case Map.get(ids_by_kind, "pack_version", []) do
+      [] ->
+        %{}
+
+      ids ->
+        Emisar.Catalog.PackVersion.Query.all()
+        |> Emisar.Catalog.PackVersion.Query.by_account_id(account_id)
+        |> Emisar.Catalog.PackVersion.Query.select_audit_labels(ids)
+        |> Repo.all()
+        |> Map.new(fn {id, pack_id, version} -> {id, "#{pack_id}@#{version}"} end)
+    end
+  end
+
+  defp fetch_policy_labels(ids_by_kind, account_id) do
+    case Map.get(ids_by_kind, "policy", []) do
+      [] ->
+        %{}
+
+      ids ->
+        Emisar.Policies.Policy.Query.all()
+        |> Emisar.Policies.Policy.Query.by_account_id(account_id)
+        |> Emisar.Policies.Policy.Query.select_audit_labels(ids)
+        |> Repo.all()
+        |> Map.new(fn
+          {id, :account, _scope_value} -> {id, "Default policy"}
+          {id, :runner, scope_value} -> {id, "Runner policy · #{scope_value}"}
+          {id, :group, scope_value} -> {id, "Group policy · #{scope_value}"}
+        end)
+    end
   end
 
   defp fetch_labels(query_module, ids_by_kind, kind, field, scope) do

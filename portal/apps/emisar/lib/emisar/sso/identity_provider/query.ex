@@ -52,6 +52,13 @@ defmodule Emisar.SSO.IdentityProvider.Query do
   def ordered_by_name(queryable),
     do: order_by(queryable, [providers: p], asc: p.name)
 
+  @doc "Audit label-lookup helper for identity-provider targets."
+  def select_labels(queryable, ids, field) do
+    queryable
+    |> where([providers: p], p.id in ^ids)
+    |> select([providers: p], {p.id, field(p, ^field)})
+  end
+
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:providers, :asc, :name}, {:providers, :asc, :id}]

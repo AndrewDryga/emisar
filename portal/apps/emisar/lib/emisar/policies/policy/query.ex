@@ -63,6 +63,13 @@ defmodule Emisar.Policies.Policy.Query do
   def ordered_by_scope(queryable),
     do: order_by(queryable, [policies: p], asc: p.scope_type, asc: p.scope_value)
 
+  @doc "Audit label-lookup helper for policy targets."
+  def select_audit_labels(queryable, ids) do
+    queryable
+    |> where([policies: p], p.id in ^ids)
+    |> select([policies: p], {p.id, p.scope_type, p.scope_value})
+  end
+
   @doc """
   ON CONFLICT update for the one-policy-per-(account, scope) rules upsert.
   Adopts the incoming rules/editor/timestamp and bumps `vsn` only when

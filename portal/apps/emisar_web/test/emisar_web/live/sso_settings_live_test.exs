@@ -91,8 +91,14 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # next-steps (test a sign-in, enable directory sync) live.
       assert_redirect(lv, ~p"/app/#{account}/settings/sso/#{created.id}")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{created.id}")
+      {:ok, detail_lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{created.id}")
       assert html =~ "Work Okta"
+
+      assert has_element?(
+               detail_lv,
+               ~s(a[href="/app/#{account.slug}/audit?target_kind=identity_provider&target_id=#{created.id}"]),
+               "View activity"
+             )
     end
 
     test "picking a fixed-issuer provider prefills its issuer", %{conn: conn, account: account} do

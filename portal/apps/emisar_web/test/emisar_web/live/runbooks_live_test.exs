@@ -89,6 +89,13 @@ defmodule EmisarWeb.RunbooksLiveTest do
 
     # One row per runbook — the editor is reached by id, never by version.
     assert html =~ ~p"/app/#{account}/runbooks/#{published.id}/edit"
+
+    assert has_element?(
+             lv,
+             ~s(a[href="/app/#{account.slug}/audit?target_kind=runbook&target_id=#{published.id}"]),
+             "View activity"
+           )
+
     refute html =~ "/versions"
   end
 
