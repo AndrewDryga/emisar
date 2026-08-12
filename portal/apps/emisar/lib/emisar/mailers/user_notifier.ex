@@ -5,6 +5,13 @@ defmodule Emisar.Mailers.UserNotifier do
   message carries a minimal HTML alternative so its primary action is a real
   link in mail clients, and the monthly report ships the designed HTML body
   rendered by `Emisar.Mailers.MonthlyReport`.
+
+  **A paragraph is one line.** A mail client re-wraps a long line to its own
+  window, but it can never undo a newline we sent, and an interpolated name or
+  URL changes a line's rendered length — so a source-wrapped paragraph breaks
+  at an arbitrary column on the recipient's screen. Newlines here are structure
+  only: a blank line between blocks, a code or URL alone on its line, and
+  indented `Label:` value blocks. `Emisar.Mailers.TextLayoutTest` holds the line.
   """
   import Swoosh.Email
   alias Emisar.Auth.Subject
@@ -38,8 +45,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
     #{url}
 
-    You can sign in any time — emisar emails you a one-time link, no password
-    to set:
+    You can sign in any time — emisar emails you a one-time link, no password to set:
 
     #{sign_in_url}
 
@@ -63,21 +69,17 @@ defmodule Emisar.Mailers.UserNotifier do
 
         #{secret}
 
-    Type it into the sign-in page in the browser where you asked to sign in. From
-    that same browser you can also just open:
+    Type it into the sign-in page in the browser where you asked to sign in. From that same browser you can also just open:
 
     #{url}
 
-    This code only works in the browser that requested it, works once, and expires
-    in 15 minutes — an intercepted email can't sign in on its own.
+    This code only works in the browser that requested it, works once, and expires in 15 minutes — an intercepted email can't sign in on its own.
 
     This sign-in was requested:
 
     #{request_details(context)}
 
-    Didn't ask to sign in? You can ignore this email — nothing happens without the
-    code, and it only works in the browser that made the request. If sign-in
-    emails you didn't ask for keep arriving, tell your administrator.
+    Didn't ask to sign in? You can ignore this email — nothing happens without the code, and it only works in the browser that made the request. If sign-in emails you didn't ask for keep arriving, tell your administrator.
 
     — emisar
     """
@@ -101,7 +103,9 @@ defmodule Emisar.Mailers.UserNotifier do
 
   # A small, human "who/when/where" block so the recipient can tell their own
   # sign-in from a stranger's. Time is always present; IP and a parsed
-  # device summary are shown only when the request carried them.
+  # device summary are shown only when the request carried them. Two-space
+  # indent and `Label:` keys are the same label/value grammar the approval
+  # emails use, and the block is short enough to survive a `<pre>` on a phone.
   defp request_details(%RequestContext{} = context) do
     [
       {"Time", Calendar.strftime(DateTime.utc_now(), "%-d %b %Y at %H:%M UTC")},
@@ -110,7 +114,7 @@ defmodule Emisar.Mailers.UserNotifier do
     ]
     |> Enum.reject(fn {_label, value} -> is_nil(value) end)
     |> Enum.map_join("\n", fn {label, value} ->
-      "      #{String.pad_trailing(label, 8)} #{value}"
+      "  #{String.pad_trailing("#{label}:", 8)}#{value}"
     end)
   end
 
@@ -166,9 +170,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
         #{code}
 
-    The code works once and expires in 15 minutes. If you didn't request this,
-    you can safely ignore this email — your address is unchanged, and whoever
-    asked can't proceed without this code sent here.
+    The code works once and expires in 15 minutes. If you didn't request this, you can safely ignore this email — your address is unchanged, and whoever asked can't proceed without this code sent here.
 
     — emisar
     """)
@@ -182,9 +184,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
         #{code}
 
-    The code works once and expires in 15 minutes. If you didn't request this,
-    you can safely ignore this email — no authenticator can be added without
-    the code sent here.
+    The code works once and expires in 15 minutes. If you didn't request this, you can safely ignore this email — no authenticator can be added without the code sent here.
 
     — emisar
     """)
@@ -233,8 +233,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
       #{url}
 
-    You'll need to sign in if you aren't already. This email goes to
-    people who can approve runs in this workspace.
+    You'll need to sign in if you aren't already. This email goes to people who can approve runs in this workspace.
 
     — emisar
     """
@@ -272,8 +271,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
       #{url}
 
-    Approval covers this exact plan only. Current policy deny, runner access,
-    action contract, and pack-trust checks can still stop dispatch.
+    Approval covers this exact plan only. Current policy deny, runner access, action contract, and pack-trust checks can still stop dispatch.
 
     — emisar
     """
@@ -416,21 +414,19 @@ defmodule Emisar.Mailers.UserNotifier do
     sign_in_url = PublicUrl.url("/app/#{account.slug}/sign_in")
 
     deliver(invitee.email, "You're invited to #{account.name} on emisar", """
-    #{inviter.full_name || inviter.email} invited you to join the
-    \"#{account.name}\" workspace on emisar.
+    #{inviter.full_name || inviter.email} invited you to join the #{account.name} workspace on emisar.
 
     Accept the invite:
 
     #{url}
 
-    After you accept, this is where you sign in to #{account.name} — emisar
-    emails you a one-time link, so there's no password to set:
+    After you accept, this is where you sign in to #{account.name} — emisar emails you a one-time link, so there's no password to set:
 
     #{sign_in_url}
 
-    What is emisar? It lets your AI safely run pre-approved operational
-    actions on your infrastructure with full audit, policy, and approval
-    workflows. https://emisar.dev
+    What is emisar? It lets your AI safely run pre-approved operational actions on your infrastructure with full audit, policy, and approval workflows. https://emisar.dev
+
+    — emisar
     """)
   end
 
