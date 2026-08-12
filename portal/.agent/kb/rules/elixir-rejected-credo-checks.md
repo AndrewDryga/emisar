@@ -133,6 +133,41 @@ the contract stays prose in `NoUnsafeDeserialization`'s `explanations:` block,
 where the developer writing the disable comment reads it (`mix credo explain`),
 and the disable comment itself is the review anchor.**
 
+## 6. Every `x["key"] != []` emptiness guard
+
+**The smell (`Protocol.UndefinedError` in production, 2026-08-12).** `nil == []`
+is `false`, so an emptiness guard on a map read passes when the key is absent
+and hands the comprehension behind it a nil. The run page's inputs grid did
+exactly that and raised `Enumerable not implemented for Atom` on every render
+of a runbook whose stored definition predated the `"inputs"` key — 49 events,
+the whole page down. The rule is
+[`elixir-nil-is-not-an-empty-list.md`](elixir-nil-is-not-an-empty-list.md).
+
+**Why the broad form was rejected — measured 11/11 false-positive.** A prototype
+flagging `x["key"] != []` / `== []` fires on 11 sites in `apps/emisar_web/lib`,
+and **every one is correct**:
+
+- `runbook_editor_components.ex` ×3 and `runbook_workflow_components.ex` ×8 —
+  all read a **draft**, and `RunbookDraft.from_definition/1` normalizes
+  `"inputs"`/`"stages"` with `|| []` before the components ever see it. The key
+  is present by construction, so comparing to `[]` is the right check.
+
+The comparison is not the defect; reading an **un-normalized** map is. An AST
+check cannot tell a stored `jsonb` column from a constructor's output without
+dataflow, so it would fire on the idiom and never on the bug — the exact
+failure mode this file exists to prevent.
+
+**What was wired instead.** The narrow, decidable shape: a `:for` walking the
+same raw subscript expression its enclosing element compares to `[]`. Those two
+expressions must agree about one value and only one of them handles nil, which
+is decidable from source text with no dataflow. It lives in
+`EmisarWeb.TemplateHygieneTest` ("a comprehension does not re-read a raw
+subscript its guard already tested") because Credo cannot see inside a `~H`
+sigil — the template body is a binary literal at parse time, and the production
+crash was inside one. Fixture-verified both ways: it fires on the original
+buggy markup and stays silent on the normalized form and on the 11 draft sites.
+**Verdict: broad AST check rejected; narrow template check wired.**
+
 ---
 
 **If reopened:** re-measure first (the prototype for #1 was a path-scoped

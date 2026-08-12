@@ -29,6 +29,12 @@ defmodule EmisarWeb.TemplateHygieneTest do
   # Only visible at real data volumes — a fleet advertising dozens of runners.
   @repeated_inline ~r{^\s*<\.(?:chip|badge|identity_tag)\s+:for[=\s]}
 
+  # `x["key"] != []` is an equality test, not a list check: a map with no such
+  # key compares as non-empty, so the guard passes and hands the comprehension
+  # behind it a nil. Only a hazard when the two read the SAME raw expression —
+  # normalizing once into an assign makes them agree by construction.
+  @raw_subscript_for ~r/:for=\{[^}]*<-\s*([^}]*\["[a-z_]+"\])\s*\}/
+
   defp template_sources do
     [
       Path.wildcard(Path.join(@web_lib, "**/*.heex")),
@@ -88,6 +94,39 @@ defmodule EmisarWeb.TemplateHygieneTest do
            Put the lead-in prose in its own element and the repeated elements in a
            sibling `flex flex-wrap gap-*`; the container's gap replaces any per-item
            `ml-*`. Verify at the widest list, not a two-item demo.
+
+           Offending lines (relative to apps/emisar_web/lib):
+           #{Enum.map_join(offenders, "\n", &"  #{&1}")}
+           """
+  end
+
+  test "a comprehension does not re-read a raw subscript its guard already tested" do
+    offenders =
+      for {file, source} <- template_sources(),
+          lines = String.split(source, "\n"),
+          {line, index} <- Enum.with_index(lines),
+          [_match, subscript] <- Regex.scan(@raw_subscript_for, line),
+          guard = enclosing_open_tag(lines, index),
+          String.contains?(guard, subscript <> " != []") or
+            String.contains?(guard, subscript <> " == []"),
+          do: "#{file}:#{index + 1}"
+
+    assert offenders == [],
+           """
+           A `:for` walks the same raw subscript expression its enclosing element
+           compares to `[]`. That comparison is not a list check — a map with no such
+           key is not equal to `[]`, so the guard passes and the comprehension receives
+           nil, raising Protocol.UndefinedError and taking the whole page down.
+
+           Normalize once into an assign so the guard and the walk cannot disagree:
+
+               ✅  assigns = assign(assigns, :inputs, definition["inputs"] || [])
+                   <div :if={@inputs != []}><div :for={input <- @inputs}>
+
+               ❌  <div :if={definition["inputs"] != []}>
+                     <div :for={input <- definition["inputs"]}>
+
+           See .agent/kb/rules/elixir-nil-is-not-an-empty-list.md.
 
            Offending lines (relative to apps/emisar_web/lib):
            #{Enum.map_join(offenders, "\n", &"  #{&1}")}
