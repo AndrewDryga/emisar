@@ -150,6 +150,19 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "b1"
     end
 
+    test "the filter bar narrows the fleet instead of crashing the view", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id, name: "kept-runner", group: "keep")
+      Fixtures.Runners.create_runner(account_id: account.id, name: "gone-runner", group: "gone")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
+      lv |> form("#runners-filter", %{"group" => "keep"}) |> render_change()
+
+      html = render(lv)
+      assert html =~ "kept-runner"
+      refute html =~ "gone-runner"
+    end
+
     test "an enforcing runner shows a Signed-only chip on the index", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 

@@ -49,6 +49,11 @@ defmodule EmisarWeb.RunnersLive do
 
   def handle_info(_, socket), do: {:noreply, socket}
 
+  def handle_event("filter", params, socket) do
+    {:noreply,
+     LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/runners", params)}
+  end
+
   # Runners owns the cleanup contract — it re-checks manage_runners and the
   # unrestricted runner access the account-wide schedule needs (IL-15), and
   # validates the raw window, so a crafted event from a viewer or a
