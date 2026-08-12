@@ -2,13 +2,15 @@ schema_version: 1
 
 id: symbolicator
 name: Symbolicator native symbolication
-version: 0.1.0
+version: 0.2.0
 description: >
-  Operate a Symbolicator host: liveness, build version, the symbol cache
-  footprint that fills its disk, one symbolication request's status, and the
-  cache cleanup — previewed before it runs. Symbolicator is Sentry's native
-  symbolication service; this pack drives the host it runs on, not the Sentry
-  API (see the sentry pack for that).
+  Debug native crashes with Symbolicator and keep the host it runs on healthy.
+  Symbolicate a stack trace, a minidump, or an Apple crash report against the
+  debug files the operator's configured sources hold, follow a request that
+  runs long, and manage what that costs: liveness, build version, the cache
+  footprint filling the disk, and the cleanup — previewed before it runs.
+  Nothing here can publish or alter a symbol; Symbolicator has no ingest path.
+  For the Sentry API itself, see the sentry pack.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -18,6 +20,7 @@ requires:
   binaries:
     - symbolicator
     - curl
+    - jq
 
 # `emisar pack suggest` detection — the binary plus its default HTTP port.
 # A host that only runs Symbolicator in a container has no binary on PATH, so
@@ -55,6 +58,10 @@ setup:
   verify: symbolicator.health
 
 actions:
+  # Resolve a crash against the symbols the operator already has
+  - actions/symbolicate.yaml
+  - actions/symbolicate_minidump.yaml
+  - actions/symbolicate_apple_crash.yaml
   # Is it up, and what is running
   - actions/health.yaml
   - actions/version.yaml

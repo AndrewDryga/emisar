@@ -1,0 +1,58 @@
+schema_version: 1
+id: symbolicator.symbolicate
+title: POST /symbolicate
+kind: exec
+risk: low
+description: >
+  Symbolicate a native stack trace — turn instruction addresses into function
+  names, files, and line numbers using the debug files this Symbolicator
+  already has access to. Send the crash's modules and frames; the symbols come
+  from the sources the operator configured, never from the request.
+side_effects:
+  - Resolves against the configured symbol sources; a debug file not cached yet is downloaded from them, which costs bandwidth and fills the caches.
+  - Adds nothing to those sources — Symbolicator has no ingest path, so nothing here can publish, alter, or delete a symbol.
+  - Returns symbolicated frames, and source context when a source bundle covers them.
+search_terms:
+  - resolve stack trace
+  - crash addresses to function names
+args:
+  - name: payload
+    type: string
+    required: true
+    description: >
+      JSON object with `modules` (each with type, debug_id, code_file,
+      image_addr, image_size) and `stacktraces` (each with `frames` carrying
+      instruction_addr). An `options` object is optional. Any other key,
+      including `sources`, is dropped before the request is sent.
+    validation:
+      max_length: 262144
+execution:
+  command:
+    binary: /bin/sh
+    # The body is rebuilt from exactly three caller keys, so a `sources` block
+    # in the payload cannot reach Symbolicator: a caller-supplied source is a
+    # URL this host would then fetch, which is the one thing a symbolication
+    # request must not be able to choose. Dropping it also means the answer
+    # always comes from the operator's own sources. The payload arrives as a
+    # positional argument and the body reaches curl on stdin, so neither is
+    # ever part of the program text or the process arguments.
+    argv:
+      - "-c"
+      - >-
+        body=$(printf '%s' "$1" | jq -c '{options: (.options // {dif_candidates: true}),
+        modules: (.modules // []), stacktraces: (.stacktraces // [])}') || {
+        printf 'payload must be a JSON object with modules and stacktraces\n' >&2; exit 2; };
+        printf '%s' "$body" | curl -fsS --globoff --proto "=http,https" --max-time 180
+        -H 'content-type: application/json' --data-binary @-
+        "${SYMBOLICATOR_URL:-http://127.0.0.1:3021}/symbolicate"
+      - "emisar"
+      - "{{ args.payload }}"
+  timeout: 5m
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Resolve one frame in a Windows module
+    args:
+      payload: '{"modules":[{"type":"pe","debug_id":"3249d99d-0c40-4931-8610-f4e4fb0b6936-1","code_file":"C:\\Windows\\System32\\kernel32.dll","image_addr":"0x749d0000","image_size":851968}],"stacktraces":[{"registers":{},"frames":[{"instruction_addr":"0x749e8630"}]}]}'

@@ -1,0 +1,23 @@
+Incident Identifier: 6B2F1C4D-0A3E-4F51-9E77-1A2B3C4D5E6F
+CrashReporter Key:   0123456789abcdef0123456789abcdef01234567
+Hardware Model:      iPhone12,1
+Process:             PacktestApp [1234]
+Path:                /var/containers/Bundle/Application/PacktestApp
+Identifier:          dev.emisar.packtest
+Version:             1.0 (1)
+Code Type:           ARM-64
+OS Version:          iPhone OS 15.0 (19A346)
+
+Exception Type:  EXC_BAD_ACCESS (SIGSEGV)
+Exception Codes: KERN_INVALID_ADDRESS at 0x0000000000000000
+Triggered by Thread:  0
+
+Thread 0 name:  Dispatch queue: com.apple.main-thread
+Thread 0 Crashed:
+0   PacktestApp                   0x0000000102b3c000 0x102b30000 + 49152
+
+Thread 0 crashed with ARM Thread State (64-bit):
+    x0: 0x0000000000000000
+
+Binary Images:
+0x102b30000 - 0x102b4ffff PacktestApp arm64  <1234567890abcdef1234567890abcdef> /var/containers/Bundle/Application/PacktestApp

@@ -9,6 +9,33 @@ env:
   SYMBOLICATOR_URL: http://127.0.0.1:3021
   SYMBOLICATOR_CONFIG: /etc/symbolicator/config.yml
 cases:
+  # Resolve a crash against the symbols the service has. This SUT has no
+  # sources configured, so the frame comes back "missing" — which still proves
+  # the whole round trip: body built, request accepted, result returned.
+  - action: symbolicator.symbolicate
+    args:
+      payload: '{"modules":[{"type":"pe","debug_id":"3249d99d-0c40-4931-8610-f4e4fb0b6936-1","code_file":"C:\\Windows\\System32\\kernel32.dll","image_addr":"0x749d0000","image_size":851968}],"stacktraces":[{"registers":{},"frames":[{"instruction_addr":"0x749e8630"}]}]}'
+    expect:
+      stdout_contains: ['"status":"completed"', '"instruction_addr":"0x749e8630"']
+  # A caller that names its own symbol source is naming a URL this host would
+  # then fetch. The action rebuilds the body from three keys, so the injected
+  # source must not survive into the request — and the candidates the service
+  # reports are the operator's, never the caller's.
+  - name: symbolicator.symbolicate-drops-caller-sources
+    action: symbolicator.symbolicate
+    args:
+      payload: '{"sources":[{"id":"packtest-injected-source","type":"http","url":"http://packtest-attacker.invalid/symbols/"}],"options":{"dif_candidates":true},"modules":[{"type":"pe","debug_id":"3249d99d-0c40-4931-8610-f4e4fb0b6936-1","code_file":"C:\\Windows\\System32\\kernel32.dll","image_addr":"0x749d0000","image_size":851968}],"stacktraces":[{"registers":{},"frames":[{"instruction_addr":"0x749e8630"}]}]}'
+    expect:
+      stdout_contains: ['"status":"completed"']
+      stdout_not_contains: ["packtest-injected-source", "packtest-attacker.invalid"]
+  - action: symbolicator.symbolicate_minidump
+    args: {path: /var/tmp/packtest.dmp}
+    expect:
+      stdout_contains: ['"status":"completed"', '"os_name":"Windows"', '"cpu_arch":"x86_64"']
+  - action: symbolicator.symbolicate_apple_crash
+    args: {path: /var/tmp/packtest.crash}
+    expect:
+      stdout_contains: ['"status":"completed"', "EXC_BAD_ACCESS", '"device_model":"iPhone12,1"']
   - action: symbolicator.health
     expect:
       stdout_contains: ["ok"]

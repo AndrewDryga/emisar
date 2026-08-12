@@ -1,0 +1,57 @@
+schema_version: 1
+id: symbolicator.symbolicate_apple_crash
+title: POST /applecrashreport
+kind: exec
+risk: low
+description: >
+  Symbolicate an Apple crash report already on this host — the iOS or macOS
+  .crash text a device produced — against the debug files this Symbolicator has
+  access to. Answers with the symbolicated result, or with a request id to
+  follow using symbolicator.request_status when the work runs long.
+side_effects:
+  - Reads the named report and sends its contents to the local symbolication service.
+  - Resolves against the configured symbol sources; a dSYM not cached yet is downloaded from them.
+  - Adds nothing to those sources — Symbolicator has no ingest path, so nothing here can publish, alter, or delete a symbol.
+search_terms:
+  - ios crash
+  - macos crash report
+  - dsym
+args:
+  - name: path
+    type: string
+    required: true
+    description: Apple crash report file on this host.
+    validation:
+      max_length: 512
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+      # Same containment as the minidump action: the pattern shapes the string,
+      # allowed_prefixes is what collapses `..` and blocks a symlink out of the
+      # directories crash artifacts land in.
+      allowed_prefixes:
+        - /var/lib/systemd/coredump
+        - /var/crash
+        - /var/tmp
+        - /tmp
+        - /data
+execution:
+  command:
+    binary: /bin/sh
+    # The field name is Symbolicator's own; omitting `sources` keeps the answer
+    # on the operator's configured sources.
+    argv:
+      - "-c"
+      - >-
+        exec curl -fsS --globoff --proto "=http,https" --max-time 300
+        -F "apple_crash_report=@$1"
+        "${SYMBOLICATOR_URL:-http://127.0.0.1:3021}/applecrashreport"
+      - "emisar"
+      - "{{ args.path }}"
+  timeout: 10m
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Symbolicate a report pulled off a device
+    args:
+      path: "/var/tmp/MyApp-2026-08-12-100731.crash"

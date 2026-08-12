@@ -1,0 +1,60 @@
+schema_version: 1
+id: symbolicator.symbolicate_minidump
+title: POST /minidump
+kind: exec
+risk: low
+description: >
+  Symbolicate a minidump already on this host — the crashing thread, its
+  stack, and the loaded modules, resolved against the debug files this
+  Symbolicator has access to. Answers with the symbolicated result, or with a
+  request id to follow using symbolicator.request_status when the work runs
+  long.
+side_effects:
+  - Reads the named dump and sends its bytes to the local symbolication service.
+  - Resolves against the configured symbol sources; a debug file not cached yet is downloaded from them.
+  - Adds nothing to those sources — Symbolicator has no ingest path, so nothing here can publish, alter, or delete a symbol.
+search_terms:
+  - crash dump
+  - core dump symbolication
+args:
+  - name: path
+    type: string
+    required: true
+    description: Minidump file on this host.
+    validation:
+      max_length: 512
+      pattern: "^/[a-zA-Z0-9_./\\-]{1,512}$"
+      # The pattern constrains lexical shape but NOT `..` (`.` and `/` are
+      # literal charset members). allowed_prefixes runs the runner's
+      # Clean+EvalSymlinks containment, holding this to the directories crash
+      # artifacts actually land in — a minidump is a copy of process memory, so
+      # an unscoped path would make this a way to feed any runner-readable file
+      # into the service.
+      allowed_prefixes:
+        - /var/lib/systemd/coredump
+        - /var/crash
+        - /var/tmp
+        - /tmp
+        - /data
+execution:
+  command:
+    binary: /bin/sh
+    # No `sources` form field: omitting it is what makes Symbolicator use the
+    # operator's configured sources rather than any the caller might name.
+    argv:
+      - "-c"
+      - >-
+        exec curl -fsS --globoff --proto "=http,https" --max-time 300
+        -F "upload_file_minidump=@$1"
+        "${SYMBOLICATOR_URL:-http://127.0.0.1:3021}/minidump"
+      - "emisar"
+      - "{{ args.path }}"
+  timeout: 10m
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Symbolicate a dump systemd-coredump kept
+    args:
+      path: "/var/lib/systemd/coredump/core.myapp.1000.dmp"
