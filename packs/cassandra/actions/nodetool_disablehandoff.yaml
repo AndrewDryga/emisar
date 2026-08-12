@@ -1,0 +1,24 @@
+schema_version: 1
+id: cassandra.nodetool_disablehandoff
+title: nodetool disablehandoff
+kind: exec
+risk: medium
+description: >
+  Stop this node storing hints for unreachable peers. Different from
+  cassandra.nodetool_pausehandoff, which keeps storing them and only stops
+  delivery. Use when hint disk use is the problem, not delivery load.
+side_effects:
+  - Writes destined for a down peer are no longer saved, so recovering that peer needs a repair.
+  - Existing hints stay on disk and still replay.
+  - Runtime-only — a restart returns the node to its cassandra.yaml value.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["disablehandoff"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Stop storing hints
+    args: {}

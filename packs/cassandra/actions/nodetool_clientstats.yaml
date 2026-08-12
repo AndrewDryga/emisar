@@ -1,0 +1,21 @@
+schema_version: 1
+id: cassandra.nodetool_clientstats
+title: nodetool clientstats
+kind: exec
+risk: low
+description: >
+  List the clients connected to this node — count per user, driver, and protocol
+  version. The read before cutting a node out of service, and the one that finds
+  an old driver still talking to it.
+side_effects: ["One JMX call.", "Read-only."]
+args: []
+execution:
+  command: {binary: nodetool, argv: ["clientstats"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Connected clients
+    args: {}

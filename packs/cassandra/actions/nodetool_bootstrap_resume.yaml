@@ -1,0 +1,25 @@
+schema_version: 1
+id: cassandra.nodetool_bootstrap_resume
+title: nodetool bootstrap resume
+kind: exec
+risk: high
+description: >
+  Resume a bootstrap that failed part way, streaming only the ranges this node is
+  still missing — the recovery when a joining node lost a stream and stopped
+  short of joining the ring. Fails on a node that already finished bootstrapping.
+side_effects:
+  - Restarts streaming from the source replicas; expect sustained network and disk load until it completes.
+  - Blocks until the bootstrap finishes or fails again.
+  - The rate honours the caps set by cassandra.nodetool_setstreamthroughput and cassandra.nodetool_setinterdcstreamthroughput.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["bootstrap", "resume"]}
+  timeout: 12h
+  cancel_grace: 5m
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 65536
+examples:
+  - title: Finish an interrupted bootstrap
+    args: {}

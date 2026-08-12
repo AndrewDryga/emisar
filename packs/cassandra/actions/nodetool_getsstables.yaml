@@ -1,0 +1,45 @@
+schema_version: 1
+id: cassandra.nodetool_getsstables
+title: nodetool getsstables <keyspace> <table> <key>
+kind: exec
+risk: low
+description: >
+  List the SSTable files that hold one partition key — how many files a read of
+  that key must touch. Empty output means the key's data is still in the memtable
+  or absent.
+side_effects: ["One JMX call.", "Read-only."]
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace holding the table.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: true
+    description: Table holding the key.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: key
+    type: string
+    required: true
+    description: Partition key, in the string form nodetool accepts.
+    validation:
+      max_length: 128
+      pattern: "^[A-Za-z0-9._:+@-]{1,128}$"
+execution:
+  command:
+    binary: nodetool
+    argv: ["getsstables", "--", "{{ args.keyspace }}", "{{ args.table }}", "{{ args.key }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Files holding one key
+    args:
+      keyspace: valorant_ks
+      table: matches
+      key: "a41f2c7e"

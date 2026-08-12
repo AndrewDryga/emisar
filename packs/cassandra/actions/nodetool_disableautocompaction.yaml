@@ -1,0 +1,41 @@
+schema_version: 1
+id: cassandra.nodetool_disableautocompaction
+title: nodetool disableautocompaction <keyspace> [table]
+kind: exec
+risk: medium
+description: >
+  Stop automatic compaction for a keyspace or one table on this node — the usual
+  move before a bulk load or a heavy backfill. Re-enable it with
+  cassandra.nodetool_enableautocompaction as soon as the load is done.
+side_effects:
+  - New compactions stop being scheduled; compactions already running finish.
+  - SSTable count and read latency grow for as long as it stays off, and disk use grows with them.
+  - Runtime-only — a restart returns the node to automatic compaction.
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace to pause.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: false
+    default: ""
+    description: 'Single table to pause; empty pauses every table in the keyspace.'
+    validation:
+      pattern: "^([a-zA-Z][a-zA-Z0-9_]{0,47})?$"
+execution:
+  command:
+    binary: nodetool
+    argv: ["disableautocompaction", "--", "{{ args.keyspace }}", "{{ args.table? }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Pause compaction on one table
+    args:
+      keyspace: valorant_ks
+      table: matches

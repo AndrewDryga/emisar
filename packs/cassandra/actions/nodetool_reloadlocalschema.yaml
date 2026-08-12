@@ -1,0 +1,23 @@
+schema_version: 1
+id: cassandra.nodetool_reloadlocalschema
+title: nodetool reloadlocalschema
+kind: exec
+risk: medium
+description: >
+  Reload this node's schema from its own system tables — the first, cheap remedy
+  when cassandra.nodetool_describecluster reports this node on a different schema
+  version from the rest.
+side_effects:
+  - Rebuilds the in-memory schema from local system tables; it pulls nothing from peers and drops nothing.
+  - Brief pause on schema-dependent work while it reloads.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["reloadlocalschema"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Reload the local schema
+    args: {}

@@ -1,6 +1,7 @@
 defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
   use ExUnit.Case, async: true
   alias Emisar.Catalog.PublishedRegistry.{Catalog, Pack}
+  alias Emisar.Catalog.TrustedManifest
 
   # A minimal, valid two-pack catalog. Each test overrides just the field
   # under test so the invalid input is explicit against a valid baseline.
@@ -409,7 +410,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
       # Every action is a valid descriptor on its own; the pack blows the
       # manifest's action cap, so the version auto-trust would pin has no
       # manifest at all — reject the document rather than trust half of it.
-      actions = Enum.map(1..81, &action("redis.a#{&1}"))
+      actions = Enum.map(1..(TrustedManifest.max_actions() + 1), &action("redis.a#{&1}"))
       catalog = put_in_pack(valid_catalog(), 0, "actions", actions)
 
       assert {:error, message} = Catalog.parse(catalog)

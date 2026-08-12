@@ -1,0 +1,25 @@
+schema_version: 1
+id: cassandra.nodetool_disablebinary
+title: nodetool disablebinary
+kind: exec
+risk: critical
+description: >
+  Stop the native transport on this node — every CQL client is disconnected and
+  no new client can connect to it. Gossip, streaming, and repair keep running, so
+  the node stays a replica and keeps taking writes from its peers. Use to take
+  one node out of client rotation without draining it.
+side_effects:
+  - Connected clients are dropped and must reconnect elsewhere; a driver without other reachable nodes fails outright.
+  - Requests this node was coordinating are lost, and the rest of the cluster carries its client load.
+  - Reverse it with cassandra.nodetool_enablebinary; a restart also brings the transport back.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["disablebinary"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Take this node out of client rotation
+    args: {}

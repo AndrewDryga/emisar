@@ -1,0 +1,58 @@
+schema_version: 1
+id: cassandra.nodetool_scrub
+title: nodetool scrub <keyspace> [table]
+kind: exec
+risk: high
+description: >
+  Rebuild a table's SSTables on this node, validating each row as it goes — the
+  repair for corrupt files reported in the log. Snapshots first by default, so
+  the pre-scrub files remain until you clear that snapshot.
+side_effects:
+  - Rewrites every SSTable of the named tables — sustained disk and CPU for the duration.
+  - Takes a snapshot first, which occupies disk until cassandra.nodetool_clearsnapshot removes it.
+  - With skip_corrupted, unreadable rows are dropped instead of failing the scrub; that data is gone from this node and needs a repair.
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace to scrub.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: false
+    default: ""
+    description: 'Single table to scrub; empty scrubs every table in the keyspace.'
+    validation:
+      pattern: "^([a-zA-Z][a-zA-Z0-9_]{0,47})?$"
+  - name: skip_corrupted
+    type: boolean
+    required: false
+    default: false
+    description: Drop rows that cannot be read instead of stopping at them.
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - |
+        flags=""
+        [ "$SKIP_CORRUPTED" = "true" ] && flags="-s"
+        set -- "$KEYSPACE"
+        [ -n "$TABLE" ] && set -- "$@" "$TABLE"
+        exec nodetool scrub $flags -- "$@"
+  env:
+    KEYSPACE: "{{ args.keyspace }}"
+    TABLE: "{{ args.table }}"
+    SKIP_CORRUPTED: "{{ args.skip_corrupted }}"
+  timeout: 6h
+  cancel_grace: 5m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 65536
+examples:
+  - title: Scrub one table
+    args:
+      keyspace: valorant_ks
+      table: matches

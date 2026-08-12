@@ -1,0 +1,65 @@
+schema_version: 1
+id: cassandra.nodetool_setstreamthroughput
+title: nodetool setstreamthroughput <value>
+kind: exec
+risk: medium
+description: >
+  Set this node's outbound streaming cap — the rate it sends SSTable data during
+  bootstrap, rebuild, repair, and decommission. Covers every stream the node
+  sends; cross-datacenter streams are additionally capped by
+  cassandra.nodetool_setinterdcstreamthroughput. 0 disables throttling.
+side_effects:
+  - Applies immediately, to streams already in flight as well as new ones.
+  - A cap under the current rate slows a running rebuild or repair; 0 lets streaming saturate the link.
+  - Runtime-only — a restart returns the node to its cassandra.yaml value.
+args:
+  - name: value
+    type: integer
+    required: true
+    description: 'Cap in the unit named by cap; 0 disables throttling.'
+    validation:
+      min: 0
+      max: 100000
+  - name: cap
+    type: string
+    required: false
+    default: stream_megabits
+    description: >
+      Which cap to set, and in which unit. stream_megabits is nodetool's own
+      default (Mb/s); stream_mib is the same cap in MiB/s; entire_sstable_mib is
+      the separate zero-copy entire-SSTable cap, which is always MiB/s.
+    validation:
+      enum: ["stream_megabits", "stream_mib", "entire_sstable_mib"]
+execution:
+  command:
+    binary: /bin/sh
+    # nodetool reads the value as megabits unless -m says MiB/s, and -e sets a
+    # different cap (zero-copy entire-SSTable streaming, always MiB/s) that
+    # nodetool refuses to combine with -m. One enum arg names exactly one legal
+    # combination; the value itself arrives through the environment.
+    argv:
+      - "-c"
+      - |
+        case "$CAP" in
+          stream_megabits) flag="" ;;
+          stream_mib) flag="-m" ;;
+          entire_sstable_mib) flag="-e" ;;
+          *) printf 'unsupported cap: %s\n' "$CAP" >&2; exit 2 ;;
+        esac
+        exec nodetool setstreamthroughput $flag -- "$VALUE"
+  env:
+    VALUE: "{{ args.value }}"
+    CAP: "{{ args.cap }}"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Throttle streaming to 200 Mb/s
+    args:
+      value: 200
+  - title: Throttle streaming to 64 MiB/s
+    args:
+      value: 64
+      cap: "stream_mib"

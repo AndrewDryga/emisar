@@ -1,0 +1,34 @@
+schema_version: 1
+id: cassandra.nodetool_getcompactionthreshold
+title: nodetool getcompactionthreshold <keyspace> <table>
+kind: exec
+risk: low
+description: Show the min and max size-tiered compaction thresholds for one table.
+side_effects: ["One JMX call.", "Read-only."]
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace holding the table.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: true
+    description: Table to read.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+execution:
+  command:
+    binary: nodetool
+    argv: ["getcompactionthreshold", "{{ args.keyspace }}", "{{ args.table }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Thresholds for one table
+    args:
+      keyspace: valorant_ks
+      table: matches

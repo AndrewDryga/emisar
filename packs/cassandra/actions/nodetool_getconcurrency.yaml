@@ -1,0 +1,20 @@
+schema_version: 1
+id: cassandra.nodetool_getconcurrency
+title: nodetool getconcurrency
+kind: exec
+risk: low
+description: >
+  List every request-processing stage on this node with its core and maximum
+  pool size — the thread limits cassandra.nodetool_setconcurrency changes.
+side_effects: ["One JMX call.", "Read-only."]
+args: []
+execution:
+  command: {binary: nodetool, argv: ["getconcurrency"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Stage thread limits
+    args: {}

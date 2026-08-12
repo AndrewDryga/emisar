@@ -1,0 +1,32 @@
+schema_version: 1
+id: cassandra.nodetool_setbatchlogreplaythrottle
+title: nodetool setbatchlogreplaythrottle <KiB/s>
+kind: exec
+risk: medium
+description: >
+  Set the batchlog replay throttle in KiB/s. Lower it when replaying batches
+  after an outage is adding load to an already busy node; 0 disables throttling.
+  Read the current value with cassandra.nodetool_getbatchlogreplaythrottle.
+side_effects:
+  - Applies to replay work that starts after the change.
+  - Cassandra reduces the rate proportionally to the number of nodes in the cluster.
+  - Runtime-only — a restart returns the node to its cassandra.yaml value.
+args:
+  - name: kb_per_sec
+    type: integer
+    required: true
+    description: 'Throttle in KiB/s; 0 disables throttling.'
+    validation:
+      min: 0
+      max: 1048576
+execution:
+  command: {binary: nodetool, argv: ["setbatchlogreplaythrottle", "{{ args.kb_per_sec }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Halve the default replay rate
+    args:
+      kb_per_sec: 512

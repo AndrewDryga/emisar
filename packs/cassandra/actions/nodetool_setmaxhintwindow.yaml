@@ -1,0 +1,33 @@
+schema_version: 1
+id: cassandra.nodetool_setmaxhintwindow
+title: nodetool setmaxhintwindow <ms>
+kind: exec
+risk: medium
+description: >
+  Set how long this node keeps writing hints for an unreachable peer, in
+  milliseconds. Raise it to carry a peer through a longer maintenance window
+  without a repair afterwards; 0 stops hint storage entirely. Read the current
+  window with cassandra.nodetool_getmaxhintwindow.
+side_effects:
+  - A longer window stores more hints on disk and lengthens replay when the peer returns.
+  - Writes made while a peer is down past the window are only recoverable by repair.
+  - Runtime-only — a restart returns the node to its cassandra.yaml value.
+args:
+  - name: window_ms
+    type: integer
+    required: true
+    description: 'Hint window in milliseconds; 0 stops storing hints.'
+    validation:
+      min: 0
+      max: 604800000
+execution:
+  command: {binary: nodetool, argv: ["setmaxhintwindow", "{{ args.window_ms }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Hold hints for six hours
+    args:
+      window_ms: 21600000

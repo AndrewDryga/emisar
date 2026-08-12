@@ -1,0 +1,98 @@
+schema_version: 1
+id: cassandra.cqlsh_select_by_key
+title: cqlsh -e "SELECT * FROM <ks>.<table> WHERE <key> = <value>"
+kind: exec
+risk: high
+description: >
+  Read the rows of one partition by its key — the "does this row exist, and what
+  does it hold" lookup. Returns stored application data, so it is approval-gated.
+  Use cassandra.nodetool_getendpoints for which replicas own the key without
+  reading it.
+side_effects:
+  - Returns application data — whatever the partition holds reaches the caller and the audit trail.
+  - A single-partition read on the coordinator, bounded by the row limit and the output cap.
+  - Read-only.
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace holding the table.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: true
+    description: Table to read.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: key_column
+    type: string
+    required: true
+    description: Partition key column to match.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: key_value
+    type: string
+    required: true
+    description: 'Key value, unquoted; the action quotes it according to key_type.'
+    validation:
+      max_length: 128
+      pattern: "^[A-Za-z0-9._:+@-]{1,128}$"
+  - name: key_type
+    type: string
+    required: false
+    default: text
+    description: >
+      How to render the value in CQL — text quotes it, number and uuid pass it
+      through bare.
+    validation:
+      enum: ["text", "number", "uuid"]
+  - name: limit
+    type: integer
+    required: false
+    default: 20
+    description: Rows to return from the partition.
+    validation:
+      min: 1
+      max: 100
+execution:
+  command:
+    binary: /bin/sh
+    # The key value carries no quote, space, or semicolon (its pattern rejects
+    # them), so quoting is the only thing key_type decides.
+    argv:
+      - "-c"
+      - |
+        case "$KEY_TYPE" in
+          text) predicate="$KEY_COLUMN = '$KEY_VALUE'" ;;
+          number|uuid) predicate="$KEY_COLUMN = $KEY_VALUE" ;;
+          *) printf 'unsupported key_type: %s\n' "$KEY_TYPE" >&2; exit 2 ;;
+        esac
+        exec cqlsh -e "SELECT * FROM $KEYSPACE.$TABLE WHERE $predicate LIMIT $LIMIT;" \
+          "${CQLSH_HOST:-127.0.0.1}" "${CQLSH_PORT:-9042}"
+  env:
+    KEYSPACE: "{{ args.keyspace }}"
+    TABLE: "{{ args.table }}"
+    KEY_COLUMN: "{{ args.key_column }}"
+    KEY_VALUE: "{{ args.key_value }}"
+    KEY_TYPE: "{{ args.key_type }}"
+    LIMIT: "{{ args.limit }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: One partition by a text key
+    args:
+      keyspace: valorant_ks
+      table: matches
+      key_column: match_id
+      key_value: "a41f2c7e"
+  - title: One partition by an integer key
+    args:
+      keyspace: valorant_ks
+      table: events
+      key_column: id
+      key_value: "42"
+      key_type: "number"

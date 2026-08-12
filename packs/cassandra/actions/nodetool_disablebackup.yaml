@@ -1,0 +1,24 @@
+schema_version: 1
+id: cassandra.nodetool_disablebackup
+title: nodetool disablebackup
+kind: exec
+risk: medium
+description: >
+  Stop incremental backup on this node — Cassandra stops hard-linking each new
+  SSTable into the backups directory. Use when those links are filling the disk
+  and the backup tooling is not clearing them.
+side_effects:
+  - New SSTables are no longer linked for backup, so incremental backups stop covering fresh data.
+  - Links already created stay on disk.
+  - Runtime-only — a restart returns the node to its cassandra.yaml value.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["disablebackup"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Stop incremental backup
+    args: {}

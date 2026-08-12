@@ -1,0 +1,32 @@
+schema_version: 1
+id: cassandra.nodetool_sethintedhandoffthrottlekb
+title: nodetool sethintedhandoffthrottlekb <KiB/s>
+kind: exec
+risk: medium
+description: >
+  Set the hinted-handoff delivery throttle in KiB/s, per delivery thread. Lower
+  it when a peer coming back online is being flooded with replayed hints; raise
+  it to clear a hint backlog faster.
+side_effects:
+  - Applies to hint deliveries that start after the change.
+  - Cassandra divides the rate across live peers, so the effective per-peer rate is lower in a large cluster.
+  - Runtime-only — a restart returns the node to its cassandra.yaml value.
+args:
+  - name: kb_per_sec
+    type: integer
+    required: true
+    description: 'Throttle in KiB/s, per delivery thread.'
+    validation:
+      min: 1
+      max: 1048576
+execution:
+  command: {binary: nodetool, argv: ["sethintedhandoffthrottlekb", "{{ args.kb_per_sec }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Halve the default hint delivery rate
+    args:
+      kb_per_sec: 512

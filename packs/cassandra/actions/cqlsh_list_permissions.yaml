@@ -1,0 +1,25 @@
+schema_version: 1
+id: cassandra.cqlsh_list_permissions
+title: cqlsh -e "LIST ALL PERMISSIONS"
+kind: exec
+risk: low
+description: >
+  List every permission granted to every role — who may read, write, or alter
+  which keyspace and table. Needs CassandraAuthorizer and a login with
+  permission to see other roles' grants.
+side_effects: ["One CQL query.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "exec cqlsh -e 'LIST ALL PERMISSIONS;' \"${CQLSH_HOST:-127.0.0.1}\" \"${CQLSH_PORT:-9042}\""
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: All grants
+    args: {}

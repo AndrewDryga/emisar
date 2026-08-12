@@ -1,0 +1,40 @@
+schema_version: 1
+id: cassandra.nodetool_relocatesstables
+title: nodetool relocatesstables <keyspace> <table>
+kind: exec
+risk: high
+description: >
+  Move a table's SSTables onto the disk that owns their token range — the fix
+  after adding or replacing a data directory on a node that spreads data across
+  several disks. A no-op on a node with one data directory.
+side_effects:
+  - Rewrites SSTables onto their correct disk — sustained disk read and write for the duration.
+  - Needs free space on the target disk while files are moved.
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace to relocate.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: true
+    description: Table to relocate.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+execution:
+  command:
+    binary: nodetool
+    argv: ["relocatesstables", "--", "{{ args.keyspace }}", "{{ args.table }}"]
+  timeout: 6h
+  cancel_grace: 5m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 65536
+examples:
+  - title: Rebalance one table across disks
+    args:
+      keyspace: valorant_ks
+      table: matches

@@ -30,7 +30,11 @@ defmodule Emisar.Catalog.TrustedManifest do
   @kinds ~w(exec script)
   @risks ~w(low medium high critical)
 
-  @max_actions 80
+  # A deeply covered service outgrows a round number: cassandra reached 119
+  # actions once its runtime limits, configuration, and administrative verbs
+  # were declared rather than left to a shell. The byte bounds below are what
+  # actually protect the manifest and the compact pack an operator reviews.
+  @max_actions 120
   @max_action_id_length 128
   @max_title_length 160
   @max_summary_length 512

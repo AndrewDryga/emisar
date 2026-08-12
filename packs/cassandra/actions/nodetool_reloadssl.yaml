@@ -1,0 +1,23 @@
+schema_version: 1
+id: cassandra.nodetool_reloadssl
+title: nodetool reloadssl
+kind: exec
+risk: medium
+description: >
+  Reload the keystore and truststore from disk so a renewed certificate takes
+  effect without a restart — the step that finishes a certificate rotation on a
+  live node.
+side_effects:
+  - New connections use the reloaded material; connections already established keep their current session.
+  - A keystore that is unreadable or has the wrong password fails here, before it can break new connections.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["reloadssl"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Pick up a renewed certificate
+    args: {}

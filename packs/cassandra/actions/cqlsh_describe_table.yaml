@@ -1,0 +1,41 @@
+schema_version: 1
+id: cassandra.cqlsh_describe_table
+title: cqlsh -e "DESCRIBE TABLE <ks>.<table>"
+kind: exec
+risk: low
+description: >
+  Show the full DDL for one table — columns, primary key, and every table
+  property (compaction, compression, gc_grace_seconds, caching, TTL defaults).
+side_effects: ["One CQL query.", "Read-only."]
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace holding the table.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: true
+    description: Table to describe.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "exec cqlsh -e \"DESCRIBE TABLE $1.$2;\" \"${CQLSH_HOST:-127.0.0.1}\" \"${CQLSH_PORT:-9042}\""
+      - "emisar"
+      - "{{ args.keyspace }}"
+      - "{{ args.table }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: One table's DDL
+    args:
+      keyspace: valorant_ks
+      table: matches

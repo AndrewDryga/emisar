@@ -1,0 +1,54 @@
+schema_version: 1
+id: cassandra.nodetool_setcachecapacity
+title: nodetool setcachecapacity <key MB> <row MB> <counter MB>
+kind: exec
+risk: medium
+description: >
+  Set the key, row, and counter cache capacities in MB. All three are set in one
+  call, so pass the current value for any cache you are not changing; 0 disables
+  a cache. cassandra.nodetool_info reports the capacities in use.
+side_effects:
+  - Shrinking a cache evicts entries immediately, so reads run cold until it refills.
+  - The key and counter caches live on the JVM heap — oversizing them adds GC pressure on the node.
+  - Runtime-only — a restart returns the node to its cassandra.yaml values.
+args:
+  - name: key_cache_mb
+    type: integer
+    required: true
+    description: 'Key cache capacity in MB; 0 disables it.'
+    validation:
+      min: 0
+      max: 65536
+  - name: row_cache_mb
+    type: integer
+    required: true
+    description: 'Row cache capacity in MB; 0 disables it.'
+    validation:
+      min: 0
+      max: 65536
+  - name: counter_cache_mb
+    type: integer
+    required: true
+    description: 'Counter cache capacity in MB; 0 disables it.'
+    validation:
+      min: 0
+      max: 65536
+execution:
+  command:
+    binary: nodetool
+    argv:
+      - "setcachecapacity"
+      - "{{ args.key_cache_mb }}"
+      - "{{ args.row_cache_mb }}"
+      - "{{ args.counter_cache_mb }}"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: 512 MB key cache, row cache off, 128 MB counter cache
+    args:
+      key_cache_mb: 512
+      row_cache_mb: 0
+      counter_cache_mb: 128

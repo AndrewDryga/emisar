@@ -1,0 +1,59 @@
+schema_version: 1
+id: cassandra.nodetool_setconcurrency
+title: nodetool setconcurrency <stage> <max>
+kind: exec
+risk: medium
+description: >
+  Set the maximum number of threads one request-processing stage may use. Lower
+  a stage to stop it crowding out the rest of the node, raise it when a stage is
+  the bottleneck. List the stages and their current sizes with
+  cassandra.nodetool_getconcurrency.
+side_effects:
+  - Applies immediately; work already queued on the stage runs under the new limit.
+  - Starving a stage that serves live traffic (MUTATION, READ) shows up as client timeouts.
+  - Runtime-only — a restart returns the node to its cassandra.yaml value.
+args:
+  - name: stage
+    type: string
+    required: true
+    description: >
+      Stage to resize, under the name nodetool accepts — MUTATION is the
+      MutationStage that cassandra.nodetool_getconcurrency prints.
+    validation:
+      enum:
+        - "READ"
+        - "MUTATION"
+        - "COUNTER_MUTATION"
+        - "VIEW_MUTATION"
+        - "GOSSIP"
+        - "REQUEST_RESPONSE"
+        - "ANTI_ENTROPY"
+        - "MIGRATION"
+        - "MISC"
+        - "TRACING"
+        - "INTERNAL_RESPONSE"
+        - "IMMEDIATE"
+        - "PAXOS_REPAIR"
+  - name: max_concurrency
+    type: integer
+    required: true
+    description: Maximum threads for the stage.
+    validation:
+      min: 1
+      max: 1024
+execution:
+  command:
+    binary: nodetool
+    # Only the maximum is exposed: nodetool's optional core-pool form fails on
+    # the SEP executors that back most stages ("Cannot resize core pool size").
+    argv: ["setconcurrency", "{{ args.stage }}", "{{ args.max_concurrency }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Hold write threads at 16
+    args:
+      stage: "MUTATION"
+      max_concurrency: 16

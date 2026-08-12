@@ -1,0 +1,23 @@
+schema_version: 1
+id: cassandra.nodetool_enablebinary
+title: nodetool enablebinary
+kind: exec
+risk: critical
+description: >
+  Start the native transport on this node so CQL clients can connect again —
+  the recovery from cassandra.nodetool_disablebinary. Confirm with
+  cassandra.nodetool_service_status.
+side_effects:
+  - Clients start connecting immediately, so a node that is not ready to serve reads takes traffic at once.
+  - Check the node is Up/Normal with cassandra.nodetool_status first.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["enablebinary"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Return this node to client rotation
+    args: {}

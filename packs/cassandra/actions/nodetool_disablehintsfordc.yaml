@@ -1,0 +1,34 @@
+schema_version: 1
+id: cassandra.nodetool_disablehintsfordc
+title: nodetool disablehintsfordc <datacenter>
+kind: exec
+risk: medium
+description: >
+  Stop this node storing hints for one datacenter — the move when a remote
+  datacenter is down for maintenance, or is being retired, and its hints would
+  otherwise pile up on every local node.
+side_effects:
+  - Writes destined for that datacenter's replicas stop being saved, so bringing it back needs a repair.
+  - Hints for other datacenters are unaffected.
+  - Runtime-only — a restart returns the node to its cassandra.yaml value.
+args:
+  - name: datacenter
+    type: string
+    required: true
+    description: Datacenter name as the snitch reports it.
+    validation:
+      max_length: 64
+      pattern: "^[A-Za-z0-9._-]{1,64}$"
+execution:
+  command:
+    binary: nodetool
+    argv: ["disablehintsfordc", "--", "{{ args.datacenter }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Stop hints for a retiring datacenter
+    args:
+      datacenter: "gcp-us-east1"

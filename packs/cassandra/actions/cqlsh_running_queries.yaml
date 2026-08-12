@@ -1,0 +1,39 @@
+schema_version: 1
+id: cassandra.cqlsh_running_queries
+title: cqlsh -e "SELECT * FROM system_views.queries"
+kind: exec
+risk: high
+description: >
+  List the queries this node is executing right now, with how long each has been
+  queued and running — the first look when a node is busy and nobody knows what
+  it is doing. The query text includes literal values, so this returns
+  application data and is approval-gated.
+side_effects:
+  - Query text includes the literals callers passed, so application data reaches the caller and the audit trail.
+  - One CQL query against a virtual table.
+  - Read-only.
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 50
+    description: Queries to return.
+    validation:
+      min: 1
+      max: 200
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "exec cqlsh -e \"SELECT thread_id, queued_micros, running_micros, task FROM system_views.queries LIMIT $1;\" \"${CQLSH_HOST:-127.0.0.1}\" \"${CQLSH_PORT:-9042}\""
+      - "emisar"
+      - "{{ args.limit }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: What this node is running now
+    args: {}

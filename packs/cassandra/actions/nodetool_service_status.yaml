@@ -1,0 +1,29 @@
+schema_version: 1
+id: cassandra.nodetool_service_status
+title: nodetool statusbinary / statusgossip / statusbackup / statushandoff
+kind: exec
+risk: low
+description: >
+  Check what this node currently has switched on — native transport (client
+  traffic), gossip, incremental backup, and hinted handoff — in one call. The
+  read to take before and after any of the enable/disable actions.
+side_effects: ["Four JMX calls.", "Read-only."]
+args: []
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - |
+        for check in statusbinary statusgossip statusbackup statushandoff; do
+          printf '%s: ' "$check"
+          nodetool "$check" || exit $?
+        done
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: What is switched on
+    args: {}

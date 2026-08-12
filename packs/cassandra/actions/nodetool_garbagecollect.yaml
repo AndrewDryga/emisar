@@ -1,0 +1,58 @@
+schema_version: 1
+id: cassandra.nodetool_garbagecollect
+title: nodetool garbagecollect <keyspace> [table]
+kind: exec
+risk: high
+description: >
+  Rewrite a table's SSTables to drop data already deleted or expired, without
+  waiting for compaction to reach it — the way to reclaim space from a
+  tombstone-heavy table on one node. Slower and heavier than letting compaction
+  do the work.
+side_effects:
+  - Rewrites every SSTable of the named tables on this node — sustained disk read, write, and CPU for the duration.
+  - Needs free disk space for the rewritten files while it runs.
+  - Data past gc_grace_seconds is purged; nothing recoverable is lost.
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace to collect.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: false
+    default: ""
+    description: 'Single table to collect; empty collects every table in the keyspace.'
+    validation:
+      pattern: "^([a-zA-Z][a-zA-Z0-9_]{0,47})?$"
+  - name: granularity
+    type: string
+    required: false
+    default: ROW
+    description: >
+      ROW drops deleted partitions and rows; CELL also drops overwritten and
+      deleted cells, at more cost.
+    validation:
+      enum: ["ROW", "CELL"]
+execution:
+  command:
+    binary: nodetool
+    argv:
+      - "garbagecollect"
+      - "-g"
+      - "{{ args.granularity }}"
+      - "--"
+      - "{{ args.keyspace }}"
+      - "{{ args.table? }}"
+  timeout: 6h
+  cancel_grace: 5m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 65536
+examples:
+  - title: Reclaim space on one table
+    args:
+      keyspace: valorant_ks
+      table: matches

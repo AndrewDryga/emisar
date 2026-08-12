@@ -1,0 +1,20 @@
+schema_version: 1
+id: cassandra.nodetool_getsnapshotthrottle
+title: nodetool getsnapshotthrottle
+kind: exec
+risk: low
+description: >
+  Show how many hard links per second snapshot and clearsnapshot may create. An
+  unthrottled node reports the maximum long value rather than a word.
+side_effects: ["One JMX call.", "Read-only."]
+args: []
+execution:
+  command: {binary: nodetool, argv: ["getsnapshotthrottle"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Current snapshot throttle
+    args: {}

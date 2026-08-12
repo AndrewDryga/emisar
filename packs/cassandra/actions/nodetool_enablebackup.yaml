@@ -1,0 +1,23 @@
+schema_version: 1
+id: cassandra.nodetool_enablebackup
+title: nodetool enablebackup
+kind: exec
+risk: medium
+description: >
+  Start incremental backup on this node — every new SSTable is hard-linked into
+  the table's backups directory for an external backup job to collect. Confirm
+  with cassandra.nodetool_service_status.
+side_effects:
+  - Each new SSTable gains a hard link that only an external job removes, so disk use grows until something clears them.
+  - Covers SSTables written from now on, not existing data; that needs cassandra.nodetool_snapshot.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["enablebackup"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Start incremental backup
+    args: {}

@@ -1,0 +1,18 @@
+schema_version: 1
+id: cassandra.nodetool_gettraceprobability
+title: nodetool gettraceprobability
+kind: exec
+risk: low
+description: Show the fraction of requests this node traces (0 = tracing off).
+side_effects: ["One JMX call.", "Read-only."]
+args: []
+execution:
+  command: {binary: nodetool, argv: ["gettraceprobability"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Current trace probability
+    args: {}

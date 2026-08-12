@@ -1,0 +1,36 @@
+schema_version: 1
+id: cassandra.nodetool_viewbuildstatus
+title: nodetool viewbuildstatus <keyspace> <view>
+kind: exec
+risk: low
+description: >
+  Show whether a materialized view has finished building, per node. Exits
+  non-zero while the build is still running, and names the nodes that are behind.
+side_effects: ["One JMX call.", "Read-only."]
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace holding the view.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: view
+    type: string
+    required: true
+    description: Materialized view name.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+execution:
+  command:
+    binary: nodetool
+    argv: ["viewbuildstatus", "--", "{{ args.keyspace }}", "{{ args.view }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: View build progress
+    args:
+      keyspace: valorant_ks
+      view: matches_by_player

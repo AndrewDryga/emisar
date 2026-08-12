@@ -1,0 +1,24 @@
+schema_version: 1
+id: cassandra.nodetool_pausehandoff
+title: nodetool pausehandoff
+kind: exec
+risk: medium
+description: >
+  Pause hint delivery from this node. Hints keep accumulating; only the replay to
+  peers stops — the move when a peer that just came back is being flooded.
+  Resume with cassandra.nodetool_resumehandoff.
+side_effects:
+  - Stored hints stop replaying; they stay on disk and grow.
+  - Peers stay inconsistent until delivery resumes or a repair runs.
+  - Runtime-only — a restart resumes delivery.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["pausehandoff"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Pause hint delivery
+    args: {}

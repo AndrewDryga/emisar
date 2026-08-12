@@ -1,0 +1,54 @@
+schema_version: 1
+id: cassandra.nodetool_settimeout
+title: nodetool settimeout <type> <ms>
+kind: exec
+risk: medium
+description: >
+  Set one of this node's request or internode timeouts, in milliseconds. Raise a
+  timeout to ride out a slow period instead of failing queries, or lower it to
+  fail fast. Read the current value with cassandra.nodetool_gettimeout.
+side_effects:
+  - Applies to requests that start after the change; requests in flight keep the old timeout.
+  - A raised timeout holds threads and memory longer under load, which can turn a slow node into an unresponsive one.
+  - Runtime-only — a restart returns the node to its cassandra.yaml value.
+args:
+  - name: timeout_type
+    type: string
+    required: true
+    description: Timeout to change.
+    validation:
+      enum:
+        - "read"
+        - "range"
+        - "write"
+        - "counterwrite"
+        - "cascontention"
+        - "truncate"
+        - "internodeconnect"
+        - "internodeuser"
+        - "internodestreaminguser"
+        - "misc"
+  - name: timeout_ms
+    type: integer
+    required: true
+    description: >
+      Timeout in milliseconds. nodetool also takes 0, which for a request
+      timeout means every request of that type fails at once rather than "no
+      limit", so this action starts at 1.
+    validation:
+      min: 1
+      max: 3600000
+execution:
+  command:
+    binary: nodetool
+    argv: ["settimeout", "{{ args.timeout_type }}", "{{ args.timeout_ms }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Give reads two more seconds
+    args:
+      timeout_type: "read"
+      timeout_ms: 7000

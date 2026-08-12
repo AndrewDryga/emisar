@@ -87,7 +87,7 @@ defmodule Emisar.Catalog.TrustedManifestTest do
     assert map_size(trusted_actions) == 30
 
     overflow =
-      for index <- 1..81 do
+      for index <- 1..(TrustedManifest.max_actions() + 1) do
         %{hd(actions) | action_id: "custom.overflow_#{index}"}
       end
 

@@ -13,6 +13,9 @@ risk_accountability:
     # --ignore-unreplicated-keyspaces, so no keyspace on a one-node ring can
     # repair successfully — in any mode, preview included.
     cassandra.nodetool_repair: requires_cluster
+    # Only a node that failed part way through joining has ranges left to
+    # stream; a healthy single node refuses the resume outright.
+    cassandra.nodetool_bootstrap_resume: requires_cluster
 versions:
   - version: "5.0.8"
     digest: "@sha256:e52bb93c21f69cc5c2f5eb9e7d9736b10a047ad38bc7776480c7dbbf7d4e0ba7"
@@ -22,7 +25,7 @@ versions:
 # A JVM node takes about a minute to gossip and answer cqlsh, and every case
 # pays that boot for its own SUT. Split the cases across matrix rows instead of
 # sharing a node between them.
-shards: 4
+shards: 9
 
 secret_env: [CQLSH_PASSWORD]
 env:
@@ -150,6 +153,151 @@ cases:
           stdout_contains: ["32"]
     cleanup:
       - argv: [nodetool, setcompactionthroughput, "64"]
+  # Runtime limits. Each case owns its SUT, so a changed limit dies with the
+  # node; the probe reads the value back rather than restoring it.
+  - action: cassandra.nodetool_setconcurrentcompactors
+    args: {count: 4}
+    probes:
+      - argv: [/bin/sh, -c, "nodetool getconcurrentcompactors | grep -qx 4 && echo compactors=4"]
+        expect:
+          stdout_contains: ["compactors=4"]
+  - action: cassandra.nodetool_setcompactionthreshold
+    args: {keyspace: packtest, table: events, min_threshold: 4, max_threshold: 16}
+    probes:
+      - argv: [nodetool, getcompactionthreshold, packtest, events]
+        expect:
+          stdout_contains: ["min = 4", "max = 16"]
+  - action: cassandra.nodetool_getcompactionthreshold
+    args: {keyspace: packtest, table: events}
+    expect:
+      stdout_contains: ["Current compaction thresholds for packtest/events", "min = "]
+  # The four streaming cases below cover every branch of the cap enum: a set and
+  # a get for megabits (-d), MiB/s (-m), and the entire-SSTable cap (-e).
+  - action: cassandra.nodetool_setstreamthroughput
+    args: {value: 400}
+    probes:
+      - argv: [nodetool, getstreamthroughput, -d]
+        expect:
+          stdout_contains: ["400.0 Mb/s"]
+  - name: cassandra.nodetool_setstreamthroughput-mib
+    action: cassandra.nodetool_setstreamthroughput
+    args: {value: 64, cap: stream_mib}
+    probes:
+      - argv: [nodetool, getstreamthroughput, -m]
+        expect:
+          stdout_contains: ["64.0 MiB/s"]
+  - action: cassandra.nodetool_getstreamthroughput
+    expect:
+      stdout_contains: ["Current stream throughput", "Mb/s"]
+  - name: cassandra.nodetool_getstreamthroughput-entire-sstable
+    action: cassandra.nodetool_getstreamthroughput
+    args: {cap: entire_sstable_mib}
+    expect:
+      stdout_contains: ["Current entire SSTable stream throughput", "MiB/s"]
+  - action: cassandra.nodetool_setinterdcstreamthroughput
+    args: {value: 800}
+    probes:
+      - argv: [nodetool, getinterdcstreamthroughput, -d]
+        expect:
+          stdout_contains: ["800.0 Mb/s"]
+  - name: cassandra.nodetool_setinterdcstreamthroughput-entire-sstable
+    action: cassandra.nodetool_setinterdcstreamthroughput
+    args: {value: 32, cap: entire_sstable_mib}
+    probes:
+      - argv: [nodetool, getinterdcstreamthroughput, -e]
+        expect:
+          stdout_contains: ["32.0 MiB/s"]
+  # nodetool labels the precise (-d) inter-datacenter read "Current stream
+  # throughput", same as the local one, so only the unit is worth asserting.
+  - action: cassandra.nodetool_getinterdcstreamthroughput
+    expect:
+      stdout_contains: ["Mb/s"]
+  - name: cassandra.nodetool_getinterdcstreamthroughput-mib
+    action: cassandra.nodetool_getinterdcstreamthroughput
+    args: {cap: stream_mib}
+    expect:
+      stdout_contains: ["Current inter-datacenter stream throughput", "MiB/s"]
+  # The hinted-handoff throttle is write-only on the StorageService MBean, so
+  # nothing can read it back. The case proves the node accepted the value (a
+  # rejected one exits 1) and that hint delivery still runs afterwards.
+  - action: cassandra.nodetool_sethintedhandoffthrottlekb
+    args: {kb_per_sec: 512}
+    expect:
+      exit: [0]
+    probes:
+      - argv: [nodetool, statushandoff]
+        expect:
+          stdout_contains: ["Hinted handoff is running"]
+  - action: cassandra.nodetool_setmaxhintwindow
+    args: {window_ms: 21600000}
+    probes:
+      - argv: [nodetool, getmaxhintwindow]
+        expect:
+          stdout_contains: ["Current max hint window: 21600000 ms"]
+  - action: cassandra.nodetool_getmaxhintwindow
+    expect:
+      stdout_contains: ["Current max hint window"]
+  - action: cassandra.nodetool_setbatchlogreplaythrottle
+    args: {kb_per_sec: 2048}
+    probes:
+      - argv: [nodetool, getbatchlogreplaythrottle]
+        expect:
+          stdout_contains: ["Batchlog replay throttle: 2048 KB/s"]
+  - action: cassandra.nodetool_getbatchlogreplaythrottle
+    expect:
+      stdout_contains: ["Batchlog replay throttle"]
+  - action: cassandra.nodetool_setsnapshotthrottle
+    args: {links_per_sec: 200}
+    probes:
+      - argv: [nodetool, getsnapshotthrottle]
+        expect:
+          stdout_contains: ["Current snapshot throttle: 200 links/s"]
+  - action: cassandra.nodetool_getsnapshotthrottle
+    expect:
+      stdout_contains: ["Current snapshot throttle"]
+  - action: cassandra.nodetool_settimeout
+    args: {timeout_type: read, timeout_ms: 7000}
+    probes:
+      - argv: [nodetool, gettimeout, read]
+        expect:
+          stdout_contains: ["Current timeout for type read: 7000 ms"]
+  - action: cassandra.nodetool_gettimeout
+    args: {timeout_type: read}
+    expect:
+      stdout_contains: ["Current timeout for type read"]
+  - action: cassandra.nodetool_settraceprobability
+    args: {probability: 0.01}
+    probes:
+      - argv: [nodetool, gettraceprobability]
+        expect:
+          stdout_contains: ["Current trace probability: 0.01"]
+  - action: cassandra.nodetool_gettraceprobability
+    expect:
+      stdout_contains: ["Current trace probability"]
+  - action: cassandra.nodetool_setcachecapacity
+    args: {key_cache_mb: 64, row_cache_mb: 0, counter_cache_mb: 32}
+    probes:
+      - argv: [nodetool, info]
+        expect:
+          stdout_contains: ["Key Cache", "capacity 64 MiB", "capacity 32 MiB"]
+  - action: cassandra.nodetool_setconcurrentviewbuilders
+    args: {count: 2}
+    probes:
+      - argv: [/bin/sh, -c, "nodetool getconcurrentviewbuilders | grep -qx 2 && echo builders=2"]
+        expect:
+          stdout_contains: ["builders=2"]
+  - action: cassandra.nodetool_getconcurrentviewbuilders
+    expect:
+      stdout_contains: ["Current number of concurrent view builders"]
+  - action: cassandra.nodetool_setconcurrency
+    args: {stage: MUTATION, max_concurrency: 16}
+    probes:
+      - argv: [/bin/sh, -c, "nodetool getconcurrency | grep -qE '^MutationStage[[:space:]]+[0-9]+[[:space:]]+16$' && echo mutation=16"]
+        expect:
+          stdout_contains: ["mutation=16"]
+  - action: cassandra.nodetool_getconcurrency
+    expect:
+      stdout_contains: ["Stage", "MutationStage", "MaximumPoolSize"]
   - action: cassandra.nodetool_getlogginglevels
     expect:
       stdout_contains: [Logger Name, ROOT]
@@ -172,6 +320,317 @@ cases:
       - argv: [nodetool, compactionstats]
         expect:
           stdout_contains: [pending tasks]
+  # Schema and data reads
+  - action: cassandra.cqlsh_describe_table
+    args: {keyspace: packtest, table: events}
+    expect:
+      stdout_contains: ["CREATE TABLE packtest.events", "PRIMARY KEY"]
+  - action: cassandra.cqlsh_list_tables
+    args: {keyspace: packtest}
+    expect:
+      stdout_contains: ["table_name", "events"]
+  - action: cassandra.cqlsh_list_permissions
+    expect:
+      stdout_contains: ["resource", "permission"]
+  - action: cassandra.cqlsh_select_rows
+    args: {keyspace: packtest, table: events}
+    expect:
+      stdout_contains: ["ready"]
+  - action: cassandra.cqlsh_select_by_key
+    args: {keyspace: packtest, table: events, key_column: id, key_value: "1", key_type: number}
+    expect:
+      stdout_contains: ["ready"]
+  - action: cassandra.cqlsh_running_queries
+    expect:
+      stdout_contains: ["thread_id", "running_micros"]
+  # Configuration
+  - action: cassandra.cqlsh_settings
+    expect:
+      stdout_contains: ["hinted_handoff_enabled"]
+  # The name differs between versions (stream_throughput_outbound gained a
+  # _megabits_per_sec suffix before 5.0), so match the shared prefix.
+  - name: cassandra.cqlsh_settings-filtered
+    action: cassandra.cqlsh_settings
+    args: {filter: "stream_throughput"}
+    expect:
+      stdout_contains: ["stream_throughput_outbound"]
+  - name: cassandra.cqlsh_settings-no-match
+    action: cassandra.cqlsh_settings
+    args: {filter: "no_such_setting"}
+    expect:
+      exit: [0]
+      stdout_contains: ["no setting name matched: no_such_setting"]
+  - action: cassandra.nodetool_getseeds
+    expect:
+      stdout_contains: ["Seed node list"]
+  - action: cassandra.nodetool_service_status
+    expect:
+      stdout_contains: ["statusbinary: running", "statusgossip: running", "statushandoff: Hinted handoff is running"]
+  - action: cassandra.nodetool_statusautocompaction
+    expect:
+      stdout_contains: ["running"]
+  # Health reads
+  - action: cassandra.nodetool_clientstats
+    expect:
+      stdout_contains: ["Total connected clients"]
+  - action: cassandra.nodetool_gcstats
+    expect:
+      stdout_contains: ["Interval (ms)", "GC Reclaimed (MB)"]
+  - action: cassandra.nodetool_datapaths
+    expect:
+      stdout_contains: ["Keyspace:", "Paths:"]
+  - action: cassandra.nodetool_listpendinghints
+    expect:
+      stdout_contains: ["pending hints"]
+  - action: cassandra.nodetool_getsstables
+    args: {keyspace: packtest, table: events, key: "1"}
+    arrange:
+      - argv: [nodetool, flush, packtest, events]
+    expect:
+      stdout_contains: ["packtest/events"]
+  # Sampling stops when the window closes, and 4.1's toppartitions has no
+  # --list to read scheduled samplers back, so the probe checks the table it
+  # sampled is still serving.
+  - action: cassandra.nodetool_toppartitions
+    args: {keyspace: packtest, table: events, duration_ms: 2000}
+    expect:
+      stdout_contains: ["Frequency of reads by partition"]
+    probes:
+      - argv: [nodetool, tablestats, packtest.events]
+        expect:
+          stdout_contains: ["SSTable count"]
+  - action: cassandra.cqlsh_largest_partitions
+    expect:
+      stdout_contains: ["keyspace_name", "packtest"]
+  - action: cassandra.cqlsh_tombstones_per_read
+    expect:
+      stdout_contains: ["keyspace_name", "packtest"]
+  - action: cassandra.cqlsh_repair_history
+    expect:
+      stdout_contains: ["keyspace_name"]
+  - action: cassandra.nodetool_repair_admin_list
+    expect:
+      stdout_contains: ["sessions"]
+  # Compaction, hint, and backup switches
+  - action: cassandra.nodetool_disableautocompaction
+    args: {keyspace: packtest, table: events}
+    probes:
+      - argv: [/bin/sh, -c, "nodetool statusautocompaction packtest events | grep -qx 'not running' && echo paused"]
+        expect:
+          stdout_contains: ["paused"]
+  - action: cassandra.nodetool_enableautocompaction
+    args: {keyspace: packtest, table: events}
+    arrange:
+      - argv: [nodetool, disableautocompaction, packtest, events]
+    probes:
+      - argv: [/bin/sh, -c, "nodetool statusautocompaction packtest events | grep -qx running && echo resumed"]
+        expect:
+          stdout_contains: ["resumed"]
+  - action: cassandra.nodetool_disablehandoff
+    probes:
+      - argv: [nodetool, statushandoff]
+        expect:
+          stdout_contains: ["Hinted handoff is not running"]
+  - action: cassandra.nodetool_enablehandoff
+    arrange:
+      - argv: [nodetool, disablehandoff]
+    probes:
+      - argv: [nodetool, statushandoff]
+        expect:
+          stdout_contains: ["Hinted handoff is running"]
+  # Pause and resume act on hint DELIVERY, which nodetool exposes no read for —
+  # statushandoff reports hint STORAGE and is unchanged by either. The probe
+  # proves the node kept serving; the exit code proves the call was accepted.
+  - action: cassandra.nodetool_pausehandoff
+    expect:
+      exit: [0]
+    probes:
+      - argv: [nodetool, statushandoff]
+        expect:
+          stdout_contains: ["Hinted handoff is running"]
+  - action: cassandra.nodetool_resumehandoff
+    arrange:
+      - argv: [nodetool, pausehandoff]
+    expect:
+      exit: [0]
+    probes:
+      - argv: [nodetool, statushandoff]
+        expect:
+          stdout_contains: ["Hinted handoff is running"]
+  # Per-datacenter hint state has no nodetool read either; a name the snitch
+  # does not know is rejected, so acceptance is the evidence.
+  - action: cassandra.nodetool_disablehintsfordc
+    args: {datacenter: datacenter1}
+    expect:
+      exit: [0]
+    probes:
+      - argv: [nodetool, statushandoff]
+        expect:
+          stdout_contains: ["Hinted handoff is running"]
+  - action: cassandra.nodetool_enablehintsfordc
+    args: {datacenter: datacenter1}
+    arrange:
+      - argv: [nodetool, disablehintsfordc, datacenter1]
+    expect:
+      exit: [0]
+    probes:
+      - argv: [nodetool, statushandoff]
+        expect:
+          stdout_contains: ["Hinted handoff is running"]
+  - action: cassandra.nodetool_truncatehints
+    probes:
+      - argv: [nodetool, listpendinghints]
+        expect:
+          stdout_contains: ["does not have any pending hints"]
+  - action: cassandra.nodetool_disablebackup
+    probes:
+      - argv: [/bin/sh, -c, "nodetool statusbackup | grep -qx 'not running' && echo backup-off"]
+        expect:
+          stdout_contains: ["backup-off"]
+  - action: cassandra.nodetool_enablebackup
+    arrange:
+      - argv: [nodetool, disablebackup]
+    probes:
+      - argv: [/bin/sh, -c, "nodetool statusbackup | grep -qx running && echo backup-on"]
+        expect:
+          stdout_contains: ["backup-on"]
+  - action: cassandra.nodetool_replaybatchlog
+    expect:
+      exit: [0]
+    probes:
+      - argv: [cqlsh, -e, "SELECT count(*) FROM system.batches;"]
+        expect:
+          stdout_contains: ["count"]
+  # Reload and refresh
+  - action: cassandra.nodetool_refresh
+    args: {keyspace: packtest, table: events}
+    expect:
+      exit: [0]
+    probes:
+      - argv: [nodetool, tablestats, packtest.events]
+        expect:
+          stdout_contains: ["SSTable count"]
+  - action: cassandra.nodetool_refreshsizeestimates
+    expect:
+      exit: [0]
+    probes:
+      - argv: [cqlsh, -e, "SELECT keyspace_name, table_name FROM system.size_estimates LIMIT 5;"]
+        expect:
+          stdout_contains: ["keyspace_name"]
+  - action: cassandra.nodetool_reloadlocalschema
+    expect:
+      exit: [0]
+    probes:
+      - argv: [nodetool, describecluster]
+        expect:
+          stdout_contains: ["Schema versions"]
+  - action: cassandra.nodetool_reloadseeds
+    expect:
+      stdout_contains: ["Seed node list"]
+    probes:
+      - argv: [nodetool, getseeds]
+        expect:
+          stdout_contains: ["Seed node list"]
+  - action: cassandra.nodetool_reloadssl
+    expect:
+      exit: [0]
+    probes:
+      - argv: [nodetool, info]
+        expect:
+          stdout_contains: ["Native Transport active: true"]
+  # Auth caches — the SUT runs PasswordAuthenticator + CassandraAuthorizer, so
+  # these MBeans exist; the probe proves logins still work after the drop.
+  - action: cassandra.nodetool_invalidatecredentialscache
+    probes:
+      - argv: [cqlsh, -e, "SELECT release_version FROM system.local;"]
+        expect:
+          stdout_contains: ["release_version"]
+  - action: cassandra.nodetool_invalidatepermissionscache
+    probes:
+      - argv: [cqlsh, -e, "SELECT release_version FROM system.local;"]
+        expect:
+          stdout_contains: ["release_version"]
+  - action: cassandra.nodetool_invalidaterolescache
+    probes:
+      - argv: [cqlsh, -e, "SELECT release_version FROM system.local;"]
+        expect:
+          stdout_contains: ["release_version"]
+  # SSTable rewrites — each arranges a flush so there is a real file to rewrite.
+  - action: cassandra.nodetool_garbagecollect
+    args: {keyspace: packtest, table: events}
+    arrange:
+      - argv: [nodetool, flush, packtest, events]
+    expect:
+      exit: [0]
+    probes:
+      - argv: [nodetool, tablestats, packtest.events]
+        expect:
+          stdout_contains: ["SSTable count"]
+  - action: cassandra.nodetool_scrub
+    args: {keyspace: packtest, table: events}
+    arrange:
+      - argv: [nodetool, flush, packtest, events]
+    probes:
+      - name: scrub snapshots the table before rewriting it
+        argv: [nodetool, listsnapshots]
+        expect:
+          stdout_contains: ["pre-scrub", "events"]
+  - action: cassandra.nodetool_upgradesstables
+    args: {keyspace: packtest, table: events, include_all: true}
+    arrange:
+      - argv: [nodetool, flush, packtest, events]
+    expect:
+      exit: [0]
+    probes:
+      - argv: [nodetool, tablestats, packtest.events]
+        expect:
+          stdout_contains: ["SSTable count"]
+  - action: cassandra.nodetool_relocatesstables
+    args: {keyspace: packtest, table: events}
+    arrange:
+      - argv: [nodetool, flush, packtest, events]
+    expect:
+      exit: [0]
+    probes:
+      - argv: [nodetool, tablestats, packtest.events]
+        expect:
+          stdout_contains: ["SSTable count"]
+  - action: cassandra.nodetool_rebuild_index
+    args: {keyspace: packtest, table: events, index: events_value_idx}
+    arrange:
+      - argv: [cqlsh, -e, "CREATE INDEX IF NOT EXISTS events_value_idx ON packtest.events (value);"]
+      - argv: [nodetool, flush, packtest, events]
+    probes:
+      - name: the rebuilt index answers a query on the indexed column
+        argv: [cqlsh, -e, "SELECT value FROM packtest.events WHERE value = 'ready';"]
+        expect:
+          stdout_contains: ["ready"]
+  # Node-wide switches. Each owns its SUT, so cutting the node out of service
+  # ends with that case.
+  - action: cassandra.nodetool_disablebinary
+    probes:
+      - argv: [/bin/sh, -c, "nodetool statusbinary | grep -qx 'not running' && echo binary-off"]
+        expect:
+          stdout_contains: ["binary-off"]
+  - action: cassandra.nodetool_enablebinary
+    arrange:
+      - argv: [nodetool, disablebinary]
+    probes:
+      - argv: [/bin/sh, -c, "nodetool statusbinary | grep -qx running && echo binary-on"]
+        expect:
+          stdout_contains: ["binary-on"]
+  - action: cassandra.nodetool_disablegossip
+    probes:
+      - argv: [/bin/sh, -c, "nodetool statusgossip | grep -qx 'not running' && echo gossip-off"]
+        expect:
+          stdout_contains: ["gossip-off"]
+  - action: cassandra.nodetool_enablegossip
+    arrange:
+      - argv: [nodetool, disablegossip]
+    probes:
+      - argv: [/bin/sh, -c, "nodetool statusgossip | grep -qx running && echo gossip-on"]
+        expect:
+          stdout_contains: ["gossip-on"]
   # Terminal case: a drained node only comes back with a restart, but this case
   # owns its disposable Compose project, so nothing after it shares the fixture.
   - action: cassandra.nodetool_drain

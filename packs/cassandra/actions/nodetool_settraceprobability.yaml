@@ -1,0 +1,35 @@
+schema_version: 1
+id: cassandra.nodetool_settraceprobability
+title: nodetool settraceprobability <probability>
+kind: exec
+risk: medium
+description: >
+  Set the fraction of requests this node traces, between 0 and 1. Turn tracing
+  on briefly to see where latency goes, then set it back to 0. Read the current
+  value with cassandra.nodetool_gettraceprobability.
+side_effects:
+  - Every traced request writes rows to the system_traces keyspace, adding write load and disk use.
+  - Values above about 0.01 are heavy on a busy node; 1 traces every request.
+  - Runtime-only — a restart returns the node to its cassandra.yaml value.
+args:
+  - name: probability
+    type: number
+    required: true
+    description: 'Fraction of requests to trace; 0 disables tracing.'
+    validation:
+      min: 0
+      max: 1
+execution:
+  command: {binary: nodetool, argv: ["settraceprobability", "{{ args.probability }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Trace one request in a hundred
+    args:
+      probability: 0.01
+  - title: Turn tracing back off
+    args:
+      probability: 0

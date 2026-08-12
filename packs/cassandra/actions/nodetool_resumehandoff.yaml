@@ -1,0 +1,22 @@
+schema_version: 1
+id: cassandra.nodetool_resumehandoff
+title: nodetool resumehandoff
+kind: exec
+risk: medium
+description: >
+  Resume hint delivery from this node after a cassandra.nodetool_pausehandoff.
+  Confirm with cassandra.nodetool_service_status.
+side_effects:
+  - Stored hints start replaying to their peers immediately.
+  - A large backlog puts load on this node and on the peers receiving it; cap it with cassandra.nodetool_sethintedhandoffthrottlekb.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["resumehandoff"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Resume hint delivery
+    args: {}

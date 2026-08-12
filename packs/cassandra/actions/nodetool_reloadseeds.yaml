@@ -1,0 +1,23 @@
+schema_version: 1
+id: cassandra.nodetool_reloadseeds
+title: nodetool reloadseeds
+kind: exec
+risk: medium
+description: >
+  Re-read the seed list from the seed provider without restarting — the step
+  after editing seeds in cassandra.yaml, typically while replacing seed nodes.
+  Read the result back with cassandra.nodetool_getseeds.
+side_effects:
+  - Replaces the in-memory seed list; gossip with current peers is unaffected.
+  - Prints the new list, or says the provider returned no remote addresses.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["reloadseeds"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Re-read the seed list
+    args: {}

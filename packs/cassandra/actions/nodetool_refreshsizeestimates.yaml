@@ -1,0 +1,23 @@
+schema_version: 1
+id: cassandra.nodetool_refreshsizeestimates
+title: nodetool refreshsizeestimates
+kind: exec
+risk: medium
+description: >
+  Recompute the system.size_estimates table this node publishes. Run it when
+  cassandra.cqlsh_system_size_estimates looks stale — Spark and analytics
+  connectors split work from those numbers.
+side_effects:
+  - Rewrites this node's size_estimates rows; it reads SSTable metadata, not data.
+  - Cheap on a small node, noticeable on one with many tables.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["refreshsizeestimates"]}
+  timeout: 10m
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Recompute size estimates
+    args: {}

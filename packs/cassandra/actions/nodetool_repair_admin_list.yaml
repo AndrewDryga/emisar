@@ -1,0 +1,37 @@
+schema_version: 1
+id: cassandra.nodetool_repair_admin_list
+title: nodetool repair_admin list
+kind: exec
+risk: low
+description: >
+  List the incremental repair sessions this node knows about. A session stuck in
+  a non-finished state is what keeps SSTables pending repair and blocks later
+  repairs; "no sessions" is the healthy answer.
+side_effects: ["One JMX call.", "Read-only."]
+args:
+  - name: include_completed
+    type: boolean
+    required: false
+    default: false
+    description: Include finished sessions as well as the ones still in flight.
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - |
+        [ "$ALL" = "true" ] && exec nodetool repair_admin list --all
+        exec nodetool repair_admin list
+  env:
+    ALL: "{{ args.include_completed }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Sessions still in flight
+    args: {}
+  - title: Every recorded session
+    args:
+      include_completed: true

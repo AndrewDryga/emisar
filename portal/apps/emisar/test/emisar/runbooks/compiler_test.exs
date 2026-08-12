@@ -181,14 +181,14 @@ defmodule Emisar.Runbooks.CompilerTest do
   } do
     selected = trusted_runner(account, subject, group: "selected")
     unrelated = trusted_runner(account, subject, group: "unrelated")
-    add_catalog_noise(unrelated, "unrelated", 80)
+    add_catalog_noise(unrelated, "unrelated", Catalog.TrustedManifest.max_actions())
 
     assert {:ok, _compiled} =
              selected.group
              |> definition()
              |> compile(%{}, subject)
 
-    add_catalog_noise(selected, "selected", 80)
+    add_catalog_noise(selected, "selected", Catalog.TrustedManifest.max_actions())
 
     assert {:error, [issue]} =
              selected.group

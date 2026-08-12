@@ -1,0 +1,40 @@
+schema_version: 1
+id: cassandra.nodetool_refresh
+title: nodetool refresh <keyspace> <table>
+kind: exec
+risk: medium
+description: >
+  Load SSTable files that were placed into a table's data directory into the
+  running node, with no restart — the last step of a file-level restore. Cassandra
+  5.0 prints a deprecation notice pointing at `nodetool import`, and still
+  performs the load.
+side_effects:
+  - The node starts serving whatever rows those files contain; a wrong file set changes query results.
+  - Loading a large file set triggers compaction on the table.
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace holding the table.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: true
+    description: Table whose directory holds the new files.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+execution:
+  command:
+    binary: nodetool
+    argv: ["refresh", "--", "{{ args.keyspace }}", "{{ args.table }}"]
+  timeout: 10m
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Pick up restored SSTables
+    args:
+      keyspace: valorant_ks
+      table: matches

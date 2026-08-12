@@ -1,0 +1,55 @@
+schema_version: 1
+id: cassandra.cqlsh_select_rows
+title: cqlsh -e "SELECT * FROM <ks>.<table> LIMIT <n>"
+kind: exec
+risk: high
+description: >
+  Read a bounded sample of rows from one table. Returns stored application data,
+  so it is approval-gated; use cassandra.cqlsh_select_by_key when you know the
+  partition key, and cassandra.cqlsh_describe_table when you only need the shape.
+side_effects:
+  - Returns application data — whatever the table holds reaches the caller and the audit trail.
+  - A range scan over the ring, bounded by the row limit and the output cap.
+  - Read-only.
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace holding the table.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: true
+    description: Table to read.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: limit
+    type: integer
+    required: false
+    default: 10
+    description: Rows to return.
+    validation:
+      min: 1
+      max: 100
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "exec cqlsh -e \"SELECT * FROM $1.$2 LIMIT $3;\" \"${CQLSH_HOST:-127.0.0.1}\" \"${CQLSH_PORT:-9042}\""
+      - "emisar"
+      - "{{ args.keyspace }}"
+      - "{{ args.table }}"
+      - "{{ args.limit }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Ten rows from a table
+    args:
+      keyspace: valorant_ks
+      table: matches
+      limit: 10

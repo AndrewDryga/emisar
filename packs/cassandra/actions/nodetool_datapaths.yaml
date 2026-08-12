@@ -1,0 +1,21 @@
+schema_version: 1
+id: cassandra.nodetool_datapaths
+title: nodetool datapaths
+kind: exec
+risk: low
+description: >
+  List the directories each table stores data in — the read that shows which
+  disk a table actually lives on before you judge a full filesystem or a JBOD
+  imbalance.
+side_effects: ["One JMX call.", "Read-only."]
+args: []
+execution:
+  command: {binary: nodetool, argv: ["datapaths"]}
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Data directories per table
+    args: {}

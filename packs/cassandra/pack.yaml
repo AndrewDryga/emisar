@@ -2,16 +2,23 @@ schema_version: 1
 
 id: cassandra
 name: Cassandra operations
-version: 0.4.17
+version: 0.6.0
 retired_below: 0.4.10
 description: >
   Deep Cassandra ops via nodetool + cqlsh: topology (status, ring,
   gossip, describering, failure detector), health (tpstats, netstats,
-  proxy + table histograms, compaction stats + history, throughput),
-  schema introspection, maintenance mutators (snapshot, flush, cleanup,
-  verify, compact, stop, throughput, cache invalidation), repair
-  workflows, node lifecycle (drain, decommission, assassinate,
-  removenode, rebuild), and logging level control. JMX on 127.0.0.1:7199.
+  proxy + table histograms, compaction stats + history, GC, clients, hot
+  and large partitions, tombstones), schema introspection down to one
+  table, effective runtime configuration, approval-gated data reads,
+  runtime limits a running node accepts without a restart (stream and
+  inter-datacenter throughput, compaction, hints, batchlog replay,
+  snapshots, request timeouts, caches, stage concurrency, tracing),
+  switches for compaction, hints, and backup, maintenance mutators
+  (snapshot, flush, cleanup, verify, compact, scrub, garbage collect,
+  upgrade + relocate SSTables, cache invalidation), repair workflows,
+  node lifecycle (drain, decommission, assassinate, removenode, rebuild,
+  bootstrap resume), default-denied native transport and gossip
+  switches, and logging level control. JMX on 127.0.0.1:7199.
 vendor: emisar
 homepage: https://github.com/andrewdryga/emisar
 
@@ -49,6 +56,7 @@ setup:
     - nodetool host/port come from each action's args (default 127.0.0.1:7199), not the environment; this pack passes no JMX username/password, so it works only against a node without JMX auth.
     - "cqlsh credentials belong in ~/.cassandra/cqlshrc (with a [authentication] username/password) on the runner host — read from disk, so it needs no inherit_env entry; the actions pass no -u/-p."
     - Lifecycle and maintenance mutators (repair, drain, decommission, assassinate, removenode, cleanup, compact) are cluster-affecting; run the read actions first.
+    - The runtime limit actions change one node and take effect at once, but a restart returns it to cassandra.yaml — after any node restart, read the limits back and set them again.
   verify: cassandra.nodetool_status
 
 actions:
@@ -69,9 +77,47 @@ actions:
   - actions/nodetool_tablestats.yaml
   - actions/nodetool_compactionstats.yaml
   - actions/nodetool_compactionhistory.yaml
-  - actions/nodetool_getconcurrentcompactors.yaml
-  - actions/nodetool_getcompactionthroughput.yaml
+  - actions/nodetool_gcstats.yaml
+  - actions/nodetool_clientstats.yaml
+  - actions/nodetool_datapaths.yaml
+  - actions/nodetool_getsstables.yaml
+  - actions/nodetool_toppartitions.yaml
+  - actions/nodetool_viewbuildstatus.yaml
+  - actions/cqlsh_largest_partitions.yaml
+  - actions/cqlsh_tombstones_per_read.yaml
   - actions/analyze_disk_pressure.yaml
+  # Runtime limits — read and change on a running node
+  - actions/nodetool_getcompactionthroughput.yaml
+  - actions/nodetool_setcompactionthroughput.yaml
+  - actions/nodetool_getconcurrentcompactors.yaml
+  - actions/nodetool_setconcurrentcompactors.yaml
+  - actions/nodetool_getcompactionthreshold.yaml
+  - actions/nodetool_setcompactionthreshold.yaml
+  - actions/nodetool_getstreamthroughput.yaml
+  - actions/nodetool_setstreamthroughput.yaml
+  - actions/nodetool_getinterdcstreamthroughput.yaml
+  - actions/nodetool_setinterdcstreamthroughput.yaml
+  - actions/nodetool_getmaxhintwindow.yaml
+  - actions/nodetool_setmaxhintwindow.yaml
+  - actions/nodetool_sethintedhandoffthrottlekb.yaml
+  - actions/nodetool_getbatchlogreplaythrottle.yaml
+  - actions/nodetool_setbatchlogreplaythrottle.yaml
+  - actions/nodetool_getsnapshotthrottle.yaml
+  - actions/nodetool_setsnapshotthrottle.yaml
+  - actions/nodetool_gettimeout.yaml
+  - actions/nodetool_settimeout.yaml
+  - actions/nodetool_getconcurrency.yaml
+  - actions/nodetool_setconcurrency.yaml
+  - actions/nodetool_getconcurrentviewbuilders.yaml
+  - actions/nodetool_setconcurrentviewbuilders.yaml
+  - actions/nodetool_setcachecapacity.yaml
+  - actions/nodetool_gettraceprobability.yaml
+  - actions/nodetool_settraceprobability.yaml
+  # Configuration as the node is running it
+  - actions/cqlsh_settings.yaml
+  - actions/nodetool_getseeds.yaml
+  - actions/nodetool_service_status.yaml
+  - actions/nodetool_statusautocompaction.yaml
   # Snapshots / endpoints
   - actions/nodetool_listsnapshots.yaml
   - actions/nodetool_getendpoints.yaml
@@ -79,9 +125,16 @@ actions:
   - actions/cqlsh_describe_schema.yaml
   - actions/cqlsh_list_keyspaces.yaml
   - actions/cqlsh_describe_keyspace.yaml
+  - actions/cqlsh_list_tables.yaml
+  - actions/cqlsh_describe_table.yaml
   - actions/cqlsh_list_roles.yaml
+  - actions/cqlsh_list_permissions.yaml
   - actions/cqlsh_system_peers.yaml
   - actions/cqlsh_system_size_estimates.yaml
+  # Stored data — returns application rows, approval-gated
+  - actions/cqlsh_select_rows.yaml
+  - actions/cqlsh_select_by_key.yaml
+  - actions/cqlsh_running_queries.yaml
   # Maintenance mutators
   - actions/nodetool_flush.yaml
   - actions/nodetool_snapshot.yaml
@@ -90,19 +143,55 @@ actions:
   - actions/nodetool_verify.yaml
   - actions/nodetool_compact.yaml
   - actions/nodetool_stop_compaction.yaml
-  - actions/nodetool_setcompactionthroughput.yaml
+  - actions/nodetool_garbagecollect.yaml
+  - actions/nodetool_scrub.yaml
+  - actions/nodetool_upgradesstables.yaml
+  - actions/nodetool_relocatesstables.yaml
+  - actions/nodetool_rebuild_index.yaml
+  - actions/nodetool_refresh.yaml
+  - actions/nodetool_refreshsizeestimates.yaml
+  - actions/nodetool_reloadlocalschema.yaml
+  - actions/nodetool_reloadseeds.yaml
+  - actions/nodetool_reloadssl.yaml
+  # Compaction switches
+  - actions/nodetool_disableautocompaction.yaml
+  - actions/nodetool_enableautocompaction.yaml
+  # Hints + batchlog
+  - actions/nodetool_listpendinghints.yaml
+  - actions/nodetool_pausehandoff.yaml
+  - actions/nodetool_resumehandoff.yaml
+  - actions/nodetool_disablehandoff.yaml
+  - actions/nodetool_enablehandoff.yaml
+  - actions/nodetool_disablehintsfordc.yaml
+  - actions/nodetool_enablehintsfordc.yaml
+  - actions/nodetool_truncatehints.yaml
+  - actions/nodetool_replaybatchlog.yaml
+  # Incremental backup
+  - actions/nodetool_disablebackup.yaml
+  - actions/nodetool_enablebackup.yaml
   # Cache invalidation
   - actions/nodetool_invalidatekeycache.yaml
   - actions/nodetool_invalidaterowcache.yaml
   - actions/nodetool_invalidatecountercache.yaml
+  - actions/nodetool_invalidatecredentialscache.yaml
+  - actions/nodetool_invalidatepermissionscache.yaml
+  - actions/nodetool_invalidaterolescache.yaml
   # Repair
   - actions/nodetool_repair.yaml
+  - actions/nodetool_repair_admin_list.yaml
+  - actions/cqlsh_repair_history.yaml
   # Lifecycle
   - actions/nodetool_drain.yaml
   - actions/nodetool_decommission.yaml
   - actions/nodetool_assassinate.yaml
   - actions/nodetool_removenode.yaml
   - actions/nodetool_rebuild.yaml
+  - actions/nodetool_bootstrap_resume.yaml
+  # Node-wide switches — default-denied, they cut this node out of service
+  - actions/nodetool_disablebinary.yaml
+  - actions/nodetool_enablebinary.yaml
+  - actions/nodetool_disablegossip.yaml
+  - actions/nodetool_enablegossip.yaml
   # Logging
   - actions/nodetool_getlogginglevels.yaml
   - actions/nodetool_setlogginglevel.yaml

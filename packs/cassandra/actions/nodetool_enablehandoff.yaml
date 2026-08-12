@@ -1,0 +1,23 @@
+schema_version: 1
+id: cassandra.nodetool_enablehandoff
+title: nodetool enablehandoff
+kind: exec
+risk: medium
+description: >
+  Resume storing hints for unreachable peers after a
+  cassandra.nodetool_disablehandoff. Confirm with
+  cassandra.nodetool_service_status.
+side_effects:
+  - Writes for a down peer are saved again, using disk for as long as the window set by cassandra.nodetool_setmaxhintwindow.
+  - Nothing recovers the hints missed while storing was off; that gap needs a repair.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["enablehandoff"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Store hints again
+    args: {}

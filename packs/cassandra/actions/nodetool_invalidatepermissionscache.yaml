@@ -1,0 +1,22 @@
+schema_version: 1
+id: cassandra.nodetool_invalidatepermissionscache
+title: nodetool invalidatepermissionscache
+kind: exec
+risk: medium
+description: >
+  Drop this node's cached permissions so a GRANT or REVOKE takes effect now
+  instead of when the cache expires. Needs CassandraAuthorizer.
+side_effects:
+  - The next request per role and resource re-reads permissions, so queries are briefly slower.
+  - Sessions already authorized keep running; only the next permission check is re-evaluated.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["invalidatepermissionscache"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Apply a REVOKE now
+    args: {}

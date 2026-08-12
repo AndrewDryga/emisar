@@ -1,0 +1,23 @@
+schema_version: 1
+id: cassandra.nodetool_enablegossip
+title: nodetool enablegossip
+kind: exec
+risk: critical
+description: >
+  Start gossip on this node so the cluster sees it as Up again — the recovery
+  from cassandra.nodetool_disablegossip. Confirm with
+  cassandra.nodetool_service_status and cassandra.nodetool_status.
+side_effects:
+  - Peers mark the node Up and resume routing replica traffic to it at once.
+  - Writes it missed arrive as hints only inside the hint window; anything older needs a repair.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["enablegossip"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Rejoin the ring
+    args: {}

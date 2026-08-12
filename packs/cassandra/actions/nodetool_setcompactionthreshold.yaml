@@ -1,0 +1,62 @@
+schema_version: 1
+id: cassandra.nodetool_setcompactionthreshold
+title: nodetool setcompactionthreshold <keyspace> <table> <min> <max>
+kind: exec
+risk: medium
+description: >
+  Set the min and max SSTable count that triggers size-tiered compaction for one
+  table. Raising the minimum makes the table compact less often and keeps more
+  SSTables; lowering it compacts sooner. Read the current pair with
+  cassandra.nodetool_getcompactionthreshold.
+side_effects:
+  - Applies to this table on this node only, and takes effect on the next compaction decision.
+  - A higher minimum leaves more SSTables per read until the next compaction.
+  - Runtime-only — a restart returns the table to its schema value.
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace holding the table.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: true
+    description: Table to change.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: min_threshold
+    type: integer
+    required: true
+    description: 'SSTables of one size tier needed before compaction starts (nodetool requires at least 2).'
+    validation:
+      min: 2
+      max: 1000
+  - name: max_threshold
+    type: integer
+    required: true
+    description: 'Most SSTables compacted at once; must not be below min_threshold.'
+    validation:
+      min: 2
+      max: 1000
+execution:
+  command:
+    binary: nodetool
+    argv:
+      - "setcompactionthreshold"
+      - "{{ args.keyspace }}"
+      - "{{ args.table }}"
+      - "{{ args.min_threshold }}"
+      - "{{ args.max_threshold }}"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Standard size-tiered thresholds
+    args:
+      keyspace: valorant_ks
+      table: matches
+      min_threshold: 4
+      max_threshold: 32

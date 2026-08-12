@@ -1,0 +1,32 @@
+schema_version: 1
+id: cassandra.nodetool_setconcurrentcompactors
+title: nodetool setconcurrentcompactors <count>
+kind: exec
+risk: medium
+description: >
+  Set how many compactions this node runs at once. Raise it to work off a
+  compaction backlog, lower it to give CPU and disk back to reads and writes.
+  Read the current value with cassandra.nodetool_getconcurrentcompactors.
+side_effects:
+  - New compactions pick up the limit; compactions already running are not stopped.
+  - Each compactor consumes CPU and disk IO, and shares the cap set by cassandra.nodetool_setcompactionthroughput.
+  - Runtime-only — a restart returns the node to its cassandra.yaml value.
+args:
+  - name: count
+    type: integer
+    required: true
+    description: Number of concurrent compactors.
+    validation:
+      min: 1
+      max: 128
+execution:
+  command: {binary: nodetool, argv: ["setconcurrentcompactors", "{{ args.count }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Allow four concurrent compactions
+    args:
+      count: 4

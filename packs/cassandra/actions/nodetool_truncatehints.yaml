@@ -1,0 +1,36 @@
+schema_version: 1
+id: cassandra.nodetool_truncatehints
+title: nodetool truncatehints [endpoint]
+kind: exec
+risk: high
+description: >
+  Delete the hints this node is holding — all of them, or only those for one
+  endpoint. The release valve when a hint backlog is filling the disk or targets
+  a node that will never come back. The deleted writes are gone from this node's
+  hint store, so the peers they were for need a repair.
+side_effects:
+  - Pending hints are deleted; the writes they carried are not delivered.
+  - Every peer whose hints were dropped is left inconsistent until a repair runs.
+  - Frees the disk the hint files were using.
+args:
+  - name: endpoint
+    type: string
+    required: false
+    default: ""
+    description: 'IP address or hostname whose hints to delete; empty deletes every pending hint on this node.'
+    validation:
+      max_length: 255
+      pattern: "^([A-Za-z0-9._:-]{1,255})?$"
+execution:
+  command:
+    binary: nodetool
+    argv: ["truncatehints", "--", "{{ args.endpoint? }}"]
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Drop hints for one dead peer
+    args:
+      endpoint: "10.1.4.7"

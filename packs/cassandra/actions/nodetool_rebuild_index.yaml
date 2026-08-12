@@ -1,0 +1,47 @@
+schema_version: 1
+id: cassandra.nodetool_rebuild_index
+title: nodetool rebuild_index <keyspace> <table> <index>
+kind: exec
+risk: high
+description: >
+  Rebuild one secondary index on this node from its base table — the fix when an
+  index returns stale or missing rows after a restore, a scrub, or index
+  corruption.
+side_effects:
+  - Reads the whole base table on this node and rewrites the index — sustained disk and CPU for the duration.
+  - Queries using the index return incomplete results until the rebuild finishes.
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace holding the table.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: true
+    description: Base table of the index.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: index
+    type: string
+    required: true
+    description: Index name as the schema declares it.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+execution:
+  command:
+    binary: nodetool
+    argv: ["rebuild_index", "--", "{{ args.keyspace }}", "{{ args.table }}", "{{ args.index }}"]
+  timeout: 6h
+  cancel_grace: 5m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 65536
+examples:
+  - title: Rebuild one index
+    args:
+      keyspace: valorant_ks
+      table: matches
+      index: matches_player_idx

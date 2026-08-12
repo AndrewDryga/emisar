@@ -1,0 +1,21 @@
+schema_version: 1
+id: cassandra.nodetool_getseeds
+title: nodetool getseeds
+kind: exec
+risk: low
+description: >
+  List the seed nodes this node is currently using, excluding its own address —
+  the running value, which drifts from cassandra.yaml after a
+  cassandra.nodetool_reloadseeds or a seed-provider change.
+side_effects: ["One JMX call.", "Read-only."]
+args: []
+execution:
+  command: {binary: nodetool, argv: ["getseeds"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Seeds in use
+    args: {}

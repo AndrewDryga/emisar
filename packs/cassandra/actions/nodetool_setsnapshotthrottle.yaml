@@ -1,0 +1,33 @@
+schema_version: 1
+id: cassandra.nodetool_setsnapshotthrottle
+title: nodetool setsnapshotthrottle <links/s>
+kind: exec
+risk: medium
+description: >
+  Set how many hard links per second snapshot and clearsnapshot may create.
+  Lower it when taking a snapshot of a large node stalls the filesystem;
+  0 disables throttling. Read the current value with
+  cassandra.nodetool_getsnapshotthrottle.
+side_effects:
+  - Applies to snapshot work that starts after the change.
+  - A low rate makes cassandra.nodetool_snapshot and cassandra.nodetool_clearsnapshot take proportionally longer on a table with many SSTables.
+  - Runtime-only — a restart returns the node to its cassandra.yaml value.
+args:
+  - name: links_per_sec
+    type: integer
+    required: true
+    description: 'Hard links per second; 0 disables throttling.'
+    validation:
+      min: 0
+      max: 1000000
+execution:
+  command: {binary: nodetool, argv: ["setsnapshotthrottle", "{{ args.links_per_sec }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Cap snapshot link creation
+    args:
+      links_per_sec: 200

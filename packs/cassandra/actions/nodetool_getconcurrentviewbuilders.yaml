@@ -1,0 +1,18 @@
+schema_version: 1
+id: cassandra.nodetool_getconcurrentviewbuilders
+title: nodetool getconcurrentviewbuilders
+kind: exec
+risk: low
+description: Show how many materialized-view builds this node runs at once.
+side_effects: ["One JMX call.", "Read-only."]
+args: []
+execution:
+  command: {binary: nodetool, argv: ["getconcurrentviewbuilders"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Concurrent view builders
+    args: {}

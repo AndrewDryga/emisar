@@ -1,0 +1,33 @@
+schema_version: 1
+id: cassandra.nodetool_enablehintsfordc
+title: nodetool enablehintsfordc <datacenter>
+kind: exec
+risk: medium
+description: >
+  Resume storing hints for one datacenter after a
+  cassandra.nodetool_disablehintsfordc — the step that goes with bringing a
+  remote datacenter back into service.
+side_effects:
+  - Writes for that datacenter's replicas are saved again while they are unreachable.
+  - Nothing recovers the hints missed while it was off; that gap needs a repair.
+args:
+  - name: datacenter
+    type: string
+    required: true
+    description: Datacenter name as the snitch reports it.
+    validation:
+      max_length: 64
+      pattern: "^[A-Za-z0-9._-]{1,64}$"
+execution:
+  command:
+    binary: nodetool
+    argv: ["enablehintsfordc", "--", "{{ args.datacenter }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Store hints for a datacenter again
+    args:
+      datacenter: "va1"

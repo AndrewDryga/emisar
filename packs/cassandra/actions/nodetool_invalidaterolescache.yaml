@@ -1,0 +1,23 @@
+schema_version: 1
+id: cassandra.nodetool_invalidaterolescache
+title: nodetool invalidaterolescache
+kind: exec
+risk: medium
+description: >
+  Drop this node's cached roles so a role or membership change takes effect now
+  instead of when the cache expires — the companion to
+  cassandra.nodetool_invalidatepermissionscache after editing roles.
+side_effects:
+  - The next request per role re-reads the roles table, so queries are briefly slower.
+  - Sessions already authenticated keep running under the reloaded role.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["invalidaterolescache"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Apply a role change now
+    args: {}

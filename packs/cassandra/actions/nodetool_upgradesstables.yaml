@@ -1,0 +1,58 @@
+schema_version: 1
+id: cassandra.nodetool_upgradesstables
+title: nodetool upgradesstables <keyspace> [table]
+kind: exec
+risk: high
+description: >
+  Rewrite SSTables that are still in an older on-disk format into the current
+  one — the step after a major-version upgrade, and what lets the old format's
+  read path be retired.
+side_effects:
+  - Rewrites every out-of-date SSTable of the named tables — sustained disk and CPU, and hours on a large node.
+  - Needs free disk space for the rewritten files while it runs.
+  - Does nothing when every file is already current, unless include_all is set.
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace to upgrade.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: false
+    default: ""
+    description: 'Single table to upgrade; empty upgrades every table in the keyspace.'
+    validation:
+      pattern: "^([a-zA-Z][a-zA-Z0-9_]{0,47})?$"
+  - name: include_all
+    type: boolean
+    required: false
+    default: false
+    description: Rewrite every SSTable, including files already in the current format.
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - |
+        flags=""
+        [ "$INCLUDE_ALL" = "true" ] && flags="-a"
+        set -- "$KEYSPACE"
+        [ -n "$TABLE" ] && set -- "$@" "$TABLE"
+        exec nodetool upgradesstables $flags -- "$@"
+  env:
+    KEYSPACE: "{{ args.keyspace }}"
+    TABLE: "{{ args.table }}"
+    INCLUDE_ALL: "{{ args.include_all }}"
+  timeout: 12h
+  cancel_grace: 5m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 65536
+examples:
+  - title: Upgrade one table's SSTables
+    args:
+      keyspace: valorant_ks
+      table: matches

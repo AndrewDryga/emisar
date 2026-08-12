@@ -1,0 +1,40 @@
+schema_version: 1
+id: cassandra.nodetool_enableautocompaction
+title: nodetool enableautocompaction <keyspace> [table]
+kind: exec
+risk: medium
+description: >
+  Resume automatic compaction for a keyspace or one table on this node after a
+  cassandra.nodetool_disableautocompaction. Confirm with
+  cassandra.nodetool_statusautocompaction.
+side_effects:
+  - Compaction resumes immediately and works off whatever backlog accumulated, which is CPU and disk heavy on a large one.
+  - The backlog respects the cap set by cassandra.nodetool_setcompactionthroughput.
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace to resume.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: false
+    default: ""
+    description: 'Single table to resume; empty resumes every table in the keyspace.'
+    validation:
+      pattern: "^([a-zA-Z][a-zA-Z0-9_]{0,47})?$"
+execution:
+  command:
+    binary: nodetool
+    argv: ["enableautocompaction", "--", "{{ args.keyspace }}", "{{ args.table? }}"]
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Resume compaction on one table
+    args:
+      keyspace: valorant_ks
+      table: matches

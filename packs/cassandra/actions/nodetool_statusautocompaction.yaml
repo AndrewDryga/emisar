@@ -1,0 +1,41 @@
+schema_version: 1
+id: cassandra.nodetool_statusautocompaction
+title: nodetool statusautocompaction [keyspace] [table]
+kind: exec
+risk: low
+description: >
+  Check whether automatic compaction is running — for the whole node, one
+  keyspace, or one table. The read that catches a table left with autocompaction
+  off after a bulk load.
+side_effects: ["One JMX call.", "Read-only."]
+args:
+  - name: keyspace
+    type: string
+    required: false
+    default: ""
+    description: 'Keyspace to check; empty checks the whole node.'
+    validation:
+      pattern: "^([a-zA-Z][a-zA-Z0-9_]{0,47})?$"
+  - name: table
+    type: string
+    required: false
+    default: ""
+    description: 'Table to check; needs keyspace, and empty checks every table in it.'
+    validation:
+      pattern: "^([a-zA-Z][a-zA-Z0-9_]{0,47})?$"
+execution:
+  command:
+    binary: nodetool
+    argv: ["statusautocompaction", "{{ args.keyspace? }}", "{{ args.table? }}"]
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Node-wide
+    args: {}
+  - title: One table
+    args:
+      keyspace: valorant_ks
+      table: matches

@@ -1,0 +1,48 @@
+schema_version: 1
+id: cassandra.nodetool_getinterdcstreamthroughput
+title: nodetool getinterdcstreamthroughput
+kind: exec
+risk: low
+description: >
+  Show this node's cross-datacenter streaming cap — the rate it sends SSTable
+  data to peers in other datacenters. Reports "unlimited" when throttling is off.
+side_effects: ["One JMX call.", "Read-only."]
+args:
+  - name: cap
+    type: string
+    required: false
+    default: stream_megabits
+    description: >
+      Which cap to read, and in which unit. stream_megabits reports Mb/s,
+      stream_mib the same cap in MiB/s, and entire_sstable_mib the separate
+      zero-copy entire-SSTable cap, which is always MiB/s.
+    validation:
+      enum: ["stream_megabits", "stream_mib", "entire_sstable_mib"]
+execution:
+  command:
+    binary: /bin/sh
+    # Megabits reads through -d (precise): the unflagged form throws when the
+    # cap is not a whole number of megabits, which is what any MiB/s value is.
+    argv:
+      - "-c"
+      - |
+        case "$CAP" in
+          stream_megabits) flag="-d" ;;
+          stream_mib) flag="-m" ;;
+          entire_sstable_mib) flag="-e" ;;
+          *) printf 'unsupported cap: %s\n' "$CAP" >&2; exit 2 ;;
+        esac
+        exec nodetool getinterdcstreamthroughput "$flag"
+  env:
+    CAP: "{{ args.cap }}"
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 1024
+  max_stderr_bytes: 8192
+examples:
+  - title: Cross-datacenter stream throughput in Mb/s
+    args: {}
+  - title: Cross-datacenter stream throughput in MiB/s
+    args:
+      cap: "stream_mib"

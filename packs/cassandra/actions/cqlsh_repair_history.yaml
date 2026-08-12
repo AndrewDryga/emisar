@@ -1,0 +1,35 @@
+schema_version: 1
+id: cassandra.cqlsh_repair_history
+title: cqlsh -e "SELECT * FROM system_distributed.repair_history"
+kind: exec
+risk: low
+description: >
+  List recent repair sessions the cluster recorded — keyspace, table,
+  coordinator, start and finish time, and status. Shows what repaired and what
+  failed, which cassandra.nodetool_repair's own output does not survive.
+side_effects: ["One CQL query.", "Read-only.", "A range scan of a cluster-wide table, bounded by the row limit."]
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 50
+    description: Sessions to return.
+    validation:
+      min: 1
+      max: 500
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "exec cqlsh -e \"SELECT keyspace_name, columnfamily_name, coordinator, started_at, finished_at, status FROM system_distributed.repair_history LIMIT $1;\" \"${CQLSH_HOST:-127.0.0.1}\" \"${CQLSH_PORT:-9042}\""
+      - "emisar"
+      - "{{ args.limit }}"
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Recent repair sessions
+    args: {}

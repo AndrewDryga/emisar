@@ -1,0 +1,56 @@
+schema_version: 1
+id: cassandra.cqlsh_settings
+title: cqlsh -e "SELECT name, value FROM system_views.settings"
+kind: exec
+risk: medium
+description: >
+  Show the configuration this node is actually running, from the
+  system_views.settings virtual table — cassandra.yaml as parsed at boot plus
+  every runtime change made since. Pass a filter to narrow it to one area
+  (compaction, stream, hinted_handoff); the unfiltered dump is over 500 rows.
+side_effects:
+  - One CQL query against a virtual table; nothing is read from disk.
+  - Read-only.
+  - "Cassandra 5.0 masks credential settings itself; on 4.x it returns keystore and truststore passwords in the clear, so this action redacts them on the way out."
+args:
+  - name: filter
+    type: string
+    required: false
+    default: ""
+    description: 'Case-insensitive substring of the setting name; empty returns every setting.'
+    validation:
+      max_length: 64
+      pattern: "^[A-Za-z0-9_.]{0,64}$"
+execution:
+  command:
+    binary: /bin/sh
+    # The virtual table takes no LIKE, so the filter is applied to the result.
+    # grep's no-match (exit 1) is a legitimate answer here, not a failure.
+    argv:
+      - "-c"
+      - |
+        settings=$(cqlsh -e 'SELECT name, value FROM system_views.settings;' "${CQLSH_HOST:-127.0.0.1}" "${CQLSH_PORT:-9042}") || exit $?
+        [ -z "$FILTER" ] && { printf '%s\n' "$settings"; exit 0; }
+        printf '%s\n' "$settings" | grep -F -i -e "$FILTER"
+        matched=$?
+        [ "$matched" -eq 1 ] && { printf 'no setting name matched: %s\n' "$FILTER"; exit 0; }
+        exit "$matched"
+  env:
+    FILTER: "{{ args.filter }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+  redact:
+    - name: cassandra-credential-settings
+      type: regex
+      # (?m) because the runner redacts a multi-line hold window, not one line.
+      pattern: '(?im)^(\s*\S*(?:password|keystore|truststore|key_provider)\S*\s*\|).*$'
+      replacement: '${1} [REDACTED]'
+examples:
+  - title: Every runtime setting
+    args: {}
+  - title: Just the streaming settings
+    args:
+      filter: "stream"

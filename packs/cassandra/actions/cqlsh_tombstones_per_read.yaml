@@ -1,0 +1,35 @@
+schema_version: 1
+id: cassandra.cqlsh_tombstones_per_read
+title: cqlsh -e "SELECT * FROM system_views.tombstones_per_read"
+kind: exec
+risk: low
+description: >
+  Show how many tombstones each table scans per read on this node (count, max,
+  p50, p99) — the read that confirms a delete-heavy or TTL-heavy table is the
+  reason queries are slow or failing.
+side_effects: ["One CQL query against a virtual table.", "Read-only."]
+args:
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Rows to return.
+    validation:
+      min: 1
+      max: 500
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "exec cqlsh -e \"SELECT keyspace_name, table_name, count, max, p50th, p99th FROM system_views.tombstones_per_read LIMIT $1;\" \"${CQLSH_HOST:-127.0.0.1}\" \"${CQLSH_PORT:-9042}\""
+      - "emisar"
+      - "{{ args.limit }}"
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+examples:
+  - title: Tombstones scanned per read
+    args: {}

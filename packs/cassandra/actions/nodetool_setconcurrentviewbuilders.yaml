@@ -1,0 +1,32 @@
+schema_version: 1
+id: cassandra.nodetool_setconcurrentviewbuilders
+title: nodetool setconcurrentviewbuilders <count>
+kind: exec
+risk: medium
+description: >
+  Set how many materialized-view builds this node runs at once. Lower it when a
+  view build is competing with live traffic, raise it to finish a build sooner.
+  Read the current value with cassandra.nodetool_getconcurrentviewbuilders.
+side_effects:
+  - New view builds pick up the limit; builds already running are not stopped.
+  - Each builder reads base-table data and writes view rows, adding CPU and disk IO.
+  - Runtime-only — a restart returns the node to its cassandra.yaml value.
+args:
+  - name: count
+    type: integer
+    required: true
+    description: Number of concurrent view builders.
+    validation:
+      min: 1
+      max: 128
+execution:
+  command: {binary: nodetool, argv: ["setconcurrentviewbuilders", "{{ args.count }}"]}
+  timeout: 15s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Hold view builds to one at a time
+    args:
+      count: 1

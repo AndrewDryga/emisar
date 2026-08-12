@@ -1,0 +1,64 @@
+schema_version: 1
+id: cassandra.nodetool_toppartitions
+title: nodetool toppartitions <keyspace> <table> <duration>
+kind: exec
+risk: medium
+description: >
+  Sample one table's traffic for a few seconds and print its busiest partitions
+  by read and write frequency — the direct answer to "which key is hot" that
+  cassandra.cqlsh_largest_partitions cannot give, since the biggest partition and
+  the busiest one are rarely the same.
+side_effects:
+  - Turns on request sampling for the named table for the duration, then reports and stops.
+  - Sampling adds bookkeeping to every read and write on that table while it runs.
+  - Blocks for the whole sampling duration.
+args:
+  - name: keyspace
+    type: string
+    required: true
+    description: Keyspace holding the table.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: table
+    type: string
+    required: true
+    description: Table to sample.
+    validation:
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+  - name: duration_ms
+    type: integer
+    required: false
+    default: 5000
+    description: How long to sample, in milliseconds.
+    validation:
+      min: 1000
+      max: 60000
+  - name: top_count
+    type: integer
+    required: false
+    default: 10
+    description: How many partitions to list per sampler.
+    validation:
+      min: 1
+      max: 100
+execution:
+  command:
+    binary: nodetool
+    argv:
+      - "toppartitions"
+      - "-k"
+      - "{{ args.top_count }}"
+      - "--"
+      - "{{ args.keyspace }}"
+      - "{{ args.table }}"
+      - "{{ args.duration_ms }}"
+  timeout: 2m
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Busiest partitions over five seconds
+    args:
+      keyspace: valorant_ks
+      table: matches

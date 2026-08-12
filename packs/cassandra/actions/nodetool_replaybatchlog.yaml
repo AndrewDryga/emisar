@@ -1,0 +1,24 @@
+schema_version: 1
+id: cassandra.nodetool_replaybatchlog
+title: nodetool replaybatchlog
+kind: exec
+risk: medium
+description: >
+  Replay this node's batchlog now and wait for it to finish, instead of waiting
+  for the periodic sweep — the step that clears batches left behind after a node
+  came back from an outage.
+side_effects:
+  - Replays batched writes to their replicas, adding write load until the backlog clears.
+  - Blocks until the replay finishes.
+  - The rate honours the cap set by cassandra.nodetool_setbatchlogreplaythrottle.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["replaybatchlog"]}
+  timeout: 30m
+output:
+  parser: text
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Clear the batchlog now
+    args: {}

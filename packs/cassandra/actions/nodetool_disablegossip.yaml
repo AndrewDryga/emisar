@@ -1,0 +1,25 @@
+schema_version: 1
+id: cassandra.nodetool_disablegossip
+title: nodetool disablegossip
+kind: exec
+risk: critical
+description: >
+  Stop gossip on this node. Every peer marks it Down and stops routing replica
+  traffic to it, while it keeps serving whatever clients are still connected —
+  the isolation move for a node that is poisoning cluster state, and the way to
+  strand a node if used carelessly.
+side_effects:
+  - The cluster treats this node as Down — reads and writes route to other replicas, and hints pile up for it.
+  - The node keeps its own client connections, so it can serve stale data while isolated.
+  - Reverse it with cassandra.nodetool_enablegossip; the node then needs a repair for what it missed.
+args: []
+execution:
+  command: {binary: nodetool, argv: ["disablegossip"]}
+  timeout: 60s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Isolate this node from the ring
+    args: {}
