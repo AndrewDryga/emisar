@@ -294,6 +294,9 @@ func runnerInstallRollback(h *harness) error {
 	}
 
 	marker := filepath.Join(etc, "packs", ".update-preserved")
+	if err := h.mkdir(filepath.Dir(marker)); err != nil {
+		return err
+	}
 	if err := writeFile(marker, "packs stay put\n", 0o600); err != nil {
 		return err
 	}
