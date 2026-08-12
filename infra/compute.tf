@@ -18,8 +18,8 @@ locals {
   # The verified runner bundle is the offline bootstrap; these immutable
   # registry refs are the authoritative set reconciled on every service start.
   admin_runner_public_packs = {
-    cloud-init         = { version = "0.1.11", hash = "sha256:b6fe92b1196b132b6abf815d2e6ddbe0e082738a1b69cd837355990b339943b6" }
-    debugging          = { version = "0.2.15", hash = "sha256:a36c3bbd405db33b805afbd0c03cc418e3716ae2218873d3569b2c3339bc513f" }
+    cloud-init         = { version = "0.1.12", hash = "sha256:d1225d74b75cf2bffb6ff61cb832a3086c3f23f66776b4d7138aa37776171222" }
+    debugging          = { version = "0.2.16", hash = "sha256:1876dca63c11974f0900136ebe1494b60475ecaa7e1fb61689adf76f77c05ea4" }
     docker             = { version = "0.2.17", hash = "sha256:f09ebfe9b5da673ecbfadd4d2d8a77b1ad2ec9af951c8c58ebeaaca21bdc0852" }
     elixir-beam        = { version = "0.1.4", hash = "sha256:d47cc9856e3585b20564a245d0d508237f2f5378684e7ba190db43473ebd6acd" }
     firewall           = { version = "0.1.12", hash = "sha256:0c7b40d32bb0ac8e6e017773d49c840d75566e710678bcdb5e50a7170074d854" }
@@ -32,11 +32,11 @@ locals {
     gcp-monitoring     = { version = "0.2.0", hash = "sha256:ab13b607bfdfc3583249d0c06a53daa06c3ed1c012aeaa97563f961bf33d892d" }
     gcp-networking     = { version = "0.1.0", hash = "sha256:8aeca131aa12cc7ee244a1c5bb7663a7434919e7f8a8406cd9206d0b9b02062f" }
     gcp-storage        = { version = "0.1.0", hash = "sha256:976ede94963f134ef0cca63eedd4bdb2dedde67d8e820feceac5a5a9c79a306b" }
-    hcp-terraform      = { version = "0.6.4", hash = "sha256:c01e745b013ead4cd3b455a62874b20821d3a90d4b6f342c4f634be6be147ee6" }
-    linux-core         = { version = "0.3.23", hash = "sha256:8e65576b749b0698744f708e1827c82363098cb953fb39279b2a02034fc3e97c" }
+    hcp-terraform      = { version = "0.7.0", hash = "sha256:3f34cba5aaaaf61b36480ec3c77f55f7dae0da90a851455ddf9beeda1a3e0baa" }
+    linux-core         = { version = "0.4.1", hash = "sha256:a5852885bec7b265c98bc897b6c45448d88c3cc92b098cd3d221b4c98e20edd4" }
     nic                = { version = "0.1.1", hash = "sha256:fe4e1d8a7e8633d57d95197103c8260d7b1273106595bae24c70efcacf65956d" }
     systemd-deep       = { version = "0.1.15", hash = "sha256:a39bcb7a8172275a5870bf1e69ee4c13b7289f36312a66778d231368e9afdfcd" }
-    time-sync          = { version = "0.1.8", hash = "sha256:fa271a412ac92244b3a80c2ec8586c0e49ff2da5e83be19f958d61c2b72772d2" }
+    time-sync          = { version = "0.1.9", hash = "sha256:717e790d5496ff76f9f5dad8fdb05aa08b476147d8e52a9a18579e14cf27f9b3" }
   }
   admin_runner_pack_pins = join("\n", [
     for id, pin in local.admin_runner_public_packs : "${id}=${pin.version}|${pin.hash}"
