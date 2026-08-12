@@ -28,7 +28,7 @@ args:
     type: string
     required: false
     default: ""
-    description: Opaque continuation_token from a prior result.
+    description: Opaque next_page_cursor from a prior result.
     validation:
       pattern: "^[A-Za-z0-9._~+/=-]*$"
       max_length: 2048

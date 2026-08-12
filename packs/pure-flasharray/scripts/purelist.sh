@@ -53,7 +53,7 @@ if sh "$script_dir/pureget.sh" "$path" "$@" >"$response"; then
 		items: (.items // []),
 		more_items_remaining: (.more_items_remaining // false),
 		total_item_count: (.total_item_count // null),
-		continuation_token: (.continuation_token // null),
+		next_page_cursor: (.continuation_token // null),
 		errors: (.errors // [])
 	}' "$response"
 else

@@ -12,10 +12,13 @@ defaults:
     stdout_not_empty: true
     stdout_not_contains: [packtest-canary-pure-api-token-52ad]
 cases:
-  - action: pure.protection_groups
+  - name: pure.protection-groups-cursor-round-trips
+    action: pure.protection_groups
     args: {limit: 2, page_cursor: cursor-in}
     expect:
       stdout_contains: [harness-pgroup, harness-target, '"more_items_remaining": true']
+      json:
+        /next_page_cursor: cursor-out
   - action: pure.default_protection
     args: {limit: 3}
     expect:
