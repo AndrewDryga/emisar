@@ -318,7 +318,7 @@ func runnerInstallRollback(h *harness) error {
 	}
 	handoff, err := h.successful(h.root, map[string]string{"EMISAR_PACKS": ""}, "bash",
 		filepath.Join(bundle, "install.sh"), "--yes", "--no-service",
-		"--version", "runner-v"+version, "--packs", "",
+		"--version", "runner-v"+version,
 		"--bin-dir", bin, "--etc-dir", etc, "--data-dir", data, "--log-dir", logDir,
 		"--preverified-bundle", bundle)
 	if err != nil {
