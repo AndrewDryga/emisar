@@ -14,7 +14,7 @@ the tree rather than from a list here:
 
     grep -rn "requires_" packs/*/test/cases.yaml
 
-What each reason costs to close, largest first (counts as of 2026-08-10):
+What each reason costs to close, largest first (counts as of 2026-08-11):
 
 - **`requires_privileged_host` — 48 actions, 16 packs.** Systemd as PID 1,
   package installs, sysctl, kernel modules, block devices, another process's
@@ -57,8 +57,8 @@ What each reason costs to close, largest first (counts as of 2026-08-10):
   service, for rebalance, decommission, and peer-removal verbs. Not a new kind
   of environment: it is the existing Compose harness with a multi-node topology
   and a join step.
-- **`requires_external_service` — 11 actions, 6 packs.** A real vendor endpoint
-  (Cloudflare, GitHub). Official sandboxes, one per vendor.
+- **`requires_external_service` — 8 actions, 5 packs.** A real vendor endpoint
+  (e.g. GitHub). Official sandboxes, one per vendor.
 - **`requires_dynamic_fixture` — 5 actions, 3 packs.** NOT an environment limit.
   `arrange` creates the fixture and `resolve_args` feeds its server-generated id
   into the action, both of which the harness already has; `consul.destroy_session`
