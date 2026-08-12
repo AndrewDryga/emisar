@@ -4594,7 +4594,7 @@ defmodule Emisar.ApprovalsTest do
     test "transitions pending requests past expires_at to expired + cancels the run" do
       {account, run} = run_fixture()
       user = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      subject = operator_subject(account)
       {:ok, request} = Approvals.create_request(run, user.id, "x")
 
       # Move the request's expiry into the past.

@@ -77,17 +77,33 @@ defmodule EmisarWeb.AuditLiveTest do
     test "renders stable copy instead of runner transport diagnostics", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
+      routine_runner =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "edge-fra-01",
+          connected?: false
+        )
+
+      abnormal_runner =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "api-iad-02",
+          connected?: false
+        )
+
       {:ok, _routine} =
         Audit.log(account.id, "runner.disconnected",
           target_kind: "runner",
-          target_label: "edge-fra-01",
+          target_id: routine_runner.id,
+          target_label: routine_runner.name,
           payload: %{reason: "{:error, :closed}"}
         )
 
       {:ok, _abnormal} =
         Audit.log(account.id, "runner.disconnected",
           target_kind: "runner",
-          target_label: "api-iad-02",
+          target_id: abnormal_runner.id,
+          target_label: abnormal_runner.name,
           payload: %{reason: "websocket dropped"}
         )
 
@@ -104,9 +120,9 @@ defmodule EmisarWeb.AuditLiveTest do
 
       for {type, target_kind} <- [
             {"user.sign_in_failed", "user"},
-            {"approval.denied", "approval_request"},
-            {"action_run.success", "runner"},
-            {"runner.connected", "runner"}
+            {"api_key.device_grant_denied", "api_key"},
+            {"oauth.consent_granted", "api_key"},
+            {"user.signed_in", "user"}
           ] do
         {:ok, _} = Audit.log(account.id, type, target_kind: target_kind, target_label: "x")
       end
@@ -317,10 +333,21 @@ defmodule EmisarWeb.AuditLiveTest do
     test "each WHEN cell stays paired with its own event across a filter patch", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
+      connected_runner =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "nomad-hvn03")
+
+      disconnected_runner =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "nomad-hvn04",
+          connected?: false
+        )
+
       {:ok, connected} =
         Audit.log(account.id, "runner.connected",
           target_kind: "runner",
-          target_label: "nomad-hvn03"
+          target_id: connected_runner.id,
+          target_label: connected_runner.name
         )
 
       {:ok, policy} =
@@ -333,7 +360,8 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, disconnected} =
         Audit.log(account.id, "runner.disconnected",
           target_kind: "runner",
-          target_label: "nomad-hvn04"
+          target_id: disconnected_runner.id,
+          target_label: disconnected_runner.name
         )
 
       # Push each to a distinct instant so a bled datetime is unambiguous.
@@ -397,6 +425,9 @@ defmodule EmisarWeb.AuditLiveTest do
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
+      routine_runner =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "routine-runner")
+
       {:ok, _} =
         Audit.log(account.id, "user.sign_in_failed",
           actor_kind: "user",
@@ -407,7 +438,8 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, _} =
         Audit.log(account.id, "runner.connected",
           target_kind: "runner",
-          target_label: "routine-runner"
+          target_id: routine_runner.id,
+          target_label: routine_runner.name
         )
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
