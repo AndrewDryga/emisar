@@ -348,7 +348,7 @@ defmodule Emisar.PoliciesScopesTest do
       assert policy.scope_type == :group
     end
 
-    test "a scoped decision's reason names the override it came from", %{
+    test "decision reasons name their scope and outcome", %{
       account: account,
       subject: subject
     } do
@@ -359,22 +359,22 @@ defmodule Emisar.PoliciesScopesTest do
 
       runner_attrs = %{action_id: "linux.uptime", risk: :low, runner_id: runner.id}
       assert {:deny, _, reason, _} = Policies.evaluate_with_policy(account.id, runner_attrs, nil)
-      assert reason =~ "this runner's policy override"
+
+      assert reason == "This runner’s policy denies low-risk actions by default."
 
       group_attrs = %{action_id: "linux.uptime", risk: :low, runner_id: "any"}
 
       assert {:deny, _, group_reason, _} =
                Policies.evaluate_with_policy(account.id, group_attrs, "prod")
 
-      assert group_reason =~ ~s(the "prod" group policy override)
+      assert group_reason == "The “prod” group policy denies low-risk actions by default."
 
-      # An account-scoped decision keeps the plain reason — no scope annotation.
       other_attrs = %{action_id: "linux.uptime", risk: :low, runner_id: "elsewhere"}
 
       assert {:allow, _, account_reason, _} =
                Policies.evaluate_with_policy(account.id, other_attrs, nil)
 
-      refute account_reason =~ "policy override"
+      assert account_reason == "The account policy allows low-risk actions by default."
     end
 
     # the catalog hands risk as an Ecto.Enum atom (:high),

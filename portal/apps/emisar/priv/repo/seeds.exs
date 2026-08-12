@@ -1529,7 +1529,8 @@ if existing_runs == [] do
         requested_by_id: attrs[:requested_by_id] || user.id,
         policy_id: policy && policy.id,
         policy_decision: attrs[:policy_decision] || "allow",
-        policy_reason: attrs[:policy_reason] || "Default for low-risk actions"
+        policy_reason:
+          attrs[:policy_reason] || "The account policy allows low-risk actions by default."
       })
       |> Runs.create_run()
 
@@ -1858,7 +1859,7 @@ if existing_runs == [] do
       status: "pending_approval",
       requires_approval: true,
       policy_decision: "require_approval",
-      policy_reason: "High-risk config reload requires an admin approval"
+      policy_reason: "The account policy requires approval for high-risk actions by default."
     })
     |> backdate.(pending1_at)
 
@@ -1884,7 +1885,7 @@ if existing_runs == [] do
       status: "pending_approval",
       requires_approval: true,
       policy_decision: "require_approval",
-      policy_reason: "Service restart is high-risk and requires human approval"
+      policy_reason: "The account policy requires approval for high-risk actions by default."
     })
     |> backdate.(pending2_at)
 
@@ -1921,7 +1922,7 @@ if existing_runs == [] do
       status: "pending_approval",
       requires_approval: true,
       policy_decision: "require_approval",
-      policy_reason: "High-risk config reload requires an admin approval"
+      policy_reason: "The account policy requires approval for high-risk actions by default."
     })
     |> backdate.(approved_at)
 
@@ -1987,7 +1988,7 @@ if existing_runs == [] do
       status: "pending_approval",
       requires_approval: true,
       policy_decision: "require_approval",
-      policy_reason: "Database config reload requires approved change window"
+      policy_reason: "The account policy requires approval for high-risk actions by default."
     })
     |> backdate.(denied_at)
 
@@ -2121,7 +2122,8 @@ ExecutionItem.Query.by_execution_id(seeded_execution_ids.succeeded)
       policy_id: item.policy_id,
       policy_version: item.policy_version,
       policy_decision: "allow",
-      policy_reason: "Satisfied by the approved frozen runbook plan",
+      policy_reason:
+        item.policy_reason <> " The approved runbook plan authorized this execution.",
       status: "running"
     })
 

@@ -62,7 +62,8 @@ defmodule Emisar.PoliciesPersistenceTest do
     end
 
     test "an account with no policy default-denies every dispatch", %{account: account} do
-      assert {:deny, [], "no policy configured for this account", nil} =
+      assert {:deny, [], "No policy is configured for this account, so this action was denied.",
+              nil} =
                Policies.evaluate_with_policy(
                  account.id,
                  %{action_id: "linux.uptime", risk: :low},

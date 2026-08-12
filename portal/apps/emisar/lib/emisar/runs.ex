@@ -1527,7 +1527,13 @@ defmodule Emisar.Runs do
          attrs:
            attrs
            |> Map.merge(policy_attrs(policy, "require_approval", reason, matched))
-           |> Map.put(:policy_reason, "#{reason}; satisfied by approved runbook execution"),
+           |> Map.put(
+             :policy_reason,
+             append_policy_reason(
+               reason,
+               "An approved runbook execution satisfied that requirement."
+             )
+           ),
          delivery: :runner
        }}
     else
@@ -1538,7 +1544,8 @@ defmodule Emisar.Runs do
            |> Map.merge(policy_attrs(policy, "require_approval", reason, matched))
            |> Map.merge(%{
              status: :denied,
-             policy_reason: "#{reason}; runbook execution approval is required"
+             policy_reason:
+               append_policy_reason(reason, "This runbook execution still needs approval.")
            }),
          delivery: :none
        }}
@@ -1565,7 +1572,15 @@ defmodule Emisar.Runs do
           attrs:
             Map.merge(
               attrs,
-              policy_attrs(policy, "allow", "matched approval grant", matched)
+              policy_attrs(
+                policy,
+                "allow",
+                append_policy_reason(
+                  policy_reason,
+                  "A standing grant satisfied that requirement."
+                ),
+                matched
+              )
             ),
           delivery: :runner,
           grant: {grant, policy}
@@ -2267,7 +2282,7 @@ defmodule Emisar.Runs do
     with {:ok, approval} <- Emisar.Policies.approval_settings_for(policy.rules) do
       case lookup_grant(attrs) do
         {:matched, grant} ->
-          case dispatch_with_grant(attrs, policy, matched, grant) do
+          case dispatch_with_grant(attrs, policy, policy_reason, matched, grant) do
             # The grant lapsed (expired / exhausted / revoked) between the peek and
             # the atomic consume — fall back to the normal approval flow as if no
             # grant matched, rather than burning a use or erroring the caller.
@@ -2287,8 +2302,18 @@ defmodule Emisar.Runs do
   # Dispatch as `:allow` against a matched grant. The grant is consumed INSIDE
   # create_run's Multi (MAJOR-3) — one use is burned only when the run row
   # durably commits, never on a validation failure.
-  defp dispatch_with_grant(attrs, policy, matched, grant) do
-    attrs = Map.merge(attrs, policy_attrs(policy, "allow", "matched approval grant", matched))
+  defp dispatch_with_grant(attrs, policy, policy_reason, matched, grant) do
+    attrs =
+      Map.merge(
+        attrs,
+        policy_attrs(
+          policy,
+          "allow",
+          append_policy_reason(policy_reason, "A standing grant satisfied that requirement."),
+          matched
+        )
+      )
+
     audit = &Audit.Events.grant_used(&1, grant, policy)
     compose = &Emisar.Approvals.consume_grant_in_multi(&1, :run, grant)
 
@@ -3912,4 +3937,6 @@ defmodule Emisar.Runs do
       matched_rules: matched
     }
   end
+
+  defp append_policy_reason(reason, sentence), do: reason <> " " <> sentence
 end

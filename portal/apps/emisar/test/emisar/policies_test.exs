@@ -1097,8 +1097,8 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "no policy means deny everything" do
-      assert {:deny, [], reason} = Policies.evaluate(nil, %{"action_id" => "x.y"})
-      assert reason =~ "no policy"
+      assert {:deny, [], "No policy is configured for this account, so this action was denied."} =
+               Policies.evaluate(nil, %{"action_id" => "x.y"})
     end
 
     test "malformed stored sections fail closed instead of raising" do
@@ -1160,13 +1160,35 @@ defmodule Emisar.PoliciesTest do
                  %{"action_id" => "x.bad", "risk" => "low"}
                )
 
-      assert reason =~ "Override:"
+      assert reason == "The account policy rule “block-bad” denies this low-risk action."
 
       assert {:allow, [], _} =
                Policies.evaluate(
                  %Policy{rules: rules},
                  %{"action_id" => "x.fine", "risk" => "low"}
                )
+    end
+
+    test "override reasons combine scope, rule, decision, and risk" do
+      rules = %{
+        "defaults" => %{"high" => "deny"},
+        "overrides" => [
+          %{
+            "name" => "permit status checks",
+            "action" => "cassandra.status_*",
+            "decision" => "allow"
+          }
+        ]
+      }
+
+      policy = %Policy{scope_type: :group, scope_value: "va1-cassandra", rules: rules}
+
+      assert {:allow, ["permit status checks"],
+              "The “va1-cassandra” group policy rule “permit status checks” allows this high-risk action."} =
+               Policies.evaluate(policy, %{
+                 "action_id" => "cassandra.status_ring",
+                 "risk" => "high"
+               })
     end
 
     test "glob overrides win when matched" do

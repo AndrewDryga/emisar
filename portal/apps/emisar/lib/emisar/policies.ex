@@ -447,7 +447,7 @@ defmodule Emisar.Policies do
     %{
       decision: decision,
       matched_rules: matched,
-      reason: annotate_scope(reason, policy),
+      reason: reason,
       policy: policy,
       approval: approval_snapshot(decision, policy)
     }
@@ -678,22 +678,22 @@ defmodule Emisar.Policies do
   `{decision, matched_rules, reason}`.
   """
   def evaluate(nil, _match_ctx),
-    do: {:deny, [], "no policy configured for this account"}
+    do: {:deny, [], "No policy is configured for this account, so this action was denied."}
 
-  def evaluate(%Policy{rules: rules}, %{} = match_ctx) do
+  def evaluate(%Policy{rules: rules} = policy, %{} = match_ctx) do
     action_id = match_ctx["action_id"] || ""
-    risk = match_ctx["risk"] || "low"
+    risk = normalize_risk(match_ctx["risk"])
 
     case find_override(overrides_for(rules), action_id) do
       nil ->
         decision = default_for_tier(defaults_for(rules), risk)
-        # The decision is stored separately on the run row and rendered
-        # as its own chip; the reason should explain WHY without
-        # echoing the verdict.
-        {atomize(decision), [], "Default for #{risk}-risk actions"}
+        decision = atomize(decision)
+        {decision, [], decision_reason(policy, decision, risk, :default)}
 
       %{"decision" => decision} = override ->
-        {atomize(decision), [rule_name(override)], "Override: #{rule_name(override)}"}
+        decision = atomize(decision)
+        name = rule_name(override)
+        {decision, [name], decision_reason(policy, decision, risk, {:rule, name})}
     end
   end
 
@@ -797,20 +797,33 @@ defmodule Emisar.Policies do
     }
 
     {decision, matched, reason} = evaluate(policy, match_ctx)
-    {decision, matched, annotate_scope(reason, policy), policy}
+    {decision, matched, reason, policy}
   end
 
-  # Annotate the decision reason with the override scope it came from, so an
-  # operator (and the LLM, which shows the reason verbatim) can tell a
-  # runner/group override apart from the account-wide policy. Account-scoped
-  # and nil policies keep the plain reason.
-  defp annotate_scope(reason, %Policy{scope_type: :runner}),
-    do: reason <> " — via this runner's policy override"
+  defp decision_reason(policy, decision, risk, :default) do
+    "#{policy_subject(policy)} #{decision_phrase(decision)} #{risk}-risk actions by default."
+  end
 
-  defp annotate_scope(reason, %Policy{scope_type: :group, scope_value: group}),
-    do: reason <> ~s( — via the "#{group}" group policy override)
+  defp decision_reason(policy, decision, risk, {:rule, name}) do
+    "#{policy_subject(policy)} rule “#{name}” #{decision_phrase(decision)} this #{risk}-risk action."
+  end
 
-  defp annotate_scope(reason, _policy), do: reason
+  defp policy_subject(%Policy{scope_type: :runner}), do: "This runner’s policy"
+
+  defp policy_subject(%Policy{scope_type: :group, scope_value: group})
+       when is_binary(group) and group != "",
+       do: "The “#{group}” group policy"
+
+  defp policy_subject(%Policy{scope_type: :account}), do: "The account policy"
+  defp policy_subject(_policy), do: "The policy"
+
+  defp decision_phrase(:allow), do: "allows"
+  defp decision_phrase(:require_approval), do: "requires approval for"
+  defp decision_phrase(:deny), do: "denies"
+
+  defp normalize_risk(nil), do: "low"
+  defp normalize_risk(risk) when risk in @risk_tiers, do: risk
+  defp normalize_risk(_risk), do: "unknown"
 
   defp rule_name(%{"name" => name}) when is_binary(name) and name != "", do: name
   defp rule_name(%{"action" => action}) when is_binary(action), do: action

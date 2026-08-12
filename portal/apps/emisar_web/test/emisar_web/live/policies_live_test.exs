@@ -117,7 +117,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
                "critical" => "deny"
              }
 
-      assert {:require_approval, [], "Default for medium-risk actions"} =
+      assert {:require_approval, [],
+              "The account policy requires approval for medium-risk actions by default."} =
                Policies.evaluate(repaired, %{"action_id" => "linux.uptime", "risk" => "medium"})
     end
 
@@ -152,7 +153,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
                %{"name" => "reads", "action" => "linux.*", "decision" => "deny"}
              ]
 
-      assert {:deny, ["reads"], "Override: reads"} =
+      assert {:deny, ["reads"], "The account policy rule “reads” denies this low-risk action."} =
                Policies.evaluate(repaired, %{"action_id" => "linux.uptime", "risk" => "low"})
     end
 

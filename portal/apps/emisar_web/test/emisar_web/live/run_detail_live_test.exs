@@ -113,27 +113,24 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert output_count(html, "runner-1") >= 2
   end
 
-  test "the policy panel carries the WHY, not a verdict chip (told once by status)",
+  test "the policy panel explains the policy source and decision in one sentence",
        %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
     run =
       run_with(account, %{
         policy_decision: "require_approval",
-        policy_reason: "Default for high-risk actions",
+        policy_reason: "The account policy requires approval for high-risk actions by default.",
         policy_version: 4
       })
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    # Eyebrow + the reason (the WHY) with the version riding the same line —
-    # a lone "Policy v4" row below read as a second, unexplained fact.
+    # The reason is a complete sentence because the same stored explanation is
+    # also reused by approvals, email, MCP, and runbooks.
     assert html =~ "Policy"
-    assert html =~ "Default for high-risk actions"
+    assert html =~ "The account policy requires approval for high-risk actions by default."
     assert html =~ ~r/·\s*v4/
-    # The verdict word is NOT restated as a chip — the run's status badge is the
-    # single source of the outcome.
-    refute html =~ "Requires approval"
   end
 
   test "an approved run's Why cluster names the human release — who, when, why",

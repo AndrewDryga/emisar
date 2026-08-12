@@ -3682,7 +3682,12 @@ defmodule Emisar.ApprovalsTest do
     test "a grant-matched dispatch consumes exactly one use and runs" do
       %{subject: subject, attrs: attrs, grant: grant} = grant_dispatch_setup(max_uses: 2)
 
-      assert {:ok, :running, _run} = Runs.dispatch_run(attrs, subject)
+      assert {:ok, :running, run} = Runs.dispatch_run(attrs, subject)
+
+      assert run.policy_reason ==
+               "The account policy requires approval for high-risk actions by default. " <>
+                 "A standing grant satisfied that requirement."
+
       assert Repo.reload!(grant).uses_count == 1
     end
 
@@ -3803,6 +3808,11 @@ defmodule Emisar.ApprovalsTest do
 
       assert {:ok, :running, run2} = Runs.dispatch_run(attrs, mcp_subject)
       assert run2.id != run1.id
+
+      assert run2.policy_reason ==
+               "The account policy requires approval for high-risk actions by default. " <>
+                 "A standing grant satisfied that requirement."
+
       refute Request.Query.all() |> Request.Query.by_run_id(run2.id) |> Repo.peek()
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
 

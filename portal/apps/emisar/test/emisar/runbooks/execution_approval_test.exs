@@ -66,7 +66,11 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     assert run.runbook_step_id == "inspect"
     assert run.expected_pack_hash == @hash
     assert run.policy_decision == "require_approval"
-    assert run.policy_reason =~ "satisfied by approved runbook execution"
+
+    assert run.policy_reason ==
+             "The account policy requires approval for high-risk actions by default. " <>
+               "An approved runbook execution satisfied that requirement."
+
     refute run.requires_approval
 
     assert {:ok, [], _metadata} =
