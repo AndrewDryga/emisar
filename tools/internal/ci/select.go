@@ -135,10 +135,13 @@ func (selection *Selection) include(file string) {
 	// the module boundary forbids sharing their code, so the corpus IS the
 	// parity check and a change to it has to run both suites.
 	jsonCorpus := strings.HasPrefix(file, "dev/json-corpus/")
-	if strings.HasPrefix(file, "runner/") || jsonCorpus || member(file, "install.sh", "README.md", "go.work", "go.work.sum") {
+	sharedInstallerHarness := hasAnyPrefix(file, "tools/cmd/installtest/", "tools/internal/installtest/harness")
+	runnerInstallerHarness := sharedInstallerHarness || strings.HasPrefix(file, "tools/internal/installtest/runner")
+	mcpInstallerHarness := sharedInstallerHarness || strings.HasPrefix(file, "tools/internal/installtest/mcp")
+	if strings.HasPrefix(file, "runner/") || jsonCorpus || runnerInstallerHarness || member(file, "install.sh", "README.md", "go.work", "go.work.sum") {
 		selection.Runner = true
 	}
-	if strings.HasPrefix(file, "mcp/") || jsonCorpus || member(file, "install-mcp.sh", "go.work", "go.work.sum") {
+	if strings.HasPrefix(file, "mcp/") || jsonCorpus || mcpInstallerHarness || member(file, "install-mcp.sh", "go.work", "go.work.sum") {
 		selection.MCP = true
 	}
 	if file == "server.json" {

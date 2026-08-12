@@ -245,6 +245,33 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
+	t.Run("installer harness selects affected Go clients", func(t *testing.T) {
+		for _, test := range []struct {
+			name       string
+			file       string
+			wantRunner bool
+			wantMCP    bool
+		}{
+			{name: "runner", file: "tools/internal/installtest/runner.go", wantRunner: true},
+			{name: "mcp", file: "tools/internal/installtest/mcp.go", wantMCP: true},
+			{name: "shared harness", file: "tools/internal/installtest/harness.go", wantRunner: true, wantMCP: true},
+			{name: "command", file: "tools/cmd/installtest/main.go", wantRunner: true, wantMCP: true},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				writeFixture(t, root, test.file, "package fixture\n")
+				commitAll(t, root, "installer harness")
+				selection, err := Select(context.Background(), root, "pull_request", base)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if selection.Runner != test.wantRunner || selection.MCP != test.wantMCP {
+					t.Fatalf("%s selection = %+v", test.file, selection)
+				}
+				resetHard(t, root, base)
+			})
+		}
+	})
+
 	// The bridge halves regressed once by naming a package that does not exist,
 	// which let attested-dispatch changes skip a required check.
 	t.Run("bridge signing seams select the signing scenario", func(t *testing.T) {
