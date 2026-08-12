@@ -99,7 +99,7 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
 
-      assert html =~ "runner(s) advertise this"
+      assert html =~ "runner still advertising this"
       assert html =~ "canary-01"
       assert html =~ "staging"
 
@@ -827,6 +827,44 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "emisar pack install #{pack_id}"
       assert html =~ "Trust anyway"
       refute html =~ "pack we don&#39;t ship a baseline for"
+
+      # The command updates the PACK on that host, not the runner binary, and
+      # the body names where to run it.
+      assert html =~ "Update the pack to"
+      refute html =~ "Update the runner to"
+      assert html =~ "Update the pack on the runners still on it"
+      # The count sits in its own span, so the noun is what reads back here —
+      # singular, because exactly one runner advertises it.
+      assert html =~ "runner still on this retired version"
+      refute html =~ "runners still on this retired version"
+      # Named by the runner the operator knows, not the hostname it reported.
+      assert html =~ runner.name
+    end
+
+    test "a retired version awaiting review that NO runner advertises offers only Reject",
+         %{conn: conn, account: account} do
+      # The reported state: a pending row below the watermark, and every runner
+      # has since moved off it — a complete fleet read finds nobody. Claiming
+      # "runners are still on the old version" there is false, and an update
+      # command fixes a problem that no longer exists; rejecting is what clears
+      # the row.
+      {pack_id, _watermark} =
+        Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
+
+      Fixtures.Catalog.create_observed_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.0"
+      )
+
+      {:ok, lv, _dead} = live(conn, ~p"/app/#{account}/packs")
+      html = render(lv)
+
+      assert html =~ "Retired by a newer release"
+      assert html =~ "No runner advertises it now"
+      refute html =~ "still on it"
+      refute html =~ "emisar pack install #{pack_id}"
+      assert html =~ "Reject"
     end
 
     test "a retired-blocked version lights the Packs nav badge; overriding clears it", %{

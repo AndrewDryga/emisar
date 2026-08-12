@@ -718,7 +718,7 @@ defmodule EmisarWeb.PacksLive do
       >
         <p>
           <span class="font-semibold text-zinc-300">{advertiser_count(@fact.advertising)}</span>
-          runner(s) still on this version:
+          {advertiser_noun(@fact.advertising)} still on this version:
         </p>
         <div class="mt-2 flex flex-wrap gap-1.5">
           <.identity_tag
@@ -798,6 +798,32 @@ defmodule EmisarWeb.PacksLive do
 
   defp advertiser_count(%{runners: runners}), do: length(runners)
 
+  # The noun agrees with the count beside it, floor included ("At least 1
+  # runner"), so no reader has to parse a "(s)".
+  defp advertiser_noun(%{runners: [_]}), do: "runner"
+  defp advertiser_noun(_advertising), do: "runners"
+
+  # The remedy a retired version awaiting review actually has, which depends on
+  # who is still on it — the same three states the trusted row's
+  # `retirement_remedy` distinguishes, worded for a row whose buttons are Trust
+  # anyway / Reject. Hosts we can see → update the pack there (they are named
+  # below). A complete fleet read with none → nothing to update, and Reject is
+  # what clears the row. A partial read → we cannot claim nobody is on it, so
+  # the sentence stays conditional rather than asserting either way.
+  defp pending_retired_remedy(%{runners: [_ | _]}),
+    do: "Update the pack on the runners still on it to clear this."
+
+  defp pending_retired_remedy(%{coverage: :complete}),
+    do: "No runner advertises it now, so there is nothing to update — reject it to clear this."
+
+  defp pending_retired_remedy(_advertising),
+    do: "Update the pack on any runner still on it to clear this."
+
+  # Nobody is on it and we read the whole fleet, so an install command would
+  # offer a fix for a problem that no longer exists; Reject is the action.
+  defp pending_retired_update?(%{runners: [], coverage: :complete}), do: false
+  defp pending_retired_update?(_advertising), do: true
+
   attr :version, :map, required: true
   attr :pack_id, :string, required: true
   attr :fact, :map, required: true
@@ -821,8 +847,7 @@ defmodule EmisarWeb.PacksLive do
       <:body>
         <span :if={@fact.retirement_blocked?}>
           <code>{@pack_id}</code> v{@version.version} was retired by a newer release — a
-          security fix superseded it. Runners are still on the old version; update the
-          pack to clear this.
+          security fix superseded it. {pending_retired_remedy(@fact.advertising)}
         </span>
         <span :if={not @fact.retirement_blocked? and is_nil(@version.hash)}>
           A runner advertised <code>{@pack_id}</code> v{@version.version} —
@@ -835,7 +860,7 @@ defmodule EmisarWeb.PacksLive do
         </span>
       </:body>
       <.install_command
-        :if={@fact.retirement_blocked?}
+        :if={@fact.retirement_blocked? and pending_retired_update?(@fact.advertising)}
         id={"upgrade-cmd-#{@version.id}"}
         pack_id={@pack_id}
         successor={@fact.retirement_successor}
@@ -878,10 +903,10 @@ defmodule EmisarWeb.PacksLive do
             {advertiser_count(@fact.advertising)}
           </span>
           <span :if={@fact.retirement_blocked?}>
-            runner(s) still on this retired version — update the pack on:
+            {advertiser_noun(@fact.advertising)} still on this retired version — update the pack on:
           </span>
           <span :if={not @fact.retirement_blocked?}>
-            runner(s) advertise this — trusting unblocks dispatch on:
+            {advertiser_noun(@fact.advertising)} still advertising this — trusting unblocks dispatch on:
           </span>
         </p>
         <%!-- A neutral two-tone tag per runner — the group (muted, left)
@@ -988,8 +1013,9 @@ defmodule EmisarWeb.PacksLive do
           on_confirm={JS.push("trust", value: %{id: @version.id})}
         >
           <:body>
-            Cloud will allow its actions to run on {advertiser_count(@fact.advertising)} advertising
-            runner(s). Trusting adopts this exact code fleet-wide.
+            Cloud will allow its actions to run on {advertiser_count(@fact.advertising)} advertising {advertiser_noun(
+              @fact.advertising
+            )}. Trusting adopts this exact code fleet-wide.
             <span :if={@fact.retired?} class="text-rose-300">
               This version was retired by a newer release — trusting it also overrides
               that retirement, so its actions run despite the fix.
@@ -1084,7 +1110,7 @@ defmodule EmisarWeb.PacksLive do
     <div class="mt-3">
       <p class="text-xs text-zinc-400">
         <span :if={@successor}>
-          Update the runner to <span class="font-medium text-zinc-200">v{@successor}</span>
+          Update the pack to <span class="font-medium text-zinc-200">v{@successor}</span>
         </span>
         <span :if={is_nil(@successor)}>Install on the runner</span>
       </p>
@@ -1388,7 +1414,7 @@ defmodule EmisarWeb.PacksLive do
                         <span :if={not is_nil(v.pending_hash)}>
                           Adopts the refused contents — its actions may run on {advertiser_count(
                             @version_facts[v.id].advertising
-                          )} advertising runner(s).
+                          )} advertising {advertiser_noun(@version_facts[v.id].advertising)}.
                         </span>
                         <span :if={is_nil(v.pending_hash)}>
                           Restores trust in the previously recorded contents — its actions may
