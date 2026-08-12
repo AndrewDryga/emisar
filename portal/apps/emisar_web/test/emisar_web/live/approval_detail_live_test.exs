@@ -56,7 +56,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   defp pending_execution_request(account, requested_by) do
-    Fixtures.Approvals.create_execution_request(account, requested_by)
+    Fixtures.Approvals.create_execution_request(account, requested_by, executable?: true)
   end
 
   test "renders human decision evidence and states that whole-run approval happens once", %{
@@ -1097,15 +1097,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ "Decisions</h3>"
   end
 
-  test "a soft-deleted target runner falls back to the full frozen runner id", %{conn: conn} do
-    # the run preloads its runner via a LEFT join scoped to
-    # `not_deleted()`, so a soft-deleted runner makes `@run.runner` nil. The meta
-    # strip falls back to the request's context runner_id — in FULL, the title
-    # recovering the whole value — instead of the runner name + link, and the
-    # page renders without crashing. (The same fallback covers a fully-pruned
-    # run, where `@run` itself is nil — but a run can't be hard-deleted while
-    # its request lives, since the request FKs the run with on_delete:
-    # :delete_all.)
+  test "a soft-deleted target runner makes the approval unavailable", %{conn: conn} do
+    # Approval visibility is the same fail-closed target check used by the
+    # decision transaction. A runner removed after the request was created
+    # cannot leave behind a decision surface for an invalid target.
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
@@ -1119,13 +1114,12 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     |> Emisar.Runners.Runner.Query.by_id(runner_id)
     |> Repo.update_all(set: [deleted_at: DateTime.utc_now()])
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    assert {:error, {:live_redirect, %{to: path, flash: flash}}} =
+             live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-    # The action id still reads off the request context…
-    assert html =~ "linux.uptime"
-    # …and the runner falls back to the frozen id, not a name+link (no crash).
-    assert html =~ runner_id
-    assert html =~ ~s(title="#{runner_id}")
+    assert path == ~p"/app/#{account}/approvals"
+    assert flash_message(flash, "error") == "Approval not found."
+    assert Repo.reload!(request).status == :pending
   end
 
   test "a removed requester is labelled as a former member and still renders", %{conn: conn} do
@@ -1161,5 +1155,13 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "Former member"
     # Sanity: the decision panel still rendered (the owner can decide).
     assert html =~ "Decide"
+  end
+
+  defp flash_message(flash, key) when is_map(flash), do: flash[key]
+
+  defp flash_message(flash, key) when is_binary(flash) do
+    EmisarWeb.Endpoint
+    |> Phoenix.LiveView.Utils.verify_flash(flash)
+    |> Map.get(key)
   end
 end

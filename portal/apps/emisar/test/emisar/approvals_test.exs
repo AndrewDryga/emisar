@@ -88,6 +88,11 @@ defmodule Emisar.ApprovalsTest do
     Fixtures.Subjects.subject_for(subject.actor, subject.account, role: subject.role)
   end
 
+  defp all_runner_pack_access(pack_ids) do
+    {:ok, access} = Accounts.RunnerAccess.new(:all, [], [], :restricted, pack_ids)
+    access
+  end
+
   # Drain the Swoosh test mailbox (notify runs inline under
   # :notify_approvers_async? false) and collect recipient addresses.
   defp notified_recipients(acc \\ []) do
@@ -419,6 +424,119 @@ defmodule Emisar.ApprovalsTest do
 
       assert {:ok, {%Request{status: :denied}, _run}} =
                Approvals.deny_request(db_request, subject, "in scope")
+    end
+
+    test "pack access filters every request read and both decision paths" do
+      {subject, _key, request} = approvable_mcp_run()
+
+      subject = subject_with_runner_access(subject, all_runner_pack_access(["postgres"]))
+
+      assert {:ok, [], _metadata} = Approvals.list_pending_approval_requests(subject)
+      assert Approvals.count_pending_approval_requests(subject) == 0
+      assert {:error, :not_found} = Approvals.fetch_approval_request_by_id(request.id, subject)
+      assert {:error, :not_found} = Approvals.approve_request(request, subject, "forged")
+      assert {:error, :not_found} = Approvals.deny_request(request, subject, "forged")
+      assert Repo.reload!(request).status == :pending
+
+      subject = subject_with_runner_access(subject, all_runner_pack_access(["linux-core"]))
+
+      assert {:ok, [%Request{id: id}], _metadata} =
+               Approvals.list_pending_approval_requests(subject)
+
+      assert id == request.id
+
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
+               Approvals.approve_request(request, subject, "covered")
+    end
+
+    test "a stale request cannot be approved after current pack access is revoked" do
+      {subject, _key, request} = approvable_mcp_run()
+      allowed = subject_with_runner_access(subject, all_runner_pack_access(["linux-core"]))
+
+      assert {:ok, stale_request} =
+               Approvals.fetch_approval_request_by_id(request.id, allowed)
+
+      _revoked = subject_with_runner_access(allowed, all_runner_pack_access(["postgres"]))
+
+      assert {:error, :not_found} =
+               Approvals.approve_request(stale_request, allowed, "access was revoked")
+
+      assert Repo.reload!(request).status == :pending
+    end
+
+    test "whole-execution approvals require every frozen runner and pack" do
+      {requester, account, subject} = Fixtures.Subjects.owner_subject()
+
+      stage_plan =
+        execution_stage_plan(["medium", "high"])
+        |> update_in(["items"], fn [postgres, redis] ->
+          redis = %{
+            redis
+            | "pack_ref" => "redis@2.1.0/sha256:" <> String.duplicate("b", 64)
+          }
+
+          [postgres, redis]
+        end)
+
+      request =
+        Fixtures.Approvals.create_execution_request(account, requester, stage_plan: stage_plan)
+
+      pack_partial = subject_with_runner_access(subject, all_runner_pack_access(["postgres"]))
+
+      assert {:error, :not_found} =
+               Approvals.fetch_approval_request_by_id(request.id, pack_partial)
+
+      all_packs =
+        subject_with_runner_access(subject, all_runner_pack_access(["postgres", "redis"]))
+
+      assert {:ok, %Request{id: id}} =
+               Approvals.fetch_approval_request_by_id(request.id, all_packs)
+
+      assert id == request.id
+
+      [first_item | _rest] =
+        Runbooks.ExecutionItem.Query.by_execution_id(request.runbook_execution_id)
+        |> Repo.all()
+
+      {:ok, one_runner} =
+        Accounts.RunnerAccess.new(
+          :restricted,
+          [],
+          [first_item.runner_id],
+          :restricted,
+          ["postgres", "redis"]
+        )
+
+      runner_partial = subject_with_runner_access(subject, one_runner)
+
+      assert {:error, :not_found} =
+               Approvals.fetch_approval_request_by_id(request.id, runner_partial)
+    end
+
+    test "missing or malformed frozen approval targets fail closed" do
+      {account, run} = run_fixture()
+      subject = operator_subject(account)
+      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, nil)
+
+      {1, _} =
+        ActionRun.Query.all()
+        |> ActionRun.Query.by_id(run.id)
+        |> Repo.update_all(set: [pack_ref: "not-a-pack-ref"])
+
+      assert {:error, :not_found} = Approvals.fetch_approval_request_by_id(request.id, subject)
+      assert {:error, :not_found} = Approvals.deny_request(request, subject, "corrupt")
+
+      {requester, execution_account, execution_subject} = Fixtures.Subjects.owner_subject()
+
+      execution_request =
+        Fixtures.Approvals.create_execution_request(execution_account, requester)
+
+      {_count, _} =
+        Runbooks.ExecutionItem.Query.by_execution_id(execution_request.runbook_execution_id)
+        |> Repo.delete_all()
+
+      assert {:error, :not_found} =
+               Approvals.fetch_approval_request_by_id(execution_request.id, execution_subject)
     end
   end
 
@@ -1146,6 +1264,7 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
+          pack_ref: @grant_pack_ref,
           args: %{},
           status: :pending_approval
         })
@@ -1199,6 +1318,36 @@ defmodule Emisar.ApprovalsTest do
 
       assert members["owner"].email in recipients
       refute other_owner.email in recipients
+    end
+
+    test "emails only deciders whose current pack access covers the action", %{
+      account: account,
+      run: run,
+      members: members
+    } do
+      operator_membership =
+        Fixtures.Memberships.fetch_membership(account.id, members["operator"].id)
+
+      admin_membership = Fixtures.Memberships.fetch_membership(account.id, members["admin"].id)
+
+      Fixtures.Memberships.force_runner_access(
+        operator_membership,
+        all_runner_pack_access(["postgres"])
+      )
+
+      Fixtures.Memberships.force_runner_access(
+        admin_membership,
+        all_runner_pack_access(["linux-core"])
+      )
+
+      {:ok, _request} =
+        Approvals.create_request(run, Fixtures.Users.create_user().id, "needs approval")
+
+      recipients = notified_recipients()
+
+      assert members["owner"].email in recipients
+      assert members["admin"].email in recipients
+      refute members["operator"].email in recipients
     end
   end
 
@@ -1289,6 +1438,59 @@ defmodule Emisar.ApprovalsTest do
   describe "after_runbook_execution_request_committed/1" do
     test "is idempotent when a replay inserted no execution request" do
       assert :ok = Approvals.after_runbook_execution_request_committed(%{})
+    end
+
+    test "emails only deciders who cover every execution runner and pack" do
+      {requester, account, _subject} = Fixtures.Subjects.owner_subject()
+      eligible = Fixtures.Users.create_user()
+      pack_partial = Fixtures.Users.create_user()
+
+      eligible_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: eligible.id,
+          role: "operator"
+        )
+
+      pack_partial_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: pack_partial.id,
+          role: "operator"
+        )
+
+      Fixtures.Memberships.force_runner_access(
+        eligible_membership,
+        all_runner_pack_access(["postgres", "redis"])
+      )
+
+      Fixtures.Memberships.force_runner_access(
+        pack_partial_membership,
+        all_runner_pack_access(["postgres"])
+      )
+
+      stage_plan =
+        execution_stage_plan(["medium", "high"])
+        |> update_in(["items"], fn [postgres, redis] ->
+          redis = %{
+            redis
+            | "pack_ref" => "redis@2.1.0/sha256:" <> String.duplicate("b", 64)
+          }
+
+          [postgres, redis]
+        end)
+
+      request =
+        Fixtures.Approvals.create_execution_request(account, requester, stage_plan: stage_plan)
+
+      assert :ok =
+               Approvals.after_runbook_execution_request_committed(%{
+                 {:runbook_execution_approval_request, :execution} => request
+               })
+
+      recipients = notified_recipients()
+      assert eligible.email in recipients
+      refute pack_partial.email in recipients
     end
   end
 

@@ -1532,11 +1532,12 @@ defmodule Emisar.Runbooks do
     do: Emisar.Runbooks.Scheduler.recheck_execution_approval(execution_id)
 
   @doc """
-  Internal bounded runner ids for an execution approval notification. The explicit
-  account scope prevents an adjacent-context notifier from turning an execution id
-  into a cross-account lookup.
+  Internal frozen runner and pack targets for an execution approval notification.
+  The explicit account scope prevents an adjacent-context notifier from turning an
+  execution id into a cross-account lookup. The caller validates every returned
+  identity and fails closed when an item is missing or malformed.
   """
-  def runner_ids_for_execution_approval(execution_id, account_id)
+  def approval_targets_for_execution(execution_id, account_id)
       when is_binary(execution_id) and is_binary(account_id) do
     execution_query =
       RunbookExecution.Query.by_account_id(account_id)
@@ -1544,19 +1545,18 @@ defmodule Emisar.Runbooks do
 
     with true <- Repo.valid_uuid?(execution_id) and Repo.valid_uuid?(account_id),
          %RunbookExecution{} <- Repo.peek(execution_query) do
-      runner_ids =
+      targets =
         ExecutionItem.Query.by_execution_id(execution_id)
-        |> ExecutionItem.Query.select_runner_ids()
+        |> ExecutionItem.Query.select_approval_targets()
         |> Repo.all()
-        |> Enum.uniq()
 
-      {:ok, runner_ids}
+      {:ok, targets}
     else
       _ -> {:error, :not_found}
     end
   end
 
-  def runner_ids_for_execution_approval(_execution_id, _account_id), do: {:error, :not_found}
+  def approval_targets_for_execution(_execution_id, _account_id), do: {:error, :not_found}
 
   @doc "Internal — activate an execution inside its final approval transaction."
   def activate_pending_approval(repo, execution_id),

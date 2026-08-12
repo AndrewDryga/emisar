@@ -2694,13 +2694,10 @@ defmodule Emisar.Catalog do
   # read — and only when some row's lifecycle actually turns on it (a trust
   # decision's blast radius, or a retired row whose remedy depends on whether
   # any host is still running it). A plain trusted row pays for nothing.
-  defp console_advertising(pack_versions, %Subject{account: %{id: account_id}}) do
+  defp console_advertising(pack_versions, %Subject{} = subject) do
     if Enum.any?(pack_versions, &advertiser_facts_needed?/1) do
       {:ok, facts, %{coverage: coverage}} =
-        Runners.list_pack_advertisement_facts_for_account(
-          account_id,
-          @console_advertising_runner_limit
-        )
+        Runners.list_pack_advertisement_facts(@console_advertising_runner_limit, subject)
 
       {index, malformed?} = advertising_index(facts)
       # A fact we couldn't read is a runner we can't rule out, so it degrades

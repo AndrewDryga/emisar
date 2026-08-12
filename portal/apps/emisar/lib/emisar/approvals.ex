@@ -712,24 +712,35 @@ defmodule Emisar.Approvals do
     # approval link (/app/:account/approvals/:id) — a slug-less URL 404s.
     request = Repo.preload(request, :account)
 
-    notify_approvers_pages(request, {:action_run, run}, requested_by_id, [run.runner], nil)
+    with %Runners.Runner{} = runner <- run.runner,
+         true <- run.account_id == request.account_id and runner.account_id == request.account_id,
+         {:ok, pack_id} <- approval_pack_id(run.pack_ref) do
+      notify_approvers_pages(
+        request,
+        {:action_run, run},
+        requested_by_id,
+        %{runners: [runner], pack_ids: [pack_id]},
+        nil
+      )
+    else
+      _ -> Logger.warning("action_approval_notification_scope_failed", req_id: request.id)
+    end
   end
 
   defp notify_runbook_execution_approvers(%Request{} = request) do
     request = Repo.preload(request, :account)
 
-    with {:ok, runner_ids} <-
-           Runbooks.runner_ids_for_execution_approval(
+    with {:ok, targets} <-
+           Runbooks.approval_targets_for_execution(
              request.runbook_execution_id,
              request.account_id
            ),
-         runner_facts <- Runners.runner_scope_facts_for_ids(request.account_id, runner_ids),
-         true <- runner_ids != [] and length(runner_facts) == length(runner_ids) do
+         {:ok, target_access} <- approval_target_access(request.account_id, targets) do
       notify_approvers_pages(
         request,
         :runbook_execution,
         request.requested_by_id,
-        runner_facts,
+        target_access,
         nil
       )
     else
@@ -747,7 +758,7 @@ defmodule Emisar.Approvals do
          %Request{} = request,
          target,
          requested_by_id,
-         runner_facts,
+         target_access,
          cursor
        ) do
     page_opts =
@@ -768,20 +779,70 @@ defmodule Emisar.Approvals do
       # triggered the request is excluded since they already saw it in the UI.
       is_nil(membership.disabled_at) and membership.role in approver_roles and
         membership.user_id != requested_by_id and
-        membership_covers_runners?(
+        membership_covers_targets?(
           Map.get(access_by_membership, membership.id, Accounts.RunnerAccess.none()),
-          runner_facts
+          target_access
         )
     end)
     |> Enum.each(&deliver_approval_email(&1, request, target))
 
     if next,
-      do: notify_approvers_pages(request, target, requested_by_id, runner_facts, next),
+      do: notify_approvers_pages(request, target, requested_by_id, target_access, next),
       else: :ok
   end
 
-  defp membership_covers_runners?(access, runner_facts),
-    do: Enum.all?(runner_facts, &Accounts.RunnerAccess.runner_in_scope?(&1, access))
+  defp membership_covers_targets?(
+         %Accounts.RunnerAccess{} = access,
+         %{runners: [_ | _] = runners, pack_ids: [_ | _] = pack_ids}
+       ) do
+    Enum.all?(runners, &Accounts.RunnerAccess.runner_in_scope?(&1, access)) and
+      Enum.all?(pack_ids, &Accounts.RunnerAccess.pack_in_scope?(&1, access))
+  end
+
+  defp membership_covers_targets?(_access, _targets), do: false
+
+  defp approval_target_access(account_id, targets)
+       when is_binary(account_id) and is_list(targets) and targets != [] do
+    with true <-
+           Enum.all?(targets, fn target ->
+             is_map(target) and Repo.valid_uuid?(Map.get(target, :runner_id))
+           end),
+         {:ok, pack_ids} <- approval_pack_ids(targets) do
+      runner_ids = targets |> Enum.map(&Map.fetch!(&1, :runner_id)) |> Enum.uniq()
+      runner_facts = Runners.runner_scope_facts_for_ids(account_id, runner_ids)
+
+      if length(runner_facts) == length(runner_ids) do
+        {:ok, %{runners: runner_facts, pack_ids: Enum.uniq(pack_ids)}}
+      else
+        {:error, :invalid_approval_targets}
+      end
+    else
+      _ -> {:error, :invalid_approval_targets}
+    end
+  end
+
+  defp approval_target_access(_account_id, _targets), do: {:error, :invalid_approval_targets}
+
+  defp approval_pack_ids(targets) do
+    Enum.reduce_while(targets, {:ok, []}, fn target, {:ok, pack_ids} ->
+      case approval_pack_id(Map.get(target, :pack_ref)) do
+        {:ok, pack_id} -> {:cont, {:ok, [pack_id | pack_ids]}}
+        {:error, :invalid_pack_ref} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp approval_pack_id(pack_ref) when is_binary(pack_ref) do
+    case Catalog.MCPProjection.parse_pack_ref(pack_ref) do
+      {:ok, {pack_id, _version, _hash}} -> {:ok, pack_id}
+      {:error, :invalid_pack_ref} = error -> error
+    end
+  end
+
+  # Pack-less actions are an intentional first-party action shape. They have no
+  # pack dimension to narrow, so only an all-pack membership covers them;
+  # `RunnerAccess.pack_in_scope?/2` encodes that distinction for nil.
+  defp approval_pack_id(nil), do: {:ok, nil}
 
   defp deliver_approval_email(membership, request, {:action_run, run}) do
     # The mail shows only what THIS recipient may see: the eligible active
@@ -987,10 +1048,20 @@ defmodule Emisar.Approvals do
         |> Multi.run(:active_account, fn repo, _changes ->
           Accounts.fetch_and_lock_account(request.account_id, repo: repo)
         end)
+        |> Multi.run(:decider_access, fn repo, _changes ->
+          with {:ok, membership} <-
+                 Accounts.fetch_and_lock_active_membership(
+                   repo,
+                   request.account_id,
+                   subject.membership_id
+                 ) do
+            {:ok, Accounts.runner_access_for_locked_membership(repo, membership)}
+          end
+        end)
         |> Multi.run(:approval_target, fn repo, _changes ->
           lock_approval_target(repo, request)
         end)
-        |> Multi.run(:locked, fn repo, _changes ->
+        |> Multi.run(:locked, fn repo, %{decider_access: access} ->
           locked =
             Request.Query.all()
             |> Request.Query.by_id(request.id)
@@ -1000,7 +1071,7 @@ defmodule Emisar.Approvals do
             |> repo.one()
 
           with %Request{} = locked <- locked,
-               true <- request_visible_to_subject?(repo, locked.id, subject) do
+               true <- request_visible_to_access?(repo, locked.id, subject, access) do
             {:ok, locked}
           else
             _ -> {:error, :not_found}
@@ -1053,10 +1124,15 @@ defmodule Emisar.Approvals do
   defp ensure_request_pending(%Request{status: :cancelled}), do: {:error, :run_cancelled}
   defp ensure_request_pending(%Request{}), do: {:error, :already_decided}
 
-  defp request_visible_to_subject?(repo, request_id, %Subject{} = subject) do
+  defp request_visible_to_access?(
+         repo,
+         request_id,
+         %Subject{} = subject,
+         %Accounts.RunnerAccess{} = access
+       ) do
     Request.Query.all()
     |> Request.Query.by_id(request_id)
-    |> scope_requests_to_subject(subject)
+    |> Request.Query.by_target_access(access)
     |> Authorizer.for_subject(subject)
     |> repo.exists?()
   end
@@ -2070,7 +2146,7 @@ defmodule Emisar.Approvals do
   end
 
   defp scope_requests_to_subject(queryable, %Subject{} = subject),
-    do: Request.Query.by_runner_access(queryable, Accounts.runner_access_for_subject(subject))
+    do: Request.Query.by_target_access(queryable, Accounts.runner_access_for_subject(subject))
 
   defp scope_grants_to_subject(queryable, %Subject{} = subject),
     do: Grant.Query.by_runner_access(queryable, Accounts.runner_access_for_subject(subject))

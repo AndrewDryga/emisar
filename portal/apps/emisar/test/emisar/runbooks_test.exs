@@ -2841,14 +2841,14 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
-  describe "runner_ids_for_execution_approval/2" do
+  describe "approval_targets_for_execution/2" do
     test "fails closed for missing and malformed account-scoped executions" do
-      assert Runbooks.runner_ids_for_execution_approval(
+      assert Runbooks.approval_targets_for_execution(
                Ecto.UUID.generate(),
                Ecto.UUID.generate()
              ) == {:error, :not_found}
 
-      assert Runbooks.runner_ids_for_execution_approval("bad", "bad") ==
+      assert Runbooks.approval_targets_for_execution("bad", "bad") ==
                {:error, :not_found}
     end
   end

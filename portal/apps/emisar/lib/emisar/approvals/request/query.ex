@@ -30,15 +30,111 @@ defmodule Emisar.Approvals.Request.Query do
   def by_status(queryable, status),
     do: where(queryable, [requests: r], r.status == ^status)
 
-  def by_runner_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :none}),
+  # PostgreSQL equivalent of Catalog.MCPProjection's canonical pack-ref
+  # contract. Approval visibility is evaluated in SQL for pagination/counting,
+  # so corrupt frozen identities must be rejected here rather than filtered
+  # after the page has already been sliced.
+  @canonical_pack_ref_pattern "^[a-z][a-z0-9_-]*@[0-9]+([.][0-9]+)*(-[0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?/sha256:[0-9a-f]{64}$"
+
+  def by_target_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :none}),
     do: where(queryable, [requests: _], false)
 
-  def by_runner_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :all}), do: queryable
-
-  def by_runner_access(
+  def by_target_access(
         queryable,
-        %Emisar.Accounts.RunnerAccess{mode: :restricted, runner_ids: runner_ids, groups: groups}
+        %Emisar.Accounts.RunnerAccess{} = access
       ) do
+    action_runner_allowed =
+      case access do
+        %Emisar.Accounts.RunnerAccess{mode: :all} ->
+          dynamic([scope_runner: runner], not is_nil(runner.id))
+
+        %Emisar.Accounts.RunnerAccess{
+          mode: :restricted,
+          runner_ids: runner_ids,
+          groups: groups
+        } ->
+          dynamic(
+            [scope_runner: runner],
+            not is_nil(runner.id) and
+              (runner.id in ^runner_ids or runner.group in ^groups)
+          )
+      end
+
+    item_runner_allowed =
+      case access do
+        %Emisar.Accounts.RunnerAccess{mode: :all} ->
+          dynamic([scope_item_runner: runner], not is_nil(runner.id))
+
+        %Emisar.Accounts.RunnerAccess{
+          mode: :restricted,
+          runner_ids: runner_ids,
+          groups: groups
+        } ->
+          dynamic(
+            [scope_item_runner: runner],
+            not is_nil(runner.id) and
+              (runner.id in ^runner_ids or runner.group in ^groups)
+          )
+      end
+
+    action_pack_allowed =
+      case access do
+        %Emisar.Accounts.RunnerAccess{pack_mode: :all} ->
+          dynamic(
+            [scope_run: run],
+            is_nil(run.pack_ref) or
+              fragment("? ~ ?", run.pack_ref, ^@canonical_pack_ref_pattern)
+          )
+
+        %Emisar.Accounts.RunnerAccess{pack_mode: :restricted, pack_ids: pack_ids} ->
+          dynamic(
+            [scope_run: run],
+            fragment("? ~ ?", run.pack_ref, ^@canonical_pack_ref_pattern) and
+              fragment("split_part(?, '@', 1)", run.pack_ref) in ^pack_ids
+          )
+      end
+
+    item_pack_allowed =
+      case access do
+        %Emisar.Accounts.RunnerAccess{pack_mode: :all} ->
+          dynamic(
+            [runbook_execution_items: item],
+            is_nil(item.pack_ref) or
+              fragment("? ~ ?", item.pack_ref, ^@canonical_pack_ref_pattern)
+          )
+
+        %Emisar.Accounts.RunnerAccess{pack_mode: :restricted, pack_ids: pack_ids} ->
+          dynamic(
+            [runbook_execution_items: item],
+            fragment("? ~ ?", item.pack_ref, ^@canonical_pack_ref_pattern) and
+              fragment("split_part(?, '@', 1)", item.pack_ref) in ^pack_ids
+          )
+      end
+
+    execution_item =
+      Emisar.Runbooks.ExecutionItem.Query.all()
+      |> where(
+        [runbook_execution_items: item],
+        item.runbook_execution_id == parent_as(:requests).runbook_execution_id and
+          item.account_id == parent_as(:requests).account_id
+      )
+      |> select([runbook_execution_items: _item], 1)
+
+    item_allowed =
+      dynamic(
+        [runbook_execution_items: item, scope_item_runner: runner],
+        item.account_id == parent_as(:requests).account_id and
+          runner.account_id == parent_as(:requests).account_id and
+          ^item_runner_allowed and ^item_pack_allowed
+      )
+
+    disallowed_condition =
+      dynamic(
+        [runbook_execution_items: item],
+        item.runbook_execution_id == parent_as(:requests).runbook_execution_id and
+          not (^item_allowed)
+      )
+
     disallowed_execution_item =
       Emisar.Runbooks.ExecutionItem.Query.all()
       |> with_named_binding(:scope_item_runner, fn queryable, binding ->
@@ -46,18 +142,23 @@ defmodule Emisar.Approvals.Request.Query do
           queryable,
           :left,
           [runbook_execution_items: item],
-          runner in ^Emisar.Runners.Runner.Query.all(),
+          runner in ^Emisar.Runners.Runner.Query.not_deleted(),
           on: item.runner_id == runner.id,
           as: ^binding
         )
       end)
-      |> where(
-        [runbook_execution_items: item, scope_item_runner: runner],
-        item.runbook_execution_id == parent_as(:requests).runbook_execution_id and
-          (is_nil(runner.id) or
-             (runner.id not in ^runner_ids and runner.group not in ^groups))
-      )
+      |> where(^disallowed_condition)
       |> select([runbook_execution_items: _item], 1)
+
+    target_allowed =
+      dynamic(
+        [requests: request, scope_run: run, scope_runner: runner],
+        (not is_nil(request.run_id) and is_nil(request.runbook_execution_id) and
+           run.account_id == request.account_id and runner.account_id == request.account_id and
+           ^action_runner_allowed and ^action_pack_allowed) or
+          (is_nil(request.run_id) and not is_nil(request.runbook_execution_id) and
+             exists(execution_item) and not exists(disallowed_execution_item))
+      )
 
     queryable
     |> with_named_binding(:scope_run, fn queryable, binding ->
@@ -75,18 +176,12 @@ defmodule Emisar.Approvals.Request.Query do
         queryable,
         :left,
         [scope_run: run],
-        runner in ^Emisar.Runners.Runner.Query.all(),
+        runner in ^Emisar.Runners.Runner.Query.not_deleted(),
         on: run.runner_id == runner.id,
         as: ^binding
       )
     end)
-    |> where(
-      [requests: request, scope_runner: runner],
-      (not is_nil(request.run_id) and
-         (runner.id in ^runner_ids or runner.group in ^groups)) or
-        (not is_nil(request.runbook_execution_id) and
-           not exists(disallowed_execution_item))
-    )
+    |> where(^target_allowed)
   end
 
   def pending(queryable \\ all()),

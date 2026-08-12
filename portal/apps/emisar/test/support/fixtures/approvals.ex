@@ -5,7 +5,8 @@ defmodule Emisar.Fixtures.Approvals do
   """
 
   import Ecto.Changeset, only: [change: 2]
-  alias Emisar.{Approvals, Fixtures, Repo, Runbooks}
+  alias Emisar.{ActionContract, Approvals, Fixtures, Repo, Runbooks}
+  alias Emisar.Catalog.{MCPProjection, TrustedManifest}
 
   @doc """
   Persists a `:pending` approval request by default. Caller supplies
@@ -48,6 +49,7 @@ defmodule Emisar.Fixtures.Approvals do
   @doc "Persists one pending whole-execution request for approval UI tests."
   def create_execution_request(account, requested_by, attrs \\ %{}) do
     attrs = Map.new(attrs)
+    executable? = Map.get(attrs, :executable?, false)
 
     runbook =
       Fixtures.Runbooks.create_runbook(
@@ -103,7 +105,7 @@ defmodule Emisar.Fixtures.Approvals do
       })
       |> Repo.insert!()
 
-    _stage =
+    stage =
       Runbooks.ExecutionStage.Changeset.create(%{
         id: Ecto.UUID.generate(),
         account_id: account.id,
@@ -116,6 +118,103 @@ defmodule Emisar.Fixtures.Approvals do
         status: :pending
       })
       |> Repo.insert!()
+
+    policy = Fixtures.Policies.create_policy(account_id: account.id)
+
+    targets =
+      stage_plan["items"]
+      |> Enum.with_index()
+      |> Enum.map(fn {item, position} ->
+        runner =
+          Fixtures.Runners.create_runner(
+            account_id: account.id,
+            name: "approval-target-#{position + 1}",
+            group: "approval-targets",
+            connected?: executable?
+          )
+
+        {:ok, {pack_id, pack_version, pack_hash}} =
+          MCPProjection.parse_pack_ref(item["pack_ref"])
+
+        action =
+          if executable? do
+            Fixtures.Catalog.create_action(
+              runner: runner,
+              action_id: item["action"],
+              pack_id: pack_id,
+              pack_version: pack_version,
+              pack_hash: pack_hash,
+              risk: item["risk"] || "medium",
+              primary_executable_available: true
+            )
+          end
+
+        %{
+          action: action,
+          frozen: item,
+          pack_hash: pack_hash,
+          pack_id: pack_id,
+          pack_version: pack_version,
+          position: position,
+          runner: runner
+        }
+      end)
+
+    if executable? do
+      targets
+      |> Enum.group_by(&{&1.pack_id, &1.pack_version, &1.pack_hash})
+      |> Enum.each(fn {{pack_id, pack_version, pack_hash}, pack_targets} ->
+        {:ok, trusted_manifest} =
+          pack_targets
+          |> Enum.map(& &1.action)
+          |> TrustedManifest.from_runner_actions()
+
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account.id,
+          pack_id: pack_id,
+          version: pack_version,
+          hash: pack_hash,
+          trusted_manifest: trusted_manifest
+        )
+      end)
+    end
+
+    Enum.each(targets, fn target ->
+      action_contract =
+        if executable? do
+          {:ok, manifest} = TrustedManifest.from_runner_actions([target.action])
+          {:ok, descriptors} = TrustedManifest.actions(manifest)
+
+          target.action.action_id
+          |> then(&Map.fetch!(descriptors, &1))
+          |> ActionContract.snapshot()
+        else
+          %{}
+        end
+
+      %Runbooks.ExecutionItem{
+        id: Ecto.UUID.generate(),
+        account_id: account.id,
+        runbook_execution_id: execution.id,
+        runbook_execution_stage_id: stage.id,
+        stage_position: 0,
+        step_id: target.frozen["step_id"],
+        step_position: target.position,
+        runner_id: target.runner.id,
+        runner_ref: target.frozen["runner_ref"],
+        target_selection: "all",
+        action_id: target.frozen["action"],
+        pack_ref: target.frozen["pack_ref"],
+        pack_hash: target.pack_hash,
+        risk: target.frozen["risk"],
+        action_contract: action_contract,
+        policy_id: policy.id,
+        policy_version: policy.vsn,
+        policy_decision: "require_approval",
+        policy_reason: "Fixture requires approval"
+      }
+      |> Repo.insert!()
+    end)
 
     Approvals.Request.Changeset.create(%{
       account_id: account.id,

@@ -4495,9 +4495,10 @@ defmodule Emisar.CatalogTest do
       assert large.version_count > small.version_count
       assert large_queries == small_queries
       # One slim pack-version read, the pending rows' whole-row re-read, the
-      # summary filter-match read, the pending pairs' whole action read, and
-      # one bounded fleet read for the pending rows' blast radius.
-      assert small_queries == 5
+      # summary filter-match read, the pending pairs' whole action read, the
+      # current membership/access re-read, and one bounded subject-scoped fleet
+      # read for the pending rows' blast radius.
+      assert small_queries == 7
 
       for pack_version <- small.pack_versions do
         {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, small_subject)
@@ -4777,6 +4778,46 @@ defmodule Emisar.CatalogTest do
       assert Enum.map(fact.advertising.runners, & &1.id) == [runner.id]
       # Retirement outranks the gentle update nudge on the same row.
       assert fact.update_successor == nil
+    end
+
+    test "retired advertiser names stay inside the subject's current runner access", %{
+      account: account,
+      subject: subject
+    } do
+      pack_id = retired_pack_id()
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: pack_id,
+        version: "0.0.0"
+      )
+
+      visible =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "database-visible",
+          group: "database"
+        )
+
+      hidden =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "web-hidden-secret",
+          group: "web"
+        )
+
+      Fixtures.Runners.advertise_packs(visible, %{pack_id => %{"version" => "0.0.0"}})
+      Fixtures.Runners.advertise_packs(hidden, %{pack_id => %{"version" => "0.0.0"}})
+
+      {:ok, database_only} = Accounts.RunnerAccess.restricted(["database"], [])
+      force_runner_access(account, subject, database_only)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(projection, pack_id, "0.0.0")
+
+      assert fact.advertising.coverage == :partial
+      assert Enum.map(fact.advertising.runners, & &1.name) == ["database-visible"]
+      refute inspect(fact.advertising) =~ "web-hidden-secret"
     end
 
     test "a retired trusted version nobody advertises may be removed", %{

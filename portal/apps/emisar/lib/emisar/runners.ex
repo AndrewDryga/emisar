@@ -258,32 +258,43 @@ defmodule Emisar.Runners do
   end
 
   @doc """
-  Internal — bounded pack-advertisement facts for `account_id`: every
-  non-deleted runner's `%{id, name, group, packs}`, ordered by group then name.
-  The Catalog composes it to answer which hosts are on a pack version from the
-  durable runner_state advertisement (an installed pack may advertise no
-  actions, so action rows cannot answer it).
+  Bounded pack-advertisement facts for the subject's current visible runners:
+  each non-deleted runner's `%{id, name, group, packs}`, ordered by group then
+  name. The Catalog composes it to answer which hosts are on a pack version
+  from the durable runner_state advertisement (an installed pack may advertise
+  no actions, so action rows cannot answer it). Requires `view_runners`.
 
   `limit` is required and caps the read. Returns
   `{:ok, facts, %{coverage: :complete | :partial}}` — `:partial` when the
-  account has more runners than `limit`, so a caller can never read a short
-  list as "no runner is on it".
+  subject cannot see the whole account fleet or their visible fleet has more
+  runners than `limit`, so a caller can never read a short scoped list as "no
+  runner is on it".
   """
-  def list_pack_advertisement_facts_for_account(account_id, limit)
-      when is_binary(account_id) and is_integer(limit) and limit > 0 do
-    # One row past the cap is the sentinel that says the fleet overflows it.
-    facts =
-      Runner.Query.not_deleted()
-      |> Runner.Query.by_account_id(account_id)
-      |> Runner.Query.ordered_by_group_name()
-      |> Runner.Query.select_pack_advertisement_facts()
-      |> Runner.Query.limit_to(limit + 1)
-      |> Repo.all()
+  def list_pack_advertisement_facts(limit, %Subject{} = subject)
+      when is_integer(limit) and limit > 0 do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_runners_permission()
+           ) do
+      access = Accounts.runner_access_for_subject(subject)
 
-    if length(facts) > limit do
-      {:ok, Enum.take(facts, limit), %{coverage: :partial}}
-    else
-      {:ok, facts, %{coverage: :complete}}
+      # One row past the cap is the sentinel that says the visible fleet
+      # overflows it. Restricted reach is inherently partial account coverage,
+      # even when every visible row fits.
+      facts =
+        Runner.Query.not_deleted()
+        |> Runner.Query.ordered_by_group_name()
+        |> Runner.Query.select_pack_advertisement_facts()
+        |> scope_to_runner_access(access)
+        |> Authorizer.for_subject(subject)
+        |> Runner.Query.limit_to(limit + 1)
+        |> Repo.all()
+
+      partial? = length(facts) > limit or access.mode != :all
+      coverage = if partial?, do: :partial, else: :complete
+
+      {:ok, Enum.take(facts, limit), %{coverage: coverage}}
     end
   end
 
@@ -418,7 +429,11 @@ defmodule Emisar.Runners do
   # the active membership before every runner query so suspension, deletion, and
   # access changes immediately affect open sessions and old API keys.
   defp scope_to_subject_membership(query, %Subject{} = subject) do
-    case Accounts.runner_access_for_subject(subject) do
+    scope_to_runner_access(query, Accounts.runner_access_for_subject(subject))
+  end
+
+  defp scope_to_runner_access(query, access) do
+    case access do
       %Accounts.RunnerAccess{mode: :none} ->
         Runner.Query.none(query)
 

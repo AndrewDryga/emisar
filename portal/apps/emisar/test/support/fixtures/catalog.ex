@@ -90,6 +90,7 @@ defmodule Emisar.Fixtures.Catalog do
       version: attrs[:version] || "9.9",
       hash: pack_hash(attrs[:hash] || "trusted-fixture"),
       trust_state: :trusted,
+      trusted_manifest: attrs[:trusted_manifest],
       first_seen_at: now,
       last_seen_at: now
     }
