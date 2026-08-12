@@ -60,6 +60,9 @@ defmodule EmisarWeb.MarketingController do
     {"/use-cases/ingress-502", :usecase_ingress_502, :usecase_ingress_502,
      "Case study: a fleet-wide 502 traced through five layers — via emisar",
      "A real incident: every app behind one anycast edge threw intermittent 502 Connection refused, yet every backend was healthy. An agent on emisar traced it across five layers — FRR, Traefik, Nomad, Consul — to a Traefik OOM loop and a wedged node still advertising a dead ingress, stopped the bleed behind gated approvals, and named the durable fix: health-gate the anycast so a node withdraws itself instead of black-holing traffic."},
+    {"/use-cases/cassandra-migration", :usecase_cassandra_migration, :usecase_cassandra_migration,
+     "Moving Cassandra from GCP to bare metal: an AI operator's field report",
+     "An AI operator explains how it authored and stress-tested a bare-metal Cassandra platform, then used emisar's bounded actions to help move 12 application jobs across 14 live keyspaces, with human decisions and corrections clearly separated."},
     {"/compare/raw-ssh-for-ai", :compare_raw_ssh, :compare_raw_ssh,
      "Why not just give the LLM SSH?",
      "Comparison: raw SSH-for-AI agents vs an emisar action pack. Both run real commands; the difference is whose recovery you're betting on."},
@@ -396,6 +399,8 @@ defmodule EmisarWeb.MarketingController do
   # search results.
   def use_cases(conn, _params) do
     cases = [
+      {"How ChatGPT Sol helped move Cassandra from GCP to bare metal",
+       @base <> "/use-cases/cassandra-migration"},
       {"The 33-hour wipe: a CSI driver reformatted a live LUN",
        @base <> "/use-cases/csi-data-loss"},
       {"The fleet-wide 502 that no backend was causing", @base <> "/use-cases/ingress-502"}
@@ -429,7 +434,7 @@ defmodule EmisarWeb.MarketingController do
     render(conn, :use_cases,
       page_title: "Use cases — real incidents emisar contained",
       meta_description:
-        "Real production incidents worked end to end through emisar: a CSI driver's 33-hour data wipe and a fleet-wide 502 that no backend was causing — each investigated through declared actions, stopped behind one approval, every step audited.",
+        "Real production work handled through emisar: a live Cassandra migration from GCP to bare metal, a CSI driver's 33-hour data wipe, and a fleet-wide 502 — investigated through declared actions, with risky changes gated and every step audited.",
       canonical_url: @base <> "/use-cases",
       json_ld: json_ld
     )

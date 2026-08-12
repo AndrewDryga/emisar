@@ -164,6 +164,7 @@ defmodule EmisarWeb.Router do
     get "/docs/security-model", MarketingController, :docs_security_model
     get "/docs/signed-dispatch", MarketingController, :docs_signed_dispatch
     get "/use-cases", MarketingController, :use_cases
+    get "/use-cases/cassandra-migration", MarketingController, :usecase_cassandra_migration
     get "/use-cases/csi-data-loss", MarketingController, :usecase_csi_data_loss
     get "/use-cases/ingress-502", MarketingController, :usecase_ingress_502
     get "/compare/raw-ssh-for-ai", MarketingController, :compare_raw_ssh

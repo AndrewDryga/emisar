@@ -82,6 +82,10 @@
 
       <div class="mx-auto mt-12 max-w-4xl space-y-6">
         <%= for {tag, title, summary, metrics, href, featured} <- [
+          {"Database migration", "How ChatGPT Sol helped move Cassandra from GCP to bare metal",
+           "A field report written by the LLM that authored the platform and performed much of the live analysis, with human decisions and corrections kept separate. It stress-tested and tuned the new cluster, then helped move 12 application jobs across 14 keyspaces.",
+           ["≈6.3 TiB dataset", "14 keyspaces repaired", "12 app jobs cut over"],
+           "/use-cases/cassandra-migration", false},
           {"Incident response", "The 33-hour wipe: a CSI driver reformatted a live LUN",
            "A democratic-csi driver ran mkfs over a live Pure LUN on a dm-multipath path-group race — 33 hours of VictoriaMetrics data gone. The agent investigated through declared actions, stopped the writes behind one approval, then landed the durable fix as reviewable infra: a guard that refuses to trust the driver. The twist is that the obvious one-line setting was a no-op.",
            ["33h metrics lost", "6-second zero-path window", "mkfs.guard fix"],

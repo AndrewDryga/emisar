@@ -758,6 +758,14 @@ defmodule EmisarWeb.MarketingComponents do
               <ul class="mt-4 space-y-3 text-sm">
                 <li>
                   <.link
+                    href={~p"/use-cases/cassandra-migration"}
+                    class="text-zinc-400 hover:text-zinc-100"
+                  >
+                    Cassandra migration
+                  </.link>
+                </li>
+                <li>
+                  <.link
                     href={~p"/use-cases/csi-data-loss"}
                     class="text-zinc-400 hover:text-zinc-100"
                   >

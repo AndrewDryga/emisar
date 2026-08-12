@@ -206,6 +206,9 @@ defmodule EmisarWeb.MarketingTest do
     # "real-shape" datastore walkthroughs were cut from the war stories; they
     # live on as pack-supporting pages, reachable from their packs and docs.
     assert html =~ "How ChatGPT Sol helped move Cassandra from GCP to bare metal"
+    assert html =~ "≈6.3 TiB dataset"
+    assert html =~ "12 app jobs cut over"
+    refute html =~ "14.28 TiB backup"
     assert html =~ "The 33-hour wipe"
     assert html =~ "The fleet-wide 502 that no backend was causing"
     assert html =~ ~s(href="/use-cases/cassandra-migration")
@@ -1778,35 +1781,64 @@ defmodule EmisarWeb.MarketingTest do
 
       assert html =~ "Case study · Database migration"
       assert html =~ "How I helped move Cassandra from GCP to bare metal"
+      assert html =~ "Moving Cassandra from GCP to bare metal: an AI operator"
       assert html =~ "Written by ChatGPT Sol"
       assert html =~ "Human review by the operator."
-      assert html =~ "I authored the destination before I operated it"
+      assert html =~ "emisar connected the plan to the live systems"
+      assert html =~ "The same four-tool loop worked across the migration"
+      assert html =~ "Stage 0"
+      assert html =~ "Plan the migration"
+      assert html =~ "High-level plan"
+      assert html =~ "Stage 1"
+      assert html =~ "Learn what production really needed"
+      assert html =~ "Stage 2"
+      assert html =~ "I authored the destination"
+      assert html =~ "Stage 3"
+      assert html =~ "Then I operated it in isolation"
+      assert html =~ "Stage 4"
+      assert html =~ "Stress, tune, and prove the destination"
+      refute html =~ "Blitz ran"
+      assert html =~ "the vendor accepted the"
       assert html =~ "15,700 lines"
       assert html =~ "37.8 million operations"
       assert html =~ "8.23 ms"
       assert html =~ "4.32 ms"
-      assert html =~ "partially supported"
       assert html =~ "Logical dataset"
       assert html =~ "≈6.3 TiB"
-      assert html =~ "Checked cutover hour"
-      assert html =~ "0 DB errors"
-      assert html =~ "The interconnect was a migration control"
+      assert html =~ "Cutover hour"
+      assert html =~ "0 errors"
+      assert html =~ "The gate to join production"
+      assert html =~ "GCP kept serving every application while VA1 joined"
+      assert html =~ "Stage 5"
+      refute html =~ "Phase 5"
+      assert html =~ "Join, stream, cut over, and retire GCP"
       assert html =~ "gcp.interconnect_utilization"
-      assert html =~ "This was not a copy job"
       assert html =~ "The tools that mattered most"
-      assert html =~ "cassandra.nodetool_status"
-      assert html =~ "pure.arrays_performance"
+      assert html =~ "made this broad toolset feel like one reliable system"
+      assert html =~ "<code>cassandra.nodetool_status</code>"
+      assert html =~ "<code>cassandra.nodetool_decommission</code>"
+      assert html =~ "<code>cassandra.nodetool_setinterdcstreamthroughput</code>"
+      assert html =~ "tfc.plan_summary"
+      assert html =~ "tfc.run_diagnostics"
+      assert html =~ "gh.workflow_run_view"
+      assert html =~ "<code>pure.arrays_performance</code>"
+      assert html =~ "<code>pure.network_interfaces_performance</code>"
       assert html =~ "stream_entire_sstables=false"
+      assert html =~ "Storage-Attached Index"
       assert html =~ "Risky work still belonged to a person"
       assert html =~ "Human feedback changed the plan"
-      assert html =~ "Keep approval real"
+      assert html =~ "Do not overcorrect"
       refute html =~ "YOU DO NOT TOUCH GCP RIGHT NOW"
-      assert html =~ "14.28 TiB"
+      refute html =~ "Tarkov"
+      refute html =~ "valorant_ks"
+      refute html =~ "14.28 TiB"
+      refute html =~ "755 GiB"
+      refute html =~ "15 TiB"
       assert html =~ "What emisar did not replace"
       assert html =~ ~s(href="/sign_up")
       assert html =~ ~s(href="/packs/cassandra")
       assert html =~ ~s(href="/docs/security-model")
-      assert html =~ ~s(href="/docs/audit-and-siem")
+      refute html =~ ~s(href="/docs/audit-and-siem")
     end
 
     test "the ingress-502 use case renders its incident narrative, the gated stop, and CTAs",
@@ -2587,8 +2619,7 @@ defmodule EmisarWeb.MarketingTest do
            /changelog),
       "/docs/teams-and-access" =>
         ~w(/docs/sso /docs/connect-an-llm /docs/policies-and-approvals /docs/audit-and-siem),
-      "/use-cases/cassandra-migration" =>
-        ~w(/packs/cassandra /docs/security-model /docs/audit-and-siem),
+      "/use-cases/cassandra-migration" => ~w(/packs/cassandra /docs/security-model),
       "/use-cases/ingress-502" =>
         ~w(/use-cases/csi-data-loss /docs/security-model /docs/action-packs),
       "/compare/raw-ssh-for-ai" => ~w(/docs/quickstart /pricing),

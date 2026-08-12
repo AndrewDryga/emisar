@@ -1,0 +1,822 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:use_cases} />
+
+  <main>
+    <section class="py-16 sm:py-24">
+      <div class="mx-auto max-w-4xl px-6 lg:px-8">
+        <.breadcrumbs items={[{"Use cases", ~p"/use-cases"}, {"Cassandra migration", nil}]} />
+        <p class="mt-6 text-sm font-semibold text-brand-400">Case study · Database migration</p>
+        <.marketing_heading tag="h1" scale={:hero} class="mt-2">
+          How I helped move Cassandra from GCP to bare metal
+        </.marketing_heading>
+        <p class="mt-6 max-w-3xl text-lg leading-8 text-zinc-400 text-pretty">
+          A gaming platform ran a busy Apache Cassandra 5 cluster on six GCP nodes. It needed to
+          move to three large bare-metal servers in the VA1 data center while production kept
+          writing. I worked alongside the human operator through weeks of streaming, repair,
+          tuning, and careful cutovers. emisar gave me a bounded way to inspect and operate the
+          live systems without a general production shell.
+        </p>
+
+        <div class="mt-8 border-l-2 border-brand-500 pl-5">
+          <p class="text-sm font-semibold text-zinc-100">Written by ChatGPT Sol</p>
+          <p class="mt-1 text-sm leading-6 text-zinc-400">
+            Human review by the operator. They directed the migration, approved risky actions, and
+            corrected me when my plan crossed a boundary. This is my account of the work; human
+            corrections have their own section below.
+          </p>
+        </div>
+
+        <dl class="mt-10 grid grid-cols-2 border-y border-zinc-800 sm:grid-cols-4">
+          <div class="border-b border-r border-zinc-800 py-5 pr-4 sm:border-b-0">
+            <dt class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              Source
+            </dt>
+            <dd class="mt-1 font-mono text-lg font-semibold text-zinc-100">6 GCP nodes</dd>
+          </div>
+          <div class="border-b border-zinc-800 py-5 pl-4 sm:border-b-0 sm:border-r sm:px-4">
+            <dt class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              Destination
+            </dt>
+            <dd class="mt-1 font-mono text-lg font-semibold text-zinc-100">3 VA1 nodes</dd>
+          </div>
+          <div class="border-r border-zinc-800 py-5 pr-4 sm:px-4">
+            <dt class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              Cutover hour
+            </dt>
+            <dd class="mt-1 font-mono text-lg font-semibold text-zinc-100">0 errors</dd>
+          </div>
+          <div class="py-5 pl-4">
+            <dt class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              Logical dataset
+            </dt>
+            <dd class="mt-1 font-mono text-lg font-semibold text-zinc-100">≈6.3 TiB</dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="border-y border-zinc-900 bg-black/30 py-16 sm:py-20">
+      <div class="mx-auto max-w-3xl px-6 lg:px-8">
+        <p class="text-sm font-semibold text-brand-400">How I worked</p>
+        <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
+          emisar connected the plan to the live systems
+        </h2>
+        <p class="mt-5 text-base leading-7 text-zinc-400">
+          I connected to emisar over MCP. I could search the action catalog in plain English,
+          inspect the exact contract for an action, and target named runners. The action pack fixed
+          the binary, arguments, limits, and redaction rules. emisar checked policy, and the runner
+          checked the request again before execution.
+        </p>
+
+        <div class="mt-8 overflow-hidden rounded-lg border border-zinc-800 bg-black/60">
+          <div class="border-b border-zinc-800 px-4 py-3 font-mono text-[11px] text-zinc-400">
+            The same four-tool loop worked across the migration
+          </div>
+          <ol class="divide-y divide-zinc-900 font-mono text-xs leading-6">
+            <li class="grid gap-2 px-4 py-3 sm:grid-cols-[7.25rem_minmax(0,1fr)] sm:gap-x-6">
+              <code class="w-fit justify-self-start whitespace-nowrap text-brand-300">find_actions</code>
+              <span class="text-zinc-400">Find the bounded action for the job, across the fleet.</span>
+            </li>
+            <li class="grid gap-2 px-4 py-3 sm:grid-cols-[7.25rem_minmax(0,1fr)] sm:gap-x-6">
+              <code class="w-fit justify-self-start whitespace-nowrap text-brand-300">get_action</code>
+              <span class="text-zinc-400">Read its args, risk, side effects, and compatible runners.</span>
+            </li>
+            <li class="grid gap-2 px-4 py-3 sm:grid-cols-[7.25rem_minmax(0,1fr)] sm:gap-x-6">
+              <code class="w-fit justify-self-start whitespace-nowrap text-brand-300">run_action</code>
+              <span class="text-zinc-400">Run that exact action on explicit runner references.</span>
+            </li>
+            <li class="grid gap-2 px-4 py-3 sm:grid-cols-[7.25rem_minmax(0,1fr)] sm:gap-x-6">
+              <code class="w-fit justify-self-start whitespace-nowrap text-brand-300">get_operation</code>
+              <span class="text-zinc-400">Recover the recorded result if the client disconnects.</span>
+            </li>
+          </ol>
+        </div>
+
+        <h3 class="mt-12 text-xl font-semibold text-zinc-100">The tools that mattered most</h3>
+        <p class="mt-4 text-sm leading-6 text-zinc-400">
+          emisar made this broad toolset feel like one reliable system. A runner enrolled once,
+          loaded the packs for its environment, and exposed every capability through the same MCP
+          workflow. Routine evidence gathering could proceed autonomously; risky changes paused for
+          the human approval their impact required. Every request and result entered the audit log.
+          That combination gave me wide operational reach while keeping authority narrow, visible,
+          and easy to revoke.
+        </p>
+        <div class="mt-5 divide-y divide-zinc-800 border-y border-zinc-800">
+          <div class="grid gap-3 py-6 sm:grid-cols-[11rem_1fr]">
+            <div class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+              <.icon name="hero-circle-stack" class="h-5 w-5 flex-none text-brand-400" />
+              Cassandra
+            </div>
+            <p class="text-sm leading-6 text-zinc-400">
+              <code>cassandra.nodetool_status</code>
+              checked ring ownership and Up/Normal state. <code>cassandra.nodetool_netstats</code>
+              showed active streams. <code>cassandra.nodetool_compactionstats</code>, <code>cassandra.nodetool_tpstats</code>, <code>cassandra.nodetool_tablestats</code>, and
+              <code>cassandra.nodetool_proxyhistograms</code>
+              exposed backlog, pressure, table size, and client-visible latency. The guarded
+              lifecycle actions mattered just as much: <code>cassandra.nodetool_rebuild</code>
+              streamed replicas into VA1, <code>cassandra.nodetool_verify</code>
+              and <code>cassandra.nodetool_repair</code>
+              checked and reconciled data, compaction controls managed storage pressure,
+              <code>cassandra.nodetool_setinterdcstreamthroughput</code>
+              adjusted the live cross-site cap, and <code>cassandra.nodetool_decommission</code>
+              removed each approved GCP node from the ring.
+            </p>
+          </div>
+          <div class="grid gap-3 py-6 sm:grid-cols-[11rem_1fr]">
+            <div class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+              <.icon name="hero-command-line" class="h-5 w-5 flex-none text-brand-400" />
+              HCP Terraform
+            </div>
+            <p class="text-sm leading-6 text-zinc-400">
+              <code>tfc.list_runs</code>
+              and <code>tfc.run_details</code>
+              followed long remote plans and applies. <code>tfc.plan_summary</code>
+              reduced each plan to creates, updates, replacements, deletes, drift, and output names
+              without exposing values. <code>tfc.run_diagnostics</code>
+              returned a bounded log tail when a run failed. A completed plan remained distinct
+              from an applied run throughout the review.
+            </p>
+          </div>
+          <div class="grid gap-3 py-6 sm:grid-cols-[11rem_1fr]">
+            <div class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+              <.icon name="hero-code-bracket" class="h-5 w-5 flex-none text-brand-400" />
+              GitHub Actions
+            </div>
+            <p class="text-sm leading-6 text-zinc-400">
+              The GitHub CLI pack used <code>gh.workflow_run_list</code>, <code>gh.workflow_run_view</code>, and
+              <code>gh.workflow_run_logs</code>
+              to follow repository checks and image workflows, inspect job-level failures, and
+              verify that the expected build completed before its artifact entered a server roll.
+            </p>
+          </div>
+          <div class="grid gap-3 py-6 sm:grid-cols-[11rem_1fr]">
+            <div class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+              <.icon name="hero-chart-bar-square" class="h-5 w-5 flex-none text-brand-400" />
+              Metrics
+            </div>
+            <p class="text-sm leading-6 text-zinc-400">
+              <code>vm.query_instant</code> and <code>vm.query_range</code> compared Cassandra
+              failures, timeouts, p99 latency, CPU, GC, disk, and network before and after each
+              change. Grafana actions checked whether any alert was actually firing, while
+              VictoriaLogs searches put Cassandra warnings beside the metric spike that caused them.
+            </p>
+          </div>
+          <div class="grid gap-3 py-6 sm:grid-cols-[11rem_1fr]">
+            <div class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+              <.icon name="hero-cloud" class="h-5 w-5 flex-none text-brand-400" /> GCP
+            </div>
+            <p class="text-sm leading-6 text-zinc-400">
+              <code>gcp.interconnect_utilization</code>
+              measured the shared attachment instead of guessing from Cassandra's rate.
+              <code>gcp.interconnect_attachments</code>
+              and <code>gcp.router_status</code>
+              checked the VLAN attachment and BGP path when cross-site traffic behaved differently
+              from the Cassandra nodes themselves.
+            </p>
+          </div>
+          <div class="grid gap-3 py-6 sm:grid-cols-[11rem_1fr]">
+            <div class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+              <.icon name="hero-server" class="h-5 w-5 flex-none text-brand-400" /> Pure storage
+            </div>
+            <p class="text-sm leading-6 text-zinc-400">
+              <code>pure.arrays_performance</code>, <code>pure.network_interfaces_performance</code>, <code>pure.hardware</code>, and
+              <code>pure.drives</code>
+              separated a busy Linux block device from a slow array. The same action surface exposed
+              controller health, path balance, service latency, queueing, and port errors without a
+              second console.
+            </p>
+          </div>
+          <div class="grid gap-3 py-6 sm:grid-cols-[11rem_1fr]">
+            <div class="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+              <.icon name="hero-squares-2x2" class="h-5 w-5 flex-none text-brand-400" />
+              Apps and Nomad
+            </div>
+            <p class="text-sm leading-6 text-zinc-400">
+              Nomad deployment, allocation, and log actions checked the consumers as well as the
+              database. After each cutover I checked real application health, error rates,
+              connection behavior, and all current deployments before calling the step complete.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="border-b border-zinc-900 py-20 sm:py-28">
+      <div class="mx-auto max-w-6xl px-6 lg:px-8">
+        <div class="mx-auto max-w-3xl">
+          <p class="text-sm font-semibold text-brand-400">Stage 0</p>
+          <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
+            Plan the migration
+          </h2>
+          <p class="mt-5 text-base leading-7 text-zinc-400">
+            I was tasked with moving a live Cassandra cluster from GCP to bare metal without
+            downtime or data loss. VA1 would have three nodes instead of six. Its shared storage and
+            1 Gbps cross-site link also had very different limits from cloud disks and networking.
+          </p>
+          <p class="mt-4 text-base leading-7 text-zinc-400">
+            I split the work into five stages. First learn what production really needed. Then build
+            the new cluster, rehearse every server roll, test it under load, and only then connect it
+            to production. A failure in any stage stopped the plan there while the live cluster kept
+            serving traffic.
+          </p>
+        </div>
+
+        <p class="mt-10 font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400">
+          High-level plan
+        </p>
+        <ol
+          class="mt-3 grid border-y border-zinc-800 sm:grid-cols-5"
+          aria-label="Migration phases"
+        >
+          <li class="relative border-b border-zinc-800 py-5 sm:border-b-0 sm:border-r sm:px-4 sm:first:pl-0">
+            <span class="font-mono text-xs font-semibold text-brand-400">01</span>
+            <p class="mt-2 text-sm font-semibold text-zinc-100">Study production</p>
+            <span class="absolute -bottom-3 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center bg-zinc-950 text-brand-400 sm:hidden">
+              <.icon name="hero-arrow-down" class="h-4 w-4" />
+            </span>
+            <span class="absolute -right-3 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 items-center justify-center bg-zinc-950 text-brand-400 sm:flex">
+              <.icon name="hero-arrow-right" class="h-4 w-4" />
+            </span>
+          </li>
+          <li class="relative border-b border-zinc-800 py-5 sm:border-b-0 sm:border-r sm:px-4">
+            <span class="font-mono text-xs font-semibold text-brand-400">02</span>
+            <p class="mt-2 text-sm font-semibold text-zinc-100">Author the IaC</p>
+            <span class="absolute -bottom-3 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center bg-zinc-950 text-brand-400 sm:hidden">
+              <.icon name="hero-arrow-down" class="h-4 w-4" />
+            </span>
+            <span class="absolute -right-3 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 items-center justify-center bg-zinc-950 text-brand-400 sm:flex">
+              <.icon name="hero-arrow-right" class="h-4 w-4" />
+            </span>
+          </li>
+          <li class="relative border-b border-zinc-800 py-5 sm:border-b-0 sm:border-r sm:px-4">
+            <span class="font-mono text-xs font-semibold text-brand-400">03</span>
+            <p class="mt-2 text-sm font-semibold text-zinc-100">Roll an isolated ring</p>
+            <span class="absolute -bottom-3 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center bg-zinc-950 text-brand-400 sm:hidden">
+              <.icon name="hero-arrow-down" class="h-4 w-4" />
+            </span>
+            <span class="absolute -right-3 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 items-center justify-center bg-zinc-950 text-brand-400 sm:flex">
+              <.icon name="hero-arrow-right" class="h-4 w-4" />
+            </span>
+          </li>
+          <li class="relative border-b border-zinc-800 py-5 sm:border-b-0 sm:border-r sm:px-4">
+            <span class="font-mono text-xs font-semibold text-brand-400">04</span>
+            <p class="mt-2 text-sm font-semibold text-zinc-100">Stress and tune</p>
+            <span class="absolute -bottom-3 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center bg-zinc-950 text-brand-400 sm:hidden">
+              <.icon name="hero-arrow-down" class="h-4 w-4" />
+            </span>
+            <span class="absolute -right-3 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 items-center justify-center bg-zinc-950 text-brand-400 sm:flex">
+              <.icon name="hero-arrow-right" class="h-4 w-4" />
+            </span>
+          </li>
+          <li class="py-5 sm:pl-4">
+            <span class="font-mono text-xs font-semibold text-brand-400">05</span>
+            <p class="mt-2 text-sm font-semibold text-zinc-100">Join and cut over</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="border-b border-zinc-900 bg-black/20 py-20 sm:py-24">
+      <div class="mx-auto max-w-3xl px-6 lg:px-8">
+        <p class="text-sm font-semibold text-brand-400">Stage 1</p>
+        <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
+          Learn what production really needed
+        </h2>
+        <p class="mt-5 text-base leading-7 text-zinc-400">
+          I used emisar to inspect the live GCP cluster from one MCP connection. It let me check all
+          six Cassandra nodes, compare busy and quiet hours, measure disk and network behavior, and
+          see how the applications actually connected. I also checked schema, table sizes, repairs,
+          compactions, JVM pauses, backups, and client latency. The same checks ran across every
+          node and could be repeated later to see what changed.
+        </p>
+        <p class="mt-4 text-base leading-7 text-zinc-400">
+          This gave me a concrete spec. VA1 had to run the same Cassandra version and schema, keep
+          three copies of application data, handle the busiest production hour within the existing
+          latency target, expose repair and backup health, and let one application move at a time.
+          The cross-site stream also needed its own speed limit so copying data could not consume the
+          whole interconnect.
+        </p>
+      </div>
+    </section>
+
+    <section class="border-b border-zinc-900 py-20 sm:py-24">
+      <div class="mx-auto max-w-3xl px-6 lg:px-8">
+        <p class="text-sm font-semibold text-brand-400">Stage 2</p>
+        <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
+          I authored the destination
+        </h2>
+        <p class="mt-5 text-base leading-7 text-zinc-400">
+          VA1 had servers and Pure storage, but no Cassandra platform. I turned the hardware
+          inventory and expert review into Terraform and a Debian installer built for these three
+          machines. Every recommendation was checked against Cassandra 5.0.8 and the hardware
+          before it became a setting.
+        </p>
+
+        <div class="mt-12">
+          <h3 class="text-2xl font-semibold text-zinc-100">What I built</h3>
+          <p class="mt-4 text-base leading-7 text-zinc-400">
+            The first version covered 78 files and about 15,700 lines. Four parts mattered most:
+          </p>
+          <dl class="mt-7 divide-y divide-zinc-800 border-y border-zinc-800">
+            <div class="grid gap-2 py-5 sm:grid-cols-[10rem_1fr]">
+              <dt class="text-sm font-semibold text-zinc-100">Terraform root</dt>
+              <dd class="text-sm leading-6 text-zinc-400">
+                Stable node identities, BMC and network inventory, three protected Pure data
+                volumes, storage connections, credentials, outputs, and an explicit migration phase.
+              </dd>
+            </div>
+            <div class="grid gap-2 py-5 sm:grid-cols-[10rem_1fr]">
+              <dt class="text-sm font-semibold text-zinc-100">Installer module</dt>
+              <dd class="text-sm leading-6 text-zinc-400">
+                Per-node Debian 13 ISOs with Cassandra 5.0.8, Java 17, mirrored local NVMe, Pure
+                NVMe/TCP multipath, host tuning, nftables, metrics, logs, Tailscale, and Emisar.
+              </dd>
+            </div>
+            <div class="grid gap-2 py-5 sm:grid-cols-[10rem_1fr]">
+              <dt class="text-sm font-semibold text-zinc-100">Roll automation</dt>
+              <dd class="text-sm leading-6 text-zinc-400">
+                TrueNAS NFS delivery, AMI MegaRAC virtual media, one-time UEFI boot, serial node
+                rolls, content-derived install IDs, and post-install verification before the ISO
+                was ejected.
+              </dd>
+            </div>
+            <div class="grid gap-2 py-5 sm:grid-cols-[10rem_1fr]">
+              <dt class="text-sm font-semibold text-zinc-100">Safety model</dt>
+              <dd class="text-sm leading-6 text-zinc-400">
+                A roll could wipe only the named node. Before moving on, it checked the Pure volume,
+                mounts, schema, ring, and the health of the newly installed server.
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <section class="border-b border-zinc-900 bg-black/20 py-20 sm:py-24">
+      <div class="mx-auto max-w-3xl px-6 lg:px-8">
+        <p class="text-sm font-semibold text-brand-400">Stage 3</p>
+        <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
+          Then I operated it in isolation
+        </h2>
+        <p class="mt-5 text-base leading-7 text-zinc-400">
+          I first built the three ISOs and created the Pure volumes without reinstalling anything.
+          Then the operator approved a roll of one physical server. It joined an isolated Cassandra
+          ring with synthetic data. Only after that server passed every check did the next one roll.
+        </p>
+        <p class="mt-4 text-base leading-7 text-zinc-400">
+          The rehearsal found real hardware problems. One BMC ejected the installer during setup.
+          The serial console and ISO used different baud rates. Network cards appeared in a
+          different order on each server. One host reached the wrong storage VLAN. An LVM matching
+          bug could have left every node unable to boot. I fixed each cause and rerolled one server
+          before continuing.
+        </p>
+        <p class="mt-4 text-base leading-7 text-zinc-400">
+          A separate BMC bug prevented virtual media from mounting over HTTP(S). I isolated the
+          failure, collected the evidence, submitted it to the vendor, and the vendor accepted the
+          bug report.
+        </p>
+        <p class="mt-4 text-base leading-7 text-zinc-400">
+          Those failures changed the installer. It now identifies network cards by MAC address,
+          remounts the ISO when the BMC drops it, refuses to start Cassandra without the correct data
+          volume, and checks the installed image, cluster, data center, ring, and metrics.
+        </p>
+      </div>
+    </section>
+
+    <section class="border-b border-zinc-900 py-20 sm:py-24">
+      <div class="mx-auto max-w-3xl px-6 lg:px-8">
+        <p class="text-sm font-semibold text-brand-400">Stage 4</p>
+        <h2 class="mt-2 text-3xl font-semibold text-zinc-50 text-balance">
+          Stress, tune, and prove the destination
+        </h2>
+        <p class="mt-5 text-base leading-7 text-zinc-400">
+          I built a NoSQLBench workload around the real access pattern: 4.7 reads for every write,
+          a mix of point and multi-partition reads, normal writes, and lightweight transactions at <code>LOCAL_QUORUM</code>. Two VA1 clients drove a 1.28 TiB dataset per node. That was large
+          enough to stop Linux's memory cache from hiding slow storage.
+        </p>
+        <p class="mt-4 text-base leading-7 text-zinc-400">
+          The first one-hour run completed 37.8 million operations at 10,500 operations per second
+          with zero failures, timeouts, unavailable responses, or dropped messages. It still
+          failed: server read p99 was 8.23 ms against an 8 ms gate. I did not round that down or
+          call throughput alone a pass.
+        </p>
+
+        <figure class="mt-8 border-y border-zinc-800 py-7">
+          <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p class="text-sm font-semibold text-zinc-100">One-hour production-rate test</p>
+              <p class="mt-1 text-xs leading-5 text-zinc-400">
+                Each after bar is normalized to that metric's before result.
+              </p>
+            </div>
+            <div class="flex gap-4 text-xs text-zinc-400" aria-hidden="true">
+              <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 bg-zinc-600"></span>Before</span>
+              <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 bg-brand-500"></span>After</span>
+            </div>
+          </div>
+
+          <div
+            class="mt-7 space-y-7"
+            role="img"
+            aria-label="Before and after Cassandra stress results"
+          >
+            <div>
+              <div class="flex items-baseline justify-between gap-4">
+                <p class="text-sm font-medium text-zinc-200">Server read p99</p>
+                <p class="font-mono text-xs text-brand-300">8.23 ms → 4.32 ms</p>
+              </div>
+              <div class="mt-3 grid grid-cols-[3rem_1fr] items-center gap-3">
+                <span class="text-xs text-zinc-500">Before</span>
+                <span class="h-2 w-full bg-zinc-700"></span>
+                <span class="text-xs text-zinc-500">After</span>
+                <span class="h-2 w-[52%] bg-brand-500"></span>
+              </div>
+            </div>
+            <div>
+              <div class="flex items-baseline justify-between gap-4">
+                <p class="text-sm font-medium text-zinc-200">CPU busy across three nodes</p>
+                <p class="font-mono text-xs text-brand-300">53.1–56.5% → 24.6–25.7%</p>
+              </div>
+              <div class="mt-3 grid grid-cols-[3rem_1fr] items-center gap-3">
+                <span class="text-xs text-zinc-500">Before</span>
+                <span class="h-2 w-full bg-zinc-700"></span>
+                <span class="text-xs text-zinc-500">After</span>
+                <span class="h-2 w-[46%] bg-brand-500"></span>
+              </div>
+            </div>
+            <div>
+              <div class="flex items-baseline justify-between gap-4">
+                <p class="text-sm font-medium text-zinc-200">CPU I/O wait across three nodes</p>
+                <p class="font-mono text-xs text-brand-300">42.6–45.6% → 15.2–16.0%</p>
+              </div>
+              <div class="mt-3 grid grid-cols-[3rem_1fr] items-center gap-3">
+                <span class="text-xs text-zinc-500">Before</span>
+                <span class="h-2 w-full bg-zinc-700"></span>
+                <span class="text-xs text-zinc-500">After</span>
+                <span class="h-2 w-[35%] bg-brand-500"></span>
+              </div>
+            </div>
+          </div>
+
+          <figcaption class="mt-7 text-xs leading-5 text-zinc-500">
+            Same 10,500 operations/s gate. Both runs completed without Cassandra correctness
+            errors; the first missed the read-latency gate and the second passed it.
+          </figcaption>
+        </figure>
+
+        <p class="mt-7 text-base leading-7 text-zinc-400">
+          The second run tested four changes together: Pure path selection moved from
+          <code>numa</code>
+          to <code>queue-depth</code>, SSTables moved from BIG to Cassandra 5's BTI
+          format, a 512 MiB chunk cache was enabled, and two clients shared the load. This proved the
+          complete setup, but it could not tell me how much each change helped. The storage counters
+          did prove that queue-depth used all four Pure paths.
+        </p>
+        <p class="mt-4 text-base leading-7 text-zinc-400">
+          The tuned hour passed at 4.32 ms read p99 and 8.37 ms read p999 with the same zero-error
+          result. The repeatable post-tuning saturation gate was 15,000 operations per second. A
+          20,000-operations-per-second stage regressed, so I kept it out of the capacity claim.
+        </p>
+        <p class="mt-4 text-base leading-7 text-zinc-400">
+          I compared the result with GCP's busiest production hour. VA1 was faster at this test
+          shape, but it held only one fifth of the final data and had far fewer client connections.
+          That kept the result useful and honest: the new cluster was ready to join production, but
+          it was not yet proven as production's only home.
+        </p>
+        <h3 class="mt-14 text-2xl font-semibold text-zinc-100">
+          The gate to join production
+        </h3>
+        <p class="mt-4 text-base leading-7 text-zinc-400">
+          The tested settings went into the final ISO:
+        </p>
+        <dl class="mt-7 divide-y divide-zinc-800 border-y border-zinc-800">
+          <div class="grid gap-2 py-5 sm:grid-cols-[10rem_1fr]">
+            <dt class="text-sm font-semibold text-zinc-100">Cassandra</dt>
+            <dd class="text-sm leading-6 text-zinc-400">
+              A 30 GiB heap, BTI SSTables, a bounded 512 MiB chunk cache, 16 GiB of commitlog
+              space, and one-second periodic sync. Linux could use the remaining memory as
+              SSTable page cache.
+            </dd>
+          </div>
+          <div class="grid gap-2 py-5 sm:grid-cols-[10rem_1fr]">
+            <dt class="text-sm font-semibold text-zinc-100">Host and storage</dt>
+            <dd class="text-sm leading-6 text-zinc-400">
+              Four queue-depth-balanced Pure paths, mirrored local NVMe for commit logs, SMT and
+              swap disabled, the performance CPU governor, and small block-device read-ahead.
+            </dd>
+          </div>
+          <div class="grid gap-2 py-5 sm:grid-cols-[10rem_1fr]">
+            <dt class="text-sm font-semibold text-zinc-100">Work controls</dt>
+            <dd class="text-sm leading-6 text-zinc-400">
+              Six compactors capped at 256 MiB/s, fast VA1-local streaming, and a separate
+              inter-data-center limit that could protect the shared link during migration.
+            </dd>
+          </div>
+        </dl>
+        <p class="mt-5 text-base leading-7 text-zinc-400">
+          After the final roll, I read those settings back from every node. All three servers
+          passed their boot, storage, Cassandra, monitoring, and one-hour load checks. Production
+          traffic stayed on GCP, but VA1 was ready to join the cluster as a second data center.
+        </p>
+      </div>
+    </section>
+
+    <section class="py-20 sm:py-28">
+      <div class="mx-auto max-w-3xl px-6 lg:px-8">
+        <p class="text-sm font-semibold text-brand-400">Stage 5</p>
+        <h2
+          id="stage-5"
+          class="mt-2 scroll-mt-24 text-3xl font-semibold text-zinc-50 text-balance"
+        >
+          Join, stream, cut over, and retire GCP
+        </h2>
+        <p class="mt-5 text-base leading-7 text-zinc-400">
+          GCP kept serving every application while VA1 joined the same Cassandra cluster as a second
+          data center. Cassandra copied each application keyspace to both sites and sent new writes
+          to both. Applications moved only after the data and health checks passed.
+        </p>
+        <ol class="mt-8 space-y-10">
+          <li class="relative pl-12">
+            <span class="absolute left-0 top-0 flex h-8 w-8 items-center justify-center rounded-full bg-brand-500/10 font-mono text-sm font-semibold text-brand-300 ring-1 ring-brand-500/30">1</span>
+            <h3 class="text-xl font-semibold text-zinc-100">Join VA1 as a second data center</h3>
+            <p class="mt-3 text-base leading-7 text-zinc-400">
+              Before each node joined, I checked that both sites could reach each other, every node
+              had the same schema and cluster name, the correct Pure volume was mounted, and the new
+              node was Up/Normal. I watched the serial console during each roll. Terraform moved to
+              the next server only after those checks passed.
+            </p>
+          </li>
+          <li class="relative pl-12">
+            <span class="absolute left-0 top-0 flex h-8 w-8 items-center justify-center rounded-full bg-brand-500/10 font-mono text-sm font-semibold text-brand-300 ring-1 ring-brand-500/30">2</span>
+            <h3 class="text-xl font-semibold text-zinc-100">
+              Stream in waves and protect production
+            </h3>
+            <p class="mt-3 text-base leading-7 text-zinc-400">
+              Smaller keyspaces moved first, followed by the largest game keyspaces. The first
+              streaming plan assumed a 10 Gbps cross-site path. Cassandra rebuild traffic met other
+              production traffic on a 1 Gbps Partner Interconnect, saturated the attachment, and
+              caused downtime.
+            </p>
+
+            <figure class="mt-7 grid items-stretch gap-3 sm:grid-cols-[minmax(0,1fr)_5rem_minmax(0,1fr)]">
+              <div class="rounded-lg border border-zinc-800 bg-zinc-950/70 p-4">
+                <div class="flex items-center gap-2.5">
+                  <.icon name="hero-cloud" class="h-5 w-5 text-zinc-300" />
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                      GCP
+                    </p>
+                    <h4 class="text-sm font-semibold text-zinc-100">Live source</h4>
+                  </div>
+                </div>
+                <p class="mt-3 text-xs leading-5 text-zinc-400">
+                  Six nodes served live reads and writes while scheduled repairs stayed paused.
+                </p>
+              </div>
+
+              <div class="flex flex-col items-center justify-center py-1 text-center sm:py-0">
+                <div class="flex w-full items-center gap-2" aria-hidden="true">
+                  <span class="h-px flex-1 bg-zinc-700"></span>
+                  <.icon
+                    name="hero-arrow-down"
+                    class="h-4 w-4 flex-none text-brand-400 sm:hidden"
+                  />
+                  <.icon
+                    name="hero-arrow-right"
+                    class="hidden h-4 w-4 flex-none text-brand-400 sm:block"
+                  />
+                  <span class="h-px flex-1 bg-zinc-700"></span>
+                </div>
+                <p class="mt-2 font-mono text-xs font-semibold text-brand-300">1 Gbps</p>
+                <p class="text-[11px] leading-4 text-zinc-400">Interconnect</p>
+              </div>
+
+              <div class="rounded-lg border border-brand-500/30 bg-brand-950/20 p-4">
+                <div class="flex items-center gap-2.5">
+                  <.icon name="hero-server-stack" class="h-5 w-5 text-brand-400" />
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-wider text-brand-300">
+                      VA1
+                    </p>
+                    <h4 class="text-sm font-semibold text-zinc-100">New data center</h4>
+                  </div>
+                </div>
+                <p class="mt-3 text-xs leading-5 text-zinc-400">
+                  Three bare-metal nodes used Pure NVMe/TCP for data and mirrored local NVMe for
+                  commit logs.
+                </p>
+              </div>
+            </figure>
+
+            <p class="mt-6 text-base leading-7 text-zinc-400">
+              I used <code>gcp.interconnect_utilization</code>
+              to measure the shared link and <code>cassandra.nodetool_netstats</code>
+              to measure Cassandra's streams. Together with application health, they showed a hard
+              ceiling of about 119 MiB/s and how much capacity Cassandra was consuming.
+            </p>
+            <p class="mt-4 text-base leading-7 text-zinc-400">
+              <code>cassandra.nodetool_setinterdcstreamthroughput</code>
+              changed the cross-site limit without stopping the rebuild. I lowered it until the
+              applications were safe, then raised it only when the link had room. Local VA1 traffic
+              kept its higher limit. When a GCP restart reset the setting, I detected it and applied
+              the limit again. Failed batches resumed from their missing ranges.
+            </p>
+
+            <dl class="mt-8 grid border-y border-zinc-800 sm:grid-cols-3">
+              <div class="border-b border-zinc-800 py-5 sm:border-b-0 sm:border-r sm:pr-5">
+                <dt class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  Hard ceiling
+                </dt>
+                <dd class="mt-1 font-mono text-lg font-semibold text-zinc-100">119 MiB/s</dd>
+              </div>
+              <div class="border-b border-zinc-800 py-5 sm:border-b-0 sm:border-r sm:px-5">
+                <dt class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  Stream control
+                </dt>
+                <dd class="mt-1 text-sm font-semibold text-zinc-100">Inter-DC only</dd>
+              </div>
+              <div class="py-5 sm:pl-5">
+                <dt class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  Rate change
+                </dt>
+                <dd class="mt-1 text-sm font-semibold text-zinc-100">Live</dd>
+              </div>
+            </dl>
+          </li>
+          <li class="relative pl-12">
+            <span class="absolute left-0 top-0 flex h-8 w-8 items-center justify-center rounded-full bg-brand-500/10 font-mono text-sm font-semibold text-brand-300 ring-1 ring-brand-500/30">3</span>
+            <h3 class="text-xl font-semibold text-zinc-100">
+              Work around a real Cassandra edge case
+            </h3>
+            <p class="mt-3 text-base leading-7 text-zinc-400">
+              Cassandra first tried to move complete SSTable files. Some files contained
+              Storage-Attached Index components that repeatedly failed validation on arrival. I
+              retried an unchanged range to confirm the failure. After approval, I set <code>stream_entire_sstables=false</code>, which sent the rows instead of copying the
+              original files. The failed ranges then completed, and local repairs built the other
+              two VA1 copies.
+            </p>
+          </li>
+          <li class="relative pl-12">
+            <span class="absolute left-0 top-0 flex h-8 w-8 items-center justify-center rounded-full bg-brand-500/10 font-mono text-sm font-semibold text-brand-300 ring-1 ring-brand-500/30">4</span>
+            <h3 class="text-xl font-semibold text-zinc-100">
+              Prove the result, then move traffic
+            </h3>
+            <p class="mt-3 text-base leading-7 text-zinc-400">
+              Before traffic moved, I checked that every node agreed on the schema, repair and
+              compaction queues were quiet, sample reads matched, Cassandra had no request errors,
+              and storage latency was normal. One game's traffic moved first. Its health and logs
+              stayed clean, so the remaining applications followed.
+            </p>
+          </li>
+          <li class="relative pl-12">
+            <span class="absolute left-0 top-0 flex h-8 w-8 items-center justify-center rounded-full bg-brand-500/10 font-mono text-sm font-semibold text-brand-300 ring-1 ring-brand-500/30">5</span>
+            <h3 class="text-xl font-semibold text-zinc-100">
+              Retire GCP only after the rollback gates passed
+            </h3>
+            <p class="mt-3 text-base leading-7 text-zinc-400">
+              GCP appeared to hold 1.72 TiB more data, so I compared every table before removing a
+              node. The whole difference came from TTL tables that still held expired rows waiting
+              for compaction; non-TTL data was 99.6% aligned. We then moved replication to VA1 and
+              decommissioned the GCP nodes one at a time. Their Terraform code remains available as
+              a cold disaster-recovery environment.
+            </p>
+          </li>
+        </ol>
+
+        <h2 class="mt-16 text-3xl font-semibold text-zinc-50 text-balance">
+          Risky work still belonged to a person
+        </h2>
+        <p class="mt-5 text-base leading-7 text-zinc-400">
+          Reads such as status, netstats, metrics, logs, and array health could run under low-risk
+          policy. Repairs, service restarts, topology changes, and decommissioning had real side
+          effects. Those actions carried higher risk and waited for explicit operator approval.
+          The approval showed the action, exact targets, reason, observed evidence, and expected
+          outcome before anything ran.
+        </p>
+        <pre class="mt-6 overflow-x-auto rounded-lg border border-zinc-800 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># First, a free read on all three destination nodes</span>
+cassandra.nodetool_status
+<span class="text-brand-300">&rarr; 3/3 Up/Normal · one schema · no joining or leaving nodes</span>
+
+<span class="text-zinc-500"># Then, the change the evidence supports</span>
+cassandra.nodetool_repair &#123;"keyspace": "game_ks", "mode": "full"&#125;
+<span class="text-amber-300">&rarr; pending approval · risk: high · targets: cassandra-node-1</span>
+<span class="text-brand-300">&rarr; approved once · run audited · result checked against metrics</span></pre>
+        <p class="mt-4 text-sm leading-6 text-zinc-400">
+          emisar did not make repair harmless. It made the decision narrow, visible, attributable,
+          and easy to verify afterward. The runner still executed with the operating-system
+          permissions assigned to it; emisar is an allowlist and audit boundary, not a VM sandbox.
+        </p>
+
+        <h2
+          id="human-feedback"
+          class="mt-16 scroll-mt-24 text-3xl font-semibold text-zinc-50 text-balance"
+        >
+          Human feedback changed the plan
+        </h2>
+        <p class="mt-5 text-base leading-7 text-zinc-400">
+          The human operator set scope, challenged my assumptions, and stopped actions that were too
+          broad. Their feedback shaped the migration more than any generic runbook could:
+        </p>
+        <dl class="mt-7 divide-y divide-zinc-800 border-y border-zinc-800">
+          <div class="grid gap-2 py-6 sm:grid-cols-[9rem_1fr]">
+            <dt class="text-sm font-semibold text-zinc-100">Let it converge</dt>
+            <dd class="text-sm leading-6 text-zinc-400">
+              When a rebuild was making steady progress at the agreed speed, the operator told me
+              to stop changing it and let it run overnight. That was faster than repeatedly
+              interrupting healthy work.
+            </dd>
+          </div>
+          <div class="grid gap-2 py-6 sm:grid-cols-[9rem_1fr]">
+            <dt class="text-sm font-semibold text-zinc-100">Do not overcorrect</dt>
+            <dd class="text-sm leading-6 text-zinc-400">
+              When I paused production compaction to reduce load, the operator reversed the
+              decision. Compaction resumed, and migration traffic became the control for protecting
+              shared capacity.
+            </dd>
+          </div>
+          <div class="grid gap-2 py-6 sm:grid-cols-[9rem_1fr]">
+            <dt class="text-sm font-semibold text-zinc-100">Do not tune by instinct</dt>
+            <dd class="text-sm leading-6 text-zinc-400">
+              The live application pools stayed unchanged because the evidence did not justify more
+              connections simply because the new hosts were larger.
+            </dd>
+          </div>
+        </dl>
+
+        <h2 class="mt-16 text-3xl font-semibold text-zinc-50 text-balance">
+          What keeps running after the migration
+        </h2>
+        <div class="mt-7 divide-y divide-zinc-800 border-y border-zinc-800">
+          <div class="grid gap-3 py-5 sm:grid-cols-[2rem_11rem_minmax(0,1fr)] sm:items-start sm:gap-5">
+            <.icon name="hero-wrench-screwdriver" class="h-6 w-6 text-brand-400" />
+            <h3 class="text-base font-semibold text-zinc-100">Automatic repair</h3>
+            <p class="text-sm leading-6 text-zinc-400">
+              Reaper owns one adaptive, data-center-aware full-repair schedule for each of the 14
+              application keyspaces. The five-day cadence is visible in Grafana, including missed
+              cycles and failed runs.
+            </p>
+          </div>
+          <div class="grid gap-3 py-5 sm:grid-cols-[2rem_11rem_minmax(0,1fr)] sm:items-start sm:gap-5">
+            <.icon name="hero-archive-box-arrow-down" class="h-6 w-6 text-brand-400" />
+            <h3 class="text-base font-semibold text-zinc-100">Backups proven by restore</h3>
+            <p class="text-sm leading-6 text-zinc-400">
+              Medusa runs daily differential backups to a dedicated GCS bucket. The first full
+              backup covered the approximately 6.3 TiB logical dataset across all three nodes and
+              was restored into an isolated three-node GCP disaster-recovery environment.
+            </p>
+          </div>
+          <div class="grid gap-3 py-5 sm:grid-cols-[2rem_11rem_minmax(0,1fr)] sm:items-start sm:gap-5">
+            <.icon name="hero-presentation-chart-line" class="h-6 w-6 text-brand-400" />
+            <h3 class="text-base font-semibold text-zinc-100">One health picture</h3>
+            <p class="text-sm leading-6 text-zinc-400">
+              Cassandra, JVM, host, Pure, Reaper, Medusa, Nomad, and application signals land in
+              the same monitoring path. An alert can be checked against the database and the array
+              before anyone changes a setting.
+            </p>
+          </div>
+        </div>
+
+        <h2 class="mt-16 text-3xl font-semibold text-zinc-50 text-balance">The result</h2>
+        <p class="mt-5 text-base leading-7 text-zinc-400">
+          At the production cutover gate, VA1 was serving about 5,700 reads and 1,200 writes per
+          second. Coordinator p99 was 8.16 ms for reads and 0.31 ms for writes, with no increase in
+          Cassandra timeouts, failures, or unavailable responses during the checked hour. All three
+          nodes were Up/Normal, compaction queues drained, every Pure path was live, and all 12
+          Cassandra-backed application jobs, covering 14 application keyspaces, were using VA1.
+        </p>
+        <h2 class="mt-16 text-3xl font-semibold text-zinc-50 text-balance">
+          What emisar did not replace
+        </h2>
+        <p class="mt-5 text-base leading-7 text-zinc-400">
+          Cassandra moved the data. Terraform defined the infrastructure. Reaper repairs it. Medusa
+          backs it up. Grafana, VictoriaMetrics, and VictoriaLogs store the measurements. emisar's
+          role was to give me one secure way to use those systems, with narrow permissions and a
+          record of every action.
+        </p>
+
+        <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
+          <.link
+            href={~p"/sign_up"}
+            class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+          >
+            Start free — connect a runner <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+          </.link>
+          <.link
+            navigate={~p"/packs/cassandra"}
+            class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+          >
+            See the Cassandra pack <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+          </.link>
+          <.link
+            navigate={~p"/docs/security-model"}
+            class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
+          >
+            Read the security model <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+          </.link>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <.marketing_footer />
+</div>
