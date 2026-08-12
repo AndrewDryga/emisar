@@ -227,10 +227,13 @@ defmodule EmisarWeb.TeamLiveTest do
         |> render_submit()
 
       assert html =~ "Invitation sent"
-      assert html =~ "We emailed a join link to"
+      assert html =~ "The join link is on its way"
       assert html =~ "newbie@example.com"
+      assert html =~ "Operator"
+      assert html =~ "None"
       assert html =~ "Invite another"
-      assert html =~ "Back to members"
+      assert html =~ "View members"
+      assert html =~ "What happens next"
 
       assert_email_sent(fn sent ->
         sent.to == [{"", "newbie@example.com"}] and sent.text_body =~ "/accept_invitation/"
@@ -240,6 +243,75 @@ defmodule EmisarWeb.TeamLiveTest do
       reset = render_click(lv, "invite_another", %{})
       assert reset =~ "Send invite"
       refute reset =~ "Invitation sent"
+    end
+
+    test "the completion receipt reports the persisted selected runner and pack access", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      runner =
+        Fixtures.Runners.create_runner(account_id: account.id, name: "db-primary", group: "db")
+
+      Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "pg.up", pack_id: "postgres")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+
+      lv
+      |> form("#invite_form", %{
+        "invite" => %{"runner_access_mode" => "restricted"}
+      })
+      |> render_change()
+
+      lv
+      |> form("#invite_form", %{
+        "invite" => %{
+          "runner_access_mode" => "restricted",
+          "scope" => ["runner:#{runner.id}"]
+        }
+      })
+      |> render_change()
+
+      lv
+      |> form("#invite_form", %{
+        "invite" => %{
+          "runner_access_mode" => "restricted",
+          "scope" => ["runner:#{runner.id}"],
+          "pack_access_mode" => "restricted"
+        }
+      })
+      |> render_change()
+
+      html =
+        lv
+        |> form("#invite_form", %{
+          "invite" => %{
+            "email" => "scoped-receipt@example.com",
+            "role" => "viewer",
+            "runner_access_mode" => "restricted",
+            "scope" => ["runner:#{runner.id}"],
+            "pack_access_mode" => "restricted",
+            "pack_scope" => ["pack:postgres"]
+          }
+        })
+        |> render_submit()
+
+      assert html =~ "scoped-receipt@example.com"
+      assert html =~ "Viewer"
+      assert html =~ "db-primary"
+      assert html =~ "postgres"
+
+      {:ok, user} = Emisar.Users.fetch_user_by_email("scoped-receipt@example.com")
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) ==
+               %Emisar.Accounts.RunnerAccess{
+                 mode: :restricted,
+                 groups: [],
+                 runner_ids: [runner.id],
+                 pack_mode: :restricted,
+                 pack_ids: ["postgres"]
+               }
     end
 
     test "selected runner access is required and persisted with the invitation", %{conn: conn} do
@@ -1173,7 +1245,7 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "bounced or was marked spam"
       refute html =~ "another way"
       assert html =~ "Invite another"
-      assert html =~ "Back to members"
+      assert html =~ "View members"
     end
 
     test "a failed send says the invite is pending, not that it was sent", %{

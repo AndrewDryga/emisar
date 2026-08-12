@@ -3019,6 +3019,8 @@ defmodule Emisar.Accounts do
           user_id: user.id,
           role: invitation.role,
           runner_access_mode: invitation.runner_access.mode,
+          pack_access_mode: invitation.runner_access.pack_mode,
+          pack_scope_pack_ids: invitation.runner_access.pack_ids,
           invited_by_id: subject.actor.id,
           invitation_token_digest: token_digest
         })

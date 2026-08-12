@@ -567,6 +567,13 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     confirmation when the qualifier is security-sensitive; reducing visual weight must not
     reduce decision evidence. Sweep: standalone cards for enforcement, links, or defaults
     that only make sense beneath the connection or feature card immediately before them.
+53. **A dedicated workflow completion is a receipt, not an alert.** When a focused create or
+    setup route reaches its successful destination, replace the form with a calm status note,
+    the exact values that were committed, a short account of what happens next, and the useful
+    exits. Reserve the icon-capped attention spine for a delivery failure, suppressed message,
+    or other state that still asks the operator to intervene. Sweep: successful dedicated flows
+    rendered as alerts, success pages that echo submitted params instead of persisted values,
+    and confirmations that omit the granted role or access.
 
 
 ## 8. The kit is the contract

@@ -629,13 +629,17 @@ defmodule EmisarWeb.TeamLive do
            socket.assigns.current_user,
            socket.assigns.current_subject
          ) do
-      {:ok, %{user: user, delivery: delivery}} ->
+      {:ok, %{membership: membership, user: user, delivery: delivery}} ->
+        access = Accounts.runner_access_for_memberships([membership]) |> Map.fetch!(membership.id)
+
         # Success is a page STATE, not a flash-and-reload: the invite view swaps
-        # to a confirmation with "Invite another" / "Back to members", so the
+        # to a confirmation with "Invite another" / "View members", so the
         # inviter isn't dumped back onto the roster wondering if it worked.
         {:noreply,
          socket
          |> assign(:invited_email, user.email)
+         |> assign(:invited_membership, membership)
+         |> assign(:invited_access, access)
          |> assign(:invite_delivery, delivery)}
 
       # The domain rebuilt the form's own validation against live runners, so a
@@ -1056,6 +1060,8 @@ defmodule EmisarWeb.TeamLive do
     socket
     |> assign(:loading?, false)
     |> assign(:invited_email, nil)
+    |> assign(:invited_membership, nil)
+    |> assign(:invited_access, nil)
     |> assign(:invite_delivery, nil)
     |> assign_invite_form()
   end
@@ -1103,19 +1109,21 @@ defmodule EmisarWeb.TeamLive do
           Only owners and admins can invite members. Ask an owner or admin to add someone.
         </.empty_state>
 
-        <%!-- Sent: confirm it, then the two next moves — no vanishing flash.
-             The transient event grammar (icon-capped spine); the tone follows
-             what actually happened to the email, and the next actions ride
-             along either way. --%>
+        <%!-- Sent is the settled destination of this focused flow, so it gets a
+             calm receipt. Delivery problems still use the attention spine
+             because the operator has to act. --%>
         <.invite_result
           :if={can_manage?(assigns) and @invited_email}
           email={@invited_email}
+          membership={@invited_membership}
+          access={@invited_access}
+          runners_by_id={@runners_by_id}
           delivery={@invite_delivery}
         >
           <div class="mt-6 flex flex-wrap items-center gap-3">
             <.button phx-click="invite_another" icon="hero-plus">Invite another</.button>
             <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:secondary}>
-              Back to members
+              View members
             </.button>
           </div>
         </.invite_result>
@@ -2015,6 +2023,9 @@ defmodule EmisarWeb.TeamLive do
   end
 
   attr :email, :string, required: true
+  attr :membership, Accounts.Membership, required: true
+  attr :access, Accounts.RunnerAccess, required: true
+  attr :runners_by_id, :map, required: true
   attr :delivery, :any, required: true
   slot :inner_block, required: true
 
@@ -2024,13 +2035,34 @@ defmodule EmisarWeb.TeamLive do
   # We never offer to relay the link — the raw token stays inside Accounts.
   defp invite_result(%{delivery: {:ok, :sent}} = assigns) do
     ~H"""
-    <.event_block icon="hero-paper-airplane" tone={:brand} title="Invitation sent">
-      <:body>
-        We emailed a join link to <span class="font-medium text-zinc-200">{@email}</span>. They'll show in the
-        roster as pending until they accept.
-      </:body>
-      {render_slot(@inner_block)}
-    </.event_block>
+    <div data-shot="invite-complete">
+      <.status_note
+        icon="hero-paper-airplane"
+        tone={:brand}
+        title="Invitation sent"
+        primary
+      >
+        The join link is on its way. This person will appear as pending until they accept it.
+      </.status_note>
+
+      <.meta_strip cols={4} class="mt-6">
+        <.meta_field label="Recipient" wrap>{@email}</.meta_field>
+        <.meta_field label="Role">{Emisar.Auth.role_label(@membership.role)}</.meta_field>
+        <.meta_field label="Runners" wrap>
+          {invited_runner_access(@access, @runners_by_id)}
+        </.meta_field>
+        <.meta_field label="Packs" wrap>{invited_pack_access(@access)}</.meta_field>
+      </.meta_strip>
+
+      <div class="mt-7 border-t border-zinc-800/70 pt-5">
+        <h2 class="text-sm font-medium text-zinc-200">What happens next</h2>
+        <p class="mt-1 max-w-xl text-sm leading-relaxed text-zinc-400">
+          They can join with the emailed link, then sign in with a magic link or your SSO provider.
+          You can resend the invitation or change their access from the member list.
+        </p>
+        {render_slot(@inner_block)}
+      </div>
+    </div>
     """
   end
 
@@ -2066,6 +2098,31 @@ defmodule EmisarWeb.TeamLive do
     </.event_block>
     """
   end
+
+  defp invited_runner_access(%Accounts.RunnerAccess{mode: :none}, _runners_by_id), do: "None"
+
+  defp invited_runner_access(%Accounts.RunnerAccess{mode: :all}, _runners_by_id),
+    do: "All runners"
+
+  defp invited_runner_access(%Accounts.RunnerAccess{mode: :restricted} = access, runners_by_id) do
+    groups = Enum.map(access.groups, &"#{&1} group")
+
+    runners =
+      Enum.map(access.runner_ids, fn id ->
+        case Map.get(runners_by_id, id) do
+          %{name: name} when is_binary(name) and name != "" -> name
+          _runner -> id
+        end
+      end)
+
+    Enum.join(groups ++ runners, ", ")
+  end
+
+  defp invited_pack_access(%Accounts.RunnerAccess{mode: :none}), do: "None"
+  defp invited_pack_access(%Accounts.RunnerAccess{pack_mode: :all}), do: "All packs"
+
+  defp invited_pack_access(%Accounts.RunnerAccess{pack_mode: :restricted, pack_ids: pack_ids}),
+    do: Enum.join(pack_ids, ", ")
 
   # Inline action menu for a single member row. Hidden for the actor's
   attr :enrolled?, :boolean, required: true

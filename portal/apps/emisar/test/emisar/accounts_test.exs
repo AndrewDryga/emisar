@@ -1,7 +1,7 @@
 defmodule Emisar.AccountsTest do
   use Emisar.DataCase, async: true
   alias Emisar.Accounts
-  alias Emisar.Accounts.{Account, Membership}
+  alias Emisar.Accounts.{Account, Membership, RunnerAccess}
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.Audit
   alias Emisar.Audit.Event, as: AuditEvent
@@ -4469,6 +4469,30 @@ defmodule Emisar.AccountsTest do
       assert invitee.email == email
       refute invitee.confirmed_at
       assert is_binary(token)
+    end
+
+    test "persists selected pack access on the invited membership" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
+
+      attrs =
+        Fixtures.Accounts.invitation_attrs(
+          role: "viewer",
+          runner_access_mode: "all",
+          pack_access_mode: "restricted",
+          pack_scope: ["pack:postgres"]
+        )
+
+      assert {:ok, %{membership: membership}} = Accounts.invite_user_to_account(attrs, subject)
+
+      assert Accounts.runner_access_for_membership(account.id, membership.id) ==
+               %RunnerAccess{
+                 mode: :all,
+                 groups: [],
+                 runner_ids: [],
+                 pack_mode: :restricted,
+                 pack_ids: ["postgres"]
+               }
     end
 
     test "a member without invite permission cannot invite a user" do
