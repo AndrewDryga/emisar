@@ -1759,6 +1759,8 @@ defmodule EmisarWeb.MarketingTest do
       cli = conn |> get(~p"/docs/runner-cli") |> html_response(200)
       assert cli =~ "emisar audit verify --all"
       assert cli =~ "/etc/emisar/config.yaml"
+      assert cli =~ "sudo emisar update"
+      assert cli =~ "requires the root-owned receipt"
 
       billing = conn |> get(~p"/docs/billing") |> html_response(200)
       assert billing =~ "7 days on Free, 90 on Team, 365 on Enterprise"
@@ -1928,6 +1930,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "emisar --version"
       assert html =~ "emisar-mcp --version"
       assert html =~ "emisar doctor"
+      assert html =~ "sudo emisar update --version &lt;target-version&gt;"
       assert html =~ "install.sh"
       assert html =~ "install-mcp.sh"
 
@@ -1956,6 +1959,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Client config and API key are untouched"
       assert html =~ "not a downgrade guarantee"
       assert html =~ "Packs do not move with the binary"
+      assert html =~ "infrastructure-managed runner is refused"
     end
 
     test "credentials opens with a matrix carrying every field the reader compares on",

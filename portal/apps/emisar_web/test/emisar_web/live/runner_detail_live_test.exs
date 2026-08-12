@@ -96,7 +96,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert has_element?(lv, "span.text-amber-300", "connected")
     assert html =~ "col-span-2 sm:col-span-1"
     assert html =~ "Runner update required"
-    assert html =~ "/install.sh | sudo bash"
+    assert html =~ "sudo emisar update"
     assert html =~ "bg-amber-300/40"
     refute html =~ "bg-amber-500/10"
     assert html =~ "preserves its configuration and restarts the service"
@@ -108,7 +108,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
     refute html =~ "unsupported"
     refute html =~ "outdated"
-    refute html =~ "/install.sh | sudo bash"
+    refute html =~ "sudo emisar update"
     # A supported, connected runner reads emerald "connected" in the Status field.
     assert has_element?(lv, "span.text-brand-300", "connected")
   end

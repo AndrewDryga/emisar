@@ -83,6 +83,7 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 		&cobra.Group{ID: "serve", Title: "Serve:"},
 		&cobra.Group{ID: "actions", Title: "Actions & packs:"},
 		&cobra.Group{ID: "diag", Title: "Diagnose & audit:"},
+		&cobra.Group{ID: "maintain", Title: "Maintain:"},
 		&cobra.Group{ID: "signing", Title: "Signed dispatch:"},
 	)
 	add := func(groupID string, c *cobra.Command) {
@@ -96,6 +97,7 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 	add("diag", stateCmd())
 	add("diag", eventsCmd())
 	add("diag", auditCmd())
+	add("maintain", updateCmd())
 	add("signing", signingCmd())
 	// version + the built-in help/completion stay ungrouped ("Additional Commands").
 	root.AddCommand(emitsJSON(versionCmd()))

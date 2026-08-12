@@ -459,7 +459,7 @@ defmodule EmisarWeb.DomainComponents do
   # an update prompt should — never the requirement string that decided it.
   defp version_chip_title(:runner, :outdated, version) do
     "Runner #{Emisar.Compat.runner_target()} is available#{version_from(version)}. " <>
-      "Re-run the installer on this host to update; it keeps the configuration and restarts the service."
+      "Run sudo emisar update on this host; it keeps the configuration and restarts the service."
   end
 
   defp version_chip_title(:mcp, :unsupported, _version) do
@@ -565,12 +565,12 @@ defmodule EmisarWeb.DomainComponents do
   # runner, so it never scopes a count to "on this page".
   defp version_upgrade_message(:runner, :single, unsupported, _outdated) when unsupported > 0 do
     "This runner is below the supported range (#{Emisar.Compat.runner_minimum()}). " <>
-      "Run the command on its host. The installer preserves its configuration and restarts the service."
+      "Run the command on its host. The update preserves its configuration and restarts the service."
   end
 
   defp version_upgrade_message(:runner, :single, 0, _outdated) do
     "This runner is behind #{Emisar.Compat.runner_target()}. " <>
-      "Run the command on its host. The installer preserves its configuration and restarts the service."
+      "Run the command on its host. The update preserves its configuration and restarts the service."
   end
 
   # `:list` scope — the notice sits above a paginated list, so it scopes the
@@ -579,13 +579,13 @@ defmodule EmisarWeb.DomainComponents do
   defp version_upgrade_message(:runner, :list, unsupported_count, 0) do
     "#{runner_count_phrase(unsupported_count)} below the supported range " <>
       "(#{Emisar.Compat.runner_minimum()}). Run the command once on each affected host; " <>
-      "the installer preserves its configuration and restarts the service."
+      "the update preserves its configuration and restarts the service."
   end
 
   defp version_upgrade_message(:runner, :list, 0, outdated_count) do
     "#{runner_count_phrase(outdated_count)} behind #{Emisar.Compat.runner_target()}. " <>
       "Run the command once on each affected host; " <>
-      "the installer preserves its configuration and restarts the service."
+      "the update preserves its configuration and restarts the service."
   end
 
   defp version_upgrade_message(:runner, :list, unsupported_count, outdated_count) do
@@ -593,7 +593,7 @@ defmodule EmisarWeb.DomainComponents do
       "range (#{Emisar.Compat.runner_minimum()}) and " <>
       "#{version_count_label(outdated_count, "runner")} behind #{Emisar.Compat.runner_target()}. " <>
       "Run the command once on each affected host; " <>
-      "the installer preserves its configuration and restarts the service."
+      "the update preserves its configuration and restarts the service."
   end
 
   # MCP agents render only as a page-scoped list (there is no per-agent detail
@@ -621,8 +621,7 @@ defmodule EmisarWeb.DomainComponents do
 
   defp version_count_label(count, noun), do: "#{count} #{noun}s are"
 
-  defp version_upgrade_command(:runner, base_url),
-    do: "curl -sSL #{String.trim_trailing(base_url, "/")}/install.sh | sudo bash"
+  defp version_upgrade_command(:runner, _base_url), do: "sudo emisar update"
 
   defp version_upgrade_command(:mcp, base_url), do: UrlHelpers.mcp_install_command(base_url)
 

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="upgrades"
-      updated="August 4, 2026"
+      updated="August 12, 2026"
       toc={[
         {"what-moves", "What upgrades on its own"},
         {"versions", "Find the versions you run"},
@@ -67,7 +67,7 @@
               <td class="px-4 py-3 font-semibold text-zinc-100">Runner binary</td>
               <td class="px-4 py-3">You, per host</td>
               <td class="px-4 py-3">
-                Re-run <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install.sh</code>. Stops and restarts the service.
+                Run <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar update</code>. Stops and restarts the service.
               </td>
             </tr>
             <tr>
@@ -184,12 +184,16 @@
 
       <.docs_h2 id="canary">Upgrade one runner</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Re-running the installer is the upgrade. Pin the release rather than taking whatever is
-        latest, and pass an explicit empty pack set so a binary upgrade stays a binary upgrade —
-        without it, the installer offers host-matched pack recommendations.
+        The runner updates to the latest stable immutable release by default. Pin the release on
+        the canary so every later host receives the same bytes.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># on the canary host</span>
-<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --version &lt;target-version&gt; --packs ""</.docs_code>
+<span class="text-zinc-500">$</span> sudo emisar update --version &lt;target-version&gt;</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        This command works only for a runner installed by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install.sh</code>, which records the paths it owns in a root-owned receipt. A copied binary,
+        container image, or infrastructure-managed runner is refused; update that deployment at its
+        source instead of letting the host drift from it.
+      </p>
       <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
       <p class="mt-5 text-base leading-7 text-zinc-400">
         What survives the upgrade:
@@ -197,9 +201,11 @@
         (an existing file is left alone),
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/runner.env</code>
         and the cached runner token, the installed packs under <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/packs</code>, the durable dispatch log, and the local audit journal. The
-        installer downloads and stages the new binary, verifies its checksum, executes it to
-        confirm the version, and checks the staged binary can read this host's dispatch state —
-        all before touching the running service.
+        update command verifies the immutable release and archive checksum, and checks GitHub's
+        workflow attestation when an authenticated
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">gh</code>
+        CLI is available. Only then does the release-bundled installer stage
+        the new binary, confirm its version, and check that it can read this host's dispatch state — all before touching the running service.
       </p>
       <.docs_callout kind={:warn} title="The service does stop.">
         <p>
@@ -256,7 +262,7 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            The installer exits non-zero. That host is already back on its previous binary; read
+            The update exits non-zero. If the swap had started, that host is already back on its previous binary; read
             the output before you touch the next host.
           </span>
         </li>
@@ -341,11 +347,11 @@
 
       <.docs_h2 id="rollback">Return to a known-good release</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Going back is the same installer with the tag you wrote down, followed by the same
+        Going back is the same update command with the version you wrote down, followed by the same
         verification.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># runner — the release you were on before</span>
-<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --version &lt;known-good-version&gt; --packs ""
+<span class="text-zinc-500">$</span> sudo emisar update --version &lt;known-good-version&gt;
 
 <span class="text-zinc-500"># bridge — same idea, with its own release tag</span>
 <span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --version &lt;known-good-version&gt;</.docs_code>

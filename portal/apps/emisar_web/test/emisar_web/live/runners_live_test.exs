@@ -684,7 +684,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       # because a warn-only unsupported runner still connects and dispatches.
       assert has_element?(lv, "span.text-amber-300.shrink-0", "connected")
       assert html =~ "Runner update required"
-      assert html =~ "/install.sh | sudo bash"
+      assert html =~ "sudo emisar update"
       assert has_element?(lv, "#runner-upgrade-command + button", "Copy")
       assert has_element?(lv, "#fleet-attention.mb-10.space-y-6")
       assert text_position(html, "Runner update required") < text_position(html, "1 connected")
@@ -708,7 +708,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "this one is on 0.0.5"
       refute html =~ "outdated"
       assert html =~ "Runner update available"
-      assert html =~ "/install.sh | sudo bash"
+      assert html =~ "sudo emisar update"
       # Outdated is advisory — the badge stays emerald "connected"; only a
       # below-minimum version degrades the connection tone.
       assert has_element?(lv, "span.text-brand-300.shrink-0", "connected")
@@ -724,7 +724,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
       refute html =~ "unsupported"
       refute html =~ "outdated"
-      refute html =~ "/install.sh | sudo bash"
+      refute html =~ "sudo emisar update"
       refute has_element?(lv, "#fleet-attention")
       # A supported, connected runner reads emerald "connected" — no caution tone.
       assert has_element?(lv, "span.text-brand-300.shrink-0", "connected")

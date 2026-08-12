@@ -150,8 +150,8 @@ func TestCLI_NoArgsAndHelpPrintRootHelpExitZero(t *testing.T) {
 			// The help must enumerate the subcommands (the operator's map of the
 			// CLI) and the category headers that group them.
 			for _, want := range []string{
-				"Usage:", "connect", "pack", "action", "audit", "doctor", "events", "signing", "state", "version",
-				"Serve:", "Actions & packs:", "Diagnose & audit:", "Signed dispatch:",
+				"Usage:", "connect", "pack", "action", "audit", "doctor", "events", "signing", "state", "update", "version",
+				"Serve:", "Actions & packs:", "Diagnose & audit:", "Maintain:", "Signed dispatch:",
 			} {
 				if !strings.Contains(stdout, want) {
 					t.Errorf("root help missing %q:\n%s", want, stdout)

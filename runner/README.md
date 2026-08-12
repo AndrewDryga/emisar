@@ -215,24 +215,33 @@ runner's reconnect backoff does not bypass that safety window.
 
 ## Upgrade and remove
 
-Re-run the installer to upgrade in place. Existing configuration, credentials,
-and valid packs are preserved:
+An installer-managed runner updates itself through the same staged installer
+transaction that created it. Existing configuration, credentials, packs, and
+local evidence are preserved:
+
+```sh
+sudo emisar update
+```
+
+Pin a reviewed release for a canary or rollback:
+
+```sh
+sudo emisar update --version X.Y.Z
+```
+
+The command accepts only an official install receipt written by `install.sh`.
+Copied development binaries, container images, and infrastructure-managed
+runners have no receipt and must be updated from their deployment source. The
+selected GitHub release must be stable and immutable; its archive is verified
+against `SHA256SUMS`, and an installed, authenticated `gh` CLI also verifies the
+release workflow attestation before the bundled installer runs.
+
+Fresh unattended installs still require an explicit pack set. Pass reviewed
+pack IDs when provisioning a host, or set an empty value to add none:
 
 ```sh
 curl -sSL https://emisar.dev/install.sh | sudo EMISAR_PACKS="" bash -s -- --yes
 ```
-
-Pin a reviewed release when repeatability matters:
-
-```sh
-curl -sSL https://emisar.dev/install.sh \
-  | sudo EMISAR_PACKS="" bash -s -- --version runner-vX.Y.Z --yes
-```
-
-Unattended installs require an explicit pack set. The empty value above adds no
-new packs and preserves valid packs already installed; pass reviewed pack IDs
-instead when provisioning a new host. Interactive installs can leave the value
-unset and review host-matched recommendations.
 
 The installer bundled in a release tarball pins itself to that release and can
 be moved to an offline host with the tarball and `SHA256SUMS` file.

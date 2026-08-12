@@ -270,6 +270,64 @@ func runnerInstallRollback(h *harness) error {
 	if err != nil {
 		return err
 	}
+	receipt := filepath.Join(etc, "install-receipt")
+	locator := filepath.Join(bin, ".emisar-install-receipt")
+	if err := exactFile(locator, receipt+"\n"); err != nil {
+		return fmt.Errorf("installer receipt locator: %w", err)
+	}
+	for _, want := range []string{
+		"schema=1", "manager=install.sh", "repository=andrewdryga/emisar",
+		"binary=" + filepath.Join(bin, "emisar"), "etc_dir=" + etc,
+		"data_dir=" + data, "log_dir=" + logDir, "init=none",
+	} {
+		if err := containsFile(receipt, want+"\n"); err != nil {
+			return fmt.Errorf("installer receipt: %w", err)
+		}
+	}
+	receiptInfo, err := os.Stat(receipt)
+	if err != nil {
+		return err
+	}
+	stat, ok := receiptInfo.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != 0 || receiptInfo.Mode().Perm() != 0o600 {
+		return fmt.Errorf("receipt owner/mode = %#v %s, want uid 0 mode 0600", receiptInfo.Sys(), receiptInfo.Mode())
+	}
+
+	marker := filepath.Join(etc, "packs", ".update-preserved")
+	if err := writeFile(marker, "packs stay put\n", 0o600); err != nil {
+		return err
+	}
+	bundle := h.path("preverified-bundle")
+	if err := h.mkdir(bundle); err != nil {
+		return err
+	}
+	for source, destination := range map[string]string{
+		filepath.Join(bin, "emisar"): filepath.Join(bundle, "emisar"),
+		h.repoPath("install.sh"):     filepath.Join(bundle, "install.sh"),
+	} {
+		contents, readErr := os.ReadFile(source)
+		if readErr != nil {
+			return readErr
+		}
+		if writeErr := os.WriteFile(destination, contents, 0o755); writeErr != nil {
+			return writeErr
+		}
+	}
+	handoff, err := h.successful(h.root, map[string]string{"EMISAR_PACKS": ""}, "bash",
+		filepath.Join(bundle, "install.sh"), "--yes", "--no-service",
+		"--version", "runner-v"+version, "--packs", "",
+		"--bin-dir", bin, "--etc-dir", etc, "--data-dir", data, "--log-dir", logDir,
+		"--preverified-bundle", bundle)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(handoff), "preserving installed packs") {
+		return fmt.Errorf("preverified handoff did not name pack preservation:\n%s", handoff)
+	}
+	if err := exactFile(marker, "packs stay put\n"); err != nil {
+		return fmt.Errorf("preverified handoff changed packs: %w", err)
+	}
+
 	before, err := fileSHA(filepath.Join(bin, "emisar"))
 	if err != nil {
 		return err
@@ -324,6 +382,8 @@ func runnerSignalRollback(h *harness) error {
 rollback_binary() { echo "rollback ran"; }
 restore_enrollment_state() { :; }
 restore_previous_service() { :; }
+rollback_install_receipt() { :; }
+rollback_service() { :; }
 warn() { :; }
 INSTALL_TRANSACTION=1
 tmp=""

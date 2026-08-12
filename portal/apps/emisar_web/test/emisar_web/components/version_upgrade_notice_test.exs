@@ -31,8 +31,8 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
       # The available release is named, not the requirement that decided it.
       assert html =~ "1 runner is behind 0.1.0"
       assert html =~ "space-y-4"
-      assert html =~ "curl -sSL https://control.example/install.sh | sudo bash"
-      assert html =~ ~s(data-copy-text="curl -sSL https://control.example/install.sh | sudo bash")
+      assert html =~ "sudo emisar update"
+      assert html =~ ~s(data-copy-text="sudo emisar update")
       assert html =~ "overflow-hidden text-ellipsis whitespace-nowrap"
       assert html =~ "min-h-9"
       refute html =~ "overflow-x-auto"

@@ -70,6 +70,7 @@ PRE_PACKS="${EMISAR_PACKS:-}"     # the explicit list itself (may be empty)
 PACKS_EXPLICIT=0; [ -n "${EMISAR_PACKS+set}" ] && PACKS_EXPLICIT=1
 NO_START="${NO_START:-0}"
 NO_SERVICE="${NO_SERVICE:-0}"     # skip user + service unit + activation
+PREVERIFIED_BUNDLE=""              # internal: verified `emisar update` handoff
 SERVICE_STARTED=0
 MODE="install"                    # install|uninstall
 ENROLLMENT_KEY_UPDATE=0           # existing runner.env needs the supplied key
@@ -197,6 +198,7 @@ while [ $# -gt 0 ]; do
     --user) require_value "$@"; SERVICE_USER="$2"; SERVICE_GROUP="$2"; shift 2;;
     --yes|-y) ASSUME_YES=1; shift;;
     --packs) require_value "$@"; PRE_PACKS="$2"; PACKS_EXPLICIT=1; shift 2;;
+    --preverified-bundle) require_value "$@"; PREVERIFIED_BUNDLE="$2"; shift 2;;
     --help|-h) usage; exit 0;;
     *) echo "unknown flag: $1" >&2; usage >&2; exit 2;;
   esac
@@ -214,6 +216,16 @@ require_owned_dir BIN_DIR "${BIN_DIR}"
 require_owned_dir ETC_DIR "${ETC_DIR}"
 require_owned_dir DATA_DIR "${DATA_DIR}"
 require_owned_dir LOG_DIR "${LOG_DIR}"
+if [ -n "${PREVERIFIED_BUNDLE}" ]; then
+  case "${PREVERIFIED_BUNDLE}" in
+    /*) ;;
+    *) reject_dir "--preverified-bundle must be an absolute path" ;;
+  esac
+  [ -d "${PREVERIFIED_BUNDLE}" ] || \
+    reject_dir "--preverified-bundle is not a directory: ${PREVERIFIED_BUNDLE}"
+  [ -n "${VERSION}" ] || \
+    reject_dir "--preverified-bundle requires --version"
+fi
 
 # -----------------------------------------------------------------------
 # Logging helpers
@@ -406,7 +418,9 @@ require_root_and_tools() {
   if [ "$(id -u)" != "0" ]; then
     die "must run as root (use sudo). detected uid=$(id -u)"
   fi
-  for tool in curl tar; do
+  local tools=(tar)
+  [ -n "${PREVERIFIED_BUNDLE}" ] || tools+=(curl)
+  for tool in "${tools[@]}"; do
     command -v "$tool" >/dev/null 2>&1 || die "required tool not found: $tool"
   done
 }
@@ -1115,6 +1129,63 @@ SERVICE_WAS_RUNNING=0
 # is left in a "running but broken" state.
 SERVICE_UNIT_CREATED=0
 INSTALL_TRANSACTION=0
+RECEIPT_PREEXISTED=0
+INSTALL_RECEIPT_PATH="${ETC_DIR}/install-receipt"
+INSTALL_RECEIPT_LOCATOR="${BIN_DIR}/.emisar-install-receipt"
+
+# The updater does not infer ownership from a path. This receipt is the
+# installer saying which exact binary and service paths it owns; the CLI accepts
+# it only when this file and its directory chain remain root-owned and not
+# writable by another user. A tiny locator beside the binary points here so
+# custom --etc-dir installations remain discoverable.
+write_install_receipt() {
+  local value receipt_tmp locator_tmp owner="root:${SERVICE_GROUP}"
+  if [ "${OS}" = "darwin" ]; then owner="root:wheel"; fi
+
+  for value in "${REPO}" "${BIN_DIR}/emisar" "${ETC_DIR}" "${DATA_DIR}" "${LOG_DIR}" \
+    "${SERVICE_USER}" "${SERVICE_GROUP}" "${INIT}"; do
+    case "${value}" in
+      *$'\n'*|*$'\r'*) die "install receipt values must not contain newlines" ;;
+    esac
+  done
+
+  receipt_tmp="$(mktemp "${INSTALL_RECEIPT_PATH}.tmp.XXXXXX")" || \
+    die "could not stage ${INSTALL_RECEIPT_PATH}"
+  chmod 600 "${receipt_tmp}"
+  cat >"${receipt_tmp}" <<EOF
+schema=1
+manager=install.sh
+repository=${REPO}
+binary=${BIN_DIR}/emisar
+etc_dir=${ETC_DIR}
+data_dir=${DATA_DIR}
+log_dir=${LOG_DIR}
+service_user=${SERVICE_USER}
+service_group=${SERVICE_GROUP}
+init=${INIT}
+EOF
+  chown "${owner}" "${receipt_tmp}" 2>/dev/null || chown root:root "${receipt_tmp}"
+  mv -f "${receipt_tmp}" "${INSTALL_RECEIPT_PATH}" || {
+    rm -f "${receipt_tmp}"
+    die "could not activate ${INSTALL_RECEIPT_PATH}"
+  }
+
+  locator_tmp="$(mktemp "${INSTALL_RECEIPT_LOCATOR}.tmp.XXXXXX")" || \
+    die "could not stage ${INSTALL_RECEIPT_LOCATOR}"
+  chmod 644 "${locator_tmp}"
+  printf '%s\n' "${INSTALL_RECEIPT_PATH}" >"${locator_tmp}"
+  chown "${owner}" "${locator_tmp}" 2>/dev/null || chown root:root "${locator_tmp}"
+  mv -f "${locator_tmp}" "${INSTALL_RECEIPT_LOCATOR}" || {
+    rm -f "${locator_tmp}"
+    die "could not activate ${INSTALL_RECEIPT_LOCATOR}"
+  }
+  log "recorded installer ownership at ${INSTALL_RECEIPT_PATH}"
+}
+
+rollback_install_receipt() {
+  [ "${RECEIPT_PREEXISTED}" = "0" ] || return 0
+  rm -f "${INSTALL_RECEIPT_PATH}" "${INSTALL_RECEIPT_LOCATOR}"
+}
 
 stage_binary() {
   local src="$1/emisar" ver_output expected
@@ -1525,6 +1596,7 @@ finish_install() {
     rollback_binary
     restore_enrollment_state
     rollback_service
+    rollback_install_receipt
     restore_previous_service
     warn "installation failed; restored the previous runner and service state"
   fi
@@ -1543,7 +1615,9 @@ do_install() {
   require_explicit_unattended_packs
   require_root_and_tools
   log "install target: ${OS}/${ARCH} via ${INIT}"
-  if [ -z "${VERSION}" ]; then
+  if [ -n "${PREVERIFIED_BUNDLE}" ]; then
+    log "preverified release: ${VERSION}"
+  elif [ -z "${VERSION}" ]; then
     VERSION="$(resolve_latest_version)" || die "could not resolve latest version"
     log "latest release: ${VERSION}"
   else
@@ -1551,7 +1625,9 @@ do_install() {
   fi
   [[ "${VERSION}" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
     die "release version must match runner-vMAJOR.MINOR.PATCH (got '${VERSION}')"
-  require_immutable_release "${VERSION}"
+  if [ -z "${PREVERIFIED_BUNDLE}" ]; then
+    require_immutable_release "${VERSION}"
+  fi
 
   local prompt
   if [ "${INIT}" = "none" ]; then
@@ -1582,13 +1658,20 @@ do_install() {
   trap 'exit 143' TERM
 
   local extracted
-  extracted="$(download_release "${VERSION}" "${tmp}")"
+  if [ -n "${PREVERIFIED_BUNDLE}" ]; then
+    extracted="${PREVERIFIED_BUNDLE}"
+  else
+    extracted="$(download_release "${VERSION}" "${tmp}")"
+  fi
 
   # Download, stage, and execute the new binary before interrupting a running
   # service. Architecture/version failures leave the current runner untouched.
   stage_binary "${extracted}"
   check_dispatch_log
   INSTALL_TRANSACTION=1
+  if [ -e "${INSTALL_RECEIPT_PATH}" ] || [ -e "${INSTALL_RECEIPT_LOCATOR}" ]; then
+    RECEIPT_PREEXISTED=1
+  fi
   stop_service_if_running
 
   # --no-service skips the daemon user — without an init unit, the
@@ -1603,14 +1686,18 @@ do_install() {
 
   ensure_dirs
   activate_binary
-  repair_installed_packs
-  # EMISAR_PACKS set (even empty) or --packs given ⇒ the pack set is
-  # explicit: install exactly it, never host-detect or suggest.
-  if [ "${PACKS_EXPLICIT}" = "1" ]; then
-    install_named_packs "${extracted}"
+  if [ -n "${PREVERIFIED_BUNDLE}" ]; then
+    log "preserving installed packs (runner binary update)"
   else
-    install_default_packs "${extracted}"
-    install_suggested_packs
+    repair_installed_packs
+    # EMISAR_PACKS set (even empty) or --packs given ⇒ the pack set is
+    # explicit: install exactly it, never host-detect or suggest.
+    if [ "${PACKS_EXPLICIT}" = "1" ]; then
+      install_named_packs "${extracted}"
+    else
+      install_default_packs "${extracted}"
+      install_suggested_packs
+    fi
   fi
   verify_installed_packs
   secure_pack_tree
@@ -1623,6 +1710,7 @@ do_install() {
   esac
 
   start_service
+  write_install_receipt
 
   discard_binary_backup
   INSTALL_TRANSACTION=0
@@ -1746,6 +1834,7 @@ EOF
   # \$0 is "bash" when run as `curl ... | sudo bash`, so don't print that.
   # Show the canonical re-curl form instead.
   echo "Uninstall:  curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --uninstall"
+  echo "Update:     sudo ${BIN_DIR}/emisar update"
   echo "==============================================================="
 }
 
@@ -1780,6 +1869,7 @@ do_uninstall() {
     log "removing ${BIN_DIR}/emisar"
     rm -f "${BIN_DIR}/emisar"
   fi
+  rm -f "${INSTALL_RECEIPT_LOCATOR}" "${INSTALL_RECEIPT_PATH}"
 
   if [ "${PURGE}" = "1" ]; then
     for d in "${ETC_DIR}" "${DATA_DIR}" "${LOG_DIR}"; do

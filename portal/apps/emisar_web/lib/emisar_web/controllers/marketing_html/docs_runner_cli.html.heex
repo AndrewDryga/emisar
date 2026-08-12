@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runner-cli"
-      updated="August 4, 2026"
+      updated="August 12, 2026"
       toc={[
         {"running", "Running the CLI"},
         {"connect", "The connect daemon"},
@@ -462,8 +462,10 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
 
       <.docs_h2 id="lifecycle">Install, update, and removal</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The binary is installed and upgraded by the same script; it isn't self-updating. Re-running
-        the installer upgrades in place and preserves config and packs. It requires systemd on Linux
+        Install the binary with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install.sh</code>, then use
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar update</code>
+        for manual host-local updates. Both paths use the same staged replacement transaction and
+        preserve config and packs. The installer requires systemd on Linux
         (use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
         for hosts without a real init). This section is the flag reference; running an upgrade
         across a fleet — canary, verification, batches, rollback — is <.link
@@ -471,12 +473,29 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           class="text-brand-400 hover:text-brand-300"
         >upgrade runners and MCP bridges</.link>.
       </p>
-      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># install or upgrade in place (config + packs preserved)</span>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar update</code>
+        requires the root-owned receipt written by the official installer. It refuses copied,
+        containerized, development, and infrastructure-managed binaries; update those from the
+        system that deployed them.
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># update an official installer-managed runner</span>
+<span class="text-zinc-500">$</span> sudo emisar update
+<span class="text-zinc-500">$</span> sudo emisar update --version X.Y.Z
+<span class="text-zinc-500"># install or provision a host</span>
 <span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash
-<span class="text-zinc-500"># pin a version, or provision unattended with a fixed pack set</span>
+<span class="text-zinc-500"># provision unattended with a fixed pack set</span>
 <span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --version runner-v0.3.0
 <span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --yes --packs linux-core,postgres</.docs_code>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar update --version X.Y.Z</code>
+            — install an exact stable immutable runner release for a canary or rollback. Without
+            the flag, the command selects the newest stable immutable release.
+          </span>
+        </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
