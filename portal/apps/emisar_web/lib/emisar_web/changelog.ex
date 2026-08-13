@@ -17,6 +17,41 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-08-13],
+      slug: "large-runbooks-finish-and-results-stay-readable",
+      title: "Large runbooks finish, and every result stays readable",
+      tag: "v0.40.0",
+      summary:
+        "A runbook no longer fails publication because its expanded plan crossed an arbitrary total-step ceiling. The limits that protect the service remain — 16 stages, 256 resolved items, bounded targets, waits, arguments, and output — but a useful procedure can now be as long as those real bounds allow. When a terminal result is too large for one MCP response, the first call keeps the summary and returns an opaque continuation for ordered, 64 KiB output pages with explicit progress counts; small executions still finish in one call. Action discovery now also follows the member's current runner and pack scope in the console and MCP, including open pages after access or a runner group changes.",
+      details: [
+        {"Security",
+         [
+           "Runner, pack, action, approval, and audit discovery now intersects the member's current runner and pack scope. Catalog rows require a deployment on a runner the member can see, malformed cross-account associations fail closed, and mounted console pages refresh when runner facts or the member's scope changes.",
+           "Phoenix LiveView is patched past the open-redirect advisory that affected navigation targets."
+         ]},
+        {"Runbooks",
+         [
+           "The arbitrary 32-step ceiling is gone. Definition size, stage count, target fan-out, frozen-plan size, and the 256-item execution ceiling remain the bounds that stop real resource growth.",
+           "Large terminal output is paged as complete records through wait_for_run. Each page names the total, returned, and remaining record counts and carries an opaque 15-minute continuation bound to the execution and credential lineage."
+         ]},
+        {"Runner",
+         [
+           "An official installer-managed runner can now update itself with emisar update. It verifies the release checksum and GitHub build attestation before handing the bundle to the same stop, swap, restart, and rollback transaction used by the installer; image and infrastructure-managed runners stay with their deployment owner.",
+           "pack update --json now emits its partial report before returning a post-update validation error, so automation keeps machine-readable results on every failure path."
+         ]},
+        {"Packs",
+         [
+           "The catalog now carries 100 packs and 1,682 actions, adding JFrog Artifactory, Databricks, Sentry, Symbolicator, and NTPsec while substantially expanding Cassandra and Cloudflare operations.",
+           "The admin runner's declared packs and executable checks now match what the production host actually carries."
+         ]},
+        {"Console",
+         [
+           "Approval forms now live-validate an empty restricted pack selection alongside runner scope, and an MFA enrollment completed in another tab returns to the app instead of sending the user through a misleading email-verification loop.",
+           "Runbook lists show a loading state on the disconnected first render, approval evidence links directly to its audit record, and invitation completion leaves one clear receipt instead of a finished form."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-08-09],
       slug: "one-runbook-one-unpublished-change",
       title: "One runbook, one unpublished change, and a diff before you publish",

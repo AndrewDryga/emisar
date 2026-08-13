@@ -1238,6 +1238,7 @@ defmodule EmisarWeb.MarketingTest do
                "A vanished runbook, a deny that matched nothing, and a session that would not end"
 
       assert html =~ "One runbook, one unpublished change, and a diff before you publish"
+      assert html =~ "Large runbooks finish, and every result stays readable"
 
       # Product release tags — the commit history, the tags, and the changelog
       # all line up (newest and oldest both rendered).
@@ -1264,6 +1265,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "v0.37.0"
       assert html =~ "v0.38.0"
       assert html =~ "v0.39.0"
+      assert html =~ "v0.40.0"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.
