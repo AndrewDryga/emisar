@@ -99,8 +99,8 @@ attach the class to its element and inspect that element's children — real
 parser work for a rule with no current violations and a cosmetic failure mode.
 
 Note this one could not be a Credo check even if it were decidable: Credo cannot
-parse `.heex` (it drops the file as unparseable), so like the anchor-glue and
-repeated-inline rules it would belong in `EmisarWeb.TemplateHygieneTest`.
+parse `.heex` (it drops the file as unparseable), so like the inline-punctuation
+and repeated-inline rules it would belong in `EmisarWeb.TemplateHygieneTest`.
 **Verdict: deferred — revisit only if it recurs, and then build it on a real
 HEEx parse, not a line window.**
 

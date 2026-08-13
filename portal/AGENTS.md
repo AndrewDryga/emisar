@@ -66,7 +66,7 @@ Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to th
 - **Per-row admin verbs: 1-2 = small bordered buttons; 3+ = the Actions menu** — and a visible action button always wears a bordered face; `:ghost` is for menu rows and inline dismiss only. `design-console-ux.md` §7.47.
 - **Spacing utilities require element siblings** — wrap prose in `<p>` before relying on `space-y-*`; raw HEEx text nodes do not participate in the sibling combinator. `design-console-ux.md` §7.22.
 - **`whitespace-pre-wrap` content glues to its tags via a one-line inner span** — template indentation inside a pre-wrap element renders as real leading whitespace. `design-console-ux.md` §7.48.
-- **Inline link/anchor text glues to its closing tag when punctuation follows** — `}>text</.link>.`, never the formatter's loose `>` ⏎ `text` ⏎ `</.link>.`, whose newline renders as a visible space ("a shell ."). **Enforced** by `EmisarWeb.TemplateHygieneTest` — a test, not a Credo check, because Credo cannot parse `.heex`.
+- **Inline prose glues to its closing tag when punctuation follows** — `<span>require_approval</span>.` or `}>text</.link>.`, never the formatter's loose `>` ⏎ `text` ⏎ `</.link>.` or any whitespace before the punctuation, which renders as a visible gap ("require_approval ." / "a shell ."). **Enforced** by `EmisarWeb.TemplateHygieneTest` — a test, not a Credo check, because Credo cannot parse `.heex`.
 - **Every attention spine starts with a visible, semantically exact icon** — match the glyph to the operator action, and verify it renders (a missing generated Heroicon class ships as an invisible glyph). `design-console-ux.md` §7.49.
 - **A note that instructs the operator wears the callout spine** — the spine-less `<.status_note>` is only for a passive posture fact about the surface. `design-console-ux.md` §7.50.
 - **One metadata group has one value typography and tone contract** — peer values share size, line height, and tone; a copy button or mono ID does not invent hierarchy. `design-console-ux.md` §7.14.
@@ -549,8 +549,8 @@ Two layers — mechanical rules run by machines, judgment rules by review:
    markup rule decidable from template SOURCE TEXT belongs in
    `EmisarWeb.TemplateHygieneTest` (which walks `.heex` and `.ex` alike and runs
    inside `mix test`, hence inside the gate), not in a Credo check that would
-   silently cover only the `~H` sigils embedded in `.ex`. The anchor-glue rule
-   shipped 8 violations while documented-but-unrun, 6 of them in `.heex`.
+   silently cover only the `~H` sigils embedded in `.ex`. The inline-punctuation
+   rule shipped 8 violations while documented-but-unrun, 6 of them in `.heex`.
    **Routing: Elixir AST → `Emisar.Checks.*`; template source text →
    `EmisarWeb.TemplateHygieneTest`.**
 
