@@ -140,7 +140,7 @@ defmodule Emisar.Runbooks.Definition do
   defp validate_draft_shape(_definition), do: invalid_draft_shape()
 
   defp draft_stage?(%{"steps" => steps}) when is_list(steps) do
-    length(steps) <= limit!(:max_steps) and Enum.all?(steps, &draft_step?/1)
+    Enum.all?(steps, &draft_step?/1)
   end
 
   defp draft_stage?(_stage), do: false
@@ -331,7 +331,6 @@ defmodule Emisar.Runbooks.Definition do
       duplicate_issues(stages, "/stages", "Stage") ++
       duplicate_step_issues(stages) ++
       input_issues(inputs) ++
-      total_step_issues(stages) ++
       stage_issues(stages, input_ids, step_index)
   end
 
@@ -525,14 +524,6 @@ defmodule Emisar.Runbooks.Definition do
   defp in_optional_enum?(_value, %{"enum" => nil}), do: true
   defp in_optional_enum?(value, %{"enum" => enum}), do: value in enum
   defp in_optional_enum?(_value, _input), do: true
-
-  defp total_step_issues(stages) do
-    if Enum.sum(Enum.map(stages, &length(&1["steps"]))) <= limit!(:max_steps) do
-      []
-    else
-      [issue("invalid_definition", "/stages", "Runbook has too many total steps.")]
-    end
-  end
 
   defp build_step_index(stages) do
     stages

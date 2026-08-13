@@ -104,7 +104,6 @@
         "steps": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 32,
           "items": {"$ref": "#/$defs/step"}
         }
       },
@@ -338,7 +337,6 @@
     "max_context_markdown_bytes": 16384,
     "max_inputs": 32,
     "max_stages": 16,
-    "max_steps": 32,
     "max_target_refs_per_step": 16,
     "max_execution_items": 256,
     "max_outputs_per_step": 16,

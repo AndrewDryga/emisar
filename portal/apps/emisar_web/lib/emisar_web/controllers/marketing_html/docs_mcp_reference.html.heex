@@ -255,8 +255,8 @@
           >Runbooks</a>.
         </p>
         <p>
-          A definition may contain 32 inputs, 16 stages, 32 steps in total, 16 target refs per
-          step, and 256 resolved items within 64 KiB. Execution returns after the durable execution
+          A definition may contain 32 inputs, 16 stages, and 16 target refs per step within 64 KiB.
+          A resolved execution may contain 256 items. Execution returns after the durable execution
           and its initial stage state commit. The response groups exact items under stages and shows
           extracted output and condition evidence, wait state, stable blocking reason, and only the
           latest physical attempt. Follow its <code>wait_for_run</code>

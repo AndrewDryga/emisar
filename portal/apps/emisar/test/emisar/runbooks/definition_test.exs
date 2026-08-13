@@ -30,6 +30,16 @@ defmodule Emisar.Runbooks.DefinitionTest do
       assert definition["schema_version"] == 1
     end
 
+    test "accepts more than 32 steps within the shared safety envelope" do
+      base_step = valid_definition() |> get_in(["stages", Access.at(0), "steps"]) |> hd()
+      steps = Enum.map(1..40, &Map.put(base_step, "id", "observe_#{&1}"))
+      definition = put_in(valid_definition(), ["stages", Access.at(0), "steps"], steps)
+
+      assert byte_size(Jason.encode!(definition)) < Definition.limit!(:max_definition_bytes)
+      assert {:ok, ^definition} = Definition.validate_draft(definition)
+      assert {:ok, ^definition} = Definition.validate(definition)
+    end
+
     test "rejects aliases and unknown fields with deterministic JSON Pointer errors" do
       definition =
         valid_definition()
@@ -284,7 +294,7 @@ defmodule Emisar.Runbooks.DefinitionTest do
 
   test "schema and runtime limits have one machine-readable owner" do
     assert Definition.schema()["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-    assert Definition.limit!(:max_steps) == 32
+    refute Map.has_key?(Definition.limits(), "max_steps")
     assert Definition.limit!(:default_stage_parallelism) == 5
   end
 

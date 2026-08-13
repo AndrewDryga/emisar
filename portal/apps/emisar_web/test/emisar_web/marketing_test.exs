@@ -1533,7 +1533,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "pack@version/sha256:hash"
       assert html =~ "name~sha256-prefix"
       assert html =~ "signed_runbook_unsupported"
-      assert html =~ "256 resolved items"
+      assert html =~ "A resolved execution may contain 256 items"
       assert html =~ "initial stage state commit"
 
       # The "Calling the endpoint" on-ramp — the verbatim curl a custom client copies.

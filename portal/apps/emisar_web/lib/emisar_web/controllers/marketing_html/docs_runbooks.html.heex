@@ -498,10 +498,10 @@
 
       <.docs_h2 id="limits">Limits</.docs_h2>
       <p class="mt-5 text-base text-zinc-400">
-        One definition is at most 64 KiB and contains up to 32 inputs, 16 stages, 32 steps in total,
-        and 16 target refs per step. A resolved execution contains at most 256 logical items. A
-        parallel stage can run 1 through 16 attempts at once — 5 unless the definition sets it. Each
-        step can retain 16 outputs and evaluate 16 success conditions. A wait polls every 5 seconds
+        One definition is at most 64 KiB and contains up to 32 inputs, 16 stages, and 16 target refs
+        per step. A resolved execution contains at most 256 logical items. A parallel stage can run
+        1 through 16 attempts at once — 5 unless the definition sets it. Each step can retain 16
+        outputs and evaluate 16 success conditions. A wait polls every 5 seconds
         to 1 hour and makes 2 to 100 attempts. The frozen execution plan is at most 1 MiB. An
         execution, including waits, ends within 24 hours. A title is at most 80 characters and 320
         bytes; a description at most 4,096 characters and 8 KiB.

@@ -1592,6 +1592,18 @@ defmodule Emisar.RunbooksTest do
       assert published_event.payload["definition_sha256"] == release.definition_sha256
     end
 
+    test "publishes more than 32 steps when the definition fits the safety envelope" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject)
+      steps = Enum.map(1..40, &step("observe-#{&1}", runner.group))
+      definition = definition([stage("inspect", steps)])
+      runbook = create_runbook(subject, definition: definition)
+
+      assert {:ok, published} = Runbooks.publish_draft(runbook, subject)
+      assert published.definition == definition
+    end
+
     test "counts publishes, not saves" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
