@@ -1053,11 +1053,14 @@
     },
     "runbook_execution_outputs": {
       "type": "object",
-      "x-maxEncodedUtf8Bytes": 524288,
-      "required": ["runbook_execution_id", "outputs"],
+      "x-maxEncodedUtf8Bytes": 65536,
+      "required": ["runbook_execution_id", "total_count", "returned_count", "remaining_count", "outputs"],
       "additionalProperties": false,
       "properties": {
         "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
+        "total_count": {"type": "integer", "minimum": 1},
+        "returned_count": {"type": "integer", "minimum": 1, "maximum": 100},
+        "remaining_count": {"type": "integer", "minimum": 0},
         "outputs": {
           "type": "array",
           "minItems": 1,

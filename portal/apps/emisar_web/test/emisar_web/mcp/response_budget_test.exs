@@ -30,4 +30,13 @@ defmodule EmisarWeb.MCP.ResponseBudgetTest do
     assert ResponseBudget.valid_request_id?(String.to_integer(String.duplicate("9", 4_096)))
     refute ResponseBudget.valid_request_id?(String.to_integer(String.duplicate("9", 4_097)))
   end
+
+  test "keeps model pages below the hard transport ceiling" do
+    payload = %{ok: true, output: String.duplicate("x", 50_000)}
+
+    assert ResponseBudget.fits_payload?(payload)
+    refute ResponseBudget.fits_model_page?(payload)
+    assert ResponseBudget.max_model_page_frame_bytes() == 64 * 1_024
+    assert ResponseBudget.max_model_page_frame_bytes() < ResponseBudget.max_frame_bytes()
+  end
 end

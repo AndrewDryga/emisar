@@ -512,7 +512,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
   defp largest_fitting_output_count(build, low, high, best) when low <= high do
     count = div(low + high, 2)
 
-    if ResponseBudget.fits_payload?(%{ok: true, execution_outputs: build.(count)}) do
+    if ResponseBudget.fits_model_page?(%{ok: true, execution_outputs: build.(count)}) do
       largest_fitting_output_count(build, count + 1, high, count)
     else
       largest_fitting_output_count(build, low, count - 1, best)
@@ -522,15 +522,19 @@ defmodule EmisarWeb.MCP.RunbookTools do
   defp largest_fitting_output_count(_build, _low, _high, best), do: best
 
   defp output_page(execution_id, outputs, position, count, scope) do
+    total_count = length(outputs)
     next_position = position + count
 
     %{
       runbook_execution_id: execution_id,
+      total_count: total_count,
+      returned_count: count,
+      remaining_count: total_count - next_position,
       outputs: outputs |> Enum.drop(position) |> Enum.take(count)
     }
     |> maybe_put(
       :next,
-      if(next_position < length(outputs), do: output_next(execution_id, scope, next_position))
+      if(next_position < total_count, do: output_next(execution_id, scope, next_position))
     )
   end
 

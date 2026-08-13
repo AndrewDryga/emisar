@@ -1302,9 +1302,10 @@ credential lineage, so a forged, expired, or cross-bound value returns
 present while the run is live (`timeout: "60s"`, and the wait wakes as soon as a
 new chunk arrives) or while a large backlog is still draining (`timeout: "0"`,
 so the caller pulls the next frame immediately); it is absent once the run is
-terminal and its output is fully drained. Each frame is sized against the real
-assembled transport frame, so a chatty or escape-heavy run drains across several
-`next` hops with nothing repeated. A dropped progress chunk surfaces as
+terminal and its output is fully drained. Each continuation is sized against
+the real assembled frame and stays within 64 KiB, so a chatty or escape-heavy
+run drains across several `next` hops with nothing repeated. A dropped progress
+chunk surfaces as
 `output_complete: false`, never a silent gap — as does a drain that retention
 pruned mid-flight: a cursor resuming inside a pruned event flags immediately,
 and a terminal drain that ends still owing whole events (the seed captured the
@@ -1808,6 +1809,9 @@ complete extracted-output records:
   "ok": true,
   "execution_outputs": {
     "runbook_execution_id": "60aeb528-cde1-5be6-8d2b-5b903f036d1c",
+    "total_count": 2,
+    "returned_count": 1,
+    "remaining_count": 1,
     "outputs": [
       {
         "item_id": "8828f094-e608-47cc-bcc5-98c13e40accd",
@@ -1833,12 +1837,15 @@ complete extracted-output records:
 }
 ```
 
-The server fills each page with as many whole output records as fit the real
-framed 512 KiB response and never splits one value. The final page omits `next`.
-Sensitive values remain `[REDACTED]`. Every page re-authorizes the execution;
-the signed 15-minute cursor is bound to its execution and credential lineage.
-An expired cursor is restarted by fetching the terminal execution without a
-cursor and following its fresh `outputs_next`.
+The server fills each page with as many whole output records as fit a 64 KiB
+model-consumable response and never splits one value. The transport still has a
+separate 512 KiB hard ceiling. `total_count`, `returned_count`, and
+`remaining_count` make progress explicit; the final page has
+`remaining_count: 0` and omits `next`. Sensitive values remain `[REDACTED]`.
+Every page re-authorizes the execution; the signed 15-minute cursor is bound to
+its execution and credential lineage. An expired cursor is restarted by
+fetching the terminal execution without a cursor and following its fresh
+`outputs_next`.
 
 `blocking` is `null` when nothing needs explanation. Otherwise it carries a
 stable code and message plus the applicable stage, step, and runner identity.

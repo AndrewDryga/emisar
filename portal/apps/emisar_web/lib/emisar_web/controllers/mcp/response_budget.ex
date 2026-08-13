@@ -9,6 +9,7 @@ defmodule EmisarWeb.MCP.ResponseBudget do
   """
 
   @max_frame_bytes 512 * 1_024
+  @max_model_page_frame_bytes 64 * 1_024
   @max_request_id_bytes 4_096
 
   @doc "Builds the one fixed MCP result representation used on the wire."
@@ -22,6 +23,15 @@ defmodule EmisarWeb.MCP.ResponseBudget do
 
   @doc "Returns whether a fixed payload fits one final frame for any accepted request id."
   def fits_payload?(payload, is_error \\ false) do
+    fits_payload_within?(payload, is_error, @max_frame_bytes)
+  end
+
+  @doc "Returns whether a continuation page stays model-consumable for any request id."
+  def fits_model_page?(payload, is_error \\ false) do
+    fits_payload_within?(payload, is_error, @max_model_page_frame_bytes)
+  end
+
+  defp fits_payload_within?(payload, is_error, limit) do
     frame = %{
       jsonrpc: "2.0",
       # NUL has the largest JSON escape among one-byte input characters, so
@@ -30,7 +40,7 @@ defmodule EmisarWeb.MCP.ResponseBudget do
       result: fixed_result(payload, is_error)
     }
 
-    encoded_size(frame) <= @max_frame_bytes
+    encoded_size(frame) <= limit
   end
 
   @doc "Encodes a final frame only when it satisfies the bridge transport ceiling."
@@ -52,6 +62,9 @@ defmodule EmisarWeb.MCP.ResponseBudget do
 
   @doc false
   def max_frame_bytes, do: @max_frame_bytes
+
+  @doc false
+  def max_model_page_frame_bytes, do: @max_model_page_frame_bytes
 
   @doc false
   def max_request_id_bytes, do: @max_request_id_bytes

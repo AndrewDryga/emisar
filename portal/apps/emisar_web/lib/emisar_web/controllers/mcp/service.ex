@@ -155,16 +155,15 @@ defmodule EmisarWeb.MCP.Service do
     total = Enum.reduce(segments, 0, &(byte_size(&1.text) + &2))
     summary = build.(total)
 
-    # Measure the REAL assembled frame instead of estimating it. The transport
-    # mirrors the payload into BOTH structuredContent and an escaped text block,
-    # so escape-heavy output (a quote costs 2 bytes in one and 4 in the other)
-    # runs far past its own encoded size. Only shrink when it actually overruns.
+    # Measure the REAL assembled frame instead of estimating it. Continuation
+    # pages stay well below the transport ceiling because clients feed them to a
+    # model whose artifact/context budget is substantially smaller.
     if fits_frame?(summary),
       do: summary,
       else: build.(largest_fitting_take(build, 0, total, 0))
   end
 
-  defp fits_frame?(summary), do: ResponseBudget.fits_payload?(%{ok: true, run: summary})
+  defp fits_frame?(summary), do: ResponseBudget.fits_model_page?(%{ok: true, run: summary})
 
   defp largest_fitting_take(build, lo, hi, best) when lo <= hi do
     mid = div(lo + hi, 2)
