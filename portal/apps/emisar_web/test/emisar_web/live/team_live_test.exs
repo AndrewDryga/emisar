@@ -126,6 +126,48 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Choose at least one runner group or runner for selected access."
     end
 
+    test "clearing the last pending-request pack scope names the error at the picker", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      request = Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      Fixtures.Catalog.create_action(runner: runner, action_id: "pg.up", pack_id: "postgres")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      form = "#approve-request-#{request.id}"
+
+      revealed =
+        render_change(lv, "approval_access_changed", %{
+          "_request_id" => request.id,
+          "runner_access_mode" => "all",
+          "pack_access_mode" => "restricted"
+        })
+
+      refute revealed =~ "Choose at least one pack"
+
+      render_change(lv, "approval_access_changed", %{
+        "_request_id" => request.id,
+        "runner_access_mode" => "all",
+        "pack_access_mode" => "restricted",
+        "pack_scope" => ["pack:postgres"]
+      })
+
+      assert has_element?(lv, "#{form} input[value='pack:postgres']:checked")
+
+      cleared =
+        render_change(lv, "approval_access_changed", %{
+          "_request_id" => request.id,
+          "runner_access_mode" => "all",
+          "pack_access_mode" => "restricted"
+        })
+
+      refute has_element?(lv, "#{form} input[value='pack:postgres']:checked")
+      assert cleared =~ "Choose at least one pack for selected pack access."
+    end
+
     test "the connection lists in the Security panel with the sign-in link", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")

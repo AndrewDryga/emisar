@@ -37,6 +37,7 @@ defmodule EmisarWeb.TeamLive do
        |> assign(:approval_scope_errors, %{})
        |> assign(:approval_pack_modes, %{})
        |> assign(:approval_pack_drafts, %{})
+       |> assign(:approval_pack_errors, %{})
        # The branded sign-in link is a per-account constant to hand to members.
        |> assign(
          :sign_in_url,
@@ -326,21 +327,28 @@ defmodule EmisarWeb.TeamLive do
   def handle_event("approval_access_changed", %{"_request_id" => id} = params, socket) do
     mode = params["runner_access_mode"]
     scope = List.wrap(params["scope"])
+    pack_mode = Map.get(params, "pack_access_mode", "all")
+    pack_scope = List.wrap(params["pack_scope"])
+    previous_pack_draft = Map.get(socket.assigns.approval_pack_drafts, id, [])
+
+    pack_errors =
+      if pack_mode == "restricted" and pack_scope == [] and previous_pack_draft != [] do
+        Map.put(socket.assigns.approval_pack_errors, id, @pack_scope_required)
+      else
+        Map.delete(socket.assigns.approval_pack_errors, id)
+      end
 
     socket =
       socket
       |> assign(
         :approval_pack_modes,
-        Map.put(
-          socket.assigns.approval_pack_modes,
-          id,
-          Map.get(params, "pack_access_mode", "all")
-        )
+        Map.put(socket.assigns.approval_pack_modes, id, pack_mode)
       )
       |> assign(
         :approval_pack_drafts,
-        Map.put(socket.assigns.approval_pack_drafts, id, List.wrap(params["pack_scope"]))
+        Map.put(socket.assigns.approval_pack_drafts, id, pack_scope)
       )
+      |> assign(:approval_pack_errors, pack_errors)
 
     case Accounts.build_runner_access(mode, scope, socket.assigns.runners) do
       {:ok, access} ->
@@ -909,6 +917,7 @@ defmodule EmisarWeb.TeamLive do
     |> assign(:approval_access_modes, modes)
     |> assign(:approval_scope_drafts, drafts)
     |> assign(:approval_scope_errors, %{})
+    |> assign(:approval_pack_errors, %{})
   end
 
   # -- Pending SSO access requests (manual provisioning) ----------------
@@ -1321,6 +1330,7 @@ defmodule EmisarWeb.TeamLive do
                   mode_value={Map.get(@approval_pack_modes, request.id, "all")}
                   scope_name="pack_scope[]"
                   selected={Map.get(@approval_pack_drafts, request.id, [])}
+                  validation_error={Map.get(@approval_pack_errors, request.id)}
                 />
                 <.button variant={:secondary} tone={:amber} size={:sm}>Approve</.button>
               </form>

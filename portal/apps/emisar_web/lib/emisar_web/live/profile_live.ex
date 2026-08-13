@@ -257,6 +257,9 @@ defmodule EmisarWeb.ProfileLive do
       {:error, :email_unavailable} ->
         {:noreply, put_flash(socket, :error, @mfa_enrollment_email_unavailable_error)}
 
+      {:error, :mfa_already_enabled} ->
+        {:noreply, refresh_after_mfa_enabled(socket)}
+
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, @mfa_enrollment_email_delivery_error)}
     end
@@ -292,6 +295,9 @@ defmodule EmisarWeb.ProfileLive do
            |> put_flash(:error, @mfa_enrollment_email_unavailable_error)
            |> reset_mfa_enrollment()}
 
+        {:error, :mfa_already_enabled} ->
+          {:noreply, refresh_after_mfa_enabled(socket)}
+
         {:error, _reason} ->
           {:noreply,
            assign(socket, :mfa_enrollment_email_error, "Could not verify that code. Try again.")}
@@ -316,6 +322,9 @@ defmodule EmisarWeb.ProfileLive do
 
         {:error, :rate_limited} ->
           {:noreply, assign(socket, :mfa_enrollment_email_error, @email_issue_rate_limit_error)}
+
+        {:error, :mfa_already_enabled} ->
+          {:noreply, refresh_after_mfa_enabled(socket)}
 
         {:error, _reason} ->
           {:noreply,
@@ -357,12 +366,14 @@ defmodule EmisarWeb.ProfileLive do
         {:error, :invalid_otp} ->
           {:noreply, assign(socket, :mfa_error, "Invalid code — try the next one.")}
 
-        {:error, reason}
-        when reason in [:mfa_enrollment_proof_stale, :mfa_already_enabled] ->
+        {:error, :mfa_enrollment_proof_stale} ->
           {:noreply,
            socket
            |> put_flash(:error, "Your account changed. Verify your current email again.")
            |> reset_mfa_enrollment()}
+
+        {:error, :mfa_already_enabled} ->
+          {:noreply, refresh_after_mfa_enabled(socket)}
 
         {:error, _changeset} ->
           {:noreply, assign(socket, :mfa_error, "Could not enable 2FA. Try again.")}
@@ -649,6 +660,10 @@ defmodule EmisarWeb.ProfileLive do
     |> assign(:mfa_error, nil)
     |> assign_mfa_enrollment_email_form()
     |> assign_mfa_form()
+  end
+
+  defp refresh_after_mfa_enabled(socket) do
+    push_navigate(socket, to: ~p"/app/#{socket.assigns.current_account}/settings/profile")
   end
 
   defp assign_mfa_disable_form(socket) do

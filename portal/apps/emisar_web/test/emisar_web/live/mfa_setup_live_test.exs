@@ -118,6 +118,39 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert {:error, {:live_redirect, %{to: "/app"}}} = live(conn, ~p"/app/mfa_setup")
   end
 
+  test "a stale setup view leaves when another session enables MFA", %{
+    conn: conn,
+    subject: subject
+  } do
+    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+
+    {_user, _codes} =
+      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+
+    render_click(lv, "start_mfa", %{})
+
+    assert_redirect(lv, "/app")
+  end
+
+  test "a concurrent enrollment completion exits instead of restarting email verification", %{
+    conn: conn,
+    subject: subject
+  } do
+    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+    html = begin_mfa_enrollment(lv)
+    [_, encoded] = Regex.run(~r/secret=([A-Z2-7]+)/, html)
+    pending_secret = Base.decode32!(encoded, padding: false)
+
+    {_user, _codes} =
+      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+
+    render_hook(lv, "confirm_mfa", %{
+      "mfa" => %{"otp" => NimbleTOTP.verification_code(pending_secret)}
+    })
+
+    assert_redirect(lv, "/app")
+  end
+
   test "a subject without account-view permission fails closed", %{
     user: user,
     account: account

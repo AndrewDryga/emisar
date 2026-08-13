@@ -508,6 +508,31 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert Repo.aggregate(Runbook, :count) == 1
   end
 
+  test "get_operation returns a typed error after its draft is published", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    runner = setup_runner!(account, subject, "db-primary")
+    draft = draft_runbook!(subject, "cache-health", %{"runner_id" => [runner.id]})
+
+    revised =
+      call(conn, "update_runbook_draft", %{
+        "slug" => "cache-health",
+        "definition_sha256" => Runbooks.definition_digest(draft.draft_definition),
+        "title" => draft.title,
+        "description" => draft.description,
+        "definition" => draft.draft_definition
+      })
+
+    draft |> Repo.reload!() |> Fixtures.Runbooks.publish_runbook()
+
+    recovered = call(conn, "get_operation", %{"operation_id" => revised["operation_id"]})
+
+    assert recovered["error"]["code"] == "operation_incomplete"
+    assert recovered["error"]["message"] =~ "durable resource is unavailable"
+  end
+
   test "execute_runbook tests the exact draft it consented to and recovers by operation", %{
     conn: conn,
     account: account,

@@ -154,6 +154,9 @@ defmodule EmisarWeb.MfaSetupLive do
       {:error, :email_unavailable} ->
         {:noreply, assign(socket, :mfa_start_error, @email_unavailable_error)}
 
+      {:error, :mfa_already_enabled} ->
+        {:noreply, push_navigate(socket, to: ~p"/app")}
+
       {:error, _reason} ->
         {:noreply, assign(socket, :mfa_start_error, @email_delivery_error)}
     end
@@ -189,6 +192,9 @@ defmodule EmisarWeb.MfaSetupLive do
            |> reset_mfa_enrollment()
            |> assign(:mfa_start_error, @email_unavailable_error)}
 
+        {:error, :mfa_already_enabled} ->
+          {:noreply, push_navigate(socket, to: ~p"/app")}
+
         {:error, _reason} ->
           {:noreply,
            assign(socket, :mfa_enrollment_email_error, "Could not verify that code. Try again.")}
@@ -209,6 +215,9 @@ defmodule EmisarWeb.MfaSetupLive do
 
         {:error, :rate_limited} ->
           {:noreply, assign(socket, :mfa_enrollment_email_error, @email_issue_rate_limit_error)}
+
+        {:error, :mfa_already_enabled} ->
+          {:noreply, push_navigate(socket, to: ~p"/app")}
 
         {:error, _reason} ->
           {:noreply, assign(socket, :mfa_enrollment_email_error, @email_delivery_error)}
@@ -241,12 +250,14 @@ defmodule EmisarWeb.MfaSetupLive do
         {:error, :invalid_otp} ->
           {:noreply, assign(socket, :mfa_error, "That code didn't match — try the next one.")}
 
-        {:error, reason}
-        when reason in [:mfa_enrollment_proof_stale, :mfa_already_enabled] ->
+        {:error, :mfa_enrollment_proof_stale} ->
           {:noreply,
            socket
            |> reset_mfa_enrollment()
            |> assign(:mfa_start_error, "Your account changed. Verify your current email again.")}
+
+        {:error, :mfa_already_enabled} ->
+          {:noreply, push_navigate(socket, to: ~p"/app")}
 
         {:error, _changeset} ->
           {:noreply, assign(socket, :mfa_error, "Could not enable MFA.")}

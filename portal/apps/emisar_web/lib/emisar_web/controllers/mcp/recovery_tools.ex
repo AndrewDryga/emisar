@@ -84,6 +84,9 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     subject = conn.assigns.current_subject
 
     case Runbooks.fetch_runbook_by_id(operation.resource_id, subject) do
+      {:ok, %{draft_definition: nil}} ->
+        {:error, :operation_resource_missing}
+
       {:ok, runbook} ->
         {:ok,
          %{

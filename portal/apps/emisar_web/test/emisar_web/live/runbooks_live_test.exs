@@ -49,6 +49,19 @@ defmodule EmisarWeb.RunbooksLiveTest do
            )
   end
 
+  test "the disconnected render loads instead of claiming a populated account is empty", %{
+    conn: conn
+  } do
+    {conn, user, account} = register_and_log_in(conn)
+    create_runbook!(user, account, "Existing runbook")
+
+    dead = conn |> get(~p"/app/#{account}/runbooks") |> html_response(200)
+
+    assert dead =~ "Loading…"
+    refute dead =~ "No runbooks yet."
+    refute dead =~ "Existing runbook"
+  end
+
   test "an empty *filtered* result keeps the filter bar, not the create-CTA", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 

@@ -828,6 +828,45 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute Emisar.Repo.reload!(user).mfa_enabled_at
     end
 
+    test "a stale profile view refreshes when another session enables MFA", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      {_user, _codes} =
+        Fixtures.Users.enable_mfa!(
+          Auth.generate_mfa_secret(),
+          Fixtures.Subjects.subject_for(user, account)
+        )
+
+      render_click(lv, "start_mfa", %{})
+
+      assert_redirect(lv, ~p"/app/#{account}/settings/profile")
+    end
+
+    test "a concurrent enrollment completion refreshes the profile MFA state", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      pending_secret = lv |> begin_mfa_enrollment() |> mfa_secret_from()
+
+      {_user, _codes} =
+        Fixtures.Users.enable_mfa!(
+          Auth.generate_mfa_secret(),
+          Fixtures.Subjects.subject_for(user, account)
+        )
+
+      render_hook(lv, "confirm_mfa", %{
+        "mfa" => %{"otp" => NimbleTOTP.verification_code(pending_secret)}
+      })
+
+      assert_redirect(lv, ~p"/app/#{account}/settings/profile")
+    end
+
     test "a non-numeric OTP is rejected and MFA stays off", %{
       conn: conn,
       user: user,

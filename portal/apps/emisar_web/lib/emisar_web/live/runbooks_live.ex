@@ -138,6 +138,8 @@ defmodule EmisarWeb.RunbooksLive do
                would hide the filter bar and trap the operator. With a filter active,
                the live_table renders its own "no matches" + the bar to clear it. --%>
           <%= cond do %>
+            <% not connected?(@socket) -> %>
+              <.loading_state />
             <% @load_error? -> %>
               <.empty_state
                 tone={:danger}
