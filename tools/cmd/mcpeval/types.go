@@ -32,9 +32,9 @@ type scenario struct {
 	// not one recipe — catalog enrichment legitimately shifts which equivalent
 	// an agent picks.
 	RequiredActions [][]string `json:"required_actions,omitempty"`
-	// required_search_actions independently pins recall@5. A correct eventual
-	// dispatch cannot hide a retrieval miss caused by an exact lookup or a
-	// lucky retry.
+	// required_search_actions independently pins recall across the complete
+	// bounded find_actions response. A correct eventual dispatch cannot hide a
+	// retrieval miss caused by an exact lookup or a lucky retry.
 	RequiredSearchActions [][]string `json:"required_search_actions,omitempty"`
 }
 

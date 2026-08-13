@@ -138,7 +138,7 @@ func validateScenario(item scenario, heldOut bool) error {
 	case outcomePositive:
 		if len(item.AllowedActions) == 0 || len(item.RequiredActions) == 0 ||
 			len(item.RequiredSearchActions) == 0 {
-			return fmt.Errorf("positive scenario %q has no action, completion, or recall@5 evidence", item.ID)
+			return fmt.Errorf("positive scenario %q has no action, completion, or bounded-recall evidence", item.ID)
 		}
 		if heldOut && (len(item.AllowedPackRefs) == 0 || len(item.AllowedRunnerRefs) == 0) {
 			return fmt.Errorf("held_out positive scenario %q has no exact pack or runner ref allowlist", item.ID)

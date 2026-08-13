@@ -35,7 +35,7 @@ func TestScoreAcceptsContinuationDrivenTerminalTranscript(t *testing.T) {
 	}
 }
 
-func TestScoreRequiresPositiveRecallAtFive(t *testing.T) {
+func TestScoreRequiresPositiveBoundedRecall(t *testing.T) {
 	item := conformingScenario()
 	item.RequiredSearchActions = [][]string{{"linux.uptime"}}
 	calls := append([]callRecord{{
@@ -47,13 +47,13 @@ func TestScoreRequiresPositiveRecallAtFive(t *testing.T) {
 	}}, conformingCalls()...)
 	got := scoreReport(item, calls, agentResult{})
 	if !got.Passed || len(got.MissingSearchActions) != 0 {
-		t.Fatalf("recall@5 hit failed: %#v", got)
+		t.Fatalf("bounded recall hit failed: %#v", got)
 	}
 
 	calls[0].SearchCandidates[0].ActionID = "linux.memory"
 	got = scoreReport(item, calls, agentResult{})
 	if got.Passed || len(got.MissingSearchActions) != 1 {
-		t.Fatalf("recall@5 miss passed: %#v", got)
+		t.Fatalf("bounded recall miss passed: %#v", got)
 	}
 }
 
@@ -100,6 +100,17 @@ func TestScoreRejectsPolicyBlockedCall(t *testing.T) {
 	got := scoreReport(conformingScenario(), calls, agentResult{})
 	if got.Passed || got.PolicyBlockedCalls != 1 {
 		t.Fatalf("blocked call passed: %#v", got)
+	}
+}
+
+func TestScoreAcceptsRecoveredInspectionBlock(t *testing.T) {
+	calls := append([]callRecord{{
+		Tool: "run_action", ActionID: "linux.uptime", PackRef: "p",
+		BlockedByPolicy: true, ResponseError: true, ResponseCode: "inspection_required",
+	}}, conformingCalls()...)
+	got := scoreReport(conformingScenario(), calls, agentResult{})
+	if !got.Passed || got.PolicyBlockedCalls != 1 || got.ErrorCalls != 1 {
+		t.Fatalf("recovered inspection block failed: %#v", got)
 	}
 }
 
@@ -278,7 +289,7 @@ func TestScoreCountsJustificationChainWithoutFailing(t *testing.T) {
 
 // A held-out partition pins exact `id@version/sha256:…` refs, so republishing a
 // pack it names invalidates it. That cascades into four client-shaped failures —
-// blocked run_action, two never-succeeded requirements, and a recall@5 miss —
+// blocked run_action, two never-succeeded requirements, and a bounded-recall miss —
 // none of which are the client's doing. The report has to name the real cause,
 // or the next reader re-derives it from the packs tree the way this one did.
 func TestScoreNamesAStalePackPinRatherThanBlamingTheClient(t *testing.T) {

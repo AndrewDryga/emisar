@@ -112,7 +112,7 @@ func (r *relay) handle(w http.ResponseWriter, request *http.Request) {
 	}
 	requestMeta := r.recorder.request(requestBody)
 	if requestMeta.blockCode != "" {
-		responseBody := policyDeniedResponse(requestMeta.rpcID, requestMeta.blockCode)
+		responseBody := policyDeniedResponse(requestMeta)
 		r.recorder.policyDenied(requestMeta, responseBody)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -198,7 +198,7 @@ type recorder struct {
 	inspected map[string]bool
 	// advertisedRisk maps action_id+pack_ref to the risk tier the portal
 	// itself served for that exact pair in this session — every find_actions
-	// candidate (all of them, not the five the report keeps for recall@5) and
+	// candidate and
 	// every retrieved get_action contract. A pair advertised at riskReadOnly
 	// may be dispatched outside the scenario allowlist as an adjacent read.
 	advertisedRisk map[string]string
@@ -208,6 +208,8 @@ type requestMetadata struct {
 	call      int
 	rpcID     any
 	blockCode string
+	actionID  string
+	packRef   string
 }
 
 func newRecorder(item scenario) *recorder {
@@ -303,14 +305,26 @@ func (r *recorder) policyDenied(metadata requestMetadata, body []byte) {
 	call.CompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
 }
 
-func policyDeniedResponse(id any, code string) []byte {
+func policyDeniedResponse(metadata requestMetadata) []byte {
+	message := "The evaluator blocked a call outside the read-only scenario."
+	error := map[string]any{"code": "evaluator_policy_denied", "kind": metadata.blockCode}
+	if metadata.blockCode == "inspection_required" {
+		message = "Inspect this exact action with the returned get_action call, then retry run_action."
+		error["next"] = map[string]any{
+			"tool": "get_action",
+			"arguments": map[string]any{
+				"action_id": metadata.actionID,
+				"pack_ref":  metadata.packRef,
+			},
+		}
+	}
 	payload := map[string]any{
-		"jsonrpc": "2.0", "id": id,
+		"jsonrpc": "2.0", "id": metadata.rpcID,
 		"result": map[string]any{
 			"isError": true,
-			"content": []any{map[string]any{"type": "text", "text": "The evaluator blocked a call outside the read-only scenario."}},
+			"content": []any{map[string]any{"type": "text", "text": message}},
 			"structuredContent": map[string]any{
-				"ok": false, "error": map[string]any{"code": "evaluator_policy_denied", "kind": code},
+				"ok": false, "error": error,
 			},
 		},
 	}
@@ -359,7 +373,10 @@ func (r *recorder) request(body []byte) requestMetadata {
 	r.calls = append(r.calls, record)
 	index := len(r.calls) - 1
 	r.mu.Unlock()
-	return requestMetadata{call: index + 1, rpcID: frame["id"], blockCode: blockCode}
+	return requestMetadata{
+		call: index + 1, rpcID: frame["id"], blockCode: blockCode,
+		actionID: record.ActionID, packRef: record.PackRef,
+	}
 }
 
 func (r *recorder) response(metadata requestMetadata, body []byte, statusCode int) {
@@ -417,7 +434,7 @@ func (r *recorder) recordAdvertisedRisk(actionID, packRef, risk string) {
 
 func collectSearchCandidates(structured map[string]any) []searchCandidate {
 	values := sliceValue(structured["candidates"])
-	candidates := make([]searchCandidate, 0, min(len(values), 5))
+	candidates := make([]searchCandidate, 0, min(len(values), 15))
 	for _, value := range values {
 		object, ok := value.(map[string]any)
 		if !ok {
@@ -427,7 +444,7 @@ func collectSearchCandidates(structured map[string]any) []searchCandidate {
 			ActionID: stringValue(object["action_id"]),
 			PackRef:  stringValue(object["pack_ref"]),
 		})
-		if len(candidates) == 5 {
+		if len(candidates) == 15 {
 			break
 		}
 	}

@@ -31,7 +31,8 @@ const riskReadOnly = "low"
 // about API behavior, robust to model drift. How the model phrases its answer
 // is reported (agent stdout), never scored.
 //
-// Hard failures: (a) a policy-blocked call, (b) a portal invalid_args
+// Hard failures: (a) a policy block the client did not safely recover from,
+// (b) a portal invalid_args
 // rejection on a MUTATION (discovery reads are designed to self-heal — every
 // rejection carries a recovery pointer, and unsteered models probe read
 // filters differently each run; a read-side invalid_args is counted and
@@ -63,13 +64,15 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 	runStatus := map[string]string{}
 	startedRuns := map[string]bool{}
 
-	for _, call := range calls {
+	for index, call := range calls {
 		result.TotalCalls++
 		adjacentRead := call.Tool == "run_action" &&
 			!allowedActionIDs[call.ActionID] && call.ActionRisk == riskReadOnly
 		if call.BlockedByPolicy {
 			result.PolicyBlockedCalls++
-			result.fail(fmt.Sprintf("the evaluator blocked %s outside the scenario allowlist (%s)", call.Tool, call.ResponseCode))
+			if call.ResponseCode != "inspection_required" || !inspectionRecovered(calls[index+1:], call) {
+				result.fail(fmt.Sprintf("the evaluator blocked %s outside the scenario allowlist (%s)", call.Tool, call.ResponseCode))
+			}
 			// pack_not_allowed on an action the scenario DOES allow means the
 			// pinned ref no longer exists, not that the client reached outside
 			// its brief.
@@ -224,14 +227,14 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 		}
 	}
 	if len(result.MissingSearchActions) > 0 {
-		result.fail("required actions missed recall@5: " + strings.Join(result.MissingSearchActions, ", "))
+		result.fail("required actions were absent from the bounded search response: " + strings.Join(result.MissingSearchActions, ", "))
 	}
 
 	// Reported last so it reads last — and worded so nobody re-diagnoses this
 	// from scratch. A stale pin cascades: it blocks run_action, so the required
 	// tool and action never succeed, AND it filters the client's own search
-	// candidates out of recall@5. Four failures, one cause, none of them the
-	// client's fault.
+	// candidates out of the bounded search response. Four failures, one cause,
+	// none of them the client's fault.
 	stale := map[string]bool{}
 	for action, refs := range unpinnedRefs {
 		if pinnedSeen[action] || succeededActions[action] {
@@ -254,6 +257,16 @@ func scoreReport(item scenario, calls []callRecord, agent agentResult) score {
 		result.fail(fmt.Sprintf("the agent process exited %d", agent.ExitCode))
 	}
 	return result
+}
+
+func inspectionRecovered(later []callRecord, blocked callRecord) bool {
+	for _, call := range later {
+		if call.Tool == "run_action" && call.ActionID == blocked.ActionID && call.PackRef == blocked.PackRef &&
+			!call.BlockedByPolicy && !call.ResponseError && call.priorContractMatched {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *score) fail(message string) {

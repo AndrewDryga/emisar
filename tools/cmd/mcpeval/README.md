@@ -17,7 +17,7 @@ allowed runners.
 
 Positive cases require:
 
-- the expected action in the first five `find_actions` candidates;
+- the expected action in the complete bounded `find_actions` response;
 - the required tool calls and one action from every required outcome group;
 - no dispatch outside the allowlist other than advertised read-only adjacent
   reads, and no wrong pack or runner;
@@ -28,9 +28,12 @@ Positive cases require:
 No-action cases require `find_actions` to return no candidate. Selecting or
 dispatching a nearby action fails the case.
 
-All cases also fail on a policy-blocked call, portal `invalid_args` rejection
-on a mutation, placeholder dispatch reason, repeated failing call, inspection
-continuity violation, timeout, or nonzero client exit. Reports record the
+All cases also fail on an unrecovered policy block, portal `invalid_args`
+rejection on a mutation, placeholder dispatch reason, repeated failing call,
+inspection continuity violation, timeout, or nonzero client exit. An
+`inspection_required` block is recovered only when the client follows the
+returned `get_action` continuation and then successfully retries that exact
+action and pack. Reports record the
 corpus digest, partition, exact client and bridge versions, calls, latency, and
 normalized token usage. Release reports omit prompts and client output.
 

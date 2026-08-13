@@ -196,7 +196,7 @@ func mintScenario(item intentItem, packRefByAction map[string]string, runnerRefs
 			return scenario{}, fmt.Errorf("positive scenario %q names no action", item.ID)
 		}
 		// A positive scenario asserts DISCOVERY: the client must reach the action
-		// through find_actions, and recall@5 measures whether our search surfaced
+		// through find_actions, and bounded recall measures whether our search surfaced
 		// it. A prompt that names the action id defeats both — it hands over the
 		// answer, makes recall vacuous, and invites the exact-filter path, where
 		// combining action_id with a query is a schema conflict. That is not a
@@ -207,7 +207,7 @@ func mintScenario(item intentItem, packRefByAction map[string]string, runnerRefs
 			if strings.Contains(item.Prompt, action) {
 				return scenario{}, fmt.Errorf(
 					"positive scenario %q names action %q in its prompt — describe the operational "+
-						"task instead, or the client is handed the answer and recall@5 measures nothing",
+						"task instead, or the client is handed the answer and bounded recall measures nothing",
 					item.ID, action)
 			}
 		}

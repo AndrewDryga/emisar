@@ -285,16 +285,41 @@ func TestPolicyBlocksUnscoredMutationTools(t *testing.T) {
 	}
 }
 
-func TestRecorderKeepsOnlyFirstFiveSearchCandidates(t *testing.T) {
+func TestPolicyDeniedResponseHandsInspectionRecoveryBackToTheClient(t *testing.T) {
+	body := policyDeniedResponse(requestMetadata{
+		rpcID: 1, blockCode: "inspection_required",
+		actionID: "linux.uptime", packRef: "linux-core@1/sha256:abc",
+	})
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	result := payload["result"].(map[string]any)
+	content := result["content"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.Contains(content, "then retry run_action") {
+		t.Fatalf("inspection recovery = %q", content)
+	}
+	next := result["structuredContent"].(map[string]any)["error"].(map[string]any)["next"].(map[string]any)
+	if next["tool"] != "get_action" {
+		t.Fatalf("inspection next = %#v", next)
+	}
+}
+
+func TestRecorderKeepsTheCompleteBoundedSearchResponse(t *testing.T) {
 	r := newRecorder(scenario{AllowedTools: []string{"find_actions"}})
 	request := r.request([]byte(`{"id":1,"method":"tools/call","params":{"name":"find_actions","arguments":{"query":"disk"}}}`))
 	r.response(request, []byte(`{"id":1,"result":{"structuredContent":{"ok":true,"candidates":[
 	  {"action_id":"a1","pack_ref":"p@1/h"},{"action_id":"a2","pack_ref":"p@1/h"},
 	  {"action_id":"a3","pack_ref":"p@1/h"},{"action_id":"a4","pack_ref":"p@1/h"},
-	  {"action_id":"a5","pack_ref":"p@1/h"},{"action_id":"a6","pack_ref":"p@1/h"}
+	  {"action_id":"a5","pack_ref":"p@1/h"},{"action_id":"a6","pack_ref":"p@1/h"},
+	  {"action_id":"a7","pack_ref":"p@1/h"},{"action_id":"a8","pack_ref":"p@1/h"},
+	  {"action_id":"a9","pack_ref":"p@1/h"},{"action_id":"a10","pack_ref":"p@1/h"},
+	  {"action_id":"a11","pack_ref":"p@1/h"},{"action_id":"a12","pack_ref":"p@1/h"},
+	  {"action_id":"a13","pack_ref":"p@1/h"},{"action_id":"a14","pack_ref":"p@1/h"},
+	  {"action_id":"a15","pack_ref":"p@1/h"},{"action_id":"a16","pack_ref":"p@1/h"}
 	]}}}`), 200)
 	candidates := r.snapshot()[0].SearchCandidates
-	if len(candidates) != 5 || candidates[0].ActionID != "a1" || candidates[4].ActionID != "a5" {
+	if len(candidates) != 15 || candidates[0].ActionID != "a1" || candidates[14].ActionID != "a15" {
 		t.Fatalf("search candidates = %#v", candidates)
 	}
 }
