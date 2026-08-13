@@ -46,11 +46,11 @@ output keeps the secret-named key.
 **Sweep.** For every pack with a `parser: json` output schema, list property
 names matching the `secretField` regex in `runner/internal/redact/rules.go`
 and check each against a behavior case with a non-null value.
-`pure-flasharray` ships `continuation_token` and is the known open instance
+`pure-flasharray` was the known instance — it shipped `continuation_token`,
+now renamed to `next_page_cursor`
 (task `2026-08-11-pure-flasharray-rename-continuation-token-output`).
 
 **Enforced.** Behavior cases that assert real cursor values fail on
 `[REDACTED]` (this is how the databricks suite caught it). Not yet a
 mechanical authoring check — graduating it means scanning output-schema
-property names against the same vocabulary in the pack validator; that
-belongs with the pure-flasharray sweep task.
+property names against the same vocabulary in the pack validator.
