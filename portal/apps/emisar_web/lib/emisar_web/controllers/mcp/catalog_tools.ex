@@ -74,7 +74,12 @@ defmodule EmisarWeb.MCP.CatalogTools do
     case Catalog.model_catalog(subject) do
       {:ok, snapshot} ->
         scope =
-          [subject.account.id, api_key.id | Enum.map(snapshot.runners, & &1.runner_ref)]
+          [subject.account.id, api_key.id] ++
+            Enum.map(snapshot.runners, & &1.runner_ref) ++
+            Enum.map(snapshot.packs, & &1.pack_ref)
+
+        scope =
+          scope
           |> Enum.join("\0")
           |> Crypto.hash_hex()
 

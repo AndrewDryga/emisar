@@ -4459,17 +4459,40 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, [], _} = Approvals.list_grants_for_account(subject_b)
     end
 
-    test "restricted managers can see and revoke only grants within their runner access" do
+    test "restricted managers see and revoke only grants within runner and pack access" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
       {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
       db_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
-      db_grant = insert_grant(account, key, runner_id: db_runner.id, granted_by_id: user.id)
-      web_grant = insert_grant(account, key, runner_id: web_runner.id, granted_by_id: user.id)
+      postgres_ref = "postgres@1.0.0/sha256:" <> String.duplicate("b", 64)
+
+      db_grant =
+        insert_grant(account, key,
+          runner_id: db_runner.id,
+          pack_ref: postgres_ref,
+          granted_by_id: user.id
+        )
+
+      denied_pack =
+        insert_grant(account, key,
+          runner_id: db_runner.id,
+          pack_ref: @grant_pack_ref,
+          granted_by_id: user.id
+        )
+
+      web_grant =
+        insert_grant(account, key,
+          runner_id: web_runner.id,
+          pack_ref: postgres_ref,
+          granted_by_id: user.id
+        )
+
       wildcard = insert_grant(account, key, runner_id: nil, granted_by_id: user.id)
-      {:ok, database_access} = Accounts.RunnerAccess.restricted(["database"], [])
+
+      {:ok, database_access} =
+        Accounts.RunnerAccess.new(:restricted, ["database"], [], :restricted, ["postgres"])
 
       subject =
         account
@@ -4478,11 +4501,13 @@ defmodule Emisar.ApprovalsTest do
 
       assert {:ok, [%Grant{id: id}], _meta} = Approvals.list_grants_for_account(subject)
       assert id == db_grant.id
+      assert {:error, :not_found} = Approvals.fetch_grant_by_id(denied_pack.id, subject)
       assert {:error, :not_found} = Approvals.fetch_grant_by_id(web_grant.id, subject)
       assert {:error, :not_found} = Approvals.revoke_grant(web_grant, subject)
 
       assert {:ok, 1} = Approvals.revoke_all_grants(subject)
       assert Repo.reload!(db_grant).revoked_at
+      refute Repo.reload!(denied_pack).revoked_at
       refute Repo.reload!(web_grant).revoked_at
       refute Repo.reload!(wildcard).revoked_at
     end

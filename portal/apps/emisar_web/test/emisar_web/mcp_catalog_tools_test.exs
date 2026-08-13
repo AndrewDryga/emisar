@@ -623,6 +623,49 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert call(conn, "find_actions", %{"action_id" => "foreign.secret"})["candidates"] == []
   end
 
+  test "an issued API key re-reads pack access and invalidates old cursors", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    membership: membership
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "mixed-host")
+
+    observe!(
+      runner,
+      %{
+        "visible" => %{"version" => "1.0.0", "hash" => @hash},
+        "hidden" => %{"version" => "1.0.0", "hash" => @hash}
+      },
+      [action("visible.read", "visible"), action("hidden.read", "hidden")]
+    )
+
+    trust_all!(subject)
+
+    first = call(conn, "list_packs", %{"availability" => "all", "limit" => 1})
+    assert length(first["packs"]) == 1
+    assert is_binary(first["next_cursor"])
+
+    {:ok, visible_only} =
+      Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["visible"])
+
+    Fixtures.Memberships.force_runner_access(membership, visible_only)
+
+    assert [%{"pack_ref" => "visible@" <> _rest}] =
+             call(conn, "list_packs", %{"availability" => "all"})["packs"]
+
+    assert call(conn, "find_actions", %{"action_id" => "hidden.read"})["candidates"] == []
+
+    stale_page =
+      call(conn, "list_packs", %{
+        "availability" => "all",
+        "limit" => 1,
+        "cursor" => first["next_cursor"]
+      })
+
+    assert stale_page["error"]["code"] == "invalid_cursor"
+  end
+
   test "an already-issued API key loses runner visibility when its membership is suspended", %{
     conn: conn,
     account: account,

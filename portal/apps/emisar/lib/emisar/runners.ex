@@ -1299,7 +1299,19 @@ defmodule Emisar.Runners do
 
   `now` is injectable so a caller can project a fixed instant.
   """
-  def runner_readiness(%Runner{} = runner, now \\ DateTime.utc_now()) do
+  def runner_readiness(runner, now_or_access \\ DateTime.utc_now())
+
+  def runner_readiness(%Runner{} = runner, %Accounts.RunnerAccess{} = access) do
+    degraded_packs =
+      Enum.filter(runner.degraded_packs || [], fn
+        %{"pack" => pack_id} -> Accounts.RunnerAccess.pack_in_scope?(pack_id, access)
+        _malformed -> false
+      end)
+
+    runner_readiness(%{runner | degraded_packs: degraded_packs}, DateTime.utc_now())
+  end
+
+  def runner_readiness(%Runner{} = runner, %DateTime{} = now) do
     connection = readiness_connection(runner)
     signatures = readiness_signatures(runner)
 

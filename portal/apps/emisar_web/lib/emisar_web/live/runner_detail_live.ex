@@ -1,10 +1,13 @@
 defmodule EmisarWeb.RunnerDetailLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Catalog, Runners, Runs}
+  alias Emisar.{Accounts, Catalog, Runners, Runs}
   alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, TransportReason, UrlHelpers}
 
   def mount(%{"id" => id}, _session, socket) do
     membership = socket.assigns.current_membership
+
+    if connected?(socket),
+      do: Accounts.subscribe_account_team(socket.assigns.current_account.id)
 
     case Runners.fetch_runner_by_id(
            id,
@@ -43,9 +46,11 @@ defmodule EmisarWeb.RunnerDetailLive do
   # columns, so every path that changes the runner re-projects it in the same
   # step — a presence diff and an enable/disable alike.
   defp assign_runner(socket, runner) do
+    access = Accounts.runner_access_for_subject(socket.assigns.current_subject)
+
     socket
     |> assign(:runner, runner)
-    |> assign(:readiness, Runners.runner_readiness(runner))
+    |> assign(:readiness, Runners.runner_readiness(runner, access))
   end
 
   def handle_params(params, _uri, socket) do
@@ -141,7 +146,32 @@ defmodule EmisarWeb.RunnerDetailLive do
     {:noreply, assign_runner(socket, runner)}
   end
 
+  def handle_info(
+        {:list_changed, :team, "membership.runner_access_changed", user_id},
+        %{assigns: %{current_user: %{id: user_id}}} = socket
+      ) do
+    {:noreply, refresh_current_runner(socket)}
+  end
+
   def handle_info(_, socket), do: {:noreply, socket}
+
+  defp refresh_current_runner(socket) do
+    case Runners.fetch_runner_by_id(
+           socket.assigns.runner.id,
+           socket.assigns.current_subject,
+           preload: [:online?]
+         ) do
+      {:ok, runner} ->
+        socket
+        |> assign_runner(runner)
+        |> load_lists(runner, socket.assigns[:filter_params] || %{})
+
+      {:error, _reason} ->
+        socket
+        |> put_flash(:error, "Runner not found.")
+        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")
+    end
+  end
 
   # Filtering is a URL patch (handle_params re-runs the catalog read, which is
   # `view_catalog`-gated in the context) — no mutation, so no gate here.

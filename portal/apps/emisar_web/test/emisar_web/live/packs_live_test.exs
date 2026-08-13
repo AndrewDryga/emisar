@@ -58,6 +58,18 @@ defmodule EmisarWeb.PacksLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
+    defp persisted_owner_subject(account) do
+      user = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      Fixtures.Subjects.subject_for(user, account)
+    end
+
     defp observe_pending_pack!(account) do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
@@ -78,9 +90,7 @@ defmodule EmisarWeb.PacksLiveTest do
         })
 
       {:ok, [pack_version], _meta} =
-        Emisar.Catalog.list_pack_versions(
-          Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
-        )
+        Emisar.Catalog.list_pack_versions(persisted_owner_subject(account))
 
       pack_version
     end
@@ -465,9 +475,7 @@ defmodule EmisarWeb.PacksLiveTest do
       end
 
       {:ok, [pack_version], _meta} =
-        Emisar.Catalog.list_pack_versions(
-          Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
-        )
+        Emisar.Catalog.list_pack_versions(persisted_owner_subject(account))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
       html = render_click(lv, "trust", %{"id" => pack_version.id})
@@ -1477,7 +1485,7 @@ defmodule EmisarWeb.PacksLiveTest do
           }
         })
 
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      subject = persisted_owner_subject(account)
       {:ok, versions, _} = Emisar.Catalog.list_pack_versions(subject)
       tools = Enum.find(versions, &(&1.pack_id == "acme-tools"))
       extras = Enum.find(versions, &(&1.pack_id == "acme-extras"))

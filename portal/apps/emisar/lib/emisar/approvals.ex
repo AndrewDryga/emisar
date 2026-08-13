@@ -2149,7 +2149,7 @@ defmodule Emisar.Approvals do
     do: Request.Query.by_target_access(queryable, Accounts.runner_access_for_subject(subject))
 
   defp scope_grants_to_subject(queryable, %Subject{} = subject),
-    do: Grant.Query.by_runner_access(queryable, Accounts.runner_access_for_subject(subject))
+    do: Grant.Query.by_target_access(queryable, Accounts.runner_access_for_subject(subject))
 
   # -- Authorization --------------------------------------------------
 

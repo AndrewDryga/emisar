@@ -39,6 +39,22 @@ defmodule Emisar.Catalog.PackVersion.Query do
     where(queryable, ^predicate)
   end
 
+  def by_deployments(queryable, []), do: none(queryable)
+
+  def by_deployments(queryable, deployments) when is_list(deployments) do
+    predicate =
+      Enum.reduce(deployments, dynamic(false), fn {pack_id, version, hash}, predicate ->
+        dynamic(
+          [packs: p],
+          ^predicate or
+            (p.pack_id == ^pack_id and p.version == ^version and
+               fragment("coalesce(?, ?)", p.pending_hash, p.hash) == ^hash)
+        )
+      end)
+
+    where(queryable, ^predicate)
+  end
+
   def pending(queryable \\ all()),
     do: where(queryable, [packs: p], p.trust_state == :pending)
 

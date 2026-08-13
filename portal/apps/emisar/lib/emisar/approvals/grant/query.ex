@@ -38,6 +38,12 @@ defmodule Emisar.Approvals.Grant.Query do
   def by_pack_ref(queryable, pack_ref),
     do: where(queryable, [grants: g], g.pack_ref == ^pack_ref)
 
+  def by_target_access(queryable, %Emisar.Accounts.RunnerAccess{} = access) do
+    queryable
+    |> by_runner_access(access)
+    |> by_pack_access(access)
+  end
+
   def by_runner_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :none}),
     do: where(queryable, [grants: _], false)
 
@@ -61,6 +67,23 @@ defmodule Emisar.Approvals.Grant.Query do
     |> where(
       [scope_runner: runner],
       runner.id in ^runner_ids or runner.group in ^groups
+    )
+  end
+
+  defp by_pack_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :none}),
+    do: where(queryable, [grants: _], false)
+
+  defp by_pack_access(queryable, %Emisar.Accounts.RunnerAccess{pack_mode: :all}),
+    do: queryable
+
+  defp by_pack_access(
+         queryable,
+         %Emisar.Accounts.RunnerAccess{pack_mode: :restricted, pack_ids: pack_ids}
+       ) do
+    where(
+      queryable,
+      [grants: g],
+      fragment("split_part(?, '@', 1)", g.pack_ref) in ^pack_ids
     )
   end
 

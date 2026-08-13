@@ -66,6 +66,18 @@ defmodule Emisar.CatalogTest do
     {account, Fixtures.Subjects.subject_for(user, account, role: :owner)}
   end
 
+  defp owner_subject_for(account) do
+    user = Fixtures.Users.create_user()
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: user.id,
+      role: "owner"
+    )
+
+    Fixtures.Subjects.subject_for(user, account, role: :owner)
+  end
+
   # Runner access is re-read from the membership on every catalog risk read, so
   # the caller keeps using the same subject after it narrows.
   defp force_runner_access(account, subject, access) do
@@ -191,7 +203,7 @@ defmodule Emisar.CatalogTest do
     setup do
       runner = Fixtures.Runners.create_runner()
       account = Emisar.Repo.preload(runner, :account).account
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      subject = owner_subject_for(account)
       %{runner: runner, account: account, subject: subject}
     end
 
@@ -291,7 +303,7 @@ defmodule Emisar.CatalogTest do
     setup do
       runner = Fixtures.Runners.create_runner()
       account = Emisar.Repo.preload(runner, :account).account
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      subject = owner_subject_for(account)
       %{runner: runner, account: account, subject: subject}
     end
 
@@ -602,7 +614,7 @@ defmodule Emisar.CatalogTest do
     test "looks up the runner by id" do
       runner = Fixtures.Runners.create_runner()
       account = Emisar.Repo.preload(runner, :account).account
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      subject = owner_subject_for(account)
 
       assert {:ok, _runner} =
                Catalog.observe_state(runner.id, state_payload(actions: [action("linux.a")]))
@@ -659,7 +671,7 @@ defmodule Emisar.CatalogTest do
       # must refuse a superseded socket — a stale host may not leave a pin
       # behind for the live one, nor advertise an action under it.
       account = Repo.preload(runner, :account).account
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      subject = owner_subject_for(account)
 
       assert {:ok, pack_versions, _metadata} = Catalog.list_pack_versions(subject)
       refute Enum.any?(pack_versions, &(&1.pack_id == "stale-pack"))
@@ -675,7 +687,7 @@ defmodule Emisar.CatalogTest do
     test "unknown pack first sight → pending, awaits operator approval" do
       runner = Fixtures.Runners.create_runner()
       account = Emisar.Repo.preload(runner, :account).account
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      subject = owner_subject_for(account)
 
       payload =
         state_payload(
@@ -693,7 +705,7 @@ defmodule Emisar.CatalogTest do
     test "custom pack: re-advertising the same pending hash is a touch (no drift event)" do
       runner = Fixtures.Runners.create_runner()
       account = Emisar.Repo.preload(runner, :account).account
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      subject = owner_subject_for(account)
 
       payload =
         state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:H1"}})
@@ -709,7 +721,7 @@ defmodule Emisar.CatalogTest do
     test "a malformed hash for a known pack is isolated from the rest of the state update" do
       runner = Fixtures.Runners.create_runner()
       account = Repo.preload(runner, :account).account
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      subject = owner_subject_for(account)
 
       initial =
         state_payload(packs: %{"custom" => %{"version" => "1.0", "hash" => "first"}})
@@ -766,7 +778,7 @@ defmodule Emisar.CatalogTest do
       account = Fixtures.Accounts.create_account()
       runner_a = Fixtures.Runners.create_runner(account_id: account.id)
       runner_b = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      subject = owner_subject_for(account)
 
       # Use a pack id we know has NO library baseline so the TOFU path
       # is exercised (baseline-match would auto-pin without testing the
@@ -2541,7 +2553,7 @@ defmodule Emisar.CatalogTest do
         )
 
       account = Emisar.Repo.preload(runner, :account).account
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      subject = owner_subject_for(account)
       {:ok, [act], _} = Catalog.list_actions_for_runner(runner.id, subject)
       assert {:error, :pack_untrusted, _pv} = Catalog.check_pack_trusted(act)
     end
@@ -2933,6 +2945,48 @@ defmodule Emisar.CatalogTest do
       assert {:ok, [%RunnerAction{action_id: "linux.reboot_host"}], _} =
                Catalog.list_actions_for_runner(runner.id, subject, filter: [risk: ["critical"]])
     end
+
+    test "current access scopes rows, filters, counts, and pagination", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "postgres.status",
+        pack_id: "postgres",
+        risk: "low"
+      )
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "linux.reboot_host",
+        pack_id: "linux-core",
+        risk: "critical"
+      )
+
+      assert {:ok, [_first], %{count: 2, next_page_cursor: cursor}} =
+               Catalog.list_actions_for_runner(runner.id, subject,
+                 count: true,
+                 page: [limit: 1]
+               )
+
+      assert is_binary(cursor)
+
+      {:ok, postgres_only} =
+        Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+      force_runner_access(account, subject, postgres_only)
+
+      assert {:ok, [%RunnerAction{action_id: "postgres.status"}], %{count: 1}} =
+               Catalog.list_actions_for_runner(runner.id, subject, count: true)
+
+      assert {:ok, [], %{count: 0}} =
+               Catalog.list_actions_for_runner(runner.id, subject,
+                 count: true,
+                 filter: [risk: ["critical"]]
+               )
+    end
   end
 
   describe "list_account_pack_ids/1" do
@@ -2991,6 +3045,38 @@ defmodule Emisar.CatalogTest do
       assert Map.keys(advertisements) |> Enum.sort() == ["linux-core", "postgres"]
       assert Enum.sort(advertisements["linux-core"]) == Enum.sort([edge.id, data.id])
       assert advertisements["postgres"] == [data.id]
+    end
+
+    test "applies current runner and pack access" do
+      {account, subject} = account_with_owner()
+      data = Fixtures.Runners.create_runner(account_id: account.id, group: "data")
+      web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      Fixtures.Catalog.create_action(
+        runner: data,
+        action_id: "postgres.uptime",
+        pack_id: "postgres"
+      )
+
+      Fixtures.Catalog.create_action(
+        runner: data,
+        action_id: "linux.uptime",
+        pack_id: "linux-core"
+      )
+
+      Fixtures.Catalog.create_action(
+        runner: web,
+        action_id: "postgres.status",
+        pack_id: "postgres"
+      )
+
+      {:ok, data_postgres} =
+        Accounts.RunnerAccess.new(:restricted, ["data"], [], :restricted, ["postgres"])
+
+      force_runner_access(account, subject, data_postgres)
+
+      assert Catalog.list_pack_advertisements(subject) ==
+               {:ok, %{"postgres" => [data.id]}}
     end
 
     test "another account's advertisements are invisible (cross-account)" do
@@ -3162,6 +3248,48 @@ defmodule Emisar.CatalogTest do
 
       force_runner_access(account, subject, Accounts.RunnerAccess.none())
       assert Catalog.model_catalog(subject) == {:ok, %{packs: [], runners: []}}
+    end
+
+    test "pack access strips denied manifests and degraded diagnostics" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _runner} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{
+              "demo" => %{"version" => "1.0.0", "hash" => "demo-bytes"},
+              "hidden" => %{"version" => "1.0.0", "hash" => "hidden-bytes"}
+            },
+            actions: [
+              action("demo.inspect", pack_id: "demo"),
+              action("hidden.inspect", pack_id: "hidden")
+            ]
+          )
+        )
+
+      {:ok, _runner} =
+        Runners.apply_state(runner, %{
+          "degraded_packs" => [
+            %{"pack" => "demo", "reason" => "allowed failure"},
+            %{"pack" => "hidden", "reason" => "denied failure"}
+          ]
+        })
+
+      trust_advertised_packs(subject)
+
+      {:ok, demo_only} =
+        Accounts.RunnerAccess.new(:all, [], [], :restricted, ["demo"])
+
+      force_runner_access(account, subject, demo_only)
+      assert {:ok, snapshot} = Catalog.model_catalog(subject)
+
+      assert Enum.map(snapshot.packs, & &1.pack_id) == ["demo"]
+      assert [%{packs: packs, issues: issues}] = snapshot.runners
+      assert Map.keys(packs) == ["demo"]
+      assert Enum.any?(issues, &(&1.message =~ "allowed failure"))
+      refute inspect(snapshot) =~ "hidden"
     end
   end
 
@@ -3953,6 +4081,32 @@ defmodule Emisar.CatalogTest do
       assert {:ok, %{}} = Catalog.action_risks_for_runner_ids([], subject)
     end
 
+    test "current pack access excludes denied risks", %{account: account, subject: subject} do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "postgres.status",
+        pack_id: "postgres",
+        risk: "low"
+      )
+
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "linux.reboot_host",
+        pack_id: "linux-core",
+        risk: "critical"
+      )
+
+      {:ok, postgres_only} =
+        Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+      force_runner_access(account, subject, postgres_only)
+
+      assert {:ok, %{"postgres.status" => :low}} =
+               Catalog.action_risks_for_runner_ids([runner.id], subject)
+    end
+
     test "is account-scoped — a foreign runner id contributes nothing", %{account: account} do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
@@ -4179,6 +4333,86 @@ defmodule Emisar.CatalogTest do
       assert {:ok, [], _} = Catalog.list_pack_versions(subject_b)
     end
 
+    test "current pack access scopes pack-version rows", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      {:ok, _} =
+        Catalog.observe_state(
+          runner,
+          state_payload(
+            packs: %{
+              "linux-core" => %{"version" => "1.0", "hash" => "linux"},
+              "postgres" => %{"version" => "1.0", "hash" => "postgres"}
+            }
+          )
+        )
+
+      {:ok, postgres_only} =
+        Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+      force_runner_access(account, subject, postgres_only)
+
+      assert {:ok, [%PackVersion{pack_id: "postgres"}], _meta} =
+               Catalog.list_pack_versions(subject)
+    end
+
+    test "all packs excludes versions deployed only on denied runners", %{
+      account: account,
+      subject: subject,
+      runner: allowed_runner
+    } do
+      allowed_runner = Repo.update!(Ecto.Changeset.change(allowed_runner, group: "database"))
+      hidden_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      {:ok, _} =
+        Catalog.observe_state(
+          allowed_runner,
+          state_payload(packs: %{"postgres" => %{"version" => "1.0", "hash" => "allowed"}})
+        )
+
+      {:ok, _} =
+        Catalog.observe_state(
+          hidden_runner,
+          state_payload(packs: %{"linux-core" => %{"version" => "1.0", "hash" => "hidden"}})
+        )
+
+      {:ok, database_only} = Accounts.RunnerAccess.restricted(["database"], [])
+      force_runner_access(account, subject, database_only)
+
+      assert {:ok, [%PackVersion{pack_id: "postgres"}], _meta} =
+               Catalog.list_pack_versions(subject)
+    end
+
+    test "hidden hash drift on a shared version is not disclosed", %{
+      account: account,
+      subject: subject
+    } do
+      database = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      {:ok, _} =
+        Catalog.observe_state(
+          database,
+          state_payload(packs: %{"acme" => %{"version" => "1.0", "hash" => "visible"}})
+        )
+
+      {:ok, _} =
+        Catalog.observe_state(
+          web,
+          state_payload(packs: %{"acme" => %{"version" => "1.0", "hash" => "hidden"}})
+        )
+
+      {:ok, database_only} = Accounts.RunnerAccess.restricted(["database"], [])
+      force_runner_access(account, subject, database_only)
+
+      assert {:ok, [], _meta} = Catalog.list_pack_versions(subject)
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      assert projection.pack_versions == []
+      assert Catalog.count_pack_versions_needing_decision(subject) == 0
+    end
+
     test "a subject without view_catalog is denied", %{account: account} do
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
 
@@ -4312,6 +4546,76 @@ defmodule Emisar.CatalogTest do
       assert Map.keys(projection.actions_by_pack_ref) == [{"acme", "1.0"}]
       assert projection.pending_count == 1
       assert projection.decision_count == 1
+    end
+
+    test "current runner access keeps denied actions out of pack filters", %{
+      account: account,
+      subject: subject
+    } do
+      database = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      {:ok, _} =
+        Catalog.observe_state(
+          database,
+          state_payload(
+            packs: %{"acme" => %{"version" => "1.0", "hash" => "shared"}},
+            actions: [action("acme.status", pack_id: "acme", risk: "low")]
+          )
+        )
+
+      {:ok, _} =
+        Catalog.observe_state(
+          web,
+          state_payload(
+            packs: %{"acme" => %{"version" => "1.0", "hash" => "shared"}},
+            actions: [action("acme.destroy", pack_id: "acme", risk: "critical")]
+          )
+        )
+
+      {:ok, database_acme} =
+        Accounts.RunnerAccess.new(:restricted, ["database"], [], :restricted, ["acme"])
+
+      force_runner_access(account, subject, database_acme)
+
+      assert {:ok, critical_projection} = Catalog.list_console_packs(%{risk: "critical"}, subject)
+      assert critical_projection.groups == []
+      refute inspect(critical_projection) =~ "acme.destroy"
+
+      assert {:ok, low_projection} = Catalog.list_console_packs(%{risk: "low"}, subject)
+      assert Enum.map(low_projection.groups, & &1.id) == ["acme"]
+      assert inspect(low_projection) =~ "acme.status"
+    end
+
+    test "all packs excludes rows and counts deployed only on denied runners", %{
+      account: account,
+      subject: subject
+    } do
+      database = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      {:ok, _} =
+        Catalog.observe_state(
+          database,
+          state_payload(packs: %{"postgres" => %{"version" => "1.0", "hash" => "allowed"}})
+        )
+
+      {:ok, _} =
+        Catalog.observe_state(
+          web,
+          state_payload(packs: %{"linux-core" => %{"version" => "1.0", "hash" => "hidden"}})
+        )
+
+      {:ok, database_only} = Accounts.RunnerAccess.restricted(["database"], [])
+      force_runner_access(account, subject, database_only)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      assert Enum.map(projection.pack_versions, & &1.pack_id) == ["postgres"]
+      assert projection.pack_count == 1
+      assert projection.version_count == 1
+      assert projection.pending_count == 1
+      assert projection.decision_count == 1
+      assert Catalog.count_pack_versions_needing_decision(subject) == 1
     end
 
     test "a name that only matches the pack id keeps the version and highlights no action", %{
@@ -4806,11 +5110,12 @@ defmodule Emisar.CatalogTest do
     } do
       pack_id = retired_pack_id()
 
-      Fixtures.Catalog.create_trusted_pack_version(
-        account_id: account.id,
-        pack_id: pack_id,
-        version: "0.0.0"
-      )
+      pack_version =
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account.id,
+          pack_id: pack_id,
+          version: "0.0.0"
+        )
 
       visible =
         Fixtures.Runners.create_runner(
@@ -4826,8 +5131,9 @@ defmodule Emisar.CatalogTest do
           group: "web"
         )
 
-      Fixtures.Runners.advertise_packs(visible, %{pack_id => %{"version" => "0.0.0"}})
-      Fixtures.Runners.advertise_packs(hidden, %{pack_id => %{"version" => "0.0.0"}})
+      deployment = %{"version" => "0.0.0", "hash" => pack_version.hash}
+      Fixtures.Runners.advertise_packs(visible, %{pack_id => deployment})
+      Fixtures.Runners.advertise_packs(hidden, %{pack_id => deployment})
 
       {:ok, database_only} = Accounts.RunnerAccess.restricted(["database"], [])
       force_runner_access(account, subject, database_only)
@@ -5133,8 +5439,8 @@ defmodule Emisar.CatalogTest do
   describe "list_pack_actions/3" do
     test "returns the distinct actions a pack version advertises, scoped to the account" do
       {account, subject} = account_with_owner()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      other_runner = Fixtures.Runners.create_runner(account_id: account.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      other_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
       {:ok, _} =
         Catalog.observe_state(
@@ -5161,6 +5467,18 @@ defmodule Emisar.CatalogTest do
       # Ordered by action_id, one row per action (deduped across runners).
       assert Enum.map(actions, & &1.action_id) == ["acme.reload", "acme.status"]
       assert Enum.map(actions, & &1.risk) == [:critical, :low]
+
+      {:ok, database_acme} =
+        Accounts.RunnerAccess.new(:restricted, ["database"], [], :restricted, ["acme"])
+
+      force_runner_access(account, subject, database_acme)
+
+      assert {:ok, database_actions} = Catalog.list_pack_actions("acme", "2.0", subject)
+
+      assert Enum.map(database_actions, &{&1.action_id, &1.risk}) == [
+               {"acme.reload", :high},
+               {"acme.status", :low}
+             ]
 
       {:ok, other_pack_only} =
         Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])

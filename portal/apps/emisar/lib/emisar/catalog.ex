@@ -1587,6 +1587,7 @@ defmodule Emisar.Catalog do
     queryable =
       RunnerAction.Query.all()
       |> RunnerAction.Query.by_runner_id(runner_id)
+      |> scope_actions_to_subject_membership(subject)
       |> Authorizer.for_subject(subject)
 
     with :ok <-
@@ -1657,8 +1658,13 @@ defmodule Emisar.Catalog do
              subject,
              Authorizer.view_catalog_permission()
            ) do
+      access = Accounts.runner_access_for_subject(subject)
+      visible_deployments = visible_deployments(subject, access)
+
       pack_ids =
         PackVersion.Query.all()
+        |> scope_pack_versions_to_packs(access)
+        |> scope_pack_versions_to_visible_runners(visible_deployments)
         |> PackVersion.Query.distinct_pack_ids()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -1681,6 +1687,7 @@ defmodule Emisar.Catalog do
            ) do
       pairs =
         RunnerAction.Query.all()
+        |> scope_actions_to_subject_membership(subject)
         |> RunnerAction.Query.distinct_pack_runner_pairs()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -1725,6 +1732,7 @@ defmodule Emisar.Catalog do
       pack_ids =
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_runner_id(runner_id)
+        |> scope_actions_to_subject_membership(subject)
         |> RunnerAction.Query.distinct_pack_ids()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -1794,11 +1802,9 @@ defmodule Emisar.Catalog do
   defp model_snapshot(%Subject{} = subject, deployment \\ nil) do
     with {:ok, runners} <-
            Runners.list_all_runners_for_account(subject, preload: [:online?]) do
-      runner_ids = Enum.map(runners, & &1.id)
-      # Resolved once for this snapshot: the fleet read above already re-read
-      # the membership, and a second read microseconds later in the same
-      # operation cannot observe a change the first one missed.
       access = Accounts.runner_access_for_subject(subject)
+      runners = Enum.map(runners, &scope_runner_pack_facts(&1, access))
+      runner_ids = Enum.map(runners, & &1.id)
 
       actions =
         RunnerAction.Query.all()
@@ -1820,6 +1826,24 @@ defmodule Emisar.Catalog do
       {:ok,
        MCPProjection.build(pack_versions, actions, runners, only_pack_ref: pack_ref(deployment))}
     end
+  end
+
+  defp scope_runner_pack_facts(runner, %Accounts.RunnerAccess{} = access) do
+    packs =
+      (runner.packs || %{})
+      |> Enum.filter(fn {pack_id, _deployment} ->
+        Accounts.RunnerAccess.pack_in_scope?(pack_id, access)
+      end)
+      |> Map.new()
+
+    degraded_packs =
+      (runner.degraded_packs || [])
+      |> Enum.filter(fn
+        %{"pack" => pack_id} -> Accounts.RunnerAccess.pack_in_scope?(pack_id, access)
+        _malformed -> false
+      end)
+
+    %{runner | packs: packs, degraded_packs: degraded_packs}
   end
 
   defp scope_actions_to_deployment(queryable, nil), do: queryable
@@ -2335,6 +2359,30 @@ defmodule Emisar.Catalog do
        ),
        do: PackVersion.Query.by_pack_ids(queryable, access.pack_ids)
 
+  defp visible_deployments(_subject, %Accounts.RunnerAccess{mode: :all}), do: :all
+  defp visible_deployments(_subject, %Accounts.RunnerAccess{mode: :none}), do: []
+
+  defp visible_deployments(%Subject{} = subject, %Accounts.RunnerAccess{mode: :restricted}) do
+    case Runners.list_all_runners_for_account(subject) do
+      {:ok, runners} ->
+        runners
+        |> Enum.flat_map(fn runner ->
+          for {pack_id, %{"version" => version, "hash" => hash}} <- runner.packs || %{},
+              is_binary(pack_id) and is_binary(version) and is_binary(hash),
+              do: {pack_id, version, hash}
+        end)
+        |> Enum.uniq()
+
+      {:error, _reason} ->
+        []
+    end
+  end
+
+  defp scope_pack_versions_to_visible_runners(queryable, :all), do: queryable
+
+  defp scope_pack_versions_to_visible_runners(queryable, deployments),
+    do: PackVersion.Query.by_deployments(queryable, deployments)
+
   # Severity rank for `RunnerAction.risk` (an Ecto.Enum) — lets us pick the
   # WORST risk when the same action is advertised by more than one runner.
   @risk_rank %{low: 0, medium: 1, high: 2, critical: 3}
@@ -2415,6 +2463,7 @@ defmodule Emisar.Catalog do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
       rows =
         RunnerAction.Query.all()
+        |> scope_actions_to_subject_membership(subject)
         |> RunnerAction.Query.select_action_risk_rows()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -2444,6 +2493,7 @@ defmodule Emisar.Catalog do
       rows =
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_runner_ids(runner_ids)
+        |> scope_actions_to_subject_membership(subject)
         |> RunnerAction.Query.select_action_risk_rows()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -2545,8 +2595,12 @@ defmodule Emisar.Catalog do
              Authorizer.view_catalog_permission()
            ) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
+      access = Accounts.runner_access_for_subject(subject)
+      visible_deployments = visible_deployments(subject, access)
 
       PackVersion.Query.all()
+      |> scope_pack_versions_to_packs(access)
+      |> scope_pack_versions_to_visible_runners(visible_deployments)
       |> apply_pack_version_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(PackVersion.Query, opts)
@@ -2599,10 +2653,12 @@ defmodule Emisar.Catalog do
       name = filters |> Map.get(:name, "") |> String.downcase()
       risk = Map.get(filters, :risk, "")
       access = Accounts.runner_access_for_subject(subject)
+      visible_deployments = visible_deployments(subject, access)
 
       pack_versions =
         PackVersion.Query.all()
         |> scope_pack_versions_to_packs(access)
+        |> scope_pack_versions_to_visible_runners(visible_deployments)
         |> PackVersion.Query.ordered_by_pack()
         |> PackVersion.Query.select_without_manifest()
         |> PackVersion.Query.limit_to(@console_pack_version_limit)
@@ -2698,6 +2754,7 @@ defmodule Emisar.Catalog do
          %Subject{} = subject
        ) do
     RunnerAction.Query.all()
+    |> scope_actions_to_runners(access)
     |> scope_actions_to_packs(access)
     |> RunnerAction.Query.ordered_by_action()
     |> RunnerAction.Query.select_console_columns()
@@ -2715,6 +2772,7 @@ defmodule Emisar.Catalog do
        ) do
     RunnerAction.Query.all()
     |> RunnerAction.Query.by_pack_refs(pending_pairs)
+    |> scope_actions_to_runners(access)
     |> scope_actions_to_packs(access)
     |> RunnerAction.Query.ordered_by_action()
     |> Authorizer.for_subject(subject)
@@ -3018,6 +3076,7 @@ defmodule Emisar.Catalog do
       actions =
         RunnerAction.Query.all()
         |> RunnerAction.Query.by_pack(pack_id, pack_version)
+        |> scope_actions_to_runners(access)
         |> scope_actions_to_packs(access)
         |> RunnerAction.Query.ordered_by_action()
         |> RunnerAction.Query.select_console_columns()
@@ -3087,14 +3146,16 @@ defmodule Emisar.Catalog do
     case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
       :ok ->
         access = Accounts.runner_access_for_subject(subject)
+        visible_deployments = visible_deployments(subject, access)
 
         pending =
           PackVersion.Query.pending()
           |> scope_pack_versions_to_packs(access)
+          |> scope_pack_versions_to_visible_runners(visible_deployments)
           |> Authorizer.for_subject(subject)
           |> Repo.aggregate(:count)
 
-        pending + count_retired_blocked(access, subject)
+        pending + count_retired_blocked(access, visible_deployments, subject)
 
       _ ->
         0
@@ -3104,13 +3165,18 @@ defmodule Emisar.Catalog do
   # Retirement lives in the published catalog snapshot (`PackBaseline`), not in
   # a column, so the version comparison happens in Elixir over a narrow read:
   # trusted, unoverridden rows of the packs that carry a watermark at all.
-  defp count_retired_blocked(%Accounts.RunnerAccess{} = access, %Subject{} = subject) do
+  defp count_retired_blocked(
+         %Accounts.RunnerAccess{} = access,
+         visible_deployments,
+         %Subject{} = subject
+       ) do
     watermarked_pack_ids = Map.keys(PackBaseline.retired_below())
 
     queryable =
       PackVersion.Query.trusted_unoverridden()
       |> PackVersion.Query.by_pack_ids(watermarked_pack_ids)
       |> scope_pack_versions_to_packs(access)
+      |> scope_pack_versions_to_visible_runners(visible_deployments)
       |> PackVersion.Query.select_decision_fields()
       |> Authorizer.for_subject(subject)
 

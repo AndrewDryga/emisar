@@ -5,7 +5,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   and per-user runner scope both read as "not found", never 403.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Catalog, Runners}
+  alias Emisar.{Accounts, Catalog, Runners}
 
   setup %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
@@ -46,6 +46,85 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ "cloud-init"
     assert html =~ "packs: parse modules_config.yaml: yaml: unmarshal"
     assert html =~ "emisar pack install"
+  end
+
+  test "current pack access hides denied actions, filters, links, and diagnostics", %{
+    conn: conn,
+    user: user,
+    account: account
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+
+    Fixtures.Catalog.create_action(
+      runner: runner,
+      action_id: "postgres.status",
+      title: "Database health",
+      pack_id: "postgres",
+      risk: "low"
+    )
+
+    Fixtures.Catalog.create_action(
+      runner: runner,
+      action_id: "linux.reboot_host",
+      title: "Denied host action",
+      pack_id: "linux-core",
+      risk: "critical"
+    )
+
+    {:ok, _updated} =
+      Runners.apply_state(runner, %{
+        "degraded_packs" => [
+          %{"pack" => "postgres", "reason" => "allowed failure"},
+          %{"pack" => "linux-core", "reason" => "denied failure"}
+        ]
+      })
+
+    {:ok, postgres_only} =
+      Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+    account.id
+    |> Fixtures.Memberships.fetch_membership(user.id)
+    |> Fixtures.Memberships.force_runner_access(postgres_only)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    assert has_element?(lv, "#actions", "postgres.status")
+    assert has_element?(lv, "option[value=postgres]", "postgres")
+    assert html =~ "Database health"
+    assert html =~ "/runs/new/#{runner.id}/postgres.status"
+    assert html =~ "allowed failure"
+
+    refute has_element?(lv, "#actions", "linux.reboot_host")
+    refute has_element?(lv, "option[value=linux-core]")
+    refute html =~ "Denied host action"
+    refute html =~ "/runs/new/#{runner.id}/linux.reboot_host"
+    refute html =~ "denied failure"
+    refute html =~ "CRITICAL"
+  end
+
+  test "an open detail page exits when current runner access is replaced", %{
+    conn: conn,
+    user: user,
+    account: account
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+    Fixtures.Catalog.create_action(runner: runner, action_id: "postgres.status")
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+    assert html =~ "postgres.status"
+
+    {:ok, web_only} = Accounts.RunnerAccess.restricted(["web"], [])
+
+    account.id
+    |> Fixtures.Memberships.fetch_membership(user.id)
+    |> Fixtures.Memberships.force_runner_access(web_only)
+
+    send(
+      lv.pid,
+      {:list_changed, :team, "membership.runner_access_changed", user.id}
+    )
+
+    assert_redirect(lv, ~p"/app/#{account}/runners")
   end
 
   test "does not expose a routine socket-close tuple", %{conn: conn, account: account} do
