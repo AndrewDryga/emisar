@@ -1491,6 +1491,15 @@ end
 
 IO.puts(IO.ANSI.cyan() <> "✓ Seeded audit-export API key" <> IO.ANSI.reset())
 
+# The release seeder runs beside the live portal, whose timeout worker correctly
+# settles visible in-flight runs while the demo runners are still offline. Keep
+# each synthetic running -> terminal history write inside one transaction so a
+# background sweep can only observe the finished fixture.
+seed_terminal_history = fn seed_fun ->
+  {:ok, run} = Repo.transaction(seed_fun)
+  run
+end
+
 existing_runs =
   case Runs.list_recent_runs(owner_subject, limit: 1) do
     {:ok, list, _meta} -> list
@@ -1747,33 +1756,37 @@ if existing_runs == [] do
   Enum.each(successes, fn {runner, action_id, started_at, dur_ms, args, who, reason, chunks} ->
     finished_at = DateTime.add(started_at, dur_ms, :millisecond)
 
-    insert_run.(%{
-      runner_id: runner.id,
-      action_id: action_id,
-      args: args,
-      reason: reason,
-      requested_by_id: who.id,
-      status: "running"
-    })
-    |> backdate.(started_at)
-    |> finalize_success.(finished_at, dur_ms, chunks)
+    seed_terminal_history.(fn ->
+      insert_run.(%{
+        runner_id: runner.id,
+        action_id: action_id,
+        args: args,
+        reason: reason,
+        requested_by_id: who.id,
+        status: "running"
+      })
+      |> backdate.(started_at)
+      |> finalize_success.(finished_at, dur_ms, chunks)
+    end)
   end)
 
   Enum.each(agent_runs, fn {runner, action_id, started_at, dur_ms, args, reason, chunks} ->
     finished_at = DateTime.add(started_at, dur_ms, :millisecond)
 
-    insert_run.(%{
-      runner_id: runner.id,
-      action_id: action_id,
-      args: args,
-      reason: reason,
-      requested_by_id: user.id,
-      source: "mcp",
-      api_key_id: agent_key.id,
-      status: "running"
-    })
-    |> backdate.(started_at)
-    |> finalize_success.(finished_at, dur_ms, chunks)
+    seed_terminal_history.(fn ->
+      insert_run.(%{
+        runner_id: runner.id,
+        action_id: action_id,
+        args: args,
+        reason: reason,
+        requested_by_id: user.id,
+        source: "mcp",
+        api_key_id: agent_key.id,
+        status: "running"
+      })
+      |> backdate.(started_at)
+      |> finalize_success.(finished_at, dur_ms, chunks)
+    end)
   end)
 
   # A single old failure for filters/detail screenshots. It is outside the
@@ -1786,44 +1799,46 @@ if existing_runs == [] do
   Enum.each(failed_specs, fn {runner, action_id, started_at, exit_code, reason, args, who, chunks} ->
     finished_at = DateTime.add(started_at, 4500, :millisecond)
 
-    insert_run.(%{
-      runner_id: runner.id,
-      action_id: action_id,
-      args: args,
-      reason: "manual investigation",
-      requested_by_id: who.id,
-      status: "running"
-    })
-    |> backdate.(started_at)
-    |> finalize_failure.(finished_at, exit_code, reason, chunks)
+    seed_terminal_history.(fn ->
+      insert_run.(%{
+        runner_id: runner.id,
+        action_id: action_id,
+        args: args,
+        reason: "manual investigation",
+        requested_by_id: who.id,
+        status: "running"
+      })
+      |> backdate.(started_at)
+      |> finalize_failure.(finished_at, exit_code, reason, chunks)
+    end)
   end)
 
   # One old cancelled run. It gives the Runs filters a realistic terminal
   # non-error without putting a fresh warning on the dashboard.
   cancelled_at = days_ago.(3)
 
-  cancelled =
-    insert_run.(%{
-      runner_id: api.id,
-      action_id: "systemd.unit_restart",
-      args: %{"unit" => "checkout-api.service"},
-      reason: "cancel after canary rollback completed elsewhere",
-      requested_by_id: jordan.id,
-      status: "running"
-    })
-    |> backdate.(cancelled_at)
+  seed_terminal_history.(fn ->
+    cancelled =
+      insert_run.(%{
+        runner_id: api.id,
+        action_id: "systemd.unit_restart",
+        args: %{"unit" => "checkout-api.service"},
+        reason: "cancel after canary rollback completed elsewhere",
+        requested_by_id: jordan.id,
+        status: "running"
+      })
+      |> backdate.(cancelled_at)
 
-  append_chunks.(cancelled, systemd_restart_output)
+    append_chunks.(cancelled, systemd_restart_output)
 
-  cancelled =
-    persist_terminal_run.(cancelled, :cancelled, %{
+    cancelled
+    |> persist_terminal_run.(:cancelled, %{
       finished_at: cancelled_at,
       cancelled_at: cancelled_at
     })
-
-  cancelled
-  |> Ecto.Changeset.change(reason_text: "operator cancelled - rollback already completed")
-  |> Repo.update!()
+    |> Ecto.Changeset.change(reason_text: "operator cancelled - rollback already completed")
+    |> Repo.update!()
+  end)
 
   IO.puts(
     IO.ANSI.cyan() <>
@@ -2099,91 +2114,93 @@ succeeded_execution =
 ExecutionItem.Query.by_execution_id(seeded_execution_ids.succeeded)
 |> Repo.all()
 |> Enum.each(fn item ->
-  args = if is_binary(item.args_raw), do: Jason.decode!(item.args_raw), else: %{}
+  seed_terminal_history.(fn ->
+    args = if is_binary(item.args_raw), do: Jason.decode!(item.args_raw), else: %{}
 
-  {:ok, attempt} =
-    Runs.create_run(%{
-      account_id: account.id,
-      runner_id: item.runner_id,
-      action_id: item.action_id,
-      args: args,
-      reason: succeeded_execution.reason,
-      source: "operator",
-      requested_by_id: user.id,
-      initiating_membership_id: owner_membership.id,
-      pack_ref: item.pack_ref,
-      runner_ref: item.runner_ref,
-      runbook_id: approval_runbook.id,
-      runbook_step_id: item.step_id,
-      runbook_execution_id: seeded_execution_ids.succeeded,
-      runbook_execution_item_id: item.id,
-      attempt_number: 1,
-      expected_pack_hash: item.pack_hash,
-      policy_id: item.policy_id,
-      policy_version: item.policy_version,
-      policy_decision: "allow",
-      policy_reason:
-        item.policy_reason <> " The approved runbook plan authorized this execution.",
-      status: "running"
-    })
-
-  chunks =
-    case item.action_id do
-      "caddy.reload_config" ->
-        runner_name = item.runner_ref |> String.split("~") |> hd()
-
-        [
-          {"stdout", "Valid configuration\n"},
-          {"stdout", "Reloaded Caddy configuration on #{runner_name}\n"}
-        ]
-
-      "caddy.version" ->
-        [{"stdout", "v2.8.4 h1:0n6wXAMXxVqI9eD/9KspXHiCmGX95e9FQeawhe2iZHQ=\n"}]
-
-      "caddy.reverse_proxy_upstreams" ->
-        [{"stdout", "{\"healthy\":true,\"upstreams\":2}\n"}]
-
-      _other ->
-        [{"stdout", "Action completed successfully\n"}]
-    end
-
-  Enum.with_index(chunks, 1)
-  |> Enum.each(fn {{stream, chunk}, seq} ->
-    {:ok, _event} =
-      Runs.append_event(attempt, %{
-        seq: seq,
-        kind: "progress",
-        stream: stream,
-        payload: %{"chunk" => chunk}
+    {:ok, attempt} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: item.runner_id,
+        action_id: item.action_id,
+        args: args,
+        reason: succeeded_execution.reason,
+        source: "operator",
+        requested_by_id: user.id,
+        initiating_membership_id: owner_membership.id,
+        pack_ref: item.pack_ref,
+        runner_ref: item.runner_ref,
+        runbook_id: approval_runbook.id,
+        runbook_step_id: item.step_id,
+        runbook_execution_id: seeded_execution_ids.succeeded,
+        runbook_execution_item_id: item.id,
+        attempt_number: 1,
+        expected_pack_hash: item.pack_hash,
+        policy_id: item.policy_id,
+        policy_version: item.policy_version,
+        policy_decision: "allow",
+        policy_reason:
+          item.policy_reason <> " The approved runbook plan authorized this execution.",
+        status: "running"
       })
+
+    chunks =
+      case item.action_id do
+        "caddy.reload_config" ->
+          runner_name = item.runner_ref |> String.split("~") |> hd()
+
+          [
+            {"stdout", "Valid configuration\n"},
+            {"stdout", "Reloaded Caddy configuration on #{runner_name}\n"}
+          ]
+
+        "caddy.version" ->
+          [{"stdout", "v2.8.4 h1:0n6wXAMXxVqI9eD/9KspXHiCmGX95e9FQeawhe2iZHQ=\n"}]
+
+        "caddy.reverse_proxy_upstreams" ->
+          [{"stdout", "{\"healthy\":true,\"upstreams\":2}\n"}]
+
+        _other ->
+          [{"stdout", "Action completed successfully\n"}]
+      end
+
+    Enum.with_index(chunks, 1)
+    |> Enum.each(fn {{stream, chunk}, seq} ->
+      {:ok, _event} =
+        Runs.append_event(attempt, %{
+          seq: seq,
+          kind: "progress",
+          stream: stream,
+          payload: %{"chunk" => chunk}
+        })
+    end)
+
+    executed_command =
+      case item.action_id do
+        "caddy.reload_config" ->
+          "caddy reload --config /etc/caddy/Caddyfile"
+
+        "caddy.version" ->
+          "caddy version"
+
+        "caddy.reverse_proxy_upstreams" ->
+          ~s(/bin/sh -c 'curl -fsS "${CADDY_ADMIN:-http://127.0.0.1:2019}/reverse_proxy/upstreams"')
+
+        _other ->
+          nil
+      end
+
+    attempt
+    |> ActionRun.Changeset.transition(:success, %{
+      started_at: DateTime.add(succeeded_at, 6, :second),
+      finished_at: succeeded_finished_at,
+      exit_code: 0,
+      duration_ms: 12_000,
+      output_complete: true,
+      executed_command: executed_command,
+      event_id: "seed-runbook-" <> item.id
+    })
+    |> Repo.update!()
   end)
-
-  executed_command =
-    case item.action_id do
-      "caddy.reload_config" ->
-        "caddy reload --config /etc/caddy/Caddyfile"
-
-      "caddy.version" ->
-        "caddy version"
-
-      "caddy.reverse_proxy_upstreams" ->
-        ~s(/bin/sh -c 'curl -fsS "${CADDY_ADMIN:-http://127.0.0.1:2019}/reverse_proxy/upstreams"')
-
-      _other ->
-        nil
-    end
-
-  attempt
-  |> ActionRun.Changeset.transition(:success, %{
-    started_at: DateTime.add(succeeded_at, 6, :second),
-    finished_at: succeeded_finished_at,
-    exit_code: 0,
-    duration_ms: 12_000,
-    output_complete: true,
-    executed_command: executed_command,
-    event_id: "seed-runbook-" <> item.id
-  })
-  |> Repo.update!()
 end)
 
 IO.puts(IO.ANSI.cyan() <> "✓ Seeded runbook action output previews" <> IO.ANSI.reset())
