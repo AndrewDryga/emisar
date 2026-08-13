@@ -532,9 +532,7 @@ defmodule EmisarWeb.ApprovalsLive do
               >
                 policy
               </.link>
-              evaluates an action as
-              <span class="font-mono text-[13px] text-zinc-300">require_approval</span>
-              . A direct action creates one request for that run. A runbook with any gated item
+              evaluates an action as <span class="font-mono text-[13px] text-zinc-300">require_approval</span>. A direct action creates one request for that run. A runbook with any gated item
               creates one request for its complete frozen execution.
             </p>
             <p>

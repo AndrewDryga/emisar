@@ -5,7 +5,7 @@ defmodule EmisarWeb.TemplateHygieneTest do
   These live here rather than in `credo/checks/` because **Credo cannot parse
   `.heex`** — it reports the file as unparseable and drops it from the run, so a
   Credo check would only ever see the `~H` sigils embedded in `.ex` files. The
-  anchor-glue rule below shipped 8 violations across six files while its grep
+  inline-punctuation rule below shipped 8 violations across six files while its grep
   sat documented-but-unrun in `portal/AGENTS.md`; six of those eight were in
   `.heex` files a Credo check could not have reached.
 
@@ -17,11 +17,9 @@ defmodule EmisarWeb.TemplateHygieneTest do
 
   @web_lib Path.join([__DIR__, "..", "..", "lib"])
 
-  # The HEEx formatter's loose form (`>` ⏎ `text` ⏎ `</.link>.`) leaves the
-  # newline + indent INSIDE the anchor, which renders as a visible space before
-  # the punctuation — "read the connection guide ." Hand-gluing the text to both
-  # tags (`}>text</.link>.`) is what the formatter then preserves.
-  @anchor_glue ~r{^\s*</\.?(?:link|a|external_link)>[.,;:!?]}
+  # Whitespace between an inline closing tag and punctuation renders as a
+  # visible space — "require_approval ." The formatter preserves adjacency.
+  @inline_prose_punctuation_gap ~r{</(?:a|span|code|strong|em|small|time|kbd|samp|abbr|mark|q|cite|del|ins|sub|sup|\.(?:link|external_link|doc_link))>[ \t\r\n]+[.,;:!?]}
 
   # A `:for` concatenates its elements with no whitespace between them and each
   # is `whitespace-nowrap`, so an inline run has no soft-wrap opportunity and
@@ -44,10 +42,11 @@ defmodule EmisarWeb.TemplateHygieneTest do
     |> Enum.map(&{Path.relative_to(&1, @web_lib), File.read!(&1)})
   end
 
-  defp offending_lines(pattern) do
+  defp offending_source_matches(pattern) do
     for {file, source} <- template_sources(),
-        {line, line_no} <- Enum.with_index(String.split(source, "\n"), 1),
-        Regex.match?(pattern, line),
+        [{byte_index, _length} | _captures] <- Regex.scan(pattern, source, return: :index),
+        line_no =
+          source |> binary_part(0, byte_index) |> :binary.matches("\n") |> length() |> Kernel.+(1),
         do: "#{file}:#{line_no}"
   end
 
@@ -133,21 +132,24 @@ defmodule EmisarWeb.TemplateHygieneTest do
            """
   end
 
-  test "inline anchor text is glued to its closing tag when punctuation follows" do
-    offenders = offending_lines(@anchor_glue)
+  test "inline prose punctuation is glued to its preceding closing tag" do
+    offenders = offending_source_matches(@inline_prose_punctuation_gap)
 
     assert offenders == [],
            """
-           A closing anchor tag sits on its own line with punctuation after it, so the
-           newline + indent render as a visible space before the punctuation ("a shell .").
+           Whitespace sits between an inline closing tag and its punctuation, so it
+           renders as a visible gap ("require_approval ." or "a shell ,").
 
-           Glue the text to both tags — the formatter preserves the adjacency, and a long
-           href still wraps in the attribute position:
+           Glue punctuation directly to the closing tag. For links whose text otherwise
+           moves to its own line, glue the text to both tags too:
 
                ✅  }>read the connection guide</.link>.
+               ✅  <span>require_approval</span>.
                ❌  >
                      read the connection guide
-                   </.link>.
+                   </.link>
+                   .
+               ❌  <code>require_approval</code> ,
 
            Offending lines (relative to apps/emisar_web/lib):
            #{Enum.map_join(offenders, "\n", &"  #{&1}")}
