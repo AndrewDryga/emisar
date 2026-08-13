@@ -95,6 +95,33 @@ re-reads the catalog; without one: sudo systemctl reload emisar
   emisar pack update --dry-run`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var updated, current, skipped, failed int
+			// Non-nil so an empty sweep serializes as [] rather than null, which
+			// a `jq '.packs[]'` consumer would fail on.
+			results := []packUpdateResult{}
+
+			// The report goes out before any failure is returned, so a partly
+			// failed sweep is still machine-readable rather than only an exit code.
+			emit := func() error {
+				if !flagJSONOut {
+					return nil
+				}
+				return printJSON(packUpdateReport{
+					DryRun:        dryRun,
+					Updated:       updated,
+					UpToDate:      current,
+					NotInRegistry: skipped,
+					Failed:        failed,
+					Packs:         results,
+				})
+			}
+			fail := func(err error) error {
+				if emitErr := emit(); emitErr != nil {
+					return emitErr
+				}
+				return err
+			}
+
 			if registry == "" {
 				registry = os.Getenv("EMISAR_PACKS_REGISTRY")
 			}
@@ -104,12 +131,12 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 
 			dirs, err := resolvePackDirs()
 			if err != nil {
-				return err
+				return fail(err)
 			}
 
 			index, err := fetchPackIndex(cmd.Context(), registry)
 			if err != nil {
-				return err
+				return fail(err)
 			}
 
 			only := map[string]bool{}
@@ -118,15 +145,11 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 			}
 
 			seen := map[string]bool{}
-			var updated, current, skipped, failed int
-			// Non-nil so an empty sweep serializes as [] rather than null, which
-			// a `jq '.packs[]'` consumer would fail on.
-			results := []packUpdateResult{}
 
 			for _, dir := range dirs {
 				installed, err := inspectInstalledPacks(dir)
 				if err != nil {
-					return err
+					return fail(err)
 				}
 				for _, p := range installed {
 					seen[p.id] = true
@@ -193,22 +216,6 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 				}
 			}
 
-			// The report goes out before any failure is returned, so a partly
-			// failed sweep is still machine-readable rather than only an exit code.
-			emit := func() error {
-				if !flagJSONOut {
-					return nil
-				}
-				return printJSON(packUpdateReport{
-					DryRun:        dryRun,
-					Updated:       updated,
-					UpToDate:      current,
-					NotInRegistry: skipped,
-					Failed:        failed,
-					Packs:         results,
-				})
-			}
-
 			if len(seen) == 0 {
 				if flagJSONOut {
 					return emit()
@@ -228,13 +235,10 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 						fmt.Println("Run without --dry-run to apply.")
 					}
 				}
-				if err := emit(); err != nil {
-					return err
-				}
 				if failed > 0 {
-					return fmt.Errorf("%d pack(s) failed to update", failed)
+					return fail(fmt.Errorf("%d pack(s) failed to update", failed))
 				}
-				return nil
+				return emit()
 			}
 
 			if failed > 0 {
@@ -242,13 +246,10 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 					fmt.Printf("%d updated, %d up to date, %d not in registry, %d failed.\n",
 						updated, current, skipped, failed)
 				}
-				if err := emit(); err != nil {
-					return err
-				}
-				return fmt.Errorf("%d pack(s) failed to update", failed)
+				return fail(fmt.Errorf("%d pack(s) failed to update", failed))
 			}
 			if _, err := packs.LoadAll(dirs, packs.LoadOptions{}); err != nil {
-				return fmt.Errorf("validate installed packs after update: %w", err)
+				return fail(fmt.Errorf("validate installed packs after update: %w", err))
 			}
 			if err := emit(); err != nil {
 				return err

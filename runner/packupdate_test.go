@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -438,6 +439,34 @@ func TestPackUpdate_PartialFailureNonZeroExit(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dest, "bad", "pack.yaml")); err != nil {
 		t.Errorf("the failed pack must be left intact: %v", err)
+	}
+}
+
+func TestPackUpdate_JSONEmittedBeforePostUpdateValidationFailure(t *testing.T) {
+	withFlags(t)
+	withJSONOut(t, true)
+
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	installPackInto(t, dir1, "conflict-pack")
+	installPackInto(t, dir2, "conflict-pack")
+	flagPacksDir = []string{dir1, dir2}
+
+	cmd := packUpdateCmd()
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs([]string{"--registry", fakeRegistry(t, nil, nil)})
+	var cmdErr error
+	out := captureStdout(t, func() { cmdErr = cmd.Execute() })
+
+	if cmdErr == nil || !strings.Contains(cmdErr.Error(), "duplicate pack id") {
+		t.Fatalf("expected duplicate pack id validation error, got %v", cmdErr)
+	}
+	var got packUpdateReport
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("JSON report was not emitted before the validation error: %v\noutput: %q", err, out)
+	}
+	if got.NotInRegistry != 2 || len(got.Packs) != 2 {
+		t.Fatalf("report = %+v, want both completed pack results", got)
 	}
 }
 
