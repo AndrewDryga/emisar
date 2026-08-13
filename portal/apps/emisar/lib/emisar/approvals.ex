@@ -1048,20 +1048,10 @@ defmodule Emisar.Approvals do
         |> Multi.run(:active_account, fn repo, _changes ->
           Accounts.fetch_and_lock_account(request.account_id, repo: repo)
         end)
-        |> Multi.run(:decider_access, fn repo, _changes ->
-          with {:ok, membership} <-
-                 Accounts.fetch_and_lock_active_membership(
-                   repo,
-                   request.account_id,
-                   subject.membership_id
-                 ) do
-            {:ok, Accounts.runner_access_for_locked_membership(repo, membership)}
-          end
-        end)
         |> Multi.run(:approval_target, fn repo, _changes ->
           lock_approval_target(repo, request)
         end)
-        |> Multi.run(:locked, fn repo, %{decider_access: access} ->
+        |> Multi.run(:locked, fn repo, _changes ->
           locked =
             Request.Query.all()
             |> Request.Query.by_id(request.id)
@@ -1071,7 +1061,7 @@ defmodule Emisar.Approvals do
             |> repo.one()
 
           with %Request{} = locked <- locked,
-               true <- request_visible_to_access?(repo, locked.id, subject, access) do
+               true <- request_visible_to_subject?(repo, locked.id, subject) do
             {:ok, locked}
           else
             _ -> {:error, :not_found}
@@ -1124,15 +1114,10 @@ defmodule Emisar.Approvals do
   defp ensure_request_pending(%Request{status: :cancelled}), do: {:error, :run_cancelled}
   defp ensure_request_pending(%Request{}), do: {:error, :already_decided}
 
-  defp request_visible_to_access?(
-         repo,
-         request_id,
-         %Subject{} = subject,
-         %Accounts.RunnerAccess{} = access
-       ) do
+  defp request_visible_to_subject?(repo, request_id, %Subject{} = subject) do
     Request.Query.all()
     |> Request.Query.by_id(request_id)
-    |> Request.Query.by_target_access(access)
+    |> scope_requests_to_subject(subject)
     |> Authorizer.for_subject(subject)
     |> repo.exists?()
   end
