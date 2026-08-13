@@ -4,8 +4,9 @@ defmodule Emisar.Fixtures.Runbooks do
   `Fixtures.Runbooks.create_runbook/1`.
   """
 
-  alias Emisar.{Fixtures, Repo}
-  alias Emisar.Runbooks.{Definition, Release, Runbook, RunbookExecution}
+  alias Emisar.{Crypto, Fixtures, Repo, Runners}
+  alias Emisar.Runbooks.{Definition, ExecutionItem, ExecutionStage, Release, Runbook}
+  alias Emisar.Runbooks.RunbookExecution
 
   @default_definition %{
     "schema_version" => 1,
@@ -181,6 +182,92 @@ defmodule Emisar.Fixtures.Runbooks do
       |> Repo.update()
 
     settled
+  end
+
+  @doc "Persists one terminal execution with the supplied extracted output records."
+  def create_execution_with_outputs(runbook, runner, output_specs, attrs \\ []) do
+    account_id = runbook.account_id
+    policy = Fixtures.Policies.create_policy(account_id: account_id)
+    execution = create_execution(Map.merge(Map.new(attrs), %{runbook: runbook}))
+    now = DateTime.utc_now()
+    {:ok, runner_ref} = Runners.public_ref(runner)
+
+    stage =
+      %{
+        id: Repo.generate_id(),
+        account_id: account_id,
+        runbook_execution_id: execution.id,
+        stage_id: "collect",
+        position: 0,
+        title: "Collect",
+        mode: :parallel,
+        max_parallel: 16,
+        status: :pending
+      }
+      |> ExecutionStage.Changeset.create()
+      |> Repo.insert!()
+
+    output_specs
+    |> Enum.chunk_every(16)
+    |> Enum.with_index()
+    |> Enum.each(fn {specs, step_position} ->
+      output_plan =
+        Enum.map(specs, fn spec ->
+          %{"id" => spec.id, "source" => "stdout", "sensitive" => spec.sensitive}
+        end)
+
+      outputs = Map.new(specs, &{&1.id, &1.value})
+      outputs_raw = Jason.encode!(outputs)
+
+      evidence =
+        Enum.map(specs, fn spec ->
+          %{"kind" => "extraction", "output" => spec.id, "status" => "extracted"}
+        end)
+
+      item =
+        %{
+          id: Repo.generate_id(),
+          account_id: account_id,
+          runbook_execution_id: execution.id,
+          runbook_execution_stage_id: stage.id,
+          stage_position: 0,
+          step_id: "collect-#{step_position}",
+          step_position: step_position,
+          runner_id: runner.id,
+          runner_ref: runner_ref,
+          target_selection: "all",
+          action_id: "operations.health",
+          pack_ref: "operations@1.0.0/sha256:" <> String.duplicate("b", 64),
+          pack_hash: "sha256:" <> String.duplicate("b", 64),
+          risk: "low",
+          action_contract: %{},
+          policy_id: policy.id,
+          policy_version: policy.vsn,
+          policy_decision: "allow",
+          policy_reason: "Fixture allows execution",
+          binding_plan: %{},
+          output_plan: output_plan,
+          success_plan: [],
+          args_raw: "{}",
+          args_sha256: Crypto.hash_hex("{}"),
+          sensitive_arg_names: []
+        }
+        |> ExecutionItem.Changeset.create()
+        |> Repo.insert!()
+
+      item
+      |> ExecutionItem.Changeset.succeed(
+        outputs,
+        outputs_raw,
+        Crypto.hash_hex(outputs_raw),
+        evidence,
+        now
+      )
+      |> Repo.update!()
+    end)
+
+    stage |> ExecutionStage.Changeset.succeed(now) |> Repo.update!()
+    settle_execution(execution, now)
   end
 
   @doc "Returns a fresh canonical minimal v1 definition for context tests."

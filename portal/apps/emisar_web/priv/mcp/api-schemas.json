@@ -286,11 +286,19 @@
         "run_id": {"$ref": "#/$defs/run_id"},
         "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
         "timeout": {"$ref": "#/$defs/wait_short", "default": "60s", "description": "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."},
-        "cursor": {"type": "string", "minLength": 1, "maxLength": 4096, "description": "Opaque output-tail cursor. Do not construct or edit this; pass only the value from a prior response's `next`. Present it to stream a run's output forward from where you left off."}
+        "cursor": {"type": "string", "minLength": 1, "maxLength": 4096, "description": "Opaque output cursor. Do not construct or edit this; pass only the value from a prior response's `next` or `outputs_next`. With run_id it streams raw run output; with runbook_execution_id it pages extracted outputs omitted from a terminal execution result."}
       },
       "oneOf": [
         {"required": ["run_id"], "not": {"required": ["runbook_execution_id"]}},
-        {"required": ["runbook_execution_id"], "not": {"anyOf": [{"required": ["run_id"]}, {"required": ["cursor"]}]}}
+        {
+          "required": ["runbook_execution_id"],
+          "not": {"required": ["run_id"]},
+          "if": {"required": ["cursor"]},
+          "then": {
+            "required": ["timeout"],
+            "properties": {"timeout": {"const": "0"}}
+          }
+        }
       ]
     },
     "next_tail": {
@@ -425,6 +433,27 @@
       "allOf": [
         {"$ref": "#/$defs/next_call"},
         {"type": "object", "properties": {"tool": {"const": "wait_for_run"}, "arguments": {"$ref": "#/$defs/wait_for_run_arguments"}}}
+      ]
+    },
+    "next_runbook_outputs": {
+      "allOf": [
+        {"$ref": "#/$defs/next_call"},
+        {
+          "type": "object",
+          "properties": {
+            "tool": {"const": "wait_for_run"},
+            "arguments": {
+              "type": "object",
+              "required": ["runbook_execution_id", "cursor", "timeout"],
+              "additionalProperties": false,
+              "properties": {
+                "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
+                "cursor": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "timeout": {"const": "0"}
+              }
+            }
+          }
+        }
       ]
     },
     "next_wait_run_immediate": {
@@ -789,6 +818,22 @@
         "value": {"$ref": "#/$defs/runbook_output_value"}
       }
     },
+    "runbook_execution_output": {
+      "type": "object",
+      "required": ["item_id", "stage_id", "step_id", "runner_ref", "output_id", "source", "sensitive", "status", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "item_id": {"type": "string", "format": "uuid"},
+        "stage_id": {"$ref": "#/$defs/step_id"},
+        "step_id": {"$ref": "#/$defs/step_id"},
+        "runner_ref": {"$ref": "#/$defs/runner_ref"},
+        "output_id": {"$ref": "#/$defs/step_id"},
+        "source": {"type": "string", "enum": ["structured_output", "stdout", "stderr"]},
+        "sensitive": {"type": "boolean"},
+        "status": {"type": "string", "enum": ["pending", "extracted", "error"]},
+        "value": {"$ref": "#/$defs/runbook_output_value"}
+      }
+    },
     "runbook_condition_result": {
       "type": "object",
       "required": ["output", "operator", "expected", "status"],
@@ -993,6 +1038,7 @@
           "items": {"$ref": "#/$defs/runbook_execution_stage"}
         },
         "runs_next": {"$ref": "#/$defs/next_recent_runs"},
+        "outputs_next": {"$ref": "#/$defs/next_runbook_outputs"},
         "approval": {"$ref": "#/$defs/approval"},
         "wait_until": {"$ref": "#/$defs/timestamp"},
         "next": {"$ref": "#/$defs/next_wait"}
@@ -1004,6 +1050,22 @@
           "else": {"not": {"required": ["next"]}}
         }
       ]
+    },
+    "runbook_execution_outputs": {
+      "type": "object",
+      "x-maxEncodedUtf8Bytes": 524288,
+      "required": ["runbook_execution_id", "outputs"],
+      "additionalProperties": false,
+      "properties": {
+        "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
+        "outputs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {"$ref": "#/$defs/runbook_execution_output"}
+        },
+        "next": {"$ref": "#/$defs/next_runbook_outputs"}
+      }
     }
   },
   "tools": {
@@ -1343,7 +1405,7 @@
     },
     "wait_for_run": {
       "title": "Wait for run",
-      "description": "Wait for one run or runbook execution to change state, finish, or reach the timeout. Observation never cancels or repeats infrastructure work.",
+      "description": "Wait for one run or runbook execution to change state, finish, or reach the timeout. Follow a run's next cursor for raw output, or a terminal execution's outputs_next cursor for extracted values omitted from its bounded result. Observation never cancels or repeats infrastructure work.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
@@ -1378,6 +1440,15 @@
             "properties": {
               "ok": {"const": true},
               "execution": {"$ref": "#/$defs/runbook_execution"}
+            }
+          },
+          {
+            "type": "object",
+            "required": ["ok", "execution_outputs"],
+            "additionalProperties": false,
+            "properties": {
+              "ok": {"const": true},
+              "execution_outputs": {"$ref": "#/$defs/runbook_execution_outputs"}
             }
           }
         ]

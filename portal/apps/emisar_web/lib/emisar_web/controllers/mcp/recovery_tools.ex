@@ -8,7 +8,8 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
   alias Emisar.{MCPOperations, Runbooks, Runs}
   alias EmisarWeb.MCP.{Cancellation, CancellationRegistry, CatalogCursor, OutputCursor}
-  alias EmisarWeb.MCP.{ResponseBudget, RunbookContract, RunbookTools, Service, WaitLimiter}
+  alias EmisarWeb.MCP.{ResponseBudget, RunbookContract, RunbookOutputCursor, RunbookTools}
+  alias EmisarWeb.MCP.{Service, WaitLimiter}
 
   @recheck_ms 2_000
 
@@ -135,7 +136,10 @@ defmodule EmisarWeb.MCP.RecoveryTools do
         :cancelled
 
       {:error, :invalid_cursor} ->
-        {:error, error("invalid_cursor", Service.invalid_cursor_message(:tail, "wait_for_run"))}
+        cursor_kind = if args["runbook_execution_id"], do: :runbook_outputs, else: :tail
+
+        {:error,
+         error("invalid_cursor", Service.invalid_cursor_message(cursor_kind, "wait_for_run"))}
 
       {:error, :not_found} ->
         {:error, error("run_not_found", "No visible run or execution has that id.")}
@@ -148,6 +152,13 @@ defmodule EmisarWeb.MCP.RecoveryTools do
          retryable_error(
            "wait_saturated",
            "This credential already has eight active waits. Retry after one finishes."
+         )}
+
+      {:error, :response_too_large} ->
+        {:error,
+         error(
+           "response_too_large",
+           "One extracted output exceeds the MCP response limit."
          )}
     end
   end
@@ -162,7 +173,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
         %{kind: :run, id: run_id, timeout_ms: timeout_ms, cursor: args["cursor"]}
 
       %{"runbook_execution_id" => id} ->
-        %{kind: :execution, id: id, timeout_ms: timeout_ms}
+        %{kind: :execution, id: id, timeout_ms: timeout_ms, cursor: args["cursor"]}
     end
   end
 
@@ -174,8 +185,23 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
   defp do_wait_for_target(conn, %{kind: :run} = target), do: wait_for_action_run(conn, target)
 
+  defp do_wait_for_target(conn, %{kind: :execution, cursor: cursor} = target)
+       when is_binary(cursor),
+       do: runbook_output_page(conn, target)
+
   defp do_wait_for_target(conn, %{kind: :execution} = target),
     do: wait_for_execution(conn, target)
+
+  defp runbook_output_page(conn, %{id: execution_id, cursor: cursor}) do
+    subject = conn.assigns.current_subject
+    scope = Service.cursor_scope(conn)
+
+    with {:ok, position} <- RunbookOutputCursor.decode(cursor, scope, execution_id),
+         {:ok, result} <- Runbooks.fetch_execution_result(execution_id, subject),
+         {:ok, payload} <- RunbookTools.project_execution_output_page(result, position, scope) do
+      {:ok, %{execution_outputs: payload}}
+    end
+  end
 
   defp wait_for_action_run(conn, %{id: run_id, timeout_ms: timeout_ms} = target) do
     subject = conn.assigns.current_subject
@@ -328,7 +354,10 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
     with {:ok, result} <- Runbooks.fetch_execution_result(execution_id, subject),
          projection = Runbooks.execution_projection(result),
-         {:ok, payload} <- RunbookTools.project_execution(result, projection, subject) do
+         {:ok, payload} <-
+           RunbookTools.project_execution(result, projection, subject,
+             output_scope: Service.cursor_scope(conn)
+           ) do
       execution = result.execution
 
       token =

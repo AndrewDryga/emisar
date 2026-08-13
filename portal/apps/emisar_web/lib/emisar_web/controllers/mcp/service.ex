@@ -66,6 +66,12 @@ defmodule EmisarWeb.MCP.Service do
       "If it has expired, call #{tool} again with just the run_id and no cursor to re-seed the tail from the run's current output."
   end
 
+  def invalid_cursor_message(:runbook_outputs, tool) do
+    "The cursor is invalid, expired, or belongs to another runbook execution. " <>
+      "Follow the `outputs_next` continuation from a prior response instead of constructing one. " <>
+      "If it has expired, call #{tool} again with just the runbook_execution_id and no cursor to get a fresh execution result."
+  end
+
   @doc "Renders fixed-contract run summaries within one 64 KiB output-preview budget."
   def fixed_run_summaries(runs, subject, opts \\ []) when is_list(runs) do
     summary_opts = [

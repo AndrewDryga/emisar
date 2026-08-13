@@ -9,7 +9,8 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   alias Emisar.{Approvals, Crypto, Runbooks}
   alias Emisar.Auth.Subject
-  alias EmisarWeb.MCP.{CatalogCursor, ResponseBudget, RunbookContract, Service}
+  alias EmisarWeb.MCP.{CatalogCursor, ResponseBudget, RunbookContract, RunbookOutputCursor}
+  alias EmisarWeb.MCP.Service
   alias EmisarWeb.MCP.ValidationError
 
   @default_limit 15
@@ -352,7 +353,9 @@ defmodule EmisarWeb.MCP.RunbookTools do
     subject = conn.assigns.current_subject
 
     with {:ok, result} <- Runbooks.fetch_execution_result(execution_id, subject) do
-      project_execution(result, subject)
+      projection = Runbooks.execution_projection(result)
+
+      project_execution(result, projection, subject, output_scope: Service.cursor_scope(conn))
     end
   end
 
@@ -360,7 +363,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
   def project_execution(%{execution: execution, runbook: runbook} = result, %Subject{} = subject) do
     projection = Runbooks.execution_projection(result)
 
-    project_execution(execution, runbook, projection, subject)
+    project_execution(execution, runbook, projection, subject, [])
   end
 
   @doc false
@@ -369,15 +372,28 @@ defmodule EmisarWeb.MCP.RunbookTools do
         projection,
         %Subject{} = subject
       ) do
-    project_execution(execution, runbook, projection, subject)
+    project_execution(execution, runbook, projection, subject, [])
   end
 
-  defp project_execution(execution, runbook, projection, subject) do
+  @doc false
+  def project_execution(
+        %{execution: execution, runbook: runbook},
+        projection,
+        %Subject{} = subject,
+        opts
+      )
+      when is_list(opts) do
+    project_execution(execution, runbook, projection, subject, opts)
+  end
+
+  defp project_execution(execution, runbook, projection, subject, opts) do
     approval = execution_approval(execution, subject)
+    output_scope = Keyword.get(opts, :output_scope)
 
     [:full, :summary, :minimal]
     |> Enum.reduce_while({:error, :response_too_large}, fn mode, _result ->
-      payload = execution_projection(execution, runbook, projection, approval, mode)
+      payload =
+        execution_projection(execution, runbook, projection, approval, mode, output_scope)
 
       if ResponseBudget.fits_payload?(%{ok: true, execution: payload}) do
         {:halt, {:ok, payload}}
@@ -396,7 +412,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   defp execution_approval(_execution, _subject), do: nil
 
-  defp execution_projection(execution, runbook, projection, approval, mode) do
+  defp execution_projection(execution, runbook, projection, approval, mode, output_scope) do
     %{
       runbook_execution_id: execution.id,
       runbook_ref: execution_runbook_ref(execution, runbook),
@@ -413,12 +429,110 @@ defmodule EmisarWeb.MCP.RunbookTools do
     |> maybe_put(:approval, approval)
     |> maybe_put(:wait_until, approval[:expires_at])
     |> maybe_put(:next, wait_next(execution.id, projection.execution.waitable?))
+    |> maybe_put(:outputs_next, outputs_next(execution.id, projection, mode, output_scope))
   end
 
   defp wait_next(_execution_id, false), do: nil
 
   defp wait_next(execution_id, true),
     do: %{tool: "wait_for_run", arguments: %{runbook_execution_id: execution_id, timeout: "60s"}}
+
+  defp outputs_next(_execution_id, _projection, :full, _scope), do: nil
+  defp outputs_next(_execution_id, _projection, _mode, nil), do: nil
+
+  defp outputs_next(execution_id, projection, _mode, scope) do
+    if projection.execution.terminal? and public_output_value?(projection) do
+      output_next(execution_id, scope, 0)
+    end
+  end
+
+  defp public_output_value?(projection) do
+    Enum.any?(projection.stages, fn stage ->
+      Enum.any?(stage.items, fn item ->
+        Enum.any?(item.outputs, &(not &1.sensitive and not is_nil(&1.value)))
+      end)
+    end)
+  end
+
+  defp output_next(execution_id, scope, position) do
+    %{
+      tool: "wait_for_run",
+      arguments: %{
+        runbook_execution_id: execution_id,
+        cursor: RunbookOutputCursor.encode(scope, execution_id, position),
+        timeout: "0"
+      }
+    }
+  end
+
+  @doc false
+  def project_execution_output_page(result, position, scope)
+      when is_integer(position) and position >= 0 and is_binary(scope) do
+    projection = Runbooks.execution_projection(result)
+    outputs = execution_outputs(projection)
+
+    if projection.execution.terminal? and position < length(outputs) do
+      fit_output_page(result.execution.id, outputs, position, scope)
+    else
+      {:error, :invalid_cursor}
+    end
+  end
+
+  defp execution_outputs(projection) do
+    Enum.flat_map(projection.stages, fn stage ->
+      Enum.flat_map(stage.items, fn item ->
+        Enum.map(item.outputs, fn output ->
+          %{
+            item_id: item.id,
+            stage_id: stage.stage_id,
+            step_id: item.step_id,
+            runner_ref: item.runner_ref,
+            output_id: output.output_id,
+            source: output.source,
+            sensitive: output.sensitive,
+            status: output.status,
+            value: output.value
+          }
+        end)
+      end)
+    end)
+  end
+
+  defp fit_output_page(execution_id, outputs, position, scope) do
+    remaining = length(outputs) - position
+    upper = min(remaining, 100)
+    build = &output_page(execution_id, outputs, position, &1, scope)
+    count = largest_fitting_output_count(build, 1, upper, 0)
+
+    if count > 0,
+      do: {:ok, build.(count)},
+      else: {:error, :response_too_large}
+  end
+
+  defp largest_fitting_output_count(build, low, high, best) when low <= high do
+    count = div(low + high, 2)
+
+    if ResponseBudget.fits_payload?(%{ok: true, execution_outputs: build.(count)}) do
+      largest_fitting_output_count(build, count + 1, high, count)
+    else
+      largest_fitting_output_count(build, low, count - 1, best)
+    end
+  end
+
+  defp largest_fitting_output_count(_build, _low, _high, best), do: best
+
+  defp output_page(execution_id, outputs, position, count, scope) do
+    next_position = position + count
+
+    %{
+      runbook_execution_id: execution_id,
+      outputs: outputs |> Enum.drop(position) |> Enum.take(count)
+    }
+    |> maybe_put(
+      :next,
+      if(next_position < length(outputs), do: output_next(execution_id, scope, next_position))
+    )
+  end
 
   # A draft test ran content that never became a release, so it has no number to
   # name — the slug plus the execution's own digest is its identity.

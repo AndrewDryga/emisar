@@ -80,9 +80,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
              "call list_runbooks again with the same arguments and no cursor"
   end
 
-  test "wait_for_run rejects a cursor paired with a runbook_execution_id", %{conn: conn} do
-    # The output cursor identifies exactly one run; pairing it with an execution
-    # id is a client error, not a silently-ignored argument.
+  test "wait_for_run rejects a constructed runbook output cursor", %{conn: conn} do
     rejected =
       call(conn, "wait_for_run", %{
         "runbook_execution_id" => Ecto.UUID.generate(),
@@ -90,8 +88,8 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         "timeout" => "0"
       })
 
-    assert rejected["error"]["message"] ==
-             "Tool arguments do not match the published input schema."
+    assert rejected["error"]["code"] == "invalid_cursor"
+    assert rejected["error"]["message"] =~ "outputs_next"
   end
 
   test "transaction-time runbook contract failures do not expose hidden reasons" do
@@ -924,6 +922,60 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
                "status" => "passed"
              }
            ]
+
+    refute Map.has_key?(recovered["execution"], "outputs_next")
+  end
+
+  test "oversized terminal outputs drain through outputs_next without changing small results", %{
+    conn: conn,
+    account: account,
+    membership: membership
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "output-pages")
+
+    runbook =
+      Fixtures.Runbooks.create_runbook(account_id: account.id)
+      |> Fixtures.Runbooks.publish_runbook()
+
+    value = String.duplicate("v", 8_000)
+
+    public_outputs =
+      Enum.map(0..63, fn index ->
+        %{id: "value-#{index}", value: value <> Integer.to_string(index), sensitive: false}
+      end)
+
+    secret = "never-return-this-secret"
+    output_specs = public_outputs ++ [%{id: "secret", value: secret, sensitive: true}]
+
+    execution =
+      Fixtures.Runbooks.create_execution_with_outputs(runbook, runner, output_specs,
+        initiating_membership_id: membership.id
+      )
+
+    response =
+      rpc(conn, "tools/call", %{
+        "name" => "wait_for_run",
+        "arguments" => %{"runbook_execution_id" => execution.id, "timeout" => "0"}
+      })
+
+    assert byte_size(response.resp_body) <= ResponseBudget.max_frame_bytes()
+    recovered = response |> json_response(200) |> get_in(["result", "structuredContent"])
+    assert_valid_tool_result("wait_for_run", recovered)
+
+    continuation = recovered["execution"]["outputs_next"]
+    assert continuation["tool"] == "wait_for_run"
+
+    {outputs, frames} = drain_execution_outputs!(conn, continuation, [], 0)
+
+    assert frames > 1
+    assert length(outputs) == 65
+    assert Enum.map(outputs, & &1["output_id"]) == Enum.map(output_specs, & &1.id)
+    assert Enum.map(Enum.take(outputs, 64), & &1["value"]) == Enum.map(public_outputs, & &1.value)
+    refute Jason.encode!(outputs) =~ secret
+    assert List.last(outputs)["value"] == "[REDACTED]"
+
+    foreign = call(foreign_key_conn(), "wait_for_run", continuation["arguments"])
+    assert foreign["error"]["code"] == "invalid_cursor"
   end
 
   test "a full projection shows a value only where the frozen plan proves it public", %{
@@ -2524,6 +2576,28 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
   defp drain_tail!(_conn, _run, _cursor, _acc, _frames),
     do: flunk("output tail did not drain within 20 frames")
+
+  defp drain_execution_outputs!(conn, continuation, outputs, frames) when frames < 20 do
+    response =
+      rpc(conn, "tools/call", %{
+        "name" => continuation["tool"],
+        "arguments" => continuation["arguments"]
+      })
+
+    assert byte_size(response.resp_body) <= ResponseBudget.max_frame_bytes()
+    payload = response |> json_response(200) |> get_in(["result", "structuredContent"])
+    assert_valid_tool_result("wait_for_run", payload)
+    page = payload["execution_outputs"]
+    outputs = outputs ++ page["outputs"]
+
+    case page["next"] do
+      nil -> {outputs, frames + 1}
+      next -> drain_execution_outputs!(conn, next, outputs, frames + 1)
+    end
+  end
+
+  defp drain_execution_outputs!(_conn, _continuation, _outputs, _frames),
+    do: flunk("runbook outputs did not drain within 20 frames")
 
   defp create_mcp_history_run!(account, runner, key, index, overrides \\ %{}) do
     attrs =

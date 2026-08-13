@@ -1182,14 +1182,16 @@ Input:
 
 Exactly one of `run_id` or `runbook_execution_id` is required. `timeout` accepts
 `0`, or an integer duration with `ms` or `s`; default and maximum are 60 seconds.
-Values above the maximum are rejected. The optional `cursor` switches the call
-into output-tail mode (below); it is an opaque value the caller only echoes back
-from a prior `next`, never constructs. One credential lineage may hold at most
-eight waits on each portal node. Saturation returns retryable `wait_saturated`;
-call again after an active wait finishes. The call returns on a state change,
-terminal status, or timeout. Every nonterminal result includes another `next`;
-pending-approval and acknowledged-delivery states also expose their durable
-`wait_until` deadline.
+Values above the maximum are rejected. With `run_id`, the optional `cursor`
+switches the call into raw output-tail mode (below). With
+`runbook_execution_id`, a cursor from a terminal execution's `outputs_next`
+switches the call into extracted-output pagination and requires `timeout: "0"`.
+A cursor is opaque: the caller only echoes a returned continuation and never
+constructs it. One credential lineage may hold at most eight waits on each
+portal node. Saturation returns retryable `wait_saturated`; call again after an
+active wait finishes. The call returns on a state change, terminal status, or
+timeout. Every nonterminal result includes another `next`; pending-approval and
+acknowledged-delivery states also expose their durable `wait_until` deadline.
 
 Example after a wait times out while approval is still pending:
 
@@ -1221,14 +1223,15 @@ Example after a wait times out while approval is still pending:
 }
 ```
 
-`status` is the sole terminality signal. `next` is the separate "there is more to
-fetch" signal: a nonterminal `run_summary` or top-level runbook execution always
-carries one, and a terminal run carries one only when persisted output remains
-beyond its bounded preview (the drain cursor below). No `next` therefore means
-nothing further to retrieve — the caller stops on its absence, not on the status.
-The continuation lives inside that object and is not duplicated at the
-tool-result level. Lightweight runs nested in a runbook step omit continuations;
-callers wait on the execution or use the individual run ID.
+`status` is the sole terminality signal. `next` is the separate continuation for
+the object being observed: a nonterminal `run_summary` or top-level runbook
+execution always carries one, and a terminal run carries one only when persisted
+raw output remains beyond its bounded preview. A terminal runbook execution may
+instead carry `outputs_next` when extracted values were omitted. Callers follow
+the continuation they receive until that continuation is absent. Continuations
+live inside their owning objects and are not duplicated at tool-result level.
+Lightweight runs nested in a runbook step omit continuations; callers wait on the
+execution or use the individual run ID.
 
 A terminal summary includes `local_audit_failed: true` only when the runner
 could not persist its terminal or refusal event locally. This warning does not
@@ -1792,7 +1795,50 @@ count, and latest physical attempt. `runs_next` paginates complete attempt
 history through `recent_runs`. When a result approaches the 512 KiB tool budget,
 the projection first replaces non-sensitive output values with their encoded
 size and SHA-256 digest, then may omit the output/condition rows while retaining
-their counts and item state. `output_values_omitted` makes this explicit.
+their counts and item state. `output_values_omitted` makes this explicit. Small
+executions still return all extracted values in this first response and make no
+extra call.
+
+A terminal execution whose public extracted values were omitted also carries
+`outputs_next`. Following it through `wait_for_run` returns ordered pages of
+complete extracted-output records:
+
+```json
+{
+  "ok": true,
+  "execution_outputs": {
+    "runbook_execution_id": "60aeb528-cde1-5be6-8d2b-5b903f036d1c",
+    "outputs": [
+      {
+        "item_id": "8828f094-e608-47cc-bcc5-98c13e40accd",
+        "stage_id": "preflight",
+        "step_id": "check",
+        "runner_ref": "postgres-primary~18a65e2f86b2548f847095a6f36d2fc9",
+        "output_id": "healthy",
+        "source": "structured_output",
+        "sensitive": false,
+        "status": "extracted",
+        "value": true
+      }
+    ],
+    "next": {
+      "tool": "wait_for_run",
+      "arguments": {
+        "runbook_execution_id": "60aeb528-cde1-5be6-8d2b-5b903f036d1c",
+        "cursor": "opaque",
+        "timeout": "0"
+      }
+    }
+  }
+}
+```
+
+The server fills each page with as many whole output records as fit the real
+framed 512 KiB response and never splits one value. The final page omits `next`.
+Sensitive values remain `[REDACTED]`. Every page re-authorizes the execution;
+the signed 15-minute cursor is bound to its execution and credential lineage.
+An expired cursor is restarted by fetching the terminal execution without a
+cursor and following its fresh `outputs_next`.
 
 `blocking` is `null` when nothing needs explanation. Otherwise it carries a
 stable code and message plus the applicable stage, step, and runner identity.
@@ -1844,9 +1890,11 @@ exact expanded plan that every target runner can independently verify.
 runbook ID it returns the same staged execution result, including newly
 dispatched attempts and another `next` while the execution is still pending
 approval or active. Complete attempt
-history stays behind the paginated `runs_next`. If any frozen target is no
-longer in current scope, it returns `not_allowed` without a partial graph or
-hidden counts. Cancellation stops observation, never the runbook.
+history stays behind the paginated `runs_next`; terminal extracted values
+omitted from the staged result stay behind `outputs_next`. If any frozen target
+is no longer in current scope, either read returns `not_allowed` without a
+partial graph or hidden counts. Cancellation stops observation, never the
+runbook.
 
 ### `create_runbook_draft`
 
