@@ -486,8 +486,8 @@ page and in the audit log, not exposed as model-visible packs or issues.
 
 An exact `pack_id` can match several observed refs. Those refs paginate under
 the normal `limit`; the API does not make an unbounded one-response exception.
-The action list for one ref is never split and a pack may define at most 80
-actions. A full 80-action compact item must pass the 56 KiB encoded compact-pack
+The action list for one ref is never split and a pack may define at most 120
+actions. A full 120-action compact item must pass the 56 KiB encoded compact-pack
 ingestion bound, leaving room for the envelope inside the 64 KiB result budget.
 It therefore gives the model one capability map without an unbounded response.
 
