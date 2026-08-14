@@ -3502,13 +3502,24 @@ defmodule EmisarWeb.CoreComponents do
   without ids or a hook, so a responsive component may duplicate the slot safely;
   the accessible name already carries the tooltip text.
 
+  When the reason ends in something the operator must RUN, pass `command` rather
+  than naming it mid-sentence: the prose stays, and the shared `code_line` row
+  carries the command below it — mono, clipped to one line, with the same Copy
+  button the page-level notice gives that same command. Copy works because the
+  revealed bubble is pointer-interactive (above) and the clipboard listener is
+  delegated at the document, so it reaches a control that only exists on hover.
+
       <.tooltip text="Role is managed by directory sync — change it in your IdP">
         <.chip icon="hero-lock-closed-mini">Operator</.chip>
       </.tooltip>
       <.tooltip text="Audit export is on the Team plan" placement={:bottom}>…</.tooltip>
+      <.tooltip id="runner-version-7" text="Runner v0.19.0 is available…" command="sudo emisar update">
+        <.icon name="hero-cloud-arrow-down" class="h-3.5 w-3.5" />
+      </.tooltip>
   """
   attr :id, :string, default: nil, doc: "bubble id — override when the same tip repeats on a page"
   attr :text, :string, required: true
+  attr :command, :string, default: nil, doc: "a command the reason tells the operator to run"
   attr :aria_label, :string, default: nil, doc: "accessible name for an icon-only trigger"
   attr :placement, :atom, default: :top, values: [:top, :bottom]
   attr :align, :atom, default: :right, values: [:left, :right, :responsive]
@@ -3519,7 +3530,10 @@ defmodule EmisarWeb.CoreComponents do
     tooltip_id =
       cond do
         assigns.id -> assigns.id
-        assigns.aria_label -> nil
+        # An icon-only trigger needs no ids — its accessible name already says
+        # everything the bubble does. A command is the exception: it lives ONLY
+        # in the bubble, so that bubble must stay described and identifiable.
+        assigns.aria_label && is_nil(assigns.command) -> nil
         true -> "tooltip-#{:erlang.phash2(assigns.text)}"
       end
 
@@ -3557,6 +3571,7 @@ defmodule EmisarWeb.CoreComponents do
         ]}
       >
         {@text}
+        <.code_line :if={@command} id={"#{@tooltip_id}-command"} value={@command} class="mt-2" />
       </span>
     </span>
     """

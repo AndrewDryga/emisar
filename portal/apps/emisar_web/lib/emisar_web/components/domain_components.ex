@@ -20,6 +20,11 @@ defmodule EmisarWeb.DomainComponents do
   alias Emisar.Runs
   alias EmisarWeb.{FleetStates, TimeHelpers, UrlHelpers}
 
+  # The one spelling of the runner self-update, read by both surfaces that ask
+  # for it — the page notice and the per-row version chip's tooltip — so an
+  # operator is never told two different things to run.
+  @runner_update_command "sudo emisar update"
+
   @doc """
   Banner shown above a billing surface when the account's Paddle subscription
   needs attention (past_due / paused / canceled). Healthy/nil/unknown status →
@@ -419,13 +424,17 @@ defmodule EmisarWeb.DomainComponents do
   attr :class, :string, default: nil
 
   def version_chip(assigns) do
-    assigns = assign(assigns, :status, version_status(assigns.kind, assigns.version))
+    assigns =
+      assigns
+      |> assign(:status, version_status(assigns.kind, assigns.version))
+      |> assign(:command, version_chip_command(assigns.kind))
 
     ~H"""
     <.tooltip
       :if={@status in [:outdated, :unsupported]}
       id={@id}
       text={version_chip_title(@kind, @status, @version)}
+      command={@command}
       aria_label={@status == :outdated && version_chip_title(@kind, @status, @version)}
       align={:responsive}
       class={@class}
@@ -469,15 +478,19 @@ defmodule EmisarWeb.DomainComponents do
 
   def version_label(_version), do: nil
 
+  # Both runner states point at the same fix, so both hand over the command
+  # instead of spelling it into the sentence — the bubble carries it as the
+  # copyable row the page notice uses, and the prose just says to run it.
   defp version_chip_title(:runner, :unsupported, _version) do
-    "Below the minimum runner version #{Emisar.Compat.runner_minimum()} — upgrade this runner."
+    "Below the minimum runner version #{Emisar.Compat.runner_minimum()} — run the command " <>
+      "on this host; it keeps the configuration and restarts the service."
   end
 
   # Names the release the operator would get and the one they are on, the way
   # an update prompt should — never the requirement string that decided it.
   defp version_chip_title(:runner, :outdated, version) do
     "Runner #{version_label(Emisar.Compat.runner_target())} is available#{version_from(version)}. " <>
-      "Run sudo emisar update on this host; it keeps the configuration and restarts the service."
+      "Run the command on this host; it keeps the configuration and restarts the service."
   end
 
   defp version_chip_title(:mcp, :unsupported, _version) do
@@ -488,6 +501,13 @@ defmodule EmisarWeb.DomainComponents do
     "emisar-mcp #{version_label(Emisar.Compat.mcp_target())} is available#{version_from(version)}. " <>
       "Re-run the installer on that machine, then restart its LLM client."
   end
+
+  # A bridge is upgraded by re-running its installer, and that one-liner carries
+  # the account's own portal URL — too long to read clipped in a bubble, so the
+  # agents-list notice keeps sole ownership of it.
+  defp version_chip_command(:runner), do: @runner_update_command
+
+  defp version_chip_command(:mcp), do: nil
 
   defp version_from(version) when is_binary(version) and version != "",
     do: "; this one is on #{version_label(version)}"
@@ -639,7 +659,7 @@ defmodule EmisarWeb.DomainComponents do
 
   defp version_count_label(count, noun), do: "#{count} #{noun}s are"
 
-  defp version_upgrade_command(:runner, _base_url), do: "sudo emisar update"
+  defp version_upgrade_command(:runner, _base_url), do: @runner_update_command
 
   defp version_upgrade_command(:mcp, base_url), do: UrlHelpers.mcp_install_command(base_url)
 
