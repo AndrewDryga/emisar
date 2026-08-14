@@ -2671,3 +2671,60 @@ IO.puts(
     "✓ Both Connected Co (slug=both-connected) — runner + agent, no actions" <>
     IO.ANSI.reset()
 )
+
+# -- Emisar staff account ---------------------------------------------
+# The platform-admin persona for `/admin`, owning its OWN workspace rather than
+# taking a seat in Northstar Labs: the demo accounts feed the docs screenshot
+# captures, so their member lists must not grow a staff row. The workspace stays
+# empty on purpose — it doubles as the empty-states surface.
+#
+# This is the ONE persona deliberately kept out of `clear_seeded_mfa`. `/admin`
+# demands a second factor proved against the CURRENT enrollment, so a developer
+# enrolls TOTP here once by hand, and a reseed must leave that enrollment — and
+# the `is_admin` flag — standing rather than disabling it the way the screenshot
+# personas need. The seed still never enrolls MFA nor mints a secret; that stays
+# the human's step, walked by the gate itself.
+staff_email = "admin@emisar.dev"
+staff_full_name = "Emisar Admin"
+
+staff_user =
+  case Users.fetch_user_by_email(staff_email) do
+    {:error, :not_found} ->
+      {:ok, registered} = Users.register_user(%{full_name: staff_full_name, email: staff_email})
+      confirm_user.(registered)
+
+    {:ok, %User{} = existing} ->
+      existing |> ensure_profile.(staff_full_name) |> confirm_user.()
+  end
+
+staff_user =
+  if staff_user.is_admin do
+    staff_user
+  else
+    # `is_admin` is a global platform flag no changeset casts and no context
+    # writes — it is set out of band by design, so the seed builds the row itself.
+    staff_user |> Ecto.Changeset.change(is_admin: true) |> Repo.update!()
+  end
+
+staff_account_query = Account.Query.not_deleted() |> Account.Query.by_slug("emisar-staff")
+
+_ =
+  case Repo.fetch(staff_account_query, Account.Query) do
+    {:error, :not_found} ->
+      {:ok, created} =
+        Accounts.create_account_with_owner(
+          %{name: "Emisar Staff", slug: "emisar-staff"},
+          staff_user
+        )
+
+      created
+
+    {:ok, existing} ->
+      existing
+  end
+
+IO.puts(
+  IO.ANSI.cyan() <>
+    "✓ Emisar Staff (slug=emisar-staff) — #{staff_email} is_admin; enroll TOTP once for /admin" <>
+    IO.ANSI.reset()
+)
