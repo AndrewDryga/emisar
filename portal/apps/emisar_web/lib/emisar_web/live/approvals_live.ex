@@ -521,11 +521,6 @@ defmodule EmisarWeb.ApprovalsLive do
               evaluates an action as <span class="font-mono text-[13px] text-zinc-300">require_approval</span>. A direct action creates one request for that run. A runbook with any gated item
               creates one request for its complete frozen execution.
             </p>
-            <p>
-              Approve releases the exact frozen work; deny cancels it. Either way your reason is
-              logged. A request nobody decides <span class="text-zinc-200">expires</span>
-              on its own and the held work is cancelled.
-            </p>
           </.docs_rail>
         </section>
 
@@ -676,8 +671,7 @@ defmodule EmisarWeb.ApprovalsLive do
             <.docs_rail title="What's a standing grant?">
               <p>
                 Approving with a duration mints a <span class="text-zinc-200">standing grant</span>: repeat calls of the same
-                action by the same API key — optionally pinned to one runner and exact
-                arguments — auto-approve for that window instead of re-asking.
+                action by the same API key are auto-approved for that window instead of re-asking.
               </p>
             </.docs_rail>
 
