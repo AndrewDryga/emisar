@@ -1,7 +1,8 @@
 defmodule EmisarWeb.RunnerDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Catalog, Runners, Runs}
-  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions, TransportReason, UrlHelpers}
+  alias EmisarWeb.{ConfirmDialog, FleetStates, LiveTable}
+  alias EmisarWeb.{Permissions, TransportReason, UrlHelpers}
 
   def mount(%{"id" => id}, _session, socket) do
     membership = socket.assigns.current_membership
@@ -589,7 +590,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                            explains why on hover, keyboard focus, and touch alike. --%>
                         <.tooltip
                           id={"action-offline-#{action.id}"}
-                          text={"Runner is #{connection_status(@readiness.connection.state)} — runs can't be dispatched from here until it reconnects"}
+                          text={"Runner is #{FleetStates.label(@readiness.connection.state)} — runs can't be dispatched from here until it reconnects"}
                           class="shrink-0"
                         >
                           <.button

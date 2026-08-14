@@ -18,7 +18,7 @@ defmodule EmisarWeb.DomainComponents do
 
   import EmisarWeb.CoreComponents
   alias Emisar.Runs
-  alias EmisarWeb.{TimeHelpers, UrlHelpers}
+  alias EmisarWeb.{FleetStates, TimeHelpers, UrlHelpers}
 
   @doc """
   Banner shown above a billing surface when the account's Paddle subscription
@@ -233,7 +233,7 @@ defmodule EmisarWeb.DomainComponents do
   def runner_status_badge(assigns) do
     ~H"""
     <.status_badge
-      status={connection_status(@state)}
+      status={FleetStates.label(@state)}
       tone={runner_status_tone(@state, @version)}
       class={@class}
     />

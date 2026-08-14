@@ -2388,18 +2388,6 @@ defmodule EmisarWeb.CoreComponents do
   defp format_status(other), do: other
 
   @doc """
-  A runner's `Runners.connection_state/1` atom → the display status string that
-  `<.status_badge>` understands (`:online` → "connected",
-  `:offline` → "offline"). One place so the runners list + detail pages
-  can't drift on the connection vocabulary — and ONE word for the offline
-  fact console-wide (the MCP wire keeps its own stable "disconnected").
-  """
-  def connection_status(:online), do: "connected"
-  def connection_status(:offline), do: "offline"
-  def connection_status(:disabled), do: "disabled"
-  def connection_status(:pending), do: "pending"
-
-  @doc """
   The ONE `<details>` disclosure — a bordered box whose summary row toggles a
   bordered body, with the chevron affordance (design-console-ux §6: advanced or
   optional content collapses behind this). `:sm` is the quiet inline helper
@@ -3271,7 +3259,7 @@ defmodule EmisarWeb.CoreComponents do
   Horizontal meta strip wrapper — the bordered rounded box that holds
   `<.meta_field>` key-value cells under page titles on DETAIL pages (a run's
   runner / risk / pack / time). Not a list page's naked posture line (a count
-  strip) nor `<.stat>` (the dashboard tile). Pass `cols` for an explicit column
+  strip). Pass `cols` for an explicit column
   count at `lg+`; defaults to auto-fitting via `sm:grid-cols-3`.
 
       <.meta_strip cols={6}>
@@ -4062,55 +4050,6 @@ defmodule EmisarWeb.CoreComponents do
   """
   def hide_confirm_dialog(js \\ %JS{}, id),
     do: js |> fade_dialog_out(id) |> JS.push("confirm_reset")
-
-  @doc ~S"""
-  Statistic **tile** — a big number in its own card, for the dashboard's metrics
-  grid. The widest of the stat pair: a list page's health counts are a naked
-  posture line of `<.status_dot>` + count text (the runners/agents grammar);
-  `<.meta_field>` is the key-value strip under a detail title.
-
-      <.stat label="Runners online" value={@runners_connected} hint={"of #{@total} total"} />
-  """
-  attr :label, :string, required: true
-  attr :value, :any, required: true
-  attr :hint, :string, default: nil
-  # Outcome lives in the value + this colored hint, NOT a tinted card border —
-  # so a stat tile reads the same as every other card (one flat surface) while
-  # still signalling state.
-  attr :hint_tone, :atom, default: :neutral, values: [:neutral, :rose, :amber, :brand]
-  attr :class, :string, default: nil
-
-  def stat(assigns) do
-    ~H"""
-    <%!-- The ONE sanctioned island surface (the dashboard pillar tile): a
-         zinc-900 step lifted off the black ground by a low-opacity white ring
-         (edge-as-light) and a 1px inset top highlight — never a drop shadow,
-         which can't read on black. --%>
-    <div class={[
-      "rounded-xl bg-zinc-900/60 p-6 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]",
-      @class
-    ]}>
-      <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@label}</div>
-      <div class={["mt-2 text-3xl font-semibold tabular-nums", stat_value_class(@value)]}>
-        {stat_value(@value)}
-      </div>
-      <div :if={@hint} class={["mt-1 text-xs", stat_hint_tone(@hint_tone)]}>{@hint}</div>
-    </div>
-    """
-  end
-
-  defp stat_hint_tone(:rose), do: "text-rose-300"
-  defp stat_hint_tone(:amber), do: "text-amber-300"
-  defp stat_hint_tone(:brand), do: "text-brand-300"
-  defp stat_hint_tone(_), do: "text-zinc-400"
-
-  # `value={:unavailable}` renders a muted em dash so a tile whose read failed
-  # reads "couldn't load", not a misleading 0 (the value is otherwise a count
-  # or an "N / M" string).
-  defp stat_value(:unavailable), do: "—"
-  defp stat_value(value), do: value
-  defp stat_value_class(:unavailable), do: "text-zinc-500"
-  defp stat_value_class(_), do: "text-zinc-50"
 
   @doc """
   Empty-state panel: a centered icon + headline + body + optional CTA.

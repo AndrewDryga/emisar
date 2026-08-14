@@ -2,6 +2,7 @@ defmodule EmisarWeb.RunnersLive do
   use EmisarWeb, :live_view
   alias Emisar.Compat
   alias Emisar.Runners
+  alias EmisarWeb.FleetStates
   alias EmisarWeb.LiveTable
   alias EmisarWeb.RunnerInstall
   alias EmisarWeb.UrlHelpers
@@ -435,19 +436,27 @@ defmodule EmisarWeb.RunnersLive do
                     tone={if @fleet.counts.online > 0, do: :brand, else: :neutral}
                     size={:sm}
                   />
-                  <span class="tabular-nums text-zinc-400">{@fleet.counts.online} connected</span>
+                  <span class="tabular-nums text-zinc-400">
+                    {@fleet.counts.online} {FleetStates.label(:online)}
+                  </span>
                 </span>
                 <span :if={@fleet.counts.offline > 0} class="flex items-center gap-1.5">
                   <.status_dot tone={:amber} size={:sm} />
-                  <span class="tabular-nums text-amber-300">{@fleet.counts.offline} offline</span>
+                  <span class="tabular-nums text-amber-300">
+                    {@fleet.counts.offline} {FleetStates.label(:offline)}
+                  </span>
                 </span>
                 <span :if={@fleet.counts.pending > 0} class="flex items-center gap-1.5">
                   <.status_dot tone={:amber} size={:sm} />
-                  <span class="tabular-nums text-amber-300">{@fleet.counts.pending} pending</span>
+                  <span class="tabular-nums text-amber-300">
+                    {@fleet.counts.pending} {FleetStates.label(:pending)}
+                  </span>
                 </span>
                 <span :if={@fleet.counts.disabled > 0} class="flex items-center gap-1.5">
                   <.status_dot tone={:neutral} size={:sm} />
-                  <span class="tabular-nums text-zinc-400">{@fleet.counts.disabled} disabled</span>
+                  <span class="tabular-nums text-zinc-400">
+                    {@fleet.counts.disabled} {FleetStates.label(:disabled)}
+                  </span>
                 </span>
               </div>
 

@@ -35,8 +35,14 @@ defmodule EmisarWeb.AdminSearchLive do
     assign(socket, :accounts, accounts)
   end
 
-  defp results_title(""), do: "Recent accounts"
-  defp results_title(_query), do: "Matching accounts"
+  # `Admin.search_accounts/2` trims before it decides whether to search or list
+  # the newest accounts, so the page's own wording trims too — otherwise a query
+  # of spaces gets recent accounts under a "Matching accounts" heading.
+  defp blank_query?(query), do: String.trim(query) == ""
+
+  defp results_title(query) do
+    if blank_query?(query), do: "Recent accounts", else: "Matching accounts"
+  end
 
   def render(assigns) do
     ~H"""
@@ -65,8 +71,18 @@ defmodule EmisarWeb.AdminSearchLive do
       <.loading_state :if={is_nil(@accounts)} />
 
       <div :if={@accounts}>
+        <%!-- Two different facts wear two different states: an empty platform is
+             not a search that found nothing, and telling staff to try a slug
+             when there is nothing to find sends them hunting for a typo. --%>
         <.empty_state
-          :if={@accounts == []}
+          :if={@accounts == [] and blank_query?(@query)}
+          icon="hero-building-office-2"
+          title="No accounts yet."
+        >
+          Nobody has signed up on this deployment.
+        </.empty_state>
+        <.empty_state
+          :if={@accounts == [] and not blank_query?(@query)}
           icon="hero-magnifying-glass"
           title="No accounts match this search."
         >
@@ -98,7 +114,7 @@ defmodule EmisarWeb.AdminSearchLive do
                     created{" "}<.local_time
                       id={"account-created-#{account.id}"}
                       value={account.inserted_at}
-                      mode={:absolute}
+                      mode={:relative}
                     />
                   </:seg>
                 </.meta_line>
