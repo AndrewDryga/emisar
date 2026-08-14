@@ -72,15 +72,7 @@
                 {page.title}
               </h3>
               <p class="mt-1 text-sm leading-relaxed text-zinc-400">{page.desc}</p>
-              <p class="mt-2 text-sm font-semibold text-brand-300">
-                Read it
-                <span
-                  aria-hidden="true"
-                  class="inline-block transition-transform group-hover:translate-x-0.5"
-                >
-                  &rarr;
-                </span>
-              </p>
+              <p class="mt-2 text-sm font-semibold text-brand-300">Read it&nbsp;<.cta_arrow /></p>
             </div>
           </.link>
         </div>
@@ -194,9 +186,7 @@
               {guide.title}
             </h3>
             <p class="mt-3 text-base leading-relaxed text-zinc-400 text-pretty">{guide.dek}</p>
-            <span class="mt-5 inline-flex items-center gap-1 text-sm font-medium text-brand-400 group-hover:text-brand-300">
-              Read the guide <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-            </span>
+            <span class="mt-5 inline-block text-sm font-medium text-brand-400 group-hover:text-brand-300">Read the guide&nbsp;<.cta_arrow /></span>
           </.link>
         <% end %>
       </div>
@@ -232,15 +222,7 @@
               {title}
             </h3>
             <p class="mt-2 text-sm leading-6 text-zinc-400">{desc}</p>
-            <p class="mt-4 text-sm font-semibold text-brand-300">
-              Read it
-              <span
-                aria-hidden="true"
-                class="inline-block transition-transform group-hover:translate-x-0.5"
-              >
-                &rarr;
-              </span>
-            </p>
+            <p class="mt-4 text-sm font-semibold text-brand-300">Read it&nbsp;<.cta_arrow /></p>
           </.link>
         <% end %>
       </div>
@@ -267,10 +249,8 @@
         </.marketing_button>
         <a
           href={EmisarWeb.MailTo.support()}
-          class="text-sm font-semibold text-zinc-100 hover:text-brand-300"
-        >
-          Email support <span aria-hidden="true">&rarr;</span>
-        </a>
+          class="group text-sm font-semibold text-zinc-100 hover:text-brand-300"
+        >Email support&nbsp;<.cta_arrow /></a>
       </div>
     </div>
   </section>

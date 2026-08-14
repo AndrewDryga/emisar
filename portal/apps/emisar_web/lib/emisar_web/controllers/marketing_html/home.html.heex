@@ -170,13 +170,7 @@
             running. Emisar gives your agent eyes and secure hands on production.
           </p>
           <p class="mt-8 text-sm">
-            <.link
-              navigate={~p"/packs"}
-              class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-            >
-              Browse the full catalog it can reach
-              <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-            </.link>
+            <.cta_link navigate={~p"/packs"}>Browse the full catalog it can reach</.cta_link>
           </p>
         </div>
 
@@ -356,15 +350,9 @@
         </div>
       </div>
 
-      <div class="mt-12 flex justify-center">
-        <.link
-          navigate={~p"/packs"}
-          class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300"
-        >
-          Browse all {@action_count} actions across {@pack_count} packs — Postgres, Docker, Nomad, Kubernetes, the AWS suite, and more
-          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-      </div>
+      <p class="mt-12 text-center text-sm">
+        <.cta_link navigate={~p"/packs"}>Browse all {@action_count} actions across {@pack_count} packs — Postgres, Docker, Nomad, Kubernetes, the AWS suite, and more</.cta_link>
+      </p>
     </div>
   </section>
 
@@ -462,27 +450,10 @@
         </div>
       </div>
 
-      <div class="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-3 text-center">
-        <.link
-          navigate={~p"/compare/raw-ssh-for-ai"}
-          class="inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
-        >
-          Read the full SSH-for-AI comparison
-          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-        <.link
-          navigate={~p"/compare/custom-mcp-server"}
-          class="inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
-        >
-          Compare with a custom MCP server <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-        <.link
-          navigate={~p"/compare/copy-paste-ai-ops"}
-          class="inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
-        >
-          Compare with the copy-paste workflow
-          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
+      <div class="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-3 text-center text-sm">
+        <.cta_link navigate={~p"/compare/raw-ssh-for-ai"}>Read the full SSH-for-AI comparison</.cta_link>
+        <.cta_link navigate={~p"/compare/custom-mcp-server"}>Compare with a custom MCP server</.cta_link>
+        <.cta_link navigate={~p"/compare/copy-paste-ai-ops"}>Compare with the copy-paste workflow</.cta_link>
       </div>
     </div>
   </section>
@@ -526,24 +497,13 @@
             </div>
             <h3 class="mt-6 text-lg font-semibold text-white">{title}</h3>
             <p class="mt-3 text-sm text-zinc-400 leading-relaxed">{scenario}</p>
-            <.link
-              navigate={href}
-              class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
-            >
-              Read the post-mortem <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-            </.link>
+            <.cta_link navigate={href} class="mt-4 inline-block text-sm">Read the post-mortem</.cta_link>
           </div>
         <% end %>
       </div>
 
       <p class="mt-12 text-center text-sm">
-        <.link
-          navigate={~p"/use-cases"}
-          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-        >
-          See every use case — the daily wins and the war stories
-          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
+        <.cta_link navigate={~p"/use-cases"}>See every use case — the daily wins and the war stories</.cta_link>
       </p>
     </div>
   </section>
@@ -576,14 +536,8 @@
         </p>
       </div>
 
-      <div class="mt-10 text-center">
-        <.link
-          navigate={~p"/zero-trust"}
-          class="inline-flex items-center gap-1.5 text-m font-semibold text-brand-400 hover:text-brand-300"
-        >
-          See emisar mapped to the framework, control by control
-          <.icon name="hero-arrow-right" class="h-4 w-4" />
-        </.link>
+      <div class="mt-10 text-center text-sm">
+        <.cta_link navigate={~p"/zero-trust"}>See emisar mapped to the framework, control by control</.cta_link>
         <p class="mx-auto mt-4 max-w-xl text-xs leading-relaxed text-zinc-400">
           Not affiliated with or endorsed by Anthropic. We cite the framework because emisar is
           built to the control set it describes.

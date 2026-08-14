@@ -223,24 +223,9 @@
       </p>
 
       <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
-        <.link
-          navigate={~p"/docs/security-model"}
-          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-        >
-          How the trust boundary works <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-        <.link
-          navigate={~p"/docs/action-packs"}
-          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-        >
-          The pack format <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
-        <.link
-          navigate={~p"/compare/raw-ssh-for-ai"}
-          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-        >
-          Compare with raw SSH <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
+        <.cta_link navigate={~p"/docs/security-model"}>How the trust boundary works</.cta_link>
+        <.cta_link navigate={~p"/docs/action-packs"}>The pack format</.cta_link>
+        <.cta_link navigate={~p"/compare/raw-ssh-for-ai"}>Compare with raw SSH</.cta_link>
       </div>
     </div>
   </section>

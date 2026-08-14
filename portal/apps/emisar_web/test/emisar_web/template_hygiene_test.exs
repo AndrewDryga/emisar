@@ -33,6 +33,18 @@ defmodule EmisarWeb.TemplateHygieneTest do
   # normalizing once into an assign makes them agree by construction.
   @raw_subscript_for ~r/:for=\{[^}]*<-\s*([^}]*\["[a-z_]+"\])\s*\}/
 
+  # A marketing CTA label is prose — long enough to wrap on a phone — so the
+  # arrow must ride in the text flow, glued to the last word. Plain whitespace
+  # before it is a line-break opportunity, and `<.cta_arrow>` is an inline-block
+  # element, so the break drops the arrow onto its own line. (Console nav CTAs
+  # are short fixed labels — "View activity" — inside an `inline-flex` link that
+  # cannot wrap, which is why this pair of rules is scoped to marketing.)
+  @detached_cta_arrow ~r{[ \t\r\n]<\.cta_arrow}
+
+  # `cta_link` glues the arrow to whatever its slot renders, so slot content
+  # that starts or ends with template whitespace puts a breakable space back.
+  @unglued_cta_link_slot ~r{<\.cta_link[^>]*>[ \t\r\n]|[ \t\r\n]</\.cta_link>}
+
   defp template_sources do
     [
       Path.wildcard(Path.join(@web_lib, "**/*.heex")),
@@ -40,6 +52,21 @@ defmodule EmisarWeb.TemplateHygieneTest do
     ]
     |> Enum.concat()
     |> Enum.map(&{Path.relative_to(&1, @web_lib), File.read!(&1)})
+  end
+
+  defp marketing_sources do
+    Enum.filter(template_sources(), fn {file, _source} ->
+      String.starts_with?(file, "emisar_web/controllers/marketing_html/") or
+        file == "emisar_web/components/marketing_components.ex"
+    end)
+  end
+
+  defp offending_marketing_matches(pattern) do
+    for {file, source} <- marketing_sources(),
+        [{byte_index, _length} | _captures] <- Regex.scan(pattern, source, return: :index),
+        line_no =
+          source |> binary_part(0, byte_index) |> :binary.matches("\n") |> length() |> Kernel.+(1),
+        do: "#{file}:#{line_no}"
   end
 
   defp offending_source_matches(pattern) do
@@ -150,6 +177,52 @@ defmodule EmisarWeb.TemplateHygieneTest do
                    </.link>
                    .
                ❌  <code>require_approval</code> ,
+
+           Offending lines (relative to apps/emisar_web/lib):
+           #{Enum.map_join(offenders, "\n", &"  #{&1}")}
+           """
+  end
+
+  test "a marketing CTA arrow is glued to the last word of its label" do
+    offenders = offending_marketing_matches(@detached_cta_arrow)
+
+    assert offenders == [],
+           """
+           A `<.cta_arrow>` follows plain whitespace, so the line may break before it
+           and strand the arrow away from the label it belongs to. A marketing CTA
+           label wraps on a phone; the founder reported exactly this — the arrow
+           floating mid-air beside a three-line block.
+
+           Glue it with a non-breaking space, and never make the label and the arrow
+           flex SIBLINGS (`inline-flex items-center` centers the arrow beside the
+           whole wrapped block):
+
+               ✅  <.cta_link navigate={~p"/packs"}>Browse every pack</.cta_link>
+               ✅  Read it&nbsp;<.cta_arrow />
+               ❌  Read it <.cta_arrow />
+               ❌  <.link class="inline-flex items-center gap-1">
+                     Read it
+                     <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+                   </.link>
+
+           Offending lines (relative to apps/emisar_web/lib):
+           #{Enum.map_join(offenders, "\n", &"  #{&1}")}
+           """
+  end
+
+  test "a cta_link label is glued to both of its tags" do
+    offenders = offending_marketing_matches(@unglued_cta_link_slot)
+
+    assert offenders == [],
+           """
+           Whitespace inside a `<.cta_link>` slot renders as a breakable space, which
+           puts back the break opportunity the component's non-breaking space exists
+           to remove.
+
+               ✅  <.cta_link navigate={~p"/use-cases"}>See every use case</.cta_link>
+               ❌  <.cta_link navigate={~p"/use-cases"}>
+                     See every use case
+                   </.cta_link>
 
            Offending lines (relative to apps/emisar_web/lib):
            #{Enum.map_join(offenders, "\n", &"  #{&1}")}

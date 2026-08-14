@@ -207,13 +207,7 @@
             </li>
           </ul>
           <p class="mt-6 text-sm">
-            <.link
-              navigate={~p"/trust"}
-              class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-            >
-              See the full trust &amp; compliance posture
-              <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-            </.link>
+            <.cta_link navigate={~p"/trust"}>See the full trust &amp; compliance posture</.cta_link>
           </p>
         </div>
       </div>
@@ -255,12 +249,7 @@
         </div>
       </div>
       <div class="mt-8 text-center">
-        <.link
-          navigate={~p"/docs/quickstart"}
-          class="inline-flex items-center gap-1 text-sm font-semibold text-brand-400 hover:text-brand-300"
-        >
-          Read the quickstart <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
+        <.cta_link navigate={~p"/docs/quickstart"} class="text-sm">Read the quickstart</.cta_link>
       </div>
     </div>
   </section>

@@ -97,12 +97,7 @@
                 </li>
               <% end %>
             </ul>
-            <.link
-              navigate={link_path}
-              class="mt-6 inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
-            >
-              {link_label} <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-            </.link>
+            <.cta_link navigate={link_path} class="mt-6 inline-block text-sm">{link_label}</.cta_link>
           </div>
         <% end %>
       </div>

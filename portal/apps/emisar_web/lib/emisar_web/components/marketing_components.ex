@@ -62,9 +62,11 @@ defmodule EmisarWeb.MarketingComponents do
   `class="group"`.** Inherits the current text colour (so it takes on the link's
   tone); `class` overrides the size, default `h-3.5 w-3.5`.
 
-      <.link navigate={~p"/x"} class="group … text-brand-400">
-        Connect an agent <.cta_arrow />
-      </.link>
+  It is an inline-block element, so a plain space before it is a line-break
+  opportunity: glue it to the last word with `&nbsp;`. On marketing, reach for
+  `cta_link` instead — it owns the glue and the treatment.
+
+      <.link navigate={~p"/x"} class="group … text-brand-400">Connect an agent&nbsp;<.cta_arrow /></.link>
   """
   attr :class, :string, default: "h-3.5 w-3.5"
 
@@ -76,6 +78,45 @@ defmodule EmisarWeb.MarketingComponents do
     />
     """
   end
+
+  @doc """
+  The forward CTA link of the marketing site — the "see the rest of this" link
+  that closes a section, a card, or a keep-reading row. ONE treatment: brand
+  text at the enclosing wrapper's size, with `cta_arrow` glued to the last word
+  by a non-breaking space. The wrapper owns spacing and alignment; a section CTA
+  centers under the section it follows (`<p class="mt-12 text-center text-sm">`).
+
+  The glue is the whole point. An `inline-flex` link makes label and arrow flex
+  SIBLINGS, so a label long enough to wrap on a phone leaves the arrow floating
+  mid-air beside the block. Riding in the text flow, the arrow can only ever
+  follow the final word — at every width.
+
+  Write the label glued to both tags; whitespace there renders as a space the
+  line is free to break at, which orphans the arrow again. `EmisarWeb.TemplateHygieneTest`
+  pins that.
+
+      <.cta_link navigate={~p"/use-cases"}>See every use case</.cta_link>
+
+  `tone={:muted}` is for the secondary links of a row that already has a brand
+  one — it keeps the hierarchy without forking the treatment.
+  """
+  attr :tone, :atom, default: :brand, values: [:brand, :muted]
+  attr :class, :string, default: nil
+  attr :rest, :global, include: ~w(href navigate patch)
+  slot :inner_block, required: true
+
+  def cta_link(assigns) do
+    ~H"""
+    <.link
+      class={["group font-medium", cta_link_tone(@tone), @class]}
+      {@rest}
+    >{render_slot(@inner_block)}&nbsp;<.cta_arrow /></.link>
+    """
+  end
+
+  defp cta_link_tone(:brand), do: "text-brand-400 hover:text-brand-300"
+
+  defp cta_link_tone(:muted), do: "text-zinc-400 hover:text-zinc-300"
 
   # -- Marketing chrome ------------------------------------------------
 

@@ -323,6 +323,24 @@ genuinely missing (then it's shared, not one-off).
   carries `class="group"`. (Only for FORWARD navigation: an external link keeps
   its up-right/`top-right-on-square` icon, and a "changed X→Y" / "flows-to"
   glyph is not a CTA and doesn't animate.)
+- **The arrow rides in the text flow after the last word — never as a flex
+  sibling of its label.** `inline-flex items-center` makes label and arrow two
+  flex items (a bare text run is one item, the icon element another), so the
+  moment the label wraps, `items-center` parks the arrow mid-air beside the
+  whole block at its right edge. Put the arrow in the text: `last word&nbsp;<.cta_arrow />`.
+  The `&nbsp;` is load-bearing — a plain space is a line-break opportunity and
+  strands the arrow on its own line. On marketing use **`<.cta_link>`**, which
+  owns the glue plus the one treatment (`group font-medium text-brand-400
+  hover:text-brand-300`, size from the wrapper's `text-sm`, `tone={:muted}` for
+  a row's secondary links); the wrapper owns spacing and alignment, and a
+  section CTA centers under its section (`<p class="mt-12 text-center text-sm">`).
+  A link that carries its own `mt-*` needs `inline-block` for that margin to
+  apply. **Enforced** by `EmisarWeb.TemplateHygieneTest` over the marketing
+  templates. (Console nav CTAs — short fixed labels like "View activity" that
+  cannot wrap — keep their `inline-flex` links; the enforcement is scoped to
+  marketing for that reason.)
+  Sweep: `inline-flex items-center` on any link whose label is a sentence, and
+  any `<.icon name="hero-arrow-right">` or literal "→"/`&rarr;` inside a link.
 
 ### Brand / gate
 `brand`, `gate_mark`.
