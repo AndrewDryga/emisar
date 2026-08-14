@@ -132,6 +132,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp execution_plan(_request), do: nil
 
+  # The section header already says "Why", so a lone REASON key stacked under it
+  # prints one thing twice (§7.43). The keys earn their place the moment a second
+  # fact — evidence, the expected outcome, the policy that gated it — joins them.
+  defp lone_reason?(%Approvals.Request{} = request, run) do
+    request.evidence in [nil, ""] and request.expected in [nil, ""] and
+      (is_nil(run) or is_nil(run.policy_reason))
+  end
+
   # Approvals owns the name (one derivation for the queue, the dashboard, and the
   # audit trail); the id is this page's own last resort, because a request whose
   # frozen context names neither a runbook nor an action still has to be
@@ -724,20 +732,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <.meta_field label="Status" wrap>
               <.status_badge status={@request_facts.status} />
             </.meta_field>
-            <%!-- Never clip the action on the decision screen — an approver must read
-             the full action id before deciding. `wrap` gives it the full row on
-             mobile and wraps rather than truncating; the risk pill flows after. --%>
-            <.meta_field label={if(@execution_request?, do: "Runbook", else: "Action")} wrap>
-              <span class="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span class={[if(not @execution_request?, do: "font-mono"), "text-zinc-200"]}>
-                  {request_title(@request)}
-                </span>
-                <.risk_pill
-                  :if={@action_risk}
-                  id={"approval-#{@request.id}-risk"}
-                  risk={@action_risk}
-                />
-              </span>
+            <%!-- No ACTION/RUNBOOK meta field: its value was `request_title/1`, the
+             very string the page title above already prints in full (mono for an
+             action id) — a label:value row whose value restates the heading says
+             one thing twice (§7.43). The risk tier is a genuinely separate fact,
+             so it keeps its place, next to the status it qualifies. `wrap`: a pill
+             is a composite, and scalar truncation shears it (§7.35). --%>
+            <.meta_field :if={@action_risk} label="Risk" wrap>
+              <.risk_pill id={"approval-#{@request.id}-risk"} risk={@action_risk} />
             </.meta_field>
             <.meta_field :if={not @execution_request?} label="Runner">
               <%= if @run && @run.runner do %>
@@ -962,10 +964,18 @@ defmodule EmisarWeb.ApprovalDetailLive do
               <.section_header title="Why" />
               <dl class="space-y-5">
                 <div :if={@request.reason && @request.reason != ""}>
-                  <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                  <dt
+                    :if={not lone_reason?(@request, @run)}
+                    class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400"
+                  >
                     Reason
                   </dt>
-                  <dd class="mt-1 text-sm leading-relaxed text-zinc-200">{@request.reason}</dd>
+                  <dd class={[
+                    "text-sm leading-relaxed text-zinc-200",
+                    not lone_reason?(@request, @run) && "mt-1"
+                  ]}>
+                    {@request.reason}
+                  </dd>
                 </div>
                 <%!-- The agent's justification chain, snapshotted on the request:
                      what it observed, then the outcome it expected. An approver

@@ -690,16 +690,18 @@ defmodule EmisarWeb.PoliciesLive do
             <:subtitle>
               The base decision for every runner, by risk tier — unless a targeted ruleset below overrides it.
             </:subtitle>
+            <%!-- Pure navigation into the audit trail, so it wears the house brand
+                 link, not button chrome (§2) — the same shape the targeted-ruleset
+                 headers below use, so one page speaks one grammar. --%>
             <:actions :if={@account.policy}>
-              <.button
+              <.link
                 navigate={
                   ~p"/app/#{@current_account}/audit?#{[target_kind: "policy", target_id: @account.policy.id]}"
                 }
-                variant={:ghost}
-                size={:sm}
+                class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
               >
-                View activity
-              </.button>
+                View activity <.cta_arrow />
+              </.link>
             </:actions>
           </.section_header>
 
@@ -943,16 +945,15 @@ defmodule EmisarWeb.PoliciesLive do
                 Replaces the default policy for this {@ruleset.scope_type}.
               </p>
             </div>
-            <div class="flex shrink-0 items-center gap-2">
-              <.button
+            <div class="flex shrink-0 items-center gap-3">
+              <.link
                 navigate={
                   ~p"/app/#{@current_account}/audit?#{[target_kind: "policy", target_id: @ruleset.policy.id]}"
                 }
-                variant={:secondary}
-                size={:sm}
+                class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
               >
-                View activity
-              </.button>
+                View activity <.cta_arrow />
+              </.link>
               <.confirm_button
                 :if={@can_manage}
                 id={"remove-ruleset-#{@ruleset.uid}"}

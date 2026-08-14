@@ -502,7 +502,7 @@ defmodule EmisarWeb.RunnersLive do
                             :if={runner.runner_version}
                             class="font-mono text-[11px] text-zinc-400"
                           >
-                            v{runner.runner_version}
+                            {version_label(runner.runner_version)}
                           </span>
                           <.version_chip
                             kind={:runner}

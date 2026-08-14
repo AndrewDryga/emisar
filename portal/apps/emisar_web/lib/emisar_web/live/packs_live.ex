@@ -1114,10 +1114,12 @@ defmodule EmisarWeb.PacksLive do
     ~H"""
     <%!-- The same icon-capped spine as a row's retired block, but NEUTRAL and
          pack-level: a newer version shipped, yet what's installed still runs and
-         dispatches — a heads-up, not a warning, so it never wears rose. --%>
+         dispatches — a heads-up, not a warning, so it never wears rose. The glyph
+         is the DOWNLOAD metaphor the runner surfaces use for the same act
+         (§7.49); an up-arrow pointed the way the operator does not go. --%>
     <.event_block
       :if={@update}
-      icon="hero-arrow-up-circle"
+      icon="hero-cloud-arrow-down"
       tone={:neutral}
       title="Update available"
       class="mt-4"
@@ -1394,52 +1396,64 @@ defmodule EmisarWeb.PacksLive do
                         class="text-zinc-400"
                       />
                     </span>
+                    <%!-- A manager's row carries three verbs (read + one trust verb +
+                         Delete) — the labeled-menu threshold (§7.47), same grammar as
+                         the LLM-agents rows. Everyone else has only the read path, and
+                         a one-item dropdown is ceremony, so it stays the house brand
+                         link: navigation is never button chrome (§2). --%>
                     <div class="ml-auto flex shrink-0 items-center gap-2">
-                      <.button
-                        navigate={
-                          ~p"/app/#{@current_account}/audit?#{[target_kind: "pack_version", target_id: v.id]}"
-                        }
-                        variant={:ghost}
-                        size={:sm}
-                      >
-                        View activity
-                      </.button>
-                      <.button
-                        :if={
-                          Catalog.subject_can_manage_packs?(@current_subject) and
-                            @version_facts[v.id].trust_state == :rejected and
-                            (v.pending_hash || v.hash) != nil
-                        }
-                        variant={:secondary}
-                        tone={:amber}
-                        size={:sm}
-                        type="button"
-                        phx-click={open_confirm("trust-#{v.id}")}
-                      >
-                        Trust
-                      </.button>
-                      <.button
-                        :if={
-                          Catalog.subject_can_manage_packs?(@current_subject) and
-                            @version_facts[v.id].trust_state == :trusted
-                        }
-                        variant={:secondary}
-                        size={:sm}
-                        type="button"
-                        phx-click={open_confirm("revoke-#{v.id}")}
-                      >
-                        Revoke trust
-                      </.button>
-                      <.button
-                        :if={Catalog.subject_can_manage_packs?(@current_subject)}
-                        variant={:secondary}
-                        tone={:rose}
-                        size={:sm}
-                        type="button"
-                        phx-click={open_confirm("delete-version-#{v.id}")}
-                      >
-                        Delete
-                      </.button>
+                      <%= if Catalog.subject_can_manage_packs?(@current_subject) do %>
+                        <.dropdown
+                          class="inline-block shrink-0 text-left"
+                          summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                          panel_class="z-10 mt-2 w-48 p-1 text-xs shadow-xl"
+                        >
+                          <:trigger>
+                            Actions
+                            <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
+                          </:trigger>
+                          <.menu_item
+                            navigate={
+                              ~p"/app/#{@current_account}/audit?#{[target_kind: "pack_version", target_id: v.id]}"
+                            }
+                            icon="hero-shield-check"
+                          >
+                            View activity
+                          </.menu_item>
+                          <.menu_item
+                            :if={
+                              @version_facts[v.id].trust_state == :rejected and
+                                (v.pending_hash || v.hash) != nil
+                            }
+                            tone={:amber}
+                            phx-click={open_confirm("trust-#{v.id}")}
+                          >
+                            Trust
+                          </.menu_item>
+                          <.menu_item
+                            :if={@version_facts[v.id].trust_state == :trusted}
+                            phx-click={open_confirm("revoke-#{v.id}")}
+                          >
+                            Revoke trust
+                          </.menu_item>
+                          <div class="my-1 border-t border-zinc-800/70"></div>
+                          <.menu_item
+                            tone={:rose}
+                            phx-click={open_confirm("delete-version-#{v.id}")}
+                          >
+                            Delete
+                          </.menu_item>
+                        </.dropdown>
+                      <% else %>
+                        <.link
+                          navigate={
+                            ~p"/app/#{@current_account}/audit?#{[target_kind: "pack_version", target_id: v.id]}"
+                          }
+                          class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                        >
+                          View activity <.cta_arrow />
+                        </.link>
+                      <% end %>
                     </div>
                   </div>
 

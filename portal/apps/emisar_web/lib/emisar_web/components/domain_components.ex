@@ -432,15 +432,18 @@ defmodule EmisarWeb.DomainComponents do
     >
       <%!-- Below the minimum is a blocked state and keeps the labelled warning
            chip. Merely behind the current release still runs and dispatches
-           fine, so it is quiet chrome — one arrow beside the version that
+           fine, so it is quiet chrome — one glyph beside the version that
            explains itself on hover or focus, never a badge shouting beside the
-           host's name (the Packs page words the same fact the same way). --%>
+           host's name (the Packs page words the same fact the same way). It is
+           the DOWNLOAD metaphor, the same glyph the page notice above uses for
+           the same act (§7.49) — an up-arrow read as upload/publish, the
+           opposite direction from what the operator actually does. --%>
       <.chip :if={@status == :unsupported} tone={:rose} icon="hero-exclamation-triangle">
         unsupported
       </.chip>
       <.icon
         :if={@status == :outdated}
-        name="hero-arrow-up-circle"
+        name="hero-cloud-arrow-down"
         class="h-3.5 w-3.5 text-zinc-500"
       />
     </.tooltip>
@@ -451,6 +454,21 @@ defmodule EmisarWeb.DomainComponents do
 
   defp version_status(:mcp, version), do: Emisar.Compat.mcp_status(version)
 
+  @doc """
+  The ONE operator-facing spelling of a release number: `v`-prefixed, matching
+  the runners list, `emisar --version`, and the release tags. `Emisar.Compat`
+  stores versions bare because they are comparison values, so the spelling is
+  the web's to apply — three console surfaces printed `v0.10.0`, `0.10.0`, and
+  "behind 0.19.0" for the same kind of fact. A blank/unknown version has no
+  label; the caller renders its own em-dash placeholder.
+
+  Note this is for a VERSION, never a requirement string — `runner_minimum/0`
+  is `">= 0.10.0"` and must stay exactly as configured.
+  """
+  def version_label(version) when is_binary(version) and version != "", do: "v" <> version
+
+  def version_label(_version), do: nil
+
   defp version_chip_title(:runner, :unsupported, _version) do
     "Below the minimum runner version #{Emisar.Compat.runner_minimum()} — upgrade this runner."
   end
@@ -458,7 +476,7 @@ defmodule EmisarWeb.DomainComponents do
   # Names the release the operator would get and the one they are on, the way
   # an update prompt should — never the requirement string that decided it.
   defp version_chip_title(:runner, :outdated, version) do
-    "Runner #{Emisar.Compat.runner_target()} is available#{version_from(version)}. " <>
+    "Runner #{version_label(Emisar.Compat.runner_target())} is available#{version_from(version)}. " <>
       "Run sudo emisar update on this host; it keeps the configuration and restarts the service."
   end
 
@@ -467,12 +485,12 @@ defmodule EmisarWeb.DomainComponents do
   end
 
   defp version_chip_title(:mcp, :outdated, version) do
-    "emisar-mcp #{Emisar.Compat.mcp_target()} is available#{version_from(version)}. " <>
+    "emisar-mcp #{version_label(Emisar.Compat.mcp_target())} is available#{version_from(version)}. " <>
       "Re-run the installer on that machine, then restart its LLM client."
   end
 
   defp version_from(version) when is_binary(version) and version != "",
-    do: "; this one is on #{version}"
+    do: "; this one is on #{version_label(version)}"
 
   defp version_from(_version), do: ""
 
@@ -569,7 +587,7 @@ defmodule EmisarWeb.DomainComponents do
   end
 
   defp version_upgrade_message(:runner, :single, 0, _outdated) do
-    "This runner is behind #{Emisar.Compat.runner_target()}. " <>
+    "This runner is behind #{version_label(Emisar.Compat.runner_target())}. " <>
       "Run the command on its host. The update preserves its configuration and restarts the service."
   end
 
@@ -583,7 +601,7 @@ defmodule EmisarWeb.DomainComponents do
   end
 
   defp version_upgrade_message(:runner, :list, 0, outdated_count) do
-    "#{runner_count_phrase(outdated_count)} behind #{Emisar.Compat.runner_target()}. " <>
+    "#{runner_count_phrase(outdated_count)} behind #{version_label(Emisar.Compat.runner_target())}. " <>
       "Run the command once on each affected host; " <>
       "the update preserves its configuration and restarts the service."
   end
@@ -591,7 +609,7 @@ defmodule EmisarWeb.DomainComponents do
   defp version_upgrade_message(:runner, :list, unsupported_count, outdated_count) do
     "On this page, #{version_count_label(unsupported_count, "runner")} below the supported " <>
       "range (#{Emisar.Compat.runner_minimum()}) and " <>
-      "#{version_count_label(outdated_count, "runner")} behind #{Emisar.Compat.runner_target()}. " <>
+      "#{version_count_label(outdated_count, "runner")} behind #{version_label(Emisar.Compat.runner_target())}. " <>
       "Run the command once on each affected host; " <>
       "the update preserves its configuration and restarts the service."
   end
@@ -606,14 +624,14 @@ defmodule EmisarWeb.DomainComponents do
 
   defp version_upgrade_message(:mcp, _scope, 0, outdated_count) do
     "#{outdated_count} #{agent_count_label(outdated_count)} on this page last connected through a bridge behind " <>
-      "#{Emisar.Compat.mcp_target()}. Run the command once on " <>
+      "#{version_label(Emisar.Compat.mcp_target())}. Run the command once on " <>
       "each affected machine, then restart its LLM client."
   end
 
   defp version_upgrade_message(:mcp, _scope, unsupported_count, outdated_count) do
     "On this page, #{version_count_label(unsupported_count, "agent")} last connected through " <>
       "a bridge below the supported range (#{Emisar.Compat.mcp_minimum()}) and " <>
-      "#{version_count_label(outdated_count, "agent")} behind #{Emisar.Compat.mcp_target()}. " <>
+      "#{version_count_label(outdated_count, "agent")} behind #{version_label(Emisar.Compat.mcp_target())}. " <>
       "Run the command once on each affected machine, then restart its LLM client."
   end
 
@@ -1060,6 +1078,9 @@ defmodule EmisarWeb.DomainComponents do
   phone or by keyboard reads what "HIGH" means — a stored risk we have no
   lexicon entry for renders the bare pill rather than an empty bubble.
 
+  The pill owns a fixed track sized to CRITICAL, its longest tier, so stacked
+  peer verdicts align on both edges instead of ragging by label length (§7.41).
+
       <.risk_pill id={"approval-risk-\#{request.id}"} risk={risk} />
   """
   attr :risk, :any, required: true
@@ -1088,7 +1109,8 @@ defmodule EmisarWeb.DomainComponents do
   defp risk_pill_face(assigns) do
     ~H"""
     <span class={[
-      "rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wider ring-1 ring-inset",
+      "w-[5.25rem] flex-none rounded px-2 py-0.5 text-center text-xs font-semibold uppercase",
+      "tracking-wider ring-1 ring-inset",
       risk_classes(@risk),
       @class
     ]}>

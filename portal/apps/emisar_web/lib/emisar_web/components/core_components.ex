@@ -190,7 +190,10 @@ defmodule EmisarWeb.CoreComponents do
   Renders a button.
 
   `variant` is STRUCTURE (design-console-ux §2): `:primary` (filled, the default),
-  `:secondary` (bordered), `:ghost` (text-only). `tone` is the hue atom that
+  `:secondary` (bordered), `:ghost` (text-only). **A VISIBLE action verb always
+  wears a bordered face** — `:ghost` is for menu rows and inline cancel/dismiss
+  affordances only (§7.47); and a control that merely NAVIGATES is a `<.link>` in
+  the house brand-plus-`cta_arrow` grammar, not a button at all. `tone` is the hue atom that
   carries MEANING at the call site — `:brand` (affirmative/primary action),
   `:neutral`, `:amber` (attention-worthy, e.g. trusting a pack's new
   contents), `:rose` (destructive) — defaulting per variant (primary→brand,
@@ -208,7 +211,7 @@ defmodule EmisarWeb.CoreComponents do
       <.button variant={:secondary} tone={:rose} size={:sm} phx-click="revoke">Revoke</.button>
       <.button icon="hero-check">Approve</.button>
       <.button tone={:amber} phx-click="trust">Trust new contents</.button>
-      <.button variant={:ghost} tone={:rose} phx-click="remove">Remove</.button>
+      <.button variant={:ghost} type="button" phx-click="cancel_edit">Cancel</.button>
       <.button navigate={~p"/app/\#{@current_account}/runbooks/new"} icon="hero-plus">New runbook</.button>
   """
   attr :type, :string, default: nil
@@ -287,8 +290,11 @@ defmodule EmisarWeb.CoreComponents do
     "border border-amber-500/40 font-medium text-amber-200 hover:bg-amber-500/10 focus-visible:outline-amber-400"
   end
 
-  # Ghost: a text-only button tinted by tone, for low-prominence inline
-  # actions (remove, revoke, suspend, restore).
+  # Ghost: a text-only button tinted by tone, for a form's quiet Cancel, an
+  # inline dismiss (clearing a chosen upload), and a disclosure toggle. NOT for
+  # an entity's action verb — revoke/suspend/delete/edit wear a bordered face so
+  # buttons look like buttons (§7.47); the tone ramp below exists so a
+  # `<.menu_item>` row can mirror it inside a dropdown panel.
   defp button_face(:ghost, :neutral),
     do: "font-medium text-zinc-300 hover:bg-zinc-900 focus-visible:outline-zinc-600"
 
@@ -2720,9 +2726,15 @@ defmodule EmisarWeb.CoreComponents do
   slot :seg, required: true do
     attr :mono, :boolean,
       doc: "render THIS segment mono — identifiers only, never a timestamp/email"
+
+    attr :truncate, :boolean,
+      doc:
+        "give THIS segment the line's flexible width and ellipsize it HERE. Marking the prose segment is how a machine id later in the line still reaches the view in full (the whole-line truncate always eats the LAST segment, which is where an id usually sits)."
   end
 
   def meta_line(assigns) do
+    assigns = assign(assigns, :flexible?, Enum.any?(assigns.seg, & &1[:truncate]))
+
     ~H"""
     <%!-- Mobile wraps to two lines (security meta like "last used" must
          never silently truncate away); sm+ restores the single-line
@@ -2731,10 +2743,37 @@ defmodule EmisarWeb.CoreComponents do
          stays in the reading face; the line as a whole is never mono. Both
          clamps are `overflow: hidden`, so a segment's tooltip bubble is clipped
          away entirely — `wrap` is how such a line opts out (§7.35). --%>
-    <div class={[!@wrap && "line-clamp-2 sm:line-clamp-none sm:truncate", @class]}>
+    <%!-- A whole-line truncate has no idea which segment matters: it simply cuts
+         from the right, so a trailing slug/hash loses its tail while the prose
+         before it survives intact. When a `:seg` asks to `truncate`, the line
+         becomes a flex row at sm+ instead — that segment takes the slack and
+         ellipsizes, every other segment keeps its full width. Mobile keeps the
+         two-line clamp either way. --%>
+    <%!-- No `line-clamp-*` on the flexible branch: it is a composite utility that
+         also sets `display`, so `sm:line-clamp-none`'s `display: block` and
+         `sm:flex` collide at the same breakpoint and Tailwind's source order — not
+         this class list — decides the winner. Block won, and the slug wrapped to a
+         second line instead of sitting beside the truncated description. On a
+         phone the segments simply wrap; `list_row`'s own `:meta` wrapper still
+         caps that at two lines. `items-center`, not `items-baseline`: a flex item
+         with `overflow: hidden` — which `truncate` sets — synthesizes its baseline
+         from its bottom margin edge, so baseline alignment dropped the segments
+         after it by a full line. Peer segments share a line-height, so centering
+         lands in the same place without that trap. --%>
+    <div class={[
+      (not @flexible? and not @wrap) && "line-clamp-2 sm:line-clamp-none sm:truncate",
+      @flexible? && "sm:flex sm:items-center",
+      @class
+    ]}>
+      <%!-- `!`, never `not`, on a slot attr: an undeclared one is nil, and
+           `not nil` is an ArgumentError that only fires once a caller opts in. --%>
       <span
         :for={{seg, idx} <- Enum.with_index(@seg)}
-        class={seg[:mono] && "font-mono"}
+        class={[
+          seg[:mono] && "font-mono",
+          @flexible? && seg[:truncate] && "sm:min-w-0 sm:truncate",
+          @flexible? && !seg[:truncate] && "sm:shrink-0 sm:whitespace-pre"
+        ]}
       >
         {if idx > 0, do: " · "}{render_slot(seg)}
       </span>

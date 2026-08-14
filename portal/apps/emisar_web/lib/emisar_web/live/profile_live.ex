@@ -994,8 +994,10 @@ defmodule EmisarWeb.ProfileLive do
               >
                 <:actions>
                   <.button phx-disable-with="Verifying...">Verify email</.button>
+                  <%!-- Resending sends a real email — a bordered face (§7.47), so it
+                       doesn't read as a second Cancel beside the actual one. --%>
                   <.button
-                    variant={:ghost}
+                    variant={:secondary}
                     type="button"
                     phx-click="resend_mfa_enrollment_email"
                   >

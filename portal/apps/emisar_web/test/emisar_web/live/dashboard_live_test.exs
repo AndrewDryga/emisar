@@ -556,11 +556,13 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert render(lv) =~ "1 of 3 done"
     end
 
-    test "a run event refreshes only recent runs and their statistics", %{conn: conn} do
+    test "a run event refreshes only the recent runs it renders", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
 
-      assert refresh_query_count(lv, {:run_updated, Ecto.UUID.generate()}) == 6
+      # The header digest is DERIVED from the rows just read (so it can only ever
+      # describe them — §7.36), which also costs no second windowed read.
+      assert refresh_query_count(lv, {:run_updated, Ecto.UUID.generate()}) == 3
     end
 
     test "an approval event refreshes only the fixed five-row queue snippet", %{conn: conn} do

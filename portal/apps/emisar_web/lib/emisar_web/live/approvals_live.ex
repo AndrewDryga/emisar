@@ -605,16 +605,17 @@ defmodule EmisarWeb.ApprovalsLive do
                     </.meta_line>
                   </:meta>
                   <:actions>
-                    <.button
+                    <%!-- Navigation, not an action — the house brand link, never button
+                         chrome (§2). --%>
+                    <.link
                       :if={grant_approval_event_id(g, @approval_event_refs)}
                       navigate={
                         ~p"/app/#{@current_account}/audit/#{grant_approval_event_id(g, @approval_event_refs)}"
                       }
-                      variant={:ghost}
-                      size={:sm}
+                      class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
                     >
-                      Audit record
-                    </.button>
+                      Audit record <.cta_arrow />
+                    </.link>
                     <.confirm_button
                       :if={Approvals.subject_can_manage_grants?(@current_subject)}
                       id={"revoke-grant-#{g.id}"}

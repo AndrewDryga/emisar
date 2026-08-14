@@ -159,10 +159,14 @@ defmodule EmisarWeb.DashboardLive do
         preload: [:runner, :attribution]
       )
 
+    recent_runs = list_or_empty(recent_runs_read)
+
     socket
-    |> assign(:recent_runs, list_or_empty(recent_runs_read))
+    |> assign(:recent_runs, recent_runs)
     |> assign(:recent_runs_error?, not read_ok?(recent_runs_read))
-    |> assign(:run_stats, unwrap_ok(Runs.fetch_run_stats(subject, hours: 24)))
+    # The header digest describes the rows below it, so it is derived from the
+    # very list that renders — never a second, wider read (§7.36).
+    |> assign(:shown_run_stats, Runs.summarize_runs(recent_runs))
     |> put_setup_read(:recent_runs, recent_runs_read)
   end
 
@@ -288,7 +292,7 @@ defmodule EmisarWeb.DashboardLive do
         pending_approvals_error?={@pending_approvals_error?}
         recent_runs={@recent_runs}
         recent_runs_error?={@recent_runs_error?}
-        run_stats={@run_stats}
+        shown_run_stats={@shown_run_stats}
         agents={@agents}
         billing={@billing}
         can_manage_billing={Billing.subject_can_manage_billing?(@current_subject)}
@@ -332,7 +336,7 @@ defmodule EmisarWeb.DashboardLive do
   attr :pending_approvals_error?, :boolean, required: true
   attr :recent_runs, :list, required: true
   attr :recent_runs_error?, :boolean, required: true
-  attr :run_stats, :map, required: true
+  attr :shown_run_stats, :map, required: true
   attr :agents, :map, required: true
   attr :billing, :map, required: true
   attr :can_manage_billing, :boolean, default: false
@@ -493,15 +497,23 @@ defmodule EmisarWeb.DashboardLive do
           <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
             Recent runs
           </h2>
-          <span :if={@run_stats && @run_stats.total > 0} class="text-xs text-zinc-400">
+          <%!-- The digest quantifies THESE rows, not a 24h window (§7.36). The
+               window read said "5 in the last 24h · 100% success" directly above
+               a list that also carried older runs and a cancelled one — a summary
+               that describes a different set than the collection it annotates is
+               worse than none. `summarize_runs/1` applies the domain's own
+               outcome split to the rows being rendered, so the two cannot drift. --%>
+          <span :if={@shown_run_stats.total > 0} class="text-xs text-zinc-400">
             <span class="tabular-nums">
-              {@run_stats.total} in the last {@run_stats.window_hours}h
+              {@shown_run_stats.total} {if @shown_run_stats.total == 1,
+                do: "run",
+                else: "runs"} shown
             </span>
-            <span :if={@run_stats.success_rate} class="tabular-nums">
-              · {@run_stats.success_rate}% success
+            <span :if={@shown_run_stats.success_rate} class="tabular-nums">
+              · {@shown_run_stats.success_rate}% success
             </span>
-            <span :if={@run_stats.failed > 0} class="tabular-nums text-amber-300">
-              · {@run_stats.failed} failed
+            <span :if={@shown_run_stats.failed > 0} class="tabular-nums text-amber-300">
+              · {@shown_run_stats.failed} failed
             </span>
           </span>
         </div>
@@ -968,6 +980,11 @@ defmodule EmisarWeb.DashboardLive do
             No calls yet
         <% end %>
       </:status>
+      <%!-- Its siblings' third line always goes somewhere — Runners' posture line
+           earns the arrow when it needs attention, Team's names its next step. This
+           pillar's activity fact is a dead end on a tile that IS a link, so it gets
+           the same verb+mechanism forward action Team uses. --%>
+      <:action>Manage agent keys</:action>
     </.pillar>
     """
   end

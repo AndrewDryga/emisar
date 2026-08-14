@@ -219,23 +219,28 @@ defmodule EmisarWeb.RunbooksLive do
                     </:title>
                     <:meta>
                       <%!-- Row 2: description preview + slug --%>
+                      <%!-- The slug is the runbook's machine handle — an operator
+                           types it into MCP and the CLI, so a tail clipped off it
+                           is unusable. The description is the elastic half: it
+                           takes the slack and ellipsizes, the slug reads whole. --%>
                       <.meta_line>
-                        <:seg :if={runbook.description && runbook.description != ""}>
+                        <:seg :if={runbook.description && runbook.description != ""} truncate>
                           {preview(runbook.description)}
                         </:seg>
                         <:seg><span class="font-mono">{runbook.slug}</span></:seg>
                       </.meta_line>
                     </:meta>
                     <:actions>
-                      <.button
+                      <%!-- Navigation, not an action — the house brand link, never
+                           button chrome (§2). --%>
+                      <.link
                         navigate={
                           ~p"/app/#{@current_account}/audit?#{[target_kind: "runbook", target_id: runbook.id]}"
                         }
-                        variant={:ghost}
-                        size={:sm}
+                        class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
                       >
-                        View activity
-                      </.button>
+                        View activity <.cta_arrow />
+                      </.link>
                       <%!-- Secondary: the page's ONE brand fill is "New runbook" —
                        a green per row turns the fill into wallpaper. Only the
                        live release runs, so a runbook with nothing published

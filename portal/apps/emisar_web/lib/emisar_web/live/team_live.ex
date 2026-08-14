@@ -1405,7 +1405,7 @@ defmodule EmisarWeb.TeamLive do
                 id={"dismiss-request-#{request.id}"}
                 title="Dismiss this request?"
                 confirm_label="Dismiss"
-                variant={:ghost}
+                variant={:secondary}
                 tone={:rose}
                 size={:sm}
                 on_confirm={JS.push("dismiss_request", value: %{id: request.id})}
@@ -1607,61 +1607,72 @@ defmodule EmisarWeb.TeamLive do
                       </div>
                     </div>
 
+                    <%!-- Role and Actions each own a FIXED track (§7.55). Both cells
+                     used to be content-sized, so a "Billing manager" row and an
+                     "Admin" row pushed the identity column to different widths (the
+                     last-active fact truncated at a different word on every row), and
+                     the self row — which has no Actions menu — let its role chip slide
+                     right out of the column. The tracks are sized to their longest
+                     content: "Billing manager ▾" and "Resend email". --%>
                     <div class="flex shrink-0 items-center gap-2 pl-14 sm:pl-0">
-                      <%= cond do %>
-                        <% can_manage?(assigns) and not member.self_owner? and not member.role_editable? -> %>
-                          <%!-- Synced role: the IdP owns it (a role mapping, or the
-                         provider default), so directory sync recomputes it and a manual
-                         change here silently reverts. Read-only, pointing to where the
-                         change actually sticks — the identity provider. --%>
-                          <.tooltip
-                            id={"role-lock-#{membership.id}"}
-                            class="shrink-0"
-                            text={"Role is managed by #{directory_label(directory)} — change it in your identity provider"}
-                          >
-                            <.chip icon="hero-lock-closed-mini">
+                      <div class="flex w-[7.5rem] shrink-0 items-center">
+                        <%= cond do %>
+                          <% can_manage?(assigns) and not member.self_owner? and not member.role_editable? -> %>
+                            <%!-- Synced role: the IdP owns it (a role mapping, or the
+                           provider default), so directory sync recomputes it and a manual
+                           change here silently reverts. Read-only, pointing to where the
+                           change actually sticks — the identity provider. --%>
+                            <.tooltip
+                              id={"role-lock-#{membership.id}"}
+                              class="w-full"
+                              text={"Role is managed by #{directory_label(directory)} — change it in your identity provider"}
+                            >
+                              <.chip icon="hero-lock-closed-mini" class="w-full">
+                                {Emisar.Auth.role_label(membership.role)}
+                              </.chip>
+                            </.tooltip>
+                          <% can_manage?(assigns) and member.role_editable? -> %>
+                            <%!-- A role change is a privilege grant — a dropdown (same skin as
+                           the Actions menu beside it) whose items each OPEN their own styled
+                           confirm modal (not a native data-confirm — we use our own dialogs
+                           everywhere), so the modal fires only when you pick a DIFFERENT role,
+                           never just on opening the control. The handler still authorizes
+                           (IL-15). Suspension does NOT lock this — editability tracks
+                           permission, not access-state. --%>
+                            <.dropdown
+                              class="w-full text-left"
+                              summary_class="flex items-center justify-between rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                              panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
+                            >
+                              <:trigger>
+                                {Emisar.Auth.role_label(membership.role)}
+                                <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
+                              </:trigger>
+                              <.menu_item
+                                :for={role <- @roles}
+                                :if={role != to_string(membership.role)}
+                                phx-click={open_confirm("change-role-#{membership.id}-#{role}")}
+                              >
+                                {Emisar.Auth.role_label(role)}
+                              </.menu_item>
+                            </.dropdown>
+                          <% true -> %>
+                            <.chip class="w-full">
                               {Emisar.Auth.role_label(membership.role)}
                             </.chip>
-                          </.tooltip>
-                        <% can_manage?(assigns) and member.role_editable? -> %>
-                          <%!-- A role change is a privilege grant — a dropdown (same skin as
-                         the Actions menu beside it) whose items each OPEN their own styled
-                         confirm modal (not a native data-confirm — we use our own dialogs
-                         everywhere), so the modal fires only when you pick a DIFFERENT role,
-                         never just on opening the control. The handler still authorizes
-                         (IL-15). Suspension does NOT lock this — editability tracks
-                         permission, not access-state. --%>
-                          <.dropdown
-                            class="inline-block shrink-0 text-left"
-                            summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
-                            panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
-                          >
-                            <:trigger>
-                              {Emisar.Auth.role_label(membership.role)}
-                              <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
-                            </:trigger>
-                            <.menu_item
-                              :for={role <- @roles}
-                              :if={role != to_string(membership.role)}
-                              phx-click={open_confirm("change-role-#{membership.id}-#{role}")}
-                            >
-                              {Emisar.Auth.role_label(role)}
-                            </.menu_item>
-                          </.dropdown>
-                        <% true -> %>
-                          <.chip class="shrink-0">
-                            {Emisar.Auth.role_label(membership.role)}
-                          </.chip>
-                      <% end %>
+                        <% end %>
+                      </div>
 
-                      <.member_actions
-                        member={member}
-                        current_user_id={@current_user.id}
-                        can_manage?={can_manage?(assigns)}
-                        current_account={@current_account}
-                        typed={@typed}
-                        name_locked?={directory_managed?(directory)}
-                      />
+                      <div class="flex w-[6.5rem] shrink-0 items-center">
+                        <.member_actions
+                          member={member}
+                          current_user_id={@current_user.id}
+                          can_manage?={can_manage?(assigns)}
+                          current_account={@current_account}
+                          typed={@typed}
+                          name_locked?={directory_managed?(directory)}
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -2287,17 +2298,17 @@ defmodule EmisarWeb.TeamLive do
     ~H"""
     <%= cond do %>
       <% @membership.user_id == @current_user_id -> %>
-        <div class="flex shrink-0 items-center gap-2">
-          <.button
-            :if={@member.resend_confirmation?}
-            variant={:secondary}
-            tone={:neutral}
-            size={:sm}
-            phx-click="resend_confirmation"
-          >
-            Resend confirmation
-          </.button>
-        </div>
+        <%!-- Same remedy as the portal-wide unconfirmed-email strip, so it uses the
+             strip's exact verb rather than a second spelling of one action. --%>
+        <.button
+          :if={@member.resend_confirmation?}
+          variant={:secondary}
+          tone={:neutral}
+          size={:sm}
+          phx-click="resend_confirmation"
+        >
+          Resend email
+        </.button>
       <% not @can_manage? -> %>
         <%!-- Viewers can't manage a member but can audit them — every role on
              this page holds view_audit. The link is subject-scoped by the audit

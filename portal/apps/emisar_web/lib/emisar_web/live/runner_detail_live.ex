@@ -353,7 +353,11 @@ defmodule EmisarWeb.RunnerDetailLive do
             </.meta_field>
             <.meta_field label="Version" wrap>
               <span class="inline-flex items-center gap-2">
-                <span class="font-mono text-zinc-200">{@runner.runner_version || "—"}</span>
+                <%!-- `v`-prefixed, the one spelling the runners list and the update
+                     notice use for the same number (§7.42 — one fact, one form). --%>
+                <span class="font-mono text-zinc-200">
+                  {version_label(@runner.runner_version) || "—"}
+                </span>
                 <.version_chip
                   kind={:runner}
                   version={@runner.runner_version}

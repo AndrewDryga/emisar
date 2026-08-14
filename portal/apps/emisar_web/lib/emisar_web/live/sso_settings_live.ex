@@ -401,10 +401,10 @@ defmodule EmisarWeb.SSOSettingsLive do
     Permissions.gated(socket, socket.assigns.can_configure?, &do_test_connection/1)
   end
 
-  def handle_event("validate_edit", %{"provider_id" => id, "provider" => params}, socket) do
+  def handle_event("validate_edit", %{"provider_id" => id, "provider" => params} = event, socket) do
     case find_provider(socket, id) do
       nil -> {:noreply, socket}
-      provider -> {:noreply, assign_edit_form(socket, provider, params, :validate)}
+      provider -> {:noreply, assign_edit_form(socket, provider, params, event)}
     end
   end
 
@@ -1253,10 +1253,11 @@ defmodule EmisarWeb.SSOSettingsLive do
   # the field blank keeps the stored secret, unless the edit repoints the issuer
   # or client id, which the domain refuses without one. With no input it seeds
   # the picker from the stored runner scope.
-  defp assign_edit_form(socket, provider, params \\ %{}, action \\ nil) do
+  defp assign_edit_form(socket, provider, params \\ %{}, event \\ %{}) do
     case SSO.change_provider(provider, params, socket.assigns.current_subject) do
       {:ok, changeset} ->
-        changeset = maybe_put_action(changeset, action)
+        changeset = if params == %{}, do: changeset, else: LiveForm.on_change(changeset, event)
+
         assign(socket, :edit_form, edit_form(provider, changeset))
 
       {:error, :unauthorized} ->
@@ -1266,9 +1267,6 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp edit_form(provider, %Ecto.Changeset{} = changeset),
     do: to_form(changeset, as: "provider", id: "edit-provider-#{provider.id}")
-
-  defp maybe_put_action(changeset, nil), do: changeset
-  defp maybe_put_action(changeset, action), do: Map.put(changeset, :action, action)
 
   defp kind_label(kind), do: Map.fetch!(@kind_labels, kind)
 
@@ -1527,16 +1525,18 @@ defmodule EmisarWeb.SSOSettingsLive do
                 <%!-- Delete lives in a danger zone at the bottom, not up here beside
                      a routine Edit — a destructive action shouldn't sit one slip
                      away from the safe one. --%>
-                <div class="flex shrink-0 items-center gap-2">
-                  <.button
+                <div class="flex shrink-0 items-center gap-3">
+                  <%!-- Navigation, not an action — the house brand link, never button
+                       chrome (§2). Edit keeps its bordered face: it opens the editing
+                       flow this page owns. --%>
+                  <.link
                     navigate={
                       ~p"/app/#{@current_account}/audit?#{[target_kind: "identity_provider", target_id: provider.id]}"
                     }
-                    variant={:ghost}
-                    size={:sm}
+                    class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
                   >
-                    View activity
-                  </.button>
+                    View activity <.cta_arrow />
+                  </.link>
                   <.button
                     navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}/edit"}
                     variant={:secondary}
@@ -2700,7 +2700,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               <.chip>{role_label(mapping.role)}</.chip>
               <.button
                 :if={@editing_mapping_id != mapping.id}
-                variant={:ghost}
+                variant={:secondary}
                 size={:sm}
                 phx-click="start_edit_mapping"
                 phx-value-id={mapping.id}
@@ -2714,7 +2714,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 id={"delete-mapping-#{mapping.id}"}
                 title="Delete this role mapping?"
                 confirm_label="Delete mapping"
-                variant={:ghost}
+                variant={:secondary}
                 tone={:rose}
                 size={:sm}
                 on_confirm={JS.push("delete_mapping", value: %{id: mapping.id})}
@@ -3251,14 +3251,16 @@ defmodule EmisarWeb.SSOSettingsLive do
                   options={role_select_options(@member_role_options, member.membership.role)}
                 />
               </form>
-              <%!-- Suspend is reversible (Reactivate undoes it), so it stays a
-                   neutral ghost — rose is reserved for the irreversible Delete. --%>
+              <%!-- Suspend is reversible (Reactivate undoes it), so it stays
+                   NEUTRAL — rose is reserved for the irreversible Delete. The face
+                   is bordered, like every visible action verb (§7.47); Reactivate
+                   below is its twin and wears the same one. --%>
               <.confirm_button
                 :if={not Accounts.membership_disabled?(member.membership)}
                 id={"suspend-scim-#{member.membership.id}"}
                 title="Suspend this member?"
                 confirm_label="Suspend member"
-                variant={:ghost}
+                variant={:secondary}
                 tone={:neutral}
                 size={:sm}
                 on_confirm={JS.push("suspend_member", value: %{membership_id: member.membership.id})}
@@ -3270,8 +3272,8 @@ defmodule EmisarWeb.SSOSettingsLive do
               </.confirm_button>
               <.button
                 :if={Accounts.membership_disabled?(member.membership) and member.identity.scim_active}
-                variant={:ghost}
-                tone={:brand}
+                variant={:secondary}
+                tone={:neutral}
                 size={:sm}
                 phx-click="reinstate_member"
                 phx-value-membership_id={member.membership.id}

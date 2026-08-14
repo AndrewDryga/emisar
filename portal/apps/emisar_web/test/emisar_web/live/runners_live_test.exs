@@ -717,8 +717,8 @@ defmodule EmisarWeb.RunnersLiveTest do
       # An available update is a heads-up, not a warning: the row wears a quiet
       # arrow that names what is available and what this host is on, never the
       # labelled "outdated" badge a blocked runner gets.
-      assert html =~ "Runner 0.1.0 is available"
-      assert html =~ "this one is on 0.0.5"
+      assert html =~ "Runner v0.1.0 is available"
+      assert html =~ "this one is on v0.0.5"
       refute html =~ "outdated"
       assert html =~ "Runner update available"
       assert html =~ "sudo emisar update"

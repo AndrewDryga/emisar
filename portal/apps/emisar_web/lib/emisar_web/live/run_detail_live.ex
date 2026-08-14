@@ -370,11 +370,12 @@ defmodule EmisarWeb.RunDetailLive do
               </span>
               <span :if={is_nil(@run.duration_ms)} class="text-zinc-500">—</span>
             </.meta_field>
+            <%!-- The code is a fact the operator READS, so it stays neutral like
+                 every peer value in this row (§7.42). STATUS above owns the
+                 verdict; tinting 0 brand and 1 rose told it a second time, in a
+                 second vocabulary, right beside the badge that already said it. --%>
             <.meta_field label="Exit code">
-              <span
-                :if={is_integer(@run.exit_code)}
-                class={["font-mono", exit_code_class(@run.exit_code)]}
-              >
+              <span :if={is_integer(@run.exit_code)} class="font-mono text-zinc-200">
                 {@run.exit_code}
               </span>
               <span :if={is_nil(@run.exit_code)} class="text-zinc-500">—</span>
@@ -517,10 +518,18 @@ defmodule EmisarWeb.RunDetailLive do
           <.section_header title="Why" />
           <dl class="space-y-5">
             <div :if={@run.reason && @run.reason != ""}>
-              <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              <dt
+                :if={not lone_reason?(@run)}
+                class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400"
+              >
                 Reason
               </dt>
-              <dd class="mt-1 text-sm leading-relaxed text-zinc-200">{@run.reason}</dd>
+              <dd class={[
+                "text-sm leading-relaxed text-zinc-200",
+                not lone_reason?(@run) && "mt-1"
+              ]}>
+                {@run.reason}
+              </dd>
             </div>
             <%!-- The optional justification chain the agent gave alongside the
                  reason — what it observed, then the outcome it expected. Rendered
@@ -758,10 +767,6 @@ defmodule EmisarWeb.RunDetailLive do
   defp error_block_tone(:refused), do: :amber
   defp error_block_tone(_status), do: :rose
 
-  # Only ever called with an integer exit code — the nil case renders `<.blank>`.
-  defp exit_code_class(0), do: "text-brand-300"
-  defp exit_code_class(code) when is_integer(code), do: "text-rose-300"
-
   defp runner_label(%Emisar.Runners.Runner{name: name}) when is_binary(name) and name != "",
     do: name
 
@@ -788,6 +793,13 @@ defmodule EmisarWeb.RunDetailLive do
   defp show_policy?(%{policy_decision: nil}), do: false
   defp show_policy?(%{policy_decision: "allow"}), do: false
   defp show_policy?(%{policy_decision: _}), do: true
+
+  # The section header already says "Why", so a lone REASON key stacked under it
+  # prints one thing twice (§7.43). The keys earn their place the moment a second
+  # fact — evidence, the expected outcome, the policy that gated it — joins them.
+  defp lone_reason?(run) do
+    run.evidence in [nil, ""] and run.expected in [nil, ""] and not show_policy?(run)
+  end
 
   # No point staring at a black terminal for a run that never made it to the
   # runner. Cancelled / denied / awaiting-approval / refused runs never produce

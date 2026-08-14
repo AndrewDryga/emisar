@@ -195,14 +195,22 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "Expected"
     assert html =~ "queue depth drops to zero within a minute"
 
+    # Several facts share the cluster, so each earns its key.
+    assert html =~ "Reason"
+
     # A reason-only run (operator dispatch carries no chain) renders neither row.
     # Reuse the runner — a second one would collide on the per-account name.
     reason_only = run_with(account, %{runner_id: with_chain.runner_id, reason: "manual restart"})
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{reason_only.id}")
 
-    assert html =~ "Reason"
+    assert html =~ "manual restart"
     refute html =~ "Evidence"
     refute html =~ "Expected"
+
+    # ...and with the reason ALONE under it, the section header "Why" already
+    # names the fact, so the REASON key would say it twice.
+    assert html =~ "Why"
+    refute html =~ "Reason"
   end
 
   test "a denied run surfaces the denial + reason, not a bare cancellation", %{conn: conn} do

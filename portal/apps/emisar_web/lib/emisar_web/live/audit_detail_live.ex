@@ -226,7 +226,13 @@ defmodule EmisarWeb.AuditDetailLive do
            (innerText) so an operator can paste it into a ticket/grep. --%>
         <%!-- Event id moved up to a meta field; the payload panel just labels its
            copy for what it grabs — the rendered JSON, ready to paste. --%>
+        <%!-- Many event types carry no payload at all. Framing an empty `{}` and
+           offering "Copy JSON" beside it promises a record that isn't there and
+           hands the operator an empty clipboard — the panel renders only when it
+           has entries to show (§7.43); the meta fields above already say what
+           happened. --%>
         <.code_panel
+          :if={payload_entries?(@event.payload)}
           id="audit-payload-json"
           label="Payload"
           copy
@@ -239,7 +245,12 @@ defmodule EmisarWeb.AuditDetailLive do
     """
   end
 
-  defp pretty_payload(nil), do: "{}"
+  # A non-map payload is unexpected but still content, so it renders; nil and an
+  # empty object are the states with nothing to show.
+  defp payload_entries?(nil), do: false
+  defp payload_entries?(payload) when is_map(payload), do: map_size(payload) > 0
+  defp payload_entries?(_payload), do: true
+
   defp pretty_payload(map) when is_map(map), do: Jason.encode!(map, pretty: true)
   defp pretty_payload(other), do: inspect(other)
 

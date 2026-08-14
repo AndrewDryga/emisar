@@ -1180,8 +1180,9 @@ defmodule EmisarWeb.AgentsLive do
                   <%!-- A manager's live row carries three verbs — the labeled-menu
                      threshold (the team-roster grammar: bordered `Actions ▾`
                      trigger, ghost faces only on the menu rows). Everyone else —
-                     and every revoked row — has the one read verb, which wears a
-                     small bordered face, never a ghost. --%>
+                     and every revoked row — keeps the two read paths, and both
+                     only NAVIGATE, so they render as the house brand link rather
+                     than button chrome (§2: chrome is for an action). --%>
                   <%= if not facts.revoked? and ApiKeys.subject_can_manage_api_keys?(@current_subject) do %>
                     <.dropdown
                       class="inline-block shrink-0 text-left"
@@ -1235,24 +1236,22 @@ defmodule EmisarWeb.AgentsLive do
                     <%!-- "What did this agent do" matters most right after a key is
                        revoked, so the read verb stays on revoked rows too. Every
                        role that can see this page also holds view_audit. --%>
-                    <.button
+                    <.link
                       navigate={
                         ~p"/app/#{@current_account}/runs?#{[source: "mcp", api_key_id: key.id]}"
                       }
-                      variant={:secondary}
-                      size={:sm}
+                      class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
                     >
-                      View activity
-                    </.button>
-                    <.button
+                      View activity <.cta_arrow />
+                    </.link>
+                    <.link
                       navigate={
                         ~p"/app/#{@current_account}/audit?#{[target_kind: "api_key", target_id: key.id]}"
                       }
-                      variant={:ghost}
-                      size={:sm}
+                      class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
                     >
-                      Audit trail
-                    </.button>
+                      Audit trail <.cta_arrow />
+                    </.link>
                   <% end %>
                   <.confirm_dialog
                     :if={
