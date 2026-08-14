@@ -618,6 +618,31 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     509px card and clipped every long label. Verify a card that sits beside a rail at the width
     where the rail first appears, not just at your own screen. Sweep: `sm:`/`lg:`-keyed
     `grid-cols-*` inside a `col-span-*` column that shares its row with an `<aside>`.
+58. **One control row, one gap per DIMENSION — and the boundary between dimensions is
+    DISTANCE, never a glyph.** A row of chips/toggles/tabs that filters on more than one
+    dimension (a time window, an outcome, a category lens) gives each dimension its own
+    wrapping box at the tight intra-group gap and steps the gap up between them —
+    `gap-x-5`/`gap-y-3` outer against `gap-1.5` inside, the house meta-row grammar
+    (`runners_live`'s fleet posture line, where distance already separates units and the
+    tight gap binds a unit's parts). At ONE uniform gap the row is a single undifferentiated
+    run, so a control from a different dimension reads as a member of whichever group it
+    touches — the audit page's `Problems only` outcome toggle read as the category chips'
+    first chip, and the founder's words were "should either have separator … or be part of
+    group on the right. Now it's illogically placed." **A glyph does not fix this**: the
+    zinc-700 middot that sat there was too quiet to read as a boundary, the chrome test puts
+    distance before glyphs, and a vertical rule is shell chrome — content hairlines are
+    row-lattice grammar only (§3). The middot stays legitimate where it always was, joining
+    TEXT metadata segments (`Dispatched by X · via key`), never two controls. Each group is
+    its own `flex flex-wrap` box so it stays contiguous when the row folds, and the outer
+    `gap-y` must EXCEED the intra-group gap or the hierarchy inverts on a phone; a lead-in
+    label (`Quick filters:`) rides the first group at that group's own gap, or it reads as a
+    fourth group and orphans a line. Never answer this by merging two dimensions into one
+    segmented group — that spells a different question as one control. Sweep: a flex row
+    holding two or more `:for` comprehensions of buttons/chips under one uniform gap class,
+    and any bare `·`/`•`/`|` element or `w-px` rule sitting between two interactive
+    siblings. **Enforcement is review, deliberately**: a source-text check was measured and
+    rejected — the console carries ~90 legitimate metadata middots against this one defect,
+    so the check would fire almost entirely on correct code.
 
 
 ## 8. The kit is the contract
