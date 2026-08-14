@@ -70,6 +70,25 @@ defmodule EmisarWeb.Components.MetaLineTest do
       refute html =~ "line-clamp"
     end
 
+    test "the preserved-whitespace segment carries no template newline" do
+      assigns = %{}
+
+      # `whitespace-pre` keeps this component's own indentation as literally as it
+      # keeps the separator's space, and a newline between the tag and the text is
+      # an empty FIRST line box: it dropped every runbooks meta line 16px below its
+      # title and grew the row by the same (measured 92px -> 76px).
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.meta_line>
+          <:seg truncate>a description long enough to need clipping somewhere</:seg>
+          <:seg mono>restart-edge-fleet</:seg>
+        </CoreComponents.meta_line>
+        """)
+
+      assert html =~ ~s(sm:whitespace-pre"> · restart-edge-fleet</span>)
+      refute html =~ ~r/whitespace-pre">\s*\n/
+    end
+
     test "a line with no truncating segment keeps the whole-line clamp" do
       assigns = %{}
 

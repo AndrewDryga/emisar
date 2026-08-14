@@ -2769,6 +2769,11 @@ defmodule EmisarWeb.CoreComponents do
     ]}>
       <%!-- `!`, never `not`, on a slot attr: an undeclared one is nil, and
            `not nil` is an ArgumentError that only fires once a caller opts in. --%>
+      <%!-- The separator and slot GLUE to the tags (§7.48): `whitespace-pre` keeps
+           the leading space that survives the flex item's line start, and it keeps
+           this template's indentation just as literally — a newline here rendered
+           an empty first line box, dropping every meta line 16px below its title
+           and growing every row by the same. --%>
       <span
         :for={{seg, idx} <- Enum.with_index(@seg)}
         class={[
@@ -2776,9 +2781,7 @@ defmodule EmisarWeb.CoreComponents do
           @flexible? && seg[:truncate] && "sm:min-w-0 sm:truncate",
           @flexible? && !seg[:truncate] && "sm:shrink-0 sm:whitespace-pre"
         ]}
-      >
-        {if idx > 0, do: " · "}{render_slot(seg)}
-      </span>
+      >{if idx > 0, do: " · "}{render_slot(seg)}</span>
     </div>
     """
   end
