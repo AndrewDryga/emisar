@@ -690,18 +690,21 @@ defmodule EmisarWeb.PoliciesLive do
             <:subtitle>
               The base decision for every runner, by risk tier — unless a targeted ruleset below overrides it.
             </:subtitle>
-            <%!-- Pure navigation into the audit trail, so it wears the house brand
-                 link, not button chrome (§2) — the same shape the targeted-ruleset
-                 headers below use, so one page speaks one grammar. --%>
+            <%!-- Navigation, but the SAME verb repeats on every targeted-ruleset
+                 header below, where the Remove peer forces the bordered face —
+                 and one repeated verb wears ONE face per page (the founder read
+                 the mixed faces as the rulesets lacking the affordance). --%>
             <:actions :if={@account.policy}>
-              <.link
+              <.button
                 navigate={
                   ~p"/app/#{@current_account}/audit?#{[target_kind: "policy", target_id: @account.policy.id]}"
                 }
-                class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                variant={:secondary}
+                size={:lg}
+                class="h-10"
               >
-                View activity <.cta_arrow />
-              </.link>
+                View activity
+              </.button>
             </:actions>
           </.section_header>
 
