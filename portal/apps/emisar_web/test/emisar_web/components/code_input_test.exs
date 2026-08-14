@@ -62,6 +62,14 @@ defmodule EmisarWeb.Components.CodeInputTest do
       assert count(html, ~r/autocomplete="one-time-code"/) == 1
     end
 
+    test "the boxes carry fixed geometry, so a wide container cannot stretch them" do
+      html = render_code_input(%{id: "c", name: "code", label: "Code"})
+
+      assert html =~ "h-14 w-12"
+      refute html =~ "w-full"
+      refute html =~ "justify-between"
+    end
+
     test "an error renders inline; absent by default" do
       with_error =
         render_code_input(%{id: "c", name: "code", label: "Code", error: "Bad code, try again."})

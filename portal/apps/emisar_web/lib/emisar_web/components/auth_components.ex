@@ -25,7 +25,9 @@ defmodule EmisarWeb.AuthComponents do
   switches the filter + `inputmode` to digits-only (TOTP, email step-up); the
   default is the alphanumeric sign-in-code alphabet. An `error` renders inline
   below the boxes (outside the ignored group, so it updates) — a rejected code
-  is shown right at the input, never as a far-off flash.
+  is shown right at the input, never as a far-off flash. The boxes own their
+  size, so the control is the same control on a narrow auth card and a
+  full-width settings panel; a caller never sizes it.
   """
   attr :id, :string, required: true
   attr :name, :string, required: true, doc: "the hidden field the aggregate posts as"
@@ -39,7 +41,12 @@ defmodule EmisarWeb.AuthComponents do
     <div>
       <div id={@id} phx-hook="CodeInput" phx-update="ignore" data-numeric={to_string(@numeric)}>
         <.label for={"#{@id}-1"}>{@label}</.label>
-        <div class="mt-2 flex justify-between gap-2 sm:gap-2.5">
+        <%!-- The cells own their size (§7.54): a one-character box is a fixed
+             48x56 control, so the group is the same control on a 448px auth
+             card and a 1100px settings panel. `w-full` here stretched each cell
+             to the container — six 200px slabs on the profile MFA step. They
+             still shrink (never grow) below the group's own 338px. --%>
+        <div class="mt-2 flex gap-2 sm:gap-2.5">
           <input
             :for={i <- 1..@length}
             id={"#{@id}-#{i}"}
@@ -51,7 +58,7 @@ defmodule EmisarWeb.AuthComponents do
             maxlength="1"
             aria-label={"Character #{i} of #{@length}"}
             class={[
-              "h-14 w-full min-w-0 rounded-lg border border-zinc-700 bg-zinc-950 text-center",
+              "h-14 w-12 min-w-0 rounded-lg border border-zinc-700 bg-zinc-950 text-center",
               "text-xl font-semibold tracking-widest text-zinc-100 shadow-sm outline-none transition",
               "focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30",
               not @numeric && "uppercase"
@@ -277,28 +284,29 @@ defmodule EmisarWeb.AuthComponents do
 
   def mfa_enrollment_email_verification(assigns) do
     ~H"""
-    <div class="space-y-4">
+    <.simple_form
+      for={@form}
+      id="mfa_enrollment_email_form"
+      phx-submit="verify_mfa_enrollment_email"
+    >
+      <%!-- The lead-in rides INSIDE the form, like every sibling step form on
+           the profile page (email change, disable, regenerate) — one block
+           rhythm for the whole step instead of a wrapper with its own gap. --%>
       <p class="text-sm text-zinc-300">
         We sent a 6-digit code to <span class="font-medium text-zinc-100">{@email}</span>.
         Enter it before adding an authenticator.
       </p>
-      <.simple_form
-        for={@form}
-        id="mfa_enrollment_email_form"
-        phx-submit="verify_mfa_enrollment_email"
-      >
-        <.code_input
-          id="mfa-enrollment-email-code"
-          name="mfa_enrollment[code]"
-          numeric
-          label="Email verification code"
-          error={@error}
-        />
-        <:actions>
-          {render_slot(@actions)}
-        </:actions>
-      </.simple_form>
-    </div>
+      <.code_input
+        id="mfa-enrollment-email-code"
+        name="mfa_enrollment[code]"
+        numeric
+        label="Email verification code"
+        error={@error}
+      />
+      <:actions>
+        {render_slot(@actions)}
+      </:actions>
+    </.simple_form>
     """
   end
 
