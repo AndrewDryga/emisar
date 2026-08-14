@@ -2063,13 +2063,15 @@ defmodule Emisar.AuditTest do
   end
 
   describe "the event taxonomy (known types, kinds, noisy set, builders)" do
-    # the Actor-type dropdown exposes exactly the six actor
+    # the Actor-type dropdown exposes exactly the seven actor
     # kinds and the Target filter the nine target kinds the catalog enumerates;
     # both lists are read straight from the LiveTable %Filter{} values so a
-    # silently-added/dropped kind is caught.
+    # silently-added/dropped kind is caught. `staff` is an Emisar-side human
+    # acting on the account from the staff console — deliberately visible to the
+    # customer, so it must be filterable in the customer's own trail.
     test "the actor-kind and subject-kind filter enumerations match the catalog" do
       assert filter_values(:actor_kind) ==
-               ~w[user api_key runner runbook scheduler system]
+               ~w[user staff api_key runner runbook scheduler system]
 
       assert filter_values(:target_kind) ==
                ~w[user account runner api_key enrollment_key approval_request

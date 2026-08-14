@@ -1,6 +1,6 @@
 defmodule Emisar.AdminTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Admin, Billing, Fixtures}
+  alias Emisar.{Admin, Audit, Billing, Fixtures}
 
   describe "job_modules/0" do
     # DataCase shares the sandbox for every async: false test, so a job left
@@ -16,6 +16,223 @@ defmodule Emisar.AdminTest do
   end
 
   defp job_enabled?(module), do: Emisar.Config.get_env(:emisar, module, [])[:enabled] != false
+
+  # These reads are DELIBERATELY cross-account — staff see the whole platform —
+  # so §7's cross-account isolation path does not apply here. The denial path is
+  # the whole security surface: `is_admin` is the only thing between a signed-in
+  # customer and every other tenant's rows.
+  describe "search_accounts/2" do
+    setup do
+      %{staff_user: Fixtures.Users.create_user() |> Fixtures.Users.mark_user_as_staff()}
+    end
+
+    test "matches an account by slug", %{staff_user: staff_user} do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_account()
+
+      assert {:ok, [found]} = Admin.search_accounts(account.slug, staff_user)
+      assert found.id == account.id
+    end
+
+    test "matches an account by member email", %{staff_user: staff_user} do
+      account = Fixtures.Accounts.create_account()
+      member = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+
+      assert {:ok, [found]} = Admin.search_accounts(member.email, staff_user)
+      assert found.id == account.id
+    end
+
+    test "a blank query lists the most recently created accounts", %{staff_user: staff_user} do
+      account_one = Fixtures.Accounts.create_account()
+      account_two = Fixtures.Accounts.create_account()
+
+      assert {:ok, accounts} = Admin.search_accounts("   ", staff_user)
+      assert Enum.map(accounts, & &1.id) == [account_two.id, account_one.id]
+    end
+
+    test "finds a disabled account", %{staff_user: staff_user} do
+      account = Fixtures.Accounts.create_account() |> Fixtures.Accounts.disable_account()
+
+      assert {:ok, [found]} = Admin.search_accounts(account.slug, staff_user)
+      assert found.id == account.id
+      assert found.disabled_at == account.disabled_at
+    end
+
+    test "denies a caller who is not staff" do
+      account = Fixtures.Accounts.create_account()
+      member = Fixtures.Users.create_user()
+
+      assert Admin.search_accounts(account.slug, member) == {:error, :unauthorized}
+    end
+
+    test "denies a stale struct whose staff flag has since been revoked" do
+      account = Fixtures.Accounts.create_account()
+      stale_staff_user = Fixtures.Users.create_user() |> Fixtures.Users.mark_user_as_staff()
+      Fixtures.Users.revoke_user_staff(stale_staff_user)
+
+      # A connected staff LiveView holds exactly this struct — its mount-time
+      # snapshot — for the life of the socket, so the flag it carries outlives
+      # the revocation. The three staff reads share one gate, which reads the
+      # row instead of believing the argument.
+      assert stale_staff_user.is_admin
+      assert Admin.search_accounts(account.slug, stale_staff_user) == {:error, :unauthorized}
+    end
+  end
+
+  describe "account_overview/2" do
+    setup do
+      %{staff_user: Fixtures.Users.create_user() |> Fixtures.Users.mark_user_as_staff()}
+    end
+
+    test "each section carries the account's own rows", %{staff_user: staff_user} do
+      account = Fixtures.Accounts.create_account(plan: "team")
+      owner = Fixtures.Users.create_user()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      run = Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id, source: :mcp)
+      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: owner.id)
+      {:ok, event} = Audit.log(account.id, "policy.updated", actor_kind: "user")
+
+      assert {:ok, overview} = Admin.account_overview(account.slug, staff_user)
+
+      assert overview.account.id == account.id
+      assert overview.billing.plan == "team"
+
+      assert Enum.map(overview.members, & &1.id) == [owner_membership.id]
+      assert Enum.map(overview.members, & &1.user.email) == [owner.email]
+      assert Enum.map(overview.sso, & &1.id) == [provider.id]
+
+      assert overview.fleet.counts ==
+               %{connected: 1, disconnected: 0, never_connected: 0, disabled: 0}
+
+      assert Enum.map(overview.fleet.runners, & &1.id) == [runner.id]
+
+      assert overview.runs.count_30d == 1
+      assert Enum.map(overview.runs.recent, & &1.id) == [run.id]
+
+      assert overview.mcp.active_api_keys == 1
+      assert overview.mcp.recent_clients == [%{client: "unknown", runs: 1}]
+
+      assert event.id in Enum.map(overview.audit_tail, & &1.id)
+    end
+
+    test "the roster keeps suspended members and unaccepted invitations", %{
+      staff_user: staff_user
+    } do
+      account = Fixtures.Accounts.create_account()
+
+      suspended_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.suspend_membership()
+
+      invited_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+
+      assert {:ok, overview} = Admin.account_overview(account.slug, staff_user)
+
+      assert Enum.map(overview.members, & &1.id) ==
+               [suspended_membership.id, invited_membership.id]
+
+      assert Enum.map(overview.members, &is_nil(&1.invitation_accepted_at)) == [true, true]
+    end
+
+    test "an account with nothing in it returns empty sections", %{staff_user: staff_user} do
+      account = Fixtures.Accounts.create_account()
+
+      assert {:ok, overview} = Admin.account_overview(account.id, staff_user)
+
+      assert overview.billing ==
+               %{
+                 plan: "free",
+                 source: "free",
+                 subscription_status: nil,
+                 paddle_subscription_id: nil
+               }
+
+      assert overview.members == []
+      assert overview.sso == []
+
+      assert overview.fleet ==
+               %{
+                 counts: %{connected: 0, disconnected: 0, never_connected: 0, disabled: 0},
+                 runners: []
+               }
+
+      assert overview.runs == %{count_30d: 0, recent: []}
+      assert overview.mcp == %{active_api_keys: 0, recent_clients: []}
+      assert overview.audit_tail == []
+    end
+
+    test "an unknown reference is not found", %{staff_user: staff_user} do
+      assert Admin.account_overview("no-such-account", staff_user) == {:error, :not_found}
+    end
+
+    test "denies a caller who is not staff" do
+      account = Fixtures.Accounts.create_account()
+      member = Fixtures.Users.create_user()
+
+      assert Admin.account_overview(account.slug, member) == {:error, :unauthorized}
+    end
+  end
+
+  describe "record_account_view/2" do
+    setup do
+      %{staff_user: Fixtures.Users.create_user() |> Fixtures.Users.mark_user_as_staff()}
+    end
+
+    test "records the view against the account, labelled by team not person", %{
+      staff_user: staff_user
+    } do
+      account = Fixtures.Accounts.create_account()
+
+      assert {:ok, event} = Admin.record_account_view(account, staff_user)
+
+      assert event.account_id == account.id
+      assert event.event_type == "staff.account_viewed"
+      assert event.actor_kind == "staff"
+      assert event.actor_id == staff_user.id
+      assert event.actor_label == "Emisar staff"
+      assert event.target_kind == "account"
+      assert event.target_id == account.id
+      assert event.target_label == account.name
+      # The customer's own audit detail card renders payload pairs, so the row
+      # names the team and nothing else; `actor_id` is the internal trace.
+      assert event.payload == %{}
+    end
+
+    test "the account's own owner reads it back from their audit trail", %{
+      staff_user: staff_user
+    } do
+      account = Fixtures.Accounts.create_account()
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert {:ok, event} = Admin.record_account_view(account, staff_user)
+
+      assert {:ok, [read_back], _metadata} =
+               Audit.list_events(subject, filter: [event_type: ["staff.account_viewed"]])
+
+      assert read_back.id == event.id
+      assert read_back.actor_label == "Emisar staff"
+    end
+
+    test "denies a caller who is not staff" do
+      account = Fixtures.Accounts.create_account()
+      member = Fixtures.Users.create_user()
+
+      assert Admin.record_account_view(account, member) == {:error, :unauthorized}
+      refute Repo.one(Audit.Event)
+    end
+  end
 
   describe "execute/2" do
     # user.erase is irreversible — the user AND every account they own — and its

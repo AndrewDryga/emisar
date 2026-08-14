@@ -3,7 +3,7 @@ name: architecture
 description: runtime components, request flow, enforcement ownership, runner lifecycle, and deployment shape
 subsystem: agent-stack
 sources: [portal, runner, mcp, packs, tools, infra, .github/workflows]
-updated: 2026-07-26
+updated: 2026-08-13
 ---
 
 # Architecture
@@ -17,7 +17,7 @@ MCP bridge connects local MCP clients to the same control-plane surface.
 
 | Component | Responsibility | Trust boundary |
 | --- | --- | --- |
-| `portal/` | Phoenix control plane, operator console, remote MCP/OAuth, policy, approvals, pack trust, runbooks, and searchable audit | Authorizes callers and dispatches only trusted catalog actions; it is not trusted to bypass runner validation |
+| `portal/` | Phoenix control plane, operator console, staff console, remote MCP/OAuth, policy, approvals, pack trust, runbooks, and searchable audit | Authorizes callers and dispatches only trusted catalog actions; it is not trusted to bypass runner validation |
 | `runner/` | Long-lived host agent, pack loader, local admission, argument validation, execution, redaction, and hash-chained journal | Has the OS permissions of its service user and gets the final decision on what this host will execute |
 | `mcp/` | Thin stdio-to-HTTP JSON-RPC bridge for local MCP clients | Holds the operator API key and optional signed-dispatch leaf key; it does not implement policy or action behavior |
 | `packs/` | Versioned action manifests, schemas, commands, scripts, limits, and redaction rules | Pack bytes are executable configuration; a trusted content hash is the reviewed unit |
@@ -73,6 +73,14 @@ argument that fails the local schema. The runner does not create approvals,
 evaluate account policy, or compose runbooks. One runner belongs to one
 workspace.
 
+Emisar staff are a separate lane from every role above. The staff console at
+`/admin` reads across tenants — account search plus one account detail view —
+and is gated on a platform `is_admin` flag, an enrolled second factor, and a
+session that proved that factor. It performs no writes: opening an account
+detail appends a `staff.account_viewed` event to that account's own audit
+trail, and every support mutation runs through a private, colocated action pack
+over release RPC rather than the web surface.
+
 ## Runner lifecycle
 
 At boot, the runner locks its data directory, then loads config, packs, admission
@@ -105,5 +113,6 @@ persists only rotated API-key successors in the user's config directory.
 
 ## Changelog
 
+- 2026-08-13 - documented the read-only staff console and its audited account view
 - 2026-07-26 - documented the authoring-time shell-program data-channel boundary
 - 2026-07-22 - moved into the knowledge base and reverified its source map

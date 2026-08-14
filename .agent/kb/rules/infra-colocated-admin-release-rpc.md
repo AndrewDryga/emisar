@@ -16,6 +16,8 @@ The action run remains the durable audit and execution record; the RPC boundary 
 
 ❌ Bad — an internal-only Plug/Cowboy endpoint plus a second bearer token and Unix socket whose sole purpose is forwarding the same two identifiers into `Emisar.Admin`.
 
+The staff web console at `/admin` is not an exception to this rule: it only browses — account search and an audited account detail view — so it opens no administrative entrypoint, and every mutation still enters through the private pack's single `bin/emisar rpc` boundary.
+
 This rule applies only to an explicitly full-trust runner. Root access on the portal host and the Erlang release cookie are equivalent to portal control; document that fact and never describe this runner as sandboxed. A runner that must remain a real lower-trust boundary cannot use this pattern.
 
 **Sweep target.** Private administration pack scripts and their COS startup path: runner changes used by only one pack, callback listeners, callback tokens, Unix sockets, ad hoc loopback HTTP routes, and duplicate operation tables.

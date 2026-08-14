@@ -1,12 +1,23 @@
 defmodule Emisar.Admin do
   @moduledoc """
-  Private administrative command boundary invoked through release RPC.
+  Emisar staff operations. Two entries, both gated on the global `is_admin`
+  flag; neither is a tenant's own surface, so neither carries a `%Subject{}`.
 
-  The public web and MCP routers never call this context. The colocated private
-  pack is the only caller; its arguments have already passed runner validation
-  and the action run is the durable audit record.
+  `execute/2` is the private administrative command boundary invoked through
+  release RPC. The public web and MCP routers never call it; the colocated
+  private pack is the only caller, its arguments have already passed runner
+  validation, and the action run is the durable audit record. Every mutation
+  lives there.
+
+  The staff-console reads — `search_accounts/2`, `account_overview/2`,
+  `record_account_view/2` — back the web `/admin` LiveViews. Each takes the
+  staff `%Users.User{}` as its last positional argument, in the seat a
+  `%Subject{}` holds elsewhere: staff hold no membership in the accounts they
+  inspect, so there is no subject to scope by, and `ensure_staff/1` runs
+  before any row is read. The web boundary additionally requires a session
+  that proved MFA against the user's current enrollment.
   """
-  alias Emisar.{Accounts, Auth, Billing}
+  alias Emisar.{Accounts, Audit, Auth, Billing}
   alias Emisar.Admin.Query
   alias Emisar.Auth.Subject
   alias Emisar.{Repo, Users}
@@ -32,6 +43,125 @@ defmodule Emisar.Admin do
 
   @doc "Every supervised recurrent job, for runtime inspection and test hygiene."
   def job_modules, do: @job_modules
+
+  # -- Staff console reads ---------------------------------------------
+
+  @doc """
+  Accounts matching `query_string` — `{:ok, [%Accounts.Account{}]}`, or
+  `{:error, :unauthorized}` when the caller is not staff.
+
+  Matches account name, account slug, and member email, capped at 25. A blank
+  query lists the 20 most recently created accounts instead. Disabled accounts
+  are included: staff see the whole platform, and a disabled account is the one
+  its owner can no longer open a support case from.
+  """
+  # IL-3 has no shape for this path: staff hold no membership in the accounts
+  # they search, so there is no `%Subject{}` to gate with and no query for
+  # `Authorizer.for_subject/2` to narrow — `ensure_staff/1`, run before the
+  # read, IS the boundary. Nor is it an `@doc "Internal"` helper: this is the
+  # staff console's public API. The moduledoc declares the whole module.
+  # credo:disable-for-next-line Emisar.Checks.ContextPublicFnSubject
+  def search_accounts(query_string, %Users.User{} = staff_user) when is_binary(query_string) do
+    with :ok <- ensure_staff(staff_user) do
+      accounts = query_string |> String.trim() |> search_queryable() |> Repo.all()
+      {:ok, accounts}
+    end
+  end
+
+  defp search_queryable(""), do: Query.recent_accounts()
+  defp search_queryable(term), do: Query.accounts_matching(term)
+
+  @doc """
+  One account's whole support picture — `{:ok, overview}`, `{:error,
+  :not_found}`, or `{:error, :unauthorized}` when the caller is not staff.
+  The account is found by id or slug, disabled ones included.
+
+  The overview is a map of sections, each carrying whole structs: `:account`,
+  `:billing` (`Billing.support_plan/1`), `:members` (memberships with their
+  user, suspended and unaccepted invitations included), `:sso` (identity
+  providers — an account may hold one per kind), `:fleet` (`:counts` by
+  connection state plus up to 50 `:runners`, most recently connected first),
+  `:runs` (`:count_30d` and the 10 most recent), `:mcp` (`:active_api_keys`
+  and the 30-day `:recent_clients` tally), and `:audit_tail` (the 10 most
+  recent audit events).
+
+  `:runs.recent` carries `%Runs.ActionRun{}` structs, so those rows hold the
+  customer's argument and output payloads. The console renders run identity,
+  status, and timing — never a payload field.
+  """
+  def account_overview(id_or_slug, %Users.User{} = staff_user) when is_binary(id_or_slug) do
+    with :ok <- ensure_staff(staff_user),
+         reference = String.trim(id_or_slug),
+         {:ok, account} <- Accounts.fetch_account_by_id_or_slug_including_disabled(reference),
+         {:ok, billing} <- Billing.support_plan(account) do
+      {:ok, overview_sections(account, billing)}
+    end
+  end
+
+  defp overview_sections(%Accounts.Account{} = account, billing) do
+    since = DateTime.add(DateTime.utc_now(), -30, :day)
+
+    %{
+      account: account,
+      billing: billing,
+      members: Query.account_memberships(account.id) |> Repo.all(),
+      sso: Query.account_identity_providers(account.id) |> Repo.all(),
+      fleet: %{
+        counts: Query.account_runner_connection_counts(account.id) |> Repo.one(),
+        runners: Query.recent_account_runners(account.id) |> Repo.all()
+      },
+      runs: %{
+        count_30d: aggregate_count(Query.account_runs_since(account.id, since)),
+        recent: Query.recent_account_runs(account.id) |> Repo.all()
+      },
+      mcp: %{
+        active_api_keys: Query.active_api_key_count(account.id) |> Repo.one(),
+        recent_clients: Query.account_mcp_clients_since(account.id, since) |> Repo.all()
+      },
+      audit_tail: Query.recent_audit_events(account.id) |> Repo.all()
+    }
+  end
+
+  @doc """
+  Append the staff console's view of `account` to that account's own audit
+  trail — `{:ok, %Audit.Event{}}`, `{:error, %Ecto.Changeset{}}` if the row is
+  rejected, or `{:error, :unauthorized}` when the caller is not staff. The
+  customer seeing this row is the point; see
+  `Audit.Events.staff_account_viewed/2`.
+  """
+  def record_account_view(%Accounts.Account{} = account, %Users.User{} = staff_user) do
+    with :ok <- ensure_staff(staff_user) do
+      Audit.record(Audit.Events.staff_account_viewed(staff_user, account))
+    end
+  end
+
+  # `is_admin` is a global staff flag, wholly separate from account roles. The
+  # staff console reads ACROSS tenants, so there is no query to narrow the way
+  # `Authorizer.for_subject/2` does — this gate is the whole boundary, and it
+  # runs before any row is read rather than filtering one afterwards.
+  #
+  # The verdict is the DATABASE row, never the caller's struct. A connected
+  # LiveView holds the `current_user` it mounted with for the life of its
+  # socket, so judging that snapshot would let an open staff console keep
+  # reading every tenant after the flag was revoked — and revocation is a
+  # console/migration write with no session to end. The context is the
+  # authorization boundary, so it reads truth rather than memory. The argument
+  # match stays as a cheap first clause (a signed-in customer is denied without
+  # touching the database); past it, one indexed primary-key read per staff call
+  # buys a current answer, which is nothing at single-digit staff scale.
+  defp ensure_staff(%Users.User{is_admin: true, id: id}) do
+    # Fail closed on everything that is not a live, still-flagged row: a
+    # revoked flag, a soft-deleted user (the fetch composes `not_deleted`), and
+    # a vanished or unpersisted id all land here.
+    case Users.fetch_user_by_id(id) do
+      {:ok, %Users.User{is_admin: true}} -> :ok
+      _denied -> {:error, :unauthorized}
+    end
+  end
+
+  defp ensure_staff(_user), do: {:error, :unauthorized}
+
+  # -- Private pack RPC ------------------------------------------------
 
   @doc "Execute one action from the trusted, colocated private admin pack."
   def execute("emisar.admin." <> _ = action_id, encoded_args)

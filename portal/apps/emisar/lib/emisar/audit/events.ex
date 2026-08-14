@@ -120,6 +120,29 @@ defmodule Emisar.Audit.Events do
     account_lifecycle_by_support(subject, account, "account.enabled", reason)
   end
 
+  @doc """
+  Emisar staff opened an account in the staff console.
+
+  Written into the CUSTOMER's own trail on purpose — access transparency: an
+  account sees every staff read of its workspace, the same way it sees its own
+  members' activity. `actor_label` is the team, not the person, so the row
+  reads as an Emisar-side access rather than naming an employee to the
+  customer; the audit detail card renders payload pairs to that customer, so
+  the acting employee stays out of it and `actor_id` carries the internal
+  traceability an access reconstruction needs. Staff hold no membership in the
+  account, so there is no `%Subject{}` to derive the actor from.
+  """
+  def staff_account_viewed(%Users.User{} = staff_user, %Accounts.Account{} = account) do
+    Audit.changeset(account.id, "staff.account_viewed",
+      actor_kind: "staff",
+      actor_id: staff_user.id,
+      actor_label: "Emisar staff",
+      target_kind: "account",
+      target_id: account.id,
+      target_label: account.name
+    )
+  end
+
   # -- Membership ------------------------------------------------------
 
   def membership_role_changed(%Subject{} = subject, %Accounts.Membership{} = membership, new_role) do

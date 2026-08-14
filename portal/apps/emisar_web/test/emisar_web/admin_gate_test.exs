@@ -13,17 +13,12 @@ defmodule EmisarWeb.AdminGateTest do
   only), so in test they must 404.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Auth, Repo}
+  alias Emisar.Auth
   alias EmisarWeb.UserAuth
 
   # Read the compile-time flag in the module body (the macro can't run
   # inside a function) so the dev-routes-off assertion can check it.
   @dev_routes Application.compile_env(:emisar_web, :dev_routes)
-
-  # `is_admin` has no production write path (set via console/migration
-  # only), so the test grants it out-of-band, the same shape
-  # require_sso_test uses for its account flag.
-  defp make_admin(user), do: user |> Ecto.Changeset.change(is_admin: true) |> Repo.update!()
 
   # A real signed-in session stamped with the moment it proved the second factor
   # — what an admin holds after clearing the MFA challenge at sign-in. Call it
@@ -45,7 +40,7 @@ defmodule EmisarWeb.AdminGateTest do
     } do
       {conn, user, account} = register_and_log_in(conn)
       Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
-      make_admin(user)
+      Fixtures.Users.mark_user_as_staff(user)
 
       conn = conn |> complete_mfa_challenge(user) |> get("/admin/live")
 
@@ -58,7 +53,7 @@ defmodule EmisarWeb.AdminGateTest do
 
     test "an admin who has not enrolled MFA is sent to set it up", %{conn: conn} do
       {conn, user, _account} = register_and_log_in(conn)
-      make_admin(user)
+      Fixtures.Users.mark_user_as_staff(user)
 
       conn = get(conn, "/admin/live")
 
@@ -75,7 +70,7 @@ defmodule EmisarWeb.AdminGateTest do
       # leaving the admin on a dead end.
       {conn, user, account} = register_and_log_in(conn)
       Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
-      make_admin(user)
+      Fixtures.Users.mark_user_as_staff(user)
 
       conn = get(conn, "/admin/live")
 
@@ -129,7 +124,7 @@ defmodule EmisarWeb.AdminGateTest do
       # The assign is set before the dashboard 302s, so it's observable here.
       {conn, user, account} = register_and_log_in(conn)
       Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
-      make_admin(user)
+      Fixtures.Users.mark_user_as_staff(user)
 
       conn = conn |> complete_mfa_challenge(user) |> get("/admin/live")
 
@@ -159,7 +154,7 @@ defmodule EmisarWeb.AdminGateTest do
       # stuffing the claim into the session.
       {conn, user, account} = register_and_log_in(conn)
       Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
-      make_admin(user)
+      Fixtures.Users.mark_user_as_staff(user)
 
       conn = conn |> put_session(:mfa_verified_at, DateTime.utc_now()) |> get("/admin/live")
 
@@ -173,7 +168,7 @@ defmodule EmisarWeb.AdminGateTest do
       {_user, [recovery_code | _]} =
         Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
-      make_admin(user)
+      Fixtures.Users.mark_user_as_staff(user)
 
       conn = complete_mfa_challenge(conn, user)
       session_token = get_session(conn, :user_token)
@@ -197,11 +192,68 @@ defmodule EmisarWeb.AdminGateTest do
     end
   end
 
+  describe "the /admin staff console gate" do
+    test "an admin who verified a second factor this session reaches the search", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
+      Fixtures.Users.mark_user_as_staff(user)
+
+      conn = complete_mfa_challenge(conn, user)
+
+      assert {:ok, _live, html} = live(conn, ~p"/admin")
+      assert html =~ "Emisar Admin"
+    end
+
+    test "an authenticated non-admin is denied with a flash + redirect to /app", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+
+      conn = get(conn, ~p"/admin")
+
+      assert redirected_to(conn) == "/app"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Not authorized."
+      assert conn.halted
+    end
+
+    test "an admin whose session never proved the second factor is signed out", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
+      Fixtures.Users.mark_user_as_staff(user)
+
+      conn = get(conn, ~p"/admin")
+
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert get_session(conn, :user_token) == nil
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
+               "Admin access requires two-factor authentication. Sign in again to continue."
+    end
+
+    test "the account detail route rides the same gate", %{conn: conn} do
+      {conn, _user, _account} = register_and_log_in(conn)
+      account = Fixtures.Accounts.create_account()
+
+      conn = get(conn, ~p"/admin/accounts/#{account.id}")
+
+      assert redirected_to(conn) == "/app"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Not authorized."
+    end
+
+    test "the staff console rides the :noindex pipeline", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
+      Fixtures.Users.mark_user_as_staff(user)
+
+      conn = conn |> complete_mfa_challenge(user) |> get(~p"/admin")
+
+      assert conn.assigns[:noindex] == true
+    end
+  end
+
   describe "the /admin/live socket gate" do
     test "an admin who verified a second factor this session mounts" do
       {user, _account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
-      make_admin(user)
+      Fixtures.Users.mark_user_as_staff(user)
       token = Fixtures.Auth.create_session_token!(user, :magic_link, DateTime.utc_now())
 
       assert {:cont, socket} =
@@ -216,7 +268,7 @@ defmodule EmisarWeb.AdminGateTest do
       # forced step-up on their next full navigation.
       {user, _account, subject} = Fixtures.Subjects.owner_subject()
       {enrolled_user, _codes} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
-      make_admin(user)
+      Fixtures.Users.mark_user_as_staff(user)
 
       stale_proof_at = DateTime.add(enrolled_user.mfa_enabled_at, -1, :second)
       token = Fixtures.Auth.create_session_token!(user, :magic_link, stale_proof_at)
@@ -236,7 +288,7 @@ defmodule EmisarWeb.AdminGateTest do
       # re-decide: this token proved a factor at sign-in, but the enrollment
       # behind it is gone, and only the on_mount sees that on a reconnect.
       user = Fixtures.Users.create_user()
-      make_admin(user)
+      Fixtures.Users.mark_user_as_staff(user)
       token = Fixtures.Auth.create_session_token!(user, :magic_link, DateTime.utc_now())
 
       assert {:halt, socket} =

@@ -1,7 +1,7 @@
 defmodule Emisar.Admin.Query do
   @moduledoc false
   use Emisar, :query
-  alias Emisar.{Accounts, ApiKeys, Approvals, Runners, Runs, Users}
+  alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Runners, Runs, SSO, Users}
 
   def accounts_matching(term, limit \\ 25) do
     pattern = "%#{term}%"
@@ -24,6 +24,14 @@ defmodule Emisar.Admin.Query do
     |> limit(^limit)
   end
 
+  # Disabled accounts stay in the listing: staff triage starts from the ones a
+  # customer can no longer reach themselves.
+  def recent_accounts(limit \\ 20) do
+    Accounts.Account.Query.not_deleted()
+    |> order_by([accounts: a], desc: a.inserted_at, desc: a.id)
+    |> Accounts.Account.Query.limit_to(limit)
+  end
+
   def membership_by_id(account_id, membership_id) do
     Accounts.Membership.Query.not_deleted()
     |> Accounts.Membership.Query.by_account_id(account_id)
@@ -40,6 +48,59 @@ defmodule Emisar.Admin.Query do
     )
     |> where([user: u], u.email == ^email)
     |> preload([user: u], user: u)
+  end
+
+  # The whole roster, suspended members and unaccepted invitations included —
+  # "who can reach this account" is the first question a support case asks.
+  def account_memberships(account_id) do
+    Accounts.Membership.Query.not_deleted()
+    |> Accounts.Membership.Query.by_account_id(account_id)
+    |> Accounts.Membership.Query.with_preloaded_user()
+    |> order_by([memberships: m, user: u], asc: m.role, asc: u.email)
+  end
+
+  # An account holds at most one provider per kind, so this is a list, not a
+  # single row; disabled providers are kept — "SSO configured but switched off"
+  # is exactly the state a support case is opened about.
+  def account_identity_providers(account_id) do
+    SSO.IdentityProvider.Query.not_deleted()
+    |> SSO.IdentityProvider.Query.by_account_id(account_id)
+    |> SSO.IdentityProvider.Query.ordered_by_name()
+  end
+
+  # The four connection states are disjoint, so the fleet posture is one scan
+  # rather than a count per state.
+  def account_runner_connection_counts(account_id) do
+    Runners.Runner.Query.not_deleted()
+    |> Runners.Runner.Query.by_account_id(account_id)
+    |> Runners.Runner.Query.connection_counts()
+  end
+
+  def recent_account_runners(account_id, limit \\ 50) do
+    Runners.Runner.Query.not_deleted()
+    |> Runners.Runner.Query.by_account_id(account_id)
+    |> order_by([runners: r], desc_nulls_last: r.last_connected_at, asc: r.name)
+    |> Runners.Runner.Query.limit_to(limit)
+  end
+
+  def account_runs_since(account_id, since) do
+    Runs.ActionRun.Query.all()
+    |> Runs.ActionRun.Query.by_account_id(account_id)
+    |> Runs.ActionRun.Query.inserted_after(since)
+  end
+
+  def recent_account_runs(account_id, limit \\ 10) do
+    Runs.ActionRun.Query.all()
+    |> Runs.ActionRun.Query.by_account_id(account_id)
+    |> Runs.ActionRun.Query.ordered_by_recent()
+    |> Runs.ActionRun.Query.limit_to(limit)
+  end
+
+  def recent_audit_events(account_id, limit \\ 10) do
+    Audit.Event.Query.all()
+    |> Audit.Event.Query.by_account_id(account_id)
+    |> Audit.Event.Query.ordered_by_recent()
+    |> Audit.Event.Query.limit_to(limit)
   end
 
   def count_accounts_since(since),
@@ -85,6 +146,22 @@ defmodule Emisar.Admin.Query do
     })
     |> order_by([runs: r], desc: count(r.id))
     |> limit(^limit)
+  end
+
+  # The per-account cut of `mcp_clients_since/2`: within one account the
+  # distinct-account tally is always 1, so the run count is the whole answer.
+  def account_mcp_clients_since(account_id, since, limit \\ 10) do
+    Runs.ActionRun.Query.all()
+    |> Runs.ActionRun.Query.by_account_id(account_id)
+    |> Runs.ActionRun.Query.inserted_after(since)
+    |> where([runs: r], r.source == :mcp)
+    |> group_by([runs: r], fragment("COALESCE(NULLIF(?->>'name', ''), 'unknown')", r.client_info))
+    |> select([runs: r], %{
+      client: fragment("COALESCE(NULLIF(?->>'name', ''), 'unknown')", r.client_info),
+      runs: count(r.id)
+    })
+    |> order_by([runs: r], desc: count(r.id))
+    |> Runs.ActionRun.Query.limit_to(limit)
   end
 
   def approval_statuses_since(since) do
@@ -152,14 +229,20 @@ defmodule Emisar.Admin.Query do
     )
   end
 
+  def active_api_key_count(account_id),
+    do: account_id |> active_api_keys() |> select([api_keys: k], count(k.id))
+
   def active_api_key_count(account_id, user_id) do
-    from(key in ApiKeys.ApiKey,
-      as: :api_keys,
-      where:
-        key.account_id == ^account_id and key.created_by_id == ^user_id and
-          is_nil(key.revoked_at) and is_nil(key.deleted_at),
-      select: count(key.id)
-    )
+    account_id
+    |> active_api_keys()
+    |> where([api_keys: k], k.created_by_id == ^user_id)
+    |> select([api_keys: k], count(k.id))
+  end
+
+  defp active_api_keys(account_id) do
+    ApiKeys.ApiKey.Query.not_deleted()
+    |> ApiKeys.ApiKey.Query.by_account_id(account_id)
+    |> ApiKeys.ApiKey.Query.not_revoked()
   end
 
   def table_counts do

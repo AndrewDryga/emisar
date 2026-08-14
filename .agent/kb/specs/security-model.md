@@ -199,6 +199,16 @@ The runner-side guarantees above pair with the control plane's own model:
   it can touch at all.
 - Operator sign-in supports TOTP MFA with one-shot hashed recovery
   codes; approvals and credential lifecycles are all audited.
+- Emisar staff reach a customer workspace through a read-only console at
+  `/admin` — account search and an account detail view — gated on a
+  platform `is_admin` flag, an enrolled second factor, and a session that
+  proved that factor against the current enrollment. Staff hold no
+  membership in the accounts they inspect, so the gate is the whole
+  boundary. Every account detail view writes a `staff.account_viewed`
+  event into that account's own audit trail, which the customer reads:
+  access transparency, not an internal-only log. Support mutations are
+  not on that console at all — they run through a private, colocated
+  action pack over release RPC, so each one is an ordinary audited run.
 
 Runbook definitions, typed inputs, bindings, extractor patterns, action output,
 and runner/catalog state are all untrusted input. Static validation happens

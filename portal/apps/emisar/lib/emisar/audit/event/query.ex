@@ -140,7 +140,8 @@ defmodule Emisar.Audit.Event.Query do
     {"sso.link_request_dismissed", "SSO link request dismissed"},
     {"audit.exported", "Audit log exported"},
     {"audit.retention_swept", "Audit log pruned (retention)"},
-    {"subscription.changed", "Subscription plan changed"}
+    {"subscription.changed", "Subscription plan changed"},
+    {"staff.account_viewed", "Staff viewed account"}
   ]
 
   def known_event_type_values, do: @known_event_types
@@ -341,6 +342,10 @@ defmodule Emisar.Audit.Event.Query do
     {"Billing",
      [
        {"subscription.changed", "Plan changed"}
+     ]},
+    {"Emisar staff",
+     [
+       {"staff.account_viewed", "Viewed account"}
      ]}
   ]
 
@@ -369,7 +374,8 @@ defmodule Emisar.Audit.Event.Query do
     "Run" => "activity",
     "Runner" => "fleet",
     "Audit" => "admin",
-    "Billing" => "admin"
+    "Billing" => "admin",
+    "Emisar staff" => "admin"
   }
 
   @categories [
@@ -759,6 +765,7 @@ defmodule Emisar.Audit.Event.Query do
         span: :row_start,
         values: [
           {"user", "User"},
+          {"staff", "Emisar staff"},
           {"api_key", "API key"},
           {"runner", "Runner"},
           {"runbook", "Runbook"},
@@ -1043,7 +1050,9 @@ defmodule Emisar.Audit.Event.Query do
     "audit.retention_swept" =>
       {false, false, false, "The retention sweep pruned events past their retain-until date."},
     "subscription.changed" =>
-      {false, false, true, "The billing plan changed (via checkout or the billing provider)."}
+      {false, false, true, "The billing plan changed (via checkout or the billing provider)."},
+    "staff.account_viewed" =>
+      {false, false, true, "Emisar staff opened this workspace in the internal support console."}
   }
 
   @doc "One-line description of when an event type is written — the Type picker's hover pane."

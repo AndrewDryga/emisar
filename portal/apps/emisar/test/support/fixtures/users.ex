@@ -48,6 +48,26 @@ defmodule Emisar.Fixtures.Users do
     updated
   end
 
+  @doc """
+  Flags a user as Emisar staff. `is_admin` has no production write path — it is
+  set out of band, so no changeset casts it — and it is a GLOBAL flag, wholly
+  separate from the account roles a membership carries.
+  """
+  def mark_user_as_staff(%User{} = user) do
+    {:ok, staff_user} = user |> Ecto.Changeset.change(is_admin: true) |> Emisar.Repo.update()
+    staff_user
+  end
+
+  @doc """
+  Revokes a user's Emisar staff flag, returning the un-flagged row. The
+  counterpart write to `mark_user_as_staff/1` — it exists so a test can hold a
+  struct that still SAYS `is_admin: true` while the row no longer does.
+  """
+  def revoke_user_staff(%User{} = user) do
+    {:ok, revoked_user} = user |> Ecto.Changeset.change(is_admin: false) |> Emisar.Repo.update()
+    revoked_user
+  end
+
   @doc "Soft-deletes a user, returning the tombstoned row."
   def mark_user_as_deleted(%User{} = user) do
     {:ok, deleted} = user |> User.Changeset.delete() |> Emisar.Repo.update()

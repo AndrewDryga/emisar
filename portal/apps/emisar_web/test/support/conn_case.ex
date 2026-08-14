@@ -80,6 +80,24 @@ defmodule EmisarWeb.ConnCase do
   end
 
   @doc """
+  Logs in a user who clears the whole `/admin` gate: `is_admin`, an enrolled
+  second factor, and a session stamped with the moment it proved that factor.
+  Returns `{conn, staff_user}`. Tests that drive one of those three conditions
+  build the conn themselves; this is for the surfaces behind the gate.
+  """
+  def register_and_log_in_staff(conn) do
+    {conn, user, account} = register_and_log_in(conn)
+    Fixtures.Users.enable_mfa!(Emisar.Auth.generate_mfa_secret(), owner_subject(user, account))
+    staff_user = Fixtures.Users.mark_user_as_staff(user)
+
+    # Minted AFTER enrolling, so the proof lands past `mfa_enabled_at` the way
+    # a real MFA challenge at sign-in does.
+    token = Fixtures.Auth.create_session_token!(staff_user, :magic_link, DateTime.utc_now())
+
+    {Plug.Conn.put_session(conn, :user_token, token), staff_user}
+  end
+
+  @doc """
   Types `token` into the typed-confirm field of the `<.confirm_dialog>` with
   the given `dialog_id` (drives its `phx-change="confirm_typed"` form) and
   returns the rendered HTML. The `confirm_typed` handler holds the value in

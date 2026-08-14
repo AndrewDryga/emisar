@@ -577,7 +577,11 @@ Two layers — mechanical rules run by machines, judgment rules by review:
    `NoProcessDictionary` disables on `Emisar.Config` + `EmisarWeb.Sandbox`
    (the test-only per-process config-override seam — `Process.put` there
    is a config override that dies with the test process, never ambient
-   request/audit state).
+   request/audit state), plus the `ContextPublicFnSubject` disable on
+   `Emisar.Admin.search_accounts/2` (the staff console reads ACROSS
+   tenants, so there is no `%Subject{}` to gate with and no query for
+   `for_subject/2` to narrow — its `ensure_staff/1` gate is the boundary,
+   and it is public API, not an `@doc "Internal"` helper).
 
 2. **`/elixir-iron-review`** carries the judgment laws a static check can't
    decide (their safety depends on where a value came from): IL-3/4/5

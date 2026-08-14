@@ -596,13 +596,24 @@ defmodule EmisarWeb.Router do
     end
   end
 
-  # Production admin mount at /admin/live. Guarded by the regular auth pipeline
-  # AND `:is_admin` on the user record (separate from per-account role) AND a
-  # second factor this session verified. The distinct `live_session_name` keeps
-  # it isolated from the dev-routes mount.
-  scope "/admin" do
+  # Emisar staff surfaces. Guarded by the regular auth pipeline AND `:is_admin`
+  # on the user record (separate from per-account role) AND a second factor this
+  # session verified — with `:ensure_admin` re-deciding all three on the socket,
+  # so the request and mount gates cannot drift. The staff console reads across
+  # tenants and mutates nothing; every account view it renders writes a
+  # customer-visible `staff.account_viewed` audit row. Mutations stay on the
+  # private emisar-admin pack (release RPC), never here.
+  scope "/admin", EmisarWeb do
     pipe_through [:browser, :noindex, :require_authenticated_user, :require_admin]
 
+    live_session :admin_console,
+      on_mount: [{EmisarWeb.UserAuth, :ensure_admin}] do
+      live "/", AdminSearchLive
+      live "/accounts/:id", AdminAccountLive
+    end
+
+    # A distinct `live_session_name` keeps the LiveDashboard isolated from the
+    # console mount above and from the dev-routes mount.
     live_dashboard "/live",
       metrics: EmisarWeb.Telemetry,
       ecto_repos: [Emisar.Repo],
