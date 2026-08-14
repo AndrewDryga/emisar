@@ -189,6 +189,24 @@ defmodule EmisarWeb.RunnerScopeTest do
       refute html =~ "All packs"
     end
 
+    test "a failed advertisement read says so instead of claiming the runners carry no packs" do
+      html =
+        render_component(&RunnerScope.pack_access_field/1,
+          runner_mode: "restricted",
+          runner_scope: ["group:edge-web"],
+          runners: @runners,
+          advertisements: %{},
+          mode_name: "pack_access_mode",
+          mode_value: "restricted",
+          scope_name: "pack_scope[]",
+          selected: [],
+          load_error: RunnerScope.pack_load_error(true)
+        )
+
+      refute html =~ "No packs on the selected runners."
+      assert html =~ "a read error, not an empty catalog"
+    end
+
     test "the pack list follows the runner selection" do
       edge_web =
         render_component(&RunnerScope.pack_access_field/1,
@@ -294,6 +312,21 @@ defmodule EmisarWeb.RunnerScopeTest do
         )
 
       assert html =~ "No runners registered yet."
+    end
+
+    test "a failed runner read says so instead of showing the no-runners empty state" do
+      html =
+        render_component(&RunnerScope.runner_scope_select/1,
+          name: "scope[]",
+          runners: [],
+          selected: [],
+          load_error: RunnerScope.runner_load_error(true)
+        )
+
+      # An admin choosing a member's reach must never be told the fleet is
+      # empty when the fleet is simply unread.
+      refute html =~ "No runners registered yet."
+      assert html =~ "a read error, not an empty fleet"
     end
 
     test "an unavailable selection stays ticked and removable, even with an empty catalog" do

@@ -445,10 +445,14 @@ defmodule EmisarWeb.PacksLive do
     if Map.has_key?(socket.assigns.inspected_actions, id) do
       socket
     else
+      # Three distinct values, because this list is what an admin reads before
+      # trusting bytes: nil (not read yet), :error (the read failed), or the
+      # actions. Collapsing the failure to [] said "advertises nothing" about a
+      # version whose contents we never saw.
       actions =
         case Catalog.list_pack_actions(pack_id, version, socket.assigns.current_subject) do
           {:ok, actions} -> actions
-          _ -> []
+          _ -> :error
         end
 
       update(socket, :inspected_actions, &Map.put(&1, id, actions))
@@ -607,7 +611,11 @@ defmodule EmisarWeb.PacksLive do
   defp matched?(matched, action_id), do: MapSet.member?(matched, action_id)
 
   attr :version, :map, required: true
-  attr :inspected, :any, required: true, doc: "nil (unloaded), [] (none), or the action list"
+
+  attr :inspected, :any,
+    required: true,
+    doc: "nil (unloaded), :error (read failed), [] (none), or the action list"
+
   attr :matched, :any, default: nil, doc: "MapSet of matched action_ids, or nil when unfiltered"
 
   # A trusted version's auditable contents, expanded by the row's leading
@@ -632,18 +640,22 @@ defmodule EmisarWeb.PacksLive do
         <span class="break-all font-mono">{@version.hash || @version.pending_hash}</span>
       </p>
       <p :if={is_nil(@inspected)} class="mt-2 text-[11px] text-zinc-500">Loading…</p>
+      <p :if={@inspected == :error} class="mt-2 text-[11px] text-rose-300">
+        Couldn't load this version's actions — a read error, not an empty pack. Refresh before
+        deciding on its trust.
+      </p>
       <p :if={@inspected == []} class="mt-2 text-[11px] text-zinc-500">
         No actions advertised for this version right now.
       </p>
       <p
-        :if={not is_nil(@matched) and @shown not in [nil, []]}
+        :if={not is_nil(@matched) and @shown not in [nil, :error, []]}
         data-role="pack-action-match-summary"
         class="mt-2 text-[11px] font-medium text-brand-300"
       >
         {match_count_label(@shown)}
       </p>
       <.pack_action_list
-        :if={@shown not in [nil, []]}
+        :if={@shown not in [nil, :error, []]}
         actions={@shown}
         class={if @matched, do: "mt-1.5", else: "mt-2"}
       />
@@ -652,8 +664,10 @@ defmodule EmisarWeb.PacksLive do
   end
 
   # The contents a disclosure renders: everything when unfiltered, only the
-  # matched actions when a filter is active (nil stays nil — still loading).
+  # matched actions when a filter is active. nil (still loading) and :error (the
+  # read failed) pass through — neither is a list to filter.
   defp filtered_contents(nil, _matched), do: nil
+  defp filtered_contents(:error, _matched), do: :error
   defp filtered_contents(actions, nil), do: actions
 
   defp filtered_contents(actions, matched),

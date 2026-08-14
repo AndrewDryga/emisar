@@ -32,6 +32,7 @@ defmodule EmisarWeb.TeamLive do
        |> assign(:runners_by_id, %{})
        |> assign(:runner_load_error?, false)
        |> assign(:pack_advertisements, %{})
+       |> assign(:pack_load_error?, false)
        |> assign(:approval_access_modes, %{})
        |> assign(:approval_scope_drafts, %{})
        |> assign(:approval_scope_errors, %{})
@@ -744,14 +745,17 @@ defmodule EmisarWeb.TeamLive do
         # them. The pagination metadata was discarded here anyway.
         #
         # A role without view_runners (billing_manager) gets no runners rather
-        # than a MatchError crash — mirror the directory load above.
-        runners =
+        # than a MatchError crash — mirror the directory load above. The failure
+        # rides along: a scope editor that shows "No runners registered yet." on
+        # a failed read invites an admin to widen a grant they can't see.
+        {runners, runner_load_error?} =
           case Emisar.Runners.list_all_runners_for_account(socket.assigns.current_subject) do
-            {:ok, runners} -> runners
-            {:error, _} -> []
+            {:ok, runners} -> {runners, false}
+            {:error, _} -> {[], Runners.subject_can_view_runners?(socket.assigns.current_subject)}
           end
 
         runners_by_id = Map.new(runners, &{&1.id, &1})
+        {advertisements, pack_load_error?} = account_pack_advertisements(socket)
 
         socket
         |> assign(:member_facts, member_facts)
@@ -761,7 +765,9 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:directory_by_user_id, directory_by_user_id)
         |> assign(:runners, runners)
         |> assign(:runners_by_id, runners_by_id)
-        |> assign(:pack_advertisements, account_pack_advertisements(socket))
+        |> assign(:runner_load_error?, runner_load_error?)
+        |> assign(:pack_advertisements, advertisements)
+        |> assign(:pack_load_error?, pack_load_error?)
         |> assign(:current_role, current_role(member_facts, socket.assigns.current_user.id))
         |> assign(
           :suppressed_emails,
@@ -782,14 +788,19 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:directory_by_user_id, %{})
         |> assign(:runners, [])
         |> assign(:runners_by_id, %{})
+        |> assign(:runner_load_error?, true)
         |> assign(:pack_advertisements, %{})
+        |> assign(:pack_load_error?, true)
         |> assign(:current_role, nil)
         |> assign(:suppressed_emails, MapSet.new())
         |> assign(:provider_facts, [])
         |> assign(:require_sso_available?, false)
         |> assign(:enabled_sso_provider_count, 0)
+        |> assign(:sso_load_error?, true)
         |> assign(:pending_requests, [])
+        |> assign(:pending_requests_error?, sso_admin?(socket))
         |> assign(:sync_stats, %{})
+        |> assign(:sync_stats_error?, sso_admin?(socket))
         |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
@@ -799,13 +810,16 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp load_invite_runners(socket) do
+    {advertisements, pack_load_error?} = account_pack_advertisements(socket)
+
     case Runners.list_all_runners_for_account(socket.assigns.current_subject) do
       {:ok, runners} ->
         socket
         |> assign(:loading?, false)
         |> assign(:runners, runners)
         |> assign(:runners_by_id, Map.new(runners, &{&1.id, &1}))
-        |> assign(:pack_advertisements, account_pack_advertisements(socket))
+        |> assign(:pack_advertisements, advertisements)
+        |> assign(:pack_load_error?, pack_load_error?)
         |> assign(:runner_load_error?, false)
 
       {:error, _reason} ->
@@ -813,17 +827,22 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:loading?, false)
         |> assign(:runners, [])
         |> assign(:runners_by_id, %{})
-        |> assign(:pack_advertisements, %{})
+        |> assign(:pack_advertisements, advertisements)
+        |> assign(:pack_load_error?, pack_load_error?)
         |> assign(:runner_load_error?, true)
     end
   end
 
   # A role without view_catalog gets no pack choices rather than a crash — the
-  # same shape as the runner and directory loads above.
+  # same shape as the runner and directory loads above. The second element says
+  # whether the empty map is a real answer or a failed read, so a pack picker
+  # cannot report "No packs on the selected runners" for packs it never read.
   defp account_pack_advertisements(socket) do
-    case Catalog.list_pack_advertisements(socket.assigns.current_subject) do
-      {:ok, advertisements} -> advertisements
-      {:error, _reason} -> %{}
+    subject = socket.assigns.current_subject
+
+    case Catalog.list_pack_advertisements(subject) do
+      {:ok, advertisements} -> {advertisements, false}
+      {:error, _reason} -> {%{}, Catalog.subject_can_view_packs?(subject)}
     end
   end
 
@@ -858,47 +877,60 @@ defmodule EmisarWeb.TeamLive do
   # but not the connections), the enabled count (drives the status / lockout
   # guard), and whether requiring SSO is even possible (≥1 enabled connection).
   defp assign_sso_state(socket) do
-    provider_facts =
-      case SSO.list_provider_facts(socket.assigns.current_subject) do
-        {:ok, facts, _meta} -> facts
-        _ -> []
+    subject = socket.assigns.current_subject
+    sso_admin? = sso_admin?(socket)
+
+    {provider_facts, providers_failed?} =
+      case SSO.list_provider_facts(subject) do
+        {:ok, facts, _meta} -> {facts, false}
+        _ -> {[], sso_admin?}
       end
 
     # Every human role can read the narrow posture even when it cannot inspect
     # connection details. That keeps the account's enforcement stance honest
     # without handing a viewer raw provider configuration.
-    count =
-      case SSO.fetch_account_connection_facts(socket.assigns.current_subject) do
-        {:ok, %{enabled_count: count}} -> count
-        {:error, _reason} -> 0
+    {count, posture_failed?} =
+      case SSO.fetch_account_connection_facts(subject) do
+        {:ok, %{enabled_count: count}} -> {count, false}
+        {:error, _reason} -> {0, true}
       end
 
     # Manual-provisioning requests waiting on an admin, across every connection —
     # the SSO hub now lives on Team, so its needs-attention queue does too. Gated
     # (manage_sso + Team plan) inside the read, so a non-SSO-admin just gets [].
-    pending_requests =
-      case SSO.list_pending_link_request_facts(socket.assigns.current_subject) do
-        {:ok, facts, _meta} -> facts
-        _ -> []
+    # For an admin, a failed read hides people locked out waiting on them, so it
+    # keeps the section and reports the failure.
+    {pending_requests, pending_requests_error?} =
+      case SSO.list_pending_link_request_facts(subject) do
+        {:ok, facts, _meta} -> {facts, false}
+        _ -> {[], sso_admin?}
       end
 
     # Per-connection directory-sync counts (users + distinct groups), so a synced
     # connection's row can show how much it's pulling in. Gated → {} for a
     # non-SSO-admin, and JIT connections simply have no entry.
-    sync_stats =
-      case SSO.provider_sync_stats(socket.assigns.current_subject) do
-        {:ok, stats} -> stats
-        _ -> %{}
+    {sync_stats, sync_stats_error?} =
+      case SSO.provider_sync_stats(subject) do
+        {:ok, stats} -> {stats, false}
+        _ -> {%{}, sso_admin?}
       end
 
     socket
     |> assign(:provider_facts, provider_facts)
     |> assign(:enabled_sso_provider_count, count)
     |> assign(:require_sso_available?, count > 0)
+    |> assign(:sso_load_error?, providers_failed? or posture_failed?)
     |> assign(:pending_requests, pending_requests)
+    |> assign(:pending_requests_error?, pending_requests_error?)
     |> assign_approval_access(pending_requests)
     |> assign(:sync_stats, sync_stats)
+    |> assign(:sync_stats_error?, sync_stats_error?)
   end
+
+  # The permission half of every manage_sso-gated read on this page. A member
+  # who simply lacks the permission gets the quiet nothing they already got; a
+  # failed read is only reported to someone the section is actually for.
+  defp sso_admin?(socket), do: SSO.subject_can_manage_sso?(socket.assigns.current_subject)
 
   # Each request's form opens on the runner access its own connection currently
   # defaults to — SSO derives it, so the page never reads a provider's default
@@ -1215,11 +1247,7 @@ defmodule EmisarWeb.TeamLive do
                   submit_error_field={@form[:runner_access_mode]}
                   submit_error_message="Choose at least one runner group or runner for selected access."
                   loading?={@loading?}
-                  load_error={
-                    if @runner_load_error? do
-                      "Runner access options could not be loaded. Try again before sending the invite."
-                    end
-                  }
+                  load_error={RunnerScope.runner_load_error(@runner_load_error?)}
                 />
               </div>
 
@@ -1229,6 +1257,7 @@ defmodule EmisarWeb.TeamLive do
                   runner_scope={List.wrap(@form[:scope].value)}
                   runners={@runners}
                   advertisements={@pack_advertisements}
+                  load_error={RunnerScope.pack_load_error(@pack_load_error?)}
                   mode_name="invite[pack_access_mode]"
                   mode_value={@form[:pack_access_mode].value}
                   scope_name="invite[pack_scope][]"
@@ -1257,12 +1286,33 @@ defmodule EmisarWeb.TeamLive do
 
       <.loading_state :if={@live_action == :index and @loading?} />
 
+      <%!-- The queue read failed for someone who administers it, so the section
+           below would disappear along with the people waiting in it. --%>
+      <section
+        :if={@live_action == :index and not @loading? and @pending_requests_error?}
+        class="mb-8"
+      >
+        <.section_header title="Pending access requests" />
+        <.empty_state
+          variant={:hint}
+          tone={:danger}
+          icon="hero-exclamation-triangle"
+          title="Couldn't load access requests"
+        >
+          This is a load error, not an empty queue — someone may be locked out waiting on you.
+          Refresh the page to try again.
+        </.empty_state>
+      </section>
+
       <%!-- Pending SSO access requests — people blocked waiting for an admin,
            across every connection. Time-sensitive, so it leads the page, full
            width above the roster + Security panel. Only an SSO admin with
            requests sees it (the read gates on manage_sso + plan → []). --%>
       <section
-        :if={@live_action == :index and not @loading? and @pending_requests != []}
+        :if={
+          @live_action == :index and not @loading? and not @pending_requests_error? and
+            @pending_requests != []
+        }
         class="mb-8"
       >
         <.section_header
@@ -1319,12 +1369,14 @@ defmodule EmisarWeb.TeamLive do
                   runners={@runners}
                   selected={Map.get(@approval_scope_drafts, request.id, [])}
                   validation_error={Map.get(@approval_scope_errors, request.id)}
+                  load_error={RunnerScope.runner_load_error(@runner_load_error?)}
                 />
                 <.pack_access_field
                   runner_mode={Map.get(@approval_access_modes, request.id, "none")}
                   runner_scope={Map.get(@approval_scope_drafts, request.id, [])}
                   runners={@runners}
                   advertisements={@pack_advertisements}
+                  load_error={RunnerScope.pack_load_error(@pack_load_error?)}
                   variant={:select}
                   mode_name="pack_access_mode"
                   mode_value={Map.get(@approval_pack_modes, request.id, "all")}
@@ -1708,6 +1760,7 @@ defmodule EmisarWeb.TeamLive do
                             runners={@runners}
                             selected={@scope_draft}
                             validation_error={@scope_error}
+                            load_error={RunnerScope.runner_load_error(@runner_load_error?)}
                           />
                         </div>
                       </div>
@@ -1717,6 +1770,7 @@ defmodule EmisarWeb.TeamLive do
                         runner_scope={@scope_draft}
                         runners={@runners}
                         advertisements={@pack_advertisements}
+                        load_error={RunnerScope.pack_load_error(@pack_load_error?)}
                         mode_name="pack_access_mode"
                         mode_value={@scope_pack_mode}
                         scope_name="pack_scope[]"
@@ -1871,8 +1925,13 @@ defmodule EmisarWeb.TeamLive do
                       :if={provider.directory_sync?}
                       class="mt-0.5 block text-[11px] leading-tight text-zinc-400"
                     >
+                      <%!-- Zeroes from a failed stats read would report a live sync
+                           as pulling nothing in. --%>
+                      <span :if={@sync_stats_error?}>Sync counts unavailable</span>
                       <% stats = Map.get(@sync_stats, provider.id, %{users: 0, groups: 0}) %>
-                      {sync_count(stats.users, "user")} · {sync_count(stats.groups, "group")}
+                      <span :if={not @sync_stats_error?}>
+                        {sync_count(stats.users, "user")} · {sync_count(stats.groups, "group")}
+                      </span>
                       <span :if={provider.last_synced_at} class="text-brand-300/90">
                         · synced
                         <.local_time
@@ -1893,14 +1952,29 @@ defmodule EmisarWeb.TeamLive do
                 </.link>
               </li>
             </ul>
+            <%!-- "Not configured" is a claim about how this account signs in, so
+                 it is never made from a read that failed. --%>
+            <.empty_state
+              :if={@sso_load_error?}
+              variant={:hint}
+              tone={:danger}
+              icon="hero-exclamation-triangle"
+              title="Couldn't load single sign-on"
+              class="mt-3"
+            >
+              This is a load error, not a sign-in posture — connections may well be configured
+              and enforced. Refresh the page to try again.
+            </.empty_state>
             <p
-              :if={@provider_facts == [] and @enabled_sso_provider_count == 0}
+              :if={
+                not @sso_load_error? and @provider_facts == [] and @enabled_sso_provider_count == 0
+              }
               class="mt-3 text-xs text-zinc-400"
             >
               Not configured — members sign in with a magic link.
             </p>
             <p
-              :if={@provider_facts == [] and @enabled_sso_provider_count > 0}
+              :if={not @sso_load_error? and @provider_facts == [] and @enabled_sso_provider_count > 0}
               class="mt-3 text-xs text-zinc-400"
             >
               Configured — owners and admins manage connections.

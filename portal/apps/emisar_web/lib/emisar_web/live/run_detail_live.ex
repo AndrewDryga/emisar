@@ -45,17 +45,19 @@ defmodule EmisarWeb.RunDetailLive do
         # @event_window chunks, chronological — so a >window run reads identically
         # live or reloaded. Deferred behind connected?/1 so the dead render doesn't
         # run the heavy read a second time (same pattern as run_new_live).
-        events =
+        #
+        # Three states, never conflated: the dead render hasn't read yet
+        # (:loading), a transient read failure must not raise inside mount and
+        # must not claim the run produced nothing (:error), and :loaded is the
+        # only state in which an empty window means "no output captured".
+        {events, output_state} =
           if connected?(socket) do
-            # A transient read failure between the run fetch above and this one
-            # must not raise inside mount — that leaves the run page unable to
-            # render at all. Degrade to an empty window; the live stream fills it.
             case Runs.list_recent_events_for_run(run, event_window(), subject) do
-              {:ok, evts} -> evts
-              {:error, _} -> []
+              {:ok, evts} -> {evts, :loaded}
+              {:error, _} -> {[], :error}
             end
           else
-            []
+            {[], :loading}
           end
 
         approval_request = lookup_approval(subject, run)
@@ -76,6 +78,7 @@ defmodule EmisarWeb.RunDetailLive do
          # Whether any output was persisted — gates the output panel for an
          # errored run so "result never arrived" doesn't render an empty terminal.
          |> assign(:output_present?, events != [])
+         |> assign(:output_state, output_state)
          |> assign(:oldest_seq, event_seq(List.first(events)))
          |> assign(:more_earlier?, events_truncated?(run))
          |> stream(:events, events)}
@@ -631,7 +634,7 @@ defmodule EmisarWeb.RunDetailLive do
              Hidden for statuses where the panel would just be blank. --%>
         <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — earned: the run terminal frame (the sanctioned hand-rolled code_panel) --%>
         <div
-          :if={show_output?(@run, @output_present?)}
+          :if={show_output?(@run, @output_present?, @output_state)}
           class="overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-zinc-800"
         >
           <header class="flex items-center justify-between gap-3 border-b border-zinc-800/70 px-4 py-2">
@@ -676,11 +679,31 @@ defmodule EmisarWeb.RunDetailLive do
                concatenate and only the real newlines break lines. Block
                elements or template indentation here would double the
                spacing, since <pre> makes all whitespace significant. --%>
+          <%!-- The window hasn't been read yet (dead render) — never flash
+               "No output captured." at a run that may have plenty. --%>
+          <.loading_state :if={@output_state == :loading} />
+
+          <%!-- The read failed. "No output captured." here would state a fact
+               about the run from a query that never answered. --%>
+          <.callout
+            :if={@output_state == :error}
+            tone={:rose}
+            icon="hero-exclamation-triangle"
+            title="Couldn't load this run's output"
+            class="m-4"
+          >
+            This is a read error, not an empty result — the run may well have produced output.
+            Refresh the page to try again.
+          </.callout>
+
           <%!-- A terminal run that streamed nothing gets one quiet line instead
                of a 24rem black void (the in-flight min-height stays — more may
                be coming). --%>
           <p
-            :if={not @output_present? and @run.status not in [:sent, :running, :cancelling]}
+            :if={
+              @output_state == :loaded and not @output_present? and
+                @run.status not in [:sent, :running, :cancelling]
+            }
             class="bg-black/60 p-4 font-mono text-xs text-zinc-400"
           >
             No output captured.
@@ -692,7 +715,10 @@ defmodule EmisarWeb.RunDetailLive do
                browser default (auto) keeps the operator's visible line put while
                the earlier window is inserted above it. --%>
           <pre
-            :if={@output_present? or @run.status in [:sent, :running, :cancelling]}
+            :if={
+              @output_state != :loading and
+                (@output_present? or @run.status in [:sent, :running, :cancelling])
+            }
             id="run-output"
             phx-update="stream"
             tabindex="0"
@@ -770,13 +796,18 @@ defmodule EmisarWeb.RunDetailLive do
   # arrived" — so gate it on whether any output was actually persisted.
   # Everything else (sent / running while streaming, success, failed) gets the
   # panel — an empty one is fine because chunks stream in via PubSub.
-  defp show_output?(%{status: :error}, output_present?), do: output_present?
-
-  defp show_output?(%{status: status}, _output_present?)
+  defp show_output?(%{status: status}, _output_present?, _output_state)
        when status in [:cancelled, :denied, :pending_approval, :pending, :refused],
        do: false
 
-  defp show_output?(_run, _output_present?), do: true
+  # Until the window is read, "did this run capture anything?" has no answer —
+  # the panel renders so the loading and read-failure states have somewhere to
+  # live instead of the whole section silently disappearing.
+  defp show_output?(_run, _output_present?, output_state) when output_state != :loaded, do: true
+
+  defp show_output?(%{status: :error}, output_present?, :loaded), do: output_present?
+
+  defp show_output?(_run, _output_present?, :loaded), do: true
 
   defp matched_rules_label(nil), do: "—"
   defp matched_rules_label([]), do: "—"

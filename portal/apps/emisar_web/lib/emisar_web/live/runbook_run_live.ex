@@ -48,6 +48,7 @@ defmodule EmisarWeb.RunbookRunLive do
      |> assign(:events_by_attempt, %{})
      |> assign(:approval_request, nil)
      |> assign(:recent_executions, [])
+     |> assign(:recent_executions_error?, false)
      |> assign(:expanded_plan_stages, MapSet.new())
      |> assign(:expanded_execution_stages, MapSet.new())
      |> assign(:subscribed_execution_id, nil)}
@@ -85,6 +86,7 @@ defmodule EmisarWeb.RunbookRunLive do
           |> assign(:events_by_attempt, %{})
           |> assign(:approval_request, nil)
           |> assign(:recent_executions, [])
+          |> assign(:recent_executions_error?, false)
           |> assign(:expanded_plan_stages, MapSet.new())
           |> assign(:expanded_execution_stages, MapSet.new())
           |> assign(:subscribed_execution_id, nil)
@@ -383,6 +385,7 @@ defmodule EmisarWeb.RunbookRunLive do
           |> load_execution_approval_request(result)
           |> load_attempt_output_previews(result.latest_attempts)
           |> assign(:recent_executions, [])
+          |> assign(:recent_executions_error?, false)
           |> assign(:page_title, execution_page_title(result))
 
         if projection.execution.waitable?,
@@ -450,8 +453,15 @@ defmodule EmisarWeb.RunbookRunLive do
            socket.assigns.runbook,
            socket.assigns.current_subject
          ) do
-      {:ok, executions} -> assign(socket, :recent_executions, executions)
-      {:error, _reason} -> assign(socket, :recent_executions, [])
+      {:ok, executions} ->
+        socket
+        |> assign(:recent_executions, executions)
+        |> assign(:recent_executions_error?, false)
+
+      {:error, _reason} ->
+        socket
+        |> assign(:recent_executions, [])
+        |> assign(:recent_executions_error?, true)
     end
   end
 
@@ -741,6 +751,7 @@ defmodule EmisarWeb.RunbookRunLive do
           can_start?={can_start?(assigns)}
           current_account={@current_account}
           recent_executions={@recent_executions}
+          recent_executions_error?={@recent_executions_error?}
         />
       </div>
     </.dashboard_shell>
@@ -757,6 +768,7 @@ defmodule EmisarWeb.RunbookRunLive do
   attr :can_start?, :boolean, required: true
   attr :current_account, :map, required: true
   attr :recent_executions, :list, required: true
+  attr :recent_executions_error?, :boolean, default: false
 
   defp run_form(assigns) do
     pending_inputs =
@@ -891,6 +903,7 @@ defmodule EmisarWeb.RunbookRunLive do
           <.section_header title="Recent executions" />
           <RunbookWorkflowComponents.recent_executions
             executions={@recent_executions}
+            load_error?={@recent_executions_error?}
             current_account={@current_account}
             runbook={@runbook}
           />

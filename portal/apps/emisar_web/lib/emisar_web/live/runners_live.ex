@@ -211,10 +211,12 @@ defmodule EmisarWeb.RunnersLive do
 
     case Runners.list_runners_for_account(socket.assigns.current_subject, opts) do
       {:ok, runners, meta} ->
+        # nil, not [] — a failed summaries read must not print "0 runners total"
+        # above the group's own visible rows.
         groups =
           case Runners.list_group_summaries(socket.assigns.current_subject) do
             {:ok, list} -> list
-            _ -> []
+            _ -> nil
           end
 
         # An empty fleet on the live socket IS the wizard — mint the one-liner and
@@ -463,9 +465,7 @@ defmodule EmisarWeb.RunnersLive do
               >
                 <:group_header :let={group_label}>
                   <.list_group_header label={group_label}>
-                    {group_total(@groups, group_label)} {if group_total(@groups, group_label) == 1,
-                      do: "runner",
-                      else: "runners"} total
+                    {group_total_label(@groups, group_label)}
                   </.list_group_header>
                 </:group_header>
 
@@ -630,11 +630,18 @@ defmodule EmisarWeb.RunnersLive do
       Enum.any?(runners, &(Compat.runner_status(&1.runner_version) in [:outdated, :unsupported]))
   end
 
-  defp group_total(groups, group) do
-    Enum.find_value(groups, 0, fn
-      {^group, n} -> n
-      _ -> nil
-    end)
+  # The group's whole-fleet total, or nothing at all when the summaries read
+  # failed — a count is a fact, and an unread one has no honest placeholder.
+  defp group_total_label(nil, _group), do: nil
+
+  defp group_total_label(groups, group) do
+    total =
+      Enum.find_value(groups, 0, fn
+        {^group, n} -> n
+        _ -> nil
+      end)
+
+    "#{total} #{if total == 1, do: "runner", else: "runners"} total"
   end
 
   # "last heartbeat 3m ago" / "just connected — waiting for first

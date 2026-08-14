@@ -1,7 +1,7 @@
 defmodule EmisarWeb.SSOSettingsLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Catalog, Runners, SSO}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, MailTo, Permissions}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, MailTo, Permissions, RunnerScope}
   alias Phoenix.LiveView.JS
 
   # Humanized provider-kind labels for the select + the row badge — the enum's
@@ -80,19 +80,23 @@ defmodule EmisarWeb.SSOSettingsLive do
       # single open inline edit (id + form). Keyed by provider id so each
       # provider's directory-sync panel owns its own mappings + form.
       |> assign(:group_mappings, %{})
+      |> assign(:group_mapping_errors, %{})
       |> assign(:synced_groups, %{})
+      |> assign(:synced_group_errors, %{})
       |> assign(:mapping_forms, %{})
       |> assign(:editing_mapping_id, nil)
       |> assign(:mapping_edit_form, nil)
       # The add-mapping form is behind an "Add mapping" button, not always open.
       |> assign(:adding_mapping, false)
       |> assign(:runner_access_mappings, %{})
+      |> assign(:runner_access_mapping_errors, %{})
       |> assign(:runner_access_mapping_forms, %{})
       |> assign(:editing_runner_access_mapping_id, nil)
       |> assign(:runner_access_mapping_edit_form, nil)
       |> assign(:adding_runner_access_mapping, false)
       |> assign(:runners, [])
       |> assign(:runner_load_error?, false)
+      |> assign(:pack_load_error?, false)
       |> assign(:pack_advertisements, %{})
       |> assign(:scim_base_url, "#{Emisar.PublicUrl.base()}/scim/v2")
       # The fixed OIDC redirect URI the operator registers in their IdP — shown
@@ -253,7 +257,12 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp load_runners(socket) do
-    socket = assign(socket, :pack_advertisements, account_pack_advertisements(socket))
+    {advertisements, pack_load_error?} = account_pack_advertisements(socket)
+
+    socket =
+      socket
+      |> assign(:pack_advertisements, advertisements)
+      |> assign(:pack_load_error?, pack_load_error?)
 
     case Runners.list_all_runners_for_account(socket.assigns.current_subject) do
       {:ok, runners} ->
@@ -269,11 +278,15 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   # A role without view_catalog gets no pack choices rather than a crash — the
-  # same shape as the runner load above.
+  # same shape as the runner load above. The flag says whether the empty map is
+  # a real answer or a failed read, so a pack picker cannot report "No packs on
+  # the selected runners" for packs it never read.
   defp account_pack_advertisements(socket) do
-    case Catalog.list_pack_advertisements(socket.assigns.current_subject) do
-      {:ok, advertisements} -> advertisements
-      {:error, _reason} -> %{}
+    subject = socket.assigns.current_subject
+
+    case Catalog.list_pack_advertisements(subject) do
+      {:ok, advertisements} -> {advertisements, false}
+      {:error, _reason} -> {%{}, Catalog.subject_can_view_packs?(subject)}
     end
   end
 
@@ -282,27 +295,29 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp load_group_mappings(socket, providers) do
     scim_providers = Enum.filter(providers, & &1.scim_enabled)
 
-    role_mappings =
-      Map.new(scim_providers, fn provider ->
-        {provider.id, list_mappings(socket, provider)}
-      end)
+    role_reads = Map.new(scim_providers, &{&1.id, list_mappings(socket, &1)})
 
-    runner_access_mappings =
-      Map.new(scim_providers, fn provider ->
-        {provider.id, list_runner_access_mappings(socket, provider)}
-      end)
+    runner_access_reads =
+      Map.new(scim_providers, &{&1.id, list_runner_access_mappings(socket, &1)})
+
+    role_mappings = rows(role_reads)
+    runner_access_mappings = rows(runner_access_reads)
 
     # The groups the IdP has actually synced (id + member count), each annotated
     # with its role mapping — powers the "Synced groups" readout, and (projected
     # to ids) the map-after-first-sync picker.
-    synced =
+    synced_reads =
       Map.new(scim_providers, fn provider ->
-        {provider.id,
-         annotate_synced_groups(
-           list_synced_groups(socket, provider),
-           role_mappings[provider.id],
-           runner_access_mappings[provider.id]
-         )}
+        {groups, failed?} = list_synced_groups(socket, provider)
+
+        annotated =
+          annotate_synced_groups(
+            groups,
+            role_mappings[provider.id],
+            runner_access_mappings[provider.id]
+          )
+
+        {provider.id, {annotated, failed?}}
       end)
 
     forms = Map.new(scim_providers, &{&1.id, mapping_form(&1)})
@@ -310,16 +325,27 @@ defmodule EmisarWeb.SSOSettingsLive do
 
     socket
     |> assign(:group_mappings, role_mappings)
+    |> assign(:group_mapping_errors, read_errors(role_reads))
     |> assign(:runner_access_mappings, runner_access_mappings)
-    |> assign(:synced_groups, synced)
+    |> assign(:runner_access_mapping_errors, read_errors(runner_access_reads))
+    |> assign(:synced_groups, rows(synced_reads))
+    |> assign(:synced_group_errors, read_errors(synced_reads))
     |> assign(:mapping_forms, forms)
     |> assign(:runner_access_mapping_forms, runner_access_forms)
   end
 
+  # Each per-provider read is kept as `{rows, read_failed?}` and split here: the
+  # rows render the list, the flag keeps a failed read from rendering as that
+  # section's "no mappings / no groups" — which on this page reads as a claim
+  # that the directory grants nobody a role or extra runner reach.
+  defp rows(reads), do: Map.new(reads, fn {id, {rows, _failed?}} -> {id, rows} end)
+
+  defp read_errors(reads), do: Map.new(reads, fn {id, {_rows, failed?}} -> {id, failed?} end)
+
   defp list_synced_groups(socket, provider) do
     case SSO.list_synced_groups(provider, socket.assigns.current_subject) do
-      {:ok, groups} -> groups
-      {:error, _} -> []
+      {:ok, groups} -> {groups, false}
+      {:error, _} -> {[], true}
     end
   end
 
@@ -341,15 +367,15 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp list_mappings(socket, provider) do
     case SSO.list_group_mappings(provider, socket.assigns.current_subject) do
-      {:ok, mappings, _meta} -> mappings
-      {:error, _} -> []
+      {:ok, mappings, _meta} -> {mappings, false}
+      {:error, _} -> {[], true}
     end
   end
 
   defp list_runner_access_mappings(socket, provider) do
     case SSO.list_group_runner_access_mappings(provider, socket.assigns.current_subject) do
-      {:ok, mappings, _meta} -> mappings
-      {:error, _reason} -> []
+      {:ok, mappings, _meta} -> {mappings, false}
+      {:error, _reason} -> {[], true}
     end
   end
 
@@ -980,8 +1006,11 @@ defmodule EmisarWeb.SSOSettingsLive do
   # Refresh just one provider's mapping list (after a mapping CRUD), leaving the
   # other providers' panels untouched.
   defp reload_mappings(socket, provider) do
+    {mappings, failed?} = list_mappings(socket, provider)
+
     socket
-    |> put_mappings(provider.id, list_mappings(socket, provider))
+    |> put_mappings(provider.id, mappings)
+    |> put_read_error(:group_mapping_errors, provider.id, failed?)
     |> reannotate_synced_groups(provider.id)
   end
 
@@ -1014,13 +1043,14 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp reload_runner_access_mappings(socket, provider) do
-    mappings = list_runner_access_mappings(socket, provider)
+    {mappings, failed?} = list_runner_access_mappings(socket, provider)
 
     socket
     |> assign(
       :runner_access_mappings,
       Map.put(socket.assigns.runner_access_mappings, provider.id, mappings)
     )
+    |> put_read_error(:runner_access_mapping_errors, provider.id, failed?)
     |> reannotate_synced_groups(provider.id)
   end
 
@@ -1037,6 +1067,11 @@ defmodule EmisarWeb.SSOSettingsLive do
       :group_mappings,
       Map.put(socket.assigns.group_mappings, provider_id, mappings)
     )
+  end
+
+  defp put_read_error(socket, assign_name, provider_id, failed?) do
+    errors = Map.put(socket.assigns[assign_name], provider_id, failed?)
+    assign(socket, assign_name, errors)
   end
 
   defp put_mapping_form(socket, provider_id, form),
@@ -1357,6 +1392,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 runners={@runners}
                 pack_advertisements={@pack_advertisements}
                 runner_load_error?={@runner_load_error?}
+                pack_load_error?={@pack_load_error?}
                 guide_id="new"
                 callback_url={@callback_url}
                 inline_guide?={false}
@@ -1418,6 +1454,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 runners={@runners}
                 pack_advertisements={@pack_advertisements}
                 runner_load_error?={@runner_load_error?}
+                pack_load_error?={@pack_load_error?}
                 guide_id={provider.id}
                 callback_url={@callback_url}
                 editing?
@@ -1594,6 +1631,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               :if={@can_configure_directory_sync? and provider.scim_enabled}
               provider={provider}
               mappings={Map.get(@group_mappings, provider.id, [])}
+              load_error?={Map.get(@group_mapping_errors, provider.id, false)}
               synced_groups={Map.get(@synced_groups, provider.id, [])}
               mapping_form={Map.get(@mapping_forms, provider.id)}
               mapping_role_options={@mapping_role_options}
@@ -1610,6 +1648,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               :if={@can_configure_directory_sync? and provider.scim_enabled}
               provider={provider}
               mappings={Map.get(@runner_access_mappings, provider.id, [])}
+              load_error?={Map.get(@runner_access_mapping_errors, provider.id, false)}
               synced_groups={Map.get(@synced_groups, provider.id, [])}
               mapping_form={Map.get(@runner_access_mapping_forms, provider.id)}
               editing_mapping_id={@editing_runner_access_mapping_id}
@@ -1626,6 +1665,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             <.synced_groups_section
               :if={@can_configure_directory_sync? and provider.scim_enabled}
               synced_groups={Map.get(@synced_groups, provider.id, [])}
+              load_error?={Map.get(@synced_group_errors, provider.id, false)}
             />
             <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
               What your IdP has actually pushed. A group with no role mapping leaves its members at
@@ -1877,6 +1917,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :runners, :list, required: true
   attr :pack_advertisements, :map, required: true
   attr :runner_load_error?, :boolean, required: true
+  attr :pack_load_error?, :boolean, default: false
   attr :guide_id, :string, required: true
   attr :callback_url, :string, required: true
   # The :new view renders the guide in its own rail, so it suppresses the inline
@@ -2078,10 +2119,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 selected={List.wrap(@form[:default_runner_scope].value)}
                 submit_error_field={@form[:default_runner_access_mode]}
                 submit_error_message="Choose at least one runner group or runner for selected access."
-                load_error={
-                  if @runner_load_error?,
-                    do: "Runner access options could not be loaded. Try again before saving."
-                }
+                load_error={RunnerScope.runner_load_error(@runner_load_error?)}
               />
             </div>
 
@@ -2091,6 +2129,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 runner_scope={List.wrap(@form[:default_runner_scope].value)}
                 runners={@runners}
                 advertisements={@pack_advertisements}
+                load_error={RunnerScope.pack_load_error(@pack_load_error?)}
                 mode_name="provider[default_pack_access_mode]"
                 mode_value={@form[:default_pack_access_mode].value}
                 scope_name="provider[default_pack_scope][]"
@@ -2602,6 +2641,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   attr :provider, :map, required: true
   attr :mappings, :list, required: true
+  attr :load_error?, :boolean, default: false
   attr :mapping_form, Phoenix.HTML.Form, default: nil
   attr :mapping_role_options, :list, required: true
   attr :editing_mapping_id, :string, default: nil
@@ -2712,7 +2752,20 @@ defmodule EmisarWeb.SSOSettingsLive do
         </li>
       </ul>
 
-      <.empty_state :if={@mappings == []} variant={:hint} class="mt-4">
+      <%!-- "No role mappings yet" is a statement about what this directory grants,
+           so it is never made from a read that failed. --%>
+      <.empty_state
+        :if={@load_error?}
+        variant={:hint}
+        tone={:danger}
+        icon="hero-exclamation-triangle"
+        title="Couldn't load role mappings"
+        class="mt-4"
+      >
+        This is a load error, not an empty list — mapped groups may well be granting roles.
+        Refresh the page to try again.
+      </.empty_state>
+      <.empty_state :if={not @load_error? and @mappings == []} variant={:hint} class="mt-4">
         No role mappings yet. New members land at the connection's default role until you map a
         directory group to a higher one.
       </.empty_state>
@@ -2779,6 +2832,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   attr :provider, :map, required: true
   attr :mappings, :list, required: true
+  attr :load_error?, :boolean, default: false
   attr :mapping_form, Phoenix.HTML.Form, default: nil
   attr :editing_mapping_id, :string, default: nil
   attr :mapping_edit_form, Phoenix.HTML.Form, default: nil
@@ -2904,7 +2958,20 @@ defmodule EmisarWeb.SSOSettingsLive do
         </li>
       </ul>
 
-      <.empty_state :if={@mappings == []} variant={:hint} class="mt-4">
+      <%!-- Claiming no group widens runner reach is a security statement — never
+           make it from a read that failed. --%>
+      <.empty_state
+        :if={@load_error?}
+        variant={:hint}
+        tone={:danger}
+        icon="hero-exclamation-triangle"
+        title="Couldn't load runner access mappings"
+        class="mt-4"
+      >
+        This is a load error, not an empty list — IdP groups may well be granting extra runner
+        reach. Refresh the page to try again.
+      </.empty_state>
+      <.empty_state :if={not @load_error? and @mappings == []} variant={:hint} class="mt-4">
         No IdP groups grant additional runner access. Synced members use the connection default.
       </.empty_state>
 
@@ -3022,6 +3089,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   attr :synced_groups, :list, required: true
+  attr :load_error?, :boolean, default: false
 
   # The groups the IdP actually pushes over SCIM (id + distinct member count),
   # each annotated with its role mapping — the directory-state companion to the
@@ -3061,7 +3129,18 @@ defmodule EmisarWeb.SSOSettingsLive do
         </li>
       </ul>
 
-      <.empty_state :if={@synced_groups == []} variant={:hint} class="mt-4">
+      <.empty_state
+        :if={@load_error?}
+        variant={:hint}
+        tone={:danger}
+        icon="hero-exclamation-triangle"
+        title="Couldn't load synced groups"
+        class="mt-4"
+      >
+        This is a load error, not an empty directory — your IdP may well be pushing groups.
+        Refresh the page to try again.
+      </.empty_state>
+      <.empty_state :if={not @load_error? and @synced_groups == []} variant={:hint} class="mt-4">
         No groups synced yet. Once your IdP pushes group memberships over SCIM, they'll appear here
         with their member counts.
       </.empty_state>

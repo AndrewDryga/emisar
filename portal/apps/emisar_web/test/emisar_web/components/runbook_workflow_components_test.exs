@@ -40,4 +40,21 @@ defmodule EmisarWeb.Components.RunbookWorkflowComponentsTest do
     assert html =~ "check_uptime"
     assert html =~ ~s(data-steps-marker="parallel")
   end
+
+  test "a failed execution-history read says so instead of \"No runs yet.\"" do
+    assigns = %{account: %{slug: "test-co"}}
+
+    html =
+      rendered_to_string(~H"""
+      <RunbookWorkflowComponents.recent_executions
+        executions={[]}
+        load_error?
+        current_account={@account}
+      />
+      """)
+
+    refute html =~ "No runs yet."
+    assert html =~ "Couldn&#39;t load recent runs"
+    assert html =~ "not an empty history"
+  end
 end

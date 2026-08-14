@@ -452,13 +452,14 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     assert html =~ "No decided approvals yet."
   end
 
-  test "grants and decided load errors collapse to empty silently — no danger banner", %{
+  test "grants and decided load errors say the read failed, never that there is nothing", %{
     conn: conn
   } do
-    # crafted `grants_after`/`decided_after` cursors make
-    # both reads return {:error,_}. Unlike Pending, these historical sections run
-    # through `list_or_empty/1`, so they render their normal empty-states with NO
-    # danger banner (a stale grant/decision isn't the held-action hazard pending is).
+    # Crafted `grants_after`/`decided_after` cursors make both reads return
+    # {:error, _} for an OWNER, who holds manage_grants — so this is a real read
+    # failure, not a permission denial. A standing grant is live authorization to
+    # skip the approval prompt, so "No active grants." here would understate what
+    # the account currently allows.
     {conn, _user, account} = register_and_log_in(conn)
 
     {:ok, _lv, html} =
@@ -467,10 +468,13 @@ defmodule EmisarWeb.ApprovalsLiveTest do
         ~p"/app/#{account}/approvals?grants_after=not-a-cursor&decided_after=also-not"
       )
 
-    assert html =~ "No active grants."
-    assert html =~ "No decided approvals yet."
-    # Only Pending escalates a load failure to a danger banner.
+    assert html =~ "Couldn&#39;t load standing grants"
+    assert html =~ "Couldn&#39;t load the decision log"
+    refute html =~ "No active grants."
+    refute html =~ "No decided approvals yet."
+    # Pending read fine — its own section is unaffected.
     refute html =~ "Couldn&#39;t load pending approvals."
+    assert html =~ "Nothing waiting."
   end
 
   test "an operator's crafted revoke_grant is denied gracefully", %{conn: conn} do

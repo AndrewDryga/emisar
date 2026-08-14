@@ -15,6 +15,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   def runner_name(_ref), do: "Unknown runner"
 
   attr :executions, :list, required: true
+  attr :load_error?, :boolean, default: false
   attr :current_account, :map, required: true
   attr :runbook, :map, default: nil
   attr :show_runbook?, :boolean, default: false
@@ -32,10 +33,24 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       )
 
     ~H"""
-    <p :if={@visible_executions == []} class="text-sm leading-6 text-zinc-500">
+    <%!-- "No runs yet." from a failed read tells an operator this runbook has
+         never executed. --%>
+    <.empty_state
+      :if={@load_error?}
+      variant={:hint}
+      tone={:danger}
+      icon="hero-exclamation-triangle"
+      title="Couldn't load recent runs"
+    >
+      This is a load error, not an empty history. Refresh the page to try again.
+    </.empty_state>
+    <p
+      :if={not @load_error? and @visible_executions == []}
+      class="text-sm leading-6 text-zinc-500"
+    >
       No runs yet.
     </p>
-    <ul :if={@visible_executions != []} class="divide-y divide-zinc-800/70">
+    <ul :if={not @load_error? and @visible_executions != []} class="divide-y divide-zinc-800/70">
       <li :for={execution <- @visible_executions}>
         <% runbook = if @show_runbook?, do: execution.runbook, else: @runbook %>
         <% attribution = execution_attribution(execution) %>

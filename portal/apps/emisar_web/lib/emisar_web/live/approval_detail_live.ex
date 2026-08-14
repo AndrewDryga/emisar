@@ -35,6 +35,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
      |> assign(:runner_connection, :unknown)
      |> assign(:user_labels, %{})
      |> assign(:decisions, [])
+     |> assign(:decisions_error?, false)
      |> assign(:approval_event_refs, %{final: nil, decisions: %{}})
      |> assign(:approved_count, 0)
      |> assign(:already_decided?, false)
@@ -208,22 +209,26 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp load_decisions(socket, request) do
     subject = socket.assigns.current_subject
 
-    decisions =
+    # A failed read here is not "nobody has voted": it would print "0 of 3" to
+    # the approver deciding on a quorum, and drop the vote trail that shows who
+    # already signed off. Carry the failure so the tally reads as unknown.
+    {decisions, decisions_failed?} =
       case Approvals.list_decisions_for_request(request, subject) do
-        {:ok, list} -> list
-        {:error, _} -> []
+        {:ok, list} -> {list, false}
+        {:error, _} -> {[], true}
       end
 
-    approved_count =
+    {approved_count, count_failed?} =
       case Approvals.approved_count_for_request(request, subject) do
-        {:ok, n} -> n
-        {:error, _} -> 0
+        {:ok, n} -> {n, false}
+        {:error, _} -> {0, true}
       end
 
     actor_id = subject.actor && subject.actor.id
 
     socket
     |> assign(:decisions, decisions)
+    |> assign(:decisions_error?, decisions_failed? or count_failed?)
     |> assign(:approval_event_refs, approval_event_refs(request, subject))
     |> assign(:user_labels, user_labels_for(request, decisions, subject))
     |> assign(:approved_count, approved_count)
@@ -798,7 +803,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <%!-- Only surface the tally for a multi-approver gate; a 1-of-1
              request reads no differently than the single-approver flow. --%>
             <.meta_field :if={@request.min_approvals > 1} label="Approvals">
-              <span class="text-zinc-200">{@approved_count} of {@request.min_approvals}</span>
+              <span :if={@decisions_error?} class="text-zinc-200">
+                {@request.min_approvals} required · tally unavailable
+              </span>
+              <span :if={not @decisions_error?} class="text-zinc-200">
+                {@approved_count} of {@request.min_approvals}
+              </span>
             </.meta_field>
             <%!-- Expiry isn't a meta field: for a held request the live countdown
                owns it in the decide panel (more prominent + ticking); a decided
@@ -995,11 +1005,26 @@ defmodule EmisarWeb.ApprovalDetailLive do
                (the decision-history panel covers the lone vote). --%>
             <%!-- The vote trail ON THE CANVAS — hairline rows under a section
                header (the approvals-list grammar), not a boxed split panel. --%>
-            <section :if={@decisions != [] and @request.min_approvals > 1}>
+            <section :if={(@decisions != [] or @decisions_error?) and @request.min_approvals > 1}>
               <.section_header title="Decisions">
-                <:subtitle>{@approved_count} of {@request.min_approvals} approvals</:subtitle>
+                <:subtitle :if={not @decisions_error?}>
+                  {@approved_count} of {@request.min_approvals} approvals
+                </:subtitle>
               </.section_header>
-              <ul class="divide-y divide-zinc-800/70">
+              <%!-- Who has already signed off is what an approver reads before
+                   adding their own vote — never present a failed read as an
+                   untouched quorum. --%>
+              <.empty_state
+                :if={@decisions_error?}
+                variant={:hint}
+                tone={:danger}
+                icon="hero-exclamation-triangle"
+                title="Couldn't load the decisions"
+              >
+                This is a load error, not an untouched request — approvals may already be
+                recorded. Refresh the page before deciding.
+              </.empty_state>
+              <ul :if={not @decisions_error?} class="divide-y divide-zinc-800/70">
                 <li
                   :for={decision <- @decisions}
                   class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-sm"
@@ -1053,6 +1078,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               self_blocked?={@self_blocked?}
               already_decided?={@already_decided?}
               approved_count={@approved_count}
+              decisions_error?={@decisions_error?}
               min_approvals={@request.min_approvals}
               expires_at={@request_facts.expires_at}
               expires_in_seconds={@request_facts.expires_in_seconds}
@@ -1099,6 +1125,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   attr :self_blocked?, :boolean, default: false
   attr :already_decided?, :boolean, default: false
   attr :approved_count, :integer, default: 0
+  attr :decisions_error?, :boolean, default: false
   attr :min_approvals, :integer, default: 1
   attr :expires_at, :any, default: nil
   # Seconds left on the deadline, projected by Approvals — the no-JS fallback
@@ -1137,7 +1164,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
       <p :if={@min_approvals > 1} class="text-xs leading-relaxed text-zinc-400">
         This {target_noun(@execution_request?)} needs
         <strong class="text-zinc-100">{@min_approvals} distinct approvals</strong>
-        — {@approved_count} so far.
+        <span :if={not @decisions_error?}>— {@approved_count} so far.</span>
+        <span :if={@decisions_error?}>— the current tally couldn't be read.</span>
       </p>
 
       <.event_block

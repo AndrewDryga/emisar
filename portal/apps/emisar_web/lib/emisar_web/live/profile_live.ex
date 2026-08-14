@@ -29,6 +29,7 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:session_page_count, 0)
      |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
      |> assign(:filter_params, %{})
+     |> assign(:sessions_error?, false)
      |> assign_mfa_facts(user)
      |> assign_profile_form(user)
      |> assign_email_form(user)
@@ -70,17 +71,23 @@ defmodule EmisarWeb.ProfileLive do
         |> assign(:session_page_count, length(presented))
         |> assign(:metadata, metadata)
         |> assign(:filter_params, params)
+        |> assign(:sessions_error?, false)
         |> stream(:sessions, presented, reset: true)
 
       # A bad cursor from a hand-edited URL — retry once, clean, on page 1.
       {:error, _} when map_size(params) > 0 ->
         load_sessions(socket, %{})
 
+      # You are reading this page from a live session, so an empty device list
+      # can only be a failed read — and this is the list an operator scans for a
+      # device they don't recognize.
       {:error, _} ->
         socket
         |> assign(:session_count, 0)
         |> assign(:session_page_count, 0)
+        |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:filter_params, params)
+        |> assign(:sessions_error?, true)
         |> stream(:sessions, [], reset: true)
     end
   end
@@ -1061,7 +1068,18 @@ defmodule EmisarWeb.ProfileLive do
                pager off the list only when the pager renders (its :if drops the
                node on a single page, leaving one child and no phantom gap). --%>
           <div class="space-y-4">
+            <.empty_state
+              :if={@sessions_error?}
+              tone={:danger}
+              icon="hero-exclamation-triangle"
+              title="Couldn't load your sessions"
+            >
+              This is a load error, not an empty list — you are signed in on at least this device.
+              Refresh the page to try again.
+            </.empty_state>
+
             <ul
+              :if={not @sessions_error?}
               id="active-sessions"
               phx-update="stream"
               class="divide-y divide-zinc-800/70 text-sm"

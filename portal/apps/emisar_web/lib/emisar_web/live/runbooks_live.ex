@@ -36,6 +36,7 @@ defmodule EmisarWeb.RunbooksLive do
     |> assign(:filters, Runbooks.runbook_filters())
     |> assign(:load_error?, false)
     |> assign(:recent_executions, [])
+    |> assign(:recent_executions_error?, false)
   end
 
   def handle_event("filter", params, socket) do
@@ -84,8 +85,15 @@ defmodule EmisarWeb.RunbooksLive do
 
   defp load_recent_executions(socket) do
     case Runbooks.list_recent_executions(socket.assigns.current_subject, 5) do
-      {:ok, executions} -> assign(socket, :recent_executions, executions)
-      {:error, _reason} -> assign(socket, :recent_executions, [])
+      {:ok, executions} ->
+        socket
+        |> assign(:recent_executions, executions)
+        |> assign(:recent_executions_error?, false)
+
+      {:error, _reason} ->
+        socket
+        |> assign(:recent_executions, [])
+        |> assign(:recent_executions_error?, true)
     end
   end
 
@@ -260,6 +268,7 @@ defmodule EmisarWeb.RunbooksLive do
             <.section_header title="Recent runs" />
             <RunbookWorkflowComponents.recent_executions
               executions={@recent_executions}
+              load_error?={@recent_executions_error?}
               current_account={@current_account}
               show_runbook?
             />

@@ -252,6 +252,24 @@ defmodule EmisarWeb.RunnerScope do
   end
 
   @doc """
+  The `load_error` message for a failed runner read, or `nil`. The picker's own
+  empty state ("No runners registered yet.") would otherwise invite an admin to
+  widen a grant because the fleet it reaches looks empty.
+  """
+  def runner_load_error(true) do
+    "Couldn't load the runner list — a read error, not an empty fleet. Refresh and try again."
+  end
+
+  def runner_load_error(false), do: nil
+
+  @doc "The same, for a failed pack-advertisement read."
+  def pack_load_error(true) do
+    "Couldn't load the pack list — a read error, not an empty catalog. Refresh and try again."
+  end
+
+  def pack_load_error(false), do: nil
+
+  @doc """
   Runner ids a `"group:x"` / `"runner:id"` selection covers — every runner when
   the grant reaches them all.
   """

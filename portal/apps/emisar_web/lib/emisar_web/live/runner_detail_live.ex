@@ -66,15 +66,19 @@ defmodule EmisarWeb.RunnerDetailLive do
   # so the two reads run once on the live mount, not also on the dead render
   # (IL-18) — the dead render shows <.loading_state>. Both reads tolerate an
   # {:error, …} (a hand-edited page/filter URL, a permission tightened
-  # mid-session) and degrade to empty rather than raising a MatchError that
-  # would crash the whole LiveView.
+  # mid-session) rather than raising a MatchError that would crash the whole
+  # LiveView — and each carries its failure so the empty section says the read
+  # failed instead of making a claim about the host.
   defp load_lists(socket, runner, params) do
     if connected?(socket) do
       subject = socket.assigns.current_subject
 
+      {runs, runs_error?} = recent_runs(runner, subject)
+
       socket
       |> assign(:loading?, false)
-      |> assign(:recent_runs, recent_runs(runner, subject))
+      |> assign(:recent_runs, runs)
+      |> assign(:recent_runs_error?, runs_error?)
       |> load_actions(runner, subject, params)
     else
       assign(socket, :loading?, true)
@@ -91,16 +95,21 @@ defmodule EmisarWeb.RunnerDetailLive do
         socket
         |> assign(:actions, actions)
         |> assign(:actions_metadata, meta)
+        |> assign(:actions_error?, false)
         |> assign(:filter_params, params)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
       {:error, _} when map_size(params) > 0 ->
         load_actions(socket, runner, subject, %{})
 
+      # "This runner hasn't reported a catalog yet. Check the runner logs on the
+      # host." would send an operator to debug a healthy host over a control-plane
+      # read failure.
       {:error, _} ->
         socket
         |> assign(:actions, [])
         |> assign(:actions_metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+        |> assign(:actions_error?, true)
         |> assign(:filter_params, params)
     end
   end
@@ -127,8 +136,8 @@ defmodule EmisarWeb.RunnerDetailLive do
   # number nothing renders.
   defp recent_runs(runner, subject) do
     case Runs.list_recent_runs_for_runner(runner.id, subject, page: [limit: 20], count: false) do
-      {:ok, recent_runs, _} -> recent_runs
-      {:error, _} -> []
+      {:ok, recent_runs, _} -> {recent_runs, false}
+      {:error, _} -> {[], true}
     end
   end
 
@@ -619,16 +628,27 @@ defmodule EmisarWeb.RunnerDetailLive do
                 <%!-- Two-state empty: an over-filter stays a quiet one-liner; a
                    genuinely empty catalog gets the onboarding box (floored to the
                    recent-runs placeholder height in the mixed side-by-side view). --%>
-                <%= if LiveTable.has_active_filters?(@filter_params, @action_filters) do %>
-                  <span class="text-zinc-400">No actions match these filters.</span>
-                <% else %>
-                  <.empty_state
-                    icon="hero-cpu-chip"
-                    title="No actions yet."
-                    class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
-                  >
-                    This runner hasn't reported a catalog yet. Check the runner logs on the host.
-                  </.empty_state>
+                <%= cond do %>
+                  <% @actions_error? -> %>
+                    <.empty_state
+                      tone={:danger}
+                      icon="hero-exclamation-triangle"
+                      title="Couldn't load this runner's actions"
+                      class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
+                    >
+                      This is a load error, not an empty catalog — the host is not the thing to
+                      check. Refresh the page to try again.
+                    </.empty_state>
+                  <% LiveTable.has_active_filters?(@filter_params, @action_filters) -> %>
+                    <span class="text-zinc-400">No actions match these filters.</span>
+                  <% true -> %>
+                    <.empty_state
+                      icon="hero-cpu-chip"
+                      title="No actions yet."
+                      class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
+                    >
+                      This runner hasn't reported a catalog yet. Check the runner logs on the host.
+                    </.empty_state>
                 <% end %>
               </:empty>
             </LiveTable.live_table>
@@ -646,26 +666,37 @@ defmodule EmisarWeb.RunnerDetailLive do
               </:actions>
             </.section_header>
 
-            <%= if @recent_runs == [] do %>
-              <%!-- Shared min-height + centered content so this narrow (1/3)
-                   placeholder matches the wide "No actions yet" box beside it —
-                   their descriptions wrap to different line counts, so a bare box
-                   would be two different heights. A fixed floor doesn't couple to
-                   the neighbor the way items-stretch would in the mixed (one
-                   column full) state. --%>
-              <.empty_state
-                icon="hero-bolt"
-                title="No runs yet."
-                class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
-              >
-                Nothing dispatched to this runner yet — runs land here as they happen.
-              </.empty_state>
-            <% else %>
-              <ul class="divide-y divide-zinc-800/70">
-                <li :for={run <- @recent_runs}>
-                  <.run_row run={run} current_account={@current_account} />
-                </li>
-              </ul>
+            <%= cond do %>
+              <% @recent_runs_error? -> %>
+                <.empty_state
+                  tone={:danger}
+                  icon="hero-exclamation-triangle"
+                  title="Couldn't load recent runs"
+                  class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
+                >
+                  This is a load error, not an empty history — runs may well exist. Refresh the
+                  page to try again.
+                </.empty_state>
+              <% @recent_runs == [] -> %>
+                <%!-- Shared min-height + centered content so this narrow (1/3)
+                     placeholder matches the wide "No actions yet" box beside it —
+                     their descriptions wrap to different line counts, so a bare box
+                     would be two different heights. A fixed floor doesn't couple to
+                     the neighbor the way items-stretch would in the mixed (one
+                     column full) state. --%>
+                <.empty_state
+                  icon="hero-bolt"
+                  title="No runs yet."
+                  class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
+                >
+                  Nothing dispatched to this runner yet — runs land here as they happen.
+                </.empty_state>
+              <% true -> %>
+                <ul class="divide-y divide-zinc-800/70">
+                  <li :for={run <- @recent_runs}>
+                    <.run_row run={run} current_account={@current_account} />
+                  </li>
+                </ul>
             <% end %>
           </section>
         </div>
