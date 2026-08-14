@@ -79,13 +79,19 @@ export function setupCopyToClipboardDelegation() {
     btn._copyTimer = setTimeout(() => { btn.innerHTML = original }, 1500)
   }
 
+  // CAPTURE phase, and the event stops here: a copy click must never ALSO
+  // activate the surface beneath it. A bubble-phase listener runs after
+  // LiveView's own document-level link/click delegation, so a Copy button
+  // inside a tooltip bubble inside a runner row navigated to the runner —
+  // preventDefault alone couldn't stop LV from acting on the same click.
   document.addEventListener("click", async (e) => {
     // Closest so clicks on a nested icon/span inside the button still fire.
     const btn = e.target.closest("[data-copy], [data-copy-text]")
     if (!btn) return
     e.preventDefault()
+    e.stopPropagation()
     const text = resolveText(btn)
     if (text == null || text === "") return
     if (await tryWriteToClipboard(text)) flashCopied(btn)
-  })
+  }, true)
 }

@@ -28,15 +28,22 @@ export function wireTooltip(el) {
     requestAnimationFrame(position)
   }
 
+  // The bubble is an overlay: a click inside it acts on the BUBBLE's content,
+  // never on whatever row/link the trigger happens to sit in. Defaults inside
+  // the bubble (a link, the Copy button's own handler) still run.
+  const shield = (e) => e.stopPropagation()
+
   el.addEventListener("keydown", onKey)
   el.addEventListener("mouseenter", rearm)
   el.addEventListener("focusin", rearm)
+  bubble.addEventListener("click", shield)
   window.addEventListener("resize", position)
 
   return () => {
     el.removeEventListener("keydown", onKey)
     el.removeEventListener("mouseenter", rearm)
     el.removeEventListener("focusin", rearm)
+    bubble.removeEventListener("click", shield)
     window.removeEventListener("resize", position)
   }
 }
