@@ -192,8 +192,10 @@ defmodule EmisarWeb.CoreComponents do
   `variant` is STRUCTURE (design-console-ux §2): `:primary` (filled, the default),
   `:secondary` (bordered), `:ghost` (text-only). **A VISIBLE action verb always
   wears a bordered face** — `:ghost` is for menu rows and inline cancel/dismiss
-  affordances only (§7.47); and a control that merely NAVIGATES is a `<.link>` in
-  the house brand-plus-`cta_arrow` grammar, not a button at all. `tone` is the hue atom that
+  affordances only (§7.47). A control that merely NAVIGATES is a `<.link>` in the
+  house brand-plus-`cta_arrow` grammar **when it stands alone**; a navigation verb
+  sharing a row with bordered action buttons takes the `:secondary` face at the
+  peers' size, because a row wears ONE button grammar (§7.47). `tone` is the hue atom that
   carries MEANING at the call site — `:brand` (affirmative/primary action),
   `:neutral`, `:amber` (attention-worthy, e.g. trusting a pack's new
   contents), `:rose` (destructive) — defaulting per variant (primary→brand,

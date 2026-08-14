@@ -418,16 +418,19 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                 </.meta_line>
               </:meta>
               <:actions>
-                <%!-- Navigation, not an action — the house brand link, never button
-                     chrome (§2). --%>
-                <.link
+                <%!-- Navigation, but this row's action group also carries a bordered
+                     Revoke, and a row wears ONE button grammar (§7.47). The face is
+                     the ROW's, not the per-row permission state's — restyling it when
+                     Revoke is absent would move the layout between states (§7.55). --%>
+                <.button
                   navigate={
                     ~p"/app/#{@current_account}/audit?#{[target_kind: "enrollment_key", target_id: key.id]}"
                   }
-                  class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                  variant={:secondary}
+                  size={:sm}
                 >
-                  View activity <.cta_arrow />
-                </.link>
+                  View activity
+                </.button>
                 <%!-- Plain confirm — revoking doesn't disconnect anyone (existing
                      runners keep their tokens) and is undone by issuing a fresh
                      key, so it doesn't earn a type-to-confirm. The button only

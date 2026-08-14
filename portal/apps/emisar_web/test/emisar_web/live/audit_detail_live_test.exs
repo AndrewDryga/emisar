@@ -170,7 +170,9 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     refute primary =~ "Claude Code"
     assert secondary =~ "Claude Code"
     refute secondary =~ "via"
-    assert facts =~ "grid-cols-[5.25rem_minmax(0,1fr)]"
+    # The label track measures this card's own labels — a hardcoded width sized
+    # for the longest fact stranded the two-character ID label far from its UUID.
+    assert facts =~ "grid-cols-[max-content,minmax(0,1fr)]"
     assert facts =~ "gap-y-1"
     assert facts =~ "text-xs"
     assert facts =~ "leading-5"

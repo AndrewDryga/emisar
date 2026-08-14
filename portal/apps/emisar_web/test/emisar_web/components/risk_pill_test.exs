@@ -59,6 +59,32 @@ defmodule EmisarWeb.Components.RiskPillTest do
       assert html =~ ~s(aria-describedby="row-2-risk")
     end
 
+    test "the track form takes the fixed width; the inline default is content-sized" do
+      # The shared width belongs to a COLUMN of peers, not to the pill (§7.41):
+      # baking the track into the component ballooned HIGH on every meta line.
+      assigns = %{}
+
+      track =
+        rendered_to_string(~H"""
+        <DomainComponents.risk_pill id="runner-action-risk" risk="high" variant={:track} />
+        """)
+
+      inline =
+        rendered_to_string(~H"""
+        <DomainComponents.risk_pill id="pending-risk" risk="high" />
+        """)
+
+      assert track =~ "w-[5.25rem]"
+      assert track =~ "text-center"
+      assert track =~ "text-xs"
+
+      refute inline =~ "w-[5.25rem]"
+      refute inline =~ "text-center"
+      # <.chip upcase> metrics — the house size for a tag riding a line of text.
+      assert inline =~ "text-[10px]"
+      assert inline =~ "px-1.5"
+    end
+
     test "a stored risk with no lexicon entry renders the bare pill" do
       # A frozen plan can carry a tier we have no wording for. An empty bubble
       # and a stray tab stop are worse than no tooltip at all.

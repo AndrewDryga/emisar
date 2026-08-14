@@ -246,6 +246,12 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
     assert has_element?(lv, ~s(a[href="/app/#{account.slug}/audit/#{event_id}"]), "Audit record")
 
+    # One button grammar per row (§7.47): Audit record navigates, but it shares
+    # this row with the bordered Revoke, so it wears the same :secondary face
+    # rather than sitting beside it as a bare brand link.
+    assert has_element?(lv, "a.border-zinc-800", "Audit record")
+    refute has_element?(lv, "a.text-brand-400", "Audit record")
+
     html = render_click(lv, "revoke_grant", %{"id" => grant.id})
     assert html =~ "Grant revoked. New calls will require fresh approval."
   end

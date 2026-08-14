@@ -505,7 +505,13 @@ defmodule EmisarWeb.RunnerDetailLive do
                     {action.title}
                   </:meta>
                   <:actions>
-                    <.risk_pill id={"runner-action-#{action.action_id}-risk"} risk={action.risk} />
+                    <%!-- Every advertised action's verdict stacks in this one
+                       right-hand column, so the pills share a fixed track. --%>
+                    <.risk_pill
+                      id={"runner-action-#{action.action_id}-risk"}
+                      risk={action.risk}
+                      variant={:track}
+                    />
                     <%!-- Dispatch only makes sense when the runner is online AND
                        accepts portal dispatch — otherwise the run sits in
                        `pending` until reconnect, or (for a signature-enforcing

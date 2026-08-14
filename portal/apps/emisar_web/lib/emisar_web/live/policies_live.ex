@@ -875,7 +875,9 @@ defmodule EmisarWeb.PoliciesLive do
             :for={tier <- ["critical", "high", "medium", "low"]}
             class="flex items-center justify-between"
           >
-            <dt><.risk_pill id={"policy-breakdown-#{tier}-risk"} risk={tier} /></dt>
+            <dt>
+              <.risk_pill id={"policy-breakdown-#{tier}-risk"} risk={tier} variant={:track} />
+            </dt>
             <dd class="text-xs tabular-nums text-zinc-400">{@breakdown[tier]}</dd>
           </div>
         </dl>
@@ -946,14 +948,19 @@ defmodule EmisarWeb.PoliciesLive do
               </p>
             </div>
             <div class="flex shrink-0 items-center gap-3">
-              <.link
+              <%!-- Navigation, but it shares this header row with the bordered
+                   Remove — one button grammar per row, at the peer's optical
+                   height (§7.47). --%>
+              <.button
                 navigate={
                   ~p"/app/#{@current_account}/audit?#{[target_kind: "policy", target_id: @ruleset.policy.id]}"
                 }
-                class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                variant={:secondary}
+                size={:lg}
+                class="h-10"
               >
-                View activity <.cta_arrow />
-              </.link>
+                View activity
+              </.button>
               <.confirm_button
                 :if={@can_manage}
                 id={"remove-ruleset-#{@ruleset.uid}"}

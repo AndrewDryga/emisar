@@ -595,7 +595,9 @@ defmodule EmisarWeb.PacksLive do
           (matched?(@matched, action.action_id) && "border-brand-500") || "border-transparent"
         ]}
       >
-        <.risk_pill id={"#{@id}-#{action.action_id}-risk"} risk={action.risk} class="flex-none" />
+        <%!-- One pill per row, all in the leading column — a fixed track keeps
+             the action ids beside them on one left edge. --%>
+        <.risk_pill id={"#{@id}-#{action.action_id}-risk"} risk={action.risk} variant={:track} />
         <span class={[
           "font-mono",
           (matched?(@matched, action.action_id) && "text-brand-200") || "text-zinc-300"
@@ -968,10 +970,12 @@ defmodule EmisarWeb.PacksLive do
             <span class="w-12 flex-none font-semibold uppercase tracking-wide text-rose-300">
               + added
             </span>
+            <%!-- Added / changed / removed rows put their verdicts in one
+                 column after the w-12 marker, so every pill takes the track. --%>
             <.risk_pill
               id={"pack-version-#{@version.id}-added-#{a.action_id}-risk"}
               risk={a.risk}
-              class="flex-none"
+              variant={:track}
             />
             <span class="truncate font-mono text-zinc-200">{a.action_id}</span>
           </li>
@@ -986,13 +990,14 @@ defmodule EmisarWeb.PacksLive do
               <.risk_pill
                 id={"pack-version-#{@version.id}-changed-#{c.action_id}-old-risk"}
                 risk={c.old_risk}
-                class="flex-none opacity-60"
+                variant={:track}
+                class="opacity-60"
               />
               <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-500" />
               <.risk_pill
                 id={"pack-version-#{@version.id}-changed-#{c.action_id}-new-risk"}
                 risk={c.new_risk}
-                class="flex-none"
+                variant={:track}
               />
             </span>
             <span class="truncate font-mono text-zinc-200">{c.action_id}</span>
@@ -1010,7 +1015,8 @@ defmodule EmisarWeb.PacksLive do
             <.risk_pill
               id={"pack-version-#{@version.id}-removed-#{r.action_id}-risk"}
               risk={r.risk}
-              class="flex-none opacity-50"
+              variant={:track}
+              class="opacity-50"
             />
             <span class="truncate font-mono line-through">{r.action_id}</span>
           </li>

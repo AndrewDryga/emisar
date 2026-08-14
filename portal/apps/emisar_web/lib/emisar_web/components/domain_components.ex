@@ -1078,16 +1078,26 @@ defmodule EmisarWeb.DomainComponents do
   phone or by keyboard reads what "HIGH" means — a stored risk we have no
   lexicon entry for renders the bare pill rather than an empty bubble.
 
-  The pill owns a fixed track sized to CRITICAL, its longest tier, so stacked
-  peer verdicts align on both edges instead of ragging by label length (§7.41).
+  Two forms, because the shared width is a property of a COLUMN of peers, not
+  of the pill itself (§7.41). `:track` takes a fixed width sized to CRITICAL,
+  its longest tier, so pills stacked in one visual column align on both edges
+  instead of ragging by label length. `:inline` — the default — is content-
+  sized at the house inline-chip metrics, so a pill riding an identity or meta
+  line stays proportionate to the text beside it instead of ballooning.
 
       <.risk_pill id={"approval-risk-\#{request.id}"} risk={risk} />
+      <.risk_pill id={"runner-action-\#{id}-risk"} risk={risk} variant={:track} />
   """
   attr :risk, :any, required: true
 
   attr :id, :string,
     default: nil,
     doc: "unique tooltip id — pass a per-row id where the pill repeats on one page"
+
+  attr :variant, :atom,
+    default: :inline,
+    values: [:inline, :track],
+    doc: "`:track` where pills form a column of peer verdicts that must share one width"
 
   attr :class, :string, default: nil
 
@@ -1097,20 +1107,26 @@ defmodule EmisarWeb.DomainComponents do
 
     ~H"""
     <.tooltip :if={@meaning} id={@id} text={@meaning} class={@class}>
-      <.risk_pill_face risk={@risk} />
+      <.risk_pill_face risk={@risk} variant={@variant} />
     </.tooltip>
-    <.risk_pill_face :if={is_nil(@meaning)} risk={@risk} class={@class} />
+    <.risk_pill_face
+      :if={is_nil(@meaning)}
+      risk={@risk}
+      variant={@variant}
+      class={@class}
+    />
     """
   end
 
   attr :risk, :string, required: true
+  attr :variant, :atom, required: true, values: [:inline, :track]
   attr :class, :string, default: nil
 
   defp risk_pill_face(assigns) do
     ~H"""
     <span class={[
-      "w-[5.25rem] flex-none rounded px-2 py-0.5 text-center text-xs font-semibold uppercase",
-      "tracking-wider ring-1 ring-inset",
+      "rounded font-semibold uppercase tracking-wider ring-1 ring-inset",
+      risk_pill_geometry(@variant),
       risk_classes(@risk),
       @class
     ]}>
@@ -1118,6 +1134,14 @@ defmodule EmisarWeb.DomainComponents do
     </span>
     """
   end
+
+  # The column's width, not the pill's: `:track` is sized to CRITICAL so peers
+  # stacked in one column share both edges; `:inline` matches `<.chip upcase>`,
+  # the house metrics for a tag riding a line of text.
+  defp risk_pill_geometry(:track),
+    do: "w-[5.25rem] flex-none px-2 py-0.5 text-center text-xs"
+
+  defp risk_pill_geometry(:inline), do: "whitespace-nowrap px-1.5 py-0.5 text-[10px]"
 
   # The severity scale spelled out, so a non-expert approver knows what
   # "HIGH" means and that CRITICAL is above it (the lexicon a single word can't carry).

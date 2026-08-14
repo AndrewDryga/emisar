@@ -964,27 +964,19 @@ defmodule EmisarWeb.DashboardLive do
       tone={if @agents.active_today > 0, do: :brand, else: :neutral}
       navigate={~p"/app/#{@current_account}/agents"}
     >
+      <%!-- The bare agent count is just entities; the operational fact is how
+           many acted today, so it leads the metric in the Runners "N / M"
+           grammar and the status line carries the non-redundant recency. --%>
       <:value>
-        {@agents.total}
-        <span class="text-2xl text-zinc-500">
-          {if @agents.total == 1, do: " agent", else: " agents"}
-        </span>
+        {@agents.active_today}<span class="text-2xl text-zinc-500"> / {@agents.total} active today</span>
       </:value>
       <:status>
-        <%= cond do %>
-          <% @agents.active_today > 0 -> %>
-            {@agents.active_today} active today
-          <% @agents.last_call_at -> %>
-            last call{" "}<.local_time value={@agents.last_call_at} mode={:relative} />
-          <% true -> %>
-            No calls yet
+        <%= if @agents.last_call_at do %>
+          last call{" "}<.local_time value={@agents.last_call_at} mode={:relative} />
+        <% else %>
+          No calls yet
         <% end %>
       </:status>
-      <%!-- Its siblings' third line always goes somewhere — Runners' posture line
-           earns the arrow when it needs attention, Team's names its next step. This
-           pillar's activity fact is a dead end on a tile that IS a link, so it gets
-           the same verb+mechanism forward action Team uses. --%>
-      <:action>Manage agent keys</:action>
     </.pillar>
     """
   end
@@ -1122,10 +1114,17 @@ defmodule EmisarWeb.DashboardLive do
       <div class="mt-3 font-display text-4xl font-semibold leading-none tracking-[-0.03em] text-zinc-50 tabular-nums">
         {render_slot(@value)}
       </div>
+      <%!-- The pillar's LAST line sits on one baseline across the whole row —
+           bottom-pinned in an equal-height (grid-stretched) column, so the
+           agents pillar's extra posture line can't push its forward action a
+           row below its siblings'. Here that's the posture line only when no
+           action follows it; `pt-` preserves the resting 10px gap once the
+           auto margin collapses in the tallest pillar. --%>
       <div
         :if={@status != []}
         class={[
-          "mt-2.5 flex items-center gap-1.5 text-[13px]",
+          "flex items-center gap-1.5 text-[13px]",
+          if(@action == [], do: "mt-auto pt-2.5", else: "mt-2.5"),
           pillar_status_class(@status_tone)
         ]}
       >
@@ -1142,7 +1141,7 @@ defmodule EmisarWeb.DashboardLive do
            reads as a form submit, and the whole tile is already the link. --%>
       <div
         :if={@action != []}
-        class="mt-2.5 flex items-center gap-1 text-[13px] font-medium text-brand-400 transition-colors group-hover:text-brand-300"
+        class="mt-auto flex items-center gap-1 pt-2.5 text-[13px] font-medium text-brand-400 transition-colors group-hover:text-brand-300"
       >
         {render_slot(@action)}
         <.cta_arrow />
@@ -1196,7 +1195,9 @@ defmodule EmisarWeb.DashboardLive do
       <div class="mt-3 flex min-h-[2.25rem] items-end font-display text-xl font-semibold leading-snug tracking-[-0.01em] text-zinc-100">
         {@title}
       </div>
-      <div class="mt-2.5 flex items-center gap-1 text-[13px] font-medium text-brand-400 transition-colors group-hover:text-brand-300">
+      <%!-- Bottom-pinned like the live pillar's action line, so a mixed row of
+           CTA and live pillars still lands every forward action on one baseline. --%>
+      <div class="mt-auto flex items-center gap-1 pt-2.5 text-[13px] font-medium text-brand-400 transition-colors group-hover:text-brand-300">
         {@cta}
         <.cta_arrow />
       </div>

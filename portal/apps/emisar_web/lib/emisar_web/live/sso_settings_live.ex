@@ -1526,17 +1526,18 @@ defmodule EmisarWeb.SSOSettingsLive do
                      a routine Edit — a destructive action shouldn't sit one slip
                      away from the safe one. --%>
                 <div class="flex shrink-0 items-center gap-3">
-                  <%!-- Navigation, not an action — the house brand link, never button
-                       chrome (§2). Edit keeps its bordered face: it opens the editing
-                       flow this page owns. --%>
-                  <.link
+                  <%!-- Both verbs navigate and they share one row, so they share one
+                       button grammar (§7.47) rather than splitting into a bare link
+                       beside a bordered Edit. --%>
+                  <.button
                     navigate={
                       ~p"/app/#{@current_account}/audit?#{[target_kind: "identity_provider", target_id: provider.id]}"
                     }
-                    class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                    variant={:secondary}
+                    size={:sm}
                   >
-                    View activity <.cta_arrow />
-                  </.link>
+                    View activity
+                  </.button>
                   <.button
                     navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}/edit"}
                     variant={:secondary}

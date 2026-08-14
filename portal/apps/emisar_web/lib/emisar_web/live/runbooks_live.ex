@@ -231,16 +231,17 @@ defmodule EmisarWeb.RunbooksLive do
                       </.meta_line>
                     </:meta>
                     <:actions>
-                      <%!-- Navigation, not an action — the house brand link, never
-                           button chrome (§2). --%>
-                      <.link
+                      <%!-- Navigation, but it shares this row with the bordered Run
+                           button, and a row wears ONE button grammar (§7.47). --%>
+                      <.button
                         navigate={
                           ~p"/app/#{@current_account}/audit?#{[target_kind: "runbook", target_id: runbook.id]}"
                         }
-                        class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                        variant={:secondary}
+                        size={:sm}
                       >
-                        View activity <.cta_arrow />
-                      </.link>
+                        View activity
+                      </.button>
                       <%!-- Secondary: the page's ONE brand fill is "New runbook" —
                        a green per row turns the fill into wallpaper. Only the
                        live release runs, so a runbook with nothing published

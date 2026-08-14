@@ -422,10 +422,14 @@ defmodule EmisarWeb.AuditDetailLive do
       </div>
       <%!-- One label/value grid owns every secondary fact. Every cell has a
            20px minimum row with a 4px gap; copy buttons can no longer make the
-           ID row taller than the text-only rows below it. --%>
+           ID row taller than the text-only rows below it. The label track is
+           `max-content` — the house label-track grammar (`kv` layout={:grid}) —
+           so it measures THIS card's longest label; a hardcoded width sized for
+           the longest fact stranded the two-character ID label 84px from its
+           UUID in a full-width card. --%>
       <dl
         :if={@id || @runner || @run || @device || @auth_method || @mcp_client_label != ""}
-        class="mt-3 grid grid-cols-[5.25rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs leading-5"
+        class="mt-3 grid grid-cols-[max-content,minmax(0,1fr)] gap-x-3 gap-y-1 text-xs leading-5"
         data-audit-facts
       >
         <dt :if={@id} class={entity_fact_label_class()}>ID</dt>

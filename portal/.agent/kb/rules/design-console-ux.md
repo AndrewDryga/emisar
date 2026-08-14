@@ -458,6 +458,14 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     give them the same fixed, non-shrinking width so both edges align despite different
     label lengths. `whitespace-nowrap` is not a fix by itself: verify alignment plus label
     and page overflow at the narrowest grid breakpoint.
+    **That shared width belongs to the COLUMN, not to the component.** A verdict pill
+    that also rides identity and meta lines carries two structural forms, and the
+    content-sized one is the DEFAULT — a lone pill has no column to align to, so the
+    column is what opts in. `risk_pill` is the worked case: `variant={:track}` is the
+    fixed width sized to CRITICAL (runner detail's advertised actions, the policy rail's
+    tier breakdown, the pack action list and its trust diff); `variant={:inline}` matches
+    `<.chip upcase>` metrics for a pill beside prose. Pinning the track width inside the
+    component instead made `HIGH` balloon at every inline site.
 42. **Informative content wears a neutral tone; amber/rose is reserved for a warning or a
     decision.** A runner identity, a content hash, an ID, a version, or any metadata an
     operator merely reads is neutral `zinc` — never tint it amber/rose as if it were the
@@ -527,6 +535,18 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     `:ghost` face is for menu rows and inline cancel/dismiss affordances only; "buttons need
     to look like buttons." Sweep: `variant={:ghost}` action buttons repeated per row in a
     list, icon-only dropdown triggers, and single-item dropdowns.
+    **A ROW WEARS ONE BUTTON GRAMMAR, and that beats §2's nav-is-a-link letter inside it.**
+    §2 governs a navigation verb that stands ALONE — a section header, a rail, a footer, an
+    action-free row — where it stays the bare brand link with its `cta_arrow`. Put that same
+    verb in an action group beside a bordered button and it takes the `:secondary` face at
+    the peer's size and optical height, arrow dropped (the arrow is the link affordance).
+    `Audit record →` as bare text next to a ringed `Revoke` reads as two unrelated
+    affordances; the founder's words were "there should be link and button next to each
+    other, both should be buttons or move link from this place." The face is the ROW's, not
+    the per-row permission state's — restyling it when a conditional peer button is absent
+    would move the layout between states (§7.55). Sweep: `<:actions>` slots and
+    `flex items-center gap-*` action clusters holding BOTH a bare `text-brand-400` link and
+    a `<.button>`/`<.confirm_button>`.
 48. **`whitespace-pre-wrap` content glues to its tags via a one-line inner span.** Template
     indentation inside a pre-wrap element renders as REAL leading whitespace (a stray blank
     + indent before the value). Never put `whitespace-pre-wrap` on a multiline-formatted
