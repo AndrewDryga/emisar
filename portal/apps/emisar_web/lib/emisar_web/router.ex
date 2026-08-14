@@ -27,23 +27,12 @@ defmodule EmisarWeb.Router do
 
   defp put_noindex(conn, _opts), do: Plug.Conn.assign(conn, :noindex, true)
 
-  # Admin-only gate (separate from role-based perms). Used by /admin/live
-  # so a leaked operator session cannot reach the LiveDashboard.
+  # Admin-only gate (separate from role-based perms). Used by /admin/live so a
+  # leaked operator session cannot reach the LiveDashboard. The plug lives in
+  # `UserAuth` (imported above) beside the `:ensure_admin` on_mount it shares its
+  # decision with, so the request and socket gates cannot drift.
   pipeline :require_admin do
-    plug :ensure_admin
-  end
-
-  defp ensure_admin(conn, _opts) do
-    case conn.assigns[:current_user] do
-      %{is_admin: true} ->
-        conn
-
-      _ ->
-        conn
-        |> Phoenix.Controller.put_flash(:error, "Not authorized.")
-        |> Phoenix.Controller.redirect(to: "/app")
-        |> Plug.Conn.halt()
-    end
+    plug :require_admin_user
   end
 
   pipeline :api do
@@ -274,7 +263,8 @@ defmodule EmisarWeb.Router do
 
     # MFA challenge completion — MfaChallengeLive verifies the TOTP/recovery code,
     # then redirects here with a signed handoff that (with the matching pending
-    # session) establishes the full mfa:true session the LiveView can't set itself.
+    # session) establishes the full second-factor-verified session the LiveView
+    # can't set itself.
     get "/sign_in/mfa/complete", UserSessionController, :mfa_complete
 
     # SSO landing: pick a team (recent-accounts cookie + manual entry) → its branded sign-in page.
@@ -606,10 +596,10 @@ defmodule EmisarWeb.Router do
     end
   end
 
-  # Production admin mount at /admin/live. Guarded by the regular auth
-  # pipeline AND `:is_admin` on the user record (separate from per-
-  # account role). The distinct `live_session_name` keeps it isolated
-  # from the dev-routes mount.
+  # Production admin mount at /admin/live. Guarded by the regular auth pipeline
+  # AND `:is_admin` on the user record (separate from per-account role) AND a
+  # second factor this session verified. The distinct `live_session_name` keeps
+  # it isolated from the dev-routes mount.
   scope "/admin" do
     pipe_through [:browser, :noindex, :require_authenticated_user, :require_admin]
 

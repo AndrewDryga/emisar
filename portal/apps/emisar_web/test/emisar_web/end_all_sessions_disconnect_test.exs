@@ -37,7 +37,7 @@ defmodule EmisarWeb.EndAllSessionsDisconnectTest do
         role: "operator"
       )
 
-    token = Fixtures.Auth.create_session_token!(member, :magic_link, false)
+    token = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
     topic = Auth.live_socket_topic_for_session(token)
     EmisarWeb.Endpoint.subscribe(topic)
 

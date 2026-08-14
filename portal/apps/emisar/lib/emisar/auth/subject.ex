@@ -21,8 +21,12 @@ defmodule Emisar.Auth.Subject do
     * `auth_method` — how this session was authenticated (`:magic_link |
       :sso`), or nil for an API key / runner (the actor IS the credential).
       Stamped onto every audit row.
-    * `mfa` — whether a second factor was verified this session (TOTP, or an
-      MFA-enforcing IdP). `true`/`false` for a user session, nil otherwise.
+    * `mfa` — whether a second factor is verified for this session (TOTP, or an
+      MFA-enforcing IdP). `true`/`false` for a user session, nil otherwise. The
+      boundary passes `Auth.session_mfa_verified?/2`'s answer, not the raw
+      session stamp, so the Subject — the authorization principal — carries the
+      claim already bound to the user's current enrollment. The raw
+      `mfa_verified_at` stays on the session row for forensics.
     * `user_identity_id` — the `%SSO.UserIdentity{}` behind an `:sso`
       session; nil otherwise.
   """

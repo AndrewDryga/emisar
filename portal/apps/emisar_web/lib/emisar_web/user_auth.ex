@@ -13,10 +13,11 @@ defmodule EmisarWeb.UserAuth do
   alias EmisarWeb.{Analytics, MarketingAttribution}
   alias EmisarWeb.RequestContext
 
-  # Session provenance for an unauthenticated request — no method, no SSO
-  # identity. `fetch_user_and_token_by_session_token/1` returns the `%UserToken{}`
-  # on a hit; this is the miss/anonymous default the Subject build reads from.
-  @no_auth %{auth_method: nil, mfa: nil, user_identity_id: nil}
+  # Session provenance for an unauthenticated request — no method, no factor, no
+  # SSO identity. `fetch_user_and_token_by_session_token/1` returns the
+  # `%UserToken{}` on a hit; this is the miss/anonymous default the Subject build
+  # reads from, and `Auth.session_mfa_verified?/2` fails it closed.
+  @no_auth %{auth_method: nil, mfa_verified_at: nil, user_identity_id: nil}
 
   # -- Public surface -------------------------------------------------
 
@@ -171,6 +172,62 @@ defmodule EmisarWeb.UserAuth do
 
   defp maybe_store_return_to(conn), do: conn
 
+  @doc """
+  Used in router: the platform-admin gate on `/admin/live`. `is_admin` is a
+  global flag set out-of-band, so it is never the whole gate — the admin must
+  also hold an enrolled second factor that THIS session proved against the
+  CURRENT enrollment, which keeps a cookie minted before enrollment, one whose
+  proof predates a re-enrollment, and an SSO session from an IdP that doesn't
+  satisfy MFA off the staff surface.
+  """
+  def require_admin_user(conn, _opts) do
+    case admin_access(conn.assigns[:current_user], conn.assigns[:current_auth]) do
+      :ok ->
+        conn
+
+      # A session that never proved a factor can only be elevated by minting a
+      # new one, which a plug does by ending this one — the same forced step-up
+      # `require_sso` takes.
+      {:error, :mfa_unverified} ->
+        conn |> log_out_user_with_flash(admin_denial_message(:mfa_unverified)) |> halt()
+
+      {:error, reason} ->
+        conn
+        |> put_flash(:error, admin_denial_message(reason))
+        |> redirect(to: admin_denial_path(reason))
+        |> halt()
+    end
+  end
+
+  # The admin gate's ONE decision, shared by the `:require_admin` plug and the
+  # `:ensure_admin` on_mount so the request and socket layers cannot drift. The
+  # factor comes from the session row, never a session key, so it records what
+  # this session proved rather than what the user owns — and it goes through
+  # `Auth.session_mfa_verified?/2`, so a proof taken against an enrollment the
+  # operator has since replaced stops counting without anyone being signed out.
+  # Enrollment is judged FIRST: an unenrolled admin can never mint a verified
+  # session, so sending one back through sign-in would never terminate.
+  defp admin_access(%{is_admin: true, mfa_enabled_at: nil}, _auth), do: {:error, :mfa_unenrolled}
+
+  defp admin_access(%{is_admin: true} = user, auth) do
+    if Auth.session_mfa_verified?(user, auth),
+      do: :ok,
+      else: {:error, :mfa_unverified}
+  end
+
+  defp admin_access(_user, _auth), do: {:error, :not_admin}
+
+  defp admin_denial_message(:not_admin), do: "Not authorized."
+
+  defp admin_denial_message(:mfa_unenrolled),
+    do: "Admin access requires two-factor authentication. Set it up to continue."
+
+  defp admin_denial_message(:mfa_unverified),
+    do: "Admin access requires two-factor authentication. Sign in again to continue."
+
+  defp admin_denial_path(:mfa_unenrolled), do: ~p"/app/mfa_setup"
+  defp admin_denial_path(_reason), do: ~p"/app"
+
   @doc "Used in router: prevents already-logged-in users from hitting auth pages."
   def redirect_if_user_is_authenticated(conn, _opts) do
     if conn.assigns[:current_user] do
@@ -249,13 +306,22 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
-  # Session provenance (auth_method / mfa / user_identity_id) for the Subject,
-  # pulled off the `:current_auth` assign the boundary stashed (a `%UserToken{}`
-  # or `@no_auth`). So every audit row the subject produces records how the
-  # operator signed in.
+  # Session provenance for the Subject, pulled off the `:current_auth` assign the
+  # boundary stashed (a `%UserToken{}` or `@no_auth`). So every audit row the
+  # subject produces records how the operator signed in.
+  #
+  # `:mfa` is the BOUND answer, not the session's raw stamp: the Subject is the
+  # authorization principal, and consumers downstream of it (the account MFA
+  # compliance path, the audit row's "was this second-factor-protected") see only
+  # the Subject, so the binding has to happen here or not at all.
   defp auth_opts(assigns) do
     auth = Map.get(assigns, :current_auth, @no_auth)
-    [auth_method: auth.auth_method, mfa: auth.mfa, user_identity_id: auth.user_identity_id]
+
+    [
+      auth_method: auth.auth_method,
+      mfa: Auth.session_mfa_verified?(assigns.current_user, auth),
+      user_identity_id: auth.user_identity_id
+    ]
   end
 
   # If the session asked for an account the user can no longer reach
@@ -380,20 +446,23 @@ defmodule EmisarWeb.UserAuth do
 
   # The LiveDashboard's socket gate. The :require_admin PIPELINE only guards the
   # dead render; a LiveView session stays verifiable for 14 days, so without an
-  # on_mount hook a revoked admin could replay one and reconnect to DB stats and
-  # the process list. Re-reads the user from the session token on every mount.
+  # on_mount hook a revoked admin — or one who has since turned MFA off — could
+  # replay one and reconnect to DB stats and the process list. Re-reads the user
+  # and this session's factor from the session token on every mount. A mount
+  # cannot clear the plug session, so the socket layer only REFUSES; the plug
+  # owns the step-up on the next full navigation.
   def on_mount(:ensure_admin, _params, session, socket) do
     socket = mount_current_user(session, socket)
 
-    case socket.assigns.current_user do
-      %{is_admin: true} ->
+    case admin_access(socket.assigns.current_user, socket.assigns.current_auth) do
+      :ok ->
         {:cont, socket}
 
-      _ ->
+      {:error, reason} ->
         socket =
           socket
-          |> Phoenix.LiveView.put_flash(:error, "Not authorized.")
-          |> Phoenix.LiveView.redirect(to: ~p"/app")
+          |> Phoenix.LiveView.put_flash(:error, admin_denial_message(reason))
+          |> Phoenix.LiveView.redirect(to: admin_denial_path(reason))
 
         {:halt, socket}
     end

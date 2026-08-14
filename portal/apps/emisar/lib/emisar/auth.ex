@@ -71,7 +71,8 @@ defmodule Emisar.Auth do
   active account row lock while recording the sign-in and inserting the
   user-global session credential, so a concurrent account disable either
   revokes this session afterward or prevents it from being minted. `mfa` says
-  whether the IdP satisfies the second factor; `opts` carry the
+  whether the IdP satisfies the second factor — the domain turns that into the
+  session's proof timestamp, so no caller supplies one; `opts` carry the
   `:user_identity_id` the session is bound to. Returns `{:ok, token}` (the raw
   cookie value) or `{:error, :account_disabled | reason}`.
   """
@@ -84,6 +85,7 @@ defmodule Emisar.Auth do
       ) do
     {token, digest} = Crypto.session_token()
     metadata = %{ip_address: context.ip_address, user_agent: context.user_agent}
+    mfa_verified_at = if mfa, do: DateTime.utc_now()
 
     Multi.new()
     |> Multi.run(:account, fn repo, _changes ->
@@ -106,7 +108,7 @@ defmodule Emisar.Auth do
       Users.put_sign_in(Multi.new(), user, "sso", context)
     end)
     |> Multi.insert(:token, fn %{sign_in: signed_in_user} ->
-      UserToken.Changeset.session(signed_in_user, digest, metadata, :sso, mfa, opts)
+      UserToken.Changeset.session(signed_in_user, digest, metadata, :sso, mfa_verified_at, opts)
     end)
     |> Repo.commit_multi()
     |> case do
@@ -119,10 +121,10 @@ defmodule Emisar.Auth do
   Internal — `EmisarWeb.UserAuth` resolves a request's session cookie to its
   user; the session token IS the credential, so there's no Subject yet.
   Returns `{:ok, user, token}` — the `%UserToken{}` rides alongside so the
-  boundary reads its provenance (`auth_method` / `mfa` / `user_identity_id`)
-  off it and stamps the `%Subject{}`. The user is preloaded scoped to live
-  users, so a soft-deleted user's token resolves to `{:error, :not_found}` —
-  as do expired / unknown / non-binary tokens.
+  boundary reads its provenance (`auth_method` / `mfa_verified_at` /
+  `user_identity_id`) off it and stamps the `%Subject{}`. The user is preloaded
+  scoped to live users, so a soft-deleted user's token resolves to
+  `{:error, :not_found}` — as do expired / unknown / non-binary tokens.
   """
   def fetch_user_and_token_by_session_token(token) when is_binary(token) do
     UserToken.Query.by_token_digest(Crypto.hash(token))
@@ -136,6 +138,37 @@ defmodule Emisar.Auth do
       _ -> {:error, :not_found}
     end
   end
+
+  @doc """
+  Internal — does this session still count as second-factor verified? Judges the
+  exact `{user, token}` pair `fetch_user_and_token_by_session_token/1` returns,
+  and it is what the boundary calls to BUILD a `%Subject{}`, so there is no
+  Subject to take.
+
+  `mfa_verified_at` is fixed at mint, so alone it is a claim about a factor that
+  may since have been torn down. Binding it to the user's CURRENT enrollment is
+  what makes a disable → re-enroll stop satisfying a second-factor gate for every
+  session that only ever proved the previous factor — without deleting a session
+  or signing anyone out.
+
+  An `:sso` session is exempt from that comparison on purpose: the IdP proved the
+  factor, so our own TOTP enrollment lifecycle does not govern it. Comparing it
+  against `mfa_enabled_at` would retroactively strip a valid IdP-proofed session
+  the moment the operator also enrolled TOTP here.
+  """
+  def session_mfa_verified?(%Users.User{}, %UserToken{mfa_verified_at: nil}), do: false
+
+  def session_mfa_verified?(%Users.User{}, %UserToken{auth_method: :sso}), do: true
+
+  def session_mfa_verified?(
+        %Users.User{mfa_enabled_at: %DateTime{} = enabled_at},
+        %UserToken{auth_method: :magic_link, mfa_verified_at: verified_at}
+      ),
+      do: DateTime.compare(verified_at, enabled_at) != :lt
+
+  # Fails closed on everything left: an anonymous request's provenance stand-in,
+  # and a magic-link proof with no enrollment behind it to bind against.
+  def session_mfa_verified?(_user, _auth), do: false
 
   @doc """
   Internal — FORCED invalidation of the session row behind a cookie (the
@@ -797,8 +830,8 @@ defmodule Emisar.Auth do
   The user is re-read HERE, never taken from the caller, so an enrollment that
   landed since the link was issued still forces the second factor; the same
   check runs again on the locked row inside the minting transaction. The
-  session's provenance is fixed — `:magic_link` with `mfa: false` — so no caller
-  can claim a factor it didn't verify.
+  session's provenance is fixed — `:magic_link` with no `mfa_verified_at` — so no
+  caller can claim a factor it didn't verify.
 
   Returns `{:ok, user, token, target}` — `user` is the row the minting
   transaction locked and stamped, so the boundary installs the session for the
@@ -826,7 +859,7 @@ defmodule Emisar.Auth do
   written, so it is only good for the enrollment it was minted against: a
   disable, a re-enable, a secret rotation, or any other credential write since
   the challenge fails closed with no token. Provenance is fixed to `:magic_link`
-  with `mfa: true`.
+  with `mfa_verified_at` stamped now.
 
   Same `{:ok, user, token, target}` success shape as
   `complete_magic_link_sign_in/3`; `{:error, :mfa_proof_stale}` when the proof no
@@ -864,8 +897,8 @@ defmodule Emisar.Auth do
 
   # The ONE magic-link session minter. `proof` is `nil` for a factor-one
   # completion and a verified MFA proof for factor two — it fixes BOTH the
-  # re-check on the locked user row AND the `mfa` provenance stamped on the
-  # token, so the two can't disagree and no caller supplies either.
+  # re-check on the locked user row AND the `mfa_verified_at` provenance stamped
+  # on the token, so the two can't disagree and no caller supplies either.
   #
   # Locks the branded account first and the user row second — one ordering for
   # both factors, so concurrent completions can't deadlock — and holds both
@@ -883,6 +916,9 @@ defmodule Emisar.Auth do
        ) do
     {token, digest} = Crypto.session_token()
     metadata = %{ip_address: context.ip_address, user_agent: context.user_agent}
+    # The proof IS factor two, so its presence decides whether this session
+    # records a second factor and its arrival time is when that factor was shown.
+    mfa_verified_at = if proof, do: DateTime.utc_now()
 
     Multi.new()
     |> lock_sign_in_account(account)
@@ -893,13 +929,7 @@ defmodule Emisar.Auth do
       Users.put_sign_in(Multi.new(), loaded_user, "magic_link", context)
     end)
     |> Multi.insert(:token, fn %{sign_in: signed_in_user} ->
-      UserToken.Changeset.session(
-        signed_in_user,
-        digest,
-        metadata,
-        :magic_link,
-        not is_nil(proof)
-      )
+      UserToken.Changeset.session(signed_in_user, digest, metadata, :magic_link, mfa_verified_at)
     end)
     |> Repo.commit_multi()
     |> case do
@@ -1511,10 +1541,22 @@ defmodule Emisar.Auth do
   @doc """
   Disable TOTP for the caller after verifying a current TOTP or recovery code.
   The user is re-fetched before the factor check, and both verification paths
-  validate against the current row under a lock. Returns {:ok, user} on
-  success, {:error, :invalid_code | :replay} when the factor is rejected,
-  {:error, :rate_limited} once the shared per-user MFA attempt window is
-  exhausted, or the underlying update error.
+  validate against the current row under a lock.
+
+  Sessions survive: a session's `mfa_verified_at` is bound to the enrollment it
+  proved (`session_mfa_verified?/2`), so tearing the factor down already strips
+  every live session of its second-factor claim without signing anyone out.
+
+  Their live SOCKETS do not survive, because a mounted socket decided its gates
+  once and holds a `%Subject{}` built from the old enrollment: an already-open
+  `/admin/live` would stay usable until its next mount, and the profile socket
+  that initiated this would keep stamping a stale `mfa` onto later audit rows.
+  Dropping the sockets makes each one reconnect, remount, and re-decide against
+  the rebuilt Subject — the cookie is still valid, so nobody is signed out.
+
+  Returns {:ok, user} on success, {:error, :invalid_code | :replay} when the
+  factor is rejected, {:error, :rate_limited} once the shared per-user MFA
+  attempt window is exhausted, or the underlying update error.
   """
   def disable_mfa(code, %Subject{actor: %Users.User{id: id}} = subject)
       when is_binary(code) do
@@ -1522,9 +1564,23 @@ defmodule Emisar.Auth do
 
     with {:ok, user} <- Users.fetch_user_by_id(id),
          {:ok, _verified} <- verify_current_mfa_factor(user, code, subject.context) do
-      Users.update_user_mfa(id, nil, nil, [],
-        audit: &Audit.user_changesets(&1, "user.mfa_disabled", context: subject.context)
-      )
+      # Captured before the write and broadcast after it, the same order the
+      # sibling revocation paths use, so every "this credential changed, re-decide"
+      # site reads as one shape. The broadcast is a best-effort side effect on the
+      # way out rather than a transaction hook, which keeps this entry point safe
+      # to call from a caller that already holds a transaction.
+      socket_topics = capture_live_socket_topics(user)
+
+      case Users.update_user_mfa(id, nil, nil, [],
+             audit: &Audit.user_changesets(&1, "user.mfa_disabled", context: subject.context)
+           ) do
+        {:ok, disabled_user} ->
+          disconnect_live_socket_topics(socket_topics)
+          {:ok, disabled_user}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
     else
       {:error, :invalid} -> {:error, :invalid_code}
       {:error, :not_found} -> {:error, :invalid_code}

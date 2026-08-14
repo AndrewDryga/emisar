@@ -416,6 +416,35 @@ defmodule Emisar.AccountsTest do
       assert Accounts.ensure_account_compliant(account, %{subject | actor: user}) == :ok
     end
 
+    test "a session replayed across a disable and re-enroll tracks the ENROLLMENT, not its proof",
+         %{account: account, subject: subject} do
+      account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+
+      {enrolled, [recovery_code | _]} =
+        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+
+      # `mfa: true` is the bound claim the boundary stamped when this session's
+      # proof still matched the enrollment behind it.
+      proved_subject = %{subject | actor: enrolled, mfa: true}
+      assert Accounts.ensure_account_compliant(account, proved_subject) == :ok
+
+      {:ok, disabled} = Auth.disable_mfa(recovery_code, proved_subject)
+      disabled_subject = %{proved_subject | actor: disabled, mfa: false}
+
+      assert Accounts.ensure_account_compliant(account, disabled_subject) ==
+               {:error, :mfa_required}
+
+      {re_enrolled, _codes} =
+        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), disabled_subject)
+
+      # This control asks whether the MEMBER holds a factor, never whether this
+      # session proved the current one — so re-enrolling restores compliance even
+      # though the session's own claim is now false. The bound claim is what the
+      # staff-admin gate consumes; this pins where the account control's line is.
+      replayed_subject = %{disabled_subject | actor: re_enrolled, mfa: false}
+      assert Accounts.ensure_account_compliant(account, replayed_subject) == :ok
+    end
+
     test "this account's MFA-satisfying SSO identity clears both controls", %{
       user: user,
       account: account,
@@ -714,8 +743,8 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
       Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: member.id)
-      member_token = Fixtures.Auth.create_session_token!(member, :magic_link, false)
-      outsider_token = Fixtures.Auth.create_session_token!(outsider, :magic_link, false)
+      member_token = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
+      outsider_token = Fixtures.Auth.create_session_token!(outsider, :magic_link, nil)
 
       assert {:ok, _account} =
                Accounts.set_account_disabled_for_support(
@@ -3970,6 +3999,41 @@ defmodule Emisar.AccountsTest do
       assert Enum.any?(events, &(&1.event_type == "user.mfa_reset_by_admin"))
     end
 
+    test "the reset ends every session the member holds" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+      target_user = enroll_member_mfa(Fixtures.Users.create_user())
+
+      target =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: target_user.id,
+          role: "operator"
+        )
+
+      mfa_token =
+        Fixtures.Auth.create_session_token!(target_user, :magic_link, DateTime.utc_now())
+
+      plain_token = Fixtures.Auth.create_session_token!(target_user, :magic_link, nil)
+      owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+
+      assert {:ok, %User{}} = Accounts.reset_member_mfa(target, owner_subject)
+
+      # A reset is the remediation for a compromised factor, so a cookie the
+      # attacker already holds must not outlive it. Stripping its second-factor
+      # claim (what `Auth.session_mfa_verified?/2` does on its own) would leave
+      # that cookie signed in.
+      assert Auth.fetch_user_and_token_by_session_token(mfa_token) == {:error, :not_found}
+      assert Auth.fetch_user_and_token_by_session_token(plain_token) == {:error, :not_found}
+    end
+
     test "a viewer (no manage_team) is refused" do
       account = Fixtures.Accounts.create_account()
 
@@ -4201,7 +4265,7 @@ defmodule Emisar.AccountsTest do
 
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
-      token = Fixtures.Auth.create_session_token!(target, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(target, :magic_link, nil)
       assert {:ok, %User{}, _auth} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
 
       assert :ok = Accounts.end_all_sessions_for(membership, subject)
@@ -4357,7 +4421,7 @@ defmodule Emisar.AccountsTest do
           role: "admin"
         )
 
-      session_token = Fixtures.Auth.create_session_token!(member, :magic_link, false)
+      session_token = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
 
       assert {:ok, %User{}, _token} =
                Emisar.Auth.fetch_user_and_token_by_session_token(session_token)
@@ -5919,7 +5983,7 @@ defmodule Emisar.AccountsTest do
           role: "admin"
         )
 
-      token = Fixtures.Auth.create_session_token!(user, :sso, true)
+      token = Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now())
 
       assert :ok = Accounts.refresh_directory_authorization_sessions(membership)
       assert {:ok, %User{}, _session} = Emisar.Auth.fetch_user_and_token_by_session_token(token)

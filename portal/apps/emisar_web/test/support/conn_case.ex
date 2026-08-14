@@ -31,7 +31,7 @@ defmodule EmisarWeb.ConnCase do
   into the session and returning the conn.
   """
   def log_in_user(conn, user) do
-    token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+    token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
     conn
     |> Phoenix.ConnTest.init_test_session(%{})

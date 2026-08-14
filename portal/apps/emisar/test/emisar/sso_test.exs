@@ -2209,7 +2209,7 @@ defmodule Emisar.SSOTest do
       {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
 
       _token =
-        Fixtures.Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
 
       assert {:ok, _} = SSO.update_provider(provider, %{enabled: false}, subject)
 
@@ -2225,7 +2225,7 @@ defmodule Emisar.SSOTest do
       {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
 
       _token =
-        Fixtures.Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
 
       assert {:ok, _} = SSO.delete_provider(provider, subject)
 
@@ -2915,9 +2915,9 @@ defmodule Emisar.SSOTest do
       )
 
       sso_session =
-        Fixtures.Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
 
-      magic_link_session = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      magic_link_session = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert {:ok, _} =
                SSO.scim_update_user(provider, "okta|multi", %SCIMUserUpdate{active: false})

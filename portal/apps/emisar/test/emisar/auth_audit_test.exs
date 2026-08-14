@@ -41,7 +41,7 @@ defmodule Emisar.AuthAuditTest do
     end
 
     test "complete_session_sign_out audits", %{user: user, account: account} do
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert :ok = Auth.complete_session_sign_out(token)
       assert [event] = events_of(account, "user.signed_out")
@@ -286,8 +286,8 @@ defmodule Emisar.AuthAuditTest do
     setup do
       {user, account, subject} = Fixtures.Subjects.owner_subject()
       # Mint two sessions for the user.
-      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      keep = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       %{user: user, account: account, keep: keep, subject: subject}
     end
 

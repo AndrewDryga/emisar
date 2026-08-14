@@ -2725,7 +2725,8 @@ defmodule Emisar.Accounts do
   `user.mfa_reset_by_admin`.
 
   Clearing a factor is an MFA-bypass surface, so the operation stays
-  gated, hierarchy-checked, and audited.
+  gated, hierarchy-checked, and audited. It also ends every session the member
+  holds — see the transaction below.
   """
   def reset_member_mfa(%Membership{} = membership, %Subject{} = subject) do
     with :ok <-
@@ -2735,6 +2736,16 @@ defmodule Emisar.Accounts do
       # the row lock; the member's old factor stops working the moment
       # this commits. The membership guard runs on a locked re-read in the
       # same transaction so the hierarchy is judged on the CURRENT role.
+      #
+      # The member's sessions die with the factor, in the same transaction. An
+      # admin reaches for this when a factor is compromised, so stripping the
+      # session's second-factor claim is not enough — `session_mfa_verified?/2`
+      # would do that on its own and still leave whoever holds the cookie signed
+      # in. Sessions are user-global while this reset is account-triggered, so
+      # the member is signed out of their other accounts too — accepted, because
+      # the MFA fields being wiped are user-global already. Topics are captured
+      # before the delete (an after-commit lookup finds no rows to derive them
+      # from).
       Multi.new()
       |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
       |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
@@ -2742,7 +2753,16 @@ defmodule Emisar.Accounts do
           audit: &Audit.Events.user_mfa_reset_by_admin(subject, loaded_membership, &1)
         )
       end)
-      |> Repo.commit_multi()
+      |> Multi.run(:socket_topics, fn _repo, %{user: user} ->
+        {:ok, Auth.capture_live_socket_topics(user)}
+      end)
+      |> Multi.run(:tokens, fn _repo, %{user: user} -> Auth.delete_all_session_tokens(user) end)
+      |> Repo.commit_multi(
+        after_commit: fn %{socket_topics: socket_topics} ->
+          Auth.disconnect_live_socket_topics(socket_topics)
+          :ok
+        end
+      )
       |> case do
         {:ok, %{user: user}} -> {:ok, user}
         {:error, reason} -> {:error, reason}

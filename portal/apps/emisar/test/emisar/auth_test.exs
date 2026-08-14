@@ -169,7 +169,8 @@ defmodule Emisar.AuthTest do
 
       assert {:ok, token} = Auth.complete_sso_account_sign_in(user, account.id, true, context)
 
-      assert {:ok, %User{id: id}, %UserToken{auth_method: :sso, mfa: true} = stored} =
+      assert {:ok, %User{id: id},
+              %UserToken{auth_method: :sso, mfa_verified_at: %DateTime{}} = stored} =
                Auth.fetch_user_and_token_by_session_token(token)
 
       assert id == user.id
@@ -217,7 +218,7 @@ defmodule Emisar.AuthTest do
     end
 
     test "resolves a live session to {:ok, user, token}", %{user: user} do
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert {:ok, %User{id: id}, %UserToken{context: "session"}} =
                Auth.fetch_user_and_token_by_session_token(token)
@@ -231,7 +232,7 @@ defmodule Emisar.AuthTest do
     end
 
     test "a session past its validity window no longer resolves", %{user: user} do
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       # 61 days is past the 60-day session window.
       age_tokens(user.id, 61 * 24 * 60)
 
@@ -241,7 +242,7 @@ defmodule Emisar.AuthTest do
     test "a soft-deleted user's token reads as :not_found (preload scoped to live users)", %{
       user: user
     } do
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       {:ok, _} = user |> User.Changeset.delete() |> Repo.update()
 
       assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
@@ -250,7 +251,7 @@ defmodule Emisar.AuthTest do
     test "a session holding a removed auth_method fails closed, never raising on load", %{
       user: user
     } do
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       # A legacy `password` session from before the passwordless rework dropped
       # that enum value. Written at the DB layer to bypass the enum cast —
       # exactly how it lands in a real DB after the enum narrows. Loading it
@@ -261,10 +262,65 @@ defmodule Emisar.AuthTest do
     end
   end
 
+  describe "session_mfa_verified?/2" do
+    # Fixed instants rather than `utc_now`, so the ordering the predicate turns
+    # on is what each test asserts and never an equal-instant coin flip.
+    test "a magic-link proof taken against the current enrollment counts" do
+      user = %User{mfa_enabled_at: ~U[2026-08-01 12:00:00.000000Z]}
+
+      session = %UserToken{
+        auth_method: :magic_link,
+        mfa_verified_at: ~U[2026-08-01 12:00:01.000000Z]
+      }
+
+      assert Auth.session_mfa_verified?(user, session) == true
+    end
+
+    test "a magic-link proof older than the current enrollment does not" do
+      # A disable → re-enroll moves `mfa_enabled_at` forward, and that is exactly
+      # what strips the claim from a session that only proved the old factor.
+      user = %User{mfa_enabled_at: ~U[2026-08-01 12:00:00.000000Z]}
+
+      session = %UserToken{
+        auth_method: :magic_link,
+        mfa_verified_at: ~U[2026-07-31 09:00:00.000000Z]
+      }
+
+      assert Auth.session_mfa_verified?(user, session) == false
+    end
+
+    test "a magic-link proof with no enrollment left behind it does not" do
+      user = %User{mfa_enabled_at: nil}
+
+      session = %UserToken{
+        auth_method: :magic_link,
+        mfa_verified_at: ~U[2026-08-01 12:00:00.000000Z]
+      }
+
+      assert Auth.session_mfa_verified?(user, session) == false
+    end
+
+    test "an SSO proof survives TOTP enrollment churn" do
+      # The IdP proved the factor, so our TOTP lifecycle does not govern it —
+      # enrolling here afterwards must not retroactively invalidate the session.
+      user = %User{mfa_enabled_at: ~U[2026-08-02 12:00:00.000000Z]}
+      session = %UserToken{auth_method: :sso, mfa_verified_at: ~U[2026-08-01 12:00:00.000000Z]}
+
+      assert Auth.session_mfa_verified?(user, session) == true
+    end
+
+    test "a session that never proved a factor is never verified" do
+      user = %User{mfa_enabled_at: ~U[2026-08-01 12:00:00.000000Z]}
+
+      assert Auth.session_mfa_verified?(user, %UserToken{auth_method: :magic_link}) == false
+      assert Auth.session_mfa_verified?(user, %UserToken{auth_method: :sso}) == false
+    end
+  end
+
   describe "delete_session_token/1" do
     test "drops the session row backing the cookie" do
       user = Fixtures.Users.create_user()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert :ok = Auth.delete_session_token(token)
       assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
@@ -276,7 +332,7 @@ defmodule Emisar.AuthTest do
 
     test "writes no user.signed_out — a forced invalidation is not a sign-out" do
       {user, _account, _subject} = Fixtures.Subjects.owner_subject()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert :ok = Auth.delete_session_token(token)
       assert events_of_type("user.signed_out") == []
@@ -286,7 +342,7 @@ defmodule Emisar.AuthTest do
   describe "complete_session_sign_out/2" do
     test "drops the presented session and audits it once, to the token's owner" do
       {user, _account, _subject} = Fixtures.Subjects.owner_subject()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       context = RequestContext.new(%{ip_address: "203.0.113.7", user_agent: "Firefox"})
 
       assert :ok = Auth.complete_session_sign_out(token, context)
@@ -306,7 +362,7 @@ defmodule Emisar.AuthTest do
 
     test "a failed audit rolls the token deletion back" do
       {user, _account, _subject} = Fixtures.Subjects.owner_subject()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       # A non-string request_id fails the audit changeset, so the sign-out's one
       # transaction aborts — the browser must not be told it signed out.
       context = %RequestContext{request_id: %{invalid: true}}
@@ -320,7 +376,7 @@ defmodule Emisar.AuthTest do
 
     test "an expired session is swept without a voluntary sign-out audit" do
       {user, _account, _subject} = Fixtures.Subjects.owner_subject()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       # 61 days is past the 60-day session window.
       age_tokens(user.id, 61 * 24 * 60)
 
@@ -332,7 +388,7 @@ defmodule Emisar.AuthTest do
 
     test "a session holding a removed auth_method is swept without an audit" do
       {user, _account, _subject} = Fixtures.Subjects.owner_subject()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       Ecto.Adapters.SQL.query!(Repo, "UPDATE auth_user_tokens SET auth_method = 'password'", [])
 
       assert :ok = Auth.complete_session_sign_out(token)
@@ -343,8 +399,8 @@ defmodule Emisar.AuthTest do
 
     test "only the presented session ends — the user's other devices stay signed in" do
       {user, _account, _subject} = Fixtures.Subjects.owner_subject()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      other_token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      other_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert :ok = Auth.complete_session_sign_out(token)
 
@@ -356,8 +412,8 @@ defmodule Emisar.AuthTest do
   describe "delete_all_session_tokens/1" do
     test "removes every session token for the user and returns the count" do
       user = Fixtures.Users.create_user()
-      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert {:ok, 2} = Auth.delete_all_session_tokens(user)
 
@@ -370,8 +426,8 @@ defmodule Emisar.AuthTest do
     test "only touches the given user's sessions" do
       user = Fixtures.Users.create_user()
       other = Fixtures.Users.create_user()
-      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      keep = Fixtures.Auth.create_session_token!(other, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      keep = Fixtures.Auth.create_session_token!(other, :magic_link, nil)
 
       assert {:ok, 1} = Auth.delete_all_session_tokens(user)
       # The other user's session is untouched.
@@ -393,9 +449,9 @@ defmodule Emisar.AuthTest do
         )
 
       sso =
-        Fixtures.Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
 
-      magic_link = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      magic_link = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert :ok = Auth.revoke_identity_sessions(user, [identity.id])
 
@@ -405,7 +461,7 @@ defmodule Emisar.AuthTest do
 
     test "an empty identity list revokes nothing" do
       user = Fixtures.Users.create_user()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert :ok = Auth.revoke_identity_sessions(user, [])
       assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(token)
@@ -415,8 +471,8 @@ defmodule Emisar.AuthTest do
   describe "capture_live_socket_topics/1" do
     test "captures a topic per live session, and still resolves them after the rows are gone" do
       user = Fixtures.Users.create_user()
-      token_one = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      token_two = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token_one = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      token_two = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       captured = Auth.capture_live_socket_topics(user)
 
@@ -439,7 +495,7 @@ defmodule Emisar.AuthTest do
     # `EmisarWeb.EndAllSessionsDisconnectTest`.
     test "is a best-effort :ok that deletes no token rows" do
       user = Fixtures.Users.create_user()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       captured = Auth.capture_live_socket_topics(user)
 
       assert :ok = Auth.disconnect_live_socket_topics(captured)
@@ -459,9 +515,9 @@ defmodule Emisar.AuthTest do
       user: user,
       subject: subject
     } do
-      keep = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      _other1 = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      _other2 = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      _other1 = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      _other2 = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert Auth.revoke_and_disconnect_other_sessions!(keep, subject) == 2
 
@@ -472,7 +528,7 @@ defmodule Emisar.AuthTest do
     end
 
     test "with only the current session, revokes nothing", %{user: user, subject: subject} do
-      keep = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert Auth.revoke_and_disconnect_other_sessions!(keep, subject) == 0
       assert {:ok, %User{}, _} = Auth.fetch_user_and_token_by_session_token(keep)
@@ -486,7 +542,7 @@ defmodule Emisar.AuthTest do
     # observable contract here is the `:ok` and that the DB is untouched.
     test "is a best-effort :ok that deletes no token rows" do
       user = Fixtures.Users.create_user()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert :ok = Auth.broadcast_disconnect_for_user(user)
       assert :ok = Auth.broadcast_disconnect_for_user(user, except: Crypto.hash(token))
@@ -526,9 +582,9 @@ defmodule Emisar.AuthTest do
     end
 
     test "returns the caller's session rows, newest-first", %{user: user, subject: subject} do
-      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject)
       assert length(sessions) == 3
@@ -539,9 +595,9 @@ defmodule Emisar.AuthTest do
       user: user,
       subject: subject
     } do
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       request_magic_link(user)
-      Fixtures.Auth.create_session_token!(Fixtures.Users.create_user(), :magic_link, false)
+      Fixtures.Auth.create_session_token!(Fixtures.Users.create_user(), :magic_link, nil)
 
       assert {:ok, [session], _meta} = Auth.list_sessions_for_user(token, subject)
       assert session.current?
@@ -555,8 +611,8 @@ defmodule Emisar.AuthTest do
     end
 
     test "removes one of the caller's own sessions by id", %{user: user, subject: subject} do
-      _t1 = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      _t2 = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _t1 = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      _t2 = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       {:ok, [session | _], _} = Auth.list_sessions_for_user(nil, subject)
 
       assert :ok = Auth.revoke_session(session.id, subject)
@@ -566,7 +622,7 @@ defmodule Emisar.AuthTest do
 
     test "can't kill another user's session — scoped to the caller", %{subject: subject} do
       {other, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
-      _ = Fixtures.Auth.create_session_token!(other, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(other, :magic_link, nil)
       {:ok, [other_session], _} = Auth.list_sessions_for_user(nil, other_subject)
 
       assert {:error, :not_found} = Auth.revoke_session(other_session.id, subject)
@@ -586,9 +642,9 @@ defmodule Emisar.AuthTest do
     end
 
     test "keeps the named session, revokes the rest", %{user: user, subject: subject} do
-      keep = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert Auth.revoke_other_sessions!(user, keep) == 2
       assert {:ok, [survivor], _} = Auth.list_sessions_for_user(keep, subject)
@@ -596,8 +652,8 @@ defmodule Emisar.AuthTest do
     end
 
     test "with nil, kills every session including the caller's", %{user: user, subject: subject} do
-      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
-      _ = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert Auth.revoke_other_sessions!(user, nil) == 2
       assert {:ok, [], _} = Auth.list_sessions_for_user(nil, subject)
@@ -837,7 +893,7 @@ defmodule Emisar.AuthTest do
 
       assert signed_in.id == user.id
 
-      assert {:ok, %User{id: id}, %UserToken{auth_method: :magic_link, mfa: false}} =
+      assert {:ok, %User{id: id}, %UserToken{auth_method: :magic_link, mfa_verified_at: nil}} =
                Auth.fetch_user_and_token_by_session_token(token)
 
       assert id == user.id
@@ -862,7 +918,7 @@ defmodule Emisar.AuthTest do
 
       assert landed.id == account.id
 
-      assert {:ok, _user, %UserToken{auth_method: :magic_link, mfa: false}} =
+      assert {:ok, _user, %UserToken{auth_method: :magic_link, mfa_verified_at: nil}} =
                Auth.fetch_user_and_token_by_session_token(token)
     end
 
@@ -931,7 +987,7 @@ defmodule Emisar.AuthTest do
       %{account: account, codes: codes, secret: secret, subject: subject, user: user}
     end
 
-    test "a verified TOTP proof mints a magic_link session stamped mfa: true", %{
+    test "a verified TOTP proof mints a magic_link session stamping the proof time", %{
       secret: secret,
       user: user
     } do
@@ -943,7 +999,8 @@ defmodule Emisar.AuthTest do
 
       assert signed_in.id == user.id
 
-      assert {:ok, %User{id: id}, %UserToken{auth_method: :magic_link, mfa: true}} =
+      assert {:ok, %User{id: id},
+              %UserToken{auth_method: :magic_link, mfa_verified_at: %DateTime{}}} =
                Auth.fetch_user_and_token_by_session_token(token)
 
       assert id == user.id
@@ -958,7 +1015,7 @@ defmodule Emisar.AuthTest do
       assert {:ok, _user, token, :no_target} =
                Auth.complete_magic_link_mfa_sign_in(proof, nil, %RequestContext{})
 
-      assert {:ok, _user, %UserToken{auth_method: :magic_link, mfa: true}} =
+      assert {:ok, _user, %UserToken{auth_method: :magic_link, mfa_verified_at: %DateTime{}}} =
                Auth.fetch_user_and_token_by_session_token(token)
     end
 
@@ -1757,6 +1814,21 @@ defmodule Emisar.AuthTest do
 
       assert {:ok, %User{mfa_secret: nil, mfa_enabled_at: nil, mfa_recovery_codes: []}} =
                Auth.disable_mfa(code, subject)
+    end
+
+    test "leaves the caller's sessions signed in", %{secret: secret, subject: subject} do
+      {user, [code | _]} = Fixtures.Users.enable_mfa!(secret, subject)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, DateTime.utc_now())
+
+      assert {:ok, %User{mfa_enabled_at: nil}} = Auth.disable_mfa(code, subject)
+
+      # Turning your own factor off is not a compromise signal, so it does not
+      # sign you out. The claim it stripped is `session_mfa_verified?/2`'s, which
+      # binds the session's proof to the enrollment it was taken against. The
+      # sockets ARE dropped so each re-decides — proven end-to-end in
+      # `EmisarWeb.MfaDisableDisconnectTest`, since the disconnect handler lives
+      # in `emisar_web` and is a no-op in this `:emisar`-only test process.
+      assert {:ok, %User{}, _session} = Auth.fetch_user_and_token_by_session_token(token)
     end
 
     test "rejects a wrong code and leaves MFA enabled", %{secret: secret, subject: subject} do

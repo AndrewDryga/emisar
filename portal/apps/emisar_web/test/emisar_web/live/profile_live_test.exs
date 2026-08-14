@@ -428,7 +428,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # A second device with recognizable metadata so its row renders distinctly
       # from the current session.
       _other =
-        Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
+        Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
           "ip_address" => "198.51.100.4",
           "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
         })
@@ -455,7 +455,7 @@ defmodule EmisarWeb.ProfileLiveTest do
     } do
       # 15 more devices on top of the current session — 16 total, one past a page.
       for n <- 1..15 do
-        Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
+        Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
           "ip_address" => "203.0.113.#{n}",
           "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
         })
@@ -481,12 +481,12 @@ defmodule EmisarWeb.ProfileLiveTest do
     } do
       user_agent = "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
 
-      Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
+      Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
         "ip_address" => "203.0.113.10",
         "user_agent" => user_agent
       })
 
-      Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
+      Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
         "ip_address" => "203.0.113.11",
         "user_agent" => user_agent
       })
@@ -522,7 +522,7 @@ defmodule EmisarWeb.ProfileLiveTest do
     } do
       # A second device — the row we'll revoke. It's the one the caller's own
       # session token does NOT mark as current.
-      Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
+      Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
         "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
       })
 
@@ -551,7 +551,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # Two devices: one current, one other. The other carries a sign-out control;
       # the current device must not (you can't sign yourself out from here —
       # that's "sign out everywhere else").
-      Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
+      Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
         "user_agent" => "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
       })
 
@@ -585,7 +585,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # the cap with the SAME opts the LV uses (seeding 101 and reading back).
 
       # 100 more sessions (register_and_log_in already created one) → 101 total.
-      for _ <- 1..100, do: Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      for _ <- 1..100, do: Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       subject = Fixtures.Subjects.subject_for(user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
@@ -608,7 +608,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # session rows, even though a real session exists. A second device is seeded
       # so "no rows on the dead render" is meaningful.
       _other =
-        Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
+        Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
           "ip_address" => "203.0.113.9",
           "user_agent" => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15) Safari/17.0"
         })
@@ -641,7 +641,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # digest may ever reach the rendered rows — only id + inserted_at + the
       # ip/user-agent metadata.
       raw_token =
-        Fixtures.Auth.create_session_token!(user, :magic_link, false, %{
+        Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
           "ip_address" => "203.0.113.7",
           "user_agent" => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15) Firefox/126.0"
         })
@@ -1007,7 +1007,12 @@ defmodule EmisarWeb.ProfileLiveTest do
       html =
         render_submit(lv, "disable_mfa", %{"mfa_disable" => %{"code" => recovery_code}})
 
-      assert html =~ "2FA disabled."
+      # The disable drops this socket too, so it reconnects and the "2FA
+      # disabled." flash may not survive the remount. What the operator is
+      # actually owed is the durable outcome: the factor is gone and the card
+      # offers setup again.
+      assert html =~ "Set up 2FA"
+      refute html =~ "Disable 2FA"
       refute Emisar.Repo.reload!(user).mfa_enabled_at
     end
 

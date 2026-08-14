@@ -19,10 +19,13 @@ defmodule Emisar.Auth.UserToken do
     field :remaining_attempts, :integer
     # How the session was authenticated — carried onto %Auth.Subject{} and
     # stamped on every audit row (provenance). `auth_method` is the method;
-    # `mfa` records whether a second factor was verified this session (kept
-    # separate so "SSO + enforced TOTP" is expressible). `user_identity` is :sso.
+    # `mfa_verified_at` records WHEN this session proved a second factor, nil for
+    # never (kept separate so "SSO + enforced TOTP" is expressible). Set only at
+    # mint and never updated, on purpose: it is evidence about one sign-in, so
+    # `Auth.session_mfa_verified?/2` binds it to the enrollment it proved rather
+    # than the row moving under it. `user_identity` is :sso.
     field :auth_method, Ecto.Enum, values: [:magic_link, :sso]
-    field :mfa, :boolean, default: false
+    field :mfa_verified_at, :utc_datetime_usec
 
     belongs_to :user, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :user_identity, Emisar.SSO.UserIdentity, where: [deleted_at: nil]

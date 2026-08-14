@@ -8,19 +8,20 @@ defmodule Emisar.Auth.UserToken.Changeset do
   @doc """
   Session-cookie token row. Persists the digest (never the raw bearer) plus
   optional request metadata for the Profile sessions list. `auth_method` (how
-  the session was authenticated) and `mfa` (whether a second factor was
-  verified) are always-present provenance, so they're positional; `opts` carry
-  the SSO-only `:user_identity_id`.
+  the session was authenticated) and `mfa_verified_at` (when a second factor was
+  verified, or nil) are always-present provenance, so they're positional; `opts`
+  carry the SSO-only `:user_identity_id`.
   """
-  def session(%Users.User{} = user, digest, metadata, auth_method, mfa, opts \\ [])
-      when is_binary(digest) and is_boolean(mfa) do
+  def session(%Users.User{} = user, digest, metadata, auth_method, mfa_verified_at, opts \\ [])
+      when is_binary(digest) and
+             (is_nil(mfa_verified_at) or is_struct(mfa_verified_at, DateTime)) do
     change(%UserToken{},
       token: digest,
       context: "session",
       user_id: user.id,
       metadata: normalize_metadata(metadata),
       auth_method: auth_method,
-      mfa: mfa,
+      mfa_verified_at: mfa_verified_at,
       user_identity_id: Keyword.get(opts, :user_identity_id)
     )
   end

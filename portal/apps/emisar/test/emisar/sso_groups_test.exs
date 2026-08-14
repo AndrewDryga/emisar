@@ -465,7 +465,7 @@ defmodule Emisar.SSOGroupsTest do
       {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
 
       mine =
-        Fixtures.Auth.create_session_token!(user, :sso, false, %{}, user_identity_id: identity.id)
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
 
       other_account = Fixtures.Accounts.create_account()
       other_provider = Fixtures.SSO.create_identity_provider(account_id: other_account.id)
@@ -478,7 +478,7 @@ defmodule Emisar.SSOGroupsTest do
         )
 
       theirs =
-        Fixtures.Auth.create_session_token!(user, :sso, false, %{},
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{},
           user_identity_id: other_identity.id
         )
 
@@ -491,7 +491,7 @@ defmodule Emisar.SSOGroupsTest do
     test "a user with no identity in the account is a no-op" do
       %{account: account} = scim_provider()
       user = Fixtures.Users.create_user()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert :ok = SSO.end_account_sessions_for_user(user.id, account.id)
       assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(token)

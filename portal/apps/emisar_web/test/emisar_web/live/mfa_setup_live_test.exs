@@ -340,15 +340,16 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   end
 
   describe "magic-link sign-in funnels into enforced MFA setup" do
-    test "a magic-link session (mfa: false) on a require_mfa account is funnelled to setup", %{
-      user: user,
-      account: account
-    } do
-      # a magic-link sign-in records `mfa: false` (the link
+    test "a magic-link session with no second factor on a require_mfa account is funnelled to setup",
+         %{
+           user: user,
+           account: account
+         } do
+      # a magic-link sign-in records no `mfa_verified_at` (the link
       # proves email control, not a second factor). So on a require_mfa account the
       # member is still un-enrolled, and the first /app mount's :ensure_account_compliant
       # gate funnels them into TOTP setup — the magic link is not an MFA bypass.
-      magic_token = Fixtures.Auth.create_session_token!(user, :magic_link, false)
+      magic_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       conn =
         Phoenix.ConnTest.build_conn()

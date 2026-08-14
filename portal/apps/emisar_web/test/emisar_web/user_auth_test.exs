@@ -5,7 +5,7 @@ defmodule EmisarWeb.UserAuthTest do
 
   # Session provenance for an unauthenticated request — the miss/anonymous
   # default the Subject build reads from. Mirrors `UserAuth`'s private @no_auth.
-  @no_auth %{auth_method: nil, mfa: nil, user_identity_id: nil}
+  @no_auth %{auth_method: nil, mfa_verified_at: nil, user_identity_id: nil}
 
   setup %{conn: conn} do
     # secret_key_base is needed to sign the remember-me cookie; a bare test

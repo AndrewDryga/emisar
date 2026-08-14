@@ -34,7 +34,9 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
   # A real signed-in session whose token records SSO provenance for `identity`.
   defp sso_session(user, identity) do
     token =
-      Fixtures.Auth.create_session_token!(user, :sso, true, %{}, user_identity_id: identity.id)
+      Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now(), %{},
+        user_identity_id: identity.id
+      )
 
     build_conn() |> init_test_session(%{}) |> put_session(:user_token, token)
   end

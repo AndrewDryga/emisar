@@ -428,7 +428,7 @@ defmodule EmisarWeb.UserSessionController do
 
   # `log_in` installs the session token `Auth` already minted — the two captures
   # (`log_in_magic_link_user/4`, `log_in_magic_link_mfa_user/4`) are what fix the
-  # `mfa` provenance, so nothing here decides it.
+  # second-factor provenance, so nothing here decides it.
   defp install_magic_link_session(conn, {:member, account}, user, token, registered?, log_in) do
     # Cookie write is a resp_cookie — separate from the session, so the session
     # renewal inside `log_in` keeps it (same as the SSO callback).

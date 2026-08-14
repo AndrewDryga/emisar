@@ -538,8 +538,9 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert token = get_session(conn, :user_token)
       assert {:ok, signed_in, session_token} = Auth.fetch_user_and_token_by_session_token(token)
       assert signed_in.id == user.id
-      # The second factor is stamped onto the token so it reaches every audit row.
-      assert session_token.mfa == true
+      # The proof time is stamped onto the token, so the factor claim reaches every
+      # audit row bound to the enrollment it was taken against.
+      assert %DateTime{} = session_token.mfa_verified_at
       refute get_session(conn, :mfa_pending_user_id)
     end
 
