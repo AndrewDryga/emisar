@@ -946,6 +946,7 @@ defmodule EmisarWeb.AgentsLive do
       <.event_block
         :if={@live_action == :index and @rotated}
         icon="hero-key"
+        tone={:amber}
         title="Key rotated — copy the new key now; it won't be shown again"
       >
         <:body>
@@ -1496,13 +1497,15 @@ defmodule EmisarWeb.AgentsLive do
               <%= if @quick_secret do %>
                 <section id="custom-key-save-step" class="space-y-6">
                   <.step_header step={1} title="Save your key" />
-                  <%!-- NEUTRAL, not amber — the copy-now caution is a permanent
-                       property of a fresh mint, not an exceptional state (the
-                       install-wizard grammar); amber stays reserved for a state
-                       that needs the operator's attention. --%>
+                  <%!-- AMBER: a single-secret reveal wears the pending tone
+                       (design-system §8.1) — the key is in the operator's hands
+                       and unrecoverable once they leave, which is exactly the
+                       "act before you move on" state amber names. Matches the
+                       install wizard and the rotation reveal; one event, one
+                       color, everywhere. --%>
                   <.event_block
                     icon="hero-key"
-                    tone={:neutral}
+                    tone={:amber}
                     title="New key minted — it's live now"
                   >
                     <:body>

@@ -863,11 +863,14 @@ defmodule EmisarWeb.AuditLive do
   defp kindless_label("runbook"), do: "Runbook"
 
   @doc """
-  Outcome → house tone for the audit event's `<.status_dot>` — failures `:rose`,
-  denials/removals `:amber`, pass verdicts `:brand`, routine events `:neutral`.
-  Keyed off `Audit.event_outcome/1` so the dot + the "Severity" filter never
-  disagree. Public because the detail page's title dot must match the list
-  (same sharing mechanism as `ref/1`).
+  Outcome → house tone for the audit event's `<.status_dot>` — failures AND
+  denials `:rose`, removals/limits `:amber`, pass verdicts `:brand`, routine
+  events `:neutral`. Denials are rose here exactly as they are in the approvals
+  queue: the tone table (design-console-ux §2) reads rose as "denied", and one
+  refusal must not wear two colors on two surfaces. Keyed off
+  `Audit.event_outcome/1` so the dot + the "Severity" filter never disagree.
+  Public because the detail page's title dot must match the list (same sharing
+  mechanism as `ref/1`).
   """
   def outcome_tone(event_type) do
     case Audit.event_outcome(event_type) do
@@ -879,7 +882,7 @@ defmodule EmisarWeb.AuditLive do
   end
 
   # Tint the event title by outcome so the rows an operator hunts for — a failure
-  # (rose), a denial/removal/expiry (amber) — pop out of a wall of routine sign-ins
+  # or denial (rose), a removal/expiry/limit (amber) — pop out of a wall of routine sign-ins
   # (which stay neutral zinc). The title carries the color, not just the 2px dot,
   # so the signal reads at a glance without making every row loud.
   # Pass verdicts keep the neutral title ON PURPOSE: the brand dot already says

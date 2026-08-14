@@ -991,6 +991,34 @@ defmodule EmisarWeb.AuditLiveTest do
     end
   end
 
+  describe "outcome_tone/1" do
+    test "a denial is rose — the same tone the approvals queue gives it" do
+      for event_type <- ~w[approval.denied action_run.denied action_run.refused
+                           pack_trust_rejected runner.version_rejected] do
+        assert EmisarWeb.AuditLive.outcome_tone(event_type) == :rose,
+               "expected #{event_type} to be :rose"
+      end
+
+      # The alignment this pins: one refusal cannot wear two colors on two
+      # surfaces, so audit reads a denial exactly as the status chip does.
+      assert EmisarWeb.CoreComponents.status_tone("denied") == :deny
+    end
+
+    test "a removal or throttle stays amber — taken away is not the gate saying no" do
+      for event_type <- ~w[enrollment_key.revoked user.session_revoked runner.disabled
+                           membership.suspended approval.expired user.mfa_rate_limited] do
+        assert EmisarWeb.AuditLive.outcome_tone(event_type) == :amber,
+               "expected #{event_type} to be :amber"
+      end
+    end
+
+    test "failures are rose, pass verdicts brand, routine activity neutral" do
+      assert EmisarWeb.AuditLive.outcome_tone("action_run.failed") == :rose
+      assert EmisarWeb.AuditLive.outcome_tone("approval.approved") == :brand
+      assert EmisarWeb.AuditLive.outcome_tone("runner.connected") == :neutral
+    end
+  end
+
   describe "keyset pagination is account-scoped across pages" do
     # walking page → next as account B never pages in any of
     # account A's events: every page is scoped by for_subject/2. Seed enough A

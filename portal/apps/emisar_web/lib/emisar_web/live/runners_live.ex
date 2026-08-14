@@ -428,7 +428,13 @@ defmodule EmisarWeb.RunnersLive do
              everywhere). --%>
               <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs">
                 <span class="flex items-center gap-1.5">
-                  <.status_dot tone={:brand} size={:sm} />
+                  <%!-- Zero connected is not a healthy state: green is a real
+                       pass/healthy fact (design-system §3.1), so the dot only
+                       goes brand once a host is actually reachable. --%>
+                  <.status_dot
+                    tone={if @fleet.counts.online > 0, do: :brand, else: :neutral}
+                    size={:sm}
+                  />
                   <span class="tabular-nums text-zinc-400">{@fleet.counts.online} connected</span>
                 </span>
                 <span :if={@fleet.counts.offline > 0} class="flex items-center gap-1.5">

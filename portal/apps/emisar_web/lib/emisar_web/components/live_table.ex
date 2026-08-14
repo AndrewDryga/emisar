@@ -711,7 +711,7 @@ defmodule EmisarWeb.LiveTable do
   @doc """
   The active (non-default) filters as human "Title: Label" strings — a
   `:collapsible` page's CLOSED toggle narrates what's narrowing the list
-  ("Type: Runner — all events · Severity: Failures & errors") instead of a
+  ("Type: Runner — all events · Severity: Failures & denials") instead of a
   bare count. List values resolve through the filter's option labels
   (grouped or flat); datetimes prettify the `T`; a boolean reads as its title.
   """

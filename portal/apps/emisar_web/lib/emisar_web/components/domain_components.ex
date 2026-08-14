@@ -654,8 +654,9 @@ defmodule EmisarWeb.DomainComponents do
          section chrome (vertical rules belong to the shell). ONE type
          ladder — section_header 16 / body 14 / meta 12; never an uppercase
          eyebrow as a section title. The command is the only contained
-         artifact; amber is reserved for the ONE overdue state — the
-         credential note and the normal wait stay neutral/brand. --%>
+         artifact; the credential note and the wait line are both AMBER
+         (design-system §5/§8.1 — pending and secret-in-hand, not an alarm),
+         and the overdue escalation earns its spine rather than its hue. --%>
     <div>
       <p class="text-sm leading-relaxed text-zinc-400">
         Two minutes — pick a Linux or macOS host, paste the one-liner.
@@ -681,37 +682,37 @@ defmodule EmisarWeb.DomainComponents do
                     The leading space keeps the key out of your shell history.
                   </p>
                   <%!-- The one-liner embeds a single-use enrollment key shown
-                       only here. Keeping it out of chat/tickets is an operator
-                       action — but the note is a permanent property of the
-                       command, not an exceptional state, so the spine stays
-                       NEUTRAL: amber on this page belongs to the overdue
-                       escalation alone. --%>
-                  <.event_block
+                       only here — a single-secret reveal, so it wears §8.1's
+                       naked grammar verbatim: an amber `status_note` at
+                       `primary` beside the command's own code panel, never a
+                       spine or a box. --%>
+                  <.status_note
                     icon="hero-key"
-                    tone={:neutral}
+                    tone={:amber}
                     title="Live credential — won't be shown again"
+                    primary
                     class="mt-5"
                   >
-                    <:body>
-                      The command runs with <code class="font-mono text-zinc-300">sudo</code>
-                      and carries a <span class="font-medium text-zinc-200">one-time</span>
-                      key: it enrolls exactly one host, then expires. Treat it like a password —
-                      paste it straight onto the host, never into a chat or ticket.
-                    </:body>
-                  </.event_block>
+                    The command runs with <code class="font-mono text-zinc-300">sudo</code>
+                    and carries a <span class="font-medium text-zinc-200">one-time</span>
+                    key: it enrolls exactly one host, then expires. Treat it like a password —
+                    paste it straight onto the host, never into a chat or ticket.
+                  </.status_note>
                 </section>
 
                 <%!-- The page's live status — the naked dot-led wait line
                      (the wait-room grammar sso_pending copies), directly
                      under the act it follows so the operator's eye never has
                      to jump static content to find the page's one live
-                     element. Waiting is this page's NORMAL state: a quiet
-                     brand ping (channel open, listening), never an alert. --%>
+                     element. Waiting is this page's NORMAL state, and a
+                     pending placeholder is AMBER (design-system §5) — nothing
+                     is healthy yet, but nothing is wrong either; the ping is
+                     what says the channel is open. --%>
                 <div>
                   <div class="flex items-start gap-3">
                     <%!-- mt-[6px]: optically centers the 10px dot on the first
                          text line (text-sm/relaxed ≈ 23px line box). --%>
-                    <.status_dot tone={:brand} ping size={:lg} class="mt-[6px]" />
+                    <.status_dot tone={:amber} ping size={:lg} class="mt-[6px]" />
                     <p class="text-sm leading-relaxed text-zinc-400">
                       <span class="font-medium text-zinc-300">Waiting for a runner to connect</span>
                       — this page advances on its own; you can leave, and the runner will appear in

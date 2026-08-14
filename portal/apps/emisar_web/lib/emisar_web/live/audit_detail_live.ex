@@ -259,6 +259,11 @@ defmodule EmisarWeb.AuditDetailLive do
       |> assign(:changed, overrides["changed"] || [])
 
     ~H"""
+    <%!-- Every decision VALUE here is neutral zinc (§7.42): a policy decision is
+         something the operator reads, not a verdict on the change. Painting
+         old=rose/new=brand lied about direction — a tightening (allow → deny)
+         rendered the safer value red. The `→` and the section headings carry
+         direction; the faint row washes carry add/remove/modify. --%>
     <section :if={@defaults_diff != %{} or @added != [] or @removed != [] or @changed != []}>
       <.section_header title="Changes" />
       <div class="space-y-5">
@@ -273,11 +278,11 @@ defmodule EmisarWeb.AuditDetailLive do
                 class="flex items-center gap-2"
               >
                 <span class="font-mono text-xs text-zinc-300">{tier}:</span>
-                <code class="rounded bg-rose-500/10 px-1.5 py-0.5 text-[11px] text-rose-300">
+                <code class="rounded bg-zinc-800/60 px-1.5 py-0.5 text-[11px] text-zinc-200">
                   {from || "—"}
                 </code>
                 <span class="text-zinc-500">→</span>
-                <code class="rounded bg-brand-500/10 px-1.5 py-0.5 text-[11px] text-brand-300">
+                <code class="rounded bg-zinc-800/60 px-1.5 py-0.5 text-[11px] text-zinc-200">
                   {to || "—"}
                 </code>
               </li>
@@ -294,7 +299,7 @@ defmodule EmisarWeb.AuditDetailLive do
               <li :for={ov <- @added} class="rounded bg-brand-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{ov["action"]}</code>
                 <span class="text-zinc-500">→</span>
-                <code class="font-mono text-brand-300">{ov["decision"]}</code>
+                <code class="font-mono text-zinc-200">{ov["decision"]}</code>
                 <span :if={ov["name"] && ov["name"] != ""} class="ml-2 text-zinc-400">
                   ({ov["name"]})
                 </span>
@@ -312,7 +317,7 @@ defmodule EmisarWeb.AuditDetailLive do
               <li :for={ov <- @removed} class="rounded bg-rose-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{ov["action"]}</code>
                 <span class="text-zinc-500">→</span>
-                <code class="font-mono text-rose-300">{ov["decision"]}</code>
+                <code class="font-mono text-zinc-200">{ov["decision"]}</code>
               </li>
             </ul>
           </div>
@@ -326,11 +331,11 @@ defmodule EmisarWeb.AuditDetailLive do
             <ul class="space-y-1 text-xs">
               <li :for={c <- @changed} class="rounded bg-amber-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{c["action"]}</code>:
-                <code class="rounded bg-rose-500/10 px-1.5 py-0.5 text-rose-300">
+                <code class="rounded bg-zinc-800/60 px-1.5 py-0.5 text-zinc-200">
                   {c["from"]["decision"]}
                 </code>
                 <span class="text-zinc-500">→</span>
-                <code class="rounded bg-brand-500/10 px-1.5 py-0.5 text-brand-300">
+                <code class="rounded bg-zinc-800/60 px-1.5 py-0.5 text-zinc-200">
                   {c["to"]["decision"]}
                 </code>
               </li>
