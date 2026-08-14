@@ -1108,7 +1108,9 @@ defmodule EmisarWeb.RunbookRunLive do
            and only a held/dead outcome earns an attention event block. --%>
       <div>
         <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-14">
-          <.meta_field label="Status">
+          <%!-- wrap: a badge is a composite, not a text run — truncation shears
+           its pill instead of ellipsizing (§7.35). --%>
+          <.meta_field label="Status" wrap>
             <.status_badge status={@result.execution.status} />
           </.meta_field>
           <.meta_field label="Started by">
@@ -1323,7 +1325,7 @@ defmodule EmisarWeb.RunbookRunLive do
                 so it is identity, not addressing. --%>
           <span class="text-zinc-500">·</span>
           <span class="font-mono text-xs text-zinc-500">{@item.step_id}</span>
-          <.risk_pill :if={@item.risk} risk={@item.risk} />
+          <.risk_pill :if={@item.risk} id={"execution-item-#{@item.id}-risk"} risk={@item.risk} />
         </div>
         <%!-- No leading glyph, matching the plan and the editor: a runner name
               says what it is, so an arrow would label nothing. --%>

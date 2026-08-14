@@ -1915,9 +1915,46 @@ defmodule Emisar.AuditTest do
 
       assert refs["enrollment_key"][enrollment_key.id] == "enroll-prod"
       assert refs["action_run"][run.id] == "linux.uptime"
-      # The approval_request resolver labels by id (no friendlier handle exists).
-      assert refs["approval_request"][request.id] == request.id
+      # An approval request is named the way the approvals queue names it —
+      # the held action, not the id every other kind resolves away from.
+      assert refs["approval_request"][request.id] == "linux.uptime"
       assert refs["runbook"][runbook.id] == "deploy-book"
+    end
+
+    test "an approval_request for a runbook execution resolves its runbook title", %{
+      account: account,
+      user: user
+    } do
+      request =
+        Fixtures.Approvals.create_execution_request(account, user, %{
+          runbook_title: "Rotate the edge certificates"
+        })
+
+      {:ok, event} =
+        Audit.log(account.id, "approval.touched",
+          target_kind: "approval_request",
+          target_id: request.id
+        )
+
+      refs = Audit.resolve_references([event])
+
+      assert refs["approval_request"][request.id] == "Rotate the edge certificates"
+    end
+
+    test "an approval_request deleted since the event is simply absent" do
+      account = Fixtures.Accounts.create_account()
+      ghost_id = Ecto.UUID.generate()
+
+      {:ok, event} =
+        Audit.log(account.id, "approval.touched",
+          target_kind: "approval_request",
+          target_id: ghost_id
+        )
+
+      refs = Audit.resolve_references([event])
+
+      # No entry is the trail's cue to print the raw id rather than a blank cell.
+      refute Map.has_key?(refs["approval_request"], ghost_id)
     end
   end
 

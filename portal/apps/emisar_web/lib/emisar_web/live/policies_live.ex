@@ -873,7 +873,7 @@ defmodule EmisarWeb.PoliciesLive do
             :for={tier <- ["critical", "high", "medium", "low"]}
             class="flex items-center justify-between"
           >
-            <dt><.risk_pill risk={tier} /></dt>
+            <dt><.risk_pill id={"policy-breakdown-#{tier}-risk"} risk={tier} /></dt>
             <dd class="text-xs tabular-nums text-zinc-400">{@breakdown[tier]}</dd>
           </div>
         </dl>

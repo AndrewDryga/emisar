@@ -460,8 +460,11 @@ defmodule EmisarWeb.DashboardLive do
           >
             <.status_dot tone={:amber} size={:md} />
             <div class="min-w-0 flex-1">
+              <%!-- The same name the approvals queue shows: reading `action_id`
+                   straight off the context printed a bare "—" for every runbook
+                   execution, which carries a runbook title instead. --%>
               <div class="break-all font-mono text-sm text-zinc-200 sm:truncate">
-                {request.context["action_id"] || "—"}
+                {Approvals.request_name(request) || "—"}
               </div>
               <div class="truncate text-xs text-zinc-400">
                 <.local_time

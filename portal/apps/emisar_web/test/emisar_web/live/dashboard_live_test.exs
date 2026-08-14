@@ -304,6 +304,28 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "your approval"
     end
 
+    test "a held runbook execution names its runbook, never a bare dash", %{conn: conn} do
+      # A runbook_execution request carries no action_id, so reading one straight
+      # off the context printed "—" as the row's whole identity — the operator
+      # could not tell which of several held executions the row was.
+      {conn, user, account} = register_and_log_in(conn)
+
+      request =
+        Fixtures.Approvals.create_execution_request(account, user, %{
+          runbook_title: "Rotate the edge certificates"
+        })
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
+
+      assert html =~ "Awaiting review"
+
+      href = ~p"/app/#{account}/approvals/#{request.id}"
+      row = lv |> element(~s(a[href="#{href}"])) |> render()
+
+      assert row =~ "Rotate the edge certificates"
+      refute row =~ "—"
+    end
+
     test "the Team pillar pitches SSO once a real team exists", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)

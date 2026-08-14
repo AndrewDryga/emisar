@@ -2724,6 +2724,11 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :class, :any, default: nil
 
+  attr :wrap, :boolean,
+    default: false,
+    doc:
+      "For a line carrying a `<.tooltip>` or other absolutely-positioned child: drop the clamp so the bubble isn't clipped by its overflow, and let the segments wrap instead."
+
   slot :seg, required: true do
     attr :mono, :boolean,
       doc: "render THIS segment mono — identifiers only, never a timestamp/email"
@@ -2735,8 +2740,10 @@ defmodule EmisarWeb.CoreComponents do
          never silently truncate away); sm+ restores the single-line
          truncate. Mirrors list_row's :meta wrapper. Mono is PER SEGMENT — the
          id segment carries it, but a prose segment (a timestamp, an email)
-         stays in the reading face; the line as a whole is never mono. --%>
-    <div class={["line-clamp-2 sm:line-clamp-none sm:truncate", @class]}>
+         stays in the reading face; the line as a whole is never mono. Both
+         clamps are `overflow: hidden`, so a segment's tooltip bubble is clipped
+         away entirely — `wrap` is how such a line opts out (§7.35). --%>
+    <div class={[!@wrap && "line-clamp-2 sm:line-clamp-none sm:truncate", @class]}>
       <span
         :for={{seg, idx} <- Enum.with_index(@seg)}
         class={seg[:mono] && "font-mono"}
@@ -3320,6 +3327,12 @@ defmodule EmisarWeb.CoreComponents do
   # Island rows keep the px-5 gutter; a CONTENT-ON-CANVAS list passes its own
   # (the run_row precedent) so rows align to the page rail instead.
   attr :padding, :string, default: "px-5 py-4"
+
+  attr :meta_wrap, :boolean,
+    default: false,
+    doc:
+      "Drop the `:meta` slot's mobile clamp — for a meta line carrying a `<.tooltip>`, whose bubble the clamp's overflow would otherwise clip away on a phone."
+
   slot :leading, doc: "a custom leading element (avatar, connection dot) — replaces the icon disc"
   slot :title, required: true
   slot :chips
@@ -3351,7 +3364,13 @@ defmodule EmisarWeb.CoreComponents do
           <%!-- Two lines on mobile (a credential row's "last used" is its
                security signal — never silently truncated away), single-line
                truncate from sm up. --%>
-          <div :if={@meta != []} class="mt-1 line-clamp-2 text-xs text-zinc-400 sm:line-clamp-none">
+          <div
+            :if={@meta != []}
+            class={[
+              "mt-1 text-xs text-zinc-400",
+              !@meta_wrap && "line-clamp-2 sm:line-clamp-none"
+            ]}
+          >
             {render_slot(@meta)}
           </div>
         </div>
@@ -3464,7 +3483,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :aria_label, :string, default: nil, doc: "accessible name for an icon-only trigger"
   attr :placement, :atom, default: :top, values: [:top, :bottom]
   attr :align, :atom, default: :right, values: [:left, :right, :responsive]
-  attr :class, :string, default: nil, doc: "classes on the wrapper (e.g. shrink-0)"
+  attr :class, :any, default: nil, doc: "classes on the wrapper (e.g. shrink-0)"
   slot :inner_block, required: true
 
   def tooltip(assigns) do

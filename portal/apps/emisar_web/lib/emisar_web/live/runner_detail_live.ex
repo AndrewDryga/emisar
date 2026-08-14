@@ -338,7 +338,9 @@ defmodule EmisarWeb.RunnerDetailLive do
                with room to spare); phones keep the tidy 2-col grid, where the
                hostname's `wrap` spans both columns so it reads in one line. --%>
           <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-16">
-            <.meta_field label="Status">
+            <%!-- wrap: a badge is a composite, not a text run — truncation shears
+             its pill instead of ellipsizing (§7.35). --%>
+            <.meta_field label="Status" wrap>
               <.runner_status_badge
                 state={@readiness.connection.state}
                 version={@runner.runner_version}
@@ -498,7 +500,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                     {action.title}
                   </:meta>
                   <:actions>
-                    <.risk_pill risk={action.risk} />
+                    <.risk_pill id={"runner-action-#{action.action_id}-risk"} risk={action.risk} />
                     <%!-- Dispatch only makes sense when the runner is online AND
                        accepts portal dispatch — otherwise the run sits in
                        `pending` until reconnect, or (for a signature-enforcing

@@ -11,6 +11,9 @@
 //   * the animated "watch emisar work" home-page terminal demo (a no-op
 //     on every page that doesn't render it)
 //   * restrained on-scroll reveals (a no-op when no [data-reveal] is present)
+//   * Escape-to-dismiss + viewport clamping for the shared <.tooltip>,
+//     which a pack page's risk pills render — the console gets the same
+//     behaviour from the LiveView hook in tooltip.js
 //
 // The authenticated console loads `app.js` (LiveSocket + hooks) instead;
 // `root.html.heex` picks the bundle from the `@app_js?` assign, which the
@@ -31,6 +34,7 @@ import {initReveal} from "./reveal.js"
 import {initScrollFocusable} from "./scroll_focusable.js"
 import {initSubscribeGuard} from "./subscribe_guard.js"
 import {initTerminalCasts} from "./terminal_cast.js"
+import {initTooltips} from "./tooltip.js"
 
 setupCopyToClipboardDelegation()
 initStaticFlashes()
@@ -54,3 +58,4 @@ initReveal()
 initScrollFocusable()
 initSubscribeGuard()
 initTerminalCasts()
+initTooltips()

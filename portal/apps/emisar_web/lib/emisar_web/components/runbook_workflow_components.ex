@@ -163,7 +163,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   @doc "Renders one frozen runbook stage with the shared plan-row grammar."
   def plan_stage(assigns) do
-    assigns = assign(assigns, :visible_item_count, assigns.item_count || length(assigns.items))
+    assigns =
+      assigns
+      |> assign(:visible_item_count, assigns.item_count || length(assigns.items))
+      |> assign(:tip_prefix, assigns.id || "plan-stage-#{assigns.stage["id"]}")
 
     ~H"""
     <section
@@ -189,7 +192,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         marker={if @stage["mode"] == "parallel", do: :parallel, else: :number}
         class="mt-3"
       >
-        <:step :for={item <- @items}>
+        <:step :for={{item, index} <- Enum.with_index(@items)}>
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-mono text-sm text-zinc-100">{item["action"]}</span>
@@ -200,7 +203,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               <span :if={item["step_id"]} class="font-mono text-xs text-zinc-500">
                 {item["step_id"]}
               </span>
-              <.risk_pill :if={item["risk"]} risk={item["risk"]} />
+              <.risk_pill
+                :if={item["risk"]}
+                id={"#{@tip_prefix}-item-#{index}-risk"}
+                risk={item["risk"]}
+              />
             </div>
             <%!-- No leading glyph, matching the editor's target line: a runner
                   name says what it is, so an arrow would label nothing. --%>
@@ -679,7 +686,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               separator keeps two mono identifiers from reading as one. --%>
         <span :if={@step["id"] != ""} class="text-zinc-500">·</span>
         <span :if={@step["id"] != ""} class="font-mono text-xs text-zinc-500">{@step["id"]}</span>
-        <.risk_pill :if={@risk} risk={@risk} />
+        <.risk_pill
+          :if={@risk}
+          id={"runbook-stage-#{@stage_index}-step-#{@step_index}-risk"}
+          risk={@risk}
+        />
         <span
           :if={@issue_count > 0}
           class="inline-flex items-center gap-1 text-[11px] font-medium text-rose-300"

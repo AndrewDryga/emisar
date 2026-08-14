@@ -581,6 +581,7 @@ defmodule EmisarWeb.PacksLive do
   # both render the identical list. `action_id`/`title` are runner-advertised
   # (attacker-influenced); they render through escaped HEEx, never `raw/1`.
   attr :actions, :list, required: true
+  attr :id, :string, required: true, doc: "version-scoped prefix for the per-row risk tooltip ids"
   attr :matched, :any, default: nil, doc: "MapSet of action_ids the active filter matched"
   attr :class, :string, default: nil
 
@@ -594,7 +595,7 @@ defmodule EmisarWeb.PacksLive do
           (matched?(@matched, action.action_id) && "border-brand-500") || "border-transparent"
         ]}
       >
-        <.risk_pill risk={action.risk} class="flex-none" />
+        <.risk_pill id={"#{@id}-#{action.action_id}-risk"} risk={action.risk} class="flex-none" />
         <span class={[
           "font-mono",
           (matched?(@matched, action.action_id) && "text-brand-200") || "text-zinc-300"
@@ -656,6 +657,7 @@ defmodule EmisarWeb.PacksLive do
       </p>
       <.pack_action_list
         :if={@shown not in [nil, :error, []]}
+        id={"pack-version-#{@version.id}-contents"}
         actions={@shown}
         class={if @matched, do: "mt-1.5", else: "mt-2"}
       />
@@ -966,7 +968,11 @@ defmodule EmisarWeb.PacksLive do
             <span class="w-12 flex-none font-semibold uppercase tracking-wide text-rose-300">
               + added
             </span>
-            <.risk_pill risk={a.risk} class="flex-none" />
+            <.risk_pill
+              id={"pack-version-#{@version.id}-added-#{a.action_id}-risk"}
+              risk={a.risk}
+              class="flex-none"
+            />
             <span class="truncate font-mono text-zinc-200">{a.action_id}</span>
           </li>
           <li :for={c <- @fact.action_changes.changed} class="flex items-center gap-2 text-[11px]">
@@ -977,9 +983,17 @@ defmodule EmisarWeb.PacksLive do
               ~ changed
             </span>
             <span class="flex items-center gap-1">
-              <.risk_pill risk={c.old_risk} class="flex-none opacity-60" />
+              <.risk_pill
+                id={"pack-version-#{@version.id}-changed-#{c.action_id}-old-risk"}
+                risk={c.old_risk}
+                class="flex-none opacity-60"
+              />
               <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-500" />
-              <.risk_pill risk={c.new_risk} class="flex-none" />
+              <.risk_pill
+                id={"pack-version-#{@version.id}-changed-#{c.action_id}-new-risk"}
+                risk={c.new_risk}
+                class="flex-none"
+              />
             </span>
             <span class="truncate font-mono text-zinc-200">{c.action_id}</span>
             <span :if={c.old_kind != c.new_kind} class="flex-none text-zinc-500">
@@ -993,7 +1007,11 @@ defmodule EmisarWeb.PacksLive do
             <span class="w-12 flex-none font-semibold uppercase tracking-wide">
               − removed
             </span>
-            <.risk_pill risk={r.risk} class="flex-none opacity-50" />
+            <.risk_pill
+              id={"pack-version-#{@version.id}-removed-#{r.action_id}-risk"}
+              risk={r.risk}
+              class="flex-none opacity-50"
+            />
             <span class="truncate font-mono line-through">{r.action_id}</span>
           </li>
         </ul>
@@ -1005,7 +1023,12 @@ defmodule EmisarWeb.PacksLive do
         <div class="text-[11px] font-semibold text-zinc-300">
           Trusting authorizes {length(@fact.actions)} action(s):
         </div>
-        <.pack_action_list actions={@fact.actions} matched={@matched} class="mt-1" />
+        <.pack_action_list
+          id={"pack-version-#{@version.id}-pending"}
+          actions={@fact.actions}
+          matched={@matched}
+          class="mt-1"
+        />
       </div>
       <%!-- Trust/Reject mutate authorization state — owner/admin
            only. The context gate (manage_catalog) is defense in

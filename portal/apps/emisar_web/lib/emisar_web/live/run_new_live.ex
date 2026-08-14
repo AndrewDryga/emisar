@@ -360,8 +360,10 @@ defmodule EmisarWeb.RunNewLive do
           <%!-- The action's facts as the NAKED meta row (the detail grammar),
                not a boxed strip. --%>
           <div class="mt-8 grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-14">
-            <.meta_field label="Risk">
-              <.risk_pill risk={@action.risk} />
+            <%!-- wrap: the pill carries the severity lexicon in a <.tooltip>, and
+             truncation would clip both the bubble and the pill (§7.35). --%>
+            <.meta_field label="Risk" wrap>
+              <.risk_pill id={"run-new-#{@action.action_id}-risk"} risk={@action.risk} />
             </.meta_field>
             <.meta_field label="Kind">
               <span class="text-zinc-200">{@action.kind}</span>

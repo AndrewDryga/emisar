@@ -327,7 +327,9 @@ defmodule EmisarWeb.RunDetailLive do
                fit the 7xl column); phones keep the tidy 2-col grid, the forensic
                timestamp spanning both columns via `wrap`. --%>
           <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-14">
-            <.meta_field label="Status">
+            <%!-- wrap: the status meaning rides a <.tooltip>, and scalar truncation
+             is `overflow: hidden` — it would clip the bubble away entirely. --%>
+            <.meta_field label="Status" wrap>
               <.tooltip text={RunStatuses.meaning(@run.status)} align={:left}>
                 <.status_badge status={@run.status} />
               </.tooltip>

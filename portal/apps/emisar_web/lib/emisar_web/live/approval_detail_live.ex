@@ -132,21 +132,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp execution_plan(_request), do: nil
 
-  defp request_title(%{
-         context: %{
-           "kind" => "runbook_execution",
-           "execution_kind" => "draft_test",
-           "runbook" => runbook
-         }
-       }),
-       do: "Draft test · #{runbook["title"] || "Runbook"}"
-
-  defp request_title(%{
-         context: %{"kind" => "runbook_execution", "runbook" => runbook}
-       }),
-       do: runbook["title"] || "Runbook execution"
-
-  defp request_title(%{context: context, id: id}), do: context["action_id"] || id
+  # Approvals owns the name (one derivation for the queue, the dashboard, and the
+  # audit trail); the id is this page's own last resort, because a request whose
+  # frozen context names neither a runbook nor an action still has to be
+  # addressable in a page title.
+  defp request_title(%Approvals.Request{} = request),
+    do: Approvals.request_name(request) || request.id
 
   # One tier for either shape — a direct action's advertised risk or the worst
   # across a frozen execution plan — owned by the Approvals context.
@@ -625,9 +616,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # Hover context for the source qualifier. `:operator` (a human from the
   # console) carries no qualifier at all — the requester name says it; `:mcp`
   # is the one that matters, an autonomous LLM agent reaching the gate.
-  defp dispatch_source_title(:mcp), do: "Dispatched by an LLM agent over the MCP API"
-  defp dispatch_source_title(:runbook), do: "Dispatched as a step in a runbook run"
-  defp dispatch_source_title(_), do: nil
+  # Only reached for a non-:operator source — the qualifier renders nowhere else.
+  defp dispatch_source_meaning(:mcp), do: "Dispatched by an LLM agent over the MCP API"
+  defp dispatch_source_meaning(:runbook), do: "Dispatched as a step in a runbook run"
 
   # The dispatch channel qualifier comes from Runs' attribution projection, so
   # approval never reinterprets API-key ownership or association load state.
@@ -728,7 +719,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
                  the sweeper hasn't auto-denied yet is still :pending in the DB,
                  and "Status: pending" above an "Expired — auto-denied" verdict
                  block contradicts the page. --%>
-            <.meta_field label="Status">
+            <%!-- wrap: a badge is a composite, not a text run — truncation shears
+             its pill instead of ellipsizing (§7.35). --%>
+            <.meta_field label="Status" wrap>
               <.status_badge status={@request_facts.status} />
             </.meta_field>
             <%!-- Never clip the action on the decision screen — an approver must read
@@ -739,7 +732,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 <span class={[if(not @execution_request?, do: "font-mono"), "text-zinc-200"]}>
                   {request_title(@request)}
                 </span>
-                <.risk_pill :if={@action_risk} risk={@action_risk} />
+                <.risk_pill
+                  :if={@action_risk}
+                  id={"approval-#{@request.id}-risk"}
+                  risk={@action_risk}
+                />
               </span>
             </.meta_field>
             <.meta_field :if={not @execution_request?} label="Runner">
@@ -773,21 +770,27 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <%!-- Who (the accountable human) AND what asked: a request from an
              autonomous LLM agent (MCP) is the reason the gate exists and
              warrants more scrutiny than an operator's own dispatch. --%>
-            <.meta_field label="Requested by">
-              <span class="block truncate">
+            <%!-- wrap: the source qualifier explains itself through a <.tooltip>,
+             whose bubble scalar truncation would clip away. --%>
+            <.meta_field label="Requested by" wrap>
+              <span class="block">
                 <span class="text-zinc-200">
                   {user_label(@user_labels, @request.requested_by_id)}
                 </span>
                 <%!-- The source qualifier is quiet TYPE after the name (the
                      run-detail "Dispatched by" grammar), never a filled chip —
-                     who asked is metadata, not a status. --%>
-                <span
+                     who asked is metadata, not a status. "· Claude Code" doesn't
+                     say an LLM dispatched this, so the tooltip carries that where
+                     a touch or keyboard approver can reach it. --%>
+                <.tooltip
                   :if={@run && @run.source != :operator}
+                  id={"approval-#{@request.id}-source"}
+                  align={:left}
+                  text={dispatch_source_meaning(@run.source)}
                   class="text-zinc-400"
-                  title={dispatch_source_title(@run.source)}
                 >
                   · {approval_channel(@run)}
-                </span>
+                </.tooltip>
               </span>
             </.meta_field>
             <%!-- wrap: the forensic timestamp is a machine value — on a phone it takes

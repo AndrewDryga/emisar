@@ -1054,39 +1054,59 @@ defmodule EmisarWeb.DomainComponents do
   @doc """
   Risk pill — used on action descriptors. Colours mirror the runner's
   declared risk level (`low|medium|high|critical`); takes the risk as a
-  string (pack-manifest data) or an Ecto.Enum atom (catalog rows).
+  string (pack-manifest data) or an Ecto.Enum atom (catalog rows). The
+  severity lexicon rides the shared `<.tooltip>`, so an approver deciding on a
+  phone or by keyboard reads what "HIGH" means — a stored risk we have no
+  lexicon entry for renders the bare pill rather than an empty bubble.
+
+      <.risk_pill id={"approval-risk-\#{request.id}"} risk={risk} />
   """
   attr :risk, :any, required: true
+
+  attr :id, :string,
+    default: nil,
+    doc: "unique tooltip id — pass a per-row id where the pill repeats on one page"
+
   attr :class, :string, default: nil
 
   def risk_pill(assigns) do
-    assigns = assign(assigns, :risk, to_string(assigns.risk))
+    risk = to_string(assigns.risk)
+    assigns = assigns |> assign(:risk, risk) |> assign(:meaning, risk_meaning(risk))
 
     ~H"""
-    <span
-      title={risk_title(@risk)}
-      class={[
-        "rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wider ring-1 ring-inset",
-        risk_classes(@risk),
-        @class
-      ]}
-    >
+    <.tooltip :if={@meaning} id={@id} text={@meaning} class={@class}>
+      <.risk_pill_face risk={@risk} />
+    </.tooltip>
+    <.risk_pill_face :if={is_nil(@meaning)} risk={@risk} class={@class} />
+    """
+  end
+
+  attr :risk, :string, required: true
+  attr :class, :string, default: nil
+
+  defp risk_pill_face(assigns) do
+    ~H"""
+    <span class={[
+      "rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wider ring-1 ring-inset",
+      risk_classes(@risk),
+      @class
+    ]}>
       {@risk}
     </span>
     """
   end
 
-  # The severity scale spelled out on hover, so a non-expert approver knows what
+  # The severity scale spelled out, so a non-expert approver knows what
   # "HIGH" means and that CRITICAL is above it (the lexicon a single word can't carry).
-  defp risk_title("low"), do: "Low — read-only or trivially reversible"
+  defp risk_meaning("low"), do: "Low — read-only or trivially reversible"
 
-  defp risk_title("medium"), do: "Medium — changes state, easily reversible"
+  defp risk_meaning("medium"), do: "Medium — changes state, easily reversible"
 
-  defp risk_title("high"), do: "High — service-affecting"
+  defp risk_meaning("high"), do: "High — service-affecting"
 
-  defp risk_title("critical"), do: "Critical — data loss or irreversible"
+  defp risk_meaning("critical"), do: "Critical — data loss or irreversible"
 
-  defp risk_title(_), do: nil
+  defp risk_meaning(_), do: nil
 
   # Risk is a SEVERITY ramp, not a policy outcome: low is the quiet neutral floor,
   # NOT brand-green — green means "the gate allowed this", and a risk tier has had
@@ -1135,33 +1155,38 @@ defmodule EmisarWeb.DomainComponents do
   # change the badge's width under it.
   def approval_expiry(assigns) do
     ~H"""
-    <span
+    <%!-- The consequence rides the shared tooltip, not a hover-only title: the
+         approver who most needs "auto-denied at expiry" is the one triaging the
+         queue on a phone. Its bubble id is derived from the row id the inner
+         <.local_time> already owns, so the two never collide. --%>
+    <.tooltip
       :if={@expires_at}
-      title={expiry_title(@expired?)}
+      id={@id && "#{@id}-consequence"}
+      text={expiry_meaning(@expired?)}
       class={[
-        "inline-flex items-center gap-1 text-xs tabular-nums",
+        "items-center gap-1 text-xs tabular-nums",
         expiry_class(@expires_in_seconds),
         @class
       ]}
     >
       <%!-- Past tense once it's lapsed ("expired 2m ago") so an at-the-wire
            approval isn't an ambiguous static "expires just now"; {" "} is a
-           literal space HEEx won't trim. The title states the on-expiry behavior;
-           the LocalTime hook carries the absolute time on hover. --%>
+           literal space HEEx won't trim. The LocalTime hook carries the absolute
+           time on hover. --%>
       <.icon name={if @expired?, do: "hero-no-symbol", else: "hero-clock"} class="h-3 w-3" />
       {if @expired?, do: "expired", else: "expires"}{" "}<TimeHelpers.local_time
         id={@id}
         value={@expires_at}
         mode={:relative}
       />
-    </span>
+    </.tooltip>
     """
   end
 
-  defp expiry_title(true),
+  defp expiry_meaning(true),
     do: "Expired without a decision — it was auto-denied; the action won't run."
 
-  defp expiry_title(false),
+  defp expiry_meaning(false),
     do: "If no one decides by then, it's auto-denied — the action won't run."
 
   # Under two hours left → amber: an approval lapsing soon needs to stand out

@@ -939,6 +939,31 @@ defmodule Emisar.Approvals do
   defp expires_in_seconds(nil, _now), do: nil
 
   @doc """
+  The operator-facing name for one request: a runbook execution's own title (a
+  draft test says so), otherwise the action id it holds. `nil` when the frozen
+  context names neither, so each surface supplies its own placeholder.
+
+  Takes the `%Request{}` or its stored `context` map — the audit label batch
+  derives the same name from a projection rather than loading whole rows. ONE
+  derivation for the approvals list, the approval detail, the dashboard queue,
+  and the audit trail's Target column. Pure — the context is frozen at request
+  time, so no permission gate and no reads.
+  """
+  def request_name(%Request{context: context}), do: request_name(context)
+
+  def request_name(%{
+        "kind" => "runbook_execution",
+        "execution_kind" => "draft_test",
+        "runbook" => runbook
+      }),
+      do: "Draft test · #{runbook["title"] || "Runbook"}"
+
+  def request_name(%{"kind" => "runbook_execution", "runbook" => runbook}),
+    do: runbook["title"] || "Runbook execution"
+
+  def request_name(context) when is_map(context), do: context["action_id"]
+
+  @doc """
   Changeset for the grant choices an approve carries — `:duration`, `:scope`,
   and an optional `:max_uses`. Accepts the raw decision form (string keys) or
   an atom-keyed map / keyword list; an unrecognized duration or scope is a

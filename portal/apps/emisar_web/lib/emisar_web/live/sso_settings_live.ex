@@ -1869,18 +1869,27 @@ defmodule EmisarWeb.SSOSettingsLive do
     ~H"""
     <.event_block icon="hero-check-circle" tone={:brand} title="Discovery succeeded">
       <:body>This issuer serves a valid OIDC configuration.</:body>
+      <%!-- An IdP's three endpoints share a long prefix and differ only in the
+           trailing path segment, which is exactly where the truncation lands —
+           so each value carries its full self as the hover escape. --%>
       <dl class="mt-3 space-y-1 text-xs text-zinc-400">
         <div :if={@summary.authorization_endpoint} class="flex gap-2">
           <dt class="w-32 shrink-0 text-zinc-400">Authorization</dt>
-          <dd class="truncate font-mono text-zinc-300">{@summary.authorization_endpoint}</dd>
+          <dd class="truncate font-mono text-zinc-300" title={@summary.authorization_endpoint}>
+            {@summary.authorization_endpoint}
+          </dd>
         </div>
         <div :if={@summary.token_endpoint} class="flex gap-2">
           <dt class="w-32 shrink-0 text-zinc-400">Token</dt>
-          <dd class="truncate font-mono text-zinc-300">{@summary.token_endpoint}</dd>
+          <dd class="truncate font-mono text-zinc-300" title={@summary.token_endpoint}>
+            {@summary.token_endpoint}
+          </dd>
         </div>
         <div :if={@summary.jwks_uri} class="flex gap-2">
           <dt class="w-32 shrink-0 text-zinc-400">JWKS</dt>
-          <dd class="truncate font-mono text-zinc-300">{@summary.jwks_uri}</dd>
+          <dd class="truncate font-mono text-zinc-300" title={@summary.jwks_uri}>
+            {@summary.jwks_uri}
+          </dd>
         </div>
       </dl>
     </.event_block>

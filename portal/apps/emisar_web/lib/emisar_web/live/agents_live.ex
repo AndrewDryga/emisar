@@ -1099,7 +1099,7 @@ defmodule EmisarWeb.AgentsLive do
               <.list_group_header label={owner} />
             </:group_header>
             <:item :let={{key, facts}}>
-              <.list_row padding="py-4">
+              <.list_row padding="py-4" meta_wrap>
                 <:title>
                   <span class="truncate font-medium text-zinc-100">{key.name}</span>
                   <%!-- The emisar-mcp bridge version this key last connected through —
@@ -1129,7 +1129,9 @@ defmodule EmisarWeb.AgentsLive do
                      so it's off the row; the scopes are a fixed MCP shape nobody
                      manages here, so they earn no chips. No key prefix: truncated
                      it rendered the SAME shared literal on every row. --%>
-                  <.meta_line class="text-[11px]">
+                  <%!-- wrap: the swap-pending segment explains itself through a
+                     <.tooltip>, whose bubble the clamp would clip away. --%>
+                  <.meta_line wrap class="text-[11px]">
                     <%!-- The client only earns a seg when it ADDS to the name —
                        a quick-mint names the key after its client, so the seg
                        would just echo the title; a custom-named key keeps it. --%>

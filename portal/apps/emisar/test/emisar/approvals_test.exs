@@ -1657,6 +1657,52 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  describe "request_name/1" do
+    test "an action request is named by the action it holds" do
+      context = %{"runner_id" => Ecto.UUID.generate(), "action_id" => "postgres.vacuum"}
+
+      assert Approvals.request_name(%Request{context: context}) == "postgres.vacuum"
+    end
+
+    test "a runbook execution is named by its runbook's title" do
+      context = %{
+        "kind" => "runbook_execution",
+        "execution_kind" => "published",
+        "runbook" => %{"title" => "Rotate the edge certificates"}
+      }
+
+      assert Approvals.request_name(%Request{context: context}) == "Rotate the edge certificates"
+    end
+
+    test "a draft test says so before the title" do
+      context = %{
+        "kind" => "runbook_execution",
+        "execution_kind" => "draft_test",
+        "runbook" => %{"title" => "Rotate the edge certificates"}
+      }
+
+      assert Approvals.request_name(%Request{context: context}) ==
+               "Draft test · Rotate the edge certificates"
+    end
+
+    test "a runbook frozen without a title still names its kind" do
+      published = %{"kind" => "runbook_execution", "runbook" => %{}}
+      draft = %{"kind" => "runbook_execution", "execution_kind" => "draft_test", "runbook" => %{}}
+
+      assert Approvals.request_name(%Request{context: published}) == "Runbook execution"
+      assert Approvals.request_name(%Request{context: draft}) == "Draft test · Runbook"
+    end
+
+    test "takes the stored context directly, so the audit label batch skips the rows" do
+      # Audit projects {id, context} pairs rather than loading whole requests.
+      assert Approvals.request_name(%{"action_id" => "linux.uptime"}) == "linux.uptime"
+    end
+
+    test "a context naming neither leaves the placeholder to the surface" do
+      assert Approvals.request_name(%Request{context: %{}}) == nil
+    end
+  end
+
   describe "change_decision_input/1" do
     test "no attrs means a single-use approval with no cap" do
       changeset = Approvals.change_decision_input()

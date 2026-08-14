@@ -130,7 +130,9 @@ defmodule EmisarWeb.AuditDetailLive do
             <.meta_field label="Event ID" wrap>
               <.copyable_id value={@event.id} class="text-sm leading-5 text-zinc-300" />
             </.meta_field>
-            <.meta_field label="IP address">
+            <%!-- wrap, like its Event ID and Request ID siblings: the copy button is
+             a sibling control, and an IPv6 address is wider than the UUIDs. --%>
+            <.meta_field label="IP address" wrap>
               <.copyable_id
                 :if={@event.ip_address}
                 value={@event.ip_address}

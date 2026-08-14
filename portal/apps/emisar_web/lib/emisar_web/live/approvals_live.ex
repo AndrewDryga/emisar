@@ -255,22 +255,6 @@ defmodule EmisarWeb.ApprovalsLive do
     end
   end
 
-  defp request_title(%{
-         context: %{
-           "kind" => "runbook_execution",
-           "execution_kind" => "draft_test",
-           "runbook" => runbook
-         }
-       }),
-       do: "Draft test · #{runbook["title"] || "Runbook"}"
-
-  defp request_title(%{
-         context: %{"kind" => "runbook_execution", "runbook" => runbook}
-       }),
-       do: runbook["title"] || "Runbook execution"
-
-  defp request_title(%{context: context}), do: context["action_id"] || "—"
-
   defp request_scope_label(
          %{context: %{"kind" => "runbook_execution", "plan" => plan}},
          _labels
@@ -453,10 +437,11 @@ defmodule EmisarWeb.ApprovalsLive do
                     <div class="min-w-0 flex-1">
                       <div class="flex flex-wrap items-center gap-2">
                         <span class="truncate font-mono text-sm text-zinc-200">
-                          {request_title(request)}
+                          {Approvals.request_name(request) || "—"}
                         </span>
                         <.risk_pill
                           :if={@risk_labels[request.id]}
+                          id={"pending-#{request.id}-risk"}
                           risk={@risk_labels[request.id]}
                           class="flex-none"
                         />
@@ -766,7 +751,7 @@ defmodule EmisarWeb.ApprovalsLive do
                   >
                     <div class="min-w-0 flex-1">
                       <div class="truncate font-mono text-sm text-zinc-200">
-                        {request_title(request)}
+                        {Approvals.request_name(request) || "—"}
                       </div>
                       <div class="text-xs text-zinc-400 sm:truncate">
                         {request_scope_label(request, @runner_labels)}

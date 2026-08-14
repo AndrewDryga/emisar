@@ -211,7 +211,11 @@ defmodule EmisarWeb.RunbooksLive do
                       <%!-- Headline risk — the most-severe step's risk, so the
                        operator sees how dangerous a runbook is before opening
                        it. Hidden when no step's action is in the catalog. --%>
-                      <.risk_pill :if={@runbook_risk[runbook.id]} risk={@runbook_risk[runbook.id]} />
+                      <.risk_pill
+                        :if={@runbook_risk[runbook.id]}
+                        id={"runbook-#{runbook.id}-risk"}
+                        risk={@runbook_risk[runbook.id]}
+                      />
                     </:title>
                     <:meta>
                       <%!-- Row 2: description preview + slug --%>

@@ -722,14 +722,7 @@ defmodule Emisar.Audit do
           :action_id,
           &Emisar.Runs.ActionRun.Query.by_account_id(&1, account_id)
         ),
-      "approval_request" =>
-        fetch_labels(
-          Emisar.Approvals.Request.Query,
-          ids_by_kind,
-          "approval_request",
-          :id,
-          &Emisar.Approvals.Request.Query.by_account_id(&1, account_id)
-        ),
+      "approval_request" => fetch_request_labels(ids_by_kind, account_id),
       "runbook" =>
         fetch_labels(
           Emisar.Runbooks.Runbook.Query,
@@ -770,6 +763,30 @@ defmodule Emisar.Audit do
         |> Emisar.Catalog.PackVersion.Query.select_audit_labels(ids)
         |> Repo.all()
         |> Map.new(fn {id, pack_id, version} -> {id, "#{pack_id}@#{version}"} end)
+    end
+  end
+
+  # A request's name is a projection of its frozen context, so it resolves the
+  # same way Approvals words it on the queue — never the raw id, which reads as
+  # an unresolved ref beside every other kind's human label. A context naming
+  # neither a runbook nor an action stays out of the map, so the trail falls
+  # back to the id rather than rendering a blank Target.
+  defp fetch_request_labels(ids_by_kind, account_id) do
+    case Map.get(ids_by_kind, "approval_request", []) do
+      [] ->
+        %{}
+
+      ids ->
+        Emisar.Approvals.Request.Query.all()
+        |> Emisar.Approvals.Request.Query.by_account_id(account_id)
+        |> Emisar.Approvals.Request.Query.select_audit_labels(ids)
+        |> Repo.all()
+        |> Enum.reduce(%{}, fn {id, context}, labels ->
+          case Emisar.Approvals.request_name(context) do
+            nil -> labels
+            name -> Map.put(labels, id, name)
+          end
+        end)
     end
   end
 
