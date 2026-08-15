@@ -754,22 +754,28 @@ defmodule Emisar.AuditTest do
       refute Enum.any?(Audit.Event.Query.filters(), &(&1.name == :hide_noise))
     end
 
-    test "outcome filter narrows to failures (danger) and denials (warn) by suffix", %{
+    test "outcome filter narrows to failures+denials (danger) and removals (warn) by suffix", %{
       account: account,
       subject: subject
     } do
       {:ok, _} = Audit.log(account.id, "action_run.failed", actor_kind: "system")
       {:ok, _} = Audit.log(account.id, "approval.denied", actor_kind: "user")
+      {:ok, _} = Audit.log(account.id, "enrollment_key.revoked", actor_kind: "user")
       {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
 
-      # "danger" keeps only the failure; routine (approved) is excluded.
+      # "danger" keeps the failure AND the denial; the revocation and the pass are excluded.
       {:ok, danger, _} = Audit.list_events(subject, filter: [outcome: ["danger"]])
-      assert Enum.map(danger, & &1.event_type) == ["action_run.failed"]
+      kept_danger = Enum.map(danger, & &1.event_type) |> Enum.sort()
+      assert kept_danger == ["action_run.failed", "approval.denied"]
 
-      # Both outcomes keep the failure + the denial, still dropping the pass.
+      # "warn" is what was taken away, never a denial.
+      {:ok, warn, _} = Audit.list_events(subject, filter: [outcome: ["warn"]])
+      assert Enum.map(warn, & &1.event_type) == ["enrollment_key.revoked"]
+
+      # Both outcomes keep all three, still dropping the pass.
       {:ok, both, _} = Audit.list_events(subject, filter: [outcome: ["danger", "warn"]])
       kept = Enum.map(both, & &1.event_type) |> Enum.sort()
-      assert kept == ["action_run.failed", "approval.denied"]
+      assert kept == ["action_run.failed", "approval.denied", "enrollment_key.revoked"]
 
       # "pass" keeps only the yes-verdict.
       {:ok, passes, _} = Audit.list_events(subject, filter: [outcome: ["pass"]])
@@ -1915,9 +1921,46 @@ defmodule Emisar.AuditTest do
 
       assert refs["enrollment_key"][enrollment_key.id] == "enroll-prod"
       assert refs["action_run"][run.id] == "linux.uptime"
-      # The approval_request resolver labels by id (no friendlier handle exists).
-      assert refs["approval_request"][request.id] == request.id
+      # An approval request is named the way the approvals queue names it —
+      # the held action, not the id every other kind resolves away from.
+      assert refs["approval_request"][request.id] == "linux.uptime"
       assert refs["runbook"][runbook.id] == "deploy-book"
+    end
+
+    test "an approval_request for a runbook execution resolves its runbook title", %{
+      account: account,
+      user: user
+    } do
+      request =
+        Fixtures.Approvals.create_execution_request(account, user, %{
+          runbook_title: "Rotate the edge certificates"
+        })
+
+      {:ok, event} =
+        Audit.log(account.id, "approval.touched",
+          target_kind: "approval_request",
+          target_id: request.id
+        )
+
+      refs = Audit.resolve_references([event])
+
+      assert refs["approval_request"][request.id] == "Rotate the edge certificates"
+    end
+
+    test "an approval_request deleted since the event is simply absent" do
+      account = Fixtures.Accounts.create_account()
+      ghost_id = Ecto.UUID.generate()
+
+      {:ok, event} =
+        Audit.log(account.id, "approval.touched",
+          target_kind: "approval_request",
+          target_id: ghost_id
+        )
+
+      refs = Audit.resolve_references([event])
+
+      # No entry is the trail's cue to print the raw id rather than a blank cell.
+      refute Map.has_key?(refs["approval_request"], ghost_id)
     end
   end
 
@@ -1932,17 +1975,19 @@ defmodule Emisar.AuditTest do
   end
 
   describe "event_outcome/1 (one source for the dots + the Outcome filter)" do
-    test "failures and errors are :danger" do
+    test "failures, errors, and denials are :danger" do
       for t <- ~w[user.sign_in_failed user.mfa_failed
-                  action_run.failed action_run.error runner.error action_run.timed_out] do
+                  action_run.failed action_run.error runner.error action_run.timed_out
+                  approval.denied action_run.denied action_run.refused
+                  pack_trust_rejected runner.version_rejected] do
         assert Audit.event_outcome(t) == :danger, "expected #{t} to be :danger"
       end
     end
 
-    test "denials and access taken away are :warn" do
+    test "access taken away and throttles are :warn" do
       for t <-
-            ~w[approval.denied action_run.denied enrollment_key.revoked user.session_revoked
-                  runner.disabled runner.deleted runner.version_rejected membership.removed
+            ~w[enrollment_key.revoked user.session_revoked
+                  runner.disabled runner.deleted membership.removed
                   membership.suspended approval.expired action_run.cancelled approval.grant_revoked
                   user.mfa_rate_limited user.email_change_rate_limited
                   user.inbox_step_up_rate_limited] do
@@ -1983,21 +2028,25 @@ defmodule Emisar.AuditTest do
       # Real known types, one per tone (outcome/1: danger / warn / pass / neutral).
       {:ok, _} = Audit.log(account.id, "action_run.failed", actor_kind: "system")
       {:ok, _} = Audit.log(account.id, "approval.denied", actor_kind: "user")
+      {:ok, _} = Audit.log(account.id, "enrollment_key.revoked", actor_kind: "user")
       {:ok, _} = Audit.log(account.id, "approval.approved", actor_kind: "user")
       {:ok, _} = Audit.log(account.id, "runner.connected", actor_kind: "runner")
 
       assert Audit.event_outcome("action_run.failed") == :danger
-      assert Audit.event_outcome("approval.denied") == :warn
+      assert Audit.event_outcome("approval.denied") == :danger
+      assert Audit.event_outcome("enrollment_key.revoked") == :warn
       assert Audit.event_outcome("approval.approved") == :pass
       assert Audit.event_outcome("runner.connected") == :neutral
 
       {:ok, danger, _} = Audit.list_events(subject, filter: [outcome: ["danger"]])
-      assert Enum.map(danger, & &1.event_type) == ["action_run.failed"]
+
+      assert Enum.sort(Enum.map(danger, & &1.event_type)) ==
+               ["action_run.failed", "approval.denied"]
 
       {:ok, both, _} = Audit.list_events(subject, filter: [outcome: ["danger", "warn"]])
 
       assert Enum.sort(Enum.map(both, & &1.event_type)) ==
-               ["action_run.failed", "approval.denied"]
+               ["action_run.failed", "approval.denied", "enrollment_key.revoked"]
     end
   end
 

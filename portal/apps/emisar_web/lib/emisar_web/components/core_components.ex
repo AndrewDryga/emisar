@@ -190,7 +190,12 @@ defmodule EmisarWeb.CoreComponents do
   Renders a button.
 
   `variant` is STRUCTURE (design-console-ux §2): `:primary` (filled, the default),
-  `:secondary` (bordered), `:ghost` (text-only). `tone` is the hue atom that
+  `:secondary` (bordered), `:ghost` (text-only). **A VISIBLE action verb always
+  wears a bordered face** — `:ghost` is for menu rows and inline cancel/dismiss
+  affordances only (§7.47). A control that merely NAVIGATES is a `<.link>` in the
+  house brand-plus-`cta_arrow` grammar **when it stands alone**; a navigation verb
+  sharing a row with bordered action buttons takes the `:secondary` face at the
+  peers' size, because a row wears ONE button grammar (§7.47). `tone` is the hue atom that
   carries MEANING at the call site — `:brand` (affirmative/primary action),
   `:neutral`, `:amber` (attention-worthy, e.g. trusting a pack's new
   contents), `:rose` (destructive) — defaulting per variant (primary→brand,
@@ -208,7 +213,7 @@ defmodule EmisarWeb.CoreComponents do
       <.button variant={:secondary} tone={:rose} size={:sm} phx-click="revoke">Revoke</.button>
       <.button icon="hero-check">Approve</.button>
       <.button tone={:amber} phx-click="trust">Trust new contents</.button>
-      <.button variant={:ghost} tone={:rose} phx-click="remove">Remove</.button>
+      <.button variant={:ghost} type="button" phx-click="cancel_edit">Cancel</.button>
       <.button navigate={~p"/app/\#{@current_account}/runbooks/new"} icon="hero-plus">New runbook</.button>
   """
   attr :type, :string, default: nil
@@ -287,8 +292,11 @@ defmodule EmisarWeb.CoreComponents do
     "border border-amber-500/40 font-medium text-amber-200 hover:bg-amber-500/10 focus-visible:outline-amber-400"
   end
 
-  # Ghost: a text-only button tinted by tone, for low-prominence inline
-  # actions (remove, revoke, suspend, restore).
+  # Ghost: a text-only button tinted by tone, for a form's quiet Cancel, an
+  # inline dismiss (clearing a chosen upload), and a disclosure toggle. NOT for
+  # an entity's action verb — revoke/suspend/delete/edit wear a bordered face so
+  # buttons look like buttons (§7.47); the tone ramp below exists so a
+  # `<.menu_item>` row can mirror it inside a dropdown panel.
   defp button_face(:ghost, :neutral),
     do: "font-medium text-zinc-300 hover:bg-zinc-900 focus-visible:outline-zinc-600"
 
@@ -2388,18 +2396,6 @@ defmodule EmisarWeb.CoreComponents do
   defp format_status(other), do: other
 
   @doc """
-  A runner's `Runners.connection_state/1` atom → the display status string that
-  `<.status_badge>` understands (`:online` → "connected",
-  `:offline` → "offline"). One place so the runners list + detail pages
-  can't drift on the connection vocabulary — and ONE word for the offline
-  fact console-wide (the MCP wire keeps its own stable "disconnected").
-  """
-  def connection_status(:online), do: "connected"
-  def connection_status(:offline), do: "offline"
-  def connection_status(:disabled), do: "disabled"
-  def connection_status(:pending), do: "pending"
-
-  @doc """
   The ONE `<details>` disclosure — a bordered box whose summary row toggles a
   bordered body, with the chevron affordance (design-console-ux §6: advanced or
   optional content collapses behind this). `:sm` is the quiet inline helper
@@ -2724,25 +2720,68 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :class, :any, default: nil
 
+  attr :wrap, :boolean,
+    default: false,
+    doc:
+      "For a line carrying a `<.tooltip>` or other absolutely-positioned child: drop the clamp so the bubble isn't clipped by its overflow, and let the segments wrap instead."
+
   slot :seg, required: true do
     attr :mono, :boolean,
       doc: "render THIS segment mono — identifiers only, never a timestamp/email"
+
+    attr :truncate, :boolean,
+      doc:
+        "give THIS segment the line's flexible width and ellipsize it HERE. Marking the prose segment is how a machine id later in the line still reaches the view in full (the whole-line truncate always eats the LAST segment, which is where an id usually sits)."
   end
 
   def meta_line(assigns) do
+    assigns = assign(assigns, :flexible?, Enum.any?(assigns.seg, & &1[:truncate]))
+
     ~H"""
     <%!-- Mobile wraps to two lines (security meta like "last used" must
          never silently truncate away); sm+ restores the single-line
          truncate. Mirrors list_row's :meta wrapper. Mono is PER SEGMENT — the
          id segment carries it, but a prose segment (a timestamp, an email)
-         stays in the reading face; the line as a whole is never mono. --%>
-    <div class={["line-clamp-2 sm:line-clamp-none sm:truncate", @class]}>
+         stays in the reading face; the line as a whole is never mono. Both
+         clamps are `overflow: hidden`, so a segment's tooltip bubble is clipped
+         away entirely — `wrap` is how such a line opts out (§7.35). --%>
+    <%!-- A whole-line truncate has no idea which segment matters: it simply cuts
+         from the right, so a trailing slug/hash loses its tail while the prose
+         before it survives intact. When a `:seg` asks to `truncate`, the line
+         becomes a flex row at sm+ instead — that segment takes the slack and
+         ellipsizes, every other segment keeps its full width. Mobile keeps the
+         two-line clamp either way. --%>
+    <%!-- No `line-clamp-*` on the flexible branch: it is a composite utility that
+         also sets `display`, so `sm:line-clamp-none`'s `display: block` and
+         `sm:flex` collide at the same breakpoint and Tailwind's source order — not
+         this class list — decides the winner. Block won, and the slug wrapped to a
+         second line instead of sitting beside the truncated description. On a
+         phone the segments simply wrap; `list_row`'s own `:meta` wrapper still
+         caps that at two lines. `items-center`, not `items-baseline`: a flex item
+         with `overflow: hidden` — which `truncate` sets — synthesizes its baseline
+         from its bottom margin edge, so baseline alignment dropped the segments
+         after it by a full line. Peer segments share a line-height, so centering
+         lands in the same place without that trap. --%>
+    <div class={[
+      (not @flexible? and not @wrap) && "line-clamp-2 sm:line-clamp-none sm:truncate",
+      @flexible? && "sm:flex sm:items-center",
+      @class
+    ]}>
+      <%!-- `!`, never `not`, on a slot attr: an undeclared one is nil, and
+           `not nil` is an ArgumentError that only fires once a caller opts in. --%>
+      <%!-- The separator and slot GLUE to the tags (§7.48): `whitespace-pre` keeps
+           the leading space that survives the flex item's line start, and it keeps
+           this template's indentation just as literally — a newline here rendered
+           an empty first line box, dropping every meta line 16px below its title
+           and growing every row by the same. --%>
       <span
         :for={{seg, idx} <- Enum.with_index(@seg)}
-        class={seg[:mono] && "font-mono"}
-      >
-        {if idx > 0, do: " · "}{render_slot(seg)}
-      </span>
+        class={[
+          seg[:mono] && "font-mono",
+          @flexible? && seg[:truncate] && "sm:min-w-0 sm:truncate",
+          @flexible? && !seg[:truncate] && "sm:shrink-0 sm:whitespace-pre"
+        ]}
+      >{if idx > 0, do: " · "}{render_slot(seg)}</span>
     </div>
     """
   end
@@ -3264,7 +3303,7 @@ defmodule EmisarWeb.CoreComponents do
   Horizontal meta strip wrapper — the bordered rounded box that holds
   `<.meta_field>` key-value cells under page titles on DETAIL pages (a run's
   runner / risk / pack / time). Not a list page's naked posture line (a count
-  strip) nor `<.stat>` (the dashboard tile). Pass `cols` for an explicit column
+  strip). Pass `cols` for an explicit column
   count at `lg+`; defaults to auto-fitting via `sm:grid-cols-3`.
 
       <.meta_strip cols={6}>
@@ -3320,6 +3359,12 @@ defmodule EmisarWeb.CoreComponents do
   # Island rows keep the px-5 gutter; a CONTENT-ON-CANVAS list passes its own
   # (the run_row precedent) so rows align to the page rail instead.
   attr :padding, :string, default: "px-5 py-4"
+
+  attr :meta_wrap, :boolean,
+    default: false,
+    doc:
+      "Drop the `:meta` slot's mobile clamp — for a meta line carrying a `<.tooltip>`, whose bubble the clamp's overflow would otherwise clip away on a phone."
+
   slot :leading, doc: "a custom leading element (avatar, connection dot) — replaces the icon disc"
   slot :title, required: true
   slot :chips
@@ -3351,7 +3396,13 @@ defmodule EmisarWeb.CoreComponents do
           <%!-- Two lines on mobile (a credential row's "last used" is its
                security signal — never silently truncated away), single-line
                truncate from sm up. --%>
-          <div :if={@meta != []} class="mt-1 line-clamp-2 text-xs text-zinc-400 sm:line-clamp-none">
+          <div
+            :if={@meta != []}
+            class={[
+              "mt-1 text-xs text-zinc-400",
+              !@meta_wrap && "line-clamp-2 sm:line-clamp-none"
+            ]}
+          >
             {render_slot(@meta)}
           </div>
         </div>
@@ -3454,24 +3505,38 @@ defmodule EmisarWeb.CoreComponents do
   without ids or a hook, so a responsive component may duplicate the slot safely;
   the accessible name already carries the tooltip text.
 
+  When the reason ends in something the operator must RUN, pass `command` rather
+  than naming it mid-sentence: the prose stays, and the shared `code_line` row
+  carries the command below it — mono, clipped to one line, with the same Copy
+  button the page-level notice gives that same command. Copy works because the
+  revealed bubble is pointer-interactive (above) and the clipboard listener is
+  delegated at the document, so it reaches a control that only exists on hover.
+
       <.tooltip text="Role is managed by directory sync — change it in your IdP">
         <.chip icon="hero-lock-closed-mini">Operator</.chip>
       </.tooltip>
       <.tooltip text="Audit export is on the Team plan" placement={:bottom}>…</.tooltip>
+      <.tooltip id="runner-version-7" text="Runner v0.19.0 is available…" command="sudo emisar update">
+        <.icon name="hero-cloud-arrow-down" class="h-3.5 w-3.5" />
+      </.tooltip>
   """
   attr :id, :string, default: nil, doc: "bubble id — override when the same tip repeats on a page"
   attr :text, :string, required: true
+  attr :command, :string, default: nil, doc: "a command the reason tells the operator to run"
   attr :aria_label, :string, default: nil, doc: "accessible name for an icon-only trigger"
   attr :placement, :atom, default: :top, values: [:top, :bottom]
   attr :align, :atom, default: :right, values: [:left, :right, :responsive]
-  attr :class, :string, default: nil, doc: "classes on the wrapper (e.g. shrink-0)"
+  attr :class, :any, default: nil, doc: "classes on the wrapper (e.g. shrink-0)"
   slot :inner_block, required: true
 
   def tooltip(assigns) do
     tooltip_id =
       cond do
         assigns.id -> assigns.id
-        assigns.aria_label -> nil
+        # An icon-only trigger needs no ids — its accessible name already says
+        # everything the bubble does. A command is the exception: it lives ONLY
+        # in the bubble, so that bubble must stay described and identifiable.
+        assigns.aria_label && is_nil(assigns.command) -> nil
         true -> "tooltip-#{:erlang.phash2(assigns.text)}"
       end
 
@@ -3509,6 +3574,7 @@ defmodule EmisarWeb.CoreComponents do
         ]}
       >
         {@text}
+        <.code_line :if={@command} id={"#{@tooltip_id}-command"} value={@command} class="mt-2" />
       </span>
     </span>
     """
@@ -4043,55 +4109,6 @@ defmodule EmisarWeb.CoreComponents do
   """
   def hide_confirm_dialog(js \\ %JS{}, id),
     do: js |> fade_dialog_out(id) |> JS.push("confirm_reset")
-
-  @doc ~S"""
-  Statistic **tile** — a big number in its own card, for the dashboard's metrics
-  grid. The widest of the stat pair: a list page's health counts are a naked
-  posture line of `<.status_dot>` + count text (the runners/agents grammar);
-  `<.meta_field>` is the key-value strip under a detail title.
-
-      <.stat label="Runners online" value={@runners_connected} hint={"of #{@total} total"} />
-  """
-  attr :label, :string, required: true
-  attr :value, :any, required: true
-  attr :hint, :string, default: nil
-  # Outcome lives in the value + this colored hint, NOT a tinted card border —
-  # so a stat tile reads the same as every other card (one flat surface) while
-  # still signalling state.
-  attr :hint_tone, :atom, default: :neutral, values: [:neutral, :rose, :amber, :brand]
-  attr :class, :string, default: nil
-
-  def stat(assigns) do
-    ~H"""
-    <%!-- The ONE sanctioned island surface (the dashboard pillar tile): a
-         zinc-900 step lifted off the black ground by a low-opacity white ring
-         (edge-as-light) and a 1px inset top highlight — never a drop shadow,
-         which can't read on black. --%>
-    <div class={[
-      "rounded-xl bg-zinc-900/60 p-6 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.07]",
-      @class
-    ]}>
-      <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">{@label}</div>
-      <div class={["mt-2 text-3xl font-semibold tabular-nums", stat_value_class(@value)]}>
-        {stat_value(@value)}
-      </div>
-      <div :if={@hint} class={["mt-1 text-xs", stat_hint_tone(@hint_tone)]}>{@hint}</div>
-    </div>
-    """
-  end
-
-  defp stat_hint_tone(:rose), do: "text-rose-300"
-  defp stat_hint_tone(:amber), do: "text-amber-300"
-  defp stat_hint_tone(:brand), do: "text-brand-300"
-  defp stat_hint_tone(_), do: "text-zinc-400"
-
-  # `value={:unavailable}` renders a muted em dash so a tile whose read failed
-  # reads "couldn't load", not a misleading 0 (the value is otherwise a count
-  # or an "N / M" string).
-  defp stat_value(:unavailable), do: "—"
-  defp stat_value(value), do: value
-  defp stat_value_class(:unavailable), do: "text-zinc-500"
-  defp stat_value_class(_), do: "text-zinc-50"
 
   @doc """
   Empty-state panel: a centered icon + headline + body + optional CTA.

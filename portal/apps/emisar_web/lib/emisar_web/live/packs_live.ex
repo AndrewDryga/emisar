@@ -445,10 +445,14 @@ defmodule EmisarWeb.PacksLive do
     if Map.has_key?(socket.assigns.inspected_actions, id) do
       socket
     else
+      # Three distinct values, because this list is what an admin reads before
+      # trusting bytes: nil (not read yet), :error (the read failed), or the
+      # actions. Collapsing the failure to [] said "advertises nothing" about a
+      # version whose contents we never saw.
       actions =
         case Catalog.list_pack_actions(pack_id, version, socket.assigns.current_subject) do
           {:ok, actions} -> actions
-          _ -> []
+          _ -> :error
         end
 
       update(socket, :inspected_actions, &Map.put(&1, id, actions))
@@ -577,6 +581,7 @@ defmodule EmisarWeb.PacksLive do
   # both render the identical list. `action_id`/`title` are runner-advertised
   # (attacker-influenced); they render through escaped HEEx, never `raw/1`.
   attr :actions, :list, required: true
+  attr :id, :string, required: true, doc: "version-scoped prefix for the per-row risk tooltip ids"
   attr :matched, :any, default: nil, doc: "MapSet of action_ids the active filter matched"
   attr :class, :string, default: nil
 
@@ -590,7 +595,9 @@ defmodule EmisarWeb.PacksLive do
           (matched?(@matched, action.action_id) && "border-brand-500") || "border-transparent"
         ]}
       >
-        <.risk_pill risk={action.risk} class="flex-none" />
+        <%!-- One pill per row, all in the leading column — a fixed track keeps
+             the action ids beside them on one left edge. --%>
+        <.risk_pill id={"#{@id}-#{action.action_id}-risk"} risk={action.risk} variant={:track} />
         <span class={[
           "font-mono",
           (matched?(@matched, action.action_id) && "text-brand-200") || "text-zinc-300"
@@ -607,7 +614,11 @@ defmodule EmisarWeb.PacksLive do
   defp matched?(matched, action_id), do: MapSet.member?(matched, action_id)
 
   attr :version, :map, required: true
-  attr :inspected, :any, required: true, doc: "nil (unloaded), [] (none), or the action list"
+
+  attr :inspected, :any,
+    required: true,
+    doc: "nil (unloaded), :error (read failed), [] (none), or the action list"
+
   attr :matched, :any, default: nil, doc: "MapSet of matched action_ids, or nil when unfiltered"
 
   # A trusted version's auditable contents, expanded by the row's leading
@@ -632,18 +643,23 @@ defmodule EmisarWeb.PacksLive do
         <span class="break-all font-mono">{@version.hash || @version.pending_hash}</span>
       </p>
       <p :if={is_nil(@inspected)} class="mt-2 text-[11px] text-zinc-500">Loading…</p>
+      <p :if={@inspected == :error} class="mt-2 text-[11px] text-rose-300">
+        Couldn't load this version's actions — a read error, not an empty pack. Refresh before
+        deciding on its trust.
+      </p>
       <p :if={@inspected == []} class="mt-2 text-[11px] text-zinc-500">
         No actions advertised for this version right now.
       </p>
       <p
-        :if={not is_nil(@matched) and @shown not in [nil, []]}
+        :if={not is_nil(@matched) and @shown not in [nil, :error, []]}
         data-role="pack-action-match-summary"
         class="mt-2 text-[11px] font-medium text-brand-300"
       >
         {match_count_label(@shown)}
       </p>
       <.pack_action_list
-        :if={@shown not in [nil, []]}
+        :if={@shown not in [nil, :error, []]}
+        id={"pack-version-#{@version.id}-contents"}
         actions={@shown}
         class={if @matched, do: "mt-1.5", else: "mt-2"}
       />
@@ -652,8 +668,10 @@ defmodule EmisarWeb.PacksLive do
   end
 
   # The contents a disclosure renders: everything when unfiltered, only the
-  # matched actions when a filter is active (nil stays nil — still loading).
+  # matched actions when a filter is active. nil (still loading) and :error (the
+  # read failed) pass through — neither is a list to filter.
   defp filtered_contents(nil, _matched), do: nil
+  defp filtered_contents(:error, _matched), do: :error
   defp filtered_contents(actions, nil), do: actions
 
   defp filtered_contents(actions, matched),
@@ -952,7 +970,13 @@ defmodule EmisarWeb.PacksLive do
             <span class="w-12 flex-none font-semibold uppercase tracking-wide text-rose-300">
               + added
             </span>
-            <.risk_pill risk={a.risk} class="flex-none" />
+            <%!-- Added / changed / removed rows put their verdicts in one
+                 column after the w-12 marker, so every pill takes the track. --%>
+            <.risk_pill
+              id={"pack-version-#{@version.id}-added-#{a.action_id}-risk"}
+              risk={a.risk}
+              variant={:track}
+            />
             <span class="truncate font-mono text-zinc-200">{a.action_id}</span>
           </li>
           <li :for={c <- @fact.action_changes.changed} class="flex items-center gap-2 text-[11px]">
@@ -963,9 +987,18 @@ defmodule EmisarWeb.PacksLive do
               ~ changed
             </span>
             <span class="flex items-center gap-1">
-              <.risk_pill risk={c.old_risk} class="flex-none opacity-60" />
+              <.risk_pill
+                id={"pack-version-#{@version.id}-changed-#{c.action_id}-old-risk"}
+                risk={c.old_risk}
+                variant={:track}
+                class="opacity-60"
+              />
               <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-500" />
-              <.risk_pill risk={c.new_risk} class="flex-none" />
+              <.risk_pill
+                id={"pack-version-#{@version.id}-changed-#{c.action_id}-new-risk"}
+                risk={c.new_risk}
+                variant={:track}
+              />
             </span>
             <span class="truncate font-mono text-zinc-200">{c.action_id}</span>
             <span :if={c.old_kind != c.new_kind} class="flex-none text-zinc-500">
@@ -979,7 +1012,12 @@ defmodule EmisarWeb.PacksLive do
             <span class="w-12 flex-none font-semibold uppercase tracking-wide">
               − removed
             </span>
-            <.risk_pill risk={r.risk} class="flex-none opacity-50" />
+            <.risk_pill
+              id={"pack-version-#{@version.id}-removed-#{r.action_id}-risk"}
+              risk={r.risk}
+              variant={:track}
+              class="opacity-50"
+            />
             <span class="truncate font-mono line-through">{r.action_id}</span>
           </li>
         </ul>
@@ -991,7 +1029,12 @@ defmodule EmisarWeb.PacksLive do
         <div class="text-[11px] font-semibold text-zinc-300">
           Trusting authorizes {length(@fact.actions)} action(s):
         </div>
-        <.pack_action_list actions={@fact.actions} matched={@matched} class="mt-1" />
+        <.pack_action_list
+          id={"pack-version-#{@version.id}-pending"}
+          actions={@fact.actions}
+          matched={@matched}
+          class="mt-1"
+        />
       </div>
       <%!-- Trust/Reject mutate authorization state — owner/admin
            only. The context gate (manage_catalog) is defense in
@@ -1077,10 +1120,12 @@ defmodule EmisarWeb.PacksLive do
     ~H"""
     <%!-- The same icon-capped spine as a row's retired block, but NEUTRAL and
          pack-level: a newer version shipped, yet what's installed still runs and
-         dispatches — a heads-up, not a warning, so it never wears rose. --%>
+         dispatches — a heads-up, not a warning, so it never wears rose. The glyph
+         is the DOWNLOAD metaphor the runner surfaces use for the same act
+         (§7.49); an up-arrow pointed the way the operator does not go. --%>
     <.event_block
       :if={@update}
-      icon="hero-arrow-up-circle"
+      icon="hero-cloud-arrow-down"
       tone={:neutral}
       title="Update available"
       class="mt-4"
@@ -1357,52 +1402,64 @@ defmodule EmisarWeb.PacksLive do
                         class="text-zinc-400"
                       />
                     </span>
+                    <%!-- A manager's row carries three verbs (read + one trust verb +
+                         Delete) — the labeled-menu threshold (§7.47), same grammar as
+                         the LLM-agents rows. Everyone else has only the read path, and
+                         a one-item dropdown is ceremony, so it stays the house brand
+                         link: navigation is never button chrome (§2). --%>
                     <div class="ml-auto flex shrink-0 items-center gap-2">
-                      <.button
-                        navigate={
-                          ~p"/app/#{@current_account}/audit?#{[target_kind: "pack_version", target_id: v.id]}"
-                        }
-                        variant={:ghost}
-                        size={:sm}
-                      >
-                        View activity
-                      </.button>
-                      <.button
-                        :if={
-                          Catalog.subject_can_manage_packs?(@current_subject) and
-                            @version_facts[v.id].trust_state == :rejected and
-                            (v.pending_hash || v.hash) != nil
-                        }
-                        variant={:secondary}
-                        tone={:amber}
-                        size={:sm}
-                        type="button"
-                        phx-click={open_confirm("trust-#{v.id}")}
-                      >
-                        Trust
-                      </.button>
-                      <.button
-                        :if={
-                          Catalog.subject_can_manage_packs?(@current_subject) and
-                            @version_facts[v.id].trust_state == :trusted
-                        }
-                        variant={:secondary}
-                        size={:sm}
-                        type="button"
-                        phx-click={open_confirm("revoke-#{v.id}")}
-                      >
-                        Revoke trust
-                      </.button>
-                      <.button
-                        :if={Catalog.subject_can_manage_packs?(@current_subject)}
-                        variant={:secondary}
-                        tone={:rose}
-                        size={:sm}
-                        type="button"
-                        phx-click={open_confirm("delete-version-#{v.id}")}
-                      >
-                        Delete
-                      </.button>
+                      <%= if Catalog.subject_can_manage_packs?(@current_subject) do %>
+                        <.dropdown
+                          class="inline-block shrink-0 text-left"
+                          summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                          panel_class="z-10 mt-2 w-48 p-1 text-xs shadow-xl"
+                        >
+                          <:trigger>
+                            Actions
+                            <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
+                          </:trigger>
+                          <.menu_item
+                            navigate={
+                              ~p"/app/#{@current_account}/audit?#{[target_kind: "pack_version", target_id: v.id]}"
+                            }
+                            icon="hero-shield-check"
+                          >
+                            View activity
+                          </.menu_item>
+                          <.menu_item
+                            :if={
+                              @version_facts[v.id].trust_state == :rejected and
+                                (v.pending_hash || v.hash) != nil
+                            }
+                            tone={:amber}
+                            phx-click={open_confirm("trust-#{v.id}")}
+                          >
+                            Trust
+                          </.menu_item>
+                          <.menu_item
+                            :if={@version_facts[v.id].trust_state == :trusted}
+                            phx-click={open_confirm("revoke-#{v.id}")}
+                          >
+                            Revoke trust
+                          </.menu_item>
+                          <div class="my-1 border-t border-zinc-800/70"></div>
+                          <.menu_item
+                            tone={:rose}
+                            phx-click={open_confirm("delete-version-#{v.id}")}
+                          >
+                            Delete
+                          </.menu_item>
+                        </.dropdown>
+                      <% else %>
+                        <.link
+                          navigate={
+                            ~p"/app/#{@current_account}/audit?#{[target_kind: "pack_version", target_id: v.id]}"
+                          }
+                          class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                        >
+                          View activity <.cta_arrow />
+                        </.link>
+                      <% end %>
                     </div>
                   </div>
 

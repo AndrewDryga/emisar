@@ -711,7 +711,7 @@ defmodule EmisarWeb.LiveTable do
   @doc """
   The active (non-default) filters as human "Title: Label" strings — a
   `:collapsible` page's CLOSED toggle narrates what's narrowing the list
-  ("Type: Runner — all events · Severity: Failures & errors") instead of a
+  ("Type: Runner — all events · Severity: Failures & denials") instead of a
   bare count. List values resolve through the filter's option labels
   (grouped or flat); datetimes prettify the `T`; a boolean reads as its title.
   """
@@ -791,16 +791,20 @@ defmodule EmisarWeb.LiveTable do
       id={"#{@id}-pager"}
       class="flex items-center justify-between text-xs text-zinc-400"
     >
-      <%!-- An estimated total is marked with `~` and says so on hover: the
-           number is the planner's row estimate for an append-only set too large
-           to count on every load, and a bare figure would read as exact. --%>
+      <%!-- An estimated total is marked with `~` that explains itself through the
+           shared tooltip — the number is the planner's row estimate for an
+           append-only set too large to count on every load, and a bare figure
+           would read as exact. A one-character marker is unreadable without that
+           explanation, so it goes where touch and keyboard can reach it. --%>
       <div>
         <%= if @metadata.count != nil do %>
           <span class="tabular-nums">
-            <span :if={@page_count}>{@page_count} / </span><span
+            <span :if={@page_count}>{@page_count} / </span><CoreComponents.tooltip
               :if={@metadata.count_kind == :estimated}
-              title="Approximate — counting every event on each load gets slower as the trail grows. Filter the list for an exact total."
-            >~</span>{@metadata.count}
+              id={"#{@id}-count-estimate"}
+              align={:left}
+              text="Approximate — counting every event on each load gets slower as the trail grows. Filter the list for an exact total."
+            >~</CoreComponents.tooltip>{@metadata.count}
           </span>
           total
         <% end %>

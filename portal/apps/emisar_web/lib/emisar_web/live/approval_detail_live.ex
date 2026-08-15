@@ -35,6 +35,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
      |> assign(:runner_connection, :unknown)
      |> assign(:user_labels, %{})
      |> assign(:decisions, [])
+     |> assign(:decisions_error?, false)
      |> assign(:approval_event_refs, %{final: nil, decisions: %{}})
      |> assign(:approved_count, 0)
      |> assign(:already_decided?, false)
@@ -131,21 +132,20 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp execution_plan(_request), do: nil
 
-  defp request_title(%{
-         context: %{
-           "kind" => "runbook_execution",
-           "execution_kind" => "draft_test",
-           "runbook" => runbook
-         }
-       }),
-       do: "Draft test · #{runbook["title"] || "Runbook"}"
+  # The section header already says "Why", so a lone REASON key stacked under it
+  # prints one thing twice (§7.43). The keys earn their place the moment a second
+  # fact — evidence, the expected outcome, the policy that gated it — joins them.
+  defp lone_reason?(%Approvals.Request{} = request, run) do
+    request.evidence in [nil, ""] and request.expected in [nil, ""] and
+      (is_nil(run) or is_nil(run.policy_reason))
+  end
 
-  defp request_title(%{
-         context: %{"kind" => "runbook_execution", "runbook" => runbook}
-       }),
-       do: runbook["title"] || "Runbook execution"
-
-  defp request_title(%{context: context, id: id}), do: context["action_id"] || id
+  # Approvals owns the name (one derivation for the queue, the dashboard, and the
+  # audit trail); the id is this page's own last resort, because a request whose
+  # frozen context names neither a runbook nor an action still has to be
+  # addressable in a page title.
+  defp request_title(%Approvals.Request{} = request),
+    do: Approvals.request_name(request) || request.id
 
   # One tier for either shape — a direct action's advertised risk or the worst
   # across a frozen execution plan — owned by the Approvals context.
@@ -208,22 +208,26 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp load_decisions(socket, request) do
     subject = socket.assigns.current_subject
 
-    decisions =
+    # A failed read here is not "nobody has voted": it would print "0 of 3" to
+    # the approver deciding on a quorum, and drop the vote trail that shows who
+    # already signed off. Carry the failure so the tally reads as unknown.
+    {decisions, decisions_failed?} =
       case Approvals.list_decisions_for_request(request, subject) do
-        {:ok, list} -> list
-        {:error, _} -> []
+        {:ok, list} -> {list, false}
+        {:error, _} -> {[], true}
       end
 
-    approved_count =
+    {approved_count, count_failed?} =
       case Approvals.approved_count_for_request(request, subject) do
-        {:ok, n} -> n
-        {:error, _} -> 0
+        {:ok, n} -> {n, false}
+        {:error, _} -> {0, true}
       end
 
     actor_id = subject.actor && subject.actor.id
 
     socket
     |> assign(:decisions, decisions)
+    |> assign(:decisions_error?, decisions_failed? or count_failed?)
     |> assign(:approval_event_refs, approval_event_refs(request, subject))
     |> assign(:user_labels, user_labels_for(request, decisions, subject))
     |> assign(:approved_count, approved_count)
@@ -620,9 +624,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # Hover context for the source qualifier. `:operator` (a human from the
   # console) carries no qualifier at all — the requester name says it; `:mcp`
   # is the one that matters, an autonomous LLM agent reaching the gate.
-  defp dispatch_source_title(:mcp), do: "Dispatched by an LLM agent over the MCP API"
-  defp dispatch_source_title(:runbook), do: "Dispatched as a step in a runbook run"
-  defp dispatch_source_title(_), do: nil
+  # Only reached for a non-:operator source — the qualifier renders nowhere else.
+  defp dispatch_source_meaning(:mcp), do: "Dispatched by an LLM agent over the MCP API"
+  defp dispatch_source_meaning(:runbook), do: "Dispatched as a step in a runbook run"
 
   # The dispatch channel qualifier comes from Runs' attribution projection, so
   # approval never reinterprets API-key ownership or association load state.
@@ -723,19 +727,19 @@ defmodule EmisarWeb.ApprovalDetailLive do
                  the sweeper hasn't auto-denied yet is still :pending in the DB,
                  and "Status: pending" above an "Expired — auto-denied" verdict
                  block contradicts the page. --%>
-            <.meta_field label="Status">
+            <%!-- wrap: a badge is a composite, not a text run — truncation shears
+             its pill instead of ellipsizing (§7.35). --%>
+            <.meta_field label="Status" wrap>
               <.status_badge status={@request_facts.status} />
             </.meta_field>
-            <%!-- Never clip the action on the decision screen — an approver must read
-             the full action id before deciding. `wrap` gives it the full row on
-             mobile and wraps rather than truncating; the risk pill flows after. --%>
-            <.meta_field label={if(@execution_request?, do: "Runbook", else: "Action")} wrap>
-              <span class="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span class={[if(not @execution_request?, do: "font-mono"), "text-zinc-200"]}>
-                  {request_title(@request)}
-                </span>
-                <.risk_pill :if={@action_risk} risk={@action_risk} />
-              </span>
+            <%!-- No ACTION/RUNBOOK meta field: its value was `request_title/1`, the
+             very string the page title above already prints in full (mono for an
+             action id) — a label:value row whose value restates the heading says
+             one thing twice (§7.43). The risk tier is a genuinely separate fact,
+             so it keeps its place, next to the status it qualifies. `wrap`: a pill
+             is a composite, and scalar truncation shears it (§7.35). --%>
+            <.meta_field :if={@action_risk} label="Risk" wrap>
+              <.risk_pill id={"approval-#{@request.id}-risk"} risk={@action_risk} />
             </.meta_field>
             <.meta_field :if={not @execution_request?} label="Runner">
               <%= if @run && @run.runner do %>
@@ -768,21 +772,27 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <%!-- Who (the accountable human) AND what asked: a request from an
              autonomous LLM agent (MCP) is the reason the gate exists and
              warrants more scrutiny than an operator's own dispatch. --%>
-            <.meta_field label="Requested by">
-              <span class="block truncate">
+            <%!-- wrap: the source qualifier explains itself through a <.tooltip>,
+             whose bubble scalar truncation would clip away. --%>
+            <.meta_field label="Requested by" wrap>
+              <span class="block">
                 <span class="text-zinc-200">
                   {user_label(@user_labels, @request.requested_by_id)}
                 </span>
                 <%!-- The source qualifier is quiet TYPE after the name (the
                      run-detail "Dispatched by" grammar), never a filled chip —
-                     who asked is metadata, not a status. --%>
-                <span
+                     who asked is metadata, not a status. "· Claude Code" doesn't
+                     say an LLM dispatched this, so the tooltip carries that where
+                     a touch or keyboard approver can reach it. --%>
+                <.tooltip
                   :if={@run && @run.source != :operator}
+                  id={"approval-#{@request.id}-source"}
+                  align={:left}
+                  text={dispatch_source_meaning(@run.source)}
                   class="text-zinc-400"
-                  title={dispatch_source_title(@run.source)}
                 >
                   · {approval_channel(@run)}
-                </span>
+                </.tooltip>
               </span>
             </.meta_field>
             <%!-- wrap: the forensic timestamp is a machine value — on a phone it takes
@@ -798,7 +808,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <%!-- Only surface the tally for a multi-approver gate; a 1-of-1
              request reads no differently than the single-approver flow. --%>
             <.meta_field :if={@request.min_approvals > 1} label="Approvals">
-              <span class="text-zinc-200">{@approved_count} of {@request.min_approvals}</span>
+              <span :if={@decisions_error?} class="text-zinc-200">
+                {@request.min_approvals} required · tally unavailable
+              </span>
+              <span :if={not @decisions_error?} class="text-zinc-200">
+                {@approved_count} of {@request.min_approvals}
+              </span>
             </.meta_field>
             <%!-- Expiry isn't a meta field: for a held request the live countdown
                owns it in the decide panel (more prominent + ticking); a decided
@@ -949,10 +964,18 @@ defmodule EmisarWeb.ApprovalDetailLive do
               <.section_header title="Why" />
               <dl class="space-y-5">
                 <div :if={@request.reason && @request.reason != ""}>
-                  <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                  <dt
+                    :if={not lone_reason?(@request, @run)}
+                    class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400"
+                  >
                     Reason
                   </dt>
-                  <dd class="mt-1 text-sm leading-relaxed text-zinc-200">{@request.reason}</dd>
+                  <dd class={[
+                    "text-sm leading-relaxed text-zinc-200",
+                    not lone_reason?(@request, @run) && "mt-1"
+                  ]}>
+                    {@request.reason}
+                  </dd>
                 </div>
                 <%!-- The agent's justification chain, snapshotted on the request:
                      what it observed, then the outcome it expected. An approver
@@ -995,11 +1018,26 @@ defmodule EmisarWeb.ApprovalDetailLive do
                (the decision-history panel covers the lone vote). --%>
             <%!-- The vote trail ON THE CANVAS — hairline rows under a section
                header (the approvals-list grammar), not a boxed split panel. --%>
-            <section :if={@decisions != [] and @request.min_approvals > 1}>
+            <section :if={(@decisions != [] or @decisions_error?) and @request.min_approvals > 1}>
               <.section_header title="Decisions">
-                <:subtitle>{@approved_count} of {@request.min_approvals} approvals</:subtitle>
+                <:subtitle :if={not @decisions_error?}>
+                  {@approved_count} of {@request.min_approvals} approvals
+                </:subtitle>
               </.section_header>
-              <ul class="divide-y divide-zinc-800/70">
+              <%!-- Who has already signed off is what an approver reads before
+                   adding their own vote — never present a failed read as an
+                   untouched quorum. --%>
+              <.empty_state
+                :if={@decisions_error?}
+                variant={:hint}
+                tone={:danger}
+                icon="hero-exclamation-triangle"
+                title="Couldn't load the decisions"
+              >
+                This is a load error, not an untouched request — approvals may already be
+                recorded. Refresh the page before deciding.
+              </.empty_state>
+              <ul :if={not @decisions_error?} class="divide-y divide-zinc-800/70">
                 <li
                   :for={decision <- @decisions}
                   class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-sm"
@@ -1053,6 +1091,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               self_blocked?={@self_blocked?}
               already_decided?={@already_decided?}
               approved_count={@approved_count}
+              decisions_error?={@decisions_error?}
               min_approvals={@request.min_approvals}
               expires_at={@request_facts.expires_at}
               expires_in_seconds={@request_facts.expires_in_seconds}
@@ -1099,6 +1138,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   attr :self_blocked?, :boolean, default: false
   attr :already_decided?, :boolean, default: false
   attr :approved_count, :integer, default: 0
+  attr :decisions_error?, :boolean, default: false
   attr :min_approvals, :integer, default: 1
   attr :expires_at, :any, default: nil
   # Seconds left on the deadline, projected by Approvals — the no-JS fallback
@@ -1137,7 +1177,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
       <p :if={@min_approvals > 1} class="text-xs leading-relaxed text-zinc-400">
         This {target_noun(@execution_request?)} needs
         <strong class="text-zinc-100">{@min_approvals} distinct approvals</strong>
-        — {@approved_count} so far.
+        <span :if={not @decisions_error?}>— {@approved_count} so far.</span>
+        <span :if={@decisions_error?}>— the current tally couldn't be read.</span>
       </p>
 
       <.event_block

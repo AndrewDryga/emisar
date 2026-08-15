@@ -146,16 +146,23 @@ defmodule Emisar.Audit.Event.Query do
 
   def known_event_type_values, do: @known_event_types
 
-  # An event's OUTCOME from its type suffix: a failure (`:danger`), a warn-class
-  # denial/removal (`:warn`), a pass verdict (`:pass` — the gate saying YES: a
+  # An event's OUTCOME from its type suffix: a failure or DENIAL (`:danger`), a
+  # removal/limit (`:warn`), a pass verdict (`:pass` — the gate saying YES: a
   # run succeeding, an approval landing, a grant or consent letting something
   # through), or routine (`:neutral`). The audit list/detail dots color by this
   # AND the "Severity" filter narrows by it, so the two can never disagree —
   # one source, read by both (the web reads it, never copies it). Lifecycle
   # positives (connected, enabled, accepted, confirmed) stay :neutral on
   # purpose: green marks verdicts, not activity, or it becomes wallpaper.
-  @danger_suffixes ~w[_failed .failed .error .timed_out _halted]
-  @warn_suffixes ~w[.denied .refused .revoked _revoked .rejected _rejected _rate_limited .disabled .deleted _deleted .removed .suspended .expired .cancelled]
+  #
+  # A DENIAL is `:danger`, so the trail paints it ROSE exactly as the approvals
+  # queue does — the tone table (design-console-ux §2) reads rose as
+  # "denied/failed/danger", and one refusal cannot wear two colors on two
+  # surfaces. `:warn` keeps what it always meant minus the denials: something
+  # existing was taken away or throttled (revoked, deleted, suspended, expired,
+  # rate-limited) — a caution to look at, not the gate saying no.
+  @danger_suffixes ~w[_failed .failed .error .timed_out _halted .denied .refused .rejected _rejected]
+  @warn_suffixes ~w[.revoked _revoked _rate_limited .disabled .deleted _deleted .removed .suspended .expired .cancelled]
   @pass_suffixes ~w[.success .succeeded .approved _approved .grant_used .consent_granted]
 
   def outcome(event_type) when is_binary(event_type) do
@@ -717,8 +724,8 @@ defmodule Emisar.Audit.Event.Query do
         type: {:list, :string},
         span: :half,
         values: [
-          {"danger", "Failures & errors"},
-          {"warn", "Denials & removals"},
+          {"danger", "Failures & denials"},
+          {"warn", "Removals & limits"},
           {"pass", "Successes & approvals"}
         ],
         fun: fn queryable, outcomes ->

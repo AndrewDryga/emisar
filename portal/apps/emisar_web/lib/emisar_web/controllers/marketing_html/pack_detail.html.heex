@@ -152,7 +152,7 @@
                     <span class="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300">
                       {action.kind}
                     </span>
-                    <.risk_pill risk={action.risk} />
+                    <.risk_pill id={"pack-action-#{action.id}-risk"} risk={action.risk} />
                   </div>
                   <p class="mt-0.5 truncate text-xs text-zinc-400">{action.title}</p>
                 </div>
@@ -196,10 +196,8 @@
           </.link>
           <.link
             navigate={~p"/docs/publishing-packs"}
-            class="font-semibold text-brand-300 hover:text-brand-200"
-          >
-            Publish your own →
-          </.link>
+            class="group font-semibold text-brand-300 hover:text-brand-200"
+          >Publish your own&nbsp;<.cta_arrow /></.link>
         </div>
       </div>
     </div>

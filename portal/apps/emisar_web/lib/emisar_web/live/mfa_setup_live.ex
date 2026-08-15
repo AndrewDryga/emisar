@@ -109,7 +109,9 @@ defmodule EmisarWeb.MfaSetupLive do
           >
             <:actions>
               <.button phx-disable-with="Verifying...">Verify email</.button>
-              <.button variant={:ghost} type="button" phx-click="resend_mfa_enrollment_email">
+              <%!-- Resending sends a real email, so it wears a bordered face (§7.47) —
+                   the same grammar as the profile copy of this step. --%>
+              <.button variant={:secondary} type="button" phx-click="resend_mfa_enrollment_email">
                 Resend code
               </.button>
             </:actions>

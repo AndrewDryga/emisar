@@ -36,6 +36,7 @@ defmodule EmisarWeb.RunbooksLive do
     |> assign(:filters, Runbooks.runbook_filters())
     |> assign(:load_error?, false)
     |> assign(:recent_executions, [])
+    |> assign(:recent_executions_error?, false)
   end
 
   def handle_event("filter", params, socket) do
@@ -84,8 +85,15 @@ defmodule EmisarWeb.RunbooksLive do
 
   defp load_recent_executions(socket) do
     case Runbooks.list_recent_executions(socket.assigns.current_subject, 5) do
-      {:ok, executions} -> assign(socket, :recent_executions, executions)
-      {:error, _reason} -> assign(socket, :recent_executions, [])
+      {:ok, executions} ->
+        socket
+        |> assign(:recent_executions, executions)
+        |> assign(:recent_executions_error?, false)
+
+      {:error, _reason} ->
+        socket
+        |> assign(:recent_executions, [])
+        |> assign(:recent_executions_error?, true)
     end
   end
 
@@ -203,23 +211,33 @@ defmodule EmisarWeb.RunbooksLive do
                       <%!-- Headline risk — the most-severe step's risk, so the
                        operator sees how dangerous a runbook is before opening
                        it. Hidden when no step's action is in the catalog. --%>
-                      <.risk_pill :if={@runbook_risk[runbook.id]} risk={@runbook_risk[runbook.id]} />
+                      <.risk_pill
+                        :if={@runbook_risk[runbook.id]}
+                        id={"runbook-#{runbook.id}-risk"}
+                        risk={@runbook_risk[runbook.id]}
+                      />
                     </:title>
                     <:meta>
                       <%!-- Row 2: description preview + slug --%>
+                      <%!-- The slug is the runbook's machine handle — an operator
+                           types it into MCP and the CLI, so a tail clipped off it
+                           is unusable. The description is the elastic half: it
+                           takes the slack and ellipsizes, the slug reads whole. --%>
                       <.meta_line>
-                        <:seg :if={runbook.description && runbook.description != ""}>
+                        <:seg :if={runbook.description && runbook.description != ""} truncate>
                           {preview(runbook.description)}
                         </:seg>
                         <:seg><span class="font-mono">{runbook.slug}</span></:seg>
                       </.meta_line>
                     </:meta>
                     <:actions>
+                      <%!-- Navigation, but it shares this row with the bordered Run
+                           button, and a row wears ONE button grammar (§7.47). --%>
                       <.button
                         navigate={
                           ~p"/app/#{@current_account}/audit?#{[target_kind: "runbook", target_id: runbook.id]}"
                         }
-                        variant={:ghost}
+                        variant={:secondary}
                         size={:sm}
                       >
                         View activity
@@ -260,6 +278,7 @@ defmodule EmisarWeb.RunbooksLive do
             <.section_header title="Recent runs" />
             <RunbookWorkflowComponents.recent_executions
               executions={@recent_executions}
+              load_error?={@recent_executions_error?}
               current_account={@current_account}
               show_runbook?
             />

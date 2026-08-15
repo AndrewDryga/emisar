@@ -18,7 +18,12 @@ defmodule EmisarWeb.DomainComponents do
 
   import EmisarWeb.CoreComponents
   alias Emisar.Runs
-  alias EmisarWeb.{TimeHelpers, UrlHelpers}
+  alias EmisarWeb.{FleetStates, TimeHelpers, UrlHelpers}
+
+  # The one spelling of the runner self-update, read by both surfaces that ask
+  # for it — the page notice and the per-row version chip's tooltip — so an
+  # operator is never told two different things to run.
+  @runner_update_command "sudo emisar update"
 
   @doc """
   Banner shown above a billing surface when the account's Paddle subscription
@@ -233,7 +238,7 @@ defmodule EmisarWeb.DomainComponents do
   def runner_status_badge(assigns) do
     ~H"""
     <.status_badge
-      status={connection_status(@state)}
+      status={FleetStates.label(@state)}
       tone={runner_status_tone(@state, @version)}
       class={@class}
     />
@@ -419,28 +424,35 @@ defmodule EmisarWeb.DomainComponents do
   attr :class, :string, default: nil
 
   def version_chip(assigns) do
-    assigns = assign(assigns, :status, version_status(assigns.kind, assigns.version))
+    assigns =
+      assigns
+      |> assign(:status, version_status(assigns.kind, assigns.version))
+      |> assign(:command, version_chip_command(assigns.kind))
 
     ~H"""
     <.tooltip
       :if={@status in [:outdated, :unsupported]}
       id={@id}
       text={version_chip_title(@kind, @status, @version)}
+      command={@command}
       aria_label={@status == :outdated && version_chip_title(@kind, @status, @version)}
       align={:responsive}
       class={@class}
     >
       <%!-- Below the minimum is a blocked state and keeps the labelled warning
            chip. Merely behind the current release still runs and dispatches
-           fine, so it is quiet chrome — one arrow beside the version that
+           fine, so it is quiet chrome — one glyph beside the version that
            explains itself on hover or focus, never a badge shouting beside the
-           host's name (the Packs page words the same fact the same way). --%>
+           host's name (the Packs page words the same fact the same way). It is
+           the DOWNLOAD metaphor, the same glyph the page notice above uses for
+           the same act (§7.49) — an up-arrow read as upload/publish, the
+           opposite direction from what the operator actually does. --%>
       <.chip :if={@status == :unsupported} tone={:rose} icon="hero-exclamation-triangle">
         unsupported
       </.chip>
       <.icon
         :if={@status == :outdated}
-        name="hero-arrow-up-circle"
+        name="hero-cloud-arrow-down"
         class="h-3.5 w-3.5 text-zinc-500"
       />
     </.tooltip>
@@ -451,15 +463,34 @@ defmodule EmisarWeb.DomainComponents do
 
   defp version_status(:mcp, version), do: Emisar.Compat.mcp_status(version)
 
+  @doc """
+  The ONE operator-facing spelling of a release number: `v`-prefixed, matching
+  the runners list, `emisar --version`, and the release tags. `Emisar.Compat`
+  stores versions bare because they are comparison values, so the spelling is
+  the web's to apply — three console surfaces printed `v0.10.0`, `0.10.0`, and
+  "behind 0.19.0" for the same kind of fact. A blank/unknown version has no
+  label; the caller renders its own em-dash placeholder.
+
+  Note this is for a VERSION, never a requirement string — `runner_minimum/0`
+  is `">= 0.10.0"` and must stay exactly as configured.
+  """
+  def version_label(version) when is_binary(version) and version != "", do: "v" <> version
+
+  def version_label(_version), do: nil
+
+  # Both runner states point at the same fix, so both hand over the command
+  # instead of spelling it into the sentence — the bubble carries it as the
+  # copyable row the page notice uses, and the prose just says to run it.
   defp version_chip_title(:runner, :unsupported, _version) do
-    "Below the minimum runner version #{Emisar.Compat.runner_minimum()} — upgrade this runner."
+    "Below the minimum runner version #{Emisar.Compat.runner_minimum()} — run the command " <>
+      "on this host; it keeps the configuration and restarts the service."
   end
 
   # Names the release the operator would get and the one they are on, the way
   # an update prompt should — never the requirement string that decided it.
   defp version_chip_title(:runner, :outdated, version) do
-    "Runner #{Emisar.Compat.runner_target()} is available#{version_from(version)}. " <>
-      "Run sudo emisar update on this host; it keeps the configuration and restarts the service."
+    "Runner #{version_label(Emisar.Compat.runner_target())} is available#{version_from(version)}. " <>
+      "Run the command on this host; it keeps the configuration and restarts the service."
   end
 
   defp version_chip_title(:mcp, :unsupported, _version) do
@@ -467,12 +498,19 @@ defmodule EmisarWeb.DomainComponents do
   end
 
   defp version_chip_title(:mcp, :outdated, version) do
-    "emisar-mcp #{Emisar.Compat.mcp_target()} is available#{version_from(version)}. " <>
+    "emisar-mcp #{version_label(Emisar.Compat.mcp_target())} is available#{version_from(version)}. " <>
       "Re-run the installer on that machine, then restart its LLM client."
   end
 
+  # A bridge is upgraded by re-running its installer, and that one-liner carries
+  # the account's own portal URL — too long to read clipped in a bubble, so the
+  # agents-list notice keeps sole ownership of it.
+  defp version_chip_command(:runner), do: @runner_update_command
+
+  defp version_chip_command(:mcp), do: nil
+
   defp version_from(version) when is_binary(version) and version != "",
-    do: "; this one is on #{version}"
+    do: "; this one is on #{version_label(version)}"
 
   defp version_from(_version), do: ""
 
@@ -569,7 +607,7 @@ defmodule EmisarWeb.DomainComponents do
   end
 
   defp version_upgrade_message(:runner, :single, 0, _outdated) do
-    "This runner is behind #{Emisar.Compat.runner_target()}. " <>
+    "This runner is behind #{version_label(Emisar.Compat.runner_target())}. " <>
       "Run the command on its host. The update preserves its configuration and restarts the service."
   end
 
@@ -583,7 +621,7 @@ defmodule EmisarWeb.DomainComponents do
   end
 
   defp version_upgrade_message(:runner, :list, 0, outdated_count) do
-    "#{runner_count_phrase(outdated_count)} behind #{Emisar.Compat.runner_target()}. " <>
+    "#{runner_count_phrase(outdated_count)} behind #{version_label(Emisar.Compat.runner_target())}. " <>
       "Run the command once on each affected host; " <>
       "the update preserves its configuration and restarts the service."
   end
@@ -591,7 +629,7 @@ defmodule EmisarWeb.DomainComponents do
   defp version_upgrade_message(:runner, :list, unsupported_count, outdated_count) do
     "On this page, #{version_count_label(unsupported_count, "runner")} below the supported " <>
       "range (#{Emisar.Compat.runner_minimum()}) and " <>
-      "#{version_count_label(outdated_count, "runner")} behind #{Emisar.Compat.runner_target()}. " <>
+      "#{version_count_label(outdated_count, "runner")} behind #{version_label(Emisar.Compat.runner_target())}. " <>
       "Run the command once on each affected host; " <>
       "the update preserves its configuration and restarts the service."
   end
@@ -606,14 +644,14 @@ defmodule EmisarWeb.DomainComponents do
 
   defp version_upgrade_message(:mcp, _scope, 0, outdated_count) do
     "#{outdated_count} #{agent_count_label(outdated_count)} on this page last connected through a bridge behind " <>
-      "#{Emisar.Compat.mcp_target()}. Run the command once on " <>
+      "#{version_label(Emisar.Compat.mcp_target())}. Run the command once on " <>
       "each affected machine, then restart its LLM client."
   end
 
   defp version_upgrade_message(:mcp, _scope, unsupported_count, outdated_count) do
     "On this page, #{version_count_label(unsupported_count, "agent")} last connected through " <>
       "a bridge below the supported range (#{Emisar.Compat.mcp_minimum()}) and " <>
-      "#{version_count_label(outdated_count, "agent")} behind #{Emisar.Compat.mcp_target()}. " <>
+      "#{version_count_label(outdated_count, "agent")} behind #{version_label(Emisar.Compat.mcp_target())}. " <>
       "Run the command once on each affected machine, then restart its LLM client."
   end
 
@@ -621,7 +659,7 @@ defmodule EmisarWeb.DomainComponents do
 
   defp version_count_label(count, noun), do: "#{count} #{noun}s are"
 
-  defp version_upgrade_command(:runner, _base_url), do: "sudo emisar update"
+  defp version_upgrade_command(:runner, _base_url), do: @runner_update_command
 
   defp version_upgrade_command(:mcp, base_url), do: UrlHelpers.mcp_install_command(base_url)
 
@@ -654,8 +692,9 @@ defmodule EmisarWeb.DomainComponents do
          section chrome (vertical rules belong to the shell). ONE type
          ladder — section_header 16 / body 14 / meta 12; never an uppercase
          eyebrow as a section title. The command is the only contained
-         artifact; amber is reserved for the ONE overdue state — the
-         credential note and the normal wait stay neutral/brand. --%>
+         artifact; the credential note and the wait line are both AMBER
+         (design-system §5/§8.1 — pending and secret-in-hand, not an alarm),
+         and the overdue escalation earns its spine rather than its hue. --%>
     <div>
       <p class="text-sm leading-relaxed text-zinc-400">
         Two minutes — pick a Linux or macOS host, paste the one-liner.
@@ -681,37 +720,37 @@ defmodule EmisarWeb.DomainComponents do
                     The leading space keeps the key out of your shell history.
                   </p>
                   <%!-- The one-liner embeds a single-use enrollment key shown
-                       only here. Keeping it out of chat/tickets is an operator
-                       action — but the note is a permanent property of the
-                       command, not an exceptional state, so the spine stays
-                       NEUTRAL: amber on this page belongs to the overdue
-                       escalation alone. --%>
-                  <.event_block
+                       only here — a single-secret reveal, so it wears §8.1's
+                       naked grammar verbatim: an amber `status_note` at
+                       `primary` beside the command's own code panel, never a
+                       spine or a box. --%>
+                  <.status_note
                     icon="hero-key"
-                    tone={:neutral}
+                    tone={:amber}
                     title="Live credential — won't be shown again"
+                    primary
                     class="mt-5"
                   >
-                    <:body>
-                      The command runs with <code class="font-mono text-zinc-300">sudo</code>
-                      and carries a <span class="font-medium text-zinc-200">one-time</span>
-                      key: it enrolls exactly one host, then expires. Treat it like a password —
-                      paste it straight onto the host, never into a chat or ticket.
-                    </:body>
-                  </.event_block>
+                    The command runs with <code class="font-mono text-zinc-300">sudo</code>
+                    and carries a <span class="font-medium text-zinc-200">one-time</span>
+                    key: it enrolls exactly one host, then expires. Treat it like a password —
+                    paste it straight onto the host, never into a chat or ticket.
+                  </.status_note>
                 </section>
 
                 <%!-- The page's live status — the naked dot-led wait line
                      (the wait-room grammar sso_pending copies), directly
                      under the act it follows so the operator's eye never has
                      to jump static content to find the page's one live
-                     element. Waiting is this page's NORMAL state: a quiet
-                     brand ping (channel open, listening), never an alert. --%>
+                     element. Waiting is this page's NORMAL state, and a
+                     pending placeholder is AMBER (design-system §5) — nothing
+                     is healthy yet, but nothing is wrong either; the ping is
+                     what says the channel is open. --%>
                 <div>
                   <div class="flex items-start gap-3">
                     <%!-- mt-[6px]: optically centers the 10px dot on the first
                          text line (text-sm/relaxed ≈ 23px line box). --%>
-                    <.status_dot tone={:brand} ping size={:lg} class="mt-[6px]" />
+                    <.status_dot tone={:amber} ping size={:lg} class="mt-[6px]" />
                     <p class="text-sm leading-relaxed text-zinc-400">
                       <span class="font-medium text-zinc-300">Waiting for a runner to connect</span>
                       — this page advances on its own; you can leave, and the runner will appear in
@@ -1054,39 +1093,87 @@ defmodule EmisarWeb.DomainComponents do
   @doc """
   Risk pill — used on action descriptors. Colours mirror the runner's
   declared risk level (`low|medium|high|critical`); takes the risk as a
-  string (pack-manifest data) or an Ecto.Enum atom (catalog rows).
+  string (pack-manifest data) or an Ecto.Enum atom (catalog rows). The
+  severity lexicon rides the shared `<.tooltip>`, so an approver deciding on a
+  phone or by keyboard reads what "HIGH" means — a stored risk we have no
+  lexicon entry for renders the bare pill rather than an empty bubble.
+
+  Two forms, because the shared width is a property of a COLUMN of peers, not
+  of the pill itself (§7.41). `:track` takes a fixed width sized to CRITICAL,
+  its longest tier, so pills stacked in one visual column align on both edges
+  instead of ragging by label length. `:inline` — the default — is content-
+  sized at the house inline-chip metrics, so a pill riding an identity or meta
+  line stays proportionate to the text beside it instead of ballooning.
+
+      <.risk_pill id={"approval-risk-\#{request.id}"} risk={risk} />
+      <.risk_pill id={"runner-action-\#{id}-risk"} risk={risk} variant={:track} />
   """
   attr :risk, :any, required: true
+
+  attr :id, :string,
+    default: nil,
+    doc: "unique tooltip id — pass a per-row id where the pill repeats on one page"
+
+  attr :variant, :atom,
+    default: :inline,
+    values: [:inline, :track],
+    doc: "`:track` where pills form a column of peer verdicts that must share one width"
+
   attr :class, :string, default: nil
 
   def risk_pill(assigns) do
-    assigns = assign(assigns, :risk, to_string(assigns.risk))
+    risk = to_string(assigns.risk)
+    assigns = assigns |> assign(:risk, risk) |> assign(:meaning, risk_meaning(risk))
 
     ~H"""
-    <span
-      title={risk_title(@risk)}
-      class={[
-        "rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wider ring-1 ring-inset",
-        risk_classes(@risk),
-        @class
-      ]}
-    >
+    <.tooltip :if={@meaning} id={@id} text={@meaning} class={@class}>
+      <.risk_pill_face risk={@risk} variant={@variant} />
+    </.tooltip>
+    <.risk_pill_face
+      :if={is_nil(@meaning)}
+      risk={@risk}
+      variant={@variant}
+      class={@class}
+    />
+    """
+  end
+
+  attr :risk, :string, required: true
+  attr :variant, :atom, required: true, values: [:inline, :track]
+  attr :class, :string, default: nil
+
+  defp risk_pill_face(assigns) do
+    ~H"""
+    <span class={[
+      "rounded font-semibold uppercase tracking-wider ring-1 ring-inset",
+      risk_pill_geometry(@variant),
+      risk_classes(@risk),
+      @class
+    ]}>
       {@risk}
     </span>
     """
   end
 
-  # The severity scale spelled out on hover, so a non-expert approver knows what
+  # The column's width, not the pill's: `:track` is sized to CRITICAL so peers
+  # stacked in one column share both edges; `:inline` matches `<.chip upcase>`,
+  # the house metrics for a tag riding a line of text.
+  defp risk_pill_geometry(:track),
+    do: "w-[5.25rem] flex-none px-2 py-0.5 text-center text-xs"
+
+  defp risk_pill_geometry(:inline), do: "whitespace-nowrap px-1.5 py-0.5 text-[10px]"
+
+  # The severity scale spelled out, so a non-expert approver knows what
   # "HIGH" means and that CRITICAL is above it (the lexicon a single word can't carry).
-  defp risk_title("low"), do: "Low — read-only or trivially reversible"
+  defp risk_meaning("low"), do: "Low — read-only or trivially reversible"
 
-  defp risk_title("medium"), do: "Medium — changes state, easily reversible"
+  defp risk_meaning("medium"), do: "Medium — changes state, easily reversible"
 
-  defp risk_title("high"), do: "High — service-affecting"
+  defp risk_meaning("high"), do: "High — service-affecting"
 
-  defp risk_title("critical"), do: "Critical — data loss or irreversible"
+  defp risk_meaning("critical"), do: "Critical — data loss or irreversible"
 
-  defp risk_title(_), do: nil
+  defp risk_meaning(_), do: nil
 
   # Risk is a SEVERITY ramp, not a policy outcome: low is the quiet neutral floor,
   # NOT brand-green — green means "the gate allowed this", and a risk tier has had
@@ -1135,33 +1222,38 @@ defmodule EmisarWeb.DomainComponents do
   # change the badge's width under it.
   def approval_expiry(assigns) do
     ~H"""
-    <span
+    <%!-- The consequence rides the shared tooltip, not a hover-only title: the
+         approver who most needs "auto-denied at expiry" is the one triaging the
+         queue on a phone. Its bubble id is derived from the row id the inner
+         <.local_time> already owns, so the two never collide. --%>
+    <.tooltip
       :if={@expires_at}
-      title={expiry_title(@expired?)}
+      id={@id && "#{@id}-consequence"}
+      text={expiry_meaning(@expired?)}
       class={[
-        "inline-flex items-center gap-1 text-xs tabular-nums",
+        "items-center gap-1 text-xs tabular-nums",
         expiry_class(@expires_in_seconds),
         @class
       ]}
     >
       <%!-- Past tense once it's lapsed ("expired 2m ago") so an at-the-wire
            approval isn't an ambiguous static "expires just now"; {" "} is a
-           literal space HEEx won't trim. The title states the on-expiry behavior;
-           the LocalTime hook carries the absolute time on hover. --%>
+           literal space HEEx won't trim. The LocalTime hook carries the absolute
+           time on hover. --%>
       <.icon name={if @expired?, do: "hero-no-symbol", else: "hero-clock"} class="h-3 w-3" />
       {if @expired?, do: "expired", else: "expires"}{" "}<TimeHelpers.local_time
         id={@id}
         value={@expires_at}
         mode={:relative}
       />
-    </span>
+    </.tooltip>
     """
   end
 
-  defp expiry_title(true),
+  defp expiry_meaning(true),
     do: "Expired without a decision — it was auto-denied; the action won't run."
 
-  defp expiry_title(false),
+  defp expiry_meaning(false),
     do: "If no one decides by then, it's auto-denied — the action won't run."
 
   # Under two hours left → amber: an approval lapsing soon needs to stand out

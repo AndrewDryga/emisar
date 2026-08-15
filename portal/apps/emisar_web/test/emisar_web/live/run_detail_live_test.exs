@@ -195,14 +195,22 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "Expected"
     assert html =~ "queue depth drops to zero within a minute"
 
+    # Several facts share the cluster, so each earns its key.
+    assert html =~ "Reason"
+
     # A reason-only run (operator dispatch carries no chain) renders neither row.
     # Reuse the runner — a second one would collide on the per-account name.
     reason_only = run_with(account, %{runner_id: with_chain.runner_id, reason: "manual restart"})
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{reason_only.id}")
 
-    assert html =~ "Reason"
+    assert html =~ "manual restart"
     refute html =~ "Evidence"
     refute html =~ "Expected"
+
+    # ...and with the reason ALONE under it, the section header "Why" already
+    # names the fact, so the REASON key would say it twice.
+    assert html =~ "Why"
+    refute html =~ "Reason"
   end
 
   test "a denied run surfaces the denial + reason, not a bare cancellation", %{conn: conn} do
@@ -933,5 +941,58 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     send(lv.pid, {:run_updated, finished})
     refute render(lv) =~ "streaming"
+  end
+
+  test "the pre-connect render says it is loading, never that no output was captured", %{
+    conn: conn
+  } do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{})
+
+    {:ok, finished} =
+      Fixtures.Runs.finish(run, %{
+        "request_id" => run.request_id,
+        "status" => "success",
+        "exit_code" => 0
+      })
+
+    Repo.insert!(%RunEvent{
+      id: Repo.generate_id(),
+      account_id: account.id,
+      run_id: finished.id,
+      seq: 1,
+      kind: :progress,
+      stream: "stdout",
+      payload: %{"chunk" => "up 3 days"}
+    })
+
+    # The dead render defers the output read behind connected?/1 (IL-18), so it
+    # has no answer yet — "No output captured." there would be a claim about a
+    # run that in fact produced output.
+    dead = html_response(get(conn, ~p"/app/#{account}/runs/#{finished.id}"), 200)
+
+    refute dead =~ "No output captured."
+    assert dead =~ "Loading…"
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{finished.id}")
+
+    assert html =~ "up 3 days"
+    refute html =~ "No output captured."
+  end
+
+  test "a terminal run that really captured nothing still says so", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{})
+
+    {:ok, finished} =
+      Fixtures.Runs.finish(run, %{
+        "request_id" => run.request_id,
+        "status" => "success",
+        "exit_code" => 0
+      })
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{finished.id}")
+
+    assert html =~ "No output captured."
   end
 end

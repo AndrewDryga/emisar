@@ -571,15 +571,15 @@ defmodule EmisarWeb.BillingLive do
                 <%!-- ONE card style for every plan — identity ("current") and merch
                  ("most popular") are the CHIPS' job; per-plan border treatments
                  read as three different products. --%>
-                <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — the choice-card recipe (pick-a-plan grid; current = selected ring) --%>
+                <%!-- The current plan is METADATA, not a pass verdict (design-system
+                     §3.1), so it never wears the brand ring: the neutral `current`
+                     chip names it, and a neutral wash keeps it findable in the row. --%>
+                <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — the choice-card recipe (pick-a-plan grid; current = neutral wash) --%>
                 <article
                   :for={plan <- @plans}
                   class={[
-                    "relative flex flex-col rounded-lg p-5",
-                    if(current_plan?(plan, @summary),
-                      do: "bg-white/[0.04] ring-2 ring-brand-400/70",
-                      else: "bg-black/20 ring-1 ring-zinc-800"
-                    )
+                    "relative flex flex-col rounded-lg p-5 ring-1 ring-zinc-800",
+                    if(current_plan?(plan, @summary), do: "bg-white/[0.04]", else: "bg-black/20")
                   ]}
                 >
                   <div class="flex items-center justify-between gap-2">
@@ -606,8 +606,8 @@ defmodule EmisarWeb.BillingLive do
                     </li>
                   </ul>
 
-                  <%!-- No footer on the current plan: the chip + bright ring already
-                   say it — a disabled "You're here" button was a fake affordance. --%>
+                  <%!-- No footer on the current plan: the chip already says it —
+                   a disabled "You're here" button was a fake affordance. --%>
                   <div :if={not current_plan?(plan, @summary)} class="mt-5">
                     <%= cond do %>
                       <% plan.key == "enterprise" -> %>
@@ -742,12 +742,15 @@ defmodule EmisarWeb.BillingLive do
   attr :label, :string, required: true
 
   # One plan-feature line in the billing rail: a check when the plan turns it
-  # on, a muted dash when it doesn't.
+  # on, a muted dash when it doesn't. The included-feature glyph is the house
+  # bare `hero-check` in brand — the same one the plan cards, docs
+  # prerequisites, and auth components render; a filled circle here made one
+  # page speak two dialects for one fact.
   defp feature_line(assigns) do
     ~H"""
     <li class="flex items-center gap-2">
       <.icon
-        name={if @enabled, do: "hero-check-circle-mini", else: "hero-minus-circle-mini"}
+        name={if @enabled, do: "hero-check", else: "hero-minus"}
         class={"h-4 w-4 flex-none " <> if(@enabled, do: "text-brand-400", else: "text-zinc-500")}
       />
       <span class={(@enabled && "text-zinc-300") || "text-zinc-400"}>{@label}</span>

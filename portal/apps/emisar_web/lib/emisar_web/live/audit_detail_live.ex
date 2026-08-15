@@ -130,7 +130,9 @@ defmodule EmisarWeb.AuditDetailLive do
             <.meta_field label="Event ID" wrap>
               <.copyable_id value={@event.id} class="text-sm leading-5 text-zinc-300" />
             </.meta_field>
-            <.meta_field label="IP address">
+            <%!-- wrap, like its Event ID and Request ID siblings: the copy button is
+             a sibling control, and an IPv6 address is wider than the UUIDs. --%>
+            <.meta_field label="IP address" wrap>
               <.copyable_id
                 :if={@event.ip_address}
                 value={@event.ip_address}
@@ -224,7 +226,13 @@ defmodule EmisarWeb.AuditDetailLive do
            (innerText) so an operator can paste it into a ticket/grep. --%>
         <%!-- Event id moved up to a meta field; the payload panel just labels its
            copy for what it grabs — the rendered JSON, ready to paste. --%>
+        <%!-- Many event types carry no payload at all. Framing an empty `{}` and
+           offering "Copy JSON" beside it promises a record that isn't there and
+           hands the operator an empty clipboard — the panel renders only when it
+           has entries to show (§7.43); the meta fields above already say what
+           happened. --%>
         <.code_panel
+          :if={payload_entries?(@event.payload)}
           id="audit-payload-json"
           label="Payload"
           copy
@@ -237,7 +245,12 @@ defmodule EmisarWeb.AuditDetailLive do
     """
   end
 
-  defp pretty_payload(nil), do: "{}"
+  # A non-map payload is unexpected but still content, so it renders; nil and an
+  # empty object are the states with nothing to show.
+  defp payload_entries?(nil), do: false
+  defp payload_entries?(payload) when is_map(payload), do: map_size(payload) > 0
+  defp payload_entries?(_payload), do: true
+
   defp pretty_payload(map) when is_map(map), do: Jason.encode!(map, pretty: true)
   defp pretty_payload(other), do: inspect(other)
 
@@ -257,6 +270,11 @@ defmodule EmisarWeb.AuditDetailLive do
       |> assign(:changed, overrides["changed"] || [])
 
     ~H"""
+    <%!-- Every decision VALUE here is neutral zinc (§7.42): a policy decision is
+         something the operator reads, not a verdict on the change. Painting
+         old=rose/new=brand lied about direction — a tightening (allow → deny)
+         rendered the safer value red. The `→` and the section headings carry
+         direction; the faint row washes carry add/remove/modify. --%>
     <section :if={@defaults_diff != %{} or @added != [] or @removed != [] or @changed != []}>
       <.section_header title="Changes" />
       <div class="space-y-5">
@@ -271,11 +289,11 @@ defmodule EmisarWeb.AuditDetailLive do
                 class="flex items-center gap-2"
               >
                 <span class="font-mono text-xs text-zinc-300">{tier}:</span>
-                <code class="rounded bg-rose-500/10 px-1.5 py-0.5 text-[11px] text-rose-300">
+                <code class="rounded bg-zinc-800/60 px-1.5 py-0.5 text-[11px] text-zinc-200">
                   {from || "—"}
                 </code>
                 <span class="text-zinc-500">→</span>
-                <code class="rounded bg-brand-500/10 px-1.5 py-0.5 text-[11px] text-brand-300">
+                <code class="rounded bg-zinc-800/60 px-1.5 py-0.5 text-[11px] text-zinc-200">
                   {to || "—"}
                 </code>
               </li>
@@ -292,7 +310,7 @@ defmodule EmisarWeb.AuditDetailLive do
               <li :for={ov <- @added} class="rounded bg-brand-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{ov["action"]}</code>
                 <span class="text-zinc-500">→</span>
-                <code class="font-mono text-brand-300">{ov["decision"]}</code>
+                <code class="font-mono text-zinc-200">{ov["decision"]}</code>
                 <span :if={ov["name"] && ov["name"] != ""} class="ml-2 text-zinc-400">
                   ({ov["name"]})
                 </span>
@@ -310,7 +328,7 @@ defmodule EmisarWeb.AuditDetailLive do
               <li :for={ov <- @removed} class="rounded bg-rose-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{ov["action"]}</code>
                 <span class="text-zinc-500">→</span>
-                <code class="font-mono text-rose-300">{ov["decision"]}</code>
+                <code class="font-mono text-zinc-200">{ov["decision"]}</code>
               </li>
             </ul>
           </div>
@@ -324,11 +342,11 @@ defmodule EmisarWeb.AuditDetailLive do
             <ul class="space-y-1 text-xs">
               <li :for={c <- @changed} class="rounded bg-amber-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{c["action"]}</code>:
-                <code class="rounded bg-rose-500/10 px-1.5 py-0.5 text-rose-300">
+                <code class="rounded bg-zinc-800/60 px-1.5 py-0.5 text-zinc-200">
                   {c["from"]["decision"]}
                 </code>
                 <span class="text-zinc-500">→</span>
-                <code class="rounded bg-brand-500/10 px-1.5 py-0.5 text-brand-300">
+                <code class="rounded bg-zinc-800/60 px-1.5 py-0.5 text-zinc-200">
                   {c["to"]["decision"]}
                 </code>
               </li>
@@ -404,10 +422,14 @@ defmodule EmisarWeb.AuditDetailLive do
       </div>
       <%!-- One label/value grid owns every secondary fact. Every cell has a
            20px minimum row with a 4px gap; copy buttons can no longer make the
-           ID row taller than the text-only rows below it. --%>
+           ID row taller than the text-only rows below it. The label track is
+           `max-content` — the house label-track grammar (`kv` layout={:grid}) —
+           so it measures THIS card's longest label; a hardcoded width sized for
+           the longest fact stranded the two-character ID label 84px from its
+           UUID in a full-width card. --%>
       <dl
         :if={@id || @runner || @run || @device || @auth_method || @mcp_client_label != ""}
-        class="mt-3 grid grid-cols-[5.25rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs leading-5"
+        class="mt-3 grid grid-cols-[max-content,minmax(0,1fr)] gap-x-3 gap-y-1 text-xs leading-5"
         data-audit-facts
       >
         <dt :if={@id} class={entity_fact_label_class()}>ID</dt>

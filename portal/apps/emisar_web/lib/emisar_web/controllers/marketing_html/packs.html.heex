@@ -39,8 +39,8 @@
         ship today, across databases, containers, observability, cloud, networking, and more —
         install what you run, or <.link
           href={~p"/docs/publishing-packs"}
-          class="text-brand-300 hover:text-brand-200"
-        >author your own →</.link>.
+          class="group text-brand-300 hover:text-brand-200"
+        >author your own&nbsp;<.cta_arrow /></.link>.
       </p>
     </div>
   </section>
@@ -147,12 +147,7 @@
               <.link
                 navigate={~p"/packs/#{pack.id}"}
                 class="font-semibold text-brand-300 hover:text-brand-200"
-              >
-                Browse pack
-                <span class="inline-block transition-transform group-hover:translate-x-0.5">
-                  →
-                </span>
-              </.link>
+              >Browse pack&nbsp;<.cta_arrow /></.link>
               <.external_link
                 href={EmisarWeb.PacksRegistry.source_url(pack)}
                 class="text-xs text-zinc-500 hover:text-zinc-300"

@@ -67,6 +67,73 @@ defmodule EmisarWeb.Components.TooltipTest do
       assert html =~ ~s(role="tooltip")
     end
 
+    test "a command rides the shared copyable row inside the described bubble" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.tooltip
+          id="runner-version-7"
+          text="Runner v0.19.0 is available. Run the command on this host."
+          command="sudo emisar update"
+        >
+          <span>icon</span>
+        </CoreComponents.tooltip>
+        """)
+
+      bubble = html |> LazyHTML.from_fragment() |> LazyHTML.query_by_id("runner-version-7")
+
+      # The description AT reads carries the reason AND the command it ends in.
+      assert LazyHTML.text(bubble) =~ "Run the command on this host."
+      assert LazyHTML.text(bubble) =~ "sudo emisar update"
+
+      # It is the shared code_line row — mono, clipped to one line, never a
+      # scrolling panel — wired to the delegated clipboard listener, which is
+      # what lets Copy work on a control that exists only once revealed.
+      assert html =~ ~s(id="runner-version-7-command")
+      assert html =~ "font-mono"
+      assert html =~ "overflow-hidden text-ellipsis whitespace-nowrap"
+      assert html =~ ~s(data-copy-text="sudo emisar update")
+      refute html =~ "overflow-x-auto"
+    end
+
+    test "a tip with no command is unchanged — prose only, no copy control" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.tooltip text="Role is managed by directory sync">
+          <span>Operator</span>
+        </CoreComponents.tooltip>
+        """)
+
+      assert html =~ "Role is managed by directory sync"
+      refute html =~ "data-copy-text"
+      refute html =~ "font-mono"
+      refute html =~ "-command"
+    end
+
+    test "a command keeps its bubble described even on an icon-only trigger" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.tooltip
+          text="Run the command on this host."
+          command="sudo emisar update"
+          aria_label="Runner update available"
+        >
+          <span aria-hidden="true">icon</span>
+        </CoreComponents.tooltip>
+        """)
+
+      # An icon-only trigger normally skips ids entirely; a command may not,
+      # because the bubble is the only place that command appears.
+      assert [_, tooltip_id] = Regex.run(~r/aria-describedby="([^"]+)"/, html)
+      bubble = html |> LazyHTML.from_fragment() |> LazyHTML.query_by_id(tooltip_id)
+      assert LazyHTML.text(bubble) =~ "sudo emisar update"
+    end
+
     test "placement bottom opens the bubble downward" do
       assigns = %{}
 

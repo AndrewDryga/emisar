@@ -86,11 +86,11 @@ defmodule EmisarWeb.DashboardLive do
     account = socket.assigns.current_account
     subject = socket.assigns.current_subject
     # Tolerate {:error, :unauthorized} per tile — a billing_manager (or any
-    # future narrow role) still gets a rendering dashboard; tiles it can't
-    # read show empty rather than crashing the landing page. The raw read
-    # results are kept alongside the collapsed lists: an empty list only means
-    # "genuinely empty account" when its read verifiably succeeded, and the
-    # first-run checklist refuses to activate on unverified emptiness.
+    # future narrow role) still gets a rendering dashboard rather than a crashed
+    # landing page. The raw read results are kept alongside the collapsed lists:
+    # an empty list only means "genuinely empty account" when its read verifiably
+    # succeeded, so the first-run checklist refuses to activate on unverified
+    # emptiness and every tile renders its own read failure instead of a zero.
     api_keys_read = ApiKeys.list_api_keys_for_account(subject)
     api_keys = list_or_empty(api_keys_read)
 
@@ -107,6 +107,7 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:can_view_runners?, Runners.subject_can_view_runners?(subject))
     |> assign(:can_view_runs?, Runs.subject_can_view_runs?(subject))
     |> assign(:can_view_agents?, ApiKeys.subject_can_view_api_keys?(subject))
+    |> assign(:can_view_approvals?, Approvals.subject_can_view_approvals?(subject))
     |> refresh_runners()
     |> refresh_runs()
     |> refresh_approvals()
@@ -140,6 +141,7 @@ defmodule EmisarWeb.DashboardLive do
     socket
     |> assign(:runners_total, length(runners))
     |> assign(:runners_connected, length(online_runner_ids))
+    |> assign(:runners_error?, not read_ok?(runners_read))
     |> assign(:actions_advertised?, actions_advertised?)
     |> put_setup_read(:runners, runners_read)
     |> put_setup_read(:actions, actions_read)
@@ -157,9 +159,14 @@ defmodule EmisarWeb.DashboardLive do
         preload: [:runner, :attribution]
       )
 
+    recent_runs = list_or_empty(recent_runs_read)
+
     socket
-    |> assign(:recent_runs, list_or_empty(recent_runs_read))
-    |> assign(:run_stats, unwrap_ok(Runs.fetch_run_stats(subject, hours: 24)))
+    |> assign(:recent_runs, recent_runs)
+    |> assign(:recent_runs_error?, not read_ok?(recent_runs_read))
+    # The header digest describes the rows below it, so it is derived from the
+    # very list that renders — never a second, wider read (§7.36).
+    |> assign(:shown_run_stats, Runs.summarize_runs(recent_runs))
     |> put_setup_read(:recent_runs, recent_runs_read)
   end
 
@@ -170,7 +177,9 @@ defmodule EmisarWeb.DashboardLive do
         count: false
       )
 
-    assign(socket, :pending_approvals, list_or_empty(read))
+    socket
+    |> assign(:pending_approvals, list_or_empty(read))
+    |> assign(:pending_approvals_error?, not read_ok?(read))
   end
 
   defp put_setup_read(socket, name, result) do
@@ -276,11 +285,14 @@ defmodule EmisarWeb.DashboardLive do
         :if={not @loading?}
         runners_total={@runners_total}
         runners_connected={@runners_connected}
+        runners_error?={@runners_error?}
         actions_advertised?={@actions_advertised?}
         pending_approvals={@pending_approvals}
         pending_approvals_count={@pending_approvals_count}
+        pending_approvals_error?={@pending_approvals_error?}
         recent_runs={@recent_runs}
-        run_stats={@run_stats}
+        recent_runs_error?={@recent_runs_error?}
+        shown_run_stats={@shown_run_stats}
         agents={@agents}
         billing={@billing}
         can_manage_billing={Billing.subject_can_manage_billing?(@current_subject)}
@@ -291,6 +303,7 @@ defmodule EmisarWeb.DashboardLive do
         can_view_runners?={@can_view_runners?}
         can_view_runs?={@can_view_runs?}
         can_view_agents?={@can_view_agents?}
+        can_view_approvals?={@can_view_approvals?}
         show_setup?={@show_setup?}
         can_install_runners?={@can_install_runners?}
         can_issue_agent_key?={@can_issue_agent_key?}
@@ -316,11 +329,14 @@ defmodule EmisarWeb.DashboardLive do
   #   4. Recent runs — the activity proof, with the 24h digest in its header.
   attr :runners_connected, :integer, required: true
   attr :runners_total, :integer, required: true
+  attr :runners_error?, :boolean, required: true
   attr :actions_advertised?, :boolean, required: true
   attr :pending_approvals, :list, required: true
   attr :pending_approvals_count, :integer, required: true
+  attr :pending_approvals_error?, :boolean, required: true
   attr :recent_runs, :list, required: true
-  attr :run_stats, :map, required: true
+  attr :recent_runs_error?, :boolean, required: true
+  attr :shown_run_stats, :map, required: true
   attr :agents, :map, required: true
   attr :billing, :map, required: true
   attr :can_manage_billing, :boolean, default: false
@@ -331,6 +347,7 @@ defmodule EmisarWeb.DashboardLive do
   attr :can_view_runners?, :boolean, default: true
   attr :can_view_runs?, :boolean, default: true
   attr :can_view_agents?, :boolean, default: true
+  attr :can_view_approvals?, :boolean, default: true
   attr :show_setup?, :boolean, default: false
   attr :can_install_runners?, :boolean, default: false
   attr :can_issue_agent_key?, :boolean, default: false
@@ -387,6 +404,7 @@ defmodule EmisarWeb.DashboardLive do
         :if={@can_view_runners?}
         connected={@runners_connected}
         total={@runners_total}
+        read_failed?={@runners_error?}
         current_account={@current_account}
       />
       <.agents_pillar :if={@can_view_agents?} agents={@agents} current_account={@current_account} />
@@ -397,12 +415,31 @@ defmodule EmisarWeb.DashboardLive do
       />
     </div>
 
+    <%!-- A failed approvals read would otherwise be indistinguishable from the
+         zero state below, hiding held actions entirely — so it keeps the
+         section and says the queue is unknown. --%>
+    <section :if={@can_view_approvals? and @pending_approvals_error?} class="pt-6">
+      <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
+        Awaiting review
+      </h2>
+      <.empty_state
+        variant={:hint}
+        tone={:danger}
+        icon="hero-exclamation-triangle"
+        title="Couldn't load pending approvals"
+        class="mt-3"
+      >
+        This is a load error, not an empty queue — a held action may be waiting. Refresh the page,
+        or open Approvals to check.
+      </.empty_state>
+    </section>
+
     <%!-- The escape hatch, only when it's live: a run held on a human decision
          is an agent blocked right now. Zero pending renders nothing — silence
          is the confirmation. Same content-on-canvas grammar as Recent runs —
          amber stays on the STATUS (the dot, the waiting count), never a boxed
          wash: approvals earn attention, not the centerpiece. --%>
-    <section :if={@pending_approvals != []} class="pt-6">
+    <section :if={@pending_approvals != [] and not @pending_approvals_error?} class="pt-6">
       <div class="flex flex-wrap items-baseline justify-between gap-3">
         <div class="flex min-w-0 flex-wrap items-baseline gap-3">
           <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
@@ -427,8 +464,11 @@ defmodule EmisarWeb.DashboardLive do
           >
             <.status_dot tone={:amber} size={:md} />
             <div class="min-w-0 flex-1">
+              <%!-- The same name the approvals queue shows: reading `action_id`
+                   straight off the context printed a bare "—" for every runbook
+                   execution, which carries a runbook title instead. --%>
               <div class="break-all font-mono text-sm text-zinc-200 sm:truncate">
-                {request.context["action_id"] || "—"}
+                {Approvals.request_name(request) || "—"}
               </div>
               <div class="truncate text-xs text-zinc-400">
                 <.local_time
@@ -457,15 +497,23 @@ defmodule EmisarWeb.DashboardLive do
           <h2 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
             Recent runs
           </h2>
-          <span :if={@run_stats && @run_stats.total > 0} class="text-xs text-zinc-400">
+          <%!-- The digest quantifies THESE rows, not a 24h window (§7.36). The
+               window read said "5 in the last 24h · 100% success" directly above
+               a list that also carried older runs and a cancelled one — a summary
+               that describes a different set than the collection it annotates is
+               worse than none. `summarize_runs/1` applies the domain's own
+               outcome split to the rows being rendered, so the two cannot drift. --%>
+          <span :if={@shown_run_stats.total > 0} class="text-xs text-zinc-400">
             <span class="tabular-nums">
-              {@run_stats.total} in the last {@run_stats.window_hours}h
+              {@shown_run_stats.total} {if @shown_run_stats.total == 1,
+                do: "run",
+                else: "runs"} shown
             </span>
-            <span :if={@run_stats.success_rate} class="tabular-nums">
-              · {@run_stats.success_rate}% success
+            <span :if={@shown_run_stats.success_rate} class="tabular-nums">
+              · {@shown_run_stats.success_rate}% success
             </span>
-            <span :if={@run_stats.failed > 0} class="tabular-nums text-amber-300">
-              · {@run_stats.failed} failed
+            <span :if={@shown_run_stats.failed > 0} class="tabular-nums text-amber-300">
+              · {@shown_run_stats.failed} failed
             </span>
           </span>
         </div>
@@ -479,7 +527,24 @@ defmodule EmisarWeb.DashboardLive do
         </.link>
       </div>
 
-      <ul class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
+      <%!-- The runs read failed, so the empty feed below would claim nothing has
+           run. Say the read failed instead. --%>
+      <.empty_state
+        :if={@recent_runs_error?}
+        variant={:hint}
+        tone={:danger}
+        icon="hero-exclamation-triangle"
+        title="Couldn't load recent runs"
+        class="mt-3"
+      >
+        This is a load error, not an empty feed — runs may well exist. Refresh the page, or open
+        Runs to check.
+      </.empty_state>
+
+      <ul
+        :if={not @recent_runs_error?}
+        class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70"
+      >
         <li :for={run <- @recent_runs}>
           <.run_row
             run={run}
@@ -497,9 +562,10 @@ defmodule EmisarWeb.DashboardLive do
   defp pending_decision_label(1), do: "pending decision"
   defp pending_decision_label(_count), do: "pending decisions"
 
-  # Dashboard tiles want a plain list, not a paginator tuple — they
-  # don't show Prev/Next. Treat any unauthorized / unexpected reply as
-  # empty so the tile still renders cleanly.
+  # Dashboard tiles want a plain list, not a paginator tuple — they don't show
+  # Prev/Next. The empty list is only ever the RENDER shape: every caller pairs
+  # it with `read_ok?/1` so a failed read renders its own error state instead of
+  # the tile's "nothing waiting".
   defp list_or_empty({:ok, list, _meta}), do: list
   defp list_or_empty({:ok, list}) when is_list(list), do: list
   defp list_or_empty(_), do: []
@@ -804,7 +870,24 @@ defmodule EmisarWeb.DashboardLive do
 
   attr :connected, :integer, required: true
   attr :total, :integer, required: true
+  attr :read_failed?, :boolean, required: true
   attr :current_account, :map, required: true
+
+  # A failed fleet read leaves the counts at 0, which would pitch "Put your
+  # first host online" at an account whose hosts are running — say the read
+  # failed instead, in the Team pillar's grammar.
+  defp runners_pillar(%{read_failed?: true} = assigns) do
+    ~H"""
+    <.pillar
+      label="Runners"
+      tone={:neutral}
+      navigate={~p"/app/#{@current_account}/runners"}
+    >
+      <:value>—</:value>
+      <:status>Couldn't load your fleet</:status>
+    </.pillar>
+    """
+  end
 
   defp runners_pillar(%{total: 0} = assigns) do
     ~H"""
@@ -881,20 +964,17 @@ defmodule EmisarWeb.DashboardLive do
       tone={if @agents.active_today > 0, do: :brand, else: :neutral}
       navigate={~p"/app/#{@current_account}/agents"}
     >
+      <%!-- The bare agent count is just entities; the operational fact is how
+           many acted today, so it leads the metric in the Runners "N / M"
+           grammar and the status line carries the non-redundant recency. --%>
       <:value>
-        {@agents.total}
-        <span class="text-2xl text-zinc-500">
-          {if @agents.total == 1, do: " agent", else: " agents"}
-        </span>
+        {@agents.active_today}<span class="text-2xl text-zinc-500"> / {@agents.total} active today</span>
       </:value>
       <:status>
-        <%= cond do %>
-          <% @agents.active_today > 0 -> %>
-            {@agents.active_today} active today
-          <% @agents.last_call_at -> %>
-            last call{" "}<.local_time value={@agents.last_call_at} mode={:relative} />
-          <% true -> %>
-            No calls yet
+        <%= if @agents.last_call_at do %>
+          last call{" "}<.local_time value={@agents.last_call_at} mode={:relative} />
+        <% else %>
+          No calls yet
         <% end %>
       </:status>
     </.pillar>
@@ -1034,10 +1114,17 @@ defmodule EmisarWeb.DashboardLive do
       <div class="mt-3 font-display text-4xl font-semibold leading-none tracking-[-0.03em] text-zinc-50 tabular-nums">
         {render_slot(@value)}
       </div>
+      <%!-- The pillar's LAST line sits on one baseline across the whole row —
+           bottom-pinned in an equal-height (grid-stretched) column, so the
+           agents pillar's extra posture line can't push its forward action a
+           row below its siblings'. Here that's the posture line only when no
+           action follows it; `pt-` preserves the resting 10px gap once the
+           auto margin collapses in the tallest pillar. --%>
       <div
         :if={@status != []}
         class={[
-          "mt-2.5 flex items-center gap-1.5 text-[13px]",
+          "flex items-center gap-1.5 text-[13px]",
+          if(@action == [], do: "mt-auto pt-2.5", else: "mt-2.5"),
           pillar_status_class(@status_tone)
         ]}
       >
@@ -1054,7 +1141,7 @@ defmodule EmisarWeb.DashboardLive do
            reads as a form submit, and the whole tile is already the link. --%>
       <div
         :if={@action != []}
-        class="mt-2.5 flex items-center gap-1 text-[13px] font-medium text-brand-400 transition-colors group-hover:text-brand-300"
+        class="mt-auto flex items-center gap-1 pt-2.5 text-[13px] font-medium text-brand-400 transition-colors group-hover:text-brand-300"
       >
         {render_slot(@action)}
         <.cta_arrow />
@@ -1108,7 +1195,9 @@ defmodule EmisarWeb.DashboardLive do
       <div class="mt-3 flex min-h-[2.25rem] items-end font-display text-xl font-semibold leading-snug tracking-[-0.01em] text-zinc-100">
         {@title}
       </div>
-      <div class="mt-2.5 flex items-center gap-1 text-[13px] font-medium text-brand-400 transition-colors group-hover:text-brand-300">
+      <%!-- Bottom-pinned like the live pillar's action line, so a mixed row of
+           CTA and live pillars still lands every forward action on one baseline. --%>
+      <div class="mt-auto flex items-center gap-1 pt-2.5 text-[13px] font-medium text-brand-400 transition-colors group-hover:text-brand-300">
         {@cta}
         <.cta_arrow />
       </div>

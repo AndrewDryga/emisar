@@ -43,13 +43,7 @@
         </p>
       </div>
       <p class="mt-8 text-sm">
-        <.link
-          navigate={~p"/security"}
-          class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
-        >
-          See exactly how the trust boundary holds
-          <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
-        </.link>
+        <.cta_link navigate={~p"/security"}>See exactly how the trust boundary holds</.cta_link>
       </p>
     </div>
   </section>
@@ -144,10 +138,8 @@
           <.marketing_button href={~p"/sign_up"} size={:lg}>Get started</.marketing_button>
           <.link
             href={~p"/docs"}
-            class="text-sm font-semibold text-zinc-100 hover:text-brand-300"
-          >
-            Read the docs <span aria-hidden="true">&rarr;</span>
-          </.link>
+            class="group text-sm font-semibold text-zinc-100 hover:text-brand-300"
+          >Read the docs&nbsp;<.cta_arrow /></.link>
           <.external_link
             href="https://github.com/andrewdryga/emisar"
             class="text-sm font-semibold text-zinc-100 hover:text-brand-300"

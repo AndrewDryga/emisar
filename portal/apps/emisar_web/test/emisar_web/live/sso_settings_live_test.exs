@@ -274,6 +274,39 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "Add a new connection to use a different provider"
     end
 
+    test "editing one field doesn't accuse the operator of blank ones", %{
+      conn: conn,
+      account: account
+    } do
+      provider = insert_provider(account, %{name: "Old Name"})
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
+
+      # Same contract as the create form: a `phx-change` carries EVERY field, so
+      # the edit handler used to mark the changeset validated raw and report
+      # "can't be blank" for fields the operator had not reached — including the
+      # client secret, which is blank ON PURPOSE here ("leave to keep").
+      changed =
+        lv
+        |> form("#edit-provider-#{provider.id}", %{
+          "provider_id" => provider.id,
+          "provider" => %{"name" => "New Name"}
+        })
+        |> render_change(%{"_target" => ["provider", "name"]})
+
+      refute changed =~ "can&#39;t be blank"
+
+      # The field they ARE editing still reports blank the moment it is cleared.
+      cleared =
+        lv
+        |> form("#edit-provider-#{provider.id}", %{
+          "provider_id" => provider.id,
+          "provider" => %{"name" => ""}
+        })
+        |> render_change(%{"_target" => ["provider", "name"]})
+
+      assert cleared =~ "can&#39;t be blank"
+    end
+
     test "edits a connection's display name from the edit page", %{
       conn: conn,
       account: account

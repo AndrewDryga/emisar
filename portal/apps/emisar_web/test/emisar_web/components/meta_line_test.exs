@@ -44,6 +44,68 @@ defmodule EmisarWeb.Components.MetaLineTest do
 
       assert visible_text(html) == "emk_abc… · last used never"
     end
+
+    test "a truncating segment takes the slack; the rest keep their full width" do
+      assigns = %{}
+
+      # A whole-line truncate always eats the LAST segment, which is where a
+      # machine id sits (the runbooks row lost its slug's tail while the prose
+      # before it survived). Marking the prose flips the line to a flex row: the
+      # prose ellipsizes, the id renders whole.
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.meta_line>
+          <:seg truncate>a description long enough to need clipping somewhere</:seg>
+          <:seg mono>restart-edge-fleet</:seg>
+        </CoreComponents.meta_line>
+        """)
+
+      assert html =~ "sm:flex"
+      assert html =~ "sm:min-w-0 sm:truncate"
+      assert html =~ "sm:shrink-0 sm:whitespace-pre"
+      # The line as a whole no longer truncates — that is now a per-segment job.
+      refute html =~ "sm:line-clamp-none sm:truncate"
+      # And no line-clamp at all here: it also sets `display`, which would race
+      # `sm:flex` at the same breakpoint and win, leaving the row un-flexed.
+      refute html =~ "line-clamp"
+    end
+
+    test "the preserved-whitespace segment carries no template newline" do
+      assigns = %{}
+
+      # `whitespace-pre` keeps this component's own indentation as literally as it
+      # keeps the separator's space, and a newline between the tag and the text is
+      # an empty FIRST line box: it dropped every runbooks meta line 16px below its
+      # title and grew the row by the same (measured 92px -> 76px).
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.meta_line>
+          <:seg truncate>a description long enough to need clipping somewhere</:seg>
+          <:seg mono>restart-edge-fleet</:seg>
+        </CoreComponents.meta_line>
+        """)
+
+      assert html =~ ~s(sm:whitespace-pre"> · restart-edge-fleet</span>)
+      refute html =~ ~r/whitespace-pre">\s*\n/
+    end
+
+    test "a line with no truncating segment keeps the whole-line clamp" do
+      assigns = %{}
+
+      # The opt-in must not change any existing caller: `seg[:truncate]` is nil
+      # when undeclared, and nil is exactly what `not/1` raises on.
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.meta_line>
+          <:seg>plain</:seg>
+          <:seg mono>id-42</:seg>
+        </CoreComponents.meta_line>
+        """)
+
+      assert html =~ "line-clamp-2 sm:line-clamp-none sm:truncate"
+      refute html =~ "sm:flex"
+      refute html =~ "sm:shrink-0"
+    end
   end
 
   describe "code_line/1" do

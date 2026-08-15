@@ -1082,7 +1082,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     # A role that can't manage keys keeps both read paths — run activity and the
     # key's audit trail — while manage-only controls stay absent.
-    test "an operator's row shows a bordered View activity button, no Actions menu",
+    test "an operator's row shows the read verbs as links, no Actions menu",
          %{conn: conn} do
       {_owner_conn, owner, account} = register_and_log_in(conn)
 
@@ -1101,8 +1101,11 @@ defmodule EmisarWeb.AgentsLiveTest do
         build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/agents")
 
       refute has_element?(lv, "details summary", "Actions")
-      assert has_element?(lv, "a.border-zinc-800", "View activity")
-      assert has_element?(lv, "a", "Audit trail")
+      # Both verbs only NAVIGATE, so they wear the house brand link, never button
+      # chrome (design-console-ux §2).
+      assert has_element?(lv, "a.text-brand-400", "View activity")
+      assert has_element?(lv, "a.text-brand-400", "Audit trail")
+      refute has_element?(lv, "a.border-zinc-800", "View activity")
       # The manage-only dialogs aren't rendered at all for this role.
       refute has_element?(lv, "#rotate-#{key.id}")
       refute has_element?(lv, "#revoke-agent-key-#{key.id}")

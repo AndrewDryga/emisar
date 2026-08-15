@@ -458,6 +458,14 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     give them the same fixed, non-shrinking width so both edges align despite different
     label lengths. `whitespace-nowrap` is not a fix by itself: verify alignment plus label
     and page overflow at the narrowest grid breakpoint.
+    **That shared width belongs to the COLUMN, not to the component.** A verdict pill
+    that also rides identity and meta lines carries two structural forms, and the
+    content-sized one is the DEFAULT — a lone pill has no column to align to, so the
+    column is what opts in. `risk_pill` is the worked case: `variant={:track}` is the
+    fixed width sized to CRITICAL (runner detail's advertised actions, the policy rail's
+    tier breakdown, the pack action list and its trust diff); `variant={:inline}` matches
+    `<.chip upcase>` metrics for a pill beside prose. Pinning the track width inside the
+    component instead made `HIGH` balloon at every inline site.
 42. **Informative content wears a neutral tone; amber/rose is reserved for a warning or a
     decision.** A runner identity, a content hash, an ID, a version, or any metadata an
     operator merely reads is neutral `zinc` — never tint it amber/rose as if it were the
@@ -527,6 +535,18 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     `:ghost` face is for menu rows and inline cancel/dismiss affordances only; "buttons need
     to look like buttons." Sweep: `variant={:ghost}` action buttons repeated per row in a
     list, icon-only dropdown triggers, and single-item dropdowns.
+    **A ROW WEARS ONE BUTTON GRAMMAR, and that beats §2's nav-is-a-link letter inside it.**
+    §2 governs a navigation verb that stands ALONE — a section header, a rail, a footer, an
+    action-free row — where it stays the bare brand link with its `cta_arrow`. Put that same
+    verb in an action group beside a bordered button and it takes the `:secondary` face at
+    the peer's size and optical height, arrow dropped (the arrow is the link affordance).
+    `Audit record →` as bare text next to a ringed `Revoke` reads as two unrelated
+    affordances; the founder's words were "there should be link and button next to each
+    other, both should be buttons or move link from this place." The face is the ROW's, not
+    the per-row permission state's — restyling it when a conditional peer button is absent
+    would move the layout between states (§7.55). Sweep: `<:actions>` slots and
+    `flex items-center gap-*` action clusters holding BOTH a bare `text-brand-400` link and
+    a `<.button>`/`<.confirm_button>`.
 48. **`whitespace-pre-wrap` content glues to its tags via a one-line inner span.** Template
     indentation inside a pre-wrap element renders as REAL leading whitespace (a stray blank
     + indent before the value). Never put `whitespace-pre-wrap` on a multiline-formatted
@@ -598,6 +618,31 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     509px card and clipped every long label. Verify a card that sits beside a rail at the width
     where the rail first appears, not just at your own screen. Sweep: `sm:`/`lg:`-keyed
     `grid-cols-*` inside a `col-span-*` column that shares its row with an `<aside>`.
+58. **One control row, one gap per DIMENSION — and the boundary between dimensions is
+    DISTANCE, never a glyph.** A row of chips/toggles/tabs that filters on more than one
+    dimension (a time window, an outcome, a category lens) gives each dimension its own
+    wrapping box at the tight intra-group gap and steps the gap up between them —
+    `gap-x-5`/`gap-y-3` outer against `gap-1.5` inside, the house meta-row grammar
+    (`runners_live`'s fleet posture line, where distance already separates units and the
+    tight gap binds a unit's parts). At ONE uniform gap the row is a single undifferentiated
+    run, so a control from a different dimension reads as a member of whichever group it
+    touches — the audit page's `Problems only` outcome toggle read as the category chips'
+    first chip, and the founder's words were "should either have separator … or be part of
+    group on the right. Now it's illogically placed." **A glyph does not fix this**: the
+    zinc-700 middot that sat there was too quiet to read as a boundary, the chrome test puts
+    distance before glyphs, and a vertical rule is shell chrome — content hairlines are
+    row-lattice grammar only (§3). The middot stays legitimate where it always was, joining
+    TEXT metadata segments (`Dispatched by X · via key`), never two controls. Each group is
+    its own `flex flex-wrap` box so it stays contiguous when the row folds, and the outer
+    `gap-y` must EXCEED the intra-group gap or the hierarchy inverts on a phone; a lead-in
+    label (`Quick filters:`) rides the first group at that group's own gap, or it reads as a
+    fourth group and orphans a line. Never answer this by merging two dimensions into one
+    segmented group — that spells a different question as one control. Sweep: a flex row
+    holding two or more `:for` comprehensions of buttons/chips under one uniform gap class,
+    and any bare `·`/`•`/`|` element or `w-px` rule sitting between two interactive
+    siblings. **Enforcement is review, deliberately**: a source-text check was measured and
+    rejected — the console carries ~90 legitimate metadata middots against this one defect,
+    so the check would fire almost entirely on correct code.
 
 
 ## 8. The kit is the contract

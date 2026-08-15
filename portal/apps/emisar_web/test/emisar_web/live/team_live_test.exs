@@ -483,21 +483,21 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, _} = user |> Ecto.Changeset.change(confirmed_at: nil) |> Emisar.Repo.update()
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      assert html =~ "Resend confirmation"
+      assert html =~ "Resend email"
 
-      assert has_element?(
-               lv,
-               "button.border-zinc-800[phx-click='resend_confirmation']",
-               "Resend confirmation"
-             )
+      # Scoped to the roster: the portal-wide verify-email strip offers the same
+      # remedy in the same words on this very page, so an unscoped selector
+      # matches two buttons.
+      roster_resend = "#members button.border-zinc-800[phx-click='resend_confirmation']"
+      assert has_element?(lv, roster_resend, "Resend email")
 
-      html = lv |> element("button", "Resend confirmation") |> render_click()
+      html = lv |> element(roster_resend) |> render_click()
       assert html =~ "Confirmation email sent"
     end
 
     test "a confirmed user sees no resend button", %{conn: conn, account: account} do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      refute html =~ "Resend confirmation"
+      refute html =~ "Resend email"
     end
   end
 

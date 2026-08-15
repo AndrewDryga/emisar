@@ -946,6 +946,7 @@ defmodule EmisarWeb.AgentsLive do
       <.event_block
         :if={@live_action == :index and @rotated}
         icon="hero-key"
+        tone={:amber}
         title="Key rotated — copy the new key now; it won't be shown again"
       >
         <:body>
@@ -1099,7 +1100,7 @@ defmodule EmisarWeb.AgentsLive do
               <.list_group_header label={owner} />
             </:group_header>
             <:item :let={{key, facts}}>
-              <.list_row padding="py-4">
+              <.list_row padding="py-4" meta_wrap>
                 <:title>
                   <span class="truncate font-medium text-zinc-100">{key.name}</span>
                   <%!-- The emisar-mcp bridge version this key last connected through —
@@ -1129,7 +1130,9 @@ defmodule EmisarWeb.AgentsLive do
                      so it's off the row; the scopes are a fixed MCP shape nobody
                      manages here, so they earn no chips. No key prefix: truncated
                      it rendered the SAME shared literal on every row. --%>
-                  <.meta_line class="text-[11px]">
+                  <%!-- wrap: the swap-pending segment explains itself through a
+                     <.tooltip>, whose bubble the clamp would clip away. --%>
+                  <.meta_line wrap class="text-[11px]">
                     <%!-- The client only earns a seg when it ADDS to the name —
                        a quick-mint names the key after its client, so the seg
                        would just echo the title; a custom-named key keeps it. --%>
@@ -1177,8 +1180,9 @@ defmodule EmisarWeb.AgentsLive do
                   <%!-- A manager's live row carries three verbs — the labeled-menu
                      threshold (the team-roster grammar: bordered `Actions ▾`
                      trigger, ghost faces only on the menu rows). Everyone else —
-                     and every revoked row — has the one read verb, which wears a
-                     small bordered face, never a ghost. --%>
+                     and every revoked row — keeps the two read paths, and both
+                     only NAVIGATE, so they render as the house brand link rather
+                     than button chrome (§2: chrome is for an action). --%>
                   <%= if not facts.revoked? and ApiKeys.subject_can_manage_api_keys?(@current_subject) do %>
                     <.dropdown
                       class="inline-block shrink-0 text-left"
@@ -1232,24 +1236,22 @@ defmodule EmisarWeb.AgentsLive do
                     <%!-- "What did this agent do" matters most right after a key is
                        revoked, so the read verb stays on revoked rows too. Every
                        role that can see this page also holds view_audit. --%>
-                    <.button
+                    <.link
                       navigate={
                         ~p"/app/#{@current_account}/runs?#{[source: "mcp", api_key_id: key.id]}"
                       }
-                      variant={:secondary}
-                      size={:sm}
+                      class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
                     >
-                      View activity
-                    </.button>
-                    <.button
+                      View activity <.cta_arrow />
+                    </.link>
+                    <.link
                       navigate={
                         ~p"/app/#{@current_account}/audit?#{[target_kind: "api_key", target_id: key.id]}"
                       }
-                      variant={:ghost}
-                      size={:sm}
+                      class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
                     >
-                      Audit trail
-                    </.button>
+                      Audit trail <.cta_arrow />
+                    </.link>
                   <% end %>
                   <.confirm_dialog
                     :if={
@@ -1494,13 +1496,15 @@ defmodule EmisarWeb.AgentsLive do
               <%= if @quick_secret do %>
                 <section id="custom-key-save-step" class="space-y-6">
                   <.step_header step={1} title="Save your key" />
-                  <%!-- NEUTRAL, not amber — the copy-now caution is a permanent
-                       property of a fresh mint, not an exceptional state (the
-                       install-wizard grammar); amber stays reserved for a state
-                       that needs the operator's attention. --%>
+                  <%!-- AMBER: a single-secret reveal wears the pending tone
+                       (design-system §8.1) — the key is in the operator's hands
+                       and unrecoverable once they leave, which is exactly the
+                       "act before you move on" state amber names. Matches the
+                       install wizard and the rotation reveal; one event, one
+                       color, everywhere. --%>
                   <.event_block
                     icon="hero-key"
-                    tone={:neutral}
+                    tone={:amber}
                     title="New key minted — it's live now"
                   >
                     <:body>

@@ -51,7 +51,8 @@ defmodule EmisarWeb.PoliciesLive do
   # runner/group rulesets, and the runner/group pickers new rulesets target.
   defp load_all(socket) do
     subject = socket.assigns.current_subject
-    runners = list_runners(subject)
+    {runners, runners_failed?} = list_runners(subject)
+    {groups, groups_failed?} = list_groups(subject)
     catalog_index = load_action_risk_index(subject)
 
     account_policy =
@@ -84,7 +85,8 @@ defmodule EmisarWeb.PoliciesLive do
     |> assign(:account, account_editor)
     |> assign(:rulesets, rulesets)
     |> assign(:runners, runners)
-    |> assign(:groups, list_groups(subject))
+    |> assign(:groups, groups)
+    |> assign(:targets_error?, runners_failed? or groups_failed?)
   end
 
   # The compact catalog risk index every policy rail derives from. A failed read
@@ -168,17 +170,23 @@ defmodule EmisarWeb.PoliciesLive do
   defp stored_baseline(nil, input), do: Policies.build_rules(input)
   defp stored_baseline(%Policies.Policy{rules: rules}, _input), do: rules
 
+  # The targets a ruleset can claim. A failed read is carried, not collapsed:
+  # empty target lists otherwise disable Add ruleset with "…or none exist yet",
+  # blaming an empty fleet for a read that never answered.
   defp list_runners(subject) do
     case Runners.list_all_runners_for_account(subject) do
-      {:ok, runners} -> runners
-      {:error, _} -> []
+      {:ok, runners} -> {runners, false}
+      {:error, _} -> {[], true}
     end
   end
 
   defp list_groups(subject) do
     case Runners.list_group_summaries(subject) do
-      {:ok, rows} -> rows |> Enum.map(&elem(&1, 0)) |> Enum.reject(&blank?/1) |> Enum.sort()
-      {:error, _} -> []
+      {:ok, rows} ->
+        {rows |> Enum.map(&elem(&1, 0)) |> Enum.reject(&blank?/1) |> Enum.sort(), false}
+
+      {:error, _} ->
+        {[], true}
     end
   end
 
@@ -616,13 +624,16 @@ defmodule EmisarWeb.PoliciesLive do
       Enum.any?(runners, &(not MapSet.member?(taken, {:runner, &1.id})))
   end
 
-  defp can_add_ruleset?(account, runners, groups, rulesets),
-    do: account.approval_valid? and addable_any?(runners, groups, rulesets)
+  defp can_add_ruleset?(account, runners, groups, rulesets, targets_error?),
+    do: account.approval_valid? and not targets_error? and addable_any?(runners, groups, rulesets)
 
-  defp add_ruleset_disabled_reason(%{approval_valid?: false}, _runners, _groups, _rulesets),
+  defp add_ruleset_disabled_reason(%{approval_valid?: false}, _runners, _groups, _rulesets, _err),
     do: "Repair and save the default policy before adding a ruleset"
 
-  defp add_ruleset_disabled_reason(_account, runners, groups, rulesets) do
+  defp add_ruleset_disabled_reason(_account, _runners, _groups, _rulesets, true),
+    do: "Couldn't load the runners and groups a ruleset targets. Refresh the page to try again"
+
+  defp add_ruleset_disabled_reason(_account, runners, groups, rulesets, false) do
     if not addable_any?(runners, groups, rulesets),
       do: "Every runner and group already has a ruleset (or none exist yet)"
   end
@@ -679,13 +690,18 @@ defmodule EmisarWeb.PoliciesLive do
             <:subtitle>
               The base decision for every runner, by risk tier — unless a targeted ruleset below overrides it.
             </:subtitle>
+            <%!-- Navigation, but the SAME verb repeats on every targeted-ruleset
+                 header below, where the Remove peer forces the bordered face —
+                 and one repeated verb wears ONE face per page (the founder read
+                 the mixed faces as the rulesets lacking the affordance). --%>
             <:actions :if={@account.policy}>
               <.button
                 navigate={
                   ~p"/app/#{@current_account}/audit?#{[target_kind: "policy", target_id: @account.policy.id]}"
                 }
-                variant={:ghost}
-                size={:sm}
+                variant={:secondary}
+                size={:lg}
+                class="h-10"
               >
                 View activity
               </.button>
@@ -774,8 +790,18 @@ defmodule EmisarWeb.PoliciesLive do
               <.add_row
                 label="Add ruleset"
                 phx-click="add_ruleset"
-                disabled={not can_add_ruleset?(@account, @runners, @groups, @rulesets)}
-                title={add_ruleset_disabled_reason(@account, @runners, @groups, @rulesets)}
+                disabled={
+                  not can_add_ruleset?(@account, @runners, @groups, @rulesets, @targets_error?)
+                }
+                title={
+                  add_ruleset_disabled_reason(
+                    @account,
+                    @runners,
+                    @groups,
+                    @rulesets,
+                    @targets_error?
+                  )
+                }
               />
             </div>
           </div>
@@ -852,7 +878,9 @@ defmodule EmisarWeb.PoliciesLive do
             :for={tier <- ["critical", "high", "medium", "low"]}
             class="flex items-center justify-between"
           >
-            <dt><.risk_pill risk={tier} /></dt>
+            <dt>
+              <.risk_pill id={"policy-breakdown-#{tier}-risk"} risk={tier} variant={:track} />
+            </dt>
             <dd class="text-xs tabular-nums text-zinc-400">{@breakdown[tier]}</dd>
           </div>
         </dl>
@@ -922,13 +950,17 @@ defmodule EmisarWeb.PoliciesLive do
                 Replaces the default policy for this {@ruleset.scope_type}.
               </p>
             </div>
-            <div class="flex shrink-0 items-center gap-2">
+            <div class="flex shrink-0 items-center gap-3">
+              <%!-- Navigation, but it shares this header row with the bordered
+                   Remove — one button grammar per row, at the peer's optical
+                   height (§7.47). --%>
               <.button
                 navigate={
                   ~p"/app/#{@current_account}/audit?#{[target_kind: "policy", target_id: @ruleset.policy.id]}"
                 }
                 variant={:secondary}
-                size={:sm}
+                size={:lg}
+                class="h-10"
               >
                 View activity
               </.button>

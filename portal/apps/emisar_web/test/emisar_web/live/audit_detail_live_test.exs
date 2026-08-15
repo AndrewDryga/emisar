@@ -33,6 +33,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
         target_kind: "action_run",
         target_id: run.id,
         target_label: run.action_id,
+        payload: %{"decision" => "deny", "matched_rules" => ["high-risk"]},
         context: %RequestContext{user_agent: "Go-http-client/1.1"}
       )
 
@@ -169,7 +170,9 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     refute primary =~ "Claude Code"
     assert secondary =~ "Claude Code"
     refute secondary =~ "via"
-    assert facts =~ "grid-cols-[5.25rem_minmax(0,1fr)]"
+    # The label track measures this card's own labels — a hardcoded width sized
+    # for the longest fact stranded the two-character ID label far from its UUID.
+    assert facts =~ "grid-cols-[max-content,minmax(0,1fr)]"
     assert facts =~ "gap-y-1"
     assert facts =~ "text-xs"
     assert facts =~ "leading-5"
@@ -367,7 +370,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
        %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
-    {:ok, event} = Audit.log(account.id, "audit.bare_event", [])
+    {:ok, event} = Audit.log(account.id, "audit.rich_event", payload: %{"k" => "v"})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
@@ -377,6 +380,32 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     assert html =~ ~s(data-copy-text="#{event.id}")
     refute html =~ "event:#{event.id}"
     # The payload copy names what it grabs.
+    assert html =~ "Copy JSON"
+  end
+
+  test "an event with no payload renders no payload panel at all", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    # Framing an empty `{}` under a "Copy JSON" button promises a record that is
+    # not there and copies nothing (§7.43). Both empty shapes reach the page:
+    # `log/3` with no `:payload` stores nil, and an explicit `%{}` stays `%{}`.
+    {:ok, nil_payload} = Audit.log(account.id, "audit.bare_event", [])
+    {:ok, empty_payload} = Audit.log(account.id, "audit.empty_payload", payload: %{})
+
+    for event <- [nil_payload, empty_payload] do
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
+
+      refute has_element?(lv, "#audit-payload-json")
+      refute html =~ "Copy JSON"
+      # The event still renders — only its empty panel is gone.
+      assert html =~ "Event ID"
+    end
+
+    # One populated pair proves the panel is withheld for emptiness, not broken.
+    {:ok, populated} = Audit.log(account.id, "audit.rich_event", payload: %{"k" => "v"})
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit/#{populated.id}")
+
+    assert has_element?(lv, "#audit-payload-json")
     assert html =~ "Copy JSON"
   end
 
@@ -394,18 +423,16 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     refute html =~ "text-sm leading-5 text-zinc-400"
   end
 
-  # payload rendering covers the edges: a nil payload shows
-  # `{}`, a non-map payload is inspected, and a map is pretty JSON. Drive all
-  # three through the live page (the <pre id="audit-payload-json"> is the target).
-  test "payload renders {} for nil, inspect/1 for a non-map, pretty JSON for a map",
-       %{conn: conn} do
+  # payload rendering covers the edges: an empty payload renders no panel, and a
+  # map is pretty JSON. Drive both through the live page (the
+  # <pre id="audit-payload-json"> is the target).
+  test "payload renders no panel when empty, pretty JSON for a map", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
 
-    # nil payload → "{}". A fresh log/3 with no :payload leaves it nil. Read the
-    # <pre> itself so we assert on the payload block, not stray braces elsewhere.
+    # A fresh log/3 with no :payload leaves it nil — nothing to frame or copy.
     {:ok, nil_event} = Audit.log(account.id, "audit.nil_payload", actor_kind: "system")
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/#{nil_event.id}")
-    assert lv |> element("#audit-payload-json") |> render() =~ ">{}<"
+    refute has_element?(lv, "#audit-payload-json")
 
     # map payload → pretty JSON (the indented multi-line form, not inline).
     {:ok, map_event} =

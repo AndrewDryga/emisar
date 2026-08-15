@@ -418,11 +418,15 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                 </.meta_line>
               </:meta>
               <:actions>
+                <%!-- Navigation, but this row's action group also carries a bordered
+                     Revoke, and a row wears ONE button grammar (§7.47). The face is
+                     the ROW's, not the per-row permission state's — restyling it when
+                     Revoke is absent would move the layout between states (§7.55). --%>
                 <.button
                   navigate={
                     ~p"/app/#{@current_account}/audit?#{[target_kind: "enrollment_key", target_id: key.id]}"
                   }
-                  variant={:ghost}
+                  variant={:secondary}
                   size={:sm}
                 >
                   View activity

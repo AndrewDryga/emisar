@@ -304,6 +304,28 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ "your approval"
     end
 
+    test "a held runbook execution names its runbook, never a bare dash", %{conn: conn} do
+      # A runbook_execution request carries no action_id, so reading one straight
+      # off the context printed "—" as the row's whole identity — the operator
+      # could not tell which of several held executions the row was.
+      {conn, user, account} = register_and_log_in(conn)
+
+      request =
+        Fixtures.Approvals.create_execution_request(account, user, %{
+          runbook_title: "Rotate the edge certificates"
+        })
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
+
+      assert html =~ "Awaiting review"
+
+      href = ~p"/app/#{account}/approvals/#{request.id}"
+      row = lv |> element(~s(a[href="#{href}"])) |> render()
+
+      assert row =~ "Rotate the edge certificates"
+      refute row =~ "—"
+    end
+
     test "the Team pillar pitches SSO once a real team exists", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
@@ -534,11 +556,13 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert render(lv) =~ "1 of 3 done"
     end
 
-    test "a run event refreshes only recent runs and their statistics", %{conn: conn} do
+    test "a run event refreshes only the recent runs it renders", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
 
-      assert refresh_query_count(lv, {:run_updated, Ecto.UUID.generate()}) == 6
+      # The header digest is DERIVED from the rows just read (so it can only ever
+      # describe them — §7.36), which also costs no second windowed read.
+      assert refresh_query_count(lv, {:run_updated, Ecto.UUID.generate()}) == 3
     end
 
     test "an approval event refreshes only the fixed five-row queue snippet", %{conn: conn} do

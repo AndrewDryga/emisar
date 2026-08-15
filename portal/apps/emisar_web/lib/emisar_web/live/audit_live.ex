@@ -380,38 +380,53 @@ defmodule EmisarWeb.AuditLive do
         <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>
       </.page_intro>
 
-      <%!-- Quick relative-range presets — set the unified bar's From to
-           (now − window); the date filter below consumes it. Re-adds the
-           presets the date-unification dropped, without a second bar. --%>
-      <div class="mb-2 flex flex-wrap items-center gap-1.5 text-xs">
-        <span class="text-zinc-400">Quick filters:</span>
-        <%!-- An active preset wears the brand active-filter tint and clicking
+      <%!-- THREE filter dimensions share this row — a relative window, the
+           outcome toggle, and the review-category lens — so each is its own
+           group and DISTANCE is the boundary: 20px between groups against 6px
+           inside one, the house meta-row step (runners_live's fleet posture
+           line). No glyph does this job — the middot that used to sit between
+           the toggle and the categories was too quiet to read as a boundary,
+           so a whole different dimension looked like the category group's
+           first chip, and a vertical rule is shell chrome, never content. Each
+           group is its own wrapping box, so it stays contiguous — and the gap
+           step survives — when the row folds on a phone. --%>
+      <div class="mb-2 flex flex-wrap items-center gap-x-5 gap-y-3 text-xs">
+        <%!-- Quick relative-range presets — set the unified bar's From to
+             (now − window); the date filter below consumes it. Re-adds the
+             presets the date-unification dropped, without a second bar.
+             An active preset wears the brand active-filter tint and clicking
              it again clears the window — the chip is a TOGGLE, like every
              other filter control. Which chip is active rides a `window` URL
              param (the materialized From value can't be matched back to its
              preset a minute later); the From facet stays the visible source
              of truth for the actual bound. --%>
-        <button
-          :for={{label, window} <- audit_presets()}
-          type="button"
-          phx-click="preset"
-          phx-value-window={window}
-          aria-pressed={to_string(@filter_params["window"] == window)}
-          class={[
-            "rounded-md px-2 py-1 font-medium ring-1 transition",
-            if(@filter_params["window"] == window,
-              do: "bg-brand-500/10 text-brand-300 ring-brand-500/40",
-              else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
-            )
-          ]}
-        >
-          {label}
-        </button>
+        <div class="flex flex-wrap items-center gap-1.5">
+          <%!-- The row's lead-in rides the first group at the group's own tight
+               gap: at the between-group distance it would read as a fourth
+               group and orphan its own line on a phone. --%>
+          <span class="text-zinc-400">Quick filters:</span>
+          <button
+            :for={{label, window} <- audit_presets()}
+            type="button"
+            phx-click="preset"
+            phx-value-window={window}
+            aria-pressed={to_string(@filter_params["window"] == window)}
+            class={[
+              "rounded-md px-2 py-1 font-medium ring-1 transition",
+              if(@filter_params["window"] == window,
+                do: "bg-brand-500/10 text-brand-300 ring-brand-500/40",
+                else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
+              )
+            ]}
+          >
+            {label}
+          </button>
+        </div>
         <%!-- One-click "only the events that went wrong" — denials, removals, and
              failures (the danger+warn severities) — so the rows an operator hunts
              for surface out of a wall of routine sign-ins, without hand-building
-             the Severity filter. Toggles the filter the panel already exposes. --%>
-        <%!-- Active wears the BRAND active-filter tint like every other filter
+             the Severity filter. Toggles the filter the panel already exposes.
+             Active wears the BRAND active-filter tint like every other filter
              control — rose would say "something is wrong", but an engaged
              toggle is a filter state, not an alarm (the problem ROWS carry
              their own rose/amber). --%>
@@ -429,7 +444,6 @@ defmodule EmisarWeb.AuditLive do
         >
           Problems only
         </button>
-        <span aria-hidden="true" class="px-0.5 text-zinc-700">·</span>
         <%!-- Event-category chips — the coarse review lens (UI-017): one click
              focuses decisions / access / activity out of the runner connect-
              disconnect churn (Fleet), or onto it. They drive the same `category`
@@ -437,22 +451,24 @@ defmodule EmisarWeb.AuditLive do
              VIEW, never trimmed. An active chip wears the brand active-filter tint
              like every other control — an engaged lens is a filter state, not an
              alarm (the problem ROWS carry their own rose/amber). --%>
-        <button
-          :for={{value, label} <- Audit.event_category_values()}
-          type="button"
-          phx-click="category"
-          phx-value-category={value}
-          aria-pressed={to_string(value in List.wrap(@filter_params["category"]))}
-          class={[
-            "rounded-md px-2 py-1 font-medium ring-1 transition",
-            if(value in List.wrap(@filter_params["category"]),
-              do: "bg-brand-500/10 text-brand-300 ring-brand-500/40",
-              else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
-            )
-          ]}
-        >
-          {label}
-        </button>
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button
+            :for={{value, label} <- Audit.event_category_values()}
+            type="button"
+            phx-click="category"
+            phx-value-category={value}
+            aria-pressed={to_string(value in List.wrap(@filter_params["category"]))}
+            class={[
+              "rounded-md px-2 py-1 font-medium ring-1 transition",
+              if(value in List.wrap(@filter_params["category"]),
+                do: "bg-brand-500/10 text-brand-300 ring-brand-500/40",
+                else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
+              )
+            ]}
+          >
+            {label}
+          </button>
+        </div>
       </div>
 
       <%!-- The facet drawer opens from a DISCLOSURE line, not a floating chip —
@@ -863,11 +879,14 @@ defmodule EmisarWeb.AuditLive do
   defp kindless_label("runbook"), do: "Runbook"
 
   @doc """
-  Outcome → house tone for the audit event's `<.status_dot>` — failures `:rose`,
-  denials/removals `:amber`, pass verdicts `:brand`, routine events `:neutral`.
-  Keyed off `Audit.event_outcome/1` so the dot + the "Severity" filter never
-  disagree. Public because the detail page's title dot must match the list
-  (same sharing mechanism as `ref/1`).
+  Outcome → house tone for the audit event's `<.status_dot>` — failures AND
+  denials `:rose`, removals/limits `:amber`, pass verdicts `:brand`, routine
+  events `:neutral`. Denials are rose here exactly as they are in the approvals
+  queue: the tone table (design-console-ux §2) reads rose as "denied", and one
+  refusal must not wear two colors on two surfaces. Keyed off
+  `Audit.event_outcome/1` so the dot + the "Severity" filter never disagree.
+  Public because the detail page's title dot must match the list (same sharing
+  mechanism as `ref/1`).
   """
   def outcome_tone(event_type) do
     case Audit.event_outcome(event_type) do
@@ -879,7 +898,7 @@ defmodule EmisarWeb.AuditLive do
   end
 
   # Tint the event title by outcome so the rows an operator hunts for — a failure
-  # (rose), a denial/removal/expiry (amber) — pop out of a wall of routine sign-ins
+  # or denial (rose), a removal/expiry/limit (amber) — pop out of a wall of routine sign-ins
   # (which stay neutral zinc). The title carries the color, not just the 2px dot,
   # so the signal reads at a glance without making every row loud.
   # Pass verdicts keep the neutral title ON PURPOSE: the brand dot already says

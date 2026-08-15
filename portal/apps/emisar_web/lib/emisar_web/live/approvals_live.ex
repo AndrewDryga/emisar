@@ -134,34 +134,30 @@ defmodule EmisarWeb.ApprovalsLive do
     grants_opts = LiveTable.params_to_opts(params, [], prefix: "grants_") |> put_page_limit(15)
     decided_opts = LiveTable.params_to_opts(params, [], prefix: "decided_") |> put_page_limit(15)
 
-    # Pending is the held-action danger: an {:error, _} (incl. :unauthorized)
-    # collapsed to [] reads as "Nothing waiting", hiding a run awaiting a human.
-    # Track the error so the section can say "couldn't load" instead. (Grants
-    # and decided below are historical/secondary — list_or_empty is fine there.)
+    # Each of the three sections carries its OWN read failure. An {:error, _}
+    # collapsed to [] reads as "Nothing waiting" / "No active grants" — hiding a
+    # run awaiting a human, or a standing grant that is right now letting an
+    # agent skip the prompt. A section the subject has no permission for is a
+    # different message, so its denial never renders as a read failure: grants
+    # need manage_grants (admin+), which an operator or viewer simply lacks.
     {pending, pending_meta, pending_error?} =
-      case Approvals.list_pending_approval_requests(subject, pending_opts) do
-        {:ok, list, meta} -> {list, meta, false}
-        _ -> {[], %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0}, true}
-      end
+      list_read(Approvals.list_pending_approval_requests(subject, pending_opts))
 
-    {:ok, grants, grants_meta} =
-      list_or_empty(
-        Approvals.list_grants_for_account(
-          subject,
-          Keyword.put(grants_opts, :preload, [:api_key, :runner, :approval_request_run])
-        )
-      )
+    grants_read_opts =
+      Keyword.put(grants_opts, :preload, [:api_key, :runner, :approval_request_run])
+
+    {grants, grants_meta, grants_failed?} =
+      list_read(Approvals.list_grants_for_account(subject, grants_read_opts))
+
+    grants_error? = grants_failed? and Approvals.subject_can_manage_grants?(subject)
 
     # Decided-only AT THE QUERY — the old "all minus pending" client-side
     # subtraction made the pager count include pending rows it never showed
     # ("2 / 4 total" with no Next), a dead end on a governance surface.
-    {:ok, decided, decided_meta} =
-      list_or_empty(
-        Approvals.list_approval_requests_for_account(
-          subject,
-          Keyword.put(decided_opts, :status, :decided)
-        )
-      )
+    decided_read_opts = Keyword.put(decided_opts, :status, :decided)
+
+    {decided, decided_meta, decided_error?} =
+      list_read(Approvals.list_approval_requests_for_account(subject, decided_read_opts))
 
     # ONE projection time for the whole page: two rows must not disagree about a
     # deadline that falls between their renders, and what an expiry MEANS
@@ -177,9 +173,11 @@ defmodule EmisarWeb.ApprovalsLive do
     |> assign(:pending_error?, pending_error?)
     |> assign(:grants, grants)
     |> assign(:grants_metadata, grants_meta)
+    |> assign(:grants_error?, grants_error?)
     |> assign(:approval_event_refs, approval_event_refs)
     |> assign(:decided, decided)
     |> assign(:decided_metadata, decided_meta)
+    |> assign(:decided_error?, decided_error?)
     |> assign(:filter_params, params)
     |> assign(:runner_labels, runner_labels_for(subject.account.id, pending ++ decided))
     |> assign(:user_labels, user_labels_for(pending ++ decided, grants, subject))
@@ -206,10 +204,13 @@ defmodule EmisarWeb.ApprovalsLive do
     Keyword.put(opts, :page, page)
   end
 
-  defp list_or_empty({:ok, _, _} = ok), do: ok
+  # A section's read as {rows, metadata, read_failed?}. The empty list is the
+  # RENDER shape only — the third element is what keeps a failed read from
+  # rendering as this section's ordinary empty state.
+  defp list_read({:ok, list, meta}), do: {list, meta, false}
 
-  defp list_or_empty(_) do
-    {:ok, [], %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0}}
+  defp list_read(_) do
+    {[], %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0}, true}
   end
 
   defp runner_labels_for(account_id, requests) do
@@ -253,22 +254,6 @@ defmodule EmisarWeb.ApprovalsLive do
       true -> "—"
     end
   end
-
-  defp request_title(%{
-         context: %{
-           "kind" => "runbook_execution",
-           "execution_kind" => "draft_test",
-           "runbook" => runbook
-         }
-       }),
-       do: "Draft test · #{runbook["title"] || "Runbook"}"
-
-  defp request_title(%{
-         context: %{"kind" => "runbook_execution", "runbook" => runbook}
-       }),
-       do: runbook["title"] || "Runbook execution"
-
-  defp request_title(%{context: context}), do: context["action_id"] || "—"
 
   defp request_scope_label(
          %{context: %{"kind" => "runbook_execution", "plan" => plan}},
@@ -452,10 +437,11 @@ defmodule EmisarWeb.ApprovalsLive do
                     <div class="min-w-0 flex-1">
                       <div class="flex flex-wrap items-center gap-2">
                         <span class="truncate font-mono text-sm text-zinc-200">
-                          {request_title(request)}
+                          {Approvals.request_name(request) || "—"}
                         </span>
                         <.risk_pill
                           :if={@risk_labels[request.id]}
+                          id={"pending-#{request.id}-risk"}
                           risk={@risk_labels[request.id]}
                           class="flex-none"
                         />
@@ -534,11 +520,6 @@ defmodule EmisarWeb.ApprovalsLive do
               </.link>
               evaluates an action as <span class="font-mono text-[13px] text-zinc-300">require_approval</span>. A direct action creates one request for that run. A runbook with any gated item
               creates one request for its complete frozen execution.
-            </p>
-            <p>
-              Approve releases the exact frozen work; deny cancels it. Either way your reason is
-              logged. A request nobody decides <span class="text-zinc-200">expires</span>
-              on its own and the held work is cancelled.
             </p>
           </.docs_rail>
         </section>
@@ -619,12 +600,15 @@ defmodule EmisarWeb.ApprovalsLive do
                     </.meta_line>
                   </:meta>
                   <:actions>
+                    <%!-- Navigation, but it shares this row with a bordered Revoke,
+                         and a row wears ONE button grammar (§7.47) — so it takes the
+                         :secondary face at Revoke's size, not the bare brand link. --%>
                     <.button
                       :if={grant_approval_event_id(g, @approval_event_refs)}
                       navigate={
                         ~p"/app/#{@current_account}/audit/#{grant_approval_event_id(g, @approval_event_refs)}"
                       }
-                      variant={:ghost}
+                      variant={:secondary}
                       size={:sm}
                     >
                       Audit record
@@ -648,8 +632,21 @@ defmodule EmisarWeb.ApprovalsLive do
                 </.list_row>
               </:item>
               <:empty>
+                <%!-- A standing grant is live authorization to skip the prompt, so
+                     "No active grants." on a failed read understates what the
+                     account currently allows. --%>
                 <.empty_state
-                  :if={grants_disabled?(@current_account)}
+                  :if={@grants_error?}
+                  tone={:danger}
+                  icon="hero-exclamation-triangle"
+                  title="Couldn't load standing grants"
+                >
+                  This is a load error, not an empty list — grants may well be active and letting
+                  agents skip approval. Refresh the page; if it persists, your access may have
+                  changed.
+                </.empty_state>
+                <.empty_state
+                  :if={not @grants_error? and grants_disabled?(@current_account)}
                   icon="hero-no-symbol"
                   title="Standing grants are disabled."
                 >
@@ -657,7 +654,7 @@ defmodule EmisarWeb.ApprovalsLive do
                   admin can re-enable them under Maximum grant lifetime below.
                 </.empty_state>
                 <.empty_state
-                  :if={not grants_disabled?(@current_account)}
+                  :if={not @grants_error? and not grants_disabled?(@current_account)}
                   icon="hero-key"
                   title="No active grants."
                 >
@@ -674,8 +671,7 @@ defmodule EmisarWeb.ApprovalsLive do
             <.docs_rail title="What's a standing grant?">
               <p>
                 Approving with a duration mints a <span class="text-zinc-200">standing grant</span>: repeat calls of the same
-                action by the same API key — optionally pinned to one runner and exact
-                arguments — auto-approve for that window instead of re-asking.
+                action by the same API key are auto-approved for that window instead of re-asking.
               </p>
             </.docs_rail>
 
@@ -752,7 +748,7 @@ defmodule EmisarWeb.ApprovalsLive do
                   >
                     <div class="min-w-0 flex-1">
                       <div class="truncate font-mono text-sm text-zinc-200">
-                        {request_title(request)}
+                        {Approvals.request_name(request) || "—"}
                       </div>
                       <div class="text-xs text-zinc-400 sm:truncate">
                         {request_scope_label(request, @runner_labels)}
@@ -782,6 +778,16 @@ defmodule EmisarWeb.ApprovalsLive do
               </:item>
               <:empty>
                 <.empty_state
+                  :if={@decided_error?}
+                  tone={:danger}
+                  icon="hero-exclamation-triangle"
+                  title="Couldn't load the decision log"
+                >
+                  This is a load error, not an empty log — decisions may well be recorded.
+                  Refresh the page; if it persists, your access may have changed.
+                </.empty_state>
+                <.empty_state
+                  :if={not @decided_error?}
                   icon="hero-clipboard-document-check"
                   title="No decided approvals yet."
                 >

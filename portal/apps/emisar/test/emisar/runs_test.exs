@@ -765,77 +765,43 @@ defmodule Emisar.RunsTest do
     end
   end
 
-  describe "fetch_run_stats/2" do
-    setup do
-      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+  describe "summarize_runs/1" do
+    test "classifies exactly the rows it is handed, in the windowed read's vocabulary" do
+      account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      %{account: account, runner: runner, subject: subject}
+
+      runs =
+        for status <- ~w[success success refused denied cancelled running] do
+          {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id, %{status: status}))
+          run
+        end
+
+      # Refused is a failure; denied and cancelled are their own outcomes and
+      # running is in flight, so only success + failed form the success_rate
+      # denominator (2 of 3 = 67%).
+      assert Runs.summarize_runs(runs) == %{
+               total: 6,
+               success: 2,
+               failed: 1,
+               success_rate: 67
+             }
     end
 
-    test "rolls up totals by status", %{account: account, runner: runner, subject: subject} do
-      for status <- ~w[success success failed pending] do
-        {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{status: status}))
-      end
-
-      assert {:ok, stats} = Runs.fetch_run_stats(subject)
-      assert stats.total == 4
-      assert stats.success == 2
-      assert stats.failed == 1
-      assert stats.success_rate == 67
+    test "an empty list totals zero and has no rate yet" do
+      assert Runs.summarize_runs([]) == %{total: 0, success: 0, failed: 0, success_rate: nil}
     end
 
-    test "classifies every outcome, not just failed/error/timed_out", %{
-      account: account,
-      runner: runner,
-      subject: subject
-    } do
-      # refused + validation_failed are genuine failures (were excluded before);
-      # denied + cancelled are their own buckets; running is in-flight.
-      for status <- ~w[success refused validation_failed denied cancelled running] do
-        {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{status: status}))
-      end
-
-      assert {:ok, stats} = Runs.fetch_run_stats(subject)
-      assert stats.total == 6
-      assert stats.success == 1
-      assert stats.failed == 2
-      assert stats.denied == 1
-      assert stats.cancelled == 1
-      assert stats.in_progress == 1
-      # 1 success out of 3 results (success + failed); denied/cancelled/running
-      # are excluded from the denominator.
-      assert stats.success_rate == 33
-    end
-
-    test "counts only the subject's own account (cross-account isolation)", %{
-      account: account,
-      runner: runner,
-      subject: subject
-    } do
-      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{status: "success"}))
-
-      # A second account with its own runs must not leak into the headline.
-      other_account = Fixtures.Accounts.create_account()
-      other_runner = Fixtures.Runners.create_runner(account_id: other_account.id)
-
-      {:ok, _} =
-        Runs.create_run(base_attrs(other_account.id, other_runner.id, %{status: "failed"}))
-
-      assert {:ok, %{total: 1, success: 1}} = Runs.fetch_run_stats(subject)
-    end
-
-    test "success_rate is nil before any run has a result" do
-      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+    test "success_rate is nil while nothing has a result" do
+      account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{status: "running"}))
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id, %{status: "running"}))
 
-      assert {:ok, %{total: 1, success_rate: nil}} = Runs.fetch_run_stats(subject)
-    end
-
-    test "a subject without view_runs permission is refused", %{account: account} do
-      subject = no_permissions_subject(account)
-
-      assert {:error, :unauthorized} = Runs.fetch_run_stats(subject)
+      assert Runs.summarize_runs([run]) == %{
+               total: 1,
+               success: 0,
+               failed: 0,
+               success_rate: nil
+             }
     end
   end
 

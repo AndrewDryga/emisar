@@ -16,6 +16,7 @@ defmodule EmisarWeb.AdminAccountLive do
   use EmisarWeb, :live_view
   import EmisarWeb.StaffComponents
   alias Emisar.{Admin, Auth}
+  alias EmisarWeb.FleetStates
 
   def mount(%{"id" => id}, _session, socket) do
     # IL-18: mount runs twice. The connected guard keeps the eight-query
@@ -71,10 +72,17 @@ defmodule EmisarWeb.AdminAccountLive do
         <div>
           <.section_header title="Billing" />
           <dl class="mt-2 max-w-md text-sm">
+            <%!-- The plan is an authored slug and renders as it was written
+                 (§7.37); the rows under it are machine tokens, so they get the
+                 console's humanized wording. --%>
             <.kv label="Plan">{@overview.billing.plan}</.kv>
-            <.kv label="Source">{@overview.billing.source}</.kv>
+            <%!-- A free account's source IS "free": the row earns its place only
+                 when it says something the Plan row above didn't (§7.43). --%>
+            <.kv :if={@overview.billing.source != @overview.billing.plan} label="Source">
+              {humanize_token(@overview.billing.source)}
+            </.kv>
             <.kv :if={@overview.billing.subscription_status} label="Subscription status">
-              {@overview.billing.subscription_status}
+              {humanize_token(@overview.billing.subscription_status)}
             </.kv>
           </dl>
 
@@ -113,7 +121,13 @@ defmodule EmisarWeb.AdminAccountLive do
               padding="py-4"
             >
               <:title>
-                <span class="truncate text-sm font-medium text-zinc-100">
+                <%!-- The email IS the row's identity, and the roster is the one
+                     place a support case starts from — so the truncated value
+                     stays reachable rather than ending in an ellipsis. --%>
+                <span
+                  class="truncate text-sm font-medium text-zinc-100"
+                  title={membership.user.email}
+                >
                   {membership.user.email}
                 </span>
               </:title>
@@ -151,7 +165,9 @@ defmodule EmisarWeb.AdminAccountLive do
                      lives in SSOSettingsLive, and a second copy here would drift
                      the moment a kind is added. --%>
                 <.chip mono>{provider.kind}</.chip>
-                <.chip :if={provider.enabled} tone={:brand}>Enabled</.chip>
+                <%!-- Healthy is absence (§7.1): a working provider wears no
+                     badge, exactly as the member and runner rows here mark only
+                     the suspended and the disabled. --%>
                 <.chip :if={!provider.enabled}>Disabled</.chip>
               </:chips>
             </.list_row>
@@ -160,24 +176,54 @@ defmodule EmisarWeb.AdminAccountLive do
 
         <div>
           <.section_header title="Fleet" />
-          <div class="mt-2 grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <.stat label="Connected" value={@overview.fleet.counts.connected} />
-            <.stat label="Disconnected" value={@overview.fleet.counts.disconnected} />
-            <.stat label="Never connected" value={@overview.fleet.counts.never_connected} />
-            <.stat label="Disabled" value={@overview.fleet.counts.disabled} />
+          <%!-- The runners page's posture line, verbatim — same dots, same
+               words, same healthy-by-absence rule. These counts read the durable
+               connect/disconnect columns rather than presence, but they answer
+               the four states `Runners.connection_state/1` names, so staff and
+               the customer describe one fleet in one vocabulary. --%>
+          <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pb-4 text-xs">
+            <span class="flex items-center gap-1.5">
+              <.status_dot
+                tone={if @overview.fleet.counts.connected > 0, do: :brand, else: :neutral}
+                size={:sm}
+              />
+              <span class="tabular-nums text-zinc-400">
+                {@overview.fleet.counts.connected} {FleetStates.label(:online)}
+              </span>
+            </span>
+            <span :if={@overview.fleet.counts.disconnected > 0} class="flex items-center gap-1.5">
+              <.status_dot tone={:amber} size={:sm} />
+              <span class="tabular-nums text-amber-300">
+                {@overview.fleet.counts.disconnected} {FleetStates.label(:offline)}
+              </span>
+            </span>
+            <span
+              :if={@overview.fleet.counts.never_connected > 0}
+              class="flex items-center gap-1.5"
+            >
+              <.status_dot tone={:amber} size={:sm} />
+              <span class="tabular-nums text-amber-300">
+                {@overview.fleet.counts.never_connected} {FleetStates.label(:pending)}
+              </span>
+            </span>
+            <span :if={@overview.fleet.counts.disabled > 0} class="flex items-center gap-1.5">
+              <.status_dot tone={:neutral} size={:sm} />
+              <span class="tabular-nums text-zinc-400">
+                {@overview.fleet.counts.disabled} {FleetStates.label(:disabled)}
+              </span>
+            </span>
           </div>
 
           <.empty_state
             :if={@overview.fleet.runners == []}
             variant={:bare}
             title="No runners enrolled."
-            class="mt-6"
           >
             Nothing in this account can execute an action yet.
           </.empty_state>
           <ul
             :if={@overview.fleet.runners != []}
-            class="mt-6 divide-y divide-zinc-800/70 border-t border-zinc-800/70"
+            class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
           >
             <.list_row
               :for={runner <- @overview.fleet.runners}
@@ -211,24 +257,22 @@ defmodule EmisarWeb.AdminAccountLive do
         </div>
 
         <div>
-          <.section_header title="Runs" />
-          <div class="mt-2 grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <.stat label="Runs" value={@overview.runs.count_30d} hint="last 30 days" />
-          </div>
+          <%!-- The 30-day figure qualifies the section, not the list: the rows
+               below are the ten most recent runs, whenever they happened. That
+               is why it reads as a subtitle rather than the count badge, which
+               everywhere else on this page counts the rows under it. --%>
+          <.section_header title="Runs">
+            <:subtitle>{@overview.runs.count_30d} dispatched in the last 30 days.</:subtitle>
+          </.section_header>
 
-          <.empty_state
-            :if={@overview.runs.recent == []}
-            variant={:bare}
-            title="No runs yet."
-            class="mt-6"
-          >
+          <.empty_state :if={@overview.runs.recent == []} variant={:bare} title="No runs yet.">
             This account has never dispatched an action.
           </.empty_state>
           <%!-- Identity, status, and timing only. A run row carries the
                 customer's arguments and output; neither ever renders here. --%>
           <ul
             :if={@overview.runs.recent != []}
-            class="mt-6 divide-y divide-zinc-800/70 border-t border-zinc-800/70"
+            class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
           >
             <.list_row :for={run <- @overview.runs.recent} id={"run-#{run.id}"} padding="py-4">
               <:title>
@@ -256,22 +300,20 @@ defmodule EmisarWeb.AdminAccountLive do
         </div>
 
         <div>
-          <.section_header title="LLM agents" />
-          <div class="mt-2 grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <.stat label="Active API keys" value={@overview.mcp.active_api_keys} />
-          </div>
+          <.section_header title="LLM agents">
+            <:subtitle>{api_keys_subtitle(@overview.mcp.active_api_keys)}</:subtitle>
+          </.section_header>
 
           <.empty_state
             :if={@overview.mcp.recent_clients == []}
             variant={:bare}
             title="No MCP activity."
-            class="mt-6"
           >
             No agent has dispatched an action here in the last 30 days.
           </.empty_state>
           <ul
             :if={@overview.mcp.recent_clients != []}
-            class="mt-6 divide-y divide-zinc-800/70 border-t border-zinc-800/70"
+            class="divide-y divide-zinc-800/70 border-t border-zinc-800/70"
           >
             <.list_row
               :for={{client, index} <- Enum.with_index(@overview.mcp.recent_clients)}
@@ -304,11 +346,15 @@ defmodule EmisarWeb.AdminAccountLive do
               <:meta>
                 <.meta_line>
                   <:seg :if={event.actor_label}>{event.actor_label}</:seg>
+                  <%!-- A support case turns on exactly when something happened,
+                       so the tail's relative times carry the instant bubble the
+                       audit trail uses, not the native title's ~1s dwell. --%>
                   <:seg>
                     <.local_time
                       id={"event-at-#{event.id}"}
                       value={event.occurred_at}
                       mode={:relative}
+                      styled_tooltip
                     />
                   </:seg>
                 </.meta_line>
@@ -330,4 +376,11 @@ defmodule EmisarWeb.AdminAccountLive do
     </.staff_shell>
     """
   end
+
+  # Billing's source and Paddle's subscription status are machine tokens
+  # (`legacy_manual`, `past_due`) that no operator says out loud.
+  defp humanize_token(token), do: token |> String.replace("_", " ") |> String.capitalize()
+
+  defp api_keys_subtitle(1), do: "1 active API key."
+  defp api_keys_subtitle(count), do: "#{count} active API keys."
 end

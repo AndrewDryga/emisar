@@ -70,7 +70,12 @@ defmodule EmisarWeb.AdminAccountLiveTest do
       # in the markup — assert the segment that identifies this action.
       assert html =~ "replication_status"
       assert has_element?(live, "#run-#{run.id}")
-      assert html =~ "Active API keys"
+      assert html =~ "1 active API key."
+
+      # The fixture subscription has no Paddle id, so its source (legacy_manual)
+      # differs from the plan — the row renders, humanized.
+      assert has_element?(live, "dt", "Source")
+      assert html =~ "Legacy manual"
     end
 
     test "the account can be reached by slug as well as id", %{conn: conn, account: account} do
@@ -140,7 +145,7 @@ defmodule EmisarWeb.AdminAccountLiveTest do
     test "every section renders its empty state", %{conn: conn} do
       account = Fixtures.Accounts.create_account()
 
-      {:ok, _live, html} = live(conn, ~p"/admin/accounts/#{account.id}")
+      {:ok, live, html} = live(conn, ~p"/admin/accounts/#{account.id}")
 
       assert html =~ account.name
       assert html =~ "No members."
@@ -149,6 +154,9 @@ defmodule EmisarWeb.AdminAccountLiveTest do
       assert html =~ "No runs yet."
       assert html =~ "No MCP activity."
       assert html =~ "free"
+
+      # A free account's source IS "free" — the row would only restate Plan.
+      refute has_element?(live, "dt", "Source")
     end
   end
 

@@ -334,6 +334,17 @@ defmodule Emisar.Approvals.Request.Query do
     |> select([requests: r], {r.id, field(r, ^field)})
   end
 
+  @doc """
+  Audit label projection: a request's name lives in its frozen `context`, not in
+  one column, so the trail reads the map and lets `Approvals.request_name/1`
+  word it. Mirrors `Policy.Query.select_audit_labels/2`.
+  """
+  def select_audit_labels(queryable, ids) do
+    queryable
+    |> where([requests: r], r.id in ^ids)
+    |> select([requests: r], {r.id, r.context})
+  end
+
   # -- Pagination ------------------------------------------------------
 
   @impl Emisar.Repo.Query

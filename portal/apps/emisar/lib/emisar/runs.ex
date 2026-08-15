@@ -392,45 +392,26 @@ defmodule Emisar.Runs do
   @max_mcp_fanout 16
 
   @doc """
-  Rolled-up totals for the dashboard headline: total runs in window, plus the
-  canonical outcome split — successes, failures (the `@failure_statuses` set),
-  denied, cancelled, and in-flight (the remainder). `success_rate` is successes
-  over attempted RESULTS (success + failure), or nil when none have a result
-  yet — denied / cancelled / in-flight never count toward it.
+  The canonical run-outcome split for a list of runs the caller ALREADY holds,
+  so a summary rendered beside a collection quantifies exactly the rows on
+  screen rather than a time window that disagrees with them.
+
+  Pure and Subject-less by design: it reads no rows, and the list it classifies
+  came from an already-authorized read. Returns
+  `%{total, success, failed, success_rate}`; `success_rate` is successes over
+  attempted RESULTS (success + failure) and is `nil` when none have a result.
   """
-  def fetch_run_stats(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ) do
-      hours = Keyword.get(opts, :hours, 24)
-      cutoff = DateTime.utc_now() |> DateTime.add(-hours * 3600, :second)
+  def summarize_runs(runs) when is_list(runs) do
+    success = Enum.count(runs, &(&1.status == :success))
+    failed = Enum.count(runs, &(&1.status in @failure_statuses))
+    results = success + failed
 
-      # One aggregate row, summed in SQL (FILTER) — no app-side counting.
-      %{total: total, success: success, failed: failed, denied: denied, cancelled: cancelled} =
-        ActionRun.Query.all()
-        |> scope_runs_to_membership(subject)
-        |> ActionRun.Query.inserted_after(cutoff)
-        |> ActionRun.Query.outcome_totals(@failure_statuses)
-        |> Authorizer.for_subject(subject)
-        |> Repo.one()
-
-      results = success + failed
-      in_progress = total - success - failed - denied - cancelled
-
-      {:ok,
-       %{
-         window_hours: hours,
-         total: total,
-         success: success,
-         failed: failed,
-         denied: denied,
-         cancelled: cancelled,
-         in_progress: in_progress,
-         success_rate: if(results > 0, do: round(success * 100 / results))
-       }}
-    end
+    %{
+      total: length(runs),
+      success: success,
+      failed: failed,
+      success_rate: if(results > 0, do: round(success * 100 / results))
+    }
   end
 
   @doc """

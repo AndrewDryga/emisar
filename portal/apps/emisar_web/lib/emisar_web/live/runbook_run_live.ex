@@ -48,6 +48,7 @@ defmodule EmisarWeb.RunbookRunLive do
      |> assign(:events_by_attempt, %{})
      |> assign(:approval_request, nil)
      |> assign(:recent_executions, [])
+     |> assign(:recent_executions_error?, false)
      |> assign(:expanded_plan_stages, MapSet.new())
      |> assign(:expanded_execution_stages, MapSet.new())
      |> assign(:subscribed_execution_id, nil)}
@@ -85,6 +86,7 @@ defmodule EmisarWeb.RunbookRunLive do
           |> assign(:events_by_attempt, %{})
           |> assign(:approval_request, nil)
           |> assign(:recent_executions, [])
+          |> assign(:recent_executions_error?, false)
           |> assign(:expanded_plan_stages, MapSet.new())
           |> assign(:expanded_execution_stages, MapSet.new())
           |> assign(:subscribed_execution_id, nil)
@@ -383,6 +385,7 @@ defmodule EmisarWeb.RunbookRunLive do
           |> load_execution_approval_request(result)
           |> load_attempt_output_previews(result.latest_attempts)
           |> assign(:recent_executions, [])
+          |> assign(:recent_executions_error?, false)
           |> assign(:page_title, execution_page_title(result))
 
         if projection.execution.waitable?,
@@ -450,8 +453,15 @@ defmodule EmisarWeb.RunbookRunLive do
            socket.assigns.runbook,
            socket.assigns.current_subject
          ) do
-      {:ok, executions} -> assign(socket, :recent_executions, executions)
-      {:error, _reason} -> assign(socket, :recent_executions, [])
+      {:ok, executions} ->
+        socket
+        |> assign(:recent_executions, executions)
+        |> assign(:recent_executions_error?, false)
+
+      {:error, _reason} ->
+        socket
+        |> assign(:recent_executions, [])
+        |> assign(:recent_executions_error?, true)
     end
   end
 
@@ -741,6 +751,7 @@ defmodule EmisarWeb.RunbookRunLive do
           can_start?={can_start?(assigns)}
           current_account={@current_account}
           recent_executions={@recent_executions}
+          recent_executions_error?={@recent_executions_error?}
         />
       </div>
     </.dashboard_shell>
@@ -757,6 +768,7 @@ defmodule EmisarWeb.RunbookRunLive do
   attr :can_start?, :boolean, required: true
   attr :current_account, :map, required: true
   attr :recent_executions, :list, required: true
+  attr :recent_executions_error?, :boolean, default: false
 
   defp run_form(assigns) do
     pending_inputs =
@@ -891,6 +903,7 @@ defmodule EmisarWeb.RunbookRunLive do
           <.section_header title="Recent executions" />
           <RunbookWorkflowComponents.recent_executions
             executions={@recent_executions}
+            load_error?={@recent_executions_error?}
             current_account={@current_account}
             runbook={@runbook}
           />
@@ -1095,7 +1108,9 @@ defmodule EmisarWeb.RunbookRunLive do
            and only a held/dead outcome earns an attention event block. --%>
       <div>
         <div class="grid grid-cols-2 gap-x-10 gap-y-8 sm:flex sm:flex-wrap sm:items-start sm:gap-x-14">
-          <.meta_field label="Status">
+          <%!-- wrap: a badge is a composite, not a text run — truncation shears
+           its pill instead of ellipsizing (§7.35). --%>
+          <.meta_field label="Status" wrap>
             <.status_badge status={@result.execution.status} />
           </.meta_field>
           <.meta_field label="Started by">
@@ -1310,7 +1325,7 @@ defmodule EmisarWeb.RunbookRunLive do
                 so it is identity, not addressing. --%>
           <span class="text-zinc-500">·</span>
           <span class="font-mono text-xs text-zinc-500">{@item.step_id}</span>
-          <.risk_pill :if={@item.risk} risk={@item.risk} />
+          <.risk_pill :if={@item.risk} id={"execution-item-#{@item.id}-risk"} risk={@item.risk} />
         </div>
         <%!-- No leading glyph, matching the plan and the editor: a runner name
               says what it is, so an arrow would label nothing. --%>
