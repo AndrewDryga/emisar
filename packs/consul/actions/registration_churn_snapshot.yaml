@@ -1,0 +1,69 @@
+schema_version: 1
+
+id: consul.registration_churn_snapshot
+title: Registration churn incident snapshot
+kind: script
+risk: low
+
+description: >
+  Sample the local Consul agent's completed telemetry interval twice, then
+  return a compact JSON incident snapshot with registration, deregistration,
+  and ACL-blocked mutation deltas plus bounded local services, failing checks,
+  and services explicitly registered to loopback. The metrics endpoint reports
+  completed ten-second aggregation intervals, so this is a focused diagnostic
+  sample rather than an audit log. Deltas are null when both reads observe the
+  same completed interval.
+
+side_effects:
+  - Five fixed read-only local-agent API calls separated by one bounded wait.
+  - Service and check details omit check output, service metadata, and ACL tokens.
+  - Never registers, deregisters, or changes a Consul object.
+
+search_terms:
+  - service registration churn
+  - service deregistration storm
+  - missing service discovery target
+  - consul acl blocked registration
+  - suspicious loopback registration
+  - intermittent 502 bad gateway
+
+args:
+  - name: sample_seconds
+    type: integer
+    required: false
+    default: 12
+    description: Seconds between the two completed-interval metric samples.
+    validation:
+      min: 5
+      max: 30
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Maximum services, failing checks, and loopback registrations returned per list.
+    validation:
+      min: 1
+      max: 200
+
+execution:
+  script:
+    path: scripts/registration_churn_snapshot.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.sample_seconds }}"
+    - "{{ args.limit }}"
+  timeout: 90s
+
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 16384
+
+examples:
+  - title: Default incident snapshot
+    args: {}
+  - title: Short, tightly bounded sample
+    args:
+      sample_seconds: 5
+      limit: 25

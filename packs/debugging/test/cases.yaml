@@ -1,13 +1,85 @@
-# Two different reasons, kept apart on purpose. drop_caches and sysctl_set
-# reach kernel state a container SHARES with its host, so even a privileged
-# lane would mutate the CI machine — these stay uncovered by choice. kill_pid
-# and pid_environ only need a target process in the same PID namespace, which
-# a SUT can provide; they are declared because that lane is not built.
+# drop_caches and sysctl_set reach kernel state a container SHARES with its
+# host, so even a privileged lane would mutate the CI machine. kill_pid remains
+# outside this read-focused fixture and is still declared explicitly.
 # See .agent/kb/pack-behavior-environment-limits.md for what was measured.
+services: [debug-target]
+versions:
+  - version: "13-slim"
+    digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
+    default: true
 risk_accountability:
   mode: complete
   exceptions:
     debugging.drop_caches: requires_privileged_host
     debugging.kill_pid: requires_privileged_host
-    debugging.pid_environ: requires_privileged_host
     debugging.sysctl_set: requires_privileged_host
+cases:
+  - action: debugging.pid_context
+    arrange:
+      - argv: [/bin/sh, -c, "/bin/sh -c 'cd /tmp; exec sleep 600' </dev/null >/dev/null 2>&1 & echo $! > /tmp/packtest-context.pid"]
+    resolve_args:
+      pid:
+        argv: [/bin/sh, -c, "cat /tmp/packtest-context.pid"]
+    expect:
+      stdout_contains: [owner=packtest, start_time=, executable=/usr/bin/sleep, cwd=/tmp, parent_chain:]
+    cleanup:
+      - argv: [/bin/sh, -c, "kill $(cat /tmp/packtest-context.pid) 2>/dev/null || true"]
+
+  - name: debugging.pid-context-missing-process
+    action: debugging.pid_context
+    args: {pid: 4194304}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [PID 4194304 does not exist]
+
+  - action: debugging.pid_env_keys
+    arrange:
+      - argv: [/bin/sh, -c, "CONSUL_HTTP_TOKEN=packtest-consul-secret NOMAD_ADDR=http://nomad.invalid PACKTEST_MULTILINE=$(printf 'first\\nsecond-secret') sleep 600 </dev/null >/dev/null 2>&1 & echo $! > /tmp/packtest-env.pid"]
+    resolve_args:
+      pid:
+        argv: [/bin/sh, -c, "cat /tmp/packtest-env.pid"]
+    expect:
+      stdout_contains: [CONSUL_HTTP_TOKEN, NOMAD_ADDR, PACKTEST_MULTILINE]
+      stdout_not_contains: [packtest-consul-secret, "http://nomad.invalid", first, second-secret, "="]
+    cleanup:
+      - argv: [/bin/sh, -c, "kill $(cat /tmp/packtest-env.pid) 2>/dev/null || true"]
+
+  - action: debugging.pid_connections
+    args: {limit: 1}
+    arrange:
+      - argv: [/bin/sh, -c, "nc -lk 127.0.0.1 23456 </dev/null >/dev/null 2>&1 & echo $! > /tmp/packtest-listener.pid"]
+      - argv: [/bin/sh, -c, "nc 127.0.0.1 23456 < /dev/zero >/dev/null 2>&1 & echo $! > /tmp/packtest-connection.pid"]
+      - argv: [/bin/sh, -c, "ss -H -tnp | grep -F \"pid=$(cat /tmp/packtest-connection.pid),\""]
+        retry_for: 10s
+        retry_every: 200ms
+    resolve_args:
+      pid:
+        argv: [/bin/sh, -c, "cat /tmp/packtest-connection.pid"]
+    expect:
+      stdout_contains: [ESTAB, "127.0.0.1:23456", pid=]
+    cleanup:
+      - argv: [/bin/sh, -c, "kill $(cat /tmp/packtest-connection.pid) $(cat /tmp/packtest-listener.pid) 2>/dev/null || true"]
+
+  - action: debugging.pid_argv
+    arrange:
+      - argv: [/bin/sh, -c, "/bin/sh -c 'while :; do sleep 60; done' packtest-argv-target benign-marker </dev/null >/dev/null 2>&1 & echo $! > /tmp/packtest-argv.pid"]
+    resolve_args:
+      pid:
+        argv: [/bin/sh, -c, "cat /tmp/packtest-argv.pid"]
+    expect:
+      stdout_contains: [packtest-argv-target, benign-marker]
+    cleanup:
+      - argv: [/bin/sh, -c, "kill $(cat /tmp/packtest-argv.pid) 2>/dev/null || true"]
+
+  - action: debugging.pid_environ
+    arrange:
+      - argv: [/bin/sh, -c, "PACKTEST_VISIBLE=harmless-marker sleep 600 </dev/null >/dev/null 2>&1 & echo $! > /tmp/packtest-environ.pid"]
+    resolve_args:
+      pid:
+        argv: [/bin/sh, -c, "cat /tmp/packtest-environ.pid"]
+    expect:
+      stdout_contains: [PACKTEST_VISIBLE=harmless-marker]
+    cleanup:
+      - argv: [/bin/sh, -c, "kill $(cat /tmp/packtest-environ.pid) 2>/dev/null || true"]

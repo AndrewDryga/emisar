@@ -1,0 +1,64 @@
+schema_version: 1
+
+id: debugging.pid_connections
+title: Process remote socket ownership
+kind: script
+risk: low
+
+description: >
+  List a bounded ss inventory of connected TCP and UDP sockets owned by one
+  Linux PID. Each line includes protocol/state, local and remote endpoints, and
+  kernel process ownership. Listening sockets and unrelated processes are
+  omitted.
+
+side_effects:
+  - One read-only ss inventory filtered locally to the requested PID.
+  - Output is capped by the validated line limit.
+  - Socket ownership for another user's process normally requires root.
+
+search_terms:
+  - process remote connections
+  - process socket ownership
+  - unexpected consul connection
+  - unexpected nomad connection
+  - rogue process network
+
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: PID whose connected sockets should be returned.
+    validation:
+      min: 1
+      max: 4194304
+  - name: limit
+    type: integer
+    required: false
+    default: 50
+    description: Maximum matching socket lines to return.
+    validation:
+      min: 1
+      max: 500
+
+execution:
+  script:
+    path: scripts/pid_connections.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.pid }}"
+    - "{{ args.limit }}"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 131072
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Show up to fifty remote sockets for PID 4321
+    args:
+      pid: 4321
+  - title: Return only ten matching sockets
+    args:
+      pid: 4321
+      limit: 10

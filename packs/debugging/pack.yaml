@@ -2,7 +2,7 @@ schema_version: 1
 
 id: debugging
 name: Linux debugging toolkit
-version: 0.2.16
+version: 0.2.17
 retired_below: 0.2.14
 description: >
   General-purpose Linux diagnostics + low-level remediation: process
@@ -48,6 +48,10 @@ actions:
   - actions/socket_summary.yaml
   - actions/top_open_files.yaml
   # Per-PID introspection
+  - actions/pid_context.yaml
+  - actions/pid_env_keys.yaml
+  - actions/pid_connections.yaml
+  - actions/pid_argv.yaml
   - actions/pid_environ.yaml
   - actions/pid_cwd.yaml
   - actions/pid_fds.yaml

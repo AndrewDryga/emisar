@@ -19,6 +19,23 @@ cases:
   - action: consul.agent_metrics
     expect:
       stdout_contains: [Timestamp, Gauges]
+  - action: consul.registration_churn_snapshot
+    args: {sample_seconds: 12, limit: 10}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -X PUT --data ''{"ID":"packtest-loopback","Name":"packtest-loopback","Address":"127.0.0.1","Port":9999,"Check":{"TTL":"30s"}}'' "$CONSUL_HTTP_ADDR/v1/agent/service/register"']
+      - argv: [/bin/sh, -c, 'curl -fsS -X PUT "$CONSUL_HTTP_ADDR/v1/agent/check/fail/service:packtest-loopback"']
+      - argv: [/bin/sh, -c, '(sleep 2; for suffix in 1 2 3 4 5; do curl -fsS -X PUT --data "{\"ID\":\"packtest-churn-$suffix\",\"Name\":\"packtest-churn\"}" "$CONSUL_HTTP_ADDR/v1/agent/service/register"; curl -fsS -X PUT "$CONSUL_HTTP_ADDR/v1/agent/service/deregister/packtest-churn-$suffix"; done) >/tmp/packtest-consul-churn.log 2>&1 &']
+    expect:
+      # The persistent loopback fixture may share the sampled interval with the
+      # five churn registrations, so registration count is intentionally not
+      # asserted as exactly five. The five deregistrations are isolated.
+      stdout_contains: ['"registrations":', '"deregistrations":5']
+      json:
+        /sample_seconds: 12
+        /failing_checks/count: 1
+        /suspicious_loopback_registrations/count: 1
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -X PUT "$CONSUL_HTTP_ADDR/v1/agent/service/deregister/packtest-loopback"']
   - action: consul.agent_self
     expect:
       stdout_contains: [Config, Member]

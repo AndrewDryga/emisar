@@ -1,0 +1,23 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/debugging/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+    image: emisar-packtest-debugging-tools:latest
+    pid: service:debug-target
+    network_mode: service:debug-target
+
+  # The runner joins this disposable container's PID and network namespaces.
+  # Targets started by arrange steps therefore look like host-local processes
+  # and own real sockets, without exposing the test to the Docker host.
+  debug-target:
+    image: debian:${PACKTEST_VERSION:-13-slim}${PACKTEST_DIGEST-}
+    command: [sleep, infinity]
+    healthcheck:
+      test: [CMD, "true"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10

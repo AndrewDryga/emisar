@@ -1,0 +1,52 @@
+schema_version: 1
+
+id: debugging.pid_env_keys
+title: Process environment variable names
+kind: script
+risk: low
+
+description: >
+  List only the valid environment variable names inherited by one Linux PID,
+  one per line. Values are never emitted, so this can safely establish that
+  variables such as CONSUL_HTTP_TOKEN or NOMAD_ADDR reached an unexpected
+  process. Use the high-risk pid_environ action only when values are essential.
+
+side_effects:
+  - Reads /proc/<pid>/environ but emits only names matching shell variable syntax.
+  - Environment values are never written to stdout, stderr, or a temporary file.
+  - Read-only; inspecting another user's process normally requires root or CAP_SYS_PTRACE.
+
+search_terms:
+  - inherited environment
+  - inherited consul token
+  - inherited nomad address
+  - CONSUL_HTTP_TOKEN
+  - NOMAD_ADDR
+  - process credentials
+
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: PID to inspect.
+    validation:
+      min: 1
+      max: 4194304
+
+execution:
+  script:
+    path: scripts/pid_env_keys.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.pid }}"
+  timeout: 5s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: List inherited variable names for PID 4321
+    args:
+      pid: 4321

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: consul
 name: HashiCorp Consul operations
-version: 0.2.26
+version: 0.2.27
 # The kv reads returned secret-bearing values at a tier the default policy
 # auto-runs; every version below fails closed rather than skipping approval.
 retired_below: 0.2.25
@@ -24,6 +24,7 @@ requires:
   binaries:
     - consul
     - curl
+    - jq
 
 # `emisar pack suggest` detection — default process names / ports.
 detect:
@@ -61,6 +62,7 @@ actions:
   - actions/raft_peers.yaml
   - actions/agent_self.yaml
   - actions/agent_metrics.yaml
+  - actions/registration_churn_snapshot.yaml
   - actions/agent_host_info.yaml
   - actions/autopilot_state.yaml
   - actions/raft_remove_peer.yaml

@@ -1,0 +1,50 @@
+schema_version: 1
+
+id: debugging.pid_argv
+title: Process full argument vector
+kind: exec
+risk: high
+
+description: >
+  Show the full argument vector a Linux PID was started with, one argument per
+  line. Arguments often contain tokens, passwords, private URLs, or inline
+  configuration, so this action is high risk and should require explicit
+  approval. Prefer pid_context when executable identity and ancestry are enough.
+
+side_effects:
+  - Reads /proc/<pid>/cmdline and exposes every argument.
+  - Read-only, but output may contain credentials or other secrets.
+  - The runner's pattern-based redaction is a backstop, not a guarantee.
+
+search_terms:
+  - full process command line
+  - process arguments
+  - process argv
+  - daemon flags
+
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: PID to inspect.
+    validation:
+      min: 1
+      max: 4194304
+
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - "-c"
+      - "tr '\\0' '\\n' < /proc/{{ args.pid }}/cmdline"
+  timeout: 5s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Show the full argv for PID 4321 after approval
+    args:
+      pid: 4321

@@ -1,0 +1,50 @@
+schema_version: 1
+
+id: debugging.pid_context
+title: Process identity and parent chain
+kind: script
+risk: low
+
+description: >
+  Show a compact identity record for one Linux PID: owner, start time,
+  command name, executable, cwd, and a parent chain capped at sixteen entries.
+  Command arguments and environment values are deliberately omitted.
+
+side_effects:
+  - Reads process metadata with ps and /proc readlink operations.
+  - Parent traversal is capped at sixteen processes.
+  - Read-only and does not expose command arguments or environment values.
+
+search_terms:
+  - rogue process
+  - unexpected daemon
+  - process ancestry
+  - who started this process
+  - process executable cwd owner
+
+args:
+  - name: pid
+    type: integer
+    required: true
+    description: PID to inspect.
+    validation:
+      min: 1
+      max: 4194304
+
+execution:
+  script:
+    path: scripts/pid_context.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.pid }}"
+  timeout: 10s
+
+output:
+  parser: text
+  max_stdout_bytes: 32768
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Identify PID 4321 and its parents
+    args:
+      pid: 4321
