@@ -8,6 +8,7 @@ SAMPLE_TIME = "2026-07-27T22:00:00Z"
 POLICY_ID = "8675309001234"
 
 MUTATIONS = []
+REQUESTS = []
 POLICY_ENABLED = {"value": True}
 
 
@@ -64,7 +65,20 @@ def response(raw_path):
     if request.path == "/health":
         return {"ok": True}
     if request.path == "/probe/state":
-        return {"mutations": MUTATIONS}
+        return {"mutations": MUTATIONS, "requests": REQUESTS}
+    if request.path == "/v2/projects/example-prod/logs":
+        if query.get("pageToken", [""])[0] == "worst-case":
+            return {
+                "logNames": ["\u2028" * 400 for _ in range(8)],
+                "nextPageToken": "C" * 1024,
+            }
+        return {
+            "logNames": [
+                "projects/example-prod/logs/harness-api",
+                "projects/example-prod/logs/harness-worker",
+            ],
+            "nextPageToken": "log-names-next",
+        }
     if request.path.endswith("/metricDescriptors"):
         return {
             "metricDescriptors": [{
@@ -119,6 +133,49 @@ def response(raw_path):
     return None
 
 
+def log_entries(request_body):
+    filter_value = request_body.get("filter", "")
+    if "worst_case" in filter_value:
+        flood = "\u2028" * 400
+        return {
+            "entries": [{
+                "timestamp": flood,
+                "severity": flood,
+                "resource": {"type": flood},
+                "logName": flood,
+                "textPayload": flood,
+            } for _ in range(5)],
+            "nextPageToken": "N" * 1200,
+        }
+    return {
+        "entries": [
+            {
+                "timestamp": "2026-08-15T06:30:00Z",
+                "severity": "ERROR",
+                "resource": {"type": "gce_instance"},
+                "logName": "projects/example-prod/logs/harness-api",
+                "textPayload": (
+                    "harness log event Authorization: Bearer "
+                    "packtest-canary-gcp-log-bearer-7498"
+                ),
+            },
+            {
+                "timestamp": "2026-08-15T06:29:00Z",
+                "severity": "WARNING",
+                "resource": {"type": "cloud_run_revision"},
+                "logName": "projects/example-prod/logs/harness-worker",
+                "jsonPayload": {
+                    "message": f"worker retry {ACCESS_TOKEN}",
+                    "event": "worker retry",
+                    "attempt": 2,
+                    "internalCredential": ACCESS_TOKEN,
+                },
+            },
+        ],
+        "nextPageToken": "log-entries-next",
+    }
+
+
 def patch_response(raw_path, body):
     request = urlparse(raw_path)
     query = parse_qs(request.query, keep_blank_values=True)
@@ -166,6 +223,34 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
         self.write_json(200, payload)
+
+    def do_POST(self):
+        if not self.authorized():
+            return
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length).decode() if length else "{}"
+        if urlparse(self.path).path != "/v2/entries:list":
+            self.write_json(
+                404,
+                {"error": {
+                    "code": 404,
+                    "message": f"unhandled post {self.path}",
+                }},
+            )
+            return
+        try:
+            request_body = json.loads(body)
+        except json.JSONDecodeError:
+            self.write_json(400, {"error": {"message": "invalid json"}})
+            return
+        REQUESTS.append(request_body)
+        if "provider_failure" in request_body.get("filter", ""):
+            self.write_json(
+                503,
+                {"error": {"code": 503, "message": "fixture unavailable"}},
+            )
+            return
+        self.write_json(200, log_entries(request_body))
 
     def authorized(self):
         if urlparse(self.path).path in ("/health", "/probe/state"):

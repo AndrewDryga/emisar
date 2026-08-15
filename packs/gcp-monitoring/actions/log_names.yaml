@@ -1,0 +1,78 @@
+schema_version: 1
+id: gcp.log_names
+title: List Cloud Logging log names
+kind: script
+risk: low
+description: >
+  List one bounded page of log names that contain entries in a Google Cloud
+  project. Use the returned continuation cursor to inspect the next page.
+side_effects:
+  - One gcloud token read and one read-only Cloud Logging API request.
+  - Returns names only; no log entries or payloads are read.
+search_terms:
+  - list gcp logs
+  - discover cloud logging logs
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: page_size
+    type: integer
+    required: false
+    default: 8
+    description: Maximum log names in this page.
+    validation:
+      min: 1
+      max: 8
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: >
+      Opaque continuation cursor from the previous result. Provider cursors
+      containing unsupported characters or exceeding 1,024 bytes are omitted
+      from output and cannot be continued through this action.
+    validation:
+      pattern: "^[A-Za-z0-9._~+/=-]*$"
+      max_length: 1024
+execution:
+  script:
+    path: scripts/logging_api.sh
+    interpreter: /bin/sh
+  argv:
+    - log-names
+    - "{{ args.project }}"
+    - "{{ args.page_size }}"
+    - "{{ args.page_cursor }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [log_names, next_page_cursor, cursor_omitted]
+    properties:
+      log_names:
+        type: array
+        maxItems: 8
+        items:
+          type: object
+          additionalProperties: false
+          required: [name, truncated]
+          properties:
+            name: {type: string, maxLength: 240}
+            truncated: {type: boolean}
+      next_page_cursor: {type: [string, "null"], maxLength: 1024}
+      cursor_omitted: {type: boolean}
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 16384
+examples:
+  - title: First page of project logs
+    args:
+      project: example-prod
+      page_size: 8

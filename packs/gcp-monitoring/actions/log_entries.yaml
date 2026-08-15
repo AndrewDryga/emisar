@@ -1,0 +1,116 @@
+schema_version: 1
+id: gcp.log_entries
+title: Query recent Cloud Logging entries
+kind: script
+risk: medium
+description: >
+  Query the newest five recent Cloud Logging entries in a Google Cloud project,
+  optionally narrowed by minimum severity, resource type, and exact log ID.
+  Returns fixed, clipped diagnostic fields; log content is arbitrary application
+  output, so redaction is best-effort and the result should be treated as
+  sensitive diagnostics.
+side_effects:
+  - One gcloud token read and one read-only Cloud Logging API request.
+  - Returns application-controlled log content into the governed run result and audit trail.
+search_terms:
+  - query gcp logs
+  - find cloud logging errors
+  - recent google cloud logs
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation:
+      pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+  - name: minimum_severity
+    type: string
+    required: false
+    default: DEFAULT
+    description: Minimum normalized Cloud Logging severity to return.
+    validation:
+      enum: [DEFAULT, DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL, ALERT, EMERGENCY]
+  - name: resource_type
+    type: string
+    required: false
+    default: ""
+    description: Optional exact monitored-resource type, such as gce_instance or cloud_run_revision.
+    validation:
+      pattern: "^([a-z][a-z0-9_]{0,127})?$"
+      max_length: 128
+  - name: log_id
+    type: string
+    required: false
+    default: ""
+    description: Optional exact URL-encoded log ID, without the projects/PROJECT/logs/ prefix.
+    validation:
+      pattern: "^([A-Za-z0-9][A-Za-z0-9._~%+/-]{0,511})?$"
+      max_length: 512
+  - name: window_minutes
+    type: integer
+    required: false
+    default: 60
+    description: Recent query window in minutes.
+    validation:
+      min: 1
+      max: 1440
+  - name: page_size
+    type: integer
+    required: false
+    default: 5
+    description: Maximum entries to return.
+    validation:
+      min: 1
+      max: 5
+execution:
+  script:
+    path: scripts/logging_api.sh
+    interpreter: /bin/sh
+  argv:
+    - log-entries
+    - "{{ args.project }}"
+    - "{{ args.minimum_severity }}"
+    - "{{ args.resource_type }}"
+    - "{{ args.log_id }}"
+    - "{{ args.window_minutes }}"
+    - "{{ args.page_size }}"
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [entries, more_available]
+    properties:
+      entries:
+        type: array
+        maxItems: 5
+        items:
+          type: object
+          additionalProperties: false
+          required: [timestamp, severity, resource_type, log_name, message, message_truncated]
+          properties:
+            timestamp: {type: string, maxLength: 40}
+            severity: {type: string, maxLength: 16}
+            resource_type: {type: string, maxLength: 64}
+            log_name: {type: string, maxLength: 160}
+            message: {type: string, maxLength: 200}
+            message_truncated: {type: boolean}
+      more_available: {type: boolean}
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 16384
+  redact:
+    - name: bearer-authorization
+      type: regex
+      pattern: '(?i)(authorization[":= ]+bearer[[:space:]]+)[A-Za-z0-9._~+/=-]{8,}'
+      replacement: '${1}[REDACTED]'
+examples:
+  - title: Recent VM errors
+    args:
+      project: example-prod
+      minimum_severity: ERROR
+      resource_type: gce_instance
+      window_minutes: 60
+      page_size: 5

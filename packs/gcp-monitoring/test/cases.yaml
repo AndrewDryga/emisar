@@ -7,14 +7,111 @@ risk_accountability:
   mode: complete
 secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
 env:
+  CLOUDSDK_API_ENDPOINT_OVERRIDES_LOGGING: https://gcp-api:8443/
   CLOUDSDK_API_ENDPOINT_OVERRIDES_MONITORING: https://gcp-api:8443/
   CURL_CA_BUNDLE: /packs/gcp-monitoring/test/fixtures/server.crt
   CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-monitoring-access-token-281b
 defaults:
   expect:
     stdout_not_empty: true
-    stdout_not_contains: [packtest-canary-gcp-monitoring-access-token-281b]
+    stdout_not_contains:
+      - packtest-canary-gcp-monitoring-access-token-281b
+      - packtest-canary-gcp-log-bearer-7498
 cases:
+  - action: gcp.log_names
+    args:
+      project: example-prod
+      page_size: 2
+    expect:
+      json:
+        /log_names/0/name: projects/example-prod/logs/harness-api
+        /log_names/0/truncated: false
+        /log_names/1/name: projects/example-prod/logs/harness-worker
+        /next_page_cursor: log-names-next
+        /cursor_omitted: false
+  # Eight log names whose values are floods of U+2028 plus a maximum valid
+  # cursor exercise the schema's advertised worst case under the 8 KiB cap.
+  - name: gcp.log_names-fits-the-cap-on-a-worst-case-page
+    action: gcp.log_names
+    args:
+      project: example-prod
+      page_size: 8
+      page_cursor: worst-case
+    expect:
+      json:
+        /log_names/0/truncated: true
+        /log_names/7/truncated: true
+        /cursor_omitted: false
+      stdout_contains:
+        - '"next_page_cursor":"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
+  - action: gcp.log_entries
+    args:
+      project: example-prod
+      minimum_severity: ERROR
+      resource_type: gce_instance
+      log_id: harness-api
+      window_minutes: 30
+      page_size: 5
+    expect:
+      json:
+        /entries/0/severity: ERROR
+        /entries/0/resource_type: gce_instance
+        /entries/0/message: "harness log event Authorization: Bearer [REDACTED]"
+        /entries/0/message_truncated: false
+        /entries/1/message: worker retry [REDACTED]
+        /more_available: true
+    probes:
+      - name: the bounded project query reached Cloud Logging
+        argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
+        expect:
+          stdout_contains:
+            - '"resourceNames": ["projects/example-prod"]'
+            - 'severity >= ERROR AND resource.type = \"gce_instance\"'
+            - 'logName = \"projects/example-prod/logs/harness-api\"'
+            - '"orderBy": "timestamp desc"'
+            - '"pageSize": 5'
+  # Five entries whose projected fields are floods of the six-byte escaped
+  # U+2028 codepoint. Success proves the advertised maximum remains below the
+  # runner's 8 KiB structured-result cap after canonical JSON encoding.
+  - name: gcp.log_entries-fits-the-cap-on-a-worst-case-page
+    action: gcp.log_entries
+    args:
+      project: example-prod
+      resource_type: worst_case
+      page_size: 5
+    expect:
+      json:
+        /entries/0/message_truncated: true
+        /entries/4/message_truncated: true
+        /more_available: true
+  - name: gcp.log_entries-propagates-provider-errors
+    action: gcp.log_entries
+    args:
+      project: example-prod
+      resource_type: provider_failure
+    expect:
+      status: failure
+      exit: [22]
+      reason_contains: [process exited with code 22]
+      stderr_contains: ["curl: (22)"]
+  - name: gcp.log_entries-rejects-filter-syntax-in-resource-type
+    action: gcp.log_entries
+    args:
+      project: example-prod
+      resource_type: "gce_instance) OR true"
+    expect:
+      status: failure
+      reason_contains: [must match pattern]
+  - name: gcp.log_entries-rejects-http-endpoint
+    action: gcp.log_entries
+    env:
+      CLOUDSDK_API_ENDPOINT_OVERRIDES_LOGGING: http://gcp-api:8080/
+    args:
+      project: example-prod
+    expect:
+      status: failure
+      exit: [2]
+      stderr_contains: [Logging API endpoint must use HTTPS]
   - action: gcp.metric_query
     args:
       project: example-prod
