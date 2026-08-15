@@ -1568,7 +1568,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       call(
         conn,
         "execute_runbook",
-        %{"runbook_ref" => "wait-health@1", "reason" => "Wait test"},
+        %{"runbook_ref" => "wait-health@1", "reason" => "Wait for health"},
         "op_524NN9NMDZ1T76NARWCKM5A0D6"
       )
 

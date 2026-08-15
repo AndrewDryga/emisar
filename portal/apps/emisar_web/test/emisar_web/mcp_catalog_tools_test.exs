@@ -963,7 +963,13 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     duration = "1.0000000000000000000000000000000000000001ns"
 
     body =
-      run_action_body(pack_ref, runner_ref, ~s({"job_id":7,"delay":"#{duration}"}), "Run", "0")
+      run_action_body(
+        pack_ref,
+        runner_ref,
+        ~s({"job_id":7,"delay":"#{duration}"}),
+        "Verify duration parsing",
+        "0"
+      )
 
     response = raw_action(conn, body)
     assert response["ok"]
@@ -991,7 +997,13 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     runner_ref = "native-http~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
 
     body =
-      run_action_body(pack_ref, runner_ref, ~s({"job_id":9007199254740993}), "Native call", "0")
+      run_action_body(
+        pack_ref,
+        runner_ref,
+        ~s({"job_id":9007199254740993}),
+        "Verify native replay",
+        "0"
+      )
 
     first = raw_action(conn, body)
     assert first["ok"]

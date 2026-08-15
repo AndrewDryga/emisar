@@ -19,7 +19,15 @@ defmodule EmisarWeb.MCP.InputContractTest do
     assert {:ok, %{"limit" => 15}} = InputContract.validate("recent_runs", %{"limit" => 15.0})
   end
 
-  test "bounds reason to the published 2000-character limit" do
+  test "bounds reason to the published 12-to-2000-character range" do
+    action = valid_action_args(%{"reason" => "Check memory"})
+    assert {:ok, _arguments} = InputContract.validate("run_action", action)
+
+    action = valid_action_args(%{"reason" => "H"})
+
+    assert {:error, [%{path: "$.reason", code: "min"}]} =
+             InputContract.validate("run_action", action)
+
     action = valid_action_args(%{"reason" => String.duplicate("😀", 2_000)})
     assert {:ok, _arguments} = InputContract.validate("run_action", action)
 
@@ -30,7 +38,11 @@ defmodule EmisarWeb.MCP.InputContractTest do
 
     action = valid_action_args(%{"reason" => "   "})
 
-    assert {:error, [%{path: "$.reason", code: "format"}]} =
+    assert {:error,
+            [
+              %{path: "$.reason", code: "format"},
+              %{path: "$.reason", code: "min"}
+            ]} =
              InputContract.validate("run_action", action)
   end
 
@@ -141,7 +153,7 @@ defmodule EmisarWeb.MCP.InputContractTest do
         "pack_ref" => @pack_ref,
         "runner_refs" => [@runner_ref],
         "args" => %{},
-        "reason" => "Inspect"
+        "reason" => "Inspect demo action"
       },
       overrides
     )

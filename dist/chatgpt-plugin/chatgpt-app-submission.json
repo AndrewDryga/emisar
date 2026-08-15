@@ -171,11 +171,27 @@
       "user_prompt": "Using Emisar, list every visible runner with its connection state and the pack IDs included in the runner response. Do not expand pack details or execute actions.",
       "file_attachment_urls": null,
       "tools_triggered": "list_runners",
-      "expected_output": "Reports one connected runner named bmorin-dev with pack IDs debian, debugging, docker, firewall, linux-core, network-tls, nic, and systemd-deep. No action or run is created.",
+      "expected_output": "Reports one connected runner named bmorin-dev and the nonempty pack ID list returned for it. The runner is connected. No action, operation, or run is created.",
       "expected_output_url": null
     },
     {
-      "description": "Inspect an exact diagnostic action before execution.",
+      "description": "Inspect the exact memory diagnostic before execution.",
+      "user_prompt": "Using Emisar, find and inspect linux.memory on bmorin-dev. Report its risk, side effects, arguments, and compatible runners. Do not execute it.",
+      "file_attachment_urls": null,
+      "tools_triggered": "find_actions, get_action",
+      "expected_output": "Reports that linux.memory is a low-risk, read-only action with no arguments, reads memory and swap via free -m, and is compatible with bmorin-dev. No operation or run is created.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Check host memory with a read-only action.",
+      "user_prompt": "Using Emisar, run linux.memory with no arguments on bmorin-dev and set wait to 60s. Report total, used, free, and available memory. Reason: OpenAI review memory health check.",
+      "file_attachment_urls": null,
+      "tools_triggered": "find_actions, get_action, run_action",
+      "expected_output": "After any ChatGPT confirmation, linux.memory succeeds on bmorin-dev and returns nonempty total, used, free, and available memory values from free -m without modifying the host.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Inspect the exact filesystem diagnostic before execution.",
       "user_prompt": "Using Emisar, find and inspect linux.disk_usage on bmorin-dev. Report its risk, side effects, path argument default and restrictions, and compatible runners. Do not execute it.",
       "file_attachment_urls": null,
       "tools_triggered": "find_actions, get_action",
@@ -188,22 +204,6 @@
       "file_attachment_urls": null,
       "tools_triggered": "find_actions, get_action, run_action",
       "expected_output": "After any ChatGPT confirmation, linux.disk_usage succeeds on bmorin-dev, reports df output for /, states whether usage exceeds 85%, and performs no cleanup or filesystem modification.",
-      "expected_output_url": null
-    },
-    {
-      "description": "Review account-visible filesystem check history.",
-      "user_prompt": "Using Emisar, call recent_runs with action_id linux.disk_usage, scope account, and limit 5. Summarize each returned run's status, runner, and timestamp. Do not execute anything.",
-      "file_attachment_urls": null,
-      "tools_triggered": "recent_runs",
-      "expected_output": "Returns up to five account-visible linux.disk_usage runs with status, runner, and timestamp for each returned row. It creates no operation or run.",
-      "expected_output_url": null
-    },
-    {
-      "description": "Check current host load, memory, and uptime.",
-      "user_prompt": "Using Emisar, run debugging.loadavg with no arguments on bmorin-dev and set wait to 60s. Summarize the returned load averages, memory fields, and uptime. Reason: OpenAI review host health check.",
-      "file_attachment_urls": null,
-      "tools_triggered": "find_actions, get_action, run_action",
-      "expected_output": "After any ChatGPT confirmation, debugging.loadavg succeeds on bmorin-dev and returns nonempty load averages, memory fields, and uptime without modifying the host.",
       "expected_output_url": null
     }
   ],

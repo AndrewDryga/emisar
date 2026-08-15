@@ -203,8 +203,8 @@
     },
     "reason": {
       "type": "string",
-      "description": "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state what you are doing and why (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). A vague or placeholder reason slows approval.",
-      "minLength": 1,
+      "description": "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state the specific action and why it is needed (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). Must be at least 12 characters; vague or placeholder reasons are rejected.",
+      "minLength": 12,
       "maxLength": 2000,
       "pattern": "\\S"
     },

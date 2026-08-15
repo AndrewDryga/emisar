@@ -69,7 +69,9 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
              "Opaque continuation token"
 
     assert get_in(run_action, ["inputSchema", "$defs", "reason", "description"]) ==
-             "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state what you are doing and why (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). A vague or placeholder reason slows approval."
+             "Human-readable justification for this action. Shown to human approvers and recorded in the audit log — state the specific action and why it is needed (e.g. 'Restart stuck postgres on db-1 to clear a connection pileup'). Must be at least 12 characters; vague or placeholder reasons are rejected."
+
+    assert get_in(run_action, ["inputSchema", "$defs", "reason", "minLength"]) == 12
 
     assert get_in(run_action, ["inputSchema", "$defs", "evidence", "description"]) ==
              "Optional: what you already observed that makes this action necessary — prior findings, error signatures, or the run ids you inspected. State it so approvers and the audit log see the basis. Not verified."
