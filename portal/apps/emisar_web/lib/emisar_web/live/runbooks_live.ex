@@ -139,6 +139,14 @@ defmodule EmisarWeb.RunbooksLive do
         </.button>
       </:actions>
 
+      <%!-- Defines the noun and names who can dispatch it; the rail beside the list
+           owns the EXECUTION semantics (stages, what stops a run) and the docs link,
+           so neither is repeated here. --%>
+      <.page_intro>
+        A runbook is a multi-step procedure saved as one versioned unit — an operator or an
+        LLM agent dispatches it on demand, and only the published release ever runs.
+      </.page_intro>
+
       <div class="grid min-w-0 gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <main id="runbooks-primary" class="min-w-0">
           <%!-- Account-empty (create CTA) only when there's genuinely nothing AND no
@@ -159,10 +167,11 @@ defmodule EmisarWeb.RunbooksLive do
               </.empty_state>
             <% @runbooks == [] && @metadata.count == 0 &&
                  not LiveTable.has_active_filters?(@filter_params, @filters) -> %>
+              <%!-- The intro above defines what a runbook is, so this says the one
+                   thing it can add: the two ways to get a first one, matching the
+                   header's two buttons. --%>
               <.empty_state icon="hero-book-open" title="No runbooks yet.">
-                Runbooks are cloud-side workflows that expand into ordered action dispatches.
-                Compose multi-step procedures, publish them, and operators or LLMs can run them
-                safely.
+                Compose one from your fleet's actions, or import a definition you already have.
               </.empty_state>
             <% true -> %>
               <%!-- Standalone live_table (self-framed cards panel) — matches runs/
