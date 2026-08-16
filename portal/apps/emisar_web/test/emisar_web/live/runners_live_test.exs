@@ -499,7 +499,10 @@ defmodule EmisarWeb.RunnersLiveTest do
       {:ok, lv, html} =
         build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners")
 
-      assert html =~ "Owners and admins with full runner access only"
+      # The schedule they can't set is still ON the page as a value, with the
+      # requirement on the lock's tooltip rather than a prose tail.
+      assert html =~ "After 30 days inactive"
+      assert html =~ "Owners and admins with full runner access can change this"
       refute has_element?(lv, "#runner-retention-form")
       refute has_element?(lv, "#runners-cleanup-now")
 
@@ -548,7 +551,8 @@ defmodule EmisarWeb.RunnersLiveTest do
 
       {:ok, lv, html} = build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/runners")
 
-      assert html =~ "Owners and admins with full runner access only"
+      assert html =~ "After 30 days inactive"
+      assert html =~ "Owners and admins with full runner access can change this"
       refute has_element?(lv, "#runner-retention-form")
 
       assert render_click(lv, "set_runner_retention", %{"hours" => "168"}) =~

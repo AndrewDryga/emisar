@@ -643,6 +643,37 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     siblings. **Enforcement is review, deliberately**: a source-text check was measured and
     rejected — the console carries ~90 legitimate metadata middots against this one defect,
     so the check would fire almost entirely on correct code.
+59. **A gated setting always shows its current value; WHO may change it rides the lock's
+    tooltip, never a prose tail.** Every account setting wears one shape,
+    `<.gated_setting>` — the Team roster's already-approved role pattern generalized. A
+    member who may change it gets the CONTROL, which already carries the value (a select's
+    selection, a toggle's verb, a confirm button's "Stop requiring SSO"); a member who may
+    not gets that same value as a content-sized locked `<.chip icon="hero-lock-closed-mini">`
+    whose `<.tooltip>` names *that setting's* real requirement. Both arms sit in the same
+    slot with the caller's one spacing class, so the permission state never moves the card
+    (§7.55), and the value is never stretched to the control's track (a value filling that
+    box reads as the control disabled). **Three failures this closed, all reported together
+    by the founder as "they look different and disagree on fundamentals":** the value BURIED
+    in the permission sentence ("Owners and admins with full runner access only — currently
+    after 1 hour inactive" — runners and packs cleanup); the value ABSENT entirely, so a
+    viewer read a whole card about a setting and learned nothing about where it stood (the
+    grant cap when uncapped, 2FA enforcement, require-SSO, the monthly report); and a state
+    tag printed beside the title (`Enforced`, `Required`) that the card's own control verb
+    already said, and that rendered only in the true state anyway. The description says what
+    the setting DOES, the value says where it STANDS, the lock says who moves it — one job
+    each. **Never flatten differing requirements to one sentence**: the runner schedule needs
+    unrestricted runner access on top of owner/admin, and the tooltip must say so; verify
+    each against the permission predicate, not the prose next to it. The scope is a closed
+    set — the fields of `Account.Settings` — so a seventh setting is the only thing that adds
+    a call site. **Not** this shape: a page-level gate that redirects at mount (audit export),
+    a door to a sub-page (SIEM export), or a per-item CTA slot whose card has no value of its
+    own to lock (the billing plan grid, where the `Current` chip is the value and the other
+    cards' footers are calls to action). Sweep: a template branch whose non-permitted arm
+    renders a permission SENTENCE where the control was, and any `:if`-gated state tag beside
+    a title whose sibling control's verb already carries it. **Enforcement is review plus
+    `EmisarWeb.Components.GatedSettingTest`**: a source-text check on the permission-sentence
+    strings was considered and rejected — the billing plan grid renders exactly that shape
+    correctly, so the check would fire on correct code.
 
 
 ## 8. The kit is the contract

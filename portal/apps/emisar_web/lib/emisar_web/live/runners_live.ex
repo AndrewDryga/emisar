@@ -134,7 +134,10 @@ defmodule EmisarWeb.RunnersLive do
   defp cleanup_flash(1), do: "Removed 1 inactive runner."
   defp cleanup_flash(count), do: "Removed #{count} inactive runners."
 
-  defp retention_period_label(hours), do: "after #{retention_period_phrase(hours)} inactive"
+  # What a member who can't change the schedule reads in its place. Worded like
+  # the select's own options, so both audiences read the setting the same way.
+  defp retention_value_label(nil), do: "Off"
+  defp retention_value_label(hours), do: "After #{retention_period_phrase(hours)} inactive"
 
   defp retention_period_phrase(1), do: "1 hour"
   defp retention_period_phrase(24), do: "1 day"
@@ -582,22 +585,21 @@ defmodule EmisarWeb.RunnersLive do
                     sweep deletes them; a host that comes back online re-enrolls as a fresh
                     runner. Currently-connected and disabled runners are never touched.
                   </p>
-                  <%= if Runners.subject_can_manage_inactive_retention?(@current_subject) do %>
-                    <form id="runner-retention-form" phx-change="set_runner_retention" class="mt-3">
+                  <.gated_setting
+                    id="runner-retention"
+                    can_change?={Runners.subject_can_manage_inactive_retention?(@current_subject)}
+                    value={retention_value_label(@retention_hours)}
+                    who_can_change="Owners and admins with full runner access can change this"
+                    class="mt-3"
+                  >
+                    <form id="runner-retention-form" phx-change="set_runner_retention">
                       <.select
                         name="hours"
                         aria-label="Remove runners inactive for"
                         options={runner_retention_options(@retention_hours)}
                       />
                     </form>
-                  <% else %>
-                    <p class="mt-2 text-[11px] text-zinc-400">
-                      Owners and admins with full runner access only — currently {(@retention_hours &&
-                                                                                     retention_period_label(
-                                                                                       @retention_hours
-                                                                                     )) || "off"}.
-                    </p>
-                  <% end %>
+                  </.gated_setting>
                   <%!-- A runner-scoped admin can't set the account-wide schedule but can
                        still run the manual sweep — it's narrowed to their own scope. --%>
                   <.confirm_button

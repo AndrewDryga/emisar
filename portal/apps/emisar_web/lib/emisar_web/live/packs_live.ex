@@ -490,7 +490,10 @@ defmodule EmisarWeb.PacksLive do
   defp cleanup_flash(count),
     do: "Removed #{count} pack versions no runner has advertised recently."
 
-  defp retention_days_label(days), do: "after #{days_phrase(days)} unseen"
+  # What a member who can't change the schedule reads in its place. Worded like
+  # the select's own options, so both audiences read the setting the same way.
+  defp pack_retention_value_label(nil), do: "Off"
+  defp pack_retention_value_label(days), do: "After #{days_phrase(days)} unseen"
 
   defp days_phrase(1), do: "1 day"
   defp days_phrase(days), do: "#{days} days"
@@ -1618,8 +1621,16 @@ defmodule EmisarWeb.PacksLive do
                 again re-inserts it as a fresh trust decision. Versions a connected runner
                 still advertises are never removed.
               </p>
-              <%= if Catalog.subject_can_manage_packs?(@current_subject) do %>
-                <form id="pack-retention-form" phx-change="set_pack_retention" class="mt-3">
+              <.gated_setting
+                id="pack-retention"
+                can_change?={Catalog.subject_can_manage_packs?(@current_subject)}
+                value={
+                  pack_retention_value_label(@current_account.settings.pack_unseen_retention_days)
+                }
+                who_can_change="Owners and admins can change this"
+                class="mt-3"
+              >
+                <form id="pack-retention-form" phx-change="set_pack_retention">
                   <.select
                     name="days"
                     aria-label="Remove pack versions not seen for"
@@ -1647,14 +1658,7 @@ defmodule EmisarWeb.PacksLive do
                   </:body>
                   Clean up now
                 </.confirm_button>
-              <% else %>
-                <p class="mt-2 text-[11px] text-zinc-400">
-                  Owner/admin only — currently {(@current_account.settings.pack_unseen_retention_days &&
-                                                   retention_days_label(
-                                                     @current_account.settings.pack_unseen_retention_days
-                                                   )) || "off"}.
-                </p>
-              <% end %>
+              </.gated_setting>
             </div>
           </div>
         </aside>

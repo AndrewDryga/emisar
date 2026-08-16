@@ -1734,7 +1734,10 @@ defmodule EmisarWeb.PacksLiveTest do
       {:ok, lv, html} =
         build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/packs")
 
-      assert html =~ "Owner/admin only"
+      # The schedule they can't set is still ON the page as a value, with the
+      # requirement on the lock's tooltip rather than a prose tail.
+      assert html =~ "After 30 days unseen"
+      assert html =~ "Owners and admins can change this"
       refute has_element?(lv, "#packs-cleanup form")
 
       assert render_click(lv, "set_pack_retention", %{"days" => "7"}) =~

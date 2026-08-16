@@ -355,6 +355,13 @@ defmodule EmisarWeb.ApprovalsLive do
       "longer authorize anything; try again to clear them from the list."
   end
 
+  # What a member who can't change the cap reads in its place. Worded like the
+  # select's own options, so both audiences read the setting the same way — and
+  # it covers the uncapped state, which had no rendering at all.
+  defp grant_lifetime_value_label(nil), do: "No cap"
+  defp grant_lifetime_value_label(0), do: "Disabled"
+  defp grant_lifetime_value_label(seconds), do: grant_lifetime_label(seconds)
+
   defp grant_lifetime_label(3_600), do: "1 hour"
   defp grant_lifetime_label(86_400), do: "1 day"
   defp grant_lifetime_label(2_592_000), do: "30 days"
@@ -681,9 +688,9 @@ defmodule EmisarWeb.ApprovalsLive do
               </h3>
               <%!-- Max grant-lifetime cap — owner/admin. Bounds how long an approved
                    standing grant can keep skipping the prompt; single-use ("once") is
-                   always exempt. Server-enforced in Approvals.create_grant.
-                   Choice→consequence: an UNCAPPED account wears amber with what that
-                   means; disabled wears brand; a set cap is quiet. --%>
+                   always exempt. Server-enforced in Approvals.create_grant. What
+                   "Disabled" costs an operator is stated where they meet it — the
+                   select's own option, and the grants-list empty state. --%>
               <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — self-contained control card, the team-security rail grammar --%>
               <div id="approvals-grant-cap" class="mt-3 rounded-xl border border-zinc-800/80 p-4">
                 <h4 class="text-sm font-medium text-zinc-100">Maximum grant lifetime</h4>
@@ -691,24 +698,16 @@ defmodule EmisarWeb.ApprovalsLive do
                   Cap how long an approved grant can keep skipping the prompt.
                   Single-use approvals are always allowed.
                 </p>
-                <p
-                  :if={grants_disabled?(@current_account)}
-                  class="mt-2 flex items-start gap-1.5 text-xs"
+                <.gated_setting
+                  id="max-grant-lifetime"
+                  can_change?={Approvals.subject_can_manage_grants?(@current_subject)}
+                  value={
+                    grant_lifetime_value_label(@current_account.settings.max_grant_lifetime_seconds)
+                  }
+                  who_can_change="Owners and admins can change this"
+                  class="mt-3"
                 >
-                  <.status_dot tone={:brand} size={:sm} class="mt-1" />
-                  <span>
-                    <span class="whitespace-nowrap text-brand-300">disabled</span>
-                    <span class="text-zinc-400">— every approval is single-use</span>
-                  </span>
-                </p>
-                <p
-                  :if={(@current_account.settings.max_grant_lifetime_seconds || 0) > 0}
-                  class="mt-2 text-xs text-zinc-400"
-                >
-                  {grant_lifetime_label(@current_account.settings.max_grant_lifetime_seconds)}
-                </p>
-                <%= if Approvals.subject_can_manage_grants?(@current_subject) do %>
-                  <form id="max-grant-lifetime-form" phx-change="set_max_grant_lifetime" class="mt-3">
+                  <form id="max-grant-lifetime-form" phx-change="set_max_grant_lifetime">
                     <.select
                       name="seconds"
                       aria-label="Maximum grant lifetime"
@@ -717,9 +716,7 @@ defmodule EmisarWeb.ApprovalsLive do
                       }
                     />
                   </form>
-                <% else %>
-                  <p class="mt-2 text-[11px] text-zinc-400">Owner/admin only.</p>
-                <% end %>
+                </.gated_setting>
               </div>
             </div>
           </aside>

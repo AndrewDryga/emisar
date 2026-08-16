@@ -1037,6 +1037,18 @@ defmodule EmisarWeb.TeamLive do
 
   defp sync_count(count, word), do: "#{count} #{word}#{if count == 1, do: "", else: "s"}"
 
+  # What a member who can't flip these security/notification settings reads in
+  # the control's place. Each states the setting's own state plainly — the OFF
+  # state included, which none of the three used to render at all.
+  defp mfa_enforcement_value_label(:enforced), do: "Enforced"
+  defp mfa_enforcement_value_label(_), do: "Not enforced"
+
+  defp sso_required_value_label(true), do: "Required"
+  defp sso_required_value_label(_), do: "Not required"
+
+  defp monthly_report_value_label(true), do: "Off"
+  defp monthly_report_value_label(_), do: "On"
+
   defp request_label(request),
     do: Accounts.user_display_name(request) || request.provider_identifier
 
@@ -1868,41 +1880,39 @@ defmodule EmisarWeb.TeamLive do
                   </span>
                 </span>
               </span>
-              <.chip :if={@security_facts.mfa_enforcement == :enforced} tone={:brand}>
-                Enforced
-              </.chip>
             </p>
-            <div class="mt-4">
-              <%= if Accounts.subject_can_manage_account_security?(@current_subject) do %>
-                <%= if @security_facts.mfa_enforcement == :actor_not_enrolled do %>
-                  <.tooltip
-                    text="Enable 2FA on your own profile first — otherwise you'd lock yourself out."
-                    placement={:bottom}
-                    class="shrink-0"
-                  >
-                    <.mfa_confirm_button
-                      require_mfa={false}
-                      total={@security_facts.mfa_total}
-                      unenrolled={unenrolled}
-                      disabled={true}
-                    />
-                  </.tooltip>
-                <% else %>
+            <%!-- No "Enforced" chip on the facts line above: the button's own verb
+                 says it for a member who can change it, and the locked value says it
+                 for one who can't — a chip as well would state it twice. --%>
+            <.gated_setting
+              id="require-mfa"
+              can_change?={Accounts.subject_can_manage_account_security?(@current_subject)}
+              value={mfa_enforcement_value_label(@security_facts.mfa_enforcement)}
+              who_can_change="Owners and admins can change this"
+              class="mt-4"
+            >
+              <%= if @security_facts.mfa_enforcement == :actor_not_enrolled do %>
+                <.tooltip
+                  text="Enable 2FA on your own profile first — otherwise you'd lock yourself out."
+                  placement={:bottom}
+                  class="shrink-0"
+                >
                   <.mfa_confirm_button
-                    require_mfa={@security_facts.mfa_enforcement == :enforced}
+                    require_mfa={false}
                     total={@security_facts.mfa_total}
                     unenrolled={unenrolled}
-                    disabled={false}
+                    disabled={true}
                   />
-                <% end %>
+                </.tooltip>
+              <% else %>
+                <.mfa_confirm_button
+                  require_mfa={@security_facts.mfa_enforcement == :enforced}
+                  total={@security_facts.mfa_total}
+                  unenrolled={unenrolled}
+                  disabled={false}
+                />
               <% end %>
-              <span
-                :if={not Accounts.subject_can_manage_account_security?(@current_subject)}
-                class="text-[11px] text-zinc-400"
-              >
-                Owner/admin only
-              </span>
-            </div>
+            </.gated_setting>
           </div>
 
           <%!-- ── Single sign-on connections ── --%>
@@ -2018,20 +2028,22 @@ defmodule EmisarWeb.TeamLive do
               data-role="require-sso-section"
               class="mt-4 border-t border-zinc-800/70 pt-3"
             >
-              <div class="flex items-center justify-between gap-3">
-                <p class="text-[11px] font-medium text-zinc-300">Require single sign-on</p>
-                <span :if={@security_facts.sso_required?} class="text-[11px] text-zinc-400">
-                  Required
-                </span>
-              </div>
+              <p class="text-[11px] font-medium text-zinc-300">Require single sign-on</p>
               <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
                 Members sign in through this account's identity provider. Magic-link sign-ins are
                 redirected to SSO. Needs an enabled connection.
               </p>
-              <div class="mt-3">
+              <%!-- The "Required" tag that rode the title line is gone: the button's
+                   verb states it for a member who can change it, the locked value for
+                   one who can't, and neither said it when SSO was NOT required. --%>
+              <.gated_setting
+                id="require-sso"
+                can_change?={Accounts.subject_can_manage_account_security?(@current_subject)}
+                value={sso_required_value_label(@security_facts.sso_required?)}
+                who_can_change="Owners and admins can change this"
+                class="mt-3"
+              >
                 <%= cond do %>
-                  <% not Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                    <span class="text-[11px] text-zinc-400">Owner/admin only</span>
                   <% @security_facts.sso_required? -> %>
                     <.confirm_button
                       id="require-sso"
@@ -2065,7 +2077,7 @@ defmodule EmisarWeb.TeamLive do
                   <% true -> %>
                     <span class="text-[11px] text-zinc-400">Add an enabled connection first</span>
                 <% end %>
-              </div>
+              </.gated_setting>
             </div>
             <%!-- The branded sign-in link to hand to members — only once there's a
                  connection to sign in through. --%>
@@ -2097,22 +2109,21 @@ defmodule EmisarWeb.TeamLive do
               approvals that gated risky work, current posture. Sign-in and approval emails are
               separate and keep working either way.
             </p>
-            <div class="mt-4">
+            <.gated_setting
+              id="monthly-report"
+              can_change?={Accounts.subject_can_manage_account?(@current_subject)}
+              value={monthly_report_value_label(@current_account.settings.monthly_report_opt_out)}
+              who_can_change="Owners and admins can change this"
+              class="mt-4"
+            >
               <.switch
-                :if={Accounts.subject_can_manage_account?(@current_subject)}
                 on={not @current_account.settings.monthly_report_opt_out}
                 on_label="Turn off"
                 off_label="Turn back on"
                 aria-label="Monthly account-health report email"
                 phx-click="toggle_monthly_report"
               />
-              <span
-                :if={not Accounts.subject_can_manage_account?(@current_subject)}
-                class="text-[11px] text-zinc-400"
-              >
-                Owner/admin only
-              </span>
-            </div>
+            </.gated_setting>
           </div>
         </aside>
       </div>
