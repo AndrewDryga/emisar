@@ -1234,24 +1234,29 @@ defmodule EmisarWeb.AgentsLive do
                     </.dropdown>
                   <% else %>
                     <%!-- "What did this agent do" matters most right after a key is
-                       revoked, so the read verb stays on revoked rows too. Every
-                       role that can see this page also holds view_audit. --%>
-                    <.link
+                       revoked, so the read verbs stay on revoked rows too. Every
+                       role that can see this page also holds view_audit. TWO verbs
+                       in one row, so they wear the bordered face the manager
+                       branch's `Actions ▾` trigger wears — a pair of bare links
+                       reads as prose, not as this row's affordances (§7.47). --%>
+                    <.button
                       navigate={
                         ~p"/app/#{@current_account}/runs?#{[source: "mcp", api_key_id: key.id]}"
                       }
-                      class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                      variant={:secondary}
+                      size={:sm}
                     >
-                      View activity <.cta_arrow />
-                    </.link>
-                    <.link
+                      View activity
+                    </.button>
+                    <.button
                       navigate={
                         ~p"/app/#{@current_account}/audit?#{[target_kind: "api_key", target_id: key.id]}"
                       }
-                      class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                      variant={:secondary}
+                      size={:sm}
                     >
-                      Audit trail <.cta_arrow />
-                    </.link>
+                      Audit trail
+                    </.button>
                   <% end %>
                   <.confirm_dialog
                     :if={
