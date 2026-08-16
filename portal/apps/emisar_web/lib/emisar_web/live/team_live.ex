@@ -1624,10 +1624,9 @@ defmodule EmisarWeb.TeamLive do
                            change actually sticks — the identity provider. --%>
                             <.tooltip
                               id={"role-lock-#{membership.id}"}
-                              class="w-full"
                               text={"Role is managed by #{directory_label(directory)} — change it in your identity provider"}
                             >
-                              <.chip icon="hero-lock-closed-mini" class="w-full">
+                              <.chip icon="hero-lock-closed-mini">
                                 {Emisar.Auth.role_label(membership.role)}
                               </.chip>
                             </.tooltip>
@@ -1657,7 +1656,11 @@ defmodule EmisarWeb.TeamLive do
                               </.menu_item>
                             </.dropdown>
                           <% true -> %>
-                            <.chip class="w-full">
+                            <%!-- A role nobody here can change is a VALUE, so the chip
+                           is content-sized: stretched to the track it impersonated the
+                           disabled twin of the dropdown above it. The track still fixes
+                           the column, so every role starts on one left edge. --%>
+                            <.chip>
                               {Emisar.Auth.role_label(membership.role)}
                             </.chip>
                         <% end %>
@@ -2312,16 +2315,20 @@ defmodule EmisarWeb.TeamLive do
       <% not @can_manage? -> %>
         <%!-- Viewers can't manage a member but can audit them — every role on
              this page holds view_audit. The link is subject-scoped by the audit
-             page; it only pre-filters to this member as actor. --%>
-        <.link
+             page; it only pre-filters to this member as actor. It wears the
+             bordered face because this column is a control track: its other
+             occupants are the `Actions ▾` trigger and `Resend email`, and a bare
+             link among them reads as the odd one out (§7.47). --%>
+        <.button
           :if={@membership.user_id}
           navigate={
             ~p"/app/#{@current_account}/audit?#{[actor_kind: "user", actor_id: @membership.user_id]}"
           }
-          class="group inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+          variant={:secondary}
+          size={:sm}
         >
-          View activity <.cta_arrow />
-        </.link>
+          View activity
+        </.button>
       <% true -> %>
         <.dropdown
           class="inline-block text-left"
