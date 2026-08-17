@@ -145,7 +145,30 @@ defmodule EmisarWeb.Components.TooltipTest do
         """)
 
       assert html =~ "top-full mt-2"
+      assert html =~ ~s(data-side="below")
       refute html =~ "bottom-full mb-2"
+    end
+
+    test "declares its side for the flip, and ships a hover bridge for each" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.tooltip text="Issuing an enrollment key needs access to every runner">
+          <span>New key</span>
+        </CoreComponents.tooltip>
+        """)
+
+      # overlay.js reads the declared side once, then rewrites `data-side` when
+      # that side has no room — which is what turns the default upward bubble on
+      # a page-header control into a downward one instead of a bubble cut off by
+      # the top of the screen.
+      assert html =~ ~s(data-side="above")
+
+      # Both bridges ship, keyed to the side, so the pointer can still cross the
+      # gap from trigger to bubble after a flip (WCAG 1.4.13 hoverable).
+      assert html =~ "data-[side=above]:before:top-full"
+      assert html =~ "data-[side=below]:before:bottom-full"
     end
 
     test "alignment left opens the bubble inward from a left-edge trigger" do

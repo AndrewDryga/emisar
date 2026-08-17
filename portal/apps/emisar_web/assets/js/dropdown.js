@@ -5,42 +5,18 @@
 // a row's actions take their own full-width line — a right-aligned panel ran off
 // the LEFT of the canvas, which `main` clips away entirely.
 //
-// This slides the panel back in: above the trigger when there is no room below,
-// and inward from the canvas edge, sharing the tooltip's clamp. Every offset is
-// measured from real rects and applied as a transform, so a call site's own
-// `mt-*` gap and `align` anchor keep working untouched.
-import {horizontalShift} from "./overlay.js"
-
-// Matches the canvas inset the horizontal clamp uses, so a panel pulled back
-// from either edge keeps the same breathing room.
-const INSET = 8
+// The geometry that pulls it back — the flip and the canvas clamp — is shared
+// with the tooltip bubble and the select panel in overlay.js.
+import {positionOverlay} from "./overlay.js"
 
 export function positionDropdown(details) {
   const panel = details.querySelector("[data-dropdown-panel]")
   const summary = details.querySelector("summary")
   if (!panel || !summary) return
 
-  panel.style.transform = ""
-  // `panel_position={:flow_on_narrow}` leaves the panel in document flow below
-  // xl. In flow it pushes its siblings down instead of overlaying them, so
-  // there is no overflow to pull back — and moving it would tear it off the
-  // space the layout already reserved.
-  if (getComputedStyle(panel).position !== "absolute") return
-
-  const trigger = summary.getBoundingClientRect()
-  const rect = panel.getBoundingClientRect()
-  // The gap the call site asked for, read back rather than assumed — `mt-2` on
-  // one menu, `mt-1` on the workspace switcher.
-  const gap = rect.top - trigger.bottom
-  const roomBelow = window.innerHeight - INSET - rect.bottom
-  const roomAbove = trigger.top - gap - rect.height - INSET
-  // Flip only when above is genuinely roomier. On a screen too short for the
-  // panel either way, flipping would hide MORE of it than leaving it below.
-  const flipped = roomBelow < 0 && roomAbove > roomBelow
-  const y = flipped ? trigger.top - gap - rect.bottom : 0
-  const x = horizontalShift(details, rect)
-
-  panel.style.transform = x || y ? `translate(${x}px, ${y}px)` : ""
+  // Every call site hangs its panel below the trigger — `top-full` on the
+  // stretched workspace switcher, a plain `mt-*` offset on the row menus.
+  positionOverlay(details, summary, panel, "below")
 }
 
 function openDropdowns() {

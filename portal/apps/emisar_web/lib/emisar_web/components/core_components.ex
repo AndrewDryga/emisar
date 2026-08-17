@@ -502,11 +502,19 @@ defmodule EmisarWeb.CoreComponents do
         <.icon name="hero-chevron-down" class="h-4 w-4 shrink-0 text-zinc-500" />
       </button>
 
+      <%!-- The field and its panel fuse into one continuous element, so the seam
+           squares off on whichever side the panel actually opened. The Combobox
+           hook positions it through overlay.js — a picker low on the page has no
+           room below, so the panel flips above the trigger and `data-side`
+           carries the fused border and corners up with it. --%>
       <div
         data-combobox-panel
         hidden
+        data-side="below"
         class={[
-          "absolute z-30 w-full overflow-hidden rounded-b-lg rounded-t-none border border-t-0",
+          "absolute z-30 w-full overflow-hidden border",
+          "data-[side=below]:rounded-b-lg data-[side=below]:border-t-0",
+          "data-[side=above]:rounded-t-lg data-[side=above]:border-b-0",
           "bg-zinc-900 shadow-xl shadow-black/60",
           if(@active?, do: "border-brand-500/60", else: "border-zinc-700")
         ]}
@@ -3508,9 +3516,11 @@ defmodule EmisarWeb.CoreComponents do
   carrying `text`, for the "why" a control is locked/disabled/limited. The reveal
   is CSS (named `group/tooltip`, so it's safe inside a row that has its own
   `group`); the bubble is right-anchored so it grows leftward and won't clip off a
-  right-edge badge. `placement` picks which side it opens on — default `:top`, but
-  use `:bottom` for a trigger near the top of the viewport (a title-row control),
-  where an upward bubble would clip off-screen.
+  right-edge badge. `placement` picks the side it opens on by default — `:top`.
+  It is a preference, not a clipping fix: `assets/js/overlay.js` measures the live
+  rects on every reveal and opens the bubble on the other side when the declared
+  one has no room, so a trigger high on the page flips its bubble downward on its
+  own rather than running off the top of the screen.
 
   The `text` carries load-bearing "why locked/limited" copy, so it's a full WCAG
   1.4.13 tooltip, not a hover-only hint:
@@ -3581,21 +3591,23 @@ defmodule EmisarWeb.CoreComponents do
       <%!-- Revealed, the bubble is pointer-interactive and a transparent `before`
            bridge closes the gap to the trigger (WCAG 1.4.13 hoverable); hidden, it
            stays pointer-events-none so the invisible bubble can't intercept clicks
-           over whatever sits above/below the trigger. --%>
+           over whatever sits above/below the trigger. The bridge rides `data-side`
+           because overlay.js rewrites it when the declared side has no room: left
+           behind on the far side, it would break hoverable on exactly the triggers
+           that needed the flip. --%>
       <span
         id={@tooltip_id}
         role="tooltip"
         data-tooltip-bubble
+        data-side={if(@placement == :bottom, do: "below", else: "above")}
         class={[
           "pointer-events-none absolute z-30 w-max max-w-xs rounded-lg bg-zinc-800 px-2.5 py-1.5",
           "text-[11px] font-medium leading-snug text-zinc-100 opacity-0 shadow-xl ring-1 ring-white/10",
           "transition-opacity duration-100 group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100",
           "group-hover/tooltip:pointer-events-auto group-focus-within/tooltip:pointer-events-auto",
           "before:absolute before:inset-x-0 before:h-2 before:content-['']",
-          if(@placement == :bottom,
-            do: "top-full mt-2 before:bottom-full",
-            else: "bottom-full mb-2 before:top-full"
-          ),
+          "data-[side=above]:before:top-full data-[side=below]:before:bottom-full",
+          if(@placement == :bottom, do: "top-full mt-2", else: "bottom-full mb-2"),
           tooltip_align(@align)
         ]}
       >

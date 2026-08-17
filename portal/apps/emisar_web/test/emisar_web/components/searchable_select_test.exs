@@ -4,6 +4,32 @@ defmodule EmisarWeb.Components.SearchableSelectTest do
   import Phoenix.LiveViewTest
   alias EmisarWeb.CoreComponents
 
+  test "opens on the side that fits, and the fused seam follows it" do
+    assigns = %{}
+
+    html =
+      rendered_to_string(~H"""
+      <CoreComponents.searchable_select
+        id="action-picker"
+        name="action"
+        selected_label="Choose an action"
+        groups={[]}
+        aria_label="Action"
+      />
+      """)
+
+    # The panel ships declaring the side its markup put it on; overlay.js reads
+    # that, flips it above the trigger when a picker low on the page has no room
+    # below, and stamps the side it landed on back here.
+    assert html =~ ~s(data-side="below")
+
+    # The field and its panel fuse into one element, so the squared corners and
+    # the dropped border ride the side rather than being baked in downward —
+    # both halves ship, and the flip picks one.
+    assert html =~ "data-[side=below]:rounded-b-lg data-[side=below]:border-t-0"
+    assert html =~ "data-[side=above]:rounded-t-lg data-[side=above]:border-b-0"
+  end
+
   test "keeps the trigger concise while rendering grouped searchable metadata" do
     assigns = %{
       groups: [

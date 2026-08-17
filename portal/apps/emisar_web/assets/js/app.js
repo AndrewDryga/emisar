@@ -15,6 +15,7 @@ import topbar from "../vendor/topbar"
 import {setupCopyToClipboardDelegation} from "./copy.js"
 import {initDropdowns} from "./dropdown.js"
 import {FlashAutoClose} from "./flash.js"
+import {positionOverlay} from "./overlay.js"
 import {Tooltip} from "./tooltip.js"
 
 // `<time>` element formatter. The server renders a UTC fallback into
@@ -64,9 +65,13 @@ const Combobox = {
     })
     this.onDocClick = (e) => { if (!this.el.contains(e.target)) this.close() }
     document.addEventListener("click", this.onDocClick)
+    this.onReposition = () => this.position()
   },
 
-  destroyed() { document.removeEventListener("click", this.onDocClick) },
+  destroyed() {
+    document.removeEventListener("click", this.onDocClick)
+    this.untrack()
+  },
 
   // The hovered option's description mirrors into the footer pane — a fixed
   // strip instead of per-option tooltips (which would clip in the scroll).
@@ -103,25 +108,46 @@ const Combobox = {
 
   open() {
     this.hydrate()
-    this.panel.hidden = false
-    // The field and its dropdown fuse into one continuous element while open:
-    // the trigger's bottom corners square off against the panel.
-    this.trigger.classList.add("rounded-b-none")
     this.search.value = ""
     this.filter()
+    this.panel.hidden = false
+    // Focus first: the browser may scroll the field into view to reveal it, and
+    // that moves the rects the panel is measured against.
     this.search.focus()
+    this.position()
+    window.addEventListener("resize", this.onReposition)
+    window.addEventListener("scroll", this.onReposition, true)
   },
 
   close() {
     this.panel.hidden = true
-    this.trigger.classList.remove("rounded-b-none")
+    this.untrack()
+    this.trigger.classList.remove("rounded-b-none", "rounded-t-none")
     this.describe(null)
+  },
+
+  untrack() {
+    window.removeEventListener("resize", this.onReposition)
+    window.removeEventListener("scroll", this.onReposition, true)
+  },
+
+  // Opens the panel on the side that fits — a picker in the last row of a long
+  // editor has none below it — through the geometry the tooltip bubble and the
+  // dropdown panel share. The field and its panel fuse into one continuous
+  // element while open, so the squared seam follows the side it opened on.
+  position() {
+    const side = positionOverlay(this.el, this.trigger, this.panel, "below")
+    this.trigger.classList.toggle("rounded-b-none", side === "below")
+    this.trigger.classList.toggle("rounded-t-none", side === "above")
   },
 
   describe(text) {
     if (!this.descriptionPane) return
     this.descriptionPane.textContent = text || ""
     this.descriptionPane.hidden = !text
+    // The pane grows the panel by a row; an upward-opening panel measures from
+    // its bottom edge, so it has to be re-anchored or it slides over the field.
+    if (!this.panel.hidden) this.position()
   },
 
   filter() {
@@ -134,6 +160,9 @@ const Combobox = {
       const options = Array.from(section.querySelectorAll("[data-combobox-option]"))
       section.hidden = !options.some((option) => !option.parentElement.hidden)
     })
+    // Typing shrinks the list, which shortens the panel — an upward-opening one
+    // is anchored by its bottom edge, so it has to be re-measured as it narrows.
+    if (!this.panel.hidden) this.position()
   },
 
   select(option) {
