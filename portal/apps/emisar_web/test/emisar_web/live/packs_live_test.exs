@@ -58,14 +58,38 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "acme-tools"
       assert html =~ "9.9"
       assert html =~ "1 pack · 1 version"
+      assert has_element?(lv, "#packs.mt-10")
 
       # The out-of-scope pack is NAMED, and that is all: no version row, no
       # hash, no action, no trust state, no advertiser.
       assert html =~ "Outside your pack access"
+      assert has_element?(lv, "section.mt-12", "Outside your pack access")
       assert html =~ "hidden-tools"
       refute html =~ "7.7"
       refute html =~ "hidden.wipe"
       refute html =~ Fixtures.Catalog.pack_hash("hidden")
+    end
+
+    test "uses content-start spacing when only out-of-scope packs are visible", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+
+      Fixtures.Catalog.create_trusted_pack_version(
+        account_id: account.id,
+        pack_id: "hidden-tools"
+      )
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      {:ok, access} =
+        Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme-tools"])
+
+      Fixtures.Memberships.force_runner_access(membership, access)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      refute has_element?(lv, "#packs.mt-10")
+      assert has_element?(lv, "section.mt-6", "Outside your pack access")
+      refute has_element?(lv, "section.mt-12", "Outside your pack access")
     end
 
     test "a crafted contents event on an out-of-scope pack reveals nothing", %{conn: conn} do

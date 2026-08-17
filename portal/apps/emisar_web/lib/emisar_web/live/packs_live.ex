@@ -1330,7 +1330,11 @@ defmodule EmisarWeb.PacksLive do
             {no_match_copy(@name_filter, @risk_filter)}
           </p>
 
-          <ul id="packs" phx-update="stream" class="mt-10 space-y-10">
+          <ul
+            id="packs"
+            phx-update="stream"
+            class={["space-y-10", @pack_count > 0 && "mt-10"]}
+          >
             <%!-- CONTENT ON CANVAS (the runners-group grammar): each pack is a
                  naked group — mono pack id + version count on a hairline — with
                  its version rows below. The stream <li> wraps label + rows. The
@@ -1609,7 +1613,10 @@ defmodule EmisarWeb.PacksLive do
                there is no version row, trust state, contents, advertiser or
                control to render. Chips, not rows: nothing here is actionable,
                and a row shape would promise otherwise. --%>
-          <section :if={@out_of_scope_pack_ids != []} class="mt-12">
+          <section
+            :if={@out_of_scope_pack_ids != []}
+            class={if @pack_count == 0, do: "mt-6", else: "mt-12"}
+          >
             <.section_header
               title="Outside your pack access"
               count={length(@out_of_scope_pack_ids)}
