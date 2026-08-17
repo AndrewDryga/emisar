@@ -13,6 +13,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
     |> cast(attrs, @create_fields)
     |> validate_required([:account_id, :user_id, :role])
     |> unique_constraint([:account_id, :user_id])
+    |> put_access_the_role_carries()
   end
 
   # Born suspended: SSO provisions a user the IdP created as deactivated
@@ -26,22 +27,25 @@ defmodule Emisar.Accounts.Membership.Changeset do
   end
 
   def update(%Membership{} = membership, attrs) do
-    cast(membership, attrs, @update_fields)
+    membership
+    |> cast(attrs, @update_fields)
+    |> put_access_the_role_carries()
   end
 
   def update_runner_access(%Membership{} = membership, %RunnerAccess{} = access) do
-    change(membership,
-      runner_access_mode: access.mode,
-      pack_access_mode: access.pack_mode,
-      pack_scope_pack_ids: access.pack_ids
-    )
+    membership
+    |> put_runner_access(access)
+    |> put_access_the_role_carries()
   end
 
   # Directory sync sets the role AND marks it directory-managed, so the operator
   # role-change path rejects a manual change to it (the lock is domain-owned, not
   # UI-only). `role` is a validated atom off the sync path.
-  def sync_role(%Membership{} = membership, role),
-    do: change(membership, role: role, directory_managed: true)
+  def sync_role(%Membership{} = membership, role) do
+    membership
+    |> change(role: role, directory_managed: true)
+    |> put_access_the_role_carries()
+  end
 
   def sync_authorization(
         %Membership{} = membership,
@@ -50,17 +54,11 @@ defmodule Emisar.Accounts.Membership.Changeset do
         provider_id,
         version
       ) do
-    change(membership,
-      role: role,
-      directory_managed: true,
-      runner_access_mode: access.mode,
-      pack_access_mode: access.pack_mode,
-      pack_scope_pack_ids: access.pack_ids,
-      runner_access_directory_managed: true,
-      directory_provider_id: provider_id,
-      directory_authorization_version: version,
-      directory_authorization_pending_version: nil
-    )
+    membership
+    |> change(role: role, directory_managed: true)
+    |> put_runner_access(access)
+    |> put_directory_authorization(provider_id, version)
+    |> put_access_the_role_carries()
   end
 
   def sync_runner_authorization(
@@ -69,15 +67,10 @@ defmodule Emisar.Accounts.Membership.Changeset do
         provider_id,
         version
       ) do
-    change(membership,
-      runner_access_mode: access.mode,
-      pack_access_mode: access.pack_mode,
-      pack_scope_pack_ids: access.pack_ids,
-      runner_access_directory_managed: true,
-      directory_provider_id: provider_id,
-      directory_authorization_version: version,
-      directory_authorization_pending_version: nil
-    )
+    membership
+    |> put_runner_access(access)
+    |> put_directory_authorization(provider_id, version)
+    |> put_access_the_role_carries()
   end
 
   def delete(%Membership{} = membership), do: change(membership, deleted_at: DateTime.utc_now())
@@ -124,5 +117,37 @@ defmodule Emisar.Accounts.Membership.Changeset do
       invitation_accepted_at: nil,
       inserted_at: DateTime.utc_now()
     )
+  end
+
+  defp put_runner_access(changeset, %RunnerAccess{} = access) do
+    change(changeset,
+      runner_access_mode: access.mode,
+      pack_access_mode: access.pack_mode,
+      pack_scope_pack_ids: access.pack_ids
+    )
+  end
+
+  defp put_directory_authorization(changeset, provider_id, version) do
+    change(changeset,
+      runner_access_directory_managed: true,
+      directory_provider_id: provider_id,
+      directory_authorization_version: version,
+      directory_authorization_pending_version: nil
+    )
+  end
+
+  # The last word on every membership write: a role that carries no runner reach
+  # (the finance seat) carries no pack reach either, so BOTH dimensions land
+  # cleared however the row was built — created, re-roled, access-edited, or
+  # synced from a directory. It runs after the access is put, so a grant and a
+  # role that contradict each other resolve to the role. Rewriting the matching
+  # `user_runner_scopes` rows is `Accounts`' job in the same transaction; a pure
+  # changeset cannot reach another table.
+  defp put_access_the_role_carries(changeset) do
+    role = get_field(changeset, :role)
+
+    if Emisar.Auth.Role.carries_runner_access?(role),
+      do: changeset,
+      else: put_runner_access(changeset, RunnerAccess.none())
   end
 end

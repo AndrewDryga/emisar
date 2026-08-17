@@ -57,6 +57,29 @@ defmodule Emisar.Auth.Role do
   def description(_), do: nil
 
   @doc """
+  True when a role's job involves reaching runners at all.
+
+  `:billing_manager` is the one role it is false for: the finance seat manages
+  the subscription and reads the money trail, so it holds no runner and
+  therefore no pack reach. Assigning it RESETS both dimensions rather than
+  refusing — `Accounts.RunnerAccess.for_role/2` applies that to the grant, and
+  every membership write normalizes through it, so the seat cannot acquire
+  scope by invitation, role change, or directory sync.
+
+  Takes an atom or the string a form posts, so a caller holding a raw role
+  param does not have to normalize first.
+  """
+  def carries_runner_access?(role) do
+    case cast(role) do
+      {:ok, :billing_manager} -> false
+      {:ok, _role} -> true
+      # An unknown or absent role has been granted nothing, so it reaches
+      # nothing. Only an already-invalid changeset gets here.
+      :error -> false
+    end
+  end
+
+  @doc """
   Coerce a role name (atom or string) into a known role atom. Returns
   `{:ok, role}` or `:error`. Safe on untrusted input — it compares
   against the known set and never creates atoms.

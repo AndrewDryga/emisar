@@ -26,6 +26,8 @@ defmodule EmisarWeb.MemberErrors do
     runner_access_managed_by_directory:
       "That member's runner access is set by their identity provider.",
     runner_access_exceeds_subject: "You can only grant runner access that you currently have.",
+    role_carries_no_runner_access:
+      "A billing manager has no runner or pack access. Change their role first, then set access.",
     member_runner_access_exceeds_subject:
       "That member's runner access is wider than yours. Narrow their access first, then change their role.",
     mfa_enrollment_required:

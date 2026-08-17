@@ -986,18 +986,35 @@ defmodule Emisar.Audit do
   """
   def event_outcome(event_type), do: Event.Query.outcome(event_type)
 
-  @doc "The review-category `{value, label}` options — the audit page's category chips."
-  def event_category_values, do: Event.Query.category_values()
+  @doc """
+  The review-category `{value, label}` chips this subject can narrow BY —
+  EMPTY when their readable slice falls in one category, since picking it would
+  change nothing they can already see.
 
-  @doc "The audit facet panel's full `%Repo.Filter{}` list."
-  def event_filters, do: Event.Query.filters()
+  Read off the `:category` facet the panel itself renders, so the chips and the
+  facet are one list by construction rather than two that agree today.
+  """
+  def event_category_values(%Subject{} = subject) do
+    case Enum.find(event_filters(subject), &(&1.name == :category)) do
+      nil -> []
+      filter -> filter.values
+    end
+  end
+
+  @doc """
+  The audit facet panel's full `%Repo.Filter{}` list, narrowed to what this
+  subject's reads can actually return — see `Event.Query.readable_filters/2`.
+  """
+  def event_filters(%Subject{} = subject) do
+    Event.Query.readable_filters(Event.Query.filters(), Authorizer.readable_event_types(subject))
+  end
 
   @doc """
   The audit facet panel's filters with conditional facets dropped when the
-  selected Type can't carry them.
+  selected Type can't carry them, on top of the subject's readable narrowing.
   """
-  def applicable_event_filters(type_param, params),
-    do: Event.Query.applicable_filters(Event.Query.filters(), type_param, params)
+  def applicable_event_filters(type_param, params, %Subject{} = subject),
+    do: Event.Query.applicable_filters(event_filters(subject), type_param, params)
 
   @doc "The `%Repo.Filter{}` for the actor picker, given its loaded `{id, label}` options."
   def actor_filter(options), do: Event.Query.actor_filter(options)

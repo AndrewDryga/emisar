@@ -66,6 +66,26 @@ defmodule Emisar.AuthTest do
     end
   end
 
+  describe "role_carries_runner_access?/1" do
+    # The finance seat is the only role with no runner reach, and every
+    # membership write normalizes through it — so a role added here without a
+    # deliberate answer would silently start carrying scope.
+    test "every role but the finance seat reaches runners" do
+      for role <- Auth.roles() -- [:billing_manager] do
+        assert Auth.role_carries_runner_access?(role)
+      end
+
+      refute Auth.role_carries_runner_access?(:billing_manager)
+    end
+
+    test "takes the string a form posts, and fails closed on an unknown role" do
+      assert Auth.role_carries_runner_access?("operator")
+      refute Auth.role_carries_runner_access?("billing_manager")
+      refute Auth.role_carries_runner_access?("nope")
+      refute Auth.role_carries_runner_access?(nil)
+    end
+  end
+
   describe "resolve_post_auth_account/2" do
     test "an unbranded sign-in has no target" do
       assert Auth.resolve_post_auth_account(Fixtures.Users.create_user(), nil) == :no_target

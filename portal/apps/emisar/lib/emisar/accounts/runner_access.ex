@@ -73,6 +73,23 @@ defmodule Emisar.Accounts.RunnerAccess do
   def restricted(groups, runner_ids), do: new(:restricted, groups, runner_ids)
 
   @doc """
+  The reach a membership at `role` may actually carry.
+
+  A role that reaches no runner (`Auth.Role.carries_runner_access?/1` — the
+  finance seat) reaches no pack either, so its grant is always `none/0`;
+  assigning the role RESETS both dimensions rather than refusing, which is what
+  keeps a directory that maps one group to the seat and another to runners from
+  failing its whole sync. Every other role keeps what it was given.
+
+  Applied to the `%RunnerAccess{}` VALUE before a write, so the membership's own
+  columns and its `user_runner_scopes` rows are written from one source and
+  cannot disagree.
+  """
+  def for_role(role, %__MODULE__{} = access) do
+    if Emisar.Auth.Role.carries_runner_access?(role), do: access, else: none()
+  end
+
+  @doc """
   Canonical access for an explicit mode plus the raw `"group:<name>"` /
   `"runner:<id>"` selector values a picker submitted, allowlisted against the
   account facts the selection may name: either `%{groups: [name], runners:

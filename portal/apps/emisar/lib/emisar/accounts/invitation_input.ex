@@ -64,11 +64,19 @@ defmodule Emisar.Accounts.InvitationInput do
     pack_scope = get_field(changeset, :pack_scope) || []
 
     case RunnerAccess.from_selection(mode, scope, allowlist, pack_mode, pack_scope) do
-      {:ok, access} ->
+      {:ok, selected} ->
+        # The role decides what the selection may actually grant, so an invite to
+        # a role that carries no reach resets it here rather than at the write —
+        # the form re-renders from `:runner_access` and shows the operator the
+        # cleared state before they send it.
+        access = RunnerAccess.for_role(get_field(changeset, :role), selected)
+
         changeset
         |> put_change(:scope, RunnerAccess.selection_values(access.groups, access.runner_ids))
         |> put_change(:pack_scope, RunnerAccess.pack_selection_values(access.pack_ids))
         |> put_change(:runner_access, access)
+        |> put_change(:runner_access_mode, to_string(access.mode))
+        |> put_change(:pack_access_mode, to_string(access.pack_mode))
 
       {:error, :invalid_pack_access} ->
         add_error(changeset, :pack_access_mode, "requires at least one available pack")

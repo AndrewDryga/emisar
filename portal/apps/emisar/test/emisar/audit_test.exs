@@ -2081,9 +2081,9 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "event_category_values/0" do
+  describe "event_category_values/1" do
     test "carries the review categories the audit chips render" do
-      assert Audit.event_category_values() == [
+      assert Audit.event_category_values(full_trail_subject()) == [
                {"decisions", "Decisions"},
                {"access", "Access"},
                {"activity", "Activity"},
@@ -2114,9 +2114,9 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "event_filters/0" do
+  describe "event_filters/1" do
     test "carries the facet panel's filters in panel order" do
-      assert Enum.map(Audit.event_filters(), & &1.name) == [
+      assert Enum.map(Audit.event_filters(full_trail_subject()), & &1.name) == [
                :category,
                :from,
                :to,
@@ -2130,9 +2130,9 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "applicable_event_filters/2" do
+  describe "applicable_event_filters/3" do
     test "no Type selected drops the request-scoped facets and keeps Target type" do
-      names = Enum.map(Audit.applicable_event_filters(nil, %{}), & &1.name)
+      names = Enum.map(Audit.applicable_event_filters(nil, %{}, full_trail_subject()), & &1.name)
 
       refute :request_id in names
       refute :auth_method in names
@@ -2140,9 +2140,10 @@ defmodule Emisar.AuditTest do
     end
 
     test "a live param keeps its facet so the applied filter stays clearable" do
-      names = Enum.map(Audit.applicable_event_filters(nil, %{"request_id" => "req_x"}), & &1.name)
+      filters =
+        Audit.applicable_event_filters(nil, %{"request_id" => "req_x"}, full_trail_subject())
 
-      assert :request_id in names
+      assert :request_id in Enum.map(filters, & &1.name)
     end
   end
 
@@ -2379,6 +2380,12 @@ defmodule Emisar.AuditTest do
   end
 
   # -- Taxonomy helpers ------------------------------------------------
+
+  # A reader of the WHOLE trail. The facet accessors narrow their vocabulary to
+  # the subject's readable event types, so the panel goldens above need a subject
+  # that is narrowed to nothing — only `view_audit` decides that.
+  defp full_trail_subject,
+    do: Fixtures.Subjects.build_subject(permissions: Emisar.Auth.Permissions.for_role(:owner))
 
   # The %Filter{} value codes for a static filter (e.g. actor_kind / target_kind
   # enumerations) — read from the query module's own filters/0 so the assertion

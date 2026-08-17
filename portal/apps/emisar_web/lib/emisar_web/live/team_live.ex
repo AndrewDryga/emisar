@@ -122,18 +122,13 @@ defmodule EmisarWeb.TeamLive do
       {:ok, %{runner_access_editable?: false}} ->
         {:noreply, put_flash(socket, :error, error_message(:runner_access_managed_by_directory))}
 
-      {:ok, %{runner_access: access}} ->
-        {:noreply,
-         socket
-         |> assign(:scope_editing_id, id)
-         |> assign(:scope_access_mode, to_string(access.mode))
-         |> assign(:scope_draft, RunnerScope.to_values(access.groups, access.runner_ids))
-         |> assign(:scope_error, nil)
-         |> assign(:scope_pack_mode, to_string(access.pack_mode))
-         |> assign(:scope_pack_draft, RunnerScope.to_pack_values(access.pack_ids))
-         |> assign(:scope_pack_error, nil)
-         |> assign(:editing_id, nil)
-         |> assign(:edit_form, nil)}
+      # Re-read: a role changed to one that reaches no runners since mount has to
+      # close the editor here too — the hidden menu item is never the check.
+      {:ok, %{membership: membership, runner_access: access}} ->
+        if Emisar.Auth.role_carries_runner_access?(membership.role),
+          do: {:noreply, open_scope_edit(socket, id, access)},
+          else:
+            {:noreply, put_flash(socket, :error, error_message(:role_carries_no_runner_access))}
 
       {:error, _reason} ->
         {:noreply, socket}
@@ -632,6 +627,19 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp error_message(reason), do: EmisarWeb.MemberErrors.message(reason)
+
+  defp open_scope_edit(socket, id, access) do
+    socket
+    |> assign(:scope_editing_id, id)
+    |> assign(:scope_access_mode, to_string(access.mode))
+    |> assign(:scope_draft, RunnerScope.to_values(access.groups, access.runner_ids))
+    |> assign(:scope_error, nil)
+    |> assign(:scope_pack_mode, to_string(access.pack_mode))
+    |> assign(:scope_pack_draft, RunnerScope.to_pack_values(access.pack_ids))
+    |> assign(:scope_pack_error, nil)
+    |> assign(:editing_id, nil)
+    |> assign(:edit_form, nil)
+  end
 
   defp do_invite(socket, params) do
     case Accounts.invite_user_to_account_and_deliver(
@@ -1228,7 +1236,23 @@ defmodule EmisarWeb.TeamLive do
               </.choice_cards>
             </fieldset>
 
-            <fieldset>
+            <%!-- A role that reaches no runners keeps the fieldset — the value is
+                  still a fact of the invite — but states it as the locked chip the
+                  roster uses for a value someone else decides. Leaving the pickers
+                  up would offer a choice `InvitationInput` resets on the very next
+                  change event, which reads as a broken control. --%>
+            <fieldset :if={not Emisar.Auth.role_carries_runner_access?(@form[:role].value)}>
+              <legend class="text-sm font-medium text-zinc-300">Access</legend>
+              <p class="mt-0.5 text-xs text-zinc-400">
+                {Emisar.Auth.role_label(@form[:role].value)} manages billing only.
+              </p>
+              <div class="mt-3 flex flex-wrap items-center gap-2">
+                <.chip icon="hero-lock-closed-mini">No runners</.chip>
+                <.chip icon="hero-lock-closed-mini">No packs</.chip>
+              </div>
+            </fieldset>
+
+            <fieldset :if={Emisar.Auth.role_carries_runner_access?(@form[:role].value)}>
               <legend class="text-sm font-medium text-zinc-300">Access</legend>
               <%!-- The eyebrows below already say the two decisions, so this line
                     spends itself on the one thing they cannot: why the first card
@@ -2398,8 +2422,14 @@ defmodule EmisarWeb.TeamLive do
           >
             Edit name
           </.menu_item>
+          <%!-- A role that reaches no runners has nothing to set: the row above
+           already states the cleared value, so the verb goes rather than
+           opening an editor whose every save the domain refuses. --%>
           <.menu_item
-            :if={@member.runner_access_editable?}
+            :if={
+              @member.runner_access_editable? and
+                Emisar.Auth.role_carries_runner_access?(@membership.role)
+            }
             phx-click="start_scope_edit"
             phx-value-membership_id={@membership.id}
           >

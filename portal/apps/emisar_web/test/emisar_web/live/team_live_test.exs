@@ -846,6 +846,45 @@ defmodule EmisarWeb.TeamLiveTest do
   end
 
   describe "runner-scope editor (#238)" do
+    # The seat's access is structurally nothing, so the roster states the cleared
+    # value and drops the verb rather than opening an editor that cannot save.
+    test "a billing manager is offered no Set access verb, and the event is refused anyway", %{
+      conn: conn
+    } do
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "FinanceOrg"}})
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+
+      finance =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
+
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      # The verb exists on the page — for the operator, not the finance seat.
+      assert html =~ "Set access"
+
+      assert has_element?(
+               lv,
+               "[phx-click='start_scope_edit'][phx-value-membership_id='#{operator.id}']"
+             )
+
+      refute has_element?(
+               lv,
+               "[phx-click='start_scope_edit'][phx-value-membership_id='#{finance.id}']"
+             )
+
+      # Hiding it is never the check (IL-15) — the crafted event is refused too.
+      assert render_click(lv, "start_scope_edit", %{"membership_id" => finance.id}) =~
+               "A billing manager has no runner or pack access."
+
+      assert Emisar.Accounts.update_membership_runner_access(
+               Fixtures.Memberships.fetch_membership(account.id, finance.user_id),
+               Emisar.Accounts.RunnerAccess.all(),
+               subject
+             ) == {:error, :role_carries_no_runner_access}
+    end
+
     test "owner can save a group + an individual runner (in another group)", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg"}})
 

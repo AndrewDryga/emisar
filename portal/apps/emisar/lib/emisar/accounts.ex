@@ -1421,10 +1421,14 @@ defmodule Emisar.Accounts do
     {:error, :owner_not_assignable}
   end
 
-  def provision_sso_membership(account_id, user_id, role, %RunnerAccess{} = access, opts) do
+  def provision_sso_membership(account_id, user_id, role, %RunnerAccess{} = granted, opts) do
     active? = Keyword.get(opts, :active?, true)
     directory_managed? = Keyword.get(opts, :directory_managed?, false)
     directory_provider = Keyword.get(opts, :directory_provider)
+    # The role and the grant arrive from two independent sources — a provider's
+    # `default_role` and its `default_runner_*`, or a group→role mapping beside a
+    # group→runner one — so the role decides what the grant may actually be.
+    access = RunnerAccess.for_role(role, granted)
 
     attrs = %{
       account_id: account_id,
@@ -1577,6 +1581,7 @@ defmodule Emisar.Accounts do
       |> Multi.run(:runner_access_guard, fn _repo, %{target: target} ->
         with :ok <- ensure_can_modify_membership(target, subject),
              :ok <- ensure_runner_access_grant_allowed(subject, access),
+             :ok <- ensure_role_carries_runner_access(target, access),
              :ok <- ensure_runner_access_not_directory_managed(target) do
           {:ok, :ok}
         else
@@ -1634,6 +1639,16 @@ defmodule Emisar.Accounts do
        do: {:error, :runner_access_managed_by_directory}
 
   defp ensure_runner_access_not_directory_managed(%Membership{}), do: :ok
+
+  # ASSIGNING a role that carries no reach resets it (`RunnerAccess.for_role/2`);
+  # editing the reach of someone who already holds that role is a contradiction
+  # the operator has to see, so it is refused rather than silently stored as
+  # nothing. Clearing it is always allowed — that is the state the role wants.
+  defp ensure_role_carries_runner_access(%Membership{} = membership, %RunnerAccess{} = access) do
+    if access == RunnerAccess.for_role(membership.role, access),
+      do: :ok,
+      else: {:error, :role_carries_no_runner_access}
+  end
 
   defp lock_runner_access_membership(repo, membership_id, account_id) do
     Membership.Query.not_deleted()
@@ -2032,33 +2047,74 @@ defmodule Emisar.Accounts do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id),
          {:ok, new_role} <- cast_new_role(membership, new_role) do
-      Membership.Query.not_deleted()
-      |> Membership.Query.by_id(membership.id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(Membership.Query,
-        with: fn loaded_membership ->
-          # The guards judge the row's CURRENT state under the lock — the caller's
-          # struct is a stale socket snapshot. `directory_managed` is judged here
-          # too, so a stale UI or crafted event can't slip a synced-role change past.
-          with :ok <- ensure_role_not_directory_managed(loaded_membership),
-               :ok <- ensure_role_change_allowed(loaded_membership, new_role, subject),
-               :ok <-
-                 ensure_role_change_within_subject_reach(loaded_membership, new_role, subject),
-               :ok <- ensure_demotion_keeps_an_owner(loaded_membership, new_role) do
-            Membership.Changeset.update(loaded_membership, %{role: new_role})
-          else
-            {:error, reason} -> reason
-          end
-        end,
-        # `changeset.data` is the locked pre-update row — the audit
-        # payload records the role that was actually replaced. (A capture
-        # can't skip &1, so this stays a fn.)
-        audit: fn _updated, changeset ->
-          Audit.Events.membership_role_changed(subject, changeset.data, new_role)
-        end,
-        after_commit: &on_membership_role_changed/2
-      )
+      # A role that carries no runner reach resets it, so this spans two tables
+      # and needs a Multi: the nested `fetch_and_update` joins this transaction
+      # and keeps only its `:audit`, and the side effects ride the outer commit.
+      Multi.new()
+      |> Multi.run(:target, fn repo, _changes ->
+        lock_runner_access_membership(repo, membership.id, membership.account_id)
+      end)
+      |> Multi.run(:previous_access, fn repo, %{target: target} ->
+        {:ok, load_runner_access(repo, target)}
+      end)
+      |> Multi.run(:membership, fn _repo, _changes ->
+        write_membership_role(membership, new_role, subject)
+      end)
+      |> Multi.run(:runner_access, fn repo, %{membership: updated, previous_access: previous} ->
+        reset_runner_access_the_role_carries(repo, updated, previous)
+      end)
+      |> Multi.run(:runner_access_audit, fn repo, changes ->
+        insert_runner_access_audit(repo, subject, changes, changes.runner_access)
+      end)
+      |> Repo.commit_multi(after_commit: &on_membership_role_committed/1)
+      |> case do
+        {:ok, %{membership: updated}} -> {:ok, updated}
+        {:error, reason} -> {:error, reason}
+      end
     end
+  end
+
+  defp write_membership_role(%Membership{} = membership, new_role, %Subject{} = subject) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_id(membership.id)
+    |> Authorizer.for_subject(subject)
+    |> Repo.fetch_and_update(Membership.Query,
+      with: fn loaded_membership ->
+        # The guards judge the row's CURRENT state under the lock — the caller's
+        # struct is a stale socket snapshot. `directory_managed` is judged here
+        # too, so a stale UI or crafted event can't slip a synced-role change past.
+        with :ok <- ensure_role_not_directory_managed(loaded_membership),
+             :ok <- ensure_role_change_allowed(loaded_membership, new_role, subject),
+             :ok <- ensure_role_change_within_subject_reach(loaded_membership, new_role, subject),
+             :ok <- ensure_demotion_keeps_an_owner(loaded_membership, new_role) do
+          Membership.Changeset.update(loaded_membership, %{role: new_role})
+        else
+          {:error, reason} -> reason
+        end
+      end,
+      # `changeset.data` is the locked pre-update row — the audit
+      # payload records the role that was actually replaced. (A capture
+      # can't skip &1, so this stays a fn.)
+      audit: fn _updated, changeset ->
+        Audit.Events.membership_role_changed(subject, changeset.data, new_role)
+      end
+    )
+  end
+
+  # The membership's own columns come from `Membership.Changeset`; the normalized
+  # `user_runner_scopes` rows can only be rewritten here, so both go through
+  # `RunnerAccess.for_role/2` and cannot end up describing different reach. A
+  # role that keeps its access writes nothing.
+  defp reset_runner_access_the_role_carries(
+         repo,
+         %Membership{} = membership,
+         %RunnerAccess{} = previous
+       ) do
+    access = RunnerAccess.for_role(membership.role, previous)
+
+    if access == previous,
+      do: {:ok, previous},
+      else: replace_runner_access_rows(repo, membership.id, access)
   end
 
   # -- PubSub ----------------------------------------------------------
@@ -2076,12 +2132,27 @@ defmodule Emisar.Accounts do
     )
   end
 
-  # after_commit for both role-change paths (operator UI + SCIM sync): refresh
-  # the team list AND, on a privilege REDUCTION, cut the member's stale
-  # delegations. `changeset.data.role` is the locked pre-update role.
+  # after_commit for the SCIM role sync, whose `fetch_and_update` hands back the
+  # changeset: refresh the team list AND, on a privilege REDUCTION, cut the
+  # member's stale delegations. `changeset.data.role` is the locked pre-update role.
   defp on_membership_role_changed(%Membership{} = membership, %Ecto.Changeset{} = changeset) do
     broadcast_membership_role_changed(membership)
     maybe_revoke_reduced_member_delegations(changeset.data.role, membership)
+  end
+
+  # after_commit for the operator role change, whose Multi carries the locked
+  # pre-update row as `:target`. Same cleanup, plus the access broadcast when the
+  # new role also reset the member's reach — a Packs/Runners page already open
+  # has to lose its inventory the moment the role stops carrying it.
+  defp on_membership_role_committed(
+         %{target: target, membership: membership, previous_access: previous} = changes
+       ) do
+    broadcast_membership_role_changed(membership)
+    maybe_revoke_reduced_member_delegations(target.role, membership)
+
+    if changes.runner_access == previous,
+      do: :ok,
+      else: broadcast_membership_runner_access_changed(membership)
   end
 
   # A role change rewrites the user's permission set, but two things still carry
@@ -2534,7 +2605,7 @@ defmodule Emisar.Accounts do
   def sync_set_membership_authorization(
         %Membership{} = membership,
         role,
-        %RunnerAccess{} = access,
+        %RunnerAccess{} = granted,
         %SSO.IdentityProvider{} = provider
       ) do
     Multi.new()
@@ -2552,7 +2623,14 @@ defmodule Emisar.Accounts do
         {:ok, :ok}
       end
     end)
-    |> Multi.update(:membership, fn %{target: target} ->
+    |> Multi.run(:granted_access, fn _repo, %{target: target} ->
+      # Role and reach are recomputed from two independent mapping tables, so a
+      # directory can map one group to the finance seat and another to runners.
+      # The role that will be IN FORCE after this write decides — a synced owner
+      # keeps theirs, so their reach is never reset by the seat's rule.
+      {:ok, RunnerAccess.for_role(role_in_force(target, role), granted)}
+    end)
+    |> Multi.update(:membership, fn %{target: target, granted_access: access} ->
       if target.role == :owner do
         Membership.Changeset.sync_runner_authorization(
           target,
@@ -2570,14 +2648,14 @@ defmodule Emisar.Accounts do
         )
       end
     end)
-    |> Multi.run(:runner_access, fn repo, %{membership: updated} ->
+    |> Multi.run(:runner_access, fn repo, %{membership: updated, granted_access: access} ->
       replace_runner_access_rows(repo, updated.id, access)
     end)
     |> Multi.run(:role_audit, fn repo, changes ->
       insert_synced_role_audit(repo, provider, role, changes)
     end)
     |> Multi.run(:runner_access_audit, fn repo, changes ->
-      insert_synced_runner_access_audit(repo, provider, access, changes)
+      insert_synced_runner_access_audit(repo, provider, changes.granted_access, changes)
     end)
     |> Repo.commit_multi(after_commit: &on_membership_authorization_synced/1)
     |> case do
@@ -2740,6 +2818,12 @@ defmodule Emisar.Accounts do
   # it; this is the write-path backstop.
   defp ensure_sync_role_assignable(:owner), do: {:error, :owner_not_assignable}
   defp ensure_sync_role_assignable(_role), do: :ok
+
+  # `ensure_synced_role_transition/2` lets a synced owner through unchanged, and
+  # `sync_runner_authorization/4` then writes their reach without their role — so
+  # the role a sync leaves in force is the owner's own, not the directory's.
+  defp role_in_force(%Membership{role: :owner}, _synced_role), do: :owner
+  defp role_in_force(%Membership{}, synced_role), do: synced_role
 
   defp ensure_synced_role_transition(%Membership{role: :owner}, _role), do: :ok
 

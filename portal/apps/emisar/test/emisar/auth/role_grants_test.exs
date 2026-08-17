@@ -140,6 +140,41 @@ defmodule Emisar.Auth.RoleGrantsTest do
     runner: @runner
   }
 
+  # The three permissions a machine credential holds that no human role does.
+  # Every function they gate matches `%Subject{actor: %ApiKeys.ApiKey{}}` in its
+  # HEAD — `MCPOperations.reserve_in_multi/3`, `fetch_recovery/2`,
+  # `resource_id/3`, and the `Runbooks.create_or_replay_mcp_*` family — so a
+  # human subject falls to the `{:error, :unauthorized}` clause before the
+  # permission is ever consulted; granting them to an owner would unlock
+  # nothing. `:api_client` is not an assignable role either (`Auth.Role.all/0`
+  # and the `Membership` enum both exclude it), so no delegation guard ever asks
+  # whether an owner covers it.
+  @machine_only [
+    {Emisar.MCPOperations.Operation, :reserve},
+    {Emisar.MCPOperations.Operation, :view},
+    {Emisar.Runbooks.Runbook, :draft}
+  ]
+
+  # Deliberate deviations from "owner and admin can do anything any role can".
+  # Owner's list is EMPTY for every membership role — that is the invariant with
+  # no exception, and it is what keeps an owner able to GRANT every role:
+  # `covers_role?/2` is a plain subset test with no notion of one permission
+  # implying another, so a permission handed to one narrow role would otherwise
+  # silently strand it. Each entry below is held by an OWNER, so nothing is
+  # closed to owner and admin together.
+  @sanctioned_gaps %{
+    # An owner outranks an admin; that gap IS the ownership boundary.
+    {:admin, :owner} => [
+      {Emisar.Accounts.Membership, :manage_owners},
+      {Emisar.Billing.Subscription, :manage}
+    ],
+    # The finance seat is appointed by an owner, not an admin — `manage_billing`
+    # is what makes `covers_role?/2` say so with no `role == :owner` check.
+    {:admin, :billing_manager} => [{Emisar.Billing.Subscription, :manage}],
+    {:owner, :api_client} => @machine_only,
+    {:admin, :api_client} => @machine_only
+  }
+
   describe "for_role/1 grants exactly" do
     for {role, expected} <- @goldens do
       test "#{role}" do
@@ -158,21 +193,29 @@ defmodule Emisar.Auth.RoleGrantsTest do
     assert Enum.sort(Role.all()) == Enum.sort(Map.keys(@goldens) -- [:api_client, :runner])
   end
 
-  describe "the privilege ordering the escalation guards rely on" do
-    test "admin is owner minus manage_owners and billing management" do
-      assert MapSet.difference(Permissions.for_role(:owner), Permissions.for_role(:admin)) ==
-               MapSet.new([
-                 {Emisar.Accounts.Membership, :manage_owners},
-                 {Emisar.Billing.Subscription, :manage}
-               ])
-    end
+  # The durable half of the goldens: a permission added to ONE narrow role has
+  # to reach owner and admin too, or this fails. The assertion is an equality on
+  # the gap, so deleting a sanctioned exception is as visible a diff as adding
+  # one — grant an admin `manage_billing` and the {:admin, :billing_manager}
+  # entry above must go in the same change.
+  describe "owner and admin cover every role" do
+    for superset <- [:owner, :admin], {role, _grants} <- @goldens, role != superset do
+      test "#{superset} holds every permission #{role} does" do
+        gap =
+          MapSet.difference(
+            Permissions.for_role(unquote(role)),
+            Permissions.for_role(unquote(superset))
+          )
 
+        assert gap ==
+                 MapSet.new(Map.get(@sanctioned_gaps, {unquote(superset), unquote(role)}, []))
+      end
+    end
+  end
+
+  describe "the privilege ordering the escalation guards rely on" do
     test "viewer holds no permission an operator lacks" do
       assert MapSet.subset?(Permissions.for_role(:viewer), Permissions.for_role(:operator))
-    end
-
-    test "operator holds no permission an admin lacks" do
-      assert MapSet.subset?(Permissions.for_role(:operator), Permissions.for_role(:admin))
     end
 
     test "the runner credential holds strictly less than any human role" do

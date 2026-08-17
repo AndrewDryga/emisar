@@ -31,6 +31,21 @@ defmodule Emisar.Audit.Authorizer do
 
   def list_permissions_for_role(_), do: []
 
+  @doc """
+  The event types this subject's reads are narrowed to — `:all`, or the exact
+  list nothing outside of can ever come back.
+
+  The ONE judgment behind both halves of the trail: `for_subject/2` scopes the
+  ROWS by it, and `Audit.event_filters/1` derives the OFFERED OPTIONS from it,
+  so the panel cannot advertise a type the read withholds and the two cannot
+  drift. Narrowing a role is one edit here.
+  """
+  def readable_event_types(%Subject{} = subject) do
+    if has_permission?(subject, view_audit_permission()),
+      do: :all,
+      else: Event.Query.billing_event_types()
+  end
+
   @impl Emisar.Auth.Authorizer
   # Row scoping is where the billing narrowing lives, so EVERY audit read — the
   # list, the detail fetch, the filter-option lookups, the export sweep — is
@@ -39,9 +54,10 @@ defmodule Emisar.Audit.Authorizer do
   def for_subject(queryable, %Subject{account: %{id: account_id}} = subject) do
     scoped = Event.Query.by_account_id(queryable, account_id)
 
-    if has_permission?(subject, view_audit_permission()),
-      do: scoped,
-      else: Event.Query.only_billing_events(scoped)
+    case readable_event_types(subject) do
+      :all -> scoped
+      types -> Event.Query.only_event_types(scoped, types)
+    end
   end
 
   def for_subject(queryable, _), do: Event.Query.none(queryable)

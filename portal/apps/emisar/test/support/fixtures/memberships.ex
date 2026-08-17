@@ -158,6 +158,19 @@ defmodule Emisar.Fixtures.Memberships do
   end
 
   @doc """
+  Test inspector: the normalized `{scope_type, scope_value}` rows behind a
+  membership's runner access. `Accounts` collapses an inconsistent row set to
+  `none()` on read, so reading the effective access can't tell a rewritten row
+  set from a stale one — a test that must prove the ROWS moved reads them here.
+  """
+  def list_runner_scopes(%Membership{} = membership) do
+    MembershipRunnerScope.Query.by_membership_id(membership.id)
+    |> MembershipRunnerScope.Query.ordered_by_type_and_value()
+    |> Repo.all()
+    |> Enum.map(&{&1.scope_type, &1.scope_value})
+  end
+
+  @doc """
   Test inspector: the membership joining `account_id` + `user_id`, or
   `nil`. Lets a test read post-mutation membership state without the
   production context exposing a fixture-only lookup.

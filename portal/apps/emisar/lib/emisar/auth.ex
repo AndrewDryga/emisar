@@ -33,6 +33,14 @@ defmodule Emisar.Auth do
   @doc "One-line description of what a membership role can do — `nil` when unknown."
   def role_description(role), do: Role.description(role)
 
+  @doc """
+  Whether a membership role reaches runners at all — a role FACT beside its
+  label and description, not an authorization decision. False for the finance
+  seat, whose access is structurally nothing, so a surface can state the
+  cleared value instead of offering a control that cannot change it.
+  """
+  def role_carries_runner_access?(role), do: Role.carries_runner_access?(role)
+
   # -- Post-auth account target -----------------------------------------
 
   @doc """

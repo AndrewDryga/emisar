@@ -844,6 +844,29 @@ defmodule Emisar.RunnerAccessTest do
       assert Accounts.runner_access_for_membership(account.id, membership.id) ==
                RunnerAccess.none()
     end
+
+    # Role and reach are recomputed from two independent mapping tables, so one
+    # group can map to the finance seat while another grants runners. The role
+    # in force decides, and a contradiction resets the grant rather than failing
+    # the whole sync.
+    test "a role that carries no reach resets the directory's grant" do
+      {account, _owner, _owner_subject} = account_with_owner()
+      member = create_member(account, "viewer")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      {:ok, access} = RunnerAccess.restricted(["production"], [])
+
+      assert {:ok, updated} =
+               Accounts.sync_set_membership_authorization(
+                 member,
+                 :billing_manager,
+                 access,
+                 provider
+               )
+
+      assert updated.role == :billing_manager
+      assert updated.runner_access_mode == :none
+      assert Accounts.runner_access_for_membership(account.id, member.id) == RunnerAccess.none()
+    end
   end
 
   describe "runner_in_scope?/2" do

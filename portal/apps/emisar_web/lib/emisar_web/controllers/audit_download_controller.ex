@@ -100,8 +100,8 @@ defmodule EmisarWeb.AuditDownloadController do
   # The SAME filter surface the audit LiveView applies: the applicable base
   # filters (conditional facets included) plus the actor/target pivots that
   # ride outside the form.
-  defp list_opts(params, _subject) do
-    base_filters = Audit.applicable_event_filters(params["event_type"], params)
+  defp list_opts(params, subject) do
+    base_filters = Audit.applicable_event_filters(params["event_type"], params, subject)
 
     params
     |> LiveTable.params_to_opts(base_filters)

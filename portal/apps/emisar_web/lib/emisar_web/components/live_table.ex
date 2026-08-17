@@ -27,7 +27,7 @@ defmodule EmisarWeb.LiveTable do
         rows={@rows}
         metadata={@metadata}
         filter_params={@filter_params}
-        filters={Emisar.Audit.event_filters()}
+        filters={Emisar.Audit.event_filters(@current_subject)}
       >
         <:col :let={ev} label="Type"><span class="font-mono">{ev.event_type}</span></:col>
         ...

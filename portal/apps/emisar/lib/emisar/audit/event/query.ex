@@ -697,15 +697,15 @@ defmodule Emisar.Audit.Event.Query do
   def by_event_types(queryable, _), do: queryable
 
   @doc """
-  Narrows to the billing slice of the trail — the row scope a subject holding
-  only `view_billing_audit` gets from `Audit.Authorizer.for_subject/2`.
+  Narrows to exactly `types` — the row scope `Audit.Authorizer.for_subject/2`
+  applies to a subject that may not read the whole trail.
 
   Deliberately NOT built on `by_event_types/2`, whose empty list means "every
-  type": an empty billing set there would hand a billing manager the whole
+  type": an empty readable set there would hand a narrowed reader the whole
   audit log. Its own `in` fails closed instead — no types, no rows.
   """
-  def only_billing_events(queryable),
-    do: where(queryable, [events: e], e.event_type in ^@billing_event_types)
+  def only_event_types(queryable, types) when is_list(types),
+    do: where(queryable, [events: e], e.event_type in ^types)
 
   # Hard-cap; the controller validates the user-supplied limit against
   # @max_export_limit and passes it through, so this stays a one-liner.
@@ -1159,6 +1159,87 @@ defmodule Emisar.Audit.Event.Query do
       end
     end)
   end
+
+  @vocabulary_filter_names [:category, :event_type, :outcome]
+
+  @doc """
+  The filters a reader narrowed to `readable` event types can actually use.
+
+  Each vocabulary-bearing filter keeps only the values that can still match a
+  readable type, and one left with no value that NARROWS is dropped — nothing
+  selectable, or a single choice that just returns the reader's whole slice.
+  An option that can only ever come back empty, or change nothing, is not a
+  filter. A billing manager is offered 16 type groups and 5 category chips where
+  one type can match; afterwards, neither control is offered at all.
+
+  `readable` is `Audit.Authorizer.readable_event_types/1` — the same judgment
+  `for_subject/2` scopes the ROWS by — so an offered option always has rows
+  behind it, and narrowing a role stays one edit.
+
+  `valid_values` is deliberately left at the FULL vocabulary. It is what a
+  programmatic `event_type` param is validated against, and narrowing it would
+  turn a filter naming a withheld type into a dropped param — i.e. the reader's
+  whole slice — where the row scope gives it the zero rows it should.
+  """
+  def readable_filters(filters, :all), do: filters
+
+  def readable_filters(filters, readable) do
+    allowed = MapSet.new(readable)
+
+    filters
+    |> Enum.map(&narrow_filter_values(&1, allowed))
+    |> Enum.reject(&cannot_narrow?(&1, allowed))
+  end
+
+  defp narrow_filter_values(%Filter{name: :event_type} = filter, allowed) do
+    groups =
+      for {group_label, options} <- filter.values,
+          kept = Enum.filter(options, &reaches?(:event_type, elem(&1, 0), allowed)),
+          kept != [],
+          do: {group_label, kept}
+
+    %{filter | values: groups}
+  end
+
+  defp narrow_filter_values(%Filter{name: name} = filter, allowed)
+       when name in [:category, :outcome] do
+    %{filter | values: Enum.filter(filter.values, &reaches?(name, elem(&1, 0), allowed))}
+  end
+
+  defp narrow_filter_values(%Filter{} = filter, _allowed), do: filter
+
+  # A value narrows when what it selects is a NON-EMPTY, PROPER subset of the
+  # readable set: empty means it can only return zero rows, and equal means
+  # picking it changes nothing the reader can already see.
+  defp cannot_narrow?(%Filter{name: name} = filter, allowed)
+       when name in @vocabulary_filter_names do
+    not Enum.any?(selections(filter), fn selected ->
+      reach = MapSet.intersection(selected, allowed)
+      not Enum.empty?(reach) and not MapSet.equal?(reach, allowed)
+    end)
+  end
+
+  defp cannot_narrow?(%Filter{}, _allowed), do: false
+
+  defp selections(%Filter{name: :event_type} = filter) do
+    for {_group_label, options} <- filter.values,
+        {value, _label, _description} <- options,
+        do: selected_types(:event_type, value)
+  end
+
+  defp selections(%Filter{name: name} = filter),
+    do: for({value, _label} <- filter.values, do: selected_types(name, value))
+
+  defp reaches?(name, value, allowed) do
+    reach = MapSet.intersection(selected_types(name, value), allowed)
+    not Enum.empty?(reach)
+  end
+
+  # The event types one filter value actually selects — the same expansion its
+  # own `fun` runs at query time, so an option's advertised reach is its real one.
+  defp selected_types(:event_type, value), do: MapSet.new(expand_event_type_groups([value]))
+  defp selected_types(:category, value), do: MapSet.new(event_types_for_categories([value]))
+  defp selected_types(:outcome, value), do: MapSet.new(event_types_for_outcomes([value]))
 
   defp param_present?(params, name) do
     case Map.get(params, to_string(name)) do

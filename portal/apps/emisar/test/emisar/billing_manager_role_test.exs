@@ -3,8 +3,9 @@ defmodule Emisar.BillingManagerRoleTest do
   The billing_manager seat's whole contract in one place — three things and
   nothing else: full billing control, a READ-ONLY view of the team, and the
   BILLING SLICE of the audit trail. Plus the member floor (own account + own
-  profile) and the delegation rule that falls out of `covers_role?/2`
-  (granting it requires `manage_billing`, which only owners hold).
+  profile), NO runner or pack reach by any route, and the delegation rule that
+  falls out of `covers_role?/2` (granting it requires `manage_billing`, which
+  only owners hold).
   """
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Billing, Catalog, Fixtures, Policies}
@@ -122,6 +123,59 @@ defmodule Emisar.BillingManagerRoleTest do
       refute other_event.id in Enum.map(events, & &1.id)
     end
 
+    # The filter offers what the read can return and nothing else — a Type group
+    # or category chip that could only ever come back empty is not a control, it
+    # is a list of things you are not allowed to see. The narrowing is derived
+    # from `Authorizer.readable_event_types/1`, the same judgment that scopes the
+    # rows, so the two cannot drift.
+    test "is offered no Type, Severity, or Category control — none of them can narrow", %{
+      subject: subject
+    } do
+      assert Enum.map(Audit.event_filters(subject), & &1.name) ==
+               [:from, :to, :request_id, :auth_method, :actor_kind, :target_kind]
+
+      assert Audit.event_category_values(subject) == []
+    end
+
+    test "an owner's filter surface is untouched", %{account: account} do
+      owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+      owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+
+      assert Enum.map(Audit.event_filters(owner_subject), & &1.name) ==
+               [
+                 :category,
+                 :from,
+                 :to,
+                 :event_type,
+                 :outcome,
+                 :request_id,
+                 :auth_method,
+                 :actor_kind,
+                 :target_kind
+               ]
+
+      assert length(Audit.event_category_values(owner_subject)) == 5
+
+      type_filter = Enum.find(Audit.event_filters(owner_subject), &(&1.name == :event_type))
+      assert length(type_filter.values) == 16
+    end
+
+    # Narrowing the OFFER never narrows the READ: `valid_values` stays the full
+    # vocabulary, so a programmatic filter naming a withheld type still returns
+    # the zero rows the row scope gives it — not the reader's whole slice,
+    # which is what dropping the param would silently produce.
+    test "a filter naming a type no longer offered still returns nothing", %{subject: subject} do
+      assert {:ok, [], _metadata} =
+               Audit.list_events(subject, filter: [event_type: ["runner.registered"]])
+    end
+
     # Reading the money trail in the console is the seat's job; taking the
     # record OUT of the product is an owner/admin/SIEM act.
     test "cannot export the trail", %{subject: subject} do
@@ -168,6 +222,101 @@ defmodule Emisar.BillingManagerRoleTest do
 
     test "SSO administration", %{subject: subject} do
       assert SSO.list_providers_for_account(subject) == {:error, :unauthorized}
+    end
+  end
+
+  # The seat manages money, not machines, so it holds no runner and therefore no
+  # pack reach. Assigning the role RESETS both dimensions, and every write path
+  # normalizes through `RunnerAccess.for_role/2`, so there is no order of
+  # operations — role first, access first, directory sync — that leaves one.
+  describe "no runner or pack scope, by any route" do
+    setup %{account: account} do
+      owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+      %{owner_subject: Fixtures.Subjects.subject_for(owner, account, role: :owner)}
+    end
+
+    test "assigning the role clears the scope the member already had", %{
+      account: account,
+      owner_subject: owner_subject
+    } do
+      {:ok, production} = Accounts.RunnerAccess.restricted(["production"], [])
+
+      member =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Memberships.force_runner_access(production)
+
+      assert Fixtures.Memberships.list_runner_scopes(member) == [{:group, "production"}]
+
+      assert {:ok, %Accounts.Membership{role: :billing_manager}} =
+               Accounts.update_membership_role(member, "billing_manager", owner_subject)
+
+      assert Accounts.runner_access_for_membership(account.id, member.id) ==
+               Accounts.RunnerAccess.none()
+
+      # The `user_runner_scopes` rows moved too, not just the columns — a read
+      # collapses an inconsistent pair to `none()`, so only the rows prove it.
+      assert Fixtures.Memberships.list_runner_scopes(member) ==
+               [{:runner, Accounts.RunnerAccess.none_runner_id()}]
+    end
+
+    test "the access editor refuses to give one reach", %{
+      account: account,
+      owner_subject: owner_subject
+    } do
+      member =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
+
+      assert Accounts.update_membership_runner_access(
+               member,
+               Accounts.RunnerAccess.all(),
+               owner_subject
+             ) == {:error, :role_carries_no_runner_access}
+
+      assert Accounts.runner_access_for_membership(account.id, member.id) ==
+               Accounts.RunnerAccess.none()
+    end
+
+    test "an invitation straight into the role lands with none", %{
+      account: account,
+      owner_subject: owner_subject
+    } do
+      attrs =
+        Fixtures.Accounts.invitation_attrs(
+          email: "finance-new@example.test",
+          role: "billing_manager",
+          runner_access_mode: "all"
+        )
+
+      assert {:ok, %{membership: membership}} =
+               Accounts.invite_user_to_account(attrs, owner_subject)
+
+      assert Accounts.runner_access_for_membership(account.id, membership.id) ==
+               Accounts.RunnerAccess.none()
+    end
+
+    test "a directory provisioning it lands with none", %{account: account} do
+      user = Fixtures.Users.create_user()
+
+      assert {:ok, %Accounts.Membership{role: :billing_manager} = membership} =
+               Accounts.provision_sso_membership(
+                 account.id,
+                 user.id,
+                 :billing_manager,
+                 Accounts.RunnerAccess.all(),
+                 directory_managed?: true
+               )
+
+      assert membership.runner_access_mode == :none
+
+      assert Accounts.runner_access_for_membership(account.id, membership.id) ==
+               Accounts.RunnerAccess.none()
     end
   end
 

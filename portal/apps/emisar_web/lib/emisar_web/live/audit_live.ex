@@ -38,7 +38,7 @@ defmodule EmisarWeb.AuditLive do
      # panel around.
      |> assign(
        :filters_open?,
-       LiveTable.has_active_filters?(params, Audit.event_filters())
+       LiveTable.has_active_filters?(params, Audit.event_filters(socket.assigns.current_subject))
      )
      |> assign(:reload_scheduled?, false)}
   end
@@ -246,7 +246,13 @@ defmodule EmisarWeb.AuditLive do
 
   defp load(socket, params) do
     socket = assign_filter_state(socket, params)
-    base_filters = Audit.applicable_event_filters(params["event_type"], params)
+
+    base_filters =
+      Audit.applicable_event_filters(
+        params["event_type"],
+        params,
+        socket.assigns.current_subject
+      )
 
     opts =
       params
@@ -281,16 +287,18 @@ defmodule EmisarWeb.AuditLive do
   end
 
   defp assign_filter_state(socket, params) do
+    subject = socket.assigns.current_subject
+
     # Request ID + Sign-in method only apply to some event types — drop them
     # when the selected Type can't carry them (or none is set), so the filter
-    # panel shows only filters that can actually narrow the log.
-    base_filters = Audit.applicable_event_filters(params["event_type"], params)
+    # panel shows only filters that can actually narrow the log. The subject
+    # narrows it first: a facet whose every option is unreadable is not offered.
+    base_filters = Audit.applicable_event_filters(params["event_type"], params, subject)
 
     # Render each dynamic picker right after its kind filter (the dependent
     # control belongs next to its trigger), not tacked on at the end.
     # base_filters stays the opts source; the actor/target pickers are
     # render-only — actor_id/target_id apply via the opts path in `load/2`.
-    subject = socket.assigns.current_subject
     actor_filter = actor_kind_filter(params, subject)
     target_filter = target_kind_filter(params, subject)
 
@@ -307,6 +315,7 @@ defmodule EmisarWeb.AuditLive do
     # LiveTable datetime filters — params_to_opts applies them via :filter.
     socket
     |> assign(:filters, filters)
+    |> assign(:categories, Audit.event_category_values(subject))
     |> assign(:filter_params, params)
     |> assign(:active_facet_count, LiveTable.count_active_filters(params, filters))
     |> assign(
@@ -456,10 +465,12 @@ defmodule EmisarWeb.AuditLive do
              panel facet below; the append-only record is only ever narrowed as a
              VIEW, never trimmed. An active chip wears the brand active-filter tint
              like every other control — an engaged lens is a filter state, not an
-             alarm (the problem ROWS carry their own rose/amber). --%>
-        <div class="flex flex-wrap items-center gap-1.5">
+             alarm (the problem ROWS carry their own rose/amber). A reader whose
+             whole slice sits in one category gets no chips: the domain returns
+             none, because the one lens it could offer would change nothing. --%>
+        <div :if={@categories != []} class="flex flex-wrap items-center gap-1.5">
           <button
-            :for={{value, label} <- Audit.event_category_values()}
+            :for={{value, label} <- @categories}
             type="button"
             phx-click="category"
             phx-value-category={value}
