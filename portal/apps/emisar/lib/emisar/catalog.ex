@@ -2632,7 +2632,10 @@ defmodule Emisar.Catalog do
   `groups` (`%{id: pack_id,
   versions: [...], update: nil | %{version, hash}}` over the visible rows,
   packs ascending and versions newest-seen first), `actions_by_pack_ref`,
-  `matched_action_ids` and
+  `matched_action_ids`,
+  `out_of_scope_pack_ids` (the account's other pack ids — identity only, for
+  discovery; empty under a `:risk` filter, which cannot be judged without
+  reading actions the member may not see), and
   `version_facts` (see `list_console_packs/2`'s fact map) keyed by pack-version
   id, and the visible `pack_count`/`version_count`, `pending_count`, and
   `decision_count` — or `{:error, :unauthorized}`.
@@ -2684,6 +2687,7 @@ defmodule Emisar.Catalog do
            groups: groups,
            actions_by_pack_ref: actions_by_pack_ref,
            matched_action_ids: matched_ids,
+           out_of_scope_pack_ids: out_of_scope_pack_ids(pack_versions, name, risk, subject),
            version_facts: version_facts,
            pack_count: length(groups),
            version_count: length(visible),
@@ -3012,6 +3016,29 @@ defmodule Emisar.Catalog do
     end)
     |> Enum.sort_by(& &1.id)
   end
+
+  # Discovery: the pack ids in this account that the member's own pack or runner
+  # access does not reach, so the console can say a pack EXISTS without handing
+  # over anything about it. Identity only, and structurally so — the read
+  # selects `pack_id` and nothing else (`distinct_pack_ids/1`), so no trust
+  # state, action, advertiser, version or decision fact about an out-of-scope
+  # pack is produced for a caller to render by accident. The name filter still
+  # applies because the id is all we matched on anyway; a RISK filter returns
+  # none, since judging an out-of-scope pack's risk would mean reading its
+  # actions — exactly what the member may not see.
+  defp out_of_scope_pack_ids(pack_versions, name, "", %Subject{} = subject) do
+    in_scope = MapSet.new(pack_versions, & &1.pack_id)
+
+    PackVersion.Query.all()
+    |> PackVersion.Query.distinct_pack_ids()
+    |> Authorizer.for_subject(subject)
+    |> Repo.all()
+    |> Enum.reject(&MapSet.member?(in_scope, &1))
+    |> Enum.filter(&String.contains?(String.downcase(&1), name))
+    |> Enum.sort()
+  end
+
+  defp out_of_scope_pack_ids(_pack_versions, _name, _risk, _subject), do: []
 
   # The pack-level "a newer version shipped" nudge, said once per pack: a
   # trusted, non-retired version below the current shipped one, and nothing

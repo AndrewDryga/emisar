@@ -734,6 +734,69 @@ defmodule EmisarWeb.AgentsLiveTest do
       flush_key_broadcast(lv)
     end
 
+    # A custom key is the same `:mcp` credential the quick path mints, bounded by
+    # the same membership scope — so it takes the same ISSUE permission and an
+    # operator may create one.
+    test "an operator creates a custom key, bound to their own membership", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      operator = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      {:ok, lv, _html} =
+        build_conn()
+        |> log_in_user(operator)
+        |> live(~p"/app/#{account}/agents/connect")
+
+      lv |> render_click("select_client", %{"client" => "custom"})
+
+      lv
+      |> form("#api_key_form", %{"api_key" => %{"name" => "operator-bot"}})
+      |> render_submit()
+
+      key = Repo.one!(ApiKey)
+      assert key.name == "operator-bot"
+      assert key.kind == :mcp
+      # The key resolves THIS membership's runner and pack access at call time,
+      # so it can never reach further than the operator who minted it.
+      assert key.created_by_membership_id == membership.id
+      flush_key_broadcast(lv)
+    end
+
+    test "an operator cannot mint an audit-export token through the custom form", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      operator = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
+
+      {:ok, lv, _html} =
+        build_conn()
+        |> log_in_user(operator)
+        |> live(~p"/app/#{account}/agents/connect")
+
+      lv |> render_click("select_client", %{"client" => "custom"})
+
+      # The form has no kind field, so this is a crafted post: `create_key/2`
+      # picks its permission from the POSTED kind, and the whole account's audit
+      # stream stays with manage_api_keys.
+      html =
+        render_submit(lv, "create", %{
+          "api_key" => %{"name" => "siem", "kind" => "audit_export"}
+        })
+
+      assert html =~ "Could not create the key."
+      refute Repo.one(ApiKey)
+    end
+
     # a `datetime-local` expiry on the custom-create form (no seconds, no zone)
     # is stored as UTC: `ApiKeys` reads the browser's minute stamp as a UTC
     # wallclock, so "2099-12-25 at 10:30" persists as 10:30:00 UTC. (The
@@ -992,9 +1055,9 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "bravo-bot"
     end
 
-    # quick-mint/create/revoke are manage-gated (admin+); an
-    # operator who forces the `revoke` event gets the gated flash and the key is
-    # NOT revoked.
+    # Minting (quick or custom) is the ISSUE tier an operator holds; revoking is
+    # manage (admin+). An operator who forces the `revoke` event gets the gated
+    # flash and the key is NOT revoked.
     test "an operator cannot revoke — forced event gated, key untouched", %{conn: conn} do
       {_owner_conn, owner, account} = register_and_log_in(conn)
 
@@ -1123,7 +1186,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     # an operator holds
     # view_api_keys (the page renders) and issue_quick_key (quick-mint is the
     # operator's LEGIT flow) — while custom create + revoke stay manage-gated.
-    test "an operator quick-mints; custom create and revoke stay gated", %{conn: conn} do
+    test "an operator quick-mints and custom-creates; revoke stays gated", %{conn: conn} do
       {_owner_conn, owner, account} = register_and_log_in(conn)
 
       {:ok, _raw, key} =
@@ -1156,12 +1219,13 @@ defmodule EmisarWeb.AgentsLiveTest do
       render_click(lv, "select_client", %{"client" => "claude_code"})
       refute render_click(lv, "reveal_snippet", %{}) =~ denial
       assert Enum.count(Repo.all(ApiKey)) == 2
-      # custom create → still manage-gated, no third key.
-      assert render_click(lv, "create", %{"api_key" => %{"name" => "sneaky"}}) =~ denial
+      # custom create → the same ISSUE tier, so it mints a third key.
+      refute render_submit(lv, "create", %{"api_key" => %{"name" => "operator-custom"}}) =~ denial
+      assert Enum.count(Repo.all(ApiKey)) == 3
       # revoke an existing key → still manage-gated, key untouched.
       assert render_click(lv, "revoke", %{"id" => key.id}) =~ denial
 
-      assert Enum.count(Repo.all(ApiKey)) == 2
+      assert Enum.count(Repo.all(ApiKey)) == 3
       assert is_nil(Repo.reload!(key).revoked_at)
     end
 
@@ -1185,30 +1249,44 @@ defmodule EmisarWeb.AgentsLiveTest do
     # may only quick-mint gets it disabled + lock + accessible tooltip (never
     # a form that dies in a denial flash at submit), and forcing the
     # select_client event past the disabled tab is refused too (IL-15).
-    test "an operator's Custom tab is locked; a forced select_client is refused", %{conn: conn} do
+    test "an operator's Custom tab is live, a viewer's connect panel is absent", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-
       operator = Fixtures.Users.create_user()
+      viewer = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+      for {user, role} <- [{operator, "operator"}, {viewer, "viewer"}] do
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: role
+        )
+      end
 
-      {:ok, lv, html} =
+      {:ok, operator_lv, _html} =
         build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/agents")
 
-      # The tab renders locked: disabled, no click wiring, tooltip naming the gate.
-      assert has_element?(lv, "button[disabled]", "Custom key (advanced)")
-      refute has_element?(lv, "button[phx-click='select_client'][phx-value-client='custom']")
-      assert has_element?(lv, "#custom-key-lock[role='tooltip']")
-      assert html =~ "Creating a custom key needs an admin or owner role."
+      # No lock and no tooltip: the panel only renders for a member who may mint,
+      # so every tab in it — Custom included — is a working control.
+      refute has_element?(operator_lv, "button[disabled]", "Custom key (advanced)")
 
-      assert render_click(lv, "select_client", %{"client" => "custom"}) =~
+      assert has_element?(
+               operator_lv,
+               "button[phx-click='select_client'][phx-value-client='custom']"
+             )
+
+      render_click(operator_lv, "select_client", %{"client" => "custom"})
+      assert has_element?(operator_lv, "#api_key_form")
+
+      # A viewer holds only view_api_keys — no panel, and a forced event denied.
+      {:ok, viewer_lv, _html} =
+        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/agents")
+
+      refute has_element?(viewer_lv, "button[phx-value-client='custom']")
+
+      assert render_click(viewer_lv, "select_client", %{"client" => "custom"}) =~
                "You don&#39;t have permission to do that."
 
-      refute has_element?(lv, "#api_key_form")
+      refute has_element?(viewer_lv, "#api_key_form")
     end
 
     # a forged/foreign key id revoke is a quiet no-op: the

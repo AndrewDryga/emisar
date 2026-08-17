@@ -869,6 +869,31 @@ defmodule Emisar.BillingTest do
 
       assert {:error, :unauthorized} = Billing.list_recent_invoices(account, subject)
     end
+
+    # An admin runs the account and answers for what it spends; the billing
+    # manager IS the finance seat. Both read the ledger without holding manage.
+    test "an admin and a billing manager read the ledger", %{account: account} do
+      account = %{account | paddle_customer_id: "ctm_invoices_01"}
+
+      for role <- ["admin", "billing_manager"] do
+        subject = role_subject(account, role)
+
+        assert {:ok, _invoices} = Billing.list_recent_invoices(account, subject)
+      end
+    end
+
+    # view_billing gets the plan and its limits through billing_summary/2 — never
+    # the money behind them.
+    test "an operator and a viewer are refused — view_billing is not the ledger",
+         %{account: account} do
+      account = %{account | paddle_customer_id: "ctm_invoices_01"}
+
+      for role <- ["operator", "viewer"] do
+        subject = role_subject(account, role)
+
+        assert {:error, :unauthorized} = Billing.list_recent_invoices(account, subject)
+      end
+    end
   end
 
   describe "invoice_pdf_url/3" do
@@ -892,6 +917,18 @@ defmodule Emisar.BillingTest do
     } do
       assert {:error, :not_found} =
                Billing.invoice_pdf_url(account, "txn_from_account_b", subject)
+    end
+
+    test "an admin downloads the PDF, an operator is refused — same gate as the list", %{
+      account: account
+    } do
+      assert {:ok, url} =
+               Billing.invoice_pdf_url(account, "txn_stub_1", role_subject(account, "admin"))
+
+      assert url =~ "txn_stub_1"
+
+      assert {:error, :unauthorized} =
+               Billing.invoice_pdf_url(account, "txn_stub_1", role_subject(account, "operator"))
     end
 
     test "an owner of another account is refused", %{account: account} do
@@ -2433,6 +2470,29 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "subject_can_view_invoices?/1" do
+    setup do
+      {_user, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, owner_subject: owner_subject}
+    end
+
+    test "true for an owner", %{owner_subject: owner_subject} do
+      assert Billing.subject_can_view_invoices?(owner_subject)
+    end
+
+    test "true for admin and billing manager, false for operator and viewer", %{account: account} do
+      # The boundary the ledger draws: reading what the account spent is the
+      # account-running tier, one step below changing the plan.
+      for role <- [:admin, :billing_manager] do
+        assert Billing.subject_can_view_invoices?(role_subject(account, to_string(role)))
+      end
+
+      for role <- [:operator, :viewer] do
+        refute Billing.subject_can_view_invoices?(role_subject(account, to_string(role)))
+      end
+    end
+  end
+
   describe "headroom/2" do
     test ":ok when more than one slot free" do
       assert Billing.headroom(%{runner_count: 1, runner_limit: 3}, :runners) == :ok
@@ -2462,6 +2522,21 @@ defmodule Emisar.BillingTest do
       assert Billing.headroom(%{member_count: 5, member_limit: :unlimited}, :members) ==
                :unlimited
     end
+  end
+
+  # A persisted member of `account` at `role` — billing gates read the role off
+  # the membership row, so a struct-only subject would not exercise them.
+  defp role_subject(account, role) when is_binary(role) do
+    user = Fixtures.Users.create_user()
+
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: role
+      )
+
+    Fixtures.Subjects.membership_subject(membership)
   end
 
   defp processed_event?(event_id) do

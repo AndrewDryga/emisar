@@ -461,6 +461,72 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "refs_outside_runner_access/2" do
+    test "an unrestricted member excludes nothing, not even an unenrolled runner" do
+      {account, _user, subject} = account_with_owner_subject()
+      Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      refs = ["group:database", "group:never-created", "runner:nobody~deadbeef"]
+
+      assert Runners.refs_outside_runner_access(refs, subject) == {:ok, []}
+    end
+
+    test "a restricted member's out-of-access refs come back, in the order given" do
+      {account, user, _subject} = account_with_owner_subject()
+
+      database =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "db-1",
+          group: "database"
+        )
+
+      Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {:ok, access} = Accounts.RunnerAccess.restricted(["database"], [])
+      Fixtures.Memberships.force_runner_access(membership, access)
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      {:ok, database_ref} = Runners.public_ref(database)
+
+      refs = ["group:web", "group:database", "runner:#{database_ref}", "runner:web-1~nope"]
+
+      assert Runners.refs_outside_runner_access(refs, subject) ==
+               {:ok, ["group:web", "runner:web-1~nope"]}
+    end
+
+    test "an OFFLINE runner inside access is in scope — this judges access, not availability" do
+      {account, user, _subject} = account_with_owner_subject()
+
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "sleeping",
+        group: "database",
+        connected?: false
+      )
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {:ok, access} = Accounts.RunnerAccess.restricted(["database"], [])
+      Fixtures.Memberships.force_runner_access(membership, access)
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert Runners.refs_outside_runner_access(["group:database"], subject) == {:ok, []}
+    end
+
+    test "a member with no runner access has every ref outside it" do
+      {account, user, _subject} = account_with_owner_subject()
+      Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      Fixtures.Memberships.force_runner_access(membership, Accounts.RunnerAccess.none())
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert Runners.refs_outside_runner_access(["group:database"], subject) ==
+               {:ok, ["group:database"]}
+    end
+  end
+
   describe "public_ref/1" do
     test "derives a stable readable reference without exposing external identity" do
       runner =

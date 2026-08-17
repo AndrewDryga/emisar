@@ -14,7 +14,7 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "No packs reported yet"
     end
 
-    test "renders only packs in the member's current pack access", %{conn: conn} do
+    test "lists in-scope packs in full and names the rest for discovery only", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
@@ -23,14 +23,23 @@ defmodule EmisarWeb.PacksLiveTest do
           "hostname" => "host-1",
           "version" => "0.1.0",
           "labels" => %{},
-          "actions" => [],
+          "actions" => [
+            %{
+              "id" => "hidden.wipe",
+              "pack_id" => "hidden-tools",
+              "pack_version" => "7.7",
+              "summary" => "Wipe the host",
+              "risk" => "critical",
+              "args" => []
+            }
+          ],
           "packs" => %{
             "acme-tools" => %{
               "version" => "9.9",
               "hash" => Fixtures.Catalog.pack_hash("acme")
             },
             "hidden-tools" => %{
-              "version" => "9.9",
+              "version" => "7.7",
               "hash" => Fixtures.Catalog.pack_hash("hidden")
             }
           }
@@ -47,8 +56,74 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render(lv)
 
       assert html =~ "acme-tools"
-      refute html =~ "hidden-tools"
+      assert html =~ "9.9"
       assert html =~ "1 pack · 1 version"
+
+      # The out-of-scope pack is NAMED, and that is all: no version row, no
+      # hash, no action, no trust state, no advertiser.
+      assert html =~ "Outside your pack access"
+      assert html =~ "hidden-tools"
+      refute html =~ "7.7"
+      refute html =~ "hidden.wipe"
+      refute html =~ Fixtures.Catalog.pack_hash("hidden")
+    end
+
+    test "a crafted contents event on an out-of-scope pack reveals nothing", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      {:ok, _runner} =
+        Emisar.Catalog.observe_state(runner, %{
+          "hostname" => "host-1",
+          "version" => "0.1.0",
+          "labels" => %{},
+          "actions" => [
+            %{
+              "id" => "hidden.wipe",
+              "pack_id" => "hidden-tools",
+              "pack_version" => "7.7",
+              "summary" => "Wipe the host",
+              "risk" => "critical",
+              "args" => []
+            }
+          ],
+          "packs" => %{
+            "acme-tools" => %{
+              "version" => "9.9",
+              "hash" => Fixtures.Catalog.pack_hash("acme")
+            },
+            "hidden-tools" => %{
+              "version" => "7.7",
+              "hash" => Fixtures.Catalog.pack_hash("hidden")
+            }
+          }
+        })
+
+      hidden =
+        Emisar.Catalog.PackVersion.Query.all()
+        |> Emisar.Catalog.PackVersion.Query.by_pack_id("hidden-tools")
+        |> Emisar.Repo.one!()
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      {:ok, access} =
+        Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme-tools"])
+
+      Fixtures.Memberships.force_runner_access(membership, access)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      # Discovery names the pack, so its version id is guessable — the contents
+      # read is scoped in the Catalog, not by which chevrons the page drew.
+      html =
+        render_hook(lv, "inspect_pack", %{
+          "id" => hidden.id,
+          "pack-id" => "hidden-tools",
+          "version" => "7.7"
+        })
+
+      refute html =~ "hidden.wipe"
+      refute html =~ "Wipe the host"
     end
   end
 

@@ -427,19 +427,24 @@ defmodule EmisarWeb.BillingLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
-    test "no upgrade controls render", %{conn: conn, user: user, account: account} do
+    test "the plan and its limits render; the money sections do not", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
       downgrade_to(user, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      # The plan/usage is visible to everyone who can view billing…
+      # The operational facts every role needs — which plan, and how much of it
+      # is left — stay on view_billing…
       assert html =~ "Current plan"
-      # …but the manage-gated upgrade CTA + per-card upgrade buttons are
-      # replaced with the read-only affordance naming BOTH roles that hold
-      # manage_billing — "Owners only" promised less access than the
-      # billing-manager role actually has.
+      assert html =~ "Usage"
+      # …while the money surfaces are manage_billing's: no ledger, no catalogue,
+      # and so no upgrade control to deny.
+      refute html =~ "Recent invoices"
+      refute html =~ "Plans"
       refute html =~ "Upgrade to Team"
-      assert html =~ "Owner or billing manager only"
     end
 
     test "a crafted upgrade event is refused — flash, no redirect", %{
@@ -458,6 +463,78 @@ defmodule EmisarWeb.BillingLiveTest do
       html = render_hook(lv, "upgrade", %{"plan" => "team"})
 
       assert html =~ "have permission to do that."
+    end
+  end
+
+  describe "as an admin" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      downgrade_to(user, "admin")
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "keeps the invoice ledger; the plan catalogue stays with manage", %{
+      conn: conn,
+      account: account
+    } do
+      account = attach_customer(account, "ctm_invoices_admin_01")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+      html = render_async(lv)
+
+      assert html =~ "Current plan"
+      # An admin answers for what the account spends, so the ledger stays…
+      assert html =~ "Recent invoices"
+      assert has_element?(lv, "button[phx-click='download_invoice'][phx-value-id='txn_stub_1']")
+      # …but choosing a plan is a checkout, which they cannot complete.
+      refute html =~ "Plans"
+      refute html =~ "Upgrade to Team"
+    end
+
+    test "downloads an invoice PDF", %{conn: conn, account: account} do
+      account = attach_customer(account, "ctm_invoices_admin_02")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+      render_async(lv)
+
+      assert {:error, {:redirect, redirect}} =
+               render_click(lv, "download_invoice", %{"id" => "txn_stub_1"})
+
+      url = redirect[:to] || redirect[:external]
+      assert is_binary(url) and url =~ "txn_stub_1"
+    end
+  end
+
+  describe "as an operator" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      downgrade_to(user, "operator")
+      %{conn: conn, user: user, account: account}
+    end
+
+    test "reads the plan and its limits, not the invoices or the catalogue", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert html =~ "Current plan"
+      assert html =~ "Usage"
+      refute html =~ "Recent invoices"
+      refute html =~ "Plans"
+    end
+
+    test "a crafted invoice download is refused — the flash, not a PDF", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      # No invoice row renders for an operator, so push the event directly:
+      # the Billing context gates the read, not the template (IL-15).
+      html = render_hook(lv, "download_invoice", %{"id" => "txn_stub_1"})
+
+      assert html =~ "Couldn&#39;t open that invoice"
     end
   end
 

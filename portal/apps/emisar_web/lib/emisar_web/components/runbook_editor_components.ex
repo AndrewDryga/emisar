@@ -308,8 +308,15 @@ defmodule EmisarWeb.RunbookEditorComponents do
               </:body>
               Discard changes
             </.confirm_button>
+            <%!-- Deleting is lifecycle, not authoring: an operator may write,
+                 publish and discard this runbook but never end it, so the
+                 control follows `manage` while the rest of the editor follows
+                 `author`. --%>
             <.confirm_button
-              :if={not @read_only? and @runbook}
+              :if={
+                not @read_only? and not is_nil(@runbook) and
+                  Runbooks.subject_can_manage_runbooks?(@current_subject)
+              }
               id="delete-runbook"
               title="Delete this runbook?"
               confirm_label="Delete runbook"

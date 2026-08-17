@@ -62,7 +62,7 @@ defmodule EmisarWeb.RunbookEditorLive do
       |> assign(:publish_review, nil)
       |> assign(
         :read_only?,
-        not Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject)
+        not Runbooks.subject_can_author_runbooks?(socket.assigns.current_subject)
       )
       |> assign(:draft, draft)
       |> assign(:baseline, RunbookDraft.fingerprint(draft))
@@ -85,7 +85,7 @@ defmodule EmisarWeb.RunbookEditorLive do
           |> assign(:loaded?, true)
           |> assign(
             :read_only?,
-            not Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject)
+            not Runbooks.subject_can_author_runbooks?(socket.assigns.current_subject)
           )
           |> assign(:definition_issues, [])
           |> assign(:open_panels, MapSet.new())
@@ -371,7 +371,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   def handle_event("save", _params, socket) do
     Permissions.gated(
       socket,
-      Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject),
+      Runbooks.subject_can_author_runbooks?(socket.assigns.current_subject),
       &save(&1, false)
     )
   end
@@ -379,7 +379,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   def handle_event("review_publish", _params, socket) do
     Permissions.gated(
       socket,
-      Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject),
+      Runbooks.subject_can_author_runbooks?(socket.assigns.current_subject),
       &open_publish_review/1
     )
   end
@@ -391,7 +391,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   def handle_event("publish", _params, socket) do
     Permissions.gated(
       socket,
-      Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject),
+      Runbooks.subject_can_author_runbooks?(socket.assigns.current_subject),
       &publish/1
     )
   end
@@ -399,7 +399,7 @@ defmodule EmisarWeb.RunbookEditorLive do
   def handle_event("discard_draft", _params, socket) do
     Permissions.gated(
       socket,
-      Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject),
+      Runbooks.subject_can_author_runbooks?(socket.assigns.current_subject),
       &discard_draft/1
     )
   end

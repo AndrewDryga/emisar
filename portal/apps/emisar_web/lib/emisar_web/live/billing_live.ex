@@ -18,7 +18,7 @@ defmodule EmisarWeb.BillingLive do
        |> assign(:plans, ordered_plans())
        |> assign(:summary, fetch_summary(account, subject))
        |> assign(:features, feature_states(account))
-       |> assign_async(:invoices, fn -> fetch_invoices(account, subject) end)}
+       |> assign_invoices(account, subject)}
     else
       {:ok, socket}
     end
@@ -32,6 +32,19 @@ defmodule EmisarWeb.BillingLive do
       scim: Billing.directory_sync_available?(account),
       audit_export: Billing.audit_export_available?(account)
     }
+  end
+
+  # A member who may not read the ledger never fires its read, so the assign
+  # never exists — the section is `:if`-gated on the same predicate, exactly as
+  # the dead render leaves it unassigned. Firing it anyway would render the
+  # context's refusal as this section's failure state, which reads as an outage
+  # rather than "not yours".
+  defp assign_invoices(socket, account, subject) do
+    if Billing.subject_can_view_invoices?(subject) do
+      assign_async(socket, :invoices, fn -> fetch_invoices(account, subject) end)
+    else
+      socket
+    end
   end
 
   defp fetch_summary(account, subject) do
@@ -125,8 +138,8 @@ defmodule EmisarWeb.BillingLive do
   end
 
   # Download one invoice's PDF — Billing re-checks the transaction against the
-  # account's own invoices + view-billing, then Paddle mints a short-lived signed
-  # URL we redirect to (it's served as a download, so the page stays put).
+  # account's own invoices + manage-billing, then Paddle mints a short-lived
+  # signed URL we redirect to (it's served as a download, so the page stays put).
   def handle_event("download_invoice", %{"id" => id}, socket) do
     case Billing.invoice_pdf_url(
            socket.assigns.current_account,
@@ -143,12 +156,12 @@ defmodule EmisarWeb.BillingLive do
   end
 
   # Re-run the failed async invoice fetch in place. Authorization lives in
-  # the context read (view-billing + account scope), same as the mount fetch.
+  # the context read (manage-billing + account scope), same as the mount fetch.
   def handle_event("retry_invoices", _params, socket) do
     account = socket.assigns.current_account
     subject = socket.assigns.current_subject
 
-    {:noreply, assign_async(socket, :invoices, fn -> fetch_invoices(account, subject) end)}
+    {:noreply, assign_invoices(socket, account, subject)}
   end
 
   defp ordered_plans do
@@ -435,7 +448,17 @@ defmodule EmisarWeb.BillingLive do
                  once a Paddle customer exists — a never-billed account resolves
                  to [] instantly, and a flash of "Recent invoices" that then
                  vanishes would just jiggle the page. --%>
-            <.async_result :let={invoices} assign={@invoices}>
+            <%!-- The ledger is money, not operations: an operator reading their
+                 plan and limits above has no business in what the company paid
+                 and when, while an admin answers for what the account spends.
+                 Gated on the same `view_invoices` the context read enforces —
+                 the section is hidden because there is nothing to show, not to
+                 hide a control that would work. --%>
+            <.async_result
+              :let={invoices}
+              :if={Billing.subject_can_view_invoices?(@current_subject)}
+              assign={@invoices}
+            >
               <:loading>
                 <section :if={@current_account.paddle_customer_id}>
                   <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -541,7 +564,11 @@ defmodule EmisarWeb.BillingLive do
             <%!-- Plans sit in the main column (not full width under the rail).
                  Picking a plan is the choice_cards concept — the current plan
                  takes the selected treatment (bright ring), the rest quiet. --%>
-            <section>
+            <%!-- Buying is the money-handler's job, and `start_checkout/4` has
+                 always required manage-billing — so the catalogue only renders
+                 for a member who could actually act on it, rather than three
+                 cards whose every button dies in a denial. --%>
+            <section :if={Billing.subject_can_manage_billing?(@current_subject)}>
               <.section_header title="Plans">
                 <:actions>
                   <%!-- Monthly/annual is pure UI state (set_cycle) — the chosen
@@ -619,14 +646,6 @@ defmodule EmisarWeb.BillingLive do
                         >
                           Contact sales
                         </.button>
-                      <% not Billing.subject_can_manage_billing?(@current_subject) -> %>
-                        <%!-- Quiet fact for members without manage-billing (the owner
-                         and billing-manager roles hold it — keep this copy in step
-                         with Billing.Authorizer), not a gray slab that apes a
-                         disabled button. --%>
-                        <p class="py-2 text-center text-xs font-medium text-zinc-400">
-                          Owner or billing manager only
-                        </p>
                       <% sales_led_plan?(@summary.plan) -> %>
                         <%!-- On a custom Enterprise plan (or any Paddle-minted slug
                          this build doesn't know) every other tier is a downgrade,

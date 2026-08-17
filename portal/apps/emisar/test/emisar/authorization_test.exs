@@ -6,18 +6,23 @@ defmodule Emisar.AuthorizationTest do
   to "permissionless = full access" wouldn't show up in feature tests.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.Accounts.Membership
   alias Emisar.Auth.Subject
   alias Emisar.Fixtures
 
+  # A PERSISTED member: gates that read current runner/pack access resolve it
+  # from the membership row, and an unresolvable membership fails closed — so a
+  # struct-only subject would be denied for the wrong reason.
   defp subject_with_role(account, role) do
     user = Fixtures.Users.create_user()
 
-    Subject.for_user(
-      user,
-      account,
-      %Membership{role: Atom.to_string(role), user_id: user.id, account_id: account.id}
-    )
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: Atom.to_string(role)
+      )
+
+    Subject.for_user(user, account, membership)
   end
 
   describe "Audit reads" do

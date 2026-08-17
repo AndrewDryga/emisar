@@ -1160,6 +1160,35 @@ defmodule Emisar.RunbooksTest do
                Subject.for_runner(runner, account)
              ) == {:error, :unauthorized}
     end
+
+    test "an operator creates a runbook — authoring is the operator tier" do
+      account = Fixtures.Accounts.create_account()
+      operator = membership_subject(account, "operator")
+
+      assert {:ok, runbook} = Runbooks.create_runbook(runbook_attrs(), operator)
+      assert runbook.account_id == account.id
+    end
+
+    test "denies a viewer, who may read runbooks but never author one" do
+      account = Fixtures.Accounts.create_account()
+      viewer = membership_subject(account, "viewer")
+
+      assert Runbooks.create_runbook(runbook_attrs(), viewer) == {:error, :unauthorized}
+      refute Repo.one(Runbooks.Runbook)
+    end
+
+    test "refuses a first draft whose step is outside the author's access" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      trusted_runner(account, subject, group: "database")
+      trusted_runner(account, subject, group: "web")
+
+      {:ok, access} = Emisar.Accounts.RunnerAccess.new(:restricted, ["database"], [])
+      operator = scoped_membership_subject(account, "operator", access)
+
+      attrs = runbook_attrs(definition: definition("web"))
+
+      assert Runbooks.create_runbook(attrs, operator) == {:error, :target_out_of_scope}
+    end
   end
 
   describe "import_runbook/3" do
@@ -1550,13 +1579,60 @@ defmodule Emisar.RunbooksTest do
       assert Repo.reload!(live).slug == "frozen"
     end
 
-    test "denies a principal without manage permission" do
+    test "an operator saves the draft in place — authoring is the operator tier" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(subject)
       operator = membership_subject(account, "operator")
 
-      assert Runbooks.save_draft(runbook, %{}, base_sha(runbook), operator) ==
+      assert {:ok, saved} =
+               Runbooks.save_draft(
+                 runbook,
+                 %{"title" => "Operator edit"},
+                 base_sha(runbook),
+                 operator
+               )
+
+      assert saved.title == "Operator edit"
+    end
+
+    test "denies a viewer, who may read runbooks but never write one" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runbook = create_runbook(subject)
+      viewer = membership_subject(account, "viewer")
+
+      assert Runbooks.save_draft(runbook, %{}, base_sha(runbook), viewer) ==
                {:error, :unauthorized}
+    end
+
+    test "refuses a step targeting a runner group outside the author's access" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      trusted_runner(account, subject, group: "database")
+      trusted_runner(account, subject, group: "web")
+      runbook = create_runbook(subject)
+
+      {:ok, access} = Emisar.Accounts.RunnerAccess.new(:restricted, ["database"], [])
+      operator = scoped_membership_subject(account, "operator", access)
+
+      in_scope = %{"draft_definition" => definition("database")}
+      out_of_scope = %{"draft_definition" => definition("web")}
+
+      assert {:ok, saved} = Runbooks.save_draft(runbook, in_scope, base_sha(runbook), operator)
+
+      assert Runbooks.save_draft(saved, out_of_scope, base_sha(saved), operator) ==
+               {:error, :target_out_of_scope}
+    end
+
+    test "refuses a step naming a pack outside the author's access" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runbook = create_runbook(subject)
+
+      {:ok, access} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["other-pack"])
+      operator = scoped_membership_subject(account, "operator", access)
+
+      attrs = %{"draft_definition" => definition("database")}
+
+      assert Runbooks.save_draft(runbook, attrs, base_sha(runbook), operator) ==
+               {:error, :pack_out_of_scope}
     end
   end
 
@@ -1653,12 +1729,39 @@ defmodule Emisar.RunbooksTest do
       refute Repo.exists?(Runbooks.Release)
     end
 
-    test "denies a principal without manage permission" do
+    test "an operator publishes a draft that sits inside their own access" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject)
+      runbook = create_runbook(subject, definition: definition(runner.group))
+
+      {:ok, access} = Emisar.Accounts.RunnerAccess.new(:restricted, [runner.group], [])
+      operator = scoped_membership_subject(account, "operator", access)
+
+      assert {:ok, published} = Runbooks.publish_draft(runbook, operator)
+      assert published.live_version == 1
+    end
+
+    test "refuses to publish a draft whose step is outside the publisher's access" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      _policy = Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, subject, group: "web")
+      trusted_runner(account, subject, group: "database")
+      runbook = create_runbook(subject, definition: definition(runner.group))
+
+      {:ok, access} = Emisar.Accounts.RunnerAccess.new(:restricted, ["database"], [])
+      operator = scoped_membership_subject(account, "operator", access)
+
+      assert Runbooks.publish_draft(runbook, operator) == {:error, :target_out_of_scope}
+      assert Repo.reload!(runbook).live_version == nil
+    end
+
+    test "denies a viewer, who may read a runbook but never publish one" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(subject)
-      operator = membership_subject(account, "operator")
+      viewer = membership_subject(account, "viewer")
 
-      assert Runbooks.publish_draft(runbook, operator) == {:error, :unauthorized}
+      assert Runbooks.publish_draft(runbook, viewer) == {:error, :unauthorized}
     end
 
     test "denies cross-account mutation" do
@@ -1711,12 +1814,26 @@ defmodule Emisar.RunbooksTest do
       assert Runbooks.discard_draft(live, subject) == {:error, :no_draft}
     end
 
-    test "denies a principal without manage permission" do
+    test "an operator discards the unpublished change" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       live = subject |> create_runbook() |> Fixtures.Runbooks.publish_runbook()
       operator = membership_subject(account, "operator")
 
-      assert Runbooks.discard_draft(live, operator) == {:error, :unauthorized}
+      revised = put_in(definition(), ["context_markdown"], "Inspect twice.")
+
+      assert {:ok, drafted} = save_draft(live, %{"draft_definition" => revised}, subject)
+      assert {:ok, discarded} = Runbooks.discard_draft(drafted, operator)
+
+      assert discarded.draft_definition == nil
+      assert discarded.definition == live.definition
+    end
+
+    test "denies a viewer, who may read a runbook but never drop its pending change" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      live = subject |> create_runbook() |> Fixtures.Runbooks.publish_runbook()
+      viewer = membership_subject(account, "viewer")
+
+      assert Runbooks.discard_draft(live, viewer) == {:error, :unauthorized}
     end
 
     test "denies cross-account mutation" do
@@ -2962,12 +3079,30 @@ defmodule Emisar.RunbooksTest do
     end
   end
 
-  describe "subject_can_manage_runbooks?/1" do
-    test "distinguishes owners from viewers" do
+  describe "subject_can_author_runbooks?/1" do
+    test "operators author; viewers and MCP keys do not" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      operator = membership_subject(account, "operator")
+      viewer = membership_subject(account, "viewer")
+      api_client = api_client_subject(account, owner, "authoring client")
+
+      assert Runbooks.subject_can_author_runbooks?(owner)
+      assert Runbooks.subject_can_author_runbooks?(operator)
+      refute Runbooks.subject_can_author_runbooks?(viewer)
+      # Publication is human-only: a model drafts through the operation-reserved
+      # MCP paths and never holds the authoring verb.
+      refute Runbooks.subject_can_author_runbooks?(api_client)
+    end
+  end
+
+  describe "subject_can_manage_runbooks?/1" do
+    test "deleting stays with owners and admins, above the authoring tier" do
+      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      operator = membership_subject(account, "operator")
       viewer = membership_subject(account, "viewer")
 
       assert Runbooks.subject_can_manage_runbooks?(owner)
+      refute Runbooks.subject_can_manage_runbooks?(operator)
       refute Runbooks.subject_can_manage_runbooks?(viewer)
     end
   end
@@ -3220,6 +3355,23 @@ defmodule Emisar.RunbooksTest do
         role: role
       )
 
+    Fixtures.Subjects.membership_subject(membership)
+  end
+
+  # A member whose runner/pack access is narrower than the account. The subject
+  # carries only the membership id; every authoring gate re-reads the persisted
+  # access, so the forced scope is what decides.
+  defp scoped_membership_subject(account, role, access) do
+    user = Fixtures.Users.create_user()
+
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: role
+      )
+
+    Fixtures.Memberships.force_runner_access(membership, access)
     Fixtures.Subjects.membership_subject(membership)
   end
 

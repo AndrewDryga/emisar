@@ -427,9 +427,10 @@ defmodule Emisar.ApiKeys do
 
   @doc """
   Mints an operator-created key of the attrs' `:kind` (`:mcp` default), from
-  either internal attrs or the create form's raw browser params. `%Subject{}`
-  needs `manage_api_keys`; an `:audit_export` token additionally needs the
-  account's paid audit-export entitlement. Returns `{:ok, raw_secret, key}` or
+  either internal attrs or the create form's raw browser params. The permission
+  follows the kind: an `:mcp` key needs `issue_quick_key`, an `:audit_export`
+  token needs `manage_api_keys` plus the account's paid audit-export
+  entitlement. Returns `{:ok, raw_secret, key}` or
   `{:error, %Ecto.Changeset{} | :unauthorized | :audit_export_not_available | :not_found}`.
   """
   def create_key(attrs, %Subject{account: account} = subject) do
@@ -437,12 +438,9 @@ defmodule Emisar.ApiKeys do
     user_id = Subject.actor_id(subject)
     membership_id = subject.membership_id
     input_changeset = change_key(attrs)
+    kind = Ecto.Changeset.get_field(input_changeset, :kind)
 
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_api_keys_permission()
-           ),
+    with :ok <- Auth.Authorizer.ensure_has_permissions(subject, permissions_for_kind(kind)),
          {:ok, input} <- Ecto.Changeset.apply_action(input_changeset, :insert),
          :ok <- ensure_key_kind_available(input.kind, account) do
       {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
@@ -664,6 +662,19 @@ defmodule Emisar.ApiKeys do
   defp ensure_rotatable(%ApiKey{} = source) do
     if oauth_backing?(source), do: {:error, :oauth_backing}, else: :ok
   end
+
+  # An MCP key grants nothing its minter doesn't already hold: it authenticates
+  # as `:api_client` and resolves the minter's own membership scope at call
+  # time, so authoring its name and expiry is the same act as taking a quick
+  # key. An `:audit_export` token is a different capability — the whole
+  # account's audit stream rather than this member's runner scope — so it keeps
+  # `manage_api_keys` on top. Picking the permission LIST from the value being
+  # granted keeps one `ensure_has_permissions/2` at the boundary; a crafted
+  # `kind` from an operator's form post is refused here, not in the template.
+  defp permissions_for_kind(:audit_export),
+    do: [Authorizer.manage_api_keys_permission(), Authorizer.issue_quick_key_permission()]
+
+  defp permissions_for_kind(_kind), do: Authorizer.issue_quick_key_permission()
 
   # An audit-export token is the paid export surface's credential — minting one
   # (directly or as a rotation successor) requires the account's audit-export

@@ -666,6 +666,41 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert stale_page["error"]["code"] == "invalid_cursor"
   end
 
+  test "the console's out-of-scope pack discovery never reaches the model catalog", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    membership: membership
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "discovery-host")
+
+    observe!(
+      runner,
+      %{
+        "visible" => %{"version" => "1.0.0", "hash" => @hash},
+        "hidden" => %{"version" => "1.0.0", "hash" => @hash}
+      },
+      [action("visible.read", "visible"), action("hidden.read", "hidden")]
+    )
+
+    trust_all!(subject)
+
+    {:ok, visible_only} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["visible"])
+    Fixtures.Memberships.force_runner_access(membership, visible_only)
+
+    # The console names an out-of-scope pack so an operator can ask for access.
+    # A model catalog must not: a pack ref it can never dispatch is a
+    # hallucination target, and this surface stays trusted-and-in-scope only.
+    console_subject = Fixtures.Subjects.membership_subject(membership)
+    assert {:ok, console} = Emisar.Catalog.list_console_packs(%{}, console_subject)
+    assert console.out_of_scope_pack_ids == ["hidden"]
+
+    packs = call(conn, "list_packs", %{"availability" => "all"})["packs"]
+
+    assert [%{"pack_ref" => "visible@1.0.0/" <> _digest}] = packs
+    refute inspect(packs) =~ "hidden"
+  end
+
   test "an already-issued API key loses runner visibility when its membership is suspended", %{
     conn: conn,
     account: account,

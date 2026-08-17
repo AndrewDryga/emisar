@@ -333,6 +333,45 @@ defmodule Emisar.Runners do
     end
   end
 
+  @doc """
+  Internal — the `group:` / `runner:` refs in `refs` that fall OUTSIDE the
+  subject's own runner access, in the order given.
+
+  Authoring judges access, never availability: a step aimed at a runner the
+  author may reach but which happens to be offline is a perfectly good draft,
+  while a step aimed at a runner they may not reach is not theirs to write. So
+  this reads the subject-scoped fleet without the online filter
+  `available_runbook_targets/1` applies to dispatch. Requires `view_runners`;
+  returns `{:ok, [ref]}` (empty when every ref is in scope).
+  """
+  def refs_outside_runner_access(refs, %Subject{} = subject) when is_list(refs) do
+    refs_outside_access(refs, Accounts.runner_access_for_subject(subject), subject)
+  end
+
+  # An unrestricted member excludes nothing, so there is no fleet to read and no
+  # ref to refuse — including one naming a runner nobody has enrolled yet, which
+  # is an ordinary thing to write into a draft and is publication's problem, not
+  # authorization's. Only a RESTRICTED member's refs are matched against a fleet.
+  defp refs_outside_access(_refs, %Accounts.RunnerAccess{mode: :all}, %Subject{}), do: {:ok, []}
+
+  defp refs_outside_access(refs, %Accounts.RunnerAccess{}, %Subject{} = subject) do
+    with {:ok, runners} <- list_all_runners_for_account(subject) do
+      reachable = Enum.flat_map(runners, &runbook_runner/1)
+      groups = MapSet.new(reachable, & &1.group)
+      runner_refs = MapSet.new(reachable, & &1.runner_ref)
+
+      {:ok, Enum.reject(refs, &ref_in_runner_access?(&1, groups, runner_refs))}
+    end
+  end
+
+  defp ref_in_runner_access?("group:" <> group, groups, _runner_refs),
+    do: MapSet.member?(groups, group)
+
+  defp ref_in_runner_access?("runner:" <> runner_ref, _groups, runner_refs),
+    do: MapSet.member?(runner_refs, runner_ref)
+
+  defp ref_in_runner_access?(_ref, _groups, _runner_refs), do: false
+
   @doc "The stable readable runner reference owned by the runner identity domain."
   def public_ref(%Runner{name: name, external_id: external_id})
       when is_binary(name) and is_binary(external_id) do

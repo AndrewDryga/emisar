@@ -410,26 +410,28 @@ defmodule Emisar.Runbooks do
 
   Nothing is live until someone publishes: `live_version` and `definition` stay
   null, so an incomplete canonical definition may be saved while publication
-  remains strict. Requires manage or draft permission; returns
-  `{:ok, runbook} | {:error, changeset | :unauthorized}`.
+  remains strict. Requires author or draft permission, and every step named in
+  the draft must sit inside the author's own runner and pack access; returns
+  `{:ok, runbook} | {:error, changeset | :target_out_of_scope | :pack_out_of_scope | :unauthorized}`.
   """
   def create_runbook(attrs, %Subject{account: account} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              {:one_of,
-              [Authorizer.manage_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
-           ) do
-      account.id
-      |> Runbook.Changeset.create(Subject.user_id(subject), attrs)
-      |> insert_runbook(subject)
+              [Authorizer.author_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
+           ),
+         changeset = Runbook.Changeset.create(account.id, Subject.user_id(subject), attrs),
+         :ok <- ensure_authored_changeset_in_access(changeset, subject) do
+      insert_runbook(changeset, subject)
     end
   end
 
   @doc """
   Imports one strictly valid canonical v1 JSON definition as a new runbook's
-  first draft. Requires manage or draft permission; returns
-  `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :unauthorized}`.
+  first draft. Requires author or draft permission, and every step must sit
+  inside the author's own runner and pack access; returns
+  `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :target_out_of_scope | :pack_out_of_scope | :unauthorized}`.
   """
   def import_runbook(title, encoded_definition, %Subject{account: account} = subject)
       when is_binary(title) do
@@ -437,19 +439,18 @@ defmodule Emisar.Runbooks do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              {:one_of,
-              [Authorizer.manage_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
+              [Authorizer.author_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
            ),
-         {:ok, definition} <- Definition.decode_json(encoded_definition) do
-      attrs = %{
-        "title" => title,
-        "slug" => "",
-        "description" => "",
-        "draft_definition" => definition
-      }
-
-      account.id
-      |> Runbook.Changeset.create(Subject.user_id(subject), attrs)
-      |> insert_runbook(subject)
+         {:ok, definition} <- Definition.decode_json(encoded_definition),
+         attrs = %{
+           "title" => title,
+           "slug" => "",
+           "description" => "",
+           "draft_definition" => definition
+         },
+         changeset = Runbook.Changeset.create(account.id, Subject.user_id(subject), attrs),
+         :ok <- ensure_authored_changeset_in_access(changeset, subject) do
+      insert_runbook(changeset, subject)
     end
   end
 
@@ -693,33 +694,42 @@ defmodule Emisar.Runbooks do
   else's is refused as `{:error, :draft_changed}` rather than silently
   overwriting it. The slug is frozen once a release exists.
 
-  Requires `manage_runbooks` and that the subject owns the runbook's account.
-  Returns
-  `{:ok, runbook} | {:error, changeset | :draft_changed | :unauthorized | :not_found}`.
+  Requires `author_runbooks`, that the subject owns the runbook's account, and
+  that every step the save writes sits inside the author's own runner and pack
+  access — judged on the locked row, so an access narrowed after the editor
+  loaded is what decides. Returns
+  `{:ok, runbook} | {:error, changeset | :draft_changed | :target_out_of_scope | :pack_out_of_scope | :unauthorized | :not_found}`.
   """
   def save_draft(%Runbook{} = runbook, attrs, base_sha, %Subject{} = subject)
       when is_binary(base_sha) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
-             Authorizer.manage_runbooks_permission()
+             Authorizer.author_runbooks_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
       Runbook.Query.not_deleted()
       |> Runbook.Query.by_id(runbook.id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Runbook.Query,
-        with: &save_draft_when_current(&1, attrs, base_sha),
+        with: &save_draft_when_current(&1, attrs, base_sha, subject),
         audit: &Audit.Events.runbook_updated(subject, &2.data, &1),
         after_commit: &broadcast_runbook_updated/1
       )
     end
   end
 
-  defp save_draft_when_current(%Runbook{} = loaded_runbook, attrs, base_sha) do
-    if editing_digest(loaded_runbook) == base_sha,
-      do: Runbook.Changeset.draft(loaded_runbook, attrs),
-      else: :draft_changed
+  defp save_draft_when_current(%Runbook{} = loaded_runbook, attrs, base_sha, %Subject{} = subject) do
+    if editing_digest(loaded_runbook) == base_sha do
+      changeset = Runbook.Changeset.draft(loaded_runbook, attrs)
+
+      case ensure_authored_changeset_in_access(changeset, subject) do
+        :ok -> changeset
+        {:error, reason} -> reason
+      end
+    else
+      :draft_changed
+    end
   end
 
   @doc """
@@ -729,15 +739,16 @@ defmodule Emisar.Runbooks do
   promotes the draft to what is live, and clears it. Readiness is rechecked
   inside the transaction against the locked row's own draft — never a
   caller-held snapshot — so a stale editor preview cannot publish what current
-  state refuses. Requires `manage_runbooks` and that the subject owns the
-  runbook's account. Returns
-  `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :no_draft | :unauthorized | :not_found}`.
+  state refuses. Requires `author_runbooks`, that the subject owns the
+  runbook's account, and that every step of the locked row's draft sits inside
+  the publisher's own runner and pack access. Returns
+  `{:ok, runbook} | {:error, changeset | [Definition.issue()] | :no_draft | :target_out_of_scope | :pack_out_of_scope | :unauthorized | :not_found}`.
   """
   def publish_draft(%Runbook{} = runbook, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
-             Authorizer.manage_runbooks_permission()
+             Authorizer.author_runbooks_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
       Multi.new()
@@ -765,8 +776,15 @@ defmodule Emisar.Runbooks do
 
   defp publishable_draft(%Runbook{draft_definition: nil}, %Subject{}), do: {:error, :no_draft}
 
-  defp publishable_draft(%Runbook{} = loaded_runbook, %Subject{} = subject),
-    do: publication_readiness(loaded_runbook.draft_definition, subject)
+  # The access gate is stated separately from readiness on purpose: the compile
+  # below would also refuse an out-of-scope target, but only because it resolves
+  # against the publisher's scoped fleet — which makes a SECURITY property ride
+  # on an availability check and answers a scope problem with "unknown target".
+  defp publishable_draft(%Runbook{} = loaded_runbook, %Subject{} = subject) do
+    with :ok <- ensure_definition_in_author_access(loaded_runbook.draft_definition, subject) do
+      publication_readiness(loaded_runbook.draft_definition, subject)
+    end
+  end
 
   defp release_changeset(%{locked_runbook: loaded_runbook, definition: definition}, subject) do
     Release.Changeset.create(%{
@@ -804,7 +822,9 @@ defmodule Emisar.Runbooks do
 
   A runbook that has never been published is all draft, so there is nothing to
   fall back to: it answers `{:error, :never_published}` and stays editable.
-  Requires `manage_runbooks` and that the subject owns the runbook's account.
+  Requires `author_runbooks` and that the subject owns the runbook's account.
+  No scope gate: a discard writes no step, so it reaches nothing the author
+  could not already reach — it drops a pending change and restores the release.
   Returns
   `{:ok, runbook} | {:error, :never_published | :no_draft | :unauthorized | :not_found}`.
   """
@@ -812,7 +832,7 @@ defmodule Emisar.Runbooks do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
-             Authorizer.manage_runbooks_permission()
+             Authorizer.author_runbooks_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
       Runbook.Query.not_deleted()
@@ -1615,7 +1635,11 @@ defmodule Emisar.Runbooks do
   def subject_can_view_runbooks?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.view_runbooks_permission())
 
-  @doc "Whether `subject` may manage runbooks (admin+)."
+  @doc "Whether `subject` may author runbooks — create, save, publish, discard (operator+)."
+  def subject_can_author_runbooks?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.author_runbooks_permission())
+
+  @doc "Whether `subject` may delete a runbook (admin+)."
   def subject_can_manage_runbooks?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_runbooks_permission())
 
@@ -1668,7 +1692,54 @@ defmodule Emisar.Runbooks do
   defp dispatched_definition(%Runbook{} = runbook, :draft_test), do: runbook.draft_definition
 
   defp expand_definition(%{"stages" => stages}) when is_list(stages),
-    do: Enum.flat_map(stages, & &1["steps"])
+    do: Enum.flat_map(stages, &(&1["steps"] || []))
 
   defp expand_definition(_definition), do: []
+
+  # -- Authoring scope --------------------------------------------------
+
+  # The definition the author is WRITING, read back off the cast changeset so
+  # the guard and the write cannot disagree. An invalid changeset passes: its
+  # own field errors are the honest answer, and nothing is written either way.
+  defp ensure_authored_changeset_in_access(%Ecto.Changeset{valid?: false}, %Subject{}), do: :ok
+
+  defp ensure_authored_changeset_in_access(%Ecto.Changeset{} = changeset, %Subject{} = subject) do
+    definition = Ecto.Changeset.get_field(changeset, :draft_definition)
+    ensure_definition_in_author_access(definition, subject)
+  end
+
+  # Every step a member authors must name only runners, groups and packs that
+  # member can already reach. Without this, a narrowly-scoped author could write
+  # a step reaching a runner or pack they may not touch and hand the result to
+  # someone who may — laundering privilege through a shared document. A draft is
+  # deliberately allowed to be INCOMPLETE: a step with no pack or no targets yet
+  # reaches nothing, so it passes; only a NAMED out-of-scope ref or pack fails.
+  defp ensure_definition_in_author_access(definition, %Subject{} = subject) do
+    steps = expand_definition(definition)
+    refs = steps |> Enum.flat_map(&step_target_refs/1) |> Enum.uniq()
+
+    with :ok <- ensure_step_packs_in_access(steps, subject),
+         {:ok, outside} <- Runners.refs_outside_runner_access(refs, subject) do
+      if outside == [], do: :ok, else: {:error, :target_out_of_scope}
+    end
+  end
+
+  defp ensure_step_packs_in_access(steps, %Subject{} = subject) do
+    access = Accounts.runner_access_for_subject(subject)
+    pack_ids = Enum.flat_map(steps, &step_pack_id/1)
+
+    if Enum.all?(pack_ids, &Accounts.RunnerAccess.pack_in_scope?(&1, access)),
+      do: :ok,
+      else: {:error, :pack_out_of_scope}
+  end
+
+  defp step_pack_id(%{"pack" => %{"id" => pack_id}}) when is_binary(pack_id) and pack_id != "",
+    do: [pack_id]
+
+  defp step_pack_id(_step), do: []
+
+  defp step_target_refs(%{"targets" => %{"refs" => refs}}) when is_list(refs),
+    do: Enum.filter(refs, &is_binary/1)
+
+  defp step_target_refs(_step), do: []
 end

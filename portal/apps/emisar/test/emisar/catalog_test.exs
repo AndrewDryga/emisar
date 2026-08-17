@@ -4548,6 +4548,121 @@ defmodule Emisar.CatalogTest do
       assert projection.decision_count == 1
     end
 
+    test "names the account's other packs for discovery, and nothing else about them", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+      {:ok, acme_only} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme"])
+      force_runner_access(account, subject, acme_only)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+
+      assert projection.out_of_scope_pack_ids == ["zeta"]
+      # Identity and only identity: zeta's version, hash, action and trust state
+      # are absent from the whole projection, not merely unrendered.
+      refute inspect(projection) =~ "zeta-hash"
+      refute inspect(projection) =~ "web.reload"
+      assert Enum.map(projection.groups, & &1.id) == ["acme"]
+      assert projection.pack_count == 1
+    end
+
+    test "a pack reachable only through a denied runner is named for discovery", %{
+      account: account,
+      subject: subject
+    } do
+      database = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      {:ok, _} =
+        Catalog.observe_state(
+          database,
+          state_payload(packs: %{"postgres" => %{"version" => "1.0", "hash" => "pg"}})
+        )
+
+      {:ok, _} =
+        Catalog.observe_state(
+          web,
+          state_payload(packs: %{"nginx" => %{"version" => "1.0", "hash" => "ngx"}})
+        )
+
+      {:ok, database_only} = Accounts.RunnerAccess.new(:restricted, ["database"], [])
+      force_runner_access(account, subject, database_only)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+
+      assert Enum.map(projection.groups, & &1.id) == ["postgres"]
+      assert projection.out_of_scope_pack_ids == ["nginx"]
+    end
+
+    test "a risk filter names no out-of-scope pack — its risk cannot be judged", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+      {:ok, acme_only} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme"])
+      force_runner_access(account, subject, acme_only)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{risk: "low"}, subject)
+
+      assert projection.out_of_scope_pack_ids == []
+    end
+
+    test "the name filter narrows discovery on the pack id", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+      {:ok, acme_only} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme"])
+      force_runner_access(account, subject, acme_only)
+
+      assert {:ok, hit} = Catalog.list_console_packs(%{name: "zet"}, subject)
+      assert hit.out_of_scope_pack_ids == ["zeta"]
+
+      assert {:ok, miss} = Catalog.list_console_packs(%{name: "nothing"}, subject)
+      assert miss.out_of_scope_pack_ids == []
+    end
+
+    test "discovery never names another account's packs", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+      {other_account, other_subject} = account_with_owner()
+      other_runner = Fixtures.Runners.create_runner(account_id: other_account.id)
+
+      {:ok, _} =
+        Catalog.observe_state(
+          other_runner,
+          state_payload(packs: %{"tenant-b-pack" => %{"version" => "1.0", "hash" => "b"}})
+        )
+
+      {:ok, acme_only} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme"])
+      force_runner_access(account, subject, acme_only)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+      assert projection.out_of_scope_pack_ids == ["zeta"]
+
+      assert {:ok, other_projection} = Catalog.list_console_packs(%{}, other_subject)
+      assert other_projection.out_of_scope_pack_ids == []
+    end
+
+    test "an unrestricted member reaches every pack, so discovery names none", %{
+      subject: subject,
+      runner: runner
+    } do
+      observe_console_catalog(runner)
+
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
+
+      assert Enum.map(projection.groups, & &1.id) == ["acme", "zeta"]
+      assert projection.out_of_scope_pack_ids == []
+    end
+
     test "current runner access keeps denied actions out of pack filters", %{
       account: account,
       subject: subject
@@ -4831,9 +4946,11 @@ defmodule Emisar.CatalogTest do
       assert {:ok, lazy} = Catalog.list_console_packs(%{}, small_subject)
 
       # With no filter and nothing pending, only the current membership + scope
-      # reads and the pack-version query remain; action contents stay lazy until
-      # the operator opens a disclosure.
-      assert drain_repo_query_count() == 3
+      # reads, the pack-version query, and the discovery pack-id read remain;
+      # action contents stay lazy until the operator opens a disclosure. The
+      # discovery read is one distinct-id scan whatever the fleet's size — and
+      # under a risk filter (above) it isn't made at all.
+      assert drain_repo_query_count() == 4
       assert lazy.actions_by_pack_ref == %{}
     end
 

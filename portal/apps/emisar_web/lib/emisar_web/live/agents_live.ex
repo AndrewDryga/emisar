@@ -81,12 +81,12 @@ defmodule EmisarWeb.AgentsLive do
 
   def handle_event("select_client", %{"client" => "custom"}, socket) do
     # The custom tab swaps the snippet for a key-builder form — no quick mint,
-    # the operator fills in the form and submits. Manage-gated like the "create"
-    # submit it leads to: the tab renders locked for a role that can't manage
-    # keys, so a crafted event must not open a form that only dies at submit.
+    # the operator fills in the form and submits. Same ISSUE tier as the quick
+    # flows beside it: a custom key is the same `:mcp` credential with an
+    # operator-set name and expiry, bounded by the same membership scope.
     Permissions.gated(
       socket,
-      ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
+      ApiKeys.subject_can_issue_quick_key?(socket.assigns.current_subject),
       fn socket ->
         {:noreply,
          socket
@@ -147,7 +147,7 @@ defmodule EmisarWeb.AgentsLive do
   def handle_event("create", %{"api_key" => params}, socket) do
     Permissions.gated(
       socket,
-      ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
+      ApiKeys.subject_can_issue_quick_key?(socket.assigns.current_subject),
       &do_create(&1, params)
     )
   end
@@ -235,6 +235,12 @@ defmodule EmisarWeb.AgentsLive do
       # on the form via <.input>/<.error> — no flash dump.
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
+
+      # The form mints `:mcp`, but `create_key/2` picks its permission from the
+      # posted kind — a crafted `audit_export` post from this page is refused
+      # there, and lands here rather than crashing the socket.
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Could not create the key.")}
     end
   end
 
@@ -931,7 +937,6 @@ defmodule EmisarWeb.AgentsLive do
         snippet_open?={@snippet_open?}
         current_account={@current_account}
         form={@form}
-        can_manage_keys?={ApiKeys.subject_can_manage_api_keys?(@current_subject)}
       />
 
       <%!-- Rotation success — the SAME "here's your key" grammar as the connect
@@ -993,7 +998,6 @@ defmodule EmisarWeb.AgentsLive do
             snippet_open?={@snippet_open?}
             current_account={@current_account}
             form={@form}
-            can_manage_keys?={ApiKeys.subject_can_manage_api_keys?(@current_subject)}
           />
         </div>
       </section>
@@ -1403,7 +1407,6 @@ defmodule EmisarWeb.AgentsLive do
   attr :snippet_open?, :boolean, default: false
   attr :current_account, :any, required: true
   attr :form, :any, default: nil
-  attr :can_manage_keys?, :boolean, required: true
 
   defp connect_panel(assigns) do
     config =
@@ -1462,26 +1465,16 @@ defmodule EmisarWeb.AgentsLive do
             Roll your own
           </p>
           <div class="mt-2.5 flex flex-wrap gap-1.5">
-            <%!-- Custom-key creation is manage-gated (admin+) while the quick
-               flows above are the operator tier — a role that can't submit the
-               form gets the tab disabled + lock + tooltip (the plan/permission
-               gate grammar), never a form that dies in a denial at submit. The
-               "create"/"select_client" handlers still gate (defense in depth). --%>
-            <%= if @can_manage_keys? do %>
-              <.client_tab
-                id="custom"
-                label="Custom key (advanced)"
-                selected={"custom" == @selected_client}
-              />
-            <% else %>
-              <.tooltip
-                id="custom-key-lock"
-                align={:left}
-                text="Creating a custom key needs an admin or owner role."
-              >
-                <.client_tab id="custom" label="Custom key (advanced)" disabled />
-              </.tooltip>
-            <% end %>
+            <%!-- Custom key is the same ISSUE tier as the quick flows above: it
+               mints the same `:mcp` credential, bounded by the same membership
+               scope, with an operator-set name and expiry. The panel only
+               renders for a member who may mint, so the tab is always live —
+               the "create"/"select_client" handlers still gate (IL-15). --%>
+            <.client_tab
+              id="custom"
+              label="Custom key (advanced)"
+              selected={"custom" == @selected_client}
+            />
           </div>
         </div>
 

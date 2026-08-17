@@ -634,13 +634,16 @@ defmodule Emisar.Billing do
   date, amount, status — so the billing page shows a payment history inline
   without a trip to the portal (the portal still owns the full ledger + PDFs).
   `{:ok, []}` for an account that's never been billed (no `paddle_customer_id`).
-  Gated on view-billing, like the summary. Returns `{:ok, [invoice_map]}`.
+  Gated on `view_invoices`, not view-billing: an invoice is a financial document
+  naming what the company paid and when, which owners, admins and the billing
+  manager read and an operator does not — the plan name, limits and usage every
+  role needs live on `billing_summary/2`. Returns `{:ok, [invoice_map]}`.
   """
   def list_recent_invoices(%Accounts.Account{} = account, %Subject{} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
-             Authorizer.view_billing_permission()
+             Authorizer.view_invoices_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
       do_list_recent_invoices(account, opts)
@@ -650,14 +653,14 @@ defmodule Emisar.Billing do
   @doc """
   The signed, short-lived URL of one transaction's invoice PDF, so a billing
   manager can download an invoice inline instead of opening the portal. Gated on
-  view-billing; the transaction is re-checked against the account's own recent
-  invoices first, so a crafted id can't pull another account's PDF —
-  `{:error, :not_found}` otherwise.
+  `view_invoices`, like the list it is reached from; the transaction is
+  re-checked against the account's own recent invoices first, so a crafted id
+  can't pull another account's PDF — `{:error, :not_found}` otherwise.
   """
   def invoice_pdf_url(%Accounts.Account{} = account, transaction_id, %Subject{} = subject)
       when is_binary(transaction_id) do
     with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_billing_permission()),
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_invoices_permission()),
          :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized),
          {:ok, invoices} <- do_list_recent_invoices(account, limit: 24),
          true <- Enum.any?(invoices, &(&1.id == transaction_id)) do
@@ -1320,9 +1323,17 @@ defmodule Emisar.Billing do
 
   # -- Authorization ----------------------------------------------------
 
-  @doc "Whether `subject` may manage billing and the subscription (owner-only)."
+  @doc """
+  Whether `subject` may manage billing and the subscription — the owner and the
+  billing-manager seat. Also gates the plan catalogue, since choosing one is a
+  checkout.
+  """
   def subject_can_manage_billing?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_billing_permission())
+
+  @doc "Whether `subject` may read the invoice ledger — owners, admins, and the billing manager."
+  def subject_can_view_invoices?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.view_invoices_permission())
 
   # -- Plan headroom (UI) -----------------------------------------------
 

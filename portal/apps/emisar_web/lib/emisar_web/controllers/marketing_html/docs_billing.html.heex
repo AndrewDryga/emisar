@@ -191,10 +191,11 @@
           href={~p"/app/billing"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Billing</a>
-        and read the plan, usage, and invoices.
+        and read the plan, its limits, and how much of them is in use.
         Changing the plan, updating the card, or cancelling needs the account owner or a member with
-        the billing-manager role.
-        Admins and operators see billing but can't change it. More on <.link
+        the billing-manager role — and so does the plan catalogue, since picking one is a checkout.
+        Invoices go one step wider: owners, admins, and the billing manager read them, operators and
+        viewers don't. More on <.link
           navigate={~p"/docs/teams-and-access"}
           class="text-brand-400 hover:text-brand-300"
         >roles</.link>.

@@ -67,6 +67,7 @@ defmodule EmisarWeb.PacksLive do
        |> assign(:pack_count, 0)
        |> assign(:version_count, 0)
        |> assign(:pending_count, 0)
+       |> assign(:out_of_scope_pack_ids, [])
        |> assign(:version_facts, %{})
        |> assign(:group_cache, %{})
        |> stream(:packs, [])}
@@ -94,6 +95,9 @@ defmodule EmisarWeb.PacksLive do
         |> assign(:pending_count, projection.pending_count)
         # Keep the sidebar badge in step after a decision on this page.
         |> assign(:pending_packs_count, projection.decision_count)
+        # Discovery only — the Catalog hands this list pack IDS and nothing
+        # else, so the section below has no fact to render and no row to act on.
+        |> assign(:out_of_scope_pack_ids, projection.out_of_scope_pack_ids)
         # Every lifecycle/trust judgment a row renders — trust + retirement
         # state, the pending decision's contents and diff, who advertises it,
         # and the remedy each state offers — comes from the Catalog, keyed by
@@ -117,6 +121,7 @@ defmodule EmisarWeb.PacksLive do
         |> assign(:pack_count, 0)
         |> assign(:version_count, 0)
         |> assign(:pending_count, 0)
+        |> assign(:out_of_scope_pack_ids, [])
         |> assign(:version_facts, %{})
         |> assign(:matched_actions, %{})
         |> assign(:group_cache, %{})
@@ -1227,10 +1232,15 @@ defmodule EmisarWeb.PacksLive do
             packs. Refresh the page; if it persists, your access to this account may have changed.
           </.empty_state>
 
+          <%!-- "Nothing here yet" is only true when the WORKSPACE has no packs.
+               A member whose pack access reaches none of them is told that by
+               the discovery section below, which names the ones that exist —
+               this copy would send them to connect a runner that is already
+               connected. --%>
           <.empty_state
             :if={
-              @pack_count == 0 and @name_filter == "" and @risk_filter == "" and not @load_error? and
-                not @loading?
+              @pack_count == 0 and @out_of_scope_pack_ids == [] and @name_filter == "" and
+                @risk_filter == "" and not @load_error? and not @loading?
             }
             icon="hero-cube"
             title="No packs reported yet."
@@ -1584,6 +1594,27 @@ defmodule EmisarWeb.PacksLive do
           <p :if={@pack_count > 0} class="mt-4 text-xs text-zinc-400">
             {count_footer(@pack_count, @version_count)}
           </p>
+
+          <%!-- Discovery: the rest of the workspace's packs, by name, so a
+               member can ask for the one they need. IDENTITY ONLY — the
+               Catalog's projection carries pack ids here and nothing else, so
+               there is no version row, trust state, contents, advertiser or
+               control to render. Chips, not rows: nothing here is actionable,
+               and a row shape would promise otherwise. --%>
+          <section :if={@out_of_scope_pack_ids != []} class="mt-12">
+            <.section_header
+              title="Outside your pack access"
+              count={length(@out_of_scope_pack_ids)}
+            >
+              <:subtitle>
+                Also running in this workspace. Ask an owner or admin for access to what these
+                packs contain.
+              </:subtitle>
+            </.section_header>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <.chip :for={pack_id <- @out_of_scope_pack_ids} mono>{pack_id}</.chip>
+            </div>
+          </section>
         </div>
 
         <aside class="space-y-6">

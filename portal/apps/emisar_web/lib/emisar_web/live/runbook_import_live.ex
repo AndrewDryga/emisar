@@ -4,12 +4,12 @@ defmodule EmisarWeb.RunbookImportLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.Runbooks
-  alias EmisarWeb.CoreComponents
+  alias EmisarWeb.{CoreComponents, Permissions}
 
   @empty_params %{"title" => "", "json" => ""}
 
   def mount(_params, _session, socket) do
-    if Runbooks.subject_can_manage_runbooks?(socket.assigns.current_subject) do
+    if Runbooks.subject_can_author_runbooks?(socket.assigns.current_subject) do
       {:ok,
        socket
        |> assign(:page_title, "Import runbook")
@@ -64,7 +64,26 @@ defmodule EmisarWeb.RunbookImportLive do
      |> assign(:source_errors, [])}
   end
 
+  # Mount redirects a role that may not author, but a mounted socket whose role
+  # was narrowed in another tab must not import on a crafted event (IL-15).
   def handle_event("import_runbook", %{"import" => params}, socket) do
+    Permissions.gated(
+      socket,
+      Runbooks.subject_can_author_runbooks?(socket.assigns.current_subject),
+      &do_import(&1, params)
+    )
+  end
+
+  def handle_event("import_runbook", _params, socket) do
+    {:noreply,
+     socket
+     |> assign_form(@empty_params)
+     |> assign(:title_errors, required_title_errors(""))
+     |> assign(:json_errors, [])
+     |> assign(:source_errors, source_errors(nil, ""))}
+  end
+
+  defp do_import(socket, params) do
     params = normalize_params(params)
     title = String.trim(params["title"] || "")
     pasted_json = params["json"] || ""
@@ -89,15 +108,6 @@ defmodule EmisarWeb.RunbookImportLive do
         encoded_definition = if file, do: file.content, else: pasted_json
         import(socket, title, encoded_definition)
     end
-  end
-
-  def handle_event("import_runbook", _params, socket) do
-    {:noreply,
-     socket
-     |> assign_form(@empty_params)
-     |> assign(:title_errors, required_title_errors(""))
-     |> assign(:json_errors, [])
-     |> assign(:source_errors, source_errors(nil, ""))}
   end
 
   # Phoenix's internal upload writer creates this temporary path and passes it

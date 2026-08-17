@@ -851,23 +851,91 @@ defmodule Emisar.ApiKeysTest do
                ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
     end
 
-    test "an operator (no manage_api_keys permission) is refused with :unauthorized" do
-      # A custom key mints an execute-capable MCP credential, so it gates
-      # on `manage_api_keys` — which operators lack (they may only mint
-      # the pre-scoped quick key via `mint_quick_key/1`).
+    test "an operator may mint an MCP key — the issue tier, same as a quick key" do
       account = Fixtures.Accounts.create_account()
       operator = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
 
-      subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert {:ok, _raw, %ApiKey{kind: :mcp} = key} = ApiKeys.create_key(%{name: "ci"}, subject)
+
+      assert key.created_by_membership_id == membership.id
+    end
+
+    test "the key binds to the MINTER's membership, never an attrs-supplied one" do
+      # The scope invariant: a key resolves `created_by_membership`'s runner and
+      # pack access at call time, so binding it to the minter is what stops a
+      # key carrying more access than the member who minted it.
+      account = Fixtures.Accounts.create_account()
+      operator = Fixtures.Users.create_user()
+      owner = Fixtures.Users.create_user()
+
+      operator_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(operator_membership)
+      attrs = %{"name" => "crafted", "created_by_membership_id" => owner_membership.id}
+
+      assert {:ok, _raw, %ApiKey{} = key} = ApiKeys.create_key(attrs, subject)
+
+      assert key.created_by_membership_id == operator_membership.id
+    end
+
+    test "an operator cannot mint an audit-export token even where the plan allows it" do
+      # `:audit_export` is a different capability — the account's whole audit
+      # stream, not this member's runner scope — so it keeps `manage_api_keys`.
+      account = Fixtures.Accounts.create_account()
+      operator = Fixtures.Users.create_user()
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(membership)
 
       assert {:error, :unauthorized} =
-               ApiKeys.create_key(%{name: "ci"}, subject)
+               ApiKeys.create_key(%{name: "siem", kind: :audit_export}, subject)
+
+      refute Repo.one(ApiKey)
+    end
+
+    test "a viewer holds only view_api_keys and cannot mint at all" do
+      account = Fixtures.Accounts.create_account()
+      viewer = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert {:error, :unauthorized} = ApiKeys.create_key(%{name: "peek"}, subject)
+      refute Repo.one(ApiKey)
     end
 
     test "a stale subject cannot create a key after the account is disabled" do

@@ -125,7 +125,7 @@ defmodule EmisarWeb.RunbooksLive do
       width={:table}
     >
       <:title>Runbooks</:title>
-      <:actions :if={Runbooks.subject_can_manage_runbooks?(@current_subject)}>
+      <:actions :if={Runbooks.subject_can_author_runbooks?(@current_subject)}>
         <.button
           navigate={~p"/app/#{@current_account}/runbooks/import"}
           variant={:secondary}
