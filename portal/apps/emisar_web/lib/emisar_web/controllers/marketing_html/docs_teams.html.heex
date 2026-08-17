@@ -154,6 +154,15 @@
         of scoping the DBA — not a policy convention, and not a per-key setting to keep in sync.
         Scope changes are audited.
       </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Scope binds owners and admins too: an admin scoped to one group really does lose the rest
+        of the fleet. For them it is a
+        <strong class="text-zinc-200">guardrail, not a boundary</strong>
+        — nobody can change their own access, but anyone who can manage them can change it for
+        them, and an admin can promote a member whose own access is wider. Scope an admin to keep
+        a mistake from reaching the wrong host; to hold back someone you no longer trust, change
+        their role or remove them.
+      </p>
 
       <.docs_h2 id="mfa">MFA</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">

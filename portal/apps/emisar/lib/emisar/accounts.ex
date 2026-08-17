@@ -984,6 +984,7 @@ defmodule Emisar.Accounts do
       confirmation_pending?: confirmation_pending?,
       runner_access: Map.get(access_by_membership, membership.id, RunnerAccess.none()),
       runner_access_editable?: not membership.runner_access_directory_managed,
+      manages_team?: manages_team?(membership),
       role_editable?: not self_owner? and not membership.directory_managed,
       resend_invitation?: pending_invitation? and not disabled?,
       resend_confirmation?:
@@ -1015,6 +1016,14 @@ defmodule Emisar.Accounts do
        do: true
 
   defp self_owner?(%Membership{}, %Subject{}), do: false
+
+  # Read off the permission rather than a role list, so a future role granting
+  # manage_team is covered without a second place to remember. The access
+  # editor says out loud what this implies: such a member cannot change their
+  # own access (`ensure_can_modify_membership/2` refuses self), but anyone who
+  # can manage them can change it for them — a guardrail, not containment.
+  defp manages_team?(%Membership{role: role}),
+    do: role in Auth.Permissions.roles_with_permission(Authorizer.manage_team_permission())
 
   @doc """
   The memberships for the given `user_ids` in `account`, each preloaded with its

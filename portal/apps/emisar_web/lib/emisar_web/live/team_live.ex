@@ -1780,6 +1780,19 @@ defmodule EmisarWeb.TeamLive do
                       class="space-y-4"
                     >
                       <input type="hidden" name="membership_id" value={membership.id} />
+                      <%!-- A member who can manage the team can have this undone by a
+                       peer, so the editor says so rather than letting the operator
+                       read a narrowed scope as containment. --%>
+                      <.status_note
+                        :if={member.manages_team?}
+                        icon="hero-lock-open"
+                        tone={:amber}
+                        title="This member can manage the team"
+                      >
+                        They can't change their own access, but anyone else who can manage them
+                        can change it. So this is a guardrail against mistakes, not a way to
+                        contain them.
+                      </.status_note>
                       <p class="text-xs text-zinc-400">
                         Any API key they create reaches only what you allow here, so narrowing
                         this narrows their keys too.
