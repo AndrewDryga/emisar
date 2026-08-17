@@ -1772,13 +1772,7 @@ defmodule Emisar.Accounts do
          runner_access: access
        }) do
     broadcast_membership_runner_access_changed(membership)
-
-    if RunnerAccess.covers?(previous_access, access) and
-         not RunnerAccess.covers?(access, previous_access) do
-      refresh_member_sessions(membership)
-    else
-      :ok
-    end
+    refresh_member_sessions_if_access_changed(previous_access, access, membership)
   end
 
   defp broadcast_membership_runner_access_changed(%Membership{} = membership) do
@@ -2133,35 +2127,77 @@ defmodule Emisar.Accounts do
   end
 
   # after_commit for the SCIM role sync, whose `fetch_and_update` hands back the
-  # changeset: refresh the team list AND, on a privilege REDUCTION, cut the
-  # member's stale delegations. `changeset.data.role` is the locked pre-update role.
+  # changeset: refresh the team list and the member's stale web subject, then on
+  # a privilege REDUCTION cut their standing API-key delegations.
+  # `changeset.data.role` is the locked pre-update role.
   defp on_membership_role_changed(%Membership{} = membership, %Ecto.Changeset{} = changeset) do
     broadcast_membership_role_changed(membership)
-    maybe_revoke_reduced_member_delegations(changeset.data.role, membership)
+    refresh_member_sessions_if_role_changed(changeset.data.role, membership)
+    maybe_revoke_reduced_member_api_keys(changeset.data.role, membership)
   end
 
   # after_commit for the operator role change, whose Multi carries the locked
-  # pre-update row as `:target`. Same cleanup, plus the access broadcast when the
-  # new role also reset the member's reach — a Packs/Runners page already open
-  # has to lose its inventory the moment the role stops carrying it.
+  # pre-update row as `:target`. Refresh once when either the role or its carried
+  # reach changed, then broadcast the access reset separately for other mounted
+  # team pages.
   defp on_membership_role_committed(
          %{target: target, membership: membership, previous_access: previous} = changes
        ) do
     broadcast_membership_role_changed(membership)
-    maybe_revoke_reduced_member_delegations(target.role, membership)
+
+    refresh_member_sessions_if_authorization_changed(
+      target,
+      membership,
+      previous,
+      changes.runner_access
+    )
+
+    maybe_revoke_reduced_member_api_keys(target.role, membership)
 
     if changes.runner_access == previous,
       do: :ok,
       else: broadcast_membership_runner_access_changed(membership)
   end
 
-  # A role change rewrites the user's permission set, but two things still carry
-  # the OLD one:
+  # A membership authorization change leaves a mounted LiveView carrying the
+  # OLD `%Subject{}` until its socket reconnects. That is unsafe after a
+  # reduction and confusing after an expansion, so every real role, runner, or
+  # pack access change disconnects the affected user's sockets after commit.
+  # The session rows stay intact: the browser reconnects and rebuilds the
+  # subject from current membership state.
+  defp refresh_member_sessions_if_role_changed(role, %Membership{role: role}), do: :ok
+
+  defp refresh_member_sessions_if_role_changed(_previous_role, %Membership{} = membership),
+    do: refresh_member_sessions(membership)
+
+  defp refresh_member_sessions_if_access_changed(access, access, %Membership{}), do: :ok
+
+  defp refresh_member_sessions_if_access_changed(
+         %RunnerAccess{},
+         %RunnerAccess{},
+         %Membership{} = membership
+       ),
+       do: refresh_member_sessions(membership)
+
+  defp refresh_member_sessions_if_authorization_changed(
+         %Membership{role: previous_role},
+         %Membership{role: role},
+         %RunnerAccess{} = previous_access,
+         %RunnerAccess{} = access
+       )
+       when previous_role == role and previous_access == access,
+       do: :ok
+
+  defp refresh_member_sessions_if_authorization_changed(
+         %Membership{},
+         %Membership{} = membership,
+         %RunnerAccess{},
+         %RunnerAccess{}
+       ),
+       do: refresh_member_sessions(membership)
+
+  # A reduced role also leaves one standing delegation carrying the OLD role:
   #
-  #   * a mounted LiveView snapshotted the OLD %Subject{} at mount, so a demoted
-  #     operator/admin keeps stale powers on every open socket until they happen
-  #     to navigate — disconnect the sockets (they stay signed in) so each
-  #     remounts and rebuilds its subject from the new role; and
   #   * an API key mints a `:api_client` subject that ALWAYS holds
   #     `dispatch_run`, bound to `created_by_membership_id` — the role is never
   #     re-read at dispatch. Demoting an operator to viewer would otherwise
@@ -2170,14 +2206,12 @@ defmodule Emisar.Accounts do
   #
   # Authz here is permission-based, not rank-based (`Auth.Role` deliberately has
   # no rank), so "reduction" is a permission-subset test — the new role losing a
-  # permission the old one held. An elevation or a no-op (a SCIM reconcile
-  # re-applying the same role) keeps both, avoiding needless churn.
-  defp maybe_revoke_reduced_member_delegations(
+  # permission the old one held. An elevation or a no-op keeps the keys.
+  defp maybe_revoke_reduced_member_api_keys(
          old_role,
          %Membership{role: new_role} = membership
        ) do
     if reduced_permissions?(old_role, new_role) do
-      refresh_member_sessions(membership)
       revoke_membership_api_keys(membership)
     else
       :ok
@@ -2709,14 +2743,14 @@ defmodule Emisar.Accounts do
     if is_integer(previous_membership.directory_authorization_pending_version) do
       refresh_member_sessions(membership)
     else
-      maybe_revoke_reduced_member_delegations(previous_membership.role, membership)
+      refresh_member_sessions_if_authorization_changed(
+        previous_membership,
+        membership,
+        previous_access,
+        access
+      )
 
-      if RunnerAccess.covers?(previous_access, access) and
-           not RunnerAccess.covers?(access, previous_access) do
-        refresh_member_sessions(membership)
-      else
-        :ok
-      end
+      maybe_revoke_reduced_member_api_keys(previous_membership.role, membership)
     end
   end
 
