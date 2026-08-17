@@ -600,12 +600,25 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     control and breaks the row's shared edges (the policy override row shipped a 32px Name
     beside a 28px Action and Decision). Sweep: `size={:compact}` (or any shared control) call
     sites passing a `text-*` class, and rows mixing a mono identifier field with a prose one.
-55. **A state change never moves the layout.** View-only, plan-gated, and disabled states
-    restyle controls in place: same height, same width, same track positions as the state that
-    can act. A per-row action rendered only for a manager takes a FIXED track (`2rem`), never
-    `auto`/`max-content` — a content-sized track collapses when the button is absent and slides
-    every field sideways between the editable and blocked views. Sweep: `:if={@can_manage}`
-    controls inside `auto` grid tracks or flex rows that own their own width.
+55. **A state change never moves the layout — and what must not move is the neighbouring
+    CONTENT, not every control inside its own cluster.** View-only, plan-gated, and disabled
+    states restyle in place: same height, same width, same position as the state that can act.
+    A row whose trailing controls appear only for some viewers (a manager's `Actions ▾`, a
+    self-row verb) puts the whole role+action CLUSTER in one fixed or minimum track and lets
+    its members stay content-sized and RIGHT-ANCHORED (`justify-end`) inside it. The track is
+    what holds the identity column identical on every row — content-sized cells let a "Billing
+    manager" row and an "Admin" row truncate the same fact at different words. The
+    right-anchoring is what the founder asked for on the Team roster: "right-align the role,
+    tighten the gap to the action button, and when a row has no button the role pill sits at
+    the right edge." **Do NOT give each control its OWN fixed track** — that was this rule's
+    earlier reading and it shipped two defects the founder reported: a value stretched to the
+    dropdown's box read as that dropdown disabled (§7.59), and a self row with no button left
+    its role chip stranded mid-column with a hole where everyone else's button was. A pill
+    sliding within a right-anchored cluster is the intended geometry; a pill that drags the
+    column beside it is the defect. Sweep: `:if={@can_manage}` controls inside `auto` grid
+    tracks or flex rows that own their own width; per-control fixed tracks in a trailing
+    action cluster; and an empty wrapper left where a conditional control renders nothing —
+    it is still a flex item, so the cluster's gap pushes the value off the right edge.
 56. **A native select reserves room for its chevron.** The Tailwind forms plugin paints the arrow
     as a background image (1.5em wide, 0.5rem from the right edge) and sets `padding-right:
     2.5rem` — which our own `px-*` overrides, so the longest option prints over the arrow and
@@ -661,9 +674,17 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     tag printed beside the title (`Enforced`, `Required`) that the card's own control verb
     already said, and that rendered only in the true state anyway. The description says what
     the setting DOES, the value says where it STANDS, the lock says who moves it — one job
-    each. **Never flatten differing requirements to one sentence**: the runner schedule needs
-    unrestricted runner access on top of owner/admin, and the tooltip must say so; verify
-    each against the permission predicate, not the prose next to it. The scope is a closed
+    each. **The lock's sentence is ONE house line, "Only owners and admins can change this."**
+    — the founder's call, overriding this rule's first reading (a bespoke sentence per
+    setting): a lock tooltip is read in passing, and six locks on one page each wording the
+    same two roles differently read as six different rules. The line matches the denial
+    flashes' voice ("Only owners and admins can change this setting."), so the tooltip and the
+    error an operator gets for trying agree. It is knowingly approximate at exactly one call
+    site — the runner cleanup schedule also needs unrestricted runner access
+    (`Runners.subject_can_manage_inactive_retention?/1`), so a runner-scoped admin reads a
+    lock beside a line saying they qualify; that setting's DENIAL flash keeps the precise
+    wording. **Never relax a predicate to match the line** — tighten the wording if it bites.
+    The scope is a closed
     set — the fields of `Account.Settings` — so a seventh setting is the only thing that adds
     a call site. **Not** this shape: a page-level gate that redirects at mount (audit export),
     a door to a sub-page (SIEM export), or a per-item CTA slot whose card has no value of its

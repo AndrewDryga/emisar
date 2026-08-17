@@ -3590,21 +3590,28 @@ defmodule EmisarWeb.CoreComponents do
 
   A member who may change it gets the CONTROL, which already carries the
   current value (a select's selection, a toggle's verb). A member who may not
-  gets that same value as a content-sized locked chip whose tooltip names who
-  can change *this* setting. So the value is on the surface for everyone, the
-  permission is quiet chrome on the lock rather than a prose tail competing
-  with the description, and the slot keeps one box across both states (§7.55).
+  gets that same value as a content-sized locked chip whose tooltip says who
+  can change it. So the value is on the surface for everyone, the permission
+  is quiet chrome on the lock rather than a prose tail competing with the
+  description, and the slot keeps one box across both states (§7.55).
 
   `value` is only read on the locked branch; it must be the SHORT current
   value, in the control's own vocabulary ("After 1 hour inactive", "No cap"),
-  never a sentence. `who_can_change` states that setting's real requirement —
-  they differ, so never flatten them to one sentence.
+  never a sentence. `who_can_change` is the ONE house line — "Only owners and
+  admins can change this." — at every call site (the founder's call: a lock
+  tooltip is read in passing, and per-setting wording made the same two roles
+  read as several different rules across one page). It is knowingly
+  approximate at exactly one setting: the runner cleanup schedule ALSO needs
+  unrestricted runner access (`Runners.subject_can_manage_inactive_retention?/1`),
+  so a runner-scoped admin sees a lock beside a line saying they qualify.
+  Tighten the WORDING there if it ever bites; never relax the predicate to
+  match the line.
 
       <.gated_setting
         id="runner-retention"
         can_change?={Runners.subject_can_manage_inactive_retention?(@current_subject)}
         value={retention_value_label(@retention_hours)}
-        who_can_change="Owners and admins with full runner access can change this"
+        who_can_change="Only owners and admins can change this."
         class="mt-3"
       >
         <form phx-change="set_runner_retention"><.select name="hours" options={…} /></form>
@@ -3613,7 +3620,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :id, :string, required: true, doc: "unique on the page — the lock tooltip's id"
   attr :can_change?, :boolean, required: true
   attr :value, :string, required: true, doc: "the short current value, for the locked branch"
-  attr :who_can_change, :string, required: true, doc: "this setting's real requirement"
+  attr :who_can_change, :string, required: true, doc: "the house lock line"
   attr :class, :any, default: nil, doc: "the caller's spacing for the slot"
   slot :inner_block, required: true, doc: "the control, for a member who may change it"
 

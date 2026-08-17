@@ -589,7 +589,7 @@ defmodule EmisarWeb.RunnersLive do
                     id="runner-retention"
                     can_change?={Runners.subject_can_manage_inactive_retention?(@current_subject)}
                     value={retention_value_label(@retention_hours)}
-                    who_can_change="Owners and admins with full runner access can change this"
+                    who_can_change="Only owners and admins can change this."
                     class="mt-3"
                   >
                     <form id="runner-retention-form" phx-change="set_runner_retention">

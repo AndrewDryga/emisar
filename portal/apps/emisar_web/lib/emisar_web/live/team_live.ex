@@ -1043,6 +1043,9 @@ defmodule EmisarWeb.TeamLive do
   defp mfa_enforcement_value_label(:enforced), do: "Enforced"
   defp mfa_enforcement_value_label(_), do: "Not enforced"
 
+  defp sso_connections_value_label(0), do: "Not configured"
+  defp sso_connections_value_label(_), do: "Configured"
+
   defp sso_required_value_label(true), do: "Required"
   defp sso_required_value_label(_), do: "Not required"
 
@@ -1619,75 +1622,74 @@ defmodule EmisarWeb.TeamLive do
                       </div>
                     </div>
 
-                    <%!-- Role and Actions each own a FIXED track (§7.55). Both cells
-                     used to be content-sized, so a "Billing manager" row and an
-                     "Admin" row pushed the identity column to different widths (the
-                     last-active fact truncated at a different word on every row), and
-                     the self row — which has no Actions menu — let its role chip slide
-                     right out of the column. The tracks are sized to their longest
-                     content: "Billing manager ▾" and "Resend email". --%>
-                    <div class="flex shrink-0 items-center gap-2 pl-14 sm:pl-0">
-                      <div class="flex w-[7.5rem] shrink-0 items-center">
-                        <%= cond do %>
-                          <% can_manage?(assigns) and not member.self_owner? and not member.role_editable? -> %>
-                            <%!-- Synced role: the IdP owns it (a role mapping, or the
-                           provider default), so directory sync recomputes it and a manual
-                           change here silently reverts. Read-only, pointing to where the
-                           change actually sticks — the identity provider. --%>
-                            <.tooltip
-                              id={"role-lock-#{membership.id}"}
-                              text={"Role is managed by #{directory_label(directory)} — change it in your identity provider"}
-                            >
-                              <.chip icon="hero-lock-closed-mini">
-                                {Emisar.Auth.role_label(membership.role)}
-                              </.chip>
-                            </.tooltip>
-                          <% can_manage?(assigns) and member.role_editable? -> %>
-                            <%!-- A role change is a privilege grant — a dropdown (same skin as
-                           the Actions menu beside it) whose items each OPEN their own styled
-                           confirm modal (not a native data-confirm — we use our own dialogs
-                           everywhere), so the modal fires only when you pick a DIFFERENT role,
-                           never just on opening the control. The handler still authorizes
-                           (IL-15). Suspension does NOT lock this — editability tracks
-                           permission, not access-state. --%>
-                            <.dropdown
-                              class="w-full text-left"
-                              summary_class="flex items-center justify-between rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
-                              panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
-                            >
-                              <:trigger>
-                                {Emisar.Auth.role_label(membership.role)}
-                                <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
-                              </:trigger>
-                              <.menu_item
-                                :for={role <- @roles}
-                                :if={role != to_string(membership.role)}
-                                phx-click={open_confirm("change-role-#{membership.id}-#{role}")}
-                              >
-                                {Emisar.Auth.role_label(role)}
-                              </.menu_item>
-                            </.dropdown>
-                          <% true -> %>
-                            <%!-- A role nobody here can change is a VALUE, so the chip
-                           is content-sized: stretched to the track it impersonated the
-                           disabled twin of the dropdown above it. The track still fixes
-                           the column, so every role starts on one left edge. --%>
-                            <.chip>
+                    <%!-- Role + actions are ONE right-anchored cluster: the GROUP
+                     owns the fixed track, its members stay content-sized inside it
+                     (§7.55). The track is what keeps the identity column identical
+                     on every row — content-sized cells let a "Billing manager" row
+                     and an "Admin" row truncate the last-active fact at different
+                     words. Right-anchoring is what puts the role beside its button
+                     with one tight gap, and pins the role to the column's right edge
+                     on a row that has no button at all. `min-w` so the rare own row
+                     carrying two verbs grows rather than overflowing. --%>
+                    <div class="flex shrink-0 items-center justify-end gap-1.5 pl-14 sm:min-w-[14.5rem] sm:pl-0">
+                      <%= cond do %>
+                        <% can_manage?(assigns) and not member.self_owner? and not member.role_editable? -> %>
+                          <%!-- Synced role: the IdP owns it (a role mapping, or the
+                         provider default), so directory sync recomputes it and a manual
+                         change here silently reverts. Read-only, pointing to where the
+                         change actually sticks — the identity provider. --%>
+                          <.tooltip
+                            id={"role-lock-#{membership.id}"}
+                            text={"Role is managed by #{directory_label(directory)} — change it in your identity provider"}
+                          >
+                            <.chip icon="hero-lock-closed-mini">
                               {Emisar.Auth.role_label(membership.role)}
                             </.chip>
-                        <% end %>
-                      </div>
-
-                      <div class="flex w-[6.5rem] shrink-0 items-center">
-                        <.member_actions
-                          member={member}
-                          current_user_id={@current_user.id}
-                          can_manage?={can_manage?(assigns)}
-                          current_account={@current_account}
-                          typed={@typed}
-                          name_locked?={directory_managed?(directory)}
-                        />
-                      </div>
+                          </.tooltip>
+                        <% can_manage?(assigns) and member.role_editable? -> %>
+                          <%!-- A role change is a privilege grant — a dropdown (the exact
+                         skin of the Actions menu beside it) whose items each OPEN their own
+                         styled confirm modal (not a native data-confirm — we use our own
+                         dialogs everywhere), so the modal fires only when you pick a
+                         DIFFERENT role, never just on opening the control. The handler still
+                         authorizes (IL-15). Suspension does NOT lock this — editability
+                         tracks permission, not access-state. --%>
+                          <.dropdown
+                            class="inline-block text-left"
+                            summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                            panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
+                          >
+                            <:trigger>
+                              {Emisar.Auth.role_label(membership.role)}
+                              <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
+                            </:trigger>
+                            <.menu_item
+                              :for={role <- @roles}
+                              :if={role != to_string(membership.role)}
+                              phx-click={open_confirm("change-role-#{membership.id}-#{role}")}
+                            >
+                              {Emisar.Auth.role_label(role)}
+                            </.menu_item>
+                          </.dropdown>
+                        <% true -> %>
+                          <%!-- A role nobody here can change is a VALUE, so the chip
+                         is content-sized: stretched to a control's box it impersonated
+                         the disabled twin of the dropdown above it. --%>
+                          <.chip>
+                            {Emisar.Auth.role_label(membership.role)}
+                          </.chip>
+                      <% end %>
+                      <%!-- No wrapper: an empty cell would still be a flex item, so
+                       the cluster's gap would push the role off the right edge on a
+                       row with no verb. --%>
+                      <.member_actions
+                        member={member}
+                        current_user_id={@current_user.id}
+                        can_manage?={can_manage?(assigns)}
+                        current_account={@current_account}
+                        typed={@typed}
+                        name_locked?={directory_managed?(directory)}
+                      />
                     </div>
                   </div>
 
@@ -1888,7 +1890,7 @@ defmodule EmisarWeb.TeamLive do
               id="require-mfa"
               can_change?={Accounts.subject_can_manage_account_security?(@current_subject)}
               value={mfa_enforcement_value_label(@security_facts.mfa_enforcement)}
-              who_can_change="Owners and admins can change this"
+              who_can_change="Only owners and admins can change this."
               class="mt-4"
             >
               <%= if @security_facts.mfa_enforcement == :actor_not_enrolled do %>
@@ -1989,20 +1991,24 @@ defmodule EmisarWeb.TeamLive do
               This is a load error, not a sign-in posture — connections may well be configured
               and enforced. Refresh the page to try again.
             </.empty_state>
-            <p
-              :if={
-                not @sso_load_error? and @provider_facts == [] and @enabled_sso_provider_count == 0
-              }
-              class="mt-3 text-xs text-zinc-400"
+            <%!-- With no list to show, the card still has to say where SSO
+                 STANDS — through the same shape as every other setting (§7.59).
+                 An SSO admin only lands here when nothing is connected, so
+                 their arm keeps the sign-in consequence; a member who can't
+                 manage connections gets that state as the locked value, not a
+                 sentence about who outranks them. --%>
+            <.gated_setting
+              :if={not @sso_load_error? and @provider_facts == []}
+              id="sso-connections"
+              can_change?={SSO.subject_can_manage_sso?(@current_subject)}
+              value={sso_connections_value_label(@enabled_sso_provider_count)}
+              who_can_change="Only owners and admins can change this."
+              class="mt-3"
             >
-              Not configured — members sign in with a magic link.
-            </p>
-            <p
-              :if={not @sso_load_error? and @provider_facts == [] and @enabled_sso_provider_count > 0}
-              class="mt-3 text-xs text-zinc-400"
-            >
-              Configured — owners and admins manage connections.
-            </p>
+              <p class="text-xs text-zinc-400">
+                Not configured — members sign in with a magic link.
+              </p>
+            </.gated_setting>
             <div class="mt-4">
               <%= cond do %>
                 <% SSO.subject_can_configure_sso?(@current_subject) -> %>
@@ -2040,7 +2046,7 @@ defmodule EmisarWeb.TeamLive do
                 id="require-sso"
                 can_change?={Accounts.subject_can_manage_account_security?(@current_subject)}
                 value={sso_required_value_label(@security_facts.sso_required?)}
-                who_can_change="Owners and admins can change this"
+                who_can_change="Only owners and admins can change this."
                 class="mt-3"
               >
                 <%= cond do %>
@@ -2113,7 +2119,7 @@ defmodule EmisarWeb.TeamLive do
               id="monthly-report"
               can_change?={Accounts.subject_can_manage_account?(@current_subject)}
               value={monthly_report_value_label(@current_account.settings.monthly_report_opt_out)}
-              who_can_change="Owners and admins can change this"
+              who_can_change="Only owners and admins can change this."
               class="mt-4"
             >
               <.switch
@@ -2298,7 +2304,10 @@ defmodule EmisarWeb.TeamLive do
   defp provisioned_via_label(:manual), do: "Linked"
   defp provisioned_via_label(_), do: "Synced"
 
-  # own row (use Profile) and short-circuited for non-managers.
+  # The roster row's action slot, in three shapes: your OWN row gets the audit
+  # jump (plus the email remedy while yours is unconfirmed), a manager gets the
+  # full Actions menu on everyone else's row, and a non-manager gets nothing on
+  # a teammate's row.
   attr :member, :map, required: true
   attr :current_user_id, :string, required: true
   attr :can_manage?, :boolean, required: true
@@ -2312,8 +2321,22 @@ defmodule EmisarWeb.TeamLive do
     ~H"""
     <%= cond do %>
       <% @membership.user_id == @current_user_id -> %>
-        <%!-- Same remedy as the portal-wide unconfirmed-email strip, so it uses the
-             strip's exact verb rather than a second spelling of one action. --%>
+        <%!-- Your own row is the only one that offers a jump into a person's
+             audit trail as a plain button: a teammate's trail is a MANAGER's
+             affordance and lives in the Actions menu below, so the roster no
+             longer hands every operator a one-click pivot into a colleague's
+             activity. Both verbs wear the bordered face of this cluster's
+             other occupants (§7.47), and the remedy verb keeps the exact
+             wording of the portal-wide unconfirmed-email strip. --%>
+        <.button
+          navigate={
+            ~p"/app/#{@current_account}/audit?#{[actor_kind: "user", actor_id: @membership.user_id]}"
+          }
+          variant={:secondary}
+          size={:sm}
+        >
+          View activity
+        </.button>
         <.button
           :if={@member.resend_confirmation?}
           variant={:secondary}
@@ -2323,24 +2346,7 @@ defmodule EmisarWeb.TeamLive do
         >
           Resend email
         </.button>
-      <% not @can_manage? -> %>
-        <%!-- Viewers can't manage a member but can audit them — every role on
-             this page holds view_audit. The link is subject-scoped by the audit
-             page; it only pre-filters to this member as actor. It wears the
-             bordered face because this column is a control track: its other
-             occupants are the `Actions ▾` trigger and `Resend email`, and a bare
-             link among them reads as the odd one out (§7.47). --%>
-        <.button
-          :if={@membership.user_id}
-          navigate={
-            ~p"/app/#{@current_account}/audit?#{[actor_kind: "user", actor_id: @membership.user_id]}"
-          }
-          variant={:secondary}
-          size={:sm}
-        >
-          View activity
-        </.button>
-      <% true -> %>
+      <% @can_manage? -> %>
         <.dropdown
           class="inline-block text-left"
           summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
@@ -2491,6 +2497,7 @@ defmodule EmisarWeb.TeamLive do
             access reversible.
           </:body>
         </.confirm_dialog>
+      <% true -> %>
     <% end %>
     """
   end

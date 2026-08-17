@@ -1627,7 +1627,7 @@ defmodule EmisarWeb.PacksLive do
                 value={
                   pack_retention_value_label(@current_account.settings.pack_unseen_retention_days)
                 }
-                who_can_change="Owners and admins can change this"
+                who_can_change="Only owners and admins can change this."
                 class="mt-3"
               >
                 <form id="pack-retention-form" phx-change="set_pack_retention">

@@ -402,6 +402,40 @@ defmodule EmisarWeb.DashboardLiveTest do
              )
     end
 
+    test "an operator's Team pillar reports the count and offers no SSO verb", %{conn: conn} do
+      {_owner_conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
+
+      {:ok, _raw, _key} =
+        Emisar.ApiKeys.create_key(
+          %{name: "Bot", scopes: ["actions:read"], runner_filter: []},
+          subject
+        )
+
+      first_run(account, runner)
+
+      operator = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
+
+      Fixtures.SSO.create_identity_provider(account_id: account.id, enabled: true)
+
+      {:ok, _lv, html} =
+        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}")
+
+      # The tile still reports where the team stands and still navigates to
+      # Team; what it must not do is pitch a verb this role cannot perform.
+      assert html =~ "2<span class=\"text-2xl text-zinc-500\"> members</span>"
+      refute html =~ "Manage SSO providers"
+      refute html =~ "Enable SSO"
+    end
+
     test "both connected but no advertised actions: the checklist requires a catalog pack first",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)

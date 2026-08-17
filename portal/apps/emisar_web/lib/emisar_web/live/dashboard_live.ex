@@ -298,6 +298,7 @@ defmodule EmisarWeb.DashboardLive do
         can_manage_billing={Billing.subject_can_manage_billing?(@current_subject)}
         team_security={@team_security}
         sso_enabled?={@sso_enabled?}
+        can_manage_sso?={SSO.subject_can_manage_sso?(@current_subject)}
         pending_packs_count={@pending_packs_count}
         current_account={@current_account}
         can_view_runners?={@can_view_runners?}
@@ -342,6 +343,7 @@ defmodule EmisarWeb.DashboardLive do
   attr :can_manage_billing, :boolean, default: false
   attr :team_security, :any, required: true
   attr :sso_enabled?, :boolean, required: true
+  attr :can_manage_sso?, :boolean, required: true
   attr :pending_packs_count, :integer, default: 0
   attr :current_account, :map, required: true
   attr :can_view_runners?, :boolean, default: true
@@ -411,6 +413,7 @@ defmodule EmisarWeb.DashboardLive do
       <.team_pillar
         team_security={@team_security}
         sso_enabled?={@sso_enabled?}
+        can_manage_sso?={@can_manage_sso?}
         current_account={@current_account}
       />
     </div>
@@ -1013,9 +1016,13 @@ defmodule EmisarWeb.DashboardLive do
   # for everyone; once SSO is LIVE, the forward action is managing the
   # providers, not enabling what's already on. Per-member 2FA posture lives on
   # the Team settings roster, where it's actionable, not as a dashboard stat.
+  # A viewer who can't manage SSO gets NO action line — the whole tile already
+  # navigates to Team, and pitching a verb their role can't perform is a dead
+  # CTA (the LLM-agents pillar made the same call).
 
   attr :team_security, :any, required: true
   attr :sso_enabled?, :boolean, required: true
+  attr :can_manage_sso?, :boolean, required: true
   attr :current_account, :map, required: true
 
   defp team_pillar(%{team_security: :unavailable} = assigns) do
@@ -1047,10 +1054,22 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
+  defp team_pillar(%{can_manage_sso?: false} = assigns) do
+    ~H"""
+    <.pillar
+      label="Team"
+      tone={:neutral}
+      navigate={~p"/app/#{@current_account}/settings/team"}
+    >
+      <:value>{@team_security.mfa_total}<span class="text-2xl text-zinc-500"> members</span></:value>
+    </.pillar>
+    """
+  end
+
   # A real team exists — the valuable next step is federated identity: pitch
   # enabling SSO until a connection is live, then managing the providers
   # (nudging "Enable" at an account already on SSO reads as a bug). The
-  # settings page owns the plan/permission gate either way.
+  # settings page owns the plan gate either way.
   defp team_pillar(%{sso_enabled?: false} = assigns) do
     ~H"""
     <.pillar

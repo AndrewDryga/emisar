@@ -524,11 +524,27 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
       _ = Fixtures.Memberships.force_role(membership, "viewer")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert html =~ "Configured — owners and admins manage connections."
+      # The state reaches them as the locked value every other setting on this
+      # page uses, not as a sentence about who outranks them.
+      assert has_element?(lv, "#sso-connections-lock-tt", "Configured")
+      refute has_element?(lv, "#sso-connections-lock-tt", "Not configured")
+      assert has_element?(lv, "#sso-connections-lock", "Only owners and admins can change this.")
+      refute html =~ "Configured — owners and admins manage connections."
       refute html =~ "Not configured — members sign in with a magic link."
       refute html =~ "Private IdP"
+    end
+
+    test "an unconfigured account reads as Not configured, still locked", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+
+      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      _ = Fixtures.Memberships.force_role(membership, "viewer")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(lv, "#sso-connections-lock-tt", "Not configured")
     end
   end
 
@@ -569,7 +585,7 @@ defmodule EmisarWeb.TeamLiveTest do
         {:ok, lv, html} =
           build_conn() |> log_in_user(member) |> live(~p"/app/#{account}/settings/team")
 
-        # The roster IS visible — they can audit teammates even read-only.
+        # The roster IS visible.
         assert html =~ "Teammate Tess"
         assert html =~ teammate.email
 
@@ -585,8 +601,16 @@ defmodule EmisarWeb.TeamLiveTest do
         assert html =~ "Only owners and admins can invite or manage members."
         assert html =~ "Your role: #{unquote(role)}"
 
-        # Auditing a teammate stays available — the "View activity" affordance.
-        assert html =~ "View activity"
+        # The roster offers no jump into a TEAMMATE's audit trail — only into
+        # your own. (A manager's per-row audit item lives in the Actions menu,
+        # which this role doesn't get at all.)
+        refute has_element?(
+                 lv,
+                 "a[href*='actor_id=#{teammate.id}']",
+                 "View activity"
+               )
+
+        assert has_element?(lv, "a[href*='actor_id=#{member.id}']", "View activity")
       end
     end
   end

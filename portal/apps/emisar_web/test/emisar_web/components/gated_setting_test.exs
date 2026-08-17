@@ -23,7 +23,7 @@ defmodule EmisarWeb.Components.GatedSettingTest do
           id="runner-retention"
           can_change?={true}
           value="After 1 hour inactive"
-          who_can_change="Owners and admins with full runner access can change this"
+          who_can_change="Only owners and admins can change this."
         >
           <form id="runner-retention-form"><input name="hours" /></form>
         </CoreComponents.gated_setting>
@@ -35,7 +35,7 @@ defmodule EmisarWeb.Components.GatedSettingTest do
       # The control carries the value itself, so the chip's copy must not also
       # print — that would state the setting twice to the same reader.
       refute html =~ "After 1 hour inactive"
-      refute html =~ "Owners and admins with full runner access can change this"
+      refute html =~ "Only owners and admins can change this."
     end
 
     test "a member who can't gets the value, locked, and never the control" do
@@ -47,7 +47,7 @@ defmodule EmisarWeb.Components.GatedSettingTest do
           id="runner-retention"
           can_change?={false}
           value="After 1 hour inactive"
-          who_can_change="Owners and admins with full runner access can change this"
+          who_can_change="Only owners and admins can change this."
         >
           <form id="runner-retention-form"><input name="hours" /></form>
         </CoreComponents.gated_setting>
@@ -67,13 +67,13 @@ defmodule EmisarWeb.Components.GatedSettingTest do
           id="max-grant-lifetime"
           can_change?={false}
           value="No cap"
-          who_can_change="Owners and admins can change this"
+          who_can_change="Only owners and admins can change this."
         >
           <form id="max-grant-lifetime-form"><input name="seconds" /></form>
         </CoreComponents.gated_setting>
         """)
 
-      assert html =~ "Owners and admins can change this"
+      assert html =~ "Only owners and admins can change this."
       assert html =~ ~s(role="tooltip")
       assert html =~ ~s(tabindex="0")
       assert html =~ "group-focus-within/tooltip:opacity-100"
@@ -95,7 +95,7 @@ defmodule EmisarWeb.Components.GatedSettingTest do
           id="monthly-report"
           can_change?={true}
           value="On"
-          who_can_change="Owners and admins can change this"
+          who_can_change="Only owners and admins can change this."
           class="mt-4"
         >
           <button id="monthly-report-switch">Turn off</button>
@@ -108,7 +108,7 @@ defmodule EmisarWeb.Components.GatedSettingTest do
           id="monthly-report"
           can_change?={false}
           value="On"
-          who_can_change="Owners and admins can change this"
+          who_can_change="Only owners and admins can change this."
           class="mt-4"
         >
           <button id="monthly-report-switch">Turn off</button>

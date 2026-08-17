@@ -704,7 +704,7 @@ defmodule EmisarWeb.ApprovalsLive do
                   value={
                     grant_lifetime_value_label(@current_account.settings.max_grant_lifetime_seconds)
                   }
-                  who_can_change="Owners and admins can change this"
+                  who_can_change="Only owners and admins can change this."
                   class="mt-3"
                 >
                   <form id="max-grant-lifetime-form" phx-change="set_max_grant_lifetime">
