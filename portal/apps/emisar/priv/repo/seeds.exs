@@ -2150,7 +2150,10 @@ ExecutionItem.Query.by_execution_id(seeded_execution_ids.succeeded)
         action_id: item.action_id,
         args: args,
         reason: succeeded_execution.reason,
-        source: "operator",
+        # A runbook stage's attempt — the scheduler writes `source: :runbook`,
+        # so seeding it as `operator` left the runs list's "Dispatched by →
+        # Runbook" filter matching nothing in the demo account.
+        source: "runbook",
         requested_by_id: user.id,
         initiating_membership_id: owner_membership.id,
         pack_ref: item.pack_ref,

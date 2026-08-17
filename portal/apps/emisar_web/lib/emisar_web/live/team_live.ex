@@ -1521,7 +1521,13 @@ defmodule EmisarWeb.TeamLive do
                     ]}>
                       <.avatar name={Accounts.member_display_name(membership, membership.user) || "?"} />
 
-                      <div class="min-w-0 flex-1">
+                      <%!-- `@container`: the roster sits in `lg:col-span-2` beside
+                       the Security rail, so this column is at its NARROWEST just
+                       past 1024px — narrower than on a phone, where the role and
+                       Actions controls stack away instead of taking the row. The
+                       access rows below key their label track to that width, not
+                       the viewport's (§7.57). --%>
+                      <div class="@container min-w-0 flex-1">
                         <%!-- flex-wrap: the member's name is their identity — on a
                          phone the status chips wrap to the next line instead of
                          crushing the name to "Theo A…". --%>
@@ -1618,8 +1624,11 @@ defmodule EmisarWeb.TeamLive do
                          which dimension it belongs to. The label does, and it
                          also lets each tag drop the half the row already
                          states — a pack row saying "pack" on every pill is the
-                         same word twice. --%>
-                        <dl class="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1">
+                         same word twice. Below `@[17rem]` the label track would
+                         cost the tags more room than they have left, so it
+                         steps above them — still naming the dimension, just on
+                         its own line, instead of squeezing a tag to "da…". --%>
+                        <dl class="mt-1 grid grid-cols-1 items-baseline gap-x-2 gap-y-1 @[17rem]:grid-cols-[auto_minmax(0,1fr)]">
                           <dt class="text-[10px] uppercase tracking-wider text-zinc-400">
                             runners:
                           </dt>

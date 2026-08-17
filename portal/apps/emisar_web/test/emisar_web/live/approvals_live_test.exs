@@ -522,18 +522,18 @@ defmodule EmisarWeb.ApprovalsLiveTest do
       %{conn: conn, account: account}
     end
 
-    test "the decided table pages at 15 rows with a live pager", %{
+    test "the decided table pages at 10 rows with a live pager", %{
       conn: conn,
       account: account
     } do
-      for _ <- 1..16 do
+      for _ <- 1..11 do
         Fixtures.Approvals.create_request(account_id: account.id, status: :approved)
       end
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
 
-      # 15 of 16 render; the pager offers the next cursor page.
-      assert has_element?(lv, "#decided-pager", "15 / 16")
+      # 10 of 11 render; the pager offers the next cursor page.
+      assert has_element?(lv, "#decided-pager", "10 / 11")
       assert has_element?(lv, ~s(a[href*="decided_after="]))
     end
   end

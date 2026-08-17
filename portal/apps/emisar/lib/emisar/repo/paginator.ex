@@ -8,7 +8,7 @@ defmodule Emisar.Repo.Paginator do
   import Ecto.Query
   alias Emisar.Repo.Query
 
-  @default_limit 35
+  @default_limit 20
   @max_limit 100
 
   # A cursor is the one place an operator-supplied string is turned back into

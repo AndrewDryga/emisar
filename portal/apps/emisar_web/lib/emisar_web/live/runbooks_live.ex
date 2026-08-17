@@ -283,8 +283,22 @@ defmodule EmisarWeb.RunbooksLive do
             </div>
           </section>
 
+          <%!-- A digest, not a second list: the rail stays five rows and hands
+               depth to the runs list filtered to runbook dispatches, which
+               already pages, filters, and reaches every run a runbook started.
+               Paging a 20rem rail five at a time would outweigh the runbooks
+               it sits beside. Same shape as a runner's own recent-runs rail. --%>
           <section id="recent-runbook-runs">
-            <.section_header title="Recent runs" />
+            <.section_header title="Recent runs">
+              <:actions :if={@recent_executions != []}>
+                <.link
+                  navigate={~p"/app/#{@current_account}/runs?#{[source: "runbook"]}"}
+                  class="group inline-flex items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
+                >
+                  View all <.cta_arrow />
+                </.link>
+              </:actions>
+            </.section_header>
             <RunbookWorkflowComponents.recent_executions
               executions={@recent_executions}
               load_error?={@recent_executions_error?}

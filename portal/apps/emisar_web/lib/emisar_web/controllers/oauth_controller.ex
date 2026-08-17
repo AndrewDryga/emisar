@@ -407,7 +407,7 @@ defmodule EmisarWeb.OAuthController do
   # picker's options. The read failing must never block consent, so it
   # degrades to the session account (today's single-account behavior).
   defp consent_accounts(conn) do
-    case Accounts.list_accounts_for_user(conn.assigns.current_subject, page_size: 100) do
+    case Accounts.list_accounts_for_user(conn.assigns.current_subject, page: [limit: 100]) do
       {:ok, accounts, _meta} -> accounts
       _ -> [conn.assigns.current_account]
     end

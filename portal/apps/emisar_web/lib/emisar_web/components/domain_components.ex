@@ -359,6 +359,12 @@ defmodule EmisarWeb.DomainComponents do
   `<.chip>`; a pair crammed into one chip as `"Group: x"` is the shape this
   replaces. Informative, so it stays zinc even inside a rose block.
 
+  The pair is ONE unbreakable unit: it wraps whole to the next line of its
+  `flex flex-wrap` row, and only when a single tag is wider than that row does
+  the value half ellipsize (its `title` keeps the value readable). Left to
+  break, the value wrapped under its own label and stranded the divider beside
+  the empty half.
+
       <.identity_tag category="group" value="va1-cassandra" />
       <.identity_tag category={runner.group} value={runner.name} />
       <.identity_tag category="runner" title={runner_id}>
@@ -375,13 +381,15 @@ defmodule EmisarWeb.DomainComponents do
     ~H"""
     <span
       class={[
-        "inline-flex items-stretch overflow-hidden rounded font-mono text-[11px] ring-1 ring-zinc-700/60",
+        "inline-flex max-w-full items-stretch overflow-hidden rounded font-mono text-[11px] ring-1 ring-zinc-700/60",
         @class
       ]}
       {@rest}
     >
-      <span class="bg-zinc-800/50 px-1.5 py-0.5 text-zinc-400">{@category}</span>
-      <span class="border-l border-zinc-700/60 px-1.5 py-0.5 text-zinc-300">
+      <span class="shrink-0 whitespace-nowrap bg-zinc-800/50 px-1.5 py-0.5 text-zinc-400">
+        {@category}
+      </span>
+      <span class="truncate border-l border-zinc-700/60 px-1.5 py-0.5 text-zinc-300" title={@value}>
         {@value}{render_slot(@inner_block)}
       </span>
     </span>

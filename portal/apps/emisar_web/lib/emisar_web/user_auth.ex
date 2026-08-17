@@ -879,7 +879,7 @@ defmodule EmisarWeb.UserAuth do
   # fetch on every LV mount — `count: false` because the switcher renders the
   # rows, never a total, and the default aggregate would double the cost.
   defp load_switchable_accounts(subject) do
-    case Accounts.list_accounts_for_user(subject, page_size: 100, count: false) do
+    case Accounts.list_accounts_for_user(subject, page: [limit: 100], count: false) do
       {:ok, accounts, _meta} -> accounts
       _ -> []
     end

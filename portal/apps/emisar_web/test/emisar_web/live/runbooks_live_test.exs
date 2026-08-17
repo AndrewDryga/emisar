@@ -165,6 +165,29 @@ defmodule EmisarWeb.RunbooksLiveTest do
     refute html =~ hidden.reason
   end
 
+  test "the recent-runs digest hands depth to the runs list, not a rail pager", %{conn: conn} do
+    # The rail is five rows in a 20rem column; the full record of what runbooks
+    # dispatched is the runs list filtered to them, which already pages.
+    {conn, user, account} = register_and_log_in(conn)
+    runbook = create_runbook!(user, account, "Deploy check", published?: true)
+    create_execution!(user, account, runbook, "Deploy during change window")
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks")
+
+    assert has_element?(lv, "#recent-runbook-runs a[href$='/runs?source=runbook']", "View all")
+    refute has_element?(lv, "#recent-runbook-runs [id$='-pager']")
+  end
+
+  test "an account with no executions yet offers no door to an empty list", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    create_runbook!(user, account, "Never run", published?: true)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks")
+
+    assert has_element?(lv, "#recent-runbook-runs", "No runs yet.")
+    refute has_element?(lv, "#recent-runbook-runs a[href$='/runs?source=runbook']")
+  end
+
   test "a viewer gets the list but no New action", %{conn: conn} do
     {_owner_conn, user, account} = register_and_log_in(conn)
     runbook = create_runbook!(user, account, "Visible to all")

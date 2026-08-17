@@ -125,14 +125,14 @@ defmodule EmisarWeb.ApprovalsLive do
   defp load(socket, params) do
     subject = socket.assigns.current_subject
 
-    # Three tables share one page — compact 15-row pages keep every section
-    # scannable (the Paginator's 35/the decided read's 100 defaults let one
+    # Three tables share one page — compact 10-row pages keep every section
+    # scannable (the Paginator's 20/the decided read's 100 defaults let one
     # busy section swallow the page); the pager takes over past that.
     pending_opts =
-      LiveTable.params_to_opts(params, [], prefix: "pending_") |> put_page_limit(15)
+      LiveTable.params_to_opts(params, [], prefix: "pending_") |> put_page_limit(10)
 
-    grants_opts = LiveTable.params_to_opts(params, [], prefix: "grants_") |> put_page_limit(15)
-    decided_opts = LiveTable.params_to_opts(params, [], prefix: "decided_") |> put_page_limit(15)
+    grants_opts = LiveTable.params_to_opts(params, [], prefix: "grants_") |> put_page_limit(10)
+    decided_opts = LiveTable.params_to_opts(params, [], prefix: "decided_") |> put_page_limit(10)
 
     # Each of the three sections carries its OWN read failure. An {:error, _}
     # collapsed to [] reads as "Nothing waiting" / "No active grants" — hiding a

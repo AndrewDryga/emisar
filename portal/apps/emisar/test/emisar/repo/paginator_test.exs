@@ -26,7 +26,7 @@ defmodule Emisar.Repo.PaginatorTest do
 
   describe "init/3" do
     test "clamps the requested page limit" do
-      assert {:ok, %{limit: 35}} = Paginator.init(CursorQuery, [], [])
+      assert {:ok, %{limit: 20}} = Paginator.init(CursorQuery, [], [])
       assert {:ok, %{limit: 1}} = Paginator.init(CursorQuery, [], limit: 0)
       assert {:ok, %{limit: 100}} = Paginator.init(CursorQuery, [], limit: 1_000)
     end

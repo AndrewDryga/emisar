@@ -263,7 +263,7 @@ defmodule Emisar.RunnersTest do
     test "returns every scoped runner without a pagination cap and preloads Presence on request" do
       {account, _user, subject} = account_with_owner_subject()
 
-      # 40 runners — past the paginator's 35-row default page.
+      # 40 runners — past the paginator's 20-row default page.
       for _ <- 1..40,
           do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
@@ -273,7 +273,7 @@ defmodule Emisar.RunnersTest do
 
       # The UI reader is deliberately left paginated.
       assert {:ok, paged, _meta} = Runners.list_runners_for_account(subject)
-      assert length(paged) == 35
+      assert length(paged) == 20
 
       # Another account sees none of them.
       {_other, _u, other_subject} = account_with_owner_subject()

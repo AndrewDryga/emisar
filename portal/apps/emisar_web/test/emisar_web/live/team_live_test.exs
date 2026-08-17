@@ -1158,7 +1158,7 @@ defmodule EmisarWeb.TeamLiveTest do
           subject
         )
 
-      # One past the 35-row default page. The scope editor validates a selection
+      # Well past the 20-row default page. The scope editor validates a selection
       # against the runner list the page loaded, so a paged load made this runner
       # ungrantable — the selection came back `:invalid_runner_access` and the
       # picker silently dropped it.
