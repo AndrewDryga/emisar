@@ -373,6 +373,20 @@ defmodule Emisar.Audit.Event.Query do
   """
   def billing_event_types, do: @billing_event_types
 
+  # Actor/target vocabularies for event types exposed to a NARROWED reader.
+  # Full-trail readers keep the complete static filters, so only a type that
+  # joins a restricted readable slice needs an entry. A missing entry fails
+  # OPEN at the presentation layer (the complete kind vocabulary stays shown),
+  # while the billing-manager role test pins this slice to the exact compact
+  # surface so a newly-added Billing type cannot ship without declaring its
+  # usable kinds. Row authorization remains in Authorizer.for_subject/2.
+  @kind_values_by_event_type %{
+    "subscription.changed" => %{
+      actor_kind: ["system"],
+      target_kind: ["account"]
+    }
+  }
+
   # Each domain group belongs to exactly ONE review CATEGORY — the coarse lens
   # the audit page's quick-filter chips + panel facet narrow by. Deriving from
   # the existing groups (not a second per-type taxonomy) keeps it low-drift: a
@@ -1160,7 +1174,8 @@ defmodule Emisar.Audit.Event.Query do
     end)
   end
 
-  @vocabulary_filter_names [:category, :event_type, :outcome]
+  @event_type_vocabulary_filter_names [:category, :event_type, :outcome]
+  @kind_filter_names [:actor_kind, :target_kind]
 
   @doc """
   The filters a reader narrowed to `readable` event types can actually use.
@@ -1168,9 +1183,8 @@ defmodule Emisar.Audit.Event.Query do
   Each vocabulary-bearing filter keeps only the values that can still match a
   readable type, and one left with no value that NARROWS is dropped — nothing
   selectable, or a single choice that just returns the reader's whole slice.
-  An option that can only ever come back empty, or change nothing, is not a
-  filter. A billing manager is offered 16 type groups and 5 category chips where
-  one type can match; afterwards, neither control is offered at all.
+  This applies to event taxonomy and actor/target kinds alike. An option that
+  can only ever come back empty, or change nothing, is not a filter.
 
   `readable` is `Audit.Authorizer.readable_event_types/1` — the same judgment
   `for_subject/2` scopes the ROWS by — so an offered option always has rows
@@ -1206,20 +1220,41 @@ defmodule Emisar.Audit.Event.Query do
     %{filter | values: Enum.filter(filter.values, &reaches?(name, elem(&1, 0), allowed))}
   end
 
+  defp narrow_filter_values(%Filter{name: name} = filter, allowed)
+       when name in @kind_filter_names do
+    case readable_kind_values(name, allowed) do
+      :unknown -> filter
+      kinds -> %{filter | values: Enum.filter(filter.values, &MapSet.member?(kinds, elem(&1, 0)))}
+    end
+  end
+
   defp narrow_filter_values(%Filter{} = filter, _allowed), do: filter
 
   # A value narrows when what it selects is a NON-EMPTY, PROPER subset of the
   # readable set: empty means it can only return zero rows, and equal means
   # picking it changes nothing the reader can already see.
   defp cannot_narrow?(%Filter{name: name} = filter, allowed)
-       when name in @vocabulary_filter_names do
+       when name in @event_type_vocabulary_filter_names do
     not Enum.any?(selections(filter), fn selected ->
       reach = MapSet.intersection(selected, allowed)
       not Enum.empty?(reach) and not MapSet.equal?(reach, allowed)
     end)
   end
 
+  defp cannot_narrow?(%Filter{name: name, values: values}, _allowed)
+       when name in @kind_filter_names,
+       do: length(values) < 2
+
   defp cannot_narrow?(%Filter{}, _allowed), do: false
+
+  defp readable_kind_values(name, allowed) do
+    Enum.reduce_while(allowed, MapSet.new(), fn type, acc ->
+      case get_in(@kind_values_by_event_type, [type, name]) do
+        nil -> {:halt, :unknown}
+        kinds -> {:cont, MapSet.union(acc, MapSet.new(kinds))}
+      end
+    end)
+  end
 
   defp selections(%Filter{name: :event_type} = filter) do
     for {_group_label, options} <- filter.values,

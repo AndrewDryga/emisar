@@ -447,7 +447,7 @@ defmodule EmisarWeb.AuditLive do
           phx-click="toggle_problems"
           aria-pressed={to_string(problems_only?(@filter_params))}
           class={[
-            "min-h-10 rounded-md px-3 py-2 font-medium ring-1 transition-colors",
+            "rounded-md px-2 py-1 font-medium ring-1 transition-colors",
             if(problems_only?(@filter_params),
               do: "bg-brand-500/10 text-brand-300 ring-brand-500/40",
               else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"

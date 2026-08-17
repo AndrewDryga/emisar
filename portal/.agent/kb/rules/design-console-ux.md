@@ -150,6 +150,11 @@ Structural rules that ride along:
     pairs in the cell beside it. A kind picker's title is "<X> type" so it doesn't collide
     with the "<X>" value picker next to it. Never make a filter double-width just to fill
     space — that was the exact "don't make them double width" correction.
+  - **A scoped reader sees only filters that can narrow their readable slice, and only
+    values that can match it.** Derive the offered vocabulary from the same subject-aware
+    contract that scopes the rows; never branch on a role name in the LiveView. Drop a
+    control when zero values remain or its sole remaining value would select the reader's
+    whole slice. The backend authorization remains authoritative for hand-edited URLs.
 - **Settings never embed in operational pages** without a PM decision — the current three
   (2FA/SSO toggles on Team, grant cap on Approvals, SIEM tokens on Audit) are grandfathered
   until that pass; do not add a fourth.
@@ -665,7 +670,9 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     filters:`) rides the first dimension at a small label-to-control gap, or it reads as a
     fourth group and orphans a line. **Same-dimension filter options are one segmented
     control:** zero gap, one outer frame, shared internal dividers, square internal corners,
-    and rounding only on the two outside ends. A single-option dimension remains one rounded
+    and rounding only on the two outside ends. Segmentation changes ADJACENCY only: preserve
+    the established compact chip density (`px-2 py-1`), rather than inflating the joined
+    options into toolbar-sized buttons. A single-option dimension remains one compact rounded
     toggle. The previous `gap-1.5` chip row made one choice set read as several unrelated
     actions; this joined treatment is the 2026-08-17 correction. Never answer this by
     merging two dimensions into one segmented group — that spells a different question as

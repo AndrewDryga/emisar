@@ -1309,6 +1309,16 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "SIEM export"
       refute has_element?(lv, "a[href*='/audit/export']")
     end
+
+    test "offers only filters that can narrow the billing slice", %{account: account, conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+      lv |> element("button[phx-click='toggle_filters']") |> render_click()
+
+      assert has_element?(lv, "#audit-events-filter input[name='from']")
+      assert has_element?(lv, "#audit-events-filter input[name='to']")
+      refute has_element?(lv, "#audit-events-filter select[name='actor_kind']")
+      refute has_element?(lv, "#audit-events-filter select[name='target_kind']")
+    end
   end
 
   # Click "Next →" until the pager runs out, returning every page's HTML

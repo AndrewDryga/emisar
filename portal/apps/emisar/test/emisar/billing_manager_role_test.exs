@@ -132,11 +132,11 @@ defmodule Emisar.BillingManagerRoleTest do
     # is a list of things you are not allowed to see. The narrowing is derived
     # from `Authorizer.readable_event_types/1`, the same judgment that scopes the
     # rows, so the two cannot drift.
-    test "is offered no Type, Severity, or Category control — none of them can narrow", %{
+    test "is offered only filters that can narrow the billing slice", %{
       subject: subject
     } do
       assert Enum.map(Audit.event_filters(subject), & &1.name) ==
-               [:from, :to, :request_id, :auth_method, :actor_kind, :target_kind]
+               [:from, :to, :request_id, :auth_method]
 
       assert Audit.event_category_values(subject) == []
     end

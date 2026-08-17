@@ -29,10 +29,12 @@ defmodule EmisarWeb.Components.SegmentedFilterTest do
       refute html =~ "gap-"
     end
 
-    test "renders shared edges, full hit areas, pressed state, and LiveView bindings" do
+    test "renders shared edges, compact chip density, pressed state, and LiveView bindings" do
       html = render_group()
 
-      assert html =~ "min-h-10"
+      assert html =~ "px-2 py-1"
+      refute html =~ "min-h-10"
+      refute html =~ "px-3 py-2"
       assert html =~ "first:rounded-l-md"
       assert html =~ "last:rounded-r-md"
       assert html =~ "first:border-l-0"
