@@ -354,10 +354,23 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     assigned to one named person. Say "awaiting review" or "pending decision", not
     "waiting on you", when any authorized reviewer can act. Sweep: viewer-relative
     queue headings and counts derived only from broad role permission.
-25. **Tooltips open inward from the nearest canvas edge.** A trigger near the left edge
-    left-aligns its bubble so it grows right; a trigger near the right edge right-aligns
-    it so it grows left. Raising z-index cannot escape an ancestor's overflow boundary.
-    Sweep: edge-adjacent tooltips whose bubble points into clipped shell chrome.
+25. **Overlays open inward from the nearest canvas edge, and no ancestor may clip one
+    away.** A trigger near the left edge left-aligns its bubble so it grows right; a
+    trigger near the right edge right-aligns it so it grows left; a trigger with no room
+    BELOW opens its panel above itself. Raising z-index cannot escape an ancestor's
+    overflow boundary — and the boundary is often one nobody declared: clamping ONE axis
+    with `-hidden` makes CSS compute the other to `auto`, so `overflow-x-hidden` on the
+    work canvas turned it into a vertical scroll container that swallowed an open
+    dropdown panel on the last row of a list whole. It did not overflow the page; the
+    document never grew, so no amount of scrolling reached it. Clamp one axis with
+    `overflow-[xy]-clip` (the other stays `visible`); keep plain `overflow-hidden` only
+    where both axes really must be contained. Measure the flip and the clamp against the
+    live rects — `assets/js/overlay.js` owns the shared canvas bounds so the tooltip
+    bubble and the dropdown panel cannot drift apart. Sweep: single-axis `-hidden` on any
+    ancestor of an absolutely-positioned overlay, and edge-adjacent overlays whose panel
+    points into clipped shell chrome. **Enforced** by `EmisarWeb.TemplateHygieneTest`
+    (single-axis `-hidden`) and `EmisarWeb.Components.DropdownTest` (the
+    `data-dropdown` / `data-dropdown-panel` contract dropdown.js positions against).
 26. **A status marker carries status color; adjacent facts remain readable facts.** Keep
     inline counts and ratios neutral when an adjacent dot or chip already signals
     caution. Color a number only when the value itself crosses a meaningful threshold.

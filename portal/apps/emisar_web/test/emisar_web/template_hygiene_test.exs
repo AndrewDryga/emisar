@@ -45,6 +45,14 @@ defmodule EmisarWeb.TemplateHygieneTest do
   # that starts or ends with template whitespace puts a breakable space back.
   @unglued_cta_link_slot ~r{<\.cta_link[^>]*>[ \t\r\n]|[ \t\r\n]</\.cta_link>}
 
+  # Clamping ONE axis with `-hidden` forces the other to compute to `auto` (CSS
+  # Overflow 3), so the element silently becomes a scroll container that swallows
+  # every absolutely-positioned overlay hanging out of it. The console shell's
+  # `<main>` ate the whole `Actions ▾` panel on the last row of a list, and the
+  # document could not even grow to reach it. `overflow-[xy]-clip` clamps the same
+  # axis and leaves the other one `visible`.
+  @single_axis_hidden ~r{\boverflow-[xy]-hidden\b}
+
   defp template_sources do
     [
       Path.wildcard(Path.join(@web_lib, "**/*.heex")),
@@ -153,6 +161,28 @@ defmodule EmisarWeb.TemplateHygieneTest do
                      <div :for={input <- definition["inputs"]}>
 
            See .agent/kb/rules/elixir-nil-is-not-an-empty-list.md.
+
+           Offending lines (relative to apps/emisar_web/lib):
+           #{Enum.map_join(offenders, "\n", &"  #{&1}")}
+           """
+  end
+
+  test "a single-axis overflow clamp uses clip, never hidden" do
+    offenders = offending_source_matches(@single_axis_hidden)
+
+    assert offenders == [],
+           """
+           A single axis is clamped with `-hidden`. CSS Overflow 3 then computes the
+           OTHER axis to `auto`, so the element becomes a scroll container nobody asked
+           for — and it clips every absolutely-positioned overlay that hangs out of it.
+           A dropdown panel or tooltip past its edge does not overflow the page, it
+           disappears, and the document never grows for the operator to scroll to.
+
+               ✅  <main class="flex-1 overflow-x-clip ...">
+               ❌  <main class="flex-1 overflow-x-hidden ...">
+
+           `clip` clamps the same axis and leaves the other `visible`. Both axes really
+           needing containment is a different thing — plain `overflow-hidden` stays.
 
            Offending lines (relative to apps/emisar_web/lib):
            #{Enum.map_join(offenders, "\n", &"  #{&1}")}

@@ -84,7 +84,10 @@ defmodule EmisarWeb.StaffComponents do
         </h1>
       </header>
 
-      <main class="flex-1 overflow-x-hidden px-4 pb-10 pt-2 sm:px-8">
+      <%!-- `overflow-x-clip`, never the `-hidden` spelling — a single-axis
+           `-hidden` makes the other axis a scroll container that swallows any
+           overlay hanging out of it. Same canvas rule as the operator shell. --%>
+      <main class="flex-1 overflow-x-clip px-4 pb-10 pt-2 sm:px-8">
         <div class="mx-auto w-full max-w-6xl space-y-6">
           {render_slot(@inner_block)}
         </div>

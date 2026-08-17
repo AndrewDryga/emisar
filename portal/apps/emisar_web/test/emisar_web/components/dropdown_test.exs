@@ -39,6 +39,17 @@ defmodule EmisarWeb.Components.DropdownTest do
       assert html =~ "group"
     end
 
+    test "marks the shell and panel for the on-screen positioning both bundles wire" do
+      html = render_dropdown(%{}, "Actions", "x")
+
+      # dropdown.js finds every panel through this pair — a delegated `toggle`
+      # listener, so there is no id or hook to key it to. Drop either attribute and
+      # a panel opening at the bottom or the edge of the screen silently stops
+      # being pulled back on screen, in the console AND on a static page.
+      assert html =~ "data-dropdown"
+      assert html =~ "data-dropdown-panel"
+    end
+
     test "renders the trigger in the summary and the inner block in the panel" do
       html = render_dropdown(%{}, "Open menu", "the items")
 

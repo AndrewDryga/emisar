@@ -2,7 +2,10 @@
 // it as a LiveView hook, and the server-rendered marketing pages (a pack's risk
 // pills) wire it once on load. CSS owns the reveal; this adds WCAG 1.4.13
 // "Dismissable" (Escape) plus horizontal viewport clamping, which keeps a long
-// bubble inside the visible work canvas when its trigger sits near an edge.
+// bubble inside the visible work canvas when its trigger sits near an edge —
+// the same clamp the dropdown panel uses, shared through overlay.js.
+import {horizontalShift} from "./overlay.js"
+
 export function wireTooltip(el) {
   const bubble = el?.querySelector("[data-tooltip-bubble]")
   if (!bubble) return () => {}
@@ -11,16 +14,7 @@ export function wireTooltip(el) {
 
   const position = () => {
     bubble.style.transform = ""
-    const rect = bubble.getBoundingClientRect()
-    const canvas = el.closest("main")?.getBoundingClientRect()
-    const leftEdge = Math.max(8, (canvas?.left ?? 0) + 8)
-    const rightEdge = Math.min(window.innerWidth - 8, (canvas?.right ?? window.innerWidth) - 8)
-    const shift = rect.left < leftEdge
-      ? leftEdge - rect.left
-      : rect.right > rightEdge
-        ? rightEdge - rect.right
-        : 0
-    bubble.style.transform = `translateX(${shift}px)`
+    bubble.style.transform = `translateX(${horizontalShift(el, bubble.getBoundingClientRect())}px)`
   }
 
   const rearm = () => {

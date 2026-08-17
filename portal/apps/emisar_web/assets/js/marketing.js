@@ -14,6 +14,9 @@
 //   * Escape-to-dismiss + viewport clamping for the shared <.tooltip>,
 //     which a pack page's risk pills render — the console gets the same
 //     behaviour from the LiveView hook in tooltip.js
+//   * on-screen positioning for the shared <.dropdown> panel — a delegated
+//     listener, so the console and a server-rendered page wire it identically
+//     and neither can grow a panel that opens off the bottom or the edge
 //
 // The authenticated console loads `app.js` (LiveSocket + hooks) instead;
 // `root.html.heex` picks the bundle from the `@app_js?` assign, which the
@@ -24,6 +27,7 @@ import {initDocsFilter} from "./docs_filter.js"
 import {initDocsLightbox} from "./docs_lightbox.js"
 import {initDocsNavScroll} from "./docs_nav_scroll.js"
 import {initDocsToc} from "./docs-toc.js"
+import {initDropdowns} from "./dropdown.js"
 import {initEmisarDemo} from "./emisar_demo.js"
 import {initStaticFlashes} from "./flash.js"
 import {initLegalToc} from "./legal_toc.js"
@@ -51,6 +55,7 @@ if (document.querySelector('nav[aria-label="Docs"]')) {
 }
 initDocsFilter()
 initDocsLightbox()
+initDropdowns()
 initMobileNav()
 initPackSearch()
 initPricingCycle()

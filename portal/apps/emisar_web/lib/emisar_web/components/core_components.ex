@@ -354,9 +354,10 @@ defmodule EmisarWeb.CoreComponents do
   defp icon_button_tone(:rose), do: "hover:text-rose-300 focus-visible:outline-rose-400"
 
   @doc """
-  A click-to-open dropdown built on native `<details>` — no JS, so it opens on
-  click and closes on outside-click / Esc / re-click for free, and works before
-  LiveView connects.
+  A click-to-open dropdown built on native `<details>`, so it opens on click and
+  closes on re-click before LiveView connects; `phx-click-away` adds the
+  outside-click close once it has. (Native `<details>` has no Escape close —
+  only `<dialog>` and popovers do.)
 
   The `:trigger` slot is the `<summary>` content (the button/icon the operator
   clicks); the default slot is the panel. The component owns the a11y plumbing
@@ -364,6 +365,12 @@ defmodule EmisarWeb.CoreComponents do
   triangle (`list-none` + the WebKit/standard marker pseudo-elements) — and the
   panel's `absolute` anchor. `group` on the `<details>` lets trigger/panel markup
   use `group-open:` modifiers (e.g. swapping a chevron when open).
+
+  The `data-dropdown` / `data-dropdown-panel` pair is the contract `dropdown.js`
+  positions against: an open panel that would run past the bottom of the screen
+  opens ABOVE its trigger instead, and one that would run past a canvas edge
+  slides back inside it. Both bundles wire that delegated listener, so a panel
+  positions itself on a static page exactly as it does in the console.
 
   `align` anchors the panel: `:right` (default) right-aligns it under the trigger
   (a per-row actions menu); `:left` left-aligns it; `:stretch` spans the trigger
@@ -398,19 +405,27 @@ defmodule EmisarWeb.CoreComponents do
 
   def dropdown(assigns) do
     ~H"""
-    <details class={["group relative", @class]} phx-click-away={JS.remove_attribute("open")} {@rest}>
+    <details
+      class={["group relative", @class]}
+      data-dropdown
+      phx-click-away={JS.remove_attribute("open")}
+      {@rest}
+    >
       <summary class={[
         "cursor-pointer list-none [&::-webkit-details-marker]:hidden [&::marker]:hidden",
         @summary_class
       ]}>
         {render_slot(@trigger)}
       </summary>
-      <div class={[
-        "rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10",
-        dropdown_panel_position(@panel_position),
-        dropdown_align(@align),
-        @panel_class
-      ]}>
+      <div
+        data-dropdown-panel
+        class={[
+          "rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10",
+          dropdown_panel_position(@panel_position),
+          dropdown_align(@align),
+          @panel_class
+        ]}
+      >
         {render_slot(@inner_block)}
       </div>
     </details>
@@ -1695,7 +1710,14 @@ defmodule EmisarWeb.CoreComponents do
              it — typography and space carry the structure; a contained surface
              (island) is reserved for things where the box MEANS something (a
              code artifact, a form, an attention panel). --%>
-        <main class="flex-1 overflow-x-hidden bg-black px-4 pb-10 pt-2 sm:px-8">
+        <%!-- Wide content is clamped with `overflow-x-clip`, never the `-hidden`
+             spelling: `-hidden` on ONE axis forces the other to compute to `auto`,
+             which silently made this canvas a vertical SCROLL container. It then
+             swallowed every absolutely-positioned overlay hanging out of it — an
+             open dropdown panel on the last row of a list vanished instead of
+             extending the page, and no amount of scrolling reached it. `clip`
+             contains the same wide table without creating that boundary. --%>
+        <main class="flex-1 overflow-x-clip bg-black px-4 pb-10 pt-2 sm:px-8">
           <div class={["mx-auto w-full space-y-6", shell_width(@width)]}>
             {render_slot(@inner_block)}
           </div>

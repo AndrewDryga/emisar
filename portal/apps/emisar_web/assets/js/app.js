@@ -13,6 +13,7 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 import {setupCopyToClipboardDelegation} from "./copy.js"
+import {initDropdowns} from "./dropdown.js"
 import {FlashAutoClose} from "./flash.js"
 import {Tooltip} from "./tooltip.js"
 
@@ -279,6 +280,12 @@ function formatForensic(dt) {
 // CSP-safe Copy buttons (`data-copy` / `data-copy-text`). Shared with the
 // marketing bundle; see copy.js for why it's a delegated listener.
 setupCopyToClipboardDelegation()
+
+// Keeps an open <.dropdown> panel on screen — above its trigger when there's no
+// room below, inside the canvas when it would run off an edge. Delegated at the
+// document, so a panel a LiveView patch adds later needs no re-wiring; the
+// marketing bundle calls the identical function.
+initDropdowns()
 
 // Live expiry countdown for a held approval. Ticks "Expires in MM:SS" (or "Hh MMm"
 // when far out), shifting tone amber→rose as it nears zero. At zero it shows
