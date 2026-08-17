@@ -66,7 +66,7 @@ defmodule Emisar.Runbooks.Runbook.Query do
   defp state_or("live", acc), do: dynamic([runbooks: r], ^acc or not is_nil(r.live_version))
   defp state_or("draft", acc), do: dynamic([runbooks: r], ^acc or not is_nil(r.draft_definition))
 
-  # Label-batcher for `Audit.resolve_references/1`. The query module
+  # Label-batcher for `Audit.resolve_references/2`. The query module
   # already knows the named binding, so audit-side resolution can stay
   # Repo-only without poking at the schema.
   def select_labels(queryable, ids, field) do

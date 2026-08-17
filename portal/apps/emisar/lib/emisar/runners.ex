@@ -95,7 +95,7 @@ defmodule Emisar.Runners do
         # they already authorized, but the lookup itself had no tenant filter
         # at all — it would resolve ANY account's runner id to its name, which
         # is one careless caller away from a cross-tenant name leak. Its direct
-        # analogue `Audit.resolve_references/1` scopes the same operation, and
+        # analogue `Audit.resolve_references/2` scopes the same operation, and
         # so does the sibling `runner_scope_facts_for_ids/2` below.
         Runner.Query.all()
         |> Runner.Query.by_account_id(account_id)

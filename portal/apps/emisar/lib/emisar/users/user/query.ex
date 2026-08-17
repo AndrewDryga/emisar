@@ -30,7 +30,7 @@ defmodule Emisar.Users.User.Query do
   def lock_for_update(queryable), do: lock(queryable, "FOR UPDATE")
 
   @doc """
-  `Audit.resolve_references/1` helper — narrow to ids, project
+  `Audit.resolve_references/2` helper — narrow to ids, project
   `{id, label_field}` tuples. Plain SQL composition for label lookup
   fan-out; not paginated.
   """
