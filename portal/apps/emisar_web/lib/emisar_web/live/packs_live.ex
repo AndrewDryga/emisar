@@ -1607,8 +1607,8 @@ defmodule EmisarWeb.PacksLive do
               count={length(@out_of_scope_pack_ids)}
             >
               <:subtitle>
-                Also running in this workspace. Ask an owner or admin for access to what these
-                packs contain.
+                Also running in this workspace. Ask an owner or admin for access to actions those
+                packs provide.
               </:subtitle>
             </.section_header>
             <div class="mt-4 flex flex-wrap gap-2">
