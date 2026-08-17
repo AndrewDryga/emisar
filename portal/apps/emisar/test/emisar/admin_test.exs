@@ -1,5 +1,6 @@
 defmodule Emisar.AdminTest do
   use Emisar.DataCase, async: true
+  alias Emisar.Accounts.Membership
   alias Emisar.{Admin, Audit, Billing, Fixtures}
 
   describe "job_modules/0" do
@@ -286,6 +287,14 @@ defmodule Emisar.AdminTest do
                ])
 
       assert {:error, :not_found} = Emisar.Accounts.fetch_account_by_id(account.id)
+
+      assert {:ok, %{disabled: false}} =
+               Admin.execute("emisar.admin.account.enable", [
+                 "account=#{account.slug}",
+                 "reason=support=resolved"
+               ])
+
+      assert {:ok, _account} = Emisar.Accounts.fetch_account_by_id(account.id)
     end
 
     # These four run under `support_subject/1`, which has no actor. Every one of
@@ -316,6 +325,116 @@ defmodule Emisar.AdminTest do
       assert {:ok, _} = Admin.execute("emisar.admin.member.reinstate", args)
       assert {:ok, _} = Admin.execute("emisar.admin.sessions.revoke", args)
       assert {:ok, _} = Admin.execute("emisar.admin.mfa.reset", args)
+    end
+
+    # The support subject holds no membership, so `runner_access_for_subject/1`
+    # reads its reach as `none` and the nondelegation cap refused the full runner
+    # access this verb hands out. Behind that, the membership insert dereferenced
+    # `subject.actor.id` for the inviter attribution, which is nil here too.
+    test "invites a member with full runner access from the actorless support subject" do
+      account = Fixtures.Accounts.create_account()
+
+      assert {:ok, invited} =
+               Admin.execute("emisar.admin.member.invite", [
+                 "account=#{account.slug}",
+                 "email=locked-out-owner@example.com",
+                 "role=admin"
+               ])
+
+      assert invited.email == "locked-out-owner@example.com"
+      assert invited.role == :admin
+      assert invited.invitation_pending
+      refute invited.disabled
+
+      membership = Repo.one(Membership)
+      assert membership.id == invited.id
+      assert membership.runner_access_mode == :all
+      # No human invited them — the platform did.
+      assert is_nil(membership.invited_by_id)
+    end
+
+    # The other invitation verb on the same actorless subject: it mints a fresh
+    # join link, so the old one must stop working.
+    test "resends a pending invitation from the actorless support subject" do
+      account = Fixtures.Accounts.create_account()
+
+      assert {:ok, invited} =
+               Admin.execute("emisar.admin.member.invite", [
+                 "account=#{account.slug}",
+                 "email=stalled-invite@example.com",
+                 "role=operator"
+               ])
+
+      first_digest = Repo.one(Membership).invitation_token_digest
+
+      assert {:ok, resent} =
+               Admin.execute("emisar.admin.invitation.resend", [
+                 "account=#{account.slug}",
+                 "member=stalled-invite@example.com"
+               ])
+
+      assert resent.id == invited.id
+      assert resent.email == "stalled-invite@example.com"
+      assert resent.invitation_pending
+      refute Repo.one(Membership).invitation_token_digest == first_digest
+    end
+
+    # Promoting reads the MEMBER's existing access as what the stronger role
+    # would wield, and the member holds `all` — more than the support subject's
+    # `none` — so the same cap governs this verb.
+    test "changes a member role from the actorless support subject" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      user = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "viewer"
+        )
+
+      assert {:ok, promoted} =
+               Admin.execute("emisar.admin.member.set_role", [
+                 "account=#{account.slug}",
+                 "member=#{user.email}",
+                 "role=admin"
+               ])
+
+      assert promoted.id == membership.id
+      assert promoted.role == :admin
+      assert promoted.email == user.email
+    end
+
+    test "transfers ownership and demotes the previous owner" do
+      account = Fixtures.Accounts.create_account()
+      previous_owner = Fixtures.Users.create_user()
+
+      previous_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: previous_owner.id,
+          role: "owner"
+        )
+
+      next_owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: next_owner.id,
+        role: "operator"
+      )
+
+      assert {:ok, promoted} =
+               Admin.execute("emisar.admin.owner.transfer", [
+                 "account=#{account.slug}",
+                 "new_owner=#{next_owner.email}",
+                 "previous_owner=#{previous_owner.email}"
+               ])
+
+      assert promoted.role == :owner
+      assert promoted.email == next_owner.email
+      assert Repo.reload!(previous_membership).role == :admin
     end
 
     test "rejects malformed, duplicate, excessive, and non-admin arguments" do

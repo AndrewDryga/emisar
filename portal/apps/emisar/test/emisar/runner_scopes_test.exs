@@ -774,6 +774,32 @@ defmodule Emisar.RunnerAccessTest do
       assert Accounts.ensure_runner_access_grant_allowed(admin_subject, RunnerAccess.all()) ==
                {:error, :runner_access_exceeds_subject}
     end
+
+    # The staff break-glass subject (`Emisar.Admin.support_subject/1`) holds no
+    # membership, so its own reach reads as `none` — it is acting as the
+    # platform, not delegating reach it never had.
+    test "exempts the actorless, membership-less platform subject" do
+      platform_subject = Fixtures.Subjects.build_subject(role: :owner)
+
+      assert Accounts.ensure_runner_access_grant_allowed(platform_subject, RunnerAccess.all()) ==
+               :ok
+    end
+
+    # Both nils are the guard, so an ordinary member can never reach the
+    # exemption: a caller holding either half is capped by its own reach.
+    test "caps a subject carrying only half the platform shape" do
+      user = Fixtures.Users.create_user()
+      actor_only = Fixtures.Subjects.build_subject(user: user, role: :owner)
+
+      membership_only =
+        Fixtures.Subjects.build_subject(role: :owner, membership_id: Ecto.UUID.generate())
+
+      assert Accounts.ensure_runner_access_grant_allowed(actor_only, RunnerAccess.all()) ==
+               {:error, :runner_access_exceeds_subject}
+
+      assert Accounts.ensure_runner_access_grant_allowed(membership_only, RunnerAccess.all()) ==
+               {:error, :runner_access_exceeds_subject}
+    end
   end
 
   describe "sync_set_membership_authorization/4" do

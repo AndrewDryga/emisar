@@ -859,49 +859,6 @@ defmodule EmisarWeb.TeamLiveTest do
                }
     end
 
-    test "the editor calls scope a guardrail only for a member who can manage the team", %{
-      conn: conn
-    } do
-      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "GuardrailOrg"}})
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
-
-      {:ok, %{membership: admin_membership}} =
-        Emisar.Accounts.invite_user_to_account(
-          Fixtures.Accounts.invitation_attrs(
-            email: "admin-#{System.unique_integer([:positive])}@example.com",
-            role: "admin",
-            runner_access_mode: "all"
-          ),
-          subject
-        )
-
-      {:ok, %{membership: operator_membership}} =
-        Emisar.Accounts.invite_user_to_account(
-          Fixtures.Accounts.invitation_attrs(
-            email: "operator-#{System.unique_integer([:positive])}@example.com",
-            role: "operator",
-            runner_access_mode: "all"
-          ),
-          subject
-        )
-
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
-
-      admin_editor =
-        render_click(lv, "start_scope_edit", %{"membership_id" => admin_membership.id})
-
-      assert admin_editor =~ "This member can manage the team"
-
-      # The note qualifies the save the operator is about to make, so it wears the
-      # callout spine (§7.50) — the amber spine class is what the spine-less
-      # `status_note` does not render.
-      assert admin_editor =~ "bg-amber-300/40"
-
-      # An operator's scope is a real limit, so the same note there would be a lie.
-      refute render_click(lv, "start_scope_edit", %{"membership_id" => operator_membership.id}) =~
-               "This member can manage the team"
-    end
-
     test "an emptied pack selection is named at the picker, not in a flash", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "PackErrOrg"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)

@@ -984,7 +984,6 @@ defmodule Emisar.Accounts do
       confirmation_pending?: confirmation_pending?,
       runner_access: Map.get(access_by_membership, membership.id, RunnerAccess.none()),
       runner_access_editable?: not membership.runner_access_directory_managed,
-      manages_team?: manages_team?(membership),
       role_editable?: not self_owner? and not membership.directory_managed,
       resend_invitation?: pending_invitation? and not disabled?,
       resend_confirmation?:
@@ -1016,14 +1015,6 @@ defmodule Emisar.Accounts do
        do: true
 
   defp self_owner?(%Membership{}, %Subject{}), do: false
-
-  # Read off the permission rather than a role list, so a future role granting
-  # manage_team is covered without a second place to remember. The access
-  # editor says out loud what this implies: such a member cannot change their
-  # own access (`ensure_can_modify_membership/2` refuses self), but anyone who
-  # can manage them can change it for them — a guardrail, not containment.
-  defp manages_team?(%Membership{role: role}),
-    do: role in Auth.Permissions.roles_with_permission(Authorizer.manage_team_permission())
 
   @doc """
   The memberships for the given `user_ids` in `account`, each preloaded with its
@@ -1612,7 +1603,25 @@ defmodule Emisar.Accounts do
   @doc """
   Internal - SSO and team configuration use the same live nondelegation check:
   a subject may grant only runner access their current active membership covers.
+  The staff break-glass subject is exempt — it holds no membership, so it has no
+  reach of its own to delegate.
   """
+  # The break-glass support subject (`Emisar.Admin.support_subject/1`) is an owner
+  # by permission but holds no membership in the account, so
+  # `runner_access_for_subject/1` reads its reach as `none` and this cap refused
+  # every staff invite and every support-run promotion. It is not delegating its
+  # own reach; it is acting as the platform, and its authority is
+  # `Emisar.Admin.ensure_staff/1` plus the staff audit trail, not a tenant scope.
+  # BOTH nils are the guard: `Subject.for_user/5` always carries an actor AND a
+  # membership, so no ordinary member can ever take this clause. One spelling
+  # here covers every caller of the cap — invitations, access edits, role
+  # promotions, and SSO — rather than a carve-out repeated at each.
+  def ensure_runner_access_grant_allowed(
+        %Subject{actor: nil, membership_id: nil},
+        %RunnerAccess{}
+      ),
+      do: :ok
+
   def ensure_runner_access_grant_allowed(%Subject{} = subject, %RunnerAccess{} = access) do
     if RunnerAccess.covers?(runner_access_for_subject(subject), access),
       do: :ok,
@@ -2185,20 +2194,6 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # The staff break-glass subject (`Emisar.Admin.support_subject/1`) is an owner
-  # by permission but holds no membership in the account, so it has no member
-  # reach to cap against — `runner_access_for_subject/1` reports `none` for it,
-  # which would refuse every support-run owner transfer. Its authority is
-  # `ensure_staff/1` plus the staff audit trail, not a tenant scope. Nothing else
-  # reaches here without a membership: `Subject.for_user/5` always carries one,
-  # and no other role holds `manage_team`.
-  defp ensure_role_change_within_subject_reach(
-         %Membership{},
-         _new_role,
-         %Subject{actor: nil, membership_id: nil}
-       ),
-       do: :ok
-
   # Nondelegation — the cap invitations (`validate_invitation/3`) and access edits
   # (`update_membership_runner_access/3`) already run: you may not hand out reach
   # you don't hold yourself. A role change carries no access of its own, so only a
@@ -2207,7 +2202,9 @@ defmodule Emisar.Accounts do
   # lock. Without this a scoped admin promotes a member whose access exceeds
   # theirs and gains a peer who can widen them right back. A change that only
   # removes permissions is a narrowing and stays open, so a scoped admin can
-  # always reduce a member they cannot fully reach.
+  # always reduce a member they cannot fully reach. The break-glass staff subject
+  # is exempt inside the cap itself, so a support-run promotion is never refused
+  # for reach it was never meant to hold.
   defp ensure_role_change_within_subject_reach(
          %Membership{} = membership,
          new_role,
@@ -3142,7 +3139,11 @@ defmodule Emisar.Accounts do
           runner_access_mode: invitation.runner_access.mode,
           pack_access_mode: invitation.runner_access.pack_mode,
           pack_scope_pack_ids: invitation.runner_access.pack_ids,
-          invited_by_id: subject.actor.id,
+          # `Subject.user_id/1`, not `subject.actor.id`: the break-glass support
+          # subject has no actor, and this is a `belongs_to :invited_by` on users
+          # — a platform-run invitation records no human inviter rather than
+          # crashing on nil (or hanging an API key's id off a users FK).
+          invited_by_id: Subject.user_id(subject),
           invitation_token_digest: token_digest
         })
       end)
