@@ -160,8 +160,13 @@ var docsShots = []shot{
 	// header (chromedp mis-clips a tall element anchored partway down the page);
 	// #shell-canvas is top-anchored, so it captures clean like the loop frames.
 	{Name: "team-page", Path: "/app/demo/settings/team", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 820, Output: "screenshots/team-page.webp"},
-	{Name: "runs", Path: "/app/demo/runs", Anchor: Anchor{Selector: "#runs"}, Width: 1280, Output: "screenshots/runs.webp"},
-	{Name: "agents", Path: "/app/demo/agents", Anchor: Anchor{Selector: "#agents"}, Width: docsWidth, Output: "screenshots/agents.webp"},
+	// TopCSS on both: these anchor a PAGINATED list, so the crop height follows
+	// whatever the seed happens to hold — the demo account now fills a page, and
+	// uncapped these grew to 2x and 4x their committed height. The caps keep the
+	// framing the docs were written against; a page's worth of rows is the seed's
+	// job to exercise, not a teaching image's.
+	{Name: "runs", Path: "/app/demo/runs", Anchor: Anchor{Selector: "#runs"}, Width: 1280, TopCSS: 870, Output: "screenshots/runs.webp"},
+	{Name: "agents", Path: "/app/demo/agents", Anchor: Anchor{Selector: "#agents"}, Width: docsWidth, TopCSS: 900, Output: "screenshots/agents.webp"},
 	// Runbooks use one production-shaped seeded procedure across the complete
 	// guide. Content-addressed navigation avoids whichever audit draft happens to
 	// sort first, while the narrow anchors keep each image about the step beside
