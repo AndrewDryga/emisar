@@ -36,6 +36,13 @@ var (
 	cardPolicy    = regexp.MustCompile(`(?i)\bmust\b|\bnever\b|\bdo[[:space:]]+not\b`)
 	inlineCode    = regexp.MustCompile("`[^`]*`")
 	markdownLink  = regexp.MustCompile(`!?\[[^]]*\]\([^)]+\)`)
+	elixirFence   = regexp.MustCompile("^```elixir\\s*$")
+	fenceClose    = regexp.MustCompile("^```\\s*$")
+	// Only a module DEFINITION is judged. A manual's examples reference real
+	// modules constantly and correctly — `belongs_to :account,
+	// Emisar.Accounts.Account` is the shape we want copied — so matching a bare
+	// module reference would flag the examples for being right.
+	exampleDefmodule = regexp.MustCompile(`^\s*defmodule\s+([A-Z][A-Za-z0-9_.]*)\s+do\b`)
 )
 
 type checker struct {
@@ -180,6 +187,70 @@ func (c *checker) checkSkillText() {
 	if len(findings) > 0 {
 		c.fail("skills still mention retired review commands or stale product/security wording")
 	}
+}
+
+// definedElixirModules maps every module the tree actually defines to the file
+// that defines it, by reading source rather than compiling: the check that uses
+// it runs in the tooling gate, which has no BEAM build to consult.
+func (c *checker) definedElixirModules() map[string]string {
+	modules := map[string]string{}
+	c.walkRepository(func(relative string, entry fs.DirEntry) {
+		if entry.IsDir() || (!strings.HasSuffix(relative, ".ex") && !strings.HasSuffix(relative, ".exs")) {
+			return
+		}
+		data, err := os.ReadFile(c.path(relative))
+		if err != nil {
+			c.fail("reading %s: %v", relative, err)
+			return
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if match := exampleDefmodule.FindStringSubmatch(line); match != nil {
+				modules[match[1]] = relative
+			}
+		}
+	})
+	return modules
+}
+
+// checkManualExamples keeps every module a manual DEFINES fictional. A template
+// has to stay simpler than the code it teaches — the real Runbooks authorizer
+// scopes two schemas through a `query_source` case that a new single-schema
+// context must not copy — so an example carrying a real module's name reads as
+// a mirror of that module, and the next drift report "syncs" the template to
+// production code that was never its contract (PR #44 did exactly that, while
+// missing four places where the examples contradicted the manual's own rules).
+// Naming an example after nothing that exists makes the two readings impossible
+// to confuse, and turns a future collision into this failure rather than an
+// argument.
+func (c *checker) checkManualExamples() {
+	defined := c.definedElixirModules()
+	c.walkRepository(func(relative string, entry fs.DirEntry) {
+		if entry.IsDir() || entry.Name() != "AGENTS.md" {
+			return
+		}
+		data, err := os.ReadFile(c.path(relative))
+		if err != nil {
+			c.fail("reading %s: %v", relative, err)
+			return
+		}
+		fenced := false
+		for index, line := range strings.Split(string(data), "\n") {
+			switch {
+			case !fenced && elixirFence.MatchString(line):
+				fenced = true
+			case fenced && fenceClose.MatchString(line):
+				fenced = false
+			case fenced:
+				match := exampleDefmodule.FindStringSubmatch(line)
+				if match == nil {
+					continue
+				}
+				if source, ok := defined[match[1]]; ok {
+					c.fail("%s:%d example defines %s, which %s already defines — name manual examples after a context that does not exist", relative, index+1, match[1], source)
+				}
+			}
+		}
+	})
 }
 
 func (c *checker) checkCoop() {
@@ -890,6 +961,7 @@ func (c *checker) run(requireCoop bool) int {
 	c.checkLinks()
 	c.group("manuals and skills use current task commands and screenshot paths", c.checkManualText)
 	c.group("skills use current review commands and product/security wording", c.checkSkillText)
+	c.group("manual code examples define only fictional modules", c.checkManualExamples)
 	if _, err := exec.LookPath("coop"); err == nil {
 		c.group("Coop task commands and queue listing work", c.checkCoop)
 	} else if requireCoop {

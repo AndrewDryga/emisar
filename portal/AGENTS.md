@@ -348,28 +348,36 @@ A small set of context functions never take a `%Subject{}`: the runner socket pr
 ### 2. Query modules (`lib/emisar/<context>/<schema>/query.ex`)
 
 ```elixir
-defmodule Emisar.Runbooks.Runbook.Query do
-  use Emisar, :query        # imports Ecto.Query, attaches @behaviour Emisar.Repo.Query
-  alias Emisar.Runbooks.Runbook
+defmodule Emisar.Widgets.Widget.Query do
+  # imports Ecto.Query, attaches @behaviour Emisar.Repo.Query
+  use Emisar, :query
+  alias Emisar.Widgets.Widget
 
-  def all, do: from(runbooks in Runbook, as: :runbooks)
-  def not_deleted(queryable \\ all()), do: where(queryable, [runbooks: r], is_nil(r.deleted_at))
-  def by_id(queryable \\ all(), id), do: where(queryable, [runbooks: r], r.id == ^id)
+  def all, do: from(widgets in Widget, as: :widgets)
+
+  # The Authorizer's fail-closed fallback returns this; every query module whose
+  # schema has an Authorizer defines it. `use Emisar, :query` does NOT supply it.
+  def none(queryable), do: where(queryable, false)
+
+  def not_deleted(queryable \\ all()), do: where(queryable, [widgets: w], is_nil(w.deleted_at))
+  def by_id(queryable \\ all(), id), do: where(queryable, [widgets: w], w.id == ^id)
+
   def by_account_id(queryable \\ all(), account_id),
-    do: where(queryable, [runbooks: r], r.account_id == ^account_id)
-  def by_status(queryable \\ all(), status), do: where(queryable, [runbooks: r], r.status == ^status)
-  def ordered_by_title_version(queryable),
-    do: order_by(queryable, [runbooks: r], asc: r.title, desc: r.version)
+    do: where(queryable, [widgets: w], w.account_id == ^account_id)
+
+  def by_status(queryable \\ all(), status),
+    do: where(queryable, [widgets: w], w.status == ^status)
+
+  def ordered_by_name(queryable), do: order_by(queryable, [widgets: w], asc: w.name)
 
   @impl Emisar.Repo.Query
-  def cursor_fields,
-    do: [{:runbooks, :asc, :title}, {:runbooks, :desc, :version}, {:runbooks, :asc, :id}]
+  def cursor_fields, do: [{:widgets, :asc, :name}, {:widgets, :asc, :id}]
 
   # Label-batcher for Audit.resolve_references/2 — the query module owns the binding.
   def select_labels(queryable, ids, field) do
     queryable
-    |> where([runbooks: r], r.id in ^ids)
-    |> select([runbooks: r], {r.id, field(r, ^field)})
+    |> where([widgets: w], w.id in ^ids)
+    |> select([widgets: w], {w.id, field(w, ^field)})
   end
 end
 ```
@@ -377,8 +385,9 @@ end
 Rules:
 - **`use Emisar, :query`** — never `import Ecto.Query` directly.
 - Every helper is composable: takes `Ecto.Queryable.t()`, returns `Ecto.Queryable.t()`. First arg defaults to `all()` so you can either start a chain or extend one. Name that first argument **`queryable`**, not `q`.
-- Use **named bindings** (`as: :runbooks`, `as: :requests`) so later helpers don't break when an upstream caller already added a `join`. Reference by `[runbooks: r]`, not positionally.
+- Use **named bindings** (`as: :widgets`, `as: :requests`) so later helpers don't break when an upstream caller already added a `join`. Reference by `[widgets: w]`, not positionally.
 - `not_deleted/1` is the standard partial-index-friendly soft-delete filter; pair it with the changeset's `delete/1` (`deleted_at`).
+- `none/1` is the fail-closed target the Authorizer's `_` fallback returns (§5) — a binding-free `where(queryable, false)`. **`use Emisar, :query` does NOT supply it** (it injects only `import Ecto.Query` + the `@behaviour`), so every query module whose schema has an Authorizer declares its own. Miss it and the fallback is an undefined function on the one path that exists to stop a leak.
 - `cursor_fields/0` and `filters/0` are `Emisar.Repo.Query` callbacks; declare them when the context paginates or filters via `Repo.list/3`.
 - `preloads/0` entries use the `{scope_query, nested_preloads}` tuple — `account: {Account.Query.not_deleted(), Account.Query.preloads()}` — so the associated schema's own `preloads/0` cascades and deep nesting composes. Any query module reachable as a preload declares its own `preloads/0` (even `do: []`) so callers can compose that tuple.
 - For an association a list pipeline always loads, expose **two** helpers, not one: `with_joined_X/1` (idempotent `with_named_binding/3` + join scoped to the assoc's `not_deleted/0`) and `with_preloaded_X/1` (`queryable |> with_joined_X() |> preload(...)`). Keeping the join separate lets it be reused to filter on the joined columns; putting `preload` *outside* the idempotency block means it still applies when the join already exists. **Once the helpers exist, context pipelines call them** — `|> Membership.Query.with_preloaded_account()` in the chain, not a `preload: [:account]` opt on `Repo.fetch/list`. The join-based helper also subsumes a separate active-assoc filter (it inner-joins `not_deleted/0`), so a bespoke `for_active_X` filter next to it is dead weight.
@@ -392,14 +401,20 @@ Rules:
 ### 3. Schema modules
 
 ```elixir
-defmodule Emisar.Runbooks.Runbook do
-  use Emisar, :schema       # UUIDv7 PK, binary_id FKs, utc_datetime_usec timestamps
+defmodule Emisar.Widgets.Widget do
+  # UUIDv7 PK, binary_id FKs, utc_datetime_usec timestamps
+  use Emisar, :schema
 
-  schema "runbooks" do
+  schema "widgets" do
     field :name, :string
-    field :status, :string
+    field :slug, :string
+    field :status, Ecto.Enum, values: [:draft, :active, :retired]
+
     field :deleted_at, :utc_datetime_usec
-    belongs_to :account, Emisar.Accounts.Account
+
+    belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
+    belongs_to :created_by, Emisar.Users.User, where: [deleted_at: nil]
+
     timestamps()
   end
 end
@@ -415,29 +430,29 @@ end
 ### 4. Changeset modules (`lib/emisar/<context>/<schema>/changeset.ex`)
 
 ```elixir
-defmodule Emisar.Runbooks.Runbook.Changeset do
+defmodule Emisar.Widgets.Widget.Changeset do
   use Emisar, :changeset
-  alias Emisar.Runbooks.Runbook
+  alias Emisar.Widgets.Widget
 
-  @fields ~w[name slug title description status definition version]a
+  @fields ~w[name slug status]a
 
   def create(account_id, user_id, attrs) do
-    %Runbook{}
+    %Widget{}
     |> cast(attrs, @fields)
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
     |> changeset()
   end
 
-  def update(%Runbook{} = runbook, attrs), do: runbook |> cast(attrs, @fields) |> changeset()
+  def update(%Widget{} = widget, attrs), do: widget |> cast(attrs, @fields) |> changeset()
 
-  def delete(%Runbook{} = runbook), do: change(runbook, deleted_at: DateTime.utc_now())
+  def delete(%Widget{} = widget), do: change(widget, deleted_at: DateTime.utc_now())
 
   defp changeset(changeset) do
     changeset
-    |> validate_required([:account_id, :name, :slug, :title, :definition])
+    |> validate_required([:account_id, :name, :slug])
     |> validate_format(:slug, ~r/^[a-z][a-z0-9_-]{0,79}$/)
-    |> unique_constraint([:account_id, :slug, :version])
+    |> unique_constraint([:account_id, :slug])
   end
 end
 ```
@@ -451,34 +466,35 @@ end
 ### 5. Authorizer modules (`lib/emisar/<context>/authorizer.ex`)
 
 ```elixir
-defmodule Emisar.Runbooks.Authorizer do
-  @moduledoc "Authorization for cloud runbooks."
-  use Emisar.Auth.Authorizer  # attaches @behaviour, imports build/2 + Subject
+defmodule Emisar.Widgets.Authorizer do
+  @moduledoc "Authorization for widgets."
+  # attaches @behaviour, imports build/2 + Subject
+  use Emisar.Auth.Authorizer
 
-  alias Emisar.Runbooks.Runbook
+  alias Emisar.Widgets.Widget
 
-  def manage_runbooks_permission, do: build(Runbook, :manage)
-  def view_runbooks_permission, do: build(Runbook, :view)
+  def manage_widgets_permission, do: build(Widget, :manage)
+  def view_widgets_permission, do: build(Widget, :view)
 
   @impl Emisar.Auth.Authorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
-    do: [manage_runbooks_permission(), view_runbooks_permission()]
+    do: [manage_widgets_permission(), view_widgets_permission()]
 
-  def list_permissions_for_role(:operator), do: [view_runbooks_permission()]
-  def list_permissions_for_role(:viewer), do: [view_runbooks_permission()]
-  def list_permissions_for_role(:api_client), do: [view_runbooks_permission()]
+  def list_permissions_for_role(:operator), do: [view_widgets_permission()]
+  def list_permissions_for_role(:viewer), do: [view_widgets_permission()]
+  def list_permissions_for_role(:api_client), do: [view_widgets_permission()]
 
   def list_permissions_for_role(_), do: []
 
   @impl Emisar.Auth.Authorizer
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
-    do: Runbook.Query.by_account_id(queryable, account_id)
+    do: Widget.Query.by_account_id(queryable, account_id)
 
-  def for_subject(queryable, _), do: Runbook.Query.none(queryable)
+  def for_subject(queryable, _), do: Widget.Query.none(queryable)
 end
 ```
 
-- Permissions are built with **`build(Schema, :verb)`** and exposed via per-permission accessor functions (`view_runbooks_permission/0`) so callers never construct a permission inline.
+- Permissions are built with **`build(Schema, :verb)`** and exposed via per-permission accessor functions (`view_widgets_permission/0`) so callers never construct a permission inline.
 - Roles in this codebase: `:owner`, `:admin`, `:operator`, `:viewer`, `:api_client`, `:runner` — each authorizer clauses the ones it grants, with a `_ -> []` catch-all for the rest.
 - The five **membership** roles (`:owner`/`:admin`/`:billing_manager`/`:operator`/`:viewer`) are defined once in `Emisar.Auth.Role` — the single source for the `Membership` `Ecto.Enum`, the rank/`at_least?` hierarchy, and the team UI's role list. Never re-list them in a schema, changeset, or LiveView.
 - **Authorize by permission, not role name.** A context must never branch on `subject.role` to gate an action (`subject.role != :owner` is a smell) — add a permission (e.g. `manage_owners_permission`, held by owners only) and check `Auth.Authorizer.has_permission?/2`. Comparing a *data* role value (`target.role == :owner`) is fine; gating the *actor's* capability by role name is not.

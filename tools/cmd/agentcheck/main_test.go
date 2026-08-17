@@ -275,3 +275,41 @@ func TestHasJSONKeyFindsNestedHook(t *testing.T) {
 		t.Fatal("missing Start hook was reported")
 	}
 }
+
+func TestCheckManualExamplesRejectsExampleNamedAfterRealModule(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, "portal/apps/emisar/lib/emisar/runbooks/authorizer.ex", "defmodule Emisar.Runbooks.Authorizer do\nend\n")
+	writeTestFile(t, check.root, "portal/AGENTS.md", "```elixir\ndefmodule Emisar.Runbooks.Authorizer do\nend\n```\n")
+
+	check.checkManualExamples()
+
+	if !hasFailure(check, "example defines Emisar.Runbooks.Authorizer") {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+}
+
+// The examples reference real modules on purpose — a belongs_to naming the real
+// Account IS the shape we want copied — so only the defmodule line is judged.
+func TestCheckManualExamplesAcceptsFictionalModuleReferencingRealOnes(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, "portal/apps/emisar/lib/emisar/accounts/account.ex", "defmodule Emisar.Accounts.Account do\nend\n")
+	writeTestFile(t, check.root, "portal/AGENTS.md", "```elixir\ndefmodule Emisar.Widgets.Widget do\n  belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]\nend\n```\n")
+
+	check.checkManualExamples()
+
+	if len(check.failures) != 0 {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+}
+
+func TestCheckManualExamplesIgnoresNonElixirFences(t *testing.T) {
+	check := testChecker(t)
+	writeTestFile(t, check.root, "portal/apps/emisar/lib/emisar/runbooks/authorizer.ex", "defmodule Emisar.Runbooks.Authorizer do\nend\n")
+	writeTestFile(t, check.root, "portal/AGENTS.md", "```text\ndefmodule Emisar.Runbooks.Authorizer do\nend\n```\n")
+
+	check.checkManualExamples()
+
+	if len(check.failures) != 0 {
+		t.Fatalf("failures = %#v", check.failures)
+	}
+}
