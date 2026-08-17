@@ -411,7 +411,29 @@ defmodule EmisarWeb.AuditLiveTest do
       assert pairs["when-#{disconnected.id}"] == DateTime.to_iso8601(disconnected.occurred_at)
     end
 
-    test "a relative-range preset chip narrows to the window (sets From to now − window)",
+    test "same-dimension quick filters render as separate accessible segmented groups", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+
+      assert has_element?(
+               lv,
+               "[role='group'][aria-label='Time window'] button",
+               "Last hour"
+             )
+
+      assert has_element?(
+               lv,
+               "[role='group'][aria-label='Event category'] button",
+               "Decisions"
+             )
+
+      refute has_element?(lv, "[role='group'] button[phx-click='toggle_problems']")
+    end
+
+    test "a relative-range preset segment narrows to the window (sets From to now − window)",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
@@ -946,13 +968,15 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "real"
     end
 
-    test "an active preset chip highlights and a second click clears the range", %{conn: conn} do
+    test "an active preset segment highlights and a second click clears the range", %{
+      conn: conn
+    } do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "x")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
 
-      # First click arms the window: from lands in the URL + the chip lights up.
+      # First click arms the window: from lands in the URL + the segment lights up.
       html = lv |> element("button[phx-value-window='24h']") |> render_click()
       to = assert_patch(lv)
       params = URI.decode_query(URI.parse(to).query)
@@ -960,7 +984,7 @@ defmodule EmisarWeb.AuditLiveTest do
       assert Map.has_key?(params, "from")
       assert html =~ ~s(aria-pressed="true")
 
-      # Second click clears the range entirely — the chip is a toggle.
+      # Second click clears the range entirely — the segment is a toggle.
       lv |> element("button[phx-value-window='24h']") |> render_click()
       to = assert_patch(lv)
       params = URI.decode_query(URI.parse(to).query || "")

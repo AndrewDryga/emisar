@@ -651,10 +651,8 @@ The danger reads from the icon + the button + the consequence copy — the surfa
 58. **One control row, one gap per DIMENSION — and the boundary between dimensions is
     DISTANCE, never a glyph.** A row of chips/toggles/tabs that filters on more than one
     dimension (a time window, an outcome, a category lens) gives each dimension its own
-    wrapping box at the tight intra-group gap and steps the gap up between them —
-    `gap-x-5`/`gap-y-3` outer against `gap-1.5` inside, the house meta-row grammar
-    (`runners_live`'s fleet posture line, where distance already separates units and the
-    tight gap binds a unit's parts). At ONE uniform gap the row is a single undifferentiated
+    wrapping box and steps the gap up between dimensions — `gap-x-5`/`gap-y-3` on the
+    outer row. At ONE uniform gap the row is a single undifferentiated
     run, so a control from a different dimension reads as a member of whichever group it
     touches — the audit page's `Problems only` outcome toggle read as the category chips'
     first chip, and the founder's words were "should either have separator … or be part of
@@ -663,11 +661,15 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     distance before glyphs, and a vertical rule is shell chrome — content hairlines are
     row-lattice grammar only (§3). The middot stays legitimate where it always was, joining
     TEXT metadata segments (`Dispatched by X · via key`), never two controls. Each group is
-    its own `flex flex-wrap` box so it stays contiguous when the row folds, and the outer
-    `gap-y` must EXCEED the intra-group gap or the hierarchy inverts on a phone; a lead-in
-    label (`Quick filters:`) rides the first group at that group's own gap, or it reads as a
-    fourth group and orphans a line. Never answer this by merging two dimensions into one
-    segmented group — that spells a different question as one control. Sweep: a flex row
+    its own box so it stays contiguous when the row folds, and a lead-in label (`Quick
+    filters:`) rides the first dimension at a small label-to-control gap, or it reads as a
+    fourth group and orphans a line. **Same-dimension filter options are one segmented
+    control:** zero gap, one outer frame, shared internal dividers, square internal corners,
+    and rounding only on the two outside ends. A single-option dimension remains one rounded
+    toggle. The previous `gap-1.5` chip row made one choice set read as several unrelated
+    actions; this joined treatment is the 2026-08-17 correction. Never answer this by
+    merging two dimensions into one segmented group — that spells a different question as
+    one control. Sweep: a flex row
     holding two or more `:for` comprehensions of buttons/chips under one uniform gap class,
     and any bare `·`/`•`/`|` element or `w-px` rule sitting between two interactive
     siblings. **Enforcement is review, deliberately**: a source-text check was measured and

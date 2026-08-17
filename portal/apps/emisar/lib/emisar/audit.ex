@@ -987,11 +987,11 @@ defmodule Emisar.Audit do
   def event_outcome(event_type), do: Event.Query.outcome(event_type)
 
   @doc """
-  The review-category `{value, label}` chips this subject can narrow BY —
+  The review-category `{value, label}` options this subject can narrow BY —
   EMPTY when their readable slice falls in one category, since picking it would
   change nothing they can already see.
 
-  Read off the `:category` facet the panel itself renders, so the chips and the
+  Read off the `:category` facet the panel itself renders, so the quick filters and the
   facet are one list by construction rather than two that agree today.
   """
   def event_category_values(%Subject{} = subject) do

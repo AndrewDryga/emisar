@@ -95,7 +95,7 @@ defmodule EmisarWeb.AuditLive do
     preserved = Map.take(socket.assigns.filter_params, ["actor_id", "window"])
     merged = Map.merge(preserved, params)
 
-    # A manually edited From/To supersedes the quick-range chip — its highlight
+    # A manually edited From/To supersedes the quick-range segment — its highlight
     # would lie about the bound otherwise.
     merged =
       if params["from"] != socket.assigns.filter_params["from"] or
@@ -125,9 +125,9 @@ defmodule EmisarWeb.AuditLive do
   end
 
   def handle_event("preset", %{"window" => window}, socket) do
-    # Quick relative-range chips set :from to (now − window) and clear :to, so
+    # Quick relative-range segments set :from to (now − window) and clear :to, so
     # "Last 24h" is the last 24h up to NOW (a stale upper bound would make it a
-    # weird window). Clicking the ACTIVE chip clears the range (a toggle).
+    # weird window). Clicking the ACTIVE segment clears the range (a toggle).
     # Whitelisted window → an unknown (crafted) value is a no-op, never a crash
     # or an arbitrary bound. Other active filters are preserved.
     params = socket.assigns.filter_params
@@ -164,7 +164,7 @@ defmodule EmisarWeb.AuditLive do
      LiveTable.apply_filter(socket, ~p"/app/#{socket.assigns.current_account}/audit", merged)}
   end
 
-  # A category chip is a single-select TOGGLE onto the `category` panel facet:
+  # A category segment is a single-select TOGGLE onto the `category` panel facet:
   # click one to focus that lens (replacing any prior category), click the
   # active one to clear it. It only narrows the VIEW — the append-only trail is
   # never trimmed. Other active filters are preserved.
@@ -403,46 +403,36 @@ defmodule EmisarWeb.AuditLive do
       </.page_intro>
 
       <%!-- THREE filter dimensions share this row — a relative window, the
-           outcome toggle, and the review-category lens — so each is its own
-           group and DISTANCE is the boundary: 20px between groups against 6px
-           inside one, the house meta-row step (runners_live's fleet posture
-           line). No glyph does this job — the middot that used to sit between
-           the toggle and the categories was too quiet to read as a boundary,
-           so a whole different dimension looked like the category group's
-           first chip, and a vertical rule is shell chrome, never content. Each
-           group is its own wrapping box, so it stays contiguous — and the gap
-           step survives — when the row folds on a phone. --%>
-      <div class="mb-2 flex flex-wrap items-center gap-x-5 gap-y-3 text-xs">
+           outcome toggle, and the review-category lens. Distance separates
+           dimensions; options within one dimension share edges as a segmented
+           control. Each group stays intact when the outer row wraps. --%>
+      <div
+        data-shot="audit-quick-filters"
+        class="mb-2 flex flex-wrap items-center gap-x-5 gap-y-3 text-xs"
+      >
         <%!-- Quick relative-range presets — set the unified bar's From to
              (now − window); the date filter below consumes it. Re-adds the
              presets the date-unification dropped, without a second bar.
              An active preset wears the brand active-filter tint and clicking
-             it again clears the window — the chip is a TOGGLE, like every
-             other filter control. Which chip is active rides a `window` URL
+             it again clears the window — the segment is a TOGGLE, like every
+             other filter control. Which segment is active rides a `window` URL
              param (the materialized From value can't be matched back to its
              preset a minute later); the From facet stays the visible source
              of truth for the actual bound. --%>
         <div class="flex flex-wrap items-center gap-1.5">
-          <%!-- The row's lead-in rides the first group at the group's own tight
-               gap: at the between-group distance it would read as a fourth
-               group and orphan its own line on a phone. --%>
+          <%!-- The lead-in stays attached to the first dimension, while the
+               options themselves join into one control. --%>
           <span class="text-zinc-400">Quick filters:</span>
-          <button
-            :for={{label, window} <- audit_presets()}
-            type="button"
-            phx-click="preset"
-            phx-value-window={window}
-            aria-pressed={to_string(@filter_params["window"] == window)}
-            class={[
-              "rounded-md px-2 py-1 font-medium ring-1 transition",
-              if(@filter_params["window"] == window,
-                do: "bg-brand-500/10 text-brand-300 ring-brand-500/40",
-                else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
-              )
-            ]}
-          >
-            {label}
-          </button>
+          <.segmented_filter_group label="Time window">
+            <.segmented_filter
+              :for={{label, window} <- audit_presets()}
+              active?={@filter_params["window"] == window}
+              phx-click="preset"
+              phx-value-window={window}
+            >
+              {label}
+            </.segmented_filter>
+          </.segmented_filter_group>
         </div>
         <%!-- One-click "only the events that went wrong" — denials, removals, and
              failures (the danger+warn severities) — so the rows an operator hunts
@@ -457,7 +447,7 @@ defmodule EmisarWeb.AuditLive do
           phx-click="toggle_problems"
           aria-pressed={to_string(problems_only?(@filter_params))}
           class={[
-            "rounded-md px-2 py-1 font-medium ring-1 transition",
+            "min-h-10 rounded-md px-3 py-2 font-medium ring-1 transition-colors",
             if(problems_only?(@filter_params),
               do: "bg-brand-500/10 text-brand-300 ring-brand-500/40",
               else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
@@ -466,33 +456,28 @@ defmodule EmisarWeb.AuditLive do
         >
           Problems only
         </button>
-        <%!-- Event-category chips — the coarse review lens (UI-017): one click
+        <%!-- Event-category segments — the coarse review lens (UI-017): one click
              focuses decisions / access / activity out of the runner connect-
              disconnect churn (Fleet), or onto it. They drive the same `category`
              panel facet below; the append-only record is only ever narrowed as a
-             VIEW, never trimmed. An active chip wears the brand active-filter tint
+             VIEW, never trimmed. An active segment wears the brand active-filter tint
              like every other control — an engaged lens is a filter state, not an
              alarm (the problem ROWS carry their own rose/amber). A reader whose
-             whole slice sits in one category gets no chips: the domain returns
+             whole slice sits in one category gets no segments: the domain returns
              none, because the one lens it could offer would change nothing. --%>
-        <div :if={@categories != []} class="flex flex-wrap items-center gap-1.5">
-          <button
+        <.segmented_filter_group
+          :if={@categories != []}
+          label="Event category"
+        >
+          <.segmented_filter
             :for={{value, label} <- @categories}
-            type="button"
+            active?={value in List.wrap(@filter_params["category"])}
             phx-click="category"
             phx-value-category={value}
-            aria-pressed={to_string(value in List.wrap(@filter_params["category"]))}
-            class={[
-              "rounded-md px-2 py-1 font-medium ring-1 transition",
-              if(value in List.wrap(@filter_params["category"]),
-                do: "bg-brand-500/10 text-brand-300 ring-brand-500/40",
-                else: "bg-zinc-900 text-zinc-300 ring-zinc-800 hover:bg-zinc-800 hover:text-zinc-100"
-              )
-            ]}
           >
             {label}
-          </button>
-        </div>
+          </.segmented_filter>
+        </.segmented_filter_group>
       </div>
 
       <%!-- The facet drawer opens from a DISCLOSURE line, not a floating chip —

@@ -318,6 +318,55 @@ defmodule EmisarWeb.CoreComponents do
   defp button_size(:sm), do: "px-2.5 py-1 text-xs"
 
   @doc """
+  Groups filter options from one dimension as one segmented control.
+
+  Keep separate dimensions in separate groups with space between them. The
+  group owns the outside frame; `<.segmented_filter>` owns the shared edges and
+  selected state.
+  """
+  attr :label, :string, required: true, doc: "accessible name for the filter dimension"
+  attr :class, :string, default: nil
+  slot :inner_block, required: true
+
+  def segmented_filter_group(assigns) do
+    ~H"""
+    <div
+      role="group"
+      aria-label={@label}
+      class={["inline-flex rounded-md ring-1 ring-zinc-800", @class]}
+    >
+      {render_slot(@inner_block)}
+    </div>
+    """
+  end
+
+  @doc "A toggle inside a `<.segmented_filter_group>`; `active?` drives `aria-pressed`."
+  attr :active?, :boolean, required: true
+  attr :class, :string, default: nil
+  attr :rest, :global, include: ~w(disabled)
+  slot :inner_block, required: true
+
+  def segmented_filter(assigns) do
+    ~H"""
+    <button
+      type="button"
+      aria-pressed={to_string(@active?)}
+      class={[
+        "min-h-10 whitespace-nowrap border-l border-zinc-800 px-3 py-2 text-xs font-medium transition-colors first:rounded-l-md first:border-l-0 last:rounded-r-md disabled:cursor-not-allowed disabled:opacity-50",
+        if(@active?,
+          do: "bg-brand-500/10 text-brand-300",
+          else: "bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+        ),
+        @class
+      ]}
+      {@rest}
+    >
+      {render_slot(@inner_block)}
+    </button>
+    """
+  end
+
+  @doc """
   An icon-only button. `label` is REQUIRED — it becomes both `aria-label` and
   `title`, so an icon-only control is never nameless to a screen reader or a
   mouse user. For a text+icon button use `<.button icon=>`. `tone` covers the
