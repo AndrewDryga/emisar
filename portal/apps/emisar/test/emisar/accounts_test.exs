@@ -2065,6 +2065,40 @@ defmodule Emisar.AccountsTest do
                Accounts.fetch_team_security_facts(subject)
     end
 
+    test "team_managers counts the roles that can manage the team, on the same denominator" do
+      account = Fixtures.Accounts.create_account()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+      subject = Fixtures.Subjects.membership_subject(owner_membership)
+
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+
+      # billing_manager is the orthogonal finance seat — it holds no manage_team,
+      # so the count is the owner and the admin, never "everyone above operator".
+      assert {:ok, %{mfa_total: 5, team_managers: 2}} =
+               Accounts.fetch_team_security_facts(subject)
+    end
+
+    test "team_managers counts only the subject's own account" do
+      account = Fixtures.Accounts.create_account()
+
+      owner_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+      subject = Fixtures.Subjects.membership_subject(owner_membership)
+
+      other_account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: other_account.id, role: "owner")
+      Fixtures.Memberships.create_membership(account_id: other_account.id, role: "admin")
+
+      assert {:ok, %{team_managers: 1}} = Accounts.fetch_team_security_facts(subject)
+    end
+
     test "the enforcement state and SSO requirement come from the CURRENT account row" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()

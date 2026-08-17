@@ -161,21 +161,11 @@ defmodule EmisarWeb.AgentsLive do
   def handle_event("dismiss_rotated", _params, socket),
     do: {:noreply, assign(socket, :rotated, nil)}
 
-  def handle_event("revoke", %{"id" => id}, socket) do
-    Permissions.gated(
-      socket,
-      ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
-      &do_revoke(&1, id)
-    )
-  end
+  def handle_event("revoke", %{"id" => id}, socket),
+    do: with_manageable_key(socket, id, &do_revoke/2)
 
-  def handle_event("rotate", %{"id" => id}, socket) do
-    Permissions.gated(
-      socket,
-      ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject),
-      &do_rotate(&1, id)
-    )
-  end
+  def handle_event("rotate", %{"id" => id}, socket),
+    do: with_manageable_key(socket, id, &do_rotate/2)
 
   def handle_info(:tick, socket) do
     Process.send_after(self(), :tick, @refresh_ms)
@@ -244,32 +234,50 @@ defmodule EmisarWeb.AgentsLive do
     end
   end
 
-  defp do_revoke(socket, id) do
+  # Managing a key is a PER-KEY question now — you always manage what you minted
+  # — so the event backstop asks it about the key the click names, not about the
+  # account. Reading it first also stops an id this account can't see from
+  # reaching the domain: `fetch_api_key_by_id/2` is account-scoped, and a miss
+  # stays silent rather than confirming the key exists somewhere.
+  defp with_manageable_key(socket, id, fun) do
+    subject = socket.assigns.current_subject
+
+    case ApiKeys.fetch_api_key_by_id(id, subject) do
+      {:ok, key} ->
+        Permissions.gated(
+          socket,
+          ApiKeys.subject_can_manage_api_key?(key, subject),
+          &fun.(&1, key)
+        )
+
+      {:error, _reason} ->
+        {:noreply, socket}
+    end
+  end
+
+  defp do_revoke(socket, key) do
     # `{:ok, _} =` here crashed the socket for an operator whose role was
     # reduced in another tab: revoke_api_key returns {:error, :unauthorized},
     # the page blanked to "Reconnecting", remounted, and the key was still
-    # live with nothing said. Same `with`/`else` shape as do_rotate/2 below.
-    with {:ok, key} <- ApiKeys.fetch_api_key_by_id(id, socket.assigns.current_subject),
-         {:ok, _revoked} <- ApiKeys.revoke_api_key(key, socket.assigns.current_subject) do
-      {:noreply, socket |> put_flash(:info, "API key revoked.") |> reload()}
-    else
-      {:error, :not_found} -> {:noreply, socket}
+    # live with nothing said.
+    case ApiKeys.revoke_api_key(key, socket.assigns.current_subject) do
+      {:ok, _revoked} -> {:noreply, socket |> put_flash(:info, "API key revoked.") |> reload()}
       {:error, _} -> {:noreply, put_flash(socket, :error, "Could not revoke the key.")}
     end
   end
 
-  defp do_rotate(socket, id) do
-    with {:ok, key} <- ApiKeys.fetch_api_key_by_id(id, socket.assigns.current_subject),
-         {:ok, raw, _new_key} <- ApiKeys.rotate_api_key(key, socket.assigns.current_subject) do
+  defp do_rotate(socket, key) do
+    case ApiKeys.rotate_api_key(key, socket.assigns.current_subject) do
       # The successor's one-time secret shows in a compact reveal banner right
       # here on the index — never by dumping the whole connect panel + custom
       # key form onto the list page. No flash: the banner IS the confirmation,
       # and it stays until dismissed (a flash would auto-close over the only
       # copy of the secret's instructions).
-      {:noreply, socket |> assign(:rotated, %{name: key.name, secret: raw}) |> reload()}
-    else
-      {:error, :not_found} -> {:noreply, socket}
-      {:error, _} -> {:noreply, put_flash(socket, :error, "Could not rotate the key.")}
+      {:ok, raw, _new_key} ->
+        {:noreply, socket |> assign(:rotated, %{name: key.name, secret: raw}) |> reload()}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not rotate the key.")}
     end
   end
 
@@ -1181,13 +1189,14 @@ defmodule EmisarWeb.AgentsLive do
                   </.meta_line>
                 </:meta>
                 <:actions>
-                  <%!-- A manager's live row carries three verbs — the labeled-menu
-                     threshold (the team-roster grammar: bordered `Actions ▾`
-                     trigger, ghost faces only on the menu rows). Everyone else —
-                     and every revoked row — keeps the two read paths, and both
-                     only NAVIGATE, so they render as the house brand link rather
-                     than button chrome (§2: chrome is for an action). --%>
-                  <%= if not facts.revoked? and ApiKeys.subject_can_manage_api_keys?(@current_subject) do %>
+                  <%!-- A live row you can manage — an admin's, or your own key —
+                     carries four verbs, past the labeled-menu threshold (§7.47,
+                     the team-roster grammar: bordered `Actions ▾` trigger, ghost
+                     faces only on the menu rows). Someone else's key, and every
+                     revoked row, keeps the two read paths as bordered buttons —
+                     two verbs in one row, so they wear the same face the trigger
+                     does rather than reading as a run-on pair of links. --%>
+                  <%= if not facts.revoked? and ApiKeys.subject_can_manage_api_key?(key, @current_subject) do %>
                     <.dropdown
                       class="inline-block shrink-0 text-left"
                       summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
@@ -1265,7 +1274,7 @@ defmodule EmisarWeb.AgentsLive do
                   <.confirm_dialog
                     :if={
                       facts.rotatable? and
-                        ApiKeys.subject_can_manage_api_keys?(@current_subject)
+                        ApiKeys.subject_can_manage_api_key?(key, @current_subject)
                     }
                     id={"rotate-#{key.id}"}
                     title="Rotate this key?"
@@ -1288,7 +1297,7 @@ defmodule EmisarWeb.AgentsLive do
                   <.confirm_dialog
                     :if={
                       not facts.revoked? and
-                        ApiKeys.subject_can_manage_api_keys?(@current_subject)
+                        ApiKeys.subject_can_manage_api_key?(key, @current_subject)
                     }
                     id={"revoke-agent-key-#{key.id}"}
                     title="Revoke this agent key"

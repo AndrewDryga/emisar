@@ -39,6 +39,9 @@ defmodule Emisar.Accounts.Membership.Query do
   def by_role(queryable, role),
     do: where(queryable, [memberships: m], m.role == ^role)
 
+  def by_roles(queryable, roles),
+    do: where(queryable, [memberships: m], m.role in ^roles)
+
   @doc "Membership activity is stale when it has never been recorded or predates `cutoff`."
   def last_active_before(queryable, %DateTime{} = cutoff) do
     where(

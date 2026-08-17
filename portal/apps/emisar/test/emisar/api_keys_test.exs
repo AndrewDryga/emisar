@@ -18,6 +18,19 @@ defmodule Emisar.ApiKeysTest do
     {user, account, Fixtures.Subjects.subject_for(user, account, role: :owner)}
   end
 
+  defp member_subject(account, role) do
+    user = Fixtures.Users.create_user()
+
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: Atom.to_string(role)
+      )
+
+    Fixtures.Subjects.membership_subject(membership)
+  end
+
   # The lifecycle classifiers read the struct only, so they're exercised on
   # plain structs — the salient lifecycle fields stay inline in each test.
   defp build_key(fields \\ []) do
@@ -1021,24 +1034,109 @@ defmodule Emisar.ApiKeysTest do
       assert {:error, :audit_export_not_available} = ApiKeys.rotate_api_key(key, subject)
     end
 
-    test "an operator without manage_api_keys is refused with :unauthorized" do
+    test "an operator rotates a key they minted themselves" do
+      account = Fixtures.Accounts.create_account()
+      operator_subject = member_subject(account, :operator)
+
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "claude"}, operator_subject)
+
+      assert {:ok, new_raw, successor} = ApiKeys.rotate_api_key(key, operator_subject)
+
+      assert String.starts_with?(new_raw, "emk-")
+      assert successor.replaces_id == key.id
+      # The successor inherits the minting membership, so the chain stays theirs.
+      assert successor.created_by_membership_id == operator_subject.membership_id
+    end
+
+    test "an operator is refused on a key a teammate minted" do
       {_owner, account, owner_subject} = owner_subject_pair()
 
       {:ok, _raw, key} =
         ApiKeys.create_key(%{name: "k"}, owner_subject)
 
-      operator = Fixtures.Users.create_user()
+      operator_subject = member_subject(account, :operator)
 
-      _ =
+      assert {:error, :unauthorized} = ApiKeys.rotate_api_key(key, operator_subject)
+    end
+
+    test "a demoted viewer is refused on the key they minted as an operator" do
+      account = Fixtures.Accounts.create_account()
+      operator_subject = member_subject(account, :operator)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "inherited"}, operator_subject)
+
+      membership =
+        Fixtures.Memberships.fetch_membership(account.id, operator_subject.actor.id)
+        |> Fixtures.Memberships.force_role("viewer")
+
+      # A viewer can never mint a key, so the only way to hold one is a
+      # demotion — and the own-key path asks for exactly what minting asked for.
+      viewer_subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert {:error, :unauthorized} = ApiKeys.rotate_api_key(key, viewer_subject)
+    end
+
+    test "an audit-export token cannot be rotated by a minter who lost manage_api_keys" do
+      {_owner, account, owner_subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
+      admin_subject = member_subject(account, :admin)
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, admin_subject)
+
+      membership =
+        Fixtures.Memberships.fetch_membership(account.id, admin_subject.actor.id)
+        |> Fixtures.Memberships.force_role("operator")
+
+      demoted_subject = Fixtures.Subjects.membership_subject(membership)
+
+      # Rotating mints a FRESH export credential and hands back its secret, so
+      # owning the row must not buy back a capability the demotion took away.
+      assert {:error, :unauthorized} = ApiKeys.rotate_api_key(key, demoted_subject)
+      assert {:ok, _raw, _successor} = ApiKeys.rotate_api_key(key, owner_subject)
+    end
+
+    test "a membership in another account cannot rotate the key its holder minted here" do
+      account_one = Fixtures.Accounts.create_account()
+      account_two = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      membership_one =
         Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
+          account_id: account_one.id,
+          user_id: user.id,
           role: "operator"
         )
 
-      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+      membership_two =
+        Fixtures.Memberships.create_membership(
+          account_id: account_two.id,
+          user_id: user.id,
+          role: "operator"
+        )
 
-      assert {:error, :unauthorized} = ApiKeys.rotate_api_key(key, operator_subject)
+      subject_one = Fixtures.Subjects.membership_subject(membership_one)
+      subject_two = Fixtures.Subjects.membership_subject(membership_two)
+
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "one"}, subject_one)
+
+      # Ownership is the MINTING MEMBERSHIP, not the person: the same human in
+      # another workspace is another member there.
+      assert {:error, :unauthorized} = ApiKeys.rotate_api_key(key, subject_two)
+    end
+
+    test "an MCP subject cannot rotate the key it authenticates as" do
+      account = Fixtures.Accounts.create_account()
+      operator_subject = member_subject(account, :operator)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "claude"}, operator_subject)
+
+      key_subject = Subject.for_api_key(key, account)
+
+      # The MCP boundary's subject carries the key's OWN minting membership, so
+      # ownership alone would match — a leaked secret must not be able to extend
+      # its own life. The bridge's rotation path is the possession-authorized
+      # install_auto_rotation_successor/3, not this one.
+      assert key_subject.membership_id == operator_subject.membership_id
+      assert {:error, :unauthorized} = ApiKeys.rotate_api_key(key, key_subject)
     end
 
     test "a revoked key cannot mint a late successor" do
@@ -1470,21 +1568,78 @@ defmodule Emisar.ApiKeysTest do
       end
     end
 
-    test "an operator (no manage_api_keys permission) is refused with :unauthorized" do
+    test "an operator revokes a key they minted themselves" do
+      account = Fixtures.Accounts.create_account()
+      operator_subject = member_subject(account, :operator)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "claude"}, operator_subject)
+
+      assert {:ok, %ApiKey{revoked_at: %DateTime{}, revoked_by_id: revoked_by_id}} =
+               ApiKeys.revoke_api_key(key, operator_subject)
+
+      assert revoked_by_id == operator_subject.actor.id
+      assert Repo.reload!(key).revoked_at
+    end
+
+    test "an operator is refused on a key a teammate minted" do
       account = Fixtures.Accounts.create_account()
       {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
-      operator = Fixtures.Users.create_user()
+      operator_subject = member_subject(account, :operator)
 
-      _ =
+      assert {:error, :unauthorized} = ApiKeys.revoke_api_key(key, operator_subject)
+      refute Repo.reload!(key).revoked_at
+    end
+
+    test "a demoted viewer is refused on the key they minted as an operator" do
+      account = Fixtures.Accounts.create_account()
+      operator_subject = member_subject(account, :operator)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "inherited"}, operator_subject)
+
+      membership =
+        Fixtures.Memberships.fetch_membership(account.id, operator_subject.actor.id)
+        |> Fixtures.Memberships.force_role("viewer")
+
+      viewer_subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert {:error, :unauthorized} = ApiKeys.revoke_api_key(key, viewer_subject)
+      refute Repo.reload!(key).revoked_at
+    end
+
+    test "a membership in another account cannot revoke the key its holder minted here" do
+      account_one = Fixtures.Accounts.create_account()
+      account_two = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      membership_one =
         Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
+          account_id: account_one.id,
+          user_id: user.id,
           role: "operator"
         )
 
-      subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+      membership_two =
+        Fixtures.Memberships.create_membership(
+          account_id: account_two.id,
+          user_id: user.id,
+          role: "operator"
+        )
 
-      assert {:error, :unauthorized} = ApiKeys.revoke_api_key(key, subject)
+      subject_one = Fixtures.Subjects.membership_subject(membership_one)
+      subject_two = Fixtures.Subjects.membership_subject(membership_two)
+
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "one"}, subject_one)
+
+      assert {:error, :unauthorized} = ApiKeys.revoke_api_key(key, subject_two)
+      refute Repo.reload!(key).revoked_at
+    end
+
+    test "an MCP subject cannot revoke the key it authenticates as" do
+      account = Fixtures.Accounts.create_account()
+      operator_subject = member_subject(account, :operator)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "claude"}, operator_subject)
+
+      assert {:error, :unauthorized} =
+               ApiKeys.revoke_api_key(key, Subject.for_api_key(key, account))
+
       refute Repo.reload!(key).revoked_at
     end
 
@@ -2474,6 +2629,42 @@ defmodule Emisar.ApiKeysTest do
 
       refute ApiKeys.subject_can_manage_api_keys?(operator_subject)
       refute ApiKeys.subject_can_manage_api_keys?(viewer_subject)
+    end
+  end
+
+  describe "subject_can_manage_api_key?/2" do
+    test "is true for a manager on any key in the account" do
+      {_owner, account, owner_subject} = owner_subject_pair()
+      operator_subject = member_subject(account, :operator)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "theirs"}, operator_subject)
+
+      assert ApiKeys.subject_can_manage_api_key?(key, owner_subject)
+    end
+
+    test "is true on your own key and false on a teammate's" do
+      {_owner, account, owner_subject} = owner_subject_pair()
+      operator_subject = member_subject(account, :operator)
+
+      {:ok, _raw, own_key} = ApiKeys.create_key(%{name: "mine"}, operator_subject)
+      {:ok, _raw, owners_key} = ApiKeys.create_key(%{name: "theirs"}, owner_subject)
+
+      assert ApiKeys.subject_can_manage_api_key?(own_key, operator_subject)
+      refute ApiKeys.subject_can_manage_api_key?(owners_key, operator_subject)
+    end
+
+    test "is false for a viewer on the key they minted before being demoted" do
+      account = Fixtures.Accounts.create_account()
+      operator_subject = member_subject(account, :operator)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "inherited"}, operator_subject)
+
+      membership =
+        Fixtures.Memberships.fetch_membership(account.id, operator_subject.actor.id)
+        |> Fixtures.Memberships.force_role("viewer")
+
+      refute ApiKeys.subject_can_manage_api_key?(
+               key,
+               Fixtures.Subjects.membership_subject(membership)
+             )
     end
   end
 end

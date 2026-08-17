@@ -1088,14 +1088,15 @@ defmodule Emisar.Accounts do
 
   @doc """
   The account's security posture for the team rail, read from CURRENT state: 2FA
-  enrollment across every member, whether enforcement is on (and whether the
-  caller could turn it on without locking themselves out), and whether SSO is
-  required.
+  enrollment across every member, how many of them can manage the team, whether
+  enforcement is on (and whether the caller could turn it on without locking
+  themselves out), and whether SSO is required.
 
   The denominator is every non-deleted membership — suspended and still-pending
   included — so the count matches the roster rather than one page of it, and the
   account row, its settings, and the actor's own enrollment are all re-read here
-  rather than taken from a long-lived socket snapshot. Requires
+  rather than taken from a long-lived socket snapshot. `team_managers` shares
+  that denominator, so it can never exceed the member count beside it. Requires
   `view_own_account`. Returns `{:ok, facts}` or `{:error, :not_found |
   :unauthorized}`.
   """
@@ -1107,6 +1108,7 @@ defmodule Emisar.Accounts do
            ),
          {:ok, account} <- fetch_current_account(subject) do
       base = Membership.Query.not_deleted() |> Membership.Query.by_account_id(account.id)
+      manager_roles = Auth.Permissions.roles_with_permission(Authorizer.manage_team_permission())
 
       total = base |> Authorizer.for_subject(subject) |> Repo.aggregate(:count)
 
@@ -1116,11 +1118,18 @@ defmodule Emisar.Accounts do
         |> Authorizer.for_subject(subject)
         |> Repo.aggregate(:count)
 
+      managers =
+        base
+        |> Membership.Query.by_roles(manager_roles)
+        |> Authorizer.for_subject(subject)
+        |> Repo.aggregate(:count)
+
       {:ok,
        %{
          mfa_total: total,
          mfa_enrolled: enrolled,
          mfa_missing: total - enrolled,
+         team_managers: managers,
          mfa_enforcement: mfa_enforcement(account, subject),
          sso_required?: account.settings.require_sso
        }}

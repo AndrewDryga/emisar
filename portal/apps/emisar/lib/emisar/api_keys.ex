@@ -16,7 +16,7 @@ defmodule Emisar.ApiKeys do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, RequestContext}
+  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, RequestContext, Users}
   alias Emisar.ApiKeys.{ApiKey, Authorizer, DeviceGrant}
   alias Emisar.Auth.Subject
   require Logger
@@ -467,16 +467,13 @@ defmodule Emisar.ApiKeys do
   successor's FIRST authenticated use proves the client swapped and retires
   the replaced chain automatically (`api_key.retired_by_rotation` in the
   audit trail). The operator can still revoke the old key by hand sooner.
-  `%Subject{}` needs `manage_api_keys` — and, for an `:audit_export` source,
-  the account's paid audit-export entitlement (the successor is a fresh export
-  credential); returns `{:ok, raw_secret, new_key}`.
+  `%Subject{}` needs `manage_api_keys`, or — on a key it minted itself — the
+  permission that minting that kind of key required. For an `:audit_export`
+  source it also needs the account's paid audit-export entitlement (the
+  successor is a fresh export credential). Returns `{:ok, raw_secret, new_key}`.
   """
   def rotate_api_key(%ApiKey{} = key, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_api_keys_permission()
-           ) do
+    with :ok <- ensure_can_manage_key(key, subject) do
       {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
 
       source_queryable =
@@ -489,6 +486,7 @@ defmodule Emisar.ApiKeys do
       |> put_active_account_lock(subject.account.id)
       |> Multi.run(:source, fn repo, _changes ->
         with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
+             :ok <- ensure_can_manage_key(source, subject),
              :ok <- ensure_rotatable(source),
              :ok <- ensure_key_kind_available(source.kind, subject.account) do
           {:ok, source}
@@ -663,6 +661,32 @@ defmodule Emisar.ApiKeys do
     if oauth_backing?(source), do: {:error, :oauth_backing}, else: :ok
   end
 
+  # Rotating and revoking a key is `manage_api_keys` — EXCEPT on a key you
+  # minted yourself, which asks exactly what minting that kind asked for: an
+  # operator allowed to issue an `:mcp` key runs the rest of its life too, while
+  # an `:audit_export` token still needs `manage_api_keys` (so a demoted admin
+  # cannot rotate an inherited export credential into a fresh secret). A viewer
+  # holds neither and is refused on their own key — they could never have minted
+  # it. Ownership is the minting membership, the column `create_key/2` binds and
+  # every successor inherits, so a rotation chain can never cross owners and the
+  # cascade revoke stays within one person's keys. The shared-binding match IS
+  # the check (the house self-service shape) — never a role-name branch — and
+  # `is_binary` stops two nil ids (a membership-unbound key; a subject with no
+  # membership) reading as the same person. The actor must be a HUMAN: an MCP
+  # subject carries its key's minting membership, so without this a key could
+  # manage itself; the machine rotation path is `install_auto_rotation_successor/3`.
+  # Callers re-run it on the LOCKED row inside their transaction, so the caller's
+  # struct decides nothing.
+  defp ensure_can_manage_key(
+         %ApiKey{created_by_membership_id: membership_id} = key,
+         %Subject{membership_id: membership_id, actor: %Users.User{}} = subject
+       )
+       when is_binary(membership_id),
+       do: Auth.Authorizer.ensure_has_permissions(subject, permissions_for_kind(key.kind))
+
+  defp ensure_can_manage_key(%ApiKey{}, %Subject{} = subject),
+    do: Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_api_keys_permission())
+
   # An MCP key grants nothing its minter doesn't already hold: it authenticates
   # as `:api_client` and resolves the minter's own membership scope at call
   # time, so authoring its name and expiry is the same act as taking a quick
@@ -801,15 +825,12 @@ defmodule Emisar.ApiKeys do
 
   @doc """
   Explicitly revokes a key and every account-scoped rotation descendant in one
-  transaction. `%Subject{}` needs `manage_api_keys`; returns `{:ok, key}` or a
-  tagged authorization/not-found/write error.
+  transaction. `%Subject{}` needs `manage_api_keys`, or — on a key it minted
+  itself — the permission that minting that kind of key required; returns
+  `{:ok, key}` or a tagged authorization/not-found/write error.
   """
   def revoke_api_key(%ApiKey{} = key, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_api_keys_permission()
-           ) do
+    with :ok <- ensure_can_manage_key(key, subject) do
       by_user_id = Subject.actor_id(subject)
 
       source_queryable =
@@ -836,6 +857,7 @@ defmodule Emisar.ApiKeys do
 
   defp revoke_key_chain(repo, source_queryable, subject, by_user_id) do
     with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
+         :ok <- ensure_can_manage_key(source, subject),
          descendants = rotation_descendants(repo, source),
          {:ok, revoked_source} <- revoke_and_audit(repo, source, subject, by_user_id, nil),
          {:ok, revoked_descendants} <-
@@ -1558,4 +1580,12 @@ defmodule Emisar.ApiKeys do
   @doc "Whether `subject` may manage MCP API keys (admin+)."
   def subject_can_manage_api_keys?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_api_keys_permission())
+
+  @doc """
+  Whether `subject` may rotate or revoke THIS key — `manage_api_keys`, or the
+  key is one they minted and they still hold what minting it required. The row
+  grammar reads off this, so a key you own offers the same verbs an admin gets.
+  """
+  def subject_can_manage_api_key?(%ApiKey{} = key, %Subject{} = subject),
+    do: ensure_can_manage_key(key, subject) == :ok
 end

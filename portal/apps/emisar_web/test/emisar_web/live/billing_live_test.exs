@@ -427,24 +427,26 @@ defmodule EmisarWeb.BillingLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
-    test "the plan and its limits render; the money sections do not", %{
+    test "reads the plan, its limits, and the catalogue, but buys nothing", %{
       conn: conn,
       user: user,
       account: account
     } do
       downgrade_to(user, "viewer")
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      # The operational facts every role needs — which plan, and how much of it
-      # is left — stay on view_billing…
+      # What the tiers include is an operational fact on view_billing, alongside
+      # the current plan and the usage meters…
       assert html =~ "Current plan"
       assert html =~ "Usage"
-      # …while the money surfaces are manage_billing's: no ledger, no catalogue,
-      # and so no upgrade control to deny.
+      assert html =~ "Plans"
+      assert html =~ "Team"
+      # …while spending money is manage_billing's: the ledger and every card's
+      # call to action are gone, so there is no control left to deny.
       refute html =~ "Recent invoices"
-      refute html =~ "Plans"
       refute html =~ "Upgrade to Team"
+      refute has_element?(lv, "button[phx-click='upgrade']")
     end
 
     test "a crafted upgrade event is refused — flash, no redirect", %{
@@ -473,7 +475,7 @@ defmodule EmisarWeb.BillingLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
-    test "keeps the invoice ledger; the plan catalogue stays with manage", %{
+    test "keeps the invoice ledger and reads the catalogue, without a checkout", %{
       conn: conn,
       account: account
     } do
@@ -483,12 +485,14 @@ defmodule EmisarWeb.BillingLiveTest do
       html = render_async(lv)
 
       assert html =~ "Current plan"
-      # An admin answers for what the account spends, so the ledger stays…
+      # An admin answers for what the account spends, so the ledger stays, and
+      # the catalogue is what they point an owner at when a limit bites…
       assert html =~ "Recent invoices"
       assert has_element?(lv, "button[phx-click='download_invoice'][phx-value-id='txn_stub_1']")
+      assert html =~ "Plans"
       # …but choosing a plan is a checkout, which they cannot complete.
-      refute html =~ "Plans"
       refute html =~ "Upgrade to Team"
+      refute has_element?(lv, "button[phx-click='upgrade']")
     end
 
     test "downloads an invoice PDF", %{conn: conn, account: account} do
@@ -512,16 +516,17 @@ defmodule EmisarWeb.BillingLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
-    test "reads the plan and its limits, not the invoices or the catalogue", %{
+    test "reads the plan, its limits, and the catalogue, not the invoices", %{
       conn: conn,
       account: account
     } do
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       assert html =~ "Current plan"
       assert html =~ "Usage"
+      assert html =~ "Plans"
       refute html =~ "Recent invoices"
-      refute html =~ "Plans"
+      refute has_element?(lv, "button[phx-click='upgrade']")
     end
 
     test "a crafted invoice download is refused — the flash, not a PDF", %{

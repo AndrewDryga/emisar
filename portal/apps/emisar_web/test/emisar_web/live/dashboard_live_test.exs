@@ -434,6 +434,36 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert html =~ "2<span class=\"text-2xl text-zinc-500\"> members</span>"
       refute html =~ "Manage SSO providers"
       refute html =~ "Enable SSO"
+
+      # With no verb to offer, the last line is a plain fact instead — the
+      # answer to the question every lock tooltip on the console raises.
+      assert html =~ "1 owner or admin"
+    end
+
+    test "the operator's Team pillar counts every owner and admin", %{conn: conn} do
+      {_owner_conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
+      {:ok, _raw, _key} = Emisar.ApiKeys.create_key(%{name: "Bot"}, subject)
+      first_run(account, runner)
+
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      # The finance seat manages no team, so it is a member and not a manager.
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
+
+      operator = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
+
+      {:ok, _lv, html} =
+        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}")
+
+      assert html =~ "4<span class=\"text-2xl text-zinc-500\"> members</span>"
+      assert html =~ "2 owners and admins"
     end
 
     test "both connected but no advertised actions: the checklist requires a catalog pack first",

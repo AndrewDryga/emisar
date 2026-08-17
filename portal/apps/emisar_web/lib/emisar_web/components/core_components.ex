@@ -2718,6 +2718,7 @@ defmodule EmisarWeb.CoreComponents do
         <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
       </.meta_line>
   """
+  attr :id, :string, default: nil
   attr :class, :any, default: nil
 
   attr :wrap, :boolean,
@@ -2762,11 +2763,14 @@ defmodule EmisarWeb.CoreComponents do
          from its bottom margin edge, so baseline alignment dropped the segments
          after it by a full line. Peer segments share a line-height, so centering
          lands in the same place without that trap. --%>
-    <div class={[
-      (not @flexible? and not @wrap) && "line-clamp-2 sm:line-clamp-none sm:truncate",
-      @flexible? && "sm:flex sm:items-center",
-      @class
-    ]}>
+    <div
+      id={@id}
+      class={[
+        (not @flexible? and not @wrap) && "line-clamp-2 sm:line-clamp-none sm:truncate",
+        @flexible? && "sm:flex sm:items-center",
+        @class
+      ]}
+    >
       <%!-- `!`, never `not`, on a slot attr: an undeclared one is nil, and
            `not nil` is an ArgumentError that only fires once a caller opts in. --%>
       <%!-- The separator and slot GLUE to the tags (§7.48): `whitespace-pre` keeps

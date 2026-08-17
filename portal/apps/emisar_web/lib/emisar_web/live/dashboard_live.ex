@@ -1054,6 +1054,11 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
+  # No forward action this role can perform, so the last line is a plain fact
+  # instead: how many people can change the things the console's locks reserve
+  # for them. It answers the question every lock tooltip raises ("Only owners
+  # and admins can change this.") — hence that line's own wording — and it
+  # stays a fact, with no link or arrow to a page this member cannot act on.
   defp team_pillar(%{can_manage_sso?: false} = assigns) do
     ~H"""
     <.pillar
@@ -1062,6 +1067,7 @@ defmodule EmisarWeb.DashboardLive do
       navigate={~p"/app/#{@current_account}/settings/team"}
     >
       <:value>{@team_security.mfa_total}<span class="text-2xl text-zinc-500"> members</span></:value>
+      <:status>{team_managers_status(@team_security.team_managers)}</:status>
     </.pillar>
     """
   end
@@ -1095,6 +1101,9 @@ defmodule EmisarWeb.DashboardLive do
     </.pillar>
     """
   end
+
+  defp team_managers_status(1), do: "1 owner or admin"
+  defp team_managers_status(count), do: "#{count} owners and admins"
 
   # -- The pillar card shape --------------------------------------------
 

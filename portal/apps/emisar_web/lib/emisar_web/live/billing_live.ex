@@ -564,11 +564,15 @@ defmodule EmisarWeb.BillingLive do
             <%!-- Plans sit in the main column (not full width under the rail).
                  Picking a plan is the choice_cards concept — the current plan
                  takes the selected treatment (bright ring), the rest quiet. --%>
-            <%!-- Buying is the money-handler's job, and `start_checkout/4` has
-                 always required manage-billing — so the catalogue only renders
-                 for a member who could actually act on it, rather than three
-                 cards whose every button dies in a denial. --%>
-            <section :if={Billing.subject_can_manage_billing?(@current_subject)}>
+            <%!-- What the tiers include is an operational fact every member
+                 works against (the same `view_billing` the usage rail and the
+                 plan strip already render from) — an admin chasing a limit
+                 needs to see which plan lifts it before asking an owner for it,
+                 and hiding the whole catalogue left them nothing to point at.
+                 Buying stays the money-handler's job: `start_checkout/4` has
+                 always required manage-billing, so the CTA — not the card —
+                 is what that permission gates. --%>
+            <section>
               <.section_header title="Plans">
                 <:actions>
                   <%!-- Monthly/annual is pure UI state (set_cycle) — the chosen
@@ -634,8 +638,17 @@ defmodule EmisarWeb.BillingLive do
                   </ul>
 
                   <%!-- No footer on the current plan: the chip already says it —
-                   a disabled "You're here" button was a fake affordance. --%>
-                  <div :if={not current_plan?(plan, @summary)} class="mt-5">
+                   a disabled "You're here" button was a fake affordance. Same
+                   reasoning for a member who can't buy: every button here would
+                   die in a denial, and a card whose footer is simply absent
+                   reads as a price list, which is what it is for them. --%>
+                  <div
+                    :if={
+                      not current_plan?(plan, @summary) and
+                        Billing.subject_can_manage_billing?(@current_subject)
+                    }
+                    class="mt-5"
+                  >
                     <%= cond do %>
                       <% plan.key == "enterprise" -> %>
                         <.button

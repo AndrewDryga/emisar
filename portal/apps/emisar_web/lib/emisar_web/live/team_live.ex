@@ -31,6 +31,8 @@ defmodule EmisarWeb.TeamLive do
        |> assign(:runners, [])
        |> assign(:runners_by_id, %{})
        |> assign(:runner_load_error?, false)
+       # The intro's role note renders before the roster load resolves it.
+       |> assign(:current_role, nil)
        |> assign(:pack_advertisements, %{})
        |> assign(:pack_load_error?, false)
        |> assign(:approval_access_modes, %{})
@@ -1294,9 +1296,15 @@ defmodule EmisarWeb.TeamLive do
         </div>
       </div>
 
+      <%!-- The role note opens the page instead of closing it: it explains why
+           the roster's invite and role controls are missing, so it has to be
+           read BEFORE them, not discovered under the last row. The docs link
+           stays the paragraph's tail either way. --%>
       <.page_intro :if={@live_action == :index}>
         Members, roles, and invitations for this workspace — who can dispatch, approve,
-        and configure. <.doc_link href="/docs/teams-and-access">Team &amp; access docs</.doc_link>
+        and configure.{" "}<span :if={not can_manage?(assigns) and @current_role}>Only owners and admins can invite or manage members. Your role: {Emisar.Auth.role_label(
+          @current_role
+        )}.{" "}</span><.doc_link href="/docs/teams-and-access">Team &amp; access docs</.doc_link>
       </.page_intro>
 
       <.loading_state :if={@live_action == :index and @loading?} />
@@ -1553,18 +1561,33 @@ defmodule EmisarWeb.TeamLive do
                         <%!-- Both timestamps render through <.local_time> (viewer-local,
                        hoverable, live); {" "} guards the space the formatter would
                        otherwise let HEEx trim before each component tag. --%>
-                        <%!-- Wraps below sm — single-line truncation ate the
-                         sign-in-recency tail on every long email. --%>
-                        <div
+                        <%!-- When and how recently a colleague signs in is an
+                         ADMINISTRATIVE fact about them, so a viewer who can't
+                         manage the team sees it only on their OWN row — that
+                         one is their own record. Their identity still reads in
+                         full. The shared meta line owns the middot, so dropping
+                         the two activity segments can't strand a separator
+                         after the email. --%>
+                        <% show_activity? =
+                          can_manage?(assigns) or membership.user_id == @current_user.id %>
+                        <.meta_line
                           id={"member-metadata-#{membership.id}"}
-                          class="text-xs text-zinc-400 sm:truncate"
+                          class="text-xs text-zinc-400"
                         >
-                          <span :if={email = Accounts.secondary_user_email(membership.user)}>{email} · </span>joined{" "}<.local_time
-                            id={"member-joined-#{membership.id}"}
-                            value={membership.inserted_at}
-                            mode={:relative}
-                          /> ·{" "}<.activity_status membership={membership} />
-                        </div>
+                          <:seg :if={email = Accounts.secondary_user_email(membership.user)}>
+                            {email}
+                          </:seg>
+                          <:seg :if={show_activity?}>
+                            joined{" "}<.local_time
+                              id={"member-joined-#{membership.id}"}
+                              value={membership.inserted_at}
+                              mode={:relative}
+                            />
+                          </:seg>
+                          <:seg :if={show_activity?}>
+                            <.activity_status membership={membership} />
+                          </:seg>
+                        </.meta_line>
                         <% access = member.runner_access %>
                         <%!-- One labelled row per dimension, on a shared label
                          track. A middot could not survive the wrap: once a long
@@ -1845,10 +1868,6 @@ defmodule EmisarWeb.TeamLive do
                 </.empty_state>
               </:empty>
             </LiveTable.live_table>
-
-            <p :if={not can_manage?(assigns)} class="mt-6 text-xs text-zinc-400">
-              Only owners and admins can invite or manage members. Your role: {@current_role || "—"}.
-            </p>
           </section>
         </div>
 

@@ -1143,9 +1143,87 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "one click"
     end
 
-    # A role that can't manage keys keeps both read paths — run activity and the
-    # key's audit trail — while manage-only controls stay absent.
-    test "an operator's row shows the read verbs as bordered buttons, no Actions menu",
+    # You always manage what you minted, so an operator's OWN key carries the
+    # same four verbs an admin's row does — one labeled menu, never four loose
+    # buttons stranded in the action slot.
+    test "an operator's own key row carries the same labeled Actions menu", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      operator = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(%{name: "my-bot"}, Fixtures.Subjects.membership_subject(membership))
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/agents")
+
+      assert has_element?(lv, "details summary", "Actions")
+      assert has_element?(lv, "details a", "View activity")
+      assert has_element?(lv, "details a", "View audit trail")
+      assert has_element?(lv, "details button", "Rotate")
+      assert has_element?(lv, "details button", "Revoke")
+      assert has_element?(lv, "#rotate-#{key.id}")
+      assert has_element?(lv, "#revoke-agent-key-#{key.id}")
+      # The bordered read-pair is the grammar for a row you CAN'T manage.
+      refute has_element?(lv, "a.border-zinc-800", "Audit trail")
+    end
+
+    test "an operator rotates their own key and gets the new secret", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      operator = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(%{name: "my-bot"}, Fixtures.Subjects.membership_subject(membership))
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/agents")
+
+      html = render_click(lv, "rotate", %{"id" => key.id})
+
+      assert html =~ "Key rotated"
+      assert [successor] = Enum.reject(Repo.all(ApiKey), &(&1.id == key.id))
+      assert successor.replaces_id == key.id
+      flush_key_broadcast(lv)
+    end
+
+    test "an operator revokes their own key", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      operator = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(%{name: "my-bot"}, Fixtures.Subjects.membership_subject(membership))
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/agents")
+
+      assert render_click(lv, "revoke", %{"id" => key.id}) =~ "API key revoked."
+      assert Repo.reload!(key).revoked_at
+      flush_key_broadcast(lv)
+    end
+
+    # A role that can't manage a TEAMMATE's key keeps both read paths — run
+    # activity and the key's audit trail — while manage-only controls stay absent.
+    test "an operator's row for a teammate's key shows the read verbs as bordered buttons",
          %{conn: conn} do
       {_owner_conn, owner, account} = register_and_log_in(conn)
 

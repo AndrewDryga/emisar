@@ -597,9 +597,11 @@ defmodule EmisarWeb.TeamLiveTest do
 
         refute has_element?(lv, "##{"change-role-#{teammate_membership.id}-operator"}")
 
-        # The read-only footer names their role and points them at who can manage.
+        # The read-only note names their role and points them at who can manage.
+        # It renders the role's LABEL, so `billing_manager` reads as a phrase
+        # rather than leaking the atom's underscore.
         assert html =~ "Only owners and admins can invite or manage members."
-        assert html =~ "Your role: #{unquote(role)}"
+        assert html =~ "Your role: #{Emisar.Auth.role_label(unquote(role))}"
 
         # The roster offers no jump into a TEAMMATE's audit trail — only into
         # your own. (A manager's per-row audit item lives in the Actions menu,
@@ -612,6 +614,66 @@ defmodule EmisarWeb.TeamLiveTest do
 
         assert has_element?(lv, "a[href*='actor_id=#{member.id}']", "View activity")
       end
+    end
+
+    test "a teammate's activity facts are hidden; your own row keeps them", %{
+      account: account,
+      teammate: teammate,
+      teammate_membership: teammate_membership
+    } do
+      member = Fixtures.Users.create_user(%{full_name: "Reader Rae"})
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        )
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(member) |> live(~p"/app/#{account}/settings/team")
+
+      teammate_metadata =
+        lv |> element("#member-metadata-#{teammate_membership.id}") |> render()
+
+      # When and how recently a colleague signs in is an administrative fact —
+      # their identity still reads in full, and the middot goes with the facts.
+      assert teammate_metadata =~ teammate.email
+      refute teammate_metadata =~ "joined"
+      refute teammate_metadata =~ "active"
+      refute teammate_metadata =~ "·"
+
+      own_metadata = lv |> element("#member-metadata-#{membership.id}") |> render()
+
+      assert own_metadata =~ member.email
+      assert own_metadata =~ "joined"
+      assert own_metadata =~ "last active"
+    end
+
+    test "the permission note opens the page, with the docs link still the intro's tail", %{
+      account: account
+    } do
+      member = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: member.id,
+        role: "operator"
+      )
+
+      {:ok, lv, html} =
+        build_conn() |> log_in_user(member) |> live(~p"/app/#{account}/settings/team")
+
+      # One paragraph, in this order: what the page is, who may change it, docs.
+      assert has_element?(
+               lv,
+               "p",
+               ~r/who can dispatch, approve,\s+and configure\.\s+Only owners and admins can invite or manage members\.\s+Your role: Operator\.\s+Team & access docs/s
+             )
+
+      # Moved, not duplicated — the footer under the roster is gone.
+      assert length(Regex.scan(~r/Only owners and admins can invite or manage members\./, html)) ==
+               1
     end
   end
 
@@ -1976,9 +2038,9 @@ defmodule EmisarWeb.TeamLiveTest do
         |> element("#member-metadata-#{membership.id}")
         |> render()
 
-      assert metadata_html =~ ~r/metadata-[^"]+"[^>]*>\s*joined\s<time/
+      assert metadata_html =~ ~r/metadata-[^"]+"[^>]*>\s*<span[^>]*>\s*joined\s<time/
       refute metadata_html =~ member.email
-      refute metadata_html =~ ~r/metadata-[^"]+"[^>]*>\s*·/
+      refute metadata_html =~ ~r/metadata-[^"]+"[^>]*>\s*(<span[^>]*>)?\s*·/
     end
   end
 
