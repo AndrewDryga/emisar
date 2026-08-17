@@ -14,7 +14,8 @@ description: >
   bounded sample — most destructive first — and `truncated` reports how many
   entries each list dropped, so the result fits the runner's structured-output
   cap on plans of any size. Attribute and output VALUES are never emitted —
-  only addresses, types, actions, and names — because the structured plan HCP
+  only addresses, types, actions, names, and the bounded `replace_paths` that
+  identify replacement-forcing attributes — because the structured plan HCP
   Terraform serves carries every value in cleartext, sensitive ones included.
   Needs a user or team token with admin access to the workspace;
   tfc.run_details gives counts on a read-only token.
@@ -65,13 +66,18 @@ output:
         items:
           type: object
           additionalProperties: false
-          required: [address, resource_type, module, action, reason]
+          required: [address, resource_type, module, action, reason, replace_paths, replace_paths_truncated]
           properties:
             address: {type: string, maxLength: 80}
             resource_type: {type: string, maxLength: 44}
             module: {type: string, maxLength: 32}
             action: {type: string, maxLength: 12}
             reason: {type: string, maxLength: 36}
+            replace_paths:
+              type: array
+              maxItems: 2
+              items: {type: string, maxLength: 32}
+            replace_paths_truncated: {type: integer, minimum: 0}
       drift:
         type: array
         maxItems: 3

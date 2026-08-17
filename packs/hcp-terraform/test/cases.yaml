@@ -183,6 +183,9 @@ cases:
         /summary/drifted: 1
         /changes/0/address: aws_s3_bucket.legacy
         /changes/0/action: delete
+        /changes/1/address: aws_instance.api
+        /changes/1/replace_paths/0: user_data
+        /changes/1/replace_paths_truncated: 0
         /drift/0/address: aws_security_group.web
         /outputs/0/name: db_password
         /outputs/0/sensitive: true
@@ -211,6 +214,7 @@ cases:
         /changes/0/address: AAA-sentinel-delete-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
         /changes/0/action: delete
         /changes/1/address: "AAB-sentinel-delete-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+        /changes/0/replace_paths_truncated: 1
         /truncated/changes: 390
         /truncated/drift: 197
         /truncated/outputs: 43

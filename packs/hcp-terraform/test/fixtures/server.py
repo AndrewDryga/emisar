@@ -355,6 +355,7 @@ def plan_json_output():
                     "actions": ["delete", "create"],
                     "before": {"user_data": PLAN_SECRET},
                     "after": {"user_data": PLAN_SECRET},
+                    "replace_paths": [["user_data"]],
                 },
             },
             {
@@ -442,7 +443,18 @@ def worst_resource_change(address, actions, reason=None):
         "mode": "managed",
         "type": "aws_" + BACKSLASH_FLOOD,
         "name": "worst",
-        "change": {"actions": actions, "before": {}, "after": {}},
+        "change": {
+            "actions": actions,
+            "before": {},
+            "after": {},
+            # Three hostile paths prove both the two-path sample bound and the
+            # per-path byte clip in the maximum structured-output case.
+            "replace_paths": [
+                [U2028_FLOOD, 999999, BACKSLASH_FLOOD],
+                [BACKSLASH_FLOOD, 999999, U2028_FLOOD],
+                ["omitted", BACKSLASH_FLOOD],
+            ],
+        },
     }
     if reason is not None:
         change["action_reason"] = reason

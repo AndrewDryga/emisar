@@ -230,6 +230,31 @@ def most_destructive_first: sort_by([(destruction_rank[.action] // 6), .address]
 
 def omitted($entries; $cap): [($entries | length) - $cap, 0] | max;
 
+# Terraform reports the attribute paths which forced a replacement without
+# requiring us to read the before/after values. Render each path in familiar
+# attribute/index notation, then bound both the sample and each display string.
+def replacement_path:
+  if type != "array" or length == 0 then
+    error("replace_paths in the plan document contains a path that is not a non-empty array")
+  else
+    reduce .[] as $step ("";
+      if ($step | type) == "string" then
+        . + (if . == "" then "" else "." end) + $step
+      elif ($step | type) == "number" and ($step | floor) == $step then
+        . + "[\($step)]"
+      else
+        error("replace_paths in the plan document contains a step that is not a string or integer")
+      end)
+  end;
+
+def replacement_paths($change):
+  if ($change | has("replace_paths") | not) then []
+  elif ($change.replace_paths | type) != "array" then
+    error("replace_paths in the plan document is \($change.replace_paths | type) rather than an array")
+  else
+    [$change.replace_paths[] | replacement_path]
+  end;
+
 def clip_resource:
   .address |= clipped(80; 80)
   | .resource_type |= clipped(44; 44)
@@ -275,12 +300,16 @@ def project_plan:
   supported_format_version
   | . as $plan
   | [ ($plan | collection("resource_changes"; "array"))[]
+      | .change as $change
+      | replacement_paths($change) as $replace_paths
       | {
           address: (.address // ""),
           resource_type: (.type // ""),
           module: (.module_address // ""),
-          action: norm_action(.change.actions),
-          reason: (.action_reason // "")
+          action: norm_action($change.actions),
+          reason: (.action_reason // ""),
+          replace_paths: ($replace_paths[:2] | map(clipped(32; 32))),
+          replace_paths_truncated: omitted($replace_paths; 2)
         }
       | select(is_noop(.action) | not)
     ] as $changes

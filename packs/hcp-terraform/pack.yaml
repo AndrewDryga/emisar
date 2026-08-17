@@ -2,11 +2,12 @@ schema_version: 1
 
 id: hcp-terraform
 name: HCP Terraform run review and gating
-version: 0.7.0
+version: 0.8.0
 description: >
   Review HCP Terraform (formerly Terraform Cloud) and Terraform Enterprise runs
   and gate what happens next: list workspaces and runs, project a run's plan
-  into a summary that carries no resource or output values, read why a run
+  into a summary that carries no resource or output values but does identify
+  the bounded attribute paths that force replacement, read why a run
   failed from a bounded tail of its plan or apply log, queue a speculative
   plan-only run, retry a failed run against its exact configuration version,
   and confirm, discard, or cancel a run through emisar's policy and approval
