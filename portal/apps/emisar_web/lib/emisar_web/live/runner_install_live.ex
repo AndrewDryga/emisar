@@ -26,14 +26,19 @@ defmodule EmisarWeb.RunnerInstallLive do
   alias EmisarWeb.UrlHelpers
 
   def mount(_params, _session, socket) do
-    # Install mints a root-capable key at mount — a role that can't mint got a
-    # gutted wizard framing the permanent denial as a retryable failure.
+    # Install mints a root-capable key at mount — a subject that can't mint got a
+    # gutted wizard framing the permanent denial as a retryable failure. Minting
+    # needs the whole fleet as well as the role, because the enrolling host names
+    # its own group.
     if Runners.subject_can_install_runners?(socket.assigns.current_subject) do
       mount_install(socket)
     else
       {:ok,
        socket
-       |> put_flash(:info, "Connecting a runner needs an operator role or above.")
+       |> put_flash(
+         :info,
+         "Connecting a runner needs an operator role or above, with access to every runner."
+       )
        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
     end
   end

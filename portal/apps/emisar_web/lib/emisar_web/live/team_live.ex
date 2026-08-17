@@ -2631,8 +2631,9 @@ defmodule EmisarWeb.TeamLive do
     "Owners have full control — billing, deleting the account, and managing other owners — and can remove or demote you."
   end
 
-  defp role_change_body("admin"),
-    do: "Admins manage runners, policy, members, and approvals across the whole account."
+  defp role_change_body("admin") do
+    "Admins manage runners, policy, members, approvals, and billing across the whole account — everything an owner can, except adding or removing owners."
+  end
 
   defp role_change_body("operator"),
     do: "Operators can dispatch runs to your fleet and approve gated actions."

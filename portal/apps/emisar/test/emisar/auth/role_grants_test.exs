@@ -54,12 +54,8 @@ defmodule Emisar.Auth.RoleGrantsTest do
     {Emisar.Users.User, :edit_self}
   ]
 
-  # admin is owner minus the two owner-only grants.
-  @admin @owner --
-           [
-             {Emisar.Accounts.Membership, :manage_owners},
-             {Emisar.Billing.Subscription, :manage}
-           ]
+  # admin is owner minus the one owner-only grant.
+  @admin @owner -- [{Emisar.Accounts.Membership, :manage_owners}]
 
   @billing_manager [
     {Emisar.Accounts.Account, :view_own},
@@ -163,14 +159,11 @@ defmodule Emisar.Auth.RoleGrantsTest do
   # silently strand it. Each entry below is held by an OWNER, so nothing is
   # closed to owner and admin together.
   @sanctioned_gaps %{
-    # An owner outranks an admin; that gap IS the ownership boundary.
-    {:admin, :owner} => [
-      {Emisar.Accounts.Membership, :manage_owners},
-      {Emisar.Billing.Subscription, :manage}
-    ],
-    # The finance seat is appointed by an owner, not an admin — `manage_billing`
-    # is what makes `covers_role?/2` say so with no `role == :owner` check.
-    {:admin, :billing_manager} => [{Emisar.Billing.Subscription, :manage}],
+    # Appointing an owner is the ONE thing an admin cannot do; that gap IS the
+    # ownership boundary. Since admins hold `manage_billing`, `:billing_manager`
+    # has no entry here at all — an admin covers the finance seat entirely, and
+    # `covers_role?/2` therefore lets an admin appoint it.
+    {:admin, :owner} => [{Emisar.Accounts.Membership, :manage_owners}],
     {:owner, :api_client} => @machine_only,
     {:admin, :api_client} => @machine_only
   }
@@ -196,8 +189,8 @@ defmodule Emisar.Auth.RoleGrantsTest do
   # The durable half of the goldens: a permission added to ONE narrow role has
   # to reach owner and admin too, or this fails. The assertion is an equality on
   # the gap, so deleting a sanctioned exception is as visible a diff as adding
-  # one — grant an admin `manage_billing` and the {:admin, :billing_manager}
-  # entry above must go in the same change.
+  # one — granting an admin `manage_billing` is what removed the whole
+  # {:admin, :billing_manager} entry, and this test is what demanded it.
   describe "owner and admin cover every role" do
     for superset <- [:owner, :admin], {role, _grants} <- @goldens, role != superset do
       test "#{superset} holds every permission #{role} does" do

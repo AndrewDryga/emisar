@@ -382,19 +382,36 @@ defmodule EmisarWeb.BillingLiveTest do
       assert html =~ "upgrade to a paid plan first"
     end
 
-    test "an admin pushing a crafted manage event is refused — flash, no redirect", %{
+    test "an admin manages the subscription — the account's money is theirs to run", %{
       conn: conn,
       user: user,
       account: account
     } do
-      # manage_billing belongs to owners + billing managers, not admins. An
-      # admin (who can VIEW billing) crafting the
-      # manage_billing event is double-gated: Permissions.gated denies it in the LV
-      # before the context is even called, so the result is a permission flash and
-      # no portal redirect. (Customer attached, to prove the gate — not the
-      # no-customer branch — is what refuses.)
       downgrade_to(user, "admin")
       account = attach_customer(account, "ctm_admin_manage_01")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert has_element?(lv, "button[phx-click='manage_billing']", "Manage subscription")
+
+      assert {:error, {:redirect, redirect}} = render_click(lv, "manage_billing", %{})
+      url = redirect[:to] || redirect[:external]
+      assert is_binary(url) and url =~ "stub-portal"
+    end
+
+    test "an operator pushing a crafted manage event is refused — flash, no redirect", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      # manage_billing stops below the admin tier. An operator (who can VIEW
+      # billing) crafting the manage_billing event is double-gated:
+      # Permissions.gated denies it in the LV before the context is even called,
+      # so the result is a permission flash and no portal redirect. (Customer
+      # attached, to prove the gate — not the no-customer branch — is what
+      # refuses.)
+      downgrade_to(user, "operator")
+      account = attach_customer(account, "ctm_operator_manage_01")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -475,7 +492,7 @@ defmodule EmisarWeb.BillingLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
-    test "keeps the invoice ledger and reads the catalogue, without a checkout", %{
+    test "gets the whole billing surface — ledger, catalogue, and checkout", %{
       conn: conn,
       account: account
     } do
@@ -485,14 +502,12 @@ defmodule EmisarWeb.BillingLiveTest do
       html = render_async(lv)
 
       assert html =~ "Current plan"
-      # An admin answers for what the account spends, so the ledger stays, and
-      # the catalogue is what they point an owner at when a limit bites…
+      # An admin runs the account, so they run its money: the ledger, the
+      # catalogue, and the checkout that acts on it.
       assert html =~ "Recent invoices"
       assert has_element?(lv, "button[phx-click='download_invoice'][phx-value-id='txn_stub_1']")
       assert html =~ "Plans"
-      # …but choosing a plan is a checkout, which they cannot complete.
-      refute html =~ "Upgrade to Team"
-      refute has_element?(lv, "button[phx-click='upgrade']")
+      assert has_element?(lv, "button[phx-click='upgrade']")
     end
 
     test "downloads an invoice PDF", %{conn: conn, account: account} do

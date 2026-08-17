@@ -1773,12 +1773,21 @@ defmodule Emisar.Runners do
   """
   def change_enrollment_key(attrs \\ %{}), do: EnrollmentKey.Changeset.form(attrs)
 
+  @doc """
+  Mint a named enrollment key and audit it. Requires `manage_enrollment_keys`
+  AND unrestricted runner access — the enrolling host self-reports its group, so
+  a key is a fleet-wide grant and a runner-scoped admin must not be able to
+  widen their own reach by minting one. Returns `{:ok, raw_secret, key}` or
+  `{:error, %Ecto.Changeset{} | :unauthorized}`; the raw secret is returned once
+  and never stored.
+  """
   def create_enrollment_key(attrs, %Subject{account: account} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_enrollment_keys_permission()
-           ) do
+           ),
+         :ok <- ensure_full_runner_access(subject) do
       account_id = account.id
       user_id = Subject.actor_id(subject)
       {raw, prefix, hash} = Crypto.mint("emkey-enroll-", @enrollment_key_prefix_size)
@@ -1976,16 +1985,22 @@ defmodule Emisar.Runners do
   install command, marks it auto-generated, and evicts the oldest
   auto-unused key beyond the per-account ring cap of #{@install_ring_cap}.
 
-  Returns `{:ok, raw_secret, key}`. No audit log on mint — auto-gen is
-  noise. Once a runner registers with the key, `consume_enrollment_key/1`
-  clears the auto flag and audit logs `enrollment_key.bound` with `auto: true`.
+  Requires `issue_install_key` AND unrestricted runner access, for the same
+  reason `create_enrollment_key/2` does: the enrolling host names its own group,
+  so this key can place a machine anywhere in the fleet.
+
+  Returns `{:ok, raw_secret, key}` or `{:error, :unauthorized}`. No audit log on
+  mint — auto-gen is noise. Once a runner registers with the key,
+  `consume_enrollment_key/1` clears the auto flag and audit logs
+  `enrollment_key.bound` with `auto: true`.
   """
   def mint_install_key(%Subject{account: account} = subject, opts \\ []) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.issue_install_key_permission()
-           ) do
+           ),
+         :ok <- ensure_full_runner_access(subject) do
       account_id = account.id
       user_id = Subject.actor_id(subject)
       cap = opts[:ring_cap] || @install_ring_cap
@@ -2258,13 +2273,36 @@ defmodule Emisar.Runners do
   def subject_can_manage_runners?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_runners_permission())
 
-  @doc "Whether the subject can mint an install key / connect a host (operators and above)."
-  def subject_can_install_runners?(%Subject{} = subject),
-    do: Auth.Authorizer.has_permission?(subject, Authorizer.issue_install_key_permission())
+  @doc """
+  Whether the subject can mint an install key / connect a host —
+  `issue_install_key` plus unrestricted runner access.
 
-  @doc "Whether `subject` may manage runner enrollment keys (admin+)."
+  An enrollment key is a FLEET-WIDE grant: the enrolling host self-reports its
+  group, so whoever holds a key can land a machine in any group at all. A member
+  who reaches only part of the fleet must not be able to widen it — otherwise
+  they mint a key, enrol a box they control into a group they do not, and every
+  member of that group starts dispatching to it.
+  """
+  def subject_can_install_runners?(%Subject{} = subject) do
+    Auth.Authorizer.has_permission?(subject, Authorizer.issue_install_key_permission()) and
+      full_runner_access?(subject)
+  end
+
+  @doc "Whether `subject` may manage runner enrollment keys — list and revoke (admin+)."
   def subject_can_manage_enrollment_keys?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_enrollment_keys_permission())
+
+  @doc """
+  Whether `subject` may create a named enrollment key — `manage_enrollment_keys`
+  plus the same unrestricted runner access `subject_can_install_runners?/1`
+  requires, and for the same reason.
+
+  Deliberately narrower than `subject_can_manage_enrollment_keys?/1`: listing and
+  revoking stay open to a runner-restricted admin, because both NARROW what the
+  fleet accepts. Only minting widens it.
+  """
+  def subject_can_create_enrollment_keys?(%Subject{} = subject),
+    do: subject_can_manage_enrollment_keys?(subject) and full_runner_access?(subject)
 
   @doc """
   Whether `subject` may change the account-wide inactivity window (the runners

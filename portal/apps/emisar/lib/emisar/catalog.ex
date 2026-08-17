@@ -564,7 +564,7 @@ defmodule Emisar.Catalog do
         lock_trustable_pack_version(repo, pack_version_id, subject)
       end)
       |> Multi.run(:manifest, fn repo, %{before: pack_version} ->
-        trusted_manifest_source(repo, pack_version)
+        trusted_manifest_source(repo, pack_version, subject)
       end)
       # Trusting a RETIRED version IS the override — an explicit,
       # permission-gated action. Compute it inside the transaction (retirement
@@ -672,10 +672,11 @@ defmodule Emisar.Catalog do
   # What the trust adopts: a row carrying a pending_hash snapshots the
   # complete advertised descriptor set for those exact bytes; a revoked row
   # with no pending hash restores its recorded hash + manifest instead.
-  defp trusted_manifest_source(_repo, %PackVersion{pending_hash: nil}), do: {:ok, :restore}
+  defp trusted_manifest_source(_repo, %PackVersion{pending_hash: nil}, %Subject{}),
+    do: {:ok, :restore}
 
-  defp trusted_manifest_source(repo, %PackVersion{} = pack_version),
-    do: snapshot_action_set(repo, pack_version)
+  defp trusted_manifest_source(repo, %PackVersion{} = pack_version, %Subject{} = subject),
+    do: snapshot_action_set(repo, pack_version, subject)
 
   @doc """
   Explicitly re-trust an already-trusted pack version whose version the
@@ -699,7 +700,7 @@ defmodule Emisar.Catalog do
         |> PackVersion.Query.by_id(pack_version_id)
         |> Authorizer.for_subject(subject)
         |> Repo.fetch_and_update(PackVersion.Query,
-          with: &override_retirement_changeset(&1, overridden_by_id),
+          with: &override_retirement_changeset(&1, overridden_by_id, subject),
           audit: &Audit.Events.pack_retirement_overridden(subject, &1),
           after_commit: fn updated ->
             broadcast_pack_trust(updated.account_id)
@@ -710,6 +711,16 @@ defmodule Emisar.Catalog do
         {:error, :not_found}
       end
     end
+  end
+
+  # Pack access is judged here, on the LOCKED row, because this mutation reaches
+  # the version by id rather than through `lock_pack_version/3` — and BEFORE the
+  # trust state, so a refusal cannot report whether an unreachable version is
+  # trusted.
+  defp override_retirement_changeset(%PackVersion{} = pack_version, overridden_by_id, subject) do
+    if pack_in_scope?(pack_version, subject),
+      do: override_retirement_changeset(pack_version, overridden_by_id),
+      else: :not_found
   end
 
   # Only a TRUSTED row can be overridden (the override re-enables dispatch for
@@ -743,7 +754,7 @@ defmodule Emisar.Catalog do
         |> PackVersion.Query.by_id(pack_version_id)
         |> Authorizer.for_subject(subject)
         |> Repo.fetch_and_update(PackVersion.Query,
-          with: &revoke_trust_changeset/1,
+          with: &revoke_trust_changeset(&1, subject),
           audit: &Audit.Events.pack_trust_revoked(subject, &1),
           after_commit: fn updated ->
             broadcast_pack_trust(updated.account_id)
@@ -756,6 +767,14 @@ defmodule Emisar.Catalog do
     end
   end
 
+  # Same as the retirement override: this mutation reaches the version by id, so
+  # the locked row's pack is judged here, and before the trust state.
+  defp revoke_trust_changeset(%PackVersion{} = pack_version, subject) do
+    if pack_in_scope?(pack_version, subject),
+      do: revoke_trust_changeset(pack_version),
+      else: :not_found
+  end
+
   # Only a TRUSTED row can be revoked; any other state aborts as :not_trusted.
   defp revoke_trust_changeset(%PackVersion{trust_state: :trusted} = pack_version),
     do: PackVersion.Changeset.revoke_trust(pack_version)
@@ -765,7 +784,9 @@ defmodule Emisar.Catalog do
   # Locked, account-scoped re-read shared by the trust-state deciders
   # (`FOR NO KEY UPDATE`): two operators racing decisions on the same row
   # serialize, and the loser judges the winner's already-flipped state
-  # instead of overwriting it.
+  # instead of overwriting it. Pack access is judged on the LOCKED row rather
+  # than on the id the caller sent, so the pack whose trust is being decided is
+  # the pack that was checked.
   defp lock_pack_version(repo, pack_version_id, %Subject{} = subject) do
     if Repo.valid_uuid?(pack_version_id) do
       queryable =
@@ -774,10 +795,30 @@ defmodule Emisar.Catalog do
         |> PackVersion.Query.lock_for_update()
         |> Authorizer.for_subject(subject)
 
-      repo.fetch(queryable, PackVersion.Query)
+      with {:ok, pack_version} <- repo.fetch(queryable, PackVersion.Query),
+           true <- pack_in_scope?(pack_version, subject) do
+        {:ok, pack_version}
+      else
+        false -> {:error, :not_found}
+        {:error, :not_found} -> {:error, :not_found}
+      end
     else
       {:error, :not_found}
     end
+  end
+
+  # Reach a pack and you may decide its versions; cannot reach it and the pack
+  # does not exist for you — which is why an out-of-scope decision is
+  # `:not_found`, the same answer a cross-account id gets, and not
+  # `:unauthorized`, which would confirm the version is there. `list_console_packs/2`
+  # hides these packs, so without this the UI and the mutation disagreed and a
+  # pack-restricted member could flip trust on a pack they are never shown.
+  # Access is re-read at the mutation boundary rather than taken from the
+  # session, so a scope narrowed mid-session takes the decision away from an
+  # already-open page immediately.
+  defp pack_in_scope?(%PackVersion{} = pack_version, %Subject{} = subject) do
+    access = Accounts.runner_access_for_subject(subject)
+    Accounts.RunnerAccess.pack_in_scope?(pack_version.pack_id, access)
   end
 
   # Reject decides a live pending review only.
@@ -918,6 +959,7 @@ defmodule Emisar.Catalog do
   # Locked, account-scoped read of every version row of a pack — the
   # whole-pack delete works from this exact set, so a version observed after
   # the lock re-inserts (documented semantics) instead of vanishing silently.
+  # Pack access is judged on a locked row, not on the `pack_id` argument.
   defp lock_pack_versions_by_pack_id(repo, pack_id, %Subject{} = subject) do
     queryable =
       PackVersion.Query.all()
@@ -927,8 +969,12 @@ defmodule Emisar.Catalog do
 
     case repo.all(queryable) do
       [] -> {:error, :not_found}
-      versions -> {:ok, versions}
+      [version | _] = versions -> judge_pack_reach(versions, version, subject)
     end
+  end
+
+  defp judge_pack_reach(versions, %PackVersion{} = version, %Subject{} = subject) do
+    if pack_in_scope?(version, subject), do: {:ok, versions}, else: {:error, :not_found}
   end
 
   # -- Retention ---------------------------------------------------------
@@ -1005,6 +1051,16 @@ defmodule Emisar.Catalog do
     end
   end
 
+  # The manual "Clean up now" sweep is narrowed to the operator's own pack
+  # access, exactly as the trust decisions are — deleting a pin REMOVES a trust
+  # decision, and the console never showed this member those packs. The daily
+  # job passes no subject and stays account-wide, which is the same split
+  # `Runners.scope_sweep_to_subject/2` makes for the fleet.
+  defp scope_sweep_to_pack_access(queryable, %Subject{} = subject),
+    do: scope_pack_versions_to_packs(queryable, Accounts.runner_access_for_subject(subject))
+
+  defp scope_sweep_to_pack_access(queryable, nil), do: queryable
+
   # The subject's account struct is a socket snapshot — read the setting fresh.
   defp fetch_retention_days(%Subject{account: %{id: account_id}}) do
     with {:ok, settings} <- Accounts.fetch_account_settings(account_id) do
@@ -1035,6 +1091,7 @@ defmodule Emisar.Catalog do
         PackVersion.Query.all()
         |> PackVersion.Query.by_account_id(account_id)
         |> PackVersion.Query.last_seen_before(cutoff)
+        |> scope_sweep_to_pack_access(subject)
         |> PackVersion.Query.lock_for_update()
 
       versions =
@@ -1114,7 +1171,7 @@ defmodule Emisar.Catalog do
   # The complete descriptors advertised for the exact pending hash — read
   # inside the trust transaction so adopting the hash and its reviewed model
   # contract is atomic. Rows for another runner's different hash are excluded.
-  defp snapshot_action_set(repo, %PackVersion{} = pack_version) do
+  defp snapshot_action_set(repo, %PackVersion{} = pack_version, %Subject{} = subject) do
     actions =
       RunnerAction.Query.all()
       |> RunnerAction.Query.by_account_id(pack_version.account_id)
@@ -1129,7 +1186,7 @@ defmodule Emisar.Catalog do
       {:error, {:descriptor_mismatch, action_id}} ->
         {:error,
          {:descriptor_mismatch, action_id,
-          disagreeing_runner_names(pack_version.account_id, actions, action_id)}}
+          disagreeing_runner_names(pack_version.account_id, actions, action_id, subject)}}
 
       {:error, :invalid_manifest} ->
         {:error, :invalid_manifest}
@@ -1137,15 +1194,19 @@ defmodule Emisar.Catalog do
   end
 
   # Which runners to name when the fleet disagrees about `action_id` at the
-  # pending hash: every runner advertising it. With no trusted baseline there
-  # is no way to tell the honest advertisement from the hostile one, so the
-  # error names them all and the operator investigates.
-  defp disagreeing_runner_names(account_id, actions, action_id) do
+  # pending hash: every runner advertising it THAT THIS MEMBER ALREADY REACHES.
+  # With no trusted baseline there is no way to tell the honest advertisement
+  # from the hostile one, so the error names them all — but a trust decision is
+  # not a way to enumerate the fleet, so a runner-restricted member learns no
+  # name the runners list would withhold. The list can narrow to empty, and the
+  # console then states the block without naming anyone.
+  defp disagreeing_runner_names(account_id, actions, action_id, %Subject{} = subject) do
     runner_ids =
       actions
       |> Enum.filter(&(&1.action_id == action_id))
       |> Enum.map(& &1.runner_id)
       |> Enum.uniq()
+      |> narrow_to_runner_reach(account_id, subject)
 
     labels = Runners.runner_labels_for_ids(account_id, runner_ids)
 
@@ -1153,6 +1214,22 @@ defmodule Emisar.Catalog do
     |> Enum.map(&Map.get(labels, &1))
     |> Enum.reject(&is_nil/1)
     |> Enum.sort()
+  end
+
+  # `Runners.reachable_scope_values/2` is the one definition of which runners a
+  # member may name, shared with the audit and policy reads. An unrestricted
+  # member reaches the whole fleet, so skip the read entirely rather than
+  # selecting every runner id to filter against.
+  defp narrow_to_runner_reach(runner_ids, account_id, %Subject{} = subject) do
+    case Accounts.runner_access_for_subject(subject) do
+      %Accounts.RunnerAccess{mode: :all} ->
+        runner_ids
+
+      %Accounts.RunnerAccess{} = access ->
+        {reachable_ids, _groups} = Runners.reachable_scope_values(account_id, access)
+        reachable = MapSet.new(reachable_ids)
+        Enum.filter(runner_ids, &MapSet.member?(reachable, &1))
+    end
   end
 
   # -- Dispatch gate ---------------------------------------------------

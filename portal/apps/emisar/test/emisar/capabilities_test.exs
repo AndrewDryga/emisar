@@ -17,7 +17,7 @@ defmodule Emisar.CapabilitiesTest do
 
   test "subject_can_<verb>? predicates match the role matrix" do
     matrix = [
-      {&Billing.subject_can_manage_billing?/1, [:owner, :billing_manager]},
+      {&Billing.subject_can_manage_billing?/1, [:owner, :admin, :billing_manager]},
       {&Billing.subject_can_view_invoices?/1, [:owner, :admin, :billing_manager]},
       {&Audit.subject_can_view_audit?/1, @roles},
       {&Audit.subject_sees_billing_audit_only?/1, [:billing_manager]},

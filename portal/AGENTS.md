@@ -39,6 +39,8 @@ Lower-stakes taste calls. Not Iron Laws, but the defaults. **The user adds to th
 - **Repeated collections append where the new row appears.** Use the shared full-width dashed `<.add_row>` after the last item; do not put the only Add control in the section header or beside the collection label. Sweep: header/right-aligned `Add …` buttons for inputs, enum values, workflow units, outputs, conditions, overrides, or other repeated configuration. Worked example: `.agent/kb/rules/design-repeated-collections-append-at-end.md`.
 - **Approval review leads with human decision evidence, never machine provenance.** Show the action, risk, human runner name, and visible arguments without a disclosure; keep digests, compound runner refs, and database IDs in audit/canonical detail rather than the decision scan. Sweep: approval and confirmation surfaces whose primary rows contain hashes/UUIDs or hide arguments. Worked example: `.agent/kb/rules/design-approval-review-prioritizes-human-evidence.md`.
 - **Scope changes revoke stale decisions and contradictory inventory immediately.** Approve and deny both re-read current runner plus pack access at the mutation boundary; an already-open page exits when that access is gone, and Packs rows, contents, and attention counts use the same current pack scope. Hiding a button is never the authorization check. Sweep: approval decisions using socket/session scope, stale detail pages retaining controls after `:not_found`, and account-wide pack projections or badges shown to a pack-restricted member.
+- **A mutation is scoped by the same dimension its list is, and it judges that scope on the LOCKED ROW.** When a read narrows rows by a scope dimension (pack access, runner reach), every mutation on those rows narrows by the SAME dimension — a member the list hides a record from must not be able to change it, and the refusal is `:not_found` (identical to a record that isn't there), never `:unauthorized`, which confirms it exists. Judge it on the row the transaction locked, not on the id/name the caller passed, and BEFORE any state guard, or the denial leaks the state (`:not_trusted` told a stranger the version was trusted). Re-read the access at the mutation boundary so a scope narrowed mid-session takes the decision away from an already-open page. **An identity in an error message is in scope too:** narrow the names a failure reports to the ones the caller could already list (`Runners.reachable_scope_values/2` is the one definition), and let the copy drop the clause when none remain. Sweep: a `Repo.fetch_and_update`/lock helper carrying only `Authorizer.for_subject/2` where the sibling list also applies a scope filter; state guards (`:not_trusted`, `:not_pending`) that run before the scope guard; and error tuples carrying runner/member/host names assembled account-wide.
+- **A privilege that can WIDEN a member's own reach requires the whole dimension, not just the verb permission.** An enrollment key is the case: the enrolling host self-reports its group, so any key is a fleet-wide grant and a runner-scoped member minting one lands a machine they control in a group they don't. Gate creation on the permission AND `mode: :all` (`Runners.subject_can_install_runners?/1`, `subject_can_create_enrollment_keys?/1`, `subject_can_manage_inactive_retention?/1` — all read access fresh, never from the session snapshot). NARROWING verbs (revoke, disable, delete, list-to-audit) keep the plain permission — taking capability away is safe at any reach, and removing the list would remove the only place the widening artifact can be revoked. Sweep: a create/mint/enable verb whose artifact is honored fleet-wide but is gated on a permission alone, and any account-wide schedule or sweep armed by a scoped member.
 - **A database lock needs a realistic conflicting writer, not a theoretical interleaving.** Keep row locks at established state transitions where two ordinary writes can contend for the same record; do not wrap discovery reads or unrelated authorization checks in transactions merely to make them atomic against a deliberately coordinated membership, group, or catalog change. Re-read access at the actual mutation boundary and refresh mounted UI through the existing invalidation path. Sweep: `FOR SHARE` around lists, transactions whose only purpose is an authorization snapshot, and tests that need barriers or injected delays to manufacture the race.
 - **A detail route stays about the selected record; a confirmation keeps its exact decision artifact beside the submit.** Put recent history and short guidance on the parent/index or start surface, never below an individual execution. Sweep: detail pages with sibling-history lists, confirmation plans displaced into rails, duplicate stage headings/strips, raw-output-only links with no inline result, result rows that abandon the plan grammar, repeated execution arguments, terminal cards, collapsed terminals, reconstructed commands, and authored Markdown rendered naked or on tinted cards. Worked example: `.agent/kb/rules/design-detail-routes-focus-on-current-record.md`.
 - **Compact verdict labels in fixed tracks do not wrap, and peer verdicts share one width** — reduce padding before shrinking type, and verify at the narrowest grid breakpoint. `design-console-ux.md` §7.41.
@@ -263,6 +265,8 @@ The hats are also **lenses** the prime directive tells you to wear inline; the s
 
 The expanded law text. Iron Laws above are the index; this is the body.
 
+**The examples below build a fictional `Emisar.Widgets` context, and that is deliberate.** A template has to be simpler than production — the real `Runbooks.Authorizer.for_subject/2` dispatches on `query_source` across two schemas, which is exactly what a new single-schema context must *not* copy — so an example named after a real module invites two contradictory readings ("this mirrors the source" vs "this is the shape") and a stream of doc-drift PRs syncing the wrong thing. The invariant here is **the examples obey the rules this file states**, not that they match any one module. For real code to read, the top of this file already points at `Runbooks` and `Policies`. **Enforced** by `./run check agent-setup`: a `defmodule` inside a fenced `elixir` block in an `AGENTS.md` may not name a module that exists in the tree.
+
 ### 1. Context modules (`lib/emisar/<context>.ex`)
 
 Context modules are the **only** public surface that LiveView, controllers, channels, and MCP call. They are the authorization boundary.
@@ -300,12 +304,13 @@ Context modules are the **only** public surface that LiveView, controllers, chan
 Canonical context-function shape:
 
 ```elixir
-def list_runbooks(%Subject{} = subject, opts \\ []) do
-  with :ok <- Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
-    Runbook.Query.not_deleted()
-    |> Runbook.Query.ordered_by_title_version()
+def list_widgets(%Subject{} = subject, opts \\ []) do
+  with :ok <-
+         Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_widgets_permission()) do
+    Widget.Query.not_deleted()
+    |> Widget.Query.ordered_by_name()
     |> Authorizer.for_subject(subject)
-    |> Repo.list(Runbook.Query, opts)
+    |> Repo.list(Widget.Query, opts)
   end
 end
 ```

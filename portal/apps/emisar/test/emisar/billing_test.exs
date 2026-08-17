@@ -755,24 +755,21 @@ defmodule Emisar.BillingTest do
       assert url =~ "stub.paddle.test/checkout"
     end
 
-    test "an admin (manage_billing is owner-only) is refused with :unauthorized", %{
-      account: account
-    } do
-      admin = Fixtures.Users.create_user()
+    test "an operator (view, not manage) is refused with :unauthorized", %{account: account} do
+      operator = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
 
-      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
       assert {:error, :unauthorized} =
-               Billing.start_checkout(account, "team", :month, admin_subject)
+               Billing.start_checkout(account, "team", :month, operator_subject)
 
-      assert {:error, :unauthorized} = Billing.open_billing_portal(account, admin_subject)
+      assert {:error, :unauthorized} = Billing.open_billing_portal(account, operator_subject)
     end
 
     test "the owner of another account is denied checkout AND portal for account A" do
@@ -975,19 +972,19 @@ defmodule Emisar.BillingTest do
       assert synced.paddle_billing_contact_user_id == user.id
     end
 
-    test "an admin without manage_billing is refused" do
+    test "an operator without manage_billing is refused" do
       {_user, account, _subject} = Fixtures.Subjects.owner_subject()
-      admin = Fixtures.Users.create_user()
+      operator = Fixtures.Users.create_user()
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
+        user_id: operator.id,
+        role: "operator"
       )
 
-      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
-      assert {:error, :unauthorized} = Billing.ensure_paddle_customer(account, admin_subject)
+      assert {:error, :unauthorized} = Billing.ensure_paddle_customer(account, operator_subject)
     end
 
     test "an owner of another account is refused before returning an existing customer" do
@@ -2446,26 +2443,22 @@ defmodule Emisar.BillingTest do
       %{account: account, owner_subject: owner_subject}
     end
 
-    test "true for an owner (manage_billing is owner-only)", %{owner_subject: owner_subject} do
+    test "true for the three roles that run the account's money", %{
+      account: account,
+      owner_subject: owner_subject
+    } do
       assert Billing.subject_can_manage_billing?(owner_subject)
+
+      for role <- ["admin", "billing_manager"] do
+        assert Billing.subject_can_manage_billing?(role_subject(account, role))
+      end
     end
 
-    test "false for admin, operator and viewer (they hold view, not manage)", %{account: account} do
-      # The UI calls this to show/hide the checkout + portal controls — only the
-      # owner role grants manage_billing, so every other human role is false.
-      for role <- [:admin, :operator, :viewer] do
-        member = Fixtures.Users.create_user()
-
-        _ =
-          Fixtures.Memberships.create_membership(
-            account_id: account.id,
-            user_id: member.id,
-            role: to_string(role)
-          )
-
-        member_subject = Fixtures.Subjects.subject_for(member, account, role: role)
-
-        refute Billing.subject_can_manage_billing?(member_subject)
+    test "false for operator and viewer (they hold view, not manage)", %{account: account} do
+      # The UI calls this to show/hide the checkout + portal controls — an
+      # operator drives infrastructure and has no business in the money.
+      for role <- ["operator", "viewer"] do
+        refute Billing.subject_can_manage_billing?(role_subject(account, role))
       end
     end
   end

@@ -399,6 +399,58 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert flash["info"] == "Enrollment keys need an owner or admin role."
   end
 
+  # A runner-scoped admin keeps the page — listing and revoking NARROW what the
+  # fleet accepts — but loses creation, because an enrolling host names its own
+  # group and a key would let them widen their own reach. The refusal is
+  # explained in place rather than shown as a dead button.
+  test "a runner-restricted admin sees a locked New key, and the form refuses", %{conn: conn} do
+    {_owner_conn, _owner, account} = register_and_log_in(conn)
+    {:ok, production} = Emisar.Accounts.RunnerAccess.restricted(["production"], [])
+
+    membership =
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      |> Fixtures.Memberships.force_runner_access(production)
+
+    admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+
+    {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/runners/keys")
+
+    # The list still loads — this admin audits and revokes here.
+    assert html =~ "Enrollment keys"
+    assert has_element?(lv, "button[disabled]", "New key")
+    refute has_element?(lv, ~s(a[href="/app/#{account.slug}/runners/keys/new"]))
+    assert html =~ "needs access to every runner"
+
+    # The issue route refuses rather than routing them into a form that cannot
+    # succeed, and lands them back on the list with the reason.
+    dest = ~p"/app/#{account}/runners/keys"
+
+    assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
+             live(admin_conn, ~p"/app/#{account}/runners/keys/new")
+
+    assert flash["error"] =~ "needs access to every runner"
+  end
+
+  # IL-15: hiding the control is never the authorization. A crafted create event
+  # from that same admin is refused by the handler and writes nothing.
+  test "a runner-restricted admin crafting a create event is refused", %{conn: conn} do
+    {_owner_conn, _owner, account} = register_and_log_in(conn)
+    {:ok, production} = Emisar.Accounts.RunnerAccess.restricted(["production"], [])
+
+    membership =
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      |> Fixtures.Memberships.force_runner_access(production)
+
+    admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+
+    {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/runners/keys")
+
+    html = render_hook(lv, "create", %{"enrollment_key" => %{"description" => "crafted"}})
+
+    assert html =~ "have permission to do that."
+    refute html =~ "crafted"
+  end
+
   # the list is account-scoped (A's admin sees
   # A's keys, never B's), and revoke only finds keys in the loaded A list: forcing
   # a `revoke` with a foreign B-account key id is a quiet no-op (the id isn't in

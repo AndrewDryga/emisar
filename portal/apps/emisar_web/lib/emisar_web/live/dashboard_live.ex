@@ -108,6 +108,16 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:can_view_runs?, Runs.subject_can_view_runs?(subject))
     |> assign(:can_view_agents?, ApiKeys.subject_can_view_api_keys?(subject))
     |> assign(:can_view_approvals?, Approvals.subject_can_view_approvals?(subject))
+    # The checklist's three capability flags belong with their siblings here, on
+    # the full load, not on every refresh: they answer questions about the
+    # SUBJECT, which no run/approval/topology event changes. It also keeps a
+    # refresh cheap — `subject_can_install_runners?/1` reads the member's runner
+    # access from the database, so re-asking it per event put two extra queries
+    # on every burst. Rendering only; the mint itself re-reads access at the
+    # mutation boundary, which is the check that matters.
+    |> assign(:can_install_runners?, Runners.subject_can_install_runners?(subject))
+    |> assign(:can_issue_agent_key?, ApiKeys.subject_can_issue_quick_key?(subject))
+    |> assign(:can_invite_members?, Accounts.subject_can_manage_team?(subject))
     |> refresh_runners()
     |> refresh_runs()
     |> refresh_approvals()
@@ -187,14 +197,6 @@ defmodule EmisarWeb.DashboardLive do
     assign(socket, :setup_reads, setup_reads)
   end
 
-  defp assign_current_setup_state(socket) do
-    show_setup? =
-      socket.assigns.recent_runs == [] and
-        Enum.all?(socket.assigns.setup_reads, fn {_key, ok?} -> ok? end)
-
-    assign_setup_state(socket, socket.assigns.current_subject, show_setup?)
-  end
-
   # First-run: until the account has actually RUN something, the dashboard's job
   # is onboarding — an ordered checklist that runs all the way to the first run
   # (connect a runner, connect an agent, then ask the agent to run one) — not
@@ -202,12 +204,14 @@ defmodule EmisarWeb.DashboardLive do
   # connected, nothing run" phase, where its third step is the run itself, and
   # hands off to the pillars the moment a run lands.
   # Sequenced, not locked: any step stays clickable in any order.
-  defp assign_setup_state(socket, subject, show_setup?) do
-    socket
-    |> assign(:show_setup?, show_setup?)
-    |> assign(:can_install_runners?, Runners.subject_can_install_runners?(subject))
-    |> assign(:can_issue_agent_key?, ApiKeys.subject_can_issue_quick_key?(subject))
-    |> assign(:can_invite_members?, Accounts.subject_can_manage_team?(subject))
+  # This is the only part of the checklist a refresh can change; the steps'
+  # capability flags are assigned once by `load/1`.
+  defp assign_current_setup_state(socket) do
+    show_setup? =
+      socket.assigns.recent_runs == [] and
+        Enum.all?(socket.assigns.setup_reads, fn {_key, ok?} -> ok? end)
+
+    assign(socket, :show_setup?, show_setup?)
   end
 
   # A read counts as verified only when it returned its ok shape — anything

@@ -33,19 +33,34 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     end
   end
 
-  def handle_params(params, _uri, socket) do
-    page_title =
-      if socket.assigns.live_action == :new,
-        do: "Issue an enrollment key",
-        else: "Enrollment keys"
-
-    {:noreply, socket |> assign(:page_title, page_title) |> load(params)}
+  # The issue form is refused for a runner-scoped admin at the route, not at the
+  # submit: never route an operator into an action that cannot succeed. The
+  # domain gate in `create_enrollment_key/2` is still the authorization.
+  def handle_params(_params, _uri, %{assigns: %{live_action: :new}} = socket) do
+    if Runners.subject_can_create_enrollment_keys?(socket.assigns.current_subject) do
+      {:noreply, socket |> assign(:page_title, "Issue an enrollment key") |> load(%{})}
+    else
+      {:noreply,
+       socket
+       |> put_flash(:error, issue_key_lock_text())
+       |> push_patch(to: ~p"/app/#{socket.assigns.current_account}/runners/keys")}
+    end
   end
+
+  def handle_params(params, _uri, socket),
+    do: {:noreply, socket |> assign(:page_title, "Enrollment keys") |> load(params)}
 
   def handle_info({:list_changed, :enrollment_key, _event_type, _id}, socket),
     do: {:noreply, load(socket, socket.assigns[:filter_params] || %{})}
 
   def handle_info(_, socket), do: {:noreply, socket}
+
+  # ONE spelling of why key creation is locked — the disabled control's tooltip,
+  # the empty state, and the route-guard flash all read from here, so the three
+  # cannot drift into three different rules.
+  defp issue_key_lock_text do
+    "Issuing an enrollment key needs access to every runner, because an enrolling host names its own group."
+  end
 
   defp fetch_billing(socket) do
     case Emisar.Billing.billing_summary(
@@ -65,7 +80,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   def handle_event("create", %{"enrollment_key" => params}, socket) do
     Permissions.gated(
       socket,
-      Runners.subject_can_manage_enrollment_keys?(socket.assigns.current_subject),
+      Runners.subject_can_create_enrollment_keys?(socket.assigns.current_subject),
       &do_create(&1, params)
     )
   end
@@ -212,12 +227,23 @@ defmodule EmisarWeb.EnrollmentKeysLive do
           Enrollment keys
         <% end %>
       </:title>
-      <:actions :if={
-        @live_action == :index and Runners.subject_can_manage_enrollment_keys?(@current_subject)
-      }>
-        <.button navigate={~p"/app/#{@current_account}/runners/keys/new"} size={:md} icon="hero-plus">
-          New key
-        </.button>
+      <:actions :if={@live_action == :index}>
+        <%= if Runners.subject_can_create_enrollment_keys?(@current_subject) do %>
+          <.button
+            navigate={~p"/app/#{@current_account}/runners/keys/new"}
+            size={:md}
+            icon="hero-plus"
+          >
+            New key
+          </.button>
+        <% else %>
+          <%!-- Disabled, not hidden: a runner-scoped admin still lists and
+               revokes on this page, so a vanished New key reads as a bug where
+               a locked one reads as a rule. The tooltip carries the reason. --%>
+          <.tooltip id="new-key-lock" text={issue_key_lock_text()}>
+            <.button size={:md} icon="hero-lock-closed" disabled={true}>New key</.button>
+          </.tooltip>
+        <% end %>
       </:actions>
 
       <%!-- ===== Issue an enrollment key — its own focused page (:new) =====
@@ -492,7 +518,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
               reusable one for image bakes and cloud-init fleets. The install
               wizard's one-time keys appear here too, revocable until used.
               <.button
-                :if={Runners.subject_can_manage_enrollment_keys?(@current_subject)}
+                :if={Runners.subject_can_create_enrollment_keys?(@current_subject)}
                 navigate={~p"/app/#{@current_account}/runners/keys/new"}
                 variant={:secondary}
                 size={:sm}
@@ -501,16 +527,15 @@ defmodule EmisarWeb.EnrollmentKeysLive do
               >
                 New enrollment key
               </.button>
+              <p
+                :if={not Runners.subject_can_create_enrollment_keys?(@current_subject)}
+                class="mt-4 text-xs text-zinc-400"
+              >
+                {issue_key_lock_text()}
+              </p>
             </.empty_state>
           </:empty>
         </LiveTable.live_table>
-
-        <p
-          :if={not Runners.subject_can_manage_enrollment_keys?(@current_subject)}
-          class="text-xs text-zinc-400"
-        >
-          Only owners and admins can issue or revoke enrollment keys.
-        </p>
       </div>
     </.dashboard_shell>
     """

@@ -52,6 +52,17 @@ defmodule Emisar.CatalogTest do
     }
   end
 
+  # An admin holding the WHOLE fleet but only the named packs — the exact shape
+  # the console's pack list narrows to, and the one every trust mutation must
+  # judge on the locked row.
+  defp pack_restricted_subject(account, pack_ids) do
+    {:ok, access} = Accounts.RunnerAccess.new(:all, [], [], :restricted, pack_ids)
+
+    Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+    |> Fixtures.Memberships.force_runner_access(access)
+    |> Fixtures.Subjects.membership_subject()
+  end
+
   defp account_with_owner do
     account = Fixtures.Accounts.create_account()
     user = Fixtures.Users.create_user()
@@ -1348,6 +1359,50 @@ defmodule Emisar.CatalogTest do
       assert unchanged.hash == nil
     end
 
+    # A trust decision is not a way to enumerate the fleet: the error names only
+    # the disagreeing runners this member already reaches, so a runner-restricted
+    # operator learns no name the runners list would withhold.
+    test "the disagreement names only the runners the deciding member can reach", %{
+      account: account,
+      subject: subject,
+      runner: first_runner
+    } do
+      second_runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      for {runner, description} <- [
+            {first_runner, "Honest contents."},
+            {second_runner, "Hostile contents."}
+          ] do
+        assert {:ok, _} =
+                 Catalog.observe_state(
+                   runner,
+                   state_payload(
+                     packs: %{"custom" => %{"version" => "1.0", "hash" => "sha256:SAME"}},
+                     actions: [
+                       action("custom.inspect", pack_id: "custom", description: description)
+                     ]
+                   )
+                 )
+      end
+
+      {:ok, access} = Accounts.RunnerAccess.new(:restricted, [], [first_runner.id])
+
+      narrowed =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(access)
+        |> Fixtures.Subjects.membership_subject()
+
+      assert {:ok, [pending], _} = Catalog.list_pack_versions(subject)
+
+      assert {:error, {:descriptor_mismatch, "custom.inspect", runner_names}} =
+               Catalog.trust_pack_version(pending.id, narrowed)
+
+      assert runner_names == [first_runner.name]
+
+      # Still fail-closed — narrowing the NAMES never widens the decision.
+      assert Repo.reload!(pending).trust_state == :pending
+    end
+
     test "malformed model metadata aborts trust and leaves the decision pending", %{
       subject: subject,
       runner: runner
@@ -1512,6 +1567,46 @@ defmodule Emisar.CatalogTest do
       {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       assert {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
       assert_receive {:pack_trust_changed, ^account_id}
+    end
+
+    # Founder's rule: reach a pack and you may decide its versions.
+    test "a pack-restricted member trusts a version of a pack they DO hold", %{
+      account: account,
+      runner: runner
+    } do
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"held" => %{"version" => "1.0", "hash" => "sha256:NEW"}})
+        )
+
+      restricted = pack_restricted_subject(account, ["held"])
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(restricted)
+
+      assert {:ok, trusted} = Catalog.trust_pack_version(pack_version.id, restricted)
+      assert trusted.trust_state == :trusted
+    end
+
+    # The mirror: the list hides this pack from them, so the mutation must answer
+    # exactly as it would for a version that is not there.
+    test "a pack-restricted member cannot trust a version the list hides from them", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"hidden" => %{"version" => "1.0", "hash" => "sha256:NEW"}})
+        )
+
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      restricted = pack_restricted_subject(account, ["something-else"])
+
+      assert {:ok, [], _} = Catalog.list_pack_versions(restricted)
+
+      assert Catalog.trust_pack_version(pack_version.id, restricted) == {:error, :not_found}
+      assert Repo.reload!(pack_version).trust_state == :pending
     end
   end
 
@@ -1719,6 +1814,24 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _} = Catalog.reject_pack_version(pack_version.id, subject)
       assert_receive {:pack_trust_changed, ^account_id}
     end
+
+    test "a pack-restricted member cannot reject a version the list hides from them", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"hidden" => %{"version" => "1.0", "hash" => "sha256:NEW"}})
+        )
+
+      {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      restricted = pack_restricted_subject(account, ["something-else"])
+
+      assert Catalog.reject_pack_version(pack_version.id, restricted) == {:error, :not_found}
+      assert Repo.reload!(pack_version).trust_state == :pending
+    end
   end
 
   describe "override_pack_retirement/2" do
@@ -1794,6 +1907,27 @@ defmodule Emisar.CatalogTest do
 
     test "an invalid id is :not_found", %{subject: subject} do
       assert {:error, :not_found} = Catalog.override_pack_retirement("not-a-uuid", subject)
+    end
+
+    # This mutation reaches the row by id rather than through the shared lock, so
+    # its own guard judges the pack — and judges it BEFORE the trust state, so a
+    # refusal cannot report whether an unreachable version is trusted.
+    test "a pack-restricted member gets :not_found, never :not_trusted", %{
+      account: account,
+      subject: subject,
+      runner: runner
+    } do
+      _ =
+        Catalog.observe_state(
+          runner,
+          state_payload(packs: %{"hidden" => %{"version" => "9.9", "hash" => "sha256:NEW"}})
+        )
+
+      {:ok, versions, _} = Catalog.list_pack_versions(subject)
+      pending = Enum.find(versions, &(&1.pack_id == "hidden"))
+      restricted = pack_restricted_subject(account, ["something-else"])
+
+      assert Catalog.override_pack_retirement(pending.id, restricted) == {:error, :not_found}
     end
   end
 
@@ -1922,6 +2056,21 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
       assert_receive {:pack_trust_changed, ^account_id}
     end
+
+    # Same guard as the retirement override, and the same ordering: the pack is
+    # judged before the trust state, so the refusal says :not_found rather than
+    # confirming a trusted version sits behind it.
+    test "a pack-restricted member gets :not_found and the trust survives", %{
+      account: account,
+      pack_version: pack_version
+    } do
+      restricted = pack_restricted_subject(account, ["something-else"])
+
+      assert Catalog.revoke_pack_version_trust(pack_version.id, restricted) ==
+               {:error, :not_found}
+
+      assert Repo.reload!(pack_version).trust_state == :trusted
+    end
   end
 
   describe "delete_pack_version/2" do
@@ -2025,6 +2174,18 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _} = Catalog.delete_pack_version(pack_version.id, subject)
       assert_receive {:pack_trust_changed, ^account_id}
     end
+
+    # Deleting the pin removes the trust decision, so it is a trust mutation and
+    # takes the same pack gate.
+    test "a pack-restricted member cannot delete a version the list hides", %{
+      account: account,
+      pack_version: pack_version
+    } do
+      restricted = pack_restricted_subject(account, ["something-else"])
+
+      assert Catalog.delete_pack_version(pack_version.id, restricted) == {:error, :not_found}
+      assert Repo.reload!(pack_version)
+    end
   end
 
   describe "delete_pack/2" do
@@ -2125,6 +2286,21 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, _} = Catalog.delete_pack("custom", subject)
       assert_receive {:pack_trust_changed, ^account_id}
+    end
+
+    # The whole-pack delete locks its own set rather than going through
+    # `lock_pack_version/3`, so it carries its own judgment — on a locked row,
+    # not on the `pack_id` the caller passed.
+    test "a pack-restricted member cannot delete a whole pack the list hides", %{
+      account: account,
+      subject: subject
+    } do
+      restricted = pack_restricted_subject(account, ["something-else"])
+
+      assert Catalog.delete_pack("custom", restricted) == {:error, :not_found}
+
+      assert {:ok, versions, _} = Catalog.list_pack_versions(subject)
+      assert Enum.any?(versions, &(&1.pack_id == "custom"))
     end
   end
 
@@ -2306,6 +2482,25 @@ defmodule Emisar.CatalogTest do
       account = Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
 
       %{user: user, account: account, subject: subject, runner: runner, stale: stale}
+    end
+
+    # Deleting a pin removes a trust decision, so the manual sweep narrows to the
+    # operator's own pack access exactly as the trust mutations do — it cannot
+    # clear a pack the console never showed them. (The daily job passes no
+    # subject and stays account-wide, which is the job's whole purpose.)
+    test "a pack-restricted member sweeps only their own packs", %{
+      account: account,
+      subject: subject,
+      stale: stale
+    } do
+      restricted = pack_restricted_subject(account, ["fresh"])
+
+      assert {:ok, 0} = Catalog.sweep_unseen_pack_versions(restricted)
+      assert Repo.reload(stale)
+
+      # The unrestricted owner still reaches it, so the row really was sweepable.
+      assert {:ok, 1} = Catalog.sweep_unseen_pack_versions(subject)
+      refute Repo.reload(stale)
     end
 
     test "removes versions unseen past the window (and their action rows), audits the operator",

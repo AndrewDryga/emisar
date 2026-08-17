@@ -90,7 +90,31 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
                |> log_in_user(viewer)
                |> live(~p"/app/#{account}/runners/install")
 
-      assert %{"info" => "Connecting a runner needs an operator role or above."} = flash
+      assert %{
+               "info" =>
+                 "Connecting a runner needs an operator role or above, with access to every runner."
+             } = flash
+    end
+
+    # Minting is what the wizard does at mount, and a key is a fleet-wide grant
+    # — the enrolling host names its own group — so the reach matters as much as
+    # the role. An admin with only part of the fleet is turned away too.
+    test "a runner-restricted admin is redirected at mount", %{conn: conn} do
+      {_conn, _owner, account} = register_and_log_in(conn)
+      {:ok, production} = Emisar.Accounts.RunnerAccess.restricted(["production"], [])
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(production)
+
+      dest = ~p"/app/#{account}/runners"
+
+      assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
+               build_conn()
+               |> log_in_user(Emisar.Repo.preload(membership, :user).user)
+               |> live(~p"/app/#{account}/runners/install")
+
+      assert flash["info"] =~ "with access to every runner"
     end
 
     # the connected mount mints exactly one

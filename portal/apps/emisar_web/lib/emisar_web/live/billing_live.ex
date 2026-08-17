@@ -450,7 +450,7 @@ defmodule EmisarWeb.BillingLive do
                  vanishes would just jiggle the page. --%>
             <%!-- The ledger is money, not operations: an operator reading their
                  plan and limits above has no business in what the company paid
-                 and when, while an admin answers for what the account spends.
+                 and when, while the roles that run the account's money do.
                  Gated on the same `view_invoices` the context read enforces —
                  the section is hidden because there is nothing to show, not to
                  hide a control that would work. --%>
@@ -566,12 +566,12 @@ defmodule EmisarWeb.BillingLive do
                  takes the selected treatment (bright ring), the rest quiet. --%>
             <%!-- What the tiers include is an operational fact every member
                  works against (the same `view_billing` the usage rail and the
-                 plan strip already render from) — an admin chasing a limit
-                 needs to see which plan lifts it before asking an owner for it,
-                 and hiding the whole catalogue left them nothing to point at.
-                 Buying stays the money-handler's job: `start_checkout/4` has
-                 always required manage-billing, so the CTA — not the card —
-                 is what that permission gates. --%>
+                 plan strip already render from) — an operator chasing a limit
+                 needs to see which plan lifts it before asking for it, and
+                 hiding the whole catalogue left them nothing to point at.
+                 Buying stays the money-handler's job: `start_checkout/4`
+                 requires manage-billing, so the CTA — not the card — is what
+                 that permission gates. --%>
             <section>
               <.section_header title="Plans">
                 <:actions>

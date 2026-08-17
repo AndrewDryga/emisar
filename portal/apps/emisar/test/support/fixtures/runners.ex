@@ -4,8 +4,7 @@ defmodule Emisar.Fixtures.Runners do
   `Fixtures.Runners.create_runner/1`.
   """
 
-  alias Emisar.Accounts.Account
-  alias Emisar.{Fixtures, Repo, Runners, Users}
+  alias Emisar.{Fixtures, Repo, Runners}
   alias Emisar.Runners.{Runner, Token}
 
   @doc """
@@ -105,13 +104,18 @@ defmodule Emisar.Fixtures.Runners do
       attrs
       |> Map.take([:description, :group, :reusable, :max_uses, :expires_at])
 
-    account =
-      Account.Query.not_deleted()
-      |> Account.Query.by_id(account_id)
-      |> Repo.fetch!(Account.Query)
+    # The minting subject must be a REAL member: creating a key needs
+    # unrestricted runner access, and that is read from the membership row, so a
+    # phantom membership would mint nothing.
+    membership =
+      Fixtures.Memberships.fetch_membership(account_id, user_id) ||
+        Fixtures.Memberships.create_membership(
+          account_id: account_id,
+          user_id: user_id,
+          role: "owner"
+        )
 
-    {:ok, user} = Users.fetch_user_by_id(user_id)
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.membership_subject(membership)
     {:ok, raw, key} = Runners.create_enrollment_key(create_attrs, subject)
     {raw, key}
   end

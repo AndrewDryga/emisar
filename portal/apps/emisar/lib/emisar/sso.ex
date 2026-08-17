@@ -330,8 +330,8 @@ defmodule Emisar.SSO do
          changeset = IdentityProvider.Changeset.create(account.id, attrs, allowlist),
          default_role = Ecto.Changeset.get_field(changeset, :default_role),
          # Creation checked runner access but never the role it hands every new
-         # member. The changeset only excludes :owner, so an admin could stand up
-         # a connection defaulting to a role they cannot themselves grant.
+         # member. Checked here, before the insert, so the escalation answer wins
+         # over the changeset's own narrower :owner exclusion.
          :ok <- ensure_grantable_role(default_role, subject),
          {:ok, access} <- provider_access_from_changeset(changeset),
          :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access) do
@@ -470,10 +470,10 @@ defmodule Emisar.SSO do
   # genuine move to another IdP is a new connection.
   # A connection's default role and its group mappings are BOTH ways to hand a
   # role to whoever the directory sends, so they need the same no-escalation rule
-  # a team role change gets: you may only grant what you already hold. Rejecting
-  # only `:owner` let an admin — who has no `manage_billing` — set
-  # `default_role: :billing_manager` or map a group they control to it, and give
-  # an accomplice the finance seat.
+  # a team role change gets: you may only grant what you already hold. Derived
+  # from permissions via `covers_role?/2`, never a role-name list — the rule then
+  # tracks a grant moving between roles on its own (admins gaining
+  # `manage_billing` opened `:billing_manager` here with no edit).
   defp ensure_grantable_role(role, %Subject{} = subject) do
     if grantable_role?(role, subject), do: :ok, else: {:error, :role_exceeds_your_permissions}
   end

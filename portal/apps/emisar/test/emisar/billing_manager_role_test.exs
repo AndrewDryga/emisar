@@ -4,8 +4,12 @@ defmodule Emisar.BillingManagerRoleTest do
   nothing else: full billing control, a READ-ONLY view of the team, and the
   BILLING SLICE of the audit trail. Plus the member floor (own account + own
   profile), NO runner or pack reach by any route, and the delegation rule that
-  falls out of `covers_role?/2` (granting it requires `manage_billing`, which
-  only owners hold).
+  falls out of `covers_role?/2` (granting it requires `manage_billing`, held by
+  owners and admins).
+
+  Since admins hold `manage_billing` the seat grants nothing an admin lacks, so
+  it exists purely for least privilege: the person who handles the money gets
+  the money and none of the fleet.
   """
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Billing, Catalog, Fixtures, Policies}
@@ -337,7 +341,7 @@ defmodule Emisar.BillingManagerRoleTest do
                Accounts.update_membership_role(member, "billing_manager", owner_subject)
     end
 
-    test "an admin cannot assign it — the role grants manage_billing the admin lacks", %{
+    test "an admin assigns it too — admins hold the manage_billing it grants", %{
       account: account
     } do
       admin = Fixtures.Users.create_user()
@@ -351,17 +355,18 @@ defmodule Emisar.BillingManagerRoleTest do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
       admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
-      assert Accounts.update_membership_role(member, "billing_manager", admin_subject) ==
-               {:error, :insufficient_privileges}
+      assert {:ok, %Accounts.Membership{role: :billing_manager}} =
+               Accounts.update_membership_role(member, "billing_manager", admin_subject)
 
-      assert Accounts.invite_user_to_account(
-               Fixtures.Accounts.invitation_attrs(
-                 email: "finance-lead@example.test",
-                 role: "billing_manager",
-                 runner_access_mode: "all"
-               ),
-               admin_subject
-             ) == {:error, :insufficient_privileges}
+      assert {:ok, %{membership: %Accounts.Membership{role: :billing_manager}}} =
+               Accounts.invite_user_to_account(
+                 Fixtures.Accounts.invitation_attrs(
+                   email: "finance-lead@example.test",
+                   role: "billing_manager",
+                   runner_access_mode: "all"
+                 ),
+                 admin_subject
+               )
     end
   end
 end

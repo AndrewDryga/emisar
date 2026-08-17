@@ -2916,6 +2916,47 @@ defmodule Emisar.RunnersTest do
       assert {:error, :unauthorized} =
                Runners.create_enrollment_key(%{reusable: true}, viewer_subject_for(account))
     end
+
+    # A key is a FLEET-WIDE grant: the enrolling host self-reports its group, so
+    # a runner-scoped admin minting one could land a machine they control in a
+    # group they do not, where other members dispatch to it. The permission is
+    # held; the reach is not.
+    test "an admin whose runner access is restricted is refused, and writes nothing", %{
+      account: account
+    } do
+      {:ok, production} = RunnerAccess.restricted(["production"], [])
+
+      restricted =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(production)
+        |> Fixtures.Subjects.membership_subject()
+
+      assert Runners.create_enrollment_key(%{reusable: true}, restricted) ==
+               {:error, :unauthorized}
+
+      refute Repo.exists?(EnrollmentKey.Query.all())
+      assert Repo.all(Audit.Event) == []
+    end
+
+    # The fleet-access gate resolves the membership by (account_id, membership_id)
+    # TOGETHER, so a subject carrying another account's membership id reads as no
+    # access at all rather than borrowing that membership's reach.
+    test "cross-account — a subject carrying another account's membership is refused", %{
+      account: account,
+      user: user
+    } do
+      other_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: Fixtures.Accounts.create_account().id,
+          role: "owner"
+        )
+
+      owner_subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      spliced = %{owner_subject | membership_id: other_membership.id}
+
+      assert Runners.create_enrollment_key(%{reusable: true}, spliced) == {:error, :unauthorized}
+      refute Repo.exists?(EnrollmentKey.Query.all())
+    end
   end
 
   describe "enrollment_install_command/2" do
@@ -3187,6 +3228,30 @@ defmodule Emisar.RunnersTest do
     test "a viewer (no issue_install_key) is refused" do
       account = Fixtures.Accounts.create_account()
       assert {:error, :unauthorized} = Runners.mint_install_key(viewer_subject_for(account))
+    end
+
+    # The permission alone is not enough: an enrolling host names its own group,
+    # so a key minted by a runner-scoped operator could land a machine they
+    # control in a group they cannot reach, where others dispatch to it. The
+    # unrestricted operator is the control — same role, same permission.
+    test "an operator holding only part of the fleet is refused; an unrestricted one mints" do
+      account = Fixtures.Accounts.create_account()
+      {:ok, production} = RunnerAccess.restricted(["production"], [])
+
+      restricted =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Memberships.force_runner_access(production)
+        |> Fixtures.Subjects.membership_subject()
+
+      unrestricted =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Subjects.membership_subject()
+
+      assert Runners.mint_install_key(restricted) == {:error, :unauthorized}
+      assert {:ok, _raw, _key} = Runners.mint_install_key(unrestricted)
+
+      # Exactly one key exists — the refusal wrote nothing.
+      assert %EnrollmentKey{} = Repo.one(EnrollmentKey)
     end
   end
 
@@ -3560,12 +3625,29 @@ defmodule Emisar.RunnersTest do
       account = Fixtures.Accounts.create_account()
 
       operator =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Subjects.membership_subject()
 
-      viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+      viewer =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+        |> Fixtures.Subjects.membership_subject()
 
       assert Runners.subject_can_install_runners?(operator)
       refute Runners.subject_can_install_runners?(viewer)
+    end
+
+    test "false for an operator whose runner access is restricted" do
+      # A key is a fleet-wide grant — the enrolling host names its own group —
+      # so a member who reaches part of the fleet cannot widen it.
+      account = Fixtures.Accounts.create_account()
+      {:ok, production} = RunnerAccess.restricted(["production"], [])
+
+      restricted =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Memberships.force_runner_access(production)
+        |> Fixtures.Subjects.membership_subject()
+
+      refute Runners.subject_can_install_runners?(restricted)
     end
   end
 
@@ -3575,6 +3657,52 @@ defmodule Emisar.RunnersTest do
 
       assert Runners.subject_can_manage_enrollment_keys?(owner)
       refute Runners.subject_can_manage_enrollment_keys?(viewer_subject_for(account))
+    end
+
+    # Listing and revoking NARROW what the fleet accepts, so a runner-scoped
+    # admin keeps both — only creation is taken away.
+    test "true for an admin whose runner access is restricted" do
+      account = Fixtures.Accounts.create_account()
+      {:ok, production} = RunnerAccess.restricted(["production"], [])
+
+      restricted =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(production)
+        |> Fixtures.Subjects.membership_subject()
+
+      assert Runners.subject_can_manage_enrollment_keys?(restricted)
+      refute Runners.subject_can_create_enrollment_keys?(restricted)
+    end
+  end
+
+  describe "subject_can_create_enrollment_keys?/1" do
+    test "true for an owner with the whole fleet" do
+      {_account, _user, owner} = account_with_owner_subject()
+
+      assert Runners.subject_can_create_enrollment_keys?(owner)
+    end
+
+    test "false for an operator, who may mint an install key but not a named one" do
+      account = Fixtures.Accounts.create_account()
+
+      operator =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Subjects.membership_subject()
+
+      refute Runners.subject_can_create_enrollment_keys?(operator)
+    end
+
+    test "false for an admin holding named runners rather than the fleet" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, named} = RunnerAccess.restricted([], [runner.id])
+
+      restricted =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(named)
+        |> Fixtures.Subjects.membership_subject()
+
+      refute Runners.subject_can_create_enrollment_keys?(restricted)
     end
   end
 

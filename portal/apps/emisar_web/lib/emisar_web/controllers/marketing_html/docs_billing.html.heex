@@ -192,10 +192,9 @@
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Billing</a>
         and read the plan, its limits, and how much of them is in use.
-        Changing the plan, updating the card, or cancelling needs the account owner or a member with
-        the billing-manager role — and so does the plan catalogue, since picking one is a checkout.
-        Invoices go one step wider: owners, admins, and the billing manager read them, operators and
-        viewers don't. More on <.link
+        Changing the plan, updating the card, or cancelling needs an owner, an admin, or a member
+        with the billing-manager role — and so does the plan catalogue, since picking one is a
+        checkout. Those same three read the invoices; operators and viewers don't. More on <.link
           navigate={~p"/docs/teams-and-access"}
           class="text-brand-400 hover:text-brand-300"
         >roles</.link>.
@@ -219,11 +218,11 @@
         period you've already paid for.
       </p>
       <.docs_callout kind={:note} title="Who can change billing.">
-        Owners can do everything, including granting the billing-manager role — only owners can,
-        since only they hold billing management. The billing-manager role carries the subscription,
-        payment method, and invoices. It also reads the member list and the billing events in the
-        audit trail, but nothing beyond that: no runners, policies, or actions, so it's safe to
-        hand to whoever owns the invoice.
+        Owners and admins both hold billing management, so either can also grant the
+        billing-manager role. That role carries the subscription, payment method, and invoices,
+        plus the member list and the billing events in the audit trail — and nothing beyond that:
+        no runners, policies, or actions. It gives an admin nothing new, which is the point: hand
+        it to whoever owns the invoice and they never touch infrastructure.
       </.docs_callout>
 
       <.docs_h2 id="invoices">Invoices and payment method</.docs_h2>

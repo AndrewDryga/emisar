@@ -12,9 +12,10 @@ defmodule Emisar.Auth.Role do
   `:billing_manager` is the one ORTHOGONAL role — the finance seat. It holds
   full billing control, a read-only view of the member list, and the billing
   slice of the audit trail; no runners, runs, packs, policy, runbooks,
-  approvals, or agents. It sorts after `:admin` for the UI but has no rank:
-  permission comparison (`covers_role?/2`) is what makes an owner the only
-  role able to grant it (only owners hold `manage_billing`).
+  approvals, or agents. It sorts after `:admin` for the UI but has no rank.
+  Owners and admins both hold `manage_billing`, so both can appoint the seat
+  and it grants nothing they lack — its whole purpose is least privilege: the
+  person who handles the money never needs the fleet.
   """
   @roles [:owner, :admin, :billing_manager, :operator, :viewer]
 
@@ -40,8 +41,9 @@ defmodule Emisar.Auth.Role do
   def description("owner"),
     do: "Full control of the workspace, including billing and adding or removing other owners."
 
-  def description("admin"),
-    do: "Manages members, runners, and policies, and approves actions. Billing is view-only."
+  def description("admin") do
+    "Manages members, runners, policies, and billing, and approves actions. Can't add or remove owners."
+  end
 
   def description("billing_manager") do
     "Manages the subscription, payment method, and invoices. Also reads the member list and billing events in the audit trail — no runners, actions, or policy."

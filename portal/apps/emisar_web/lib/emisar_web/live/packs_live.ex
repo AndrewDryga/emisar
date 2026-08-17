@@ -479,11 +479,15 @@ defmodule EmisarWeb.PacksLive do
   # runners so the operator can find the stale or hostile one. Trust stays
   # blocked (fail-closed) rather than letting one runner pick the manifest.
   defp descriptor_mismatch_flash(action_id, runner_names) do
-    "Runners #{prose_names(runner_names)} disagree about what this version contains (action #{action_id}). Trust stays blocked until they advertise identical contents."
+    "#{disagreeing_runners(runner_names)} about what this version contains (action #{action_id}). Trust stays blocked until they advertise identical contents."
   end
 
-  defp prose_names([first, second]), do: "#{first} and #{second}"
-  defp prose_names(names), do: Enum.join(names, ", ")
+  # The domain narrows the names to the runners this member reaches, so a
+  # runner-restricted operator can be told the block and its cause without
+  # being handed the name of a runner outside their fleet scope.
+  defp disagreeing_runners([]), do: "Runners disagree"
+  defp disagreeing_runners([first, second]), do: "Runners #{first} and #{second} disagree"
+  defp disagreeing_runners(names), do: "Runners #{Enum.join(names, ", ")} disagree"
 
   defp retention_set_flash(nil), do: "Automatic cleanup turned off — pack versions are kept."
 

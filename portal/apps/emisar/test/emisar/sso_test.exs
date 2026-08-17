@@ -1355,8 +1355,38 @@ defmodule Emisar.SSOTest do
 
   describe "configure_provider/2 role coverage" do
     test "an admin can't stand up a connection defaulting to a role they can't grant" do
-      # The changeset excludes only :owner, so creation was the one path that
-      # never asked whether the caller may hand out the role it defaults to.
+      # Creation was the one path that never asked whether the caller may hand
+      # out the role it defaults to. The escalation check runs before the insert,
+      # so it — not the changeset's narrower :owner exclusion — owns the answer.
+      {_owner, account, _owner_subject} = enterprise_owner()
+      admin_user = Fixtures.Users.create_user()
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin_user.id,
+          role: "admin"
+        )
+
+      admin = Fixtures.Subjects.membership_subject(admin_membership)
+
+      attrs = %{
+        kind: :okta,
+        name: "Okta",
+        issuer: "https://idp.example.test",
+        client_id: "cid",
+        client_secret: "secret",
+        default_role: :owner
+      }
+
+      assert {:error, :role_exceeds_your_permissions} =
+               SSO.configure_provider(attrs, admin)
+    end
+
+    # Admins hold manage_billing, so the finance seat is theirs to hand out and
+    # the coverage check — derived from permissions, not a role-name list — lets
+    # it through with no special case.
+    test "an admin CAN stand up a connection defaulting to billing_manager" do
       {_owner, account, _owner_subject} = enterprise_owner()
       admin_user = Fixtures.Users.create_user()
 
@@ -1378,8 +1408,8 @@ defmodule Emisar.SSOTest do
         default_role: :billing_manager
       }
 
-      assert {:error, :role_exceeds_your_permissions} =
-               SSO.configure_provider(attrs, admin)
+      assert {:ok, provider} = SSO.configure_provider(attrs, admin)
+      assert provider.default_role == :billing_manager
     end
   end
 
@@ -5038,24 +5068,47 @@ defmodule Emisar.SSOTest do
       }
     end
 
-    test "an admin can't make billing_manager the connection default", %{
+    test "an admin can't make owner the connection default", %{
       provider: provider,
       admin: admin
     } do
-      # An admin holds no manage_billing, so handing the finance seat to whoever
-      # the directory sends is an escalation by proxy. Rejecting only :owner
-      # missed it.
-      assert {:error, :role_exceeds_your_permissions} =
-               SSO.update_provider(provider, %{default_role: :billing_manager}, admin)
+      # Two independent guards refuse this and the changeset's exclusion is
+      # simply the one reached first on the update path, so the reported error is
+      # the field error rather than the escalation one. Pinned with an ADMIN
+      # caller — who also fails `covers_role?/2` — to prove there is no ordering
+      # hole between them.
+      assert {:error, changeset} =
+               SSO.update_provider(provider, %{default_role: :owner}, admin)
+
+      assert "can't be owner" in errors_on(changeset).default_role
+      assert Repo.reload!(provider).default_role == :operator
     end
 
-    test "an admin can't map a group to billing_manager", %{provider: provider, admin: admin} do
+    test "an admin can't map a group to owner", %{provider: provider, admin: admin} do
       assert {:error, :role_exceeds_your_permissions} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{"external_group_id" => "grp-founders", "role" => "owner"},
+                 admin
+               )
+    end
+
+    # Admins hold manage_billing, so the finance seat grants them nothing new and
+    # the directory may hand it out on their authority.
+    test "an admin CAN map a group to billing_manager", %{provider: provider, admin: admin} do
+      assert {:ok, mapping} =
                SSO.create_group_mapping(
                  provider,
                  %{"external_group_id" => "grp-finance", "role" => "billing_manager"},
                  admin
                )
+
+      assert mapping.role == :billing_manager
+
+      assert {:ok, updated} =
+               SSO.update_provider(provider, %{default_role: :billing_manager}, admin)
+
+      assert updated.default_role == :billing_manager
     end
 
     test "an admin can still grant the roles they hold", %{provider: provider, admin: admin} do
