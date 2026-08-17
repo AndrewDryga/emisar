@@ -45,12 +45,13 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       # An operator can read runs, so the dashboard is theirs — the first-run
       # checklist (a fresh account has no runs), not a bounce to billing.
-      {:ok, _lv, html} =
+      {:ok, lv, html} =
         build_conn()
         |> log_in_user(operator)
         |> live(~p"/app/#{account}")
 
       assert html =~ "Get to your first gated run"
+      assert has_element?(lv, "a[href='#{~p"/app/#{account}"}']", "Dashboard")
     end
 
     test "unconfirmed users see the verify-email banner and can resend", %{conn: conn} do
@@ -803,6 +804,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert has_element?(lv, "a[href='#{~p"/app/#{account}/audit"}']")
 
       # The sections the role holds no view permission for are gone.
+      refute has_element?(lv, "a[href='#{~p"/app/#{account}"}']", "Dashboard")
       refute has_element?(lv, "a[href='#{~p"/app/#{account}/runbooks"}']")
       refute has_element?(lv, "a[href='#{~p"/app/#{account}/policies"}']")
       refute has_element?(lv, "a[href='#{~p"/app/#{account}/runs"}']")

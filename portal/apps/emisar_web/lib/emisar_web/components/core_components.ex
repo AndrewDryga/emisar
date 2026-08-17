@@ -1864,6 +1864,7 @@ defmodule EmisarWeb.CoreComponents do
 
     assigns =
       assign(assigns,
+        can_view_dashboard?: Emisar.Runs.subject_can_view_runs?(subject),
         can_view_runners?: Emisar.Runners.subject_can_view_runners?(subject),
         can_view_agents?: Emisar.ApiKeys.subject_can_view_api_keys?(subject),
         can_view_runs?: Emisar.Runs.subject_can_view_runs?(subject),
@@ -1897,6 +1898,7 @@ defmodule EmisarWeb.CoreComponents do
          "Support" cut in half read as a rendering defect on every screenshot. --%>
     <nav class="scrollbar-subtle flex-1 space-y-0.5 overflow-y-auto px-3 pb-4 pt-2 text-sm">
       <.nav_link
+        :if={@can_view_dashboard?}
         to={~p"/app/#{@current_account}"}
         active={@section == :dashboard}
         icon="hero-home"
