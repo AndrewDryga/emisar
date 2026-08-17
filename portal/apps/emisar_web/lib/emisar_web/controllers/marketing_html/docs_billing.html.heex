@@ -221,8 +221,9 @@
       <.docs_callout kind={:note} title="Who can change billing.">
         Owners can do everything, including granting the billing-manager role — only owners can,
         since only they hold billing management. The billing-manager role carries the subscription,
-        payment method, and invoices, but no access to team, runners, policies, or actions, so it's
-        safe to hand to whoever owns the invoice.
+        payment method, and invoices. It also reads the member list and the billing events in the
+        audit trail, but nothing beyond that: no runners, policies, or actions, so it's safe to
+        hand to whoever owns the invoice.
       </.docs_callout>
 
       <.docs_h2 id="invoices">Invoices and payment method</.docs_h2>

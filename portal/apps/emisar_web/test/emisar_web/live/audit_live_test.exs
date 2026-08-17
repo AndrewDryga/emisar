@@ -1157,6 +1157,61 @@ defmodule EmisarWeb.AuditLiveTest do
     |> Repo.delete_all()
   end
 
+  describe "GET /app/audit as a billing manager" do
+    setup %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+
+      finance = Emisar.Fixtures.Users.create_user()
+
+      Emisar.Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: finance.id,
+        role: "billing_manager"
+      )
+
+      {:ok, _billing_event} =
+        Audit.log(account.id, "subscription.changed",
+          actor_kind: "system",
+          payload: %{from: "free", to: "team"}
+        )
+
+      {:ok, _runner_event} =
+        Audit.log(account.id, "runner.connected",
+          actor_kind: "runner",
+          actor_label: "db-prod-01",
+          target_kind: "runner",
+          target_label: "db-prod-01"
+        )
+
+      %{account: account, conn: build_conn() |> log_in_user(finance)}
+    end
+
+    test "renders the billing events and none of the rest", %{account: account, conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
+
+      assert html =~ "Subscription plan changed"
+      refute html =~ "Runner connected"
+      refute html =~ "db-prod-01"
+    end
+
+    test "the intro says the view is the billing slice", %{account: account, conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
+
+      assert html =~ "The billing events in this account&#39;s audit trail"
+      refute html =~ "The append-only record of every action"
+    end
+
+    # No export control, because the domain refuses the download — an upgrade
+    # prompt here would sell a plan that still wouldn't open it.
+    test "offers no export control", %{account: account, conn: conn} do
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
+
+      refute html =~ "Export CSV"
+      refute html =~ "SIEM export"
+      refute has_element?(lv, "a[href*='/audit/export']")
+    end
+  end
+
   # Click "Next →" until the pager runs out, returning every page's HTML
   # concatenated, so an assertion can confirm something never appears on ANY
   # page of the keyset walk (not just the first). Bounded by a hard step count

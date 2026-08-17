@@ -2062,6 +2062,27 @@ defmodule Emisar.AuditTest do
     end
   end
 
+  describe "Event.Query.billing_event_types/0" do
+    # The exact slice of the trail a billing manager may read. This set is a
+    # SECURITY boundary, so it is pinned rather than derived in the assertion:
+    # a type joining or leaving the "Billing" group changes what the finance
+    # seat sees, and that has to be a reviewed diff.
+    test "is exactly the Billing group's types" do
+      assert Audit.Event.Query.billing_event_types() == ["subscription.changed"]
+    end
+
+    # Derived from the group, not hand-kept beside it: a billing type added to
+    # the dropdown reaches the finance seat without a second edit. (Emptiness
+    # needs no assertion — the comprehension builds a literal, so the compiler
+    # types it as a non-empty list and rejects a comparison against `[]`.)
+    test "matches the Billing group in the type dropdown" do
+      {"Billing", options} =
+        List.keyfind(Audit.Event.Query.grouped_event_type_values(), "Billing", 0)
+
+      assert Audit.Event.Query.billing_event_types() == Enum.map(options, &elem(&1, 0))
+    end
+  end
+
   describe "event_filters/0" do
     test "carries the facet panel's filters in panel order" do
       assert Enum.map(Audit.event_filters(), & &1.name) == [
@@ -2351,7 +2372,7 @@ defmodule Emisar.AuditTest do
   end
 
   describe "subject_can_view_audit?/1" do
-    test "true for a viewer, false for a billing_manager (the nav gate)" do
+    setup do
       account = Fixtures.Accounts.create_account()
 
       viewer_subject =
@@ -2362,8 +2383,50 @@ defmodule Emisar.AuditTest do
           role: :billing_manager
         )
 
+      %{billing_manager_subject: billing_manager_subject, viewer_subject: viewer_subject}
+    end
+
+    test "true for a viewer and for a billing_manager (the nav gate opens for both)", %{
+      billing_manager_subject: billing_manager_subject,
+      viewer_subject: viewer_subject
+    } do
       assert Audit.subject_can_view_audit?(viewer_subject)
-      refute Audit.subject_can_view_audit?(billing_manager_subject)
+      assert Audit.subject_can_view_audit?(billing_manager_subject)
+    end
+  end
+
+  describe "subject_sees_billing_audit_only?/1" do
+    test "true only for the finance seat" do
+      account = Fixtures.Accounts.create_account()
+
+      for role <- [:owner, :admin, :operator, :viewer] do
+        subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: role)
+        refute Audit.subject_sees_billing_audit_only?(subject)
+      end
+
+      billing_manager_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
+          role: :billing_manager
+        )
+
+      assert Audit.subject_sees_billing_audit_only?(billing_manager_subject)
+    end
+  end
+
+  describe "subject_can_export_audit?/1" do
+    test "true for a viewer, false for a billing_manager (the export controls' gate)" do
+      account = Fixtures.Accounts.create_account()
+
+      viewer_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      billing_manager_subject =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
+          role: :billing_manager
+        )
+
+      assert Audit.subject_can_export_audit?(viewer_subject)
+      refute Audit.subject_can_export_audit?(billing_manager_subject)
     end
   end
 end

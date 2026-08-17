@@ -28,7 +28,7 @@
         src="/images/screenshots/team-page.webp"
         title="emisar console · Team"
         caption="The roster — each member's role, runner scope, and a directory-sync badge — beside the account's security panel."
-        alt="The desktop Team page: the member roster — each member with their role (owner, admin, operator, viewer), their runner scope (all runners, or a specific group), and a badge on members provisioned and role-synced through SCIM — beside the Security panel with 2FA enforcement and single sign-on."
+        alt="The desktop Team page: the member roster — each member with their role (owner, admin, billing manager, operator, viewer), their runner scope (all runners, or a specific group), and a badge on members provisioned and role-synced through SCIM — beside the Security panel with 2FA enforcement and single sign-on."
       />
 
       <.docs_h2 id="roles">Roles</.docs_h2>
@@ -64,9 +64,10 @@
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">Billing manager</td>
               <td class="px-4 py-3">
-                The finance seat: manage the subscription, payment method, and invoices —
-                and nothing else. No team, runner, policy, or action access, so procurement
-                can own billing without touching infrastructure.
+                The finance seat: manage the subscription, payment method, and invoices. Reads
+                the member list and the billing events in the audit trail, and nothing more —
+                no runner, policy, runbook, approval, or action access, so procurement can own
+                the invoice without touching infrastructure.
               </td>
             </tr>
             <tr>

@@ -7,18 +7,20 @@ defmodule Emisar.CapabilitiesTest do
   live.
   """
   use ExUnit.Case, async: true
-  alias Emisar.{Accounts, ApiKeys, Approvals, Billing, Catalog}
+  alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Billing, Catalog}
   alias Emisar.Auth.Subject
   alias Emisar.{Policies, Runbooks, Runners, Runs}
 
-  @roles [:owner, :admin, :operator, :viewer]
+  @roles [:owner, :admin, :billing_manager, :operator, :viewer]
 
   defp subject(role), do: %Subject{permissions: Emisar.Auth.Permissions.for_role(role)}
 
   test "subject_can_<verb>? predicates match the role matrix" do
     matrix = [
-      {&Billing.subject_can_manage_billing?/1, [:owner]},
-      {&Billing.subject_can_view_invoices?/1, [:owner, :admin]},
+      {&Billing.subject_can_manage_billing?/1, [:owner, :billing_manager]},
+      {&Billing.subject_can_view_invoices?/1, [:owner, :admin, :billing_manager]},
+      {&Audit.subject_can_view_audit?/1, @roles},
+      {&Audit.subject_sees_billing_audit_only?/1, [:billing_manager]},
       {&Accounts.subject_can_manage_account_security?/1, [:owner, :admin]},
       {&Accounts.subject_can_manage_team?/1, [:owner, :admin]},
       {&Runners.subject_can_manage_runners?/1, [:owner, :admin]},

@@ -795,17 +795,21 @@ defmodule EmisarWeb.DashboardLiveTest do
       # And on billing the nav still offers only what the role can open.
       {:ok, lv, _html} = live(conn, billing)
 
-      # Billing + Team stay reachable (billing is the seat's job; the roster
-      # view is every member's floor).
+      # The seat's three surfaces: Billing is its job, the roster is every
+      # member's floor, and Audit opens onto the billing slice of the trail
+      # (`Audit.Authorizer.for_subject/2` withholds the rest of the rows).
       assert has_element?(lv, "a[href='#{~p"/app/#{account}/settings/billing"}']")
       assert has_element?(lv, "a[href='#{~p"/app/#{account}/settings/team"}']")
+      assert has_element?(lv, "a[href='#{~p"/app/#{account}/audit"}']")
 
       # The sections the role holds no view permission for are gone.
       refute has_element?(lv, "a[href='#{~p"/app/#{account}/runbooks"}']")
       refute has_element?(lv, "a[href='#{~p"/app/#{account}/policies"}']")
       refute has_element?(lv, "a[href='#{~p"/app/#{account}/runs"}']")
-      refute has_element?(lv, "a[href='#{~p"/app/#{account}/audit"}']")
       refute has_element?(lv, "a[href='#{~p"/app/#{account}/runners"}']")
+      refute has_element?(lv, "a[href='#{~p"/app/#{account}/packs"}']")
+      refute has_element?(lv, "a[href='#{~p"/app/#{account}/approvals"}']")
+      refute has_element?(lv, "a[href='#{~p"/app/#{account}/agents"}']")
     end
   end
 

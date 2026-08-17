@@ -3,6 +3,11 @@ defmodule EmisarWeb.RoleAccessMatrixTest do
   Direct-route authorization for detail and configuration LiveViews. Every role
   gets one clean outcome: authorized roles render, while a billing-only role is
   denied without a 500 or a partial policy configuration.
+
+  Team and Audit are the two routes EVERY membership role reaches — the roster
+  because every member may see who they work with, Audit because the finance
+  seat gets the billing slice of it (`Audit.Authorizer.for_subject/2` narrows
+  the rows; the door is open to all).
   """
   use EmisarWeb.ConnCase, async: true
 
@@ -83,21 +88,19 @@ defmodule EmisarWeb.RoleAccessMatrixTest do
 
       assert_page_route(
         conn,
-        ~p"/app/#{account}/settings/team",
-        ~p"/app/#{account}",
-        "You don't have access to team.",
-        "Members",
-        authorized?
-      )
-
-      assert_page_route(
-        conn,
         ~p"/app/#{account}/policies",
         ~p"/app/#{account}",
         "You don't have access to policies.",
         "Default policy",
         authorized?
       )
+
+      # Open to every role, billing manager included — no flash, no bounce.
+      assert {:ok, _team_lv, team_html} = live(conn, ~p"/app/#{account}/settings/team")
+      assert team_html =~ "Members"
+
+      assert {:ok, _audit_lv, audit_html} = live(conn, ~p"/app/#{account}/audit")
+      assert audit_html =~ "Audit log"
     end
   end
 

@@ -1,6 +1,6 @@
 defmodule EmisarWeb.TeamLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Catalog, Runners, SSO}
+  alias Emisar.{Accounts, Audit, Catalog, Runners, SSO}
   alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, RunnerScope}
   alias Phoenix.LiveView.JS
 
@@ -10,50 +10,49 @@ defmodule EmisarWeb.TeamLive do
   @runner_scope_required "Choose at least one runner group or runner for selected access."
   @pack_scope_required "Choose at least one pack for selected pack access."
 
+  # No mount gate, deliberately: every member may see who else is in the
+  # workspace, so the roster read (`list_team_member_facts/3`) asks only for
+  # `view_own_account`. Managing the team is gated where it acts — the render's
+  # `can_manage?/1` branches and `Permissions.gated/3` on every handler — which
+  # is what leaves a billing manager a read-only Team page instead of a nav link
+  # that flashes and bounces. Same shape as the Billing page.
   def mount(_params, _session, socket) do
-    if Runners.subject_can_view_runners?(socket.assigns.current_subject) do
-      if connected?(socket),
-        do: Accounts.subscribe_account_team(socket.assigns.current_account.id)
+    if connected?(socket),
+      do: Accounts.subscribe_account_team(socket.assigns.current_account.id)
 
-      {:ok,
-       socket
-       |> assign(:page_title, "Team")
-       |> assign(:roles, @roles)
-       |> assign(:editing_id, nil)
-       |> assign(:edit_form, nil)
-       |> assign(:scope_editing_id, nil)
-       |> assign(:scope_access_mode, "none")
-       |> assign(:scope_draft, [])
-       |> assign(:scope_error, nil)
-       |> assign(:scope_pack_mode, "all")
-       |> assign(:scope_pack_draft, [])
-       |> assign(:scope_pack_error, nil)
-       |> assign(:runners, [])
-       |> assign(:runners_by_id, %{})
-       |> assign(:runner_load_error?, false)
-       # The intro's role note renders before the roster load resolves it.
-       |> assign(:current_role, nil)
-       |> assign(:pack_advertisements, %{})
-       |> assign(:pack_load_error?, false)
-       |> assign(:approval_access_modes, %{})
-       |> assign(:approval_scope_drafts, %{})
-       |> assign(:approval_scope_errors, %{})
-       |> assign(:approval_pack_modes, %{})
-       |> assign(:approval_pack_drafts, %{})
-       |> assign(:approval_pack_errors, %{})
-       # The branded sign-in link is a per-account constant to hand to members.
-       |> assign(
-         :sign_in_url,
-         Emisar.PublicUrl.base() <> ~p"/app/#{socket.assigns.current_account}/sign_in"
-       )
-       |> ConfirmDialog.init()
-       |> assign_invite_form()}
-    else
-      {:ok,
-       socket
-       |> put_flash(:error, "You don't have access to team.")
-       |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}")}
-    end
+    {:ok,
+     socket
+     |> assign(:page_title, "Team")
+     |> assign(:roles, @roles)
+     |> assign(:editing_id, nil)
+     |> assign(:edit_form, nil)
+     |> assign(:scope_editing_id, nil)
+     |> assign(:scope_access_mode, "none")
+     |> assign(:scope_draft, [])
+     |> assign(:scope_error, nil)
+     |> assign(:scope_pack_mode, "all")
+     |> assign(:scope_pack_draft, [])
+     |> assign(:scope_pack_error, nil)
+     |> assign(:runners, [])
+     |> assign(:runners_by_id, %{})
+     |> assign(:runner_load_error?, false)
+     # The intro's role note renders before the roster load resolves it.
+     |> assign(:current_role, nil)
+     |> assign(:pack_advertisements, %{})
+     |> assign(:pack_load_error?, false)
+     |> assign(:approval_access_modes, %{})
+     |> assign(:approval_scope_drafts, %{})
+     |> assign(:approval_scope_errors, %{})
+     |> assign(:approval_pack_modes, %{})
+     |> assign(:approval_pack_drafts, %{})
+     |> assign(:approval_pack_errors, %{})
+     # The branded sign-in link is a per-account constant to hand to members.
+     |> assign(
+       :sign_in_url,
+       Emisar.PublicUrl.base() <> ~p"/app/#{socket.assigns.current_account}/sign_in"
+     )
+     |> ConfirmDialog.init()
+     |> assign_invite_form()}
   end
 
   def handle_params(params, _uri, socket) do
@@ -1709,6 +1708,9 @@ defmodule EmisarWeb.TeamLive do
                         member={member}
                         current_user_id={@current_user.id}
                         can_manage?={can_manage?(assigns)}
+                        can_view_member_activity?={
+                          not Audit.subject_sees_billing_audit_only?(@current_subject)
+                        }
                         current_account={@current_account}
                         typed={@typed}
                         name_locked?={directory_managed?(directory)}
@@ -2330,6 +2332,9 @@ defmodule EmisarWeb.TeamLive do
   attr :member, :map, required: true
   attr :current_user_id, :string, required: true
   attr :can_manage?, :boolean, required: true
+  # A reader who only sees the billing slice of the trail finds nothing under a
+  # person-filtered view, so they get no jump into one — not even their own.
+  attr :can_view_member_activity?, :boolean, required: true
   attr :current_account, :map, required: true
   attr :typed, :string, required: true
   attr :name_locked?, :boolean, required: true
@@ -2348,6 +2353,7 @@ defmodule EmisarWeb.TeamLive do
              other occupants (§7.47), and the remedy verb keeps the exact
              wording of the portal-wide unconfirmed-email strip. --%>
         <.button
+          :if={@can_view_member_activity?}
           navigate={
             ~p"/app/#{@current_account}/audit?#{[actor_kind: "user", actor_id: @membership.user_id]}"
           }
@@ -2575,10 +2581,10 @@ defmodule EmisarWeb.TeamLive do
 
   # Role-change confirm copy for our styled dialog — the title carries the
   # escalation question, the body the consequence. Promoting to a privileged role
-  # grants real power (a new owner can act against you), so those spell it out; a
-  # demotion keeps the plain read-only note.
+  # grants real power (a new owner can act against you), so those spell it out.
   defp role_change_title(name, "owner"), do: "Make #{name} an owner?"
   defp role_change_title(name, "admin"), do: "Make #{name} an admin?"
+  defp role_change_title(name, "billing_manager"), do: "Make #{name} a billing manager?"
   defp role_change_title(name, "operator"), do: "Make #{name} an operator?"
   defp role_change_title(name, role), do: "Change #{name} to #{Emisar.Auth.role_label(role)}?"
 
@@ -2592,9 +2598,12 @@ defmodule EmisarWeb.TeamLive do
   defp role_change_body("operator"),
     do: "Operators can dispatch runs to your fleet and approve gated actions."
 
-  defp role_change_body(_role) do
-    "Read-only access — they can see runs, runners, and audit, but can't dispatch or change anything."
-  end
+  # Every remaining role states its OWN contract, from the one description the
+  # role pickers already render. The hardcoded fallback here used to hand a
+  # billing manager the viewer sentence — "they can see runs, runners, and
+  # audit" — which was the exact inverse of the seat, and any role added later
+  # would have inherited the same wrong promise.
+  defp role_change_body(role), do: Emisar.Auth.role_description(role)
 
   # Membership activity is account-specific. Until a membership has its first
   # console touch, the user's sign-in timestamp is the conservative fallback:

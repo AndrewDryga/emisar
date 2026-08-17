@@ -94,7 +94,7 @@ defmodule EmisarWeb.MarketingController do
      "Authentication — sign-in, SSO, MFA & directory sync",
      "Choose how your team authenticates to emisar: passwordless magic links, OIDC single sign-on, MFA enforcement, session controls, and SCIM directory provisioning and offboarding."},
     {"/docs/teams-and-access", :docs_teams, :docs_teams, "Teams, roles & access",
-     "The emisar access model: owner/admin/operator/viewer roles, invitations, per-member runner scopes that hide out-of-scope hosts, account-wide MFA enforcement, session management, and scoped revocable API keys."},
+     "The emisar access model: owner/admin/billing-manager/operator/viewer roles, invitations, per-member runner scopes that hide out-of-scope hosts, account-wide MFA enforcement, session management, and scoped revocable API keys."},
     {"/docs/sso", :docs_sso, :docs_sso, "Single sign-on (SSO)",
      "OIDC single sign-on for emisar on Team and Enterprise — sign in with Google Workspace, Okta, Microsoft Entra, JumpCloud, Keycloak, or any compliant provider; identities are bound by issuer + subject, never email."},
     {"/docs/integrations/okta", :docs_sso_okta, :docs_sso_okta, "Okta SSO & SCIM setup",

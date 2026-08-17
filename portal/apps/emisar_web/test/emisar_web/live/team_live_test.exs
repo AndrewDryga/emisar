@@ -548,7 +548,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
   end
 
-  describe "a non-manager (operator / viewer) sees the roster read-only" do
+  describe "a non-manager (billing manager / operator / viewer) sees the roster read-only" do
     setup %{conn: conn} do
       # An owner with the account + a teammate to render in the roster, then a
       # second member we log in AS to observe the read-only view.
@@ -614,6 +614,40 @@ defmodule EmisarWeb.TeamLiveTest do
 
         assert has_element?(lv, "a[href*='actor_id=#{member.id}']", "View activity")
       end
+    end
+
+    # The finance seat reads the roster like any other non-manager, but its
+    # audit reach is the billing slice — so a person-filtered trail would always
+    # be empty, and it gets no jump into one at all, not even its own row.
+    test "a billing manager reads the roster and is offered no activity jump", %{
+      account: account,
+      teammate: teammate,
+      teammate_membership: teammate_membership
+    } do
+      member = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: member.id,
+        role: "billing_manager"
+      )
+
+      {:ok, lv, html} =
+        build_conn() |> log_in_user(member) |> live(~p"/app/#{account}/settings/team")
+
+      assert html =~ "Teammate Tess"
+      assert html =~ teammate.email
+
+      refute html =~ "Invite member"
+      refute html =~ "Send invite"
+      refute has_element?(lv, "summary", "Actions")
+      refute has_element?(lv, "##{"change-role-#{teammate_membership.id}-operator"}")
+
+      assert html =~ "Only owners and admins can invite or manage members."
+      assert html =~ "Your role: Billing manager"
+
+      refute has_element?(lv, "a[href*='actor_id=#{teammate.id}']", "View activity")
+      refute has_element?(lv, "a[href*='actor_id=#{member.id}']", "View activity")
     end
 
     test "a teammate's activity facts are hidden; your own row keeps them", %{

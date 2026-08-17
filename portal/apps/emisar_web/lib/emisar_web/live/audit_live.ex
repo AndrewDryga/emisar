@@ -341,13 +341,15 @@ defmodule EmisarWeb.AuditLive do
       <%!-- Sub-feature side door — export config is its own page; its entry
            rides the TITLE row (the pattern for a page's secondary surface),
            not the intro prose and never below the rows. --%>
-      <:actions>
+      <:actions :if={Audit.subject_can_export_audit?(@current_subject)}>
         <%!-- :md, not :sm — a control on the 28px title row needs the full-size
              button to hold its own beside the H1. Export downloads the CURRENT
              FILTERED VIEW as CSV; both export surfaces are Team+ (the console
              trail is on every plan — taking the data OUT is paid). On a lower
              plan the control is a disabled lock button with a downward tooltip
-             naming the gate; upgrading is the Billing nav item. --%>
+             naming the gate; upgrading is the Billing nav item. A reader who
+             holds only the billing slice gets no export control at all — the
+             domain refuses the download, so an upgrade prompt would be a lie. --%>
         <%= if @audit_export_available? do %>
           <.button variant={:secondary} size={:md} href={audit_download_path(assigns)} download>
             Export CSV
@@ -374,7 +376,11 @@ defmodule EmisarWeb.AuditLive do
         <% end %>
       </:actions>
 
-      <.page_intro>
+      <.page_intro :if={Audit.subject_sees_billing_audit_only?(@current_subject)}>
+        The billing events in this account's audit trail — every plan change, recorded as it
+        happens. <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>
+      </.page_intro>
+      <.page_intro :if={not Audit.subject_sees_billing_audit_only?(@current_subject)}>
         The append-only record of every action, approval, and access change in this account —
         exportable to your SIEM for independent, long-term retention.
         <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>

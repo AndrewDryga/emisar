@@ -358,6 +358,21 @@ defmodule Emisar.Audit.Event.Query do
 
   def grouped_event_type_values, do: @grouped_event_types
 
+  # The finance seat's slice of the trail. Derived from the "Billing" GROUP
+  # above rather than a second hand-kept list, so a new billing event type is
+  # visible to a billing manager the moment it joins the group operators
+  # already filter by — the same low-drift rule `@category_of_group` follows.
+  @billing_event_types for {"Billing", options} <- @grouped_event_types,
+                           {value, _label} <- options,
+                           do: value
+
+  @doc """
+  The event types a billing-scoped reader may see — the "Billing" group's types.
+  `Audit.Authorizer.for_subject/2` is what applies it; this is the set, pinned in
+  `Emisar.AuditTest` so the narrowing can't silently change.
+  """
+  def billing_event_types, do: @billing_event_types
+
   # Each domain group belongs to exactly ONE review CATEGORY — the coarse lens
   # the audit page's quick-filter chips + panel facet narrow by. Deriving from
   # the existing groups (not a second per-type taxonomy) keeps it low-drift: a
@@ -655,6 +670,17 @@ defmodule Emisar.Audit.Event.Query do
     do: where(queryable, [events: e], e.event_type in ^types)
 
   def by_event_types(queryable, _), do: queryable
+
+  @doc """
+  Narrows to the billing slice of the trail — the row scope a subject holding
+  only `view_billing_audit` gets from `Audit.Authorizer.for_subject/2`.
+
+  Deliberately NOT built on `by_event_types/2`, whose empty list means "every
+  type": an empty billing set there would hand a billing manager the whole
+  audit log. Its own `in` fails closed instead — no types, no rows.
+  """
+  def only_billing_events(queryable),
+    do: where(queryable, [events: e], e.event_type in ^@billing_event_types)
 
   # Hard-cap; the controller validates the user-supplied limit against
   # @max_export_limit and passes it through, so this stays a one-liner.

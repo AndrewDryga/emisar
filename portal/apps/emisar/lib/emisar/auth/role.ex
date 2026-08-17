@@ -9,10 +9,12 @@ defmodule Emisar.Auth.Role do
   roles that aren't account memberships (`:api_client`, `:runner`) live on
   `Auth.Subject`, not here.
 
-  `:billing_manager` is the one ORTHOGONAL role — full billing control,
-  nothing else (a finance seat). It sorts after `:admin` for the UI but has
-  no rank: permission comparison (`covers_role?/2`) is what makes an owner
-  the only role able to grant it (only owners hold `manage_billing`).
+  `:billing_manager` is the one ORTHOGONAL role — the finance seat. It holds
+  full billing control, a read-only view of the member list, and the billing
+  slice of the audit trail; no runners, runs, packs, policy, runbooks,
+  approvals, or agents. It sorts after `:admin` for the UI but has no rank:
+  permission comparison (`covers_role?/2`) is what makes an owner the only
+  role able to grant it (only owners hold `manage_billing`).
   """
   @roles [:owner, :admin, :billing_manager, :operator, :viewer]
 
@@ -41,8 +43,9 @@ defmodule Emisar.Auth.Role do
   def description("admin"),
     do: "Manages members, runners, and policies, and approves actions. Billing is view-only."
 
-  def description("billing_manager"),
-    do: "Manages the subscription, payment method, and invoices — no team, runners, or actions."
+  def description("billing_manager") do
+    "Manages the subscription, payment method, and invoices. Also reads the member list and billing events in the audit trail — no runners, actions, or policy."
+  end
 
   def description("operator"),
     do: "Dispatches actions and approves them. No team, policy, or billing management."

@@ -341,8 +341,7 @@ defmodule Emisar.Audit do
   `Emisar.Repo.list/3` options (`:filter`, `:page`).
   """
   def list_events(%Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
+    with :ok <- ensure_can_read_audit(subject) do
       # actor_id / target_id ride as opts — the dynamic "by actor" / "by
       # subject" pickers aren't in the static filters/0 list, so they can't go
       # through :filter. Everything else is a LiveTable filter, applied via :filter.
@@ -374,8 +373,7 @@ defmodule Emisar.Audit do
   no entries.
   """
   def approval_event_refs(request_ids, %Subject{} = subject) when is_list(request_ids) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
+    with :ok <- ensure_can_read_audit(subject) do
       ids = request_ids |> Enum.filter(&Repo.valid_uuid?/1) |> Enum.uniq() |> Enum.take(100)
 
       events =
@@ -433,8 +431,7 @@ defmodule Emisar.Audit do
   """
   def list_actor_options(actor_kind, %Subject{} = subject, opts \\ [])
       when is_binary(actor_kind) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
+    with :ok <- ensure_can_read_audit(subject) do
       logged_ids =
         Event.Query.all()
         |> Event.Query.distinct_actor_ids_of_kind(actor_kind)
@@ -466,8 +463,7 @@ defmodule Emisar.Audit do
   `{:error, :unauthorized}`.
   """
   def list_target_options(target_kind, %Subject{} = subject) when is_binary(target_kind) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
+    with :ok <- ensure_can_read_audit(subject) do
       ids =
         Event.Query.all()
         |> Event.Query.distinct_target_ids_of_kind(target_kind)
@@ -630,8 +626,7 @@ defmodule Emisar.Audit do
   `{:ok, event} | {:error, :not_found}`.
   """
   def fetch_event_by_id(id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()),
+    with :ok <- ensure_can_read_audit(subject),
          true <- Repo.valid_uuid?(id) do
       Event.Query.all()
       |> Event.Query.by_id(id)
@@ -866,13 +861,47 @@ defmodule Emisar.Audit do
 
   # -- Authorization ----------------------------------------------------
 
-  @doc "True when the subject may view the audit trail (the console nav + section gate)."
-  def subject_can_view_audit?(%Subject{} = subject),
+  @doc """
+  True when the subject may reach the audit trail at all — the whole record, or
+  the billing slice a billing manager sees (the console nav + section gate).
+  """
+  def subject_can_view_audit?(%Subject{} = subject) do
+    Auth.Authorizer.has_permission?(subject, Authorizer.view_audit_permission()) or
+      Auth.Authorizer.has_permission?(subject, Authorizer.view_billing_audit_permission())
+  end
+
+  @doc """
+  True when the subject reads the audit trail narrowed to billing events — the
+  finance seat. The web words the page from it; `Authorizer.for_subject/2` is
+  what actually withholds the rows.
+  """
+  def subject_sees_billing_audit_only?(%Subject{} = subject) do
+    subject_can_view_audit?(subject) and
+      not Auth.Authorizer.has_permission?(subject, Authorizer.view_audit_permission())
+  end
+
+  @doc """
+  True when the subject may take the record OUT of the product — the gate behind
+  the CSV and SIEM export controls. The plan entitlement is a separate,
+  account-level check; `ensure_can_export_audit/1` is authoritative for both.
+  """
+  def subject_can_export_audit?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.view_audit_permission())
+
+  # Either audit permission opens a read — how MUCH of the trail comes back is
+  # `Authorizer.for_subject/2`'s call, not this gate's.
+  defp ensure_can_read_audit(%Subject{} = subject) do
+    Auth.Authorizer.ensure_has_permissions(
+      subject,
+      {:one_of, [Authorizer.view_audit_permission(), Authorizer.view_billing_audit_permission()]}
+    )
+  end
 
   # Export (the SIEM sweep and the CSV download alike) is the paid surface —
   # the in-console trail stays on every plan. The web's plan checks are
   # courtesy navigation/copy; this gate is authoritative for both export reads.
+  # Deliberately the FULL-trail permission: taking the record out of the product
+  # is an owner/admin/SIEM act, not part of the finance seat's read.
   defp ensure_can_export_audit(%Subject{account: account} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do

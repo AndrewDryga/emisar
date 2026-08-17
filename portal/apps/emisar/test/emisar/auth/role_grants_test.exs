@@ -31,6 +31,7 @@ defmodule Emisar.Auth.RoleGrantsTest do
     {Emisar.Approvals.Request, :decide},
     {Emisar.Approvals.Request, :view},
     {Emisar.Audit.Event, :view},
+    {Emisar.Audit.Event, :view_billing},
     {Emisar.Billing.Subscription, :manage},
     {Emisar.Billing.Subscription, :view},
     {Emisar.Billing.Subscription, :view_invoices},
@@ -62,6 +63,7 @@ defmodule Emisar.Auth.RoleGrantsTest do
 
   @billing_manager [
     {Emisar.Accounts.Account, :view_own},
+    {Emisar.Audit.Event, :view_billing},
     {Emisar.Billing.Subscription, :manage},
     {Emisar.Billing.Subscription, :view},
     {Emisar.Billing.Subscription, :view_invoices},
@@ -76,6 +78,7 @@ defmodule Emisar.Auth.RoleGrantsTest do
     {Emisar.Approvals.Request, :decide},
     {Emisar.Approvals.Request, :view},
     {Emisar.Audit.Event, :view},
+    {Emisar.Audit.Event, :view_billing},
     {Emisar.Billing.Subscription, :view},
     {Emisar.Catalog.RunnerAction, :view},
     {Emisar.Policies.Policy, :view},
@@ -95,6 +98,7 @@ defmodule Emisar.Auth.RoleGrantsTest do
     {Emisar.ApiKeys.ApiKey, :view},
     {Emisar.Approvals.Request, :view},
     {Emisar.Audit.Event, :view},
+    {Emisar.Audit.Event, :view_billing},
     {Emisar.Billing.Subscription, :view},
     {Emisar.Catalog.RunnerAction, :view},
     {Emisar.Policies.Policy, :view},
@@ -109,6 +113,7 @@ defmodule Emisar.Auth.RoleGrantsTest do
   @api_client [
     {Emisar.Accounts.Account, :view_own},
     {Emisar.Audit.Event, :view},
+    {Emisar.Audit.Event, :view_billing},
     {Emisar.Catalog.RunnerAction, :view},
     {Emisar.MCPOperations.Operation, :reserve},
     {Emisar.MCPOperations.Operation, :view},
