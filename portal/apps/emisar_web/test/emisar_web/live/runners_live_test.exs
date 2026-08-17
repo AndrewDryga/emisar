@@ -150,17 +150,35 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert html =~ "b1"
     end
 
-    test "the filter bar narrows the fleet instead of crashing the view", %{conn: conn} do
+    test "one filter searches runner groups or names", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, name: "kept-runner", group: "keep")
       Fixtures.Runners.create_runner(account_id: account.id, name: "gone-runner", group: "gone")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
-      lv |> form("#runners-filter", %{"group" => "keep"}) |> render_change()
+      assert has_element?(lv, "#runners-filter input[name='group_or_name']")
+      refute has_element?(lv, "#runners-filter input[name='group']")
+      refute has_element?(lv, "#runners-filter input[name='name']")
+
+      lv |> form("#runners-filter", %{"group_or_name" => "KEEP"}) |> render_change()
 
       html = render(lv)
       assert html =~ "kept-runner"
       refute html =~ "gone-runner"
+    end
+
+    test "a search with no matches renders an empty result instead of loading forever", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id, name: "present-runner")
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners?group_or_name=missing")
+
+      assert html =~ "No runners match this search."
+      assert has_element?(lv, "#runners-filter input[name='group_or_name'][value='missing']")
+      refute html =~ "Loading"
+      refute html =~ "EMISAR_ENROLLMENT_KEY"
     end
 
     test "an enforcing runner shows a Signed-only chip on the index", %{conn: conn} do

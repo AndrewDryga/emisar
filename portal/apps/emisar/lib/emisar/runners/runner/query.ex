@@ -299,17 +299,17 @@ defmodule Emisar.Runners.Runner.Query do
   def filters,
     do: [
       %Filter{
-        name: :group,
-        title: "Group",
+        name: :group_or_name,
+        title: "Group or name",
         type: :string,
-        fun: fn queryable, group -> {queryable, dynamic([runners: r], r.group == ^group)} end
-      },
-      %Filter{
-        name: :name,
-        title: "Name",
-        type: :string,
-        fun: fn queryable, name ->
-          {queryable, dynamic([runners: r], ilike(r.name, ^Like.contains(name)))}
+        fun: fn queryable, term ->
+          pattern = Like.contains(term)
+
+          {queryable,
+           dynamic(
+             [runners: r],
+             ilike(r.group, ^pattern) or ilike(r.name, ^pattern)
+           )}
         end
       }
     ]

@@ -142,6 +142,12 @@ Structural rules that ride along:
   the operator is looking for and (with `display:contents` on a `<details>`) renders as a
   broken floating layout. The clear affordance is a labeled "× Clear filters" link shown
   only when a non-default filter is active (default ≠ active). LiveTable owns this.
+  - **Alternate identifiers for one entity share one free-text search.** When an operator
+    starts with one string and does not need Boolean composition, search those fields with
+    OR semantics and name the control for them (`Group or name`). Parallel text inputs imply
+    separate AND-able dimensions and force the operator to choose a database column before
+    searching. Keep separate controls only when each field is a distinct dimension the
+    operator may intentionally combine.
   - **Opt into `filter_layout={:stacked}` ONLY when a filter dynamically reveals a
     dependent control that must sit beside it** (the audit Actor/Subject kind pickers
     reveal a value dropdown). Stacked is a two-column grid (`grid-cols-1 sm:grid-cols-2`)

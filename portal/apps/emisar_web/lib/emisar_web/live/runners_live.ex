@@ -194,6 +194,7 @@ defmodule EmisarWeb.RunnersLive do
     |> assign(:filters, Runners.runner_filters())
     |> assign(:groups, [])
     |> assign(:fleet, Runners.fleet_status([]))
+    |> assign(:loaded?, false)
     |> assign(:load_error?, false)
   end
 
@@ -247,6 +248,7 @@ defmodule EmisarWeb.RunnersLive do
         |> assign(:filters, filters)
         |> assign(:groups, groups)
         |> assign(:fleet, fleet)
+        |> assign(:loaded?, true)
         |> assign(:load_error?, false)
 
       # A clean reload can fail too (e.g. a tightened list permission) — show a
@@ -261,6 +263,7 @@ defmodule EmisarWeb.RunnersLive do
         |> assign(:filters, filters)
         |> assign(:groups, [])
         |> assign(:fleet, fleet)
+        |> assign(:loaded?, true)
         |> assign(:load_error?, true)
 
       # Bad filter/page params from a hand-edited URL — retry once, clean.
@@ -373,7 +376,7 @@ defmodule EmisarWeb.RunnersLive do
             keys_path={~p"/app/#{@current_account}/runners/keys"}
             show_keys_link={Runners.subject_can_manage_enrollment_keys?(@current_subject)}
           />
-        <% @runners == [] && @metadata.count == 0 -> %>
+        <% not @loaded? -> %>
           <%!-- Dead/pre-connect render — defer the onboarding pitch until the
                live socket confirms there really are no runners. --%>
           <.loading_state />
@@ -480,6 +483,8 @@ defmodule EmisarWeb.RunnersLive do
                 wrapper_class="divide-y divide-zinc-800/70"
                 group_by={fn runner -> runner.group || "(no group)" end}
               >
+                <:empty>No runners match this search.</:empty>
+
                 <:group_header :let={group_label}>
                   <.list_group_header label={group_label}>
                     {group_total_label(@groups, group_label)}

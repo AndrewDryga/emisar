@@ -166,24 +166,46 @@ defmodule Emisar.RunnersTest do
   end
 
   describe "runner_filters/0" do
-    test "carries the Runners table's filters in panel order" do
-      assert Enum.map(Runners.runner_filters(), & &1.name) == [:group, :name]
+    test "carries the Runners table's group-or-name search" do
+      assert [%{name: :group_or_name, title: "Group or name"}] = Runners.runner_filters()
     end
   end
 
   describe "list_runners_for_account/2" do
-    test "filters by account, group, and status" do
+    test "filters by account, group or name, and status" do
       {account, _user, subject} = account_with_owner_subject()
       other_account = Fixtures.Accounts.create_account()
 
-      _ = Fixtures.Runners.create_runner(account_id: account.id, group: "web", connected?: true)
-      _ = Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
+      web =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "edge-one",
+          group: "web",
+          connected?: true
+        )
+
+      database =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "database-primary",
+          group: "db",
+          connected?: false
+        )
+
       _ = Fixtures.Runners.create_runner(account_id: other_account.id, group: "web")
 
       assert {:ok, list, _} = Runners.list_runners_for_account(subject)
       assert length(list) == 2
       assert {:ok, list, _} = Runners.list_runners_for_account(subject, group: "web")
       assert length(list) == 1
+      web_id = web.id
+      database_id = database.id
+
+      assert {:ok, [%{id: ^web_id}], _} =
+               Runners.list_runners_for_account(subject, filter: [group_or_name: "WEB"])
+
+      assert {:ok, [%{id: ^database_id}], _} =
+               Runners.list_runners_for_account(subject, filter: [group_or_name: "PRIMARY"])
 
       # connected? tracks presence from this process, so the "connected"
       # filter resolves the online id set and returns just that runner.
