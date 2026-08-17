@@ -712,6 +712,7 @@ defmodule EmisarWeb.AuditLiveTest do
     test "switching the actor kind drops the now-invalid actor pick", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_id: user.id)
+      {:ok, _} = Audit.log(account.id, "action.dispatched", actor_kind: "api_key")
 
       # Land with a user actor picked (kind + id both in the params).
       {:ok, lv, _html} =
@@ -730,6 +731,7 @@ defmodule EmisarWeb.AuditLiveTest do
     test "switching the subject kind drops the stale subject pick", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", target_kind: "user", target_id: user.id)
+      {:ok, _} = Audit.log(account.id, "runner.connected", target_kind: "runner")
 
       {:ok, lv, _html} =
         live(conn, ~p"/app/#{account}/audit?target_kind=user&target_id=#{user.id}")
@@ -1073,7 +1075,9 @@ defmodule EmisarWeb.AuditLiveTest do
 
       # The alignment this pins: one refusal cannot wear two colors on two
       # surfaces, so audit reads a denial exactly as the status chip does.
-      assert EmisarWeb.CoreComponents.status_tone("denied") == :deny
+      for status <- ~w[denied refused rejected] do
+        assert EmisarWeb.CoreComponents.status_tone(status) == :deny
+      end
     end
 
     test "a removal or throttle stays amber — taken away is not the gate saying no" do
@@ -1127,6 +1131,37 @@ defmodule EmisarWeb.AuditLiveTest do
       html = walk_all_pages(lv, html)
       refute html =~ "A-secret"
     end
+  end
+
+  test "actor and target kind filters list only kinds that have rows", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    {:ok, _} =
+      Audit.log(account.id, "user.invited",
+        actor_kind: "user",
+        target_kind: "user"
+      )
+
+    {:ok, _} =
+      Audit.log(account.id, "account.updated",
+        actor_kind: "system",
+        target_kind: "account"
+      )
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
+    lv |> element("button[phx-click='toggle_filters']") |> render_click()
+
+    for kind <- ~w[user system] do
+      assert has_element?(lv, "select[name='actor_kind'] option[value='#{kind}']")
+    end
+
+    refute has_element?(lv, "select[name='actor_kind'] option[value='runner']")
+
+    for kind <- ~w[user account] do
+      assert has_element?(lv, "select[name='target_kind'] option[value='#{kind}']")
+    end
+
+    refute has_element?(lv, "select[name='target_kind'] option[value='runner']")
   end
 
   describe "GET /app/audit/:id" do

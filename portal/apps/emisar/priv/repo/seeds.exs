@@ -2887,6 +2887,37 @@ filler_run_rows =
 
 runs_added = insert_seed_rows.(ActionRun, filler_run_rows)
 
+# Bulk-inserted volume rows bypass `Runs.transition/3`, so repair the terminal
+# receipt that transition normally writes. Check the exact request/status pair,
+# not merely whether the request has any event: a partially-seeded run may have
+# its dispatch row but still be missing its final outcome. Running this over the
+# account's terminal rows also repairs databases seeded before this block
+# existed, while leaving developer-created receipts alone.
+seeded_run_outcomes =
+  Audit.Event.Query.all()
+  |> Audit.Event.Query.by_account_id(account.id)
+  |> Repo.all()
+  |> MapSet.new(&{&1.request_id, &1.event_type})
+
+audits_added =
+  run_query
+  |> Repo.all()
+  |> Repo.preload(:runner)
+  |> Enum.count(fn run ->
+    outcome = {run.request_id, "action_run.#{run.status}"}
+
+    if ActionRun.terminal?(run.status) and not MapSet.member?(seeded_run_outcomes, outcome) do
+      run
+      |> Audit.run_event_changeset()
+      |> Ecto.Changeset.change(occurred_at: run.finished_at)
+      |> Repo.insert!()
+
+      true
+    else
+      false
+    end
+  end)
+
 # The approvals "Recent decisions" tab reads the same table as the queue but
 # newest-first, so its filler is the OLD end: one decided request against the
 # oldest runs that do not have one yet. Read back from the table rather than
@@ -3005,14 +3036,9 @@ grants_added =
 IO.puts(
   IO.ANSI.cyan() <>
     "✓ Activity volume: +#{runs_added} runs, +#{decisions_added} decided approvals, " <>
-    "+#{grants_added} grants, +#{sessions_added} sessions" <>
+    "+#{grants_added} grants, +#{sessions_added} sessions, +#{audits_added} run receipts" <>
     IO.ANSI.reset()
 )
-
-# The audit trail needs no filler of its own: a fresh seed writes 104 events for
-# this account — three pages — because every seeded mutation above already logs
-# one through its own domain call. Synthetic audit rows would only add rows the
-# rest of the account cannot explain.
 
 # -- Keycloak OIDC + SCIM provider (./run e2e SSO) -----------------
 # Seeds an enabled :keycloak IdentityProvider on the demo (enterprise) account
@@ -3104,28 +3130,22 @@ if System.get_env("EMISAR_DEV_FIXED_SCIM_TOKEN") not in [nil, ""] do
   # here with no provider at all means something upstream genuinely failed. Say
   # so. A provider that exists but has SCIM off is repaired instead, which is
   # what makes a re-seed over an older database converge.
-  providers =
-    case Emisar.SSO.list_providers_for_account(owner_subject) do
-      {:ok, found, _meta} -> found
-      _ -> []
-    end
-
   scim_provider =
-    case Enum.find(providers, & &1.scim_enabled) do
-      %Emisar.SSO.IdentityProvider{} = enabled ->
+    case Emisar.SSO.IdentityProvider.Query.not_deleted()
+         |> Emisar.SSO.IdentityProvider.Query.by_account_id(account.id)
+         |> Emisar.SSO.IdentityProvider.Query.by_id(provider_id)
+         |> Repo.peek() do
+      %Emisar.SSO.IdentityProvider{scim_enabled: true} = enabled ->
+        enabled
+
+      %Emisar.SSO.IdentityProvider{} = provider ->
+        {:ok, enabled, _raw_token} = Emisar.SSO.enable_scim(provider, owner_subject)
         enabled
 
       nil ->
-        case providers do
-          [provider | _] ->
-            {:ok, enabled, _raw_token} = Emisar.SSO.enable_scim(provider, owner_subject)
-            enabled
-
-          [] ->
-            raise """
-            EMISAR_DEV_FIXED_SCIM_TOKEN is set, so this seed is meant to create             directory-sync state, but the demo account has no identity provider             to attach it to. The team and SSO docs captures need those members.             Check that Keycloak came up and that EMISAR_DEV_FIXED_OIDC_CLIENT_SECRET             reached the seed.\
-            """
-        end
+        raise """
+        EMISAR_DEV_FIXED_SCIM_TOKEN is set, so this seed is meant to create directory-sync state, but the demo account has no Keycloak provider to attach it to. The team and SSO docs captures need those members. Check that Keycloak came up and that EMISAR_DEV_FIXED_OIDC_CLIENT_SECRET reached the seed.\
+        """
     end
 
   if scim_provider do

@@ -243,7 +243,6 @@ defmodule EmisarWeb.RunDetailLive do
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
-      flash={@flash}
       section={:runs}
       width={:table}
     >
@@ -453,8 +452,7 @@ defmodule EmisarWeb.RunDetailLive do
 
             <%!-- Terminal cause — only when we got a message back. Titled and
                toned by the status so a failed command never reads as a system
-               "Error", and a refused (amber, nothing-executed) run doesn't wear
-               the rose failure tone its badge deliberately avoids. --%>
+               "Error". --%>
             <.event_block
               :if={@run.error_message}
               icon="hero-exclamation-triangle"
@@ -761,10 +759,8 @@ defmodule EmisarWeb.RunDetailLive do
       (run.status in [:sent, :running, :cancelling, :pending] and runner_connection == :offline)
   end
 
-  # The terminal-cause block matches its status badge's tone: refused is the
-  # amber nothing-executed security block; every other message-bearing terminal
-  # status is a rose did-not-happen outcome.
-  defp error_block_tone(:refused), do: :amber
+  # Every message-bearing terminal status is a rose did-not-happen outcome,
+  # matching its status badge.
   defp error_block_tone(_status), do: :rose
 
   defp runner_label(%Emisar.Runners.Runner{name: name}) when is_binary(name) and name != "",

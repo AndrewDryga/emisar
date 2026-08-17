@@ -1599,8 +1599,6 @@ defmodule EmisarWeb.CoreComponents do
   attr :fleet_all_offline?, :boolean, default: false
   attr :no_agents?, :boolean, default: false
   attr :onboarding_incomplete?, :boolean, default: false
-  attr :flash, :map, default: %{}
-
   slot :inner_block, required: true
   slot :title, required: true
   slot :actions
@@ -2418,8 +2416,8 @@ defmodule EmisarWeb.CoreComponents do
   The coarse semantic bucket for a status string — `:pass | :pending | :deny |
   :neutral`. Used where a caller needs the OUTCOME tone without the full badge
   (e.g. the mobile card's left status spine). The detailed `status_classes`/
-  `status_dot` below carry the per-status visual specifics (the running pulse,
-  the amber "refused" security-block) that this coarse bucket flattens.
+  `status_dot` below carry the per-status visual specifics, such as the running
+  pulse, that this coarse bucket flattens.
   """
   def status_tone(status) do
     case to_string(status) do
@@ -2428,11 +2426,11 @@ defmodule EmisarWeb.CoreComponents do
         :pass
 
       s
-      when s in ~w[pending pending_approval queued waiting refused rejected expired cancelled] ->
+      when s in ~w[pending pending_approval queued waiting expired cancelled] ->
         :pending
 
       s
-      when s in ~w[failed halted error validation_failed unknown_action timed_out dispatch_failed denied retired] ->
+      when s in ~w[failed halted error validation_failed unknown_action timed_out dispatch_failed denied refused rejected retired] ->
         :deny
 
       _ ->
@@ -2453,13 +2451,13 @@ defmodule EmisarWeb.CoreComponents do
     do: {:amber, true}
 
   defp status_dot_spec("queued"), do: {:amber, false}
-  defp status_dot_spec("refused"), do: {:amber, false}
   defp status_dot_spec("offline"), do: {:amber, false}
   defp status_dot_spec("pending"), do: {:amber, false}
-  defp status_dot_spec("rejected"), do: {:amber, false}
   defp status_dot_spec("expired"), do: {:amber, false}
   defp status_dot_spec("cancelled"), do: {:amber, false}
   defp status_dot_spec("denied"), do: {:rose, false}
+  defp status_dot_spec("refused"), do: {:rose, false}
+  defp status_dot_spec("rejected"), do: {:rose, false}
   defp status_dot_spec("retired"), do: {:rose, false}
 
   defp status_dot_spec(s)
@@ -2874,15 +2872,20 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   Renders text that may carry markdown-style backtick spans — pack
   descriptions, side-effect notes — with the `` `code` `` parts as inline
-  mono instead of leaking literal backticks into the UI. Everything is
-  escaped as usual; only the presentation changes. Odd/unbalanced
-  backticks degrade to plain text for the trailing segment.
+  mono instead of leaking literal backticks into the UI. With an inner block,
+  renders one consistently-styled inline code value for console prose.
+  Everything is escaped as usual; only the presentation changes.
+  Odd/unbalanced backticks degrade to plain text for the trailing segment.
 
       <.inline_code text={@action.description} />
   """
-  attr :text, :string, required: true
+  attr :text, :string, default: nil
+  attr :surface, :atom, default: :default, values: [:default, :quiet, :diff, :prominent]
+  attr :size, :atom, default: :inherit, values: [:inherit, :compact, :xs, :sm]
+  attr :class, :string, default: nil
+  slot :inner_block
 
-  def inline_code(assigns) do
+  def inline_code(%{text: text} = assigns) when is_binary(text) do
     assigns = assign(assigns, :segments, Enum.with_index(String.split(assigns.text, "`")))
 
     ~H"""
@@ -2897,6 +2900,31 @@ defmodule EmisarWeb.CoreComponents do
     <% end %>
     """
   end
+
+  def inline_code(assigns) do
+    ~H"""
+    <code class={[inline_code_surface(@surface), inline_code_size(@size), @class]}>
+      {render_slot(@inner_block)}
+    </code>
+    """
+  end
+
+  defp inline_code_surface(:default),
+    do: "rounded bg-zinc-900 px-1 py-0.5 font-mono text-zinc-200"
+
+  defp inline_code_surface(:quiet),
+    do: "rounded bg-black/30 px-1 py-0.5 font-mono text-zinc-200"
+
+  defp inline_code_surface(:diff),
+    do: "rounded bg-zinc-800/60 px-1.5 py-0.5 font-mono text-zinc-200"
+
+  defp inline_code_surface(:prominent),
+    do: "rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-zinc-200 ring-1 ring-white/10"
+
+  defp inline_code_size(:inherit), do: nil
+  defp inline_code_size(:compact), do: "text-[11px]"
+  defp inline_code_size(:xs), do: "text-xs"
+  defp inline_code_size(:sm), do: "text-[13px]"
 
   @doc """
   One code value with its copy button — a sign-in link, a callback URI, a
@@ -4361,8 +4389,8 @@ defmodule EmisarWeb.CoreComponents do
   def event_chunk(_), do: ""
 
   @doc """
-  The ONE "reveal once" amber box for freshly-minted credentials — runner
-  keys, SIEM export tokens, SCIM bearers, MFA recovery codes. Warns the
+  The ONE "reveal once" amber box for freshly-minted credentials — SIEM
+  export tokens, SCIM bearers, MFA recovery codes. Warns the
   operator the value won't be shown again. Pass exactly one of `secret`
   (a single value with its copy button) or `codes` (a list rendered as
   per-code copy cells + "Copy all" + an optional "Download .txt" when
@@ -4372,16 +4400,15 @@ defmodule EmisarWeb.CoreComponents do
   `:actions` slot instead.
 
       <.secret_reveal
-        :if={@new_secret}
-        title="Copy this enrollment key now — it will not be shown again."
-        secret={@new_secret}
-        on_dismiss="dismiss_secret"
+        :if={@export_secret}
+        title="Copy this token now — we won't show it again"
+        secret={@export_secret}
+        on_dismiss="dismiss_export_secret"
       >
-        Treat it like a password. Anyone with this key can register a
-        runner under your account.
+        A read-only token for shipping audit events to a SIEM.
 
-        <:install_command>
-          curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY={@new_secret} bash
+        <:install_command label="Use with">
+          curl -H "Authorization: Bearer {@export_secret}" {@base_audit_url}
         </:install_command>
       </.secret_reveal>
 

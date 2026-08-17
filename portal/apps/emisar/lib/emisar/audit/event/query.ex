@@ -500,6 +500,14 @@ defmodule Emisar.Audit.Event.Query do
     |> distinct(true)
   end
 
+  @doc "Distinct non-null actor kinds present in the scoped audit query."
+  def distinct_actor_kinds(queryable \\ all()) do
+    queryable
+    |> where([events: e], not is_nil(e.actor_kind))
+    |> select([events: e], e.actor_kind)
+    |> distinct(true)
+  end
+
   @doc """
   The `%Filter{}` for the dynamic actor picker, given its loaded `{id, label}`
   options. The fun lives here (not the LiveView) so the Ecto.Query stays in the
@@ -538,6 +546,14 @@ defmodule Emisar.Audit.Event.Query do
     queryable
     |> where([events: e], e.target_kind == ^kind and not is_nil(e.target_id))
     |> select([events: e], e.target_id)
+    |> distinct(true)
+  end
+
+  @doc "Distinct non-null target kinds present in the scoped audit query."
+  def distinct_target_kinds(queryable \\ all()) do
+    queryable
+    |> where([events: e], not is_nil(e.target_kind))
+    |> select([events: e], e.target_kind)
     |> distinct(true)
   end
 
@@ -635,6 +651,30 @@ defmodule Emisar.Audit.Event.Query do
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:events, :desc, :occurred_at}, {:events, :asc, :id}]
+
+  @actor_kind_values [
+    {"user", "User"},
+    {"staff", "Emisar staff"},
+    {"api_key", "API key"},
+    {"runner", "Runner"},
+    {"runbook", "Runbook"},
+    {"scheduler", "Scheduler"},
+    {"system", "System"}
+  ]
+
+  @target_kind_values [
+    {"user", "User"},
+    {"account", "Account"},
+    {"runner", "Runner"},
+    {"api_key", "API key"},
+    {"enrollment_key", "Enrollment key"},
+    {"approval_request", "Approval"},
+    {"approval_grant", "Standing grant"},
+    {"runbook", "Runbook"},
+    {"policy", "Policy"},
+    {"pack_version", "Pack version"},
+    {"identity_provider", "Identity provider"}
+  ]
 
   @impl Emisar.Repo.Query
   def filters,
@@ -739,15 +779,8 @@ defmodule Emisar.Audit.Event.Query do
         # :row_start — begins its row so the revealed Actor value picker pairs
         # in the cell beside it (see actor_filter/1).
         span: :row_start,
-        values: [
-          {"user", "User"},
-          {"staff", "Emisar staff"},
-          {"api_key", "API key"},
-          {"runner", "Runner"},
-          {"runbook", "Runbook"},
-          {"scheduler", "Scheduler"},
-          {"system", "System"}
-        ],
+        values: @actor_kind_values,
+        valid_values: @actor_kind_values,
         fun: fn queryable, kinds -> {queryable, dynamic([events: e], e.actor_kind in ^kinds)} end
       },
       %Filter{
@@ -757,19 +790,8 @@ defmodule Emisar.Audit.Event.Query do
         # :row_start — mirrors Actor type; the revealed Subject value picker pairs
         # in the cell beside it.
         span: :row_start,
-        values: [
-          {"user", "User"},
-          {"account", "Account"},
-          {"runner", "Runner"},
-          {"api_key", "API key"},
-          {"enrollment_key", "Enrollment key"},
-          {"approval_request", "Approval"},
-          {"approval_grant", "Standing grant"},
-          {"runbook", "Runbook"},
-          {"policy", "Policy"},
-          {"pack_version", "Pack version"},
-          {"identity_provider", "Identity provider"}
-        ],
+        values: @target_kind_values,
+        valid_values: @target_kind_values,
         fun: fn queryable, kinds ->
           {queryable, dynamic([events: e], e.target_kind in ^kinds)}
         end
@@ -1107,6 +1129,26 @@ defmodule Emisar.Audit.Event.Query do
     filters
     |> Enum.map(&narrow_filter_values(&1, allowed))
     |> Enum.reject(&cannot_narrow?(&1, allowed))
+  end
+
+  @doc """
+  Narrows the Actor type and Target type presentation values to kinds that are
+  present in this account's readable rows. The full `valid_values` stay intact,
+  so a crafted URL still applies as an empty-result filter instead of being
+  dropped. A currently-applied kind keeps its control visible for clearing.
+  """
+  def present_kind_filters(filters, logged_kinds, params) do
+    Enum.flat_map(filters, fn
+      %Filter{name: name} = filter when name in @kind_filter_names ->
+        logged = logged_kinds |> Map.get(name, []) |> MapSet.new()
+        values = Enum.filter(filter.values, &MapSet.member?(logged, elem(&1, 0)))
+        filter = %{filter | values: values, valid_values: filter.valid_values || filter.values}
+
+        if length(values) >= 2 or param_present?(params, name), do: [filter], else: []
+
+      %Filter{} = filter ->
+        [filter]
+    end)
   end
 
   defp narrow_filter_values(%Filter{name: :event_type} = filter, allowed) do

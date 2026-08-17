@@ -282,22 +282,10 @@ defmodule EmisarWeb.DomainComponents do
   plan sees it's not on theirs. `tier: :team` → Team and Enterprise;
   `tier: :enterprise` → Enterprise only.
 
-  Pass `link={false}` for the compact, non-linking tag used INSIDE another anchor
-  (a docs-index card) — anchors can't nest.
-
       <p>… what the feature does. <.plan_note tier={:enterprise} /></p>
   """
   attr :tier, :atom, required: true, values: [:team, :enterprise]
-  attr :link, :boolean, default: true
   attr :class, :string, default: nil
-
-  def plan_note(%{link: false} = assigns) do
-    ~H"""
-    <span title={plan_note_title(@tier)} class={["text-xs font-medium text-amber-400/70", @class]}>
-      {plan_note_label(@tier)}
-    </span>
-    """
-  end
 
   def plan_note(assigns) do
     ~H"""

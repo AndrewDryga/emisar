@@ -2130,6 +2130,102 @@ defmodule Emisar.AuditTest do
     end
   end
 
+  describe "available_event_kinds/1" do
+    test "returns only kinds present in the subject's account" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      other = Fixtures.Accounts.create_account()
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          target_kind: "user"
+        )
+
+      {:ok, _} =
+        Audit.log(other.id, "runner.connected",
+          actor_kind: "runner",
+          target_kind: "runner"
+        )
+
+      assert {:ok, %{actor_kind: actor_kinds, target_kind: target_kinds}} =
+               Audit.available_event_kinds(subject)
+
+      assert "user" in actor_kinds
+      assert "user" in target_kinds
+      refute "runner" in actor_kinds
+      refute "runner" in target_kinds
+    end
+  end
+
+  describe "available_event_filters/3" do
+    test "narrows kind values to rows while preserving crafted-filter validation" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited",
+          actor_kind: "user",
+          target_kind: "user"
+        )
+
+      {:ok, _} =
+        Audit.log(account.id, "account.updated",
+          actor_kind: "system",
+          target_kind: "account"
+        )
+
+      assert {:ok, filters} = Audit.available_event_filters(nil, %{}, subject)
+
+      actor = Enum.find(filters, &(&1.name == :actor_kind))
+      target = Enum.find(filters, &(&1.name == :target_kind))
+
+      assert Enum.map(actor.values, &elem(&1, 0)) == ~w[user system]
+      assert Enum.map(target.values, &elem(&1, 0)) == ~w[user account]
+
+      assert {:ok, crafted} =
+               Audit.available_event_filters(nil, %{"actor_kind" => "runner"}, subject)
+
+      crafted_actor = Enum.find(crafted, &(&1.name == :actor_kind))
+      assert "runner" in Enum.map(crafted_actor.valid_values, &elem(&1, 0))
+      refute "runner" in Enum.map(crafted_actor.values, &elem(&1, 0))
+    end
+  end
+
+  describe "present_kind_filters/3" do
+    test "shows only logged kinds but keeps the complete validation vocabulary" do
+      filters = Audit.Event.Query.filters()
+
+      presented =
+        Audit.Event.Query.present_kind_filters(
+          filters,
+          %{actor_kind: ~w[user system], target_kind: ~w[account user]},
+          %{}
+        )
+
+      actor = Enum.find(presented, &(&1.name == :actor_kind))
+      target = Enum.find(presented, &(&1.name == :target_kind))
+
+      assert Enum.map(actor.values, &elem(&1, 0)) == ~w[user system]
+      assert Enum.map(target.values, &elem(&1, 0)) == ~w[user account]
+      assert "runner" in Enum.map(actor.valid_values, &elem(&1, 0))
+      assert "runner" in Enum.map(target.valid_values, &elem(&1, 0))
+    end
+
+    test "drops a kind control that cannot narrow, unless it is applied" do
+      filters = Audit.Event.Query.filters()
+      logged = %{actor_kind: ["user"], target_kind: []}
+
+      refute Enum.any?(
+               Audit.Event.Query.present_kind_filters(filters, logged, %{}),
+               &(&1.name == :actor_kind)
+             )
+
+      assert Enum.any?(
+               Audit.Event.Query.present_kind_filters(filters, logged, %{"actor_kind" => "runner"}),
+               &(&1.name == :actor_kind)
+             )
+    end
+  end
+
   describe "applicable_event_filters/3" do
     test "no Type selected drops the request-scoped facets and keeps Target type" do
       names = Enum.map(Audit.applicable_event_filters(nil, %{}, full_trail_subject()), & &1.name)

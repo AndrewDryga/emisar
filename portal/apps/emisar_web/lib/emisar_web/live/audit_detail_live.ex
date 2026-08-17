@@ -88,7 +88,6 @@ defmodule EmisarWeb.AuditDetailLive do
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
-      flash={@flash}
       section={:audit}
       width={:table}
     >
@@ -289,13 +288,13 @@ defmodule EmisarWeb.AuditDetailLive do
                 class="flex items-center gap-2"
               >
                 <span class="font-mono text-xs text-zinc-300">{tier}:</span>
-                <code class="rounded bg-zinc-800/60 px-1.5 py-0.5 text-[11px] text-zinc-200">
+                <.inline_code surface={:diff} size={:compact}>
                   {from || "—"}
-                </code>
+                </.inline_code>
                 <span class="text-zinc-500">→</span>
-                <code class="rounded bg-zinc-800/60 px-1.5 py-0.5 text-[11px] text-zinc-200">
+                <.inline_code surface={:diff} size={:compact}>
                   {to || "—"}
-                </code>
+                </.inline_code>
               </li>
             </ul>
           </div>
@@ -342,13 +341,13 @@ defmodule EmisarWeb.AuditDetailLive do
             <ul class="space-y-1 text-xs">
               <li :for={c <- @changed} class="rounded bg-amber-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{c["action"]}</code>:
-                <code class="rounded bg-zinc-800/60 px-1.5 py-0.5 text-zinc-200">
+                <.inline_code surface={:diff}>
                   {c["from"]["decision"]}
-                </code>
+                </.inline_code>
                 <span class="text-zinc-500">→</span>
-                <code class="rounded bg-zinc-800/60 px-1.5 py-0.5 text-zinc-200">
+                <.inline_code surface={:diff}>
                   {c["to"]["decision"]}
-                </code>
+                </.inline_code>
               </li>
             </ul>
           </div>

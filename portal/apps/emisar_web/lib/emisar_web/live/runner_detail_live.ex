@@ -287,7 +287,6 @@ defmodule EmisarWeb.RunnerDetailLive do
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
-      flash={@flash}
       section={:runners}
       width={:table}
     >
@@ -432,7 +431,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                 <span class="text-zinc-500">— {degraded["reason"]}</span>
               </p>
               <p>
-                Reinstall the pack on the host (<code class="rounded bg-black/30 px-1 font-mono text-xs text-zinc-200">emisar pack install &lt;name&gt;</code>) or re-run the installer; the runner
+                Reinstall the pack on the host (<.inline_code surface={:quiet} size={:xs}>emisar pack install &lt;name&gt;</.inline_code>) or re-run the installer; the runner
                 re-advertises on its next reload.
               </p>
             </div>
@@ -459,9 +458,9 @@ defmodule EmisarWeb.RunnerDetailLive do
           This runner verifies a client signature on every run and refuses unsigned ones, so
           the portal can't dispatch to it. Runs and runbooks must come from an MCP client
           configured with a signing key and certificate — mint them with
-          <code class="rounded bg-black/30 px-1 font-mono text-xs text-zinc-200">
+          <.inline_code surface={:quiet} size={:xs}>
             emisar signing init
-          </code>
+          </.inline_code>
           on the host.
         </.status_note>
 

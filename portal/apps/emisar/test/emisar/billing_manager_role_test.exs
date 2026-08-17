@@ -25,7 +25,7 @@ defmodule Emisar.BillingManagerRoleTest do
       role: "billing_manager"
     )
 
-    subject = Fixtures.Subjects.subject_for(user, account, role: :billing_manager)
+    subject = Fixtures.Subjects.subject_for(user, account)
     %{account: account, subject: subject}
   end
 
@@ -150,7 +150,7 @@ defmodule Emisar.BillingManagerRoleTest do
         role: "owner"
       )
 
-      owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      owner_subject = Fixtures.Subjects.subject_for(owner, account)
 
       assert Enum.map(Audit.event_filters(owner_subject), & &1.name) ==
                [
@@ -243,7 +243,7 @@ defmodule Emisar.BillingManagerRoleTest do
         role: "owner"
       )
 
-      %{owner_subject: Fixtures.Subjects.subject_for(owner, account, role: :owner)}
+      %{owner_subject: Fixtures.Subjects.subject_for(owner, account)}
     end
 
     test "assigning the role clears the scope the member already had", %{
@@ -335,7 +335,7 @@ defmodule Emisar.BillingManagerRoleTest do
       )
 
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
-      owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      owner_subject = Fixtures.Subjects.subject_for(owner, account)
 
       assert {:ok, %Accounts.Membership{role: :billing_manager}} =
                Accounts.update_membership_role(member, "billing_manager", owner_subject)
@@ -353,7 +353,7 @@ defmodule Emisar.BillingManagerRoleTest do
       )
 
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
-      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      admin_subject = Fixtures.Subjects.subject_for(admin, account)
 
       assert {:ok, %Accounts.Membership{role: :billing_manager}} =
                Accounts.update_membership_role(member, "billing_manager", admin_subject)

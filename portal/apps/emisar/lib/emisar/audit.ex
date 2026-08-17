@@ -87,7 +87,7 @@ defmodule Emisar.Audit do
       Multi.new()
       |> Multi.update(:policy, changeset)
       |> Multi.insert(:audit, fn %{policy: updated} ->
-        Audit.Events.policy_updated(subject, updated)
+        Audit.Events.policy_updated(subject, policy, updated)
       end)
       |> Repo.commit_multi()
 
@@ -848,11 +848,39 @@ defmodule Emisar.Audit do
   end
 
   @doc """
+  The actor and target kinds that actually occur in this subject's readable
+  audit rows. This is presentation metadata for removing dead filter choices;
+  the static filter vocabulary remains the validation boundary.
+  """
+  def available_event_kinds(%Subject{} = subject) do
+    with :ok <- ensure_can_read_audit(subject) do
+      scoped = Event.Query.all() |> Authorizer.for_subject(subject)
+
+      {:ok,
+       %{
+         actor_kind: scoped |> Event.Query.distinct_actor_kinds() |> Repo.all(),
+         target_kind: scoped |> Event.Query.distinct_target_kinds() |> Repo.all()
+       }}
+    end
+  end
+
+  @doc """
   The audit facet panel's filters with conditional facets dropped when the
   selected Type can't carry them, on top of the subject's readable narrowing.
   """
   def applicable_event_filters(type_param, params, %Subject{} = subject),
     do: Event.Query.applicable_filters(event_filters(subject), type_param, params)
+
+  @doc """
+  The applicable audit filters for the console, with actor and target kinds
+  narrowed to values present in the subject's readable rows.
+  """
+  def available_event_filters(type_param, params, %Subject{} = subject) do
+    with {:ok, kinds} <- available_event_kinds(subject) do
+      filters = applicable_event_filters(type_param, params, subject)
+      {:ok, Event.Query.present_kind_filters(filters, kinds, params)}
+    end
+  end
 
   @doc "The `%Repo.Filter{}` for the actor picker, given its loaded `{id, label}` options."
   def actor_filter(options), do: Event.Query.actor_filter(options)

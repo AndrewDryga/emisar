@@ -246,12 +246,11 @@ defmodule Emisar.Repo do
 
       Multi.new()
       |> Multi.update(:policy, Policy.Changeset.update(policy, attrs))
-      |> Multi.insert(:audit, fn %{policy: p} ->
-        Audit.changeset(p.account_id, "policy.updated",
-          actor_id: subject.actor.id, target_id: p.id, payload: %{...})
+      |> Multi.insert(:audit, fn %{policy: updated} ->
+        Audit.Events.policy_updated(subject, policy, updated)
       end)
-      |> Repo.commit_multi(after_commit: fn %{policy: p} ->
-        broadcast_policy_change(p)
+      |> Repo.commit_multi(after_commit: fn %{policy: updated} ->
+        broadcast_policy_change(updated)
       end)
 
   Options:

@@ -881,7 +881,6 @@ defmodule EmisarWeb.AgentsLive do
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
-      flash={@flash}
       section={:agents}
       width={:table}
     >
@@ -1581,9 +1580,9 @@ defmodule EmisarWeb.AgentsLive do
                   <%= if config_target_is_file?(@config) do %>
                     <p class="text-sm text-zinc-400">
                       Open
-                      <code class="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[13px] text-zinc-200 ring-1 ring-white/10">
+                      <.inline_code surface={:prominent} size={:sm}>
                         {@config.location}
-                      </code>
+                      </.inline_code>
                       and add:
                     </p>
                   <% else %>

@@ -46,7 +46,8 @@ defmodule EmisarWeb.AuditLive do
   # IL-18: the dead render shows `<.loading_state />` for the trail, so the
   # events page, its count, and the reference batch were paid twice per first
   # paint. The filter bar IS part of that first paint (a deep-linked facet must
-  # render its labels), so its state still resolves on both passes.
+  # render its labels), so its static state still resolves on both passes; the
+  # data-backed kind options wait for the connected pass.
   def handle_params(params, _uri, socket) do
     if connected?(socket) do
       {:noreply, load(socket, params)}
@@ -293,7 +294,15 @@ defmodule EmisarWeb.AuditLive do
     # when the selected Type can't carry them (or none is set), so the filter
     # panel shows only filters that can actually narrow the log. The subject
     # narrows it first: a facet whose every option is unreadable is not offered.
-    base_filters = Audit.applicable_event_filters(params["event_type"], params, subject)
+    base_filters =
+      if connected?(socket) do
+        case Audit.available_event_filters(params["event_type"], params, subject) do
+          {:ok, filters} -> filters
+          {:error, _reason} -> []
+        end
+      else
+        Audit.applicable_event_filters(params["event_type"], params, subject)
+      end
 
     # Render each dynamic picker right after its kind filter (the dependent
     # control belongs next to its trigger), not tacked on at the end.
@@ -342,7 +351,6 @@ defmodule EmisarWeb.AuditLive do
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
-      flash={@flash}
       section={:audit}
       width={:table}
     >

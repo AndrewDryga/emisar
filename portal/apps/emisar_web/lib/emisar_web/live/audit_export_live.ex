@@ -148,7 +148,6 @@ defmodule EmisarWeb.AuditExportLive do
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
-      flash={@flash}
       section={:audit}
       width={:table}
     >
@@ -186,7 +185,7 @@ defmodule EmisarWeb.AuditExportLive do
         </.section_header>
 
         <%!-- One-shot reveal via the shared <.secret_reveal> — the single
-             reviewed shown-once surface (same as agents + install). The raw
+             reviewed shown-once surface (same as SCIM + MFA). The raw
              secret only ever exists in the socket assigns; a refresh hides it
              for good. --%>
         <.secret_reveal

@@ -1324,7 +1324,6 @@ defmodule EmisarWeb.SSOSettingsLive do
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
-      flash={@flash}
       section={:team}
       width={:table}
     >
@@ -2669,21 +2668,22 @@ defmodule EmisarWeb.SSOSettingsLive do
               <span class="text-zinc-300">bearer token</span>
               into its <span class="text-zinc-300">API token</span>
               field (rotate above if you didn't copy it) — it's sent in the
-              <code class="rounded bg-zinc-900 px-1 py-0.5">Authorization</code>
+              <.inline_code>Authorization</.inline_code>
               header.
             </:step>
             <:step>
               Map the SCIM <span class="text-zinc-300">externalId</span>
               to the same value your OIDC
-              <code class="rounded bg-zinc-900 px-1 py-0.5">{@provider.identifier_claim}</code>
+              <.inline_code>{@provider.identifier_claim}</.inline_code>
               claim carries — so a member's SSO login and their synced record are one identity.
             </:step>
           </.steps>
           <p :if={@provider.kind == :okta} class="mt-3 pl-5 text-[11px] leading-relaxed text-zinc-400">
             The SCIM app is a second Okta integration, separate from your sign-in app — its own
             SSO doesn't need to be functional. Okta defaults both the OIDC
-            <code class="rounded bg-zinc-900 px-1 py-0.5">sub</code>
-            and the SCIM <code class="rounded bg-zinc-900 px-1 py-0.5">externalId</code>
+            <.inline_code>sub</.inline_code>
+            and the SCIM
+            <.inline_code>externalId</.inline_code>
             to the Okta user id, so step 3 usually needs no change.
           </p>
         </details>

@@ -828,10 +828,10 @@ defmodule EmisarWeb.RunDetailLiveTest do
     # The distinct terminal state + the human refusal reason both show…
     assert html =~ "refused"
     assert html =~ "refused: signature does not match the dispatched action"
-    # …titled and toned as the amber nothing-executed block, not a rose failure.
+    # …titled and toned as the same rose refusal the status badge and audit use.
     assert html =~ ">Refused<"
-    assert html =~ "bg-amber-300/40"
-    refute html =~ "bg-rose-400/40"
+    assert html =~ "bg-rose-400/40"
+    refute html =~ "bg-amber-300/40"
     # …and there's no empty terminal panel (a refused run produced no output).
     refute html =~ "Output"
   end

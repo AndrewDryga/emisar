@@ -120,7 +120,6 @@ defmodule EmisarWeb.RunbooksLive do
       current_user={@current_user}
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
-      flash={@flash}
       section={:runbooks}
       width={:table}
     >
