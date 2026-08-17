@@ -222,6 +222,33 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert all_html =~ "border-brand-500/60"
     end
 
+    test "a search miss keeps the list controls without opening onboarding", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "Present bot"}, subject)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents?name=missing")
+
+      assert html =~ "No agents match these filters."
+      assert has_element?(lv, ~s(#agents-filter input[name="name"][value="missing"]))
+      assert has_element?(lv, "a", "Clear filters")
+      refute has_element?(lv, "#connect-panel")
+      refute html =~ "No agents connected yet."
+    end
+
+    test "a revoked-result filter does not treat dead rows as an empty account", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "Revoked bot"}, subject)
+      {:ok, _key} = ApiKeys.revoke_api_key(key, subject)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents?status=revoked")
+
+      assert html =~ "Revoked bot"
+      refute has_element?(lv, "#connect-panel")
+      refute html =~ "No agents connected yet."
+    end
+
     test "selecting Claude.ai (remote MCP) shows OAuth URL instead of bridge snippet",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)

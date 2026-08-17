@@ -247,6 +247,43 @@ defmodule EmisarWeb.LiveTableTest do
       refute html =~ ~s(<ul id="things")
     end
 
+    test "a stale empty page replaces caller empty copy with a first-page escape" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <LiveTable.live_table
+          layout={:cards}
+          id="grants"
+          path="/approvals"
+          prefix="grants_"
+          rows={[]}
+          metadata={%Metadata{count: 7, previous_page_cursor: nil, next_page_cursor: nil}}
+          filter_params={
+            %{
+              "grants_after" => "stale",
+              "pending_after" => "keep",
+              "status" => "active"
+            }
+          }
+          filters={[string_filter(:status)]}
+        >
+          <:item :let={_t}>
+            <li>row</li>
+          </:item>
+          <:empty>No grants yet.</:empty>
+        </LiveTable.live_table>
+        """)
+
+      assert html =~ "This page no longer has results."
+      assert html =~ "Back to first page"
+      assert html =~ "pending_after=keep"
+      assert html =~ "status=active"
+      refute html =~ "grants_after"
+      refute html =~ "No grants yet."
+      refute html =~ ~s(name="status" disabled)
+    end
+
     test "renders one <li> per row in the cards <ul>" do
       assigns = %{rows: [%{id: 1, name: "alpha"}, %{id: 2, name: "beta"}]}
 

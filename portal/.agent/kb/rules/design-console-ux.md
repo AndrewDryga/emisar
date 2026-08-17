@@ -184,6 +184,9 @@ Every page ships the full matrix; a missing state is a bug:
   multi-section pages (a failed sidebar read gets its own error state, not `[]`).
 - **Empty:** two distinct states — *account-empty* (pitch + CTA into the setup path) vs
   *filter-empty* (quiet one-liner; the filter bar stays rendered and live).
+- **Empty page:** zero rows with a positive scoped total and an active page cursor is neither
+  of those states. Suppress the caller's empty copy and offer a first-page return that preserves
+  filters and any other list's cursor.
 - **Permission:** a gated control is hidden (or replaced by a one-line "why not" note when
   its absence would confuse); the handler re-gates regardless (IL-15). Plan-locks and
   permission-locks are different messages — don't conflate them.

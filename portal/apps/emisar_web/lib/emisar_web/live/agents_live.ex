@@ -315,7 +315,7 @@ defmodule EmisarWeb.AgentsLive do
     |> assign(:never_used_count, summary.activity.never_used)
     |> assign(:issued_count, summary.live)
     |> assign(:quick_connected?, quick_key_connected?(socket, rows))
-    |> assign_connect_inline(summary)
+    |> assign_connect_inline()
   end
 
   # The connect panel embeds INLINE only while connecting IS the page's job:
@@ -324,9 +324,16 @@ defmodule EmisarWeb.AgentsLive do
   # on screen (a quick mint / rotation reveal must not vanish when the reload
   # lands). Otherwise the flow lives on its own /connect page behind the title
   # CTA.
-  defp assign_connect_inline(socket, summary) do
+  defp assign_connect_inline(socket) do
+    # Paginator count is the FILTERED total. It proves onboarding only when
+    # the default (live agents) view itself is empty; a search miss or an
+    # explicit revoked/all view says nothing about the account's real state.
+    account_empty? =
+      socket.assigns.metadata.count == 0 and
+        not LiveTable.has_active_filters?(socket.assigns.filter_params, socket.assigns.filters)
+
     inline? =
-      summary.live == 0 or socket.assigns.selected_client != nil or
+      account_empty? or socket.assigns.selected_client != nil or
         socket.assigns.quick_secret != nil
 
     assign(socket, :show_connect_inline?, inline?)
@@ -394,7 +401,7 @@ defmodule EmisarWeb.AgentsLive do
         |> assign(:never_used_count, summary.activity.never_used)
         |> assign(:issued_count, summary.live)
         |> assign(:quick_connected?, quick_key_connected?(socket, rows))
-        |> assign_connect_inline(summary)
+        |> assign_connect_inline()
         |> assign(:load_error?, false)
 
       # A clean reload can fail too (e.g. a tightened list permission) — flag it
@@ -980,7 +987,8 @@ defmodule EmisarWeb.AgentsLive do
       </.event_block>
 
       <%!-- The empty state IS the connect flow (the runners install-wizard
-           pattern): no agents → the panel renders right here, no detour. It
+           pattern): no live agents in the unfiltered view → the panel renders
+           right here, no detour. A filtered miss never opens onboarding. It
            also pins open while a quick-mint secret is on screen, so the
            reload can't hide the only copy. --%>
       <section :if={@live_action == :index and @show_connect_inline?}>
@@ -1319,23 +1327,25 @@ defmodule EmisarWeb.AgentsLive do
               </.list_row>
             </:item>
             <:empty>
-              <.empty_state
-                :if={@load_error?}
-                tone={:danger}
-                icon="hero-exclamation-triangle"
-                title="Couldn't load your agents"
-              >
-                This is a load error, not an empty list — your connected agents may well be here.
-                Refresh the page; if it persists, your access to this account may have changed.
-              </.empty_state>
-              <.empty_state
-                :if={not @load_error?}
-                icon="hero-cpu-chip"
-                title="No agents connected yet."
-              >
-                Pick a client above. Cloud clients use OAuth; local clients get a key +
-                pre-filled snippet. The agent shows up here on its first MCP call.
-              </.empty_state>
+              <%= cond do %>
+                <% @load_error? -> %>
+                  <.empty_state
+                    tone={:danger}
+                    icon="hero-exclamation-triangle"
+                    title="Couldn't load your agents"
+                  >
+                    This is a load error, not an empty list — your connected agents may well be
+                    here. Refresh the page; if it persists, your access to this account may have
+                    changed.
+                  </.empty_state>
+                <% LiveTable.has_active_filters?(@filter_params, @filters) -> %>
+                  <span class="text-zinc-400">No agents match these filters.</span>
+                <% true -> %>
+                  <.empty_state icon="hero-cpu-chip" title="No agents connected yet.">
+                    Pick a client above. Cloud clients use OAuth; local clients get a key +
+                    pre-filled snippet. The agent shows up here on its first MCP call.
+                  </.empty_state>
+              <% end %>
             </:empty>
           </LiveTable.live_table>
         </div>

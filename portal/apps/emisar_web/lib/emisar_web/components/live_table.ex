@@ -145,16 +145,20 @@ defmodule EmisarWeb.LiveTable do
         filters={@filters}
         params={@filter_params}
         layout={@filter_layout}
-        hidden={filters_inert?(@rows, @filter_params, @filters)}
+        hidden={filters_inert?(@rows, @filter_params, @filters, @prefix)}
       />
 
       <%= if Enum.empty?(@rows) do %>
-        <%!-- Just padding around the slot: a truly-empty slot renders a
-             dashed-border `empty_state` placeholder that brings its own frame;
-             a filtered one-liner sits quietly in the padding. --%>
-        <div id={"#{@id}-empty"} class={[cards_empty_class(@wrapper_class), "text-sm text-zinc-400"]}>
+        <.empty_result
+          id={@id}
+          path={@path}
+          metadata={@metadata}
+          filter_params={@filter_params}
+          prefix={@prefix}
+          class={[cards_empty_class(@wrapper_class), "text-sm text-zinc-400"]}
+        >
           {render_slot(@empty) || "Nothing to show."}
-        </div>
+        </.empty_result>
       <% else %>
         <ul id={@id} class={[@resolved_wrapper_class, @class]}>
           {render_slot(@list_header)}
@@ -210,17 +214,20 @@ defmodule EmisarWeb.LiveTable do
         filters={@filters}
         params={@filter_params}
         layout={@filter_layout}
-        hidden={filters_inert?(@rows, @filter_params, @filters)}
+        hidden={filters_inert?(@rows, @filter_params, @filters, @prefix)}
       />
 
       <%= if Enum.empty?(@rows) do %>
-        <%!-- No top hairline: a truly-empty slot renders a dashed-border
-             `empty_state` placeholder that brings its own frame, and a stray
-             solid rule above it reads as a broken table edge. A filtered
-             one-liner just sits in the padding. --%>
-        <div id={"#{@id}-empty"} class="py-1 text-sm text-zinc-400">
+        <.empty_result
+          id={@id}
+          path={@path}
+          metadata={@metadata}
+          filter_params={@filter_params}
+          prefix={@prefix}
+          class="py-1 text-sm text-zinc-400"
+        >
           {render_slot(@empty) || "Nothing to show."}
-        </div>
+        </.empty_result>
       <% else %>
         <%!-- The dense table sits DIRECTLY on the canvas — terminal-calm, no
              frame. Readability comes from structure, not a box: a quiet
@@ -756,10 +763,39 @@ defmodule EmisarWeb.LiveTable do
   # Filters are inert (rendered disabled) only when there's genuinely nothing to
   # filter — no rows AND no active filter. An empty result that IS filtered keeps
   # its controls live so the operator can clear back to the full set.
-  defp filters_inert?(rows, params, filters),
-    do: Enum.empty?(rows) and not has_active_filters?(params, filters)
+  defp filters_inert?(rows, params, filters, prefix) do
+    Enum.empty?(rows) and not has_active_filters?(params, filters) and
+      not has_page_cursor?(params, prefix)
+  end
 
   # -- Paginator ------------------------------------------------------
+
+  attr :id, :string, required: true
+  attr :path, :any, required: true
+  attr :metadata, :any, required: true
+  attr :filter_params, :map, required: true
+  attr :prefix, :string, required: true
+  attr :class, :any, default: nil
+  slot :inner_block, required: true
+
+  defp empty_result(assigns) do
+    ~H"""
+    <%= if stale_page?(0, @metadata, @filter_params, @prefix) do %>
+      <.paginator
+        id={@id}
+        path={@path}
+        metadata={@metadata}
+        filter_params={@filter_params}
+        prefix={@prefix}
+        page_count={0}
+      />
+    <% else %>
+      <%!-- No top hairline: a true-empty slot may bring its own framed
+           `empty_state`, while a filtered one-liner stays quiet in the padding. --%>
+      <div id={"#{@id}-empty"} class={@class}>{render_slot(@inner_block)}</div>
+    <% end %>
+    """
+  end
 
   @doc """
   Standalone cursor pagination control. Use this when a LiveView
@@ -782,6 +818,13 @@ defmodule EmisarWeb.LiveTable do
     doc: "rows on THIS page — renders the count as \"50 / 608 total\""
 
   def paginator(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :stale_page?,
+        stale_page?(assigns.page_count, assigns.metadata, assigns.filter_params, assigns.prefix)
+      )
+
     ~H"""
     <nav
       :if={
@@ -797,21 +840,32 @@ defmodule EmisarWeb.LiveTable do
            would read as exact. A one-character marker is unreadable without that
            explanation, so it goes where touch and keyboard can reach it. --%>
       <div>
-        <%= if @metadata.count != nil do %>
-          <span class="tabular-nums">
-            <span :if={@page_count}>{@page_count} / </span><CoreComponents.tooltip
-              :if={@metadata.count_kind == :estimated}
-              id={"#{@id}-count-estimate"}
-              align={:left}
-              text="Approximate — counting every event on each load gets slower as the trail grows. Filter the list for an exact total."
-            >~</CoreComponents.tooltip>{@metadata.count}
-          </span>
-          total
+        <%= if @stale_page? do %>
+          This page no longer has results.
+        <% else %>
+          <%= if @metadata.count != nil do %>
+            <span class="tabular-nums">
+              <span :if={@page_count && @page_count > 0}>{@page_count} / </span><CoreComponents.tooltip
+                :if={@metadata.count_kind == :estimated}
+                id={"#{@id}-count-estimate"}
+                align={:left}
+                text="Approximate — counting every event on each load gets slower as the trail grows. Filter the list for an exact total."
+              >~</CoreComponents.tooltip>{@metadata.count}
+            </span>
+            total
+          <% end %>
         <% end %>
       </div>
       <%!-- Count hugs the list's LEFT rail, Prev/Next its RIGHT — the pager
            lines up with the columns above it. --%>
       <div class="flex gap-2">
+        <.link
+          :if={@stale_page?}
+          patch={page_link(@path, @filter_params, @prefix, [])}
+          class="inline-flex min-h-10 items-center rounded-lg border border-zinc-800 px-3 hover:bg-white/[0.04]"
+        >
+          Back to first page
+        </.link>
         <.link
           :if={@metadata.previous_page_cursor}
           patch={page_link(@path, @filter_params, @prefix, before: @metadata.previous_page_cursor)}
@@ -830,6 +884,32 @@ defmodule EmisarWeb.LiveTable do
     </nav>
     """
   end
+
+  @doc """
+  True when a valid cursor now lands past the end of a non-empty result set.
+
+  The total comes from the same scoped, filtered query as the page. Callers
+  with custom empty-state markup can use this to avoid describing a stale page
+  as an empty account.
+  """
+  def stale_page?(page_count, metadata, params, prefix \\ "")
+
+  def stale_page?(0, %{count: count}, params, prefix)
+      when is_integer(count) and count > 0,
+      do: has_page_cursor?(params, prefix)
+
+  def stale_page?(_page_count, _metadata, _params, _prefix), do: false
+
+  defp has_page_cursor?(params, prefix) when is_map(params) do
+    Enum.any?(["before", "after"], fn direction ->
+      case params["#{prefix}#{direction}"] do
+        cursor when is_binary(cursor) -> cursor != ""
+        _other -> false
+      end
+    end)
+  end
+
+  defp has_page_cursor?(_params, _prefix), do: false
 
   defp page_link(path, params, prefix, page_params) do
     # Drop this table's prior cursor (both directions), then layer the

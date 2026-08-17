@@ -2831,7 +2831,19 @@ defmodule EmisarWeb.SSOSettingsLive do
         This is a load error, not an empty list — mapped groups may well be granting roles.
         Refresh the page to try again.
       </.empty_state>
-      <.empty_state :if={not @load_error? and @mappings == []} variant={:hint} class="mt-4">
+      <.empty_state
+        :if={
+          not @load_error? and @mappings == [] and
+            not LiveTable.stale_page?(
+              0,
+              @metadata,
+              @filter_params,
+              "role_mappings_"
+            )
+        }
+        variant={:hint}
+        class="mt-4"
+      >
         No role mappings yet. New members land at the connection's default role until you map a
         directory group to a higher one.
       </.empty_state>
@@ -3052,7 +3064,19 @@ defmodule EmisarWeb.SSOSettingsLive do
         This is a load error, not an empty list — IdP groups may well be granting extra runner
         reach. Refresh the page to try again.
       </.empty_state>
-      <.empty_state :if={not @load_error? and @mappings == []} variant={:hint} class="mt-4">
+      <.empty_state
+        :if={
+          not @load_error? and @mappings == [] and
+            not LiveTable.stale_page?(
+              0,
+              @metadata,
+              @filter_params,
+              "runner_access_mappings_"
+            )
+        }
+        variant={:hint}
+        class="mt-4"
+      >
         No IdP groups grant additional runner access. Synced members use the connection default.
       </.empty_state>
 

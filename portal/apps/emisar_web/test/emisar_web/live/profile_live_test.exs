@@ -472,6 +472,19 @@ defmodule EmisarWeb.ProfileLiveTest do
       html = lv |> element("#active-sessions-pager a", "Next") |> render_click()
       assert rendered_session_rows(lv) == 1
       assert html =~ "Prev"
+
+      subject = Fixtures.Subjects.subject_for(user, account)
+      {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
+      oldest_session = List.last(sessions)
+
+      html = render_hook(lv, "revoke_session", %{"id" => oldest_session.id})
+
+      assert rendered_session_rows(lv) == 0
+      assert html =~ "This page no longer has results."
+      assert has_element?(lv, "#active-sessions-pager a", "Back to first page")
+
+      lv |> element("#active-sessions-pager a", "Back to first page") |> render_click()
+      assert rendered_session_rows(lv) == 15
     end
 
     test "renders and revokes same-device sessions independently", %{

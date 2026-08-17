@@ -1321,7 +1321,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert {:ok, [], _meta} = SSO.list_group_mappings(provider, owner)
     end
 
-    test "role and runner-access mapping lists page independently past 20 rows", %{
+    test "role and runner-access mapping lists page independently and recover stale pages", %{
       conn: conn,
       account: account,
       provider: provider,
@@ -1385,6 +1385,47 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       html = render(lv)
       assert html =~ "Role group 21"
       assert html =~ "Access group 21"
+
+      {:ok, role_mappings, _meta} =
+        SSO.list_group_mappings(provider, owner, page: [limit: 100])
+
+      role_21 = Enum.find(role_mappings, &(&1.external_group_id == "role-group-21"))
+      html = render_click(lv, "delete_mapping", %{"id" => role_21.id})
+
+      assert has_element?(
+               lv,
+               "#role-mappings-#{provider.id}-pager a",
+               "Back to first page"
+             )
+
+      refute html =~ "No role mappings yet."
+      assert html =~ "Access group 21"
+
+      _html =
+        lv
+        |> element("#role-mappings-#{provider.id}-pager a", "Back to first page")
+        |> render_click()
+
+      html = render(lv)
+      assert html =~ "Role group 01"
+      assert html =~ "Access group 21"
+
+      {:ok, runner_mappings, _meta} =
+        SSO.list_group_runner_access_mappings(provider, owner, page: [limit: 100])
+
+      runner_21 =
+        Enum.find(runner_mappings, &(&1.external_group_id == "access-group-21"))
+
+      html = render_click(lv, "delete_runner_access_mapping", %{"id" => runner_21.id})
+
+      assert has_element?(
+               lv,
+               "#runner-access-mappings-#{provider.id}-pager a",
+               "Back to first page"
+             )
+
+      refute html =~ "No IdP groups grant additional runner access."
+      assert html =~ "Role group 01"
     end
 
     test "edits a mapping's display + role through the inline edit form", %{
