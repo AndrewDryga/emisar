@@ -730,6 +730,12 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     `EmisarWeb.Components.GatedSettingTest`**: a source-text check on the permission-sentence
     strings was considered and rejected — the billing plan grid renders exactly that shape
     correctly, so the check would fire on correct code.
+60. **One concept keeps one icon across navigation and secondary surfaces.** Reuse the
+    owning menu item's glyph anywhere the same concept appears as compact metadata:
+    LLM agents and MCP origin use `hero-sparkles`; `hero-bolt` remains the Runs and
+    action/execution glyph. A tooltip explains the compact icon (§7.15), but never gives
+    a second glyph a duplicate meaning. Sweep: source badges, counters, empty states, and
+    inline metadata whose noun already has a navigation icon.
 
 
 ## 8. The kit is the contract

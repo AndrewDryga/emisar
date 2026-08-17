@@ -170,12 +170,12 @@ defmodule EmisarWeb.DomainComponents do
   @doc """
   The dispatch ORIGIN of a run — a small leading icon + the actor label on one
   truncating line. The ICON (not color) distinguishes an LLM/MCP-dispatched run
-  (a bolt — the one an operator scans for) from an operator (a person), a runbook,
-  or a schedule, so agent-origin is pre-attentive without spending the
-  emerald-means-allowed semantic on it (who dispatched is metadata, not an
-  outcome). The canonical origin shape — reuse it instead of re-pairing an icon
-  with an actor label. The caller caps the width (`max-w-*`) where the column is
-  tight; the label always stays one line.
+  (sparkles — the same glyph as the LLM agents menu item) from an operator (a
+  person), a runbook, or a schedule, so agent-origin is pre-attentive without
+  spending the emerald-means-allowed semantic on it (who dispatched is metadata,
+  not an outcome). The canonical origin shape — reuse it instead of re-pairing an
+  icon with an actor label. The caller caps the width (`max-w-*`) where the column
+  is tight; the label always stays one line.
 
       <.source_badge
         id={"run-source-\#{run.id}"}
@@ -213,7 +213,7 @@ defmodule EmisarWeb.DomainComponents do
     """
   end
 
-  defp source_icon(:mcp), do: "hero-bolt"
+  defp source_icon(:mcp), do: "hero-sparkles"
 
   defp source_icon(:runbook), do: "hero-book-open"
 
