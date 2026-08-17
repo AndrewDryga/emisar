@@ -496,6 +496,59 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ "unrelated-actor"
     end
 
+    # The actor pivot's id is read straight from the URL and `ensure`d into the
+    # picker's options, so it is the crafted route into the fleet: without the
+    # narrowing on label resolution, any runner uuid rendered that host's NAME
+    # with no event needing to exist.
+    test "a crafted actor_id never names a runner outside the member's fleet", %{conn: conn} do
+      {_conn, owner_user, account} = register_and_log_in(conn)
+      owner_subject = owner_subject(owner_user, account)
+
+      in_fleet =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "db-1",
+          group: "db",
+          connected?: false
+        )
+
+      out_of_fleet =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "edge-1",
+          group: "edge",
+          connected?: false
+        )
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      {:ok, restricted} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
+
+      {:ok, _updated} =
+        Emisar.Accounts.update_membership_runner_access(membership, restricted, owner_subject)
+
+      member_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+
+      {:ok, _lv, html} =
+        live(
+          member_conn,
+          ~p"/app/#{account}/audit?#{[actor_kind: "runner", actor_id: out_of_fleet.id]}"
+        )
+
+      refute html =~ "edge-1"
+
+      # The picker still names the fleet they DO hold — this narrowed the label,
+      # it did not turn the pivot off.
+      {:ok, _lv, html} =
+        live(
+          member_conn,
+          ~p"/app/#{account}/audit?#{[actor_kind: "runner", actor_id: in_fleet.id]}"
+        )
+
+      assert html =~ "db-1"
+    end
+
     test "a crafted preset window is a no-op (whitelist), not a crash or an arbitrary bound",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)

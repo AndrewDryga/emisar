@@ -13,8 +13,12 @@ defmodule Emisar.AuthAuditTest do
   alias Emisar.Auth.SecurityAttemptWindow
   alias Emisar.Fixtures
 
+  # A PERSISTED owner, because audit reads narrow by the reader's runner access
+  # and a membership that doesn't resolve reads as `none` — which withholds the
+  # runner/group identity these assertions are about.
   defp events_of(account, event_type) do
-    subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+    subject = Fixtures.Subjects.membership_subject(membership)
 
     {:ok, events, _} =
       Audit.list_events(subject, filter: [event_type: [event_type]])

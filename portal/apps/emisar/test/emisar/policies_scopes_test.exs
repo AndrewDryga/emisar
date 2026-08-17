@@ -79,10 +79,11 @@ defmodule Emisar.PoliciesScopesTest do
     test "a runner/group scope requires a non-empty scope_value" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, %Ecto.Changeset{} = changeset} =
-               Policies.save_scoped_rules(@deny_all, :runner, "", subject)
+      assert Policies.save_scoped_rules(@deny_all, :runner, "", subject) ==
+               {:error, :runner_not_found}
 
-      assert %{scope_value: [_ | _]} = errors_on(changeset)
+      assert Policies.save_scoped_rules(@deny_all, :group, "", subject) ==
+               {:error, :group_not_found}
     end
   end
 
@@ -197,9 +198,9 @@ defmodule Emisar.PoliciesScopesTest do
 
     # a SCOPED (runner/group) ruleset WRITE is likewise account-bound, by two
     # different mechanisms. A runner scope must name a runner in the writer's
-    # OWN account, so B can't even address A's runner id. A group scope stays
-    # free-form, so B saving a colliding "prod" creates B's own row and leaves
-    # A's same-named override untouched.
+    # OWN account, so B can't even address A's runner id. A group scope is a name
+    # rather than a host and both owners are unrestricted, so B saving a colliding
+    # "prod" creates B's own row and leaves A's same-named override untouched.
     test "account B can't claim A's runner id, and its group save leaves A's override alone" do
       {_user_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
       runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)

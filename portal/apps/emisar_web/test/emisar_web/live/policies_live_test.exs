@@ -1250,29 +1250,45 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert policy.scope_value == runner.id
     end
 
-    test "save rejects a :runner scope not in the account (crafted set_target)", %{
-      conn: conn,
+    test "save rejects a runner or group scope outside the fleet (crafted set_target)", %{
       account: account,
       subject: subject
     } do
-      # A crafted set_target carrying a runner id outside the account (IL-15) must
-      # not persist an inert `(account, :runner, <foreign>)` row. Driven via
-      # render_hook (a raw event) because the real picker only offers in-account
-      # runners — which is exactly the gate a crafted event tries to skip.
-      foreign_runner_id = Ecto.UUID.generate()
+      # A crafted set_target carrying a scope the writer can't reach (IL-15) must
+      # not persist an inert `(account, <scope>)` row. Driven via render_hook (a
+      # raw event) because the real pickers only offer in-fleet runners and
+      # groups — which is exactly the gate a crafted event tries to skip. The
+      # writer is a RESTRICTED admin, because a group name is only out of reach
+      # for one: an unrestricted admin may name a group nothing is enrolled in.
+      Fixtures.Runners.create_runner(account_id: account.id, name: "db-1", group: "db")
+      Fixtures.Runners.create_runner(account_id: account.id, name: "edge-1", group: "edge")
 
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      {:ok, restricted} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
 
-      html = lv |> render_click("add_ruleset", %{})
-      [uid] = Regex.run(~r/new-\d+/, html)
+      {:ok, _updated} =
+        Emisar.Accounts.update_membership_runner_access(membership, restricted, subject)
 
-      render_hook(lv, "set_target", %{"uid" => uid, "target" => "runner:" <> foreign_runner_id})
+      admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
 
-      html = lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
+      for {target, noun} <- [
+            {"runner:" <> Ecto.UUID.generate(), "That runner"},
+            {"group:edge", "That group"}
+          ] do
+        {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/policies")
 
-      assert html =~ "in this account"
+        html = lv |> render_click("add_ruleset", %{})
+        [uid] = Regex.run(~r/new-\d+/, html)
 
-      # The crafted scope persisted nothing — no override exists.
+        render_hook(lv, "set_target", %{"uid" => uid, "target" => target})
+
+        html = lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
+
+        assert html =~ noun
+        assert html =~ "in your fleet."
+      end
+
+      # The crafted scopes persisted nothing — no override exists.
       assert {:ok, []} = Policies.list_scoped_policies(subject)
     end
 

@@ -1675,22 +1675,29 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "resolve_references/1" do
+  describe "resolve_references/2" do
     setup do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
 
-      %{account: account, user: user}
+      %{
+        account: account,
+        user: user,
+        subject: Fixtures.Subjects.subject_for(user, account, role: :owner)
+      }
     end
 
-    test "returns live labels for users, runners, and api keys", %{account: account, user: user} do
+    test "returns live labels for users, runners, and api keys", %{
+      account: account,
+      user: user,
+      subject: subject
+    } do
       # User labels scope through membership — the setup stamped the owner
       # membership the real write path would have created. Owner role so
       # Fixtures.ApiKeys.create_api_key's owner-subject can mint
@@ -1720,7 +1727,7 @@ defmodule Emisar.AuditTest do
           target_id: api_key.id
         )
 
-      refs = Audit.resolve_references([e_user, e_runner, e_key])
+      refs = Audit.resolve_references([e_user, e_runner, e_key], subject)
 
       assert refs["user"][user.id] == user.full_name
       assert refs["runner"][runner.id] == "db-prod-01"
@@ -1729,7 +1736,8 @@ defmodule Emisar.AuditTest do
 
     test "resolves the human behind an api_key actor (its owner)", %{
       account: account,
-      user: user
+      user: user,
+      subject: subject
     } do
       # The audit trail leads with WHO acted; an api_key/MCP actor resolves to
       # its creating human so a wall of generically-named keys stays legible.
@@ -1742,14 +1750,15 @@ defmodule Emisar.AuditTest do
           actor_id: api_key.id
         )
 
-      refs = Audit.resolve_references([event])
+      refs = Audit.resolve_references([event], subject)
 
       assert refs["api_key"][api_key.id] == api_key.name
       assert refs["api_key_owner"][api_key.id] == (user.full_name || user.email)
     end
 
     test "falls back to email when an actor or key owner has no nonblank name", %{
-      account: account
+      account: account,
+      subject: subject
     } do
       user = Fixtures.Users.create_user(full_name: "  ")
 
@@ -1769,7 +1778,7 @@ defmodule Emisar.AuditTest do
       {:ok, key_event} =
         Audit.log(account.id, "action.dispatched", actor_kind: "api_key", actor_id: api_key.id)
 
-      refs = Audit.resolve_references([event, key_event])
+      refs = Audit.resolve_references([event, key_event], subject)
 
       assert refs["user"][user.id] == user.email
       assert refs["api_key_owner"][api_key.id] == user.email
@@ -1779,6 +1788,11 @@ defmodule Emisar.AuditTest do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
       user_b = Fixtures.Users.create_user()
+
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account_a.id, role: "owner")
+        )
 
       _ =
         Fixtures.Memberships.create_membership(
@@ -1794,13 +1808,14 @@ defmodule Emisar.AuditTest do
       {:ok, event} =
         Audit.log(account_a.id, "action.dispatched", actor_kind: "api_key", actor_id: key_b.id)
 
-      refs = Audit.resolve_references([event])
+      refs = Audit.resolve_references([event], subject)
 
       refute Map.has_key?(refs["api_key_owner"], key_b.id)
     end
 
     test "a former member's key resolves no owner, but its own name still resolves", %{
-      account: account
+      account: account,
+      subject: subject
     } do
       departed_user = Fixtures.Users.create_user()
 
@@ -1819,7 +1834,7 @@ defmodule Emisar.AuditTest do
       {:ok, event} =
         Audit.log(account.id, "action.dispatched", actor_kind: "api_key", actor_id: api_key.id)
 
-      refs = Audit.resolve_references([event])
+      refs = Audit.resolve_references([event], subject)
 
       # No owner entry is the UI's cue to fall back to the key name.
       refute Map.has_key?(refs["api_key_owner"], api_key.id)
@@ -1830,13 +1845,18 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
       ghost_id = Ecto.UUID.generate()
 
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        )
+
       {:ok, event} =
         Audit.log(account.id, "user.gone",
           actor_kind: "user",
           actor_id: ghost_id
         )
 
-      refs = Audit.resolve_references([event])
+      refs = Audit.resolve_references([event], subject)
 
       refute Map.has_key?(refs["user"], ghost_id)
     end
@@ -1844,6 +1864,11 @@ defmodule Emisar.AuditTest do
     test "an id stamped from another account does not resolve (account-scoped)" do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
+
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account_a.id, role: "owner")
+        )
 
       # A runner + user that genuinely live in account B.
       runner_b = Fixtures.Runners.create_runner(account_id: account_b.id, name: "b-runner")
@@ -1859,7 +1884,7 @@ defmodule Emisar.AuditTest do
           target_id: runner_b.id
         )
 
-      refs = Audit.resolve_references([event])
+      refs = Audit.resolve_references([event], subject)
 
       refute Map.has_key?(refs["user"], user_b.id)
       refute Map.has_key?(refs["runner"], runner_b.id)
@@ -1867,9 +1892,9 @@ defmodule Emisar.AuditTest do
 
     test "resolves enrollment_key, action_run, approval_request, and runbook labels", %{
       account: account,
-      user: user
+      user: user,
+      subject: subject
     } do
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {_raw, enrollment_key} =
@@ -1917,7 +1942,7 @@ defmodule Emisar.AuditTest do
       {:ok, e_runbook} =
         Audit.log(account.id, "runbook.touched", target_kind: "runbook", target_id: runbook.id)
 
-      refs = Audit.resolve_references([e_enrollment_key, e_run, e_request, e_runbook])
+      refs = Audit.resolve_references([e_enrollment_key, e_run, e_request, e_runbook], subject)
 
       assert refs["enrollment_key"][enrollment_key.id] == "enroll-prod"
       assert refs["action_run"][run.id] == "linux.uptime"
@@ -1929,7 +1954,8 @@ defmodule Emisar.AuditTest do
 
     test "an approval_request for a runbook execution resolves its runbook title", %{
       account: account,
-      user: user
+      user: user,
+      subject: subject
     } do
       request =
         Fixtures.Approvals.create_execution_request(account, user, %{
@@ -1942,7 +1968,7 @@ defmodule Emisar.AuditTest do
           target_id: request.id
         )
 
-      refs = Audit.resolve_references([event])
+      refs = Audit.resolve_references([event], subject)
 
       assert refs["approval_request"][request.id] == "Rotate the edge certificates"
     end
@@ -1951,13 +1977,18 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
       ghost_id = Ecto.UUID.generate()
 
+      subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        )
+
       {:ok, event} =
         Audit.log(account.id, "approval.touched",
           target_kind: "approval_request",
           target_id: ghost_id
         )
 
-      refs = Audit.resolve_references([event])
+      refs = Audit.resolve_references([event], subject)
 
       # No entry is the trail's cue to print the raw id rather than a blank cell.
       refute Map.has_key?(refs["approval_request"], ghost_id)

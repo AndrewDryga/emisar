@@ -476,11 +476,16 @@ defmodule Emisar.Audit.Event.Query do
     do: where(queryable, [events: e], e.event_type == ^type)
 
   @doc """
-  Restricts runner, approval-request, and pack-version receipts to the same
-  runner-and-pack reach that governs their owning console records. Other target
-  kinds remain account-wide.
+  Restricts the receipts that are ABOUT one host, request, pack, or policy scope
+  to the same runner-and-pack reach that governs their owning console records.
+
+  `scope` is the caller's resolved audit scope — the member's `%RunnerAccess{}`
+  plus the runner ids and group names it reaches (both unused, and unread, when
+  the access is `all`). A policy receipt names its target in the payload rather
+  than in `target_id`, so it is judged there; every other target kind stays
+  account-wide and is narrowed, where it needs to be, by what it MENTIONS.
   """
-  def by_target_access(queryable, %Emisar.Accounts.RunnerAccess{} = access) do
+  def by_target_access(queryable, %{access: %Emisar.Accounts.RunnerAccess{} = access} = scope) do
     approval_request =
       Emisar.Approvals.Request.Query.all()
       |> Emisar.Approvals.Request.Query.by_target_access(access)
@@ -493,18 +498,38 @@ defmodule Emisar.Audit.Event.Query do
 
     runner_allowed = runner_target_allowed(access)
     pack_allowed = pack_target_allowed(access)
+    policy_allowed = policy_target_allowed(scope)
 
     allowed =
       dynamic(
         [events: e],
         is_nil(e.target_kind) or
-          e.target_kind not in ["runner", "approval_request", "pack_version"] or
+          e.target_kind not in ["runner", "approval_request", "pack_version", "policy"] or
           (e.target_kind == "runner" and ^runner_allowed) or
           (e.target_kind == "approval_request" and exists(approval_request)) or
-          (e.target_kind == "pack_version" and ^pack_allowed)
+          (e.target_kind == "pack_version" and ^pack_allowed) or
+          (e.target_kind == "policy" and ^policy_allowed)
       )
 
     where(queryable, ^allowed)
+  end
+
+  # A ruleset receipt spells out what may run on the runner or group named in
+  # `scope_value`, so it belongs to whoever reaches that scope. The account
+  # default governs nothing host-specific and stays readable; a receipt whose
+  # scope the payload does not state is withheld rather than assumed harmless.
+  defp policy_target_allowed(%{access: %Emisar.Accounts.RunnerAccess{mode: :all}}),
+    do: dynamic([events: _event], true)
+
+  defp policy_target_allowed(%{runner_ids: runner_ids, groups: groups}) do
+    dynamic(
+      [events: e],
+      fragment("?->>'scope_type'", e.payload) == "account" or
+        (fragment("?->>'scope_type'", e.payload) == "runner" and
+           fragment("?->>'scope_value'", e.payload) in ^runner_ids) or
+        (fragment("?->>'scope_type'", e.payload) == "group" and
+           fragment("?->>'scope_value'", e.payload) in ^groups)
+    )
   end
 
   defp runner_target_allowed(%Emisar.Accounts.RunnerAccess{mode: :none}),

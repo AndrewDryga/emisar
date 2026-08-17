@@ -463,9 +463,14 @@ defmodule Emisar.Policies do
   defp approval_snapshot(_decision, _policy), do: nil
 
   @doc """
-  The account's runner/group policy overrides (every non-account scope),
-  newest scope grouping first. The account default is read via
-  `fetch_policy/1`; this is the list the editor shows beneath it.
+  The runner/group policy overrides (every non-account scope) whose target the
+  subject can actually reach, newest scope grouping first. The account default is
+  read via `fetch_policy/1`; this is the list the editor shows beneath it.
+
+  A ruleset NAMES its target in `scope_value` and spells out what may run there,
+  so a member restricted away from a runner or group never sees its ruleset: an
+  unrestricted member gets every override, a restricted one gets those scoped to
+  a runner in their fleet or a group they hold, and a `none` member gets nothing.
   """
   def list_scoped_policies(%Subject{} = subject) do
     with :ok <-
@@ -474,6 +479,7 @@ defmodule Emisar.Policies do
         Policy.Query.not_deleted()
         |> Policy.Query.scoped_overrides()
         |> Policy.Query.ordered_by_scope()
+        |> scope_to_runner_access(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -481,10 +487,28 @@ defmodule Emisar.Policies do
     end
   end
 
+  # Per-member runner access is the third gate: `Authorizer.for_subject/2` scopes
+  # to the account, this scopes to the hosts within it. `all` needs no narrowing
+  # and must not pay for a fleet read; every other mode resolves the exact scope
+  # values the member may name.
+  defp scope_to_runner_access(queryable, %Subject{} = subject) do
+    case Accounts.runner_access_for_subject(subject) do
+      %Accounts.RunnerAccess{mode: :all} ->
+        queryable
+
+      access ->
+        {runner_ids, groups} = Runners.reachable_scope_values(subject.account.id, access)
+        Policy.Query.by_scope_reach(queryable, runner_ids, groups)
+    end
+  end
+
   @doc """
   Soft-delete a runner/group override: that runner/group falls back to the
   next-broader scope (group, then the account default) on the next dispatch.
-  The account default itself isn't deletable through this path.
+  The account default itself isn't deletable through this path. Removing a
+  ruleset changes what may run on its hosts, so the scope is re-judged against
+  the subject's CURRENT runner access — an open page whose access has since
+  narrowed cannot spend the row it still holds.
   """
   def delete_scoped_policy(%Policy{scope_type: scope_type} = policy, %Subject{} = subject)
       when scope_type in [:runner, :group] do
@@ -493,7 +517,8 @@ defmodule Emisar.Policies do
              subject,
              Authorizer.manage_policies_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, policy.account_id) do
+         :ok <- Subject.ensure_in_account(subject, policy.account_id),
+         :ok <- ensure_scope_in_reach(scope_type, policy.scope_value, subject) do
       Multi.new()
       |> Multi.run(:active_account, fn repo, _changes ->
         Accounts.fetch_and_lock_account(policy.account_id, repo: repo)
@@ -525,9 +550,14 @@ defmodule Emisar.Policies do
   `(account, scope)` — first save or edit, one live row per scope. The
   runner_id / group name in `scope_value` is the override's identity;
   dispatch resolution picks it over the account default for that runner/group.
-  A `:runner` scope must resolve to a runner in the subject's account —
-  `{:error, :runner_not_found}` for a foreign, deleted, or malformed id. A
-  `:group` scope stays free-form so an override can pre-date its runners.
+
+  The scope must be one the subject's own runner access reaches:
+  `{:error, :runner_not_found}` for a runner that is foreign, deleted, malformed,
+  or outside their fleet. A `:group` scope is a name rather than a host, so an
+  UNRESTRICTED subject may name any group — including one nothing is enrolled in
+  yet, so a ruleset can be prepared before the hosts join it — while a narrowed
+  subject gets `{:error, :group_not_found}` for any group outside their reach,
+  known or not.
   """
   def save_scoped_rules(rules, scope_type, scope_value, %Subject{} = subject)
       when scope_type in [:runner, :group],
@@ -543,7 +573,8 @@ defmodule Emisar.Policies do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_policies_permission()
-           ) do
+           ),
+         :ok <- ensure_scope_in_reach(scope_type, scope_value, subject) do
       changeset =
         Policy.Changeset.create(%{
           account_id: account_id,
@@ -556,9 +587,6 @@ defmodule Emisar.Policies do
       Multi.new()
       |> Multi.run(:active_account, fn repo, _changes ->
         Accounts.fetch_and_lock_account(account_id, repo: repo)
-      end)
-      |> Multi.run(:runner_scope, fn repo, _changes ->
-        ensure_runner_scope(scope_type, scope_value, account_id, repo)
       end)
       |> Multi.run(:before, fn repo, _changes ->
         {:ok, peek_scoped_policy(repo, account_id, scope_type, scope_value)}
@@ -656,19 +684,38 @@ defmodule Emisar.Policies do
     |> repo.peek()
   end
 
-  # A caller bypassing the editor UI (IL-15 — never trust the rendered form)
-  # can hand a foreign or garbage runner id; reject it inside the transaction
-  # so the account can't accumulate inert `(account, :runner, <foreign>)` rows.
-  defp ensure_runner_scope(:runner, runner_id, account_id, repo)
-       when is_binary(runner_id) and runner_id != "" do
-    if Runners.runner_in_account?(runner_id, account_id, repo: repo),
-      do: {:ok, runner_id},
-      else: {:error, :runner_not_found}
+  # A ruleset's scope names the hosts it governs, so a writer may only name one
+  # their OWN runner access reaches — the editor's picker is not the check
+  # (IL-15), and a crafted event carries whatever it likes. The account default
+  # has no host scope to judge.
+  defp ensure_scope_in_reach(:account, _scope_value, %Subject{}), do: :ok
+
+  defp ensure_scope_in_reach(:runner, runner_id, %Subject{} = subject) do
+    access = Accounts.runner_access_for_subject(subject)
+    {runner_ids, _groups} = Runners.reachable_scope_values(subject.account.id, access)
+    if runner_id in runner_ids, do: :ok, else: {:error, :runner_not_found}
   end
 
-  # A blank/non-string `:runner` value falls through to the changeset's
-  # scope_value validation at the insert step; :account/:group are free-form.
-  defp ensure_runner_scope(_scope_type, scope_value, _account_id, _repo), do: {:ok, scope_value}
+  # A group is a NAME, not a host, and an UNRESTRICTED writer can already see
+  # every group there is — so naming one nothing is enrolled in yet leaks nothing
+  # and stays legal: a setup flow writes the ruleset, then enrolls the hosts into
+  # it. A narrowed writer has to hold the group, and there reach is the check
+  # rather than mere existence — replying "no such group" for one they cannot see
+  # would turn the save into a group-name oracle, so unknown and out-of-reach
+  # give them one answer. The empty name is nobody's group either way.
+  defp ensure_scope_in_reach(:group, group, %Subject{} = subject)
+       when is_binary(group) and group != "" do
+    case Accounts.runner_access_for_subject(subject) do
+      %Accounts.RunnerAccess{mode: :all} ->
+        :ok
+
+      access ->
+        {_runner_ids, groups} = Runners.reachable_scope_values(subject.account.id, access)
+        if group in groups, do: :ok, else: {:error, :group_not_found}
+    end
+  end
+
+  defp ensure_scope_in_reach(:group, _group, %Subject{}), do: {:error, :group_not_found}
 
   # -- Evaluation -----------------------------------------------------
 

@@ -334,6 +334,31 @@ defmodule Emisar.Runners do
   end
 
   @doc """
+  Internal — the scope values `access` reaches in `account_id`, as
+  `{runner_ids, groups}`: the non-deleted runners the grant selects, and the
+  group names those runners declare plus the groups the grant names outright (a
+  granted group with no runner enrolled yet is still a name the member holds).
+
+  ONE definition of "which runner and group names may this member name", so a
+  scope-keyed read and the write that creates it cannot disagree. The caller has
+  already authorized — `access` IS the narrowing — so this takes an explicit
+  account id rather than a `%Subject{}`.
+  """
+  def reachable_scope_values(account_id, %Accounts.RunnerAccess{} = access)
+      when is_binary(account_id) do
+    facts =
+      Runner.Query.not_deleted()
+      |> Runner.Query.by_account_id(account_id)
+      |> scope_to_runner_access(access)
+      |> Runner.Query.select_scope_facts()
+      |> Repo.all()
+
+    groups = facts |> Enum.map(& &1.group) |> Enum.concat(access.groups) |> Enum.uniq()
+
+    {Enum.map(facts, & &1.id), groups}
+  end
+
+  @doc """
   Internal — the `group:` / `runner:` refs in `refs` that fall OUTSIDE the
   subject's own runner access, in the order given.
 

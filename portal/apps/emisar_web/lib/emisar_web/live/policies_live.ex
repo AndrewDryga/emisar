@@ -284,9 +284,9 @@ defmodule EmisarWeb.PoliciesLive do
   defp save_editor(socket, %{scope_type: :account} = editor),
     do: persist(socket, editor, &Policies.save_rules/2)
 
-  # Runner-scope ownership is the context's call: `Policies.save_scoped_rules/4`
-  # rejects a foreign/garbage runner id inside its transaction (a crafted
-  # `set_target` event can carry one — IL-15); `persist_rules` maps the denial.
+  # Scope ownership is the context's call: `Policies.save_scoped_rules/4` rejects
+  # a runner or group outside the subject's own fleet (a crafted `set_target`
+  # event can carry either — IL-15); `persist_rules` maps the denial.
   defp save_editor(socket, %{scope_type: scope_type, scope_value: value} = editor)
        when scope_type in [:runner, :group] and is_binary(value) and value != "" do
     persist(socket, editor, fn rules, subject ->
@@ -327,7 +327,10 @@ defmodule EmisarWeb.PoliciesLive do
          end)}
 
       {:error, :runner_not_found} ->
-        {:noreply, put_flash(socket, :error, "That runner isn't in this account.")}
+        {:noreply, put_flash(socket, :error, "That runner isn't in your fleet.")}
+
+      {:error, :group_not_found} ->
+        {:noreply, put_flash(socket, :error, "That group isn't in your fleet.")}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Could not save policy.")}

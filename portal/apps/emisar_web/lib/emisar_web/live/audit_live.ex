@@ -1,7 +1,7 @@
 defmodule EmisarWeb.AuditLive do
   @moduledoc """
   Append-only audit log list. Actor + target columns resolve their
-  display labels in a single batched pass (`Audit.resolve_references/1`)
+  display labels in a single batched pass (`Audit.resolve_references/2`)
   and render as links into the relevant detail page when one exists.
   Click a row to drill into the full event (payload, IP, user agent,
   request id) at `/app/audit/:id`.
@@ -261,7 +261,7 @@ defmodule EmisarWeb.AuditLive do
         socket
         |> assign(:events, events)
         |> assign(:metadata, meta)
-        |> assign(:refs, Audit.resolve_references(events))
+        |> assign(:refs, Audit.resolve_references(events, socket.assigns.current_subject))
         |> assign(:load_error?, false)
 
       # A clean reload can fail too (e.g. a tightened list permission) — flag it

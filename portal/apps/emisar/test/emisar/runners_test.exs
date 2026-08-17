@@ -461,6 +461,55 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "reachable_scope_values/2" do
+    test "an unrestricted grant reaches the whole fleet and every group it declares" do
+      {account, _user, _subject} = account_with_owner_subject()
+      db = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+
+      {runner_ids, groups} = Runners.reachable_scope_values(account.id, RunnerAccess.all())
+
+      assert Enum.sort(runner_ids) == Enum.sort([db.id, web.id])
+      assert Enum.sort(groups) == ["database", "web"]
+    end
+
+    test "a restricted grant reaches its own runners, its groups' runners, and both names" do
+      {account, _user, _subject} = account_with_owner_subject()
+      db = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      named = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
+      Fixtures.Runners.create_runner(account_id: account.id, group: "edge")
+
+      {:ok, access} = RunnerAccess.restricted(["database", "staging"], [named.id])
+      {runner_ids, groups} = Runners.reachable_scope_values(account.id, access)
+
+      # A runner named outright brings its own group's name into reach; a
+      # granted group with nothing enrolled yet is still a name they hold.
+      assert Enum.sort(runner_ids) == Enum.sort([db.id, named.id])
+      assert Enum.sort(groups) == ["database", "staging", "web"]
+    end
+
+    test "no runner access reaches nothing, and a deleted runner is out of reach" do
+      {account, _user, subject} = account_with_owner_subject()
+      db = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+
+      assert Runners.reachable_scope_values(account.id, RunnerAccess.none()) == {[], []}
+
+      {:ok, _deleted} = Runners.delete_runner(db, subject)
+
+      assert Runners.reachable_scope_values(account.id, RunnerAccess.all()) == {[], []}
+    end
+
+    test "cross-account: another account's fleet is never in reach" do
+      {account, _user, _subject} = account_with_owner_subject()
+      {other_account, _other_user, _other_subject} = account_with_owner_subject()
+      Fixtures.Runners.create_runner(account_id: other_account.id, group: "database")
+
+      {:ok, access} = RunnerAccess.restricted(["database"], [])
+
+      assert Runners.reachable_scope_values(account.id, access) == {[], ["database"]}
+    end
+  end
+
   describe "refs_outside_runner_access/2" do
     test "an unrestricted member excludes nothing, not even an unenrolled runner" do
       {account, _user, subject} = account_with_owner_subject()

@@ -2,7 +2,7 @@ defmodule Emisar.RunnerAccessTest do
   use Emisar.DataCase, async: true
   alias Emisar.Accounts
   alias Emisar.Accounts.RunnerAccess
-  alias Emisar.{Audit, Catalog, Fixtures, Repo, Runners, Runs}
+  alias Emisar.{Audit, Catalog, Fixtures, Policies, Repo, Runners, Runs}
 
   describe "RunnerAccess" do
     test "normalizes restricted access and rejects ambiguous shapes" do
@@ -1146,6 +1146,159 @@ defmodule Emisar.RunnerAccessTest do
       refute postgres_event.id in Enum.map(events, & &1.id)
       assert Audit.fetch_event_by_id(postgres_event.id, member_subject) == {:error, :not_found}
     end
+
+    test "ruleset receipts follow the scope they govern", %{
+      owner_subject: owner_subject,
+      member: member,
+      member_subject: member_subject,
+      db: db,
+      edge: edge
+    } do
+      {:ok, _db_policy} =
+        Policies.save_scoped_rules(Policies.default_rules(), :runner, db.id, owner_subject)
+
+      {:ok, _edge_policy} =
+        Policies.save_scoped_rules(Policies.default_rules(), :group, edge.group, owner_subject)
+
+      {:ok, restricted} = RunnerAccess.restricted(["db"], [])
+
+      {:ok, _membership} =
+        Accounts.update_membership_runner_access(member, restricted, owner_subject)
+
+      assert {:ok, events, _metadata} = Audit.list_events(member_subject)
+      assert policy_scope_values(events) == [db.id]
+
+      # A receipt spells out what may run on its scope, so the out-of-scope one
+      # is not readable by id either — and its label can't name the group.
+      {:ok, owner_events, _metadata} = Audit.list_events(owner_subject)
+      edge_event = Enum.find(owner_events, &(&1.payload["scope_value"] == "edge"))
+
+      assert Audit.fetch_event_by_id(edge_event.id, member_subject) == {:error, :not_found}
+
+      # The picker labels a ruleset by its scope, so it offers the one they
+      # reach and never spells out the group behind the other.
+      assert {:ok, [{_policy_id, label}]} =
+               Audit.list_target_options("policy", member_subject)
+
+      assert label == "Runner policy · #{db.id}"
+    end
+
+    test "a member with no runner access reads no ruleset receipts", %{
+      owner_subject: owner_subject,
+      member: member,
+      member_subject: member_subject,
+      db: db
+    } do
+      {:ok, _policy} =
+        Policies.save_scoped_rules(Policies.default_rules(), :runner, db.id, owner_subject)
+
+      {:ok, _membership} =
+        Accounts.update_membership_runner_access(member, RunnerAccess.none(), owner_subject)
+
+      assert {:ok, events, _metadata} = Audit.list_events(member_subject)
+      assert policy_scope_values(events) == []
+    end
+
+    test "cross-account: a shared group name leaks no other account's ruleset receipt", %{
+      owner_subject: owner_subject,
+      member: member,
+      member_subject: member_subject
+    } do
+      {other_account, _other_owner, other_owner_subject} = account_with_owner()
+      Fixtures.Runners.create_runner(account_id: other_account.id, name: "db-9", group: "db")
+
+      {:ok, _policy} =
+        Policies.save_scoped_rules(Policies.default_rules(), :group, "db", other_owner_subject)
+
+      {:ok, restricted} = RunnerAccess.restricted(["db"], [])
+
+      {:ok, _membership} =
+        Accounts.update_membership_runner_access(member, restricted, owner_subject)
+
+      assert {:ok, events, _metadata} = Audit.list_events(member_subject)
+      assert policy_scope_values(events) == []
+    end
+
+    test "a retention sweep's runner names are withheld from a restricted member", %{
+      account: account,
+      owner_subject: owner_subject,
+      member: member,
+      member_subject: member_subject,
+      db: db,
+      edge: edge
+    } do
+      Repo.insert!(Audit.Events.runner_retention_swept(account.id, [db, edge], 720))
+
+      {:ok, restricted} = RunnerAccess.restricted(["db"], [])
+
+      {:ok, _membership} =
+        Accounts.update_membership_runner_access(member, restricted, owner_subject)
+
+      {:ok, owner_events, _metadata} = Audit.list_events(owner_subject)
+      assert fleet_sweep(owner_events).payload["runners"] == ["db-1", "edge-1"]
+
+      assert {:ok, events, _metadata} = Audit.list_events(member_subject)
+      sweep = fleet_sweep(events)
+
+      # The sweep DELETED the rows it names, so their group is unknowable at read
+      # time: the size of the sweep stays, the host names go.
+      refute Map.has_key?(sweep.payload, "runners")
+      assert sweep.payload["count"] == 2
+    end
+
+    test "a grant receipt names only the groups its reader reaches", %{
+      account: account,
+      owner_subject: owner_subject,
+      member: member,
+      member_subject: member_subject
+    } do
+      other_member = create_member(account, "operator")
+      {:ok, db_only} = RunnerAccess.restricted(["db"], [])
+      {:ok, edge_only} = RunnerAccess.restricted(["edge"], [])
+
+      {:ok, _membership} =
+        Accounts.update_membership_runner_access(member, db_only, owner_subject)
+
+      {:ok, _other_membership} =
+        Accounts.update_membership_runner_access(other_member, edge_only, owner_subject)
+
+      assert {:ok, events, _metadata} = Audit.list_events(member_subject)
+
+      granted_groups =
+        Map.new(
+          for %{event_type: "membership.runner_access_changed"} = event <- events,
+              do: {event.target_id, event.payload["after"]["groups"]}
+        )
+
+      # Their own grant survives whole; somebody else's stops naming the fleet.
+      assert granted_groups[member.user_id] == ["db"]
+      assert granted_groups[other_member.user_id] == []
+    end
+
+    test "the actor picker's ensure id cannot name a runner outside the fleet", %{
+      owner_subject: owner_subject,
+      member: member,
+      member_subject: member_subject,
+      db: db,
+      edge: edge
+    } do
+      {:ok, restricted} = RunnerAccess.restricted(["db"], [])
+
+      {:ok, _membership} =
+        Accounts.update_membership_runner_access(member, restricted, owner_subject)
+
+      db_id = db.id
+
+      assert {:ok, [{^db_id, "db-1"}]} =
+               Audit.list_actor_options("runner", member_subject, ensure: db.id)
+
+      # The audit page takes this id straight from the URL, so it buys no reach.
+      assert Audit.list_actor_options("runner", member_subject, ensure: edge.id) == {:ok, []}
+
+      foreign = Fixtures.Runners.create_runner(name: "foreign-1", group: "db")
+
+      assert Audit.list_actor_options("runner", member_subject, ensure: foreign.id) == {:ok, []}
+    end
   end
 
   describe "mixed-revision database guard" do
@@ -1261,6 +1414,12 @@ defmodule Emisar.RunnerAccessTest do
     |> Enum.map(& &1.target_id)
     |> Enum.sort()
   end
+
+  defp policy_scope_values(events) do
+    for %{target_kind: "policy"} = event <- events, do: event.payload["scope_value"]
+  end
+
+  defp fleet_sweep(events), do: Enum.find(events, &(&1.target_kind == "runner_fleet"))
 
   defp create_member(account, role, attrs \\ []) do
     user = Fixtures.Users.create_user()

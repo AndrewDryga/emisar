@@ -1,5 +1,7 @@
 defmodule Emisar.PoliciesTest do
   use Emisar.DataCase, async: true
+  alias Emisar.Accounts
+  alias Emisar.Accounts.RunnerAccess
   alias Emisar.Auth.Subject
   alias Emisar.Fixtures
   alias Emisar.Policies
@@ -836,8 +838,10 @@ defmodule Emisar.PoliciesTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, owner)
 
-      operator =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
+      operator_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      operator = Fixtures.Subjects.membership_subject(operator_membership)
 
       assert {:ok, [_]} = Policies.list_scoped_policies(operator)
 
@@ -853,6 +857,53 @@ defmodule Emisar.PoliciesTest do
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
       assert {:ok, []} = Policies.list_scoped_policies(subject_b)
+    end
+
+    # A ruleset names its target and spells out what may run there, so the list
+    # is the fleet — plus its rules — by another name.
+    test "a restricted member reads only the rulesets whose target they reach" do
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
+      db = Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
+
+      Fixtures.Runners.create_runner(account_id: account.id, group: "edge", connected?: false)
+
+      {:ok, db_policy} = Policies.save_scoped_rules(allow_all_rules(), :runner, db.id, owner)
+      {:ok, _edge_policy} = Policies.save_scoped_rules(deny_all_rules(), :group, "edge", owner)
+
+      member = restricted_member(account, owner, "operator", ["db"])
+
+      assert {:ok, [listed]} = Policies.list_scoped_policies(member)
+      assert listed.id == db_policy.id
+    end
+
+    test "a member with no runner access reads no rulesets" do
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, owner)
+
+      member_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      member = Fixtures.Subjects.membership_subject(member_membership)
+
+      {:ok, _updated} =
+        Accounts.update_membership_runner_access(member_membership, RunnerAccess.none(), owner)
+
+      assert {:ok, []} = Policies.list_scoped_policies(member)
+    end
+
+    # Group names are not account-unique, and the narrowing matches on the name.
+    test "cross-account: a group name shared with another account lists nothing of theirs" do
+      {_owner_a, account_a, owner_a} = Fixtures.Subjects.owner_subject()
+      Fixtures.Runners.create_runner(account_id: account_a.id, group: "db", connected?: false)
+
+      {_owner_b, account_b, owner_b} = Fixtures.Subjects.owner_subject()
+      Fixtures.Runners.create_runner(account_id: account_b.id, group: "db", connected?: false)
+      {:ok, _policy_b} = Policies.save_scoped_rules(deny_all_rules(), :group, "db", owner_b)
+
+      member_a = restricted_member(account_a, owner_a, "operator", ["db"])
+
+      assert {:ok, []} = Policies.list_scoped_policies(member_a)
     end
   end
 
@@ -881,6 +932,24 @@ defmodule Emisar.PoliciesTest do
       assert {:error, :unauthorized} = Policies.delete_scoped_policy(policy, viewer)
       # The row is untouched — still live.
       assert {:ok, [_]} = Policies.list_scoped_policies(owner)
+    end
+
+    # Removing a ruleset changes what may run on its hosts, so the scope is
+    # re-judged at the mutation boundary — a page held open across an access
+    # change cannot spend the row it is still showing.
+    test "a restricted admin can't delete a ruleset outside their fleet" do
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
+      Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
+
+      edge =
+        Fixtures.Runners.create_runner(account_id: account.id, group: "edge", connected?: false)
+
+      {:ok, policy} = Policies.save_scoped_rules(deny_all_rules(), :runner, edge.id, owner)
+
+      admin = restricted_member(account, owner, "admin", ["db"])
+
+      assert Policies.delete_scoped_policy(policy, admin) == {:error, :runner_not_found}
+      assert {:ok, [_still_live]} = Policies.list_scoped_policies(owner)
     end
 
     test "cross-account: B can't delete A's override (:not_found, row untouched)" do
@@ -921,13 +990,14 @@ defmodule Emisar.PoliciesTest do
       assert updated.rules["defaults"]["low"] == "allow"
     end
 
-    test "rejects an empty scope_value for a runner/group scope" do
+    test "rejects a blank scope_value for a runner/group scope" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, %Ecto.Changeset{} = changeset} =
-               Policies.save_scoped_rules(deny_all_rules(), :runner, "", subject)
+      assert Policies.save_scoped_rules(deny_all_rules(), :runner, "", subject) ==
+               {:error, :runner_not_found}
 
-      assert %{scope_value: [_ | _]} = errors_on(changeset)
+      assert Policies.save_scoped_rules(deny_all_rules(), :group, "", subject) ==
+               {:error, :group_not_found}
     end
 
     test "rejects another account's runner id (:runner_not_found, no row written)" do
@@ -964,13 +1034,46 @@ defmodule Emisar.PoliciesTest do
                Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, subject)
     end
 
-    test "a group scope stays free-form — it may pre-date any runner in that group" do
+    # Preparing the ruleset before enrolling the hosts is a real setup flow, and
+    # an unrestricted writer can already see every group, so the name they invent
+    # tells them nothing they did not already have.
+    test "an unrestricted member may write a group ruleset before any runner is enrolled" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
 
       assert {:ok, saved} =
-               Policies.save_scoped_rules(deny_all_rules(), :group, "future-group", subject)
+               Policies.save_scoped_rules(deny_all_rules(), :group, "not-enrolled-yet", subject)
 
-      assert saved.scope_value == "future-group"
+      assert saved.scope_value == "not-enrolled-yet"
+
+      # The read side has to agree, or they would write a ruleset they cannot see.
+      assert {:ok, [listed]} = Policies.list_scoped_policies(subject)
+      assert listed.id == saved.id
+      assert listed.scope_value == "not-enrolled-yet"
+    end
+
+    # Writing a ruleset for a host you cannot see is a policy change on somebody
+    # else's fleet — and an existence answer alone would enumerate group names.
+    test "a restricted admin can't write a ruleset outside their fleet" do
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
+      Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
+
+      edge =
+        Fixtures.Runners.create_runner(account_id: account.id, group: "edge", connected?: false)
+
+      admin = restricted_member(account, owner, "admin", ["db"])
+
+      assert Policies.save_scoped_rules(deny_all_rules(), :runner, edge.id, admin) ==
+               {:error, :runner_not_found}
+
+      assert Policies.save_scoped_rules(deny_all_rules(), :group, "edge", admin) ==
+               {:error, :group_not_found}
+
+      # A group nobody has enrolled answers exactly as an out-of-reach one does,
+      # so the save can never be used to enumerate group names.
+      assert Policies.save_scoped_rules(deny_all_rules(), :group, "no-such-group", admin) ==
+               {:error, :group_not_found}
+
+      assert {:ok, []} = Policies.list_scoped_policies(owner)
     end
 
     test "a viewer can't save a scoped override (no manage_policies)" do
@@ -1392,6 +1495,18 @@ defmodule Emisar.PoliciesTest do
   end
 
   # Allow/deny-everything rule shapes for the scoped-CRUD describes above.
+  # A persisted member of `account` whose runner access is narrowed to `groups`,
+  # granted through the real mutation so the scope rows match production.
+  defp restricted_member(account, granting_subject, role, groups) do
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: role)
+    {:ok, access} = RunnerAccess.restricted(groups, [])
+
+    {:ok, _updated} =
+      Accounts.update_membership_runner_access(membership, access, granting_subject)
+
+    Fixtures.Subjects.membership_subject(membership)
+  end
+
   defp allow_all_rules do
     %{
       "schema_version" => 2,

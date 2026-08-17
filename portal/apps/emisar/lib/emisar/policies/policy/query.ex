@@ -23,6 +23,22 @@ defmodule Emisar.Policies.Policy.Query do
   def scoped_overrides(queryable),
     do: where(queryable, [policies: p], p.scope_type != :account)
 
+  @doc """
+  Rulesets whose target a member's runner access reaches — one of the runner ids
+  or group names given. The account default names no host and is always in
+  reach; compose `scoped_overrides/1` to drop it where only overrides belong.
+  """
+  def by_scope_reach(queryable, runner_ids, groups)
+      when is_list(runner_ids) and is_list(groups) do
+    where(
+      queryable,
+      [policies: p],
+      p.scope_type == :account or
+        (p.scope_type == :runner and p.scope_value in ^runner_ids) or
+        (p.scope_type == :group and p.scope_value in ^groups)
+    )
+  end
+
   def by_scope(queryable, scope_type, scope_value) do
     where(
       queryable,

@@ -14,7 +14,7 @@ defmodule EmisarWeb.AuditDetailLive do
   def mount(%{"id" => id}, _session, socket) do
     case Audit.fetch_event_by_id(id, socket.assigns.current_subject) do
       {:ok, event} ->
-        refs = Audit.resolve_references([event])
+        refs = Audit.resolve_references([event], socket.assigns.current_subject)
         # The event itself renders on the dead pass — it IS the page. The two
         # cross-links behind it are subject-gated run fetches that only some
         # target kinds even use, so they wait for the connected mount instead
