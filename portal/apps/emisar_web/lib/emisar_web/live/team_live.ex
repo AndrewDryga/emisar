@@ -1782,8 +1782,10 @@ defmodule EmisarWeb.TeamLive do
                       <input type="hidden" name="membership_id" value={membership.id} />
                       <%!-- A member who can manage the team can have this undone by a
                        peer, so the editor says so rather than letting the operator
-                       read a narrowed scope as containment. --%>
-                      <.status_note
+                       read a narrowed scope as containment. It qualifies the save the
+                       operator is about to make, so it wears the callout spine (§7.50)
+                       rather than the spine-less status_note. --%>
+                      <.callout
                         :if={member.manages_team?}
                         icon="hero-lock-open"
                         tone={:amber}
@@ -1792,7 +1794,7 @@ defmodule EmisarWeb.TeamLive do
                         They can't change their own access, but anyone else who can manage them
                         can change it. So this is a guardrail against mistakes, not a way to
                         contain them.
-                      </.status_note>
+                      </.callout>
                       <p class="text-xs text-zinc-400">
                         Any API key they create reaches only what you allow here, so narrowing
                         this narrows their keys too.

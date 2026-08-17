@@ -2003,6 +2003,12 @@ defmodule Emisar.Accounts do
     * Nobody can promote themselves.
     * Nobody can demote/remove the last owner.
 
+  A change that ADDS permissions is a grant, so it is capped at the actor's own
+  reach like an invite or an access edit: promoting a member whose runner/pack
+  access exceeds the actor's is refused with
+  `{:error, :member_runner_access_exceeds_subject}`. A change that only removes
+  permissions is a narrowing and stays open.
+
   The caller passes their `%Subject{}` so the guard runs at the domain
   boundary, not just in LiveView templates.
 
@@ -2027,6 +2033,8 @@ defmodule Emisar.Accounts do
           # too, so a stale UI or crafted event can't slip a synced-role change past.
           with :ok <- ensure_role_not_directory_managed(loaded_membership),
                :ok <- ensure_role_change_allowed(loaded_membership, new_role, subject),
+               :ok <-
+                 ensure_role_change_within_subject_reach(loaded_membership, new_role, subject),
                :ok <- ensure_demotion_keeps_an_owner(loaded_membership, new_role) do
             Membership.Changeset.update(loaded_membership, %{role: new_role})
           else
@@ -2174,6 +2182,47 @@ defmodule Emisar.Accounts do
 
       true ->
         :ok
+    end
+  end
+
+  # The staff break-glass subject (`Emisar.Admin.support_subject/1`) is an owner
+  # by permission but holds no membership in the account, so it has no member
+  # reach to cap against — `runner_access_for_subject/1` reports `none` for it,
+  # which would refuse every support-run owner transfer. Its authority is
+  # `ensure_staff/1` plus the staff audit trail, not a tenant scope. Nothing else
+  # reaches here without a membership: `Subject.for_user/5` always carries one,
+  # and no other role holds `manage_team`.
+  defp ensure_role_change_within_subject_reach(
+         %Membership{},
+         _new_role,
+         %Subject{actor: nil, membership_id: nil}
+       ),
+       do: :ok
+
+  # Nondelegation — the cap invitations (`validate_invitation/3`) and access edits
+  # (`update_membership_runner_access/3`) already run: you may not hand out reach
+  # you don't hold yourself. A role change carries no access of its own, so only a
+  # change that ADDS permissions is a grant, and what the stronger role would
+  # wield is the member's EXISTING runner and pack access, read here under the
+  # lock. Without this a scoped admin promotes a member whose access exceeds
+  # theirs and gains a peer who can widen them right back. A change that only
+  # removes permissions is a narrowing and stays open, so a scoped admin can
+  # always reduce a member they cannot fully reach.
+  defp ensure_role_change_within_subject_reach(
+         %Membership{} = membership,
+         new_role,
+         %Subject{} = subject
+       ) do
+    if Auth.Permissions.role_covers_role?(membership.role, new_role) do
+      :ok
+    else
+      case ensure_runner_access_grant_allowed(subject, load_runner_access(Repo, membership)) do
+        :ok ->
+          :ok
+
+        {:error, :runner_access_exceeds_subject} ->
+          {:error, :member_runner_access_exceeds_subject}
+      end
     end
   end
 

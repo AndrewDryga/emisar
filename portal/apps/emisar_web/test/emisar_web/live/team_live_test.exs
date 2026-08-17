@@ -887,8 +887,15 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert render_click(lv, "start_scope_edit", %{"membership_id" => admin_membership.id}) =~
-               "This member can manage the team"
+      admin_editor =
+        render_click(lv, "start_scope_edit", %{"membership_id" => admin_membership.id})
+
+      assert admin_editor =~ "This member can manage the team"
+
+      # The note qualifies the save the operator is about to make, so it wears the
+      # callout spine (§7.50) — the amber spine class is what the spine-less
+      # `status_note` does not render.
+      assert admin_editor =~ "bg-amber-300/40"
 
       # An operator's scope is a real limit, so the same note there would be a lie.
       refute render_click(lv, "start_scope_edit", %{"membership_id" => operator_membership.id}) =~
@@ -1446,6 +1453,37 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Role updated."
       assert Emisar.Repo.reload!(membership).role == :operator
       assert_team_broadcast(lv, "membership.role_changed", membership.user_id)
+    end
+
+    test "promoting a member whose access is wider than yours names the remedy", %{
+      account: account,
+      membership: membership
+    } do
+      # The domain caps a promotion at the actor's own reach, so a scoped admin
+      # can't manufacture a wider peer. That refusal has to reach the operator as
+      # the fix — narrow them first — not as the generic "didn't apply".
+      admin = Fixtures.Users.create_user()
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      {:ok, db_access} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
+      Fixtures.Memberships.force_runner_access(admin_membership, db_access)
+      Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/settings/team")
+
+      html =
+        render_click(lv, "change_role", %{"membership_id" => membership.id, "role" => "operator"})
+
+      assert html =~ "runner access is wider than yours"
+      assert html =~ "Narrow their access first, then change their role."
+      assert Emisar.Repo.reload!(membership).role == :viewer
     end
 
     test "the role dropdown offers every OTHER role and omits the current one", %{

@@ -3309,6 +3309,143 @@ defmodule Emisar.AccountsTest do
                Accounts.update_membership_role(target_membership, "owner", subject)
     end
 
+    test "a scoped admin promotes a member whose access their own covers" do
+      account = Fixtures.Accounts.create_account()
+      {:ok, db_access} = RunnerAccess.restricted(["db"], [])
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+      Fixtures.Memberships.force_runner_access(admin_membership, db_access)
+
+      target_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+
+      Fixtures.Memberships.force_runner_access(target_membership, db_access)
+
+      subject = Fixtures.Subjects.membership_subject(admin_membership)
+
+      assert {:ok, %Membership{role: :operator}} =
+               Accounts.update_membership_role(target_membership, "operator", subject)
+    end
+
+    test "a scoped admin can't promote a member whose access exceeds their own" do
+      account = Fixtures.Accounts.create_account()
+      {:ok, db_access} = RunnerAccess.restricted(["db"], [])
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+      Fixtures.Memberships.force_runner_access(admin_membership, db_access)
+
+      target_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+
+      Fixtures.Memberships.force_runner_access(target_membership, RunnerAccess.all())
+
+      subject = Fixtures.Subjects.membership_subject(admin_membership)
+
+      assert Accounts.update_membership_role(target_membership, "operator", subject) ==
+               {:error, :member_runner_access_exceeds_subject}
+
+      assert %Membership{role: :viewer} =
+               Fixtures.Memberships.fetch_membership(account.id, target_membership.user_id)
+    end
+
+    test "the cap covers the pack dimension, not only runners" do
+      account = Fixtures.Accounts.create_account()
+      {:ok, nginx_only} = RunnerAccess.new(:all, [], [], :restricted, ["nginx"])
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+      Fixtures.Memberships.force_runner_access(admin_membership, nginx_only)
+
+      target_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+
+      Fixtures.Memberships.force_runner_access(target_membership, RunnerAccess.all())
+
+      subject = Fixtures.Subjects.membership_subject(admin_membership)
+
+      assert Accounts.update_membership_role(target_membership, "operator", subject) ==
+               {:error, :member_runner_access_exceeds_subject}
+    end
+
+    test "a scoped admin can still demote a member whose access exceeds their own" do
+      account = Fixtures.Accounts.create_account()
+      {:ok, db_access} = RunnerAccess.restricted(["db"], [])
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+      Fixtures.Memberships.force_runner_access(admin_membership, db_access)
+
+      target_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      Fixtures.Memberships.force_runner_access(target_membership, RunnerAccess.all())
+
+      subject = Fixtures.Subjects.membership_subject(admin_membership)
+
+      assert {:ok, %Membership{role: :viewer}} =
+               Accounts.update_membership_role(target_membership, "viewer", subject)
+    end
+
+    test "the staff break-glass subject promotes with no membership reach to cap" do
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: Fixtures.Users.create_user().id,
+        role: "owner"
+      )
+
+      target_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      Fixtures.Memberships.force_runner_access(target_membership, RunnerAccess.all())
+
+      # `Emisar.Admin.support_subject/1`: owner permissions, no actor and no
+      # membership in the account, so it has no member reach the cap could read.
+      subject =
+        Fixtures.Subjects.build_subject(
+          account: account,
+          role: :owner,
+          permissions: Auth.Permissions.for_role(:owner)
+        )
+
+      assert {:ok, %Membership{role: :admin}} =
+               Accounts.update_membership_role(target_membership, "admin", subject)
+    end
+
+    test "a scoped admin can't promote another account's member (cross-account)" do
+      account = Fixtures.Accounts.create_account()
+      {:ok, db_access} = RunnerAccess.restricted(["db"], [])
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+      Fixtures.Memberships.force_runner_access(admin_membership, db_access)
+
+      other_account = Fixtures.Accounts.create_account()
+
+      other_membership =
+        Fixtures.Memberships.create_membership(account_id: other_account.id, role: "viewer")
+
+      Fixtures.Memberships.force_runner_access(other_membership, db_access)
+
+      subject = Fixtures.Subjects.membership_subject(admin_membership)
+
+      # The account gate fires before the reach cap, so a member the actor could
+      # otherwise promote is still refused for being in another account.
+      assert Accounts.update_membership_role(other_membership, "operator", subject) ==
+               {:error, :unauthorized}
+
+      assert %Membership{role: :viewer} =
+               Fixtures.Memberships.fetch_membership(other_account.id, other_membership.user_id)
+    end
+
     test "an owner of another account can't change this member's role (cross-account)" do
       account = Fixtures.Accounts.create_account()
 
