@@ -291,7 +291,7 @@ defmodule EmisarWeb.RunnersLiveTest do
         build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners")
 
       assert html =~ "No runners yet."
-      assert html =~ "an operator role or above, with access to every runner"
+      assert html =~ "an operator role or above, with access to all runners"
       refute html =~ "Loading"
       refute html =~ "EMISAR_ENROLLMENT_KEY"
 

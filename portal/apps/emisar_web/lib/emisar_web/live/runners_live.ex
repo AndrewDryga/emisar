@@ -360,7 +360,7 @@ defmodule EmisarWeb.RunnersLive do
                whose mint can only fail. --%>
           <.empty_state icon="hero-server-stack" title="No runners yet.">
             A runner is the emisar binary on one of your hosts. Connecting one needs
-            an operator role or above, with access to every runner — ask a teammate
+            an operator role or above, with access to all runners — ask a teammate
             who has both, and the new host's live state will appear here.
           </.empty_state>
         <% @show_wizard? -> %>

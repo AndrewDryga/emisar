@@ -92,7 +92,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
       assert %{
                "info" =>
-                 "Connecting a runner needs an operator role or above, with access to every runner."
+                 "Connecting a runner needs an operator role or above, with access to all runners."
              } = flash
     end
 
@@ -114,7 +114,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
                |> log_in_user(Emisar.Repo.preload(membership, :user).user)
                |> live(~p"/app/#{account}/runners/install")
 
-      assert flash["info"] =~ "with access to every runner"
+      assert flash["info"] =~ "with access to all runners"
     end
 
     # the connected mount mints exactly one

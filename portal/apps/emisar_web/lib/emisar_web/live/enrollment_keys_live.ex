@@ -59,7 +59,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   # the empty state, and the route-guard flash all read from here, so the three
   # cannot drift into three different rules.
   defp issue_key_lock_text do
-    "Issuing an enrollment key needs access to every runner, because an enrolling host names its own group."
+    "Creating a key needs access to all runners. A new host picks its own group when it joins, so a key can put a machine in any group."
   end
 
   defp fetch_billing(socket) do

@@ -419,7 +419,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert html =~ "Enrollment keys"
     assert has_element?(lv, "button[disabled]", "New key")
     refute has_element?(lv, ~s(a[href="/app/#{account.slug}/runners/keys/new"]))
-    assert html =~ "needs access to every runner"
+    assert html =~ "needs access to all runners"
 
     # The issue route refuses rather than routing them into a form that cannot
     # succeed, and lands them back on the list with the reason.
@@ -428,7 +428,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
              live(admin_conn, ~p"/app/#{account}/runners/keys/new")
 
-    assert flash["error"] =~ "needs access to every runner"
+    assert flash["error"] =~ "needs access to all runners"
   end
 
   # IL-15: hiding the control is never the authorization. A crafted create event
