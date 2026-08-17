@@ -52,6 +52,10 @@ defmodule EmisarWeb.SSOSettingsLive do
     socket =
       socket
       |> assign(:page_title, "Single sign-on")
+      |> assign(
+        :pack_access_restricted?,
+        socket.assigns.current_membership.pack_access_mode == :restricted
+      )
       |> assign(:can_configure?, SSO.subject_can_configure_sso?(socket.assigns.current_subject))
       |> assign(:has_sso_permission?, SSO.subject_can_manage_sso?(socket.assigns.current_subject))
       |> assign(
@@ -1389,6 +1393,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 provisioner_options={@provisioner_options}
                 runners={@runners}
                 pack_advertisements={@pack_advertisements}
+                pack_access_restricted?={@pack_access_restricted?}
                 runner_load_error?={@runner_load_error?}
                 pack_load_error?={@pack_load_error?}
                 guide_id="new"
@@ -1451,6 +1456,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 provisioner_options={@provisioner_options}
                 runners={@runners}
                 pack_advertisements={@pack_advertisements}
+                pack_access_restricted?={@pack_access_restricted?}
                 runner_load_error?={@runner_load_error?}
                 pack_load_error?={@pack_load_error?}
                 guide_id={provider.id}
@@ -1657,6 +1663,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               adding_mapping={@adding_runner_access_mapping}
               runners={@runners}
               pack_advertisements={@pack_advertisements}
+              pack_access_restricted?={@pack_access_restricted?}
             />
             <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
               Adds runners on top of the connection default. Groups are matched by id, never by
@@ -1926,6 +1933,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :provisioner_options, :list, required: true
   attr :runners, :list, required: true
   attr :pack_advertisements, :map, required: true
+  attr :pack_access_restricted?, :boolean, required: true
   attr :runner_load_error?, :boolean, required: true
   attr :pack_load_error?, :boolean, default: false
   attr :guide_id, :string, required: true
@@ -2139,6 +2147,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 runner_scope={List.wrap(@form[:default_runner_scope].value)}
                 runners={@runners}
                 advertisements={@pack_advertisements}
+                grant_limited?={@pack_access_restricted?}
                 load_error={RunnerScope.pack_load_error(@pack_load_error?)}
                 mode_name="provider[default_pack_access_mode]"
                 mode_value={@form[:default_pack_access_mode].value}
@@ -2850,6 +2859,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :adding_mapping, :boolean, default: false
   attr :runners, :list, required: true
   attr :pack_advertisements, :map, required: true
+  attr :pack_access_restricted?, :boolean, required: true
 
   defp group_runner_access_mapping_section(assigns) do
     assigns = assign(assigns, :runners_by_id, Map.new(assigns.runners, &{&1.id, &1}))
@@ -2951,6 +2961,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 synced_groups={@synced_groups}
                 runners={@runners}
                 pack_advertisements={@pack_advertisements}
+                pack_access_restricted?={@pack_access_restricted?}
                 editing?
               />
               <:actions>
@@ -3000,6 +3011,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             synced_groups={@synced_groups}
             runners={@runners}
             pack_advertisements={@pack_advertisements}
+            pack_access_restricted?={@pack_access_restricted?}
           />
           <:actions>
             <.button phx-disable-with="Adding...">Add runner access</.button>
@@ -3021,6 +3033,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :synced_groups, :list, required: true
   attr :runners, :list, required: true
   attr :pack_advertisements, :map, required: true
+  attr :pack_access_restricted?, :boolean, required: true
   attr :editing?, :boolean, default: false
 
   defp runner_access_mapping_fields(assigns) do
@@ -3085,6 +3098,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             runner_scope={List.wrap(@form[:scope].value)}
             runners={@runners}
             advertisements={@pack_advertisements}
+            grant_limited?={@pack_access_restricted?}
             mode_name={@form[:pack_access_mode].name}
             mode_value={@form[:pack_access_mode].value}
             scope_name={"#{@form.name}[pack_scope][]"}

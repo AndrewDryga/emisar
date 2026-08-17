@@ -23,6 +23,10 @@ defmodule EmisarWeb.TeamLive do
     {:ok,
      socket
      |> assign(:page_title, "Team")
+     |> assign(
+       :pack_access_restricted?,
+       socket.assigns.current_membership.pack_access_mode == :restricted
+     )
      |> assign(:roles, @roles)
      |> assign(:editing_id, nil)
      |> assign(:edit_form, nil)
@@ -1297,6 +1301,7 @@ defmodule EmisarWeb.TeamLive do
                   runner_scope={List.wrap(@form[:scope].value)}
                   runners={@runners}
                   advertisements={@pack_advertisements}
+                  grant_limited?={@pack_access_restricted?}
                   load_error={RunnerScope.pack_load_error(@pack_load_error?)}
                   mode_name="invite[pack_access_mode]"
                   mode_value={@form[:pack_access_mode].value}
@@ -1422,6 +1427,7 @@ defmodule EmisarWeb.TeamLive do
                   runner_scope={Map.get(@approval_scope_drafts, request.id, [])}
                   runners={@runners}
                   advertisements={@pack_advertisements}
+                  grant_limited?={@pack_access_restricted?}
                   load_error={RunnerScope.pack_load_error(@pack_load_error?)}
                   variant={:select}
                   mode_name="pack_access_mode"
@@ -1856,6 +1862,7 @@ defmodule EmisarWeb.TeamLive do
                         runner_scope={@scope_draft}
                         runners={@runners}
                         advertisements={@pack_advertisements}
+                        grant_limited?={@pack_access_restricted?}
                         load_error={RunnerScope.pack_load_error(@pack_load_error?)}
                         mode_name="pack_access_mode"
                         mode_value={@scope_pack_mode}

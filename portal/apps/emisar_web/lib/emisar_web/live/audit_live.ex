@@ -24,6 +24,10 @@ defmodule EmisarWeb.AuditLive do
     {:ok,
      socket
      |> assign(:page_title, "Audit log")
+     |> assign(
+       :pack_access_restricted?,
+       socket.assigns.current_membership.pack_access_mode == :restricted
+     )
      # One subscription read per mount, not one per rendered template branch —
      # this page re-renders on every debounced audit broadcast, and the
      # entitlement can't change without leaving the page.
@@ -390,9 +394,12 @@ defmodule EmisarWeb.AuditLive do
         happens. <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>
       </.page_intro>
       <.page_intro :if={not Audit.subject_sees_billing_audit_only?(@current_subject)}>
-        The append-only record of every action, approval, and access change in this account —
+        The append-only record of actions, approvals, and access changes in this account —
         exportable to your SIEM for independent, long-term retention.
         <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>
+        <span :if={@pack_access_restricted?} class="mt-2 block">
+          Pack and approval records outside your pack access are omitted from this view.
+        </span>
       </.page_intro>
 
       <%!-- THREE filter dimensions share this row — a relative window, the

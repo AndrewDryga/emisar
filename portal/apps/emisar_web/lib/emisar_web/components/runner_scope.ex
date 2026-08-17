@@ -182,6 +182,10 @@ defmodule EmisarWeb.RunnerScope do
   attr :loading?, :boolean, default: false
   attr :load_error, :string, default: nil
 
+  attr :grant_limited?, :boolean,
+    default: false,
+    doc: "whether the current operator can grant only packs within their own access"
+
   def pack_access_field(assigns) do
     runner_ids = selected_runner_ids(assigns.runners, assigns.runner_mode, assigns.runner_scope)
 
@@ -203,6 +207,9 @@ defmodule EmisarWeb.RunnerScope do
         label="Packs"
         options={[{"All packs", "all"}, {"Selected packs", "restricted"}]}
       />
+      <p :if={@grant_limited?} class="text-xs leading-relaxed text-zinc-400">
+        You can grant only packs within your own access.
+      </p>
       <.pack_scope_select
         :if={to_string(@mode_value) == "restricted"}
         name={@scope_name}
@@ -223,6 +230,9 @@ defmodule EmisarWeb.RunnerScope do
             list: the operator cannot see that the second one is a separate
             decision until they miscount the options. --%>
       <.label variant={:eyebrow}>Packs</.label>
+      <p :if={@grant_limited?} class="mt-1 text-xs leading-relaxed text-zinc-400">
+        You can grant only packs within your own access.
+      </p>
       <div class="mt-2">
         <.choice_cards name={@mode_name} value={@mode_value} attached_value="restricted">
           <:card value="all" title="All packs">

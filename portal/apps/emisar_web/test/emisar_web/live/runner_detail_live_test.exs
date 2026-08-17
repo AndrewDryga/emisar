@@ -23,6 +23,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ runner.name
     assert html =~ runner.hostname
     refute html =~ "failed to load on this runner"
+    refute html =~ "Your pack access limits this list"
   end
 
   test "runner-advertised degraded packs render with their reasons and the remedy", %{
@@ -93,6 +94,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ "Database health"
     assert html =~ "/runs/new/#{runner.id}/postgres.status"
     assert html =~ "allowed failure"
+    assert html =~ "Your pack access limits this list to actions from packs you can use."
 
     refute has_element?(lv, "#actions", "linux.reboot_host")
     refute has_element?(lv, "option[value=linux-core]")

@@ -24,6 +24,10 @@ defmodule EmisarWeb.ApprovalsLive do
     {:ok,
      socket
      |> assign(:page_title, "Approvals")
+     |> assign(
+       :pack_access_restricted?,
+       socket.assigns.current_membership.pack_access_mode == :restricted
+     )
      |> assign(:reload_scheduled?, false)}
   end
 
@@ -408,6 +412,9 @@ defmodule EmisarWeb.ApprovalsLive do
         Actions and whole runbook executions pause here before they run. Review the exact frozen
         work, then approve or deny; your reason is logged.
         <.doc_link href="/docs/policies-and-approvals">Approvals docs</.doc_link>
+        <span :if={@pack_access_restricted?} class="mt-2 block">
+          Your pack access limits this page to approvals and grants for packs you can use.
+        </span>
       </.page_intro>
 
       <.loading_state :if={not connected?(@socket)} />

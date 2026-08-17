@@ -52,6 +52,7 @@ defmodule EmisarWeb.RunnerDetailLive do
     socket
     |> assign(:runner, runner)
     |> assign(:readiness, Runners.runner_readiness(runner, access))
+    |> assign(:pack_access_restricted?, access.pack_mode == :restricted)
   end
 
   def handle_params(params, _uri, socket) do
@@ -480,7 +481,11 @@ defmodule EmisarWeb.RunnerDetailLive do
           class="grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-3 lg:items-start"
         >
           <section class="lg:col-span-2 lg:col-start-1 lg:row-start-1">
-            <.section_header title="Advertised actions" count={@actions_metadata.count} />
+            <.section_header title="Advertised actions" count={@actions_metadata.count}>
+              <:subtitle :if={@pack_access_restricted?}>
+                Your pack access limits this list to actions from packs you can use.
+              </:subtitle>
+            </.section_header>
 
             <%!-- The catalog runs the shared LiveTable :cards shell so its Search
                + Pack + Risk filters render in the standard bar and the list stays

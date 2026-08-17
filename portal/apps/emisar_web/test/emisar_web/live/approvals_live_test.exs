@@ -5,7 +5,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
   the next call needs fresh human approval).
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Approvals, Audit}
+  alias Emisar.{Accounts, Approvals, Audit}
   alias Emisar.Catalog
   alias Emisar.Runs
 
@@ -97,6 +97,28 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     # Curly quotes — the reason is operator prose, quoted the same way the
     # detail page quotes a decision reason.
     assert html =~ "“reboot for kernel patch”"
+    refute html =~ "Your pack access limits this page"
+  end
+
+  test "explains when pack access narrows the approval collections", %{conn: conn} do
+    {_owner_conn, _owner, account} = register_and_log_in(conn)
+    admin = Fixtures.Users.create_user()
+
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin"
+      )
+
+    {:ok, restricted} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+    Fixtures.Memberships.force_runner_access(membership, restricted)
+
+    admin_conn = build_conn() |> log_in_user(admin)
+    {:ok, _lv, html} = live(admin_conn, ~p"/app/#{account}/approvals")
+
+    assert html =~
+             "Your pack access limits this page to approvals and grants for packs you can use."
   end
 
   test "labels a requester with this account's directory name", %{conn: conn} do

@@ -131,6 +131,39 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
                lv,
                "input[name='provider[default_runner_access_mode]'][value='none']:checked"
              )
+
+      refute html =~ "You can grant only packs within your own access."
+    end
+
+    test "pack grant fields explain when the admin's own pack access is limited", %{
+      conn: _conn,
+      account: account
+    } do
+      admin = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      {:ok, restricted} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+
+      {:ok, lv, _html} =
+        build_conn()
+        |> log_in_user(admin)
+        |> live(~p"/app/#{account}/settings/sso/new")
+
+      changed =
+        lv
+        |> form("#provider_form", %{
+          "provider" => %{"default_runner_access_mode" => "all"}
+        })
+        |> render_change()
+
+      assert changed =~ "You can grant only packs within your own access."
     end
 
     test "selected provider access reveals quietly and validates on submit", %{

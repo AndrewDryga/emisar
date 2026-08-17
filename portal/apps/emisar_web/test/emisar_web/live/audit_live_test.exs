@@ -6,7 +6,7 @@ defmodule EmisarWeb.AuditLiveTest do
   the detail page renders payload + headers without crashing.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Audit, Repo}
+  alias Emisar.{Accounts, Audit, Repo}
   alias Emisar.Runners.Runner
 
   describe "GET /app/audit" do
@@ -72,6 +72,28 @@ defmodule EmisarWeb.AuditLiveTest do
       # No day bands (relative times carry recency; the exact stamp rides each
       # row's tooltip) — the column header is the list's first row.
       assert html =~ "Source IP"
+      refute html =~ "outside your pack access"
+    end
+
+    test "explains when pack access narrows the audit trail", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      admin = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      {:ok, restricted} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+
+      admin_conn = build_conn() |> log_in_user(admin)
+      {:ok, _lv, html} = live(admin_conn, ~p"/app/#{account}/audit")
+
+      assert html =~
+               "Pack and approval records outside your pack access are omitted from this view."
     end
 
     test "renders stable copy instead of runner transport diagnostics", %{conn: conn} do

@@ -29,6 +29,49 @@ defmodule EmisarWeb.TeamLiveTest do
       refute html =~ "Only owners and admins can invite"
     end
 
+    test "pack grant fields explain when the admin's own pack access is limited", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      admin = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      {:ok, restricted} =
+        Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+
+      {:ok, lv, html} =
+        build_conn()
+        |> log_in_user(admin)
+        |> live(~p"/app/#{account}/settings/team/invite")
+
+      refute html =~ "You can grant only packs within your own access."
+
+      changed =
+        lv
+        |> form("#invite_form", %{"invite" => %{"runner_access_mode" => "all"}})
+        |> render_change()
+
+      assert changed =~ "You can grant only packs within your own access."
+    end
+
+    test "pack grant fields stay quiet for an unrestricted owner", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
+
+      changed =
+        lv
+        |> form("#invite_form", %{"invite" => %{"runner_access_mode" => "all"}})
+        |> render_change()
+
+      refute changed =~ "You can grant only packs within your own access."
+    end
+
     test "the Security rail is SSO's one console door (its nav item is gone)", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
