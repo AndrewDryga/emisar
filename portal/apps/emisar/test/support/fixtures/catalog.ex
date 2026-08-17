@@ -144,6 +144,14 @@ defmodule Emisar.Fixtures.Catalog do
     |> Repo.update!()
   end
 
+  @doc "Test inspector: every pack-version row for one account, in catalog order."
+  def list_pack_versions(account_id) do
+    Catalog.PackVersion.Query.all()
+    |> Catalog.PackVersion.Query.by_account_id(account_id)
+    |> Catalog.PackVersion.Query.ordered_by_pack()
+    |> Repo.all()
+  end
+
   @doc """
   Inserts a REJECTED pack version row with NOTHING recorded — the legacy
   shape a pre-revoke-era reject left behind (it cleared both hashes).

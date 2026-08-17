@@ -626,8 +626,9 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
 
       # The header digest is DERIVED from the rows just read (so it can only ever
-      # describe them — §7.36), which also costs no second windowed read.
-      assert refresh_query_count(lv, {:run_updated, Ecto.UUID.generate()}) == 3
+      # describe them — §7.36), which also costs no second windowed read. Run
+      # history is account-wide, so no current-access lookup is needed either.
+      assert refresh_query_count(lv, {:run_updated, Ecto.UUID.generate()}) == 1
     end
 
     test "an approval event refreshes only the fixed five-row queue snippet", %{conn: conn} do

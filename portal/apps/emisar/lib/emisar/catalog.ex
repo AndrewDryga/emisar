@@ -989,8 +989,10 @@ defmodule Emisar.Catalog do
 
   @doc """
   Set how long a pack version may go unadvertised before the daily sweep
-  removes it. Requires `manage_catalog`, and `account` must be the subject's
-  own. `attrs` is validated through `change_pack_retention_settings/1` before
+  removes it. Requires `manage_catalog` and unrestricted pack access — the
+  schedule is account-wide, so a pack-restricted admin must not arm a sweep
+  that reaches past their own scope — and `account` must be the subject's own.
+  `attrs` is validated through `change_pack_retention_settings/1` before
   anything is written, so an invalid period never reaches the stored setting;
   a blank period turns automatic cleanup off. Returns
   `{:ok, %Accounts.Account{}}` or
@@ -1003,9 +1005,14 @@ defmodule Emisar.Catalog do
              Authorizer.manage_catalog_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, account.id),
+         :ok <- ensure_full_pack_access(subject),
          {:ok, %PackRetentionInput{days: days}} <- pack_retention_input(attrs) do
       Accounts.put_account_pack_retention_days(account.id, days, subject)
     end
+  end
+
+  defp ensure_full_pack_access(%Subject{} = subject) do
+    if full_pack_access?(subject), do: :ok, else: {:error, :unauthorized}
   end
 
   @doc """
@@ -3140,22 +3147,6 @@ defmodule Emisar.Catalog do
   defp outdated_successor({:outdated, successor}), do: successor
   defp outdated_successor(:current), do: nil
 
-  @doc "Returns every pack-version row in the subject's account after the view-catalog gate."
-  @spec list_all_pack_versions_for_account(Subject.t()) ::
-          {:ok, [PackVersion.t()]} | {:error, :unauthorized}
-  def list_all_pack_versions_for_account(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_catalog_permission()) do
-      pack_versions =
-        PackVersion.Query.all()
-        |> PackVersion.Query.ordered_by_pack()
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
-
-      {:ok, pack_versions}
-    end
-  end
-
   # Rendering concern: the Packs page passes `preload:
   # [:retirement_overridden_by]` only where it renders the retirement-override
   # note; a counting caller omits it and pays for no join. Unknown atoms raise.
@@ -3355,4 +3346,17 @@ defmodule Emisar.Catalog do
   @doc "Whether `subject` may manage packs (admin+)."
   def subject_can_manage_packs?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_catalog_permission())
+
+  @doc "Whether `subject` may change the account-wide pack-retention schedule."
+  def subject_can_manage_pack_retention?(%Subject{} = subject),
+    do: subject_can_manage_packs?(subject) and full_pack_access?(subject)
+
+  # Current access, re-read on every call: a narrowed pack scope takes the
+  # account-wide schedule away from an open session immediately.
+  defp full_pack_access?(%Subject{} = subject) do
+    case Accounts.runner_access_for_subject(subject) do
+      %Accounts.RunnerAccess{pack_mode: :all} -> true
+      %Accounts.RunnerAccess{} -> false
+    end
+  end
 end

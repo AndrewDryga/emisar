@@ -345,7 +345,7 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
         Map.put(acc, group, group_runners)
       end)
 
-    {:ok, versions} = Catalog.list_all_pack_versions_for_account(subject)
+    versions = Fixtures.Catalog.list_pack_versions(subject.account.id)
 
     versions
     |> Enum.filter(&(&1.pack_id == pack_id and &1.version == version))

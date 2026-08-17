@@ -317,9 +317,9 @@ defmodule EmisarWeb.PacksLive do
     end
   end
 
-  # Catalog owns the cleanup contract — it re-checks manage_catalog (IL-15) and
-  # validates the raw period, so a crafted event from a viewer denies and a
-  # malformed one is a changeset error rather than a stored setting.
+  # Catalog owns the cleanup contract — it re-checks manage_catalog plus current
+  # unrestricted pack access (IL-15) and validates the raw period, so a crafted
+  # event cannot arm the account-wide schedule past the caller's reach.
   def handle_event("set_pack_retention", %{"days" => _raw} = attrs, socket) do
     case Catalog.update_pack_retention_settings(
            socket.assigns.current_account,
@@ -338,7 +338,12 @@ defmodule EmisarWeb.PacksLive do
         {:noreply, put_flash(socket, :error, "Pick a valid cleanup period.")}
 
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Only owners and admins with full pack access can change this setting."
+         )}
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Could not update automatic cleanup.")}
@@ -1658,11 +1663,11 @@ defmodule EmisarWeb.PacksLive do
               </p>
               <.gated_setting
                 id="pack-retention"
-                can_change?={Catalog.subject_can_manage_packs?(@current_subject)}
+                can_change?={Catalog.subject_can_manage_pack_retention?(@current_subject)}
                 value={
                   pack_retention_value_label(@current_account.settings.pack_unseen_retention_days)
                 }
-                who_can_change="Only owners and admins can change this."
+                who_can_change="Only owners and admins with full pack access can change this."
                 class="mt-3"
               >
                 <form id="pack-retention-form" phx-change="set_pack_retention">

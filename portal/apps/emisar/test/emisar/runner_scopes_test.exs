@@ -1017,7 +1017,35 @@ defmodule Emisar.RunnerAccessTest do
     end
   end
 
-  describe "audit visibility follows runner scope" do
+  describe "run history remains account-wide after scope changes" do
+    test "list, fetch, and runner history keep runs outside current reach" do
+      {account, _owner, owner_subject} = account_with_owner()
+      db = Fixtures.Runners.create_runner(account_id: account.id, group: "db")
+      edge = Fixtures.Runners.create_runner(account_id: account.id, group: "edge")
+      db_run = Fixtures.Runs.create_run(account_id: account.id, runner_id: db.id)
+      edge_run = Fixtures.Runs.create_run(account_id: account.id, runner_id: edge.id)
+      member = create_member(account, "operator")
+      member_subject = Fixtures.Subjects.membership_subject(member)
+
+      {:ok, restricted} = RunnerAccess.restricted(["db"], [])
+
+      {:ok, _membership} =
+        Accounts.update_membership_runner_access(member, restricted, owner_subject)
+
+      assert {:ok, runs, _metadata} = Runs.list_runs(member_subject)
+      assert MapSet.new(runs, & &1.id) == MapSet.new([db_run.id, edge_run.id])
+
+      assert {:ok, fetched} = Runs.fetch_run_by_id(edge_run.id, member_subject)
+      assert fetched.id == edge_run.id
+
+      assert {:ok, [listed], _metadata} =
+               Runs.list_recent_runs_for_runner(edge.id, member_subject)
+
+      assert listed.id == edge_run.id
+    end
+  end
+
+  describe "audit history remains account-wide after scope changes" do
     setup do
       {account, _owner, owner_subject} = account_with_owner()
 
@@ -1047,11 +1075,12 @@ defmodule Emisar.RunnerAccessTest do
       }
     end
 
-    test "a restricted member reads only in-scope runner events", %{
+    test "a restricted member keeps the complete runner history and labels", %{
       owner_subject: owner_subject,
       member: member,
       member_subject: member_subject,
-      db: db
+      db: db,
+      edge: edge
     } do
       assert {:ok, all_events, _} = Audit.list_events(member_subject)
       assert length(runner_targets(all_events)) == 2
@@ -1060,26 +1089,27 @@ defmodule Emisar.RunnerAccessTest do
       {:ok, _} = Accounts.update_membership_runner_access(member, restricted, owner_subject)
 
       assert {:ok, scoped, _} = Audit.list_events(member_subject)
-      assert runner_targets(scoped) == [db.id]
+      assert runner_targets(scoped) == Enum.sort([db.id, edge.id])
 
-      # The target picker is a fleet enumeration by another name.
       assert {:ok, options} = Audit.list_target_options("runner", member_subject)
-      assert Enum.map(options, &elem(&1, 0)) == [db.id]
+      assert MapSet.new(options) == MapSet.new([{db.id, "db-1"}, {edge.id, "edge-1"}])
     end
 
-    test "a member with no runner access reads no runner events at all", %{
+    test "a member with no runner access keeps the complete runner history", %{
       owner_subject: owner_subject,
       member: member,
-      member_subject: member_subject
+      member_subject: member_subject,
+      db: db,
+      edge: edge
     } do
       {:ok, _} =
         Accounts.update_membership_runner_access(member, RunnerAccess.none(), owner_subject)
 
       assert {:ok, events, _} = Audit.list_events(member_subject)
-      assert runner_targets(events) == []
+      assert runner_targets(events) == Enum.sort([db.id, edge.id])
     end
 
-    test "an out-of-scope runner event 404s on direct fetch", %{
+    test "direct fetch keeps historical runner receipts reachable", %{
       owner_subject: owner_subject,
       member: member,
       member_subject: member_subject,
@@ -1095,10 +1125,10 @@ defmodule Emisar.RunnerAccessTest do
         Enum.find(all_events, &(&1.target_kind == "runner" and &1.target_id != db.id))
 
       assert {:ok, _} = Audit.fetch_event_by_id(in_scope.id, member_subject)
-      assert {:error, :not_found} = Audit.fetch_event_by_id(out_of_scope.id, member_subject)
+      assert {:ok, _} = Audit.fetch_event_by_id(out_of_scope.id, member_subject)
     end
 
-    test "approval receipts follow the request's runner scope", %{
+    test "approval receipts remain complete across runner scope", %{
       account: account,
       owner_subject: owner_subject,
       member: member,
@@ -1134,12 +1164,12 @@ defmodule Emisar.RunnerAccessTest do
                Audit.approval_event_refs([db_request.id, edge_request.id], member_subject)
 
       assert refs[db_request.id].final == db_event.id
-      refute Map.has_key?(refs, edge_request.id)
+      assert refs[edge_request.id].final == edge_event.id
       assert {:ok, _event} = Audit.fetch_event_by_id(db_event.id, member_subject)
-      assert Audit.fetch_event_by_id(edge_event.id, member_subject) == {:error, :not_found}
+      assert {:ok, _event} = Audit.fetch_event_by_id(edge_event.id, member_subject)
     end
 
-    test "pack receipts follow the member's pack scope", %{
+    test "pack receipts remain complete across pack scope", %{
       account: account,
       owner_subject: owner_subject,
       member: member,
@@ -1166,11 +1196,11 @@ defmodule Emisar.RunnerAccessTest do
 
       assert {:ok, events, _metadata} = Audit.list_events(member_subject)
       assert linux_event.id in Enum.map(events, & &1.id)
-      refute postgres_event.id in Enum.map(events, & &1.id)
-      assert Audit.fetch_event_by_id(postgres_event.id, member_subject) == {:error, :not_found}
+      assert postgres_event.id in Enum.map(events, & &1.id)
+      assert {:ok, _event} = Audit.fetch_event_by_id(postgres_event.id, member_subject)
     end
 
-    test "ruleset receipts follow the scope they govern", %{
+    test "ruleset receipts and labels remain complete across runner scope", %{
       owner_subject: owner_subject,
       member: member,
       member_subject: member_subject,
@@ -1189,24 +1219,20 @@ defmodule Emisar.RunnerAccessTest do
         Accounts.update_membership_runner_access(member, restricted, owner_subject)
 
       assert {:ok, events, _metadata} = Audit.list_events(member_subject)
-      assert policy_scope_values(events) == [db.id]
+      assert MapSet.new(policy_scope_values(events)) == MapSet.new([db.id, "edge"])
 
-      # A receipt spells out what may run on its scope, so the out-of-scope one
-      # is not readable by id either — and its label can't name the group.
       {:ok, owner_events, _metadata} = Audit.list_events(owner_subject)
       edge_event = Enum.find(owner_events, &(&1.payload["scope_value"] == "edge"))
 
-      assert Audit.fetch_event_by_id(edge_event.id, member_subject) == {:error, :not_found}
+      assert {:ok, _event} = Audit.fetch_event_by_id(edge_event.id, member_subject)
 
-      # The picker labels a ruleset by its scope, so it offers the one they
-      # reach and never spells out the group behind the other.
-      assert {:ok, [{_policy_id, label}]} =
-               Audit.list_target_options("policy", member_subject)
+      assert {:ok, options} = Audit.list_target_options("policy", member_subject)
 
-      assert label == "Runner policy · #{db.id}"
+      assert MapSet.new(options, &elem(&1, 1)) ==
+               MapSet.new(["Runner policy · #{db.id}", "Group policy · edge"])
     end
 
-    test "a member with no runner access reads no ruleset receipts", %{
+    test "a member with no runner access keeps ruleset receipts", %{
       owner_subject: owner_subject,
       member: member,
       member_subject: member_subject,
@@ -1219,7 +1245,7 @@ defmodule Emisar.RunnerAccessTest do
         Accounts.update_membership_runner_access(member, RunnerAccess.none(), owner_subject)
 
       assert {:ok, events, _metadata} = Audit.list_events(member_subject)
-      assert policy_scope_values(events) == []
+      assert policy_scope_values(events) == [db.id]
     end
 
     test "cross-account: a shared group name leaks no other account's ruleset receipt", %{
@@ -1242,7 +1268,7 @@ defmodule Emisar.RunnerAccessTest do
       assert policy_scope_values(events) == []
     end
 
-    test "a retention sweep's runner names are withheld from a restricted member", %{
+    test "a retention sweep keeps runner names for a restricted member", %{
       account: account,
       owner_subject: owner_subject,
       member: member,
@@ -1263,13 +1289,11 @@ defmodule Emisar.RunnerAccessTest do
       assert {:ok, events, _metadata} = Audit.list_events(member_subject)
       sweep = fleet_sweep(events)
 
-      # The sweep DELETED the rows it names, so their group is unknowable at read
-      # time: the size of the sweep stays, the host names go.
-      refute Map.has_key?(sweep.payload, "runners")
+      assert sweep.payload["runners"] == ["db-1", "edge-1"]
       assert sweep.payload["count"] == 2
     end
 
-    test "a grant receipt names only the groups its reader reaches", %{
+    test "a grant receipt keeps the complete historical scope", %{
       account: account,
       owner_subject: owner_subject,
       member: member,
@@ -1293,12 +1317,11 @@ defmodule Emisar.RunnerAccessTest do
               do: {event.target_id, event.payload["after"]["groups"]}
         )
 
-      # Their own grant survives whole; somebody else's stops naming the fleet.
       assert granted_groups[member.user_id] == ["db"]
-      assert granted_groups[other_member.user_id] == []
+      assert granted_groups[other_member.user_id] == ["edge"]
     end
 
-    test "the actor picker's ensure id cannot name a runner outside the fleet", %{
+    test "the actor picker may name an account runner outside current scope", %{
       owner_subject: owner_subject,
       member: member,
       member_subject: member_subject,
@@ -1315,8 +1338,10 @@ defmodule Emisar.RunnerAccessTest do
       assert {:ok, [{^db_id, "db-1"}]} =
                Audit.list_actor_options("runner", member_subject, ensure: db.id)
 
-      # The audit page takes this id straight from the URL, so it buys no reach.
-      assert Audit.list_actor_options("runner", member_subject, ensure: edge.id) == {:ok, []}
+      edge_id = edge.id
+
+      assert {:ok, [{^edge_id, "edge-1"}]} =
+               Audit.list_actor_options("runner", member_subject, ensure: edge.id)
 
       foreign = Fixtures.Runners.create_runner(name: "foreign-1", group: "db")
 

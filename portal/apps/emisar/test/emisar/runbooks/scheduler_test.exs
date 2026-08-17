@@ -499,7 +499,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
 
     assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "trust recheck", subject)
     assert [first] = runs(account.id, result.execution_id)
-    assert {:ok, [version]} = Catalog.list_all_pack_versions_for_account(subject)
+    assert [version] = Fixtures.Catalog.list_pack_versions(subject.account.id)
     assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(version.id, subject)
 
     assert {:ok, _first} =
@@ -906,7 +906,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
                ]
              })
 
-    {:ok, versions} = Catalog.list_all_pack_versions_for_account(subject)
+    versions = Fixtures.Catalog.list_pack_versions(subject.account.id)
 
     Enum.each(versions, fn version ->
       if version.trust_state != :trusted do

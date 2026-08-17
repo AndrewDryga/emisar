@@ -318,7 +318,7 @@ defmodule EmisarWeb.MCPFindActionsRetrievalTest do
   end
 
   defp trust_pending!(subject) do
-    {:ok, versions} = Catalog.list_all_pack_versions_for_account(subject)
+    versions = Fixtures.Catalog.list_pack_versions(subject.account.id)
 
     Enum.each(versions, fn version ->
       if version.trust_state != :trusted do

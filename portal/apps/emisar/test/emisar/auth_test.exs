@@ -4,6 +4,10 @@ defmodule Emisar.AuthTest do
   alias Emisar.Auth.{SecurityAttemptWindow, UserToken}
   alias Emisar.Users.User
 
+  defmodule RaisingSessionDisconnector do
+    def disconnect_live_sessions(_topics), do: raise("handler must not run")
+  end
+
   # Backdate every user_token row so its `inserted_at` lands `minutes` in
   # the past — the only lever on the validity window, since
   # `UserToken.Query.not_expired/2` filters `inserted_at > ago(window)`.
@@ -508,11 +512,8 @@ defmodule Emisar.AuthTest do
   end
 
   describe "disconnect_live_socket_topics/1" do
-    # In the `:emisar`-only test process the `:session_disconnect_handler`
-    # (which lives in `emisar_web`) isn't configured, so this is a pure,
-    # best-effort no-op that must not raise or touch token rows. That the
-    # broadcast actually reaches the socket is proven end-to-end in
-    # `EmisarWeb.EndAllSessionsDisconnectTest`.
+    # In the `:emisar`-only test process the configured handler's sibling app
+    # isn't started, so this is a pure, best-effort no-op.
     test "is a best-effort :ok that deletes no token rows" do
       user = Fixtures.Users.create_user()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
@@ -522,6 +523,16 @@ defmodule Emisar.AuthTest do
       assert :ok = Auth.disconnect_live_socket_topics([])
 
       assert {:ok, %User{}, _} = Auth.fetch_user_and_token_by_session_token(token)
+    end
+
+    test "does not call a loaded handler whose application is not started" do
+      Emisar.Config.put_override(
+        :session_disconnect_handler,
+        {:emisar_not_started_for_test, RaisingSessionDisconnector}
+      )
+
+      assert Code.ensure_loaded?(RaisingSessionDisconnector)
+      assert :ok = Auth.disconnect_live_socket_topics(["users_sessions:test"])
     end
   end
 
@@ -556,10 +567,9 @@ defmodule Emisar.AuthTest do
   end
 
   describe "broadcast_disconnect_for_user/2" do
-    # In the `:emisar`-only test process the `:session_disconnect_handler`
-    # (which lives in `emisar_web`) isn't configured, so this is a pure,
-    # best-effort no-op that must not raise or touch token rows — its
-    # observable contract here is the `:ok` and that the DB is untouched.
+    # In the `:emisar`-only test process the configured handler's sibling app
+    # isn't started, so this is a pure, best-effort no-op whose observable
+    # contract is `:ok` with the DB untouched.
     test "is a best-effort :ok that deletes no token rows" do
       user = Fixtures.Users.create_user()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)

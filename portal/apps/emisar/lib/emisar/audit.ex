@@ -27,9 +27,10 @@ defmodule Emisar.Audit do
   engine origin) carries no request metadata, by construction.
   """
   use Supervisor
-  alias Emisar.{Accounts, Auth, Billing, Repo, RequestContext, Runners, Runs}
   alias Emisar.Audit.{Authorizer, Event, Events}
+  alias Emisar.Auth
   alias Emisar.Auth.Subject
+  alias Emisar.{Billing, Repo, RequestContext, Runs}
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -355,22 +356,14 @@ defmodule Emisar.Audit do
       # leaves an explicit `count:` alone, so the CSV export's cursor walk
       # keeps its `count: false`.
       opts = Keyword.put_new(opts, :count, :auto)
-      scope = audit_scope(subject)
 
       Event.Query.all()
       |> filter_by_actor_id(actor_id)
       |> filter_by_target_id(target_id)
-      |> Event.Query.by_target_access(scope)
       |> Authorizer.for_subject(subject)
       |> Repo.list(Event.Query, opts)
-      |> withhold_listed(scope)
     end
   end
-
-  defp withhold_listed({:ok, events, metadata}, scope),
-    do: {:ok, withhold_out_of_reach(events, scope), metadata}
-
-  defp withhold_listed({:error, reason}, _scope), do: {:error, reason}
 
   @doc """
   The retained audit receipts for approval decisions, keyed by request id.
@@ -392,7 +385,6 @@ defmodule Emisar.Audit do
         ])
         |> Event.Query.ordered_by_recent()
         |> Event.Query.limit_to(2_000)
-        |> Event.Query.by_target_access(audit_scope(subject))
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -434,19 +426,15 @@ defmodule Emisar.Audit do
   `opts[:ensure]` forces an actor id into the option set even with zero events
   (a Team "View activity" link for a member who hasn't acted yet), so the picker
   can SELECT it instead of falling back to All. It is a caller-supplied id — the
-  audit page takes it straight from the URL — so it buys no reach: the label
-  still resolves through the subject's own narrowing, and an id that resolves to
-  nothing (another account's, or a runner outside their fleet) is dropped.
+  audit page takes it straight from the URL — so it buys no account reach: an id
+  that resolves only in another account is dropped.
   """
   def list_actor_options(actor_kind, %Subject{} = subject, opts \\ [])
       when is_binary(actor_kind) do
     with :ok <- ensure_can_read_audit(subject) do
-      scope = audit_scope(subject)
-
       logged_ids =
         Event.Query.all()
         |> Event.Query.distinct_actor_ids_of_kind(actor_kind)
-        |> Event.Query.by_target_access(scope)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -454,7 +442,7 @@ defmodule Emisar.Audit do
 
       labels =
         %{actor_kind => ids}
-        |> resolve_labels(subject.account.id, scope)
+        |> resolve_labels(subject.account.id)
         |> Map.get(actor_kind, %{})
 
       options =
@@ -475,18 +463,15 @@ defmodule Emisar.Audit do
   """
   def list_target_options(target_kind, %Subject{} = subject) when is_binary(target_kind) do
     with :ok <- ensure_can_read_audit(subject) do
-      scope = audit_scope(subject)
-
       ids =
         Event.Query.all()
         |> Event.Query.distinct_target_ids_of_kind(target_kind)
-        |> Event.Query.by_target_access(scope)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
       labels =
         %{target_kind => ids}
-        |> resolve_labels(subject.account.id, scope)
+        |> resolve_labels(subject.account.id)
         |> Map.get(target_kind, %{})
 
       options =
@@ -518,110 +503,6 @@ defmodule Emisar.Audit do
   end
 
   defp filter_by_target_id(queryable, _id), do: Event.Query.none(queryable)
-
-  # Per-user runner + pack scope applies to the audit log the same way it applies
-  # to runs, approvals, and the catalog. The receipts can carry command, decision,
-  # or trust details, so a target kind must not become a side door to records the
-  # member cannot open on their owning page.
-  #
-  # Resolved ONCE per read and threaded, because the same narrowing decides three
-  # things: which rows come back, which display labels resolve, and which identity
-  # inside a payload is readable. An unrestricted member never pays for the fleet
-  # lookup — every consumer branches on `access.mode` first, so the two lists stay
-  # empty and unread for them.
-  defp audit_scope(%Subject{} = subject) do
-    case Accounts.runner_access_for_subject(subject) do
-      %Accounts.RunnerAccess{mode: :all} = access ->
-        %{access: access, runner_ids: [], groups: []}
-
-      access ->
-        {runner_ids, groups} = Runners.reachable_scope_values(subject.account.id, access)
-        %{access: access, runner_ids: runner_ids, groups: groups}
-    end
-  end
-
-  # What a receipt MENTIONS, as opposed to what it is ABOUT. A grant snapshot
-  # names runner groups, runner ids, and pack ids; a retention sweep names the
-  # rows it removed. None of that decides whether the reader may open the event,
-  # so withholding the row would cost a member the record of their own
-  # membership, invitation, and provisioning events — the identity inside it is
-  # withheld instead, and the event stays readable.
-  #
-  # An unrestricted member reads every value; a narrowed one reads the names
-  # their own access already reaches, so their OWN grant survives whole while
-  # another member's stops naming hosts they cannot see. A sweep's `runners`
-  # list is the one value that cannot be re-judged — it names rows the sweep
-  # DELETED, so their group is unknowable at read time — and is dropped rather
-  # than guessed at; `count` still reports the sweep's real size.
-  defp withhold_out_of_reach(events, scope) when is_list(events),
-    do: Enum.map(events, &withhold_out_of_reach(&1, scope))
-
-  defp withhold_out_of_reach(%Event{} = event, %{access: %Accounts.RunnerAccess{mode: :all}}),
-    do: event
-
-  defp withhold_out_of_reach(%Event{payload: payload} = event, scope) when is_map(payload),
-    do: %Event{event | payload: withhold_payload(payload, scope)}
-
-  defp withhold_out_of_reach(%Event{} = event, _scope), do: event
-
-  defp withhold_payload(payload, scope) do
-    Enum.reduce(payload, %{}, fn {key, value}, kept ->
-      case withhold_entry(key, value, scope) do
-        :withhold -> kept
-        {:keep, value} -> Map.put(kept, key, value)
-      end
-    end)
-  end
-
-  defp withhold_entry("runners", _swept_names, _scope), do: :withhold
-
-  defp withhold_entry("versions", versions, scope) when is_list(versions),
-    do: {:keep, Enum.filter(versions, &pack_ref_in_reach?(&1, scope))}
-
-  defp withhold_entry("runner_id", runner_id, scope) when is_binary(runner_id) do
-    if runner_id in scope.runner_ids, do: {:keep, runner_id}, else: :withhold
-  end
-
-  defp withhold_entry(_key, value, scope) when is_map(value),
-    do: {:keep, withhold_access_snapshot(value, scope)}
-
-  defp withhold_entry(_key, value, _scope), do: {:keep, value}
-
-  # The persisted shape of `Audit.Events`' runner-access snapshot — the one
-  # payload value that names hosts and packs wholesale, under `runner_access`,
-  # `before`, or `after` depending on the event.
-  defp withhold_access_snapshot(
-         %{"mode" => _mode, "groups" => groups, "runner_ids" => runner_ids} = snapshot,
-         scope
-       )
-       when is_list(groups) and is_list(runner_ids) do
-    snapshot
-    |> Map.put("groups", Enum.filter(groups, &(&1 in scope.groups)))
-    |> Map.put("runner_ids", Enum.filter(runner_ids, &(&1 in scope.runner_ids)))
-    |> withhold_pack_ids(scope)
-  end
-
-  defp withhold_access_snapshot(value, _scope), do: value
-
-  defp withhold_pack_ids(%{"pack_ids" => pack_ids} = snapshot, scope) when is_list(pack_ids) do
-    kept = Enum.filter(pack_ids, &Accounts.RunnerAccess.pack_in_scope?(&1, scope.access))
-    Map.put(snapshot, "pack_ids", kept)
-  end
-
-  defp withhold_pack_ids(snapshot, _scope), do: snapshot
-
-  # A swept pack version reads `"<pack_id>@<version>"`, and the pack dimension
-  # owns it. A BARE version string names no pack of its own — it belongs to a
-  # payload that states its `pack_id` beside the list — so it is left alone
-  # rather than read as a pack id that matches nothing.
-  defp pack_ref_in_reach?(version_ref, scope) when is_binary(version_ref) do
-    case String.split(version_ref, "@", parts: 2) do
-      [pack_id, _version] -> Accounts.RunnerAccess.pack_in_scope?(pack_id, scope.access)
-      [_version] -> true
-    end
-  end
-
-  defp pack_ref_in_reach?(_version_ref, _scope), do: false
 
   @doc """
   SIEM export — cursor-paginated forward sweep of every event the
@@ -661,7 +542,6 @@ defmodule Emisar.Audit do
     with :ok <- ensure_can_export_audit(subject) do
       types = Keyword.get(opts, :event_types, [])
       limit = clamp_export_limit(Keyword.get(opts, :limit, @default_export_limit))
-      scope = audit_scope(subject)
 
       events =
         Event.Query.all()
@@ -669,11 +549,10 @@ defmodule Emisar.Audit do
         |> Event.Query.by_event_types(types)
         |> Event.Query.ordered_for_export()
         |> Event.Query.limit_to(limit)
-        |> Event.Query.by_target_access(scope)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
-      {:ok, withhold_out_of_reach(events, scope)}
+      {:ok, events}
     end
   end
 
@@ -738,24 +617,15 @@ defmodule Emisar.Audit do
   def fetch_event_by_id(id, %Subject{} = subject) do
     with :ok <- ensure_can_read_audit(subject),
          true <- Repo.valid_uuid?(id) do
-      scope = audit_scope(subject)
-
       Event.Query.all()
       |> Event.Query.by_id(id)
-      |> Event.Query.by_target_access(scope)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(Event.Query)
-      |> withhold_fetched(scope)
     else
       false -> {:error, :not_found}
       other -> other
     end
   end
-
-  defp withhold_fetched({:ok, %Event{} = event}, scope),
-    do: {:ok, withhold_out_of_reach(event, scope)}
-
-  defp withhold_fetched({:error, reason}, _scope), do: {:error, reason}
 
   @doc """
   Bulk-resolves the labels for every actor + subject referenced by the
@@ -764,23 +634,13 @@ defmodule Emisar.Audit do
   inside an already-authorized parent transaction); we only project
   display labels.
 
-  Both call sites pass an already-account-scoped, single-account event
-  list (one page of the audit log, or one event). Label lookups are
-  therefore additionally scoped to that account: a mis-stamped id can't
+  Both call sites pass an already-account-scoped, single-account event list
+  (one page of the audit log, or one event). Label lookups are additionally
+  scoped to the subject's account: a mis-stamped id can't
   resolve a name/email belonging to another account (defense-in-depth).
-  Correctly-scoped ids are unaffected. Mixed-account input degrades to
-  the first account's scope rather than leaking, but isn't a supported
-  shape.
-
-  The subject's own runner access narrows it further: a name is a label, and a
-  label is the thing a restricted member must not learn about a host, group, or
-  ruleset outside their reach. Resolution is the single choke point for that —
-  the picker's caller-supplied `:ensure` id passes through here too, so it can
-  never name something the member could not already see.
+  Correctly-scoped ids are unaffected.
   """
-  def resolve_references(events, %Subject{} = subject) when is_list(events) do
-    account_id = events |> Enum.map(& &1.account_id) |> List.first()
-
+  def resolve_references(events, %Subject{account: %{id: account_id}}) when is_list(events) do
     events
     |> Enum.flat_map(fn event ->
       [{event.actor_kind, event.actor_id}, {event.target_kind, event.target_id}]
@@ -788,13 +648,13 @@ defmodule Emisar.Audit do
     |> Enum.reject(fn {_, id} -> is_nil(id) end)
     |> Enum.uniq()
     |> Enum.group_by(fn {kind, _} -> kind end, fn {_, id} -> id end)
-    |> resolve_labels(account_id, audit_scope(subject))
+    |> resolve_labels(account_id)
   end
 
   # Resolve a %{kind => [id]} map to %{kind => %{id => label}}, each kind's
-  # lookup scoped to account_id and to the reader's runner access. Shared by
-  # resolve_references/2 (event actor/subject refs) and the option pickers.
-  defp resolve_labels(ids_by_kind, account_id, scope) do
+  # lookup scoped to account_id. Shared by resolve_references/2 (event
+  # actor/subject refs) and the option pickers.
+  defp resolve_labels(ids_by_kind, account_id) do
     %{
       # Users belong to accounts via memberships, not a column, so they
       # scope through the membership join rather than `by_account_id`.
@@ -812,7 +672,7 @@ defmodule Emisar.Audit do
           ids_by_kind,
           "runner",
           :name,
-          &(&1 |> Emisar.Runners.Runner.Query.by_account_id(account_id) |> in_runner_reach(scope))
+          &Emisar.Runners.Runner.Query.by_account_id(&1, account_id)
         ),
       "api_key" =>
         fetch_labels(
@@ -867,21 +727,8 @@ defmodule Emisar.Audit do
           &Emisar.SSO.IdentityProvider.Query.by_account_id(&1, account_id)
         ),
       "pack_version" => fetch_pack_version_labels(ids_by_kind, account_id),
-      "policy" => fetch_policy_labels(ids_by_kind, account_id, scope)
+      "policy" => fetch_policy_labels(ids_by_kind, account_id)
     }
-  end
-
-  # A runner's NAME is the leak, so the label lookup carries the same narrowing
-  # its own console list does: an unrestricted reader resolves every runner in
-  # the account, a narrowed one only the fleet they hold, and `none` resolves
-  # nothing at all.
-  defp in_runner_reach(queryable, %{access: %Accounts.RunnerAccess{mode: :all}}), do: queryable
-
-  defp in_runner_reach(queryable, %{access: %Accounts.RunnerAccess{mode: :none}}),
-    do: Emisar.Runners.Runner.Query.none(queryable)
-
-  defp in_runner_reach(queryable, %{access: %Accounts.RunnerAccess{} = access}) do
-    Emisar.Runners.Runner.Query.by_scope_values(queryable, access.runner_ids, access.groups)
   end
 
   defp fetch_pack_version_labels(ids_by_kind, account_id) do
@@ -922,10 +769,7 @@ defmodule Emisar.Audit do
     end
   end
 
-  # A ruleset's label IS its scope — `Runner policy · <uuid>`, `Group policy ·
-  # <name>` — so it resolves only for a scope the reader reaches. The account
-  # default names no host and always resolves.
-  defp fetch_policy_labels(ids_by_kind, account_id, scope) do
+  defp fetch_policy_labels(ids_by_kind, account_id) do
     case Map.get(ids_by_kind, "policy", []) do
       [] ->
         %{}
@@ -933,7 +777,6 @@ defmodule Emisar.Audit do
       ids ->
         Emisar.Policies.Policy.Query.all()
         |> Emisar.Policies.Policy.Query.by_account_id(account_id)
-        |> in_policy_reach(scope)
         |> Emisar.Policies.Policy.Query.select_audit_labels(ids)
         |> Repo.all()
         |> Map.new(fn
@@ -943,11 +786,6 @@ defmodule Emisar.Audit do
         end)
     end
   end
-
-  defp in_policy_reach(queryable, %{access: %Accounts.RunnerAccess{mode: :all}}), do: queryable
-
-  defp in_policy_reach(queryable, %{runner_ids: runner_ids, groups: groups}),
-    do: Emisar.Policies.Policy.Query.by_scope_reach(queryable, runner_ids, groups)
 
   defp fetch_labels(query_module, ids_by_kind, kind, field, narrow) do
     case Map.get(ids_by_kind, kind, []) do

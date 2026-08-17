@@ -123,7 +123,7 @@ defmodule Emisar.CatalogTest do
         )
       )
 
-    {:ok, pack_versions} = Catalog.list_all_pack_versions_for_account(subject)
+    pack_versions = Fixtures.Catalog.list_pack_versions(subject.account.id)
 
     Enum.each(pack_versions, fn pack_version ->
       if pack_version.trust_state != :trusted,
@@ -203,7 +203,7 @@ defmodule Emisar.CatalogTest do
   # The model-facing reads expose only an exact hash an operator already
   # trusted, so every snapshot test arranges that decision explicitly.
   defp trust_advertised_packs(subject) do
-    {:ok, pack_versions} = Catalog.list_all_pack_versions_for_account(subject)
+    pack_versions = Fixtures.Catalog.list_pack_versions(subject.account.id)
 
     Enum.each(pack_versions, fn pack_version ->
       {:ok, _trusted} = Catalog.trust_pack_version(pack_version.id, subject)
@@ -2414,6 +2414,35 @@ defmodule Emisar.CatalogTest do
       refute Enum.any?(Repo.all(Audit.Event), &(&1.event_type == "account.updated"))
     end
 
+    test "a pack-restricted admin cannot arm the account-wide sweep", %{account: account} do
+      admin = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      # Build the subject before narrowing the membership: the retention guard
+      # must re-read current access instead of trusting the open session's copy.
+      stale_subject = Fixtures.Subjects.subject_for(admin, account)
+
+      {:ok, restricted} =
+        Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+
+      refute Catalog.subject_can_manage_pack_retention?(stale_subject)
+
+      assert {:error, :unauthorized} =
+               Catalog.update_pack_retention_settings(account, %{"days" => "7"}, stale_subject)
+
+      assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
+      assert settings.pack_unseen_retention_days == nil
+      refute Enum.any?(Repo.all(Audit.Event), &(&1.event_type == "account.updated"))
+    end
+
     test "another account's admin gets :not_found and writes nothing", %{account: account} do
       {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
@@ -3657,7 +3686,7 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _resolved} =
                Catalog.resolve_model_action("demo.inspect", demo_ref, [runner_ref], subject)
 
-      assert {:ok, [pack_version]} = Catalog.list_all_pack_versions_for_account(subject)
+      assert [pack_version] = Fixtures.Catalog.list_pack_versions(subject.account.id)
       assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(pack_version.id, subject)
 
       assert Catalog.resolve_model_action("demo.inspect", demo_ref, [runner_ref], subject) ==
@@ -5568,7 +5597,7 @@ defmodule Emisar.CatalogTest do
           state_payload(packs: %{pack_id => %{"version" => "0.0.0", "hash" => "lagging"}})
         )
 
-      {:ok, [pack_version]} = Catalog.list_all_pack_versions_for_account(subject)
+      [pack_version] = Fixtures.Catalog.list_pack_versions(subject.account.id)
       {:ok, _rejected} = Catalog.reject_pack_version(pack_version.id, subject)
 
       assert {:ok, projection} = Catalog.list_console_packs(%{}, subject)
@@ -5688,63 +5717,6 @@ defmodule Emisar.CatalogTest do
       assert Enum.map(projection.groups, & &1.id) == [pack_id]
       assert [%{version: "0.0.0"}] = Enum.find(projection.groups, &(&1.id == pack_id)).versions
       assert group_update(projection, pack_id) == nil
-    end
-  end
-
-  describe "list_all_pack_versions_for_account/1" do
-    test "returns the complete account-scoped set in deterministic pack order" do
-      {account, subject} = account_with_owner()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      {:ok, _runner} =
-        Catalog.observe_state(
-          runner,
-          state_payload(
-            packs: %{
-              "zeta" => %{"version" => "2.0", "hash" => "zeta-hash"},
-              "alpha" => %{"version" => "1.0", "hash" => "alpha-hash"}
-            }
-          )
-        )
-
-      assert {:ok, pack_versions} = Catalog.list_all_pack_versions_for_account(subject)
-
-      assert Enum.map(pack_versions, &{&1.pack_id, &1.version}) == [
-               {"alpha", "1.0"},
-               {"zeta", "2.0"}
-             ]
-    end
-
-    test "denies a subject without view-catalog permission" do
-      account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.build_subject(account: account, role: :billing_manager)
-
-      assert Catalog.list_all_pack_versions_for_account(subject) == {:error, :unauthorized}
-    end
-
-    test "never returns another account's rows" do
-      {account_a, subject_a} = account_with_owner()
-      {account_b, subject_b} = account_with_owner()
-      runner_a = Fixtures.Runners.create_runner(account_id: account_a.id)
-      runner_b = Fixtures.Runners.create_runner(account_id: account_b.id)
-
-      {:ok, _runner_a} =
-        Catalog.observe_state(
-          runner_a,
-          state_payload(packs: %{"alpha" => %{"version" => "1.0", "hash" => "a"}})
-        )
-
-      {:ok, _runner_b} =
-        Catalog.observe_state(
-          runner_b,
-          state_payload(packs: %{"beta" => %{"version" => "1.0", "hash" => "b"}})
-        )
-
-      assert {:ok, [%PackVersion{pack_id: "alpha"}]} =
-               Catalog.list_all_pack_versions_for_account(subject_a)
-
-      assert {:ok, [%PackVersion{pack_id: "beta"}]} =
-               Catalog.list_all_pack_versions_for_account(subject_b)
     end
   end
 
@@ -6317,6 +6289,32 @@ defmodule Emisar.CatalogTest do
 
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
       refute Catalog.subject_can_manage_packs?(viewer_subject)
+    end
+  end
+
+  describe "subject_can_manage_pack_retention?/1" do
+    test "requires manage_catalog and current unrestricted pack access" do
+      {_user, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      assert Catalog.subject_can_manage_pack_retention?(owner_subject)
+
+      admin = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      stale_admin_subject = Fixtures.Subjects.subject_for(admin, account)
+      assert Catalog.subject_can_manage_pack_retention?(stale_admin_subject)
+
+      {:ok, restricted} =
+        Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+
+      refute Catalog.subject_can_manage_pack_retention?(stale_admin_subject)
     end
   end
 end

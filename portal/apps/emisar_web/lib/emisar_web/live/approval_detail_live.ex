@@ -283,7 +283,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # can't stand behind renders no command card at all — the raw Arguments card
   # still carries the detail.
   defp build_command_preview(%Catalog.RunnerAction{} = action, %Runs.ActionRun{} = run, subject) do
-    case Runs.project_action_command(run, action, subject) do
+    case Runs.project_action_command(run.id, action, subject) do
       {:ok, line} -> line
       {:error, _reason} -> nil
     end

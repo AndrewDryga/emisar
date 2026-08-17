@@ -83,7 +83,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
       })
 
     subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-    {:ok, [pack_version]} = Catalog.list_all_pack_versions_for_account(subject)
+    [pack_version] = Fixtures.Catalog.list_pack_versions(subject.account.id)
     {:ok, _pack_version} = Catalog.trust_pack_version(pack_version.id, subject)
   end
 

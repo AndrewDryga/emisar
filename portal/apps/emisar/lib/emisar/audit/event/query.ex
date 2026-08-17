@@ -1,7 +1,6 @@
 defmodule Emisar.Audit.Event.Query do
   use Emisar, :query
   alias Emisar.Repo.{Filter, Like}
-  alias Emisar.Runners
 
   # What's deliberately NOT audited (so the default listing stays
   # operator-meaningful): run lifecycle states (pending/sent/running) never leave
@@ -488,101 +487,6 @@ defmodule Emisar.Audit.Event.Query do
 
   def by_event_type(queryable, type),
     do: where(queryable, [events: e], e.event_type == ^type)
-
-  @doc """
-  Restricts the receipts that are ABOUT one host, request, pack, or policy scope
-  to the same runner-and-pack reach that governs their owning console records.
-
-  `scope` is the caller's resolved audit scope — the member's `%RunnerAccess{}`
-  plus the runner ids and group names it reaches (both unused, and unread, when
-  the access is `all`). A policy receipt names its target in the payload rather
-  than in `target_id`, so it is judged there; every other target kind stays
-  account-wide and is narrowed, where it needs to be, by what it MENTIONS.
-  """
-  def by_target_access(queryable, %{access: %Emisar.Accounts.RunnerAccess{} = access} = scope) do
-    approval_request =
-      Emisar.Approvals.Request.Query.all()
-      |> Emisar.Approvals.Request.Query.by_target_access(access)
-      |> where(
-        [requests: request],
-        request.id == parent_as(:events).target_id and
-          request.account_id == parent_as(:events).account_id
-      )
-      |> select([requests: _request], 1)
-
-    runner_allowed = runner_target_allowed(access)
-    pack_allowed = pack_target_allowed(access)
-    policy_allowed = policy_target_allowed(scope)
-
-    allowed =
-      dynamic(
-        [events: e],
-        is_nil(e.target_kind) or
-          e.target_kind not in ["runner", "approval_request", "pack_version", "policy"] or
-          (e.target_kind == "runner" and ^runner_allowed) or
-          (e.target_kind == "approval_request" and exists(approval_request)) or
-          (e.target_kind == "pack_version" and ^pack_allowed) or
-          (e.target_kind == "policy" and ^policy_allowed)
-      )
-
-    where(queryable, ^allowed)
-  end
-
-  # A ruleset receipt spells out what may run on the runner or group named in
-  # `scope_value`, so it belongs to whoever reaches that scope. The account
-  # default governs nothing host-specific and stays readable; a receipt whose
-  # scope the payload does not state is withheld rather than assumed harmless.
-  defp policy_target_allowed(%{access: %Emisar.Accounts.RunnerAccess{mode: :all}}),
-    do: dynamic([events: _event], true)
-
-  defp policy_target_allowed(%{runner_ids: runner_ids, groups: groups}) do
-    dynamic(
-      [events: e],
-      fragment("?->>'scope_type'", e.payload) == "account" or
-        (fragment("?->>'scope_type'", e.payload) == "runner" and
-           fragment("?->>'scope_value'", e.payload) in ^runner_ids) or
-        (fragment("?->>'scope_type'", e.payload) == "group" and
-           fragment("?->>'scope_value'", e.payload) in ^groups)
-    )
-  end
-
-  defp runner_target_allowed(%Emisar.Accounts.RunnerAccess{mode: :none}),
-    do: dynamic([events: _event], false)
-
-  defp runner_target_allowed(%Emisar.Accounts.RunnerAccess{mode: :all}),
-    do: dynamic([events: e], not is_nil(e.target_id))
-
-  defp runner_target_allowed(%Emisar.Accounts.RunnerAccess{
-         mode: :restricted,
-         runner_ids: runner_ids,
-         groups: groups
-       }) do
-    dynamic(
-      [events: e],
-      not is_nil(e.target_id) and
-        exists(
-          from(runner in Runners.Runner.Query.not_deleted(),
-            where:
-              runner.id == parent_as(:events).target_id and
-                (runner.id in ^runner_ids or runner.group in ^groups),
-            select: 1
-          )
-        )
-    )
-  end
-
-  defp pack_target_allowed(%Emisar.Accounts.RunnerAccess{mode: :none}),
-    do: dynamic([events: _event], false)
-
-  defp pack_target_allowed(%Emisar.Accounts.RunnerAccess{pack_mode: :all}),
-    do: dynamic([events: _event], true)
-
-  defp pack_target_allowed(%Emisar.Accounts.RunnerAccess{
-         pack_mode: :restricted,
-         pack_ids: pack_ids
-       }) do
-    dynamic([events: e], fragment("?->>'pack_id'", e.payload) in ^pack_ids)
-  end
 
   @doc """
   Distinct `actor_id`s for actors of `kind` in the scoped events — the id set

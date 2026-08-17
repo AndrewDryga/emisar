@@ -1812,16 +1812,48 @@ defmodule EmisarWeb.PacksLiveTest do
       # The schedule they can't set is still ON the page as a value, with the
       # requirement on the lock's tooltip rather than a prose tail.
       assert html =~ "After 30 days unseen"
-      assert html =~ "Only owners and admins can change this."
+      assert html =~ "Only owners and admins with full pack access can change this."
       refute has_element?(lv, "#packs-cleanup form")
 
       assert render_click(lv, "set_pack_retention", %{"days" => "7"}) =~
-               "Only owners and admins can change this setting."
+               "Only owners and admins with full pack access can change this setting."
 
       assert render_click(lv, "cleanup_now", %{}) =~ "Admin required to clean up the catalog."
 
       # The stale row survived both crafted attempts, and the window is untouched.
       assert Emisar.Repo.reload(stale)
+      assert {:ok, settings} = Emisar.Accounts.fetch_account_settings(account.id)
+      assert settings.pack_unseen_retention_days == 30
+    end
+
+    test "a pack-restricted admin cannot arm the account-wide schedule", %{account: account} do
+      _account =
+        Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: 30})
+
+      admin = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      {:ok, restricted} =
+        Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+
+      {:ok, lv, html} =
+        build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/packs")
+
+      assert html =~ "After 30 days unseen"
+      assert html =~ "Only owners and admins with full pack access can change this."
+      refute has_element?(lv, "#pack-retention-form")
+
+      assert render_click(lv, "set_pack_retention", %{"days" => "7"}) =~
+               "Only owners and admins with full pack access can change this setting."
+
       assert {:ok, settings} = Emisar.Accounts.fetch_account_settings(account.id)
       assert settings.pack_unseen_retention_days == 30
     end

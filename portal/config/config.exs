@@ -16,7 +16,7 @@ config :emisar,
   # Web-side handler `Emisar.Auth` calls when it needs to disconnect
   # active LiveView sockets (the broadcast struct itself lives in the
   # `phoenix` package, which emisar deliberately doesn't depend on).
-  session_disconnect_handler: EmisarWeb.SessionDisconnector,
+  session_disconnect_handler: {:emisar_web, EmisarWeb.SessionDisconnector},
   # Supervised Task fan-out for detached domain work (Analytics,
   # Approvals, Marketing.Conversions). Lives in Emisar's supervision tree
   # so SIGTERM gracefully drains in-flight tasks instead of dropping them

@@ -309,15 +309,14 @@ defmodule Emisar.Runbooks do
     end
   end
 
-  @doc "Fetches one runbook execution visible to the subject."
+  @doc "Fetches one account-scoped runbook execution visible to the subject."
   def fetch_execution_by_id(execution_id, %Subject{} = subject) when is_binary(execution_id) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
-         true <- Repo.valid_uuid?(execution_id),
-         access = Accounts.runner_access_for_subject(subject),
-         {:ok, execution} <-
-           fetch_scoped_execution(execution_id, access, subject, false) do
-      {:ok, execution}
+         true <- Repo.valid_uuid?(execution_id) do
+      RunbookExecution.Query.by_id(execution_id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(RunbookExecution.Query)
     else
       false -> {:error, :not_found}
       other -> other
@@ -327,8 +326,6 @@ defmodule Emisar.Runbooks do
   @doc "Fetches account-scoped execution identity for recovery. Requires `view_runbooks`."
   def fetch_execution_recovery_identity(execution_id, %Subject{} = subject)
       when is_binary(execution_id) do
-    # Later scope changes may hide details, but not whether an earlier
-    # lineage-owned operation committed.
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
          true <- Repo.valid_uuid?(execution_id) do
@@ -352,9 +349,7 @@ defmodule Emisar.Runbooks do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()),
          true <- Repo.valid_uuid?(execution_id),
-         access = Accounts.runner_access_for_subject(subject),
-         {:ok, execution} <-
-           fetch_scoped_execution(execution_id, access, subject, true),
+         {:ok, execution} <- fetch_execution_result_row(execution_id, subject),
          {:ok, runbook} <- fetch_runbook_for_execution(execution, subject),
          {:ok, attempts} <- Runs.list_latest_runbook_attempts(execution.id, subject) do
       {:ok, %{execution: execution, runbook: runbook, latest_attempts: attempts}}
@@ -1380,7 +1375,6 @@ defmodule Emisar.Runbooks do
          :ok <- Subject.ensure_in_account(subject, runbook.account_id) do
       executions =
         RunbookExecution.Query.by_runbook_id(runbook.id)
-        |> RunbookExecution.Query.by_runner_access(Accounts.runner_access_for_subject(subject))
         |> RunbookExecution.Query.ordered_by_recent()
         |> RunbookExecution.Query.limit_to(limit)
         |> RunbookExecution.Query.with_attribution()
@@ -1398,7 +1392,6 @@ defmodule Emisar.Runbooks do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_runbooks_permission()) do
       executions =
         RunbookExecution.Query.all()
-        |> RunbookExecution.Query.by_runner_access(Accounts.runner_access_for_subject(subject))
         |> RunbookExecution.Query.ordered_by_recent()
         |> RunbookExecution.Query.limit_to(limit)
         |> RunbookExecution.Query.with_runbook()
@@ -1472,13 +1465,9 @@ defmodule Emisar.Runbooks do
 
   defp execution_via(%RunbookExecution{}), do: "LLM agent"
 
-  defp fetch_scoped_execution(execution_id, access, subject, preload?) do
-    query =
-      RunbookExecution.Query.by_id(execution_id)
-      |> RunbookExecution.Query.by_runner_access(access)
-      |> maybe_with_execution_result(preload?)
-
-    query
+  defp fetch_execution_result_row(execution_id, subject) do
+    RunbookExecution.Query.by_id(execution_id)
+    |> with_execution_result()
     |> Authorizer.for_subject(subject)
     |> Repo.fetch(RunbookExecution.Query)
   end
@@ -1487,13 +1476,11 @@ defmodule Emisar.Runbooks do
   # consumer attributes the execution to its accountable human via
   # `execution_who_via/1` (console header, MCP serialization keeps it cheap
   # to ignore).
-  defp maybe_with_execution_result(query, true) do
+  defp with_execution_result(query) do
     query
     |> RunbookExecution.Query.with_stages_and_items()
     |> RunbookExecution.Query.with_attribution()
   end
-
-  defp maybe_with_execution_result(query, false), do: query
 
   defp authoring_preview_inputs(%{"inputs" => inputs}) do
     inputs

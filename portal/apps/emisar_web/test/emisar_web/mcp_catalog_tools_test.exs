@@ -743,7 +743,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     assert call(conn, "list_runners", %{"pack_ref" => pack_ref})["runners"] == []
 
-    {:ok, [pending]} = Catalog.list_all_pack_versions_for_account(subject)
+    [pending] = Fixtures.Catalog.list_pack_versions(subject.account.id)
     assert {:ok, _trusted} = Catalog.trust_pack_version(pending.id, subject)
 
     assert [%{"pack_ref" => ^pack_ref}] =
@@ -862,7 +862,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
       action("awaiting.read", "awaiting")
     ])
 
-    {:ok, versions} = Catalog.list_all_pack_versions_for_account(subject)
+    versions = Fixtures.Catalog.list_pack_versions(subject.account.id)
 
     Enum.each(versions, fn version ->
       if version.pack_id in ["postgres", "linux-core"] do
@@ -1312,7 +1312,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
   end
 
   defp trust_all!(subject) do
-    {:ok, versions} = Catalog.list_all_pack_versions_for_account(subject)
+    versions = Fixtures.Catalog.list_pack_versions(subject.account.id)
 
     Enum.each(versions, fn version ->
       if version.trust_state != :trusted do

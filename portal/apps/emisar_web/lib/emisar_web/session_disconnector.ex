@@ -11,7 +11,8 @@ defmodule EmisarWeb.SessionDisconnector do
   the `phoenix` package — which the data-layer `emisar` app deliberately
   doesn't pull in.
 
-  Wired via `config :emisar, :session_disconnect_handler, EmisarWeb.SessionDisconnector`.
+  Wired via
+  `config :emisar, :session_disconnect_handler, {:emisar_web, EmisarWeb.SessionDisconnector}`.
   """
 
   @doc """

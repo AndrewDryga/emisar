@@ -19,7 +19,7 @@ repeat the frozen-plan arguments above it, frame it as a separate card, put it
 behind a disclosure, or add a visible heading that restates what it already
 shows. Never reconstruct a command from arguments. Fetch tails in one authorized
 bounded read, cap each action independently, and fail closed if any requested
-run is outside the subject's account or runner scope. Never weaken output
+run is outside the subject's account. Never weaken output
 retention, redaction, or sensitive-value masking to populate the preview.
 
 User-authored operational instructions are an artifact, not page chrome. Render

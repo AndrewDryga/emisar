@@ -20,42 +20,6 @@ defmodule Emisar.Runbooks.RunbookExecution.Query do
   def by_operation_id(queryable \\ all(), operation_id),
     do: where(queryable, [runbook_executions: r], r.operation_id == ^operation_id)
 
-  def by_runner_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :none}),
-    do: where(queryable, [runbook_executions: _], false)
-
-  def by_runner_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :all}), do: queryable
-
-  def by_runner_access(
-        queryable,
-        %Emisar.Accounts.RunnerAccess{mode: :restricted, runner_ids: runner_ids, groups: groups}
-      ) do
-    disallowed_item =
-      Emisar.Runbooks.ExecutionItem.Query.all()
-      |> with_named_binding(:scope_runner, fn queryable, binding ->
-        join(
-          queryable,
-          :left,
-          [runbook_execution_items: item],
-          runner in ^Emisar.Runners.Runner.Query.all(),
-          on: item.runner_id == runner.id,
-          as: ^binding
-        )
-      end)
-      |> where(
-        [runbook_execution_items: item, scope_runner: runner],
-        item.runbook_execution_id == parent_as(:runbook_executions).id and
-          (is_nil(runner.id) or
-             (runner.id not in ^runner_ids and runner.group not in ^groups))
-      )
-      |> select([runbook_execution_items: _item], 1)
-
-    where(
-      queryable,
-      [runbook_executions: _],
-      not exists(disallowed_item)
-    )
-  end
-
   def active(queryable \\ all()),
     do: where(queryable, [runbook_executions: r], r.status == :active)
 

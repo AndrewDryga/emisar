@@ -724,7 +724,7 @@ defmodule Emisar.RunsTest do
   end
 
   describe "list_recent_mcp_runs/3" do
-    test "returns only fixed-contract runs in the key lineage and current runner scope" do
+    test "keeps fixed-contract lineage history after current runner scope changes" do
       %{
         subject: subject,
         membership: membership,
@@ -749,8 +749,10 @@ defmodule Emisar.RunsTest do
 
       Fixtures.Memberships.force_runner_access(membership, access)
 
-      assert {:ok, [], _metadata} =
+      assert {:ok, [listed_after_scope_change], _metadata} =
                Runs.list_recent_mcp_runs(%{scope: :own}, subject, limit: 15)
+
+      assert listed_after_scope_change.id == run.id
     end
 
     test "rejects subjects without run-view permission" do
@@ -1043,7 +1045,7 @@ defmodule Emisar.RunsTest do
           expected_pack_hash: pack.content_hash
         )
 
-      assert Runs.project_action_command(run, advertised_action, subject) ==
+      assert Runs.project_action_command(run.id, advertised_action, subject) ==
                {:ok, "df -P -h /"}
     end
 
@@ -1068,7 +1070,7 @@ defmodule Emisar.RunsTest do
           expected_pack_hash: pack.content_hash
         )
 
-      assert Runs.project_action_command(run, advertised_action, subject) ==
+      assert Runs.project_action_command(run.id, advertised_action, subject) ==
                {:ok, "df -P -h '[REDACTED]' '[REDACTED]'"}
     end
 
@@ -1086,7 +1088,11 @@ defmodule Emisar.RunsTest do
           expected_pack_hash: pack.content_hash
         )
 
-      assert Runs.project_action_command(run, advertised_action, no_permissions_subject(account)) ==
+      assert Runs.project_action_command(
+               run.id,
+               advertised_action,
+               no_permissions_subject(account)
+             ) ==
                {:error, :unauthorized}
     end
 
@@ -1106,8 +1112,31 @@ defmodule Emisar.RunsTest do
 
       {_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
-      assert Runs.project_action_command(run, advertised_action, other_subject) ==
+      assert Runs.project_action_command(run.id, advertised_action, other_subject) ==
                {:error, :not_found}
+    end
+
+    test "freshly scopes the run to the account, not the member's current runner reach", %{
+      account: account,
+      subject: subject,
+      runner: runner,
+      pack: pack,
+      advertised_action: advertised_action
+    } do
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.disk_usage",
+          expected_pack_hash: pack.content_hash
+        )
+
+      membership = Repo.get!(Emisar.Accounts.Membership, subject.membership_id)
+      {:ok, restricted} = Emisar.Accounts.RunnerAccess.restricted(["another-group"], [])
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+
+      assert Runs.project_action_command(run.id, advertised_action, subject) ==
+               {:ok, "df -P -h /"}
     end
 
     test "rejects an advertisement that is not this run's", %{
@@ -1142,10 +1171,10 @@ defmodule Emisar.RunsTest do
           expected_pack_hash: pack.content_hash
         )
 
-      assert Runs.project_action_command(run, other_runner_action, subject) ==
+      assert Runs.project_action_command(run.id, other_runner_action, subject) ==
                {:error, :action_mismatch}
 
-      assert Runs.project_action_command(run, other_action, subject) ==
+      assert Runs.project_action_command(run.id, other_action, subject) ==
                {:error, :action_mismatch}
     end
 
@@ -1166,7 +1195,7 @@ defmodule Emisar.RunsTest do
           expected_pack_hash: drifted_hash
         )
 
-      assert Runs.project_action_command(drifted_run, advertised_action, subject) ==
+      assert Runs.project_action_command(drifted_run.id, advertised_action, subject) ==
                {:error, :no_command_preview}
 
       drifted_advertisement =
@@ -1185,7 +1214,7 @@ defmodule Emisar.RunsTest do
           expected_pack_hash: pack.content_hash
         )
 
-      assert Runs.project_action_command(pinned_run, drifted_advertisement, subject) ==
+      assert Runs.project_action_command(pinned_run.id, drifted_advertisement, subject) ==
                {:error, :no_command_preview}
     end
 
@@ -1206,13 +1235,13 @@ defmodule Emisar.RunsTest do
 
       malformed = Fixtures.Runs.put_malformed_args_raw(run, ~s({"paths":"secret-value",}))
 
-      assert Runs.project_action_command(malformed, advertised_action, subject) ==
+      assert Runs.project_action_command(malformed.id, advertised_action, subject) ==
                {:error, :invalid_action_args}
     end
   end
 
   describe "fetch_mcp_run_by_id/2" do
-    test "returns the exact fixed-contract run and fails closed outside account or scope" do
+    test "returns the exact fixed-contract run across scope changes, but not across accounts" do
       %{
         subject: subject,
         membership: membership,
@@ -1237,7 +1266,8 @@ defmodule Emisar.RunsTest do
 
       Fixtures.Memberships.force_runner_access(membership, access)
 
-      assert {:error, :not_found} = Runs.fetch_mcp_run_by_id(run.id, subject)
+      assert {:ok, fetched_after_scope_change} = Runs.fetch_mcp_run_by_id(run.id, subject)
+      assert fetched_after_scope_change.id == run.id
       assert {:error, :not_found} = Runs.fetch_mcp_run_by_id("not-a-uuid", subject)
     end
   end
@@ -2824,7 +2854,7 @@ defmodule Emisar.RunsTest do
                Runs.list_runs_by_mcp_operation(run.mcp_operation_record_id, foreign_subject)
     end
 
-    test "re-reads the API key owner's runner access before returning operation runs" do
+    test "keeps operation history after the API key owner's runner access changes" do
       %{subject: subject, membership: membership, runners: [runner]} = mcp_fanout_fixture(["low"])
       facts = mcp_action_facts("op_314NN9NMDZ1T76NARWCKM5A0D6", [runner])
 
@@ -2838,8 +2868,10 @@ defmodule Emisar.RunsTest do
         Emisar.Accounts.RunnerAccess.none()
       )
 
-      assert {:ok, []} =
+      assert {:ok, [listed_after_scope_change]} =
                Runs.list_runs_by_mcp_operation(run.mcp_operation_record_id, subject)
+
+      assert listed_after_scope_change.id == run.id
     end
   end
 
@@ -3012,7 +3044,7 @@ defmodule Emisar.RunsTest do
         runner
       end)
 
-    {:ok, pack_versions} = Catalog.list_all_pack_versions_for_account(owner_subject)
+    pack_versions = Fixtures.Catalog.list_pack_versions(owner_subject.account.id)
 
     Enum.each(pack_versions, fn pack_version ->
       if pack_version.trust_state != :trusted do
@@ -5712,7 +5744,7 @@ defmodule Emisar.RunsTest do
       refute_receive {:run_updated, _}, 200
     end
 
-    test "a restricted same-account subscriber gets only an id it cannot dereference" do
+    test "a restricted same-account subscriber can dereference historical run ids" do
       account = Fixtures.Accounts.create_account()
       _database_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
@@ -5728,7 +5760,8 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, web_runner.id))
       assert_receive {:run_updated, run_id}, 500
       assert run_id == run.id
-      assert {:error, :not_found} = Runs.fetch_run_by_id(run_id, restricted_subject)
+      assert {:ok, fetched} = Runs.fetch_run_by_id(run_id, restricted_subject)
+      assert fetched.id == run.id
     end
   end
 

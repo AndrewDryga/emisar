@@ -160,7 +160,7 @@ defmodule Emisar.ApprovalsTest do
              })
 
     subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-    assert {:ok, [pack_version]} = Catalog.list_all_pack_versions_for_account(subject)
+    assert [pack_version] = Fixtures.Catalog.list_pack_versions(subject.account.id)
     assert {:ok, _pack_version} = Catalog.trust_pack_version(pack_version.id, subject)
   end
 

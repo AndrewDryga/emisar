@@ -203,11 +203,7 @@ defmodule Emisar.Runs do
            ) do
       {preloads, opts} = Keyword.pop(opts, :preload, [])
 
-      # Runner/agent scoping arrives through the DECLARED filters —
-      # Query.filters/0 carries :runner_id and :api_key_id, the deep-link
-      # targets of "View all runs" / "View activity" — not side-channel opts.
       ActionRun.Query.all()
-      |> scope_runs_to_membership(subject)
       |> apply_run_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.list(ActionRun.Query, opts)
@@ -227,7 +223,6 @@ defmodule Emisar.Runs do
            ) do
       options =
         ActionRun.Query.all()
-        |> scope_runs_to_membership(subject)
         |> ActionRun.Query.operator_options()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -249,7 +244,6 @@ defmodule Emisar.Runs do
            ) do
       options =
         ActionRun.Query.all()
-        |> scope_runs_to_membership(subject)
         |> ActionRun.Query.runbook_options()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -284,7 +278,6 @@ defmodule Emisar.Runs do
       opts = Keyword.put(opts, :page, limit: limit)
 
       ActionRun.Query.all()
-      |> scope_runs_to_membership(subject)
       |> apply_run_scope(scope, subject)
       |> maybe_by_runner_id(runner_id)
       |> maybe_by_action_id(action_id)
@@ -304,7 +297,6 @@ defmodule Emisar.Runs do
            ) do
       ActionRun.Query.all()
       |> ActionRun.Query.fixed_mcp_contract()
-      |> scope_runs_to_membership(subject)
       |> apply_mcp_history_scope(filters[:scope], subject)
       |> maybe_by_operation_id(filters[:operation_id])
       |> maybe_by_runbook_execution_id(filters[:runbook_execution_id])
@@ -447,7 +439,6 @@ defmodule Emisar.Runs do
            ) do
       ActionRun.Query.all()
       |> ActionRun.Query.by_runner_id(runner_id)
-      |> scope_runs_to_membership(subject)
       |> Authorizer.for_subject(subject)
       |> Repo.list(ActionRun.Query, opts)
     end
@@ -464,7 +455,6 @@ defmodule Emisar.Runs do
 
       ActionRun.Query.all()
       |> ActionRun.Query.by_id(id)
-      |> scope_runs_to_membership(subject)
       |> apply_run_preloads(preloads)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(ActionRun.Query, opts)
@@ -504,13 +494,14 @@ defmodule Emisar.Runs do
   where an operator decides against *what runs*, not just which arguments were
   sent.
 
-  Requires `view_runs` and the run's own account. `advertised_action` is the
-  runner's catalog row for this run; its account, runner, and action id must be
-  the run's own, and its pack hash is one half of the proof. The command
-  template and the arg declarations both come from the published catalog entry
-  that hash proves (`Catalog.PublishedRegistry.resolve_action/4`), never from
-  the advertisement itself, so a forged `args_schema` cannot move a default or
-  drop a `sensitive` flag out of the line.
+  Requires `view_runs` and takes a run id so the run is freshly fetched through
+  the caller's account scope. `advertised_action` is the runner's catalog row
+  for this run; its account, runner, and action id must be the run's own, and its
+  pack hash is one half of the proof. The command template and the arg
+  declarations both come from the published catalog entry that hash proves
+  (`Catalog.PublishedRegistry.resolve_action/4`), never from the advertisement
+  itself, so a forged `args_schema` cannot move a default or drop a `sensitive`
+  flag out of the line.
 
   Returns `{:ok, line}` with every sensitive value masked, or
   `{:error, :unauthorized}`, `{:error, :not_found}` for a run outside the
@@ -521,16 +512,12 @@ defmodule Emisar.Runs do
   reference the template can't resolve.
   """
   def project_action_command(
-        %ActionRun{} = run,
+        run_id,
         %Catalog.RunnerAction{} = advertised_action,
         %Subject{} = subject
-      ) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.view_runs_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, run.account_id),
+      )
+      when is_binary(run_id) do
+    with {:ok, run} <- fetch_run_by_id(run_id, subject),
          :ok <- ensure_advertisement_matches_run(advertised_action, run),
          {:ok, args} <- decode_action_args(run.args_raw),
          {:ok, action} <-
@@ -585,7 +572,6 @@ defmodule Emisar.Runs do
          true <- Repo.valid_uuid?(id) do
       ActionRun.Query.all()
       |> ActionRun.Query.fixed_mcp_contract()
-      |> scope_runs_to_membership(subject)
       |> ActionRun.Query.by_id(id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(ActionRun.Query)
@@ -606,7 +592,6 @@ defmodule Emisar.Runs do
       runs =
         ActionRun.Query.all()
         |> ActionRun.Query.by_runbook_execution_id(execution_id)
-        |> scope_runs_to_membership(subject)
         |> ActionRun.Query.with_preloaded_runner()
         |> Authorizer.for_subject(subject)
         |> ActionRun.Query.ordered_by_oldest()
@@ -628,7 +613,6 @@ defmodule Emisar.Runs do
         ActionRun.Query.all()
         |> ActionRun.Query.by_runbook_execution_id(execution_id)
         |> ActionRun.Query.latest_runbook_attempts()
-        |> scope_runs_to_membership(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
@@ -643,23 +627,6 @@ defmodule Emisar.Runs do
     do: ActionRun.Query.by_api_key_id(query, api_key_id)
 
   defp apply_run_scope(query, _scope, _subject), do: query
-
-  # Runner scope only: the pack dimension gates what a member may DISCOVER and
-  # DISPATCH, never what they may know happened on a host they already reach.
-  # Hiding part of a reachable runner's history would leave an operator reading
-  # an incomplete record with nothing saying so.
-  defp scope_runs_to_membership(query, %Subject{} = subject) do
-    case Accounts.runner_access_for_subject(subject) do
-      %Accounts.RunnerAccess{mode: :none} ->
-        ActionRun.Query.none(query)
-
-      %Accounts.RunnerAccess{mode: :all} ->
-        query
-
-      %Accounts.RunnerAccess{mode: :restricted, runner_ids: runner_ids, groups: groups} ->
-        ActionRun.Query.by_runner_scope_values(query, runner_ids, groups)
-    end
-  end
 
   # Rendering concerns are the caller's: pass `preload:` only for the
   # associations the page actually shows. Unknown atoms raise (caller bug).
@@ -1704,7 +1671,6 @@ defmodule Emisar.Runs do
       runs =
         ActionRun.Query.all()
         |> ActionRun.Query.by_mcp_operation_record_id(operation_record_id)
-        |> scope_runs_to_membership(subject)
         |> ActionRun.Query.with_preloaded_runner()
         |> Authorizer.for_subject(subject)
         |> ActionRun.Query.ordered_by_oldest()
@@ -1715,11 +1681,9 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  The subset of `run_ids` still visible to the subject and not yet in a
-  terminal status — the ids a settle-wait must keep waiting on. One query for
-  the whole set, so a fan-out poll never pays a scoped fetch per run. A run
-  that disappeared from the subject's scope is deliberately absent (nothing
-  left to wait for); the caller's terminal re-read fails closed on the gap.
+  The subset of account-scoped `run_ids` not yet in a terminal status — the ids
+  a settle-wait must keep waiting on. One query for the whole set, so a fan-out
+  poll never pays a fetch per run.
   """
   def list_unsettled_run_ids(run_ids, %Subject{} = subject) when is_list(run_ids) do
     with :ok <-
@@ -1731,7 +1695,6 @@ defmodule Emisar.Runs do
         ActionRun.Query.all()
         |> ActionRun.Query.by_ids(run_ids)
         |> ActionRun.Query.status_not_in(ActionRun.terminal_statuses())
-        |> scope_runs_to_membership(subject)
         |> Authorizer.for_subject(subject)
         |> ActionRun.Query.select_ids()
         |> Repo.all()
@@ -3624,7 +3587,6 @@ defmodule Emisar.Runs do
     visible_ids =
       ActionRun.Query.all()
       |> ActionRun.Query.by_ids(run_ids)
-      |> scope_runs_to_membership(subject)
       |> Authorizer.for_subject(subject)
       |> ActionRun.Query.select_ids()
       |> Repo.all()

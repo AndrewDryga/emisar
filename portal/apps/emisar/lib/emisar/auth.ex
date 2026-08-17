@@ -340,7 +340,8 @@ defmodule Emisar.Auth do
   also want to invalidate the cookies on the server side.
 
   The actual PubSub broadcast lives in `EmisarWeb.SessionDisconnector`
-  (configured via `:emisar, :session_disconnect_handler`) because
+  (configured with its owning application via
+  `:emisar, :session_disconnect_handler`) because
   `%Phoenix.Socket.Broadcast{}` — the struct Phoenix.LiveView listens
   for — lives in the `phoenix` package, which the data-layer app
   deliberately doesn't depend on. Auth knows WHICH topics to kill;
@@ -365,16 +366,21 @@ defmodule Emisar.Auth do
   end
 
   defp disconnect_live_sessions(topics) do
-    # The handler module lives in `emisar_web` — `Code.ensure_loaded?`
-    # is defensive against running this code in an `:emisar`-only test
-    # process where the umbrella sibling hasn't been started.
-    handler = Application.get_env(:emisar, :session_disconnect_handler)
+    case Emisar.Config.get_env(:emisar, :session_disconnect_handler) do
+      {application, handler} when is_atom(application) and is_atom(handler) ->
+        if application_started?(application), do: handler.disconnect_live_sessions(topics)
 
-    if handler && Code.ensure_loaded?(handler) do
-      handler.disconnect_live_sessions(topics)
+      _missing_or_invalid ->
+        :ok
     end
 
     :ok
+  end
+
+  defp application_started?(application) do
+    Enum.any?(Application.started_applications(), fn {started, _description, _version} ->
+      started == application
+    end)
   end
 
   @doc """

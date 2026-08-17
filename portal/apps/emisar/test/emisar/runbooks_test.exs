@@ -367,7 +367,7 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, [visible]} = Runbooks.list_model_visible_runbooks(subject)
       assert visible.id == runbook.id
 
-      assert {:ok, [trusted]} = Catalog.list_all_pack_versions_for_account(subject)
+      assert [trusted] = Fixtures.Catalog.list_pack_versions(subject.account.id)
       assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(trusted.id, subject)
 
       assert Runbooks.list_model_visible_runbooks(subject) == {:ok, []}
@@ -398,7 +398,7 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, [draft]} = Runbooks.list_model_draft_runbooks(subject)
       assert draft.id == edited.id
 
-      assert {:ok, [trusted]} = Catalog.list_all_pack_versions_for_account(subject)
+      assert [trusted] = Fixtures.Catalog.list_pack_versions(subject.account.id)
       assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(trusted.id, subject)
 
       assert {:ok, [still_visible]} = Runbooks.list_model_draft_runbooks(subject)
@@ -439,7 +439,7 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, fetched} = Runbooks.fetch_model_visible_runbook("versioned", subject)
       assert fetched.id == live.id
 
-      assert {:ok, [trusted]} = Catalog.list_all_pack_versions_for_account(subject)
+      assert [trusted] = Fixtures.Catalog.list_pack_versions(subject.account.id)
       assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(trusted.id, subject)
 
       assert Runbooks.fetch_model_visible_runbook("versioned", subject) == {:error, :not_found}
@@ -484,7 +484,7 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, fetched} = Runbooks.fetch_model_runbook_draft("working", subject)
       assert fetched.id == working.id
 
-      assert {:ok, [trusted]} = Catalog.list_all_pack_versions_for_account(subject)
+      assert [trusted] = Fixtures.Catalog.list_pack_versions(subject.account.id)
       assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(trusted.id, subject)
 
       assert {:ok, still_readable} = Runbooks.fetch_model_runbook_draft("working", subject)
@@ -529,7 +529,7 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "fetch_execution_by_id/2" do
-    test "returns only executions visible through current account and runner scope" do
+    test "returns only executions visible through the current account" do
       fixture = mcp_execution_fixture()
 
       assert {:ok, fetched} =
@@ -546,18 +546,22 @@ defmodule Emisar.RunbooksTest do
                {:error, :not_found}
     end
 
-    test "hides an execution when current runner scope excludes one selected runner" do
+    test "keeps execution history after current runner scope changes" do
       fixture = mcp_execution_fixture()
 
       fixture.account.id
       |> Fixtures.Memberships.fetch_membership(fixture.owner.actor.id)
       |> Fixtures.Memberships.force_runner_access(Emisar.Accounts.RunnerAccess.none())
 
-      assert Runbooks.fetch_execution_by_id(fixture.execution_id, fixture.subject) ==
-               {:error, :not_found}
+      assert {:ok, execution} =
+               Runbooks.fetch_execution_by_id(fixture.execution_id, fixture.subject)
 
-      assert Runbooks.fetch_execution_result(fixture.execution_id, fixture.subject) ==
-               {:error, :not_found}
+      assert execution.id == fixture.execution_id
+
+      assert {:ok, result} =
+               Runbooks.fetch_execution_result(fixture.execution_id, fixture.subject)
+
+      assert result.execution.id == fixture.execution_id
     end
   end
 
@@ -915,7 +919,7 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "list_recent_executions_for_runbook/3" do
-    test "returns bounded current-scope history and hides it after runner-scope loss" do
+    test "returns bounded account history after runner-scope loss" do
       fixture = mcp_execution_fixture()
 
       assert {:ok, [execution]} =
@@ -931,12 +935,14 @@ defmodule Emisar.RunbooksTest do
       |> Fixtures.Memberships.fetch_membership(fixture.owner.actor.id)
       |> Fixtures.Memberships.force_runner_access(Emisar.Accounts.RunnerAccess.none())
 
-      assert {:ok, []} =
+      assert {:ok, [execution_after_scope_change]} =
                Runbooks.list_recent_executions_for_runbook(
                  fixture.runbook,
                  fixture.subject,
                  1
                )
+
+      assert execution_after_scope_change.id == fixture.execution_id
     end
   end
 
@@ -3326,7 +3332,7 @@ defmodule Emisar.RunbooksTest do
   end
 
   defp trust_pack_versions(subject) do
-    assert {:ok, versions} = Catalog.list_all_pack_versions_for_account(subject)
+    assert versions = Fixtures.Catalog.list_pack_versions(subject.account.id)
 
     Enum.each(versions, fn version ->
       if version.trust_state != :trusted do

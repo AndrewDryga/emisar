@@ -5,6 +5,7 @@ defmodule EmisarWeb.SessionDisconnectorTest do
   disconnect event LiveView's channel tears down on.
   """
   use EmisarWeb.ConnCase, async: true
+  alias Emisar.{Auth, Crypto, Fixtures}
 
   test "broadcasts a disconnect event to every given topic" do
     topics = ["users_sessions:test-#{System.unique_integer([:positive])}", "users_sessions:two"]
@@ -19,5 +20,17 @@ defmodule EmisarWeb.SessionDisconnectorTest do
 
   test "an empty topic list is a no-op" do
     assert :ok = EmisarWeb.SessionDisconnector.disconnect_live_sessions([])
+  end
+
+  test "Auth calls the handler while the web application is running" do
+    user = Fixtures.Users.create_user()
+    token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+    topic = Auth.live_socket_topic(Crypto.hash(token))
+    EmisarWeb.Endpoint.subscribe(topic)
+
+    assert :ok = Auth.broadcast_disconnect_for_user(user)
+    assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect", payload: %{}}
+
+    assert {:ok, _user, _auth} = Auth.fetch_user_and_token_by_session_token(token)
   end
 end

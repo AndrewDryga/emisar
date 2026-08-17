@@ -1275,7 +1275,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert [%{"live" => %{"runbook_ref" => "revoked-pack-book@1"}}] =
              call(conn, "list_runbooks", %{})["runbooks"]
 
-    {:ok, [trusted]} = Catalog.list_all_pack_versions_for_account(subject)
+    [trusted] = Fixtures.Catalog.list_pack_versions(subject.account.id)
     assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(trusted.id, subject)
 
     assert call(conn, "list_runbooks", %{})["runbooks"] == []
@@ -1423,7 +1423,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert length(runners) == 16
   end
 
-  test "execution summaries fail atomically after runner scope is narrowed", %{
+  test "execution summaries remain complete after runner scope is narrowed", %{
     conn: conn,
     account: account,
     subject: subject,
@@ -1452,18 +1452,18 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     recovered = call(conn, "get_operation", %{"operation_id" => operation_id})
     assert recovered["operation"]["runbook_execution_id"] == execution_id
 
-    hidden =
+    waited =
       call(conn, "wait_for_run", %{
         "runbook_execution_id" => execution_id,
         "timeout" => "0"
       })
 
-    assert hidden["error"]["code"] == "run_not_found"
+    assert waited["execution"]["runbook_execution_id"] == execution_id
 
     history = call(conn, "recent_runs", %{"runbook_execution_id" => execution_id})
-    assert [%{"runner_ref" => runner_ref}] = history["runs"]
-    assert runner_ref == runner_ref(db)
-    refute Jason.encode!(history) =~ runner_ref(web)
+
+    assert MapSet.new(history["runs"], & &1["runner_ref"]) ==
+             MapSet.new([runner_ref(db), runner_ref(web)])
   end
 
   test "recent history shares one UTF-8-safe output budget across every run", %{
@@ -2724,7 +2724,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   end
 
   defp trust_all!(subject) do
-    {:ok, versions} = Catalog.list_all_pack_versions_for_account(subject)
+    versions = Fixtures.Catalog.list_pack_versions(subject.account.id)
 
     Enum.each(versions, fn version ->
       if version.trust_state != :trusted do
