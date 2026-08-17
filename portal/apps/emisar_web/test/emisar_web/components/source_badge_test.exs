@@ -2,9 +2,8 @@ defmodule EmisarWeb.Components.SourceBadgeTest do
   @moduledoc """
   Renders `EmisarWeb.DomainComponents.source_badge/1` and verifies that every
   icon-encoded dispatch source has a hover/focus tooltip and accessible name
-  while the adjacent text remains the accountable actor. Source badges are safe
-  in responsive slots that render the same component twice because this
-  aria-label mode emits no DOM ids.
+  while the adjacent text remains the accountable actor. Each responsive slot
+  supplies its own id so the shared tooltip can flip at viewport edges.
   """
   use ExUnit.Case, async: true
   import Phoenix.Component
@@ -20,18 +19,20 @@ defmodule EmisarWeb.Components.SourceBadgeTest do
       ]
 
       for {source, icon, tooltip} <- sources do
-        assigns = %{source: source, tooltip: tooltip}
+        assigns = %{source: source, tooltip: tooltip, id: "source-#{source}"}
 
         html =
           rendered_to_string(~H"""
-          <DomainComponents.source_badge source={@source} label="Maya Chen" />
+          <DomainComponents.source_badge id={@id} source={@source} label="Maya Chen" />
           """)
 
         assert html =~ icon
         assert html =~ ~s(aria-label="#{assigns.tooltip}")
         assert html =~ ~s(role="tooltip")
         assert html =~ ~s(title="Maya Chen")
-        refute html =~ ~s(aria-describedby=)
+        assert html =~ ~s(id="#{assigns.id}")
+        assert html =~ ~s(aria-describedby="#{assigns.id}")
+        assert html =~ ~s(phx-hook="Tooltip")
       end
     end
   end

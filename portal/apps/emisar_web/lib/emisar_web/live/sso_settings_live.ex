@@ -1,8 +1,11 @@
 defmodule EmisarWeb.SSOSettingsLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Catalog, Runners, SSO}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, MailTo, Permissions, RunnerScope}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MailTo, Permissions, RunnerScope}
   alias Phoenix.LiveView.JS
+
+  @role_mapping_prefix "role_mappings_"
+  @runner_access_mapping_prefix "runner_access_mappings_"
 
   # Humanized provider-kind labels for the select + the row badge — the enum's
   # atoms don't title-case cleanly ("openid_connect" → "OpenID Connect").
@@ -84,6 +87,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       # single open inline edit (id + form). Keyed by provider id so each
       # provider's directory-sync panel owns its own mappings + form.
       |> assign(:group_mappings, %{})
+      |> assign(:group_mapping_metadata, %{})
       |> assign(:group_mapping_errors, %{})
       |> assign(:synced_groups, %{})
       |> assign(:synced_group_errors, %{})
@@ -93,6 +97,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       # The add-mapping form is behind an "Add mapping" button, not always open.
       |> assign(:adding_mapping, false)
       |> assign(:runner_access_mappings, %{})
+      |> assign(:runner_access_mapping_metadata, %{})
       |> assign(:runner_access_mapping_errors, %{})
       |> assign(:runner_access_mapping_forms, %{})
       |> assign(:editing_runner_access_mapping_id, nil)
@@ -102,6 +107,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:runner_load_error?, false)
       |> assign(:pack_load_error?, false)
       |> assign(:pack_advertisements, %{})
+      |> assign(:mapping_filter_params, %{})
       |> assign(:scim_base_url, "#{Emisar.PublicUrl.base()}/scim/v2")
       # The fixed OIDC redirect URI the operator registers in their IdP — shown
       # in the per-provider setup guide so they paste the exact value.
@@ -166,7 +172,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     if connected?(socket) do
       case socket.assigns.live_action do
         :show ->
-          load_show(socket, params["id"])
+          load_show(socket, params)
 
         :edit ->
           load_edit(socket, params["id"])
@@ -186,15 +192,18 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   # Detail: ONE connection (account-scoped — a cross-account or unknown id is
   # not_found → back to the overview) + its group→role mappings / synced groups.
-  defp load_show(socket, id) do
+  defp load_show(socket, params) do
+    id = params["id"]
+
     case SSO.fetch_provider_by_id(id, socket.assigns.current_subject) do
       {:ok, provider} ->
         socket
         |> assign(:loaded?, true)
         |> assign(:providers, [provider])
+        |> assign(:mapping_filter_params, Map.drop(params, ["id"]))
         |> assign(:adding_mapping, false)
         |> assign(:adding_runner_access_mapping, false)
-        |> load_group_mappings([provider])
+        |> load_group_mappings([provider], params)
         |> load_synced_members(provider)
         |> load_runners()
         |> assign_form(SSO.change_provider(socket.assigns.current_subject))
@@ -296,16 +305,24 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   # Role mappings only exist for SCIM-enabled providers; load each one's
   # list + seed a fresh create form, both keyed by provider id.
-  defp load_group_mappings(socket, providers) do
+  defp load_group_mappings(socket, providers, params) do
     scim_providers = Enum.filter(providers, & &1.scim_enabled)
 
-    role_reads = Map.new(scim_providers, &{&1.id, list_mappings(socket, &1)})
+    role_opts = LiveTable.params_to_opts(params, [], prefix: @role_mapping_prefix)
+
+    runner_access_opts =
+      LiveTable.params_to_opts(params, [], prefix: @runner_access_mapping_prefix)
+
+    role_reads = Map.new(scim_providers, &{&1.id, list_mappings(socket, &1, role_opts)})
 
     runner_access_reads =
-      Map.new(scim_providers, &{&1.id, list_runner_access_mappings(socket, &1)})
+      Map.new(
+        scim_providers,
+        &{&1.id, list_runner_access_mappings(socket, &1, runner_access_opts)}
+      )
 
-    role_mappings = rows(role_reads)
-    runner_access_mappings = rows(runner_access_reads)
+    role_mappings = paged_rows(role_reads)
+    runner_access_mappings = paged_rows(runner_access_reads)
 
     # The groups the IdP has actually synced (id + member count), each annotated
     # with its role mapping — powers the "Synced groups" readout, and (projected
@@ -314,14 +331,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       Map.new(scim_providers, fn provider ->
         {groups, failed?} = list_synced_groups(socket, provider)
 
-        annotated =
-          annotate_synced_groups(
-            groups,
-            role_mappings[provider.id],
-            runner_access_mappings[provider.id]
-          )
-
-        {provider.id, {annotated, failed?}}
+        {provider.id, {groups, failed?}}
       end)
 
     forms = Map.new(scim_providers, &{&1.id, mapping_form(&1)})
@@ -329,9 +339,11 @@ defmodule EmisarWeb.SSOSettingsLive do
 
     socket
     |> assign(:group_mappings, role_mappings)
-    |> assign(:group_mapping_errors, read_errors(role_reads))
+    |> assign(:group_mapping_metadata, paged_metadata(role_reads))
+    |> assign(:group_mapping_errors, paged_read_errors(role_reads))
     |> assign(:runner_access_mappings, runner_access_mappings)
-    |> assign(:runner_access_mapping_errors, read_errors(runner_access_reads))
+    |> assign(:runner_access_mapping_metadata, paged_metadata(runner_access_reads))
+    |> assign(:runner_access_mapping_errors, paged_read_errors(runner_access_reads))
     |> assign(:synced_groups, rows(synced_reads))
     |> assign(:synced_group_errors, read_errors(synced_reads))
     |> assign(:mapping_forms, forms)
@@ -346,6 +358,15 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp read_errors(reads), do: Map.new(reads, fn {id, {_rows, failed?}} -> {id, failed?} end)
 
+  defp paged_rows(reads),
+    do: Map.new(reads, fn {id, {rows, _metadata, _failed?}} -> {id, rows} end)
+
+  defp paged_metadata(reads),
+    do: Map.new(reads, fn {id, {_rows, metadata, _failed?}} -> {id, metadata} end)
+
+  defp paged_read_errors(reads),
+    do: Map.new(reads, fn {id, {_rows, _metadata, failed?}} -> {id, failed?} end)
+
   defp list_synced_groups(socket, provider) do
     case SSO.list_synced_groups(provider, socket.assigns.current_subject) do
       {:ok, groups} -> {groups, false}
@@ -353,35 +374,25 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  # Attach each synced group's role mapping (nil when unmapped) so the readout
-  # shows the role its members resolve to next to the member count.
-  defp annotate_synced_groups(groups, role_mappings, runner_access_mappings) do
-    role_by_group = Map.new(role_mappings, &{&1.external_group_id, &1})
-    access_by_group = Map.new(runner_access_mappings, &{&1.external_group_id, &1})
-
-    Enum.map(groups, fn group ->
-      group
-      |> Map.put(:mapping, Map.get(role_by_group, group.external_group_id))
-      |> Map.put(
-        :runner_access_mapping,
-        Map.get(access_by_group, group.external_group_id)
-      )
-    end)
-  end
-
-  defp list_mappings(socket, provider) do
-    case SSO.list_group_mappings(provider, socket.assigns.current_subject) do
-      {:ok, mappings, _meta} -> {mappings, false}
-      {:error, _} -> {[], true}
+  defp list_mappings(socket, provider, opts) do
+    case SSO.list_group_mappings(provider, socket.assigns.current_subject, opts) do
+      {:ok, mappings, metadata} -> {mappings, metadata, false}
+      {:error, _} -> {[], empty_metadata(), true}
     end
   end
 
-  defp list_runner_access_mappings(socket, provider) do
-    case SSO.list_group_runner_access_mappings(provider, socket.assigns.current_subject) do
-      {:ok, mappings, _meta} -> {mappings, false}
-      {:error, _reason} -> {[], true}
+  defp list_runner_access_mappings(socket, provider, opts) do
+    case SSO.list_group_runner_access_mappings(
+           provider,
+           socket.assigns.current_subject,
+           opts
+         ) do
+      {:ok, mappings, metadata} -> {mappings, metadata, false}
+      {:error, _reason} -> {[], empty_metadata(), true}
     end
   end
+
+  defp empty_metadata, do: %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0}
 
   def handle_event("validate", %{"provider" => params} = event, socket) do
     case SSO.change_provider(%SSO.IdentityProvider{}, params, socket.assigns.current_subject) do
@@ -1002,20 +1013,32 @@ defmodule EmisarWeb.SSOSettingsLive do
   # toggled, edited). If it vanished (deleted), load_show falls back to the overview.
   defp reload_show(socket) do
     case socket.assigns.providers do
-      [provider | _] -> load_show(socket, provider.id)
-      _ -> socket
+      [provider | _] ->
+        params = Map.put(socket.assigns.mapping_filter_params, "id", provider.id)
+        load_show(socket, params)
+
+      _ ->
+        socket
     end
   end
 
   # Refresh just one provider's mapping list (after a mapping CRUD), leaving the
   # other providers' panels untouched.
   defp reload_mappings(socket, provider) do
-    {mappings, failed?} = list_mappings(socket, provider)
+    opts =
+      LiveTable.params_to_opts(
+        socket.assigns.mapping_filter_params,
+        [],
+        prefix: @role_mapping_prefix
+      )
+
+    {mappings, metadata, failed?} = list_mappings(socket, provider, opts)
 
     socket
     |> put_mappings(provider.id, mappings)
+    |> put_mapping_metadata(:group_mapping_metadata, provider.id, metadata)
     |> put_read_error(:group_mapping_errors, provider.id, failed?)
-    |> reannotate_synced_groups(provider.id)
+    |> reload_synced_groups(provider)
   end
 
   # The synced-groups readout carries each group's mapping badge, so a mapping
@@ -1023,20 +1046,12 @@ defmodule EmisarWeb.SSOSettingsLive do
   # readout showing a role badge for a mapping that had just been deleted. The
   # groups themselves have not changed — this re-derives their annotation from
   # the mapping lists now in the socket, with no extra read.
-  defp reannotate_synced_groups(socket, provider_id) do
-    annotated =
-      socket.assigns.synced_groups
-      |> Map.get(provider_id, [])
-      |> annotate_synced_groups(
-        Map.get(socket.assigns.group_mappings, provider_id, []),
-        Map.get(socket.assigns.runner_access_mappings, provider_id, [])
-      )
+  defp reload_synced_groups(socket, provider) do
+    {groups, failed?} = list_synced_groups(socket, provider)
 
-    assign(
-      socket,
-      :synced_groups,
-      Map.put(socket.assigns.synced_groups, provider_id, annotated)
-    )
+    socket
+    |> assign(:synced_groups, Map.put(socket.assigns.synced_groups, provider.id, groups))
+    |> put_read_error(:synced_group_errors, provider.id, failed?)
   end
 
   defp reload_mappings_for_id(socket, provider_id) do
@@ -1047,15 +1062,23 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp reload_runner_access_mappings(socket, provider) do
-    {mappings, failed?} = list_runner_access_mappings(socket, provider)
+    opts =
+      LiveTable.params_to_opts(
+        socket.assigns.mapping_filter_params,
+        [],
+        prefix: @runner_access_mapping_prefix
+      )
+
+    {mappings, metadata, failed?} = list_runner_access_mappings(socket, provider, opts)
 
     socket
     |> assign(
       :runner_access_mappings,
       Map.put(socket.assigns.runner_access_mappings, provider.id, mappings)
     )
+    |> put_mapping_metadata(:runner_access_mapping_metadata, provider.id, metadata)
     |> put_read_error(:runner_access_mapping_errors, provider.id, failed?)
-    |> reannotate_synced_groups(provider.id)
+    |> reload_synced_groups(provider)
   end
 
   defp reload_runner_access_mappings_for_id(socket, provider_id) do
@@ -1076,6 +1099,11 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp put_read_error(socket, assign_name, provider_id, failed?) do
     errors = Map.put(socket.assigns[assign_name], provider_id, failed?)
     assign(socket, assign_name, errors)
+  end
+
+  defp put_mapping_metadata(socket, assign_name, provider_id, metadata) do
+    values = Map.put(socket.assigns[assign_name], provider_id, metadata)
+    assign(socket, assign_name, values)
   end
 
   defp put_mapping_form(socket, provider_id, form),
@@ -1637,7 +1665,10 @@ defmodule EmisarWeb.SSOSettingsLive do
             <.role_mapping_section
               :if={@can_configure_directory_sync? and provider.scim_enabled}
               provider={provider}
+              path={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
               mappings={Map.get(@group_mappings, provider.id, [])}
+              metadata={Map.get(@group_mapping_metadata, provider.id, empty_metadata())}
+              filter_params={@mapping_filter_params}
               load_error?={Map.get(@group_mapping_errors, provider.id, false)}
               synced_groups={Map.get(@synced_groups, provider.id, [])}
               mapping_form={Map.get(@mapping_forms, provider.id)}
@@ -1654,7 +1685,10 @@ defmodule EmisarWeb.SSOSettingsLive do
             <.group_runner_access_mapping_section
               :if={@can_configure_directory_sync? and provider.scim_enabled}
               provider={provider}
+              path={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
               mappings={Map.get(@runner_access_mappings, provider.id, [])}
+              metadata={Map.get(@runner_access_mapping_metadata, provider.id, empty_metadata())}
+              filter_params={@mapping_filter_params}
               load_error?={Map.get(@runner_access_mapping_errors, provider.id, false)}
               synced_groups={Map.get(@synced_groups, provider.id, [])}
               mapping_form={Map.get(@runner_access_mapping_forms, provider.id)}
@@ -2659,7 +2693,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   attr :provider, :map, required: true
+  attr :path, :any, required: true
   attr :mappings, :list, required: true
+  attr :metadata, :any, required: true
+  attr :filter_params, :map, required: true
   attr :load_error?, :boolean, default: false
   attr :mapping_form, Phoenix.HTML.Form, default: nil
   attr :mapping_role_options, :list, required: true
@@ -2676,7 +2713,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp role_mapping_section(assigns) do
     ~H"""
     <section>
-      <.section_header title="Role mapping" count={length(@mappings)} count_tone={:neutral}>
+      <.section_header title="Role mapping" count={@metadata.count} count_tone={:neutral}>
         <:actions>
           <.button
             :if={not @adding_mapping}
@@ -2770,6 +2807,16 @@ defmodule EmisarWeb.SSOSettingsLive do
           </div>
         </li>
       </ul>
+      <div class="mt-4">
+        <LiveTable.paginator
+          id={"role-mappings-#{@provider.id}"}
+          path={@path}
+          metadata={@metadata}
+          filter_params={@filter_params}
+          prefix="role_mappings_"
+          page_count={length(@mappings)}
+        />
+      </div>
 
       <%!-- "No role mappings yet" is a statement about what this directory grants,
            so it is never made from a read that failed. --%>
@@ -2850,7 +2897,10 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   attr :provider, :map, required: true
+  attr :path, :any, required: true
   attr :mappings, :list, required: true
+  attr :metadata, :any, required: true
+  attr :filter_params, :map, required: true
   attr :load_error?, :boolean, default: false
   attr :mapping_form, Phoenix.HTML.Form, default: nil
   attr :editing_mapping_id, :string, default: nil
@@ -2868,7 +2918,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     <section>
       <.section_header
         title="Runner access mapping"
-        count={length(@mappings)}
+        count={@metadata.count}
         count_tone={:neutral}
       >
         <:actions>
@@ -2978,6 +3028,16 @@ defmodule EmisarWeb.SSOSettingsLive do
           </div>
         </li>
       </ul>
+      <div class="mt-4">
+        <LiveTable.paginator
+          id={"runner-access-mappings-#{@provider.id}"}
+          path={@path}
+          metadata={@metadata}
+          filter_params={@filter_params}
+          prefix="runner_access_mappings_"
+          page_count={length(@mappings)}
+        />
+      </div>
 
       <%!-- Claiming no group widens runner reach is a security statement — never
            make it from a read that failed. --%>

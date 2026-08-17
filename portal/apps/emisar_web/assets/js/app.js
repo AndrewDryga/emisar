@@ -252,10 +252,14 @@ const LocalTime = {
     const tooltip = mode === "relative"
       ? `${utc} · ${formatAbsolute(dt, false)} (${zone})`
       : iso
-    // Styled-tooltip elements render the stamp as an instant CSS bubble fed
-    // by data-tooltip; the native title would double it after a 1s dwell.
-    if (this.el.hasAttribute("data-styled-tooltip")) {
-      this.el.setAttribute("data-tooltip", tooltip)
+    // Styled timestamps use the shared tooltip component so the bubble can
+    // flip at viewport edges and dismiss on Escape. Keep its initial ISO text
+    // useful before JS, then replace it with the viewer-local exact stamp.
+    const tooltipId = this.el.dataset.tooltipId
+    const tooltipBubble = tooltipId && document.getElementById(tooltipId)
+    if (tooltipBubble) {
+      tooltipBubble.textContent = tooltip
+      this.el.removeAttribute("title")
     } else {
       this.el.setAttribute("title", tooltip)
     }

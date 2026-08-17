@@ -1,5 +1,7 @@
 defmodule EmisarWeb.TimeHelpersTest do
   use ExUnit.Case, async: true
+  import Phoenix.Component
+  import Phoenix.LiveViewTest
   import EmisarWeb.TimeHelpers
 
   describe "relative_time/2" do
@@ -47,6 +49,25 @@ defmodule EmisarWeb.TimeHelpersTest do
       assert absolute_time(~U[2026-05-21 14:03:00Z]) == "May 21, 14:03 UTC"
       assert absolute_time(~N[2026-05-21 14:03:00]) == "May 21, 14:03 UTC"
       assert absolute_time(nil) == "—"
+    end
+  end
+
+  describe "local_time/1" do
+    test "styled timestamps use the shared flipping tooltip with stable ids" do
+      assigns = %{value: ~U[2026-05-21 14:03:00Z]}
+
+      html =
+        rendered_to_string(~H"""
+        <.local_time id="when-event-1" value={@value} mode={:relative} styled_tooltip />
+        """)
+
+      assert html =~ ~s(id="when-event-1")
+      assert html =~ ~s(data-tooltip-id="when-event-1-exact")
+      assert html =~ ~s(id="when-event-1-exact")
+      assert html =~ ~s(aria-describedby="when-event-1-exact")
+      assert html =~ ~s(phx-hook="Tooltip")
+      refute html =~ "data-styled-tooltip"
+      refute html =~ "after:content"
     end
   end
 

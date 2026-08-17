@@ -1562,9 +1562,10 @@ defmodule Emisar.SSO do
   List each external group a provider has synced via SCIM with its distinct
   member count — the synced-groups readout, and (projected to ids) the picker
   source for map-after-first-sync so an admin keys a role mapping on a real
-  synced group. `manage_sso` + Enterprise; account-scoped.
-  `{:ok, [%{external_group_id: String.t(), member_count: non_neg_integer()}]}`,
-  ordered by external group id.
+  synced group. Each row also carries its current role and runner-access
+  mappings, if any, so paginating the editable lists cannot make an off-page
+  mapping look absent. `manage_sso` + Enterprise; account-scoped and ordered by
+  external group id.
   """
   def list_synced_groups(%IdentityProvider{} = provider, %Subject{} = subject) do
     with :ok <- ensure_can_manage_sso(subject),
@@ -1579,6 +1580,20 @@ defmodule Emisar.SSO do
         |> Repo.all()
         |> Map.new(&{&1.external_group_id, &1})
 
+      role_mappings =
+        GroupRoleMapping.Query.not_deleted()
+        |> GroupRoleMapping.Query.by_provider_id(provider.id)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+        |> Map.new(&{&1.external_group_id, &1})
+
+      runner_access_mappings =
+        GroupRunnerAccessMapping.Query.not_deleted()
+        |> GroupRunnerAccessMapping.Query.by_provider_id(provider.id)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+        |> Map.new(&{&1.external_group_id, &1})
+
       groups =
         DirectoryGroup.Query.not_deleted()
         |> DirectoryGroup.Query.by_account_id(provider.account_id)
@@ -1590,7 +1605,9 @@ defmodule Emisar.SSO do
 
           %{
             external_group_id: group.external_group_id,
-            member_count: Map.get(counted, :member_count, 0)
+            member_count: Map.get(counted, :member_count, 0),
+            mapping: Map.get(role_mappings, group.external_group_id),
+            runner_access_mapping: Map.get(runner_access_mappings, group.external_group_id)
           }
         end)
 

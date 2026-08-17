@@ -14,6 +14,7 @@ defmodule EmisarWeb.TimeHelpers do
   (defaults to `"—"`).
   """
   use Phoenix.Component
+  alias EmisarWeb.CoreComponents
 
   @doc """
   A short relative timestamp:
@@ -171,7 +172,7 @@ defmodule EmisarWeb.TimeHelpers do
   attr :styled_tooltip, :boolean,
     default: false,
     doc:
-      "Show the hook's full-stamp tooltip as an INSTANT styled bubble (CSS ::after fed by data-tooltip) instead of the native title — which needs a ~1s still hover and reads as \"no tooltip\". Opt in where the exact stamp matters (the audit trail's relative times)."
+      "Show the hook's full stamp in the shared hover/focus tooltip. It flips at viewport edges and dismisses on Escape. Opt in where the exact stamp matters (the audit trail's relative times)."
 
   def local_time(%{value: nil} = assigns) do
     ~H"<span class={@class}>{@placeholder}</span>"
@@ -183,6 +184,7 @@ defmodule EmisarWeb.TimeHelpers do
     assigns =
       assigns
       |> assign(:iso, DateTime.to_iso8601(datetime))
+      |> assign(:time_id, assigns.id || "t-#{System.unique_integer([:positive])}")
       |> assign(
         :fallback,
         case assigns.mode do
@@ -192,36 +194,45 @@ defmodule EmisarWeb.TimeHelpers do
         end
       )
 
+    assigns = assign(assigns, :tooltip_id, "#{assigns.time_id}-exact")
+
+    render_local_time(assigns)
+  end
+
+  # A caller-supplied ROW-STABLE id lets morphdom match this <time> to its own
+  # row across a filter patch. Without one we use a per-RENDER id, not a
+  # value-derived hash: a responsive LiveTable renders each cell twice. The
+  # absence of phx-update="ignore" lets updated() re-read datetime on every
+  # patch, so a fresh fallback id is harmless.
+  defp render_local_time(%{styled_tooltip: true} = assigns) do
     ~H"""
-    <%!-- id: a caller-supplied ROW-STABLE id lets morphdom match this <time> to its
-         own row across a filter patch (no churn, no cross-row bleed). Without one we
-         fall back to a per-RENDER unique id — NOT a value-derived hash: a responsive
-         LiveTable renders each row's cell TWICE (desktop <td> + mobile card), so any
-         value-based id would be a duplicate DOM id there. What actually fixes the
-         stale-render bleed is the ABSENCE of phx-update="ignore" below — the hook's
-         updated() re-reads datetime on every patch, so a fresh id is harmless. --%>
+    <CoreComponents.tooltip id={@tooltip_id} text={@iso} class={@class}>
+      <time
+        id={@time_id}
+        phx-hook="LocalTime"
+        datetime={@iso}
+        data-format={Atom.to_string(@mode)}
+        data-tooltip-id={@tooltip_id}
+        class="cursor-help tabular-nums"
+      >
+        {@fallback}
+      </time>
+    </CoreComponents.tooltip>
+    """
+  end
+
+  defp render_local_time(assigns) do
+    ~H"""
     <time
-      id={@id || "t-#{System.unique_integer([:positive])}"}
+      id={@time_id}
       phx-hook="LocalTime"
       datetime={@iso}
       data-format={Atom.to_string(@mode)}
-      data-styled-tooltip={@styled_tooltip}
-      class={["tabular-nums", @styled_tooltip && styled_tooltip_classes(), @class]}
+      class={["tabular-nums", @class]}
     >
       {@fallback}
     </time>
     """
-  end
-
-  # The instant tooltip bubble: a pure-CSS ::after fed by attr(data-tooltip)
-  # (the LocalTime hook writes it), so it appears on hover with NO dwell delay
-  # and matches the float recipe (opaque zinc-900 + ring + heavy shadow).
-  defp styled_tooltip_classes do
-    "relative cursor-help after:pointer-events-none after:absolute after:bottom-full " <>
-      "after:right-0 after:z-20 after:mb-1.5 after:whitespace-nowrap after:rounded-md " <>
-      "after:bg-zinc-900 after:px-2.5 after:py-1.5 after:text-[11px] after:text-zinc-200 " <>
-      "after:opacity-0 after:shadow-xl after:shadow-black/60 after:ring-1 after:ring-white/10 " <>
-      "after:transition-opacity after:content-[attr(data-tooltip)] hover:after:opacity-100"
   end
 
   defp to_datetime(%DateTime{} = datetime), do: datetime

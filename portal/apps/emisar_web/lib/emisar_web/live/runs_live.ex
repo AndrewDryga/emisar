@@ -309,6 +309,7 @@ defmodule EmisarWeb.RunsLive do
           </div>
           <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-5 text-zinc-400">
             <.source_badge
+              id={"run-source-card-#{run.id}"}
               source={run.source}
               label={accountable_actor_label(Runs.run_who_via(run))}
               class="max-w-[60vw] text-xs"
@@ -340,6 +341,7 @@ defmodule EmisarWeb.RunsLive do
           <%!-- Source is a column only at lg+; on a phone surface the origin here so an
                agent run still reads distinctly from a human one (the product's point). --%>
           <.source_badge
+            id={"run-source-action-#{run.id}"}
             source={run.source}
             label={accountable_actor_label(Runs.run_who_via(run))}
             class="mt-0.5 max-w-[44vw] text-[11px] lg:hidden"
@@ -360,6 +362,7 @@ defmodule EmisarWeb.RunsLive do
              its own line 2 (the responsive table is hidden below sm). --%>
         <:col :let={run} label="Dispatched by" class="w-40 hidden lg:table-cell">
           <.source_badge
+            id={"run-source-desktop-#{run.id}"}
             source={run.source}
             label={accountable_actor_label(Runs.run_who_via(run))}
             class="max-w-[10rem] text-xs"

@@ -985,13 +985,32 @@ defmodule Emisar.SSOGroupsTest do
           member_external_ids: ["okta|u2"]
         })
 
+      {:ok, role_mapping} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-adm", role: :admin},
+          subject
+        )
+
+      {:ok, access_mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{external_group_id: "grp-ops", runner_access_mode: :all},
+          subject
+        )
+
       # Ordered by external group id; the count is distinct members per group.
       assert {:ok, groups} = SSO.list_synced_groups(provider, subject)
 
-      assert groups == [
-               %{external_group_id: "grp-adm", member_count: 1},
-               %{external_group_id: "grp-ops", member_count: 2}
-             ]
+      assert [admin_group, ops_group] = groups
+      assert admin_group.external_group_id == "grp-adm"
+      assert admin_group.member_count == 1
+      assert admin_group.mapping.id == role_mapping.id
+      assert is_nil(admin_group.runner_access_mapping)
+      assert ops_group.external_group_id == "grp-ops"
+      assert ops_group.member_count == 2
+      assert is_nil(ops_group.mapping)
+      assert ops_group.runner_access_mapping.id == access_mapping.id
     end
 
     test "a downgraded plan still reads its synced groups" do

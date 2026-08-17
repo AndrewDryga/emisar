@@ -1321,6 +1321,72 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert {:ok, [], _meta} = SSO.list_group_mappings(provider, owner)
     end
 
+    test "role and runner-access mapping lists page independently past 20 rows", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      owner: owner
+    } do
+      for n <- 1..21 do
+        suffix = n |> Integer.to_string() |> String.pad_leading(2, "0")
+
+        {:ok, _mapping} =
+          SSO.create_group_mapping(
+            provider,
+            %{
+              external_group_id: "role-group-#{suffix}",
+              external_group_display: "Role group #{suffix}",
+              role: :operator
+            },
+            owner
+          )
+
+        {:ok, _mapping} =
+          SSO.create_group_runner_access_mapping(
+            provider,
+            %{
+              external_group_id: "access-group-#{suffix}",
+              external_group_display: "Access group #{suffix}",
+              runner_access_mode: :all
+            },
+            owner
+          )
+      end
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert has_element?(lv, "#role-mappings-#{provider.id}-pager", "20 / 21 total")
+
+      assert has_element?(
+               lv,
+               "#runner-access-mappings-#{provider.id}-pager",
+               "20 / 21 total"
+             )
+
+      assert html =~ "Role group 01"
+      refute html =~ "Role group 21"
+      assert html =~ "Access group 01"
+      refute html =~ "Access group 21"
+
+      _html =
+        lv
+        |> element("#role-mappings-#{provider.id}-pager a", "Next →")
+        |> render_click()
+
+      assert has_element?(lv, "#role-mappings-#{provider.id}-pager", "1 / 21")
+      assert render(lv) =~ "Role group 21"
+      refute render(lv) =~ "Access group 21"
+
+      _html =
+        lv
+        |> element("#runner-access-mappings-#{provider.id}-pager a", "Next →")
+        |> render_click()
+
+      html = render(lv)
+      assert html =~ "Role group 21"
+      assert html =~ "Access group 21"
+    end
+
     test "edits a mapping's display + role through the inline edit form", %{
       conn: conn,
       account: account,

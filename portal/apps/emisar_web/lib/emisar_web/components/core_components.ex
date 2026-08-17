@@ -404,9 +404,9 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   A click-to-open dropdown built on native `<details>`, so it opens on click and
-  closes on re-click before LiveView connects; `phx-click-away` adds the
-  outside-click close once it has. (Native `<details>` has no Escape close —
-  only `<dialog>` and popovers do.)
+  closes on re-click before LiveView connects. The shared delegated listener
+  closes it on outside click and Escape on both static and LiveView pages;
+  `phx-click-away` remains a connected-page fallback.
 
   The `:trigger` slot is the `<summary>` content (the button/icon the operator
   clicks); the default slot is the panel. The component owns the a11y plumbing

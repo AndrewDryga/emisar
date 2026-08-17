@@ -178,6 +178,7 @@ defmodule EmisarWeb.DomainComponents do
   tight; the label always stays one line.
 
       <.source_badge
+        id={"run-source-\#{run.id}"}
         source={run.source}
         label={accountable_actor_label(Runs.run_who_via(run))}
         class="max-w-[12rem] text-xs"
@@ -191,6 +192,7 @@ defmodule EmisarWeb.DomainComponents do
     required: true,
     doc: "the actor label, e.g. `accountable_actor_label(Runs.run_who_via(run))`"
 
+  attr :id, :string, required: true, doc: "unique tooltip id for this rendered source badge"
   attr :class, :string, default: nil
 
   def source_badge(assigns) do
@@ -199,6 +201,7 @@ defmodule EmisarWeb.DomainComponents do
     ~H"""
     <span class={["inline-flex min-w-0 items-center gap-1.5 text-zinc-400", @class]}>
       <.tooltip
+        id={@id}
         text={@source_tooltip}
         aria_label={@source_tooltip}
         class="shrink-0"

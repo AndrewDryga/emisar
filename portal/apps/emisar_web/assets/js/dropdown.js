@@ -48,4 +48,29 @@ export function initDropdowns() {
 
   window.addEventListener("resize", reposition)
   window.addEventListener("scroll", reposition, true)
+
+  // LiveView's phx-click-away covers connected console pages. These delegated
+  // handlers complete the native-details behavior for static pages too, and
+  // keep working for menus introduced by a later LiveView patch.
+  document.addEventListener("click", (event) => {
+    openDropdowns().forEach((details) => {
+      if (!details.contains(event.target)) details.open = false
+    })
+  })
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return
+
+    const open = Array.from(openDropdowns())
+    if (!open.length) return
+
+    const activeDropdown =
+      event.target instanceof Element && event.target.closest("[data-dropdown][open]")
+
+    open.forEach((details) => { details.open = false })
+    event.preventDefault()
+
+    const summary = activeDropdown?.querySelector("summary") || open.at(-1)?.querySelector("summary")
+    summary?.focus()
+  })
 }

@@ -4256,8 +4256,18 @@ defmodule Emisar.SSOTest do
       assert {:ok, groups} = SSO.list_synced_groups(provider, subject)
 
       assert groups == [
-               %{external_group_id: "grp-adm", member_count: 1},
-               %{external_group_id: "grp-ops", member_count: 1}
+               %{
+                 external_group_id: "grp-adm",
+                 member_count: 1,
+                 mapping: nil,
+                 runner_access_mapping: nil
+               },
+               %{
+                 external_group_id: "grp-ops",
+                 member_count: 1,
+                 mapping: nil,
+                 runner_access_mapping: nil
+               }
              ]
     end
 
