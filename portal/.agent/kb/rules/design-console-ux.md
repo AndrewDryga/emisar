@@ -555,11 +555,15 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     the peer's size and optical height, arrow dropped (the arrow is the link affordance).
     `Audit record →` as bare text next to a ringed `Revoke` reads as two unrelated
     affordances; the founder's words were "there should be link and button next to each
-    other, both should be buttons or move link from this place." The face is the ROW's, not
-    the per-row permission state's — restyling it when a conditional peer button is absent
-    would move the layout between states (§7.55). Sweep: `<:actions>` slots and
-    `flex items-center gap-*` action clusters holding BOTH a bare `text-brand-400` link and
-    a `<.button>`/`<.confirm_button>`.
+    other, both should be buttons or move link from this place." The bordered face is forced
+    the same way by a row carrying two or more verbs even when every one of them only
+    navigates — two bare links in an action slot read as a run-on sentence rather than as
+    this row's controls (the agents list's `View activity →  Audit trail →` pair was the
+    case). The face is the ROW's, not the per-row permission state's — restyling it when a
+    conditional peer button is absent would move the layout between states (§7.55). Sweep:
+    `<:actions>` slots and `flex items-center gap-*` action clusters holding BOTH a bare
+    `text-brand-400` link and a `<.button>`/`<.confirm_button>`, OR two or more `<.link>`
+    verbs.
 48. **`whitespace-pre-wrap` content glues to its tags via a one-line inner span.** Template
     indentation inside a pre-wrap element renders as REAL leading whitespace (a stray blank
     + indent before the value). Never put `whitespace-pre-wrap` on a multiline-formatted
