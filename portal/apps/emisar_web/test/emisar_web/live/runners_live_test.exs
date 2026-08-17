@@ -318,6 +318,65 @@ defmodule EmisarWeb.RunnersLiveTest do
       assert assigns.show_wizard?
     end
 
+    test "a member with no runner access sees a permission state, not empty-fleet onboarding",
+         %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      member = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: member.id,
+        role: "operator",
+        runner_access_mode: "none"
+      )
+
+      {:ok, lv, html} =
+        build_conn()
+        |> log_in_user(member)
+        |> live(~p"/app/#{account}/runners")
+
+      assert html =~ "No runner access"
+      assert html =~ "have access to any runners"
+      refute html =~ "No runners yet."
+      refute html =~ "EMISAR_ENROLLMENT_KEY"
+      refute html =~ "Connect a runner"
+
+      assigns = :sys.get_state(lv.pid).socket.assigns
+      refute assigns.has_runner_access?
+      refute assigns.show_wizard?
+      assert assigns.install_command == nil
+    end
+
+    test "an empty restricted scope does not claim that the account has no runners", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      member = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        )
+
+      {:ok, restricted} = Emisar.Accounts.RunnerAccess.restricted(["production"], [])
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+
+      {:ok, lv, html} =
+        build_conn()
+        |> log_in_user(member)
+        |> live(~p"/app/#{account}/runners")
+
+      assert html =~ "No runners in your access"
+      assert html =~ "No runners match your assigned scope"
+      refute html =~ "No runners yet."
+      refute html =~ "EMISAR_ENROLLMENT_KEY"
+
+      assigns = :sys.get_state(lv.pid).socket.assigns
+      assert assigns.has_runner_access?
+      refute assigns.has_full_runner_access?
+      refute assigns.show_wizard?
+    end
+
     # a hand-edited page cursor makes the runner list read
     # return {:error, …} with non-empty params; `load/1` retries once with clean
     # params (first page) rather than recursing forever or rendering the

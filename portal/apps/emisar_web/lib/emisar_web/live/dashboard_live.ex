@@ -93,6 +93,7 @@ defmodule EmisarWeb.DashboardLive do
     # emptiness and every tile renders its own read failure instead of a zero.
     api_keys_read = ApiKeys.list_api_keys_for_account(subject)
     api_keys = list_or_empty(api_keys_read)
+    runner_access = Runners.runner_access_facts_for_subject(subject)
 
     socket
     |> assign(:page_title, "Dashboard")
@@ -105,6 +106,8 @@ defmodule EmisarWeb.DashboardLive do
     |> assign(:team_security, team_security(subject))
     |> assign(:sso_enabled?, sso_enabled?(subject))
     |> assign(:can_view_runners?, Runners.subject_can_view_runners?(subject))
+    |> assign(:has_runner_access?, runner_access.has_access?)
+    |> assign(:has_full_runner_access?, runner_access.full_access?)
     |> assign(:can_view_runs?, Runs.subject_can_view_runs?(subject))
     |> assign(:can_view_agents?, ApiKeys.subject_can_view_api_keys?(subject))
     |> assign(:can_view_approvals?, Approvals.subject_can_view_approvals?(subject))
@@ -208,7 +211,8 @@ defmodule EmisarWeb.DashboardLive do
   # capability flags are assigned once by `load/1`.
   defp assign_current_setup_state(socket) do
     show_setup? =
-      socket.assigns.recent_runs == [] and
+      socket.assigns.has_runner_access? and socket.assigns.recent_runs == [] and
+        (socket.assigns.has_full_runner_access? or socket.assigns.runners_total > 0) and
         Enum.all?(socket.assigns.setup_reads, fn {_key, ok?} -> ok? end)
 
     assign(socket, :show_setup?, show_setup?)
@@ -305,6 +309,8 @@ defmodule EmisarWeb.DashboardLive do
         pending_packs_count={@pending_packs_count}
         current_account={@current_account}
         can_view_runners?={@can_view_runners?}
+        has_runner_access?={@has_runner_access?}
+        has_full_runner_access?={@has_full_runner_access?}
         can_view_runs?={@can_view_runs?}
         can_view_agents?={@can_view_agents?}
         can_view_approvals?={@can_view_approvals?}
@@ -350,6 +356,8 @@ defmodule EmisarWeb.DashboardLive do
   attr :pending_packs_count, :integer, default: 0
   attr :current_account, :map, required: true
   attr :can_view_runners?, :boolean, default: true
+  attr :has_runner_access?, :boolean, default: true
+  attr :has_full_runner_access?, :boolean, default: true
   attr :can_view_runs?, :boolean, default: true
   attr :can_view_agents?, :boolean, default: true
   attr :can_view_approvals?, :boolean, default: true
@@ -410,6 +418,8 @@ defmodule EmisarWeb.DashboardLive do
         connected={@runners_connected}
         total={@runners_total}
         read_failed?={@runners_error?}
+        has_runner_access?={@has_runner_access?}
+        has_full_runner_access?={@has_full_runner_access?}
         current_account={@current_account}
       />
       <.agents_pillar :if={@can_view_agents?} agents={@agents} current_account={@current_account} />
@@ -548,7 +558,7 @@ defmodule EmisarWeb.DashboardLive do
       </.empty_state>
 
       <ul
-        :if={not @recent_runs_error?}
+        :if={not @recent_runs_error? and @recent_runs != []}
         class="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70"
       >
         <li :for={run <- @recent_runs}>
@@ -561,6 +571,12 @@ defmodule EmisarWeb.DashboardLive do
           />
         </li>
       </ul>
+      <p
+        :if={not @recent_runs_error? and @recent_runs == []}
+        class="mt-3 text-sm text-zinc-400"
+      >
+        No recent runs.
+      </p>
     </section>
     """
   end
@@ -877,6 +893,8 @@ defmodule EmisarWeb.DashboardLive do
   attr :connected, :integer, required: true
   attr :total, :integer, required: true
   attr :read_failed?, :boolean, required: true
+  attr :has_runner_access?, :boolean, required: true
+  attr :has_full_runner_access?, :boolean, required: true
   attr :current_account, :map, required: true
 
   # A failed fleet read leaves the counts at 0, which would pitch "Put your
@@ -891,6 +909,32 @@ defmodule EmisarWeb.DashboardLive do
     >
       <:value>—</:value>
       <:status>Couldn't load your fleet</:status>
+    </.pillar>
+    """
+  end
+
+  defp runners_pillar(%{has_runner_access?: false} = assigns) do
+    ~H"""
+    <.pillar
+      label="Runners"
+      tone={:neutral}
+      navigate={~p"/app/#{@current_account}/runners"}
+    >
+      <:value>—</:value>
+      <:status>No runner access</:status>
+    </.pillar>
+    """
+  end
+
+  defp runners_pillar(%{has_full_runner_access?: false, total: 0} = assigns) do
+    ~H"""
+    <.pillar
+      label="Runners"
+      tone={:neutral}
+      navigate={~p"/app/#{@current_account}/runners"}
+    >
+      <:value>0</:value>
+      <:status>No runners in your access</:status>
     </.pillar>
     """
   end

@@ -3633,6 +3633,54 @@ defmodule Emisar.RunnersTest do
     end
   end
 
+  describe "runner_access_facts_for_subject/1" do
+    test "re-reads current membership access and distinguishes all, restricted, and none" do
+      account = Fixtures.Accounts.create_account()
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert Runners.runner_access_facts_for_subject(subject) == %{
+               has_access?: true,
+               full_access?: true
+             }
+
+      {:ok, restricted} = RunnerAccess.restricted(["production"], [])
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+
+      assert Runners.runner_access_facts_for_subject(subject) == %{
+               has_access?: true,
+               full_access?: false
+             }
+
+      Fixtures.Memberships.force_runner_access(membership, RunnerAccess.none())
+
+      assert Runners.runner_access_facts_for_subject(subject) == %{
+               has_access?: false,
+               full_access?: false
+             }
+    end
+
+    test "fails closed without runner view permission" do
+      account = Fixtures.Accounts.create_account()
+
+      billing_manager =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "billing_manager",
+          runner_access_mode: "all"
+        )
+        |> Fixtures.Subjects.membership_subject()
+
+      assert Runners.runner_access_facts_for_subject(billing_manager) == %{
+               has_access?: false,
+               full_access?: false
+             }
+    end
+  end
+
   describe "subject_can_manage_runners?/1" do
     test "true for an owner, false for a viewer" do
       {account, _user, owner} = account_with_owner_subject()

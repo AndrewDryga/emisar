@@ -736,6 +736,13 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     action/execution glyph. A tooltip explains the compact icon (§7.15), but never gives
     a second glyph a duplicate meaning. Sweep: source badges, counters, empty states, and
     inline metadata whose noun already has a navigation icon.
+61. **A scoped-empty projection is a permission state, never account onboarding.** An empty
+    authorized list proves only that the current membership can reach no rows; it does not prove
+    the account owns none. Read the current access contract separately, keep account-wide history
+    available where its domain permits it, and replace setup prompts with a short access state when
+    the member has no reach. Never ask someone to connect, create, or dispatch through an entity
+    their membership cannot access. Sweep: onboarding and empty states derived only from a scoped
+    row count.
 
 
 ## 8. The kit is the contract

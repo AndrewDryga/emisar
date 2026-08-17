@@ -2265,6 +2265,19 @@ defmodule Emisar.Runners do
 
   # -- Authorization ---------------------------------------------------
 
+  @doc "Current runner-reach facts for UI state, fail-closed when view permission is absent."
+  def runner_access_facts_for_subject(%Subject{} = subject) do
+    if subject_can_view_runners?(subject) do
+      case Accounts.runner_access_for_subject(subject) do
+        %Accounts.RunnerAccess{mode: :all} -> %{has_access?: true, full_access?: true}
+        %Accounts.RunnerAccess{mode: :restricted} -> %{has_access?: true, full_access?: false}
+        %Accounts.RunnerAccess{} -> %{has_access?: false, full_access?: false}
+      end
+    else
+      %{has_access?: false, full_access?: false}
+    end
+  end
+
   @doc "True when the subject may view the runner fleet (the console nav + section gate)."
   def subject_can_view_runners?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.view_runners_permission())

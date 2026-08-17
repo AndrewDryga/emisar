@@ -25,6 +25,10 @@ defmodule EmisarWeb.RunsLive do
      socket
      |> assign(:page_title, "Runs")
      |> assign(:any_runners?, any_runners?)
+     |> assign(
+       :can_install_runners?,
+       connected?(socket) and Runners.subject_can_install_runners?(socket.assigns.current_subject)
+     )
      |> assign(:reload_scheduled?, false)}
   end
 
@@ -251,7 +255,7 @@ defmodule EmisarWeb.RunsLive do
                    pitch before the live socket confirms the list is really
                    empty — a populated account would otherwise flash it. --%>
               <.loading_state />
-            <% not @any_runners? -> %>
+            <% not @any_runners? and @can_install_runners? -> %>
               <%!-- Runner-less account: naming dispatch paths that don't exist
                  yet contradicts the product's own guidance — the first job is
                  a runner (the dashboard says the same). --%>
@@ -265,6 +269,11 @@ defmodule EmisarWeb.RunsLive do
                 </.link>
                 first — actions dispatch to your own hosts, and every run lands
                 here, gated and audited.
+              </.empty_state>
+            <% not @any_runners? -> %>
+              <.empty_state icon="hero-bolt" title="No runs yet.">
+                This account has no run history yet. Runs will appear here after someone with
+                runner access dispatches an action.
               </.empty_state>
             <% true -> %>
               <.empty_state icon="hero-bolt" title="No runs yet.">

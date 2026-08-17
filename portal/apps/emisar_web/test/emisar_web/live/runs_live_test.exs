@@ -265,6 +265,30 @@ defmodule EmisarWeb.RunsLiveTest do
     assert html =~ "No runs yet"
   end
 
+  test "a member who cannot reach runners sees empty history, not an install instruction", %{
+    conn: conn
+  } do
+    {_owner_conn, _owner, account} = register_and_log_in(conn)
+    member = Fixtures.Users.create_user()
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: member.id,
+      role: "operator",
+      runner_access_mode: "none"
+    )
+
+    {:ok, _lv, html} =
+      build_conn()
+      |> log_in_user(member)
+      |> live(~p"/app/#{account}/runs")
+
+    assert html =~ "This account has no run history yet"
+    assert html =~ ~r/someone with\s+runner access dispatches an action/
+    refute html =~ "Install a"
+    refute html =~ "runner first"
+  end
+
   test "the filter bar hides at account-empty, stays live once a filter is active", %{
     conn: conn
   } do

@@ -190,6 +190,8 @@ defmodule EmisarWeb.RunnersLive do
     |> assign(:runners, [])
     |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
     |> assign(:show_wizard?, false)
+    |> assign(:has_runner_access?, false)
+    |> assign(:has_full_runner_access?, false)
     |> assign(:filter_params, params)
     |> assign(:filters, Runners.runner_filters())
     |> assign(:groups, [])
@@ -201,6 +203,7 @@ defmodule EmisarWeb.RunnersLive do
   defp load(socket, params) do
     filters = Runners.runner_filters()
     opts = LiveTable.params_to_opts(params, filters)
+    runner_access = Runners.runner_access_facts_for_subject(socket.assigns.current_subject)
 
     # Runners derives current access from the subject, so the URL cannot select
     # a broader membership. Rows, group summaries, and fleet posture all use the
@@ -234,7 +237,7 @@ defmodule EmisarWeb.RunnersLive do
         # minted root-capable install key on every visit. A filtered miss is an
         # empty RESULT, never an empty fleet.
         show_wizard? =
-          runners == [] and meta.count == 0 and connected?(socket) and
+          runner_access.full_access? and runners == [] and meta.count == 0 and connected?(socket) and
             not LiveTable.has_active_filters?(params, filters)
 
         socket
@@ -244,6 +247,8 @@ defmodule EmisarWeb.RunnersLive do
         |> assign(:runners, runners)
         |> assign(:metadata, meta)
         |> assign(:show_wizard?, show_wizard?)
+        |> assign(:has_runner_access?, runner_access.has_access?)
+        |> assign(:has_full_runner_access?, runner_access.full_access?)
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
         |> assign(:groups, groups)
@@ -259,6 +264,8 @@ defmodule EmisarWeb.RunnersLive do
         |> assign(:runners, [])
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:show_wizard?, false)
+        |> assign(:has_runner_access?, runner_access.has_access?)
+        |> assign(:has_full_runner_access?, runner_access.full_access?)
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
         |> assign(:groups, [])
@@ -343,8 +350,8 @@ defmodule EmisarWeb.RunnersLive do
       </:actions>
 
       <.page_intro :if={not @show_wizard?}>
-        Live connection state for every host in your fleet — a runner must be connected before you
-        can dispatch an action to it.
+        Live connection state for every host you can access — a runner must be connected before
+        you can dispatch an action to it.
       </.page_intro>
 
       <%= cond do %>
@@ -360,7 +367,7 @@ defmodule EmisarWeb.RunnersLive do
         <% @show_wizard? and not Runners.subject_can_install_runners?(@current_subject) -> %>
           <%!-- Zero fleet, no install permission: the pitch without a wizard
                whose mint can only fail. --%>
-          <.empty_state icon="hero-server-stack" title="No runners yet.">
+          <.empty_state icon="hero-cpu-chip" title="No runners yet.">
             A runner is the emisar binary on one of your hosts. Connecting one needs
             an operator role or above, with access to all runners — ask a teammate
             who has both, and the new host's live state will appear here.
@@ -380,6 +387,14 @@ defmodule EmisarWeb.RunnersLive do
           <%!-- Dead/pre-connect render — defer the onboarding pitch until the
                live socket confirms there really are no runners. --%>
           <.loading_state />
+        <% not @has_runner_access? -> %>
+          <.empty_state icon="hero-cpu-chip" title="No runner access">
+            You don't have access to any runners. An owner or admin can grant it from Team.
+          </.empty_state>
+        <% not @has_full_runner_access? and @runners == [] -> %>
+          <.empty_state icon="hero-cpu-chip" title="No runners in your access">
+            No runners match your assigned scope. An owner or admin can update it from Team.
+          </.empty_state>
         <% true -> %>
           <%!-- :table width leaves the fleet list too narrow-of-content and wide
                of page — pair it with a docs rail (the main+aside grammar): the

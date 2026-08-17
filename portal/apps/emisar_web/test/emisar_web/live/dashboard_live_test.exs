@@ -244,6 +244,57 @@ defmodule EmisarWeb.DashboardLiveTest do
       refute html =~ ~p"/app/#{account}/runners/install"
     end
 
+    test "a member with no runner access sees the operational dashboard, not runner onboarding",
+         %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      member = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: member.id,
+        role: "operator",
+        runner_access_mode: "none"
+      )
+
+      {:ok, lv, html} =
+        build_conn()
+        |> log_in_user(member)
+        |> live(~p"/app/#{account}")
+
+      refute html =~ "Get to your first gated run"
+      refute html =~ "Connect a runner"
+      refute html =~ ~p"/app/#{account}/runners/install"
+      assert html =~ "No runner access"
+      assert html =~ "Recent runs"
+      assert html =~ "No recent runs."
+      assert has_element?(lv, "a[href='#{~p"/app/#{account}/runners"}']", "No runner access")
+    end
+
+    test "an empty restricted scope does not masquerade as an empty account", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      member = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        )
+
+      {:ok, restricted} = Emisar.Accounts.RunnerAccess.restricted(["production"], [])
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+
+      {:ok, _lv, html} =
+        build_conn()
+        |> log_in_user(member)
+        |> live(~p"/app/#{account}")
+
+      refute html =~ "Get to your first gated run"
+      refute html =~ "Put your first host online"
+      assert html =~ "No runners in your access"
+      assert html =~ "Recent runs"
+    end
+
     test "renders the operational dashboard once a run exists", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       subject = owner_subject(user, account)
