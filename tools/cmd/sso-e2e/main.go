@@ -77,7 +77,16 @@ func waitFor(name string, fn func() (bool, error)) {
 type driver struct {
 	portal, issuer, providerID, scimToken string
 	kcUser, kcPass, aliceKCID             string
+	aliceResourceID, daveResourceID       string
 	client                                *http.Client
+}
+
+func resourceID(resource string, body map[string]any) string {
+	id, ok := body["id"].(string)
+	if !ok || id == "" {
+		fail("SCIM %s response missing server id: %v", resource, body)
+	}
+	return id
 }
 
 // scim performs one SCIM call and returns the status plus the decoded body
@@ -135,10 +144,19 @@ func (d *driver) testSCIM() {
 	if status != 200 && status != 201 {
 		fail("SCIM provision of alice returned %d: %v", status, resp)
 	}
-	if resp["id"] == nil || resp["id"] == "" {
-		fail("SCIM provision of alice missing id: %v", resp)
+	d.aliceResourceID = resourceID("alice", resp)
+	if d.aliceResourceID == d.aliceKCID || resp["externalId"] != d.aliceKCID {
+		fail("SCIM alice must keep distinct id and externalId: %v", resp)
 	}
-	logf("SCIM: alice provisioned id=%v active=%v ✓", resp["id"], resp["active"])
+	logf("SCIM: alice provisioned id=%s active=%v ✓", d.aliceResourceID, resp["active"])
+
+	status, resp = d.scim(http.MethodPost, "/scim/v2/Users", alice)
+	if status != 200 && status != 201 {
+		fail("SCIM reconcile of alice returned %d: %v", status, resp)
+	}
+	if id := resourceID("reconciled alice", resp); id != d.aliceResourceID {
+		fail("SCIM reconcile changed alice's server id from %s to %s", d.aliceResourceID, id)
+	}
 
 	// Deprovision lifecycle on a throwaway (carol) — exercises active:false →
 	// suspended WITHOUT deactivating alice before her OIDC login.
@@ -155,9 +173,9 @@ func (d *driver) testSCIM() {
 	if status != 200 && status != 201 {
 		fail("SCIM create returned %d: %v", status, resp)
 	}
-	uid, _ := resp["id"].(string)
-	if uid == "" {
-		fail("SCIM create missing id: %v", resp)
+	uid := resourceID("carol", resp)
+	if uid == carol["externalId"] || resp["externalId"] != carol["externalId"] {
+		fail("SCIM carol must keep distinct id and externalId: %v", resp)
 	}
 	logf("SCIM: carol created id=%s active=%v ✓", uid, resp["active"])
 

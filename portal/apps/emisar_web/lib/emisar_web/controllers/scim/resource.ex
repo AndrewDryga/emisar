@@ -28,9 +28,8 @@ defmodule EmisarWeb.SCIM.Resource do
 
   @doc """
   Serialize the `%SSO.SCIMUser{}` directory-user projection to a SCIM User
-  resource. The SCIM `id` is the projection's opaque externalId — never an
-  internal UUID — so the IdP's `GET/PATCH/DELETE /Users/{id}` round-trips on
-  the identifier the domain keys every single-user operation on.
+  resource. `id` is the server-issued immutable resource UUID; `externalId`
+  remains the directory-owned correlation value.
   """
   def to_user(%SSO.SCIMUser{} = scim_user) do
     # `displayName` and `name` are what the IdP wrote and expects to read back.
@@ -39,7 +38,7 @@ defmodule EmisarWeb.SCIM.Resource do
     # name at all.
     %{
       "schemas" => [@user_schema],
-      "id" => scim_user.external_id,
+      "id" => scim_user.id,
       "externalId" => scim_user.external_id,
       "userName" => scim_user.user_name,
       "active" => scim_user.active,
@@ -166,64 +165,55 @@ defmodule EmisarWeb.SCIM.Resource do
 
   @doc """
   Serialize a directory group to a SCIM Group resource. Accepts the summary map
-  the domain's group upsert/patch returns (`%{external_group_id, display,
-  member_*}`) plus the externalId member list to render. `displayName` falls
-  back to the externalId when the IdP suppressed it. `members` is the array of
-  `%{"value" => externalId}` SCIM expects (an empty group → `[]`).
-
-  Like the User resource, the SCIM `id` is the IdP's externalId — the domain
-  keys every group operation on `external_group_id` (there is no internal Group
-  UUID to expose), so `GET/PUT/PATCH/DELETE /Groups/{id}` round-trips on it.
+  the domain's group upsert/patch returns (`%{id, external_group_id, display,
+  member_ids}`) plus the server-issued User ids to render. `displayName` falls
+  back to the externalId when the IdP suppressed it. An externalId-less probe
+  must supply a display name. `members` is the array of User resource ids.
   """
-  def to_group(%{} = summary, member_external_ids \\ []) when is_list(member_external_ids) do
+  def to_group(%{} = summary, member_ids \\ []) when is_list(member_ids) do
+    id = summary[:id] || summary["id"]
     external_id = summary[:external_group_id] || summary["external_group_id"]
-    display = summary[:display] || summary["display"] || external_id
+    display = summary[:display] || summary["display"] || external_id || id
 
     # `externalId` matters as much on a group as on a user. Without it Entra reads
     # back the group it just created, sees the field missing, and PATCHes to set
     # it — a PATCH we answer 400 to, which stops that group's sync dead and
     # leaves its role mapping permanently unapplied.
-    %{
+    resource = %{
       "schemas" => [@group_schema],
-      "id" => external_id,
-      "externalId" => external_id,
+      "id" => id,
       "displayName" => display,
-      "members" => Enum.map(member_external_ids, &%{"value" => &1}),
+      "members" => Enum.map(member_ids, &%{"value" => &1}),
       "meta" => %{"resourceType" => "Group"}
     }
+
+    if external_id, do: Map.put(resource, "externalId", external_id), else: resource
   end
 
   @doc """
   Parse an inbound SCIM Group payload into the flat attrs the domain expects:
-  `%{external_id, display, member_external_ids}`. `members` may be absent (a
-  group create with no members yet) — defaults to `[]`; each entry keys on
-  `"value"` (the member's externalId). `externalId` falls back to the resource
-  `id` (some IdPs send only one on a PUT).
+  `%{external_id, display, member_ids}`. `members` may be absent (a group create
+  with no members yet) — defaults to `[]`; each entry keys on `"value"`, the
+  server-issued User resource id. `id` and `displayName` never become identity
+  fallbacks for `externalId`.
   """
   def parse_group(%{} = params) do
     %{
       external_id: parse_group_external_id(params),
       display: string_or_nil(Map.get(params, "displayName")),
-      member_external_ids: parse_members(Map.get(params, "members"))
+      member_ids: parse_members(Map.get(params, "members"))
     }
   end
 
-  # externalId, then the resource id, then the display name. That last fallback
-  # is what lets a directory create a group it has no id for: JumpCloud's
-  # activation probe POSTs {"displayName": ..., "schemas": [...]} and nothing
-  # else, repeatedly. SCIM lets the service provider assign the id, and keying on
-  # the display name makes those repeat probes idempotent rather than minting a
-  # group per attempt — `to_group/2` then echoes it back as the id the IdP adopts.
   defp parse_group_external_id(params) do
     case Map.get(params, "externalId") do
       id when is_binary(id) and id != "" -> id
-      _ -> string_or_nil(Map.get(params, "id")) || string_or_nil(Map.get(params, "displayName"))
+      _ -> nil
     end
   end
 
   @doc """
-  Pull the member externalIds from a SCIM `members` array — each entry is a
-  `%{"value" => externalId}` complex attribute. Defensive: a missing array, a
+  Pull the server-issued User ids from a SCIM `members` array. Defensive: a missing array, a
   non-list, or entries without a usable `"value"` yield `[]` / are dropped.
   """
   def parse_members(members) when is_list(members) do

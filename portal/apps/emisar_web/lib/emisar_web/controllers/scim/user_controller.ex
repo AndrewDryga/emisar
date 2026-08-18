@@ -7,8 +7,8 @@ defmodule EmisarWeb.SCIM.UserController do
   `Emisar.SSO.scim_*` functions with it — the token's provider-scope IS the
   authorization (IL-15: re-read on every action, never trust the connection).
 
-  The SCIM resource `id` is the IdP's externalId (see `SSO.SCIMUser`), so
-  `:id` here is the externalId the domain keys on. Every mutation resolves to
+  The SCIM resource `id` is the server-issued `UserIdentity.id`; `externalId`
+  remains the IdP-owned create/filter correlation value. Every mutation resolves to
   one typed `SSO.SCIMUserUpdate` the domain commits atomically — PATCH hands
   its raw operation list to `SSO.scim_patch_user/3`, which owns the RFC 7644
   §3.5.2 reduction; PUT and DELETE state the desired update directly — so a
@@ -37,14 +37,14 @@ defmodule EmisarWeb.SCIM.UserController do
 
       true ->
         case SSO.scim_provision_user(provider, attrs) do
-          {:ok, _result} -> render_current(conn, :created, attrs.external_id)
+          {:ok, %{identity: identity}} -> render_current(conn, :created, identity.id)
           {:error, reason} -> render_error(conn, reason)
         end
     end
   end
 
-  # GET /scim/v2/Users/:id — fetch one by externalId.
-  def show(conn, %{"id" => external_id}), do: render_current(conn, :ok, external_id)
+  # GET /scim/v2/Users/:id — fetch one by server-issued resource id.
+  def show(conn, %{"id" => id}), do: render_current(conn, :ok, id)
 
   # GET /scim/v2/Users — list, optionally filtered by `userName eq "x"` /
   # `externalId eq "x"`. The filter is applied in the query (not in memory over
@@ -90,10 +90,10 @@ defmodule EmisarWeb.SCIM.UserController do
   # PATCH /scim/v2/Users/:id — RFC 7644 §3.5.2 Operations. `SSO.scim_patch_user/3`
   # reduces the ordered batch into one desired state and applies it; this action
   # only judges the envelope's shape and renders the answer.
-  def update(conn, %{"id" => external_id, "Operations" => operations})
+  def update(conn, %{"id" => id, "Operations" => operations})
       when is_list(operations) do
-    case SSO.scim_patch_user(conn.assigns.scim_provider, external_id, operations) do
-      {:ok, _result} -> render_current(conn, :ok, external_id)
+    case SSO.scim_patch_user(conn.assigns.scim_provider, id, operations) do
+      {:ok, _result} -> render_current(conn, :ok, id)
       {:error, reason} -> render_error(conn, reason)
     end
   end
@@ -107,7 +107,7 @@ defmodule EmisarWeb.SCIM.UserController do
   # PUT /scim/v2/Users/:id — full replace. Acts on the IdP-owned attributes:
   # `displayName` (the synced profile name) and the `active` lifecycle flag;
   # everything else (email, externalId) stays immutable post-provision here.
-  def replace(conn, %{"id" => external_id} = params) do
+  def replace(conn, %{"id" => id} = params) do
     attrs = Resource.parse_user(params)
 
     case Resource.parse_active(Map.get(params, "active"), nil) do
@@ -115,7 +115,7 @@ defmodule EmisarWeb.SCIM.UserController do
         bad_request(conn, "invalidValue", "PUT requires a boolean `active`.")
 
       active ->
-        apply_update(conn, external_id, %SSO.SCIMUserUpdate{
+        apply_update(conn, id, %SSO.SCIMUserUpdate{
           name: put_name(attrs.full_name),
           active: active
         })
@@ -127,19 +127,19 @@ defmodule EmisarWeb.SCIM.UserController do
 
   # The write behind PUT: the domain commits everything the request asked for —
   # rename and lifecycle — or nothing.
-  defp apply_update(conn, external_id, %SSO.SCIMUserUpdate{} = update) do
-    case SSO.scim_update_user(conn.assigns.scim_provider, external_id, update) do
-      {:ok, _result} -> render_current(conn, :ok, external_id)
+  defp apply_update(conn, id, %SSO.SCIMUserUpdate{} = update) do
+    case SSO.scim_update_user(conn.assigns.scim_provider, id, update) do
+      {:ok, _result} -> render_current(conn, :ok, id)
       {:error, reason} -> render_error(conn, reason)
     end
   end
 
   # DELETE /scim/v2/Users/:id — soft deprovision (suspend), not a hard delete
   # (R8 / decision 5). 204 No Content on success.
-  def delete(conn, %{"id" => external_id}) do
+  def delete(conn, %{"id" => id}) do
     provider = conn.assigns.scim_provider
 
-    case SSO.scim_update_user(provider, external_id, %SSO.SCIMUserUpdate{active: false}) do
+    case SSO.scim_update_user(provider, id, %SSO.SCIMUserUpdate{active: false}) do
       {:ok, _result} -> send_resp(conn, :no_content, "")
       {:error, reason} -> render_error(conn, reason)
     end
@@ -175,15 +175,15 @@ defmodule EmisarWeb.SCIM.UserController do
   # the one projection read, so a mutation's answer can never drift from the
   # next read's. Rendering mutation results directly is how a response once
   # reported `active: true` for someone a manual hold keeps signed out.
-  defp render_current(conn, status, external_id) do
-    case SSO.scim_fetch_user(conn.assigns.scim_provider, external_id) do
+  defp render_current(conn, status, id) do
+    case SSO.scim_fetch_user(conn.assigns.scim_provider, id) do
       {:ok, scim_user} ->
         conn
         |> put_status(status)
         |> json(Resource.to_user(scim_user))
 
       {:error, :not_found} ->
-        not_found(conn, external_id)
+        not_found(conn, id)
     end
   end
 

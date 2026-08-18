@@ -3156,14 +3156,17 @@ if System.get_env("EMISAR_DEV_FIXED_SCIM_TOKEN") not in [nil, ""] do
       {"kc|theo", "theo@northstar.example", "Theo Alvarez"}
     ]
 
-    for {ext, email, name} <- scim_people do
-      {:ok, _} =
-        Emisar.SSO.scim_provision_user(scim_provider, %{
-          external_id: ext,
-          email: email,
-          full_name: name
-        })
-    end
+    identity_ids_by_external_id =
+      Map.new(scim_people, fn {ext, email, name} ->
+        {:ok, %{identity: identity}} =
+          Emisar.SSO.scim_provision_user(scim_provider, %{
+            external_id: ext,
+            email: email,
+            full_name: name
+          })
+
+        {ext, identity.id}
+      end)
 
     # Certifying against a live IdP points a real directory at this connection,
     # which leaves behind identities the seed never created (an operator's own
@@ -3200,7 +3203,7 @@ if System.get_env("EMISAR_DEV_FIXED_SCIM_TOKEN") not in [nil, ""] do
       end
     end
 
-    # {external group id, display, member externalIds, mapped role | nil}
+    # {external group id, display, member externalIds resolved below, mapped role | nil}
     scim_groups = [
       {"kc-grp-platform", "Platform Engineers", ~w(kc|nadia kc|ravi kc|lena), :admin},
       {"kc-grp-sre", "SRE On-call", ~w(kc|ravi kc|theo), :operator},
@@ -3230,7 +3233,7 @@ if System.get_env("EMISAR_DEV_FIXED_SCIM_TOKEN") not in [nil, ""] do
         Emisar.SSO.scim_upsert_group(scim_provider, %{
           external_id: ext,
           display: display,
-          member_external_ids: members
+          member_ids: Enum.map(members, &Map.fetch!(identity_ids_by_external_id, &1))
         })
     end
 

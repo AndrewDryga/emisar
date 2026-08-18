@@ -44,9 +44,10 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
   Take directory ownership of an identity that arrived through OIDC first.
 
   Such an identity carries a `provider_identifier` but no `scim_external_id`. A
-  SCIM `POST /Users` reuses it by identifier, but every later `GET`/`PATCH`/
-  `DELETE /Users/{id}` looks up by `scim_external_id` — so without this stamp the
-  directory could create the member and then never offboard them.
+  SCIM `POST /Users` may reuse it by identifier. Stamping the directory's
+  `externalId` preserves reconciliation, filtering, and OIDC correlation even
+  if the login identifier is later rebound. Resource routes use the identity's
+  server-assigned `id`.
   """
   def adopt_scim_external_id(%UserIdentity{} = identity, external_id) do
     identity
@@ -64,8 +65,9 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
   presented is this member. When they already hold an identity for the connection
   — the directory provisioned them under its own `externalId`, or the IdP rotated
   their `sub` — that one identity is rebound instead of a second being created.
-  `scim_external_id` is deliberately untouched: the directory still addresses them
-  by the id it knows, and overwriting it would strand every lifecycle call.
+  `scim_external_id` is deliberately untouched: it is the IdP-owned correlation
+  value used by repeated creates and filters, and must survive an OIDC identifier
+  rebind.
   """
   def rebind_provider_identifier(%UserIdentity{} = identity, identifier, claims) do
     identity

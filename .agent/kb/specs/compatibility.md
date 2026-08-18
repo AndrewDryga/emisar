@@ -304,30 +304,35 @@ provisioning (Okta, Entra, JumpCloud, Keycloak, Google).
 **How they are versioned today.** SCIM is path-versioned at `/scim/v2`
 (RFC 7643/7644). Discovery serves `ServiceProviderConfig`, `ResourceTypes`,
 and `Schemas` advertising the deliberate subset: `patch` and `filter`
-(`maxResults` 100) on, `bulk`/`sort`/`etag` off. Every SCIM resource `id` IS
-the IdP's `externalId` — internal UUIDs are never exposed — so single-resource
-routes round-trip on the IdP's own identifier. User and Group collections
+(`maxResults` 100) on, `bulk`/`sort`/`etag` off. Every SCIM resource `id` is an
+immutable UUID assigned by emisar. The IdP-owned `externalId` remains the
+create/reconciliation and filter key, and for Users it remains the value that
+must converge with the configured OIDC subject claim. Single-resource routes
+use the returned `id`; Group `members[].value` entries use the returned User
+`id`. User and Group collections
 honor RFC 7644's one-based `startIndex` and `count`, return at most 100 resources
 per page, and report the filtered collection's full count in `totalResults`;
 malformed pagination values fail with 400 `invalidValue`. Users support idempotent
 create/reconcile, `userName eq`/`externalId eq` filters only, PATCH limited to
 `active` and rename attributes, PUT limited to `displayName` plus `active`,
-and DELETE as soft deprovision (suspend), never a hard delete. Groups support
-upsert by `externalId` (falling back to `id`, then `displayName`), membership
-`add`/`remove`/`replace` including Okta's filtered removal form, a
-`displayName eq` filter, and DELETE as membership emptying. Several tolerant
+and DELETE as soft deprovision (suspend), never a hard delete. Groups reconcile
+POSTs by `externalId` when one is supplied. A POST without `externalId`
+creates a fresh resource with a new server `id`; the display name is never
+identity. Groups support membership `add`/`remove`/`replace` including Okta's filtered removal form, a
+`displayName eq` filter, and DELETE removes the Group resource, clears its
+members, and revokes authorization derived from its mappings. Several tolerant
 parses are load-bearing for specific IdPs and are part of the contract: the
 case-insensitive and schemeless `Authorization` header (Okta header-auth
-apps), unquoted `eq` filter values, and the Group upsert fallback (JumpCloud's
-activation probe). An unsupported Users filter fails with 400 `invalidFilter`;
+apps), unquoted `eq` filter values, and the externalId-less Group create used by
+JumpCloud's activation probe. An unsupported Users filter fails with 400 `invalidFilter`;
 an unparseable Groups filter deliberately lists everything instead.
 
 **What happens on skew.** An IdP sending an unsupported operation gets an
 explicit SCIM error (`invalidPath`, `invalidFilter`, `tooMany`, 409
 `uniqueness`/`mutability`), never silent acceptance, and a rejected request
-changes nothing. Renaming either registered value, narrowing a tolerant
-parse, or exposing a different `id` breaks deployed IdP configurations that
-only the customer can update — after 1.0 all of it moves only through the
+changes nothing. Renaming either registered value, narrowing a tolerant parse,
+or reinterpreting `id`, `externalId`, or Group member references breaks deployed
+IdP configurations that only the customer can update — after 1.0 all of it moves only through the
 deprecation path, and already-issued `ems-` tokens must keep authenticating.
 
 ### Audit export for SIEM

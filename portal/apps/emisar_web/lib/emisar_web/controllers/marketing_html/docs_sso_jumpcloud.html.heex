@@ -4,8 +4,8 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="integrations-jumpcloud"
-      updated="July 31, 2026"
-      evidence="Verified against a live JumpCloud tenant on July 31, 2026."
+      updated="August 18, 2026"
+      evidence="Verified against a live JumpCloud tenant on August 18, 2026."
       toc={[
         {"sso", "Single sign-on"},
         {"scim", "Directory sync"}
@@ -288,6 +288,8 @@
               creates, renames and deletes a probe group, and provisions and removes the test user,
               against your live emisar. Do <strong class="text-zinc-200">not</strong>
               press Save instead — JumpCloud discards the configuration and you start over.
+              The probe group may omit <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>;
+              emisar returns an id that JumpCloud uses for the rename and delete.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/jumpcloud-scim-activate.webp"

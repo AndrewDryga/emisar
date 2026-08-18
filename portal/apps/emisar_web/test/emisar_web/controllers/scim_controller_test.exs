@@ -114,6 +114,18 @@ defmodule EmisarWeb.SCIMControllerTest do
     |> patch(path, body)
   end
 
+  defp user_resource_id(provider, external_id) do
+    SSO.UserIdentity.Query.not_deleted()
+    |> SSO.UserIdentity.Query.by_provider_and_scim_external_id(provider.id, external_id)
+    |> Repo.fetch!(SSO.UserIdentity.Query)
+    |> Map.fetch!(:id)
+  end
+
+  defp user_path(token, external_id) do
+    {:ok, provider} = SSO.authenticate_scim_token(token)
+    "/scim/v2/Users/#{user_resource_id(provider, external_id)}"
+  end
+
   # A PATCH PatchOp body flipping `active` (Okta path shape).
   defp active_patch(active) do
     %{
@@ -250,8 +262,8 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["userName"] == "new@acme.test"
       assert body["active"] == true
       assert body["meta"]["resourceType"] == "User"
-      # The resource id is the externalId (the domain's stable key).
-      assert body["id"] == "okta|new"
+      assert Repo.valid_uuid?(body["id"])
+      refute body["id"] == body["externalId"]
 
       {:ok, user} = Users.fetch_user_by_email("new@acme.test")
       assert Accounts.peek_sync_membership(account.id, user.id)
@@ -324,7 +336,11 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(400)
 
       assert body["scimType"] == "invalidValue"
-      assert {:error, :not_found} = SSO.scim_fetch_user(provider, "okta|invalid-active")
+
+      assert {:ok, [], 0} =
+               SSO.scim_list_users(provider,
+                 scim_filter: {:external_id, "okta|invalid-active"}
+               )
     end
 
     test "a payload the user changeset rejects → 400 invalidValue", %{conn: conn, token: token} do
@@ -374,7 +390,7 @@ defmodule EmisarWeb.SCIMControllerTest do
         conn
         |> auth(token)
         |> put_req_header("content-type", @scim_content_type)
-        |> patch(~p"/scim/v2/Users/okta|patch", patch_body)
+        |> patch(user_path(token, "okta|patch"), patch_body)
         |> json_response(200)
 
       assert body["active"] == false
@@ -399,7 +415,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert conn
              |> auth(token)
              |> put_req_header("content-type", @scim_content_type)
-             |> patch(~p"/scim/v2/Users/okta|entra", patch_body)
+             |> patch(user_path(token, "okta|entra"), patch_body)
              |> json_response(200)
 
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
@@ -421,7 +437,7 @@ defmodule EmisarWeb.SCIMControllerTest do
         conn
         |> auth(token)
         |> put_req_header("content-type", @scim_content_type)
-        |> patch(~p"/scim/v2/Users/okta|np", patch_body)
+        |> patch(user_path(token, "okta|np"), patch_body)
         |> json_response(400)
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
@@ -442,7 +458,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/okta|ci", patch_body)
+        |> scim_patch(token, user_path(token, "okta|ci"), patch_body)
         |> json_response(200)
 
       assert body["active"] == false
@@ -470,7 +486,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/okta|last", patch_body)
+        |> scim_patch(token, user_path(token, "okta|last"), patch_body)
         |> json_response(200)
 
       assert body["active"] == false
@@ -496,7 +512,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/okta|held", %{
+        |> scim_patch(token, user_path(token, "okta|held"), %{
           "Operations" => [%{"op" => "replace", "path" => "active", "value" => true}]
         })
         |> json_response(200)
@@ -512,7 +528,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       # `true` again — the same lie, one request later.
       read =
         conn
-        |> scim_get(token, ~p"/scim/v2/Users/okta|held")
+        |> scim_get(token, user_path(token, "okta|held"))
         |> json_response(200)
 
       assert read["active"] == false
@@ -539,7 +555,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       read =
         conn
-        |> scim_get(token, ~p"/scim/v2/Users/okta|removed")
+        |> scim_get(token, user_path(token, "okta|removed"))
         |> json_response(200)
 
       assert read["active"] == false
@@ -548,7 +564,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       # to do, rather than 404ing.
       body =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/okta|removed", active_patch(false))
+        |> scim_patch(token, user_path(token, "okta|removed"), active_patch(false))
         |> json_response(200)
 
       assert body["active"] == false
@@ -570,7 +586,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/okta|noact", patch_body)
+        |> scim_patch(token, user_path(token, "okta|noact"), patch_body)
         |> json_response(400)
 
       assert body["scimType"] == "invalidPath"
@@ -593,7 +609,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       }
 
       conn
-      |> scim_patch(token, ~p"/scim/v2/Users/okta|rename-only", patch_body)
+      |> scim_patch(token, user_path(token, "okta|rename-only"), patch_body)
       |> json_response(200)
 
       assert Repo.reload!(user).full_name == "New Name"
@@ -616,7 +632,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       }
 
       conn
-      |> scim_patch(token, ~p"/scim/v2/Users/okta|entra-rename", patch_body)
+      |> scim_patch(token, user_path(token, "okta|entra-rename"), patch_body)
       |> json_response(200)
 
       assert Repo.reload!(user).full_name == "Entra Name"
@@ -644,7 +660,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/okta|both-ops", patch_body)
+        |> scim_patch(token, user_path(token, "okta|both-ops"), patch_body)
         |> json_response(200)
 
       assert body["active"] == false
@@ -681,7 +697,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/okta|atomic", patch_body)
+        |> scim_patch(token, user_path(token, "okta|atomic"), patch_body)
         |> json_response(409)
 
       assert body["status"] == "409"
@@ -716,7 +732,7 @@ defmodule EmisarWeb.SCIMControllerTest do
         "name" => %{"formatted" => "Old Name", "givenName" => "New"}
       }
 
-      resp = conn |> scim_put(token, ~p"/scim/v2/Users/okta|echo", body) |> json_response(200)
+      resp = conn |> scim_put(token, user_path(token, "okta|echo"), body) |> json_response(200)
       assert resp["displayName"] == "New Name"
     end
 
@@ -743,7 +759,9 @@ defmodule EmisarWeb.SCIMControllerTest do
         ]
       }
 
-      body = conn |> scim_patch(token, ~p"/scim/v2/Users/entra|name", patch) |> json_response(200)
+      body =
+        conn |> scim_patch(token, user_path(token, "entra|name"), patch) |> json_response(200)
+
       assert body["displayName"] == "Renamed Entra R3"
     end
 
@@ -764,7 +782,9 @@ defmodule EmisarWeb.SCIMControllerTest do
         "Operations" => [%{"op" => "replace", "path" => "name.givenName", "value" => "Augusta"}]
       }
 
-      body = conn |> scim_patch(token, ~p"/scim/v2/Users/entra|half", patch) |> json_response(200)
+      body =
+        conn |> scim_patch(token, user_path(token, "entra|half"), patch) |> json_response(200)
+
       assert body["displayName"] == "Augusta Lovelace"
     end
 
@@ -781,7 +801,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/okta|many", %{"Operations" => operations})
+        |> scim_patch(token, user_path(token, "okta|many"), %{"Operations" => operations})
         |> json_response(400)
 
       assert body["scimType"] == "tooMany"
@@ -797,7 +817,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/okta|nl", %{"Operations" => "replace active"})
+        |> scim_patch(token, user_path(token, "okta|nl"), %{"Operations" => "replace active"})
         |> json_response(400)
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
@@ -814,16 +834,16 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/okta|ns", %{"active" => false})
+        |> scim_patch(token, user_path(token, "okta|ns"), %{"active" => false})
         |> json_response(400)
 
       assert body["scimType"] == "invalidSyntax"
     end
 
-    test "a PATCH active:false on an unknown externalId → 404", %{conn: conn, token: token} do
+    test "a PATCH active:false on an unknown server id → 404", %{conn: conn, token: token} do
       body =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/okta|nobody", active_patch(false))
+        |> scim_patch(token, "/scim/v2/Users/#{Ecto.UUID.generate()}", active_patch(false))
         |> json_response(404)
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
@@ -839,7 +859,8 @@ defmodule EmisarWeb.SCIMControllerTest do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|re", email: "re@acme.test"})
 
-      {:ok, _} = SSO.scim_update_user(provider, "okta|re", %SCIMUserUpdate{active: false})
+      id = user_resource_id(provider, "okta|re")
+      {:ok, _} = SSO.scim_update_user(provider, id, %SCIMUserUpdate{active: false})
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
 
       patch_body = %{"Operations" => [%{"op" => "replace", "path" => "active", "value" => true}]}
@@ -848,7 +869,7 @@ defmodule EmisarWeb.SCIMControllerTest do
         conn
         |> auth(token)
         |> put_req_header("content-type", @scim_content_type)
-        |> patch(~p"/scim/v2/Users/okta|re", patch_body)
+        |> patch(user_path(token, "okta|re"), patch_body)
         |> json_response(200)
 
       assert body["active"] == true
@@ -864,7 +885,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|del", email: "del@acme.test"})
 
-      conn = conn |> auth(token) |> delete(~p"/scim/v2/Users/okta|del")
+      conn = conn |> auth(token) |> delete(user_path(token, "okta|del"))
       assert response(conn, 204)
 
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
@@ -886,7 +907,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       body =
         conn
         |> auth(token)
-        |> delete(~p"/scim/v2/Users/okta|owner")
+        |> delete(user_path(token, "okta|owner"))
         |> json_response(409)
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
@@ -895,13 +916,13 @@ defmodule EmisarWeb.SCIMControllerTest do
       refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
     end
 
-    test "DELETE of an unknown externalId → 404 SCIM error", %{conn: conn} do
+    test "DELETE of an unknown server id → 404 SCIM error", %{conn: conn} do
       %{token: token} = scim_provider()
 
       body =
         conn
         |> auth(token)
-        |> delete(~p"/scim/v2/Users/okta|ghost")
+        |> delete("/scim/v2/Users/#{Ecto.UUID.generate()}")
         |> json_response(404)
 
       assert body["status"] == "404"
@@ -916,12 +937,13 @@ defmodule EmisarWeb.SCIMControllerTest do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|redel", email: "redel@acme.test"})
 
-      assert conn |> auth(token) |> delete(~p"/scim/v2/Users/okta|redel") |> response(204)
+      path = user_path(token, "okta|redel")
+      assert conn |> auth(token) |> delete(path) |> response(204)
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
 
       # The second DELETE re-suspends the already-disabled membership — a no-op at
       # the membership layer, still 204 (the identity row lives on, so it resolves).
-      assert conn |> auth(token) |> delete(~p"/scim/v2/Users/okta|redel") |> response(204)
+      assert conn |> auth(token) |> delete(path) |> response(204)
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
@@ -941,7 +963,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/okta|bad", patch_body)
+        |> scim_patch(token, user_path(token, "okta|bad"), patch_body)
         |> json_response(400)
 
       assert body["scimType"] == "invalidValue"
@@ -956,7 +978,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/okta|aa", active_patch(true))
+        |> scim_patch(token, user_path(token, "okta|aa"), active_patch(true))
         |> json_response(200)
 
       assert body["active"] == true
@@ -964,10 +986,10 @@ defmodule EmisarWeb.SCIMControllerTest do
       refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
-    test "a PATCH active:true on an unknown externalId → 404", %{conn: conn, token: token} do
+    test "a PATCH active:true on an unknown server id → 404", %{conn: conn, token: token} do
       body =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/okta|nobody-react", active_patch(true))
+        |> scim_patch(token, "/scim/v2/Users/#{Ecto.UUID.generate()}", active_patch(true))
         |> json_response(404)
 
       assert body["status"] == "404"
@@ -1026,7 +1048,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       # membership is suspended (R8: PUT active:false maps to scim_update_user (active: false)).
       body =
         conn
-        |> scim_put(token, ~p"/scim/v2/Users/okta|put-off-bool", %{"active" => false})
+        |> scim_put(token, user_path(token, "okta|put-off-bool"), %{"active" => false})
         |> json_response(200)
 
       assert body["active"] == false
@@ -1045,12 +1067,13 @@ defmodule EmisarWeb.SCIMControllerTest do
       {:ok, %{user: user}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|put-on", email: "puton@acme.test"})
 
-      {:ok, _} = SSO.scim_update_user(provider, "okta|put-on", %SCIMUserUpdate{active: false})
+      id = user_resource_id(provider, "okta|put-on")
+      {:ok, _} = SSO.scim_update_user(provider, id, %SCIMUserUpdate{active: false})
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
 
       body =
         conn
-        |> scim_put(token, ~p"/scim/v2/Users/okta|put-on", %{"active" => true})
+        |> scim_put(token, user_path(token, "okta|put-on"), %{"active" => true})
         |> json_response(200)
 
       assert body["active"] == true
@@ -1072,7 +1095,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_put(token, ~p"/scim/v2/Users/okta|put-rename", %{
+        |> scim_put(token, user_path(token, "okta|put-rename"), %{
           "active" => true,
           "displayName" => "New Name"
         })
@@ -1096,7 +1119,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_put(token, ~p"/scim/v2/Users/okta|put-off", %{"active" => "False"})
+        |> scim_put(token, user_path(token, "okta|put-off"), %{"active" => "False"})
         |> json_response(200)
 
       assert body["active"] == false
@@ -1123,7 +1146,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       # email rewrite via sync would be an account-takeover surface).
       body =
         conn
-        |> scim_put(token, ~p"/scim/v2/Users/okta|put-ignore", %{
+        |> scim_put(token, user_path(token, "okta|put-ignore"), %{
           "active" => false,
           "displayName" => "Renamed By IdP",
           "emails" => [%{"primary" => true, "value" => "renamed@acme.test"}]
@@ -1148,7 +1171,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_put(token, ~p"/scim/v2/Users/okta|put-na", %{"displayName" => "Renamed"})
+        |> scim_put(token, user_path(token, "okta|put-na"), %{"displayName" => "Renamed"})
         |> json_response(400)
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
@@ -1166,18 +1189,18 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_put(token, ~p"/scim/v2/Users/okta|put-bad", %{"active" => "maybe"})
+        |> scim_put(token, user_path(token, "okta|put-bad"), %{"active" => "maybe"})
         |> json_response(400)
 
       assert body["scimType"] == "invalidValue"
     end
 
-    test "PUT on an unknown externalId → 404 SCIM error", %{conn: conn} do
+    test "PUT on an unknown server id → 404 SCIM error", %{conn: conn} do
       %{token: token} = scim_provider()
 
       body =
         conn
-        |> scim_put(token, ~p"/scim/v2/Users/okta|put-ghost", %{"active" => false})
+        |> scim_put(token, "/scim/v2/Users/#{Ecto.UUID.generate()}", %{"active" => false})
         |> json_response(404)
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
@@ -1198,7 +1221,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       body =
         conn
-        |> scim_put(token, ~p"/scim/v2/Users/okta|put-owner", %{"active" => false})
+        |> scim_put(token, user_path(token, "okta|put-owner"), %{"active" => false})
         |> json_response(409)
 
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
@@ -1211,26 +1234,26 @@ defmodule EmisarWeb.SCIMControllerTest do
 
   # -- Cross-provider no-leak isolation --------------------------------
 
-  describe "cross-provider isolation (a foreign externalId is 404, never a leak)" do
+  describe "cross-provider isolation (a foreign server id is 404, never a leak)" do
     setup do
       %{token: token_a} = scim_provider()
       %{provider: provider_b, account: account_b} = scim_provider(%{default_role: :admin})
       %{token_a: token_a, provider_b: provider_b, account_b: account_b}
     end
 
-    test "DELETE of an account-B externalId → 404; B untouched", %{
+    test "DELETE of an account-B server id → 404; B untouched", %{
       conn: conn,
       token_a: token_a,
       provider_b: provider_b,
       account_b: account_b
     } do
-      {:ok, %{user: user_b}} =
+      {:ok, %{identity: identity_b, user: user_b}} =
         SSO.scim_provision_user(provider_b, %{external_id: "okta|in-b", email: "inb@acme.test"})
 
       body =
         conn
         |> auth(token_a)
-        |> delete(~p"/scim/v2/Users/okta|in-b")
+        |> delete("/scim/v2/Users/#{identity_b.id}")
         |> json_response(404)
 
       assert body["status"] == "404"
@@ -1238,7 +1261,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       refute Accounts.peek_sync_membership(account_b.id, user_b.id).disabled_at
     end
 
-    test "PUT active:true on an account-B externalId → 404; B's suspension stands", %{
+    test "PUT active:true on an account-B server id → 404; B's suspension stands", %{
       conn: conn,
       token_a: token_a,
       provider_b: provider_b,
@@ -1247,17 +1270,18 @@ defmodule EmisarWeb.SCIMControllerTest do
       {:ok, %{user: user_b}} =
         SSO.scim_provision_user(provider_b, %{external_id: "okta|susp-b", email: "sb@acme.test"})
 
-      {:ok, _} = SSO.scim_update_user(provider_b, "okta|susp-b", %SCIMUserUpdate{active: false})
+      id_b = user_resource_id(provider_b, "okta|susp-b")
+      {:ok, _} = SSO.scim_update_user(provider_b, id_b, %SCIMUserUpdate{active: false})
 
       assert conn
-             |> scim_put(token_a, ~p"/scim/v2/Users/okta|susp-b", %{"active" => true})
+             |> scim_put(token_a, "/scim/v2/Users/#{id_b}", %{"active" => true})
              |> json_response(404)
 
       # B stays suspended — A's reactivate never reached B's membership.
       assert Accounts.peek_sync_membership(account_b.id, user_b.id).disabled_at
     end
 
-    test "PATCH active:true on an account-B externalId → 404; B's suspension stands", %{
+    test "PATCH active:true on an account-B server id → 404; B's suspension stands", %{
       conn: conn,
       token_a: token_a,
       provider_b: provider_b,
@@ -1266,22 +1290,27 @@ defmodule EmisarWeb.SCIMControllerTest do
       {:ok, %{user: user_b}} =
         SSO.scim_provision_user(provider_b, %{external_id: "okta|patch-b", email: "pb@acme.test"})
 
-      {:ok, _} = SSO.scim_update_user(provider_b, "okta|patch-b", %SCIMUserUpdate{active: false})
+      id_b = user_resource_id(provider_b, "okta|patch-b")
+      {:ok, _} = SSO.scim_update_user(provider_b, id_b, %SCIMUserUpdate{active: false})
 
       assert conn
-             |> scim_patch(token_a, ~p"/scim/v2/Users/okta|patch-b", active_patch(true))
+             |> scim_patch(token_a, "/scim/v2/Users/#{id_b}", active_patch(true))
              |> json_response(404)
 
       assert Accounts.peek_sync_membership(account_b.id, user_b.id).disabled_at
     end
 
-    test "PATCH active:false on an account-B externalId → 404; B's member stays active",
+    test "PATCH active:false on an account-B server id → 404; B's member stays active",
          %{conn: conn, token_a: token_a, provider_b: provider_b, account_b: account_b} do
       {:ok, %{user: user_b}} =
         SSO.scim_provision_user(provider_b, %{external_id: "okta|live-b", email: "lb@acme.test"})
 
       assert conn
-             |> scim_patch(token_a, ~p"/scim/v2/Users/okta|live-b", active_patch(false))
+             |> scim_patch(
+               token_a,
+               "/scim/v2/Users/#{user_resource_id(provider_b, "okta|live-b")}",
+               active_patch(false)
+             )
              |> json_response(404)
 
       # B's member is still active — A's deactivate never reached B.
@@ -1307,7 +1336,9 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(201)
 
       assert provisioned["active"] == true
-      assert provisioned["id"] == ext
+      id = provisioned["id"]
+      assert Repo.valid_uuid?(id)
+      refute id == ext
 
       {:ok, user} = Users.fetch_user_by_email("life@acme.test")
       membership = Accounts.peek_sync_membership(account.id, user.id)
@@ -1317,7 +1348,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       # 2. Deactivate → membership suspended, identity flagged inactive.
       deactivated =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/#{ext}", active_patch(false))
+        |> scim_patch(token, ~p"/scim/v2/Users/#{id}", active_patch(false))
         |> json_response(200)
 
       assert deactivated["active"] == false
@@ -1326,19 +1357,19 @@ defmodule EmisarWeb.SCIMControllerTest do
       # 3. Reactivate → membership reinstated.
       reactivated =
         conn
-        |> scim_patch(token, ~p"/scim/v2/Users/#{ext}", active_patch(true))
+        |> scim_patch(token, ~p"/scim/v2/Users/#{id}", active_patch(true))
         |> json_response(200)
 
       assert reactivated["active"] == true
       refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
 
       # 4. DELETE → SUSPEND, never destroy: 204, membership disabled, user kept.
-      assert conn |> auth(token) |> delete(~p"/scim/v2/Users/#{ext}") |> response(204)
+      assert conn |> auth(token) |> delete(~p"/scim/v2/Users/#{id}") |> response(204)
 
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
       # The user row + identity persist — DELETE deactivates, it does not hard-delete.
       assert {:ok, _user} = Users.fetch_user_by_id(user.id)
-      assert {:ok, _scim_user} = SSO.scim_fetch_user(provider, ext)
+      assert {:ok, _scim_user} = SSO.scim_fetch_user(provider, id)
     end
 
     test "`scim_active` drift is self-corrected on the next reconcile (re-POST)", %{
@@ -1369,7 +1400,7 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(201)
 
       assert body["active"] == true
-      {:ok, reloaded} = SSO.scim_fetch_user(provider, "okta|drift")
+      {:ok, reloaded} = SSO.scim_fetch_user(provider, user_resource_id(provider, "okta|drift"))
       assert reloaded.active
     end
   end
@@ -1386,10 +1417,10 @@ defmodule EmisarWeb.SCIMControllerTest do
       token: token,
       provider: provider
     } do
-      {:ok, _} =
+      {:ok, %{identity: identity}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|read", email: "read@acme.test"})
 
-      body = conn |> auth(token) |> get(~p"/scim/v2/Users/okta|read") |> json_response(200)
+      body = conn |> auth(token) |> get(~p"/scim/v2/Users/#{identity.id}") |> json_response(200)
       assert body["externalId"] == "okta|read"
 
       # The same handle POST returned. A read used to hand back a bare identity,
@@ -1397,6 +1428,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       # externalId — one person with two handles depending on the verb.
       assert body["userName"] == "read@acme.test"
 
+      assert conn |> auth(token) |> get(~p"/scim/v2/Users/okta|read") |> json_response(404)
       assert conn |> auth(token) |> get(~p"/scim/v2/Users/okta|missing") |> json_response(404)
     end
 
@@ -1431,20 +1463,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert [%{"externalId" => "okta|round"}] = body["Resources"]
     end
 
-    test "GET /Users/:id matches scim_external_id only — not the provider_identifier fallback", %{
+    test "GET /Users/:id is independent from the externalId correlation value", %{
       conn: conn,
       token: token,
       provider: provider
     } do
-      # (asserts the REAL behavior, which differs from the
-      # test-plan's optimistic claim). The list filter `externalId eq` coalesces
-      # scim_external_id → provider_identifier (UserIdentity.Query.by_external_id),
-      # but the single-fetch `GET /Users/:id` (scim_fetch_user →
-      # by_provider_and_scim_external_id) matches scim_external_id ONLY. For a
-      # SCIM-provisioned identity the two ids coincide (decision 4), so this is
-      # not reachable in practice — but it documents that the fetch path does NOT
-      # fall back to provider_identifier. No product bug: SCIM only ever fetches
-      # identities it provisioned, which always carry scim_external_id.
       {:ok, %{identity: identity}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|coalesce", email: "c@acme.test"})
 
@@ -1452,10 +1475,19 @@ defmodule EmisarWeb.SCIMControllerTest do
       {:ok, _} =
         identity |> Ecto.Changeset.change(scim_external_id: nil) |> Repo.update()
 
-      # The single-fetch does NOT coalesce → 404 on the provider_identifier.
+      body =
+        conn
+        |> auth(token)
+        |> get("/scim/v2/Users/#{identity.id}")
+        |> json_response(200)
+
+      assert body["id"] == identity.id
+      assert body["externalId"] == "okta|coalesce"
+
+      # The retired externalId-addressed route does not resolve the same row.
       assert conn |> auth(token) |> get(~p"/scim/v2/Users/okta|coalesce") |> json_response(404)
 
-      # …but the LIST filter, which DOES coalesce, still finds it by externalId.
+      # The collection filter still uses the IdP correlation value.
       body =
         conn
         |> auth(token)

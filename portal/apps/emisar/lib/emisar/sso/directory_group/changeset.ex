@@ -12,7 +12,8 @@ defmodule Emisar.SSO.DirectoryGroup.Changeset do
       external_group_id: external_group_id,
       display: display
     )
-    |> validate_required([:account_id, :provider_id, :external_group_id])
+    |> validate_required([:account_id, :provider_id])
+    |> require_external_id_or_display()
     |> validate_length(:external_group_id, max: @max_length)
     |> validate_length(:display, max: @max_length)
     |> unique_constraint([:account_id, :provider_id, :external_group_id],
@@ -32,4 +33,14 @@ defmodule Emisar.SSO.DirectoryGroup.Changeset do
   end
 
   def delete(%DirectoryGroup{} = group), do: change(group, deleted_at: DateTime.utc_now())
+
+  defp require_external_id_or_display(changeset) do
+    if blank?(get_field(changeset, :external_group_id)) do
+      validate_required(changeset, [:display])
+    else
+      changeset
+    end
+  end
+
+  defp blank?(value), do: is_nil(value) or value == ""
 end

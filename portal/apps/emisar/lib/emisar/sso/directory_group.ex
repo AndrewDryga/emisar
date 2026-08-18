@@ -1,7 +1,9 @@
 defmodule Emisar.SSO.DirectoryGroup do
   @moduledoc """
-  A group the directory has pushed. Existence and display live here; who is IN it
-  lives on `DirectoryGroupMember`.
+  A group the directory has pushed. Its UUID is the SCIM resource `id`;
+  `external_group_id` is the directory-owned `externalId` when one was supplied.
+  Existence and display live here; who is IN it lives on
+  `DirectoryGroupMember`.
 
   Deriving a group from its membership rows meant an empty group did not exist —
   `POST /Groups` with no members answered 201 and the next `GET` answered 404,

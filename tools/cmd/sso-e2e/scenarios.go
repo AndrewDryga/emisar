@@ -128,10 +128,15 @@ func (d *driver) testGroupLifecycle() {
 		"displayName": "E2E Empty",
 		"members":     []any{},
 	}
-	if status, resp := d.scim(http.MethodPost, "/scim/v2/Groups", empty); status != 201 && status != 200 {
+	status, resp := d.scim(http.MethodPost, "/scim/v2/Groups", empty)
+	if status != 201 && status != 200 {
 		fail("empty group create: %d %v", status, resp)
 	}
-	status, resp := d.scim(http.MethodGet, "/scim/v2/Groups/e2e-empty", nil)
+	emptyID := resourceID("empty group", resp)
+	if emptyID == "e2e-empty" || resp["externalId"] != "e2e-empty" {
+		fail("group must keep distinct id and externalId: %v", resp)
+	}
+	status, resp = d.scim(http.MethodGet, "/scim/v2/Groups/"+emptyID, nil)
 	if status != 200 {
 		fail("empty group must be readable right after create, got %d %v", status, resp)
 	}
@@ -150,7 +155,7 @@ func (d *driver) testGroupLifecycle() {
 			{"op": "replace", "path": "externalId", "value": "e2e-empty"},
 		},
 	}
-	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Groups/e2e-empty", settle); status != 200 {
+	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Groups/"+emptyID, settle); status != 200 {
 		fail("the externalId PATCH Entra sends must be accepted: %d %v", status, resp)
 	}
 	logf("groups: externalId is served, and Entra's settling PATCH accepted ✓")
@@ -162,34 +167,36 @@ func (d *driver) testGroupLifecycle() {
 	}
 	logf("groups: displayName probe finds it ✓")
 
-	// A group naming someone the directory has not provisioned yet survives
-	// until they arrive — SCIM does not order Users before Groups.
+	// A group carrying an unknown but well-formed User resource id survives. A
+	// stale member reference must not discard the Group resource around it.
 	early := map[string]any{
 		"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:Group"},
 		"externalId":  "e2e-early",
 		"displayName": "E2E Early",
-		"members":     []map[string]any{{"value": "e2e-latecomer"}},
+		"members":     []map[string]any{{"value": "11111111-1111-4111-8111-111111111111"}},
 	}
-	if status, resp := d.scim(http.MethodPost, "/scim/v2/Groups", early); status != 201 && status != 200 {
-		fail("early group create: %d %v", status, resp)
+	status, resp = d.scim(http.MethodPost, "/scim/v2/Groups", early)
+	if status != 201 && status != 200 {
+		fail("group with unknown member id: %d %v", status, resp)
 	}
-	if status, _ := d.scim(http.MethodGet, "/scim/v2/Groups/e2e-early", nil); status != 200 {
-		fail("a group pushed before its members must survive, got %d", status)
+	earlyID := resourceID("early group", resp)
+	if status, _ := d.scim(http.MethodGet, "/scim/v2/Groups/"+earlyID, nil); status != 200 {
+		fail("a group with an unknown member id must survive, got %d", status)
 	}
-	logf("groups: a group pushed before its members survives ✓")
+	logf("groups: an unknown member id does not discard its group ✓")
 
 	// A rename batched with a membership change must apply BOTH.
 	batch := map[string]any{
 		"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
 		"Operations": []map[string]any{
 			{"op": "replace", "path": "displayName", "value": "E2E Renamed"},
-			{"op": "add", "path": "members", "value": []map[string]any{{"value": d.aliceKCID}}},
+			{"op": "add", "path": "members", "value": []map[string]any{{"value": d.aliceResourceID}}},
 		},
 	}
-	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Groups/e2e-empty", batch); status != 200 {
+	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Groups/"+emptyID, batch); status != 200 {
 		fail("batched rename+members: %d %v", status, resp)
 	}
-	status, resp = d.scim(http.MethodGet, "/scim/v2/Groups/e2e-empty", nil)
+	status, resp = d.scim(http.MethodGet, "/scim/v2/Groups/"+emptyID, nil)
 	if status != 200 || resp["displayName"] != "E2E Renamed" {
 		fail("rename half of the batch did not apply: %d %v", status, resp)
 	}
@@ -202,14 +209,14 @@ func (d *driver) testGroupLifecycle() {
 	ordered := map[string]any{
 		"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
 		"Operations": []map[string]any{
-			{"op": "replace", "path": "members", "value": []map[string]any{{"value": d.aliceKCID}}},
-			{"op": "remove", "path": "members", "value": []map[string]any{{"value": d.aliceKCID}}},
+			{"op": "replace", "path": "members", "value": []map[string]any{{"value": d.aliceResourceID}}},
+			{"op": "remove", "path": "members", "value": []map[string]any{{"value": d.aliceResourceID}}},
 		},
 	}
-	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Groups/e2e-empty", ordered); status != 200 {
+	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Groups/"+emptyID, ordered); status != 200 {
 		fail("ordered member ops: %d %v", status, resp)
 	}
-	status, resp = d.scim(http.MethodGet, "/scim/v2/Groups/e2e-empty", nil)
+	status, resp = d.scim(http.MethodGet, "/scim/v2/Groups/"+emptyID, nil)
 	if members := resp["members"].([]any); status != 200 || len(members) != 0 {
 		fail("a remove AFTER a replace must win: %d, group still has %v", status, members)
 	}
@@ -225,14 +232,14 @@ func (d *driver) testGroupLifecycle() {
 			"op": "replace",
 			"value": map[string]any{
 				"displayName": "E2E Both",
-				"members":     []map[string]any{{"value": d.aliceKCID}},
+				"members":     []map[string]any{{"value": d.aliceResourceID}},
 			},
 		}},
 	}
-	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Groups/e2e-empty", multi); status != 200 {
+	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Groups/"+emptyID, multi); status != 200 {
 		fail("pathless multi-attribute replace: %d %v", status, resp)
 	}
-	status, resp = d.scim(http.MethodGet, "/scim/v2/Groups/e2e-empty", nil)
+	status, resp = d.scim(http.MethodGet, "/scim/v2/Groups/"+emptyID, nil)
 	if status != 200 || resp["displayName"] != "E2E Both" {
 		fail("the rename half was dropped: %d %v", status, resp)
 	}
@@ -242,13 +249,13 @@ func (d *driver) testGroupLifecycle() {
 	logf("groups: a pathless replace naming both attributes applies both ✓")
 
 	// DELETE removes the resource; a group we never saw is not found.
-	if status, _ := d.scim(http.MethodDelete, "/scim/v2/Groups/e2e-early", nil); status != 204 {
+	if status, _ := d.scim(http.MethodDelete, "/scim/v2/Groups/"+earlyID, nil); status != 204 {
 		fail("DELETE should answer 204, got %d", status)
 	}
-	if status, _ := d.scim(http.MethodGet, "/scim/v2/Groups/e2e-early", nil); status != 404 {
+	if status, _ := d.scim(http.MethodGet, "/scim/v2/Groups/"+earlyID, nil); status != 404 {
 		fail("a deleted group must be gone, GET answered %d", status)
 	}
-	if status, _ := d.scim(http.MethodDelete, "/scim/v2/Groups/e2e-never", nil); status != 404 {
+	if status, _ := d.scim(http.MethodDelete, "/scim/v2/Groups/22222222-2222-4222-8222-222222222222", nil); status != 404 {
 		fail("deleting a group we never saw must be 404, got %d", status)
 	}
 	logf("groups: DELETE removes the resource and refuses an unknown one ✓")
@@ -258,16 +265,84 @@ func (d *driver) testGroupLifecycle() {
 		"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:Group"},
 		"externalId":  "e2e-crossed",
 		"displayName": "Should Not Move",
-		"members":     []map[string]any{{"value": d.aliceKCID}},
+		"members":     []map[string]any{{"value": d.aliceResourceID}},
 	}
-	if status, resp := d.scim(http.MethodPut, "/scim/v2/Groups/e2e-empty", crossed); status != 200 {
-		fail("PUT: %d %v", status, resp)
+	if status, resp := d.scim(http.MethodPut, "/scim/v2/Groups/"+emptyID, crossed); status != 400 {
+		fail("PUT with a mismatched externalId must be refused: %d %v", status, resp)
 	}
-	// The body named e2e-crossed; it must not have been created or touched.
-	if status, _ := d.scim(http.MethodGet, "/scim/v2/Groups/e2e-crossed", nil); status != 404 {
-		fail("PUT must not touch the group named only in the BODY, GET answered %d", status)
+	status, resp = d.scim(http.MethodGet, "/scim/v2/Groups/"+emptyID, nil)
+	if status != 200 || resp["externalId"] != "e2e-empty" {
+		fail("refused PUT must leave the path group unchanged: %d %v", status, resp)
 	}
-	logf("groups: PUT writes the path's group, not the body's ✓")
+	status, resp = d.scim(http.MethodGet, "/scim/v2/Groups", nil)
+	if status != 200 {
+		fail("listing groups after refused PUT: %d %v", status, resp)
+	}
+	for _, raw := range resp["Resources"].([]any) {
+		if raw.(map[string]any)["externalId"] == "e2e-crossed" {
+			fail("PUT created the group named only in its body")
+		}
+	}
+
+	replacement := map[string]any{
+		"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:Group"},
+		"displayName": "E2E PUT",
+		"members":     []map[string]any{{"value": d.aliceResourceID}},
+	}
+	status, resp = d.scim(http.MethodPut, "/scim/v2/Groups/"+emptyID, replacement)
+	if status != 200 || resourceID("replaced group", resp) != emptyID || resp["externalId"] != "e2e-empty" {
+		fail("PUT must update the path group without changing its externalId: %d %v", status, resp)
+	}
+	logf("groups: PUT writes the returned server id and cannot redirect through the body ✓")
+
+	// JumpCloud's activation probe may create a throwaway Group with only a
+	// displayName. The returned server id, never the mutable name, owns its
+	// lifecycle; equal names therefore remain distinct resources.
+	probe := map[string]any{
+		"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:Group"},
+		"displayName": "E2E Probe",
+	}
+	status, resp = d.scim(http.MethodPost, "/scim/v2/Groups", probe)
+	if status != 201 {
+		fail("displayName-only Group create: %d %v", status, resp)
+	}
+	firstProbeID := resourceID("first probe group", resp)
+	if _, present := resp["externalId"]; present {
+		fail("displayName-only Group must not invent externalId: %v", resp)
+	}
+	status, resp = d.scim(http.MethodPost, "/scim/v2/Groups", probe)
+	if status != 201 {
+		fail("second displayName-only Group create: %d %v", status, resp)
+	}
+	secondProbeID := resourceID("second probe group", resp)
+	if firstProbeID == secondProbeID {
+		fail("same-name probes must receive distinct server ids")
+	}
+	probeRename := map[string]any{
+		"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
+		"Operations": []map[string]any{
+			{"op": "replace", "path": "displayName", "value": "E2E Renamed Probe"},
+		},
+	}
+	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Groups/"+firstProbeID, probeRename); status != 200 || resp["displayName"] != "E2E Renamed Probe" {
+		fail("probe rename by server id: %d %v", status, resp)
+	}
+	if status, resp := d.scim(http.MethodGet, "/scim/v2/Groups/"+secondProbeID, nil); status != 200 || resp["displayName"] != "E2E Probe" {
+		fail("renaming one same-name probe must leave its sibling untouched: %d %v", status, resp)
+	}
+	if status, _ := d.scim(http.MethodDelete, "/scim/v2/Groups/"+firstProbeID, nil); status != 204 {
+		fail("deleting first probe: %d", status)
+	}
+	if status, _ := d.scim(http.MethodGet, "/scim/v2/Groups/"+firstProbeID, nil); status != 404 {
+		fail("deleted probe must be gone, got %d", status)
+	}
+	if status, _ := d.scim(http.MethodGet, "/scim/v2/Groups/"+secondProbeID, nil); status != 200 {
+		fail("probe sibling must survive, got %d", status)
+	}
+	if status, _ := d.scim(http.MethodDelete, "/scim/v2/Groups/"+secondProbeID, nil); status != 204 {
+		fail("deleting second probe: %d", status)
+	}
+	logf("groups: displayName-only probes use isolated server-id lifecycles ✓")
 }
 
 func (d *driver) testRoleMapping() {
@@ -292,11 +367,13 @@ func (d *driver) testRoleMapping() {
 		"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:Group"},
 		"externalId":  "e2e-privileged",
 		"displayName": "E2E Privileged",
-		"members":     []map[string]any{{"value": d.aliceKCID}},
+		"members":     []map[string]any{{"value": d.aliceResourceID}},
 	}
-	if status, resp := d.scim(http.MethodPost, "/scim/v2/Groups", push); status != 201 && status != 200 {
+	status, resp := d.scim(http.MethodPost, "/scim/v2/Groups", push)
+	if status != 201 && status != 200 {
 		fail("privileged group push: %d %v", status, resp)
 	}
+	privilegedID := resourceID("privileged group", resp)
 	if role := d.roleOf(d.aliceKCID); role != "admin" {
 		fail("a mapped group must grant its role, alice is %q", role)
 	}
@@ -310,7 +387,7 @@ func (d *driver) testRoleMapping() {
 		"displayName": "E2E Privileged",
 		"members":     []any{},
 	}
-	if status, resp := d.scim(http.MethodPut, "/scim/v2/Groups/e2e-privileged", empty); status != 200 {
+	if status, resp := d.scim(http.MethodPut, "/scim/v2/Groups/"+privilegedID, empty); status != 200 {
 		fail("emptying the privileged group: %d %v", status, resp)
 	}
 	if role := d.roleOf(d.aliceKCID); role != "operator" {
@@ -329,8 +406,13 @@ func (d *driver) testUserOrdering() {
 		"active":     true,
 		"externalId": "e2e-dave",
 	}
-	if status, resp := d.scim(http.MethodPost, "/scim/v2/Users", dave); status != 201 && status != 200 {
+	status, resp := d.scim(http.MethodPost, "/scim/v2/Users", dave)
+	if status != 201 && status != 200 {
 		fail("dave create: %d %v", status, resp)
+	}
+	d.daveResourceID = resourceID("dave", resp)
+	if d.daveResourceID == "e2e-dave" || resp["externalId"] != "e2e-dave" {
+		fail("dave must keep distinct id and externalId: %v", resp)
 	}
 
 	// An IdP that reinstates and then offboards in one request means the
@@ -342,10 +424,10 @@ func (d *driver) testUserOrdering() {
 			{"op": "replace", "path": "active", "value": false},
 		},
 	}
-	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Users/e2e-dave", both); status != 200 {
+	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Users/"+d.daveResourceID, both); status != 200 {
 		fail("ordered active ops: %d %v", status, resp)
 	}
-	status, resp := d.scim(http.MethodGet, "/scim/v2/Users/e2e-dave", nil)
+	status, resp = d.scim(http.MethodGet, "/scim/v2/Users/"+d.daveResourceID, nil)
 	if status != 200 || resp["active"] != false {
 		fail("the LAST active operation must win: %v", resp)
 	}
@@ -355,10 +437,14 @@ func (d *driver) testUserOrdering() {
 	// re-create rather than PATCH, and hearing "active" when it said "inactive"
 	// silently undid an offboarding.
 	dave["active"] = false
-	if status, resp := d.scim(http.MethodPost, "/scim/v2/Users", dave); status != 200 && status != 201 {
+	status, resp = d.scim(http.MethodPost, "/scim/v2/Users", dave)
+	if status != 200 && status != 201 {
 		fail("re-POST: %d %v", status, resp)
 	}
-	if status, resp := d.scim(http.MethodGet, "/scim/v2/Users/e2e-dave", nil); status != 200 ||
+	if id := resourceID("reconciled dave", resp); id != d.daveResourceID {
+		fail("re-POST changed dave's server id from %s to %s", d.daveResourceID, id)
+	}
+	if status, resp := d.scim(http.MethodGet, "/scim/v2/Users/"+d.daveResourceID, nil); status != 200 ||
 		resp["active"] != false {
 		fail("a re-POST carrying active:false must not reinstate: %d %v", status, resp)
 	}
@@ -369,10 +455,10 @@ func (d *driver) testUserOrdering() {
 		"schemas":    []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
 		"Operations": []map[string]any{{"op": "replace", "path": "active", "value": true}},
 	}
-	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Users/e2e-dave", on); status != 200 {
+	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Users/"+d.daveResourceID, on); status != 200 {
 		fail("reactivate: %d %v", status, resp)
 	}
-	if status, resp := d.scim(http.MethodGet, "/scim/v2/Users/e2e-dave", nil); status != 200 ||
+	if status, resp := d.scim(http.MethodGet, "/scim/v2/Users/"+d.daveResourceID, nil); status != 200 ||
 		resp["active"] != true {
 		fail("reactivation did not take: %d %v", status, resp)
 	}
@@ -386,10 +472,10 @@ func (d *driver) testUserOrdering() {
 			{"op": "replace", "value": map[string]any{"displayName": "Renamed Dave"}},
 		},
 	}
-	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Users/e2e-dave", rename); status != 200 {
+	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Users/"+d.daveResourceID, rename); status != 200 {
 		fail("rename: %d %v", status, resp)
 	}
-	status, resp = d.scim(http.MethodGet, "/scim/v2/Users/e2e-dave", nil)
+	status, resp = d.scim(http.MethodGet, "/scim/v2/Users/"+d.daveResourceID, nil)
 	if status != 200 || resp["displayName"] != "Renamed Dave" {
 		fail("a pushed name must read back: %d %v", status, resp)
 	}
@@ -424,7 +510,7 @@ func (d *driver) testBounds() {
 		"schemas":    []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
 		"Operations": operations,
 	}
-	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Users/e2e-dave", body); status != 400 {
+	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Users/"+d.daveResourceID, body); status != 400 {
 		fail("an over-cap operation list must be refused, got %d %v", status, resp)
 	}
 
@@ -474,7 +560,7 @@ func (d *driver) testOffboardingEndsAccess() {
 		"schemas":    []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
 		"Operations": []map[string]any{{"op": "replace", "path": "active", "value": false}},
 	}
-	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Users/"+d.aliceKCID, patch); status != 200 {
+	if status, resp := d.scim(http.MethodPatch, "/scim/v2/Users/"+d.aliceResourceID, patch); status != 200 {
 		fail("deprovisioning alice: %d %v", status, resp)
 	}
 	if after := sessions(); after != "0" {

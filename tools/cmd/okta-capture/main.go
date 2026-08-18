@@ -125,6 +125,16 @@ func readEnv(path string) (map[string]string, error) {
 		}
 		env[strings.TrimSpace(key)] = strings.TrimSpace(value)
 	}
+	// The tunnel URL and SCIM token are per-run inputs. Process values must win
+	// over the durable provider credentials file, just as they do in the
+	// JumpCloud rig.
+	for _, key := range []string{
+		"EMISAR_PUBLIC_URL", "EMISAR_SCIM_TOKEN", "EMISAR_DOCS_HOST", "OKTA_SCIM_APP_ID",
+	} {
+		if value, present := os.LookupEnv(key); present {
+			env[key] = value
+		}
+	}
 	return env, scanner.Err()
 }
 
@@ -874,58 +884,28 @@ func provisioningFlow(
 	if err := settle(10); err != nil {
 		return err
 	}
-	// The verification above was real, against the tunnel. Swap the rig's hostname
-	// for the product one now that it has served its purpose.
-	docsHost := env["EMISAR_DOCS_HOST"]
-	if docsHost == "" {
-		docsHost = "https://emisar.dev"
-	}
-	tunnel := strings.TrimPrefix(strings.TrimSuffix(env["EMISAR_PUBLIC_URL"], "/"), "https://")
-	if err := deidentifyHost(ctx, tunnel, strings.TrimPrefix(docsHost, "https://")); err != nil {
-		return err
-	}
-	// Centre the confirmation itself — a plain scroll-to-top leaves it under the
-	// sticky app header.
+	// Centre the confirmation itself before saving. Editing the live inputs for a
+	// de-identified screenshot here makes React discard the write-only token and
+	// turns a passing credential test into a failed Save.
 	if err := scrollToText(ctx, "was verified successfully"); err != nil {
 		return err
 	}
 	if err := settle(2); err != nil {
 		return err
 	}
-	// The step names three controls the reader has to find on this screen: the two
-	// fields they paste emisar's values into, and the button that proves the pair
-	// works. Outline each.
-	for _, label := range []string{"Base URL", "API Token"} {
-		if err := highlightGroup(ctx, label, "Enter your"); err != nil {
-			return err
-		}
-	}
-	if err := highlight(ctx, "Test API Credentials"); err != nil {
-		return err
-	}
-	if err := shoot("10-test-api-credentials"); err != nil {
-		return err
-	}
-
-	// The de-identification above rewrote the Base URL field for the screenshot.
-	// Saving now would persist THAT hostname, Okta would re-validate against a host
-	// with no SCIM provider behind it, and provisioning would silently stay off —
-	// which is exactly how a passing "verified successfully!" ended with
-	// "Provisioning is not enabled". Put the real tunnel back before saving.
-	if err := typeRealKeys(ctx, "scim_base_url", base); err != nil {
-		return err
-	}
-	if err := settle(1); err != nil {
-		return err
-	}
 	if err := clickSelector(ctx, "#userMgmtSettings\\.button\\.submit"); err != nil {
 		return err
 	}
-	fmt.Println("  clicked Save (with the real base URL restored)")
+	fmt.Println("  clicked Save")
 	if err := settle(8); err != nil {
 		return err
 	}
 	if err := shoot("11-provisioning-saved"); err != nil {
+		return err
+	}
+	// Capture the public, de-identified credential form only after the real
+	// configuration is durable; the helper cancels without changing it.
+	if err := captureConfiguredCredentials(ctx, env, shoot, step, settle); err != nil {
 		return err
 	}
 
@@ -1228,37 +1208,6 @@ func clearOtherURIFields(ctx context.Context, keepPrefix string) error {
 		return err
 	}
 	fmt.Printf("  cleared %d prefilled URI field(s)\n", cleared)
-	return nil
-}
-
-// deidentifyHost rewrites the tunnel hostname to the real product host for the
-// screenshot only, and ONLY after the live call has already happened. This is
-// de-identification (host/key/UUID), not fabrication: the verification really
-// occurred, and the tunnel name is an artifact of the capture rig that no
-// customer would ever see — theirs reads emisar.dev. Never use this to change an
-// outcome, a status, or any value that carries meaning.
-func deidentifyHost(ctx context.Context, from, to string) error {
-	script := fmt.Sprintf(`(() => {
-  const from = %q, to = %q;
-  let changed = 0;
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-  for (const el of document.querySelectorAll('input')) {
-    if (el.value && el.value.includes(from)) { setter.call(el, el.value.split(from).join(to)); changed++; }
-  }
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    if (node.nodeValue && node.nodeValue.includes(from)) {
-      node.nodeValue = node.nodeValue.split(from).join(to);
-      changed++;
-    }
-  }
-  return changed;
-})()`, from, to)
-	var changed int
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &changed)); err != nil {
-		return err
-	}
-	fmt.Printf("  de-identified host in %d place(s)\n", changed)
 	return nil
 }
 

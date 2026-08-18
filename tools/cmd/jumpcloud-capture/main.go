@@ -146,6 +146,29 @@ func clickText(ctx context.Context, label string) (bool, error) {
 	return clicked, err
 }
 
+// dismissDialogContaining closes a known transient announcement without
+// guessing at page coordinates or dismissing an application workflow dialog.
+func dismissDialogContaining(ctx context.Context, text string) (bool, error) {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const dialog = [...document.querySelectorAll('[role=dialog],[aria-modal=true]')]
+    .find(el => visible(el) && (el.textContent || '').includes(%q));
+  if (!dialog) return false;
+  const controls = [...dialog.querySelectorAll('button,[role=button]')].filter(visible);
+  const close = controls.find(el => {
+    const label = [el.getAttribute('aria-label'), el.getAttribute('title'), el.textContent]
+      .filter(Boolean).join(' ').trim().toLowerCase();
+    return label === 'x' || label === '×' || label.includes('close');
+  }) || (controls.length === 1 ? controls[0] : null);
+  if (!close) return false;
+  close.click();
+  return true;
+})()`, text)
+	var dismissed bool
+	err := chromedp.Run(ctx, chromedp.Evaluate(script, &dismissed))
+	return dismissed, err
+}
+
 // clickDeep clicks a control by exact label, walking OPEN SHADOW ROOTS as well as
 // the light DOM. JumpCloud renders the app's sticky action bar — Activate, Test
 // Connection — inside a web component, so a plain querySelectorAll finds nothing
@@ -858,6 +881,14 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	if err := chromedp.Run(ctx, chromedp.Sleep(3*time.Second)); err != nil {
 		return err
 	}
+	if dismissed, err := dismissDialogContaining(ctx, "HR-Driven Provisioning Just Got More Powerful"); err != nil {
+		return err
+	} else if dismissed {
+		fmt.Println("  dismissed the HR-driven provisioning announcement")
+		if err := chromedp.Run(ctx, chromedp.Sleep(time.Second)); err != nil {
+			return err
+		}
+	}
 	if err := highlightControl(ctx, "Configure SSO with OIDC"); err != nil {
 		return err
 	}
@@ -878,6 +909,10 @@ func ssoApplicationsFlow(ctx context.Context, env map[string]string, outDir stri
 	// Step 3 is general info. Fill the field BEFORE shooting: a walkthrough frame
 	// showing an empty Display Label teaches nothing, and shipping one is exactly
 	// what drew "you again did not select right options on the screenshots".
+	if err := highlight(ctx, "Display Label"); err != nil {
+		_ = idpcapture.Screenshot(ctx, outDir, "jc-07-no-general-info")
+		return fmt.Errorf("next did not advance to Enter General Info: %w", err)
+	}
 	if err := focusField(ctx, "label"); err != nil {
 		return err
 	}
@@ -1516,6 +1551,13 @@ func pressFooterButton(ctx context.Context, label string) (bool, error) {
 // reload throws that configuration away.
 func waitForProvisioningActive(ctx context.Context, within time.Duration) error {
 	deadline := time.Now().Add(within)
+
+	// Activate starts an asynchronous save. Reloading on the very first poll can
+	// cancel that request before JumpCloud persists the provisioning settings,
+	// leaving the form blank and inactive even though the button was pressed.
+	if err := chromedp.Run(ctx, chromedp.Sleep(12*time.Second)); err != nil {
+		return err
+	}
 
 	// Read the badge through SHADOW ROOTS. document.body.innerText does not
 	// include shadow content, and this console puts its status badges there — so

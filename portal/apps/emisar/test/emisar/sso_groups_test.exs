@@ -8,7 +8,7 @@ defmodule Emisar.SSOGroupsTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Auth, Repo, SSO}
   alias Emisar.Fixtures
-  alias Emisar.SSO.{IdentityProvider, SCIMUserUpdate}
+  alias Emisar.SSO.{DirectoryGroup, IdentityProvider, SCIMUserUpdate}
 
   @scim_string_limit 255
   @max_group_member_ids 5_000
@@ -89,7 +89,17 @@ defmodule Emisar.SSOGroupsTest do
   end
 
   defp overlong_scim_id, do: String.duplicate("g", @scim_string_limit + 1)
-  defp too_many_member_external_ids, do: for(n <- 1..(@max_group_member_ids + 1), do: "okta|#{n}")
+
+  defp too_many_member_ids,
+    do: for(_n <- 1..(@max_group_member_ids + 1), do: Ecto.UUID.generate())
+
+  defp group_id(provider, external_group_id) do
+    DirectoryGroup.Query.not_deleted()
+    |> DirectoryGroup.Query.by_provider_id(provider.id)
+    |> DirectoryGroup.Query.by_external_group_id(external_group_id)
+    |> Repo.fetch!(DirectoryGroup.Query)
+    |> Map.fetch!(:id)
+  end
 
   # The RFC 7644 PatchOp an IdP actually sends for a membership delta — what
   # `scim_patch_group/3` reduces. Written here rather than assumed, so these
@@ -125,7 +135,7 @@ defmodule Emisar.SSOGroupsTest do
                SSO.scim_upsert_group(provider, %{
                  external_id: "grp-empty",
                  display: "Platform Engineers",
-                 member_external_ids: []
+                 member_ids: []
                })
 
       assert {:ok, [%{external_group_id: "grp-empty", display: "Platform Engineers"}], 1} =
@@ -141,29 +151,37 @@ defmodule Emisar.SSOGroupsTest do
       %{identity: identity} = provision(provider, "okta|joins-later")
 
       assert {:ok, _group} =
-               SSO.scim_patch_group(provider, "grp-empty", member_ops(["okta|joins-later"], []))
+               SSO.scim_patch_group(
+                 provider,
+                 group_id(provider, "grp-empty"),
+                 member_ops([identity.id], [])
+               )
 
-      assert {:ok, [%{display: "Platform Engineers", member_external_ids: members}], 1} =
+      assert {:ok, [%{display: "Platform Engineers", member_ids: members}], 1} =
                SSO.scim_list_groups(provider)
 
-      assert members == ["okta|joins-later"]
+      assert members == [identity.id]
       assert role_of(account.id, identity.user_id) == :viewer
     end
 
     test "keeps its name after its last member leaves", %{provider: provider} do
-      %{identity: _identity} = provision(provider, "okta|leaver")
+      %{identity: identity} = provision(provider, "okta|leaver")
 
       {:ok, _} =
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-emptied",
           display: "Release Managers",
-          member_external_ids: ["okta|leaver"]
+          member_ids: [identity.id]
         })
 
       assert {:ok, _group} =
-               SSO.scim_patch_group(provider, "grp-emptied", member_ops([], ["okta|leaver"]))
+               SSO.scim_patch_group(
+                 provider,
+                 group_id(provider, "grp-emptied"),
+                 member_ops([], [identity.id])
+               )
 
-      assert {:ok, [%{display: "Release Managers", member_external_ids: []}], 1} =
+      assert {:ok, [%{display: "Release Managers", member_ids: []}], 1} =
                SSO.scim_list_groups(provider)
     end
   end
@@ -188,13 +206,14 @@ defmodule Emisar.SSOGroupsTest do
           subject
         )
 
-      assert {:ok, %{member_count: 1}} =
+      assert {:ok, %{member_ids: [member_id]}} =
                SSO.scim_upsert_group(provider, %{
                  external_id: "grp-ops",
                  display: "Operators",
-                 member_external_ids: ["okta|u1"]
+                 member_ids: [identity.id]
                })
 
+      assert member_id == identity.id
       assert role_of(account.id, identity.user_id) == :operator
     end
 
@@ -215,13 +234,14 @@ defmodule Emisar.SSOGroupsTest do
           subject
         )
 
-      assert {:ok, %{member_count: 2}} =
+      assert {:ok, %{member_ids: member_ids}} =
                SSO.scim_upsert_group(provider, %{
                  external_id: "grp-ops",
                  display: "Operators",
-                 member_external_ids: ["okta|u1", "okta|u2"]
+                 member_ids: [id1.id, id2.id]
                })
 
+      assert Enum.sort(member_ids) == Enum.sort([id1.id, id2.id])
       # Both members recomputed to :operator in one batched pass (the N+1 fix).
       assert role_of(account.id, id1.user_id) == :operator
       assert role_of(account.id, id2.user_id) == :operator
@@ -255,26 +275,26 @@ defmodule Emisar.SSOGroupsTest do
       {:ok, _} =
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-view",
-          member_external_ids: ["okta|multi"]
+          member_ids: [identity.id]
         })
 
       {:ok, _} =
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-op",
-          member_external_ids: ["okta|multi"]
+          member_ids: [identity.id]
         })
 
       {:ok, _} =
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-adm",
-          member_external_ids: ["okta|multi"]
+          member_ids: [identity.id]
         })
 
       assert role_of(account.id, identity.user_id) == :admin
 
       # Drop the admin group → falls back to the next-highest (:operator).
       {:ok, _} =
-        SSO.scim_upsert_group(provider, %{external_id: "grp-adm", member_external_ids: []})
+        SSO.scim_upsert_group(provider, %{external_id: "grp-adm", member_ids: []})
 
       assert role_of(account.id, identity.user_id) == :operator
     end
@@ -289,7 +309,7 @@ defmodule Emisar.SSOGroupsTest do
       {:ok, _} =
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-adm",
-          member_external_ids: ["okta|patch"]
+          member_ids: [identity.id]
         })
 
       assert role_of(account.id, identity.user_id) == :admin
@@ -298,12 +318,16 @@ defmodule Emisar.SSOGroupsTest do
       # left, sync demotes them to the provider's default_role (least-privilege
       # on directory removal — provider default is :viewer).
       assert {:ok, _group} =
-               SSO.scim_patch_group(provider, "grp-adm", member_ops([], ["okta|patch"]))
+               SSO.scim_patch_group(
+                 provider,
+                 group_id(provider, "grp-adm"),
+                 member_ops([], [identity.id])
+               )
 
       assert role_of(account.id, identity.user_id) == :viewer
     end
 
-    test "an unknown member external_id in a group is ignored (not yet provisioned)", %{
+    test "an unknown member resource id in a group is ignored (not yet provisioned)", %{
       provider: provider,
       subject: subject,
       account: account
@@ -315,12 +339,13 @@ defmodule Emisar.SSOGroupsTest do
 
       # The group lists a known + an unprovisioned member id; only the known
       # one is tracked + recomputed.
-      assert {:ok, %{member_count: 1}} =
+      assert {:ok, %{member_ids: [member_id]}} =
                SSO.scim_upsert_group(provider, %{
                  external_id: "grp-mix",
-                 member_external_ids: ["okta|known", "okta|ghost-not-provisioned"]
+                 member_ids: [identity.id, Ecto.UUID.generate()]
                })
 
+      assert member_id == identity.id
       assert role_of(account.id, identity.user_id) == :admin
     end
 
@@ -330,37 +355,43 @@ defmodule Emisar.SSOGroupsTest do
       assert {:error, :invalid_scim_group} =
                SSO.scim_upsert_group(provider, %{
                  external_id: overlong,
-                 member_external_ids: []
+                 member_ids: []
                })
 
       assert {:error, :invalid_scim_group} =
                SSO.scim_upsert_group(provider, %{
                  external_id: "grp-valid",
                  display: overlong,
-                 member_external_ids: []
+                 member_ids: []
                })
 
       assert {:error, :invalid_scim_group} =
                SSO.scim_upsert_group(provider, %{
                  external_id: "grp-valid",
-                 member_external_ids: [overlong]
+                 member_ids: [overlong]
                })
 
+      {:ok, group} =
+        SSO.scim_upsert_group(provider, %{external_id: "grp-valid", member_ids: []})
+
       assert {:error, :invalid_scim_group} =
-               SSO.scim_patch_group(provider, "grp-valid", member_ops([overlong], []))
+               SSO.scim_patch_group(provider, group.id, member_ops([overlong], []))
     end
 
     test "rejects oversized group member batches before querying", %{provider: provider} do
-      too_many = too_many_member_external_ids()
+      too_many = too_many_member_ids()
 
       assert {:error, :invalid_scim_group} =
                SSO.scim_upsert_group(provider, %{
                  external_id: "grp-too-large",
-                 member_external_ids: too_many
+                 member_ids: too_many
                })
 
+      {:ok, group} =
+        SSO.scim_upsert_group(provider, %{external_id: "grp-too-large", member_ids: []})
+
       assert {:error, :invalid_scim_group} =
-               SSO.scim_patch_group(provider, "grp-too-large", member_ops(too_many, []))
+               SSO.scim_patch_group(provider, group.id, member_ops(too_many, []))
     end
 
     @tag capture_log: true
@@ -383,12 +414,13 @@ defmodule Emisar.SSOGroupsTest do
       # The push lands both members into the mapped group. The recompute for the
       # provisioned member succeeds; the one for the membership-less identity is
       # refused — that refusal is logged (#5), never surfaced as a failure.
-      assert {:ok, %{member_count: 2}} =
+      assert {:ok, %{member_ids: member_ids}} =
                SSO.scim_upsert_group(provider, %{
                  external_id: "grp-adm",
-                 member_external_ids: ["okta|kept", "okta|gone"]
+                 member_ids: [kept_identity.id, gone_identity.id]
                })
 
+      assert Enum.sort(member_ids) == Enum.sort([kept_identity.id, gone_identity.id])
       # The healthy member's role was still recomputed — the failed one didn't
       # abort the batch.
       assert role_of(account.id, kept_identity.user_id) == :admin
@@ -403,20 +435,25 @@ defmodule Emisar.SSOGroupsTest do
       # reapplied roles from a directory the account had stopped trusting.
       %{provider: provider, subject: subject} = scim_provider()
       in_flight = provider
+      {:ok, group} = SSO.scim_upsert_group(provider, %{external_id: "grp-late", member_ids: []})
 
       assert {:ok, _} = SSO.disable_scim(provider, subject)
 
       assert {:error, :directory_sync_disabled} =
                SSO.scim_upsert_group(in_flight, %{
                  external_id: "grp-late",
-                 member_external_ids: []
+                 member_ids: []
                })
 
       assert {:error, :directory_sync_disabled} =
-               SSO.scim_rename_group(in_flight, "grp-late", "Too Late")
+               SSO.scim_rename_group(in_flight, group.id, "Too Late")
 
-      assert {:error, :directory_sync_disabled} =
-               SSO.scim_patch_group(in_flight, "grp-late", member_ops([], ["okta|late"]))
+      assert {:error, :not_found} =
+               SSO.scim_patch_group(
+                 in_flight,
+                 group.id,
+                 member_ops([], [Ecto.UUID.generate()])
+               )
     end
   end
 
@@ -435,26 +472,38 @@ defmodule Emisar.SSOGroupsTest do
 
       %{identity: identity} = provision(provider, "okta|member")
 
-      {:ok, _} =
+      {:ok, group} =
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-gone",
-          member_external_ids: ["okta|member"]
+          member_ids: [identity.id]
         })
 
       assert role_of(provider.account_id, identity.user_id) == :admin
 
-      assert {:ok, _} = SSO.scim_delete_group(provider, "grp-gone")
+      assert {:ok, _} = SSO.scim_delete_group(provider, group.id)
 
       # Gone means gone — deleting used to empty the members and leave the row,
       # so the very next GET still answered 200.
-      assert {:error, :not_found} = SSO.scim_fetch_group(provider, "grp-gone")
+      assert {:error, :not_found} = SSO.scim_fetch_group(provider, group.id)
       assert role_of(provider.account_id, identity.user_id) == :viewer
     end
 
     test "a group this directory never pushed is not found", %{provider: provider} do
       # Answering 204 for an unknown id used to CREATE it.
-      assert {:error, :not_found} = SSO.scim_delete_group(provider, "grp-never")
-      assert {:error, :not_found} = SSO.scim_fetch_group(provider, "grp-never")
+      missing_id = Ecto.UUID.generate()
+      assert {:error, :not_found} = SSO.scim_delete_group(provider, missing_id)
+      assert {:error, :not_found} = SSO.scim_fetch_group(provider, missing_id)
+    end
+
+    test "one provider cannot delete another provider's group resource", %{
+      provider: provider_a
+    } do
+      %{provider: provider_b} = scim_provider()
+      {:ok, group_b} = SSO.scim_upsert_group(provider_b, %{external_id: "grp-b", member_ids: []})
+
+      assert {:error, :not_found} = SSO.scim_delete_group(provider_a, group_b.id)
+      assert {:ok, unchanged} = SSO.scim_fetch_group(provider_b, group_b.id)
+      assert unchanged.external_group_id == "grp-b"
     end
   end
 
@@ -545,7 +594,7 @@ defmodule Emisar.SSOGroupsTest do
         {:ok, _group} =
           SSO.scim_upsert_group(provider, %{
             external_id: group_id,
-            member_external_ids: ["okta|runner-union"]
+            member_ids: [identity.id]
           })
       end
 
@@ -559,7 +608,7 @@ defmodule Emisar.SSOGroupsTest do
       {:ok, _group} =
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-db",
-          member_external_ids: []
+          member_ids: []
         })
 
       assert access_of(account.id, identity.user_id) ==
@@ -600,7 +649,7 @@ defmodule Emisar.SSOGroupsTest do
         {:ok, _group} =
           SSO.scim_upsert_group(provider, %{
             external_id: group_id,
-            member_external_ids: ["okta|runner-all"]
+            member_ids: [identity.id]
           })
       end
 
@@ -633,11 +682,11 @@ defmodule Emisar.SSOGroupsTest do
       {:ok, _group} =
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-db",
-          member_external_ids: ["okta|runner-reactivate"]
+          member_ids: [identity.id]
         })
 
       assert {:ok, _result} =
-               SSO.scim_update_user(provider, "okta|runner-reactivate", %SCIMUserUpdate{
+               SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{
                  active: false
                })
 
@@ -649,7 +698,7 @@ defmodule Emisar.SSOGroupsTest do
                )
 
       assert {:ok, _result} =
-               SSO.scim_update_user(provider, "okta|runner-reactivate", %SCIMUserUpdate{
+               SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{
                  active: true
                })
 
@@ -681,7 +730,7 @@ defmodule Emisar.SSOGroupsTest do
       assert {:ok, _group} =
                SSO.scim_upsert_group(provider, %{
                  external_id: "grp-runner",
-                 member_external_ids: ["okta|durable-reconcile"]
+                 member_ids: [identity.id]
                })
 
       assert access_of(account.id, identity.user_id) ==
@@ -782,7 +831,7 @@ defmodule Emisar.SSOGroupsTest do
       assert {:ok, _group} =
                SSO.scim_upsert_group(provider, %{
                  external_id: "grp-runner",
-                 member_external_ids: ["okta|blocked"]
+                 member_ids: [blocked_identity.id]
                })
 
       deleted_runner =
@@ -865,7 +914,7 @@ defmodule Emisar.SSOGroupsTest do
       {:ok, _} =
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-adm",
-          member_external_ids: ["okta|ownerskip"]
+          member_ids: [identity.id]
         })
 
       # A mapped :admin group would otherwise demote owner→admin, but sync never
@@ -886,7 +935,7 @@ defmodule Emisar.SSOGroupsTest do
       {:ok, _} =
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-adm",
-          member_external_ids: ["okta|demote"]
+          member_ids: [identity.id]
         })
 
       assert role_of(account.id, identity.user_id) == :admin
@@ -968,21 +1017,21 @@ defmodule Emisar.SSOGroupsTest do
       provider: provider,
       subject: subject
     } do
-      %{identity: _} = provision(provider, "okta|u1")
-      %{identity: _} = provision(provider, "okta|u2")
+      %{identity: id1} = provision(provider, "okta|u1")
+      %{identity: id2} = provision(provider, "okta|u2")
 
       {:ok, _} =
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-ops",
           display: "Ops",
-          member_external_ids: ["okta|u1", "okta|u2"]
+          member_ids: [id1.id, id2.id]
         })
 
       {:ok, _} =
         SSO.scim_upsert_group(provider, %{
           external_id: "grp-adm",
           display: "Admins",
-          member_external_ids: ["okta|u2"]
+          member_ids: [id2.id]
         })
 
       {:ok, role_mapping} =
@@ -1097,12 +1146,13 @@ defmodule Emisar.SSOGroupsTest do
     } do
       %{identity: identity} = provision(provider, "okta|existing-group-member")
 
-      assert {:ok, %{member_count: 1}} =
+      assert {:ok, %{member_ids: [member_id]}} =
                SSO.scim_upsert_group(provider, %{
                  external_id: "grp-existing",
-                 member_external_ids: ["okta|existing-group-member"]
+                 member_ids: [identity.id]
                })
 
+      assert member_id == identity.id
       assert role_of(account.id, identity.user_id) == :viewer
 
       assert {:ok, mapping} =

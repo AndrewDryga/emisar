@@ -16,6 +16,12 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
     )
   end
 
+  def by_directory_group_id(queryable \\ all(), directory_group_id),
+    do: where(queryable, [group_members: g], g.directory_group_id == ^directory_group_id)
+
+  def by_directory_group_ids(queryable \\ all(), directory_group_ids),
+    do: where(queryable, [group_members: g], g.directory_group_id in ^directory_group_ids)
+
   def by_provider_id(queryable \\ all(), provider_id),
     do: where(queryable, [group_members: g], g.provider_id == ^provider_id)
 
@@ -62,22 +68,21 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
   def by_external_group_ids(queryable \\ all(), external_group_ids),
     do: where(queryable, [group_members: g], g.external_group_id in ^external_group_ids)
 
-  # Every membership link a provider has, as {external_group_id, member externalId}
-  # pairs — what a SCIM `GET /Groups` must echo back as each group's `members`.
-  # Joins the identity (its `scim_external_id` is the id the IdP knows a member
-  # by) scoped to `not_deleted/0`, so a soft-deleted identity leaves the group.
-  def select_member_external_ids(queryable \\ all(), provider_id) do
+  # Every membership link a provider has, as `{directory_group_id,
+  # user_identity_id}` pairs — SCIM Group members reference the server-issued
+  # User resource id. The live identity join makes a soft-deleted identity
+  # leave the rendered group.
+  def select_member_ids(queryable \\ all(), provider_id) do
     queryable
     |> where([group_members: g], g.provider_id == ^provider_id)
     |> join(:inner, [group_members: g], i in ^Emisar.SSO.UserIdentity.Query.not_deleted(),
       on: i.id == g.user_identity_id,
       as: :identities
     )
-    |> where([identities: i], not is_nil(i.scim_external_id))
     |> order_by([group_members: g, identities: i],
-      asc: g.external_group_id,
-      asc: i.scim_external_id
+      asc: g.directory_group_id,
+      asc: i.id
     )
-    |> select([group_members: g, identities: i], {g.external_group_id, i.scim_external_id})
+    |> select([group_members: g, identities: i], {g.directory_group_id, i.id})
   end
 end

@@ -422,8 +422,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "/docs/integrations/#{path}"
     end
 
-    assert html =~ "Verified against a live Okta Integrator org on July 27, 2026."
-    assert html =~ "Verified against a live JumpCloud tenant on July 31, 2026."
+    assert html =~ "Verified against a live Okta Integrator org on August 18, 2026."
+    assert html =~ "Verified against a live JumpCloud tenant on August 18, 2026."
 
     # The oid cross-reference goes straight to the Entra guide, not the
     # one-line provider bullet on this same page.
@@ -1673,6 +1673,9 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "/Groups"
       assert html =~ "userName eq"
       assert html =~ "displayName eq"
+      assert html =~ "Resource paths use the immutable"
+      assert html =~ "members[].value"
+      assert html =~ "never the group's identity"
       assert html =~ "100 PATCH operations"
       assert html =~ "5,000 member ids"
       assert html =~ "Group runner access is"
@@ -1680,16 +1683,26 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Last sync"
     end
 
+    test "the JumpCloud guide explains its externalId-less probe lifecycle", %{conn: conn} do
+      html = conn |> get(~p"/docs/integrations/jumpcloud") |> html_response(200)
+
+      assert html =~ "probe group may omit"
+      assert html =~ "emisar returns an id"
+      assert html =~ "uses for the rename and delete"
+    end
+
     test "authentication docs expose review dates without a dead edit action", %{conn: conn} do
-      for route <- ~w(
-            /docs/authentication
-            /docs/teams-and-access
-            /docs/sso
-            /docs/scim
-          ) do
+      review_dates = [
+        {"/docs/authentication", "July 31, 2026"},
+        {"/docs/teams-and-access", "July 31, 2026"},
+        {"/docs/sso", "August 18, 2026"},
+        {"/docs/scim", "August 18, 2026"}
+      ]
+
+      for {route, date} <- review_dates do
         html = conn |> get(route) |> html_response(200)
 
-        assert html =~ "Last reviewed July 31, 2026", "missing review date on #{route}"
+        assert html =~ "Last reviewed #{date}", "missing review date on #{route}"
         refute html =~ "Suggest a change", "dead edit action returned on #{route}"
         refute html =~ "github.com/andrewdryga/emisar/edit/main/"
       end
@@ -1698,9 +1711,9 @@ defmodule EmisarWeb.MarketingTest do
     test "each provider guide publishes the evidence its claim rests on", %{conn: conn} do
       evidence = [
         {"/docs/integrations/okta",
-         "Verified against a live Okta Integrator org on July 27, 2026."},
+         "Verified against a live Okta Integrator org on August 18, 2026."},
         {"/docs/integrations/jumpcloud",
-         "Verified against a live JumpCloud tenant on July 31, 2026."},
+         "Verified against a live JumpCloud tenant on August 18, 2026."},
         {"/docs/integrations/entra", "Guide reviewed July 31, 2026."},
         {"/docs/integrations/google-workspace", "Guide reviewed July 31, 2026."},
         {"/docs/integrations/keycloak", "Guide reviewed July 31, 2026."}

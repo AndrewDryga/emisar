@@ -217,6 +217,7 @@ defmodule Emisar.SSO.Provisioning do
     DirectoryGroupMember.Query.not_deleted()
     |> DirectoryGroupMember.Query.by_user_identity_ids(Enum.map(identities, & &1.id))
     |> Repo.all()
+    |> Enum.reject(&is_nil(&1.external_group_id))
     |> Enum.group_by(& &1.user_identity_id, & &1.external_group_id)
   end
 
@@ -258,7 +259,14 @@ defmodule Emisar.SSO.Provisioning do
     Enum.find(@sync_role_precedence, &(&1 in roles))
   end
 
-  def current_group_members(%IdentityProvider{} = provider, external_group_id) do
+  def current_group_members(%IdentityProvider{} = provider, directory_group_id) do
+    DirectoryGroupMember.Query.not_deleted()
+    |> DirectoryGroupMember.Query.by_provider_id(provider.id)
+    |> DirectoryGroupMember.Query.by_directory_group_id(directory_group_id)
+    |> Repo.all()
+  end
+
+  def current_group_members_by_external_id(%IdentityProvider{} = provider, external_group_id) do
     DirectoryGroupMember.Query.not_deleted()
     |> DirectoryGroupMember.Query.by_provider_and_group(provider.id, external_group_id)
     |> Repo.all()

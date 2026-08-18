@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="scim"
-      updated="July 31, 2026"
+      updated="August 18, 2026"
       toc={[
         {"enable", "Enabling directory sync"},
         {"protocol", "SCIM protocol reference"},
@@ -254,7 +254,8 @@
               <td class="px-4 py-3">
                 Collection <code>GET</code>
                 and <code>POST</code>; resource <code>GET</code>, <code>PUT</code>, <code>PATCH</code>, and <code>DELETE</code>.
-                The resource id is the directory's <code>externalId</code>.
+                Resource paths use the immutable <code>id</code>
+                returned by emisar.
               </td>
             </tr>
             <tr>
@@ -262,7 +263,8 @@
               <td class="px-4 py-3">
                 Collection <code>GET</code>
                 and <code>POST</code>; resource <code>GET</code>, <code>PUT</code>, <code>PATCH</code>, and <code>DELETE</code>.
-                Group writes reconcile the pushed membership before mappings are applied.
+                Resource paths use the returned <code>id</code>. Group writes reconcile the pushed
+                membership before mappings are applied.
               </td>
             </tr>
           </tbody>
@@ -278,8 +280,8 @@
             requires <code>externalId</code>
             or <code>userName</code>. <code>active</code>
             defaults to true. emisar accepts a JSON boolean or the case-insensitive strings <code>"True"</code>/<code>"False"</code>
-            that Entra sends. Repeating a create
-            reconciles the existing identity instead of creating a duplicate.
+            that Entra sends. Repeating a create with the same <code>externalId</code>
+            reconciles the existing identity and returns the same server <code>id</code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -328,7 +330,20 @@
             reconcile the full membership. <code>PATCH</code>
             supports member <code>add</code>, <code>remove</code>, and whole-set <code>replace</code>, plus
             <code>displayName</code>
-            replacement.
+            replacement. Each <code>members[].value</code>
+            is the returned <code>id</code>
+            of a User resource.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            A Group <code>POST</code>
+            with <code>externalId</code>
+            reconciles that directory resource. A probe that omits <code>externalId</code>
+            gets a new server <code>id</code>; use that id for later reads and writes.
+            <code>displayName</code>
+            is a label and filter, never the group's identity.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

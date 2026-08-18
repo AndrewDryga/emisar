@@ -178,28 +178,13 @@ defmodule Emisar.SSO.UserIdentity.Query do
     |> select([identities: i], {i.provider_id, count(i.id)})
   end
 
-  # The SCIM reconciliation lookup — `(provider, externalId)`. Distinct from
-  # `by_provider_and_identifier/3` so a deactivate/fetch by the IdP's
-  # externalId stays explicit, even though the two ids coincide today
-  # (decision 4).
+  # POST reconciliation and externalId filters use the IdP-owned correlation
+  # value. Resource routes use the identity row's server-issued id instead.
   def by_provider_and_scim_external_id(queryable, provider_id, scim_external_id) do
     where(
       queryable,
       [identities: i],
       i.provider_id == ^provider_id and i.scim_external_id == ^scim_external_id
-    )
-  end
-
-  # Resolve a group's SCIM member ids (decision 4: an externalId may arrive as
-  # either side of the binding) to this provider's identities — the union of a
-  # `scim_external_id` or a `provider_identifier` match. Unknown ids match
-  # nothing (the member may not be provisioned yet).
-  def by_provider_and_external_ids(queryable, provider_id, external_ids) do
-    where(
-      queryable,
-      [identities: i],
-      i.provider_id == ^provider_id and
-        (i.scim_external_id in ^external_ids or i.provider_identifier in ^external_ids)
     )
   end
 

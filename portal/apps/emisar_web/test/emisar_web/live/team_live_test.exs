@@ -1843,7 +1843,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, _} =
         Emisar.SSO.scim_update_user(
           synced.provider,
-          synced.external_id,
+          synced.resource_id,
           %Emisar.SSO.SCIMUserUpdate{active: false}
         )
 
@@ -2411,6 +2411,6 @@ defmodule EmisarWeb.TeamLiveTest do
     # through this; without it the row isn't actually directory-managed.
     {:ok, membership} = Emisar.SSO.recompute_role_for_identity(provider, identity)
 
-    %{provider: provider, membership: membership, external_id: external_id, user: user}
+    %{provider: provider, membership: membership, resource_id: identity.id, user: user}
   end
 end

@@ -42,11 +42,11 @@ defmodule Emisar.SSO.SCIMGroupPatch do
   carrying a malformed member array, `{:error, :unsupported_scim_patch}` for one
   asking for something this connection does not model.
   """
-  @spec reduce([map()], String.t()) ::
+  @spec reduce([map()], map()) ::
           {:ok, t()} | {:error, :invalid_scim_group | :unsupported_scim_patch}
-  def reduce(operations, external_group_id) when is_list(operations) do
+  def reduce(operations, group) when is_list(operations) and is_map(group) do
     with {:ok, attributes} <- expand_operations(operations),
-         addressed = Enum.reject(attributes, &settles_identity?(&1, external_group_id)),
+         addressed = Enum.reject(attributes, &settles_identity?(&1, group)),
          {renames, member_operations} = Enum.split_with(addressed, &rename_op?/1),
          :ok <- validate_every_rename(renames) do
       plan(member_operations, pending_display(renames))
@@ -140,13 +140,19 @@ defmodule Emisar.SSO.SCIMGroupPatch do
   # before any membership applied. An operation setting this group's identity to
   # the value it already has is the no-op it claims to be; one naming a DIFFERENT
   # value stays in the list to be refused, because we do not move a resource.
-  defp settles_identity?(op, external_group_id) do
-    replace?(op) and identity_path?(Map.get(op, "path")) and
-      Map.get(op, "value") == external_group_id
+  defp settles_identity?(op, group) do
+    replace?(op) and identity_value(group, Map.get(op, "path")) == Map.get(op, "value")
   end
 
-  defp identity_path?(path) when is_binary(path), do: downcase(path) in ["id", "externalid"]
-  defp identity_path?(_path), do: false
+  defp identity_value(group, path) when is_binary(path) do
+    case downcase(path) do
+      "id" -> group[:id] || group["id"]
+      "externalid" -> group[:external_group_id] || group["external_group_id"]
+      _ -> :not_identity
+    end
+  end
+
+  defp identity_value(_group, _path), do: :not_identity
 
   defp rename_op?(op), do: rename_display(op) != nil
 
@@ -248,8 +254,8 @@ defmodule Emisar.SSO.SCIMGroupPatch do
     end
   end
 
-  # A SCIM `members` array is `[%{"value" => externalId}]`. Every entry must carry
-  # a usable value: a malformed array is refused rather than silently becoming a
+  # A SCIM `members` array carries User resource ids. Every entry must carry a
+  # usable value: a malformed array is refused rather than silently becoming a
   # shorter set, because a dropped entry is someone the directory still believes
   # is in the group.
   defp member_ids(nil), do: {:ok, []}
@@ -276,11 +282,11 @@ defmodule Emisar.SSO.SCIMGroupPatch do
   defp members_path?(path) when is_binary(path), do: downcase(path) == "members"
   defp members_path?(_path), do: false
 
-  # Okta removes a single member with `path: members[value eq "<externalId>"]`
-  # and no value. Extract the quoted externalId; anything richer is unsupported.
+  # Okta removes one member with `path: members[value eq "<User resource id>"]`
+  # and no value. Anything richer is unsupported.
   defp filtered_member_remove(path) when is_binary(path) do
     case Regex.run(~r/^members\[\s*value\s+eq\s+"([^"]+)"\s*\]$/i, path) do
-      [_, external_id] -> {:remove, [external_id]}
+      [_, resource_id] -> {:remove, [resource_id]}
       _ -> :skip
     end
   end

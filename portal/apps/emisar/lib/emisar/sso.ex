@@ -194,8 +194,8 @@ defmodule Emisar.SSO do
         |> Map.new()
 
       groups =
-        DirectoryGroupMember.Query.not_deleted()
-        |> DirectoryGroupMember.Query.count_distinct_groups_by_provider()
+        DirectoryGroup.Query.not_deleted()
+        |> DirectoryGroup.Query.count_by_provider()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
         |> Map.new()
@@ -1598,6 +1598,7 @@ defmodule Emisar.SSO do
         DirectoryGroup.Query.not_deleted()
         |> DirectoryGroup.Query.by_account_id(provider.account_id)
         |> DirectoryGroup.Query.by_provider_id(provider.id)
+        |> DirectoryGroup.Query.with_external_group_id()
         |> DirectoryGroup.Query.ordered_by_external_group_id()
         |> Repo.all()
         |> Enum.map(fn group ->
@@ -1879,7 +1880,7 @@ defmodule Emisar.SSO do
 
   defp external_group_user_ids(provider, external_group_id) do
     provider
-    |> current_group_members(external_group_id)
+    |> current_group_members_by_external_id(external_group_id)
     |> Enum.map(& &1.user_identity_id)
     |> then(&load_identities(provider, &1))
     |> Enum.map(& &1.user_id)
@@ -1908,7 +1909,7 @@ defmodule Emisar.SSO do
       %IdentityProvider{scim_enabled: true} = provider ->
         identity_ids =
           provider
-          |> current_group_members(mapping.external_group_id)
+          |> current_group_members_by_external_id(mapping.external_group_id)
           |> Enum.map(& &1.user_identity_id)
 
         provider
@@ -2532,13 +2533,13 @@ defmodule Emisar.SSO do
   defdelegate scim_provision_user(provider, attrs), to: SCIM
 
   @doc "Internal — SCIM replaces a provisioned user's attributes."
-  defdelegate scim_update_user(provider, external_id, update), to: SCIM
+  defdelegate scim_update_user(provider, id, update), to: SCIM
 
   @doc "Internal — SCIM applies a PATCH operation list to a provisioned user."
-  defdelegate scim_patch_user(provider, external_id, operations), to: SCIM
+  defdelegate scim_patch_user(provider, id, operations), to: SCIM
 
-  @doc "Internal — reads one provisioned user by its SCIM external id."
-  defdelegate scim_fetch_user(provider, external_id), to: SCIM
+  @doc "Internal — reads one provisioned user by its server-issued SCIM id."
+  defdelegate scim_fetch_user(provider, id), to: SCIM
 
   @doc "Internal — lists provisioned users, filtered and paged per SCIM."
   def scim_list_users(provider, opts \\ []), do: SCIM.scim_list_users(provider, opts)
@@ -2546,20 +2547,23 @@ defmodule Emisar.SSO do
   @doc "Internal — lists synced groups, filtered and paged per SCIM."
   def scim_list_groups(provider, opts \\ []), do: SCIM.scim_list_groups(provider, opts)
 
-  @doc "Internal — reads one synced group by its SCIM external id."
-  defdelegate scim_fetch_group(provider, external_group_id), to: SCIM
+  @doc "Internal — reads one synced group by its server-issued SCIM id."
+  defdelegate scim_fetch_group(provider, id), to: SCIM
 
   @doc "Internal — creates or replaces a synced group."
   defdelegate scim_upsert_group(provider, attrs), to: SCIM
 
+  @doc "Internal — replaces a synced group by its server-issued SCIM id."
+  defdelegate scim_replace_group(provider, id, attrs), to: SCIM
+
   @doc "Internal — removes a synced group and recomputes affected members."
-  defdelegate scim_delete_group(provider, external_group_id), to: SCIM
+  defdelegate scim_delete_group(provider, id), to: SCIM
 
   @doc "Internal — renames a synced group."
-  defdelegate scim_rename_group(provider, external_group_id, display), to: SCIM
+  defdelegate scim_rename_group(provider, id, display), to: SCIM
 
   @doc "Internal — applies a PATCH operation list to a synced group."
-  defdelegate scim_patch_group(provider, external_group_id, operations), to: SCIM
+  defdelegate scim_patch_group(provider, id, operations), to: SCIM
 
   @doc "Validates a SCIM group display name, or returns the reason it is invalid."
   defdelegate validate_scim_group_display(display), to: SCIM

@@ -84,10 +84,10 @@ defmodule Emisar.SSO.SCIM do
 
   @doc """
   Internal — SCIM provision: reconcile a directory user to a `user_identity`
-  by `(provider, externalId)`, where the externalId IS the binding identifier
-  (decision 4 — it's stored as BOTH `provider_identifier` and
-  `scim_external_id`). An existing identity is reused (idempotent — a re-POST
-  never duplicates); otherwise a fresh user + identity (`created_by: :provider`,
+  by `(provider, externalId)`. The IdP-owned value is stored as both the OIDC
+  binding identifier and SCIM correlation value; the identity row's UUID is the
+  SCIM resource id. An existing identity is reused (idempotent — a re-POST never
+  duplicates); otherwise a fresh user + identity (`created_by: :provider`,
   `provisioned_via: :scim`) + membership at `provider.default_role` are created
   in one `Multi`. Trusts the IdP's email within the connection (collision →
   `:email_taken`, never a merge). `{:ok, %{user, identity, membership}}`.
@@ -119,10 +119,9 @@ defmodule Emisar.SSO.SCIM do
   # "active", silently undoing an offboarding.
   #
   # It also adopts an OIDC-first identity, which has a `provider_identifier` but
-  # no `scim_external_id`. Reusing one without stamping it left the member
-  # invisible to every SCIM lifecycle endpoint (they look up by
-  # `scim_external_id`), so the directory could create them and never offboard
-  # them.
+  # no `scim_external_id`. Stamping the directory's correlation value keeps
+  # repeated POST reconciliation, externalId filters, and later OIDC convergence
+  # stable even if the login identifier is rebound.
   defp load_provisioned(
          %IdentityProvider{} = provider,
          %UserIdentity{} = identity,
@@ -345,10 +344,10 @@ defmodule Emisar.SSO.SCIM do
   :unsupported_scim_patch}` for a batch we refuse, plus every
   `scim_update_user/3` error for one we apply.
   """
-  def scim_patch_user(%IdentityProvider{} = provider, external_id, operations)
+  def scim_patch_user(%IdentityProvider{} = provider, id, operations)
       when is_list(operations) do
     with {:ok, update} <- SCIMUserPatch.reduce(operations) do
-      scim_update_user(provider, external_id, update)
+      scim_update_user(provider, id, update)
     end
   end
 
@@ -366,11 +365,11 @@ defmodule Emisar.SSO.SCIM do
   key revocation / broadcasts fire only after the commit. Returns
   `{:ok, %{identity: identity, membership: membership | nil}}`.
   """
-  def scim_update_user(%IdentityProvider{} = provider, external_id, %SCIMUserUpdate{} = update) do
+  def scim_update_user(%IdentityProvider{} = provider, id, %SCIMUserUpdate{} = update) do
     multi =
       Multi.new()
       |> Multi.run(:identity, fn repo, _changes ->
-        lock_scim_identity(provider, external_id, repo)
+        lock_scim_identity(provider, id, repo)
       end)
       |> Multi.run(:rename, fn _repo, %{identity: identity} ->
         apply_scim_rename(provider, identity, update.name)
@@ -387,11 +386,17 @@ defmodule Emisar.SSO.SCIM do
     end
   end
 
-  defp lock_scim_identity(%IdentityProvider{} = provider, external_id, repo) do
-    UserIdentity.Query.not_deleted()
-    |> UserIdentity.Query.by_provider_and_scim_external_id(provider.id, external_id)
-    |> UserIdentity.Query.lock_for_update()
-    |> repo.fetch(UserIdentity.Query)
+  defp lock_scim_identity(%IdentityProvider{} = provider, id, repo) do
+    if Repo.valid_uuid?(id) do
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_account_id(provider.account_id)
+      |> UserIdentity.Query.by_provider_id(provider.id)
+      |> UserIdentity.Query.by_id(id)
+      |> UserIdentity.Query.lock_for_update()
+      |> repo.fetch(UserIdentity.Query)
+    else
+      {:error, :not_found}
+    end
   end
 
   defp apply_scim_rename(_provider, _identity, :keep), do: {:ok, :unchanged}
@@ -521,13 +526,13 @@ defmodule Emisar.SSO.SCIM do
   defp scim_updated_membership(_changes), do: nil
 
   @doc """
-  Internal — SCIM read: the `%SCIMUser{}` projection for `(provider,
-  externalId)` (the IdP probes before create). `{:ok, %SCIMUser{}} |
+  Internal — SCIM read: the `%SCIMUser{}` projection for a server-issued
+  resource id under this provider. `{:ok, %SCIMUser{}} |
   {:error, :not_found}` — an identity whose membership an operator removed is
   still found, and reports inactive.
   """
-  def scim_fetch_user(%IdentityProvider{} = provider, external_id) do
-    with {:ok, identity} <- fetch_scim_identity(provider, external_id) do
+  def scim_fetch_user(%IdentityProvider{} = provider, id) do
+    with {:ok, identity} <- fetch_scim_identity(provider, id) do
       membership = Accounts.peek_sync_membership(provider.account_id, identity.user_id)
       {:ok, scim_user(identity, identity.user, membership)}
     end
@@ -579,7 +584,7 @@ defmodule Emisar.SSO.SCIM do
 
   @doc """
   Internal — SCIM read: the provider's synced directory groups as
-  `[%{external_group_id, display, member_external_ids}]`, ordered by group id.
+  `[%{id, external_group_id, display, member_ids}]`, ordered stably.
   An optional `:display_name` filter answers the `displayName eq` probe Entra
   makes before every group push; without a group read it never matches an
   existing group and re-POSTs the whole directory each cycle.
@@ -623,44 +628,49 @@ defmodule Emisar.SSO.SCIM do
   defp scim_group_summaries([], _provider), do: []
 
   defp scim_group_summaries(groups, %IdentityProvider{} = provider) do
-    external_group_ids = Enum.map(groups, & &1.external_group_id)
+    group_ids = Enum.map(groups, & &1.id)
 
     members_queryable =
       DirectoryGroupMember.Query.not_deleted()
       |> DirectoryGroupMember.Query.by_account_id(provider.account_id)
-      |> DirectoryGroupMember.Query.by_external_group_ids(external_group_ids)
-      |> DirectoryGroupMember.Query.select_member_external_ids(provider.id)
+      |> DirectoryGroupMember.Query.by_directory_group_ids(group_ids)
+      |> DirectoryGroupMember.Query.select_member_ids(provider.id)
 
     members = Enum.group_by(Repo.all(members_queryable), &elem(&1, 0), &elem(&1, 1))
 
-    Enum.map(groups, fn %DirectoryGroup{external_group_id: id} = group ->
+    Enum.map(groups, fn %DirectoryGroup{} = group ->
       %{
-        external_group_id: id,
+        id: group.id,
+        external_group_id: group.external_group_id,
         display: group.display,
-        member_external_ids: Map.get(members, id, [])
+        member_ids: Map.get(members, group.id, [])
       }
     end)
   end
 
   @doc """
-  Internal — SCIM read of one synced group by its externalId, so an IdP's
+  Internal — SCIM read of one synced group by its server-issued resource id, so an IdP's
   `GET /Groups/{id}` round-trips instead of 404ing on a group it just pushed.
   `{:ok, summary} | {:error, :not_found}`.
   """
-  def scim_fetch_group(%IdentityProvider{} = provider, external_group_id) do
-    queryable =
-      DirectoryGroup.Query.not_deleted()
-      |> DirectoryGroup.Query.by_account_id(provider.account_id)
-      |> DirectoryGroup.Query.by_provider_id(provider.id)
-      |> DirectoryGroup.Query.by_external_group_id(external_group_id)
+  def scim_fetch_group(%IdentityProvider{} = provider, id) do
+    if Repo.valid_uuid?(id) do
+      queryable =
+        DirectoryGroup.Query.not_deleted()
+        |> DirectoryGroup.Query.by_account_id(provider.account_id)
+        |> DirectoryGroup.Query.by_provider_id(provider.id)
+        |> DirectoryGroup.Query.by_id(id)
 
-    case Repo.peek(queryable) do
-      nil ->
-        {:error, :not_found}
+      case Repo.peek(queryable) do
+        nil ->
+          {:error, :not_found}
 
-      group ->
-        [summary] = scim_group_summaries([group], provider)
-        {:ok, summary}
+        group ->
+          [summary] = scim_group_summaries([group], provider)
+          {:ok, summary}
+      end
+    else
+      {:error, :not_found}
     end
   end
 
@@ -677,11 +687,17 @@ defmodule Emisar.SSO.SCIM do
 
   defp apply_scim_filter(queryable, _none), do: queryable
 
-  defp fetch_scim_identity(%IdentityProvider{} = provider, external_id) do
-    UserIdentity.Query.not_deleted()
-    |> UserIdentity.Query.by_provider_and_scim_external_id(provider.id, external_id)
-    |> UserIdentity.Query.with_preloaded_user()
-    |> Repo.fetch(UserIdentity.Query)
+  defp fetch_scim_identity(%IdentityProvider{} = provider, id) do
+    if Repo.valid_uuid?(id) do
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_account_id(provider.account_id)
+      |> UserIdentity.Query.by_provider_id(provider.id)
+      |> UserIdentity.Query.by_id(id)
+      |> UserIdentity.Query.with_preloaded_user()
+      |> Repo.fetch(UserIdentity.Query)
+    else
+      {:error, :not_found}
+    end
   end
 
   defp scim_users(%IdentityProvider{} = provider, identities) do
@@ -693,16 +709,11 @@ defmodule Emisar.SSO.SCIM do
     Enum.map(identities, &scim_user(&1, &1.user, memberships[&1.user_id]))
   end
 
-  # The projection's `external_id` is the IdP's externalId, not our internal
-  # UUID: SCIM `id` is server-assigned and opaque to the client, and every
-  # single-user operation keys strictly on externalId (decision 4 —
-  # `provider_identifier == scim_external_id`), so surfacing it as the canonical
-  # id lets the IdP's `GET/PATCH/DELETE /Users/{id}` round-trip without a
-  # separate UUID→externalId lookup. The internal UUID is never exposed.
   defp scim_user(%UserIdentity{} = identity, user, membership) do
     external_id = identity.scim_external_id || identity.provider_identifier
 
     %SCIMUser{
+      id: identity.id,
       external_id: external_id,
       user_name: scim_user_name(identity, user),
       display_name: scim_display_name(user),
@@ -771,96 +782,135 @@ defmodule Emisar.SSO.SCIM do
   # (mappings can't mint owners — decision 7).
 
   @doc """
-  Internal — SCIM group upsert (`PUT /Groups`): refresh the group's display on
-  any matching role mapping and replace its synced membership to be exactly the
-  provider's identities whose `scim_external_id`/`provider_identifier` is in
-  `member_external_ids` (unknown ids are ignored — the member may not be
-  provisioned yet). Every identity whose group membership changed (added or
-  removed) has its role recomputed. `{:ok, group_summary}`.
+  Internal — SCIM group create/reconcile (`POST /Groups`). A supplied
+  `externalId` reconciles the provider's existing group; without one, a fresh
+  server-id resource is created. `displayName` is never identity. Membership
+  values are server-issued User ids; unknown in-scope-shaped ids are ignored.
   """
   def scim_upsert_group(%IdentityProvider{} = provider, attrs) do
     external_group_id = attrs[:external_id] || attrs["external_id"]
     display = attrs[:display] || attrs["display"]
-    member_external_ids = attrs[:member_external_ids] || attrs["member_external_ids"] || []
+    member_ids = attrs[:member_ids] || attrs["member_ids"] || []
 
-    with :ok <- validate_scim_group_values(external_group_id, display, member_external_ids) do
-      with {:ok, {current_provider, affected, member_count}} <-
+    with :ok <- validate_scim_group_values(external_group_id, display, member_ids) do
+      with {:ok, {current_provider, affected, group}} <-
              Repo.transaction(fn ->
                {locked_provider, first_push?} = lock_provider!(provider)
-               desired_ids = resolve_member_identity_ids(locked_provider, member_external_ids)
-               :ok = upsert_directory_group(locked_provider, external_group_id, display)
-               _ = refresh_group_display(locked_provider, external_group_id, display)
 
-               affected =
-                 replace_group_members(locked_provider, external_group_id, display, desired_ids)
+               group =
+                 create_or_fetch_directory_group!(locked_provider, external_group_id, display)
+
+               desired_ids = resolve_member_identity_ids(locked_provider, member_ids)
+
+               affected = replace_group_members(locked_provider, group, display, desired_ids)
 
                affected = identities_to_recompute(locked_provider, affected, first_push?)
 
                current_provider =
                  prepare_scim_group_authorization_change!(locked_provider, affected)
 
-               {current_provider, affected, length(desired_ids)}
+               {current_provider, affected, group}
              end),
            :ok <- recompute_role_for_affected(current_provider, affected) do
-        {:ok,
-         %{
-           external_group_id: external_group_id,
-           display: display,
-           member_count: member_count
-         }}
+        scim_fetch_group(provider, group.id)
       end
     end
   end
 
   @doc """
-  Internal — SCIM `DELETE /Groups/{id}`: retire the group and take its members'
-  grants with it. `{:ok, group_summary}`; `{:error, :not_found}` for a group this
-  directory never pushed, because answering 204 for one invents it.
+  Internal — SCIM `PUT /Groups/{id}`: replace the addressed group without
+  allowing body identity fields to redirect the write.
   """
-  def scim_delete_group(%IdentityProvider{} = provider, external_group_id) do
-    with :ok <- validate_required_scim_string(external_group_id),
-         {:ok, _group} <- scim_fetch_group(provider, external_group_id),
-         {:ok, summary} <-
-           scim_upsert_group(provider, %{
-             external_id: external_group_id,
-             member_external_ids: []
-           }) do
-      # Emptying it revoked what it granted; retiring the ROW is what makes the
-      # resource gone. Deleting used to call the upsert alone, so a GET right
-      # after a 204 still answered 200 — and deleting a group we had never seen
-      # CREATED it.
-      queryable =
-        DirectoryGroup.Query.not_deleted()
-        |> DirectoryGroup.Query.by_account_id(provider.account_id)
-        |> DirectoryGroup.Query.by_provider_id(provider.id)
-        |> DirectoryGroup.Query.by_external_group_id(external_group_id)
+  def scim_replace_group(%IdentityProvider{} = provider, id, attrs) do
+    external_group_id = attrs[:external_id] || attrs["external_id"]
+    display = attrs[:display] || attrs["display"]
+    member_ids = attrs[:member_ids] || attrs["member_ids"] || []
 
-      now = DateTime.utc_now()
-      Repo.update_all(queryable, set: [deleted_at: now, updated_at: now])
-      {:ok, summary}
+    with true <- Repo.valid_uuid?(id),
+         :ok <- validate_optional_scim_string(external_group_id),
+         :ok <- validate_optional_scim_string(display),
+         :ok <- validate_scim_member_ids(member_ids) do
+      with {:ok, {current_provider, affected, group}} <-
+             Repo.transaction(fn ->
+               {locked_provider, first_push?} = lock_provider!(provider)
+               group = fetch_group_row!(locked_provider, id)
+               :ok = ensure_group_external_id(group, external_group_id)
+               group = put_group_display!(locked_provider, group, display)
+               desired_ids = resolve_member_identity_ids(locked_provider, member_ids)
+               affected = replace_group_members(locked_provider, group, display, desired_ids)
+               affected = identities_to_recompute(locked_provider, affected, first_push?)
+
+               current_provider =
+                 prepare_scim_group_authorization_change!(locked_provider, affected)
+
+               {current_provider, affected, group}
+             end),
+           :ok <- recompute_role_for_affected(current_provider, affected) do
+        scim_fetch_group(provider, group.id)
+      end
+    else
+      false -> {:error, :not_found}
+      error -> error
     end
   end
 
   @doc """
-  Internal — SCIM group rename: move a synced group's human name without touching
-  its id. The id is what the IdP addresses the group by and stays put; the new
-  display lands on the group's membership rows and on any role mapping of it.
-  `{:ok, group_summary}`.
+  Internal — SCIM `DELETE /Groups/{id}`: retire the exact resource and take its
+  members' grants with it. A missing resource returns `:not_found` and is never
+  invented by the delete path.
   """
-  def scim_rename_group(%IdentityProvider{} = provider, external_group_id, display) do
-    with :ok <- validate_scim_group_values(external_group_id, display, []),
-         # Under the same lock every other group write takes. Renaming outside it
-         # raced a concurrent member push: both saw no row, the member path
-         # inserted first, and the rename's conflict-free insert dropped its
-         # display while still answering success. It could also recreate a group
-         # a concurrent disable had just discarded.
-         {:ok, _} <-
+  def scim_delete_group(%IdentityProvider{} = provider, id) do
+    with true <- Repo.valid_uuid?(id),
+         {:ok, {current_provider, affected, summary}} <-
+           Repo.transaction(fn ->
+             {locked_provider, first_push?} = lock_provider!(provider)
+             group = fetch_group_row!(locked_provider, id)
+             current = current_group_members(locked_provider, group.id)
+             affected = load_identities(locked_provider, Enum.map(current, & &1.user_identity_id))
+             :ok = soft_delete_group_members(current)
+             delete_changeset = DirectoryGroup.Changeset.delete(group)
+
+             case Repo.update(delete_changeset) do
+               {:ok, _group} -> :ok
+               {:error, reason} -> Repo.rollback(reason)
+             end
+
+             affected = identities_to_recompute(locked_provider, affected, first_push?)
+
+             current_provider =
+               prepare_scim_group_authorization_change!(locked_provider, affected)
+
+             summary = %{
+               id: group.id,
+               external_group_id: group.external_group_id,
+               display: group.display,
+               member_ids: []
+             }
+
+             {current_provider, affected, summary}
+           end),
+         :ok <- recompute_role_for_affected(current_provider, affected) do
+      {:ok, summary}
+    else
+      false -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  @doc "Internal — rename one server-issued Group resource without changing identity."
+  def scim_rename_group(%IdentityProvider{} = provider, id, display) do
+    with true <- Repo.valid_uuid?(id),
+         :ok <- validate_optional_scim_string(display),
+         {:ok, group} <-
            Repo.transaction(fn ->
              {locked_provider, _first_push?} = lock_provider!(provider)
-             :ok = upsert_directory_group(locked_provider, external_group_id, display)
-             refresh_group_display(locked_provider, external_group_id, display)
+             group = fetch_group_row!(locked_provider, id)
+             put_group_display!(locked_provider, group, display)
            end) do
-      {:ok, %{external_group_id: external_group_id, display: display}}
+      scim_fetch_group(provider, group.id)
+    else
+      false -> {:error, :not_found}
+      error -> error
     end
   end
 
@@ -883,40 +933,39 @@ defmodule Emisar.SSO.SCIM do
   """
   def scim_patch_group_members(
         %IdentityProvider{} = provider,
-        external_group_id,
-        add_external_ids,
-        remove_external_ids,
+        id,
+        add_ids,
+        remove_ids,
         display \\ nil
       ) do
-    with :ok <- validate_required_scim_string(external_group_id),
+    with true <- Repo.valid_uuid?(id),
          :ok <- validate_optional_scim_string(display),
-         :ok <- validate_scim_patch_member_ids(add_external_ids, remove_external_ids) do
-      with {:ok, {current_provider, added, removed, affected}} <-
+         :ok <- validate_scim_patch_member_ids(add_ids, remove_ids) do
+      with {:ok, {current_provider, added, removed, affected, group}} <-
              Repo.transaction(fn ->
                {locked_provider, first_push?} = lock_provider!(provider)
-               # The batch's rename lands HERE, inside the same transaction and
-               # under the same provider lock as the membership change. Applied
-               # afterwards in a transaction of its own, a disable, deletion or
-               # database failure between the two returned an error to the IdP with
-               # the privilege change already committed.
-               :ok = upsert_directory_group(locked_provider, external_group_id, display)
-               _ = refresh_group_display(locked_provider, external_group_id, display)
-               add_ids = resolve_member_identity_ids(locked_provider, add_external_ids)
-               remove_ids = resolve_member_identity_ids(locked_provider, remove_external_ids)
-               added = add_group_members(locked_provider, external_group_id, add_ids)
-               removed = remove_group_members(locked_provider, external_group_id, remove_ids)
+               group = fetch_group_row!(locked_provider, id)
+               group = put_group_display!(locked_provider, group, display)
+               add_ids = resolve_member_identity_ids(locked_provider, add_ids)
+               remove_ids = resolve_member_identity_ids(locked_provider, remove_ids)
+               added = add_group_members(locked_provider, group, add_ids)
+               removed = remove_group_members(locked_provider, group, remove_ids)
                touched = Enum.uniq(added ++ removed)
                affected = identities_to_recompute(locked_provider, touched, first_push?)
 
                current_provider =
                  prepare_scim_group_authorization_change!(locked_provider, affected)
 
-               {current_provider, added, removed, affected}
+               {current_provider, added, removed, affected, group}
              end),
            :ok <- recompute_role_for_affected(current_provider, affected) do
-        {:ok,
-         %{external_group_id: external_group_id, added: length(added), removed: length(removed)}}
+        with {:ok, summary} <- scim_fetch_group(provider, group.id) do
+          {:ok, Map.merge(summary, %{added: length(added), removed: length(removed)})}
+        end
       end
+    else
+      false -> {:error, :not_found}
+      error -> error
     end
   end
 
@@ -927,60 +976,51 @@ defmodule Emisar.SSO.SCIM do
   one. The wire boundary hands the raw operations straight through — the ordering,
   the recognized attributes, and the caps are decided here.
 
-  `{:ok, group_summary}` carrying the `member_external_ids` the response renders;
+  `{:ok, group_summary}` carrying the `member_ids` the response renders;
   `{:error, :invalid_scim_group | :unsupported_scim_patch}` for a batch we refuse,
   plus every group-write error for one we apply.
   """
-  def scim_patch_group(%IdentityProvider{} = provider, external_group_id, operations)
+  def scim_patch_group(%IdentityProvider{} = provider, id, operations)
       when is_list(operations) do
-    with {:ok, command} <- SCIMGroupPatch.reduce(operations, external_group_id) do
-      apply_scim_group_patch(provider, external_group_id, command)
+    with {:ok, group} <- scim_fetch_group(provider, id),
+         {:ok, command} <- SCIMGroupPatch.reduce(operations, group) do
+      apply_scim_group_patch(provider, id, command)
     end
   end
 
   # The batch asked for nothing we had to write — answer with the group as it stands.
-  defp apply_scim_group_patch(%IdentityProvider{} = provider, external_group_id, :unchanged),
-    do: scim_fetch_group(provider, external_group_id)
+  defp apply_scim_group_patch(%IdentityProvider{} = provider, id, :unchanged),
+    do: scim_fetch_group(provider, id)
 
   defp apply_scim_group_patch(
          %IdentityProvider{} = provider,
-         external_group_id,
+         id,
          {:rename, display}
        ) do
-    with {:ok, _summary} <- scim_rename_group(provider, external_group_id, display) do
-      {:ok, %{external_group_id: external_group_id, display: display, member_external_ids: []}}
-    end
+    scim_rename_group(provider, id, display)
   end
 
   defp apply_scim_group_patch(
          %IdentityProvider{} = provider,
-         external_group_id,
-         {:replace, display, member_external_ids}
+         id,
+         {:replace, display, member_ids}
        ) do
     attrs = %{
-      external_id: external_group_id,
       display: display,
-      member_external_ids: member_external_ids
+      member_ids: member_ids
     }
 
-    with {:ok, summary} <- scim_upsert_group(provider, attrs) do
-      {:ok, Map.put(summary, :member_external_ids, member_external_ids)}
-    end
+    scim_replace_group(provider, id, attrs)
   end
 
   defp apply_scim_group_patch(
          %IdentityProvider{} = provider,
-         external_group_id,
+         id,
          {:delta, display, add_ids, remove_ids}
        ) do
     with {:ok, _summary} <-
-           scim_patch_group_members(provider, external_group_id, add_ids, remove_ids, display) do
-      {:ok,
-       %{
-         external_group_id: external_group_id,
-         display: display,
-         member_external_ids: add_ids
-       }}
+           scim_patch_group_members(provider, id, add_ids, remove_ids, display) do
+      scim_fetch_group(provider, id)
     end
   end
 
@@ -993,31 +1033,62 @@ defmodule Emisar.SSO.SCIM do
   # A group push proves the group exists, whether or not it named any members.
   # Deriving existence from membership rows meant an empty push created nothing,
   # so the `GET` right after a 201 answered 404.
-  defp upsert_directory_group(%IdentityProvider{} = provider, external_group_id, display) do
-    queryable =
+  defp create_or_fetch_directory_group!(provider, external_group_id, display) do
+    existing =
+      if external_group_id do
+        DirectoryGroup.Query.not_deleted()
+        |> DirectoryGroup.Query.by_account_id(provider.account_id)
+        |> DirectoryGroup.Query.by_provider_id(provider.id)
+        |> DirectoryGroup.Query.by_external_group_id(external_group_id)
+        |> Repo.peek()
+      end
+
+    case existing do
+      %DirectoryGroup{} = group ->
+        put_group_display!(provider, group, display)
+
+      nil ->
+        provider.account_id
+        |> DirectoryGroup.Changeset.create(provider.id, external_group_id, display)
+        |> Repo.insert()
+        |> case do
+          {:ok, group} -> group
+          {:error, reason} -> Repo.rollback(reason)
+        end
+    end
+  end
+
+  defp fetch_group_row!(%IdentityProvider{} = provider, id) do
+    result =
       DirectoryGroup.Query.not_deleted()
       |> DirectoryGroup.Query.by_account_id(provider.account_id)
       |> DirectoryGroup.Query.by_provider_id(provider.id)
-      |> DirectoryGroup.Query.by_external_group_id(external_group_id)
+      |> DirectoryGroup.Query.by_id(id)
+      |> Repo.fetch(DirectoryGroup.Query)
 
-    case Repo.peek(queryable) do
-      %DirectoryGroup{} = group ->
-        {:ok, _group} = group |> DirectoryGroup.Changeset.rename(display) |> Repo.update()
-        :ok
+    case result do
+      {:ok, group} -> group
+      {:error, reason} -> Repo.rollback(reason)
+    end
+  end
 
-      nil ->
-        changeset =
-          DirectoryGroup.Changeset.create(
-            provider.account_id,
-            provider.id,
-            external_group_id,
-            display
-          )
+  defp ensure_group_external_id(_group, nil), do: :ok
 
-        # Lost the race to a concurrent push of the same group: it exists, which
-        # is all this needed to establish.
-        _ = Repo.insert(changeset, on_conflict: :nothing)
-        :ok
+  defp ensure_group_external_id(%DirectoryGroup{external_group_id: external_id}, external_id),
+    do: :ok
+
+  defp ensure_group_external_id(_group, _external_id), do: Repo.rollback(:invalid_scim_group)
+
+  defp put_group_display!(provider, group, display) do
+    changeset = DirectoryGroup.Changeset.rename(group, display)
+
+    case Repo.update(changeset) do
+      {:ok, updated_group} ->
+        :ok = refresh_group_display(provider, updated_group, display)
+        updated_group
+
+      {:error, reason} ->
+        Repo.rollback(reason)
     end
   end
 
@@ -1072,10 +1143,15 @@ defmodule Emisar.SSO.SCIM do
     end
   end
 
-  defp validate_scim_group_values(external_group_id, display, member_external_ids) do
-    with :ok <- validate_required_scim_string(external_group_id),
-         :ok <- validate_optional_scim_string(display) do
-      validate_scim_member_ids(member_external_ids)
+  defp validate_scim_group_values(external_group_id, display, member_ids) do
+    with :ok <- validate_optional_scim_string(external_group_id),
+         :ok <- validate_optional_scim_string(display),
+         true <-
+           valid_scim_required_string?(external_group_id) or valid_scim_required_string?(display) do
+      validate_scim_member_ids(member_ids)
+    else
+      false -> {:error, :invalid_scim_group}
+      error -> error
     end
   end
 
@@ -1094,12 +1170,12 @@ defmodule Emisar.SSO.SCIM do
   defp validate_scim_patch_member_ids(_add_external_ids, _remove_external_ids),
     do: {:error, :invalid_scim_group}
 
-  defp validate_scim_member_ids(member_external_ids) when is_list(member_external_ids) do
+  defp validate_scim_member_ids(member_ids) when is_list(member_ids) do
     cond do
-      length(member_external_ids) > @scim_group_member_max_count ->
+      length(member_ids) > @scim_group_member_max_count ->
         {:error, :invalid_scim_group}
 
-      Enum.all?(member_external_ids, &valid_scim_required_string?/1) ->
+      Enum.all?(member_ids, &Repo.valid_uuid?/1) ->
         :ok
 
       true ->
@@ -1107,11 +1183,7 @@ defmodule Emisar.SSO.SCIM do
     end
   end
 
-  defp validate_scim_member_ids(_member_external_ids), do: {:error, :invalid_scim_group}
-
-  defp validate_required_scim_string(value) do
-    if valid_scim_required_string?(value), do: :ok, else: {:error, :invalid_scim_group}
-  end
+  defp validate_scim_member_ids(_member_ids), do: {:error, :invalid_scim_group}
 
   defp validate_optional_scim_string(nil), do: :ok
 
@@ -1128,13 +1200,16 @@ defmodule Emisar.SSO.SCIM do
 
   defp valid_scim_required_string?(_value), do: false
 
-  # The provider's identities for a set of SCIM member ids (decision-4 union of
-  # scim_external_id / provider_identifier). An empty id list resolves to none.
+  # The provider's identities for a set of server-issued SCIM User ids. An empty
+  # id list resolves to none; valid ids owned by another provider/account are
+  # indistinguishable from unknown ids.
   defp resolve_member_identity_ids(%IdentityProvider{}, []), do: []
 
-  defp resolve_member_identity_ids(%IdentityProvider{} = provider, external_ids) do
+  defp resolve_member_identity_ids(%IdentityProvider{} = provider, ids) do
     UserIdentity.Query.not_deleted()
-    |> UserIdentity.Query.by_provider_and_external_ids(provider.id, external_ids)
+    |> UserIdentity.Query.by_account_id(provider.account_id)
+    |> UserIdentity.Query.by_provider_id(provider.id)
+    |> UserIdentity.Query.by_ids(ids)
     |> Repo.all()
     |> Enum.map(& &1.id)
   end
@@ -1145,40 +1220,40 @@ defmodule Emisar.SSO.SCIM do
   # role recompute.
   defp replace_group_members(
          %IdentityProvider{} = provider,
-         external_group_id,
+         %DirectoryGroup{} = group,
          display,
          desired_ids
        ) do
-    current = current_group_members(provider, external_group_id)
+    current = current_group_members(provider, group.id)
     current_ids = Enum.map(current, & &1.user_identity_id)
 
     to_remove = Enum.reject(current, &(&1.user_identity_id in desired_ids))
     to_add = Enum.reject(desired_ids, &(&1 in current_ids))
 
     soft_delete_group_members(to_remove)
-    insert_group_members(provider, external_group_id, display, to_add)
+    insert_group_members(provider, group, display, to_add)
 
     changed_ids = Enum.map(to_remove, & &1.user_identity_id) ++ to_add
     load_identities(provider, changed_ids)
   end
 
-  defp add_group_members(%IdentityProvider{} = provider, external_group_id, add_ids) do
+  defp add_group_members(%IdentityProvider{} = provider, %DirectoryGroup{} = group, add_ids) do
     current_ids =
       provider
-      |> current_group_members(external_group_id)
+      |> current_group_members(group.id)
       |> Enum.map(& &1.user_identity_id)
 
     # A PATCH member op carries no displayName; the group's name is whatever its
     # PUT-stamped sibling rows already say, which is what the read aggregates.
     to_add = Enum.reject(add_ids, &(&1 in current_ids))
-    insert_group_members(provider, external_group_id, nil, to_add)
+    insert_group_members(provider, group, nil, to_add)
     load_identities(provider, to_add)
   end
 
-  defp remove_group_members(%IdentityProvider{} = provider, external_group_id, remove_ids) do
+  defp remove_group_members(%IdentityProvider{} = provider, %DirectoryGroup{} = group, remove_ids) do
     to_remove =
       provider
-      |> current_group_members(external_group_id)
+      |> current_group_members(group.id)
       |> Enum.filter(&(&1.user_identity_id in remove_ids))
 
     soft_delete_group_members(to_remove)
@@ -1189,11 +1264,11 @@ defmodule Emisar.SSO.SCIM do
   # per member. `to_add` are already-resolved provider identities + the group
   # is theirs, so the rows are valid by construction; on_conflict guards a
   # re-add race against the live-row partial unique.
-  defp insert_group_members(_provider, _external_group_id, _display, []), do: :ok
+  defp insert_group_members(_provider, _group, _display, []), do: :ok
 
   defp insert_group_members(
          %IdentityProvider{} = provider,
-         external_group_id,
+         %DirectoryGroup{} = group,
          display,
          user_identity_ids
        ) do
@@ -1205,7 +1280,8 @@ defmodule Emisar.SSO.SCIM do
           id: Repo.generate_id(),
           account_id: provider.account_id,
           provider_id: provider.id,
-          external_group_id: external_group_id,
+          directory_group_id: group.id,
+          external_group_id: group.external_group_id,
           external_group_display: display,
           user_identity_id: user_identity_id,
           inserted_at: now,
@@ -1234,21 +1310,23 @@ defmodule Emisar.SSO.SCIM do
   # membership rows, so an unmapped group still answers SCIM reads by name, and
   # on any matching role mapping, so the config UI shows the current name. A PUT
   # that omits displayName must not erase either, so nil is a no-op.
-  defp refresh_group_display(_provider, _external_group_id, nil), do: :ok
+  defp refresh_group_display(_provider, _group, nil), do: :ok
 
-  defp refresh_group_display(%IdentityProvider{} = provider, external_group_id, display) do
+  defp refresh_group_display(%IdentityProvider{} = provider, %DirectoryGroup{} = group, display) do
     now = DateTime.utc_now()
 
     members_queryable =
       DirectoryGroupMember.Query.not_deleted()
-      |> DirectoryGroupMember.Query.by_provider_and_group(provider.id, external_group_id)
+      |> DirectoryGroupMember.Query.by_directory_group_id(group.id)
 
     Repo.update_all(members_queryable, set: [external_group_display: display, updated_at: now])
 
-    GroupRoleMapping.Query.not_deleted()
-    |> GroupRoleMapping.Query.by_provider_id(provider.id)
-    |> GroupRoleMapping.Query.by_external_group_id(external_group_id)
-    |> Repo.update_all(set: [external_group_display: display, updated_at: now])
+    if group.external_group_id do
+      GroupRoleMapping.Query.not_deleted()
+      |> GroupRoleMapping.Query.by_provider_id(provider.id)
+      |> GroupRoleMapping.Query.by_external_group_id(group.external_group_id)
+      |> Repo.update_all(set: [external_group_display: display, updated_at: now])
+    end
 
     :ok
   end

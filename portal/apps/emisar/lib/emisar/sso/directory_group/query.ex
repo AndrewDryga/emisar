@@ -15,8 +15,14 @@ defmodule Emisar.SSO.DirectoryGroup.Query do
   def by_provider_id(queryable \\ all(), provider_id),
     do: where(queryable, [groups: g], g.provider_id == ^provider_id)
 
+  def by_id(queryable, id),
+    do: where(queryable, [groups: g], g.id == ^id)
+
   def by_external_group_id(queryable, external_group_id),
     do: where(queryable, [groups: g], g.external_group_id == ^external_group_id)
+
+  def with_external_group_id(queryable \\ all()),
+    do: where(queryable, [groups: g], not is_nil(g.external_group_id))
 
   @doc """
   The `displayName eq` probe Entra sends before every push, matched
@@ -43,6 +49,12 @@ defmodule Emisar.SSO.DirectoryGroup.Query do
 
   def ordered_by_external_group_id(queryable),
     do: order_by(queryable, [groups: g], asc: g.external_group_id, asc: g.id)
+
+  def count_by_provider(queryable \\ all()) do
+    queryable
+    |> group_by([groups: g], g.provider_id)
+    |> select([groups: g], {g.provider_id, count(g.id)})
+  end
 
   def offset_page(queryable, offset, limit),
     do: queryable |> offset(^offset) |> limit(^limit)
