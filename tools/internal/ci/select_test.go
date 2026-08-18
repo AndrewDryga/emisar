@@ -66,7 +66,7 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
-	t.Run("workflow pull request validates without release", func(t *testing.T) {
+	t.Run("workflow pull request validates without pack behavior or release", func(t *testing.T) {
 		writeFixture(t, root, ".github/workflows/cd.yml", "name: CD\n")
 		commitAll(t, root, "workflow")
 		selection, err := Select(context.Background(), root, "pull_request", base)
@@ -79,8 +79,34 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		if selection.PortalRelease || selection.PacksRelease {
 			t.Fatalf("workflow-only PR selected release: %+v", selection)
 		}
-		if len(selection.PackBehavior) != 3 || !selection.SigningE2E || !selection.SSOE2E {
-			t.Fatalf("workflow selection omitted integration gates: %+v", selection)
+		if len(selection.PackBehavior) != 0 || !selection.SigningE2E || !selection.SSOE2E {
+			t.Fatalf("workflow selection included pack behavior or omitted integration gates: %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("pack CI workflow validates every behavior plan", func(t *testing.T) {
+		writeFixture(t, root, ".github/workflows/ci.yml", "name: CI\n")
+		commitAll(t, root, "pack CI workflow")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(selection.PackBehavior) != 3 {
+			t.Fatalf("pack CI workflow selection = %v", selection.PackBehavior)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("unrelated workflow does not select pack behavior", func(t *testing.T) {
+		writeFixture(t, root, ".github/workflows/mcp-eval.yml", "name: MCP eval\n")
+		commitAll(t, root, "MCP eval workflow")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(selection.PackBehavior) != 0 {
+			t.Fatalf("unrelated workflow selection = %v", selection.PackBehavior)
 		}
 		resetHard(t, root, base)
 	})
@@ -118,6 +144,40 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 			selection.PackBehavior[0].Version != "18.4" ||
 			selection.PackBehavior[1].Version != "17.6" {
 			t.Fatalf("pack behavior selection = %v", selection.PackBehavior)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("pack test plan validates only that pack without release", func(t *testing.T) {
+		writeFixture(t, root, "packs/postgres/test/cases.yaml", behaviorPlan("postgres",
+			versionRow("18.4", "c", true),
+			versionRow("17.6", "b", false),
+		))
+		commitAll(t, root, "postgres behavior plan")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.Packs || selection.Portal || selection.PortalRelease || selection.PacksRelease {
+			t.Fatalf("pack test plan selected runtime publication inputs: %+v", selection)
+		}
+		if len(selection.PackBehavior) != 2 ||
+			selection.PackBehavior[0].Pack != "postgres" ||
+			selection.PackBehavior[1].Pack != "postgres" {
+			t.Fatalf("pack test plan selection = %v", selection.PackBehavior)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("pack runtime source still selects publication", func(t *testing.T) {
+		writeFixture(t, root, "packs/postgres/actions/uptime.yaml", "id: postgres.uptime\n")
+		commitAll(t, root, "postgres runtime source")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.Portal || !selection.PortalRelease || !selection.Packs || !selection.PacksRelease {
+			t.Fatalf("pack runtime source omitted publication inputs: %+v", selection)
 		}
 		resetHard(t, root, base)
 	})
@@ -484,6 +544,25 @@ func TestSelectPacksReleaseDrift(t *testing.T) {
 		}
 		if requests.Load() != 0 {
 			t.Fatalf("pack diff still probed the registry %d times", requests.Load())
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("pack test plan does not publish a matching catalog", func(t *testing.T) {
+		requests.Store(0)
+		writeFixture(t, root, "packs/postgres/test/cases.yaml", behaviorPlan("postgres",
+			versionRow("18.4", "b", true),
+		))
+		commitAll(t, root, "pack behavior plan")
+		selection, err := Select(context.Background(), root, "push", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selection.PacksRelease || !selection.Packs || len(selection.PackBehavior) != 1 {
+			t.Fatalf("pack test plan selected publication or skipped validation: %+v", selection)
+		}
+		if requests.Load() != 1 {
+			t.Fatalf("pack test plan made %d drift probes, want 1", requests.Load())
 		}
 		resetHard(t, root, base)
 	})

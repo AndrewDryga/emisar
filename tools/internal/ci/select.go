@@ -74,7 +74,7 @@ func Select(ctx context.Context, root, event, base string) (Selection, error) {
 		selection.SigningE2E = true
 		selection.SSOE2E = true
 	}
-	packBehavior, err := selectPackBehavior(root, files, selection.Workflows)
+	packBehavior, err := selectPackBehavior(root, files)
 	if err != nil {
 		return Selection{}, err
 	}
@@ -110,7 +110,8 @@ func (selection *Selection) include(file string) {
 		return
 	}
 
-	packSource := strings.HasPrefix(file, "packs/") && file != "packs/AGENTS.md" && file != "packs/CLAUDE.md" && file != "packs/PUBLISHING.md"
+	packFile := isPackFile(file)
+	packRuntimeSource := packFile && !isPackTestFile(file)
 	if strings.HasPrefix(file, "portal/") || member(file, ".dockerignore", "install.sh", "install-mcp.sh", ".tool-versions") {
 		selection.Portal = true
 		selection.PortalRelease = true
@@ -118,7 +119,7 @@ func (selection *Selection) include(file string) {
 	if file == ".trivyignore.yaml" {
 		selection.Portal = true
 	}
-	if packSource {
+	if packRuntimeSource {
 		selection.Portal = true
 		selection.PortalRelease = true
 	}
@@ -157,14 +158,14 @@ func (selection *Selection) include(file string) {
 	if hasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", ".github/workflows/", ".githooks/") || strings.Contains(file, "/.agent/") || member(file, "run", "go.work", "go.work.sum", ".gitignore", ".tool-versions") || filepath.Ext(file) == ".md" {
 		selection.Tools = true
 	}
-	// Matches the PacksRelease list below, deliberately: validatePacks ends in
-	// checkCatalogReproduction, so the code that BUILDS the catalog must run the
-	// job that proves the committed catalog still reproduces. Selecting these for
-	// release but not validation published a catalog nothing had rebuilt.
-	if packSource || hasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {
+	// Pack behavior plans are validation inputs but are not loaded into registry
+	// artifacts. Every runtime input below deliberately matches PacksRelease:
+	// validatePacks ends in checkCatalogReproduction, so code that BUILDS the
+	// catalog must run the job that proves the committed catalog still reproduces.
+	if packFile || hasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {
 		selection.Packs = true
 	}
-	if packSource || hasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {
+	if packRuntimeSource || hasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {
 		selection.PacksRelease = true
 	}
 	if strings.HasPrefix(file, "infra/") || file == ".tool-versions" {
@@ -331,8 +332,8 @@ func fetchPublishedCatalog(ctx context.Context, limit int64) ([]byte, error) {
 	return nil, lastErr
 }
 
-func selectPackBehavior(root string, files []string, workflows bool) ([]packtest.MatrixRow, error) {
-	runAll := workflows
+func selectPackBehavior(root string, files []string) ([]packtest.MatrixRow, error) {
+	runAll := false
 	selected := make(map[string]bool)
 	for _, file := range files {
 		if file == "__run_all__" || packBehaviorSharedPath(file) {
@@ -359,6 +360,8 @@ func selectPackBehavior(root string, files []string, workflows bool) ([]packtest
 func packBehaviorSharedPath(file string) bool {
 	return hasAnyPrefix(
 		file,
+		"tools/cmd/ci/",
+		"tools/internal/ci/",
 		"dev/test-packs/",
 		"tools/cmd/packtest/",
 		"tools/internal/packtest/",
@@ -368,6 +371,7 @@ func packBehaviorSharedPath(file string) bool {
 		"runner/pkg/packspec/",
 	) || member(
 		file,
+		".github/workflows/ci.yml",
 		"tools/internal/devtool/pack.go",
 		"runner/action.go",
 		"runner/config.go",
@@ -378,6 +382,16 @@ func packBehaviorSharedPath(file string) bool {
 		"go.work",
 		"go.work.sum",
 	)
+}
+
+func isPackFile(file string) bool {
+	return strings.HasPrefix(file, "packs/") &&
+		!member(file, "packs/AGENTS.md", "packs/CLAUDE.md", "packs/PUBLISHING.md")
+}
+
+func isPackTestFile(file string) bool {
+	parts := strings.Split(file, "/")
+	return len(parts) >= 3 && parts[0] == "packs" && parts[2] == "test"
 }
 
 func member(value string, candidates ...string) bool {
