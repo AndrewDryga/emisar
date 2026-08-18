@@ -114,7 +114,7 @@ defmodule EmisarWeb.PacksTest do
       refute hidden =~ "Required binaries"
     end
 
-    test "the pack reference footer link carries the muted CTA affordance", %{conn: conn} do
+    test "the pack reference footer link carries the brand CTA affordance", %{conn: conn} do
       html = conn |> get(~p"/packs/redis") |> html_response(200)
 
       [pack_reference] =
@@ -122,7 +122,7 @@ defmodule EmisarWeb.PacksTest do
 
       assert pack_reference =~ "Pack reference"
       assert pack_reference =~ "hero-arrow-right"
-      assert pack_reference =~ "text-zinc-400"
+      assert pack_reference =~ "text-brand-400"
       assert pack_reference =~ "min-h-10"
     end
 
