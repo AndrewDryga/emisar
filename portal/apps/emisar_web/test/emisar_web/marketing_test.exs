@@ -1116,6 +1116,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "CycloneDX SBOM"
       assert html =~ "immutable digest"
       assert html =~ "Confirm\n            &amp; Apply"
+      assert html =~ "out-of-scope hosts from current fleet and dispatch surfaces"
+      refute html =~ "members never see out-of-scope hosts"
     end
 
     test "the zero-trust page maps concrete controls and stays honest about scope",
@@ -2352,7 +2354,7 @@ defmodule EmisarWeb.MarketingTest do
     # pinned here rather than left to a reviewer's memory.
 
     test "audit & SIEM states the whole contract in one place", %{conn: conn} do
-      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
+      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200) |> squish()
 
       assert html =~ "GET /api/audit"
       assert html =~ "audit-export"
@@ -2367,6 +2369,8 @@ defmodule EmisarWeb.MarketingTest do
       # A cursor is a position, not a scoped handle — so the filters are the
       # caller's responsibility for the life of the chain.
       assert html =~ "Keep the filters identical for the life of a cursor."
+      assert html =~ "For roles with full audit access, the record is account-wide"
+      assert html =~ "Billing managers see only billing events"
     end
 
     test "audit & SIEM says plainly that emisar does not push", %{conn: conn} do

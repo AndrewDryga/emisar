@@ -51,6 +51,7 @@ defmodule EmisarWeb.PoliciesLive do
   # runner/group rulesets, and the runner/group pickers new rulesets target.
   defp load_all(socket) do
     subject = socket.assigns.current_subject
+    capabilities = Policies.policy_management_capabilities(subject)
     {runners, runners_failed?} = list_runners(subject)
     {groups, groups_failed?} = list_groups(subject)
     catalog_index = load_action_risk_index(subject)
@@ -80,7 +81,10 @@ defmodule EmisarWeb.PoliciesLive do
     socket
     |> assign(:loading?, false)
     |> assign(:load_error?, load_error?)
-    |> assign(:can_manage?, Policies.subject_can_manage_policies?(subject))
+    |> assign(:can_manage?, capabilities.can_manage?)
+    |> assign(:has_runner_access?, capabilities.has_runner_access?)
+    |> assign(:can_manage_scoped?, capabilities.can_manage_scoped?)
+    |> assign(:can_manage_account?, capabilities.can_manage_account?)
     |> assign(:catalog_index, catalog_index)
     |> assign(:account, account_editor)
     |> assign(:rulesets, rulesets)
@@ -129,7 +133,7 @@ defmodule EmisarWeb.PoliciesLive do
       # this, so reverting a change back clears the Save button (not a one-way flag).
       baseline_rules: stored_baseline(policy, input),
       policy: policy,
-      rules_errors: stored_approval_errors(input.approval_valid?)
+      rules_errors: stored_approval_errors(input.approval_valid?, :account)
     })
   end
 
@@ -143,7 +147,7 @@ defmodule EmisarWeb.PoliciesLive do
       show_override_errors?: false,
       baseline_rules: stored_baseline(policy, input),
       policy: policy,
-      rules_errors: stored_approval_errors(input.approval_valid?)
+      rules_errors: stored_approval_errors(input.approval_valid?, :scoped)
     })
   end
 
@@ -219,12 +223,12 @@ defmodule EmisarWeb.PoliciesLive do
 
   def handle_event("add_ruleset", _params, socket) do
     cond do
-      not Policies.subject_can_manage_policies?(socket.assigns.current_subject) ->
+      not Policies.subject_can_manage_scoped_policies?(socket.assigns.current_subject) ->
         {:noreply, socket}
 
       not socket.assigns.account.approval_valid? ->
         {:noreply,
-         put_flash(socket, :error, "Repair and save the default policy before adding a ruleset.")}
+         put_flash(socket, :error, "The default policy must be repaired before adding a ruleset.")}
 
       true ->
         {:noreply,
@@ -254,7 +258,7 @@ defmodule EmisarWeb.PoliciesLive do
       %{policy: %Policies.Policy{} = policy} ->
         Permissions.gated(
           socket,
-          Policies.subject_can_manage_policies?(socket.assigns.current_subject),
+          Policies.subject_can_manage_scoped_policies?(socket.assigns.current_subject),
           &delete_ruleset(&1, policy, uid)
         )
 
@@ -271,7 +275,7 @@ defmodule EmisarWeb.PoliciesLive do
   def handle_event("save", %{"editor" => editor_id} = params, socket) do
     Permissions.gated(
       socket,
-      Policies.subject_can_manage_policies?(socket.assigns.current_subject),
+      subject_can_save_editor?(socket.assigns.current_subject, editor_id),
       fn socket ->
         socket = apply_policy_params(socket, editor_id, params["policy"])
         save_editor(socket, get_editor(socket, editor_id))
@@ -280,6 +284,12 @@ defmodule EmisarWeb.PoliciesLive do
   end
 
   def handle_event("save", _params, socket), do: {:noreply, socket}
+
+  defp subject_can_save_editor?(subject, "account"),
+    do: Policies.subject_can_manage_account_policy?(subject)
+
+  defp subject_can_save_editor?(subject, _editor_id),
+    do: Policies.subject_can_manage_scoped_policies?(subject)
 
   defp save_editor(socket, %{scope_type: :account} = editor),
     do: persist(socket, editor, &Policies.save_rules/2)
@@ -421,7 +431,9 @@ defmodule EmisarWeb.PoliciesLive do
       }
 
       input = Policies.update_editor_input(policy_input(editor), changes)
-      rules_errors = stored_approval_errors(input.approval_valid?) ++ rules_errors(input)
+
+      rules_errors =
+        stored_approval_errors(input.approval_valid?, editor.scope_type) ++ rules_errors(input)
 
       editor |> Map.merge(input) |> Map.put(:rules_errors, rules_errors)
     end)
@@ -442,9 +454,15 @@ defmodule EmisarWeb.PoliciesLive do
     end
   end
 
-  defp stored_approval_errors(true), do: []
+  defp stored_approval_errors(true, _scope_type), do: []
 
-  defp stored_approval_errors(false),
+  defp stored_approval_errors(false, :account) do
+    [
+      "Stored approval settings are invalid. An owner or admin with full runner and pack access must repair the default policy."
+    ]
+  end
+
+  defp stored_approval_errors(false, _scope_type),
     do: ["Stored approval settings are invalid. Review this gate and save the policy."]
 
   # The choice cards post an explicit boolean string. Treat a missing value as
@@ -630,8 +648,14 @@ defmodule EmisarWeb.PoliciesLive do
   defp can_add_ruleset?(account, runners, groups, rulesets, targets_error?),
     do: account.approval_valid? and not targets_error? and addable_any?(runners, groups, rulesets)
 
-  defp add_ruleset_disabled_reason(%{approval_valid?: false}, _runners, _groups, _rulesets, _err),
-    do: "Repair and save the default policy before adding a ruleset"
+  defp add_ruleset_disabled_reason(
+         %{approval_valid?: false},
+         _runners,
+         _groups,
+         _rulesets,
+         _err
+       ),
+       do: "The default policy must be repaired before adding a ruleset"
 
   defp add_ruleset_disabled_reason(_account, _runners, _groups, _rulesets, true),
     do: "Couldn't load the runners and groups a ruleset targets. Refresh the page to try again"
@@ -677,8 +701,17 @@ defmodule EmisarWeb.PoliciesLive do
 
           <%!-- A quiet naked line, not a boxed note — the viewer fact isn't an
                actionable warning (§8.1). --%>
-          <p :if={not @can_manage?} class="text-xs text-zinc-400">
+          <p :if={not @has_runner_access?} class="text-xs text-zinc-400">
+            No runners in your access. The default policy is read-only, and targeted rulesets are hidden.
+          </p>
+          <p :if={@has_runner_access? and not @can_manage?} class="text-xs text-zinc-400">
             You can view the policy, but only owners and admins can change it.
+          </p>
+          <p
+            :if={@has_runner_access? and @can_manage? and not @can_manage_scoped?}
+            class="text-xs text-zinc-400"
+          >
+            Policy rules can affect every pack on their target. Full pack access is required to change them.
           </p>
         </div>
 
@@ -690,7 +723,11 @@ defmodule EmisarWeb.PoliciesLive do
         <section>
           <.section_header title="Default policy">
             <:subtitle>
-              The base decision for every runner, by risk tier — unless a targeted ruleset below overrides it.
+              <%= if @has_runner_access? do %>
+                The base decision for every runner, by risk tier — unless a targeted ruleset below overrides it.
+              <% else %>
+                The base decision for every runner, by risk tier.
+              <% end %>
             </:subtitle>
             <%!-- Navigation, but the SAME verb repeats on every targeted-ruleset
                  header below, where the Remove peer forces the bordered face —
@@ -710,6 +747,13 @@ defmodule EmisarWeb.PoliciesLive do
             </:actions>
           </.section_header>
 
+          <p
+            :if={@can_manage_scoped? and not @can_manage_account?}
+            class="mb-4 text-xs text-zinc-400"
+          >
+            The default applies to every runner. Full runner access is required to change it.
+          </p>
+
           <div class="grid grid-cols-1 gap-8 lg:grid-cols-4 lg:items-start">
             <div class="lg:col-span-3">
               <.policy_fields
@@ -720,7 +764,7 @@ defmodule EmisarWeb.PoliciesLive do
                 approval={@account.approval}
                 rules_errors={@account.rules_errors}
                 show_override_errors={@account.show_override_errors?}
-                can_manage={@can_manage?}
+                can_manage={@can_manage_account?}
                 save_label="Save default policy"
                 dirty={editor_dirty?(@account)}
                 top_margin="mt-0"
@@ -733,13 +777,14 @@ defmodule EmisarWeb.PoliciesLive do
                 overrides={@account.overrides}
                 approval={@account.approval}
                 catalog_path={~p"/app/#{@current_account}/packs"}
+                catalog_visible?={@has_runner_access?}
                 target="your fleet"
               />
             </aside>
           </div>
         </section>
 
-        <section>
+        <section :if={@has_runner_access?}>
           <.section_header title="Targeted rulesets">
             <:subtitle>
               A ruleset <strong class="text-zinc-300">replaces</strong>
@@ -762,7 +807,7 @@ defmodule EmisarWeb.PoliciesLive do
                the Add-ruleset composer below IS the empty state (the runbook
                precedent — no dashed hint above a dashed composer). --%>
           <p
-            :if={not @load_error? and @rulesets == [] and not @can_manage?}
+            :if={not @load_error? and @rulesets == [] and not @can_manage_scoped?}
             class="text-sm text-zinc-400"
           >
             No targeted rulesets — every runner uses the default policy above.
@@ -777,14 +822,14 @@ defmodule EmisarWeb.PoliciesLive do
                 runners={@runners}
                 groups={@groups}
                 rulesets={@rulesets}
-                can_manage={@can_manage?}
+                can_manage={@can_manage_scoped?}
                 catalog_path={~p"/app/#{@current_account}/packs"}
               />
             </div>
           </div>
 
           <div
-            :if={@can_manage? and not @load_error?}
+            :if={@can_manage_scoped? and not @load_error?}
             id="add-ruleset-row"
             class={["grid grid-cols-1 gap-8 lg:grid-cols-4", @rulesets != [] && "mt-8"]}
           >
@@ -795,16 +840,20 @@ defmodule EmisarWeb.PoliciesLive do
                 disabled={
                   not can_add_ruleset?(@account, @runners, @groups, @rulesets, @targets_error?)
                 }
-                title={
-                  add_ruleset_disabled_reason(
-                    @account,
-                    @runners,
-                    @groups,
-                    @rulesets,
-                    @targets_error?
-                  )
-                }
               />
+              <p
+                :if={not can_add_ruleset?(@account, @runners, @groups, @rulesets, @targets_error?)}
+                id="add-ruleset-disabled-reason"
+                class="mt-2 text-xs text-zinc-400"
+              >
+                {add_ruleset_disabled_reason(
+                  @account,
+                  @runners,
+                  @groups,
+                  @rulesets,
+                  @targets_error?
+                )}
+              </p>
             </div>
           </div>
         </section>
@@ -818,6 +867,7 @@ defmodule EmisarWeb.PoliciesLive do
   attr :overrides, :list, required: true
   attr :approval, :map, required: true
   attr :catalog_path, :string, required: true, doc: "link to the full action catalog (Packs)"
+  attr :catalog_visible?, :boolean, default: true
 
   attr :target, :string,
     required: true,
@@ -848,7 +898,16 @@ defmodule EmisarWeb.PoliciesLive do
         </p>
         <%!-- No catalog yet: the empty note stands in as the subtitle — no
              "…for your fleet's 0 actions." line to state a count of nothing. --%>
-        <p :if={@total == 0} class="mt-1 text-xs leading-relaxed text-zinc-400">
+        <p
+          :if={@total == 0 and not @catalog_visible?}
+          class="mt-1 text-xs leading-relaxed text-zinc-400"
+        >
+          No action catalog is visible without runner access.
+        </p>
+        <p
+          :if={@total == 0 and @catalog_visible?}
+          class="mt-1 text-xs leading-relaxed text-zinc-400"
+        >
           No actions advertised on this target yet — decisions appear once a runner reports its catalog.
         </p>
       </div>

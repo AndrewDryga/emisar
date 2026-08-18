@@ -73,8 +73,9 @@
         row expands to the full payload, and references resolve to live labels (the runner's
         name, the user's email) so you're not cross-referencing UUIDs. LLM-driven runs carry
         their attribution — which client, which key, which session — plus the required <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>, so you can answer what the
-        agent did last night, and why, with a single filter. The record is account-wide for every
-        role allowed to read it; runner and pack scope do not redact historical receipts.
+        agent did last night, and why, with a single filter. For roles with full audit access, the
+        record is account-wide; runner and pack scope do not redact historical receipts. Billing
+        managers see only billing events.
       </p>
 
       <.docs_h2 id="exporting">The export API</.docs_h2>

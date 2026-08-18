@@ -1107,6 +1107,61 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
+  describe "policy mutation reach" do
+    test "a runner-restricted admin cannot change the default but can manage an in-scope ruleset" do
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "db")
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      admin = Fixtures.Subjects.membership_subject(membership)
+      default_before = Policies.peek_policy_for_account(account.id)
+      {:ok, restricted} = RunnerAccess.restricted(["db"], [])
+
+      {:ok, _updated} =
+        Accounts.update_membership_runner_access(membership, restricted, owner)
+
+      # The Subject was built before the access change. The mutation must read
+      # the membership again instead of trusting the stale session snapshot.
+      assert {:error, :unauthorized} = Policies.save_rules(deny_all_rules(), admin)
+
+      default_after = Policies.peek_policy_for_account(account.id)
+      assert default_after.rules == default_before.rules
+      assert default_after.vsn == default_before.vsn
+
+      assert {:ok, scoped} =
+               Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, admin)
+
+      assert scoped.scope_value == runner.id
+    end
+
+    test "a pack-restricted admin cannot save or delete any policy" do
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id, group: "db")
+      {:ok, scoped} = Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, owner)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      admin = Fixtures.Subjects.membership_subject(membership)
+      default_before = Policies.peek_policy_for_account(account.id)
+      {:ok, restricted} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+      {:ok, _updated} =
+        Accounts.update_membership_runner_access(membership, restricted, owner)
+
+      assert {:error, :unauthorized} = Policies.save_rules(allow_all_rules(), admin)
+
+      assert {:error, :unauthorized} =
+               Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, admin)
+
+      assert {:error, :unauthorized} = Policies.delete_scoped_policy(scoped, admin)
+
+      default_after = Policies.peek_policy_for_account(account.id)
+      assert default_after.rules == default_before.rules
+      assert default_after.vsn == default_before.vsn
+
+      assert {:ok, [still_live]} = Policies.list_scoped_policies(owner)
+      assert still_live.id == scoped.id
+      assert still_live.rules == scoped.rules
+    end
+  end
+
   describe "subject_can_view_policies?/1" do
     test "true for a viewer, false for a billing_manager (the nav gate)" do
       account = Fixtures.Accounts.create_account()
@@ -1147,6 +1202,72 @@ defmodule Emisar.PoliciesTest do
 
       {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       refute Policies.subject_can_manage_policies?(Subject.for_api_key(api_key, account))
+    end
+  end
+
+  describe "policy_management_capabilities/1" do
+    test "separates role, runner, and pack authority using current membership access" do
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      admin = Fixtures.Subjects.membership_subject(membership)
+
+      assert Policies.policy_management_capabilities(admin) == %{
+               can_manage?: true,
+               has_runner_access?: true,
+               can_manage_scoped?: true,
+               can_manage_account?: true
+             }
+
+      {:ok, runner_restricted} = RunnerAccess.restricted(["db"], [])
+
+      {:ok, _updated} =
+        Accounts.update_membership_runner_access(membership, runner_restricted, owner)
+
+      assert Policies.policy_management_capabilities(admin) == %{
+               can_manage?: true,
+               has_runner_access?: true,
+               can_manage_scoped?: true,
+               can_manage_account?: false
+             }
+
+      {:ok, pack_restricted} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+      {:ok, _updated} =
+        Accounts.update_membership_runner_access(membership, pack_restricted, owner)
+
+      assert Policies.policy_management_capabilities(admin) == %{
+               can_manage?: true,
+               has_runner_access?: true,
+               can_manage_scoped?: false,
+               can_manage_account?: false
+             }
+    end
+  end
+
+  describe "subject_can_manage_scoped_policies?/1" do
+    test "allows a runner-restricted admin with full pack access" do
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      admin = Fixtures.Subjects.membership_subject(membership)
+      {:ok, restricted} = RunnerAccess.restricted(["db"], [])
+      {:ok, _updated} = Accounts.update_membership_runner_access(membership, restricted, owner)
+
+      assert Policies.subject_can_manage_scoped_policies?(admin)
+    end
+  end
+
+  describe "subject_can_manage_account_policy?/1" do
+    test "requires full runner and pack access" do
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      admin = Fixtures.Subjects.membership_subject(membership)
+
+      assert Policies.subject_can_manage_account_policy?(admin)
+
+      {:ok, restricted} = RunnerAccess.restricted(["db"], [])
+      {:ok, _updated} = Accounts.update_membership_runner_access(membership, restricted, owner)
+
+      refute Policies.subject_can_manage_account_policy?(admin)
     end
   end
 

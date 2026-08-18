@@ -746,15 +746,22 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # so it reads identically to the viewer case: the read-only notice, no Add /
       # Save controls, and a crafted save re-checks `subject_can_manage_policies?`
       # and is denied.
-      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      {_owner_conn, owner, account} = register_and_log_in(conn)
 
       operator = Fixtures.Users.create_user()
 
-      _ =
+      membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: operator.id,
           role: "operator"
+        )
+
+      {:ok, _updated} =
+        Emisar.Accounts.update_membership_runner_access(
+          membership,
+          Emisar.Accounts.RunnerAccess.all(),
+          Fixtures.Subjects.subject_for(owner, account)
         )
 
       {:ok, lv, html} =
@@ -1116,14 +1123,118 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~
                ~r/<button(?=[^>]*phx-click="add_ruleset")(?=[^>]*\bdisabled)[^>]*>/
 
+      assert has_element?(
+               lv,
+               "#add-ruleset-disabled-reason",
+               "The default policy must be repaired before adding a ruleset"
+             )
+
       html = render_hook(lv, "add_ruleset", %{})
-      assert html =~ "Repair and save the default policy before adding a ruleset."
+      assert html =~ "The default policy must be repaired before adding a ruleset."
       refute html =~ ~s(name="uid" value="new-)
 
       lv |> form("#policy-form-account") |> render_submit()
       html = render_hook(lv, "add_ruleset", %{})
 
       assert html =~ ~s(name="uid" value="new-)
+    end
+
+    test "a runner-restricted admin sees the default read-only and can edit an in-scope ruleset",
+         %{
+           account: account,
+           subject: subject
+         } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "db-1", group: "db")
+      {:ok, scoped} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
+      policy = Policies.peek_policy_for_account(account.id)
+
+      policy
+      |> Ecto.Changeset.change(rules: Map.delete(policy.rules, "approval"))
+      |> Emisar.Repo.update!()
+
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      {:ok, restricted} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
+
+      {:ok, _updated} =
+        Emisar.Accounts.update_membership_runner_access(membership, restricted, subject)
+
+      admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+      {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/policies")
+
+      assert html =~ "The default applies to every runner"
+      assert html =~ "full runner and pack access must repair the default policy"
+      refute has_element?(lv, "#policy-form-account button[type=submit]")
+      assert has_element?(lv, "#policy-form-#{scoped.id} button[type=submit]", "Save ruleset")
+      assert has_element?(lv, ~s(#add-ruleset-row button[disabled]))
+
+      assert has_element?(
+               lv,
+               "#add-ruleset-disabled-reason",
+               "The default policy must be repaired before adding a ruleset"
+             )
+
+      before = Policies.peek_policy_for_account(account.id)
+
+      assert render_hook(lv, "save", %{
+               "editor" => "account",
+               "policy" => %{"defaults" => %{"low" => "deny"}}
+             }) =~ "have permission to do that"
+
+      after_attempt = Policies.peek_policy_for_account(account.id)
+      assert after_attempt.rules == before.rules
+      assert after_attempt.vsn == before.vsn
+    end
+
+    test "an admin with no runner access sees a permission state, not an empty account", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, name: "db-1", group: "db")
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+      {:ok, _updated} =
+        Emisar.Accounts.update_membership_runner_access(
+          membership,
+          Emisar.Accounts.RunnerAccess.none(),
+          subject
+        )
+
+      admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+      {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/policies")
+
+      assert html =~
+               "No runners in your access. The default policy is read-only, and targeted rulesets are hidden."
+
+      refute html =~ "unless a targeted ruleset below overrides it"
+      refute html =~ "Targeted rulesets"
+      assert html =~ "No action catalog is visible without runner access."
+      refute html =~ "once a runner reports its catalog"
+      refute has_element?(lv, "#policy-form-account button[type=submit]")
+      refute has_element?(lv, "#add-ruleset-row")
+    end
+
+    test "a pack-restricted admin sees every policy editor read-only", %{
+      account: account,
+      subject: subject
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "db-1", group: "db")
+      {:ok, scoped} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+      {:ok, restricted} =
+        Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
+
+      {:ok, _updated} =
+        Emisar.Accounts.update_membership_runner_access(membership, restricted, subject)
+
+      admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+      {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/policies")
+
+      assert html =~ "Policy rules can affect every pack on their target"
+      refute has_element?(lv, "#policy-form-account button[type=submit]")
+      refute has_element?(lv, "#policy-form-#{scoped.id} button[type=submit]")
+      refute has_element?(lv, "#add-ruleset-row")
+      refute has_element?(lv, ~s(button[phx-click="remove_ruleset"]))
     end
 
     test "an existing runner ruleset renders as a card labelled with the runner name", %{
@@ -1385,17 +1496,27 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert {:ok, []} = Policies.list_scoped_policies(subject)
     end
 
-    test "a viewer sees the policy read-only and a forged save is denied", %{account: account} do
+    test "a viewer sees the policy read-only and a forged save is denied", %{
+      account: account,
+      subject: subject
+    } do
       _runner =
         Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
       viewer = Fixtures.Users.create_user()
 
-      _ =
+      membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: viewer.id,
           role: "viewer"
+        )
+
+      {:ok, _updated} =
+        Emisar.Accounts.update_membership_runner_access(
+          membership,
+          Emisar.Accounts.RunnerAccess.all(),
+          subject
         )
 
       {:ok, lv, html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/policies")

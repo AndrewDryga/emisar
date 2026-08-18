@@ -506,9 +506,10 @@ defmodule Emisar.Policies do
   Soft-delete a runner/group override: that runner/group falls back to the
   next-broader scope (group, then the account default) on the next dispatch.
   The account default itself isn't deletable through this path. Removing a
-  ruleset changes what may run on its hosts, so the scope is re-judged against
-  the subject's CURRENT runner access — an open page whose access has since
-  narrowed cannot spend the row it still holds.
+  ruleset changes what may run on its hosts, so the subject needs CURRENT full
+  pack access and the target is re-judged against their CURRENT runner access —
+  an open page whose access has since narrowed cannot spend the row it still
+  holds.
   """
   def delete_scoped_policy(%Policy{scope_type: scope_type} = policy, %Subject{} = subject)
       when scope_type in [:runner, :group] do
@@ -517,6 +518,7 @@ defmodule Emisar.Policies do
              subject,
              Authorizer.manage_policies_permission()
            ),
+         :ok <- ensure_policy_mutation_access(scope_type, subject),
          :ok <- Subject.ensure_in_account(subject, policy.account_id),
          :ok <- ensure_scope_in_reach(scope_type, policy.scope_value, subject) do
       Multi.new()
@@ -541,7 +543,9 @@ defmodule Emisar.Policies do
   partial unique index on `account_id` is the row's identity. The
   conflict update adopts the new rules and bumps `vsn` only when they
   actually changed; the audit diff reads its before-snapshot as a step
-  of the same transaction.
+  of the same transaction. Because this default governs every runner and its
+  rules match actions from every pack, the writer needs CURRENT full runner and
+  pack access.
   """
   def save_rules(rules, %Subject{} = subject), do: upsert_policy(rules, :account, "", subject)
 
@@ -558,6 +562,9 @@ defmodule Emisar.Policies do
   yet, so a ruleset can be prepared before the hosts join it — while a narrowed
   subject gets `{:error, :group_not_found}` for any group outside their reach,
   known or not.
+
+  Policy rules match action ids and risk tiers rather than pack ids, so the
+  writer also needs CURRENT full pack access.
   """
   def save_scoped_rules(rules, scope_type, scope_value, %Subject{} = subject)
       when scope_type in [:runner, :group],
@@ -574,6 +581,7 @@ defmodule Emisar.Policies do
              subject,
              Authorizer.manage_policies_permission()
            ),
+         :ok <- ensure_policy_mutation_access(scope_type, subject),
          :ok <- ensure_scope_in_reach(scope_type, scope_value, subject) do
       changeset =
         Policy.Changeset.create(%{
@@ -620,9 +628,34 @@ defmodule Emisar.Policies do
   def subject_can_view_policies?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.view_policies_permission())
 
-  @doc "Whether `subject` may manage policies (admin+)."
+  @doc "Whether `subject` holds the policy-management permission; reach-aware predicates decide which editors they may change."
   def subject_can_manage_policies?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_policies_permission())
+
+  @doc "The current reach-aware capabilities the policy editor renders."
+  def policy_management_capabilities(%Subject{} = subject) do
+    can_manage? = subject_can_manage_policies?(subject)
+    access = Accounts.runner_access_for_subject(subject)
+    has_runner_access? = match?(%Accounts.RunnerAccess{mode: mode} when mode != :none, access)
+    has_full_pack_access? = match?(%Accounts.RunnerAccess{pack_mode: :all}, access)
+
+    %{
+      can_manage?: can_manage?,
+      has_runner_access?: has_runner_access?,
+      can_manage_scoped?: can_manage? and has_runner_access? and has_full_pack_access?,
+      can_manage_account?:
+        can_manage? and
+          match?(%Accounts.RunnerAccess{mode: :all, pack_mode: :all}, access)
+    }
+  end
+
+  @doc "Whether `subject` may change a runner/group policy in their current reach."
+  def subject_can_manage_scoped_policies?(%Subject{} = subject),
+    do: policy_management_capabilities(subject).can_manage_scoped?
+
+  @doc "Whether `subject` may change the account default that governs every runner and pack."
+  def subject_can_manage_account_policy?(%Subject{} = subject),
+    do: policy_management_capabilities(subject).can_manage_account?
 
   # -- Internal helpers (no Subject needed) ---------------------------
 
@@ -684,10 +717,28 @@ defmodule Emisar.Policies do
     |> repo.peek()
   end
 
+  # Policy rules match risk tiers and action globs, not pack ids, so every write
+  # needs the whole pack dimension. The account default also governs every
+  # runner; a targeted override stays confined by the reach check below.
+  defp ensure_policy_mutation_access(:account, %Subject{} = subject) do
+    case Accounts.runner_access_for_subject(subject) do
+      %Accounts.RunnerAccess{mode: :all, pack_mode: :all} -> :ok
+      _access -> {:error, :unauthorized}
+    end
+  end
+
+  defp ensure_policy_mutation_access(scope_type, %Subject{} = subject)
+       when scope_type in [:runner, :group] do
+    case Accounts.runner_access_for_subject(subject) do
+      %Accounts.RunnerAccess{pack_mode: :all} -> :ok
+      _access -> {:error, :unauthorized}
+    end
+  end
+
   # A ruleset's scope names the hosts it governs, so a writer may only name one
   # their OWN runner access reaches — the editor's picker is not the check
   # (IL-15), and a crafted event carries whatever it likes. The account default
-  # has no host scope to judge.
+  # has no host scope to judge after the whole-fleet gate above.
   defp ensure_scope_in_reach(:account, _scope_value, %Subject{}), do: :ok
 
   defp ensure_scope_in_reach(:runner, runner_id, %Subject{} = subject) do
