@@ -19,7 +19,7 @@ defmodule EmisarWeb.RunnerSocketDrainTest do
 
     # Direct call — the drain window sleep makes this take ~2s, which is
     # the documented flush window, not a test smell.
-    assert :ok = RunnerSocketDrain.terminate(:shutdown, %{})
+    assert RunnerSocketDrain.terminate(:shutdown, %{}) == :ok
 
     assert_receive :runner_socket_drain, 500
   end

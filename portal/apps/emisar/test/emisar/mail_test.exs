@@ -202,7 +202,7 @@ defmodule Emisar.MailTest do
 
     test "a blank email is rejected" do
       assert {:error, changeset} = Mail.suppress("   ", :hard_bounce, nil)
-      assert %{email: _} = errors_on(changeset)
+      assert errors_on(changeset) == %{email: ["can't be blank"]}
     end
   end
 
@@ -218,8 +218,8 @@ defmodule Emisar.MailTest do
     end
 
     test "a normal address is delivered, not suppressed", %{user: user} do
-      assert {:ok, sent} = UserNotifier.deliver_magic_link(user, "tok", "123456")
-      refute match?(%{suppressed: true}, sent)
+      assert {:ok, _sent} = UserNotifier.deliver_magic_link(user, "tok", "123456")
+      assert_email_sent(&(&1.to == [{"", user.email}]))
     end
   end
 

@@ -20,7 +20,7 @@ defmodule Emisar.Catalog.TrustedManifestTest do
         }
       end
 
-    assert {:error, :invalid_manifest} = TrustedManifest.from_catalog_actions(actions)
+    assert TrustedManifest.from_catalog_actions(actions) == {:error, :invalid_manifest}
   end
 
   test "accepts an ordinary compact manifest" do
@@ -53,11 +53,10 @@ defmodule Emisar.Catalog.TrustedManifestTest do
       search_terms: []
     }
 
-    assert {:error, {:descriptor_mismatch, "custom.inspect"}} =
-             TrustedManifest.from_runner_actions([
-               base_action,
-               %{base_action | description: "Inspect state differently."}
-             ])
+    assert TrustedManifest.from_runner_actions([
+             base_action,
+             %{base_action | description: "Inspect state differently."}
+           ]) == {:error, {:descriptor_mismatch, "custom.inspect"}}
 
     # Identical duplicates are agreement, not a conflict.
     assert {:ok, _manifest} = TrustedManifest.from_runner_actions([base_action, base_action])
@@ -91,7 +90,7 @@ defmodule Emisar.Catalog.TrustedManifestTest do
         %{hd(actions) | action_id: "custom.overflow_#{index}"}
       end
 
-    assert {:error, :invalid_manifest} = TrustedManifest.from_runner_actions(overflow)
+    assert TrustedManifest.from_runner_actions(overflow) == {:error, :invalid_manifest}
   end
 
   test "conflicting duplicate catalog actions stay plain :invalid_manifest" do
@@ -108,8 +107,8 @@ defmodule Emisar.Catalog.TrustedManifestTest do
       "search_terms" => []
     }
 
-    assert {:error, :invalid_manifest} =
-             TrustedManifest.from_catalog_actions([action, %{action | "title" => "Other"}])
+    assert TrustedManifest.from_catalog_actions([action, %{action | "title" => "Other"}]) ==
+             {:error, :invalid_manifest}
   end
 
   test "carries an opt-in output contract inside the trusted descriptor" do
@@ -165,10 +164,9 @@ defmodule Emisar.Catalog.TrustedManifestTest do
           %{"type" => "object", "required" => "name"},
           %{"type" => "object", "description" => String.duplicate("x", 8_192)}
         ] do
-      assert {:error, :invalid_manifest} =
-               TrustedManifest.from_catalog_actions([
-                 Map.put(base, "output_schema", schema)
-               ])
+      assert TrustedManifest.from_catalog_actions([
+               Map.put(base, "output_schema", schema)
+             ]) == {:error, :invalid_manifest}
     end
   end
 
@@ -179,8 +177,8 @@ defmodule Emisar.Catalog.TrustedManifestTest do
              ])
 
     for schema <- [%{"type" => "array"}, %{"type" => "object", "$id" => "urn:other"}, "object"] do
-      assert {:error, :invalid_manifest} =
-               TrustedManifest.from_runner_actions([runner_action(output_schema: schema)]),
+      assert TrustedManifest.from_runner_actions([runner_action(output_schema: schema)]) ==
+               {:error, :invalid_manifest},
              "expected #{inspect(schema)} to be refused"
     end
   end

@@ -86,7 +86,7 @@ defmodule EmisarWeb.RoleAccessMatrixTest do
         authorized?
       )
 
-      assert_page_route(
+      assert_route(
         conn,
         ~p"/app/#{account}/policies",
         ~p"/app/#{account}",
@@ -105,10 +105,6 @@ defmodule EmisarWeb.RoleAccessMatrixTest do
   end
 
   defp assert_detail_route(conn, path, denied_path, denied_message, marker, authorized?) do
-    assert_route(conn, path, denied_path, denied_message, marker, authorized?)
-  end
-
-  defp assert_page_route(conn, path, denied_path, denied_message, marker, authorized?) do
     assert_route(conn, path, denied_path, denied_message, marker, authorized?)
   end
 

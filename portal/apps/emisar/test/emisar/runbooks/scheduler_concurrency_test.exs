@@ -156,14 +156,19 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
           fn -> Approvals.approve_request(request, subject, "race approval") end
         ])
 
-      assert match?({:ok, %{status: :cancelled}}, cancel_result)
+      assert {:ok, %{status: :cancelled}} = cancel_result
 
-      assert match?({:ok, _}, approve_result) or
-               approve_result in [
-                 {:error, :already_decided},
-                 {:error, :run_cancelled},
-                 {:error, :runbook_execution_not_approvable}
-               ]
+      case approve_result do
+        {:ok, _request} ->
+          :ok
+
+        {:error, reason}
+        when reason in [:already_decided, :run_cancelled, :runbook_execution_not_approvable] ->
+          :ok
+
+        other ->
+          flunk("unexpected approval result: #{inspect(other)}")
+      end
 
       assert Scheduler.advance_execution(result.execution_id) in [:ok, :noop]
       assert Scheduler.recover_due() >= 0

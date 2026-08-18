@@ -8,6 +8,8 @@ defmodule Emisar.Fixtures.Users do
   alias Emisar.Fixtures
   alias Emisar.Users.User
 
+  @mfa_state_fields [:mfa_secret, :mfa_enabled_at, :mfa_recovery_codes]
+
   @doc "Persists a user. Defaults to confirmed."
   def create_user(attrs \\ %{}) do
     attrs = Enum.into(attrs, %{})
@@ -72,6 +74,20 @@ defmodule Emisar.Fixtures.Users do
   def mark_user_as_deleted(%User{} = user) do
     {:ok, deleted} = user |> User.Changeset.delete() |> Emisar.Repo.update()
     deleted
+  end
+
+  @doc "Rigs stored MFA state directly for tests that exercise later lifecycle transitions."
+  def set_mfa_state(%User{} = user, attrs) do
+    attrs = Map.new(attrs)
+
+    case Map.keys(attrs) -- @mfa_state_fields do
+      [] -> :ok
+      unknown -> raise ArgumentError, "unknown MFA state fields: #{inspect(Enum.sort(unknown))}"
+    end
+
+    user
+    |> Ecto.Changeset.change(Map.take(attrs, @mfa_state_fields))
+    |> Emisar.Repo.update!()
   end
 
   @doc """

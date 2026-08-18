@@ -136,11 +136,10 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
              |> List.last()
              |> get_in(["properties", "arguments", "properties", "timeout"])
 
-    assert ["run_id", "timeout"] =
-             immediate
-             |> get_in(["allOf"])
-             |> List.last()
-             |> get_in(["properties", "arguments", "required"])
+    assert immediate
+           |> get_in(["allOf"])
+           |> List.last()
+           |> get_in(["properties", "arguments", "required"]) == ["run_id", "timeout"]
 
     refute get_in(immediate, ["allOf", Access.at(1), "properties", "arguments", "properties"])
            |> Map.has_key?("runbook_execution_id")
@@ -211,7 +210,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     }
 
     valid = put_in(base, ["error", "details"], details)
-    assert :ok = JSONSchex.validate(schema, valid)
+    assert JSONSchex.validate(schema, valid) == :ok
 
     assert {:error, _reason} =
              JSONSchex.validate(

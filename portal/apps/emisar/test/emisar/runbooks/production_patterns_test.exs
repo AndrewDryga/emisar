@@ -87,7 +87,7 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
     assert waiting.outputs == %{"healthy" => false}
 
     make_due!(waiting)
-    assert :ok = AdvanceExecutions.execute([])
+    assert AdvanceExecutions.execute([]) == :ok
 
     second_health =
       account.id
@@ -294,7 +294,7 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
 
     finish_structured!(first_health, %{"healthy" => false, "status" => "starting"})
     make_due!(item_for_attempt(first_health))
-    assert :ok = AdvanceExecutions.execute([])
+    assert AdvanceExecutions.execute([]) == :ok
 
     second_health =
       account.id
@@ -555,13 +555,8 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
     do: Runs.list_runs_for_runbook_execution(account_id, execution_id)
 
   defp attempt_by_action(account_id, execution_id, action_id) do
-    account_id
-    |> attempts(execution_id)
-    |> Enum.find(&(&1.action_id == action_id))
-    |> case do
-      nil -> flunk("expected action attempt #{action_id}")
-      run -> run
-    end
+    Enum.find(attempts(account_id, execution_id), &(&1.action_id == action_id)) ||
+      flunk("expected action attempt #{action_id}")
   end
 
   defp count_active_attempts(account_id, execution_id) do

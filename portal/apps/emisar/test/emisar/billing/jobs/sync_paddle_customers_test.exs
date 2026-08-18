@@ -8,7 +8,7 @@ defmodule Emisar.Billing.Jobs.SyncPaddleCustomersTest do
     test "syncs stale accounts from a scheduled page" do
       {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
 
-      assert :ok = SyncPaddleCustomers.execute([])
+      assert SyncPaddleCustomers.execute([]) == :ok
 
       assert Repo.reload!(account).paddle_customer_id
     end
@@ -23,7 +23,7 @@ defmodule Emisar.Billing.Jobs.SyncPaddleCustomersTest do
         role: "owner"
       )
 
-      assert :ok = SyncPaddleCustomers.execute([])
+      assert SyncPaddleCustomers.execute([]) == :ok
       refute Repo.reload!(account).paddle_customer_id
     end
   end

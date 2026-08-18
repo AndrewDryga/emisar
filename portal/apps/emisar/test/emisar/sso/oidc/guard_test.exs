@@ -83,7 +83,7 @@ defmodule Emisar.SSO.OIDC.GuardTest do
       :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false, packet: :raw], @wait)
 
     :ok = :gen_tcp.send(socket, "CONNECT 127.0.0.1:9200 HTTP/1.1\r\nHost: 127.0.0.1:9200\r\n")
-    assert {:error, :timeout} = :gen_tcp.recv(socket, 0, 750), "answered mid-request"
+    assert :gen_tcp.recv(socket, 0, 750) == {:error, :timeout}, "answered mid-request"
 
     :ok = :gen_tcp.send(socket, "\r\n")
     assert {:ok, response} = :gen_tcp.recv(socket, 0, @wait)

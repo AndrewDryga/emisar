@@ -166,8 +166,8 @@ defmodule Emisar.Runbooks.SchedulerTest do
            |> ExecutionItem.Query.select_count()
            |> Repo.one() == 0
 
-    assert :noop = Runbooks.action_run_settled(failed)
-    assert :noop = Runbooks.action_run_settled(succeeded_peer)
+    assert Runbooks.action_run_settled(failed) == :noop
+    assert Runbooks.action_run_settled(succeeded_peer) == :noop
     assert length(runs(account.id, result.execution_id)) == 2
 
     pending =
@@ -240,7 +240,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
     |> Ecto.Changeset.change(next_attempt_at: DateTime.add(DateTime.utc_now(), -1, :second))
     |> Repo.update!()
 
-    assert :ok = AdvanceExecutions.execute([])
+    assert AdvanceExecutions.execute([]) == :ok
     assert [_, second] = runs(account.id, result.execution_id)
     assert second.attempt_number == 2
 
@@ -283,7 +283,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
     |> Ecto.Changeset.change(next_attempt_at: DateTime.add(DateTime.utc_now(), -1, :second))
     |> Repo.update!()
 
-    assert :ok = AdvanceExecutions.execute([])
+    assert AdvanceExecutions.execute([]) == :ok
     assert [_, second] = runs(account.id, first_result.execution_id)
 
     assert {:ok, _second} =
@@ -541,7 +541,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
     )
     |> Repo.update!()
 
-    assert :ok = AdvanceExecutions.execute([])
+    assert AdvanceExecutions.execute([]) == :ok
     halted = execution(result.execution_id)
     assert halted.status == :halted
     assert halted.terminal_code == "execution_timed_out"
@@ -597,10 +597,10 @@ defmodule Emisar.Runbooks.SchedulerTest do
 
     target_id = List.last(execution_ids)
 
-    assert :ok = AdvanceExecutions.execute([])
+    assert AdvanceExecutions.execute([]) == :ok
     assert length(runs(account.id, target_id)) == 1
 
-    assert :ok = AdvanceExecutions.execute([])
+    assert AdvanceExecutions.execute([]) == :ok
     assert [_, target_retry] = runs(account.id, target_id)
     assert target_retry.attempt_number == 2
   end
@@ -689,15 +689,14 @@ defmodule Emisar.Runbooks.SchedulerTest do
     handler_id = "runbook-recovery-test-#{System.unique_integer([:positive])}"
     test_pid = self()
 
-    assert :ok =
-             :telemetry.attach(
-               handler_id,
-               [:emisar, :runbooks, :recovery],
-               fn event, measurements, metadata, pid ->
-                 send(pid, {:telemetry, event, measurements, metadata})
-               end,
-               test_pid
-             )
+    assert :telemetry.attach(
+             handler_id,
+             [:emisar, :runbooks, :recovery],
+             fn event, measurements, metadata, pid ->
+               send(pid, {:telemetry, event, measurements, metadata})
+             end,
+             test_pid
+           ) == :ok
 
     on_exit(fn -> :telemetry.detach(handler_id) end)
     _recovered = Scheduler.recover_due()
@@ -764,7 +763,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
     assert Enum.frequencies(Enum.map(events, & &1.event_type)) ==
              Map.new(lifecycle_types, &{&1, 1})
 
-    assert :noop = Runbooks.action_run_settled(settled)
+    assert Runbooks.action_run_settled(settled) == :noop
 
     events_after_duplicate =
       Audit.Event.Query.all()
@@ -815,7 +814,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
     assert cancelled.status == :cancelled
     assert Repo.reload!(item(result.execution_id)).status == :cancelled
 
-    assert :ok = AdvanceExecutions.execute([])
+    assert AdvanceExecutions.execute([]) == :ok
     assert [_only_attempt] = runs(account.id, result.execution_id)
   end
 

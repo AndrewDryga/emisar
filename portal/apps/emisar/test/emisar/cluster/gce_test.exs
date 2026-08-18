@@ -36,12 +36,12 @@ defmodule Emisar.Cluster.GCETest do
   describe "list_cluster_nodes/1" do
     test "runs the injected discover_fn through the IP→node mapping" do
       state = %State{config: [discover_fn: fn _ -> {:ok, [instance("10.0.0.5")]} end]}
-      assert {:ok, [:"emisar@10.0.0.5"]} = GCE.list_cluster_nodes(state)
+      assert GCE.list_cluster_nodes(state) == {:ok, [:"emisar@10.0.0.5"]}
     end
 
     test "propagates discovery errors" do
       state = %State{config: [discover_fn: fn _ -> {:error, :boom} end]}
-      assert {:error, :boom} = GCE.list_cluster_nodes(state)
+      assert GCE.list_cluster_nodes(state) == {:error, :boom}
     end
   end
 

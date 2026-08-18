@@ -11,7 +11,7 @@ defmodule EmisarWeb.SessionDisconnectorTest do
     topics = ["users_sessions:test-#{System.unique_integer([:positive])}", "users_sessions:two"]
     Enum.each(topics, &EmisarWeb.Endpoint.subscribe/1)
 
-    assert :ok = EmisarWeb.SessionDisconnector.disconnect_live_sessions(topics)
+    assert EmisarWeb.SessionDisconnector.disconnect_live_sessions(topics) == :ok
 
     for topic <- topics do
       assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect", payload: %{}}
@@ -19,7 +19,7 @@ defmodule EmisarWeb.SessionDisconnectorTest do
   end
 
   test "an empty topic list is a no-op" do
-    assert :ok = EmisarWeb.SessionDisconnector.disconnect_live_sessions([])
+    assert EmisarWeb.SessionDisconnector.disconnect_live_sessions([]) == :ok
   end
 
   test "Auth calls the handler while the web application is running" do
@@ -28,7 +28,7 @@ defmodule EmisarWeb.SessionDisconnectorTest do
     topic = Auth.live_socket_topic(Crypto.hash(token))
     EmisarWeb.Endpoint.subscribe(topic)
 
-    assert :ok = Auth.broadcast_disconnect_for_user(user)
+    assert Auth.broadcast_disconnect_for_user(user) == :ok
     assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect", payload: %{}}
 
     assert {:ok, _user, _auth} = Auth.fetch_user_and_token_by_session_token(token)

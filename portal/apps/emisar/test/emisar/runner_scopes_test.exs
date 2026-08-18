@@ -15,10 +15,10 @@ defmodule Emisar.RunnerAccessTest do
                 runner_ids: [^runner_id]
               }} = RunnerAccess.restricted([" db ", "app", "db"], [runner_id, runner_id])
 
-      assert {:error, :invalid_runner_access} = RunnerAccess.new(:restricted, [], [])
-      assert {:error, :invalid_runner_access} = RunnerAccess.new(:none, ["db"], [])
-      assert {:error, :invalid_runner_access} = RunnerAccess.new(:all, [], [runner_id])
-      assert {:error, :invalid_runner_access} = RunnerAccess.new(:restricted, [], ["not-a-uuid"])
+      assert RunnerAccess.new(:restricted, [], []) == {:error, :invalid_runner_access}
+      assert RunnerAccess.new(:none, ["db"], []) == {:error, :invalid_runner_access}
+      assert RunnerAccess.new(:all, [], [runner_id]) == {:error, :invalid_runner_access}
+      assert RunnerAccess.new(:restricted, [], ["not-a-uuid"]) == {:error, :invalid_runner_access}
     end
 
     test "unions directory grants with all dominance" do
@@ -375,12 +375,11 @@ defmodule Emisar.RunnerAccessTest do
       foreign_runner = Fixtures.Runners.create_runner()
       {:ok, foreign_access} = RunnerAccess.restricted([], [foreign_runner.id])
 
-      assert {:error, :invalid_runner_access} =
-               Accounts.update_membership_runner_access(
-                 member,
-                 foreign_access,
-                 owner_subject
-               )
+      assert Accounts.update_membership_runner_access(
+               member,
+               foreign_access,
+               owner_subject
+             ) == {:error, :invalid_runner_access}
     end
 
     test "single-runner reads hide out-of-scope runners", %{
@@ -438,24 +437,22 @@ defmodule Emisar.RunnerAccessTest do
           runner_access_directory_managed: true
         )
 
-      assert {:error, :runner_access_managed_by_directory} =
-               Accounts.update_membership_runner_access(
-                 managed,
-                 RunnerAccess.none(),
-                 owner_subject
-               )
+      assert Accounts.update_membership_runner_access(
+               managed,
+               RunnerAccess.none(),
+               owner_subject
+             ) == {:error, :runner_access_managed_by_directory}
     end
 
     test "an operator cannot edit runner access", %{
       member: member,
       member_subject: member_subject
     } do
-      assert {:error, :unauthorized} =
-               Accounts.update_membership_runner_access(
-                 member,
-                 RunnerAccess.none(),
-                 member_subject
-               )
+      assert Accounts.update_membership_runner_access(
+               member,
+               RunnerAccess.none(),
+               member_subject
+             ) == {:error, :unauthorized}
     end
 
     test "cross-account edits are denied" do
@@ -465,12 +462,11 @@ defmodule Emisar.RunnerAccessTest do
 
       assert account_a.id != account_b.id
 
-      assert {:error, :unauthorized} =
-               Accounts.update_membership_runner_access(
-                 member_b,
-                 RunnerAccess.none(),
-                 subject_a
-               )
+      assert Accounts.update_membership_runner_access(
+               member_b,
+               RunnerAccess.none(),
+               subject_a
+             ) == {:error, :unauthorized}
     end
 
     test "a restricted admin cannot delegate beyond current access", %{
@@ -486,12 +482,11 @@ defmodule Emisar.RunnerAccessTest do
       assert {:ok, _target} =
                Accounts.update_membership_runner_access(target, db_access, admin_subject)
 
-      assert {:error, :runner_access_exceeds_subject} =
-               Accounts.update_membership_runner_access(
-                 target,
-                 RunnerAccess.all(),
-                 admin_subject
-               )
+      assert Accounts.update_membership_runner_access(
+               target,
+               RunnerAccess.all(),
+               admin_subject
+             ) == {:error, :runner_access_exceeds_subject}
     end
 
     test "writes one explicit before/after audit event", %{
@@ -667,8 +662,8 @@ defmodule Emisar.RunnerAccessTest do
 
       suspended = Fixtures.Memberships.suspend_membership(membership)
 
-      assert {:error, :not_found} =
-               Accounts.fetch_and_lock_active_membership(Repo, account.id, suspended.id)
+      assert Accounts.fetch_and_lock_active_membership(Repo, account.id, suspended.id) ==
+               {:error, :not_found}
     end
   end
 
@@ -685,14 +680,13 @@ defmodule Emisar.RunnerAccessTest do
 
       local = create_member(account, "operator")
 
-      assert {:ok, 7} =
-               Accounts.mark_directory_authorization_pending(
-                 Repo,
-                 account.id,
-                 provider.id,
-                 [managed.user_id, local.user_id],
-                 7
-               )
+      assert Accounts.mark_directory_authorization_pending(
+               Repo,
+               account.id,
+               provider.id,
+               [managed.user_id, local.user_id],
+               7
+             ) === {:ok, 7}
 
       assert Repo.reload!(managed).directory_authorization_pending_version == 7
 
@@ -715,26 +709,24 @@ defmodule Emisar.RunnerAccessTest do
           runner_access_directory_managed: true
         )
 
-      assert {:ok, 4} =
-               Accounts.mark_directory_authorization_pending(
-                 Repo,
-                 account.id,
-                 other_provider.id,
-                 [member.user_id],
-                 4
-               )
+      assert Accounts.mark_directory_authorization_pending(
+               Repo,
+               account.id,
+               other_provider.id,
+               [member.user_id],
+               4
+             ) === {:ok, 4}
 
       unchanged = Repo.reload!(member)
       assert unchanged.directory_provider_id == owner_provider.id
       assert is_nil(unchanged.directory_authorization_pending_version)
 
-      assert {:error, :directory_authorization_provider_conflict} =
-               Accounts.sync_set_membership_authorization(
-                 unchanged,
-                 :viewer,
-                 RunnerAccess.none(),
-                 other_provider
-               )
+      assert Accounts.sync_set_membership_authorization(
+               unchanged,
+               :viewer,
+               RunnerAccess.none(),
+               other_provider
+             ) == {:error, :directory_authorization_provider_conflict}
     end
   end
 
@@ -892,16 +884,15 @@ defmodule Emisar.RunnerAccessTest do
 
       forged = create_member(account, "operator")
 
-      assert {:error, :runner_out_of_scope} =
-               Runs.dispatch_run(
-                 %{
-                   runner_id: runner.id,
-                   action_id: "x.y",
-                   reason: "test",
-                   requested_by_membership_id: forged.id
-                 },
-                 owner_subject
-               )
+      assert Runs.dispatch_run(
+               %{
+                 runner_id: runner.id,
+                 action_id: "x.y",
+                 reason: "test",
+                 requested_by_membership_id: forged.id
+               },
+               owner_subject
+             ) == {:error, :runner_out_of_scope}
     end
 
     test "an offline queued run is not sent after its initiating access is revoked" do
@@ -925,7 +916,7 @@ defmodule Emisar.RunnerAccessTest do
       Fixtures.Memberships.force_runner_access(membership, RunnerAccess.none())
       :ok = Runners.subscribe_runner_transport(runner)
 
-      assert {:error, :initiator_no_longer_authorized} = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == {:error, :initiator_no_longer_authorized}
       assert Runs.peek_run_by_id(run.id).status == :pending
       refute_receive {:cloud_to_runner, _generation, _payload}, 100
 
@@ -948,7 +939,7 @@ defmodule Emisar.RunnerAccessTest do
 
       attrs = %{runner_id: runner.id, action_id: "linux.uptime", reason: "test pack scope"}
 
-      assert {:error, :pack_out_of_scope} = Runs.dispatch_run(attrs, owner_subject)
+      assert Runs.dispatch_run(attrs, owner_subject) == {:error, :pack_out_of_scope}
 
       {:ok, this_pack} = RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
       Fixtures.Memberships.force_runner_access(membership, this_pack)
@@ -983,7 +974,7 @@ defmodule Emisar.RunnerAccessTest do
       {:ok, other_packs} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
       Fixtures.Memberships.force_runner_access(membership, other_packs)
 
-      assert {:error, :initiator_no_longer_authorized} = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == {:error, :initiator_no_longer_authorized}
       assert Runs.peek_run_by_id(run.id).status == :pending
     end
 

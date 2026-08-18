@@ -12,7 +12,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   alias Emisar.Runners.Runner
 
   defp subscribe_approvals(account) do
-    assert :ok = Approvals.subscribe_account_approvals(account.id)
+    assert Approvals.subscribe_account_approvals(account.id) == :ok
   end
 
   defp assert_approval_broadcast(lv, request) do

@@ -60,7 +60,7 @@ defmodule Emisar.Runs.Jobs.EventRetentionTest do
     add_event(old_run, 1)
     add_event(old_run, 2)
 
-    assert :ok = EventRetention.execute([])
+    assert EventRetention.execute([]) == :ok
 
     assert event_ids(account.id) == MapSet.new()
   end
@@ -71,7 +71,7 @@ defmodule Emisar.Runs.Jobs.EventRetentionTest do
     recent_run = finished_run(account, runner, @within_window_days)
     kept = add_event(recent_run, 1)
 
-    assert :ok = EventRetention.execute([])
+    assert EventRetention.execute([]) == :ok
 
     assert event_ids(account.id) == MapSet.new([kept.id])
   end
@@ -95,7 +95,7 @@ defmodule Emisar.Runs.Jobs.EventRetentionTest do
     unfinished |> Ecto.Changeset.change(inserted_at: old) |> Repo.update!()
     kept = add_event(unfinished, 1)
 
-    assert :ok = EventRetention.execute([])
+    assert EventRetention.execute([]) == :ok
 
     assert event_ids(account.id) == MapSet.new([kept.id])
   end
@@ -111,7 +111,7 @@ defmodule Emisar.Runs.Jobs.EventRetentionTest do
     old_run = finished_run(account, runner, @beyond_window_days)
     event = add_event(old_run, 1)
 
-    assert :ok = EventRetention.execute([])
+    assert EventRetention.execute([]) == :ok
 
     # 30 days is inside the 365-day fail-open window → kept.
     assert event_ids(account.id) == MapSet.new([event.id])
@@ -131,7 +131,7 @@ defmodule Emisar.Runs.Jobs.EventRetentionTest do
     # tombstone state; no Subject path deletes an account in this test).
     account |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
 
-    assert :ok = EventRetention.execute([])
+    assert EventRetention.execute([]) == :ok
 
     assert event_ids(account.id) == MapSet.new()
   end
@@ -172,7 +172,7 @@ defmodule Emisar.Runs.Jobs.EventRetentionTest do
 
     # `limit: 1` forces one account per page, so the sweep only completes by
     # walking account-to-account inside the supervised job tick.
-    assert :ok = EventRetention.execute(limit: 1)
+    assert EventRetention.execute(limit: 1) == :ok
 
     for account <- accounts, do: assert(event_ids(account.id) == MapSet.new())
   end

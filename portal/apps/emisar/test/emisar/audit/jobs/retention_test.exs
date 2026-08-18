@@ -28,7 +28,7 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
 
     {:ok, fresh} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
 
-    assert :ok = Retention.execute([])
+    assert Retention.execute([]) == :ok
 
     refute Repo.reload(stale)
     assert Repo.reload(fresh)
@@ -45,7 +45,7 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
     {:ok, within_team_window} =
       Audit.log(account.id, "user.signed_in", actor_kind: "user", occurred_at: ten_days_ago)
 
-    assert :ok = Retention.execute([])
+    assert Retention.execute([]) == :ok
 
     # 10 days < the 90-day Team window → kept (the free plan would have pruned it).
     assert Repo.reload(within_team_window)
@@ -76,7 +76,7 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
         retain_until: DateTime.add(DateTime.utc_now(), -86_400, :second)
       )
 
-    assert :ok = Retention.execute([])
+    assert Retention.execute([]) == :ok
 
     # The wide-window row survives the Free-plan sweep (the OLD cutoff-from-current-
     # plan behaviour would have deleted it); the expired one is gone.
@@ -91,7 +91,7 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
     {:ok, _stale} =
       Audit.log(account.id, "user.signed_in", actor_kind: "user", occurred_at: ten_days_ago)
 
-    assert :ok = Retention.execute([])
+    assert Retention.execute([]) == :ok
 
     # The stale row is gone; a summary marker for the pruned account remains (and
     # its own retain_until keeps it from being pruned in the same pass).
@@ -109,7 +109,7 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
     # A fresh row is within the Free window → nothing to prune, so no marker.
     {:ok, _fresh} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
 
-    assert :ok = Retention.execute([])
+    assert Retention.execute([]) == :ok
 
     events = Repo.all(Emisar.Audit.Event)
     refute Enum.any?(events, &(&1.event_type == "audit.retention_swept"))
@@ -127,13 +127,13 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
         payload: %{count: 1}
       )
 
-    assert :ok = Retention.execute([])
+    assert Retention.execute([]) == :ok
 
     refute Repo.reload(expired_marker)
 
     # The next scheduled tick remains silent too; the first pass did not seed a
     # replacement marker for the job to perpetuate.
-    assert :ok = Retention.execute([])
+    assert Retention.execute([]) == :ok
 
     refute Emisar.Audit.Event.Query.all()
            |> Emisar.Audit.Event.Query.by_account_id(account.id)
@@ -156,7 +156,7 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
     {:ok, _stale_event} =
       Audit.log(account.id, "user.signed_in", actor_kind: "user", occurred_at: ten_days_ago)
 
-    assert :ok = Retention.execute([])
+    assert Retention.execute([]) == :ok
 
     assert [replacement] =
              Emisar.Audit.Event
@@ -183,7 +183,7 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
     {:ok, stale} =
       Audit.log(account.id, "user.signed_in", actor_kind: "user", occurred_at: ten_days_ago)
 
-    assert :ok = Retention.execute([])
+    assert Retention.execute([]) == :ok
 
     # 10 days is inside the 365-day fail-open window → kept.
     assert Repo.reload(stale)
@@ -200,11 +200,9 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
     {:ok, stale} =
       Audit.log(account.id, "user.signed_in", actor_kind: "user", occurred_at: ten_days_ago)
 
-    # Soft-delete the account (a direct row write — no Subject path deletes an
-    # account here, and the fixture way is to build the row state directly).
-    account |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
+    Fixtures.Accounts.mark_account_as_deleted(account)
 
-    assert :ok = Retention.execute([])
+    assert Retention.execute([]) == :ok
 
     refute Repo.reload(stale)
   end
@@ -223,7 +221,7 @@ defmodule Emisar.Audit.Jobs.RetentionTest do
 
     # `limit: 1` forces one account per page, so the sweep only completes by
     # walking account-to-account inside the supervised job tick.
-    assert :ok = Retention.execute(limit: 1)
+    assert Retention.execute(limit: 1) == :ok
 
     for event <- stale, do: refute(Repo.reload(event))
   end

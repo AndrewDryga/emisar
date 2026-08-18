@@ -539,15 +539,6 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert html =~ "Enrollment keys"
   end
 
-  # BUG: a forced `revoke` of an ALREADY-revoked (but still loaded,
-  # e.g. under ?status=revoked) key is NOT idempotent — `EnrollmentKey.Changeset.revoke/2`
-  # unconditionally re-stamps `revoked_at: DateTime.utc_now()` (and writes a fresh
-  # audit row + broadcast), so re-revoking moves the timestamp instead of being a
-  # no-op. The UI hides the Revoke button on revoked rows, so this is only
-  # reachable via a crafted event, and the key stays revoked + manage-gated —
-  # low severity, but it contradicts the "no-op" claim and pollutes the audit
-  # trail with a duplicate revocation. Fix: guard the changeset on
-  # `is_nil(key.revoked_at)` (skip when already revoked).
   test "re-revoking an already-revoked key is idempotent (no timestamp change)", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account)
@@ -561,7 +552,6 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     revoked_at = Emisar.Repo.reload!(key).revoked_at
     render_click(lv, "revoke", %{"id" => key.id})
 
-    # Should stay put — a second revocation of a spent key is meaningless.
     assert Emisar.Repo.reload!(key).revoked_at == revoked_at
   end
 end

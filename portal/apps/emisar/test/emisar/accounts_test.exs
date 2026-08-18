@@ -13,7 +13,6 @@ defmodule Emisar.AccountsTest do
   alias Emisar.RequestContext
   alias Emisar.Runbooks.Runbook
   alias Emisar.Runs.ActionRun
-  alias Emisar.SSO.{IdentityProvider, UserIdentity}
   alias Emisar.Users
   alias Emisar.Users.User
 
@@ -608,7 +607,7 @@ defmodule Emisar.AccountsTest do
 
       subject = Fixtures.Subjects.membership_subject(membership)
 
-      assert {:error, :unauthorized} = Accounts.close_account(account.id, "nope", subject)
+      assert Accounts.close_account(account.id, "nope", subject) == {:error, :unauthorized}
     end
   end
 
@@ -994,8 +993,8 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
 
-      assert {:error, :require_sso_without_provider} =
-               Accounts.update_account(account, %{settings: %{require_sso: true}}, subject)
+      assert Accounts.update_account(account, %{settings: %{require_sso: true}}, subject) ==
+               {:error, :require_sso_without_provider}
 
       refute Repo.reload!(account).settings.require_sso
     end
@@ -1005,8 +1004,8 @@ defmodule Emisar.AccountsTest do
       subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
       Fixtures.SSO.create_identity_provider(account_id: account.id, enabled: false)
 
-      assert {:error, :require_sso_without_provider} =
-               Accounts.update_account(account, %{settings: %{require_sso: true}}, subject)
+      assert Accounts.update_account(account, %{settings: %{require_sso: true}}, subject) ==
+               {:error, :require_sso_without_provider}
     end
 
     test "turning the requirement OFF never needs a provider" do
@@ -2037,8 +2036,8 @@ defmodule Emisar.AccountsTest do
       {_owner_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
       {owner_b, account_b, _} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :unauthorized} =
-               Accounts.list_memberships_for_users(account_b, [owner_b.id], subject_a)
+      assert Accounts.list_memberships_for_users(account_b, [owner_b.id], subject_a) ==
+               {:error, :unauthorized}
     end
   end
 
@@ -2375,8 +2374,8 @@ defmodule Emisar.AccountsTest do
       stranger = Fixtures.Users.create_user()
       audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, "Nobody")
 
-      assert {:error, :not_found} =
-               Accounts.sync_member_display_name(account.id, stranger.id, "Nobody", audit: audit)
+      assert Accounts.sync_member_display_name(account.id, stranger.id, "Nobody", audit: audit) ==
+               {:error, :not_found}
     end
   end
 
@@ -2605,7 +2604,7 @@ defmodule Emisar.AccountsTest do
     test "returns nil when the membership is soft-deleted" do
       account = Fixtures.Accounts.create_account()
       member = Fixtures.Memberships.create_membership(account_id: account.id)
-      {:ok, _} = member |> Membership.Changeset.delete() |> Repo.update()
+      Fixtures.Memberships.mark_membership_as_deleted(member)
 
       assert is_nil(Accounts.peek_active_membership(account.id, member.id))
     end
@@ -3547,7 +3546,7 @@ defmodule Emisar.AccountsTest do
       owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
       target = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      assert :ok = Accounts.subscribe_account_team(account.id)
+      assert Accounts.subscribe_account_team(account.id) == :ok
 
       # A team mutation publishes on the topic the subscriber just joined.
       assert {:ok, _} = Accounts.suspend_membership(target, owner_subject)
@@ -3563,7 +3562,7 @@ defmodule Emisar.AccountsTest do
       target_b =
         Fixtures.Memberships.create_membership(account_id: account_b.id, role: "operator")
 
-      assert :ok = Accounts.subscribe_account_team(account_a.id)
+      assert Accounts.subscribe_account_team(account_a.id) == :ok
 
       # The mutation happens on B's topic — A's subscriber must hear nothing.
       assert {:ok, _} = Accounts.suspend_membership(target_b, owner_subject_b)
@@ -3951,7 +3950,7 @@ defmodule Emisar.AccountsTest do
       assert is_nil(Repo.reload!(key).revoked_at)
       :ok = Accounts.subscribe_account_team(account.id)
 
-      assert :ok = Accounts.membership_suspended_effects(member)
+      assert Accounts.membership_suspended_effects(member) == :ok
 
       member_user_id = member_user.id
       assert_receive {:list_changed, :team, "membership.suspended", ^member_user_id}
@@ -4057,7 +4056,7 @@ defmodule Emisar.AccountsTest do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
       :ok = Accounts.subscribe_account_team(account.id)
 
-      assert :ok = Accounts.membership_reinstated_effects(member)
+      assert Accounts.membership_reinstated_effects(member) == :ok
 
       member_user_id = member.user_id
       assert_receive {:list_changed, :team, "membership.reinstated", ^member_user_id}
@@ -4156,7 +4155,7 @@ defmodule Emisar.AccountsTest do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
       {:ok, suspended, true} = Accounts.sync_suspend_membership(member, provider)
 
-      assert {:error, :deactivated_in_idp} = Accounts.reinstate_membership(suspended, subject)
+      assert Accounts.reinstate_membership(suspended, subject) == {:error, :deactivated_in_idp}
 
       Accounts.clear_directory_managed_for_users(account.id, provider.id, [member.user_id])
 
@@ -4409,8 +4408,20 @@ defmodule Emisar.AccountsTest do
           role: "operator"
         )
 
-      provider = scim_enable_provider(provider_fixture(account))
-      scim_identity_fixture(account, provider, target)
+      provider = account |> provider_fixture() |> Fixtures.SSO.enable_scim()
+
+      external_id = "okta|#{System.unique_integer([:positive])}"
+
+      Fixtures.SSO.create_user_identity(%{
+        account_id: account.id,
+        provider_id: provider.id,
+        user_id: target.id,
+        provider_identifier: external_id,
+        scim_external_id: external_id,
+        created_by: :provider,
+        provisioned_via: :scim,
+        scim_active: true
+      })
 
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
@@ -4533,7 +4544,7 @@ defmodule Emisar.AccountsTest do
       token = Fixtures.Auth.create_session_token!(target, :magic_link, nil)
       assert {:ok, %User{}, _auth} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
 
-      assert :ok = Accounts.end_all_sessions_for(membership, subject)
+      assert Accounts.end_all_sessions_for(membership, subject) == :ok
       assert Emisar.Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
     end
 
@@ -4700,7 +4711,7 @@ defmodule Emisar.AccountsTest do
                Emisar.Auth.fetch_user_and_token_by_session_token(session_token)
 
       # …but it no longer resolves this account, which is what ending access means.
-      assert {:error, :not_found} = Accounts.fetch_membership_for_session(member, account.id)
+      assert Accounts.fetch_membership_for_session(member, account.id) == {:error, :not_found}
     end
 
     test "a removed member can be re-invited (tombstone doesn't hold the seat)" do
@@ -5576,18 +5587,21 @@ defmodule Emisar.AccountsTest do
           subject
         )
 
-      assert {:ok, _} =
-               Accounts.accept_invitation(membership, %{
-                 "full_name" => "First",
-                 "password" => "a-very-strong-password"
-               })
+      first_attrs = %{
+        "full_name" => "First",
+        "password" => "a-very-strong-password"
+      }
+
+      assert {:ok, _} = Accounts.accept_invitation(membership, first_attrs)
 
       # The locked re-judge of the (now non-pending) invitation refuses the
       # second submit before it could overwrite the winner's password.
-      assert Accounts.accept_invitation(membership, %{
-               "full_name" => "Second",
-               "password" => "another-strong-password"
-             }) == {:error, :not_found}
+      second_attrs = %{
+        "full_name" => "Second",
+        "password" => "another-strong-password"
+      }
+
+      assert Accounts.accept_invitation(membership, second_attrs) == {:error, :not_found}
     end
 
     test "a stale invitation cannot provision a user after the account is disabled" do
@@ -5611,10 +5625,12 @@ defmodule Emisar.AccountsTest do
                  subject
                )
 
-      assert Accounts.accept_invitation(membership, %{
-               "full_name" => "Late Member",
-               "password" => "a-very-strong-password"
-             }) == {:error, :not_found}
+      late_attrs = %{
+        "full_name" => "Late Member",
+        "password" => "a-very-strong-password"
+      }
+
+      assert Accounts.accept_invitation(membership, late_attrs) == {:error, :not_found}
 
       {:ok, reloaded} = Users.fetch_user_by_id(invitee.id)
       assert is_nil(reloaded.confirmed_at)
@@ -5790,7 +5806,7 @@ defmodule Emisar.AccountsTest do
         Fixtures.Accounts.create_account()
         |> Fixtures.Accounts.set_last_report_sent_at(~U[2026-07-10 09:00:00.000000Z])
 
-      assert {:error, :already_reported} = Accounts.mark_account_report_sent(account, cutoff)
+      assert Accounts.mark_account_report_sent(account, cutoff) == {:error, :already_reported}
     end
   end
 
@@ -6095,7 +6111,7 @@ defmodule Emisar.AccountsTest do
       doomed =
         Fixtures.Memberships.create_membership(account_id: account.id, user_id: doomed_user.id)
 
-      {:ok, _} = doomed |> Membership.Changeset.delete() |> Emisar.Repo.update()
+      Fixtures.Memberships.mark_membership_as_deleted(doomed)
 
       {:ok, loaded} =
         Account.Query.not_deleted()
@@ -6250,7 +6266,7 @@ defmodule Emisar.AccountsTest do
 
       token = Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now())
 
-      assert :ok = Accounts.refresh_directory_authorization_sessions(membership)
+      assert Accounts.refresh_directory_authorization_sessions(membership) == :ok
       assert {:ok, %User{}, _session} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
     end
   end
@@ -6314,7 +6330,8 @@ defmodule Emisar.AccountsTest do
   # need only a persisted provider scoped to the right account — not a full
   # SCIM-enabled one. Owner is rejected as a default_role, so use :viewer.
   defp provider_fixture(account) do
-    attrs = %{
+    Fixtures.SSO.create_identity_provider(%{
+      account_id: account.id,
       kind: :okta,
       name: "Okta",
       issuer: "https://idp.test",
@@ -6322,46 +6339,11 @@ defmodule Emisar.AccountsTest do
       client_secret: "secret",
       enabled: true,
       default_role: :viewer
-    }
-
-    {:ok, provider} = Repo.insert(IdentityProvider.Changeset.create(account.id, attrs))
-    provider
-  end
-
-  # Flip a provider into live directory sync (scim_enabled) the fixture way —
-  # the profile/role locks key off this flag.
-  defp scim_enable_provider(provider) do
-    prefix = "emsp_#{System.unique_integer([:positive])}"
-    changeset = IdentityProvider.Changeset.scim_token(provider, prefix, "digest", true)
-    {:ok, provider} = Repo.update(changeset)
-    provider
-  end
-
-  # A SCIM-provisioned identity binding `user` into the provider's directory,
-  # mirroring the sync write path's attrs.
-  defp scim_identity_fixture(account, provider, user) do
-    external_id = "okta|#{System.unique_integer([:positive])}"
-
-    attrs = %{
-      provider_identifier: external_id,
-      scim_external_id: external_id,
-      created_by: :provider,
-      provisioned_via: :scim,
-      scim_active: true
-    }
-
-    changeset = UserIdentity.Changeset.create(account.id, provider.id, user.id, attrs)
-    {:ok, identity} = Repo.insert(changeset)
-    identity
+    })
   end
 
   defp enroll_mfa(user) do
-    {:ok, user} =
-      user
-      |> Ecto.Changeset.change(mfa_enabled_at: DateTime.utc_now())
-      |> Repo.update()
-
-    user
+    Fixtures.Users.set_mfa_state(user, mfa_enabled_at: DateTime.utc_now())
   end
 
   # Fully enroll a member's MFA — secret + recovery codes too, not just
@@ -6369,15 +6351,10 @@ defmodule Emisar.AccountsTest do
   # is meaningful (clearing only the timestamp wouldn't prove the secret
   # and codes were dropped).
   defp enroll_member_mfa(user) do
-    {:ok, user} =
-      user
-      |> Ecto.Changeset.change(
-        mfa_secret: "JBSWY3DPEHPK3PXP",
-        mfa_enabled_at: DateTime.utc_now(),
-        mfa_recovery_codes: ["digest-a", "digest-b"]
-      )
-      |> Repo.update()
-
-    user
+    Fixtures.Users.set_mfa_state(user,
+      mfa_secret: "JBSWY3DPEHPK3PXP",
+      mfa_enabled_at: DateTime.utc_now(),
+      mfa_recovery_codes: ["digest-a", "digest-b"]
+    )
   end
 end

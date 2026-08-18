@@ -51,10 +51,9 @@ defmodule Emisar.Jobs.Executors.GloballyUniqueTest do
   end
 
   test "a disabled job is not started" do
-    assert :ignore =
-             GloballyUnique.start_link(
-               {ExecutingJob, :timer.hours(1), enabled: false, test_pid: self()}
-             )
+    assert GloballyUnique.start_link(
+             {ExecutingJob, :timer.hours(1), enabled: false, test_pid: self()}
+           ) == :ignore
   end
 
   test "a failed tick emits a stable redacted operator signal" do

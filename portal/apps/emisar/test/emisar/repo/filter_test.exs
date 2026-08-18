@@ -14,16 +14,16 @@ defmodule Emisar.Repo.FilterTest do
 
   describe "validate_value/2 — type checking" do
     test "accepts values matching their declared type" do
-      assert :ok = Filter.validate_value(filter(:string), "hello")
-      assert :ok = Filter.validate_value(filter(:integer), 42)
-      assert :ok = Filter.validate_value(filter(:number), 3.14)
-      assert :ok = Filter.validate_value(filter(:boolean), true)
-      assert :ok = Filter.validate_value(filter(:date), ~D[2026-01-01])
-      assert :ok = Filter.validate_value(filter(:datetime), ~U[2026-01-01 00:00:00Z])
-      assert :ok = Filter.validate_value(filter(:datetime), ~N[2026-01-01 00:00:00])
-      assert :ok = Filter.validate_value(filter({:string, :email}), "a@b.test")
-      assert :ok = Filter.validate_value(filter({:string, :uuid}), Ecto.UUID.generate())
-      assert :ok = Filter.validate_value(filter({:list, :integer}), [1, 2, 3])
+      assert Filter.validate_value(filter(:string), "hello") == :ok
+      assert Filter.validate_value(filter(:integer), 42) == :ok
+      assert Filter.validate_value(filter(:number), 3.14) == :ok
+      assert Filter.validate_value(filter(:boolean), true) == :ok
+      assert Filter.validate_value(filter(:date), ~D[2026-01-01]) == :ok
+      assert Filter.validate_value(filter(:datetime), ~U[2026-01-01 00:00:00Z]) == :ok
+      assert Filter.validate_value(filter(:datetime), ~N[2026-01-01 00:00:00]) == :ok
+      assert Filter.validate_value(filter({:string, :email}), "a@b.test") == :ok
+      assert Filter.validate_value(filter({:string, :uuid}), Ecto.UUID.generate()) == :ok
+      assert Filter.validate_value(filter({:list, :integer}), [1, 2, 3]) == :ok
     end
 
     test "rejects values whose type doesn't match" do
@@ -46,8 +46,8 @@ defmodule Emisar.Repo.FilterTest do
     end
 
     test "a range requires at least one bound, each of the declared type" do
-      assert :ok = Filter.validate_value(filter({:range, :integer}), %Range{from: 1, to: 10})
-      assert :ok = Filter.validate_value(filter({:range, :integer}), %Range{from: 1, to: nil})
+      assert Filter.validate_value(filter({:range, :integer}), %Range{from: 1, to: 10}) == :ok
+      assert Filter.validate_value(filter({:range, :integer}), %Range{from: 1, to: nil}) == :ok
 
       assert {:error, {:invalid_type, _}} =
                Filter.validate_value(filter({:range, :integer}), %Range{from: nil, to: nil})
@@ -60,19 +60,19 @@ defmodule Emisar.Repo.FilterTest do
   describe "validate_value/2 — allowed-value lists" do
     test "a flat values list constrains to its members" do
       filter = filter(:integer, [{1, "One"}, {2, "Two"}])
-      assert :ok = Filter.validate_value(filter, 1)
+      assert Filter.validate_value(filter, 1) == :ok
       assert {:error, {:invalid_value, _}} = Filter.validate_value(filter, 3)
     end
 
     test "a grouped values list is searched within each group" do
       filter = filter(:integer, [{"Group A", [{1, "One"}]}, {"Group B", [{2, "Two"}]}])
-      assert :ok = Filter.validate_value(filter, 2)
+      assert Filter.validate_value(filter, 2) == :ok
       assert {:error, {:invalid_value, _}} = Filter.validate_value(filter, 9)
     end
 
     test "no values list means any type-valid value passes" do
-      assert :ok = Filter.validate_value(filter(:string, nil), "anything")
-      assert :ok = Filter.validate_value(filter(:string, []), "anything")
+      assert Filter.validate_value(filter(:string, nil), "anything") == :ok
+      assert Filter.validate_value(filter(:string, []), "anything") == :ok
     end
   end
 
@@ -102,7 +102,7 @@ defmodule Emisar.Repo.FilterTest do
     end
 
     test "an empty filter list leaves the query untouched (nil accumulator)" do
-      assert {:q, nil} = Filter.build_dynamic(:q, [], definitions(), nil)
+      assert Filter.build_dynamic(:q, [], definitions(), nil) == {:q, nil}
     end
 
     test "a named filter applies its condition" do
@@ -116,8 +116,8 @@ defmodule Emisar.Repo.FilterTest do
     end
 
     test "an unknown filter name is a clean error" do
-      assert {:error, {:unknown_filter, name: :nope}} =
-               Filter.build_dynamic(:q, [{:nope, 1}], definitions(), nil)
+      assert Filter.build_dynamic(:q, [{:nope, 1}], definitions(), nil) ==
+               {:error, {:unknown_filter, name: :nope}}
     end
 
     test "a type-invalid value is rejected before it reaches the query" do

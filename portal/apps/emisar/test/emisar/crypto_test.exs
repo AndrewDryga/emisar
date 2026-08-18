@@ -34,7 +34,7 @@ defmodule Emisar.CryptoTest do
     end
 
     test "a non-base64 presented token is :error, not a crash or false match" do
-      assert :error = Crypto.email_token_digest("not valid base64 !!!")
+      assert Crypto.email_token_digest("not valid base64 !!!") == :error
     end
   end
 

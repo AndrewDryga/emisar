@@ -26,7 +26,7 @@ defmodule Emisar.Runbooks.Jobs.ExecutionRetentionTest do
         completed_at: days_ago(@beyond_window_days)
       )
 
-    assert :ok = ExecutionRetention.execute([])
+    assert ExecutionRetention.execute([]) == :ok
 
     refute Repo.reload(old)
   end
@@ -43,7 +43,7 @@ defmodule Emisar.Runbooks.Jobs.ExecutionRetentionTest do
     # An execution with no completion stamp is still live; age must not prune it.
     running = Fixtures.Runbooks.create_execution(account_id: account.id)
 
-    assert :ok = ExecutionRetention.execute([])
+    assert ExecutionRetention.execute([]) == :ok
 
     assert Repo.reload(recent)
     assert Repo.reload(running)
@@ -55,7 +55,7 @@ defmodule Emisar.Runbooks.Jobs.ExecutionRetentionTest do
     kept =
       Fixtures.Runbooks.create_execution(account_id: account.id, completed_at: days_ago(10))
 
-    assert :ok = ExecutionRetention.execute([])
+    assert ExecutionRetention.execute([]) == :ok
 
     assert Repo.reload(kept)
   end
@@ -68,7 +68,7 @@ defmodule Emisar.Runbooks.Jobs.ExecutionRetentionTest do
     swept = Fixtures.Runbooks.create_execution(account_id: free.id, completed_at: completed_at)
     kept = Fixtures.Runbooks.create_execution(account_id: team.id, completed_at: completed_at)
 
-    assert :ok = ExecutionRetention.execute([])
+    assert ExecutionRetention.execute([]) == :ok
 
     refute Repo.reload(swept)
     assert Repo.reload(kept)

@@ -277,7 +277,7 @@ defmodule Emisar.RunnersTest do
       account = Fixtures.Accounts.create_account()
       no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
 
-      assert {:error, :unauthorized} = Runners.list_runners_for_account(no_view)
+      assert Runners.list_runners_for_account(no_view) == {:error, :unauthorized}
     end
   end
 
@@ -299,7 +299,7 @@ defmodule Emisar.RunnersTest do
 
       # Another account sees none of them.
       {_other, _u, other_subject} = account_with_owner_subject()
-      assert {:ok, []} = Runners.list_all_runners_for_account(other_subject)
+      assert Runners.list_all_runners_for_account(other_subject) == {:ok, []}
     end
 
     test "a subject without a membership sees no runners" do
@@ -307,7 +307,7 @@ defmodule Emisar.RunnersTest do
       Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       subject = %{subject | membership_id: nil}
 
-      assert {:ok, []} = Runners.list_all_runners_for_account(subject)
+      assert Runners.list_all_runners_for_account(subject) == {:ok, []}
       assert {:ok, [], _metadata} = Runners.list_runners_for_account(subject)
     end
 
@@ -315,7 +315,7 @@ defmodule Emisar.RunnersTest do
       account = Fixtures.Accounts.create_account()
       no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
 
-      assert {:error, :unauthorized} = Runners.list_all_runners_for_account(no_view)
+      assert Runners.list_all_runners_for_account(no_view) == {:error, :unauthorized}
     end
   end
 
@@ -686,14 +686,14 @@ defmodule Emisar.RunnersTest do
       other = Fixtures.Accounts.create_account()
       _ = Fixtures.Runners.create_runner(account_id: other.id, group: "secret", connected?: false)
 
-      assert {:ok, []} = Runners.list_group_summaries(subject_a)
+      assert Runners.list_group_summaries(subject_a) == {:ok, []}
     end
 
     test "a viewer subject (no view_runners) is unauthorized" do
       account = Fixtures.Accounts.create_account()
       no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
 
-      assert {:error, :unauthorized} = Runners.list_group_summaries(no_view)
+      assert Runners.list_group_summaries(no_view) == {:error, :unauthorized}
     end
   end
 
@@ -731,7 +731,7 @@ defmodule Emisar.RunnersTest do
     end
 
     test "a malformed (non-UUID) id is :not_found, never a crash", %{subject: subject} do
-      assert {:error, :not_found} = Runners.fetch_runner_by_id("not-a-uuid", subject)
+      assert Runners.fetch_runner_by_id("not-a-uuid", subject) == {:error, :not_found}
     end
 
     test "a runner in another account is :not_found (cross-account isolation)", %{
@@ -740,14 +740,14 @@ defmodule Emisar.RunnersTest do
       account_b = Fixtures.Accounts.create_account()
       runner_b = Fixtures.Runners.create_runner(account_id: account_b.id)
 
-      assert {:error, :not_found} = Runners.fetch_runner_by_id(runner_b.id, subject_a)
+      assert Runners.fetch_runner_by_id(runner_b.id, subject_a) == {:error, :not_found}
     end
 
     test "a subject without view_runners is unauthorized", %{account: account} do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
 
-      assert {:error, :unauthorized} = Runners.fetch_runner_by_id(runner.id, no_view)
+      assert Runners.fetch_runner_by_id(runner.id, no_view) == {:error, :unauthorized}
     end
   end
 
@@ -768,21 +768,21 @@ defmodule Emisar.RunnersTest do
     end
 
     test "not_found for an unknown name", %{subject: subject} do
-      assert {:error, :not_found} = Runners.fetch_runner_by_name("nope", subject)
+      assert Runners.fetch_runner_by_name("nope", subject) == {:error, :not_found}
     end
 
     test "cross-account: a name in another account doesn't resolve", %{subject: subject_a} do
       account_b = Fixtures.Accounts.create_account()
       _runner = Fixtures.Runners.create_runner(account_id: account_b.id, name: "host-b")
 
-      assert {:error, :not_found} = Runners.fetch_runner_by_name("host-b", subject_a)
+      assert Runners.fetch_runner_by_name("host-b", subject_a) == {:error, :not_found}
     end
 
     test "denial: a subject without view_runners is unauthorized", %{account: account} do
       _runner = Fixtures.Runners.create_runner(account_id: account.id, name: "host-1")
       no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
 
-      assert {:error, :unauthorized} = Runners.fetch_runner_by_name("host-1", no_view)
+      assert Runners.fetch_runner_by_name("host-1", no_view) == {:error, :unauthorized}
     end
   end
 
@@ -1038,8 +1038,8 @@ defmodule Emisar.RunnersTest do
       account_b = Fixtures.Accounts.create_account()
       _ = Fixtures.Runners.create_runner(account_id: account_a.id, external_id: "shared")
 
-      assert {:error, :not_found} =
-               Runners.fetch_runner_by_external_id_for_account("shared", account_b.id)
+      assert Runners.fetch_runner_by_external_id_for_account("shared", account_b.id) ==
+               {:error, :not_found}
     end
 
     test "a soft-deleted runner no longer resolves (frees its external_id)" do
@@ -1047,8 +1047,8 @@ defmodule Emisar.RunnersTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id, external_id: "recycle")
       {:ok, _} = Runners.delete_runner(runner, subject)
 
-      assert {:error, :not_found} =
-               Runners.fetch_runner_by_external_id_for_account("recycle", account.id)
+      assert Runners.fetch_runner_by_external_id_for_account("recycle", account.id) ==
+               {:error, :not_found}
     end
   end
 
@@ -1066,10 +1066,9 @@ defmodule Emisar.RunnersTest do
 
       {:ok, _disabled} = Runners.disable_runner(runner, subject)
 
-      assert {:ok, {:error, :not_found}} =
-               Repo.transaction(fn ->
-                 Runners.fetch_and_lock_active_runner(runner.id, account.id, repo: Repo)
-               end)
+      assert Repo.transaction(fn ->
+               Runners.fetch_and_lock_active_runner(runner.id, account.id, repo: Repo)
+             end) == {:ok, {:error, :not_found}}
     end
   end
 
@@ -1090,16 +1089,15 @@ defmodule Emisar.RunnersTest do
 
       assert id == runner.id
 
-      assert {:ok, {:error, :not_found}} =
-               Repo.transaction(fn ->
-                 Runners.fetch_and_lock_connection_owner(
-                   runner.account_id,
-                   runner.id,
-                   runner.connection_generation,
-                   Ecto.UUID.generate(),
-                   repo: Repo
-                 )
-               end)
+      assert Repo.transaction(fn ->
+               Runners.fetch_and_lock_connection_owner(
+                 runner.account_id,
+                 runner.id,
+                 runner.connection_generation,
+                 Ecto.UUID.generate(),
+                 repo: Repo
+               )
+             end) == {:ok, {:error, :not_found}}
     end
   end
 
@@ -1125,7 +1123,8 @@ defmodule Emisar.RunnersTest do
     test "a viewer (no manage_runners) is refused", %{account: account} do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert {:error, :unauthorized} = Runners.disable_runner(runner, viewer_subject_for(account))
+      assert Runners.disable_runner(runner, viewer_subject_for(account)) ==
+               {:error, :unauthorized}
     end
 
     test "won't touch a runner in another account (cross-account → :not_found)" do
@@ -1133,7 +1132,7 @@ defmodule Emisar.RunnersTest do
       {_account_b, _ub, owner_b} = account_with_owner_subject()
       runner_a = Fixtures.Runners.create_runner(account_id: account_a.id)
 
-      assert {:error, :not_found} = Runners.disable_runner(runner_a, owner_b)
+      assert Runners.disable_runner(runner_a, owner_b) == {:error, :not_found}
     end
   end
 
@@ -1159,8 +1158,8 @@ defmodule Emisar.RunnersTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {:ok, disabled} = Runners.disable_runner(runner, owner)
 
-      assert {:error, :unauthorized} =
-               Runners.enable_runner(disabled, viewer_subject_for(account))
+      assert Runners.enable_runner(disabled, viewer_subject_for(account)) ==
+               {:error, :unauthorized}
     end
 
     test "won't enable a runner from another account", %{account: account_a, subject: owner_a} do
@@ -1168,7 +1167,7 @@ defmodule Emisar.RunnersTest do
       runner = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
       {:ok, disabled} = Runners.disable_runner(runner, owner_a)
 
-      assert {:error, :not_found} = Runners.enable_runner(disabled, owner_b)
+      assert Runners.enable_runner(disabled, owner_b) == {:error, :not_found}
     end
 
     test "refuses to enable past the plan limit (free = 3)", %{account: account, subject: subject} do
@@ -1179,7 +1178,7 @@ defmodule Emisar.RunnersTest do
       # fourth by re-enabling.
       for _ <- 1..3, do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
-      assert {:error, :over_limit, "free", 3} = Runners.enable_runner(disabled, subject)
+      assert Runners.enable_runner(disabled, subject) === {:error, :over_limit, "free", 3}
     end
   end
 
@@ -1205,7 +1204,7 @@ defmodule Emisar.RunnersTest do
     test "a viewer (no manage_runners) is refused", %{account: account} do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert {:error, :unauthorized} = Runners.delete_runner(runner, viewer_subject_for(account))
+      assert Runners.delete_runner(runner, viewer_subject_for(account)) == {:error, :unauthorized}
     end
 
     test "won't touch a runner in another account (cross-account → :not_found)" do
@@ -1213,7 +1212,7 @@ defmodule Emisar.RunnersTest do
       {_account_b, _ub, owner_b} = account_with_owner_subject()
       runner_a = Fixtures.Runners.create_runner(account_id: account_a.id)
 
-      assert {:error, :not_found} = Runners.delete_runner(runner_a, owner_b)
+      assert Runners.delete_runner(runner_a, owner_b) == {:error, :not_found}
     end
   end
 
@@ -1334,12 +1333,11 @@ defmodule Emisar.RunnersTest do
     end
 
     test "a viewer is denied and writes nothing", %{account: account} do
-      assert {:error, :unauthorized} =
-               Runners.update_inactive_retention_settings(
-                 account,
-                 %{"hours" => "168"},
-                 viewer_subject_for(account)
-               )
+      assert Runners.update_inactive_retention_settings(
+               account,
+               %{"hours" => "168"},
+               viewer_subject_for(account)
+             ) == {:error, :unauthorized}
 
       assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
       assert settings.runner_inactive_retention_hours == nil
@@ -1349,12 +1347,11 @@ defmodule Emisar.RunnersTest do
     test "another account's owner gets :not_found and writes nothing", %{account: account} do
       {_other_account, _other_user, other_subject} = account_with_owner_subject()
 
-      assert {:error, :not_found} =
-               Runners.update_inactive_retention_settings(
-                 account,
-                 %{"hours" => "168"},
-                 other_subject
-               )
+      assert Runners.update_inactive_retention_settings(
+               account,
+               %{"hours" => "168"},
+               other_subject
+             ) == {:error, :not_found}
 
       assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
       assert settings.runner_inactive_retention_hours == nil
@@ -1369,12 +1366,11 @@ defmodule Emisar.RunnersTest do
       Fixtures.Memberships.force_runner_access(admin, db_only)
       admin_subject = Fixtures.Subjects.membership_subject(admin)
 
-      assert {:error, :unauthorized} =
-               Runners.update_inactive_retention_settings(
-                 account,
-                 %{"hours" => "24"},
-                 admin_subject
-               )
+      assert Runners.update_inactive_retention_settings(
+               account,
+               %{"hours" => "24"},
+               admin_subject
+             ) == {:error, :unauthorized}
 
       assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
       assert settings.runner_inactive_retention_hours == nil
@@ -1448,7 +1444,7 @@ defmodule Emisar.RunnersTest do
       Fixtures.Accounts.set_runner_inactive_retention_hours(account, 1)
       runner = offline_runner(account, 2)
 
-      assert {:ok, 1} = Runners.sweep_inactive_runners(subject)
+      assert Runners.sweep_inactive_runners(subject) === {:ok, 1}
       assert is_nil(Runners.peek_runner_by_id(runner.id))
 
       assert [marker] = retention_markers(account.id)
@@ -1461,7 +1457,7 @@ defmodule Emisar.RunnersTest do
       Fixtures.Accounts.set_runner_inactive_retention_hours(account, 6)
       runner = offline_runner(account, 3)
 
-      assert {:ok, 0} = Runners.sweep_inactive_runners(subject)
+      assert Runners.sweep_inactive_runners(subject) === {:ok, 0}
       assert Repo.reload(runner)
       assert retention_markers(account.id) == []
     end
@@ -1472,14 +1468,14 @@ defmodule Emisar.RunnersTest do
     } do
       _runner = offline_runner(account, 960)
 
-      assert {:error, :retention_disabled} = Runners.sweep_inactive_runners(subject)
+      assert Runners.sweep_inactive_runners(subject) == {:error, :retention_disabled}
     end
 
     test "a viewer (no manage_runners) is refused", %{account: account} do
       Fixtures.Accounts.set_runner_inactive_retention_hours(account, 720)
 
-      assert {:error, :unauthorized} =
-               Runners.sweep_inactive_runners(viewer_subject_for(account))
+      assert Runners.sweep_inactive_runners(viewer_subject_for(account)) ==
+               {:error, :unauthorized}
     end
 
     test "only sweeps the subject's own account", %{account: account, subject: subject} do
@@ -1487,7 +1483,7 @@ defmodule Emisar.RunnersTest do
       {other_account, _u, _s} = account_with_owner_subject()
       other = offline_runner(other_account, 960)
 
-      assert {:ok, 0} = Runners.sweep_inactive_runners(subject)
+      assert Runners.sweep_inactive_runners(subject) === {:ok, 0}
       assert Repo.reload(other)
     end
 
@@ -1505,7 +1501,7 @@ defmodule Emisar.RunnersTest do
 
       # Composes scope_to_subject_membership just like delete_runner: the admin
       # reaches only its scoped group, so the out-of-scope host survives.
-      assert {:ok, 1} = Runners.sweep_inactive_runners(admin_subject)
+      assert Runners.sweep_inactive_runners(admin_subject) === {:ok, 1}
       assert is_nil(Runners.peek_runner_by_id(in_scope.id))
       assert Repo.reload(out_of_scope)
     end
@@ -1525,26 +1521,26 @@ defmodule Emisar.RunnersTest do
       runner = offline_runner(account, 960)
       {:ok, _reconnected} = Runners.connect_runner(runner)
 
-      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 720)
+      assert Runners.delete_inactive_runners(account.id, 720) === {:ok, 0}
       assert Repo.reload(runner)
     end
 
     test "skips a never-connected (pending) runner", %{account: account} do
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
-      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 720)
+      assert Runners.delete_inactive_runners(account.id, 720) === {:ok, 0}
       assert Repo.reload(runner)
     end
 
     test "skips a disabled runner offline past the cutoff", %{account: account} do
       runner = account |> offline_runner(960) |> Fixtures.Runners.disable_runner()
 
-      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 720)
+      assert Runners.delete_inactive_runners(account.id, 720) === {:ok, 0}
       assert Repo.reload(runner)
     end
 
     test "returns 0 and writes no marker when nothing matches", %{account: account} do
-      assert {:ok, 0} = Runners.delete_inactive_runners(account.id, 720)
+      assert Runners.delete_inactive_runners(account.id, 720) === {:ok, 0}
       assert retention_markers(account.id) == []
     end
   end
@@ -1736,13 +1732,12 @@ defmodule Emisar.RunnersTest do
 
       assert updated.hostname == "owned"
 
-      assert {:error, :not_found} =
-               Runners.apply_state_from_connection(
-                 runner,
-                 %{"hostname" => "stale"},
-                 runner.connection_generation,
-                 Ecto.UUID.generate()
-               )
+      assert Runners.apply_state_from_connection(
+               runner,
+               %{"hostname" => "stale"},
+               runner.connection_generation,
+               Ecto.UUID.generate()
+             ) == {:error, :not_found}
 
       assert Repo.reload!(runner).hostname == "owned"
     end
@@ -1772,7 +1767,7 @@ defmodule Emisar.RunnersTest do
       runner = Fixtures.Runners.create_runner(connected?: false)
       {:ok, first_claim} = Runners.connect_runner(runner)
 
-      assert {:error, :already_connected} = Runners.connect_runner(runner)
+      assert Runners.connect_runner(runner) == {:error, :already_connected}
 
       assert Runners.connection_owner?(
                runner.account_id,
@@ -1838,7 +1833,7 @@ defmodule Emisar.RunnersTest do
       runner = Fixtures.Runners.create_runner(connected?: false)
       Fixtures.Runners.disable_runner(runner)
 
-      assert {:error, :not_found} = Runners.connect_runner(runner)
+      assert Runners.connect_runner(runner) == {:error, :not_found}
       assert Repo.all(Audit.Event) == []
     end
 
@@ -1854,7 +1849,7 @@ defmodule Emisar.RunnersTest do
                  subject
                )
 
-      assert {:error, :account_disabled} = Runners.connect_runner(runner)
+      assert Runners.connect_runner(runner) == {:error, :account_disabled}
       refute Enum.any?(Repo.all(Audit.Event), &(&1.event_type == "runner.connected"))
     end
   end
@@ -1875,13 +1870,12 @@ defmodule Emisar.RunnersTest do
       Presence.untrack(self(), Presence.topic(runner.account_id), runner.id)
       {:ok, second} = Runners.connect_runner(runner)
 
-      assert {:error, :not_found} =
-               Runners.disconnect_runner(
-                 first.id,
-                 first.connection_generation,
-                 first.connection_lease_id,
-                 "stale"
-               )
+      assert Runners.disconnect_runner(
+               first.id,
+               first.connection_generation,
+               first.connection_lease_id,
+               "stale"
+             ) == {:error, :not_found}
 
       current = Repo.reload!(runner)
       assert current.connection_lease_id == second.connection_lease_id
@@ -1923,8 +1917,8 @@ defmodule Emisar.RunnersTest do
     end
 
     test "returns not_found for an unknown runner and audits nothing" do
-      assert {:error, :not_found} =
-               Runners.disconnect_runner(Ecto.UUID.generate(), 1, Ecto.UUID.generate(), "gone")
+      assert Runners.disconnect_runner(Ecto.UUID.generate(), 1, Ecto.UUID.generate(), "gone") ==
+               {:error, :not_found}
 
       assert Repo.all(Audit.Event) == []
     end
@@ -2059,8 +2053,8 @@ defmodule Emisar.RunnersTest do
       enforce_runner_versions(true)
       runner = Fixtures.Runners.create_runner(connected?: false, runner_version: "0.0.0")
 
-      assert {:error, {:unsupported_version, ">= 0.0.1"}} =
-               Runners.enforce_runner_version(runner, %RequestContext{ip_address: "10.0.0.7"})
+      assert Runners.enforce_runner_version(runner, %RequestContext{ip_address: "10.0.0.7"}) ==
+               {:error, {:unsupported_version, ">= 0.0.1"}}
 
       assert event = Repo.one(Audit.Event)
       assert event.event_type == "runner.version_rejected"
@@ -2075,7 +2069,7 @@ defmodule Emisar.RunnersTest do
     test "warn-only: a below-minimum version proceeds without audit" do
       runner = Fixtures.Runners.create_runner(connected?: false, runner_version: "0.0.0")
 
-      assert :ok = Runners.enforce_runner_version(runner, %RequestContext{})
+      assert Runners.enforce_runner_version(runner, %RequestContext{}) == :ok
       assert Repo.all(Audit.Event) == []
     end
 
@@ -2086,8 +2080,8 @@ defmodule Emisar.RunnersTest do
       unparseable =
         Fixtures.Runners.create_runner(connected?: false, runner_version: "dev-abc123")
 
-      assert :ok = Runners.enforce_runner_version(supported, %RequestContext{})
-      assert :ok = Runners.enforce_runner_version(unparseable, %RequestContext{})
+      assert Runners.enforce_runner_version(supported, %RequestContext{}) == :ok
+      assert Runners.enforce_runner_version(unparseable, %RequestContext{}) == :ok
       assert Repo.all(Audit.Event) == []
     end
   end
@@ -2846,7 +2840,7 @@ defmodule Emisar.RunnersTest do
     end
 
     test "a viewer (no manage_enrollment_keys) is refused", %{account: account} do
-      assert {:error, :unauthorized} = Runners.list_enrollment_keys(viewer_subject_for(account))
+      assert Runners.list_enrollment_keys(viewer_subject_for(account)) == {:error, :unauthorized}
     end
   end
 
@@ -2922,7 +2916,7 @@ defmodule Emisar.RunnersTest do
       assert {:error, %Ecto.Changeset{} = changeset} =
                Runners.create_enrollment_key(%{description: "dead", max_uses: 0}, subject)
 
-      assert %{max_uses: ["must be greater than 0"]} = errors_on(changeset)
+      assert errors_on(changeset) == %{max_uses: ["must be greater than 0"]}
     end
 
     test "a malformed expiry mints nothing and audits nothing", %{subject: subject} do
@@ -2935,8 +2929,8 @@ defmodule Emisar.RunnersTest do
     end
 
     test "a viewer (no manage_enrollment_keys) is refused", %{account: account} do
-      assert {:error, :unauthorized} =
-               Runners.create_enrollment_key(%{reusable: true}, viewer_subject_for(account))
+      assert Runners.create_enrollment_key(%{reusable: true}, viewer_subject_for(account)) ==
+               {:error, :unauthorized}
     end
 
     # A key is a FLEET-WIDE grant: the enrolling host self-reports its group, so
@@ -3157,13 +3151,12 @@ defmodule Emisar.RunnersTest do
       runner = Fixtures.Runners.create_runner(connected?: true)
       :ok = Runners.subscribe_runner_transport(runner)
 
-      assert :ok =
-               Runners.deliver_to_runner(
-                 runner.account_id,
-                 runner.id,
-                 runner.connection_generation,
-                 %{"cmd" => "dispatch"}
-               )
+      assert Runners.deliver_to_runner(
+               runner.account_id,
+               runner.id,
+               runner.connection_generation,
+               %{"cmd" => "dispatch"}
+             ) == :ok
 
       assert_receive {:cloud_to_runner, _generation, %{"cmd" => "dispatch"}}
     end
@@ -3198,16 +3191,15 @@ defmodule Emisar.RunnersTest do
                  subject
                )
 
-      assert {:error, :not_connected} =
-               Runners.current_connection_generation(account.id, runner.id)
+      assert Runners.current_connection_generation(account.id, runner.id) ==
+               {:error, :not_connected}
 
-      assert {:error, :not_connected} =
-               Runners.deliver_to_runner(
-                 account.id,
-                 runner.id,
-                 runner.connection_generation,
-                 %{"cmd" => "late"}
-               )
+      assert Runners.deliver_to_runner(
+               account.id,
+               runner.id,
+               runner.connection_generation,
+               %{"cmd" => "late"}
+             ) == {:error, :not_connected}
 
       refute_receive {:cloud_to_runner, _generation, _msg}
     end
@@ -3264,7 +3256,7 @@ defmodule Emisar.RunnersTest do
 
     test "a viewer (no issue_install_key) is refused" do
       account = Fixtures.Accounts.create_account()
-      assert {:error, :unauthorized} = Runners.mint_install_key(viewer_subject_for(account))
+      assert Runners.mint_install_key(viewer_subject_for(account)) == {:error, :unauthorized}
     end
 
     # The permission alone is not enough: an enrolling host names its own group,
@@ -3321,8 +3313,8 @@ defmodule Emisar.RunnersTest do
     test "a viewer (no manage_enrollment_keys) is refused", %{account: account, subject: owner} do
       {:ok, _raw, key} = Runners.create_enrollment_key(%{reusable: true}, owner)
 
-      assert {:error, :unauthorized} =
-               Runners.revoke_enrollment_key(key, viewer_subject_for(account))
+      assert Runners.revoke_enrollment_key(key, viewer_subject_for(account)) ==
+               {:error, :unauthorized}
     end
 
     test "won't touch an enrollment key in another account (cross-account → :not_found)" do
@@ -3330,7 +3322,7 @@ defmodule Emisar.RunnersTest do
       {_account_b, _ub, owner_b} = account_with_owner_subject()
       {:ok, _raw, key_a} = Runners.create_enrollment_key(%{reusable: true}, owner_a)
 
-      assert {:error, :not_found} = Runners.revoke_enrollment_key(key_a, owner_b)
+      assert Runners.revoke_enrollment_key(key_a, owner_b) == {:error, :not_found}
     end
 
     test "won't return an already-revoked enrollment key in another account" do
@@ -3339,7 +3331,7 @@ defmodule Emisar.RunnersTest do
       {:ok, _raw, key_a} = Runners.create_enrollment_key(%{reusable: true}, owner_a)
       {:ok, revoked_key_a} = Runners.revoke_enrollment_key(key_a, owner_a)
 
-      assert {:error, :not_found} = Runners.revoke_enrollment_key(revoked_key_a, owner_b)
+      assert Runners.revoke_enrollment_key(revoked_key_a, owner_b) == {:error, :not_found}
     end
   end
 
@@ -3459,8 +3451,7 @@ defmodule Emisar.RunnersTest do
       runner = Fixtures.Runners.create_runner(connected?: false)
       {raw, _token} = Runners.mint_runner_token(runner)
 
-      {:ok, _disabled} =
-        runner |> Emisar.Runners.Runner.Changeset.disable() |> Emisar.Repo.update()
+      Fixtures.Runners.disable_runner(runner)
 
       assert Runners.refresh_runner_token(raw) == {:error, :runner_disabled}
     end
@@ -3525,8 +3516,8 @@ defmodule Emisar.RunnersTest do
     end
 
     test "returns {:error, :token_invalid} for garbage" do
-      assert {:error, :token_invalid} = Runners.verify_runner_token("rnrtok-garbage")
-      assert {:error, :token_invalid} = Runners.verify_runner_token("")
+      assert Runners.verify_runner_token("rnrtok-garbage") == {:error, :token_invalid}
+      assert Runners.verify_runner_token("") == {:error, :token_invalid}
     end
 
     test "returns {:error, :runner_disabled} only for a disabled runner's valid token" do
@@ -3894,8 +3885,8 @@ defmodule Emisar.RunnersTest do
       assert %Token{} = Repo.get(Token, second_token_id)
       assert Repo.reload!(key).uses_count == 1
 
-      assert {:error, :enrollment_key_invalid} =
-               Runners.register_via_enrollment_key(raw, %{attrs | external_id: "other-host"})
+      assert Runners.register_via_enrollment_key(raw, %{attrs | external_id: "other-host"}) ==
+               {:error, :enrollment_key_invalid}
 
       assert Repo.aggregate(
                Runner.Query.by_account_id(Runner.Query.not_deleted(), account.id),
@@ -3917,8 +3908,7 @@ defmodule Emisar.RunnersTest do
       assert {:ok, %Runner{}, %Token{}, _} = Runners.register_via_enrollment_key(raw, attrs)
       assert {:ok, %EnrollmentKey{}} = Runners.revoke_enrollment_key(Repo.reload!(key), subject)
 
-      assert {:error, :enrollment_key_invalid} =
-               Runners.register_via_enrollment_key(raw, attrs)
+      assert Runners.register_via_enrollment_key(raw, attrs) == {:error, :enrollment_key_invalid}
     end
 
     test "re-registration after a soft-delete creates a fresh runner" do
@@ -3969,8 +3959,8 @@ defmodule Emisar.RunnersTest do
 
       {:ok, _} = Runners.connect_runner(holder)
 
-      assert {:error, :runner_name_taken, "samehost"} =
-               Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b"))
+      assert Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b")) ==
+               {:error, :runner_name_taken, "samehost"}
     end
 
     test "an OFFLINE holder keeps the name — a conflict is a conflict" do
@@ -3991,8 +3981,8 @@ defmodule Emisar.RunnersTest do
       assert {:ok, %Runner{id: holder_id, name: "samehost"}, _, _} =
                Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-a"))
 
-      assert {:error, :runner_name_taken, "samehost"} =
-               Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b"))
+      assert Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b")) ==
+               {:error, :runner_name_taken, "samehost"}
 
       # The holder is untouched.
       assert %Runner{} = Runners.peek_runner_by_id(holder_id)
@@ -4016,8 +4006,8 @@ defmodule Emisar.RunnersTest do
       # Connected holders are never displaced — the conflict stands.
       {:ok, holder} = Runners.connect_runner(holder)
 
-      assert {:error, :runner_name_taken, "samehost"} =
-               Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b"))
+      assert Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b")) ==
+               {:error, :runner_name_taken, "samehost"}
 
       # Deleting the holder soft-deletes it, freeing the name (partial index).
       {:ok, _} = Runners.delete_runner(holder, subject)
@@ -4039,7 +4029,7 @@ defmodule Emisar.RunnersTest do
 
       for external_id <- [nil, "", "  ", String.duplicate("x", 256)] do
         attrs = %{hostname: "invalid-id-host", group: "g", external_id: external_id}
-        assert {:error, :invalid_external_id} = Runners.register_via_enrollment_key(raw, attrs)
+        assert Runners.register_via_enrollment_key(raw, attrs) == {:error, :invalid_external_id}
       end
 
       valid = %{hostname: "valid-id-host", group: "g", external_id: "durable-id"}
@@ -4064,11 +4054,10 @@ defmodule Emisar.RunnersTest do
           reusable: true
         )
 
-      assert {:error, :over_limit, "free", 3} =
-               Runners.register_via_enrollment_key(raw, %{
-                 external_id: "ext-over-limit",
-                 group: "demo"
-               })
+      assert Runners.register_via_enrollment_key(raw, %{
+               external_id: "ext-over-limit",
+               group: "demo"
+             }) === {:error, :over_limit, "free", 3}
     end
 
     test "a reconnecting runner at the plan cap still registers (its seat is already counted)" do
@@ -4097,13 +4086,13 @@ defmodule Emisar.RunnersTest do
                Runners.register_via_enrollment_key(raw, %{external_id: "ext-keep", group: "g"})
 
       # ...but a genuinely NEW runner at the cap is still refused.
-      assert {:error, :over_limit, "free", 3} =
-               Runners.register_via_enrollment_key(raw, %{external_id: "ext-new", group: "g"})
+      assert Runners.register_via_enrollment_key(raw, %{external_id: "ext-new", group: "g"}) ===
+               {:error, :over_limit, "free", 3}
     end
 
     test "returns :enrollment_key_invalid for an unknown raw secret" do
-      assert {:error, :enrollment_key_invalid} =
-               Runners.register_via_enrollment_key("emkey-enroll-garbage", %{})
+      assert Runners.register_via_enrollment_key("emkey-enroll-garbage", %{}) ==
+               {:error, :enrollment_key_invalid}
     end
 
     test "threads the request context onto the runner.registered audit row" do
@@ -4231,11 +4220,11 @@ defmodule Emisar.RunnersTest do
       Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
-      assert {:error, :over_limit, "free", 3} = Billing.check_limit(account, :runners)
+      assert Billing.check_limit(account, :runners) === {:error, :over_limit, "free", 3}
 
       {:ok, _} = Runners.delete_runner(r1, subject)
 
-      assert :ok = Billing.check_limit(account, :runners)
+      assert Billing.check_limit(account, :runners) == :ok
       assert {:ok, %{runner_count: 2}} = Billing.billing_summary(account, subject)
     end
 
@@ -4244,10 +4233,10 @@ defmodule Emisar.RunnersTest do
       Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
-      assert {:error, :over_limit, "free", 3} = Billing.check_limit(account, :runners)
+      assert Billing.check_limit(account, :runners) === {:error, :over_limit, "free", 3}
 
       {:ok, _} = Runners.disable_runner(r1, subject)
-      assert :ok = Billing.check_limit(account, :runners)
+      assert Billing.check_limit(account, :runners) == :ok
     end
 
     test "a past_due account keeps full plan limits — status never gates registration" do
@@ -4263,7 +4252,7 @@ defmodule Emisar.RunnersTest do
       # Two runners on a Team plan is well under the cap → check_limit is :ok.
       _ = Fixtures.Runners.create_runner(account_id: account.id)
       _ = Fixtures.Runners.create_runner(account_id: account.id)
-      assert :ok = Billing.check_limit(account, :runners)
+      assert Billing.check_limit(account, :runners) == :ok
 
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
@@ -4314,10 +4303,9 @@ defmodule Emisar.RunnersTest do
       {_raw, token} = Runners.mint_runner_token(runner)
       {:ok, _deleted} = Runners.delete_runner(runner, subject)
 
-      assert [] =
-               Token.Query.all()
-               |> Runners.Authorizer.for_subject(subject)
-               |> Repo.all()
+      assert Token.Query.all()
+             |> Runners.Authorizer.for_subject(subject)
+             |> Repo.all() == []
 
       assert %Token{id: id} = Repo.reload!(token)
       assert id == token.id

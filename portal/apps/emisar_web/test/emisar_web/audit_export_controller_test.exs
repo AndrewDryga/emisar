@@ -407,7 +407,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
       account: own_account,
       raw_key: raw
     } do
-      {_other_user, other_account, _} = Fixtures.Subjects.owner_subject()
+      other_account = Fixtures.Accounts.create_account()
 
       insert_event(own_account, "user.signed_in")
       insert_event(other_account, "user.signed_in")

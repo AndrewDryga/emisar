@@ -106,25 +106,25 @@ defmodule Emisar.Runs.ActionRunTest do
     test "requires account_id, runner_id, request_id, action_id" do
       changeset = ActionRun.Changeset.create(%{})
       refute changeset.valid?
-      errors = Keyword.keys(changeset.errors)
-      assert :account_id in errors
-      assert :runner_id in errors
-      assert :request_id in errors
-      assert :action_id in errors
+      errors = errors_on(changeset)
+      assert errors.account_id == ["can't be blank"]
+      assert errors.runner_id == ["can't be blank"]
+      assert errors.request_id == ["can't be blank"]
+      assert errors.action_id == ["can't be blank"]
     end
 
     test "rejects unknown source values" do
       changeset = ActionRun.Changeset.create(create_attrs(%{source: "wat"}))
 
       refute changeset.valid?
-      assert {"is invalid", _} = changeset.errors[:source]
+      assert errors_on(changeset).source == ["is invalid"]
     end
 
     test "rejects a noncanonical request id" do
       changeset = ActionRun.Changeset.create(create_attrs(%{request_id: "req_x"}))
 
       refute changeset.valid?
-      assert {"must be a canonical run request id", _} = changeset.errors[:request_id]
+      assert errors_on(changeset).request_id == ["must be a canonical run request id"]
     end
 
     test "accepts the raised 2000-char reason and rejects one char past it" do
@@ -175,7 +175,10 @@ defmodule Emisar.Runs.ActionRunTest do
       changeset = ActionRun.Changeset.create(create_attrs(%{mcp_client_metadata: huge}))
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :mcp_client_metadata)
+
+      assert errors_on(changeset).mcp_client_metadata == [
+               "is too large (max 8192 bytes serialized)"
+             ]
     end
 
     test "requires a valid schema exactly when structured output is expected" do
@@ -197,7 +200,7 @@ defmodule Emisar.Runs.ActionRunTest do
         ActionRun.Changeset.create(create_attrs(%{structured_output_expected: true}))
 
       refute missing.valid?
-      assert {"is required for typed output", _} = missing.errors[:output_schema_snapshot]
+      assert errors_on(missing).output_schema_snapshot == ["is required for typed output"]
 
       malformed =
         ActionRun.Changeset.create(
@@ -208,15 +211,19 @@ defmodule Emisar.Runs.ActionRunTest do
         )
 
       refute malformed.valid?
-      assert {"must be a valid output schema", _} = malformed.errors[:output_schema_snapshot]
+
+      assert errors_on(malformed).output_schema_snapshot == [
+               "must be a valid output schema"
+             ]
 
       unexpected =
         ActionRun.Changeset.create(create_attrs(%{output_schema_snapshot: schema}))
 
       refute unexpected.valid?
 
-      assert {"must be absent for untyped output", _} =
-               unexpected.errors[:output_schema_snapshot]
+      assert errors_on(unexpected).output_schema_snapshot == [
+               "must be absent for untyped output"
+             ]
     end
 
     test "accepts the canonical unsigned runner options envelope" do
@@ -233,21 +240,24 @@ defmodule Emisar.Runs.ActionRunTest do
     end
 
     test "rejects runner options the Go wire decoder cannot use" do
+      value_error = "values must be positive integers within the signed 64-bit range"
+      key_error = "supports only timeout, max_stdout_bytes, and max_stderr_bytes"
+
       invalid = [
-        %{"timeout" => "5s"},
-        %{"timeout" => 1.5},
-        %{"timeout" => 0},
-        %{"timeout" => -1},
-        %{"timeout" => 9_223_372_036_854_775_808},
-        %{"future" => 1},
-        %{timeout: 1}
+        {%{"timeout" => "5s"}, value_error},
+        {%{"timeout" => 1.5}, value_error},
+        {%{"timeout" => 0}, value_error},
+        {%{"timeout" => -1}, value_error},
+        {%{"timeout" => 9_223_372_036_854_775_808}, value_error},
+        {%{"future" => 1}, key_error},
+        {%{timeout: 1}, key_error}
       ]
 
-      for opts <- invalid do
+      for {opts, expected_error} <- invalid do
         changeset = ActionRun.Changeset.create(create_attrs(%{opts: opts}))
 
         refute changeset.valid?
-        assert Keyword.has_key?(changeset.errors, :opts)
+        assert errors_on(changeset).opts == [expected_error]
       end
     end
 
@@ -293,18 +303,23 @@ defmodule Emisar.Runs.ActionRunTest do
         })
 
       assert changeset.valid?
-      assert Ecto.Changeset.get_change(changeset, :local_audit_failed)
+      assert changeset.changes.local_audit_failed
     end
 
     test "rejects oversized runner result text fields" do
-      for field <- [:error_message, :executed_command] do
+      fields = [
+        error_message: "should be at most 16384 character(s)",
+        executed_command: "is too large (max 16384 bytes)"
+      ]
+
+      for {field, expected_error} <- fields do
         changeset =
           ActionRun.Changeset.transition(transition_run(), :failed, %{
             field => String.duplicate("x", 16_385)
           })
 
         refute changeset.valid?
-        assert Keyword.has_key?(changeset.errors, field)
+        assert errors_on(changeset)[field] == [expected_error]
       end
     end
 
@@ -325,19 +340,16 @@ defmodule Emisar.Runs.ActionRunTest do
     end
 
     test "rejects oversized runner result string fields before the DB does" do
-      for field <- [
-            :reason_text,
-            :event_id,
-            :emitted_stdout_sha256,
-            :emitted_stderr_sha256
-          ] do
+      fields = [:reason_text, :event_id, :emitted_stdout_sha256, :emitted_stderr_sha256]
+
+      for field <- fields do
         changeset =
           ActionRun.Changeset.transition(transition_run(), :failed, %{
             field => String.duplicate("x", 256)
           })
 
         refute changeset.valid?
-        assert Keyword.has_key?(changeset.errors, field)
+        assert errors_on(changeset)[field] == ["should be at most 255 character(s)"]
       end
     end
 
@@ -346,23 +358,25 @@ defmodule Emisar.Runs.ActionRunTest do
         changeset = ActionRun.Changeset.transition(transition_run(), :success, %{field => -1})
 
         refute changeset.valid?
-        assert {"must be greater than or equal to %{number}", _} = changeset.errors[field]
+        assert errors_on(changeset)[field] == ["must be greater than or equal to 0"]
       end
     end
 
     test "rejects runner result numbers outside their database column ranges" do
       overflows = [
-        exit_code: 2_147_483_648,
-        duration_ms: 2_147_483_648,
-        emitted_stdout_bytes: 9_223_372_036_854_775_808,
-        emitted_stderr_bytes: 9_223_372_036_854_775_808
+        {:exit_code, 2_147_483_648, "must be less than or equal to 2147483647"},
+        {:duration_ms, 2_147_483_648, "must be less than or equal to 2147483647"},
+        {:emitted_stdout_bytes, 9_223_372_036_854_775_808,
+         "must be less than or equal to 9223372036854775807"},
+        {:emitted_stderr_bytes, 9_223_372_036_854_775_808,
+         "must be less than or equal to 9223372036854775807"}
       ]
 
-      for {field, value} <- overflows do
+      for {field, value, expected_error} <- overflows do
         changeset = ActionRun.Changeset.transition(transition_run(), :success, %{field => value})
 
         refute changeset.valid?
-        assert {"must be less than or equal to %{number}", _} = changeset.errors[field]
+        assert errors_on(changeset)[field] == [expected_error]
       end
 
       changeset =
@@ -371,7 +385,10 @@ defmodule Emisar.Runs.ActionRunTest do
         })
 
       refute changeset.valid?
-      assert {"must be greater than or equal to %{number}", _} = changeset.errors[:exit_code]
+
+      assert errors_on(changeset).exit_code == [
+               "must be greater than or equal to -2147483648"
+             ]
     end
   end
 end

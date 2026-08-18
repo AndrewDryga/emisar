@@ -160,7 +160,7 @@ defmodule Emisar.Accounts.Account.ChangesetTest do
       changeset = Account.Changeset.mark_report_sent(account)
 
       assert changeset.valid?
-      assert %DateTime{} = Ecto.Changeset.get_change(changeset, :last_report_sent_at)
+      assert %{last_report_sent_at: %DateTime{}} = changeset.changes
     end
   end
 

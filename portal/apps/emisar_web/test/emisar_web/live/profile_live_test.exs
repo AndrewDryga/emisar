@@ -212,7 +212,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       subject = owner_subject(user, account)
 
       for index <- 1..5 do
-        assert :ok = Auth.issue_email_change_code("spent-#{index}@example.com", subject)
+        assert Auth.issue_email_change_code("spent-#{index}@example.com", subject) == :ok
         assert_received {:email, _}
       end
 
@@ -339,7 +339,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       # Spend the shared per-user window elsewhere; the step-up here inherits it.
       for _ <- 1..5 do
-        assert {:error, :invalid} = Auth.verify_mfa_challenge(enrolled, {:totp, "000000"})
+        assert Auth.verify_mfa_challenge(enrolled, {:totp, "000000"}) == {:error, :invalid}
       end
 
       render_hook(lv, "confirm_email_change", %{
@@ -1153,7 +1153,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       render_click(lv, "start_regenerate_recovery_codes", %{})
 
       for _ <- 1..5 do
-        assert {:error, :invalid} = Auth.verify_mfa_challenge(enrolled, {:totp, "000000"})
+        assert Auth.verify_mfa_challenge(enrolled, {:totp, "000000"}) == {:error, :invalid}
       end
 
       html =
@@ -1210,7 +1210,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       # Spend the shared per-user window elsewhere; this step-up inherits it.
       for _ <- 1..5 do
-        assert {:error, :invalid} = Auth.verify_mfa_challenge(enrolled, {:totp, "000000"})
+        assert Auth.verify_mfa_challenge(enrolled, {:totp, "000000"}) == {:error, :invalid}
       end
 
       otp = NimbleTOTP.verification_code(secret)

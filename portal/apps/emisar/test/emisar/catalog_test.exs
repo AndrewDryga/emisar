@@ -480,10 +480,6 @@ defmodule Emisar.CatalogTest do
     end
 
     test "ingests an advertisement at the documented caps", %{runner: runner} do
-      # The prod failure was an advertisement well inside these caps dying on
-      # round trips, not on validation, so the regression has to be a real
-      # cap-sized ingest — 128 packs and 2048 actions, then a re-advertisement
-      # that must update in place rather than duplicate.
       packs =
         Map.new(1..128, fn n ->
           {"pack-#{n}", %{"version" => "1.0.0", "hash" => "hash-#{n}"}}
@@ -635,7 +631,7 @@ defmodule Emisar.CatalogTest do
     end
 
     test "returns {:error, :unknown_runner} for an unknown id" do
-      assert {:error, :unknown_runner} = Catalog.observe_state(Ecto.UUID.generate(), %{})
+      assert Catalog.observe_state(Ecto.UUID.generate(), %{}) == {:error, :unknown_runner}
     end
 
     test "rejects an advertisement from a disabled runner" do
@@ -643,8 +639,8 @@ defmodule Emisar.CatalogTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       {:ok, _disabled} = Runners.disable_runner(runner, subject)
 
-      assert {:error, :unknown_runner} =
-               Catalog.observe_state(runner.id, state_payload(actions: [action("linux.uptime")]))
+      assert Catalog.observe_state(runner.id, state_payload(actions: [action("linux.uptime")])) ==
+               {:error, :unknown_runner}
 
       assert {:ok, [], _} = Catalog.list_actions_for_runner(runner.id, subject)
     end
@@ -664,17 +660,16 @@ defmodule Emisar.CatalogTest do
 
       assert updated.hostname == "owned"
 
-      assert {:error, :connection_superseded} =
-               Catalog.observe_state_from_connection(
-                 runner.id,
-                 state_payload(
-                   hostname: "stale",
-                   packs: %{"stale-pack" => %{"version" => "1.0.0", "hash" => "sha256:stale"}},
-                   actions: [action("stale.read", pack_id: "stale-pack")]
-                 ),
-                 runner.connection_generation,
-                 Ecto.UUID.generate()
-               )
+      assert Catalog.observe_state_from_connection(
+               runner.id,
+               state_payload(
+                 hostname: "stale",
+                 packs: %{"stale-pack" => %{"version" => "1.0.0", "hash" => "sha256:stale"}},
+                 actions: [action("stale.read", pack_id: "stale-pack")]
+               ),
+               runner.connection_generation,
+               Ecto.UUID.generate()
+             ) == {:error, :connection_superseded}
 
       assert Repo.reload!(runner).hostname == "owned"
 
@@ -781,11 +776,6 @@ defmodule Emisar.CatalogTest do
     end
 
     test "concurrent first-sight from two runners → no crash, one row" do
-      # Regression: two runners advertising the same pack/version at
-      # the same time would both peek nil and then race to insert,
-      # crashing the loser on a unique-violation Changeset. With the
-      # on_conflict: :nothing fix the loser quietly falls through to
-      # the maybe_mark_pending path.
       account = Fixtures.Accounts.create_account()
       runner_a = Fixtures.Runners.create_runner(account_id: account.id)
       runner_b = Fixtures.Runners.create_runner(account_id: account.id)
@@ -1271,7 +1261,7 @@ defmodule Emisar.CatalogTest do
     } do
       pack_version = Fixtures.Catalog.create_empty_rejected_pack_version(account_id: account.id)
 
-      assert {:error, :nothing_to_trust} = Catalog.trust_pack_version(pack_version.id, subject)
+      assert Catalog.trust_pack_version(pack_version.id, subject) == {:error, :nothing_to_trust}
     end
 
     test "trust snapshots only descriptors bound to the exact pending hash", %{
@@ -1422,7 +1412,7 @@ defmodule Emisar.CatalogTest do
                )
 
       assert {:ok, [pending], _} = Catalog.list_pack_versions(subject)
-      assert {:error, :invalid_manifest} = Catalog.trust_pack_version(pending.id, subject)
+      assert Catalog.trust_pack_version(pending.id, subject) == {:error, :invalid_manifest}
       assert {:ok, [unchanged], _} = Catalog.list_pack_versions(subject)
       assert unchanged.trust_state == :pending
       assert unchanged.pending_hash == Fixtures.Catalog.pack_hash("sha256:BAD")
@@ -1449,7 +1439,7 @@ defmodule Emisar.CatalogTest do
                )
 
       assert {:ok, [pending], _} = Catalog.list_pack_versions(subject)
-      assert {:error, :invalid_manifest} = Catalog.trust_pack_version(pending.id, subject)
+      assert Catalog.trust_pack_version(pending.id, subject) == {:error, :invalid_manifest}
     end
 
     # trusting a pending pack version writes a
@@ -1501,7 +1491,9 @@ defmodule Emisar.CatalogTest do
         )
 
       {:ok, [pack_version], _} = Catalog.list_pack_versions(owner_subject)
-      assert {:error, :unauthorized} = Catalog.trust_pack_version(pack_version.id, viewer_subject)
+
+      assert Catalog.trust_pack_version(pack_version.id, viewer_subject) ==
+               {:error, :unauthorized}
     end
 
     # Trust/Reject of another account's pin is account-scoped via the locked
@@ -1520,7 +1512,7 @@ defmodule Emisar.CatalogTest do
       {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Catalog.trust_pack_version(pack_version.id, subject_b)
+      assert Catalog.trust_pack_version(pack_version.id, subject_b) == {:error, :not_found}
 
       # A's pin is untouched.
       assert {:ok, [unchanged], _} = Catalog.list_pack_versions(subject)
@@ -1544,8 +1536,8 @@ defmodule Emisar.CatalogTest do
       assert {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
 
       # The row is now :trusted (not pending) — the locked re-read rejects the race loser.
-      assert {:error, :not_pending} = Catalog.trust_pack_version(pack_version.id, subject)
-      assert {:error, :not_pending} = Catalog.reject_pack_version(pack_version.id, subject)
+      assert Catalog.trust_pack_version(pack_version.id, subject) == {:error, :not_pending}
+      assert Catalog.reject_pack_version(pack_version.id, subject) == {:error, :not_pending}
     end
 
     test "broadcasts the pack-trust change after the flip commits", %{
@@ -1658,10 +1650,7 @@ defmodule Emisar.CatalogTest do
       {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       assert {:ok, rejected} = Catalog.reject_pack_version(pack_version.id, subject)
 
-      # The row is NOT deleted — it stays as an explicit :rejected pin so the
-      # action that references this version resolves to "untrusted", not the
-      # fail-open "missing row = trusted" the old delete left behind. The
-      # refused bytes stay recorded so the decision sticks across reconnects.
+      # A rejected row must remain persisted; absence is fail-open for trust.
       assert rejected.trust_state == :rejected
       assert rejected.hash == nil
       assert rejected.pending_hash == Fixtures.Catalog.pack_hash("sha256:NOPE")
@@ -1770,8 +1759,8 @@ defmodule Emisar.CatalogTest do
 
       {:ok, [pack_version], _} = Catalog.list_pack_versions(owner_subject)
 
-      assert {:error, :unauthorized} =
-               Catalog.reject_pack_version(pack_version.id, viewer_subject)
+      assert Catalog.reject_pack_version(pack_version.id, viewer_subject) ==
+               {:error, :unauthorized}
     end
 
     test "reject of another account's pin is :not_found (cross-account)", %{
@@ -1787,7 +1776,7 @@ defmodule Emisar.CatalogTest do
       {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Catalog.reject_pack_version(pack_version.id, subject_b)
+      assert Catalog.reject_pack_version(pack_version.id, subject_b) == {:error, :not_found}
 
       # A's pin is untouched.
       assert {:ok, [unchanged], _} = Catalog.list_pack_versions(subject)
@@ -1877,15 +1866,15 @@ defmodule Emisar.CatalogTest do
       viewer = Fixtures.Users.create_user()
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} =
-               Catalog.override_pack_retirement(pack_version.id, viewer_subject)
+      assert Catalog.override_pack_retirement(pack_version.id, viewer_subject) ==
+               {:error, :unauthorized}
     end
 
     test "override of another account's pin is :not_found (cross-account)", %{
       pack_version: pack_version
     } do
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Catalog.override_pack_retirement(pack_version.id, subject_b)
+      assert Catalog.override_pack_retirement(pack_version.id, subject_b) == {:error, :not_found}
     end
 
     test "a pending (non-trusted) row is rejected with :not_trusted", %{
@@ -1902,11 +1891,11 @@ defmodule Emisar.CatalogTest do
       pending = Enum.find(versions, &(&1.pack_id == "other"))
       assert pending.trust_state == :pending
 
-      assert {:error, :not_trusted} = Catalog.override_pack_retirement(pending.id, subject)
+      assert Catalog.override_pack_retirement(pending.id, subject) == {:error, :not_trusted}
     end
 
     test "an invalid id is :not_found", %{subject: subject} do
-      assert {:error, :not_found} = Catalog.override_pack_retirement("not-a-uuid", subject)
+      assert Catalog.override_pack_retirement("not-a-uuid", subject) == {:error, :not_found}
     end
 
     # This mutation reaches the row by id rather than through the shared lock, so
@@ -2021,15 +2010,15 @@ defmodule Emisar.CatalogTest do
       pending = Enum.find(versions, &(&1.pack_id == "other"))
       assert pending.trust_state == :pending
 
-      assert {:error, :not_trusted} = Catalog.revoke_pack_version_trust(pending.id, subject)
+      assert Catalog.revoke_pack_version_trust(pending.id, subject) == {:error, :not_trusted}
     end
 
     test "a viewer subject is denied", %{account: account, pack_version: pack_version} do
       viewer = Fixtures.Users.create_user()
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} =
-               Catalog.revoke_pack_version_trust(pack_version.id, viewer_subject)
+      assert Catalog.revoke_pack_version_trust(pack_version.id, viewer_subject) ==
+               {:error, :unauthorized}
     end
 
     test "revoke of another account's pin is :not_found (cross-account)", %{
@@ -2037,12 +2026,11 @@ defmodule Emisar.CatalogTest do
     } do
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :not_found} =
-               Catalog.revoke_pack_version_trust(pack_version.id, subject_b)
+      assert Catalog.revoke_pack_version_trust(pack_version.id, subject_b) == {:error, :not_found}
     end
 
     test "an invalid id is :not_found", %{subject: subject} do
-      assert {:error, :not_found} = Catalog.revoke_pack_version_trust("not-a-uuid", subject)
+      assert Catalog.revoke_pack_version_trust("not-a-uuid", subject) == {:error, :not_found}
     end
 
     test "broadcasts the pack-trust change after the revoke commits", %{
@@ -2143,8 +2131,8 @@ defmodule Emisar.CatalogTest do
       viewer = Fixtures.Users.create_user()
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} =
-               Catalog.delete_pack_version(pack_version.id, viewer_subject)
+      assert Catalog.delete_pack_version(pack_version.id, viewer_subject) ==
+               {:error, :unauthorized}
     end
 
     test "delete of another account's pin is :not_found (cross-account)", %{
@@ -2152,7 +2140,7 @@ defmodule Emisar.CatalogTest do
       pack_version: pack_version
     } do
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Catalog.delete_pack_version(pack_version.id, subject_b)
+      assert Catalog.delete_pack_version(pack_version.id, subject_b) == {:error, :not_found}
 
       # A's pin is untouched.
       assert {:ok, [unchanged], _} = Catalog.list_pack_versions(subject)
@@ -2160,7 +2148,7 @@ defmodule Emisar.CatalogTest do
     end
 
     test "an invalid id is :not_found", %{subject: subject} do
-      assert {:error, :not_found} = Catalog.delete_pack_version("not-a-uuid", subject)
+      assert Catalog.delete_pack_version("not-a-uuid", subject) == {:error, :not_found}
     end
 
     test "broadcasts the pack-trust change after the delete commits", %{
@@ -2256,21 +2244,21 @@ defmodule Emisar.CatalogTest do
     end
 
     test "an unknown pack id is :not_found", %{subject: subject} do
-      assert {:error, :not_found} = Catalog.delete_pack("never-seen", subject)
+      assert Catalog.delete_pack("never-seen", subject) == {:error, :not_found}
     end
 
     test "a viewer subject is denied", %{account: account} do
       viewer = Fixtures.Users.create_user()
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} = Catalog.delete_pack("custom", viewer_subject)
+      assert Catalog.delete_pack("custom", viewer_subject) == {:error, :unauthorized}
     end
 
     test "another account's subject cannot delete the pack (cross-account)", %{
       subject: subject
     } do
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Catalog.delete_pack("custom", subject_b)
+      assert Catalog.delete_pack("custom", subject_b) == {:error, :not_found}
 
       # A's versions are untouched.
       assert {:ok, versions, _} = Catalog.list_pack_versions(subject)
@@ -2406,8 +2394,8 @@ defmodule Emisar.CatalogTest do
       viewer = Fixtures.Users.create_user()
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} =
-               Catalog.update_pack_retention_settings(account, %{"days" => "7"}, viewer_subject)
+      assert Catalog.update_pack_retention_settings(account, %{"days" => "7"}, viewer_subject) ==
+               {:error, :unauthorized}
 
       assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
       assert settings.pack_unseen_retention_days == nil
@@ -2435,8 +2423,8 @@ defmodule Emisar.CatalogTest do
 
       refute Catalog.subject_can_manage_pack_retention?(stale_subject)
 
-      assert {:error, :unauthorized} =
-               Catalog.update_pack_retention_settings(account, %{"days" => "7"}, stale_subject)
+      assert Catalog.update_pack_retention_settings(account, %{"days" => "7"}, stale_subject) ==
+               {:error, :unauthorized}
 
       assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
       assert settings.pack_unseen_retention_days == nil
@@ -2446,8 +2434,8 @@ defmodule Emisar.CatalogTest do
     test "another account's admin gets :not_found and writes nothing", %{account: account} do
       {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :not_found} =
-               Catalog.update_pack_retention_settings(account, %{"days" => "7"}, other_subject)
+      assert Catalog.update_pack_retention_settings(account, %{"days" => "7"}, other_subject) ==
+               {:error, :not_found}
 
       assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
       assert settings.pack_unseen_retention_days == nil
@@ -2524,17 +2512,17 @@ defmodule Emisar.CatalogTest do
     } do
       restricted = pack_restricted_subject(account, ["fresh"])
 
-      assert {:ok, 0} = Catalog.sweep_unseen_pack_versions(restricted)
+      assert Catalog.sweep_unseen_pack_versions(restricted) === {:ok, 0}
       assert Repo.reload(stale)
 
       # The unrestricted owner still reaches it, so the row really was sweepable.
-      assert {:ok, 1} = Catalog.sweep_unseen_pack_versions(subject)
+      assert Catalog.sweep_unseen_pack_versions(subject) === {:ok, 1}
       refute Repo.reload(stale)
     end
 
     test "removes versions unseen past the window (and their action rows), audits the operator",
          %{user: user, account: account, subject: subject, stale: stale} do
-      assert {:ok, 1} = Catalog.sweep_unseen_pack_versions(subject)
+      assert Catalog.sweep_unseen_pack_versions(subject) === {:ok, 1}
 
       {:ok, remaining, _} = Catalog.list_pack_versions(subject)
       assert Enum.map(remaining, & &1.pack_id) == ["fresh"]
@@ -2568,7 +2556,7 @@ defmodule Emisar.CatalogTest do
       forty_days_ago = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
       Fixtures.Catalog.backdate_pack_version_last_seen(stale_b, forty_days_ago)
 
-      assert {:ok, 1} = Catalog.sweep_unseen_pack_versions(subject)
+      assert Catalog.sweep_unseen_pack_versions(subject) === {:ok, 1}
 
       assert {:ok, [survivor], _} = Catalog.list_pack_versions(subject_b)
       assert survivor.pack_id == "b-tools"
@@ -2580,14 +2568,14 @@ defmodule Emisar.CatalogTest do
     } do
       Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: nil})
 
-      assert {:error, :retention_disabled} = Catalog.sweep_unseen_pack_versions(subject)
+      assert Catalog.sweep_unseen_pack_versions(subject) == {:error, :retention_disabled}
     end
 
     test "a viewer subject is denied", %{account: account} do
       viewer = Fixtures.Users.create_user()
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} = Catalog.sweep_unseen_pack_versions(viewer_subject)
+      assert Catalog.sweep_unseen_pack_versions(viewer_subject) == {:error, :unauthorized}
     end
   end
 
@@ -2614,7 +2602,7 @@ defmodule Emisar.CatalogTest do
     end
 
     test "the system sweep audits with a system actor", %{account: account, subject: subject} do
-      assert {:ok, 1} = Catalog.delete_unseen_pack_versions(account.id, 30)
+      assert Catalog.delete_unseen_pack_versions(account.id, 30) === {:ok, 1}
 
       {:ok, events, _} = Audit.list_events(subject)
       audit = Enum.find(events, &(&1.event_type == "pack_retention_swept"))
@@ -2648,7 +2636,7 @@ defmodule Emisar.CatalogTest do
       # A disabled runner is offline by definition, so the connected set excluded
       # it and the sweep deleted its trust pins — including trusted ones — which
       # re-enabling could not recover.
-      assert {:ok, 1} = Catalog.delete_unseen_pack_versions(account.id, 30)
+      assert Catalog.delete_unseen_pack_versions(account.id, 30) === {:ok, 1}
 
       assert Repo.reload(live)
       refute Repo.reload(stale)
@@ -2672,7 +2660,7 @@ defmodule Emisar.CatalogTest do
       forty_days_ago = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
       Fixtures.Catalog.backdate_pack_version_last_seen(live, forty_days_ago)
 
-      assert {:ok, 1} = Catalog.delete_unseen_pack_versions(account.id, 30)
+      assert Catalog.delete_unseen_pack_versions(account.id, 30) === {:ok, 1}
 
       assert Repo.reload(live)
       refute Repo.reload(stale)
@@ -2690,7 +2678,7 @@ defmodule Emisar.CatalogTest do
           state_payload(packs: %{"stale" => %{"version" => "1.0", "hash" => "sha256:STALE"}})
         )
 
-      assert {:ok, 1} = Catalog.delete_unseen_pack_versions(account.id, 30)
+      assert Catalog.delete_unseen_pack_versions(account.id, 30) === {:ok, 1}
       refute Repo.reload(stale)
     end
 
@@ -2700,7 +2688,7 @@ defmodule Emisar.CatalogTest do
     } do
       # A 90-day window keeps the 40-day-old version — housekeeping that
       # removes nothing must not manufacture audit noise.
-      assert {:ok, 0} = Catalog.delete_unseen_pack_versions(account.id, 90)
+      assert Catalog.delete_unseen_pack_versions(account.id, 90) === {:ok, 0}
 
       {:ok, events, _} = Audit.list_events(subject)
       refute Enum.any?(events, &(&1.event_type == "pack_retention_swept"))
@@ -2800,17 +2788,17 @@ defmodule Emisar.CatalogTest do
         pack_version: "1.0"
       }
 
-      assert {:error, :pack_untrusted, :no_pin} = Catalog.check_pack_trusted(action)
+      assert Catalog.check_pack_trusted(action) == {:error, :pack_untrusted, :no_pin}
     end
 
     test "action without pack_version (not yet pinnable) → {:ok, nil} (no hash to snapshot)" do
       runner = Fixtures.Runners.create_runner()
       act = %RunnerAction{pack_id: "p", pack_version: nil, account_id: runner.account_id}
-      assert {:ok, nil} = Catalog.check_pack_trusted(act)
+      assert Catalog.check_pack_trusted(act) == {:ok, nil}
     end
 
     test "a pack-less action (no pack_id) → {:ok, nil}" do
-      assert {:ok, nil} = Catalog.check_pack_trusted(%RunnerAction{pack_id: nil})
+      assert Catalog.check_pack_trusted(%RunnerAction{pack_id: nil}) == {:ok, nil}
     end
   end
 
@@ -2881,14 +2869,13 @@ defmodule Emisar.CatalogTest do
       |> Ecto.Changeset.change(risk: :low, output_schema: %{"type" => "object"})
       |> Repo.update!()
 
-      assert {:error, :action_contract_changed} =
-               Catalog.fetch_dispatch_contract(
-                 Repo,
-                 account.id,
-                 runner.id,
-                 "p.inspect",
-                 "p@1.0/" <> @dispatch_hash
-               )
+      assert Catalog.fetch_dispatch_contract(
+               Repo,
+               account.id,
+               runner.id,
+               "p.inspect",
+               "p@1.0/" <> @dispatch_hash
+             ) == {:error, :action_contract_changed}
     end
   end
 
@@ -3137,7 +3124,7 @@ defmodule Emisar.CatalogTest do
     test "a subject without view_catalog is denied", %{account: account, runner: runner} do
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
 
-      assert {:error, :unauthorized} = Catalog.list_actions_for_runner(runner.id, no_view)
+      assert Catalog.list_actions_for_runner(runner.id, no_view) == {:error, :unauthorized}
     end
 
     test "the Search filter narrows to matches on the action id OR the human title", %{
@@ -3366,8 +3353,8 @@ defmodule Emisar.CatalogTest do
         pack_id: "linux-core"
       )
 
-      assert {:ok, [{"linux-core", "linux-core"}, {"postgres", "postgres"}]} =
-               Catalog.list_action_pack_options_for_runner(runner.id, subject)
+      assert Catalog.list_action_pack_options_for_runner(runner.id, subject) ==
+               {:ok, [{"linux-core", "linux-core"}, {"postgres", "postgres"}]}
     end
 
     test "another account's subject sees none of this runner's packs (cross-account)", %{
@@ -3380,14 +3367,14 @@ defmodule Emisar.CatalogTest do
       )
 
       {_other_account, other_subject} = account_with_owner()
-      assert {:ok, []} = Catalog.list_action_pack_options_for_runner(runner.id, other_subject)
+      assert Catalog.list_action_pack_options_for_runner(runner.id, other_subject) == {:ok, []}
     end
 
     test "a subject without view_catalog is denied", %{account: account, runner: runner} do
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
 
-      assert {:error, :unauthorized} =
-               Catalog.list_action_pack_options_for_runner(runner.id, no_view)
+      assert Catalog.list_action_pack_options_for_runner(runner.id, no_view) ==
+               {:error, :unauthorized}
     end
   end
 
@@ -4076,9 +4063,9 @@ defmodule Emisar.CatalogTest do
     test "a subject without view_catalog is denied", %{account: account} do
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
 
-      assert {:error, :unauthorized} = Catalog.risk_by_action_ids(["x"], no_view)
+      assert Catalog.risk_by_action_ids(["x"], no_view) == {:error, :unauthorized}
       # The empty-list clause gates too — no DB-free bypass of the permission check.
-      assert {:error, :unauthorized} = Catalog.risk_by_action_ids([], no_view)
+      assert Catalog.risk_by_action_ids([], no_view) == {:error, :unauthorized}
     end
   end
 
@@ -4347,8 +4334,8 @@ defmodule Emisar.CatalogTest do
     test "a subject without view_catalog is denied — empty and non-empty", %{account: account} do
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
 
-      assert {:error, :unauthorized} = Catalog.action_risks_for_runner_ids(["r"], no_view)
-      assert {:error, :unauthorized} = Catalog.action_risks_for_runner_ids([], no_view)
+      assert Catalog.action_risks_for_runner_ids(["r"], no_view) == {:error, :unauthorized}
+      assert Catalog.action_risks_for_runner_ids([], no_view) == {:error, :unauthorized}
     end
   end
 
@@ -4404,7 +4391,7 @@ defmodule Emisar.CatalogTest do
 
     test "a subject without view_catalog is denied", %{account: account} do
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
-      assert {:error, :unauthorized} = Catalog.action_risk_index_for_account(no_view)
+      assert Catalog.action_risk_index_for_account(no_view) == {:error, :unauthorized}
     end
   end
 
@@ -4471,7 +4458,7 @@ defmodule Emisar.CatalogTest do
       assert {:ok, action} = Catalog.fetch_action_by_id("linux.uptime", runner.id, subject)
       assert action.account_id == account.id
 
-      assert {:error, :not_found} = Catalog.fetch_action_by_id("linux.uptime", "junk", subject)
+      assert Catalog.fetch_action_by_id("linux.uptime", "junk", subject) == {:error, :not_found}
     end
 
     test "another account's subject can't fetch the action (cross-account)", %{
@@ -4484,15 +4471,15 @@ defmodule Emisar.CatalogTest do
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :not_found} =
-               Catalog.fetch_action_by_id("linux.uptime", runner.id, subject_b)
+      assert Catalog.fetch_action_by_id("linux.uptime", runner.id, subject_b) ==
+               {:error, :not_found}
     end
 
     test "a subject without view_catalog is denied", %{account: account, runner: runner} do
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
 
-      assert {:error, :unauthorized} =
-               Catalog.fetch_action_by_id("linux.uptime", runner.id, no_view)
+      assert Catalog.fetch_action_by_id("linux.uptime", runner.id, no_view) ==
+               {:error, :unauthorized}
     end
   end
 
@@ -4515,16 +4502,16 @@ defmodule Emisar.CatalogTest do
 
       other_account = Fixtures.Accounts.create_account()
 
-      assert {:error, :not_found} =
-               Catalog.fetch_action_for_account("linux.uptime", runner.id, other_account.id)
+      assert Catalog.fetch_action_for_account("linux.uptime", runner.id, other_account.id) ==
+               {:error, :not_found}
     end
 
     test "an unknown action_id is :not_found" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert {:error, :not_found} =
-               Catalog.fetch_action_for_account("nope.do", runner.id, account.id)
+      assert Catalog.fetch_action_for_account("nope.do", runner.id, account.id) ==
+               {:error, :not_found}
     end
   end
 
@@ -4640,7 +4627,7 @@ defmodule Emisar.CatalogTest do
     test "a subject without view_catalog is denied", %{account: account} do
       no_view = %Emisar.Auth.Subject{account: account, role: :runner, permissions: MapSet.new()}
 
-      assert {:error, :unauthorized} = Catalog.list_pack_versions(no_view)
+      assert Catalog.list_pack_versions(no_view) == {:error, :unauthorized}
     end
 
     test "preload: [:retirement_overridden_by] loads the overriding admin, and it's absent by default",
@@ -5768,11 +5755,11 @@ defmodule Emisar.CatalogTest do
         Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
 
       force_runner_access(account, subject, other_pack_only)
-      assert {:ok, []} = Catalog.list_pack_actions("acme", "2.0", subject)
+      assert Catalog.list_pack_actions("acme", "2.0", subject) == {:ok, []}
 
       # Another account sees none of this account's pack actions.
       {_account, other_subject} = account_with_owner()
-      assert {:ok, []} = Catalog.list_pack_actions("acme", "2.0", other_subject)
+      assert Catalog.list_pack_actions("acme", "2.0", other_subject) == {:ok, []}
     end
   end
 
@@ -5969,10 +5956,9 @@ defmodule Emisar.CatalogTest do
                  %{base_action | side_effects: [String.duplicate("a", 1_024)]}
                ])
 
-      assert {:error, :invalid_manifest} =
-               Emisar.Catalog.TrustedManifest.from_runner_actions([
-                 %{base_action | side_effects: [String.duplicate("a", 1_025)]}
-               ])
+      assert Emisar.Catalog.TrustedManifest.from_runner_actions([
+               %{base_action | side_effects: [String.duplicate("a", 1_025)]}
+             ]) == {:error, :invalid_manifest}
     end
 
     test "accepts only trusted rows carrying a complete versioned manifest" do
@@ -5997,19 +5983,17 @@ defmodule Emisar.CatalogTest do
                  trusted_manifest: manifest
                })
 
-      assert {:error, :incomplete_manifest} =
-               Catalog.trusted_manifest_for_static_reads(%PackVersion{
-                 trust_state: :trusted,
-                 trusted_manifest: %{
-                   "custom.inspect" => %{"risk" => "low", "kind" => "exec"}
-                 }
-               })
+      assert Catalog.trusted_manifest_for_static_reads(%PackVersion{
+               trust_state: :trusted,
+               trusted_manifest: %{
+                 "custom.inspect" => %{"risk" => "low", "kind" => "exec"}
+               }
+             }) == {:error, :incomplete_manifest}
 
-      assert {:error, :pack_untrusted} =
-               Catalog.trusted_manifest_for_static_reads(%PackVersion{
-                 trust_state: :pending,
-                 trusted_manifest: manifest
-               })
+      assert Catalog.trusted_manifest_for_static_reads(%PackVersion{
+               trust_state: :pending,
+               trusted_manifest: manifest
+             }) == {:error, :pack_untrusted}
     end
   end
 
@@ -6071,9 +6055,6 @@ defmodule Emisar.CatalogTest do
     test "counts a retired-blocked trusted version, and stops once resolved" do
       {account, subject} = account_with_owner()
 
-      # Trusted under an older release, then the watermark passed it — the
-      # blocked state the badge must surface (the founder's fleet had these
-      # with NO nav signal).
       {pack_id, _watermark} =
         Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
 
@@ -6186,7 +6167,6 @@ defmodule Emisar.CatalogTest do
       account_id = account.id
       Emisar.Catalog.subscribe_account_packs(account_id)
 
-      # New custom pack (no shipped baseline) → lands pending → broadcast.
       {:ok, _} =
         Catalog.observe_state(
           runner,
@@ -6195,7 +6175,6 @@ defmodule Emisar.CatalogTest do
 
       assert_receive {:pack_trust_changed, ^account_id}
 
-      # Re-advertising the same pending hash changes nothing → silence.
       {:ok, _} =
         Catalog.observe_state(
           runner,
@@ -6204,7 +6183,6 @@ defmodule Emisar.CatalogTest do
 
       refute_receive {:pack_trust_changed, _}
 
-      # Resolving it (Trust) → broadcast again.
       {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
       {:ok, _} = Catalog.trust_pack_version(pack_version.id, subject)
       assert_receive {:pack_trust_changed, ^account_id}
@@ -6217,7 +6195,6 @@ defmodule Emisar.CatalogTest do
 
       Catalog.subscribe_account_packs(account_a.id)
 
-      # The pending pack appears in B's account — A's subscriber must hear nothing.
       {:ok, _} =
         Catalog.observe_state(
           runner_b,

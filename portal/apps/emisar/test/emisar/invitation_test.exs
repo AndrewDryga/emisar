@@ -206,7 +206,9 @@ defmodule Emisar.InvitationTest do
         assert "requires at least one runner group or runner" in errors_on(changeset).runner_access_mode
       end
 
-      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email("foreign-scope@example.test")
+      assert Emisar.Users.fetch_user_by_email("foreign-scope@example.test") ==
+               {:error, :not_found}
+
       assert {:ok, [], _meta} = Emisar.Audit.list_events(subject)
     end
 
@@ -231,7 +233,7 @@ defmodule Emisar.InvitationTest do
       assert Accounts.invite_user_to_account(attrs, admin_subject) ==
                {:error, :runner_access_exceeds_subject}
 
-      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email("over-grant@example.test")
+      assert Emisar.Users.fetch_user_by_email("over-grant@example.test") == {:error, :not_found}
       assert {:ok, [], _meta} = Emisar.Audit.list_events(owner_subject)
     end
 
@@ -259,7 +261,7 @@ defmodule Emisar.InvitationTest do
 
       assert "requires at least one runner group or runner" in errors_on(changeset).runner_access_mode
 
-      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email("stale-scope@example.test")
+      assert Emisar.Users.fetch_user_by_email("stale-scope@example.test") == {:error, :not_found}
     end
 
     test "an invalid submission returns the form changeset with nothing written", %{
@@ -311,11 +313,10 @@ defmodule Emisar.InvitationTest do
       _existing_membership =
         Fixtures.Memberships.create_membership(account_id: account.id, user_id: existing.id)
 
-      assert {:error, :already_member} =
-               Accounts.invite_user_to_account(
-                 Fixtures.Accounts.invitation_attrs(email: existing.email, role: "admin"),
-                 subject
-               )
+      assert Accounts.invite_user_to_account(
+               Fixtures.Accounts.invitation_attrs(email: existing.email, role: "admin"),
+               subject
+             ) == {:error, :already_member}
     end
   end
 
@@ -352,7 +353,7 @@ defmodule Emisar.InvitationTest do
     end
 
     test "returns :not_found for an unknown token" do
-      assert {:error, :not_found} = Accounts.fetch_invitation_by_token("bogus")
+      assert Accounts.fetch_invitation_by_token("bogus") == {:error, :not_found}
     end
 
     test "returns :not_found for nil / empty token (no leaky scan)" do
@@ -361,8 +362,8 @@ defmodule Emisar.InvitationTest do
       # the catch-all `:not_found` clause rather than scanning. So an empty token
       # param can never resolve an invite — the accept LV renders that
       # `:not_found` as the cause-neutral "Invitation unavailable" page.
-      assert {:error, :not_found} = Accounts.fetch_invitation_by_token(nil)
-      assert {:error, :not_found} = Accounts.fetch_invitation_by_token("")
+      assert Accounts.fetch_invitation_by_token(nil) == {:error, :not_found}
+      assert Accounts.fetch_invitation_by_token("") == {:error, :not_found}
     end
 
     test "an expired invitation reports :expired (the bearer holds the real token)",
@@ -372,7 +373,7 @@ defmodule Emisar.InvitationTest do
       nine_days_ago = DateTime.add(DateTime.utc_now(), -9 * 24 * 3600, :second)
       {:ok, _} = membership |> Ecto.Changeset.change(inserted_at: nine_days_ago) |> Repo.update()
 
-      assert {:error, :expired} = Accounts.fetch_invitation_by_token(token)
+      assert Accounts.fetch_invitation_by_token(token) == {:error, :expired}
     end
 
     # the 7-day window (Membership.Query.invitation_not_expired).
@@ -389,7 +390,7 @@ defmodule Emisar.InvitationTest do
       {:ok, _} =
         membership |> Ecto.Changeset.change(inserted_at: just_over_seven) |> Repo.update()
 
-      assert {:error, :expired} = Accounts.fetch_invitation_by_token(token)
+      assert Accounts.fetch_invitation_by_token(token) == {:error, :expired}
     end
   end
 
@@ -417,13 +418,13 @@ defmodule Emisar.InvitationTest do
       assert is_nil(accepted.invitation_token_digest)
 
       # The stale struct replayed: the fresh row is no longer pending.
-      assert {:error, :not_found} = Accounts.mark_invitation_accepted(membership, invitee)
+      assert Accounts.mark_invitation_accepted(membership, invitee) == {:error, :not_found}
     end
 
     test "a different signed-in user cannot burn the invitation", %{membership: membership} do
       bystander = Fixtures.Users.create_user()
 
-      assert {:error, :unauthorized} = Accounts.mark_invitation_accepted(membership, bystander)
+      assert Accounts.mark_invitation_accepted(membership, bystander) == {:error, :unauthorized}
     end
   end
 
@@ -466,8 +467,8 @@ defmodule Emisar.InvitationTest do
       # A second link holder submits after the token is burnt: judged on
       # the locked fresh row, it must fail — and crucially must NOT have
       # overwritten the winner's full_name.
-      assert {:error, :not_found} =
-               Accounts.accept_invitation(membership, %{"full_name" => "Mallory"})
+      assert Accounts.accept_invitation(membership, %{"full_name" => "Mallory"}) ==
+               {:error, :not_found}
 
       assert {:ok, %{full_name: "Carol"}} = Emisar.Users.fetch_user_by_id(user.id)
     end

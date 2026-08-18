@@ -471,7 +471,7 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       subject = no_permissions_subject(account)
 
-      assert {:error, :unauthorized} = Runs.list_runs(subject)
+      assert Runs.list_runs(subject) == {:error, :unauthorized}
     end
 
     test "the runner_id filter scopes the feed to one runner" do
@@ -534,13 +534,12 @@ defmodule Emisar.RunsTest do
       assert Ecto.assoc_loaded?(listed.runner)
 
       {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
-      assert {:ok, []} = Runs.list_runs_by_runbook_execution(execution_id, other_subject)
+      assert Runs.list_runs_by_runbook_execution(execution_id, other_subject) == {:ok, []}
 
-      assert {:error, :unauthorized} =
-               Runs.list_runs_by_runbook_execution(
-                 execution_id,
-                 no_permissions_subject(account)
-               )
+      assert Runs.list_runs_by_runbook_execution(
+               execution_id,
+               no_permissions_subject(account)
+             ) == {:error, :unauthorized}
     end
   end
 
@@ -578,7 +577,7 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       subject = no_permissions_subject(account)
 
-      assert {:error, :unauthorized} = Runs.list_run_operator_options(subject)
+      assert Runs.list_run_operator_options(subject) == {:error, :unauthorized}
     end
 
     test "cross-account — B's options never include A's operators" do
@@ -614,7 +613,7 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       subject = no_permissions_subject(account)
 
-      assert {:error, :unauthorized} = Runs.list_run_runbook_options(subject)
+      assert Runs.list_run_runbook_options(subject) == {:error, :unauthorized}
     end
   end
 
@@ -758,12 +757,11 @@ defmodule Emisar.RunsTest do
     test "rejects subjects without run-view permission" do
       account = Fixtures.Accounts.create_account()
 
-      assert {:error, :unauthorized} =
-               Runs.list_recent_mcp_runs(
-                 %{scope: :account},
-                 no_permissions_subject(account),
-                 limit: 15
-               )
+      assert Runs.list_recent_mcp_runs(
+               %{scope: :account},
+               no_permissions_subject(account),
+               limit: 15
+             ) == {:error, :unauthorized}
     end
   end
 
@@ -910,8 +908,8 @@ defmodule Emisar.RunsTest do
       assert fetched.id == run.id
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Runs.fetch_run_by_id(run.id, subject_b)
-      assert {:error, :not_found} = Runs.fetch_run_by_id("not-a-uuid", subject)
+      assert Runs.fetch_run_by_id(run.id, subject_b) == {:error, :not_found}
+      assert Runs.fetch_run_by_id("not-a-uuid", subject) == {:error, :not_found}
     end
 
     test "honors the :preload option for the run-detail render" do
@@ -1259,7 +1257,7 @@ defmodule Emisar.RunsTest do
       assert is_binary(fetched.runner_ref)
 
       {_user, _account, foreign_subject} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Runs.fetch_mcp_run_by_id(run.id, foreign_subject)
+      assert Runs.fetch_mcp_run_by_id(run.id, foreign_subject) == {:error, :not_found}
 
       {:ok, access} =
         Emisar.Accounts.RunnerAccess.restricted(["not-this-runner"], [])
@@ -1268,7 +1266,7 @@ defmodule Emisar.RunsTest do
 
       assert {:ok, fetched_after_scope_change} = Runs.fetch_mcp_run_by_id(run.id, subject)
       assert fetched_after_scope_change.id == run.id
-      assert {:error, :not_found} = Runs.fetch_mcp_run_by_id("not-a-uuid", subject)
+      assert Runs.fetch_mcp_run_by_id("not-a-uuid", subject) == {:error, :not_found}
     end
   end
 
@@ -1284,16 +1282,16 @@ defmodule Emisar.RunsTest do
 
       # Another runner in the SAME account must not see it — the runner
       # socket may only touch runs dispatched to that runner.
-      assert {:error, :not_found} =
-               Runs.fetch_run_by_request_id_for_runner(run.request_id, other_runner.id)
+      assert Runs.fetch_run_by_request_id_for_runner(run.request_id, other_runner.id) ==
+               {:error, :not_found}
     end
 
     test "an unknown request_id is :not_found" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert {:error, :not_found} =
-               Runs.fetch_run_by_request_id_for_runner("req_nope", runner.id)
+      assert Runs.fetch_run_by_request_id_for_runner("req_nope", runner.id) ==
+               {:error, :not_found}
     end
   end
 
@@ -1319,7 +1317,7 @@ defmodule Emisar.RunsTest do
       assert {:error, %Ecto.Changeset{} = changeset} =
                Runs.create_run(base_attrs(account.id, runner.id, %{args: huge}))
 
-      assert Keyword.has_key?(changeset.errors, :args_raw)
+      assert errors_on(changeset).args_raw == ["is too large (max 32768 bytes)"]
     end
 
     # Signed audit state is minted by exactly one path — the preflighted MCP
@@ -1416,8 +1414,8 @@ defmodule Emisar.RunsTest do
 
       subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} =
-               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+      assert Runs.dispatch_run(base_attrs(account.id, runner.id), subject) ==
+               {:error, :unauthorized}
     end
 
     test "an MCP key dispatches normally — its reach is the minter's scope + Policy" do
@@ -1450,8 +1448,8 @@ defmodule Emisar.RunsTest do
                  subject
                )
 
-      assert {:error, :runner_not_found} =
-               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+      assert Runs.dispatch_run(base_attrs(account.id, runner.id), subject) ==
+               {:error, :runner_not_found}
 
       refute_receive {:cloud_to_runner, _generation, _message}, 100
     end
@@ -1646,31 +1644,30 @@ defmodule Emisar.RunsTest do
       # populated on the action AND a PackVersion row exists. Custom
       # packs land pending — operator approves before dispatch can
       # carry the trusted hash on the wire.
-      :ok =
-        case Emisar.Catalog.observe_state(runner, %{
-               "hostname" => "h",
-               "version" => "0.1",
-               "labels" => %{},
-               "packs" => %{
-                 "linux-core" => %{
-                   "version" => "1.2.3",
-                   "hash" => Fixtures.Catalog.pack_hash("CLOUD_TRUSTED")
-                 }
-               },
-               "actions" => [
-                 %{
-                   "id" => "linux.uptime",
-                   "pack_id" => "linux-core",
-                   "title" => "Uptime",
-                   "kind" => "exec",
-                   "risk" => "low",
-                   "description" => "t",
-                   "args" => []
-                 }
-               ]
-             }) do
-          {:ok, _} -> :ok
-        end
+      payload = %{
+        "hostname" => "h",
+        "version" => "0.1",
+        "labels" => %{},
+        "packs" => %{
+          "linux-core" => %{
+            "version" => "1.2.3",
+            "hash" => Fixtures.Catalog.pack_hash("CLOUD_TRUSTED")
+          }
+        },
+        "actions" => [
+          %{
+            "id" => "linux.uptime",
+            "pack_id" => "linux-core",
+            "title" => "Uptime",
+            "kind" => "exec",
+            "risk" => "low",
+            "description" => "t",
+            "args" => []
+          }
+        ]
+      }
+
+      assert {:ok, _} = Emisar.Catalog.observe_state(runner, payload)
 
       {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(subject)
       assert {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
@@ -1695,11 +1692,10 @@ defmodule Emisar.RunsTest do
       _ = Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
 
-      assert {:error, :action_not_found} =
-               Runs.dispatch_run(
-                 base_attrs(account.id, runner.id),
-                 subject
-               )
+      assert Runs.dispatch_run(
+               base_attrs(account.id, runner.id),
+               subject
+             ) == {:error, :action_not_found}
     end
 
     test "rejects dispatch when the runner reports the primary executable missing" do
@@ -1718,8 +1714,8 @@ defmodule Emisar.RunsTest do
       _ = Fixtures.Policies.create_policy(account_id: account.id)
       subject = owner_subject_for(account)
 
-      assert {:error, :action_unavailable} =
-               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+      assert Runs.dispatch_run(base_attrs(account.id, runner.id), subject) ==
+               {:error, :action_unavailable}
 
       refute Repo.exists?(ActionRun)
     end
@@ -1731,14 +1727,13 @@ defmodule Emisar.RunsTest do
       # Soft-delete the runner (sets deleted_at). The dispatch gate runs
       # before the action-advertised check, so a deleted runner is refused
       # as :runner_not_found rather than slipping through to execution.
-      {:ok, _} = runner |> Emisar.Runners.Runner.Changeset.delete() |> Emisar.Repo.update()
+      Fixtures.Runners.mark_deleted(runner)
       subject = owner_subject_for(account)
 
-      assert {:error, :runner_not_found} =
-               Runs.dispatch_run(
-                 base_attrs(account.id, runner.id),
-                 subject
-               )
+      assert Runs.dispatch_run(
+               base_attrs(account.id, runner.id),
+               subject
+             ) == {:error, :runner_not_found}
     end
 
     test "policy sees the catalog's risk, not what the caller passes" do
@@ -1860,8 +1855,8 @@ defmodule Emisar.RunsTest do
 
           policy = policy |> Ecto.Changeset.change(rules: rules) |> Repo.update!()
 
-          assert {:error, :invalid_policy_approval} =
-                   Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+          assert Runs.dispatch_run(base_attrs(account.id, runner.id), subject) ==
+                   {:error, :invalid_policy_approval}
 
           policy
         end)
@@ -1972,8 +1967,8 @@ defmodule Emisar.RunsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id, enforce_signatures: true)
       _ = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
 
-      assert {:error, :runner_requires_attestation} =
-               Runs.dispatch_run(base_attrs(account.id, runner.id), subject)
+      assert Runs.dispatch_run(base_attrs(account.id, runner.id), subject) ==
+               {:error, :runner_requires_attestation}
 
       refute Repo.one(ActionRun)
     end
@@ -2104,7 +2099,7 @@ defmodule Emisar.RunsTest do
       assert {:error, %Ecto.Changeset{} = changeset} =
                Runs.dispatch_run(base_attrs(account.id, runner.id, %{args: huge}), subject)
 
-      assert Keyword.has_key?(changeset.errors, :args_raw)
+      assert errors_on(changeset).args_raw == ["is too large (max 32768 bytes)"]
 
       # No run persisted for this account…
       assert {:ok, [], _} = Runs.list_recent_runs(subject, limit: 50)
@@ -2125,7 +2120,7 @@ defmodule Emisar.RunsTest do
       subject = owner_subject_for(account)
 
       attrs = %{runner_id: runner.id, reason: "x", source: "operator", args: %{}}
-      assert {:error, :action_required} = Runs.dispatch_run(attrs, subject)
+      assert Runs.dispatch_run(attrs, subject) == {:error, :action_required}
     end
 
     test "rejects a missing reason with :reason_required" do
@@ -2134,7 +2129,7 @@ defmodule Emisar.RunsTest do
       subject = owner_subject_for(account)
 
       attrs = %{runner_id: runner.id, action_id: "linux.uptime", source: "operator", args: %{}}
-      assert {:error, :reason_required} = Runs.dispatch_run(attrs, subject)
+      assert Runs.dispatch_run(attrs, subject) == {:error, :reason_required}
     end
   end
 
@@ -2156,13 +2151,12 @@ defmodule Emisar.RunsTest do
       target = mcp_target_attrs(runner, key, "op_334NN9NMDZ1T76NARWCKM5A0D7")
       unbound = %{subject | membership_id: nil}
 
-      assert {:error, :runner_out_of_scope} =
-               Runs.compose_dispatch_batch_in_multi(
-                 Multi.new(),
-                 [target],
-                 unbound,
-                 :unbound
-               )
+      assert Runs.compose_dispatch_batch_in_multi(
+               Multi.new(),
+               [target],
+               unbound,
+               :unbound
+             ) == {:error, :runner_out_of_scope}
     end
 
     test "rejects a runner from another account" do
@@ -2200,8 +2194,8 @@ defmodule Emisar.RunsTest do
     test "rejects an empty batch before adding it to the caller's transaction" do
       %{subject: subject} = mcp_fanout_fixture(["low"])
 
-      assert {:error, :invalid_targets} =
-               Runs.compose_dispatch_batch_in_multi(Multi.new(), [], subject, :empty)
+      assert Runs.compose_dispatch_batch_in_multi(Multi.new(), [], subject, :empty) ==
+               {:error, :invalid_targets}
     end
 
     test "refuses any caller-supplied attestation before composing the batch" do
@@ -2299,7 +2293,7 @@ defmodule Emisar.RunsTest do
       :ok = Emisar.Runners.subscribe_runner_transport(runner)
       :ok = Runs.subscribe_account_runs(runner.account_id)
 
-      assert :ok = Runs.after_composed_dispatches_committed(changes)
+      assert Runs.after_composed_dispatches_committed(changes) == :ok
       assert_receive {:run_updated, run_id}, 500
       assert run_id == changes[{:composed_run, :post_commit_contract, 0}].id
 
@@ -2328,7 +2322,7 @@ defmodule Emisar.RunsTest do
 
       Fixtures.Accounts.disable_account(account)
 
-      assert {:error, :not_found} = Runs.dispatch_mcp_action(facts, subject)
+      assert Runs.dispatch_mcp_action(facts, subject) == {:error, :not_found}
       refute Repo.exists?(ActionRun)
     end
 
@@ -2337,7 +2331,7 @@ defmodule Emisar.RunsTest do
       facts = mcp_action_facts("op_334NN9NMDZ1T76NARWCKM5A0D8", [runner])
       unbound = %{subject | membership_id: nil}
 
-      assert {:error, :runner_out_of_scope} = Runs.dispatch_mcp_action(facts, unbound)
+      assert Runs.dispatch_mcp_action(facts, unbound) == {:error, :runner_out_of_scope}
     end
 
     test "rejects a runner ref that another account owns" do
@@ -2525,7 +2519,7 @@ defmodule Emisar.RunsTest do
 
       facts = mcp_action_facts("op_624NN9NMDZ1T76NARWCKM5A0D6", [ready, missing])
 
-      assert {:error, :target_contract_changed} = Runs.dispatch_mcp_action(facts, subject)
+      assert Runs.dispatch_mcp_action(facts, subject) == {:error, :target_contract_changed}
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
@@ -2616,7 +2610,7 @@ defmodule Emisar.RunsTest do
 
       facts = mcp_action_facts("op_504NN9NMDZ1T76NARWCKM5A0D6", [runner])
 
-      assert {:error, :invalid_policy_approval} = Runs.dispatch_mcp_action(facts, subject)
+      assert Runs.dispatch_mcp_action(facts, subject) == {:error, :invalid_policy_approval}
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
@@ -2641,8 +2635,8 @@ defmodule Emisar.RunsTest do
           valid_until: now |> DateTime.add(3_600, :second) |> DateTime.to_iso8601()
         )
 
-      assert {:error, :attestation_stale} =
-               Runs.dispatch_mcp_action(signed_mcp_facts(facts, signed.header), subject)
+      assert Runs.dispatch_mcp_action(signed_mcp_facts(facts, signed.header), subject) ==
+               {:error, :attestation_stale}
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
@@ -2778,7 +2772,7 @@ defmodule Emisar.RunsTest do
       %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
       facts = mcp_action_facts("op_424NN9NMDZ1T76NARWCKM5A0D6", [runner, runner])
 
-      assert {:error, :invalid_targets} = Runs.dispatch_mcp_action(facts, subject)
+      assert Runs.dispatch_mcp_action(facts, subject) == {:error, :invalid_targets}
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
@@ -2809,7 +2803,7 @@ defmodule Emisar.RunsTest do
 
       readvertise_mcp_action(runner, %{"risk" => "low"})
 
-      assert {:error, :target_contract_changed} = Runs.dispatch_mcp_action(facts, subject)
+      assert Runs.dispatch_mcp_action(facts, subject) == {:error, :target_contract_changed}
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
@@ -2828,7 +2822,7 @@ defmodule Emisar.RunsTest do
         "output_schema" => %{"type" => "object", "required" => ["forged"]}
       })
 
-      assert {:error, :target_contract_changed} = Runs.dispatch_mcp_action(facts, subject)
+      assert Runs.dispatch_mcp_action(facts, subject) == {:error, :target_contract_changed}
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
@@ -2850,8 +2844,8 @@ defmodule Emisar.RunsTest do
 
       {_user, _account, foreign_subject} = Fixtures.Subjects.owner_subject()
 
-      assert {:ok, []} =
-               Runs.list_runs_by_mcp_operation(run.mcp_operation_record_id, foreign_subject)
+      assert Runs.list_runs_by_mcp_operation(run.mcp_operation_record_id, foreign_subject) ==
+               {:ok, []}
     end
 
     test "keeps operation history after the API key owner's runner access changes" do
@@ -2947,23 +2941,20 @@ defmodule Emisar.RunsTest do
       account: account,
       runner: runner
     } do
-      assert {:error, :reason_required} =
-               Runs.dispatch_run_for_account(
-                 base_attrs(account.id, runner.id, %{reason: "   "}),
-                 account.id
-               )
+      assert Runs.dispatch_run_for_account(
+               base_attrs(account.id, runner.id, %{reason: "   "}),
+               account.id
+             ) == {:error, :reason_required}
 
-      assert {:error, :action_required} =
-               Runs.dispatch_run_for_account(
-                 %{runner_id: runner.id, reason: "x", source: "runbook", args: %{}},
-                 account.id
-               )
+      assert Runs.dispatch_run_for_account(
+               %{runner_id: runner.id, reason: "x", source: "runbook", args: %{}},
+               account.id
+             ) == {:error, :action_required}
 
-      assert {:error, :runner_required} =
-               Runs.dispatch_run_for_account(
-                 %{action_id: "linux.uptime", reason: "x", source: "runbook", args: %{}},
-                 account.id
-               )
+      assert Runs.dispatch_run_for_account(
+               %{action_id: "linux.uptime", reason: "x", source: "runbook", args: %{}},
+               account.id
+             ) == {:error, :runner_required}
     end
 
     test "re-checks the initiating membership's runner scope — out-of-scope is refused", %{
@@ -2989,8 +2980,7 @@ defmodule Emisar.RunsTest do
       attrs =
         base_attrs(account.id, runner.id, %{requested_by_membership_id: membership.id})
 
-      assert {:error, :runner_out_of_scope} =
-               Runs.dispatch_run_for_account(attrs, account.id)
+      assert Runs.dispatch_run_for_account(attrs, account.id) == {:error, :runner_out_of_scope}
     end
 
     test "stops subjectless dispatch while the account is disabled", %{
@@ -3007,8 +2997,8 @@ defmodule Emisar.RunsTest do
                  support_subject
                )
 
-      assert {:error, :runner_not_found} =
-               Runs.dispatch_run_for_account(base_attrs(account.id, runner.id), account.id)
+      assert Runs.dispatch_run_for_account(base_attrs(account.id, runner.id), account.id) ==
+               {:error, :runner_not_found}
     end
   end
 
@@ -3207,7 +3197,7 @@ defmodule Emisar.RunsTest do
       )
       |> Repo.update!()
 
-      assert {:error, :action_unavailable} = Runs.recheck_run_pack_trust(run.id)
+      assert Runs.recheck_run_pack_trust(run.id) == {:error, :action_unavailable}
     end
 
     test "refuses a run whose action pack drifted to :pending", %{
@@ -3248,7 +3238,7 @@ defmodule Emisar.RunsTest do
           args: %{}
         })
 
-      assert {:error, :pack_untrusted} = Runs.recheck_run_pack_trust(run.id)
+      assert Runs.recheck_run_pack_trust(run.id) == {:error, :pack_untrusted}
     end
 
     test "refuses a packless run when the runner no longer advertises the action", %{
@@ -3266,7 +3256,7 @@ defmodule Emisar.RunsTest do
           args: %{}
         })
 
-      assert {:error, :action_not_found} = Runs.recheck_run_pack_trust(run.id)
+      assert Runs.recheck_run_pack_trust(run.id) == {:error, :action_not_found}
     end
 
     test "refuses a versioned run when its advertised action disappeared", %{
@@ -3283,7 +3273,7 @@ defmodule Emisar.RunsTest do
           expected_pack_hash: "sha256:AUTHORIZED"
         })
 
-      assert {:error, :action_not_found} = Runs.recheck_run_pack_trust(run.id)
+      assert Runs.recheck_run_pack_trust(run.id) == {:error, :action_not_found}
     end
   end
 
@@ -3317,7 +3307,7 @@ defmodule Emisar.RunsTest do
 
     test "a fresh signature passes", %{account: account, runner: runner} do
       run = signed_run(account, runner, DateTime.to_iso8601(DateTime.utc_now()))
-      assert :ok = Runs.check_run_attestation_fresh(run.id)
+      assert Runs.check_run_attestation_fresh(run.id) == :ok
     end
 
     test "a signature older than the window is refused as :attestation_stale", %{
@@ -3326,7 +3316,7 @@ defmodule Emisar.RunsTest do
     } do
       stale = DateTime.utc_now() |> DateTime.add(-7200, :second) |> DateTime.to_iso8601()
       run = signed_run(account, runner, stale)
-      assert {:error, :attestation_stale} = Runs.check_run_attestation_fresh(run.id)
+      assert Runs.check_run_attestation_fresh(run.id) == {:error, :attestation_stale}
     end
 
     test "an unsigned run for an enforcing runner fails closed", %{
@@ -3334,7 +3324,7 @@ defmodule Emisar.RunsTest do
       runner: runner
     } do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      assert {:error, :attestation_stale} = Runs.check_run_attestation_fresh(run.id)
+      assert Runs.check_run_attestation_fresh(run.id) == {:error, :attestation_stale}
     end
   end
 
@@ -3415,7 +3405,7 @@ defmodule Emisar.RunsTest do
       |> Ecto.Changeset.change(queued_at: stale_at, status: :sent)
       |> Repo.update!()
 
-      assert :ok = Emisar.Runs.Jobs.DispatchTimeout.execute([])
+      assert Emisar.Runs.Jobs.DispatchTimeout.execute([]) == :ok
 
       reloaded = Repo.get!(ActionRun, run.id)
       assert reloaded.status == :error
@@ -3441,7 +3431,7 @@ defmodule Emisar.RunsTest do
       |> Ecto.Changeset.change(queued_at: stale_at, status: :sent)
       |> Repo.update!()
 
-      assert :ok = Emisar.Runs.Jobs.DispatchTimeout.execute([])
+      assert Emisar.Runs.Jobs.DispatchTimeout.execute([]) == :ok
 
       assert Repo.get!(ActionRun, run.id).status == :sent
     end
@@ -3468,7 +3458,7 @@ defmodule Emisar.RunsTest do
       assert pending.status == :pending
       {:ok, next_pending} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert :ok = Runs.dispatch_queued_for_runner(runner.id)
+      assert Runs.dispatch_queued_for_runner(runner.id) == :ok
 
       assert_receive {:cloud_to_runner, _generation, %{"request_id" => request_id}}, 500
       assert request_id == pending.request_id
@@ -3493,7 +3483,7 @@ defmodule Emisar.RunsTest do
       {:ok, other_sent} = Runs.create_run(base_attrs(account.id, other.id))
       other_sent = Fixtures.Runs.put_status(other_sent, :sent)
 
-      assert :ok = Runs.dispatch_queued_for_runner(runner.id)
+      assert Runs.dispatch_queued_for_runner(runner.id) == :ok
 
       # A :running run is excluded by the :pending filter — never re-sent.
       reloaded_running = Runs.peek_run_by_id(running.id)
@@ -3516,7 +3506,7 @@ defmodule Emisar.RunsTest do
           base_attrs(account.id, runner.id, %{expected_pack_hash: "sha256:AUTHORIZED"})
         )
 
-      assert :ok = Runs.dispatch_queued_for_runner(runner.id)
+      assert Runs.dispatch_queued_for_runner(runner.id) == :ok
       assert Runs.peek_run_by_id(run.id).status == :pending
       refute_receive {:cloud_to_runner, _generation, _payload}, 100
     end
@@ -3544,13 +3534,13 @@ defmodule Emisar.RunsTest do
           })
         )
 
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
 
       assert_receive {:cloud_to_runner, first_generation, %{"type" => "run_action"} = original},
                      500
 
       successor = reconnect_runner(runner)
-      assert :ok = Runs.resume_runs_for_runner(runner.id)
+      assert Runs.resume_runs_for_runner(runner.id) == :ok
 
       assert_receive {:cloud_to_runner, successor_generation,
                       %{"type" => "run_action"} = recovered},
@@ -3568,7 +3558,7 @@ defmodule Emisar.RunsTest do
       runner: runner
     } do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
 
       run
@@ -3578,7 +3568,7 @@ defmodule Emisar.RunsTest do
       {:ok, pending} = Runs.create_run(base_attrs(account.id, runner.id))
 
       successor = reconnect_runner(runner)
-      assert :ok = Runs.resume_runs_for_runner(runner.id)
+      assert Runs.resume_runs_for_runner(runner.id) == :ok
 
       assert_receive {:cloud_to_runner, generation,
                       %{"type" => "run_action", "request_id" => request_id}},
@@ -3606,7 +3596,7 @@ defmodule Emisar.RunsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       Emisar.Runners.subscribe_runner_transport(runner)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
 
       assert {:ok, started} =
@@ -3621,14 +3611,13 @@ defmodule Emisar.RunsTest do
       assert started.status == :running
       assert %DateTime{} = started.started_at
 
-      assert {:error, :not_dispatchable} =
-               Runs.mark_started_from_connection(
-                 account.id,
-                 runner.id,
-                 runner.connection_generation,
-                 runner.connection_lease_id,
-                 run.request_id
-               )
+      assert Runs.mark_started_from_connection(
+               account.id,
+               runner.id,
+               runner.connection_generation,
+               runner.connection_lease_id,
+               run.request_id
+             ) == {:error, :not_dispatchable}
     end
 
     test "rejects a superseded lease without changing the run" do
@@ -3636,19 +3625,18 @@ defmodule Emisar.RunsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       Emisar.Runners.subscribe_runner_transport(runner)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
 
       reconnect_runner(runner)
 
-      assert {:error, :connection_superseded} =
-               Runs.mark_started_from_connection(
-                 account.id,
-                 runner.id,
-                 runner.connection_generation,
-                 runner.connection_lease_id,
-                 run.request_id
-               )
+      assert Runs.mark_started_from_connection(
+               account.id,
+               runner.id,
+               runner.connection_generation,
+               runner.connection_lease_id,
+               run.request_id
+             ) == {:error, :connection_superseded}
 
       assert Runs.peek_run_by_id(run.id).status == :sent
     end
@@ -3742,7 +3730,7 @@ defmodule Emisar.RunsTest do
 
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
       assert Runs.peek_run_by_id(run.id).status == :sent
     end
@@ -3756,7 +3744,7 @@ defmodule Emisar.RunsTest do
       {:ok, _} = run |> Ecto.Changeset.change(status: :cancelled) |> Repo.update()
 
       # The row-locked claim must refuse it before anything reaches the runner.
-      assert {:error, :not_dispatchable} = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == {:error, :not_dispatchable}
       refute_receive {:cloud_to_runner, _generation, _}, 100
     end
 
@@ -3776,7 +3764,7 @@ defmodule Emisar.RunsTest do
                  support_subject
                )
 
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
       refute_receive {:cloud_to_runner, _generation, _}, 100
       assert Runs.peek_run_by_id(run.id).status == :pending
     end
@@ -3802,7 +3790,7 @@ defmodule Emisar.RunsTest do
 
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
       reloaded = Runs.peek_run_by_id(run.id)
       assert reloaded.status == :pending
       assert is_nil(reloaded.runner_connection_generation)
@@ -3818,7 +3806,7 @@ defmodule Emisar.RunsTest do
       {:ok, run} =
         Runs.create_run(base_attrs(account.id, runner.id, %{status: :pending_approval}))
 
-      assert {:error, :not_dispatchable} = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == {:error, :not_dispatchable}
       refute_receive {:cloud_to_runner, _generation, _}, 100
     end
   end
@@ -3829,13 +3817,13 @@ defmodule Emisar.RunsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert :ok = Runs.ensure_run_initiator_authorized(Repo, run)
+      assert Runs.ensure_run_initiator_authorized(Repo, run) == :ok
 
       membership = Repo.get!(Emisar.Accounts.Membership, run.initiating_membership_id)
       Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.none())
 
-      assert {:error, :initiator_no_longer_authorized} =
-               Runs.ensure_run_initiator_authorized(Repo, run)
+      assert Runs.ensure_run_initiator_authorized(Repo, run) ==
+               {:error, :initiator_no_longer_authorized}
     end
   end
 
@@ -3880,7 +3868,7 @@ defmodule Emisar.RunsTest do
         })
 
       # Redelivery must NOT ship a hash-less envelope — it refuses the run.
-      assert {:error, :pack_untrusted} = Runs.redeliver_to_runner(run)
+      assert Runs.redeliver_to_runner(run) == {:error, :pack_untrusted}
       assert Runs.peek_run_by_id(run.id).status == :refused
     end
 
@@ -3932,7 +3920,7 @@ defmodule Emisar.RunsTest do
       {:ok, [drifted], _} = Emisar.Catalog.list_pack_versions(subject)
       {:ok, _} = Emisar.Catalog.trust_pack_version(drifted.id, subject)
 
-      assert {:error, :pack_untrusted} = Runs.redeliver_to_runner(run)
+      assert Runs.redeliver_to_runner(run) == {:error, :pack_untrusted}
       assert Runs.peek_run_by_id(run.id).status == :refused
       refute_receive {:cloud_to_runner, _generation, _payload}, 100
     end
@@ -4188,7 +4176,7 @@ defmodule Emisar.RunsTest do
       subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert {:error, :unauthorized} = Runs.cancel_run(run, subject, "no rights")
+      assert Runs.cancel_run(run, subject, "no rights") == {:error, :unauthorized}
     end
 
     test "an owner of account B cannot cancel account A's run (cross-account → :not_found)", %{
@@ -4209,7 +4197,7 @@ defmodule Emisar.RunsTest do
 
       subject_b = Fixtures.Subjects.subject_for(owner_b, account_b, role: :owner)
 
-      assert {:error, :not_found} = Runs.cancel_run(run_a, subject_b, "wrong account")
+      assert Runs.cancel_run(run_a, subject_b, "wrong account") == {:error, :not_found}
     end
 
     test "cancel is accepted from :pending_approval and cancels the parked run", %{
@@ -4295,10 +4283,9 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
       sent = Fixtures.Runs.put_status(run, :sent)
 
-      assert {:error, :run_already_dispatched} =
-               Ecto.Multi.new()
-               |> Runs.cancel_run_in_multi(sent.id, "too late")
-               |> Repo.commit_multi()
+      assert Ecto.Multi.new()
+             |> Runs.cancel_run_in_multi(sent.id, "too late")
+             |> Repo.commit_multi() == {:error, :run_already_dispatched}
 
       assert Runs.peek_run_by_id(run.id).status == :sent
     end
@@ -4348,11 +4335,10 @@ defmodule Emisar.RunsTest do
 
   describe "after_undispatched_runbook_attempts_cancelled/2" do
     test "is a no-op when the enclosing transaction cancelled no attempts" do
-      assert :ok =
-               Runs.after_undispatched_runbook_attempts_cancelled(
-                 %{},
-                 Ecto.UUID.generate()
-               )
+      assert Runs.after_undispatched_runbook_attempts_cancelled(
+               %{},
+               Ecto.UUID.generate()
+             ) == :ok
     end
   end
 
@@ -4422,7 +4408,7 @@ defmodule Emisar.RunsTest do
       old_queued_at = DateTime.utc_now() |> DateTime.add(-60, :second)
       run = run |> Ecto.Changeset.change(queued_at: old_queued_at) |> Repo.update!()
 
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
       assert_receive {:cloud_to_runner, _generation, %{"request_id" => request_id}}, 500
       assert request_id == run.request_id
 
@@ -4436,7 +4422,7 @@ defmodule Emisar.RunsTest do
           %RequestContext{}
         )
 
-      assert {:ok, :requeued} = Runs.handle_runner_error(command)
+      assert Runs.handle_runner_error(command) == {:ok, :requeued}
 
       pending = Runs.peek_run_by_id(run.id)
       assert pending.status == :pending
@@ -4450,7 +4436,7 @@ defmodule Emisar.RunsTest do
       assert event.payload["code"] == "concurrency_cap_reached"
       assert event.payload["request_id"] == run.request_id
 
-      assert :ok = Runs.dispatch_queued_for_runner(runner.id)
+      assert Runs.dispatch_queued_for_runner(runner.id) == :ok
       assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^request_id}}, 500
 
       redelivered = Runs.peek_run_by_id(run.id)
@@ -4462,7 +4448,7 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
 
       unrelated =
         Runs.RunnerError.new(
@@ -4480,8 +4466,8 @@ defmodule Emisar.RunsTest do
           %RequestContext{}
         )
 
-      assert {:ok, :not_applicable} = Runs.handle_runner_error(unrelated)
-      assert {:ok, :not_applicable} = Runs.handle_runner_error(uncorrelated)
+      assert Runs.handle_runner_error(unrelated) == {:ok, :not_applicable}
+      assert Runs.handle_runner_error(uncorrelated) == {:ok, :not_applicable}
 
       assert Runs.peek_run_by_id(run.id).status == :sent
       assert length(Repo.all(Audit.Event)) == 2
@@ -4493,7 +4479,7 @@ defmodule Emisar.RunsTest do
       other_account = Fixtures.Accounts.create_account()
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
 
       command =
         Runs.RunnerError.new(
@@ -4503,7 +4489,7 @@ defmodule Emisar.RunsTest do
           %RequestContext{}
         )
 
-      assert {:ok, :request_not_found} = Runs.handle_runner_error(command)
+      assert Runs.handle_runner_error(command) == {:ok, :request_not_found}
 
       assert Runs.peek_run_by_id(run.id).status == :sent
 
@@ -4517,7 +4503,7 @@ defmodule Emisar.RunsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       peer = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
 
       command =
         Runs.RunnerError.new(
@@ -4527,7 +4513,7 @@ defmodule Emisar.RunsTest do
           %RequestContext{}
         )
 
-      assert {:ok, :request_not_found} = Runs.handle_runner_error(command)
+      assert Runs.handle_runner_error(command) == {:ok, :request_not_found}
 
       assert Runs.peek_run_by_id(run.id).status == :sent
 
@@ -4540,7 +4526,7 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
 
       command =
         Runs.RunnerError.new(
@@ -4550,10 +4536,10 @@ defmodule Emisar.RunsTest do
           %RequestContext{}
         )
 
-      assert {:ok, :requeued} = Runs.handle_runner_error(command)
+      assert Runs.handle_runner_error(command) == {:ok, :requeued}
       requeued = Runs.peek_run_by_id(run.id)
 
-      assert {:ok, :already_pending} = Runs.handle_runner_error(command)
+      assert Runs.handle_runner_error(command) == {:ok, :already_pending}
 
       duplicate = Runs.peek_run_by_id(run.id)
       assert duplicate.status == :pending
@@ -4565,7 +4551,7 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
 
       {:ok, _running} =
         Runs.mark_started_from_connection(
@@ -4584,7 +4570,7 @@ defmodule Emisar.RunsTest do
           %RequestContext{}
         )
 
-      assert {:ok, {:not_dispatchable, :running}} = Runs.handle_runner_error(command)
+      assert Runs.handle_runner_error(command) == {:ok, {:not_dispatchable, :running}}
 
       assert Runs.peek_run_by_id(run.id).status == :running
       assert Repo.one(Audit.Event).event_type == "runner.error"
@@ -4602,7 +4588,7 @@ defmodule Emisar.RunsTest do
           %RequestContext{}
         )
 
-      assert {:ok, :not_applicable} = Runs.handle_runner_error(command)
+      assert Runs.handle_runner_error(command) == {:ok, :not_applicable}
 
       event = Repo.one(Audit.Event)
       assert String.length(event.payload["code"]) == 100
@@ -4613,7 +4599,7 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
 
       command =
         Runs.RunnerError.new(
@@ -4649,7 +4635,7 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
       assert run.status == :pending
 
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
       sent = Repo.reload!(run)
       assert sent.status == :sent
       assert %DateTime{} = sent.sent_at
@@ -4695,13 +4681,12 @@ defmodule Emisar.RunsTest do
                  payload: %{"chunk" => "ok\n"}
                })
 
-      assert {:error, :duplicate_event} =
-               Runs.append_event(run, %{
-                 seq: 1,
-                 kind: "progress",
-                 stream: "stdout",
-                 payload: %{"chunk" => "ok\n"}
-               })
+      assert Runs.append_event(run, %{
+               seq: 1,
+               kind: "progress",
+               stream: "stdout",
+               payload: %{"chunk" => "ok\n"}
+             }) == {:error, :duplicate_event}
 
       payload = %{
         "status" => "success",
@@ -4820,8 +4805,8 @@ defmodule Emisar.RunsTest do
 
       # The runner re-sends the same chunk (its retry) — a benign duplicate the
       # socket drops quietly, distinct from a malformed event it must log.
-      assert {:error, :duplicate_event} =
-               Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"line" => "a"}})
+      assert Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"line" => "a"}}) ==
+               {:error, :duplicate_event}
     end
 
     test "the first progress chunk flips a :sent run to :running", %{
@@ -4851,12 +4836,11 @@ defmodule Emisar.RunsTest do
       # A late chunk (arriving after the run settled) is the hostile-flood
       # vector: it's refused under the row lock before any insert, so a terminal
       # run can never accrue unbounded events or be resurrected.
-      assert {:error, :run_terminal} =
-               Runs.append_event(finished, %{
-                 seq: 99,
-                 kind: "progress",
-                 payload: %{"chunk" => "x"}
-               })
+      assert Runs.append_event(finished, %{
+               seq: 99,
+               kind: "progress",
+               payload: %{"chunk" => "x"}
+             }) == {:error, :run_terminal}
 
       assert Runs.peek_run_by_id(run.id).status == :success
       refute Repo.exists?(RunEvent)
@@ -4898,8 +4882,8 @@ defmodule Emisar.RunsTest do
                Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "a"}})
 
       # The 50_000th accepted event spent the budget; the 50_001st is refused.
-      assert {:error, :progress_budget_exceeded} =
-               Runs.append_event(run, %{seq: 2, kind: "progress", payload: %{"chunk" => "b"}})
+      assert Runs.append_event(run, %{seq: 2, kind: "progress", payload: %{"chunk" => "b"}}) ==
+               {:error, :progress_budget_exceeded}
     end
 
     test "refuses a chunk that would exceed the per-run byte budget", %{
@@ -4910,15 +4894,15 @@ defmodule Emisar.RunsTest do
       # Sitting on the byte ceiling, so any non-empty chunk tips it over.
       Fixtures.Runs.charge_progress_budget(run, bytes: 67_108_864)
 
-      assert {:error, :progress_budget_exceeded} =
-               Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "x"}})
+      assert Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "x"}}) ==
+               {:error, :progress_budget_exceeded}
 
       refute Repo.exists?(RunEvent)
     end
 
     test "append_event/2 with an unknown run id returns :unknown_run" do
-      assert {:error, :unknown_run} =
-               Runs.append_event(Repo.generate_id(), %{seq: 1, kind: "progress", payload: %{}})
+      assert Runs.append_event(Repo.generate_id(), %{seq: 1, kind: "progress", payload: %{}}) ==
+               {:error, :unknown_run}
     end
   end
 
@@ -4958,15 +4942,14 @@ defmodule Emisar.RunsTest do
                  successor.connection_lease_id
                )
 
-      assert {:error, :connection_superseded} =
-               Runs.append_event_from_connection(
-                 sent.id,
-                 %{seq: 3, kind: "progress", payload: %{"line" => "stale"}},
-                 account.id,
-                 runner.id,
-                 runner.connection_generation,
-                 runner.connection_lease_id
-               )
+      assert Runs.append_event_from_connection(
+               sent.id,
+               %{seq: 3, kind: "progress", payload: %{"line" => "stale"}},
+               account.id,
+               runner.id,
+               runner.connection_generation,
+               runner.connection_lease_id
+             ) == {:error, :connection_superseded}
 
       assert Repo.reload!(sent).progress_event_count == 2
     end
@@ -5361,14 +5344,13 @@ defmodule Emisar.RunsTest do
 
       successor = reconnect_runner(runner)
 
-      assert {:error, :connection_superseded} =
-               Runs.finalize_from_connection(
-                 account.id,
-                 runner.id,
-                 runner.connection_generation,
-                 runner.connection_lease_id,
-                 %{"request_id" => sent.request_id, "status" => "success"}
-               )
+      assert Runs.finalize_from_connection(
+               account.id,
+               runner.id,
+               runner.connection_generation,
+               runner.connection_lease_id,
+               %{"request_id" => sent.request_id, "status" => "success"}
+             ) == {:error, :connection_superseded}
 
       assert Repo.reload!(sent).status == :sent
 
@@ -5386,14 +5368,13 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert {:error, :unknown_request_id} =
-               Runs.finalize_from_connection(
-                 account.id,
-                 runner.id,
-                 runner.connection_generation,
-                 runner.connection_lease_id,
-                 %{"request_id" => "req_does_not_exist", "status" => "success"}
-               )
+      assert Runs.finalize_from_connection(
+               account.id,
+               runner.id,
+               runner.connection_generation,
+               runner.connection_lease_id,
+               %{"request_id" => "req_does_not_exist", "status" => "success"}
+             ) == {:error, :unknown_request_id}
     end
 
     test "a runner cannot finalize another runner's run in the same account" do
@@ -5402,19 +5383,18 @@ defmodule Emisar.RunsTest do
       runner_b = Fixtures.Runners.create_runner(account_id: account.id)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner_a.id))
 
-      assert {:error, :unknown_request_id} =
-               Runs.finalize_from_connection(
-                 account.id,
-                 runner_b.id,
-                 runner_b.connection_generation,
-                 runner_b.connection_lease_id,
-                 %{"request_id" => run.request_id, "status" => "success"}
-               )
+      assert Runs.finalize_from_connection(
+               account.id,
+               runner_b.id,
+               runner_b.connection_generation,
+               runner_b.connection_lease_id,
+               %{"request_id" => run.request_id, "status" => "success"}
+             ) == {:error, :unknown_request_id}
     end
 
     test "requires a request id" do
-      assert {:error, :missing_request_id} =
-               Runs.finalize_from_connection("account", "runner", 1, "lease", %{})
+      assert Runs.finalize_from_connection("account", "runner", 1, "lease", %{}) ==
+               {:error, :missing_request_id}
     end
   end
 
@@ -5449,7 +5429,7 @@ defmodule Emisar.RunsTest do
                Runs.list_recent_events_for_run(run, 3, subject)
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Runs.list_recent_events_for_run(run, 3, subject_b)
+      assert Runs.list_recent_events_for_run(run, 3, subject_b) == {:error, :not_found}
     end
   end
 
@@ -5489,15 +5469,15 @@ defmodule Emisar.RunsTest do
       other_runner = Fixtures.Runners.create_runner(account_id: other_account.id)
       {:ok, hidden} = Runs.create_run(base_attrs(other_account.id, other_runner.id))
 
-      assert {:error, :not_found} =
-               Runs.list_recent_events_for_runs([first.id, hidden.id], 2, subject)
+      assert Runs.list_recent_events_for_runs([first.id, hidden.id], 2, subject) ==
+               {:error, :not_found}
     end
 
     test "denies a principal without run visibility", %{account: account, runner: runner} do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert {:error, :unauthorized} =
-               Runs.list_recent_events_for_runs([run.id], 2, no_permissions_subject(account))
+      assert Runs.list_recent_events_for_runs([run.id], 2, no_permissions_subject(account)) ==
+               {:error, :unauthorized}
     end
   end
 
@@ -5596,7 +5576,7 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
       {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "a"}})
 
-      assert {:ok, [], false} = Runs.list_events_for_run_since(run.id, 2, 1_000, subject)
+      assert Runs.list_events_for_run_since(run.id, 2, 1_000, subject) == {:ok, [], false}
     end
 
     test "refuses a cross-account subject", %{account: account, runner: runner} do
@@ -5604,7 +5584,7 @@ defmodule Emisar.RunsTest do
       {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "a"}})
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Runs.list_events_for_run_since(run.id, 1, 1_000, subject_b)
+      assert Runs.list_events_for_run_since(run.id, 1, 1_000, subject_b) == {:error, :not_found}
     end
   end
 
@@ -5709,7 +5689,7 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
       {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "a"}})
 
-      assert {:ok, []} = Runs.list_events_for_run_before(run.id, 1, 10, subject)
+      assert Runs.list_events_for_run_before(run.id, 1, 10, subject) == {:ok, []}
     end
 
     test "refuses a cross-account subject", %{account: account, runner: runner} do
@@ -5717,7 +5697,7 @@ defmodule Emisar.RunsTest do
       {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"chunk" => "a"}})
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Runs.list_events_for_run_before(run.id, 5, 10, subject_b)
+      assert Runs.list_events_for_run_before(run.id, 5, 10, subject_b) == {:error, :not_found}
     end
   end
 
@@ -5726,7 +5706,7 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert :ok = Runs.subscribe_account_runs(account.id)
+      assert Runs.subscribe_account_runs(account.id) == :ok
 
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
       assert_receive {:run_updated, id}, 500
@@ -5738,7 +5718,7 @@ defmodule Emisar.RunsTest do
       account_b = Fixtures.Accounts.create_account()
       runner_b = Fixtures.Runners.create_runner(account_id: account_b.id)
 
-      assert :ok = Runs.subscribe_account_runs(account_a.id)
+      assert Runs.subscribe_account_runs(account_a.id) == :ok
 
       {:ok, _run_b} = Runs.create_run(base_attrs(account_b.id, runner_b.id))
       refute_receive {:run_updated, _}, 200
@@ -5756,7 +5736,7 @@ defmodule Emisar.RunsTest do
       restricted_subject =
         Fixtures.Subjects.subject_for(subject.actor, account, role: subject.role)
 
-      assert :ok = Runs.subscribe_account_runs(account.id)
+      assert Runs.subscribe_account_runs(account.id) == :ok
       {:ok, run} = Runs.create_run(base_attrs(account.id, web_runner.id))
       assert_receive {:run_updated, run_id}, 500
       assert run_id == run.id
@@ -5772,12 +5752,12 @@ defmodule Emisar.RunsTest do
       _ = Fixtures.Catalog.create_action(runner: runner)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert :ok = Runs.subscribe_run(run.account_id, run.id)
+      assert Runs.subscribe_run(run.account_id, run.id) == :ok
 
       {:ok, _} = Runs.append_event(run, %{seq: 1, kind: "progress", payload: %{"line" => "x"}})
       assert_receive {:run_event, %RunEvent{seq: 1}}, 500
 
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
       assert_receive {:run_updated, %ActionRun{status: :sent}}, 500
     end
 
@@ -5787,7 +5767,7 @@ defmodule Emisar.RunsTest do
       {:ok, watched} = Runs.create_run(base_attrs(account.id, runner.id))
       {:ok, other} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert :ok = Runs.subscribe_run(watched.account_id, watched.id)
+      assert Runs.subscribe_run(watched.account_id, watched.id) == :ok
 
       {:ok, _} = Runs.append_event(other, %{seq: 1, kind: "progress", payload: %{"line" => "x"}})
       refute_receive {:run_event, _}, 200
@@ -5802,9 +5782,9 @@ defmodule Emisar.RunsTest do
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
       :ok = Runs.subscribe_run(run.account_id, run.id)
-      assert :ok = Runs.unsubscribe_run(run.account_id, run.id)
+      assert Runs.unsubscribe_run(run.account_id, run.id) == :ok
 
-      assert :ok = Runs.dispatch_to_runner(run)
+      assert Runs.dispatch_to_runner(run) == :ok
       refute_receive {:run_updated, _}, 200
     end
   end
@@ -5817,7 +5797,7 @@ defmodule Emisar.RunsTest do
 
       Runs.subscribe_run(account.id, run.id)
 
-      assert :ok = Runs.broadcast_cancelled_run({:cancelled, run})
+      assert Runs.broadcast_cancelled_run({:cancelled, run}) == :ok
 
       assert_receive {:run_updated, %ActionRun{id: id, runner: %Emisar.Runners.Runner{}}}, 500
       assert id == run.id
@@ -5830,8 +5810,8 @@ defmodule Emisar.RunsTest do
 
       Runs.subscribe_account_runs(account.id)
 
-      assert :ok = Runs.broadcast_cancelled_run({:noop, run})
-      assert :ok = Runs.broadcast_cancelled_run(:no_run)
+      assert Runs.broadcast_cancelled_run({:noop, run}) == :ok
+      assert Runs.broadcast_cancelled_run(:no_run) == :ok
       refute_receive {:run_updated, _}, 200
     end
   end

@@ -337,10 +337,9 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       assert body["scimType"] == "invalidValue"
 
-      assert {:ok, [], 0} =
-               SSO.scim_list_users(provider,
-                 scim_filter: {:external_id, "okta|invalid-active"}
-               )
+      assert SSO.scim_list_users(provider,
+               scim_filter: {:external_id, "okta|invalid-active"}
+             ) === {:ok, [], 0}
     end
 
     test "a payload the user changeset rejects → 400 invalidValue", %{conn: conn, token: token} do
@@ -1824,7 +1823,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       # `application/json`. The `+json` SCIM suffix is accepted INBOUND only
       # (router :scim pipeline); strict clients expecting `application/scim+json`
       # back would be surprised — documented here so the choice is deliberate.
-      assert ["application/json; charset=utf-8"] = get_resp_header(conn, "content-type")
+      assert get_resp_header(conn, "content-type") == ["application/json; charset=utf-8"]
     end
   end
 
@@ -1840,10 +1839,9 @@ defmodule EmisarWeb.SCIMControllerTest do
     end
 
     test "rejects values that are not whole base-10 integers" do
-      assert {:error, :invalid_pagination} =
-               Resource.parse_pagination(%{"startIndex" => "1.5"})
+      assert Resource.parse_pagination(%{"startIndex" => "1.5"}) == {:error, :invalid_pagination}
 
-      assert {:error, :invalid_pagination} = Resource.parse_pagination(%{"count" => "10x"})
+      assert Resource.parse_pagination(%{"count" => "10x"}) == {:error, :invalid_pagination}
     end
   end
 

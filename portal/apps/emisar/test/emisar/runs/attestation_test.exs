@@ -19,7 +19,7 @@ defmodule Emisar.Runs.AttestationTest do
     end
 
     test "absence remains valid for a runner that does not enforce signatures" do
-      assert {:ok, nil} = Attestation.validate([], facts())
+      assert Attestation.validate([], facts()) == {:ok, nil}
     end
 
     test "rejects every relayed fact that disagrees with the call" do

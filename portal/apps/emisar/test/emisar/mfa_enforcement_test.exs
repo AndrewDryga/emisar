@@ -56,12 +56,11 @@ defmodule Emisar.MfaEnforcementTest do
       {:ok, _} = Accounts.mark_invitation_accepted(m, operator_user)
       operator_subject = Fixtures.Subjects.subject_for(operator_user, account, role: :operator)
 
-      assert {:error, :unauthorized} =
-               Accounts.update_account(
-                 account,
-                 %{settings: %{require_mfa: true}},
-                 operator_subject
-               )
+      assert Accounts.update_account(
+               account,
+               %{settings: %{require_mfa: true}},
+               operator_subject
+             ) == {:error, :unauthorized}
     end
   end
 

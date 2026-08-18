@@ -54,7 +54,7 @@ defmodule Emisar.Runs.Jobs.FleetObservabilityTest do
   # fleet is up. The keys must also hold integers: the GCP metrics parse them as
   # JSON numbers, so a stringified count kills both alerts silently.
   test "execute/1 emits every tick with integer counts, whatever the fleet size" do
-    log = capture_log(fn -> assert :ok = FleetObservability.execute([]) end)
+    log = capture_log(fn -> assert FleetObservability.execute([]) == :ok end)
     assert log =~ "fleet.observability"
 
     assert_receive {:log_event, "fleet.observability", meta}
@@ -69,7 +69,7 @@ defmodule Emisar.Runs.Jobs.FleetObservabilityTest do
     Fixtures.Runs.create_run(status: :pending)
     Fixtures.Runs.create_run(status: :pending)
 
-    log = capture_log(fn -> assert :ok = FleetObservability.execute([]) end)
+    log = capture_log(fn -> assert FleetObservability.execute([]) == :ok end)
     assert log =~ "fleet.observability"
 
     assert_receive {:log_event, "fleet.observability", meta}

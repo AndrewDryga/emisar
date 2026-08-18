@@ -145,7 +145,7 @@ defmodule Emisar.AuthSessionsTest do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       assert {:ok, [session], _} = Auth.list_sessions_for_user(token, subject)
 
-      assert :ok = Auth.revoke_session(session.id, subject)
+      assert Auth.revoke_session(session.id, subject) == :ok
       assert {:ok, [], _} = Auth.list_sessions_for_user(token, subject)
     end
 
@@ -155,13 +155,13 @@ defmodule Emisar.AuthSessionsTest do
       Fixtures.Auth.create_session_token!(theirs, :magic_link, nil)
       assert {:ok, [their_session], _} = Auth.list_sessions_for_user(nil, their_subject)
 
-      assert {:error, :not_found} = Auth.revoke_session(their_session.id, my_subject)
+      assert Auth.revoke_session(their_session.id, my_subject) == {:error, :not_found}
       assert {:ok, [_], _} = Auth.list_sessions_for_user(nil, their_subject)
     end
 
     test "rejects a malformed id without hitting the DB" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Auth.revoke_session("not-a-uuid", subject)
+      assert Auth.revoke_session("not-a-uuid", subject) == {:error, :not_found}
     end
   end
 

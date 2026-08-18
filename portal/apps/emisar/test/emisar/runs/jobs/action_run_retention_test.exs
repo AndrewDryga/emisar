@@ -72,8 +72,8 @@ defmodule Emisar.Runs.Jobs.ActionRunRetentionTest do
     event = add_event(old_run)
     request = Fixtures.Approvals.create_request(account_id: account.id, run_id: old_run.id)
 
-    assert :ok = ActionRunRetention.execute([])
-    assert :ok = ActionRunRetention.execute([])
+    assert ActionRunRetention.execute([]) == :ok
+    assert ActionRunRetention.execute([]) == :ok
 
     refute Repo.reload(old_run)
     refute Repo.reload(event)
@@ -85,7 +85,7 @@ defmodule Emisar.Runs.Jobs.ActionRunRetentionTest do
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     kept = finished_run(account, runner, @within_window_days)
 
-    assert :ok = ActionRunRetention.execute([])
+    assert ActionRunRetention.execute([]) == :ok
 
     assert Repo.reload(kept)
   end
@@ -95,7 +95,7 @@ defmodule Emisar.Runs.Jobs.ActionRunRetentionTest do
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     kept = finished_run(account, runner, 10)
 
-    assert :ok = ActionRunRetention.execute([])
+    assert ActionRunRetention.execute([]) == :ok
 
     assert Repo.reload(kept)
   end
@@ -117,7 +117,7 @@ defmodule Emisar.Runs.Jobs.ActionRunRetentionTest do
     old = DateTime.utc_now() |> DateTime.add(-@beyond_window_days * 86_400, :second)
     backdate_inserted_at(run, old)
 
-    assert :ok = ActionRunRetention.execute([])
+    assert ActionRunRetention.execute([]) == :ok
 
     assert Repo.reload(run)
   end
@@ -136,8 +136,8 @@ defmodule Emisar.Runs.Jobs.ActionRunRetentionTest do
 
     Fixtures.Accounts.mark_account_as_deleted(account)
 
-    assert :ok = ActionRunRetention.execute([])
-    assert :ok = ActionRunRetention.execute([])
+    assert ActionRunRetention.execute([]) == :ok
+    assert ActionRunRetention.execute([]) == :ok
 
     assert length(retention_markers(account.id)) == 1
   end

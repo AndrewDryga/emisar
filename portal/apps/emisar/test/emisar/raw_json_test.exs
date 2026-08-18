@@ -12,27 +12,26 @@ defmodule Emisar.RawJSONTest do
     end
 
     test "rejects decoded duplicate keys at every depth" do
-      assert {:error, {:duplicate_key, ["outer", "same"]}} =
-               RawJSON.parse(~s({"outer":{"same":1,"same":2}}))
+      assert RawJSON.parse(~s({"outer":{"same":1,"same":2}})) ==
+               {:error, {:duplicate_key, ["outer", "same"]}}
 
-      assert {:error, {:duplicate_key, ["same"]}} =
-               RawJSON.parse(~s({"same":1,"\\u0073ame":2}))
+      assert RawJSON.parse(~s({"same":1,"\\u0073ame":2})) == {:error, {:duplicate_key, ["same"]}}
     end
 
     test "rejects invalid UTF-8, surrogate escapes, trailing values, and excess depth" do
-      assert {:error, :invalid_utf8} = RawJSON.parse(<<123, 34, 120, 34, 58, 255, 125>>)
-      assert {:error, :invalid_json} = RawJSON.parse(~s({"x":"\\uD800"}))
-      assert {:error, :invalid_json} = RawJSON.parse(~s({"x":"\\uDC00"}))
+      assert RawJSON.parse(<<123, 34, 120, 34, 58, 255, 125>>) == {:error, :invalid_utf8}
+      assert RawJSON.parse(~s({"x":"\\uD800"})) == {:error, :invalid_json}
+      assert RawJSON.parse(~s({"x":"\\uDC00"})) == {:error, :invalid_json}
       assert {:ok, _} = RawJSON.parse(~s({"x":"\\uD83D\\uDE80"}))
-      assert {:error, :invalid_json} = RawJSON.parse("{} {}")
+      assert RawJSON.parse("{} {}") == {:error, :invalid_json}
 
       nested = String.duplicate("[", 66) <> "0" <> String.duplicate("]", 66)
-      assert {:error, :nesting_too_deep} = RawJSON.parse(nested)
+      assert RawJSON.parse(nested) == {:error, :nesting_too_deep}
     end
 
     test "rejects non-JSON number spellings" do
       for invalid <- ["01", "+1", "1.", ".1", "1e", "NaN", "Infinity"] do
-        assert {:error, :invalid_json} = RawJSON.parse(invalid), invalid
+        assert RawJSON.parse(invalid) == {:error, :invalid_json}, invalid
       end
     end
   end
@@ -62,7 +61,7 @@ defmodule Emisar.RawJSONTest do
       raw =
         ~s({"method":"tools/call","params":{"name":"run_action","arguments":{"args":{"v":"#{value}"}}}})
 
-      assert {:error, :action_args_too_large} = RawJSON.tool_call(raw)
+      assert RawJSON.tool_call(raw) == {:error, :action_args_too_large}
     end
   end
 

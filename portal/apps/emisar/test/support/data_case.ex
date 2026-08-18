@@ -44,7 +44,7 @@ defmodule Emisar.DataCase do
 
       changeset = Users.change_user(%User{}, %{email: "bad"})
       assert "must have the @ sign and no spaces" in errors_on(changeset).email
-      assert %{email: ["must have the @ sign and no spaces"]} = errors_on(changeset)
+      assert errors_on(changeset) == %{email: ["must have the @ sign and no spaces"]}
 
   """
   def errors_on(changeset) do

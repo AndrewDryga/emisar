@@ -242,7 +242,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   # inline under the reason field (rose <.error>), never as a top-of-page flash.
   test "a blank reason renders inline at the field, not in a flash", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -259,7 +259,7 @@ defmodule EmisarWeb.RunNewLiveTest do
 
   test "a valid dispatch navigates to the run detail page", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -537,7 +537,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   # server check and flash.)
   test "a runner that's gone at dispatch time → :runner_not_found flash, no run", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -559,7 +559,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   # the operator at reloading for a current action.
   test "an action gone at dispatch time → :action_not_found flash, no run", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -583,7 +583,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   test "a runner outside the operator's scope cannot open the dispatch form", %{conn: conn} do
     {_owner_conn, owner, account} = register_and_log_in(conn)
     {runner, action} = action_with_required_arg(account)
-    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: owner.id)
+    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: owner.id)
 
     operator = Fixtures.Users.create_user()
 
@@ -611,7 +611,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   # is advertised so mount loads; `check_pack_trust` refuses at dispatch.
   test "an untrusted pack → :pack_untrusted flash, no run", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     # A custom (no-baseline) pack advertises an action and lands :pending —
@@ -652,7 +652,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     conn: conn
   } do
     {conn, user, account} = register_and_log_in(conn)
-    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
 
     runner =
       Fixtures.Runners.create_runner(
@@ -767,7 +767,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   # is dispatched.
   test "a bad integer arg renders an inline error on the field, no run", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     {runner, action} = action_with_two_int_args(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")

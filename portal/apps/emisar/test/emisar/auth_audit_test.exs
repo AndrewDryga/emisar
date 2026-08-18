@@ -47,7 +47,7 @@ defmodule Emisar.AuthAuditTest do
     test "complete_session_sign_out audits", %{user: user, account: account} do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert :ok = Auth.complete_session_sign_out(token)
+      assert Auth.complete_session_sign_out(token) == :ok
       assert [event] = events_of(account, "user.signed_out")
       assert event.actor_id == user.id
     end
@@ -106,7 +106,7 @@ defmodule Emisar.AuthAuditTest do
       {:ok, enabled, _} =
         Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), proof, subject)
 
-      assert {:error, :invalid} = Auth.verify_mfa_challenge(enabled, {:totp, "000000"})
+      assert Auth.verify_mfa_challenge(enabled, {:totp, "000000"}) == {:error, :invalid}
 
       assert [event] = events_of(account, "user.mfa_failed")
       assert event.payload["reason"] == "invalid_otp"
@@ -136,8 +136,8 @@ defmodule Emisar.AuthAuditTest do
       {:ok, enabled, _} =
         Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), proof, subject)
 
-      assert {:error, :invalid} =
-               Auth.verify_mfa_challenge(enabled, {:recovery_code, "not-a-real-code"})
+      assert Auth.verify_mfa_challenge(enabled, {:recovery_code, "not-a-real-code"}) ==
+               {:error, :invalid}
 
       assert [event] = events_of(account, "user.mfa_failed")
       assert event.payload["reason"] == "invalid_recovery_code"
@@ -156,7 +156,7 @@ defmodule Emisar.AuthAuditTest do
         Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), proof, subject)
 
       for _ <- 1..5 do
-        assert {:error, :invalid} = Auth.verify_mfa_challenge(enabled, {:totp, "000000"})
+        assert Auth.verify_mfa_challenge(enabled, {:totp, "000000"}) == {:error, :invalid}
       end
 
       assert length(events_of(account, "user.mfa_failed")) == 5
@@ -165,7 +165,7 @@ defmodule Emisar.AuthAuditTest do
       # The window is spent, so disable_mfa refuses a genuine recovery code
       # before verification — it can neither record a miss the operator didn't
       # make nor spend the code. Its first rejection emits one durable signal.
-      assert {:error, :rate_limited} = Auth.disable_mfa(hd(codes), subject)
+      assert Auth.disable_mfa(hd(codes), subject) == {:error, :rate_limited}
 
       assert length(events_of(account, "user.mfa_failed")) == 5
       assert events_of(account, "user.mfa_recovery_code_used") == []
@@ -188,7 +188,7 @@ defmodule Emisar.AuthAuditTest do
 
       # Sustained traffic after exhaustion is a pure rejection: no limiter
       # update and no extra audit row.
-      assert {:error, :rate_limited} = Auth.disable_mfa(hd(codes), subject)
+      assert Auth.disable_mfa(hd(codes), subject) == {:error, :rate_limited}
       assert Repo.reload!(window).updated_at == window.updated_at
       assert [same_event] = events_of(account, "user.mfa_rate_limited")
       assert same_event.id == event.id
@@ -246,8 +246,8 @@ defmodule Emisar.AuthAuditTest do
 
       # Wrong secret on a valid, un-consumed token → digest mismatch → the token
       # survives (attempt spent), so the failure still resolves to its owner.
-      assert {:error, :invalid_or_expired} =
-               Auth.verify_magic_link(token_id, "wrong-secret", nonce, context)
+      assert Auth.verify_magic_link(token_id, "wrong-secret", nonce, context) ==
+               {:error, :invalid_or_expired}
 
       assert [event] = events_of(account, "user.sign_in_failed")
       assert event.actor_id == user.id
@@ -314,7 +314,7 @@ defmodule Emisar.AuthAuditTest do
     } do
       {:ok, [%{id: token_id} | _], _} = Auth.list_sessions_for_user(nil, subject)
 
-      assert :ok = Auth.revoke_session(token_id, subject)
+      assert Auth.revoke_session(token_id, subject) == :ok
       assert [event] = events_of(account, "user.session_revoked")
       assert event.payload["session_id"] == token_id
     end
@@ -612,7 +612,7 @@ defmodule Emisar.AuthAuditTest do
         end)
         |> Emisar.Repo.commit_multi()
 
-      assert {:error, :forced_rollback} = result
+      assert result == {:error, :forced_rollback}
 
       # Audit row should NOT exist — multi rolled back.
       assert audit_count(account, "policy.updated") == before_count
@@ -712,7 +712,7 @@ defmodule Emisar.AuthAuditTest do
     test "a single-account user still gets exactly one row (no duplicates)" do
       {user, account, _} = Fixtures.Subjects.owner_subject()
 
-      assert :ok = Audit.log_for_user(user, "user.mfa_failed")
+      assert Audit.log_for_user(user, "user.mfa_failed") == :ok
       assert [_only] = events_of(account, "user.mfa_failed")
     end
 
@@ -720,7 +720,7 @@ defmodule Emisar.AuthAuditTest do
       user = Fixtures.Users.create_user()
       before = Repo.aggregate(Emisar.Audit.Event, :count)
 
-      assert :ok = Audit.log_for_user(user, "user.mfa_failed")
+      assert Audit.log_for_user(user, "user.mfa_failed") == :ok
       assert Repo.aggregate(Emisar.Audit.Event, :count) == before
     end
   end

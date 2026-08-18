@@ -66,17 +66,20 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
     Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false)
   end
 
-  defp authorize_params(client) do
-    %{
-      client_id: client.id,
-      redirect_uri: @redirect,
-      response_type: "code",
-      code_challenge: code_challenge(),
-      code_challenge_method: "S256",
-      scope: "mcp offline_access",
-      state: "xyz",
-      resource: @resource
-    }
+  defp authorize_params(client, overrides \\ %{}) do
+    Map.merge(
+      %{
+        "client_id" => client.id,
+        "redirect_uri" => @redirect,
+        "response_type" => "code",
+        "code_challenge" => code_challenge(),
+        "code_challenge_method" => "S256",
+        "scope" => "mcp offline_access",
+        "state" => "xyz",
+        "resource" => @resource
+      },
+      overrides
+    )
   end
 
   describe "GET /app/:account/audit/download" do
@@ -206,19 +209,8 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       conn = put_session(conn, :current_account_id, session_account.id)
       client = register_client!()
 
-      conn =
-        post(conn, ~p"/oauth/authorize", %{
-          "client_id" => client.id,
-          "redirect_uri" => @redirect,
-          "response_type" => "code",
-          "scope" => "mcp offline_access",
-          "state" => "xyz",
-          "code_challenge" => code_challenge(),
-          "code_challenge_method" => "S256",
-          "resource" => @resource,
-          "account_id" => chosen.id,
-          "decision" => "approve"
-        })
+      params = authorize_params(client, %{"account_id" => chosen.id, "decision" => "approve"})
+      conn = post(conn, ~p"/oauth/authorize", params)
 
       assert html_response(conn, 400) =~ "single sign-on"
       refute Repo.one(Emisar.ApiKeys.ApiKey)
@@ -240,19 +232,8 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       conn = put_session(conn, :current_account_id, session_account.id)
       client = register_client!()
 
-      conn =
-        post(conn, ~p"/oauth/authorize", %{
-          "client_id" => client.id,
-          "redirect_uri" => @redirect,
-          "response_type" => "code",
-          "scope" => "mcp offline_access",
-          "state" => "xyz",
-          "code_challenge" => code_challenge(),
-          "code_challenge_method" => "S256",
-          "resource" => @resource,
-          "account_id" => chosen.id,
-          "decision" => "approve"
-        })
+      params = authorize_params(client, %{"account_id" => chosen.id, "decision" => "approve"})
+      conn = post(conn, ~p"/oauth/authorize", params)
 
       assert html_response(conn, 400) =~ "two-factor authentication"
       refute Repo.one(Emisar.ApiKeys.ApiKey)
@@ -280,19 +261,8 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       conn = put_session(conn, :current_account_id, session_account.id)
       client = register_client!()
 
-      conn =
-        post(conn, ~p"/oauth/authorize", %{
-          "client_id" => client.id,
-          "redirect_uri" => @redirect,
-          "response_type" => "code",
-          "scope" => "mcp offline_access",
-          "state" => "xyz",
-          "code_challenge" => code_challenge(),
-          "code_challenge_method" => "S256",
-          "resource" => @resource,
-          "account_id" => grantee.id,
-          "decision" => "approve"
-        })
+      params = authorize_params(client, %{"account_id" => grantee.id, "decision" => "approve"})
+      conn = post(conn, ~p"/oauth/authorize", params)
 
       assert redirected_to(conn, 302) =~ "code="
       assert Repo.one(Emisar.ApiKeys.ApiKey).account_id == grantee.id

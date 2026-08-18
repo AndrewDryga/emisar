@@ -40,7 +40,7 @@ defmodule Emisar.PoliciesScopesTest do
       assert listed.id == policy.id
 
       assert {:ok, _} = Policies.delete_scoped_policy(policy, subject)
-      assert {:ok, []} = Policies.list_scoped_policies(subject)
+      assert Policies.list_scoped_policies(subject) == {:ok, []}
     end
 
     test "editing a scope upserts the same row and bumps vsn" do
@@ -58,11 +58,11 @@ defmodule Emisar.PoliciesScopesTest do
       viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
-      assert {:error, :unauthorized} =
-               Policies.save_scoped_rules(@deny_all, :runner, runner.id, viewer)
+      assert Policies.save_scoped_rules(@deny_all, :runner, runner.id, viewer) ==
+               {:error, :unauthorized}
 
       {:ok, policy} = Policies.save_scoped_rules(@deny_all, :runner, runner.id, owner)
-      assert {:error, :unauthorized} = Policies.delete_scoped_policy(policy, viewer)
+      assert Policies.delete_scoped_policy(policy, viewer) == {:error, :unauthorized}
     end
 
     test "cross-account: can't fetch or delete another account's override" do
@@ -72,8 +72,8 @@ defmodule Emisar.PoliciesScopesTest do
 
       {_user, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert {:ok, []} = Policies.list_scoped_policies(subject_b)
-      assert {:error, :not_found} = Policies.delete_scoped_policy(policy_a, subject_b)
+      assert Policies.list_scoped_policies(subject_b) == {:ok, []}
+      assert Policies.delete_scoped_policy(policy_a, subject_b) == {:error, :not_found}
     end
 
     test "a runner/group scope requires a non-empty scope_value" do
@@ -212,8 +212,8 @@ defmodule Emisar.PoliciesScopesTest do
 
       {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :runner_not_found} =
-               Policies.save_scoped_rules(@allow_all, :runner, runner_a.id, subject_b)
+      assert Policies.save_scoped_rules(@allow_all, :runner, runner_a.id, subject_b) ==
+               {:error, :runner_not_found}
 
       {:ok, group_policy_b} = Policies.save_scoped_rules(@allow_all, :group, "prod", subject_b)
 
@@ -251,10 +251,10 @@ defmodule Emisar.PoliciesScopesTest do
       {_user, account, _owner} = Fixtures.Subjects.owner_subject()
       viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
 
-      assert {:error, :unauthorized} = Policies.save_rules(@deny_all, viewer)
+      assert Policies.save_rules(@deny_all, viewer) == {:error, :unauthorized}
 
-      assert {:error, :unauthorized} =
-               Policies.save_scoped_rules(@deny_all, :runner, "runner-1", viewer)
+      assert Policies.save_scoped_rules(@deny_all, :runner, "runner-1", viewer) ==
+               {:error, :unauthorized}
     end
   end
 

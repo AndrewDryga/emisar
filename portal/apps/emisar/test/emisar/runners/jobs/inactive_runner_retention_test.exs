@@ -37,8 +37,8 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
 
     runner = offline_runner(account, @beyond_window_hours)
 
-    assert :ok = InactiveRunnerRetention.execute([])
-    assert :ok = InactiveRunnerRetention.execute([])
+    assert InactiveRunnerRetention.execute([]) == :ok
+    assert InactiveRunnerRetention.execute([]) == :ok
 
     # Soft-delete: the row survives (audit/run history intact), but it's gone
     # from the not_deleted scope and stamped deleted_at.
@@ -54,7 +54,7 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
     db = offline_runner(account, @beyond_window_hours, group: "db")
     app = offline_runner(account, @beyond_window_hours, group: "app")
 
-    assert :ok = InactiveRunnerRetention.execute([])
+    assert InactiveRunnerRetention.execute([]) == :ok
 
     # No subject → scope_to_subject_membership is never composed, so runners in
     # any group are removed. One rolled-up marker covers the whole sweep.
@@ -70,7 +70,7 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
 
     runner = offline_runner(account, 3)
 
-    assert :ok = InactiveRunnerRetention.execute([])
+    assert InactiveRunnerRetention.execute([]) == :ok
 
     assert is_nil(Repo.reload!(runner).deleted_at)
   end
@@ -79,7 +79,7 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
     account = Fixtures.Accounts.create_account()
     runner = offline_runner(account, @beyond_window_hours)
 
-    assert :ok = InactiveRunnerRetention.execute([])
+    assert InactiveRunnerRetention.execute([]) == :ok
 
     assert is_nil(Repo.reload!(runner).deleted_at)
     assert retention_markers(account.id) == []
@@ -90,7 +90,7 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
     Fixtures.Accounts.force_runner_inactive_retention_hours(account, 0)
     runner = offline_runner(account, @beyond_window_hours)
 
-    assert :ok = InactiveRunnerRetention.execute([])
+    assert InactiveRunnerRetention.execute([]) == :ok
 
     assert is_nil(Repo.reload!(runner).deleted_at)
     assert retention_markers(account.id) == []
@@ -101,8 +101,8 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetentionTest do
 
     Fixtures.Accounts.set_runner_inactive_retention_hours(account, @window_hours)
 
-    assert :ok = InactiveRunnerRetention.execute([])
-    assert :ok = InactiveRunnerRetention.execute([])
+    assert InactiveRunnerRetention.execute([]) == :ok
+    assert InactiveRunnerRetention.execute([]) == :ok
 
     assert retention_markers(account.id) == []
   end

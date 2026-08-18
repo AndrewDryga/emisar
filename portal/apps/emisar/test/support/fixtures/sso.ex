@@ -51,6 +51,15 @@ defmodule Emisar.Fixtures.SSO do
     provider
   end
 
+  @doc "Enables SCIM state directly for tests that exercise later directory transitions."
+  def enable_scim(%IdentityProvider{} = provider) do
+    prefix = "emsp_#{Emisar.Fixtures.Random.unique_int()}"
+
+    provider
+    |> IdentityProvider.Changeset.scim_token(prefix, "digest", true)
+    |> Repo.update!()
+  end
+
   @doc """
   Binds a user to a provider. Defaults to an OIDC-created identity (a
   `provider_identifier`, no `scim_external_id`); pass `:scim_external_id` for a

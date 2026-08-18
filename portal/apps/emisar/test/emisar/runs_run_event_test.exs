@@ -1,5 +1,6 @@
 defmodule Emisar.Runs.RunEventTest do
   use ExUnit.Case, async: true
+  import Emisar.DataCase, only: [errors_on: 1]
   alias Emisar.Runs.RunEvent
 
   defp create_attrs(attrs \\ %{}) do
@@ -28,14 +29,14 @@ defmodule Emisar.Runs.RunEventTest do
       changeset = RunEvent.Changeset.create(create_attrs(%{payload: payload}))
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :payload)
+      assert errors_on(changeset).payload == ["is too large (max 262144 bytes serialized)"]
     end
 
     test "rejects an oversized stream label before the DB string column does" do
       changeset = RunEvent.Changeset.create(create_attrs(%{stream: String.duplicate("x", 33)}))
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :stream)
+      assert errors_on(changeset).stream == ["should be at most 32 character(s)"]
     end
 
     test "rejects a non-positive seq from a hostile runner" do
@@ -45,7 +46,7 @@ defmodule Emisar.Runs.RunEventTest do
         changeset = RunEvent.Changeset.create(create_attrs(%{seq: bad_seq}))
 
         refute changeset.valid?
-        assert {"must be greater than %{number}", _} = changeset.errors[:seq]
+        assert errors_on(changeset).seq == ["must be greater than 0"]
       end
     end
   end

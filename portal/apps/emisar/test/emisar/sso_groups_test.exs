@@ -8,7 +8,7 @@ defmodule Emisar.SSOGroupsTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Auth, Repo, SSO}
   alias Emisar.Fixtures
-  alias Emisar.SSO.{DirectoryGroup, IdentityProvider, SCIMUserUpdate}
+  alias Emisar.SSO.{DirectoryGroup, SCIMUserUpdate}
 
   @scim_string_limit 255
   @max_group_member_ids 5_000
@@ -18,9 +18,10 @@ defmodule Emisar.SSOGroupsTest do
   end
 
   defp provider_fixture(account, attrs) do
-    attrs =
+    Fixtures.SSO.create_identity_provider(
       Map.merge(
         %{
+          account_id: account.id,
           kind: :okta,
           name: "Okta",
           issuer: "https://idp.test",
@@ -31,9 +32,7 @@ defmodule Emisar.SSOGroupsTest do
         },
         Map.new(attrs)
       )
-
-    {:ok, provider} = Repo.insert(IdentityProvider.Changeset.create(account.id, attrs))
-    provider
+    )
   end
 
   # Enterprise account + a SCIM-enabled provider. Returns the provider, the
@@ -352,46 +351,42 @@ defmodule Emisar.SSOGroupsTest do
     test "rejects overlong group and member identifiers before syncing", %{provider: provider} do
       overlong = overlong_scim_id()
 
-      assert {:error, :invalid_scim_group} =
-               SSO.scim_upsert_group(provider, %{
-                 external_id: overlong,
-                 member_ids: []
-               })
+      assert SSO.scim_upsert_group(provider, %{
+               external_id: overlong,
+               member_ids: []
+             }) == {:error, :invalid_scim_group}
 
-      assert {:error, :invalid_scim_group} =
-               SSO.scim_upsert_group(provider, %{
-                 external_id: "grp-valid",
-                 display: overlong,
-                 member_ids: []
-               })
+      assert SSO.scim_upsert_group(provider, %{
+               external_id: "grp-valid",
+               display: overlong,
+               member_ids: []
+             }) == {:error, :invalid_scim_group}
 
-      assert {:error, :invalid_scim_group} =
-               SSO.scim_upsert_group(provider, %{
-                 external_id: "grp-valid",
-                 member_ids: [overlong]
-               })
+      assert SSO.scim_upsert_group(provider, %{
+               external_id: "grp-valid",
+               member_ids: [overlong]
+             }) == {:error, :invalid_scim_group}
 
       {:ok, group} =
         SSO.scim_upsert_group(provider, %{external_id: "grp-valid", member_ids: []})
 
-      assert {:error, :invalid_scim_group} =
-               SSO.scim_patch_group(provider, group.id, member_ops([overlong], []))
+      assert SSO.scim_patch_group(provider, group.id, member_ops([overlong], [])) ==
+               {:error, :invalid_scim_group}
     end
 
     test "rejects oversized group member batches before querying", %{provider: provider} do
       too_many = too_many_member_ids()
 
-      assert {:error, :invalid_scim_group} =
-               SSO.scim_upsert_group(provider, %{
-                 external_id: "grp-too-large",
-                 member_ids: too_many
-               })
+      assert SSO.scim_upsert_group(provider, %{
+               external_id: "grp-too-large",
+               member_ids: too_many
+             }) == {:error, :invalid_scim_group}
 
       {:ok, group} =
         SSO.scim_upsert_group(provider, %{external_id: "grp-too-large", member_ids: []})
 
-      assert {:error, :invalid_scim_group} =
-               SSO.scim_patch_group(provider, group.id, member_ops(too_many, []))
+      assert SSO.scim_patch_group(provider, group.id, member_ops(too_many, [])) ==
+               {:error, :invalid_scim_group}
     end
 
     @tag capture_log: true
@@ -406,8 +401,7 @@ defmodule Emisar.SSOGroupsTest do
       # An operator removed one member from the team (membership soft-deleted)
       # while their identity lived on — so the recompute will find no membership
       # for that identity and refuse with :not_found.
-      {:ok, _} =
-        gone_membership |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update()
+      Fixtures.Memberships.mark_membership_as_deleted(gone_membership)
 
       refute Accounts.peek_sync_membership(account.id, gone_identity.user_id)
 
@@ -439,21 +433,19 @@ defmodule Emisar.SSOGroupsTest do
 
       assert {:ok, _} = SSO.disable_scim(provider, subject)
 
-      assert {:error, :directory_sync_disabled} =
-               SSO.scim_upsert_group(in_flight, %{
-                 external_id: "grp-late",
-                 member_ids: []
-               })
+      assert SSO.scim_upsert_group(in_flight, %{
+               external_id: "grp-late",
+               member_ids: []
+             }) == {:error, :directory_sync_disabled}
 
-      assert {:error, :directory_sync_disabled} =
-               SSO.scim_rename_group(in_flight, group.id, "Too Late")
+      assert SSO.scim_rename_group(in_flight, group.id, "Too Late") ==
+               {:error, :directory_sync_disabled}
 
-      assert {:error, :not_found} =
-               SSO.scim_patch_group(
-                 in_flight,
-                 group.id,
-                 member_ops([], [Ecto.UUID.generate()])
-               )
+      assert SSO.scim_patch_group(
+               in_flight,
+               group.id,
+               member_ops([], [Ecto.UUID.generate()])
+             ) == {:error, :not_found}
     end
   end
 
@@ -484,15 +476,15 @@ defmodule Emisar.SSOGroupsTest do
 
       # Gone means gone — deleting used to empty the members and leave the row,
       # so the very next GET still answered 200.
-      assert {:error, :not_found} = SSO.scim_fetch_group(provider, group.id)
+      assert SSO.scim_fetch_group(provider, group.id) == {:error, :not_found}
       assert role_of(provider.account_id, identity.user_id) == :viewer
     end
 
     test "a group this directory never pushed is not found", %{provider: provider} do
       # Answering 204 for an unknown id used to CREATE it.
       missing_id = Ecto.UUID.generate()
-      assert {:error, :not_found} = SSO.scim_delete_group(provider, missing_id)
-      assert {:error, :not_found} = SSO.scim_fetch_group(provider, missing_id)
+      assert SSO.scim_delete_group(provider, missing_id) == {:error, :not_found}
+      assert SSO.scim_fetch_group(provider, missing_id) == {:error, :not_found}
     end
 
     test "one provider cannot delete another provider's group resource", %{
@@ -501,7 +493,7 @@ defmodule Emisar.SSOGroupsTest do
       %{provider: provider_b} = scim_provider()
       {:ok, group_b} = SSO.scim_upsert_group(provider_b, %{external_id: "grp-b", member_ids: []})
 
-      assert {:error, :not_found} = SSO.scim_delete_group(provider_a, group_b.id)
+      assert SSO.scim_delete_group(provider_a, group_b.id) == {:error, :not_found}
       assert {:ok, unchanged} = SSO.scim_fetch_group(provider_b, group_b.id)
       assert unchanged.external_group_id == "grp-b"
     end
@@ -531,9 +523,9 @@ defmodule Emisar.SSOGroupsTest do
           user_identity_id: other_identity.id
         )
 
-      assert :ok = SSO.end_account_sessions_for_user(user.id, account.id)
+      assert SSO.end_account_sessions_for_user(user.id, account.id) == :ok
 
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(mine)
+      assert Auth.fetch_user_and_token_by_session_token(mine) == {:error, :not_found}
       assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(theirs)
     end
 
@@ -542,7 +534,7 @@ defmodule Emisar.SSOGroupsTest do
       user = Fixtures.Users.create_user()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert :ok = SSO.end_account_sessions_for_user(user.id, account.id)
+      assert SSO.end_account_sessions_for_user(user.id, account.id) == :ok
       assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(token)
     end
   end
@@ -743,10 +735,7 @@ defmodule Emisar.SSOGroupsTest do
       stale_provider = Repo.reload!(provider)
       audit_count_before = synced_access_audit_count(account.id, membership.user_id)
 
-      deleted_runner =
-        runner
-        |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
-        |> Repo.update!()
+      deleted_runner = Fixtures.Runners.mark_deleted(runner)
 
       assert {:ok, _provider} =
                SSO.update_provider(
@@ -762,13 +751,12 @@ defmodule Emisar.SSOGroupsTest do
       assert is_integer(pending.directory_authorization_pending_version)
       assert access_of(account.id, identity.user_id) == Accounts.RunnerAccess.none()
 
-      assert {:error, :stale_authorization_version} =
-               Accounts.sync_set_membership_authorization(
-                 pending,
-                 :viewer,
-                 Accounts.RunnerAccess.none(),
-                 stale_provider
-               )
+      assert Accounts.sync_set_membership_authorization(
+               pending,
+               :viewer,
+               Accounts.RunnerAccess.none(),
+               stale_provider
+             ) == {:error, :stale_authorization_version}
 
       assert Repo.reload!(membership).directory_authorization_pending_version ==
                pending.directory_authorization_pending_version
@@ -777,7 +765,7 @@ defmodule Emisar.SSOGroupsTest do
       |> Ecto.Changeset.change(deleted_at: nil)
       |> Repo.update!()
 
-      assert :ok = SSO.reconcile_pending_authorizations()
+      assert SSO.reconcile_pending_authorizations() == :ok
 
       reconciled = Repo.reload!(membership)
       assert reconciled.role == :viewer
@@ -798,7 +786,7 @@ defmodule Emisar.SSOGroupsTest do
       assert event.payload["after"]["groups"] == ["baseline"]
       assert event.payload["after"]["runner_ids"] == [runner.id]
 
-      assert :ok = SSO.reconcile_pending_authorizations()
+      assert SSO.reconcile_pending_authorizations() == :ok
 
       assert synced_access_audit_count(account.id, membership.user_id) ==
                audit_count_before + 1
@@ -834,10 +822,7 @@ defmodule Emisar.SSOGroupsTest do
                  member_ids: [blocked_identity.id]
                })
 
-      deleted_runner =
-        runner
-        |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
-        |> Repo.update!()
+      deleted_runner = Fixtures.Runners.mark_deleted(runner)
 
       assert {:ok, _provider} =
                SSO.update_provider(
@@ -869,7 +854,7 @@ defmodule Emisar.SSOGroupsTest do
       |> Ecto.Changeset.change(deleted_at: nil)
       |> Repo.update!()
 
-      assert :ok = SSO.reconcile_pending_authorizations()
+      assert SSO.reconcile_pending_authorizations() == :ok
       assert is_nil(Repo.reload!(blocked_membership).directory_authorization_pending_version)
 
       assert access_of(account.id, blocked_identity.user_id) ==
@@ -891,8 +876,8 @@ defmodule Emisar.SSOGroupsTest do
     test "sync_set_membership_role refuses :owner", %{provider: provider, account: account} do
       %{membership: membership} = provision(provider, "okta|noowner")
 
-      assert {:error, :owner_not_assignable} =
-               Accounts.sync_set_membership_role(membership, :owner, provider)
+      assert Accounts.sync_set_membership_role(membership, :owner, provider) ==
+               {:error, :owner_not_assignable}
 
       # The membership keeps its provisioned role — no escalation slipped through.
       assert role_of(account.id, membership.user_id) == :viewer
@@ -963,8 +948,8 @@ defmodule Emisar.SSOGroupsTest do
       demote_other_owners(account.id, except: membership.user_id)
 
       # The direct sync path still guards the last owner (§9 N5).
-      assert {:error, :last_owner} =
-               Accounts.sync_set_membership_role(Repo.reload!(membership), :admin, provider)
+      assert Accounts.sync_set_membership_role(Repo.reload!(membership), :admin, provider) ==
+               {:error, :last_owner}
 
       assert role_of(account.id, membership.user_id) == :owner
     end
@@ -984,7 +969,7 @@ defmodule Emisar.SSOGroupsTest do
     } do
       other = Fixtures.Memberships.create_membership()
 
-      assert {:error, :not_found} = Accounts.sync_suspend_membership(other, provider)
+      assert Accounts.sync_suspend_membership(other, provider) == {:error, :not_found}
       assert is_nil(Repo.reload!(other).disabled_at)
     end
 
@@ -993,7 +978,7 @@ defmodule Emisar.SSOGroupsTest do
     } do
       other = Fixtures.Memberships.create_membership()
 
-      assert {:error, :not_found} = Accounts.sync_reinstate_membership(other, provider)
+      assert Accounts.sync_reinstate_membership(other, provider) == {:error, :not_found}
     end
 
     test "sync_set_membership_role rejects a membership outside the provider's account", %{
@@ -1001,7 +986,7 @@ defmodule Emisar.SSOGroupsTest do
     } do
       other = Fixtures.Memberships.create_membership(role: "operator")
 
-      assert {:error, :not_found} = Accounts.sync_set_membership_role(other, :admin, provider)
+      assert Accounts.sync_set_membership_role(other, :admin, provider) == {:error, :not_found}
       assert Repo.reload!(other).role == :operator
     end
   end
@@ -1066,7 +1051,7 @@ defmodule Emisar.SSOGroupsTest do
       {_u, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = provider_fixture(account, %{})
 
-      assert {:ok, []} = SSO.list_synced_groups(provider, subject)
+      assert SSO.list_synced_groups(provider, subject) == {:ok, []}
     end
 
     test "is account-scoped — another account's enterprise owner can't read it", %{
@@ -1074,7 +1059,7 @@ defmodule Emisar.SSOGroupsTest do
     } do
       {_u, _account_b, subject_b} = enterprise_owner()
 
-      assert {:error, :not_found} = SSO.list_synced_groups(provider, subject_b)
+      assert SSO.list_synced_groups(provider, subject_b) == {:error, :not_found}
     end
   end
 
@@ -1285,45 +1270,42 @@ defmodule Emisar.SSOGroupsTest do
 
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} =
-               SSO.create_group_mapping(
-                 provider,
-                 %{external_group_id: "grp-2", role: :admin},
-                 viewer_subject
-               )
+      assert SSO.create_group_mapping(
+               provider,
+               %{external_group_id: "grp-2", role: :admin},
+               viewer_subject
+             ) == {:error, :unauthorized}
 
-      assert {:error, :unauthorized} = SSO.list_group_mappings(provider, viewer_subject)
+      assert SSO.list_group_mappings(provider, viewer_subject) == {:error, :unauthorized}
 
       # Denial: a Team plan can configure OIDC but not SCIM group mappings.
       {_u, _team_account, team_subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
 
-      assert {:error, :directory_sync_not_available} =
-               SSO.create_group_mapping(
-                 provider,
-                 %{external_group_id: "grp-3", role: :admin},
-                 team_subject
-               )
+      assert SSO.create_group_mapping(
+               provider,
+               %{external_group_id: "grp-3", role: :admin},
+               team_subject
+             ) == {:error, :directory_sync_not_available}
 
       # Cross-account: account B's enterprise owner cannot touch account A's
       # provider's mappings (create can't find the provider; list scopes empty).
       {_ub, _account_b, subject_b} = enterprise_owner()
 
-      assert {:error, :not_found} =
-               SSO.create_group_mapping(
-                 provider,
-                 %{external_group_id: "grp-4", role: :admin},
-                 subject_b
-               )
+      assert SSO.create_group_mapping(
+               provider,
+               %{external_group_id: "grp-4", role: :admin},
+               subject_b
+             ) == {:error, :not_found}
 
       {:ok, mapping_a} =
         SSO.create_group_mapping(provider, %{external_group_id: "grp-5", role: :admin}, subject)
 
       assert {:ok, [], _meta} = SSO.list_group_mappings(provider, subject_b)
       # And B can't update/delete A's mapping (row-scoped to B's account).
-      assert {:error, :not_found} =
-               SSO.update_group_mapping(mapping_a, %{role: :viewer}, subject_b)
+      assert SSO.update_group_mapping(mapping_a, %{role: :viewer}, subject_b) ==
+               {:error, :not_found}
 
-      assert {:error, :not_found} = SSO.delete_group_mapping(mapping_a, subject_b)
+      assert SSO.delete_group_mapping(mapping_a, subject_b) == {:error, :not_found}
     end
   end
 

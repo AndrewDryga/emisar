@@ -20,7 +20,7 @@ defmodule EmisarWeb.MCP.ResponseBudgetTest do
       result: ResponseBudget.fixed_result(escape_heavy, false)
     }
 
-    assert {:error, :response_too_large} = ResponseBudget.encode_frame(frame)
+    assert ResponseBudget.encode_frame(frame) == {:error, :response_too_large}
   end
 
   test "bounds every echoed request id used by the page budget" do

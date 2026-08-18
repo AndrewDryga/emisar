@@ -37,12 +37,12 @@ defmodule Emisar.MarketingTest do
 
     test "rejects a malformed email" do
       assert {:error, changeset} = Marketing.capture_signup(%{email: "not-an-email"})
-      assert %{email: ["must have the @ sign and no spaces"]} = errors_on(changeset)
+      assert errors_on(changeset) == %{email: ["must have the @ sign and no spaces"]}
     end
 
     test "requires an email" do
       assert {:error, changeset} = Marketing.capture_signup(%{source: "footer"})
-      assert %{email: ["can't be blank"]} = errors_on(changeset)
+      assert errors_on(changeset) == %{email: ["can't be blank"]}
     end
 
     test "bounds email and source input before persistence" do
@@ -50,12 +50,12 @@ defmodule Emisar.MarketingTest do
       too_long_source = String.duplicate("s", 101)
 
       assert {:error, changeset} = Marketing.capture_signup(%{email: too_long_email})
-      assert %{email: ["should be at most 254 character(s)"]} = errors_on(changeset)
+      assert errors_on(changeset) == %{email: ["should be at most 254 character(s)"]}
 
       assert {:error, changeset} =
                Marketing.capture_signup(%{email: "source@example.com", source: too_long_source})
 
-      assert %{source: ["should be at most 100 character(s)"]} = errors_on(changeset)
+      assert errors_on(changeset) == %{source: ["should be at most 100 character(s)"]}
     end
   end
 
@@ -75,7 +75,7 @@ defmodule Emisar.MarketingTest do
     test "sends only the click id, time, and opaque conversion id", %{user: user} do
       attribution = %{campaign: %{"utm_source" => "x"}, x_click_id: "click-123"}
 
-      assert :ok = Marketing.account_signed_up(user, attribution)
+      assert Marketing.account_signed_up(user, attribution) == :ok
 
       assert_receive {:x_ads_signup, event}
       assert event.x_click_id == "click-123"
@@ -87,7 +87,7 @@ defmodule Emisar.MarketingTest do
     end
 
     test "sends nothing without an eligible click id", %{user: user} do
-      assert :ok = Marketing.account_signed_up(user, %{campaign: %{}})
+      assert Marketing.account_signed_up(user, %{campaign: %{}}) == :ok
       refute_receive {:x_ads_signup, _event}
     end
 
@@ -95,7 +95,7 @@ defmodule Emisar.MarketingTest do
       Config.put_override(:emisar, :x_ads_conversions, nil)
       attribution = %{campaign: %{}, x_click_id: "disabled-click"}
 
-      assert :ok = Marketing.account_signed_up(user, attribution)
+      assert Marketing.account_signed_up(user, attribution) == :ok
       refute_receive {:x_ads_signup, _event}
     end
   end

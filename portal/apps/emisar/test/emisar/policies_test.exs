@@ -77,7 +77,7 @@ defmodule Emisar.PoliciesTest do
       ]
 
       for rules <- invalid do
-        assert {:error, :invalid_policy_approval} = Policies.approval_settings_for(rules)
+        assert Policies.approval_settings_for(rules) == {:error, :invalid_policy_approval}
       end
     end
   end
@@ -539,7 +539,7 @@ defmodule Emisar.PoliciesTest do
       # rules-level error the LiveView surfaces.
       changeset = Policies.change_policy(%{"schema_version" => 2, "bogus_section" => %{}})
       refute changeset.valid?
-      assert {"unknown rule sections:" <> _, _} = changeset.errors[:rules]
+      assert ["unknown rule sections:" <> _] = errors_on(changeset).rules
     end
   end
 
@@ -593,8 +593,8 @@ defmodule Emisar.PoliciesTest do
 
       refute changeset.valid?
 
-      assert {"higher-risk tiers must be at least as restrictive" <> _, []} =
-               changeset.errors[:rules]
+      assert ["higher-risk tiers must be at least as restrictive" <> _] =
+               errors_on(changeset).rules
     end
 
     test "rejects critical=require_approval when high=deny" do
@@ -631,37 +631,37 @@ defmodule Emisar.PoliciesTest do
     test "rejects an unknown top-level rule section" do
       changeset = rules_changeset(%{"schema_version" => 2, "bogus_section" => %{}})
       refute changeset.valid?
-      assert {"unknown rule sections:" <> _, _} = changeset.errors[:rules]
+      assert ["unknown rule sections:" <> _] = errors_on(changeset).rules
     end
 
     test "rejects an unknown risk tier in defaults" do
       changeset = rules_changeset(%{"defaults" => %{"extreme" => "deny"}})
       refute changeset.valid?
-      assert {"unknown risk tiers:" <> _, _} = changeset.errors[:rules]
+      assert ["unknown risk tiers:" <> _] = errors_on(changeset).rules
     end
 
     test "rejects an unknown decision value in defaults" do
       changeset = rules_changeset(%{"defaults" => %{"low" => "maybe"}})
       refute changeset.valid?
-      assert {"unknown decisions:" <> _, _} = changeset.errors[:rules]
+      assert ["unknown decisions:" <> _] = errors_on(changeset).rules
     end
 
     test "rejects defaults that isn't a JSON object" do
       changeset = rules_changeset(%{"defaults" => "allow-everything"})
       refute changeset.valid?
-      assert {"defaults must be a JSON object", _} = changeset.errors[:rules]
+      assert errors_on(changeset).rules == ["defaults must be a JSON object"]
     end
 
     test "rejects an override that isn't a JSON object" do
       changeset = rules_changeset(%{"overrides" => ["not-a-map"]})
       refute changeset.valid?
-      assert {"each override must be a JSON object", _} = changeset.errors[:rules]
+      assert errors_on(changeset).rules == ["each override must be a JSON object"]
     end
 
     test "rejects overrides that isn't a list" do
       changeset = rules_changeset(%{"overrides" => %{"not" => "a list"}})
       refute changeset.valid?
-      assert {"overrides must be a list", _} = changeset.errors[:rules]
+      assert errors_on(changeset).rules == ["overrides must be a list"]
     end
 
     test "rejects an override without an action" do
@@ -670,7 +670,7 @@ defmodule Emisar.PoliciesTest do
           rules_changeset(%{"overrides" => [%{"action" => action, "decision" => "deny"}]})
 
         refute changeset.valid?
-        assert {"override action is required", _} = changeset.errors[:rules]
+        assert errors_on(changeset).rules == ["override action is required"]
       end
     end
 
@@ -682,8 +682,9 @@ defmodule Emisar.PoliciesTest do
 
       refute changeset.valid?
 
-      assert {"override action must not have surrounding whitespace", _} =
-               changeset.errors[:rules]
+      assert errors_on(changeset).rules == [
+               "override action must not have surrounding whitespace"
+             ]
     end
 
     test "a minimal policy with neither defaults nor overrides is valid" do
@@ -698,8 +699,8 @@ defmodule Emisar.PoliciesTest do
 
       refute changeset.valid?
 
-      assert {"min_approvals must be an integer between 1 and " <> _, _} =
-               changeset.errors[:rules]
+      assert ["min_approvals must be an integer between 1 and " <> _] =
+               errors_on(changeset).rules
     end
 
     test "rejects a non-boolean allow_self_approval" do
@@ -709,7 +710,7 @@ defmodule Emisar.PoliciesTest do
         })
 
       refute changeset.valid?
-      assert {"allow_self_approval must be a boolean", _} = changeset.errors[:rules]
+      assert errors_on(changeset).rules == ["allow_self_approval must be a boolean"]
     end
 
     test "rejects an unknown key inside the approval section" do
@@ -723,7 +724,7 @@ defmodule Emisar.PoliciesTest do
         })
 
       refute changeset.valid?
-      assert {"unknown approval keys:" <> _, _} = changeset.errors[:rules]
+      assert ["unknown approval keys:" <> _] = errors_on(changeset).rules
     end
 
     test "accepts a valid approval section" do
@@ -736,11 +737,11 @@ defmodule Emisar.PoliciesTest do
     test "rejects either missing approval setting" do
       missing_min = rules_changeset(%{"approval" => %{"allow_self_approval" => false}})
       refute missing_min.valid?
-      assert {"min_approvals is required", _} = missing_min.errors[:rules]
+      assert errors_on(missing_min).rules == ["min_approvals is required"]
 
       missing_self = rules_changeset(%{"approval" => %{"min_approvals" => 1}})
       refute missing_self.valid?
-      assert {"allow_self_approval is required", _} = missing_self.errors[:rules]
+      assert errors_on(missing_self).rules == ["allow_self_approval is required"]
     end
 
     test "rejects a missing approval section after the backfill" do
@@ -751,7 +752,7 @@ defmodule Emisar.PoliciesTest do
         })
 
       refute changeset.valid?
-      assert {"approval settings are required", _} = changeset.errors[:rules]
+      assert errors_on(changeset).rules == ["approval settings are required"]
     end
   end
 
@@ -775,7 +776,7 @@ defmodule Emisar.PoliciesTest do
       {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       api_subject = Subject.for_api_key(api_key, account)
 
-      assert {:error, :unauthorized} = Policies.fetch_policy(api_subject)
+      assert Policies.fetch_policy(api_subject) == {:error, :unauthorized}
     end
 
     test "cross-account: a subject only ever reads its OWN account's policy" do
@@ -839,7 +840,7 @@ defmodule Emisar.PoliciesTest do
 
       {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       api_subject = Subject.for_api_key(api_key, account)
-      assert {:error, :unauthorized} = Policies.list_scoped_policies(api_subject)
+      assert Policies.list_scoped_policies(api_subject) == {:error, :unauthorized}
     end
 
     test "cross-account: never lists another account's overrides" do
@@ -848,7 +849,7 @@ defmodule Emisar.PoliciesTest do
       {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner_a.id, subject_a)
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:ok, []} = Policies.list_scoped_policies(subject_b)
+      assert Policies.list_scoped_policies(subject_b) == {:ok, []}
     end
 
     # A ruleset names its target and spells out what may run there, so the list
@@ -881,7 +882,7 @@ defmodule Emisar.PoliciesTest do
       {:ok, _updated} =
         Accounts.update_membership_runner_access(member_membership, RunnerAccess.none(), owner)
 
-      assert {:ok, []} = Policies.list_scoped_policies(member)
+      assert Policies.list_scoped_policies(member) == {:ok, []}
     end
 
     # Group names are not account-unique, and the narrowing matches on the name.
@@ -895,7 +896,7 @@ defmodule Emisar.PoliciesTest do
 
       member_a = restricted_member(account_a, owner_a, "operator", ["db"])
 
-      assert {:ok, []} = Policies.list_scoped_policies(member_a)
+      assert Policies.list_scoped_policies(member_a) == {:ok, []}
     end
   end
 
@@ -910,7 +911,7 @@ defmodule Emisar.PoliciesTest do
       refute is_nil(deleted.deleted_at)
 
       # Gone from the editor's list; the scope now resolves to the broader default.
-      assert {:ok, []} = Policies.list_scoped_policies(subject)
+      assert Policies.list_scoped_policies(subject) == {:ok, []}
     end
 
     test "a viewer can't delete an override (no manage_policies)" do
@@ -921,7 +922,7 @@ defmodule Emisar.PoliciesTest do
       viewer =
         Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
 
-      assert {:error, :unauthorized} = Policies.delete_scoped_policy(policy, viewer)
+      assert Policies.delete_scoped_policy(policy, viewer) == {:error, :unauthorized}
       # The row is untouched — still live.
       assert {:ok, [_]} = Policies.list_scoped_policies(owner)
     end
@@ -955,7 +956,7 @@ defmodule Emisar.PoliciesTest do
 
       # delete_scoped_policy guards with Subject.ensure_in_account (default
       # :not_found), so B is refused without A's override being touched.
-      assert {:error, :not_found} = Policies.delete_scoped_policy(policy_a, subject_b)
+      assert Policies.delete_scoped_policy(policy_a, subject_b) == {:error, :not_found}
       assert {:ok, [_]} = Policies.list_scoped_policies(subject_a)
     end
   end
@@ -996,25 +997,24 @@ defmodule Emisar.PoliciesTest do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       foreign_runner = Fixtures.Runners.create_runner(connected?: false)
 
-      assert {:error, :runner_not_found} =
-               Policies.save_scoped_rules(deny_all_rules(), :runner, foreign_runner.id, subject)
+      assert Policies.save_scoped_rules(deny_all_rules(), :runner, foreign_runner.id, subject) ==
+               {:error, :runner_not_found}
 
-      assert {:ok, []} = Policies.list_scoped_policies(subject)
+      assert Policies.list_scoped_policies(subject) == {:ok, []}
     end
 
     test "rejects a nonexistent and a malformed runner id (:runner_not_found)" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :runner_not_found} =
-               Policies.save_scoped_rules(
-                 deny_all_rules(),
-                 :runner,
-                 Ecto.UUID.generate(),
-                 subject
-               )
+      assert Policies.save_scoped_rules(
+               deny_all_rules(),
+               :runner,
+               Ecto.UUID.generate(),
+               subject
+             ) == {:error, :runner_not_found}
 
-      assert {:error, :runner_not_found} =
-               Policies.save_scoped_rules(deny_all_rules(), :runner, "not-a-uuid", subject)
+      assert Policies.save_scoped_rules(deny_all_rules(), :runner, "not-a-uuid", subject) ==
+               {:error, :runner_not_found}
     end
 
     test "rejects a soft-deleted runner's id (:runner_not_found)" do
@@ -1022,8 +1022,8 @@ defmodule Emisar.PoliciesTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {:ok, _} = Runners.delete_runner(runner, subject)
 
-      assert {:error, :runner_not_found} =
-               Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, subject)
+      assert Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, subject) ==
+               {:error, :runner_not_found}
     end
 
     # Preparing the ruleset before enrolling the hosts is a real setup flow, and
@@ -1065,7 +1065,7 @@ defmodule Emisar.PoliciesTest do
       assert Policies.save_scoped_rules(deny_all_rules(), :group, "no-such-group", admin) ==
                {:error, :group_not_found}
 
-      assert {:ok, []} = Policies.list_scoped_policies(owner)
+      assert Policies.list_scoped_policies(owner) == {:ok, []}
     end
 
     test "a viewer can't save a scoped override (no manage_policies)" do
@@ -1074,8 +1074,8 @@ defmodule Emisar.PoliciesTest do
       viewer =
         Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
 
-      assert {:error, :unauthorized} =
-               Policies.save_scoped_rules(deny_all_rules(), :runner, "r1", viewer)
+      assert Policies.save_scoped_rules(deny_all_rules(), :runner, "r1", viewer) ==
+               {:error, :unauthorized}
     end
 
     test "cross-account: B can't claim A's runner id, and A's override is untouched" do
@@ -1087,10 +1087,10 @@ defmodule Emisar.PoliciesTest do
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :runner_not_found} =
-               Policies.save_scoped_rules(allow_all_rules(), :runner, runner_a.id, subject_b)
+      assert Policies.save_scoped_rules(allow_all_rules(), :runner, runner_a.id, subject_b) ==
+               {:error, :runner_not_found}
 
-      assert {:ok, []} = Policies.list_scoped_policies(subject_b)
+      assert Policies.list_scoped_policies(subject_b) == {:ok, []}
 
       assert {:ok, [fetched_a]} = Policies.list_scoped_policies(subject_a)
       assert fetched_a.id == policy_a.id
@@ -1113,7 +1113,7 @@ defmodule Emisar.PoliciesTest do
 
       # The Subject was built before the access change. The mutation must read
       # the membership again instead of trusting the stale session snapshot.
-      assert {:error, :unauthorized} = Policies.save_rules(deny_all_rules(), admin)
+      assert Policies.save_rules(deny_all_rules(), admin) == {:error, :unauthorized}
 
       default_after = Policies.peek_policy_for_account(account.id)
       assert default_after.rules == default_before.rules
@@ -1137,12 +1137,12 @@ defmodule Emisar.PoliciesTest do
       {:ok, _updated} =
         Accounts.update_membership_runner_access(membership, restricted, owner)
 
-      assert {:error, :unauthorized} = Policies.save_rules(allow_all_rules(), admin)
+      assert Policies.save_rules(allow_all_rules(), admin) == {:error, :unauthorized}
 
-      assert {:error, :unauthorized} =
-               Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, admin)
+      assert Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, admin) ==
+               {:error, :unauthorized}
 
-      assert {:error, :unauthorized} = Policies.delete_scoped_policy(scoped, admin)
+      assert Policies.delete_scoped_policy(scoped, admin) == {:error, :unauthorized}
 
       default_after = Policies.peek_policy_for_account(account.id)
       assert default_after.rules == default_before.rules
@@ -1313,8 +1313,8 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "no policy means deny everything" do
-      assert {:deny, [], "No policy is configured for this account, so this action was denied."} =
-               Policies.evaluate(nil, %{"action_id" => "x.y"})
+      assert Policies.evaluate(nil, %{"action_id" => "x.y"}) ==
+               {:deny, [], "No policy is configured for this account, so this action was denied."}
     end
 
     test "malformed stored sections fail closed instead of raising" do
@@ -1399,12 +1399,12 @@ defmodule Emisar.PoliciesTest do
 
       policy = %Policy{scope_type: :group, scope_value: "va1-cassandra", rules: rules}
 
-      assert {:allow, ["permit status checks"],
-              "The “va1-cassandra” group policy rule “permit status checks” allows this high-risk action."} =
-               Policies.evaluate(policy, %{
-                 "action_id" => "cassandra.status_ring",
-                 "risk" => "high"
-               })
+      assert Policies.evaluate(policy, %{
+               "action_id" => "cassandra.status_ring",
+               "risk" => "high"
+             }) ==
+               {:allow, ["permit status checks"],
+                "The “va1-cassandra” group policy rule “permit status checks” allows this high-risk action."}
     end
 
     test "glob overrides win when matched" do

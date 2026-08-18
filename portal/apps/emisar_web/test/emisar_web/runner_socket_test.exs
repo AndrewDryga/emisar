@@ -349,28 +349,7 @@ defmodule EmisarWeb.RunnerSocketTest do
   # as disconnected and dispatches never reached them.
   describe "runner socket dispatch (end-to-end)" do
     setup do
-      {:ok, user} =
-        Emisar.Users.register_user(%{
-          email: "owner-#{System.unique_integer([:positive])}@example.com"
-        })
-
-      {:ok, account} =
-        Emisar.Accounts.create_account_with_owner(
-          %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo")},
-          user
-        )
-
-      # Team plan (via a subscription) so the registration tests below aren't
-      # capped at free's 3-runner limit; plan lives on the subscription now.
-      Fixtures.Accounts.create_subscription(account, "team")
-
-      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      _ = Fixtures.Catalog.create_action(runner: runner)
-      _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
-      {_raw, token} = Runners.mint_runner_token(runner)
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-
-      %{account: account, runner: runner, token: token, subject: subject}
+      unconnected_socket()
     end
 
     test "a connected runner reads online and receives dispatched actions",
@@ -396,7 +375,7 @@ defmodule EmisarWeb.RunnerSocketTest do
       # The dispatch-timeout sweep must leave a *connected* runner's run
       # alone, even past the grace window — this is what regressed.
       backdate_to_stale!(run)
-      assert :ok = Emisar.Runs.Jobs.DispatchTimeout.execute([])
+      assert Emisar.Runs.Jobs.DispatchTimeout.execute([]) == :ok
       assert Repo.get!(ActionRun, run.id).status == :sent
     end
 
@@ -411,12 +390,12 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       # Socket drops — terminate releases the durable lease and Presence
       # clears when the connection process dies.
-      assert :ok = RunnerSocket.terminate(:remote, state)
+      assert RunnerSocket.terminate(:remote, state) == :ok
       :ok = Presence.untrack(self(), Presence.topic(account.id), runner.id)
       refute Runners.online?(account.id, runner.id)
 
       backdate_to_stale!(run)
-      assert :ok = Emisar.Runs.Jobs.DispatchTimeout.execute([])
+      assert Emisar.Runs.Jobs.DispatchTimeout.execute([]) == :ok
 
       timed_out = Repo.get!(ActionRun, run.id)
       assert timed_out.status == :error
@@ -437,7 +416,7 @@ defmodule EmisarWeb.RunnerSocketTest do
                      1_000
 
       assert request_id == run.request_id
-      assert :ok = RunnerSocket.terminate(:remote, first_state)
+      assert RunnerSocket.terminate(:remote, first_state) == :ok
       :ok = Presence.untrack(self(), Presence.topic(account.id), runner.id)
 
       assert {:ok, second_state} = RunnerSocket.init(%{token: token, runner: runner})
@@ -888,7 +867,7 @@ defmodule EmisarWeb.RunnerSocketTest do
     setup [:connected_socket]
 
     test "stamps the disconnect on the runner row", %{state: state, runner: runner} do
-      assert :ok = RunnerSocket.terminate(:remote, state)
+      assert RunnerSocket.terminate(:remote, state) == :ok
 
       reloaded = Repo.reload!(runner)
       assert reloaded.last_disconnected_at
@@ -936,13 +915,12 @@ defmodule EmisarWeb.RunnerSocketTest do
       |> Ecto.Changeset.change(connection_lease_id: Ecto.UUID.generate())
       |> Repo.update!()
 
-      assert {:error, :connection_superseded} =
-               Catalog.observe_state_from_connection(
-                 state.runner_id,
-                 %{"hostname" => "must-not-land", "packs" => %{}, "actions" => []},
-                 state.connection_generation,
-                 state.connection_lease_id
-               )
+      assert Catalog.observe_state_from_connection(
+               state.runner_id,
+               %{"hostname" => "must-not-land", "packs" => %{}, "actions" => []},
+               state.connection_generation,
+               state.connection_lease_id
+             ) == {:error, :connection_superseded}
 
       assert Repo.reload!(runner).hostname != "must-not-land"
     end
@@ -1103,33 +1081,30 @@ defmodule EmisarWeb.RunnerSocketTest do
       |> Ecto.Changeset.change(connection_lease_id: Ecto.UUID.generate())
       |> Repo.update!()
 
-      assert {:error, :connection_superseded} =
-               Runs.mark_started_from_connection(
-                 state.account_id,
-                 state.runner_id,
-                 state.connection_generation,
-                 state.connection_lease_id,
-                 run.request_id
-               )
+      assert Runs.mark_started_from_connection(
+               state.account_id,
+               state.runner_id,
+               state.connection_generation,
+               state.connection_lease_id,
+               run.request_id
+             ) == {:error, :connection_superseded}
 
-      assert {:error, :connection_superseded} =
-               Runs.append_event_from_connection(
-                 run.id,
-                 %{kind: "progress", seq: 1, payload: %{"chunk" => "must-not-land"}},
-                 state.account_id,
-                 state.runner_id,
-                 state.connection_generation,
-                 state.connection_lease_id
-               )
+      assert Runs.append_event_from_connection(
+               run.id,
+               %{kind: "progress", seq: 1, payload: %{"chunk" => "must-not-land"}},
+               state.account_id,
+               state.runner_id,
+               state.connection_generation,
+               state.connection_lease_id
+             ) == {:error, :connection_superseded}
 
-      assert {:error, :connection_superseded} =
-               Runs.finalize_from_connection(
-                 state.account_id,
-                 state.runner_id,
-                 state.connection_generation,
-                 state.connection_lease_id,
-                 %{"request_id" => run.request_id, "status" => "success"}
-               )
+      assert Runs.finalize_from_connection(
+               state.account_id,
+               state.runner_id,
+               state.connection_generation,
+               state.connection_lease_id,
+               %{"request_id" => run.request_id, "status" => "success"}
+             ) == {:error, :connection_superseded}
 
       reloaded = Repo.get!(ActionRun, run.id)
       assert reloaded.status == :sent
@@ -1610,6 +1585,12 @@ defmodule EmisarWeb.RunnerSocketTest do
   # process *becomes* the runner socket (tracked in presence + subscribed
   # to its cloud→runner topic), exactly like the end-to-end tests above.
   defp connected_socket(_ctx) do
+    socket = unconnected_socket()
+    {:ok, state} = RunnerSocket.init(%{token: socket.token, runner: socket.runner})
+    Map.put(socket, :state, state)
+  end
+
+  defp unconnected_socket do
     {:ok, user} =
       Emisar.Users.register_user(%{
         email: "owner-#{System.unique_integer([:positive])}@example.com"
@@ -1621,19 +1602,15 @@ defmodule EmisarWeb.RunnerSocketTest do
         user
       )
 
-    # Team plan (via a subscription) so registration isn't capped at free's
-    # 3-runner limit; plan lives on the subscription now.
     Fixtures.Accounts.create_subscription(account, "team")
 
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-    _ = Fixtures.Catalog.create_action(runner: runner)
-    _ = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    Fixtures.Catalog.create_action(runner: runner)
+    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
     {_raw, token} = Runners.mint_runner_token(runner)
-
-    {:ok, state} = RunnerSocket.init(%{token: token, runner: runner})
     subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
-    %{account: account, user: user, runner: runner, state: state, subject: subject}
+    %{account: account, user: user, runner: runner, token: token, subject: subject}
   end
 
   # Dispatches a real run to the connected runner and drains the resulting

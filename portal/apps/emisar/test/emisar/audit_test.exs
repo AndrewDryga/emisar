@@ -197,7 +197,7 @@ defmodule Emisar.AuditTest do
       user = Fixtures.Users.create_user()
       before = Repo.aggregate(Audit.Event, :count, :id)
 
-      assert :ok = Audit.log_for_user(user, "user.signed_in", actor_kind: "user")
+      assert Audit.log_for_user(user, "user.signed_in", actor_kind: "user") == :ok
       assert Repo.aggregate(Audit.Event, :count, :id) == before
     end
   end
@@ -519,7 +519,7 @@ defmodule Emisar.AuditTest do
       {:ok, event_a} = Audit.log(account_a.id, "user.signed_in", actor_kind: "user")
       {:ok, event_b} = Audit.log(account_b.id, "user.signed_in", actor_kind: "user")
 
-      assert :ok = Audit.subscribe_account_audit(account_a.id)
+      assert Audit.subscribe_account_audit(account_a.id) == :ok
 
       # A's event fans onto A's topic — the subscriber gets it…
       Audit.broadcast_event(event_a)
@@ -540,7 +540,7 @@ defmodule Emisar.AuditTest do
 
       :ok = Audit.subscribe_account_audit(account.id)
 
-      assert :ok = Audit.broadcast_event(event)
+      assert Audit.broadcast_event(event) == :ok
       assert_receive {:audit_event, %Audit.Event{} = received}
       assert received.id == event.id
       assert received.account_id == account.id
@@ -554,7 +554,7 @@ defmodule Emisar.AuditTest do
       # Subscribe to A, broadcast B's event — A's subscriber must hear nothing.
       :ok = Audit.subscribe_account_audit(account_a.id)
 
-      assert :ok = Audit.broadcast_event(event_b)
+      assert Audit.broadcast_event(event_b) == :ok
       refute_receive {:audit_event, _event}
     end
   end
@@ -719,8 +719,7 @@ defmodule Emisar.AuditTest do
     end
 
     test "invalid cursor surfaces an error rather than returning random rows", %{subject: subject} do
-      assert {:error, :invalid_cursor} =
-               Audit.list_events(subject, page: [cursor: "garbage"])
+      assert Audit.list_events(subject, page: [cursor: "garbage"]) == {:error, :invalid_cursor}
     end
 
     test "a well-formed but type-mismatched cursor is :invalid_cursor, not a 500", %{
@@ -741,8 +740,7 @@ defmodule Emisar.AuditTest do
         |> Jason.encode!()
         |> Base.url_encode64(padding: false)
 
-      assert {:error, :invalid_cursor} =
-               Audit.list_events(subject, page: [cursor: cursor])
+      assert Audit.list_events(subject, page: [cursor: cursor]) == {:error, :invalid_cursor}
     end
 
     # The "Hide noisy events" toggle is retired (audit-logging diet): once
@@ -970,7 +968,7 @@ defmodule Emisar.AuditTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       subject = Subject.for_runner(runner, account)
 
-      assert {:error, :unauthorized} = Audit.list_events(subject)
+      assert Audit.list_events(subject) == {:error, :unauthorized}
     end
   end
 
@@ -1204,7 +1202,7 @@ defmodule Emisar.AuditTest do
       quiet = Fixtures.Users.create_user(email: "quiet@example.com", full_name: "Quiet User")
       _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: quiet.id)
 
-      assert {:ok, []} = Audit.list_actor_options("user", subject)
+      assert Audit.list_actor_options("user", subject) == {:ok, []}
 
       # ensure them in so the picker SELECTS them instead of falling back to All.
       assert {:ok, [{id, "Quiet User"}]} =
@@ -1214,10 +1212,10 @@ defmodule Emisar.AuditTest do
 
       # An id that isn't a member of this account resolves to no label → dropped.
       stranger = Fixtures.Users.create_user(email: "stranger@example.com")
-      assert {:ok, []} = Audit.list_actor_options("user", subject, ensure: stranger.id)
+      assert Audit.list_actor_options("user", subject, ensure: stranger.id) == {:ok, []}
 
       # nil ensure is a no-op.
-      assert {:ok, []} = Audit.list_actor_options("user", subject, ensure: nil)
+      assert Audit.list_actor_options("user", subject, ensure: nil) == {:ok, []}
     end
 
     test "scopes to the requested kind only", %{
@@ -1252,7 +1250,7 @@ defmodule Emisar.AuditTest do
       # but is only resolvable in B, so it must not surface in A's picker.
       {:ok, _} = Audit.log(account_a.id, "x", actor_kind: "user", actor_id: user_b.id)
 
-      assert {:ok, []} = Audit.list_actor_options("user", subject_a)
+      assert Audit.list_actor_options("user", subject_a) == {:ok, []}
     end
 
     test "a kind with no resolvable actors yields no options" do
@@ -1260,7 +1258,7 @@ defmodule Emisar.AuditTest do
       subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
       {:ok, _} = Audit.log(account.id, "x", actor_kind: "system", actor_id: Ecto.UUID.generate())
 
-      assert {:ok, []} = Audit.list_actor_options("system", subject)
+      assert Audit.list_actor_options("system", subject) == {:ok, []}
     end
 
     # the actor picker enforces view_audit before any DB
@@ -1270,7 +1268,7 @@ defmodule Emisar.AuditTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       subject = Subject.for_runner(runner, account)
 
-      assert {:error, :unauthorized} = Audit.list_actor_options("user", subject)
+      assert Audit.list_actor_options("user", subject) == {:error, :unauthorized}
     end
   end
 
@@ -1285,7 +1283,7 @@ defmodule Emisar.AuditTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       subject = Subject.for_runner(runner, account)
 
-      assert {:error, :unauthorized} = Audit.list_target_options("user", subject)
+      assert Audit.list_target_options("user", subject) == {:error, :unauthorized}
     end
 
     # a subject id that only resolves in account A never
@@ -1307,7 +1305,7 @@ defmodule Emisar.AuditTest do
       {:ok, _} =
         Audit.log(account_a.id, "user.invited", target_kind: "user", target_id: user_a.id)
 
-      assert {:ok, []} = Audit.list_target_options("user", subject_b)
+      assert Audit.list_target_options("user", subject_b) == {:ok, []}
     end
 
     # (context half) — `policy` and `approval_grant` have no
@@ -1323,8 +1321,8 @@ defmodule Emisar.AuditTest do
           target_id: Ecto.UUID.generate()
         )
 
-      assert {:ok, []} = Audit.list_target_options("policy", subject)
-      assert {:ok, []} = Audit.list_target_options("approval_grant", subject)
+      assert Audit.list_target_options("policy", subject) == {:ok, []}
+      assert Audit.list_target_options("approval_grant", subject) == {:ok, []}
     end
 
     # a subject id that WAS resolvable when the event was
@@ -1363,11 +1361,9 @@ defmodule Emisar.AuditTest do
       # Remove the membership — the audit row still references the user id, but
       # the label resolver (members_of_account) can no longer resolve it, so the
       # option is dropped rather than rendered with a nil/blank label.
-      membership
-      |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
-      |> Repo.update!()
+      Fixtures.Memberships.mark_membership_as_deleted(membership)
 
-      assert {:ok, []} = Audit.list_target_options("user", subject)
+      assert Audit.list_target_options("user", subject) == {:ok, []}
     end
   end
 
@@ -1424,8 +1420,8 @@ defmodule Emisar.AuditTest do
     test "a malformed :after cursor id returns no rows", %{account: account, subject: subject} do
       seed_export_events(account, 1)
 
-      assert {:ok, []} =
-               Audit.list_for_export(subject, after: {DateTime.utc_now(), "not-a-uuid"})
+      assert Audit.list_for_export(subject, after: {DateTime.utc_now(), "not-a-uuid"}) ==
+               {:ok, []}
     end
 
     test ":since is an inclusive lower bound and :limit caps the page", %{
@@ -1473,7 +1469,7 @@ defmodule Emisar.AuditTest do
       subject_b =
         Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_b, role: :owner)
 
-      assert {:ok, []} = Audit.list_for_export(subject_b, event_types: ["user.signed_in"])
+      assert Audit.list_for_export(subject_b, event_types: ["user.signed_in"]) == {:ok, []}
     end
 
     test "a free account is refused — the SIEM sweep is the paid surface" do
@@ -1481,7 +1477,7 @@ defmodule Emisar.AuditTest do
       subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
       _ = seed_export_events(account, 1)
 
-      assert {:error, :audit_export_not_available} = Audit.list_for_export(subject)
+      assert Audit.list_for_export(subject) == {:error, :audit_export_not_available}
     end
 
     test "a withdrawn entitlement overrides the Team plan default", %{
@@ -1492,7 +1488,7 @@ defmodule Emisar.AuditTest do
         entitlements: %{"features_audit_export_enabled?" => false}
       )
 
-      assert {:error, :audit_export_not_available} = Audit.list_for_export(subject)
+      assert Audit.list_for_export(subject) == {:error, :audit_export_not_available}
     end
 
     test "a granted entitlement enables the sweep on an otherwise ineligible plan" do
@@ -1522,7 +1518,7 @@ defmodule Emisar.AuditTest do
 
       runner_subject = Subject.for_runner(runner, account)
 
-      assert {:error, :unauthorized} = Audit.list_for_export(runner_subject)
+      assert Audit.list_for_export(runner_subject) == {:error, :unauthorized}
     end
   end
 
@@ -1551,7 +1547,7 @@ defmodule Emisar.AuditTest do
       subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
       {:ok, _event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
 
-      assert {:error, :audit_export_not_available} = Audit.list_events_for_export(subject)
+      assert Audit.list_events_for_export(subject) == {:error, :audit_export_not_available}
       assert {:ok, [_event], _meta} = Audit.list_events(subject)
     end
 
@@ -1563,7 +1559,7 @@ defmodule Emisar.AuditTest do
         entitlements: %{"features_audit_export_enabled?" => false}
       )
 
-      assert {:error, :audit_export_not_available} = Audit.list_events_for_export(subject)
+      assert Audit.list_events_for_export(subject) == {:error, :audit_export_not_available}
     end
 
     test "a no-view_audit role is :unauthorized before the plan is consulted", %{
@@ -1571,8 +1567,8 @@ defmodule Emisar.AuditTest do
     } do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert {:error, :unauthorized} =
-               Audit.list_events_for_export(Subject.for_runner(runner, account))
+      assert Audit.list_events_for_export(Subject.for_runner(runner, account)) ==
+               {:error, :unauthorized}
     end
 
     test "an owner of account B never exports account A's events (cross-account)", %{
@@ -1609,7 +1605,7 @@ defmodule Emisar.AuditTest do
     test "count == 0 records nothing — a caught-up poll leaves no marker" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
 
-      assert {:ok, :not_recorded} = Audit.record_export(subject, [limit: 100], 0)
+      assert Audit.record_export(subject, [limit: 100], 0) == {:ok, :not_recorded}
 
       {:ok, events, _} = Audit.list_events(subject, page: [limit: 50])
       refute Enum.any?(events, &(&1.event_type == "audit.exported"))
@@ -1660,7 +1656,7 @@ defmodule Emisar.AuditTest do
           role: :owner
         )
 
-      assert {:error, :not_found} = Audit.fetch_event_by_id(event_a.id, subject_b)
+      assert Audit.fetch_event_by_id(event_a.id, subject_b) == {:error, :not_found}
     end
 
     test "a malformed id is a clean :not_found" do
@@ -1671,7 +1667,7 @@ defmodule Emisar.AuditTest do
           role: :owner
         )
 
-      assert {:error, :not_found} = Audit.fetch_event_by_id("not-a-uuid", subject)
+      assert Audit.fetch_event_by_id("not-a-uuid", subject) == {:error, :not_found}
     end
   end
 

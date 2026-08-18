@@ -123,11 +123,10 @@ defmodule Emisar.Auth.SubjectTest do
           account_id: account.id
         })
 
-      assert :ok =
-               Emisar.Auth.Authorizer.ensure_has_permissions(
-                 subject,
-                 Emisar.Accounts.Authorizer.manage_security_settings_permission()
-               )
+      assert Emisar.Auth.Authorizer.ensure_has_permissions(
+               subject,
+               Emisar.Accounts.Authorizer.manage_security_settings_permission()
+             ) == :ok
     end
 
     test "{:error, :unauthorized} when the subject lacks it", %{account: account, user: user} do
@@ -138,11 +137,10 @@ defmodule Emisar.Auth.SubjectTest do
           account_id: account.id
         })
 
-      assert {:error, :unauthorized} =
-               Emisar.Auth.Authorizer.ensure_has_permissions(
-                 subject,
-                 Emisar.Accounts.Authorizer.manage_security_settings_permission()
-               )
+      assert Emisar.Auth.Authorizer.ensure_has_permissions(
+               subject,
+               Emisar.Accounts.Authorizer.manage_security_settings_permission()
+             ) == {:error, :unauthorized}
     end
 
     test "{:one_of, [...]} succeeds if any one permission is held", %{
@@ -162,7 +160,7 @@ defmodule Emisar.Auth.SubjectTest do
         Emisar.Runners.Authorizer.view_runners_permission()
       ]
 
-      assert :ok = Emisar.Auth.Authorizer.ensure_has_permissions(operator, {:one_of, perms})
+      assert Emisar.Auth.Authorizer.ensure_has_permissions(operator, {:one_of, perms}) == :ok
     end
 
     test "rejects {:one_of, [...]} if the subject holds none", %{account: account, user: user} do
@@ -178,8 +176,8 @@ defmodule Emisar.Auth.SubjectTest do
         Emisar.Accounts.Authorizer.manage_team_permission()
       ]
 
-      assert {:error, :unauthorized} =
-               Emisar.Auth.Authorizer.ensure_has_permissions(viewer, {:one_of, perms})
+      assert Emisar.Auth.Authorizer.ensure_has_permissions(viewer, {:one_of, perms}) ==
+               {:error, :unauthorized}
     end
 
     test "a plain list requires ALL permissions — holding every one passes", %{
@@ -199,7 +197,7 @@ defmodule Emisar.Auth.SubjectTest do
         Emisar.Accounts.Authorizer.manage_team_permission()
       ]
 
-      assert :ok = Emisar.Auth.Authorizer.ensure_has_permissions(owner, perms)
+      assert Emisar.Auth.Authorizer.ensure_has_permissions(owner, perms) == :ok
     end
 
     test "a plain list is rejected when the subject lacks any one of them", %{
@@ -220,8 +218,8 @@ defmodule Emisar.Auth.SubjectTest do
         Emisar.Accounts.Authorizer.manage_owners_permission()
       ]
 
-      assert {:error, :unauthorized} =
-               Emisar.Auth.Authorizer.ensure_has_permissions(admin, perms)
+      assert Emisar.Auth.Authorizer.ensure_has_permissions(admin, perms) ==
+               {:error, :unauthorized}
     end
   end
 
@@ -303,16 +301,16 @@ defmodule Emisar.Auth.SubjectTest do
       # An account-less subject is in no account.
       refute Subject.in_account?(%Subject{}, "acct-A")
 
-      assert :ok = Subject.ensure_in_account(subject, "acct-A")
+      assert Subject.ensure_in_account(subject, "acct-A") == :ok
     end
 
     test "ensure_in_account defaults to :not_found and accepts a custom error atom" do
       subject = %Subject{account: %Account{id: "acct-A"}}
 
-      assert {:error, :not_found} = Subject.ensure_in_account(subject, "acct-B")
+      assert Subject.ensure_in_account(subject, "acct-B") == {:error, :not_found}
 
-      assert {:error, :unauthorized} =
-               Subject.ensure_in_account(subject, "acct-B", :unauthorized)
+      assert Subject.ensure_in_account(subject, "acct-B", :unauthorized) ==
+               {:error, :unauthorized}
     end
   end
 end

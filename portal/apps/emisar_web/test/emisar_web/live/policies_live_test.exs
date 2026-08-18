@@ -117,9 +117,9 @@ defmodule EmisarWeb.PoliciesLiveTest do
                "critical" => "deny"
              }
 
-      assert {:require_approval, [],
-              "The account policy requires approval for medium-risk actions by default."} =
-               Policies.evaluate(repaired, %{"action_id" => "linux.uptime", "risk" => "medium"})
+      assert Policies.evaluate(repaired, %{"action_id" => "linux.uptime", "risk" => "medium"}) ==
+               {:require_approval, [],
+                "The account policy requires approval for medium-risk actions by default."}
     end
 
     test "a padded stored allow override repairs to deny before it can become active", %{
@@ -153,8 +153,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
                %{"name" => "reads", "action" => "linux.*", "decision" => "deny"}
              ]
 
-      assert {:deny, ["reads"], "The account policy rule “reads” denies this low-risk action."} =
-               Policies.evaluate(repaired, %{"action_id" => "linux.uptime", "risk" => "low"})
+      assert Policies.evaluate(repaired, %{"action_id" => "linux.uptime", "risk" => "low"}) ==
+               {:deny, ["reads"], "The account policy rule “reads” denies this low-risk action."}
     end
 
     test "tweak defaults + add an override → save → persisted as v2 JSON", %{conn: conn} do
@@ -1411,7 +1411,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       end
 
       # The crafted scopes persisted nothing — no override exists.
-      assert {:ok, []} = Policies.list_scoped_policies(subject)
+      assert Policies.list_scoped_policies(subject) == {:ok, []}
     end
 
     test "add a ruleset → pick a group → save → persists a group-scoped policy", %{
@@ -1493,7 +1493,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       html = lv |> render_click("remove_ruleset", %{"uid" => saved.id})
 
       assert html =~ "Ruleset removed"
-      assert {:ok, []} = Policies.list_scoped_policies(subject)
+      assert Policies.list_scoped_policies(subject) == {:ok, []}
     end
 
     test "a viewer sees the policy read-only and a forged save is denied", %{

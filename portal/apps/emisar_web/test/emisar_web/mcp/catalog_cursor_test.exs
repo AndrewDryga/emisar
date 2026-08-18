@@ -6,19 +6,17 @@ defmodule EmisarWeb.MCP.CatalogCursorTest do
     filters = %{"availability" => "all", "pack_id" => nil}
     cursor = CatalogCursor.encode("list_packs", "scope-a", filters, "demo@1")
 
-    assert {:ok, "demo@1"} =
-             CatalogCursor.decode(cursor, "list_packs", "scope-a", filters)
+    assert CatalogCursor.decode(cursor, "list_packs", "scope-a", filters) == {:ok, "demo@1"}
 
-    assert {:error, :invalid_cursor} =
-             CatalogCursor.decode(cursor, "list_runners", "scope-a", filters)
+    assert CatalogCursor.decode(cursor, "list_runners", "scope-a", filters) ==
+             {:error, :invalid_cursor}
 
-    assert {:error, :invalid_cursor} =
-             CatalogCursor.decode(cursor, "list_packs", "scope-b", filters)
+    assert CatalogCursor.decode(cursor, "list_packs", "scope-b", filters) ==
+             {:error, :invalid_cursor}
 
-    assert {:error, :invalid_cursor} =
-             CatalogCursor.decode(cursor, "list_packs", "scope-a", %{
-               "availability" => "executable"
-             })
+    assert CatalogCursor.decode(cursor, "list_packs", "scope-a", %{
+             "availability" => "executable"
+           }) == {:error, :invalid_cursor}
   end
 
   test "rejects tampering and oversized cursors" do
@@ -38,10 +36,9 @@ defmodule EmisarWeb.MCP.CatalogCursorTest do
     assert Base.url_decode64!(signature, padding: false) ==
              Base.url_decode64!(noncanonical_signature, padding: false)
 
-    assert {:error, :invalid_cursor} =
-             CatalogCursor.decode(tampered, "list_packs", "scope", %{})
+    assert CatalogCursor.decode(tampered, "list_packs", "scope", %{}) == {:error, :invalid_cursor}
 
-    assert {:error, :invalid_cursor} =
-             CatalogCursor.decode(String.duplicate("x", 4_097), "list_packs", "scope", %{})
+    assert CatalogCursor.decode(String.duplicate("x", 4_097), "list_packs", "scope", %{}) ==
+             {:error, :invalid_cursor}
   end
 end

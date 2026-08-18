@@ -73,14 +73,14 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
     issue_code!(subject)
 
     # A freshly-issued code (60s TTL) isn't expired — the sweep is a no-op.
-    assert :ok = Cleanup.execute([])
+    assert Cleanup.execute([]) == :ok
     assert Repo.aggregate(AuthorizationCode.Query.all(), :count) == 1
 
     # Backdate it past expiry; now the worker prunes it.
     past = DateTime.add(DateTime.utc_now(), -120, :second)
     {1, _} = AuthorizationCode.Query.all() |> Repo.update_all(set: [expires_at: past])
 
-    assert :ok = Cleanup.execute([])
+    assert Cleanup.execute([]) == :ok
     refute Repo.exists?(AuthorizationCode.Query.all())
   end
 
@@ -91,7 +91,7 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
     # Consent minted a backing key with no token; freshly minted (inside the
     # grace window) the sweep leaves it.
     assert %ApiKey{expires_at: nil, last_used_at: nil} = Repo.one(ApiKey)
-    assert :ok = Cleanup.execute([])
+    assert Cleanup.execute([]) == :ok
     assert Repo.one(ApiKey)
 
     # Backdate it past the grace window; with no token it's unreachable → pruned,
@@ -99,7 +99,7 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
     past = DateTime.add(DateTime.utc_now(), -2 * 3600, :second)
     {1, _} = ApiKey.Query.all() |> Repo.update_all(set: [inserted_at: past])
 
-    assert :ok = Cleanup.execute([])
+    assert Cleanup.execute([]) == :ok
     refute Repo.one(ApiKey)
     refute Repo.exists?(AuthorizationCode.Query.all())
   end
@@ -109,14 +109,14 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
       OAuth.register_client(%{"client_name" => "Drive-by", "redirect_uris" => [@redirect]})
 
     # A fresh registration is within the window — the sweep keeps it.
-    assert :ok = Cleanup.execute([])
+    assert Cleanup.execute([]) == :ok
     assert Repo.reload(client)
 
     # Backdate the registration past the 30-day abandonment window → pruned.
     past = DateTime.add(DateTime.utc_now(), -40 * 86_400, :second)
     {1, _} = Client.Query.by_id(client.id) |> Repo.update_all(set: [inserted_at: past])
 
-    assert :ok = Cleanup.execute([])
+    assert Cleanup.execute([]) == :ok
     refute Repo.reload(client)
   end
 
@@ -129,15 +129,15 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
     # row until the longer-lived refresh grant expires too.
     past = DateTime.add(DateTime.utc_now(), -120, :second)
     Repo.update!(Ecto.Changeset.change(token, access_expires_at: past))
-    assert :ok = Cleanup.execute([])
+    assert Cleanup.execute([]) == :ok
     assert Repo.reload(token)
 
     Repo.update!(Ecto.Changeset.change(token, refresh_expires_at: past))
-    assert :ok = Cleanup.execute([])
+    assert Cleanup.execute([]) == :ok
     refute Repo.reload(token)
 
     # A second tick is an idempotent no-op.
-    assert :ok = Cleanup.execute([])
+    assert Cleanup.execute([]) == :ok
   end
 end
 
@@ -198,7 +198,7 @@ defmodule Emisar.OAuth.Jobs.CleanupLogTest do
   # "abandoned_keys_swept 0 / codes_swept 0"; a sweep that prunes a key logs it.
   test "execute/1 logs swept counts only when rows were deleted" do
     # Nothing to delete (no keys, no codes, no abandoned clients) → silent.
-    silent = capture_log(fn -> assert :ok = Cleanup.execute([]) end)
+    silent = capture_log(fn -> assert Cleanup.execute([]) == :ok end)
     refute silent =~ "oauth_cleanup.abandoned_keys_swept"
     refute silent =~ "oauth_cleanup.codes_swept"
     refute silent =~ "oauth_cleanup.unused_clients_swept"
@@ -207,7 +207,7 @@ defmodule Emisar.OAuth.Jobs.CleanupLogTest do
 
     # A stale, unreachable backing key is reclaimed, so the abandoned-keys line
     # is logged.
-    noisy = capture_log(fn -> assert :ok = Cleanup.execute([]) end)
+    noisy = capture_log(fn -> assert Cleanup.execute([]) == :ok end)
     assert noisy =~ "oauth_cleanup.abandoned_keys_swept"
   end
 end

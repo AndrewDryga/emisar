@@ -10,7 +10,7 @@ defmodule EmisarWeb.TeamLiveTest do
   import Swoosh.TestAssertions
 
   defp subscribe_team(account) do
-    assert :ok = Emisar.Accounts.subscribe_account_team(account.id)
+    assert Emisar.Accounts.subscribe_account_team(account.id) == :ok
   end
 
   defp assert_team_broadcast(lv, event, user_id) do
@@ -262,7 +262,7 @@ defmodule EmisarWeb.TeamLiveTest do
       Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
 
       {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
-      _ = Fixtures.Memberships.force_role(membership, "viewer")
+      Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       refute html =~ "Pending access requests"
@@ -480,13 +480,13 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Choose at least one runner group or runner"
       assert html =~ "stale@example.com"
       refute html =~ "Invitation sent"
-      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email("stale@example.com")
+      assert Emisar.Users.fetch_user_by_email("stale@example.com") == {:error, :not_found}
     end
 
     test "a viewer hitting the invite route directly is refused (IL-15)", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{name: "ViewerInvite"}})
       {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil)
-      _ = Fixtures.Memberships.force_role(m, "viewer")
+      Fixtures.Memberships.force_role(m, "viewer")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team/invite")
 
@@ -501,7 +501,7 @@ defmodule EmisarWeb.TeamLiveTest do
       assert render_submit(lv, "invite", %{"invite" => %{"email" => email, "role" => "owner"}}) =~
                "Only owners and admins can invite members."
 
-      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email(email)
+      assert Emisar.Users.fetch_user_by_email(email) == {:error, :not_found}
     end
   end
 
@@ -549,7 +549,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {conn, user, account} = register_and_log_in(conn, %{account: %{name: "ViewerOrg"}})
 
       {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil)
-      _ = Fixtures.Memberships.force_role(m, "viewer")
+      Fixtures.Memberships.force_role(m, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -565,7 +565,7 @@ defmodule EmisarWeb.TeamLiveTest do
         Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Private IdP")
 
       {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
-      _ = Fixtures.Memberships.force_role(membership, "viewer")
+      Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -583,7 +583,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {conn, user, account} = register_and_log_in(conn)
 
       {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
-      _ = Fixtures.Memberships.force_role(membership, "viewer")
+      Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -1405,7 +1405,7 @@ defmodule EmisarWeb.TeamLiveTest do
       html = render_click(lv, "resend_invitation", %{"membership_id" => membership.id})
 
       assert html =~ "Invitation resent to #{email}."
-      assert {:error, :not_found} = Emisar.Accounts.fetch_invitation_by_token(old_token)
+      assert Emisar.Accounts.fetch_invitation_by_token(old_token) == {:error, :not_found}
       assert_team_broadcast(lv, "membership.invitation_resent", membership.user_id)
 
       assert_email_sent(fn sent ->
@@ -1899,7 +1899,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert html =~ "Send invite"
       refute html =~ "Invitation sent"
-      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email(email)
+      assert Emisar.Users.fetch_user_by_email(email) == {:error, :not_found}
     end
   end
 
@@ -2314,7 +2314,7 @@ defmodule EmisarWeb.TeamLiveTest do
       # The denial is the membership-management flash, and no user/membership was
       # created from the forged event.
       assert html =~ "Only owners and admins can invite members."
-      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email(email)
+      assert Emisar.Users.fetch_user_by_email(email) == {:error, :not_found}
     end
   end
 

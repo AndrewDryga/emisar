@@ -96,7 +96,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
         current_period_end: nil
       })
 
-    assert :ok = SyncSubscriptions.execute([])
+    assert SyncSubscriptions.execute([]) == :ok
 
     synced = Repo.reload!(subscription)
     # The stub reports every subscription as active with a fresh period.
@@ -128,7 +128,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
       paddle_subscription_id: "sub_page_later"
     })
 
-    assert :ok = SyncSubscriptions.execute(limit: 1)
+    assert SyncSubscriptions.execute(limit: 1) == :ok
 
     later_subscription =
       Subscription.Query.all()
@@ -142,7 +142,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
     {:ok, subscription} =
       Billing.upsert_subscription(account.id, %{plan: "free", status: "none"})
 
-    assert :ok = SyncSubscriptions.execute([])
+    assert SyncSubscriptions.execute([]) == :ok
 
     assert %Subscription{status: "none"} = Repo.reload!(subscription)
   end
@@ -159,7 +159,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
         current_period_end: nil
       })
 
-    assert :ok = SyncSubscriptions.execute([])
+    assert SyncSubscriptions.execute([]) == :ok
 
     synced = Repo.reload!(subscription)
     assert synced.status == "active"
@@ -174,7 +174,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
         status: "active"
       })
 
-    assert :ok = SyncSubscriptions.execute(scheduled: true)
+    assert SyncSubscriptions.execute(scheduled: true) == :ok
   end
 
   test "execute/1 runs Subject-less — it's a trusted server sweep, not a per-account read",
@@ -198,7 +198,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
         status: "past_due"
       })
 
-    assert :ok = SyncSubscriptions.execute([])
+    assert SyncSubscriptions.execute([]) == :ok
     assert %Subscription{status: "active"} = Repo.reload!(subscription)
   end
 end
@@ -251,7 +251,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsVendorFailTest do
 
     log =
       capture_log(fn ->
-        assert :ok = SyncSubscriptions.execute(limit: 1)
+        assert SyncSubscriptions.execute(limit: 1) == :ok
       end)
 
     assert log =~ "billing_sync.crashed"
@@ -331,7 +331,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsUnknownStatusTest do
         status: "active"
       })
 
-    assert :ok = SyncSubscriptions.execute([])
+    assert SyncSubscriptions.execute([]) == :ok
 
     assert %Subscription{status: "some_new_paddle_status"} = Repo.reload!(subscription)
   end
@@ -402,7 +402,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest do
         current_period_end: stored
       })
 
-    assert :ok = SyncSubscriptions.execute([])
+    assert SyncSubscriptions.execute([]) == :ok
 
     synced = Repo.reload!(subscription)
     assert synced.status == "active"
@@ -481,7 +481,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsRedactionTest do
 
     log =
       capture_log(fn ->
-        assert :ok = SyncSubscriptions.execute([])
+        assert SyncSubscriptions.execute([]) == :ok
       end)
 
     # The failure surfaces with its subscription id and HTTP status…

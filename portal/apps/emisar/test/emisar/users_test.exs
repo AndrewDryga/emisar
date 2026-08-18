@@ -22,7 +22,7 @@ defmodule Emisar.UsersTest do
 
   describe "fetch_user_by_id/1" do
     test "a malformed id is a clean :not_found" do
-      assert {:error, :not_found} = Users.fetch_user_by_id("not-a-uuid")
+      assert Users.fetch_user_by_id("not-a-uuid") == {:error, :not_found}
     end
   end
 
@@ -34,8 +34,8 @@ defmodule Emisar.UsersTest do
     end
 
     test "returns :not_found for unknown email" do
-      assert {:error, :not_found} =
-               Users.fetch_user_by_email("nobody-#{System.unique_integer()}@example.test")
+      assert Users.fetch_user_by_email("nobody-#{System.unique_integer()}@example.test") ==
+               {:error, :not_found}
     end
   end
 
@@ -76,7 +76,7 @@ defmodule Emisar.UsersTest do
       assert {:error, changeset} = Users.register_user(%{email: email, full_name: "TooLong"})
 
       assert "should be at most 254 character(s)" in errors_on(changeset).email
-      assert {:error, :not_found} = Users.fetch_user_by_email(email)
+      assert Users.fetch_user_by_email(email) == {:error, :not_found}
     end
 
     # the email format rule (`^[^\s]+@[^\s]+$`) rejects an
@@ -335,9 +335,8 @@ defmodule Emisar.UsersTest do
 
       changeset = Users.change_user(user, %{full_name: "Renamed"})
 
-      assert %Ecto.Changeset{valid?: true} = changeset
-      assert Ecto.Changeset.get_change(changeset, :full_name) == "Renamed"
-      # It's a pure builder — the row on disk is untouched.
+      assert changeset.valid?
+      assert changeset.changes == %{full_name: "Renamed"}
       assert Repo.reload!(user).full_name == user.full_name
     end
 
@@ -346,8 +345,8 @@ defmodule Emisar.UsersTest do
 
       changeset = Users.change_user(user)
 
-      assert %Ecto.Changeset{valid?: true, changes: changes} = changeset
-      assert changes == %{}
+      assert changeset.valid?
+      assert changeset.changes == %{}
     end
 
     test "surfaces the email-format error for the inline form" do
@@ -382,7 +381,6 @@ defmodule Emisar.UsersTest do
 
       assert user.email == email
       assert user.full_name == "SSO Person"
-      # The IdP is the email authority, so JIT-provisioned users are confirmed.
       refute is_nil(user.confirmed_at)
     end
 
@@ -396,10 +394,9 @@ defmodule Emisar.UsersTest do
     test "a colliding email is :email_taken, never a silent merge (takeover guard §9 C1)" do
       existing = Fixtures.Users.create_user(email: "taken@example.test")
 
-      assert {:error, :email_taken} =
-               Users.provision_sso_user(%{email: "taken@example.test", full_name: "Impostor"})
+      assert Users.provision_sso_user(%{email: "taken@example.test", full_name: "Impostor"}) ==
+               {:error, :email_taken}
 
-      # The pre-existing identity is untouched — no merge, no overwrite.
       assert Repo.reload!(existing).full_name == existing.full_name
     end
   end
@@ -469,18 +466,15 @@ defmodule Emisar.UsersTest do
     end
 
     test "refuses with :mfa_not_enabled when MFA is off — judged on the locked row" do
-      # A plain user has never enrolled, so the locked-row guard refuses and
-      # writes nothing.
       user = Fixtures.Users.create_user()
 
-      assert {:error, :mfa_not_enabled} =
-               Users.regenerate_user_mfa_recovery_codes(
-                 user.id,
-                 {:totp, "000000"},
-                 [Crypto.hash("nope")],
-                 DateTime.utc_now(),
-                 audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated")
-               )
+      assert Users.regenerate_user_mfa_recovery_codes(
+               user.id,
+               {:totp, "000000"},
+               [Crypto.hash("nope")],
+               DateTime.utc_now(),
+               audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated")
+             ) == {:error, :mfa_not_enabled}
 
       assert Repo.reload!(user).mfa_recovery_codes == []
     end
@@ -514,14 +508,11 @@ defmodule Emisar.UsersTest do
                  audit: &Audit.user_changesets(&1, "user.mfa_recovery_code_used")
                )
 
-      # The used digest is gone; the unused one remains.
       assert updated.mfa_recovery_codes == [digest_b]
 
-      # Re-presenting the now-consumed code is :invalid — single-use.
-      assert {:error, :invalid} =
-               Users.consume_user_mfa_recovery_code(user.id, digest_a,
-                 audit: &Audit.user_changesets(&1, "user.mfa_recovery_code_used")
-               )
+      assert Users.consume_user_mfa_recovery_code(user.id, digest_a,
+               audit: &Audit.user_changesets(&1, "user.mfa_recovery_code_used")
+             ) == {:error, :invalid}
     end
 
     test "an unknown digest is :invalid and consumes nothing", %{
@@ -529,10 +520,9 @@ defmodule Emisar.UsersTest do
       digest_a: digest_a,
       digest_b: digest_b
     } do
-      assert {:error, :invalid} =
-               Users.consume_user_mfa_recovery_code(user.id, Crypto.hash("never-issued"),
-                 audit: &Audit.user_changesets(&1, "user.mfa_recovery_code_used")
-               )
+      assert Users.consume_user_mfa_recovery_code(user.id, Crypto.hash("never-issued"),
+               audit: &Audit.user_changesets(&1, "user.mfa_recovery_code_used")
+             ) == {:error, :invalid}
 
       assert Repo.reload!(user).mfa_recovery_codes == [digest_a, digest_b]
     end
@@ -566,13 +556,12 @@ defmodule Emisar.UsersTest do
       otp = NimbleTOTP.verification_code(secret, time: at)
 
       assert {:ok, %User{}} = Users.verify_and_consume_mfa(user.id, otp, at)
-      # Same code, same 30-second bucket → the locked replay guard rejects it.
-      assert {:error, :replay} = Users.verify_and_consume_mfa(user.id, otp, at)
+      assert Users.verify_and_consume_mfa(user.id, otp, at) == {:error, :replay}
     end
 
     test "a wrong code is :invalid", %{user: user} do
-      assert {:error, :invalid} =
-               Users.verify_and_consume_mfa(user.id, "000000", DateTime.utc_now())
+      assert Users.verify_and_consume_mfa(user.id, "000000", DateTime.utc_now()) ==
+               {:error, :invalid}
     end
 
     test "MFA disabled mid-flight makes a once-valid code :invalid (judged on the locked row)", %{
@@ -586,7 +575,7 @@ defmodule Emisar.UsersTest do
           audit: &Audit.user_changesets(&1, "user.mfa_disabled")
         )
 
-      assert {:error, :invalid} = Users.verify_and_consume_mfa(user.id, otp, DateTime.utc_now())
+      assert Users.verify_and_consume_mfa(user.id, otp, DateTime.utc_now()) == {:error, :invalid}
     end
   end
 
@@ -596,7 +585,6 @@ defmodule Emisar.UsersTest do
 
       assert {:ok, %User{} = user} = Users.fetch_or_create_user_by_email(email)
       assert user.email == email
-      # The placeholder hangs an invitation off it — unconfirmed until accepted.
       assert is_nil(user.confirmed_at)
     end
 
@@ -606,15 +594,12 @@ defmodule Emisar.UsersTest do
       assert {:ok, %User{id: id}} = Users.fetch_or_create_user_by_email("already@example.test")
       assert id == existing.id
 
-      # A second call still resolves the same single row (re-fetch path).
       assert {:ok, %User{id: ^id}} = Users.fetch_or_create_user_by_email("already@example.test")
     end
   end
 
   describe "register_invited_user/2" do
     test "sets the full_name and marks the invited user confirmed" do
-      # A placeholder created by an invite is unconfirmed and nameless until
-      # the invitee accepts.
       {:ok, user} = Users.fetch_or_create_user_by_email("joiner@example.test")
       assert is_nil(user.confirmed_at)
 
@@ -622,7 +607,6 @@ defmodule Emisar.UsersTest do
                Users.register_invited_user(user, %{full_name: "Joined Member"})
 
       assert registered.full_name == "Joined Member"
-      # Accepting proves email ownership → confirmed.
       refute is_nil(registered.confirmed_at)
       assert %DateTime{} = Repo.reload!(user).confirmed_at
     end
@@ -704,7 +688,13 @@ defmodule Emisar.UsersTest do
   describe "reset_user_mfa/2" do
     test "clears every MFA field so the member re-enrolls a fresh factor" do
       {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
-      member = enroll_member_mfa(Fixtures.Users.create_user())
+
+      member =
+        Fixtures.Users.set_mfa_state(Fixtures.Users.create_user(),
+          mfa_secret: "JBSWY3DPEHPK3PXP",
+          mfa_enabled_at: DateTime.utc_now(),
+          mfa_recovery_codes: [Crypto.hash("digest-a"), Crypto.hash("digest-b")]
+        )
 
       _ =
         Fixtures.Memberships.create_membership(
@@ -762,20 +752,5 @@ defmodule Emisar.UsersTest do
       )
 
     {enrolled, account, subject}
-  end
-
-  # Fully enroll a member's MFA — secret + enrolled-at + recovery codes — so
-  # reset_user_mfa's "every field is wiped" assertion is meaningful.
-  defp enroll_member_mfa(%User{} = user) do
-    {:ok, user} =
-      user
-      |> Ecto.Changeset.change(
-        mfa_secret: "JBSWY3DPEHPK3PXP",
-        mfa_enabled_at: DateTime.utc_now(),
-        mfa_recovery_codes: [Crypto.hash("digest-a"), Crypto.hash("digest-b")]
-      )
-      |> Repo.update()
-
-    user
   end
 end

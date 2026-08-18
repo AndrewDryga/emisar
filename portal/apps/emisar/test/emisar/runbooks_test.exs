@@ -958,7 +958,7 @@ defmodule Emisar.RunbooksTest do
       assert execution.runbook.title == fixture.runbook.title
 
       {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
-      assert {:ok, []} = Runbooks.list_recent_executions(other_subject, 5)
+      assert Runbooks.list_recent_executions(other_subject, 5) == {:ok, []}
     end
 
     test "denies a principal without runbook visibility" do
@@ -1891,7 +1891,7 @@ defmodule Emisar.RunbooksTest do
     test "delivers exact account-local list changes" do
       {_user, account, _subject} = Fixtures.Subjects.owner_subject()
       {_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
-      assert :ok = Runbooks.subscribe_account_runbooks(account.id)
+      assert Runbooks.subscribe_account_runbooks(account.id) == :ok
       assert {:ok, _other} = Runbooks.create_runbook(runbook_attrs(), other_subject)
       refute_receive {:list_changed, :runbook, _, _}
     end
@@ -1903,10 +1903,10 @@ defmodule Emisar.RunbooksTest do
       execution_id = Ecto.UUID.generate()
       other_execution_id = Ecto.UUID.generate()
 
-      assert :ok = Runbooks.subscribe_execution(account_id, execution_id)
-      assert :ok = Runbooks.broadcast_execution_updated(account_id, other_execution_id)
+      assert Runbooks.subscribe_execution(account_id, execution_id) == :ok
+      assert Runbooks.broadcast_execution_updated(account_id, other_execution_id) == :ok
       refute_receive {:runbook_execution_updated, ^other_execution_id}
-      assert :ok = Runbooks.broadcast_execution_updated(account_id, execution_id)
+      assert Runbooks.broadcast_execution_updated(account_id, execution_id) == :ok
       assert_receive {:runbook_execution_updated, ^execution_id}
     end
   end
@@ -1916,9 +1916,9 @@ defmodule Emisar.RunbooksTest do
       account_id = Ecto.UUID.generate()
       execution_id = Ecto.UUID.generate()
 
-      assert :ok = Runbooks.subscribe_execution(account_id, execution_id)
-      assert :ok = Runbooks.unsubscribe_execution(account_id, execution_id)
-      assert :ok = Runbooks.broadcast_execution_updated(account_id, execution_id)
+      assert Runbooks.subscribe_execution(account_id, execution_id) == :ok
+      assert Runbooks.unsubscribe_execution(account_id, execution_id) == :ok
+      assert Runbooks.broadcast_execution_updated(account_id, execution_id) == :ok
       refute_receive {:runbook_execution_updated, ^execution_id}
     end
   end
@@ -1928,8 +1928,8 @@ defmodule Emisar.RunbooksTest do
       account_id = Ecto.UUID.generate()
       execution_id = Ecto.UUID.generate()
 
-      assert :ok = Runbooks.subscribe_execution(account_id, execution_id)
-      assert :ok = Runbooks.broadcast_execution_updated(account_id, execution_id)
+      assert Runbooks.subscribe_execution(account_id, execution_id) == :ok
+      assert Runbooks.broadcast_execution_updated(account_id, execution_id) == :ok
       assert_receive {:runbook_execution_updated, ^execution_id}
     end
   end
@@ -2959,13 +2959,13 @@ defmodule Emisar.RunbooksTest do
 
   describe "action_run_settled/1" do
     test "treats stale or unrelated callbacks as an idempotent no-op" do
-      assert :noop = Runbooks.action_run_settled(%Runs.ActionRun{})
+      assert Runbooks.action_run_settled(%Runs.ActionRun{}) == :noop
     end
   end
 
   describe "approval_settled/1" do
     test "treats a missing execution callback as idempotent success" do
-      assert :ok = Runbooks.approval_settled(Ecto.UUID.generate())
+      assert Runbooks.approval_settled(Ecto.UUID.generate()) == :ok
     end
   end
 

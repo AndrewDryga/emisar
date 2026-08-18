@@ -342,7 +342,7 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     assert Runners.online?(account.id, item.runner_id)
     assert Runners.online?(account.id, other_id)
 
-    assert :ok = Presence.untrack(self(), Presence.topic(account.id), item.runner_id)
+    assert Presence.untrack(self(), Presence.topic(account.id), item.runner_id) == :ok
     refute Runners.online?(account.id, item.runner_id)
     assert Runners.online?(account.id, other_id)
 

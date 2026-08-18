@@ -39,8 +39,8 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
     Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: @window_days})
     stale = stale_pack_version(account)
 
-    assert :ok = PackVersionRetention.execute([])
-    assert :ok = PackVersionRetention.execute([])
+    assert PackVersionRetention.execute([]) == :ok
+    assert PackVersionRetention.execute([]) == :ok
 
     refute Repo.reload(stale)
     assert length(retention_markers(account.id)) == 1
@@ -57,7 +57,7 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
         version: "2.0"
       )
 
-    assert :ok = PackVersionRetention.execute([])
+    assert PackVersionRetention.execute([]) == :ok
 
     assert Repo.reload(kept)
   end
@@ -66,7 +66,7 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
     account = Fixtures.Accounts.create_account()
     stale = stale_pack_version(account)
 
-    assert :ok = PackVersionRetention.execute([])
+    assert PackVersionRetention.execute([]) == :ok
 
     assert Repo.reload(stale)
     assert retention_markers(account.id) == []
@@ -76,8 +76,8 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
     account = Fixtures.Accounts.create_account()
     Fixtures.Accounts.set_account_settings(account, %{pack_unseen_retention_days: @window_days})
 
-    assert :ok = PackVersionRetention.execute([])
-    assert :ok = PackVersionRetention.execute([])
+    assert PackVersionRetention.execute([]) == :ok
+    assert PackVersionRetention.execute([]) == :ok
 
     assert retention_markers(account.id) == []
   end
@@ -96,8 +96,8 @@ defmodule Emisar.Catalog.Jobs.PackVersionRetentionTest do
         pack_version: stale.version
       )
 
-    assert :ok = PackVersionRetention.execute([])
+    assert PackVersionRetention.execute([]) == :ok
 
-    assert {:error, :pack_untrusted, :no_pin} = Catalog.check_pack_trusted(action)
+    assert Catalog.check_pack_trusted(action) == {:error, :pack_untrusted, :no_pin}
   end
 end

@@ -121,7 +121,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
       {conn, user, account_a} = register_and_log_in(conn)
 
       account_b = Fixtures.Accounts.create_account(%{name: "Bravo Distinct Team"})
-      _ = Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
+      Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
 
       # Pin the session to A, then request B's slugged page.
       conn = put_session(conn, :current_account_id, account_a.id)
@@ -217,7 +217,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
 
       # A second, later-joined account that stays live — the fallback target.
       live_account = Fixtures.Accounts.create_account(%{name: "Live Fallback Team"})
-      _ = Fixtures.Memberships.create_membership(account_id: live_account.id, user_id: user.id)
+      Fixtures.Memberships.create_membership(account_id: live_account.id, user_id: user.id)
 
       # Pin the session to the first account, then suspend that membership.
       conn = put_session(conn, :current_account_id, suspended_account.id)

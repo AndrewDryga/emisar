@@ -138,7 +138,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert [{_, ^fixed_email}] = sent.to
       [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
 
-      assert {:error, :not_found} = Users.fetch_user_by_email(wrong_email)
+      assert Users.fetch_user_by_email(wrong_email) == {:error, :not_found}
       assert {:ok, corrected} = Users.fetch_user_by_email(fixed_email)
       assert corrected.id == user.id
 
@@ -271,9 +271,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
     end
 
     test "one login audits user.signed_in exactly once per account", %{conn: conn, user: user} do
-      # Regression: verify_magic_link used to ALSO audit success, double-writing
-      # every login (session establishment is the one writer). The audit row is
-      # membership-scoped, so the user needs an account to receive it.
+      # Audit rows are membership-scoped, so create a membership.
       account = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
@@ -686,7 +684,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       refute Plug.Conn.get_session(conn, :user_token)
       # The token is actually killed server-side, not just dropped from the
       # session — a stolen copy can't be replayed.
-      assert {:error, :not_found} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
+      assert Emisar.Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
     end
 
     test "is a harmless redirect when no one is signed in", %{conn: conn} do

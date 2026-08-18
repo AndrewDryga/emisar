@@ -26,7 +26,7 @@ defmodule Emisar.Runners.Runner.ChangesetTest do
       changeset = Runner.Changeset.apply_state(runner, %{labels: huge})
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :labels)
+      assert errors_on(changeset).labels == ["is too large (max 65536 bytes serialized)"]
     end
 
     test "rejects an oversized packs map", %{runner: runner} do
@@ -35,7 +35,7 @@ defmodule Emisar.Runners.Runner.ChangesetTest do
       changeset = Runner.Changeset.apply_state(runner, %{packs: huge})
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :packs)
+      assert errors_on(changeset).packs == ["is too large (max 65536 bytes serialized)"]
     end
 
     test "rejects an oversized hostname", %{runner: runner} do
@@ -43,14 +43,14 @@ defmodule Emisar.Runners.Runner.ChangesetTest do
         Runner.Changeset.apply_state(runner, %{hostname: String.duplicate("h", 300)})
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :hostname)
+      assert errors_on(changeset).hostname == ["should be at most 255 character(s)"]
     end
 
     test "rejects an oversized group rename", %{runner: runner} do
       changeset = Runner.Changeset.apply_state(runner, %{group: String.duplicate("g", 81)})
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :group)
+      assert errors_on(changeset).group == ["should be at most 80 character(s)"]
     end
 
     test "rejects an oversized runner_version", %{runner: runner} do
@@ -58,14 +58,18 @@ defmodule Emisar.Runners.Runner.ChangesetTest do
         Runner.Changeset.apply_state(runner, %{runner_version: String.duplicate("9", 300)})
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :runner_version)
+      assert errors_on(changeset).runner_version == ["should be at most 255 character(s)"]
     end
 
     test "rejects a non-positive attestation window", %{runner: runner} do
       changeset = Runner.Changeset.apply_state(runner, %{max_attestation_age_seconds: 0})
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :max_attestation_age_seconds)
+
+      assert errors_on(changeset).max_attestation_age_seconds == [
+               "must be empty when signature enforcement is disabled",
+               "must be greater than 0"
+             ]
     end
 
     test "requires the freshness window exactly when signature enforcement is enabled", %{
@@ -73,7 +77,10 @@ defmodule Emisar.Runners.Runner.ChangesetTest do
     } do
       missing = Runner.Changeset.apply_state(runner, %{enforce_signatures: true})
       refute missing.valid?
-      assert Keyword.has_key?(missing.errors, :max_attestation_age_seconds)
+
+      assert errors_on(missing).max_attestation_age_seconds == [
+               "is required when signature enforcement is enabled"
+             ]
 
       paired =
         Runner.Changeset.apply_state(runner, %{
@@ -90,7 +97,10 @@ defmodule Emisar.Runners.Runner.ChangesetTest do
         })
 
       refute stray.valid?
-      assert Keyword.has_key?(stray.errors, :max_attestation_age_seconds)
+
+      assert errors_on(stray).max_attestation_age_seconds == [
+               "must be empty when signature enforcement is disabled"
+             ]
     end
   end
 
@@ -129,7 +139,7 @@ defmodule Emisar.Runners.Runner.ChangesetTest do
         })
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :hostname)
+      assert errors_on(changeset).hostname == ["should be at most 255 character(s)"]
     end
   end
 end

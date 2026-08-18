@@ -84,7 +84,7 @@ defmodule Emisar.ApiKeysTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       subject = Subject.for_runner(runner, account)
 
-      assert {:error, :unauthorized} = ApiKeys.list_api_keys_for_account(subject)
+      assert ApiKeys.list_api_keys_for_account(subject) == {:error, :unauthorized}
     end
 
     test "an owner of account B never sees account A's keys (cross-account isolation)" do
@@ -130,7 +130,7 @@ defmodule Emisar.ApiKeysTest do
 
       # Cross-account: B's owner options never include A's creator.
       {_user_b, _account_b, subject_b} = owner_subject_pair()
-      assert {:ok, []} = ApiKeys.list_key_owner_options(subject_b)
+      assert ApiKeys.list_key_owner_options(subject_b) == {:ok, []}
     end
 
     test "a runner subject without view_api_keys permission is refused" do
@@ -138,7 +138,7 @@ defmodule Emisar.ApiKeysTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       subject = Subject.for_runner(runner, account)
 
-      assert {:error, :unauthorized} = ApiKeys.list_key_owner_options(subject)
+      assert ApiKeys.list_key_owner_options(subject) == {:error, :unauthorized}
     end
   end
 
@@ -170,7 +170,7 @@ defmodule Emisar.ApiKeysTest do
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "mine"}, subject)
 
       {_user_b, _account_b, subject_b} = owner_subject_pair()
-      assert {:ok, []} = ApiKeys.list_key_options(subject_b)
+      assert ApiKeys.list_key_options(subject_b) == {:ok, []}
 
       viewer = Fixtures.Users.create_user()
 
@@ -189,7 +189,7 @@ defmodule Emisar.ApiKeysTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       subject = Subject.for_runner(runner, account)
 
-      assert {:error, :unauthorized} = ApiKeys.list_key_options(subject)
+      assert ApiKeys.list_key_options(subject) == {:error, :unauthorized}
     end
   end
 
@@ -255,7 +255,7 @@ defmodule Emisar.ApiKeysTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       subject = Subject.for_runner(runner, account)
 
-      assert {:error, :unauthorized} = ApiKeys.list_audit_export_keys_for_account(subject)
+      assert ApiKeys.list_audit_export_keys_for_account(subject) == {:error, :unauthorized}
     end
 
     test "an owner of account B never sees account A's export tokens (cross-account isolation)" do
@@ -329,12 +329,12 @@ defmodule Emisar.ApiKeysTest do
 
       {_user_b, _account_b, subject_b} = owner_subject_pair()
 
-      assert {:error, :not_found} = ApiKeys.fetch_api_key_by_id(key_a.id, subject_b)
+      assert ApiKeys.fetch_api_key_by_id(key_a.id, subject_b) == {:error, :not_found}
     end
 
     test "a malformed id is a clean :not_found, not a cast crash" do
       {_user, _account, subject} = owner_subject_pair()
-      assert {:error, :not_found} = ApiKeys.fetch_api_key_by_id("not-a-uuid", subject)
+      assert ApiKeys.fetch_api_key_by_id("not-a-uuid", subject) == {:error, :not_found}
     end
   end
 
@@ -836,8 +836,8 @@ defmodule Emisar.ApiKeysTest do
     test "a free account cannot mint an audit-export token — export is the paid surface" do
       {_user, _account, subject} = owner_subject_pair()
 
-      assert {:error, :audit_export_not_available} =
-               ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
+      assert ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject) ==
+               {:error, :audit_export_not_available}
 
       refute Repo.one(ApiKey)
     end
@@ -849,8 +849,8 @@ defmodule Emisar.ApiKeysTest do
         entitlements: %{"features_audit_export_enabled?" => false}
       )
 
-      assert {:error, :audit_export_not_available} =
-               ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
+      assert ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject) ==
+               {:error, :audit_export_not_available}
     end
 
     test "a granted entitlement enables the mint on an otherwise ineligible plan" do
@@ -928,8 +928,8 @@ defmodule Emisar.ApiKeysTest do
 
       subject = Fixtures.Subjects.membership_subject(membership)
 
-      assert {:error, :unauthorized} =
-               ApiKeys.create_key(%{name: "siem", kind: :audit_export}, subject)
+      assert ApiKeys.create_key(%{name: "siem", kind: :audit_export}, subject) ==
+               {:error, :unauthorized}
 
       refute Repo.one(ApiKey)
     end
@@ -947,7 +947,7 @@ defmodule Emisar.ApiKeysTest do
 
       subject = Fixtures.Subjects.membership_subject(membership)
 
-      assert {:error, :unauthorized} = ApiKeys.create_key(%{name: "peek"}, subject)
+      assert ApiKeys.create_key(%{name: "peek"}, subject) == {:error, :unauthorized}
       refute Repo.one(ApiKey)
     end
 
@@ -962,7 +962,7 @@ defmodule Emisar.ApiKeysTest do
                  subject
                )
 
-      assert {:error, :not_found} = ApiKeys.create_key(%{name: "late"}, subject)
+      assert ApiKeys.create_key(%{name: "late"}, subject) == {:error, :not_found}
     end
 
     # Minting a SIEM export token writes an `api_key.created` audit row in the
@@ -1031,7 +1031,7 @@ defmodule Emisar.ApiKeysTest do
         entitlements: %{"features_audit_export_enabled?" => false}
       )
 
-      assert {:error, :audit_export_not_available} = ApiKeys.rotate_api_key(key, subject)
+      assert ApiKeys.rotate_api_key(key, subject) == {:error, :audit_export_not_available}
     end
 
     test "an operator rotates a key they minted themselves" do
@@ -1056,7 +1056,7 @@ defmodule Emisar.ApiKeysTest do
 
       operator_subject = member_subject(account, :operator)
 
-      assert {:error, :unauthorized} = ApiKeys.rotate_api_key(key, operator_subject)
+      assert ApiKeys.rotate_api_key(key, operator_subject) == {:error, :unauthorized}
     end
 
     test "a demoted viewer is refused on the key they minted as an operator" do
@@ -1072,7 +1072,7 @@ defmodule Emisar.ApiKeysTest do
       # demotion — and the own-key path asks for exactly what minting asked for.
       viewer_subject = Fixtures.Subjects.membership_subject(membership)
 
-      assert {:error, :unauthorized} = ApiKeys.rotate_api_key(key, viewer_subject)
+      assert ApiKeys.rotate_api_key(key, viewer_subject) == {:error, :unauthorized}
     end
 
     test "an audit-export token cannot be rotated by a minter who lost manage_api_keys" do
@@ -1091,7 +1091,7 @@ defmodule Emisar.ApiKeysTest do
 
       # Rotating mints a FRESH export credential and hands back its secret, so
       # owning the row must not buy back a capability the demotion took away.
-      assert {:error, :unauthorized} = ApiKeys.rotate_api_key(key, demoted_subject)
+      assert ApiKeys.rotate_api_key(key, demoted_subject) == {:error, :unauthorized}
       assert {:ok, _raw, _successor} = ApiKeys.rotate_api_key(key, owner_subject)
     end
 
@@ -1121,7 +1121,7 @@ defmodule Emisar.ApiKeysTest do
 
       # Ownership is the MINTING MEMBERSHIP, not the person: the same human in
       # another workspace is another member there.
-      assert {:error, :unauthorized} = ApiKeys.rotate_api_key(key, subject_two)
+      assert ApiKeys.rotate_api_key(key, subject_two) == {:error, :unauthorized}
     end
 
     test "an MCP subject cannot rotate the key it authenticates as" do
@@ -1136,7 +1136,7 @@ defmodule Emisar.ApiKeysTest do
       # its own life. The bridge's rotation path is the possession-authorized
       # install_auto_rotation_successor/3, not this one.
       assert key_subject.membership_id == operator_subject.membership_id
-      assert {:error, :unauthorized} = ApiKeys.rotate_api_key(key, key_subject)
+      assert ApiKeys.rotate_api_key(key, key_subject) == {:error, :unauthorized}
     end
 
     test "a revoked key cannot mint a late successor" do
@@ -1144,7 +1144,7 @@ defmodule Emisar.ApiKeysTest do
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "revoked"}, subject)
 
       assert {:ok, %ApiKey{}} = ApiKeys.revoke_api_key(key, subject)
-      assert {:error, :revoked} = ApiKeys.rotate_api_key(key, subject)
+      assert ApiKeys.rotate_api_key(key, subject) == {:error, :revoked}
     end
 
     test "an OAuth backing key cannot be manually rotated" do
@@ -1157,7 +1157,7 @@ defmodule Emisar.ApiKeysTest do
       {:ok, backing} =
         ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
 
-      assert {:error, :oauth_backing} = ApiKeys.rotate_api_key(backing, subject)
+      assert ApiKeys.rotate_api_key(backing, subject) == {:error, :oauth_backing}
     end
 
     test "a stale subject cannot rotate a key after the account is disabled" do
@@ -1172,7 +1172,7 @@ defmodule Emisar.ApiKeysTest do
                  subject
                )
 
-      assert {:error, :not_found} = ApiKeys.rotate_api_key(key, subject)
+      assert ApiKeys.rotate_api_key(key, subject) == {:error, :not_found}
     end
 
     test "an owner of account B cannot rotate account A's key (cross-account → :not_found)" do
@@ -1183,7 +1183,7 @@ defmodule Emisar.ApiKeysTest do
 
       {_owner_b, _account_b, subject_b} = owner_subject_pair()
 
-      assert {:error, :not_found} = ApiKeys.rotate_api_key(key_a, subject_b)
+      assert ApiKeys.rotate_api_key(key_a, subject_b) == {:error, :not_found}
     end
   end
 
@@ -1246,8 +1246,8 @@ defmodule Emisar.ApiKeysTest do
                  subject
                )
 
-      assert {:error, :not_found} =
-               ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject)
+      assert ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject) ==
+               {:error, :not_found}
     end
 
     test "a different proposal cannot replace an already-installed successor" do
@@ -1261,8 +1261,8 @@ defmodule Emisar.ApiKeysTest do
       assert {:ok, _successor} =
                ApiKeys.install_auto_rotation_successor(prefix_one, hash_one, key_subject)
 
-      assert {:error, :already_rotated} =
-               ApiKeys.install_auto_rotation_successor(prefix_two, hash_two, key_subject)
+      assert ApiKeys.install_auto_rotation_successor(prefix_two, hash_two, key_subject) ==
+               {:error, :already_rotated}
     end
 
     test "concurrent retries converge on one installed successor" do
@@ -1302,19 +1302,17 @@ defmodule Emisar.ApiKeysTest do
       {:ok, _raw, far_key} =
         ApiKeys.create_key(%{name: "far", expires_at: far}, subject)
 
-      assert {:error, :not_eligible} =
-               ApiKeys.install_auto_rotation_successor(
-                 prefix,
-                 hash,
-                 Subject.for_api_key(quick, account)
-               )
+      assert ApiKeys.install_auto_rotation_successor(
+               prefix,
+               hash,
+               Subject.for_api_key(quick, account)
+             ) == {:error, :not_eligible}
 
-      assert {:error, :not_eligible} =
-               ApiKeys.install_auto_rotation_successor(
-                 prefix,
-                 hash,
-                 Subject.for_api_key(far_key, account)
-               )
+      assert ApiKeys.install_auto_rotation_successor(
+               prefix,
+               hash,
+               Subject.for_api_key(far_key, account)
+             ) == {:error, :not_eligible}
     end
 
     test "a revoked or expired key and an audit-export token are not eligible" do
@@ -1334,26 +1332,23 @@ defmodule Emisar.ApiKeysTest do
       {:ok, _raw, export} =
         ApiKeys.create_key(%{name: "siem", kind: :audit_export, expires_at: soon}, subject)
 
-      assert {:error, :not_eligible} =
-               ApiKeys.install_auto_rotation_successor(
-                 prefix,
-                 hash,
-                 Subject.for_api_key(revoked, account)
-               )
+      assert ApiKeys.install_auto_rotation_successor(
+               prefix,
+               hash,
+               Subject.for_api_key(revoked, account)
+             ) == {:error, :not_eligible}
 
-      assert {:error, :not_eligible} =
-               ApiKeys.install_auto_rotation_successor(
-                 prefix,
-                 hash,
-                 Subject.for_api_key(expired, account)
-               )
+      assert ApiKeys.install_auto_rotation_successor(
+               prefix,
+               hash,
+               Subject.for_api_key(expired, account)
+             ) == {:error, :not_eligible}
 
-      assert {:error, :not_eligible} =
-               ApiKeys.install_auto_rotation_successor(
-                 prefix,
-                 hash,
-                 Subject.for_api_key(export, account)
-               )
+      assert ApiKeys.install_auto_rotation_successor(
+               prefix,
+               hash,
+               Subject.for_api_key(export, account)
+             ) == {:error, :not_eligible}
     end
 
     test "invalid material and a user subject are refused" do
@@ -1362,22 +1357,20 @@ defmodule Emisar.ApiKeysTest do
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "expiring", expires_at: soon}, subject)
 
-      assert {:error, :not_eligible} =
-               ApiKeys.install_auto_rotation_successor(prefix, hash, subject)
+      assert ApiKeys.install_auto_rotation_successor(prefix, hash, subject) ==
+               {:error, :not_eligible}
 
-      assert {:error, :invalid_successor} =
-               ApiKeys.install_auto_rotation_successor(
-                 "emk-short",
-                 hash,
-                 Subject.for_api_key(key, account)
-               )
+      assert ApiKeys.install_auto_rotation_successor(
+               "emk-short",
+               hash,
+               Subject.for_api_key(key, account)
+             ) == {:error, :invalid_successor}
 
-      assert {:error, :invalid_successor} =
-               ApiKeys.install_auto_rotation_successor(
-                 <<"emk-", 0xFF, "abcdefg">>,
-                 hash,
-                 Subject.for_api_key(key, account)
-               )
+      assert ApiKeys.install_auto_rotation_successor(
+               <<"emk-", 0xFF, "abcdefg">>,
+               hash,
+               Subject.for_api_key(key, account)
+             ) == {:error, :invalid_successor}
     end
 
     test "an API key cannot install a successor in another account" do
@@ -1387,8 +1380,8 @@ defmodule Emisar.ApiKeysTest do
       {_raw, prefix, hash} = Crypto.mint("emk-", 12)
       forged_subject = Subject.for_api_key(key_a, account_b)
 
-      assert {:error, :not_found} =
-               ApiKeys.install_auto_rotation_successor(prefix, hash, forged_subject)
+      assert ApiKeys.install_auto_rotation_successor(prefix, hash, forged_subject) ==
+               {:error, :not_found}
     end
   end
 
@@ -1396,7 +1389,7 @@ defmodule Emisar.ApiKeysTest do
     test "the subscriber receives the account's api-key list broadcasts" do
       {_user, account, subject} = owner_subject_pair()
 
-      assert :ok = ApiKeys.subscribe_account_api_keys(account.id)
+      assert ApiKeys.subscribe_account_api_keys(account.id) == :ok
 
       # Minting a key publishes `api_key.created` on the topic just joined.
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "agent"}, subject)
@@ -1409,7 +1402,7 @@ defmodule Emisar.ApiKeysTest do
       {_user_a, account_a, _subject_a} = owner_subject_pair()
       {_user_b, _account_b, subject_b} = owner_subject_pair()
 
-      assert :ok = ApiKeys.subscribe_account_api_keys(account_a.id)
+      assert ApiKeys.subscribe_account_api_keys(account_a.id) == :ok
 
       # The mint happens on B's topic — A's subscriber must hear nothing.
       {:ok, _raw, _key} =
@@ -1428,7 +1421,7 @@ defmodule Emisar.ApiKeysTest do
         ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
 
       :ok = ApiKeys.subscribe_account_api_keys(account.id)
-      assert :ok = ApiKeys.broadcast_backing_key_created(key)
+      assert ApiKeys.broadcast_backing_key_created(key) == :ok
 
       assert_receive {:list_changed, :api_key, "api_key.created", key_id}, 500
       assert key_id == key.id
@@ -1496,7 +1489,7 @@ defmodule Emisar.ApiKeysTest do
 
       subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} = ApiKeys.mint_quick_key(subject)
+      assert ApiKeys.mint_quick_key(subject) == {:error, :unauthorized}
     end
   end
 
@@ -1585,7 +1578,7 @@ defmodule Emisar.ApiKeysTest do
       {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       operator_subject = member_subject(account, :operator)
 
-      assert {:error, :unauthorized} = ApiKeys.revoke_api_key(key, operator_subject)
+      assert ApiKeys.revoke_api_key(key, operator_subject) == {:error, :unauthorized}
       refute Repo.reload!(key).revoked_at
     end
 
@@ -1600,7 +1593,7 @@ defmodule Emisar.ApiKeysTest do
 
       viewer_subject = Fixtures.Subjects.membership_subject(membership)
 
-      assert {:error, :unauthorized} = ApiKeys.revoke_api_key(key, viewer_subject)
+      assert ApiKeys.revoke_api_key(key, viewer_subject) == {:error, :unauthorized}
       refute Repo.reload!(key).revoked_at
     end
 
@@ -1628,7 +1621,7 @@ defmodule Emisar.ApiKeysTest do
 
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "one"}, subject_one)
 
-      assert {:error, :unauthorized} = ApiKeys.revoke_api_key(key, subject_two)
+      assert ApiKeys.revoke_api_key(key, subject_two) == {:error, :unauthorized}
       refute Repo.reload!(key).revoked_at
     end
 
@@ -1637,8 +1630,8 @@ defmodule Emisar.ApiKeysTest do
       operator_subject = member_subject(account, :operator)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "claude"}, operator_subject)
 
-      assert {:error, :unauthorized} =
-               ApiKeys.revoke_api_key(key, Subject.for_api_key(key, account))
+      assert ApiKeys.revoke_api_key(key, Subject.for_api_key(key, account)) ==
+               {:error, :unauthorized}
 
       refute Repo.reload!(key).revoked_at
     end
@@ -1649,7 +1642,7 @@ defmodule Emisar.ApiKeysTest do
 
       {_user_b, _account_b, subject_b} = owner_subject_pair()
 
-      assert {:error, :not_found} = ApiKeys.revoke_api_key(key_a, subject_b)
+      assert ApiKeys.revoke_api_key(key_a, subject_b) == {:error, :not_found}
       refute Repo.reload!(key_a).revoked_at
     end
 
@@ -1705,14 +1698,14 @@ defmodule Emisar.ApiKeysTest do
       {_r3, other_key} =
         Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: other.id)
 
-      assert {:ok, 2} = ApiKeys.revoke_keys_for_membership(membership.id)
+      assert ApiKeys.revoke_keys_for_membership(membership.id) === {:ok, 2}
 
       refute is_nil(Repo.reload!(key1).revoked_at)
       refute is_nil(Repo.reload!(key2).revoked_at)
       assert is_nil(Repo.reload!(other_key).revoked_at)
 
       # Already-revoked keys aren't re-counted.
-      assert {:ok, 0} = ApiKeys.revoke_keys_for_membership(membership.id)
+      assert ApiKeys.revoke_keys_for_membership(membership.id) === {:ok, 0}
     end
   end
 
@@ -2058,14 +2051,14 @@ defmodule Emisar.ApiKeysTest do
       # passed the shape guard keeps it — a mis-passed id can't nuke a real key.
       {:ok, _raw, operator_key} = ApiKeys.create_key(%{name: "prod"}, subject)
 
-      assert 1 = ApiKeys.delete_backing_keys([backing.id, operator_key.id])
+      assert ApiKeys.delete_backing_keys([backing.id, operator_key.id]) === 1
 
       refute Repo.reload(backing)
       assert Repo.reload(operator_key)
     end
 
     test "an empty id list deletes nothing" do
-      assert 0 = ApiKeys.delete_backing_keys([])
+      assert ApiKeys.delete_backing_keys([]) === 0
     end
   end
 
@@ -2096,7 +2089,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "rejects a non-map payload", %{key: key} do
-      assert {:error, :invalid} = ApiKeys.record_client_info(key, "junk")
+      assert ApiKeys.record_client_info(key, "junk") == {:error, :invalid}
     end
   end
 

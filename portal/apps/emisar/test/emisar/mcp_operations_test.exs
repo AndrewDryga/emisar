@@ -77,12 +77,11 @@ defmodule Emisar.MCPOperationsTest do
     test "requires an API-client subject with the reserve permission", %{
       owner_subject: owner_subject
     } do
-      assert {:error, :unauthorized} =
-               MCPOperations.reserve_in_multi(
-                 Multi.new(),
-                 action_operation_attrs(),
-                 owner_subject
-               )
+      assert MCPOperations.reserve_in_multi(
+               Multi.new(),
+               action_operation_attrs(),
+               owner_subject
+             ) == {:error, :unauthorized}
     end
   end
 
@@ -183,8 +182,8 @@ defmodule Emisar.MCPOperationsTest do
       {:ok, _raw, other_key} = ApiKeys.create_key(%{name: "Other MCP"}, owner_subject)
       other_lineage_subject = Auth.Subject.for_api_key(other_key, account)
 
-      assert {:error, :not_found} =
-               MCPOperations.fetch_recovery(@operation_id, other_lineage_subject)
+      assert MCPOperations.fetch_recovery(@operation_id, other_lineage_subject) ==
+               {:error, :not_found}
 
       other_user = Fixtures.Users.create_user()
       other_account = Fixtures.Accounts.create_account()
@@ -200,13 +199,11 @@ defmodule Emisar.MCPOperationsTest do
       {:ok, _raw, foreign_key} = ApiKeys.create_key(%{name: "Foreign MCP"}, other_owner)
       foreign_subject = Auth.Subject.for_api_key(foreign_key, other_account)
 
-      assert {:error, :not_found} =
-               MCPOperations.fetch_recovery(@operation_id, foreign_subject)
+      assert MCPOperations.fetch_recovery(@operation_id, foreign_subject) == {:error, :not_found}
     end
 
     test "requires the view permission", %{owner_subject: owner_subject} do
-      assert {:error, :unauthorized} =
-               MCPOperations.fetch_recovery(@operation_id, owner_subject)
+      assert MCPOperations.fetch_recovery(@operation_id, owner_subject) == {:error, :unauthorized}
     end
   end
 
@@ -288,6 +285,6 @@ defmodule Emisar.MCPOperationsTest do
 
   defp assert_operation_conflict(attrs, subject) do
     assert {:ok, multi} = MCPOperations.reserve_in_multi(Multi.new(), attrs, subject)
-    assert {:error, :operation_conflict} = Repo.commit_multi(multi)
+    assert Repo.commit_multi(multi) == {:error, :operation_conflict}
   end
 end

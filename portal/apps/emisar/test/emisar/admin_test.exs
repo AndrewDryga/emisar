@@ -4,10 +4,6 @@ defmodule Emisar.AdminTest do
   alias Emisar.{Admin, Audit, Billing, Fixtures}
 
   describe "job_modules/0" do
-    # DataCase shares the sandbox for every async: false test, so a job left
-    # enabled in the test env runs update_all/delete_all INSIDE whichever test
-    # is executing when its interval elapses. Three jobs had leaked that way and
-    # only misfired on wall-clock timing, which reads as a flake.
     test "every recurrent job is disabled in the test environment" do
       enabled = Enum.filter(Admin.job_modules(), &job_enabled?/1)
 
@@ -236,22 +232,14 @@ defmodule Emisar.AdminTest do
   end
 
   describe "execute/2" do
-    # user.erase is irreversible — the user AND every account they own — and its
-    # only guard is a `when user_id == confirmation` function head. Nothing
-    # covered it in either direction. This module has already shipped this exact
-    # class: the note at the top of this file records that all four break-glass
-    # verbs crashed on a nil dereference with none of them covered. A clause
-    # reordering or head rewrite that shadows the guard turns a typo'd argv —
-    # runner-supplied — into an erasure.
     test "erases a user only when the confirmation matches the user id" do
       {user, _account, _subject} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, {:unsupported_admin_action, "emisar.admin.user.erase"}} =
-               Admin.execute("emisar.admin.user.erase", [
-                 "user_id=#{user.id}",
-                 "confirmation=not-the-user-id",
-                 "reason=typo in the confirmation"
-               ])
+      assert Admin.execute("emisar.admin.user.erase", [
+               "user_id=#{user.id}",
+               "confirmation=not-the-user-id",
+               "reason=typo in the confirmation"
+             ]) == {:error, {:unsupported_admin_action, "emisar.admin.user.erase"}}
 
       assert {:ok, %{id: _}} = Emisar.Users.fetch_user_by_id(user.id)
 
@@ -286,7 +274,7 @@ defmodule Emisar.AdminTest do
                  "reason=support=verified"
                ])
 
-      assert {:error, :not_found} = Emisar.Accounts.fetch_account_by_id(account.id)
+      assert Emisar.Accounts.fetch_account_by_id(account.id) == {:error, :not_found}
 
       assert {:ok, %{disabled: false}} =
                Admin.execute("emisar.admin.account.enable", [
@@ -439,16 +427,16 @@ defmodule Emisar.AdminTest do
     end
 
     test "rejects malformed, duplicate, excessive, and non-admin arguments" do
-      assert {:error, :invalid_admin_arguments} =
-               Admin.execute("emisar.admin.account.show", ["account"])
+      assert Admin.execute("emisar.admin.account.show", ["account"]) ==
+               {:error, :invalid_admin_arguments}
 
-      assert {:error, :invalid_admin_arguments} =
-               Admin.execute("emisar.admin.account.show", ["account=one", "account=two"])
+      assert Admin.execute("emisar.admin.account.show", ["account=one", "account=two"]) ==
+               {:error, :invalid_admin_arguments}
 
-      assert {:error, :invalid_admin_request} =
-               Admin.execute("emisar.admin.account.show", ["a=1", "b=2", "c=3", "d=4"])
+      assert Admin.execute("emisar.admin.account.show", ["a=1", "b=2", "c=3", "d=4"]) ==
+               {:error, :invalid_admin_request}
 
-      assert {:error, :invalid_admin_request} = Admin.execute("linux.uptime", [])
+      assert Admin.execute("linux.uptime", []) == {:error, :invalid_admin_request}
     end
 
     test "complimentary plans use the existing subscription posture" do

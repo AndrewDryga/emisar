@@ -40,45 +40,54 @@ defmodule EmisarWeb.LiveTableTest do
 
   describe "params_to_opts/2" do
     test "empty params → empty filter + page opts" do
-      assert [filter: [], page: []] = LiveTable.params_to_opts(%{}, [])
+      assert LiveTable.params_to_opts(%{}, []) == [filter: [], page: []]
     end
 
     test "ignores unknown param keys" do
       filters = [string_filter(:name)]
 
-      assert [filter: [], page: []] =
-               LiveTable.params_to_opts(%{"bogus" => "x"}, filters)
+      assert LiveTable.params_to_opts(%{"bogus" => "x"}, filters) == [filter: [], page: []]
     end
 
     test "string filters pass through verbatim" do
       filters = [string_filter(:name)]
 
-      assert [filter: [name: "needle"], page: []] =
-               LiveTable.params_to_opts(%{"name" => "needle"}, filters)
+      assert LiveTable.params_to_opts(%{"name" => "needle"}, filters) == [
+               filter: [name: "needle"],
+               page: []
+             ]
     end
 
     test "list filters wrap a single value into a list" do
       filters = [list_filter(:status)]
 
-      assert [filter: [status: ["a"]], page: []] =
-               LiveTable.params_to_opts(%{"status" => "a"}, filters)
+      assert LiveTable.params_to_opts(%{"status" => "a"}, filters) == [
+               filter: [status: ["a"]],
+               page: []
+             ]
     end
 
     test "list filters pass through an already-list value" do
       filters = [list_filter(:status)]
 
-      assert [filter: [status: ["a", "b"]], page: []] =
-               LiveTable.params_to_opts(%{"status" => ["a", "b"]}, filters)
+      assert LiveTable.params_to_opts(%{"status" => ["a", "b"]}, filters) == [
+               filter: [status: ["a", "b"]],
+               page: []
+             ]
     end
 
     test "boolean filters cast \"true\" / anything-else cleanly" do
       filters = [bool_filter(:archived)]
 
-      assert [filter: [archived: true], page: []] =
-               LiveTable.params_to_opts(%{"archived" => "true"}, filters)
+      assert LiveTable.params_to_opts(%{"archived" => "true"}, filters) == [
+               filter: [archived: true],
+               page: []
+             ]
 
-      assert [filter: [archived: false], page: []] =
-               LiveTable.params_to_opts(%{"archived" => "false"}, filters)
+      assert LiveTable.params_to_opts(%{"archived" => "false"}, filters) == [
+               filter: [archived: false],
+               page: []
+             ]
     end
 
     test "datetime filters parse the wallclock value to a UTC DateTime" do
@@ -91,47 +100,53 @@ defmodule EmisarWeb.LiveTableTest do
     test "an unparseable datetime drops the filter rather than erroring the list" do
       filters = [datetime_filter(:from)]
 
-      assert [filter: [], page: []] =
-               LiveTable.params_to_opts(%{"from" => "not-a-date"}, filters)
+      assert LiveTable.params_to_opts(%{"from" => "not-a-date"}, filters) == [
+               filter: [],
+               page: []
+             ]
     end
 
     test "blank string drops the filter (treated as \"not set\")" do
       filters = [string_filter(:name)]
 
-      assert [filter: [], page: []] =
-               LiveTable.params_to_opts(%{"name" => ""}, filters)
+      assert LiveTable.params_to_opts(%{"name" => ""}, filters) == [filter: [], page: []]
     end
 
     test "nested filter params are ignored before they reach a query" do
       filters = [string_filter(:name), list_filter(:status)]
 
-      assert [filter: [], page: []] =
-               LiveTable.params_to_opts(
-                 %{"name" => %{"nested" => "value"}, "status" => %{"nested" => "value"}},
-                 filters
-               )
+      assert LiveTable.params_to_opts(
+               %{"name" => %{"nested" => "value"}, "status" => %{"nested" => "value"}},
+               filters
+             ) == [filter: [], page: []]
     end
 
     test "a cursor must be a non-empty string" do
-      assert [filter: [], page: []] =
-               LiveTable.params_to_opts(%{"after" => %{"nested" => "value"}})
+      assert LiveTable.params_to_opts(%{"after" => %{"nested" => "value"}}) == [
+               filter: [],
+               page: []
+             ]
 
-      assert [filter: [], page: []] = LiveTable.params_to_opts(%{"before" => ""})
+      assert LiveTable.params_to_opts(%{"before" => ""}) == [filter: [], page: []]
     end
 
     test "after cursor lands in page[:cursor]" do
-      assert [filter: [], page: [cursor: "abc"]] =
-               LiveTable.params_to_opts(%{"after" => "abc"}, [])
+      assert LiveTable.params_to_opts(%{"after" => "abc"}, []) == [
+               filter: [],
+               page: [cursor: "abc"]
+             ]
     end
 
     test "before cursor lands in page[:cursor] too — direction is encoded in the cursor blob" do
-      assert [filter: [], page: [cursor: "xyz"]] =
-               LiveTable.params_to_opts(%{"before" => "xyz"}, [])
+      assert LiveTable.params_to_opts(%{"before" => "xyz"}, []) == [
+               filter: [],
+               page: [cursor: "xyz"]
+             ]
     end
 
     test "after takes precedence when both are present (defensive)" do
-      assert [filter: [], page: [cursor: "after-one"]] =
-               LiveTable.params_to_opts(%{"after" => "after-one", "before" => "before-one"}, [])
+      assert LiveTable.params_to_opts(%{"after" => "after-one", "before" => "before-one"}, []) ==
+               [filter: [], page: [cursor: "after-one"]]
     end
 
     test "filters + cursor compose into one opts list" do
@@ -168,22 +183,22 @@ defmodule EmisarWeb.LiveTableTest do
     test "an absent param takes the filter's default" do
       filters = [%{list_filter(:status) | default: "live"}]
 
-      assert [filter: [status: ["live"]], page: []] =
-               LiveTable.params_to_opts(%{}, filters)
+      assert LiveTable.params_to_opts(%{}, filters) == [filter: [status: ["live"]], page: []]
     end
 
     test "an explicit non-default value wins over the default" do
       filters = [%{list_filter(:status) | default: "live"}]
 
-      assert [filter: [status: ["revoked"]], page: []] =
-               LiveTable.params_to_opts(%{"status" => "revoked"}, filters)
+      assert LiveTable.params_to_opts(%{"status" => "revoked"}, filters) == [
+               filter: [status: ["revoked"]],
+               page: []
+             ]
     end
 
     test "an explicit blank overrides the default (operator picked \"All\")" do
       filters = [%{list_filter(:status) | default: "live"}]
 
-      assert [filter: [], page: []] =
-               LiveTable.params_to_opts(%{"status" => ""}, filters)
+      assert LiveTable.params_to_opts(%{"status" => ""}, filters) == [filter: [], page: []]
     end
   end
 

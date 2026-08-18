@@ -15,7 +15,7 @@ defmodule EmisarWeb.StaticImageTest do
     end
 
     test "reads a PNG" do
-      assert {1200, 630} = StaticImage.dimensions("/images/og/og-pricing.png")
+      assert StaticImage.dimensions("/images/og/og-pricing.png") === {1200, 630}
     end
 
     test "is nil for a path we do not serve" do

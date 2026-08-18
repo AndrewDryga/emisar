@@ -41,7 +41,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
     test "emails the owner the prior month's summary and stamps the account" do
       %{account: account, owner: owner} = active_account(runs: 3)
 
-      assert :ok = MonthlyReports.execute([])
+      assert MonthlyReports.execute([]) == :ok
 
       {period_start, _period_end} = CalendarMonth.previous_month(DateTime.utc_now())
       period = Calendar.strftime(period_start, "%B %Y")
@@ -66,11 +66,11 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
     test "a fresh timestamp makes a repeated execute a no-op" do
       %{account: account} = active_account()
 
-      assert :ok = MonthlyReports.execute([])
+      assert MonthlyReports.execute([]) == :ok
       assert_received {:email, _first}
       first_stamp = Repo.reload(account).last_report_sent_at
 
-      assert :ok = MonthlyReports.execute([])
+      assert MonthlyReports.execute([]) == :ok
       refute_received {:email, _second}
       assert Repo.reload(account).last_report_sent_at == first_stamp
     end
@@ -85,7 +85,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
         role: "owner"
       )
 
-      assert :ok = MonthlyReports.execute([])
+      assert MonthlyReports.execute([]) == :ok
 
       refute_received {:email, _}
       refute Repo.reload(account).last_report_sent_at
@@ -103,7 +103,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
 
       Fixtures.Runs.create_run(account_id: account.id, status: :success, inserted_at: in_window())
 
-      assert :ok = MonthlyReports.execute([])
+      assert MonthlyReports.execute([]) == :ok
 
       refute_received {:email, _}
       refute Repo.reload(account).last_report_sent_at
@@ -113,7 +113,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
       %{account: account, owner: owner} = active_account()
       {:ok, _} = Mail.suppress(owner.email, :hard_bounce, "HardBounce")
 
-      assert :ok = MonthlyReports.execute([])
+      assert MonthlyReports.execute([]) == :ok
 
       refute_received {:email, _}
       refute Repo.reload(account).last_report_sent_at
@@ -123,7 +123,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
       %{account: account} = active_account()
       Fixtures.Accounts.set_account_settings(account, %{monthly_report_opt_out: true})
 
-      assert :ok = MonthlyReports.execute([])
+      assert MonthlyReports.execute([]) == :ok
 
       refute_received {:email, _}
       refute Repo.reload(account).last_report_sent_at
@@ -134,7 +134,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
 
       Emisar.Config.put_override(:emisar, :mailer_deliver_error, {:error, {:failed, :boom}})
 
-      assert :ok = MonthlyReports.execute([])
+      assert MonthlyReports.execute([]) == :ok
 
       refute Repo.reload(account).last_report_sent_at
     end
@@ -143,7 +143,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
       %{account: account_a, owner: owner_a} = active_account(runs: 2)
       %{account: account_b, owner: owner_b} = active_account(runs: 5)
 
-      assert :ok = MonthlyReports.execute([])
+      assert MonthlyReports.execute([]) == :ok
 
       emails =
         for _ <- 1..2 do

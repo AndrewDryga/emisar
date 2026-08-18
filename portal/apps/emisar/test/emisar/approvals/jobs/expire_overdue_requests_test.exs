@@ -37,7 +37,7 @@ defmodule Emisar.Approvals.Jobs.ExpireOverdueRequestsTest do
   test "execute/1 expires the overdue request and cancels its run" do
     {request, run} = overdue_request()
 
-    assert :ok = ExpireOverdueRequests.execute([])
+    assert ExpireOverdueRequests.execute([]) == :ok
 
     assert %Request{status: :expired} = Repo.reload!(request)
     assert Repo.reload!(run).status == :cancelled
@@ -60,7 +60,7 @@ defmodule Emisar.Approvals.Jobs.ExpireOverdueRequestsTest do
 
     {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
 
-    assert :ok = ExpireOverdueRequests.execute([])
+    assert ExpireOverdueRequests.execute([]) == :ok
 
     assert %Request{status: :pending} = Repo.reload!(request)
   end
@@ -113,13 +113,13 @@ defmodule Emisar.Approvals.Jobs.ExpireOverdueRequestsLogTest do
   # in "swept 0" noise; a sweep that expires a row logs the count.
   test "execute/1 logs the swept count only when something expired" do
     # Nothing overdue → silent sweep.
-    silent = capture_log(fn -> assert :ok = ExpireOverdueRequests.execute([]) end)
+    silent = capture_log(fn -> assert ExpireOverdueRequests.execute([]) == :ok end)
     refute silent =~ "approval_expiry.swept"
 
     :ok = overdue_request()
 
     # One overdue request → the count is logged.
-    noisy = capture_log(fn -> assert :ok = ExpireOverdueRequests.execute([]) end)
+    noisy = capture_log(fn -> assert ExpireOverdueRequests.execute([]) == :ok end)
     assert noisy =~ "approval_expiry.swept"
   end
 end

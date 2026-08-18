@@ -59,8 +59,7 @@ defmodule EmisarWeb.SSOControllerTest do
   end
 
   defp enterprise_account do
-    {_user, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
-    account
+    Fixtures.Accounts.create_account(plan: "enterprise")
   end
 
   defp provider_fixture(account, attrs \\ %{}) do
@@ -80,6 +79,18 @@ defmodule EmisarWeb.SSOControllerTest do
 
     {:ok, provider} = Repo.insert(IdentityProvider.Changeset.create(account.id, attrs))
     provider
+  end
+
+  defp stash_callback(conn, provider) do
+    conn
+    |> init_test_session(%{})
+    |> put_session(@stash_key, %{
+      provider_id: provider.id,
+      state: "s",
+      nonce: "n",
+      pkce_verifier: "v",
+      redirect_uri: "https://emisar.test/sign_in/sso/callback"
+    })
   end
 
   describe "GET /sign_in/sso/:provider_id (begin)" do
@@ -199,14 +210,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
       conn =
         conn
-        |> init_test_session(%{})
-        |> put_session(@stash_key, %{
-          provider_id: provider.id,
-          state: "s",
-          nonce: "n",
-          pkce_verifier: "v",
-          redirect_uri: "https://emisar.test/sign_in/sso/callback"
-        })
+        |> stash_callback(provider)
         |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
 
       # SSO lands on the account whose IdP this is (its slug), not bare /app.
@@ -245,7 +249,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
       refute get_session(conn, :user_token)
       assert redirected_to(conn) == ~p"/sign_in"
-      assert {:error, :not_found} = Emisar.Users.fetch_user_by_email("disabled@acme.test")
+      assert Emisar.Users.fetch_user_by_email("disabled@acme.test") == {:error, :not_found}
     end
 
     test "a protected OAuth request resumes after SSO sign-in", %{conn: conn} do
@@ -290,25 +294,13 @@ defmodule EmisarWeb.SSOControllerTest do
     end
 
     test "a successful callback records the user.signed_in audit with method sso", %{conn: conn} do
-      # the callback calls `record_sign_in(user, "sso", …)`
-      # before `log_in_user` renews the session, so the sign-in is attributable to
-      # the freshly-provisioned user with the SSO method. The observable contract: a
-      # `user.signed_in` audit row on the provider's account naming the user, carrying
-      # `method: "sso"`.
       account = enterprise_account()
       provider = provider_fixture(account)
       claims = %{"sub" => "okta|audit-1", "email" => "audit@acme.test", "hd" => "acme.test"}
 
       conn =
         conn
-        |> init_test_session(%{})
-        |> put_session(@stash_key, %{
-          provider_id: provider.id,
-          state: "s",
-          nonce: "n",
-          pkce_verifier: "v",
-          redirect_uri: "https://emisar.test/sign_in/sso/callback"
-        })
+        |> stash_callback(provider)
         |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
 
       token = get_session(conn, :user_token)
@@ -332,14 +324,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
       logged_in =
         conn
-        |> init_test_session(%{})
-        |> put_session(@stash_key, %{
-          provider_id: provider.id,
-          state: "s",
-          nonce: "n",
-          pkce_verifier: "v",
-          redirect_uri: "https://emisar.test/sign_in/sso/callback"
-        })
+        |> stash_callback(provider)
         |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
 
       # Follow the session into an authenticated LiveView: the SSO session
@@ -358,14 +343,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
       logged_in =
         conn
-        |> init_test_session(%{})
-        |> put_session(@stash_key, %{
-          provider_id: provider.id,
-          state: "s",
-          nonce: "n",
-          pkce_verifier: "v",
-          redirect_uri: "https://emisar.test/sign_in/sso/callback"
-        })
+        |> stash_callback(provider)
         |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
 
       # The provider does NOT satisfy MFA, so require_mfa still funnels this
@@ -402,14 +380,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
       conn =
         conn
-        |> init_test_session(%{})
-        |> put_session(@stash_key, %{
-          provider_id: provider.id,
-          state: "s",
-          nonce: "n",
-          pkce_verifier: "v",
-          redirect_uri: "https://emisar.test/sign_in/sso/callback"
-        })
+        |> stash_callback(provider)
         |> get(~p"/sign_in/sso/callback", %{"_claims" => %{"sub" => "okta|boom"}})
 
       assert redirected_to(conn) == ~p"/sign_in"

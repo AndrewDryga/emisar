@@ -63,8 +63,8 @@ defmodule Emisar.MCPOperations.Jobs.ReplayRetentionTest do
 
     assert {1, _} = backdate_operation(operation.operation_id, old)
 
-    assert :ok = ReplayRetention.execute([])
-    assert :ok = ReplayRetention.execute([])
+    assert ReplayRetention.execute([]) == :ok
+    assert ReplayRetention.execute([]) == :ok
 
     refute Repo.reload(operation)
     assert Repo.reload!(run).mcp_operation_record_id == nil
@@ -84,7 +84,7 @@ defmodule Emisar.MCPOperations.Jobs.ReplayRetentionTest do
     assert {1, _} = backdate_operation(old_id, old)
     assert {1, _} = backdate_operation(fresh_id, fresh)
 
-    assert :ok = ReplayRetention.execute([])
+    assert ReplayRetention.execute([]) == :ok
 
     refute Repo.reload(old_operation)
     assert Repo.reload(fresh_operation)
@@ -103,8 +103,8 @@ defmodule Emisar.MCPOperations.Jobs.ReplayRetentionTest do
 
     Fixtures.Accounts.mark_account_as_deleted(account)
 
-    assert :ok = ReplayRetention.execute([])
-    assert :ok = ReplayRetention.execute([])
+    assert ReplayRetention.execute([]) == :ok
+    assert ReplayRetention.execute([]) == :ok
 
     markers =
       Audit.Event.Query.all()

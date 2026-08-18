@@ -16,74 +16,70 @@ defmodule EmisarWeb.AuditSummaryTest do
 
   describe "membership.role_changed" do
     test "renders from → to" do
-      assert [{"change", "operator → admin"}] =
-               AuditSummary.summary_pairs(
-                 ev("membership.role_changed", %{"from" => "operator", "to" => "admin"})
-               )
+      assert AuditSummary.summary_pairs(
+               ev("membership.role_changed", %{"from" => "operator", "to" => "admin"})
+             ) == [{"change", "operator → admin"}]
     end
 
     test "ignores no-op when from == to" do
-      assert [] =
-               AuditSummary.summary_pairs(
-                 ev("membership.role_changed", %{"from" => "admin", "to" => "admin"})
-               )
+      assert AuditSummary.summary_pairs(
+               ev("membership.role_changed", %{"from" => "admin", "to" => "admin"})
+             ) == []
     end
   end
 
   describe "user.email_changed" do
     test "renders from → to" do
-      assert [{"change", "old@example.com → new@example.com"}] =
-               AuditSummary.summary_pairs(
-                 ev("user.email_changed", %{
-                   "from" => "old@example.com",
-                   "to" => "new@example.com"
-                 })
-               )
+      assert AuditSummary.summary_pairs(
+               ev("user.email_changed", %{
+                 "from" => "old@example.com",
+                 "to" => "new@example.com"
+               })
+             ) == [{"change", "old@example.com → new@example.com"}]
     end
   end
 
   describe "user.signed_in" do
     test "shows method when present" do
-      assert [{"via", "magic_link"}] =
-               AuditSummary.summary_pairs(ev("user.signed_in", %{"method" => "magic_link"}))
+      assert AuditSummary.summary_pairs(ev("user.signed_in", %{"method" => "magic_link"})) == [
+               {"via", "magic_link"}
+             ]
     end
 
     test "drops to empty when method missing" do
-      assert [] = AuditSummary.summary_pairs(ev("user.signed_in", %{}))
+      assert AuditSummary.summary_pairs(ev("user.signed_in", %{})) == []
     end
   end
 
   describe "user.other_sessions_revoked" do
     test "renders the count" do
-      assert [{"count", "3"}] =
-               AuditSummary.summary_pairs(ev("user.other_sessions_revoked", %{"count" => 3}))
+      assert AuditSummary.summary_pairs(ev("user.other_sessions_revoked", %{"count" => 3})) == [
+               {"count", "3"}
+             ]
     end
 
     test "ignores zero" do
-      assert [] = AuditSummary.summary_pairs(ev("user.other_sessions_revoked", %{"count" => 0}))
+      assert AuditSummary.summary_pairs(ev("user.other_sessions_revoked", %{"count" => 0})) == []
     end
   end
 
   describe "account.require_mfa_set" do
     test "renders 'enforced' for true" do
-      assert [{"MFA", "enforced"}] =
-               AuditSummary.summary_pairs(ev("account.require_mfa_set", %{"require_mfa" => true}))
+      assert AuditSummary.summary_pairs(ev("account.require_mfa_set", %{"require_mfa" => true})) ==
+               [{"MFA", "enforced"}]
     end
 
     test "renders 'off' for false" do
-      assert [{"MFA", "off"}] =
-               AuditSummary.summary_pairs(
-                 ev("account.require_mfa_set", %{"require_mfa" => false})
-               )
+      assert AuditSummary.summary_pairs(ev("account.require_mfa_set", %{"require_mfa" => false})) ==
+               [{"MFA", "off"}]
     end
   end
 
   describe "runbook.updated" do
     test "renders v1 → v2 for new-version events" do
-      assert [{"version", "v1 → v2"}] =
-               AuditSummary.summary_pairs(
-                 ev("runbook.updated", %{"from_version" => 1, "to_version" => 2})
-               )
+      assert AuditSummary.summary_pairs(
+               ev("runbook.updated", %{"from_version" => 1, "to_version" => 2})
+             ) == [{"version", "v1 → v2"}]
     end
   end
 
@@ -118,20 +114,21 @@ defmodule EmisarWeb.AuditSummaryTest do
 
   describe "action_run.success" do
     test "renders sub-second duration in ms" do
-      assert [{"duration_ms", "850ms"}] =
-               AuditSummary.summary_pairs(ev("action_run.success", %{"duration_ms" => 850}))
+      assert AuditSummary.summary_pairs(ev("action_run.success", %{"duration_ms" => 850})) == [
+               {"duration_ms", "850ms"}
+             ]
     end
 
     test "renders seconds when over 1s" do
-      assert [{"duration_ms", "12.3s"}] =
-               AuditSummary.summary_pairs(ev("action_run.success", %{"duration_ms" => 12_345}))
+      assert AuditSummary.summary_pairs(ev("action_run.success", %{"duration_ms" => 12_345})) == [
+               {"duration_ms", "12.3s"}
+             ]
     end
 
     test "renders minutes when over 1m" do
-      assert [{"duration_ms", "5m 30s"}] =
-               AuditSummary.summary_pairs(
-                 ev("action_run.success", %{"duration_ms" => 5 * 60_000 + 30_000})
-               )
+      assert AuditSummary.summary_pairs(
+               ev("action_run.success", %{"duration_ms" => 5 * 60_000 + 30_000})
+             ) == [{"duration_ms", "5m 30s"}]
     end
   end
 
@@ -159,19 +156,18 @@ defmodule EmisarWeb.AuditSummaryTest do
     end
 
     test "empty changes produce no chips" do
-      assert [] = AuditSummary.summary_pairs(ev("policy.updated", %{"changes" => %{}}))
+      assert AuditSummary.summary_pairs(ev("policy.updated", %{"changes" => %{}})) == []
     end
 
     test "malformed nested payload values fall through without crashing the audit list" do
-      assert [] =
-               AuditSummary.summary_pairs(
-                 ev("policy.updated", %{
-                   "changes" => %{
-                     "defaults" => "not-a-map",
-                     "overrides" => %{"added" => "not-a-list"}
-                   }
-                 })
-               )
+      assert AuditSummary.summary_pairs(
+               ev("policy.updated", %{
+                 "changes" => %{
+                   "defaults" => "not-a-map",
+                   "overrides" => %{"added" => "not-a-list"}
+                 }
+               })
+             ) == []
     end
 
     test "a runner-scoped edit leads with a scope chip" do
@@ -203,36 +199,37 @@ defmodule EmisarWeb.AuditSummaryTest do
 
   describe "policy.scope_deleted" do
     test "names the removed override's scope" do
-      assert [{"scope", "group: db"}] =
-               AuditSummary.summary_pairs(
-                 ev("policy.scope_deleted", %{"scope_type" => "group", "scope_value" => "db"})
-               )
+      assert AuditSummary.summary_pairs(
+               ev("policy.scope_deleted", %{"scope_type" => "group", "scope_value" => "db"})
+             ) == [{"scope", "group: db"}]
     end
   end
 
   describe "graceful fallthrough" do
     test "unknown event types produce no chips" do
-      assert [] = AuditSummary.summary_pairs(ev("totally.made_up_event", %{"foo" => "bar"}))
+      assert AuditSummary.summary_pairs(ev("totally.made_up_event", %{"foo" => "bar"})) == []
     end
 
     test "nil payload is safe" do
-      assert [] = AuditSummary.summary_pairs(%{event_type: "user.signed_in", payload: nil})
+      assert AuditSummary.summary_pairs(%{event_type: "user.signed_in", payload: nil}) == []
     end
 
     test "accepts atom keys (test fixtures)" do
-      assert [{"via", "magic_link"}] =
-               AuditSummary.summary_pairs(ev("user.signed_in", %{method: "magic_link"}))
+      assert AuditSummary.summary_pairs(ev("user.signed_in", %{method: "magic_link"})) == [
+               {"via", "magic_link"}
+             ]
     end
   end
 
   describe "session.account_switched" do
     test "shows the role in the switched-to account" do
-      assert [{"role", "admin"}] =
-               AuditSummary.summary_pairs(ev("session.account_switched", %{"role" => "admin"}))
+      assert AuditSummary.summary_pairs(ev("session.account_switched", %{"role" => "admin"})) == [
+               {"role", "admin"}
+             ]
     end
 
     test "no chip when role is absent" do
-      assert [] = AuditSummary.summary_pairs(ev("session.account_switched", %{}))
+      assert AuditSummary.summary_pairs(ev("session.account_switched", %{})) == []
     end
   end
 

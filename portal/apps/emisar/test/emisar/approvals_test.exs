@@ -416,10 +416,10 @@ defmodule Emisar.ApprovalsTest do
       assert id == db_request.id
       assert Approvals.count_pending_approval_requests(subject) == 1
 
-      assert {:error, :not_found} =
-               Approvals.fetch_approval_request_by_id(web_request.id, subject)
+      assert Approvals.fetch_approval_request_by_id(web_request.id, subject) ==
+               {:error, :not_found}
 
-      assert {:error, :not_found} = Approvals.deny_request(web_request, subject, "forged")
+      assert Approvals.deny_request(web_request, subject, "forged") == {:error, :not_found}
       assert Repo.reload!(web_request).status == :pending
 
       assert {:ok, {%Request{status: :denied}, _run}} =
@@ -433,9 +433,9 @@ defmodule Emisar.ApprovalsTest do
 
       assert {:ok, [], _metadata} = Approvals.list_pending_approval_requests(subject)
       assert Approvals.count_pending_approval_requests(subject) == 0
-      assert {:error, :not_found} = Approvals.fetch_approval_request_by_id(request.id, subject)
-      assert {:error, :not_found} = Approvals.approve_request(request, subject, "forged")
-      assert {:error, :not_found} = Approvals.deny_request(request, subject, "forged")
+      assert Approvals.fetch_approval_request_by_id(request.id, subject) == {:error, :not_found}
+      assert Approvals.approve_request(request, subject, "forged") == {:error, :not_found}
+      assert Approvals.deny_request(request, subject, "forged") == {:error, :not_found}
       assert Repo.reload!(request).status == :pending
 
       subject = subject_with_runner_access(subject, all_runner_pack_access(["linux-core"]))
@@ -458,8 +458,8 @@ defmodule Emisar.ApprovalsTest do
 
       _revoked = subject_with_runner_access(allowed, all_runner_pack_access(["postgres"]))
 
-      assert {:error, :not_found} =
-               Approvals.approve_request(stale_request, allowed, "access was revoked")
+      assert Approvals.approve_request(stale_request, allowed, "access was revoked") ==
+               {:error, :not_found}
 
       assert Repo.reload!(request).status == :pending
     end
@@ -473,8 +473,8 @@ defmodule Emisar.ApprovalsTest do
 
       _revoked = subject_with_runner_access(allowed, all_runner_pack_access(["postgres"]))
 
-      assert {:error, :not_found} =
-               Approvals.deny_request(stale_request, allowed, "access was revoked")
+      assert Approvals.deny_request(stale_request, allowed, "access was revoked") ==
+               {:error, :not_found}
 
       assert Repo.reload!(request).status == :pending
     end
@@ -498,8 +498,8 @@ defmodule Emisar.ApprovalsTest do
 
       pack_partial = subject_with_runner_access(subject, all_runner_pack_access(["postgres"]))
 
-      assert {:error, :not_found} =
-               Approvals.fetch_approval_request_by_id(request.id, pack_partial)
+      assert Approvals.fetch_approval_request_by_id(request.id, pack_partial) ==
+               {:error, :not_found}
 
       all_packs =
         subject_with_runner_access(subject, all_runner_pack_access(["postgres", "redis"]))
@@ -524,8 +524,8 @@ defmodule Emisar.ApprovalsTest do
 
       runner_partial = subject_with_runner_access(subject, one_runner)
 
-      assert {:error, :not_found} =
-               Approvals.fetch_approval_request_by_id(request.id, runner_partial)
+      assert Approvals.fetch_approval_request_by_id(request.id, runner_partial) ==
+               {:error, :not_found}
     end
 
     test "missing or malformed frozen approval targets fail closed" do
@@ -538,8 +538,8 @@ defmodule Emisar.ApprovalsTest do
         |> ActionRun.Query.by_id(run.id)
         |> Repo.update_all(set: [pack_ref: "not-a-pack-ref"])
 
-      assert {:error, :not_found} = Approvals.fetch_approval_request_by_id(request.id, subject)
-      assert {:error, :not_found} = Approvals.deny_request(request, subject, "corrupt")
+      assert Approvals.fetch_approval_request_by_id(request.id, subject) == {:error, :not_found}
+      assert Approvals.deny_request(request, subject, "corrupt") == {:error, :not_found}
 
       {requester, execution_account, execution_subject} = Fixtures.Subjects.owner_subject()
 
@@ -550,8 +550,8 @@ defmodule Emisar.ApprovalsTest do
         Runbooks.ExecutionItem.Query.by_execution_id(execution_request.runbook_execution_id)
         |> Repo.delete_all()
 
-      assert {:error, :not_found} =
-               Approvals.fetch_approval_request_by_id(execution_request.id, execution_subject)
+      assert Approvals.fetch_approval_request_by_id(execution_request.id, execution_subject) ==
+               {:error, :not_found}
     end
   end
 
@@ -770,10 +770,10 @@ defmodule Emisar.ApprovalsTest do
       {other_account, _run} = run_fixture()
       other_subject = operator_subject(other_account)
 
-      assert {:error, :not_found} =
-               Approvals.fetch_approval_request_by_id(request.id, other_subject)
+      assert Approvals.fetch_approval_request_by_id(request.id, other_subject) ==
+               {:error, :not_found}
 
-      assert {:error, :not_found} = Approvals.fetch_approval_request_by_id("not-a-uuid", subject)
+      assert Approvals.fetch_approval_request_by_id("not-a-uuid", subject) == {:error, :not_found}
     end
   end
 
@@ -797,8 +797,8 @@ defmodule Emisar.ApprovalsTest do
       {other_account, _run_b} = run_fixture()
       other_subject = operator_subject(other_account)
 
-      assert {:error, :not_found} =
-               Approvals.fetch_approval_request_by_run_id(run.id, other_subject)
+      assert Approvals.fetch_approval_request_by_run_id(run.id, other_subject) ==
+               {:error, :not_found}
     end
 
     test "a viewer (no view_approvals) is refused with :unauthorized", %{
@@ -824,8 +824,8 @@ defmodule Emisar.ApprovalsTest do
         permissions: MapSet.new()
       }
 
-      assert {:error, :unauthorized} =
-               Approvals.fetch_approval_request_by_run_id(run.id, no_perms)
+      assert Approvals.fetch_approval_request_by_run_id(run.id, no_perms) ==
+               {:error, :unauthorized}
     end
 
     test "still returns a DENIED request — the decision record persists", %{
@@ -988,8 +988,7 @@ defmodule Emisar.ApprovalsTest do
 
       {_other_account, foreign_run} = run_fixture()
 
-      assert {:error, :not_found} =
-               Approvals.fetch_request_for_visible_run(foreign_run, subject)
+      assert Approvals.fetch_request_for_visible_run(foreign_run, subject) == {:error, :not_found}
     end
 
     test "still requires run-view permission" do
@@ -1001,8 +1000,8 @@ defmodule Emisar.ApprovalsTest do
         permissions: MapSet.new()
       }
 
-      assert {:error, :unauthorized} =
-               Approvals.fetch_request_for_visible_run(run, no_permissions)
+      assert Approvals.fetch_request_for_visible_run(run, no_permissions) ==
+               {:error, :unauthorized}
     end
   end
 
@@ -1031,8 +1030,8 @@ defmodule Emisar.ApprovalsTest do
       }
 
       # `Subject.ensure_in_account` refuses the cross-account read.
-      assert {:error, :not_found} =
-               Approvals.fetch_request_for_visible_runbook_execution(foreign_execution, subject)
+      assert Approvals.fetch_request_for_visible_runbook_execution(foreign_execution, subject) ==
+               {:error, :not_found}
     end
 
     test "still requires runbook-view permission" do
@@ -1046,8 +1045,8 @@ defmodule Emisar.ApprovalsTest do
         permissions: MapSet.new()
       }
 
-      assert {:error, :unauthorized} =
-               Approvals.fetch_request_for_visible_runbook_execution(execution, no_permissions)
+      assert Approvals.fetch_request_for_visible_runbook_execution(execution, no_permissions) ==
+               {:error, :unauthorized}
     end
   end
 
@@ -1084,7 +1083,7 @@ defmodule Emisar.ApprovalsTest do
         permissions: MapSet.new()
       }
 
-      assert {:error, :unauthorized} = Approvals.list_decisions_for_request(request, no_perms)
+      assert Approvals.list_decisions_for_request(request, no_perms) == {:error, :unauthorized}
     end
 
     test "an owner of another account can't read this request's decisions (cross-account)", %{
@@ -1093,7 +1092,7 @@ defmodule Emisar.ApprovalsTest do
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       # `Subject.ensure_in_account` refuses the cross-account read.
-      assert {:error, :not_found} = Approvals.list_decisions_for_request(request, subject_b)
+      assert Approvals.list_decisions_for_request(request, subject_b) == {:error, :not_found}
     end
   end
 
@@ -1110,14 +1109,14 @@ defmodule Emisar.ApprovalsTest do
       a = distinct_operator(account)
       b = distinct_operator(account)
 
-      assert {:ok, 0} = Approvals.approved_count_for_request(request, a)
+      assert Approvals.approved_count_for_request(request, a) === {:ok, 0}
 
       {:ok, _} = Approvals.approve_request(request, a, "yes")
-      assert {:ok, 1} = Approvals.approved_count_for_request(request, a)
+      assert Approvals.approved_count_for_request(request, a) === {:ok, 1}
 
       # A deny doesn't add to the approver tally.
       {:ok, _} = Approvals.deny_request(request, b, "no")
-      assert {:ok, 1} = Approvals.approved_count_for_request(request, a)
+      assert Approvals.approved_count_for_request(request, a) === {:ok, 1}
     end
 
     test "a viewer (no view_approvals) is refused with :unauthorized", %{
@@ -1130,7 +1129,7 @@ defmodule Emisar.ApprovalsTest do
         permissions: MapSet.new()
       }
 
-      assert {:error, :unauthorized} = Approvals.approved_count_for_request(request, no_perms)
+      assert Approvals.approved_count_for_request(request, no_perms) == {:error, :unauthorized}
     end
 
     test "an owner of another account can't read this request's count (cross-account)", %{
@@ -1138,7 +1137,7 @@ defmodule Emisar.ApprovalsTest do
     } do
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert {:error, :not_found} = Approvals.approved_count_for_request(request, subject_b)
+      assert Approvals.approved_count_for_request(request, subject_b) == {:error, :not_found}
     end
   end
 
@@ -1452,7 +1451,7 @@ defmodule Emisar.ApprovalsTest do
 
   describe "after_runbook_execution_request_committed/1" do
     test "is idempotent when a replay inserted no execution request" do
-      assert :ok = Approvals.after_runbook_execution_request_committed(%{})
+      assert Approvals.after_runbook_execution_request_committed(%{}) == :ok
     end
 
     test "emails only deciders who cover every execution runner and pack" do
@@ -1498,10 +1497,9 @@ defmodule Emisar.ApprovalsTest do
       request =
         Fixtures.Approvals.create_execution_request(account, requester, stage_plan: stage_plan)
 
-      assert :ok =
-               Approvals.after_runbook_execution_request_committed(%{
-                 {:runbook_execution_approval_request, :execution} => request
-               })
+      assert Approvals.after_runbook_execution_request_committed(%{
+               {:runbook_execution_approval_request, :execution} => request
+             }) == :ok
 
       recipients = notified_recipients()
       assert eligible.email in recipients
@@ -1524,7 +1522,7 @@ defmodule Emisar.ApprovalsTest do
 
   describe "after_runbook_execution_cancellation_committed/1" do
     test "is idempotent when no execution request changed" do
-      assert :ok = Approvals.after_runbook_execution_cancellation_committed(%{})
+      assert Approvals.after_runbook_execution_cancellation_committed(%{}) == :ok
     end
   end
 
@@ -1552,7 +1550,7 @@ defmodule Emisar.ApprovalsTest do
 
       :ok = Approvals.subscribe_account_approvals(account.id)
 
-      assert :ok = Approvals.notify_request_created(%{approval_request: request, run: run})
+      assert Approvals.notify_request_created(%{approval_request: request, run: run}) == :ok
 
       assert_receive {:approval_updated, id}
       assert id == request.id
@@ -1587,7 +1585,7 @@ defmodule Emisar.ApprovalsTest do
         |> Repo.insert()
 
       :ok = Approvals.subscribe_account_approvals(account.id)
-      assert :ok = Approvals.notify_request_created(request, run)
+      assert Approvals.notify_request_created(request, run) == :ok
       assert_receive {:approval_updated, id}
       assert id == request.id
       assert decider.email in notified_recipients()
@@ -1838,7 +1836,8 @@ defmodule Emisar.ApprovalsTest do
       {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
       other_subject = operator_subject(Fixtures.Accounts.create_account())
 
-      assert {:error, _} = Approvals.approve_request(request, other_subject, "lgtm")
+      assert Approvals.approve_request(request, other_subject, "lgtm") ==
+               {:error, :not_found}
 
       assert {:ok, %Request{status: :pending}} =
                Approvals.fetch_approval_request_by_id(request.id, subject)
@@ -1972,7 +1971,7 @@ defmodule Emisar.ApprovalsTest do
         |> Request.Query.by_id(request.id)
         |> Repo.update_all(set: [expires_at: past])
 
-      assert {:error, :expired} = Approvals.approve_request(request, subject, "too late")
+      assert Approvals.approve_request(request, subject, "too late") == {:error, :expired}
 
       # Refused, not flipped to approved — the run is never dispatched; the
       # sweep will expire it shortly.
@@ -1996,8 +1995,8 @@ defmodule Emisar.ApprovalsTest do
 
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} =
-               Approvals.approve_request(request, viewer_subject, "no rights")
+      assert Approvals.approve_request(request, viewer_subject, "no rights") ==
+               {:error, :unauthorized}
     end
 
     test "an owner of account B cannot approve account A's request (cross-account → :not_found)" do
@@ -2017,7 +2016,7 @@ defmodule Emisar.ApprovalsTest do
 
       subject_b = Fixtures.Subjects.subject_for(owner_b, account_b, role: :owner)
 
-      assert {:error, :not_found} = Approvals.approve_request(req_a, subject_b, "wrong account")
+      assert Approvals.approve_request(req_a, subject_b, "wrong account") == {:error, :not_found}
     end
 
     test "ABUSE: a forged request struct cannot cross the account boundary" do
@@ -2029,7 +2028,9 @@ defmodule Emisar.ApprovalsTest do
       subject_b = operator_subject(account_b)
       forged_request = %{request_a | account_id: account_b.id}
 
-      assert {:error, :not_found} = Approvals.approve_request(forged_request, subject_b, "forged")
+      assert Approvals.approve_request(forged_request, subject_b, "forged") ==
+               {:error, :not_found}
+
       assert %Request{status: :pending} = Repo.reload!(request_a)
       assert approved_count(request_a.id) == 0
       assert %ActionRun{status: :pending_approval} = Repo.reload!(run_a)
@@ -2042,8 +2043,8 @@ defmodule Emisar.ApprovalsTest do
       second = operator_subject(account)
 
       assert {:ok, _} = Approvals.deny_request(request, first, "no")
-      assert {:error, :already_decided} = Approvals.approve_request(request, second)
-      assert {:error, :already_decided} = Approvals.deny_request(request, second, "again")
+      assert Approvals.approve_request(request, second) == {:error, :already_decided}
+      assert Approvals.deny_request(request, second, "again") == {:error, :already_decided}
     end
   end
 
@@ -2090,7 +2091,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, request} = Approvals.create_request(run, user.id, "x")
       {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :once)
 
-      assert [] = Fixtures.Approvals.grants_for_api_key(key.id)
+      assert Fixtures.Approvals.grants_for_api_key(key.id) == []
     end
 
     test "a windowed duration on an operator-sourced run mints no grant" do
@@ -2271,7 +2272,7 @@ defmodule Emisar.ApprovalsTest do
                Approvals.approve_request(request, subject, "ok", duration: :one_day)
 
       # No grant was minted.
-      assert [] = Fixtures.Approvals.grants_for_api_key(key.id)
+      assert Fixtures.Approvals.grants_for_api_key(key.id) == []
 
       # The run was NOT dispatched (the rollback aborted before dispatch).
       refute_receive {:cloud_to_runner, _generation, _}, 100
@@ -2356,7 +2357,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert %Request{status: :pending, decided_by_id: nil} = Repo.reload!(request)
       assert Repo.all(Decision) == []
-      assert [] = Fixtures.Approvals.grants_for_api_key(key.id)
+      assert Fixtures.Approvals.grants_for_api_key(key.id) == []
       assert %ActionRun{status: :pending_approval} = Repo.reload!(run)
       refute_receive {:cloud_to_runner, _generation, _}, 100
 
@@ -2444,7 +2445,7 @@ defmodule Emisar.ApprovalsTest do
                Approvals.approve_request(request, subject, nil, duration: :forever)
 
       assert "is invalid" in errors_on(changeset).duration
-      assert [] = Fixtures.Approvals.grants_for_api_key(key.id)
+      assert Fixtures.Approvals.grants_for_api_key(key.id) == []
       assert %Request{status: :pending} = Repo.reload!(request)
     end
   end
@@ -2518,8 +2519,8 @@ defmodule Emisar.ApprovalsTest do
 
       # Refused before finalizing, so there's no approved-but-dead run; the
       # request stays pending for a re-issued (freshly-signed) request.
-      assert {:error, :attestation_stale} =
-               Approvals.approve_request(request, approver_subject, "go")
+      assert Approvals.approve_request(request, approver_subject, "go") ==
+               {:error, :attestation_stale}
 
       assert %Request{status: :pending} = Repo.reload!(request)
     end
@@ -2598,8 +2599,7 @@ defmodule Emisar.ApprovalsTest do
                Approvals.approve_request(request, operator, "first")
 
       # Same operator votes again under min 2 — the unique index rejects it.
-      assert {:error, :already_decided} =
-               Approvals.approve_request(request, operator, "again")
+      assert Approvals.approve_request(request, operator, "again") == {:error, :already_decided}
 
       assert approved_count(request.id) == 1
       assert %Request{status: :pending} = Repo.reload!(request)
@@ -2654,8 +2654,8 @@ defmodule Emisar.ApprovalsTest do
           allow_self_approval: false
         )
 
-      assert {:error, :self_approval_forbidden} =
-               Approvals.approve_request(request, subject, "approving my own")
+      assert Approvals.approve_request(request, subject, "approving my own") ==
+               {:error, :self_approval_forbidden}
 
       assert %Request{status: :pending} = Repo.reload!(request)
       assert approved_count(request.id) == 0
@@ -2788,8 +2788,8 @@ defmodule Emisar.ApprovalsTest do
 
       # The owner (the human behind the key) cannot launder a self-approval
       # through their own key.
-      assert {:error, :self_approval_forbidden} =
-               Approvals.approve_request(request, owner_subject, "self via my key")
+      assert Approvals.approve_request(request, owner_subject, "self via my key") ==
+               {:error, :self_approval_forbidden}
 
       assert %Request{status: :pending} = Repo.reload!(request)
       refute_receive {:cloud_to_runner, _generation, _}, 100
@@ -2851,7 +2851,7 @@ defmodule Emisar.ApprovalsTest do
 
       operator = distinct_operator(account)
 
-      assert {:error, :pack_untrusted} = Approvals.approve_request(request, operator, "ok")
+      assert Approvals.approve_request(request, operator, "ok") == {:error, :pack_untrusted}
 
       # The run never reached the runner, and the request is left pending to retry.
       refute_receive {:cloud_to_runner, _generation, _}, 100
@@ -2867,7 +2867,7 @@ defmodule Emisar.ApprovalsTest do
       Fixtures.Catalog.delete_actions_for_runner(runner.id)
       operator = distinct_operator(account)
 
-      assert {:error, :action_not_found} = Approvals.approve_request(request, operator, "ok")
+      assert Approvals.approve_request(request, operator, "ok") == {:error, :action_not_found}
 
       # Nothing shipped and the request is still decidable.
       refute_receive {:cloud_to_runner, _generation, _}, 100
@@ -3062,8 +3062,8 @@ defmodule Emisar.ApprovalsTest do
 
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} =
-               Approvals.deny_request(request, viewer_subject, "no rights")
+      assert Approvals.deny_request(request, viewer_subject, "no rights") ==
+               {:error, :unauthorized}
     end
 
     # (context half) — a finalizing deny writes BOTH a per-vote
@@ -3111,7 +3111,7 @@ defmodule Emisar.ApprovalsTest do
 
       subject_b = Fixtures.Subjects.subject_for(owner_b, account_b, role: :owner)
 
-      assert {:error, :not_found} = Approvals.deny_request(req_a, subject_b, "wrong account")
+      assert Approvals.deny_request(req_a, subject_b, "wrong account") == {:error, :not_found}
     end
 
     # deny is `:decide`-gated only; it is NOT self-gated.
@@ -3231,7 +3231,7 @@ defmodule Emisar.ApprovalsTest do
                Approvals.deny_request(request, b, "no")
 
       # C's later approve can't out-vote the deny.
-      assert {:error, :already_decided} = Approvals.approve_request(request, c, "let me in")
+      assert Approvals.approve_request(request, c, "let me in") == {:error, :already_decided}
 
       assert %Request{status: :denied} = Repo.reload!(request)
       assert %ActionRun{status: :cancelled} = Repo.reload!(run)
@@ -3307,7 +3307,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, _} = Runs.cancel_run(run, owner, "cancel")
 
       # The request was cancelled with the run, so the stale approve is refused.
-      assert {:error, :run_cancelled} = Approvals.approve_request(request, approver, "too late")
+      assert Approvals.approve_request(request, approver, "too late") == {:error, :run_cancelled}
 
       # The run stays cancelled and no envelope ever reached the runner.
       assert %ActionRun{status: :cancelled} = Repo.reload!(run)
@@ -3336,7 +3336,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, [locked]} = Approvals.lock_pending_requests_for_runs(Repo, [run.id])
       assert locked.id == request.id
       assert locked.status == :pending
-      assert {:ok, []} = Approvals.lock_pending_requests_for_runs(Repo, [])
+      assert Approvals.lock_pending_requests_for_runs(Repo, []) == {:ok, []}
     end
   end
 
@@ -3357,9 +3357,9 @@ defmodule Emisar.ApprovalsTest do
   describe "broadcast_cancelled_requests/1" do
     test "broadcasts every cancelled request returned by the transaction helper" do
       %{account: account, request: request} = gated_request()
-      assert :ok = Approvals.subscribe_account_approvals(account.id)
+      assert Approvals.subscribe_account_approvals(account.id) == :ok
 
-      assert :ok = Approvals.broadcast_cancelled_requests([request])
+      assert Approvals.broadcast_cancelled_requests([request]) == :ok
       assert_receive {:approval_updated, request_id}
       assert request_id == request.id
     end
@@ -3372,7 +3372,7 @@ defmodule Emisar.ApprovalsTest do
 
       :ok = Approvals.subscribe_account_approvals(account.id)
 
-      assert :ok = Approvals.broadcast_request_cancelled({:cancelled, request})
+      assert Approvals.broadcast_request_cancelled({:cancelled, request}) == :ok
 
       assert_receive {:approval_updated, id}
       assert id == request.id
@@ -3382,7 +3382,7 @@ defmodule Emisar.ApprovalsTest do
       {account, _run} = run_fixture()
       :ok = Approvals.subscribe_account_approvals(account.id)
 
-      assert :ok = Approvals.broadcast_request_cancelled(:none)
+      assert Approvals.broadcast_request_cancelled(:none) == :ok
 
       refute_receive {:approval_updated, _}, 100
     end
@@ -3394,7 +3394,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
       subject = operator_subject(account)
 
-      assert :ok = Approvals.subscribe_account_approvals(account.id)
+      assert Approvals.subscribe_account_approvals(account.id) == :ok
 
       # A decision publishes on the topic the subscriber just joined.
       assert {:ok, _} = Approvals.deny_request(request, subject, "no")
@@ -3408,7 +3408,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, request_b} = Approvals.create_request(run_b, Fixtures.Users.create_user().id, "x")
       subject_b = operator_subject(account_b)
 
-      assert :ok = Approvals.subscribe_account_approvals(account_a.id)
+      assert Approvals.subscribe_account_approvals(account_a.id) == :ok
 
       # The decision happens on B's topic — A's subscriber must hear nothing.
       assert {:ok, _} = Approvals.deny_request(request_b, subject_b, "no")
@@ -3428,13 +3428,13 @@ defmodule Emisar.ApprovalsTest do
         |> operator_subject()
         |> subject_with_runner_access(database_access)
 
-      assert :ok = Approvals.subscribe_account_approvals(account.id)
+      assert Approvals.subscribe_account_approvals(account.id) == :ok
       assert {:ok, _} = Approvals.deny_request(request, operator_subject(account), "no")
       assert_receive {:approval_updated, request_id}
       assert request_id == request.id
 
-      assert {:error, :not_found} =
-               Approvals.fetch_approval_request_by_id(request_id, restricted_subject)
+      assert Approvals.fetch_approval_request_by_id(request_id, restricted_subject) ==
+               {:error, :not_found}
 
       refute database_runner.id == web_runner.id
     end
@@ -3452,7 +3452,7 @@ defmodule Emisar.ApprovalsTest do
         Approvals.create_request(other_run, Fixtures.Users.create_user().id, "other")
 
       subject = operator_subject(account)
-      assert :ok = Approvals.subscribe_request(account.id, watched.id)
+      assert Approvals.subscribe_request(account.id, watched.id) == :ok
 
       assert {:ok, _} = Approvals.deny_request(other, subject, "no")
       refute_receive {:approval_request_updated, _}, 100
@@ -3469,7 +3469,7 @@ defmodule Emisar.ApprovalsTest do
       {account_b, _run_b} = run_fixture()
       {:ok, request_a} = Approvals.create_request(run_a, Fixtures.Users.create_user().id, "x")
 
-      assert :ok = Approvals.subscribe_request(account_b.id, request_a.id)
+      assert Approvals.subscribe_request(account_b.id, request_a.id) == :ok
       assert {:ok, _} = Approvals.deny_request(request_a, operator_subject(account_a), "no")
       refute_receive {:approval_request_updated, _}, 100
     end
@@ -3940,11 +3940,11 @@ defmodule Emisar.ApprovalsTest do
          %{account: account, run: run, request: request, operator: operator} do
       Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 86_400)
 
-      assert {:error, :grant_exceeds_account_max_lifetime} =
-               Approvals.create_grant(request, run, operator.id, %{duration: :ninety_days})
+      assert Approvals.create_grant(request, run, operator.id, %{duration: :ninety_days}) ==
+               {:error, :grant_exceeds_account_max_lifetime}
 
-      assert {:error, :grant_exceeds_account_max_lifetime} =
-               Approvals.create_grant(request, run, operator.id, %{duration: :thirty_days})
+      assert Approvals.create_grant(request, run, operator.id, %{duration: :thirty_days}) ==
+               {:error, :grant_exceeds_account_max_lifetime}
     end
 
     test "allows a duration within the cap",
@@ -3976,8 +3976,8 @@ defmodule Emisar.ApprovalsTest do
          %{account: account, run: run, request: request, operator: operator} do
       Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 0)
 
-      assert {:error, :grant_exceeds_account_max_lifetime} =
-               Approvals.create_grant(request, run, operator.id, %{duration: :one_hour})
+      assert Approvals.create_grant(request, run, operator.id, %{duration: :one_hour}) ==
+               {:error, :grant_exceeds_account_max_lifetime}
 
       assert {:ok, %Grant{}} =
                Approvals.create_grant(request, run, operator.id, %{duration: :once})
@@ -4041,7 +4041,7 @@ defmodule Emisar.ApprovalsTest do
 
       operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
 
-      assert {:error, :unauthorized} = Approvals.revoke_grant(grant, operator_subject)
+      assert Approvals.revoke_grant(grant, operator_subject) == {:error, :unauthorized}
     end
 
     # `manage_grants` = owner/admin, so an ADMIN (not just an
@@ -4089,7 +4089,7 @@ defmodule Emisar.ApprovalsTest do
 
       subject_b = Fixtures.Subjects.subject_for(owner_b, account_b, role: :owner)
 
-      assert {:error, :not_found} = Approvals.revoke_grant(g_a, subject_b)
+      assert Approvals.revoke_grant(g_a, subject_b) == {:error, :not_found}
     end
 
     test "writes an `approval.grant_revoked` audit row", %{
@@ -4309,12 +4309,11 @@ defmodule Emisar.ApprovalsTest do
 
       other_subject = Fixtures.Subjects.subject_for(other_user, other_account, role: :owner)
 
-      assert {:error, _} =
-               Approvals.update_grant_lifetime_settings(
-                 account,
-                 %{"seconds" => "86400"},
-                 other_subject
-               )
+      assert Approvals.update_grant_lifetime_settings(
+               account,
+               %{"seconds" => "86400"},
+               other_subject
+             ) == {:error, :not_found}
 
       assert {:ok, settings} = Accounts.fetch_account_settings(account.id)
       assert settings.max_grant_lifetime_seconds == nil
@@ -4493,7 +4492,7 @@ defmodule Emisar.ApprovalsTest do
       operator =
         Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
 
-      assert {:error, :unauthorized} = Approvals.list_grants_for_account(operator)
+      assert Approvals.list_grants_for_account(operator) == {:error, :unauthorized}
     end
 
     test "lists only the subject's account grants (cross-account isolation)" do
@@ -4555,11 +4554,11 @@ defmodule Emisar.ApprovalsTest do
 
       assert {:ok, [%Grant{id: id}], _meta} = Approvals.list_grants_for_account(subject)
       assert id == db_grant.id
-      assert {:error, :not_found} = Approvals.fetch_grant_by_id(denied_pack.id, subject)
-      assert {:error, :not_found} = Approvals.fetch_grant_by_id(web_grant.id, subject)
-      assert {:error, :not_found} = Approvals.revoke_grant(web_grant, subject)
+      assert Approvals.fetch_grant_by_id(denied_pack.id, subject) == {:error, :not_found}
+      assert Approvals.fetch_grant_by_id(web_grant.id, subject) == {:error, :not_found}
+      assert Approvals.revoke_grant(web_grant, subject) == {:error, :not_found}
 
-      assert {:ok, 1} = Approvals.revoke_all_grants(subject)
+      assert Approvals.revoke_all_grants(subject) === {:ok, 1}
       assert Repo.reload!(db_grant).revoked_at
       refute Repo.reload!(denied_pack).revoked_at
       refute Repo.reload!(web_grant).revoked_at
@@ -4609,10 +4608,10 @@ defmodule Emisar.ApprovalsTest do
 
       {other_account, _} = run_fixture()
       other_subject = operator_subject(other_account)
-      assert {:error, :not_found} = Approvals.fetch_grant_by_id(grant.id, other_subject)
+      assert Approvals.fetch_grant_by_id(grant.id, other_subject) == {:error, :not_found}
 
       # A malformed id is :not_found, never a crash.
-      assert {:error, :not_found} = Approvals.fetch_grant_by_id("not-a-uuid", subject)
+      assert Approvals.fetch_grant_by_id("not-a-uuid", subject) == {:error, :not_found}
     end
 
     test "an operator (no manage_grants) is refused with :unauthorized", %{
@@ -4622,7 +4621,7 @@ defmodule Emisar.ApprovalsTest do
       operator =
         Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
 
-      assert {:error, :unauthorized} = Approvals.fetch_grant_by_id(grant.id, operator)
+      assert Approvals.fetch_grant_by_id(grant.id, operator) == {:error, :unauthorized}
     end
   end
 

@@ -184,17 +184,17 @@ defmodule Emisar.OAuthTest do
     end
 
     test "an unknown but well-formed uuid is :not_found" do
-      assert {:error, :not_found} = OAuth.fetch_client(Ecto.UUID.generate())
+      assert OAuth.fetch_client(Ecto.UUID.generate()) == {:error, :not_found}
     end
 
     test "a malformed (non-uuid) client_id is a clean :not_found, never a 500" do
       # A connector can send any string as client_id; the binary_id cast is
       # guarded so a non-uuid is :not_found, not a cast crash.
-      assert {:error, :not_found} = OAuth.fetch_client("not-a-uuid")
+      assert OAuth.fetch_client("not-a-uuid") == {:error, :not_found}
     end
 
     test "a non-binary client_id is a clean :not_found (the guard's fallback clause)" do
-      assert {:error, :not_found} = OAuth.fetch_client(nil)
+      assert OAuth.fetch_client(nil) == {:error, :not_found}
     end
 
     @tag :tmp_dir
@@ -218,7 +218,7 @@ defmodule Emisar.OAuthTest do
       )
 
       url = "https://localhost:#{listener.port}/client-metadata.json"
-      assert {:error, :not_found} = OAuth.fetch_client(url)
+      assert OAuth.fetch_client(url) == {:error, :not_found}
       assert_receive {:tls_attempted, _outcome}, 5_000
       refute Repo.one(Client)
     end
@@ -228,7 +228,7 @@ defmodule Emisar.OAuthTest do
         allow_private_hosts: false
       )
 
-      assert {:error, :not_found} = OAuth.fetch_client("https://127.0.0.1/client-metadata.json")
+      assert OAuth.fetch_client("https://127.0.0.1/client-metadata.json") == {:error, :not_found}
       refute Repo.one(Client)
     end
   end
@@ -330,8 +330,8 @@ defmodule Emisar.OAuthTest do
       # an API key in-product — and must not be able to via consent either.
       viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
 
-      assert {:error, :unauthorized} =
-               OAuth.issue_code(client, authorization_params(challenge), viewer)
+      assert OAuth.issue_code(client, authorization_params(challenge), viewer) ==
+               {:error, :unauthorized}
     end
 
     test "a suspended membership cannot mint a backing key from a stale subject" do
@@ -341,8 +341,8 @@ defmodule Emisar.OAuthTest do
       client = register!()
       {_verifier, challenge} = pkce()
 
-      assert {:error, :not_found} =
-               OAuth.issue_code(client, authorization_params(challenge), subject)
+      assert OAuth.issue_code(client, authorization_params(challenge), subject) ==
+               {:error, :not_found}
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -356,8 +356,8 @@ defmodule Emisar.OAuthTest do
       client = register!()
       {_verifier, challenge} = pkce()
 
-      assert {:error, :not_found} =
-               OAuth.issue_code(client, authorization_params(challenge), subject)
+      assert OAuth.issue_code(client, authorization_params(challenge), subject) ==
+               {:error, :not_found}
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -370,8 +370,8 @@ defmodule Emisar.OAuthTest do
       client = register!()
       {_verifier, challenge} = pkce()
 
-      assert {:error, :unauthorized} =
-               OAuth.issue_code(client, authorization_params(challenge), subject)
+      assert OAuth.issue_code(client, authorization_params(challenge), subject) ==
+               {:error, :unauthorized}
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -394,8 +394,8 @@ defmodule Emisar.OAuthTest do
       # land on the ACTING operator's membership or not at all.
       borrowed = %{subject | membership_id: peer_membership.id}
 
-      assert {:error, :not_found} =
-               OAuth.issue_code(client, authorization_params(challenge), borrowed)
+      assert OAuth.issue_code(client, authorization_params(challenge), borrowed) ==
+               {:error, :not_found}
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -416,8 +416,8 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
       borrowed = %{subject | membership_id: other_membership.id}
 
-      assert {:error, :not_found} =
-               OAuth.issue_code(client, authorization_params(challenge), borrowed)
+      assert OAuth.issue_code(client, authorization_params(challenge), borrowed) ==
+               {:error, :not_found}
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -429,7 +429,7 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
       params = authorization_params(challenge, %{"redirect_uri" => "https://attacker.example/cb"})
 
-      assert {:error, :invalid_redirect_uri} = OAuth.issue_code(client, params, subject)
+      assert OAuth.issue_code(client, params, subject) == {:error, :invalid_redirect_uri}
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -443,7 +443,7 @@ defmodule Emisar.OAuthTest do
       stale_client = %{client | redirect_uris: [unregistered]}
       params = authorization_params(challenge, %{"redirect_uri" => unregistered})
 
-      assert {:error, :invalid_redirect_uri} = OAuth.issue_code(stale_client, params, subject)
+      assert OAuth.issue_code(stale_client, params, subject) == {:error, :invalid_redirect_uri}
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -455,7 +455,7 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
       params = authorization_params(challenge) |> Map.delete("redirect_uri")
 
-      assert {:error, :invalid_redirect_uri} = OAuth.issue_code(client, params, subject)
+      assert OAuth.issue_code(client, params, subject) == {:error, :invalid_redirect_uri}
 
       refute Repo.exists?(ApiKey.Query.all())
     end
@@ -598,13 +598,12 @@ defmodule Emisar.OAuthTest do
 
       # The row id must NOT authenticate the exchange: the client's identity is
       # the document URL it presented at authorization.
-      assert {:error, :invalid_grant} =
-               OAuth.exchange_code(%{
-                 "code" => code,
-                 "client_id" => client.id,
-                 "redirect_uri" => @redirect,
-                 "code_verifier" => verifier
-               })
+      assert OAuth.exchange_code(%{
+               "code" => code,
+               "client_id" => client.id,
+               "redirect_uri" => @redirect,
+               "code_verifier" => verifier
+             }) == {:error, :invalid_grant}
 
       assert {:ok, tokens} =
                OAuth.exchange_code(%{
@@ -623,13 +622,12 @@ defmodule Emisar.OAuthTest do
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
 
-      assert {:error, :invalid_grant} =
-               OAuth.exchange_code(%{
-                 "code" => code,
-                 "client_id" => "https://evil.example.com/oauth/client-metadata.json",
-                 "redirect_uri" => @redirect,
-                 "code_verifier" => verifier
-               })
+      assert OAuth.exchange_code(%{
+               "code" => code,
+               "client_id" => "https://evil.example.com/oauth/client-metadata.json",
+               "redirect_uri" => @redirect,
+               "code_verifier" => verifier
+             }) == {:error, :invalid_grant}
     end
 
     test "an unknown metadata URL never resolves to a client", %{subject: subject} do
@@ -637,13 +635,12 @@ defmodule Emisar.OAuthTest do
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
 
-      assert {:error, :invalid_grant} =
-               OAuth.exchange_code(%{
-                 "code" => code,
-                 "client_id" => "https://never-seen.example.com/client.json",
-                 "redirect_uri" => @redirect,
-                 "code_verifier" => verifier
-               })
+      assert OAuth.exchange_code(%{
+               "code" => code,
+               "client_id" => "https://never-seen.example.com/client.json",
+               "redirect_uri" => @redirect,
+               "code_verifier" => verifier
+             }) == {:error, :invalid_grant}
     end
 
     test "the backing key is minted NON-expiring so a long-lived OAuth connection never breaks on key expiry",
@@ -690,13 +687,12 @@ defmodule Emisar.OAuthTest do
       key = Repo.get!(Emisar.ApiKeys.ApiKey, code_row.api_key_id)
       Repo.update!(Ecto.Changeset.change(key, revoked_at: DateTime.utc_now()))
 
-      assert {:error, :invalid_grant} =
-               OAuth.exchange_code(%{
-                 "code" => code,
-                 "client_id" => client.id,
-                 "redirect_uri" => @redirect,
-                 "code_verifier" => verifier
-               })
+      assert OAuth.exchange_code(%{
+               "code" => code,
+               "client_id" => client.id,
+               "redirect_uri" => @redirect,
+               "code_verifier" => verifier
+             }) == {:error, :invalid_grant}
 
       # The failed check rolled back the burn — the one-time code stays unused.
       assert Repo.get!(Emisar.OAuth.AuthorizationCode, code_row.id).used_at == nil
@@ -715,13 +711,12 @@ defmodule Emisar.OAuthTest do
                  subject
                )
 
-      assert {:error, :invalid_grant} =
-               OAuth.exchange_code(%{
-                 "code" => code,
-                 "client_id" => client.id,
-                 "redirect_uri" => @redirect,
-                 "code_verifier" => verifier
-               })
+      assert OAuth.exchange_code(%{
+               "code" => code,
+               "client_id" => client.id,
+               "redirect_uri" => @redirect,
+               "code_verifier" => verifier
+             }) == {:error, :invalid_grant}
 
       assert Repo.get_by!(Emisar.OAuth.AuthorizationCode, code_hash: Emisar.Crypto.hash(code)).used_at ==
                nil
@@ -731,13 +726,12 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
 
-      assert {:error, :invalid_grant} =
-               OAuth.exchange_code(%{
-                 "code" => code,
-                 "client_id" => client.id,
-                 "redirect_uri" => @redirect,
-                 "code_verifier" => "definitely-the-wrong-verifier"
-               })
+      assert OAuth.exchange_code(%{
+               "code" => code,
+               "client_id" => client.id,
+               "redirect_uri" => @redirect,
+               "code_verifier" => "definitely-the-wrong-verifier"
+             }) == {:error, :invalid_grant}
     end
 
     test "rejects a too-short PKCE verifier (RFC 7636 §4.1)", %{subject: subject, client: client} do
@@ -747,13 +741,12 @@ defmodule Emisar.OAuthTest do
       challenge = Base.url_encode64(:crypto.hash(:sha256, short), padding: false)
       code = issue!(subject, client, challenge)
 
-      assert {:error, :invalid_grant} =
-               OAuth.exchange_code(%{
-                 "code" => code,
-                 "client_id" => client.id,
-                 "redirect_uri" => @redirect,
-                 "code_verifier" => short
-               })
+      assert OAuth.exchange_code(%{
+               "code" => code,
+               "client_id" => client.id,
+               "redirect_uri" => @redirect,
+               "code_verifier" => short
+             }) == {:error, :invalid_grant}
     end
 
     test "the code is single-use", %{subject: subject, client: client} do
@@ -768,7 +761,7 @@ defmodule Emisar.OAuthTest do
       }
 
       assert {:ok, _} = OAuth.exchange_code(params)
-      assert {:error, :invalid_grant} = OAuth.exchange_code(params)
+      assert OAuth.exchange_code(params) == {:error, :invalid_grant}
     end
 
     test "rejects an expired authorization code", %{subject: subject, client: client} do
@@ -785,26 +778,24 @@ defmodule Emisar.OAuthTest do
         |> AuthorizationCode.Query.by_code_hash(Emisar.Crypto.hash(code))
         |> Repo.update_all(set: [expires_at: past])
 
-      assert {:error, :invalid_grant} =
-               OAuth.exchange_code(%{
-                 "code" => code,
-                 "client_id" => client.id,
-                 "redirect_uri" => @redirect,
-                 "code_verifier" => verifier
-               })
+      assert OAuth.exchange_code(%{
+               "code" => code,
+               "client_id" => client.id,
+               "redirect_uri" => @redirect,
+               "code_verifier" => verifier
+             }) == {:error, :invalid_grant}
     end
 
     test "rejects a mismatched redirect_uri", %{subject: subject, client: client} do
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
 
-      assert {:error, :invalid_grant} =
-               OAuth.exchange_code(%{
-                 "code" => code,
-                 "client_id" => client.id,
-                 "redirect_uri" => "https://claude.ai/somewhere-else",
-                 "code_verifier" => verifier
-               })
+      assert OAuth.exchange_code(%{
+               "code" => code,
+               "client_id" => client.id,
+               "redirect_uri" => "https://claude.ai/somewhere-else",
+               "code_verifier" => verifier
+             }) == {:error, :invalid_grant}
     end
 
     test "rejects a code replayed by a different client",
@@ -813,13 +804,12 @@ defmodule Emisar.OAuthTest do
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
 
-      assert {:error, :invalid_grant} =
-               OAuth.exchange_code(%{
-                 "code" => code,
-                 "client_id" => other.id,
-                 "redirect_uri" => @redirect,
-                 "code_verifier" => verifier
-               })
+      assert OAuth.exchange_code(%{
+               "code" => code,
+               "client_id" => other.id,
+               "redirect_uri" => @redirect,
+               "code_verifier" => verifier
+             }) == {:error, :invalid_grant}
     end
 
     test "omits the refresh token when offline_access is not requested",
@@ -881,14 +871,13 @@ defmodule Emisar.OAuthTest do
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
 
-      assert {:error, :invalid_target} =
-               OAuth.exchange_code(%{
-                 "code" => code,
-                 "client_id" => client.id,
-                 "redirect_uri" => @redirect,
-                 "code_verifier" => verifier,
-                 "resource" => "https://other.example/mcp"
-               })
+      assert OAuth.exchange_code(%{
+               "code" => code,
+               "client_id" => client.id,
+               "redirect_uri" => @redirect,
+               "code_verifier" => verifier,
+               "resource" => "https://other.example/mcp"
+             }) == {:error, :invalid_target}
     end
 
     test "accepts a token request that repeats the matching resource",
@@ -909,7 +898,7 @@ defmodule Emisar.OAuthTest do
     test "a request missing the required params is :invalid_request, not a crash" do
       # The arity-1 fallback clause catches any param map lacking
       # code/client_id/redirect_uri/code_verifier — a malformed token POST.
-      assert {:error, :invalid_request} = OAuth.exchange_code(%{})
+      assert OAuth.exchange_code(%{}) == {:error, :invalid_request}
     end
   end
 
@@ -945,11 +934,10 @@ defmodule Emisar.OAuthTest do
       assert fresh.refresh_token != tokens.refresh_token
 
       # The rotated (old) refresh token is dead.
-      assert {:error, :invalid_grant} =
-               OAuth.refresh(%{
-                 "refresh_token" => tokens.refresh_token,
-                 "client_id" => client.id
-               })
+      assert OAuth.refresh(%{
+               "refresh_token" => tokens.refresh_token,
+               "client_id" => client.id
+             }) == {:error, :invalid_grant}
 
       # The new access token resolves.
       assert {:ok, _} = OAuth.resolve_access_token(fresh.access_token, @resource)
@@ -965,11 +953,10 @@ defmodule Emisar.OAuthTest do
       |> Ecto.Changeset.change(revoked_at: DateTime.utc_now())
       |> Emisar.Repo.update!()
 
-      assert {:error, :invalid_grant} =
-               OAuth.refresh(%{
-                 "refresh_token" => tokens.refresh_token,
-                 "client_id" => client.id
-               })
+      assert OAuth.refresh(%{
+               "refresh_token" => tokens.refresh_token,
+               "client_id" => client.id
+             }) == {:error, :invalid_grant}
     end
 
     test "a disabled account cannot refresh, and re-enable restores the retained grant",
@@ -985,7 +972,7 @@ defmodule Emisar.OAuthTest do
                )
 
       params = %{"refresh_token" => tokens.refresh_token, "client_id" => client.id}
-      assert {:error, :invalid_grant} = OAuth.refresh(params)
+      assert OAuth.refresh(params) == {:error, :invalid_grant}
 
       assert {:ok, _account} =
                Emisar.Accounts.set_account_disabled_for_support(
@@ -1002,36 +989,34 @@ defmodule Emisar.OAuthTest do
          %{tokens: tokens} do
       other = register!("Other")
 
-      assert {:error, :invalid_grant} =
-               OAuth.refresh(%{
-                 "refresh_token" => tokens.refresh_token,
-                 "client_id" => other.id
-               })
+      assert OAuth.refresh(%{
+               "refresh_token" => tokens.refresh_token,
+               "client_id" => other.id
+             }) == {:error, :invalid_grant}
     end
 
     test "rejects a refresh whose resource mismatches the granted resource (RFC 8707)",
          %{client: client, tokens: tokens} do
-      assert {:error, :invalid_target} =
-               OAuth.refresh(%{
-                 "refresh_token" => tokens.refresh_token,
-                 "client_id" => client.id,
-                 "resource" => "https://other.example/mcp"
-               })
+      assert OAuth.refresh(%{
+               "refresh_token" => tokens.refresh_token,
+               "client_id" => client.id,
+               "resource" => "https://other.example/mcp"
+             }) == {:error, :invalid_target}
     end
 
     test "a request missing the required params is :invalid_request, not a crash" do
       # The arity-1 fallback clause catches a param map lacking
       # refresh_token/client_id — a malformed token POST.
-      assert {:error, :invalid_request} = OAuth.refresh(%{})
+      assert OAuth.refresh(%{}) == {:error, :invalid_request}
     end
   end
 
   describe "resolve_access_token/2" do
     test "rejects unknown / malformed tokens" do
-      assert {:error, :invalid} = OAuth.resolve_access_token("emo-not-a-real-token", @resource)
-      assert {:error, :invalid} = OAuth.resolve_access_token("garbage", @resource)
-      assert {:error, :invalid} = OAuth.resolve_access_token(nil, @resource)
-      assert {:error, :invalid} = OAuth.resolve_access_token("emo-not-a-real-token", nil)
+      assert OAuth.resolve_access_token("emo-not-a-real-token", @resource) == {:error, :invalid}
+      assert OAuth.resolve_access_token("garbage", @resource) == {:error, :invalid}
+      assert OAuth.resolve_access_token(nil, @resource) == {:error, :invalid}
+      assert OAuth.resolve_access_token("emo-not-a-real-token", nil) == {:error, :invalid}
     end
 
     test "records the call on the backing key so the connection isn't 'never used'" do
@@ -1088,7 +1073,7 @@ defmodule Emisar.OAuthTest do
       past = DateTime.add(DateTime.utc_now(), -60, :second)
       Repo.update!(Ecto.Changeset.change(token, access_expires_at: past))
 
-      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
+      assert OAuth.resolve_access_token(tokens.access_token, @resource) == {:error, :invalid}
     end
 
     test "an access token whose pair was rotation-revoked by a refresh resolves to :invalid",
@@ -1104,7 +1089,7 @@ defmodule Emisar.OAuthTest do
                })
 
       assert {:ok, _} = OAuth.resolve_access_token(fresh.access_token, @resource)
-      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
+      assert OAuth.resolve_access_token(tokens.access_token, @resource) == {:error, :invalid}
     end
 
     test "a token whose backing api-key is revoked after issuance resolves to :invalid",
@@ -1119,7 +1104,7 @@ defmodule Emisar.OAuthTest do
       |> Ecto.Changeset.change(revoked_at: DateTime.utc_now())
       |> Repo.update!()
 
-      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
+      assert OAuth.resolve_access_token(tokens.access_token, @resource) == {:error, :invalid}
     end
 
     test "a token whose account is soft-deleted resolves to :invalid",
@@ -1133,7 +1118,7 @@ defmodule Emisar.OAuthTest do
       |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
       |> Repo.update!()
 
-      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
+      assert OAuth.resolve_access_token(tokens.access_token, @resource) == {:error, :invalid}
     end
 
     test "a disabled account's retained access token resolves generically as invalid",
@@ -1148,7 +1133,7 @@ defmodule Emisar.OAuthTest do
                  support_subject
                )
 
-      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
+      assert OAuth.resolve_access_token(tokens.access_token, @resource) == {:error, :invalid}
     end
 
     test "cross-account isolation rides the backing key — a token only ever resolves to its own account",
@@ -1187,7 +1172,7 @@ defmodule Emisar.OAuthTest do
       token = Repo.get_by!(Token, access_token_hash: Emisar.Crypto.hash(tokens.access_token))
       Repo.update!(Ecto.Changeset.change(token, resource: "https://other.example/mcp"))
 
-      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
+      assert OAuth.resolve_access_token(tokens.access_token, @resource) == {:error, :invalid}
     end
 
     test "rejects a token whose scope lacks mcp (fail-closed resource-server backstop)",
@@ -1198,7 +1183,7 @@ defmodule Emisar.OAuthTest do
       token = Repo.get_by!(Token, access_token_hash: Emisar.Crypto.hash(tokens.access_token))
       Repo.update!(Ecto.Changeset.change(token, scope: "offline_access"))
 
-      assert {:error, :invalid} = OAuth.resolve_access_token(tokens.access_token, @resource)
+      assert OAuth.resolve_access_token(tokens.access_token, @resource) == {:error, :invalid}
     end
   end
 
@@ -1212,12 +1197,12 @@ defmodule Emisar.OAuthTest do
       # Consent minted a backing key with no token; inside the grace window
       # (an exchange could still be in flight) nothing is swept.
       assert %ApiKey{expires_at: nil, last_used_at: nil} = Repo.one(ApiKey)
-      assert 0 = OAuth.delete_abandoned_backing_keys()
+      assert OAuth.delete_abandoned_backing_keys() === 0
 
       # Past the grace window the key is unreachable (no token, raw secret was
       # discarded at mint) → swept, and its spent code cascades away with it.
       future = DateTime.add(DateTime.utc_now(), 2 * 3600, :second)
-      assert 1 = OAuth.delete_abandoned_backing_keys(future)
+      assert OAuth.delete_abandoned_backing_keys(future) === 1
       refute Repo.one(ApiKey)
       refute Repo.one(AuthorizationCode)
     end
@@ -1239,7 +1224,7 @@ defmodule Emisar.OAuthTest do
       # Even far past the grace window, a key with a live token is a real
       # connection — deleting it would cascade-revoke the token, so it's left alone.
       future = DateTime.add(DateTime.utc_now(), 2 * 3600, :second)
-      assert 0 = OAuth.delete_abandoned_backing_keys(future)
+      assert OAuth.delete_abandoned_backing_keys(future) === 0
       assert %ApiKey{} = Repo.one(ApiKey)
     end
 
@@ -1266,7 +1251,7 @@ defmodule Emisar.OAuthTest do
 
       # Even well past the grace window, the surviving token row keeps the key.
       future = DateTime.add(DateTime.utc_now(), 2 * 3600, :second)
-      assert 0 = OAuth.delete_abandoned_backing_keys(future)
+      assert OAuth.delete_abandoned_backing_keys(future) === 0
       assert %ApiKey{} = Repo.one(ApiKey)
     end
 
@@ -1291,7 +1276,7 @@ defmodule Emisar.OAuthTest do
       # The key never recorded a call and now has no token → an unreachable dead
       # connection → swept.
       future = DateTime.add(DateTime.utc_now(), 2 * 3600, :second)
-      assert 1 = OAuth.delete_abandoned_backing_keys(future)
+      assert OAuth.delete_abandoned_backing_keys(future) === 1
       refute Repo.one(ApiKey)
     end
 
@@ -1316,7 +1301,7 @@ defmodule Emisar.OAuthTest do
 
       # It has history (last_used_at set), so its row is kept even with no token.
       future = DateTime.add(DateTime.utc_now(), 2 * 3600, :second)
-      assert 0 = OAuth.delete_abandoned_backing_keys(future)
+      assert OAuth.delete_abandoned_backing_keys(future) === 0
       assert %ApiKey{last_used_at: %DateTime{}} = Repo.one(ApiKey)
     end
 
@@ -1329,7 +1314,7 @@ defmodule Emisar.OAuthTest do
       # only reclaims non-expiring (`is_nil(expires_at)`) :mcp backing keys.
       backdate_key(quick, -2)
 
-      assert 0 = OAuth.delete_abandoned_backing_keys()
+      assert OAuth.delete_abandoned_backing_keys() === 0
       assert Repo.reload(quick)
     end
 
@@ -1349,7 +1334,7 @@ defmodule Emisar.OAuthTest do
 
       backdate_key(export, -2)
 
-      assert 0 = OAuth.delete_abandoned_backing_keys()
+      assert OAuth.delete_abandoned_backing_keys() === 0
       assert Repo.reload(export)
     end
   end
@@ -1362,14 +1347,14 @@ defmodule Emisar.OAuthTest do
       _code = issue!(subject, client, challenge)
 
       # The freshly-issued code has a 60s TTL — nothing to prune yet.
-      assert 0 = OAuth.delete_expired_authorization_codes()
+      assert OAuth.delete_expired_authorization_codes() === 0
 
       # Treating "now" as 2 minutes ahead, that code is expired and pruned.
       future = DateTime.add(DateTime.utc_now(), 120, :second)
-      assert 1 = OAuth.delete_expired_authorization_codes(future)
+      assert OAuth.delete_expired_authorization_codes(future) === 1
 
       # Idempotent — it's gone, a second sweep finds nothing.
-      assert 0 = OAuth.delete_expired_authorization_codes(future)
+      assert OAuth.delete_expired_authorization_codes(future) === 0
     end
   end
 
@@ -1392,13 +1377,13 @@ defmodule Emisar.OAuthTest do
       past = DateTime.add(DateTime.utc_now(), -120, :second)
 
       Repo.update!(Ecto.Changeset.change(token, access_expires_at: past))
-      assert 0 = OAuth.delete_expired_tokens()
+      assert OAuth.delete_expired_tokens() === 0
       assert Repo.reload(token)
 
       Repo.update!(Ecto.Changeset.change(token, refresh_expires_at: past))
-      assert 1 = OAuth.delete_expired_tokens()
+      assert OAuth.delete_expired_tokens() === 1
       refute Repo.reload(token)
-      assert 0 = OAuth.delete_expired_tokens()
+      assert OAuth.delete_expired_tokens() === 0
     end
   end
 
@@ -1433,7 +1418,7 @@ defmodule Emisar.OAuthTest do
       _code = issue!(subject, consented, challenge)
       backdate_registration(consented, -40)
 
-      assert 1 = OAuth.delete_unused_clients()
+      assert OAuth.delete_unused_clients() === 1
 
       refute Repo.reload(stale)
       assert Repo.reload(recent)

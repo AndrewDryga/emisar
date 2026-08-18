@@ -38,8 +38,7 @@ defmodule Emisar.RunsCrossAccountTest do
 
       subject = Fixtures.Subjects.subject_for(subject_user, account_a, role: :owner)
 
-      assert {:error, :runner_not_found} =
-               Runs.dispatch_run(attrs, subject)
+      assert Runs.dispatch_run(attrs, subject) == {:error, :runner_not_found}
     end
 
     test "rejects a missing runner_id" do
@@ -57,15 +56,14 @@ defmodule Emisar.RunsCrossAccountTest do
 
       subject = Fixtures.Subjects.subject_for(subject_user, account, role: :owner)
 
-      assert {:error, :runner_required} =
-               Runs.dispatch_run(
-                 %{
-                   action_id: "linux.uptime",
-                   source: "operator",
-                   requested_by_id: user.id
-                 },
-                 subject
-               )
+      assert Runs.dispatch_run(
+               %{
+                 action_id: "linux.uptime",
+                 source: "operator",
+                 requested_by_id: user.id
+               },
+               subject
+             ) == {:error, :runner_required}
     end
 
     test "rejects a disabled runner (even within the same account)" do
@@ -85,17 +83,16 @@ defmodule Emisar.RunsCrossAccountTest do
 
       {:ok, _disabled} = Emisar.Runners.disable_runner(runner, subject)
 
-      assert {:error, :runner_not_found} =
-               Runs.dispatch_run(
-                 %{
-                   runner_id: runner.id,
-                   action_id: "linux.uptime",
-                   reason: "disabled runner test",
-                   source: "operator",
-                   requested_by_id: user.id
-                 },
-                 subject
-               )
+      assert Runs.dispatch_run(
+               %{
+                 runner_id: runner.id,
+                 action_id: "linux.uptime",
+                 reason: "disabled runner test",
+                 source: "operator",
+                 requested_by_id: user.id
+               },
+               subject
+             ) == {:error, :runner_not_found}
     end
   end
 
@@ -134,8 +131,8 @@ defmodule Emisar.RunsCrossAccountTest do
           source: "operator"
         })
 
-      assert {:error, :not_found} =
-               Runs.fetch_run_by_request_id_for_runner(run.request_id, runner_b.id)
+      assert Runs.fetch_run_by_request_id_for_runner(run.request_id, runner_b.id) ==
+               {:error, :not_found}
     end
   end
 end

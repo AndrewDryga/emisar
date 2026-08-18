@@ -168,7 +168,7 @@ defmodule Emisar.SSOTest do
       {_owner, account, _owner_subject} = enterprise_owner()
       _provider = provider_fixture(account)
 
-      assert {:error, :unauthorized} = SSO.list_providers_for_account(viewer_in(account))
+      assert SSO.list_providers_for_account(viewer_in(account)) == {:error, :unauthorized}
     end
 
     test "a downgraded plan still lists what it has — you can't retire what you can't see" do
@@ -210,7 +210,7 @@ defmodule Emisar.SSOTest do
       {_owner, account, _owner_subject} = enterprise_owner()
       _provider = provider_fixture(account)
 
-      assert {:error, :unauthorized} = SSO.list_provider_facts(viewer_in(account))
+      assert SSO.list_provider_facts(viewer_in(account)) == {:error, :unauthorized}
     end
 
     test "is account-scoped — B never sees A's connections" do
@@ -273,7 +273,7 @@ defmodule Emisar.SSOTest do
       assert SSO.fetch_account_connection_facts(viewer) ==
                {:ok, %{enabled?: true, enabled_count: 1}}
 
-      assert {:error, :unauthorized} = SSO.list_provider_facts(viewer)
+      assert SSO.list_provider_facts(viewer) == {:error, :unauthorized}
     end
 
     test "an API client holds no posture permission" do
@@ -384,8 +384,8 @@ defmodule Emisar.SSOTest do
       %{provider: provider, account: account} = scim_provider()
       %{identity: identity} = provision(provider, "okta|erin")
 
-      assert {:error, :unauthorized} =
-               SSO.member_directory_facts([identity.user_id], viewer_in(account))
+      assert SSO.member_directory_facts([identity.user_id], viewer_in(account)) ==
+               {:error, :unauthorized}
     end
 
     test "is account-scoped — B never sees A's synced members" do
@@ -437,14 +437,14 @@ defmodule Emisar.SSOTest do
     test "a viewer (no manage_sso) is denied" do
       %{provider: provider, account: account} = scim_provider()
 
-      assert {:error, :unauthorized} = SSO.list_synced_users(provider, viewer_in(account))
+      assert SSO.list_synced_users(provider, viewer_in(account)) == {:error, :unauthorized}
     end
 
     test "another account's subject can't read the provider (:not_found)" do
       %{provider: provider} = scim_provider()
       {_ub, _account_b, sb} = enterprise_owner()
 
-      assert {:error, :not_found} = SSO.list_synced_users(provider, sb)
+      assert SSO.list_synced_users(provider, sb) == {:error, :not_found}
     end
   end
 
@@ -482,7 +482,7 @@ defmodule Emisar.SSOTest do
     test "a viewer (no manage_sso) is denied" do
       %{account: account} = scim_provider()
 
-      assert {:error, :unauthorized} = SSO.provider_sync_stats(viewer_in(account))
+      assert SSO.provider_sync_stats(viewer_in(account)) == {:error, :unauthorized}
     end
 
     test "is account-scoped — B's stats never include A's connection" do
@@ -514,14 +514,14 @@ defmodule Emisar.SSOTest do
     test "a malformed (non-UUID) id is :not_found, never a crash" do
       {_user, _account, subject} = enterprise_owner()
 
-      assert {:error, :not_found} = SSO.fetch_provider_by_id("not-a-uuid", subject)
+      assert SSO.fetch_provider_by_id("not-a-uuid", subject) == {:error, :not_found}
     end
 
     test "a viewer is denied (:unauthorized)" do
       {_owner, account, _owner_subject} = enterprise_owner()
       provider = provider_fixture(account)
 
-      assert {:error, :unauthorized} = SSO.fetch_provider_by_id(provider.id, viewer_in(account))
+      assert SSO.fetch_provider_by_id(provider.id, viewer_in(account)) == {:error, :unauthorized}
     end
 
     test "cross-account: B cannot fetch A's provider (:not_found)" do
@@ -529,7 +529,7 @@ defmodule Emisar.SSOTest do
       {_ub, _account_b, sb} = enterprise_owner()
       provider = provider_fixture(account_a)
 
-      assert {:error, :not_found} = SSO.fetch_provider_by_id(provider.id, sb)
+      assert SSO.fetch_provider_by_id(provider.id, sb) == {:error, :not_found}
     end
   end
 
@@ -547,8 +547,12 @@ defmodule Emisar.SSOTest do
       assert {:ok, changeset} =
                SSO.change_provider(%IdentityProvider{}, %{kind: :okta, name: "Okta"}, subject)
 
-      assert Ecto.Changeset.get_change(changeset, :kind) == :okta
-      assert Ecto.Changeset.get_change(changeset, :name) == "Okta"
+      assert changeset.changes == %{
+               default_pack_scope: [],
+               default_runner_scope: [],
+               kind: :okta,
+               name: "Okta"
+             }
     end
 
     test "defaults to an empty provider + no attrs", %{subject: subject} do
@@ -616,7 +620,7 @@ defmodule Emisar.SSOTest do
       assert {:ok, typed} =
                SSO.change_provider(provider, %{"client_secret" => "being-typed"}, subject)
 
-      assert Ecto.Changeset.get_change(typed, :client_secret) == "being-typed"
+      assert typed.changes == %{client_secret: "being-typed"}
     end
 
     test "an untouched edit form seeds the picker from the stored scope", %{
@@ -647,9 +651,7 @@ defmodule Emisar.SSOTest do
       assert {:ok, changeset} = SSO.change_provider(google, params, subject)
 
       # kind is create-only, and Google's issuer is not an editable field at all.
-      assert Ecto.Changeset.get_change(changeset, :kind) == nil
-      assert Ecto.Changeset.get_change(changeset, :issuer) == nil
-      assert Ecto.Changeset.get_change(changeset, :name) == "Renamed"
+      assert changeset.changes == %{name: "Renamed"}
     end
 
     test "an unrelated edit leaves a stored identifier claim alone", %{
@@ -662,7 +664,7 @@ defmodule Emisar.SSOTest do
 
       # Narrowing the claim list must not retype a connection people already
       # sign in through — the form tells the truth about what is stored.
-      assert Ecto.Changeset.get_change(changeset, :identifier_claim) == nil
+      assert changeset.changes == %{name: "Renamed"}
       assert Ecto.Changeset.get_field(changeset, :identifier_claim) == :oid
     end
 
@@ -685,9 +687,13 @@ defmodule Emisar.SSOTest do
         SSO.change_group_mapping(provider, %{external_group_id: "grp-1", role: :operator})
 
       assert %Ecto.Changeset{data: %GroupRoleMapping{}} = changeset
-      assert Ecto.Changeset.get_field(changeset, :account_id) == account.id
-      assert Ecto.Changeset.get_field(changeset, :provider_id) == provider.id
-      assert Ecto.Changeset.get_change(changeset, :role) == :operator
+
+      assert changeset.changes == %{
+               account_id: account.id,
+               external_group_id: "grp-1",
+               provider_id: provider.id,
+               role: :operator
+             }
     end
 
     test "from a %GroupRoleMapping{} it's the inline EDIT changeset (only display + role)" do
@@ -696,7 +702,7 @@ defmodule Emisar.SSOTest do
       changeset = SSO.change_group_mapping(mapping, %{role: :admin})
 
       assert %Ecto.Changeset{data: %GroupRoleMapping{}} = changeset
-      assert Ecto.Changeset.get_change(changeset, :role) == :admin
+      assert changeset.changes == %{role: :admin}
     end
 
     test "rejects an :owner role (sync can never grant owner — decision 7)" do
@@ -746,7 +752,7 @@ defmodule Emisar.SSOTest do
       assert {:ok, update} =
                SSO.change_group_runner_access_mapping(mapping, update_attrs, subject)
 
-      assert Ecto.Changeset.get_change(update, :runner_access_mode) == :all
+      assert update.changes == %{pack_scope: [], runner_access_mode: :all, scope: []}
     end
 
     test "an injected persisted array never becomes the grant", %{
@@ -815,14 +821,14 @@ defmodule Emisar.SSOTest do
         default_runner_scope: ["crafted"]
       }
 
-      assert {:error, :unauthorized} = SSO.configure_provider(attrs, viewer_in(account))
+      assert SSO.configure_provider(attrs, viewer_in(account)) == {:error, :unauthorized}
     end
 
     test "a free account cannot configure SSO" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject(%{})
 
-      assert {:error, :sso_not_available} =
-               SSO.configure_provider(%{kind: :okta, name: "Okta"}, subject)
+      assert SSO.configure_provider(%{kind: :okta, name: "Okta"}, subject) ==
+               {:error, :sso_not_available}
     end
 
     test "a Team account can configure an OIDC provider — SSO is Team and up" do
@@ -854,8 +860,8 @@ defmodule Emisar.SSOTest do
 
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} =
-               SSO.configure_provider(%{kind: :okta, name: "Okta"}, viewer_subject)
+      assert SSO.configure_provider(%{kind: :okta, name: "Okta"}, viewer_subject) ==
+               {:error, :unauthorized}
     end
 
     test "an enterprise admin configures a provider" do
@@ -1012,7 +1018,7 @@ defmodule Emisar.SSOTest do
 
       attrs = %{default_runner_access_mode: :restricted, default_runner_scope: ["crafted"]}
 
-      assert {:error, :not_found} = SSO.update_provider(provider, attrs, other_subject)
+      assert SSO.update_provider(provider, attrs, other_subject) == {:error, :not_found}
     end
 
     test "a restricted admin cannot configure or update a broader provider default" do
@@ -1045,17 +1051,16 @@ defmodule Emisar.SSOTest do
         default_runner_access_mode: :all
       }
 
-      assert {:error, :runner_access_exceeds_subject} =
-               SSO.configure_provider(attrs, admin_subject)
+      assert SSO.configure_provider(attrs, admin_subject) ==
+               {:error, :runner_access_exceeds_subject}
 
       provider = provider_fixture(account)
 
-      assert {:error, :runner_access_exceeds_subject} =
-               SSO.update_provider(
-                 provider,
-                 %{default_runner_access_mode: :all},
-                 admin_subject
-               )
+      assert SSO.update_provider(
+               provider,
+               %{default_runner_access_mode: :all},
+               admin_subject
+             ) == {:error, :runner_access_exceeds_subject}
     end
 
     test "JumpCloud is an accepted provider kind" do
@@ -1317,8 +1322,8 @@ defmodule Emisar.SSOTest do
       # have us hand over a credential they were never able to read.
       provider = provider_fixture(account, client_secret: "the-customer-s-secret")
 
-      assert {:error, :client_secret_required} =
-               SSO.update_provider(provider, %{"issuer" => "https://attacker.test"}, subject)
+      assert SSO.update_provider(provider, %{"issuer" => "https://attacker.test"}, subject) ==
+               {:error, :client_secret_required}
 
       unchanged = Repo.reload!(provider)
       assert unchanged.issuer == provider.issuer
@@ -1331,8 +1336,8 @@ defmodule Emisar.SSOTest do
     } do
       provider = provider_fixture(account, client_secret: "the-customer-s-secret")
 
-      assert {:error, :client_secret_required} =
-               SSO.update_provider(provider, %{"client_id" => "attacker-client"}, subject)
+      assert SSO.update_provider(provider, %{"client_id" => "attacker-client"}, subject) ==
+               {:error, :client_secret_required}
     end
 
     test "repointing WITH the secret is allowed — holding it is the point", %{
@@ -1400,8 +1405,7 @@ defmodule Emisar.SSOTest do
         default_role: :owner
       }
 
-      assert {:error, :role_exceeds_your_permissions} =
-               SSO.configure_provider(attrs, admin)
+      assert SSO.configure_provider(attrs, admin) == {:error, :role_exceeds_your_permissions}
     end
 
     # Admins hold manage_billing, so the finance seat is theirs to hand out and
@@ -1440,9 +1444,9 @@ defmodule Emisar.SSOTest do
       {_ub, _account_b, sb} = enterprise_owner()
       provider = provider_fixture(account_a)
 
-      assert {:error, :not_found} = SSO.fetch_provider_by_id(provider.id, sb)
-      assert {:error, :not_found} = SSO.update_provider(provider, %{name: "Hijacked"}, sb)
-      assert {:error, :not_found} = SSO.delete_provider(provider, sb)
+      assert SSO.fetch_provider_by_id(provider.id, sb) == {:error, :not_found}
+      assert SSO.update_provider(provider, %{name: "Hijacked"}, sb) == {:error, :not_found}
+      assert SSO.delete_provider(provider, sb) == {:error, :not_found}
     end
 
     test "changing the issuer to a non-https URL is rejected on update" do
@@ -1623,8 +1627,8 @@ defmodule Emisar.SSOTest do
       {_user, account, subject} = Fixtures.Subjects.owner_subject(%{})
       provider = provider_fixture(account)
 
-      assert {:error, :sso_not_available} =
-               SSO.update_provider(provider, %{name: "Renamed"}, subject)
+      assert SSO.update_provider(provider, %{name: "Renamed"}, subject) ==
+               {:error, :sso_not_available}
 
       assert Repo.reload!(provider).name == "Okta"
     end
@@ -1633,8 +1637,8 @@ defmodule Emisar.SSOTest do
       {_owner, account, _owner_subject} = enterprise_owner()
       provider = provider_fixture(account)
 
-      assert {:error, :unauthorized} =
-               SSO.update_provider(provider, %{name: "Renamed"}, viewer_in(account))
+      assert SSO.update_provider(provider, %{name: "Renamed"}, viewer_in(account)) ==
+               {:error, :unauthorized}
     end
 
     test "disabling one of two enabled providers is allowed (not the last)" do
@@ -1655,8 +1659,8 @@ defmodule Emisar.SSOTest do
       Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
       provider = provider_fixture(account)
 
-      assert {:error, :require_sso_last_provider} =
-               SSO.update_provider(provider, %{enabled: false}, subject)
+      assert SSO.update_provider(provider, %{enabled: false}, subject) ==
+               {:error, :require_sso_last_provider}
 
       assert Repo.reload!(provider).enabled
     end
@@ -1672,7 +1676,7 @@ defmodule Emisar.SSOTest do
 
       assert {:ok, %IdentityProvider{} = deleted} = SSO.delete_provider(provider, subject)
       assert deleted.deleted_at
-      assert {:error, :not_found} = SSO.fetch_provider_by_id(provider.id, subject)
+      assert SSO.fetch_provider_by_id(provider.id, subject) == {:error, :not_found}
     end
 
     test "a downgraded plan cannot delete a mapping, because deleting one can promote" do
@@ -1689,8 +1693,7 @@ defmodule Emisar.SSOTest do
 
       Fixtures.Accounts.create_subscription(account, "free")
 
-      assert {:error, :directory_sync_not_available} =
-               SSO.delete_group_mapping(mapping, subject)
+      assert SSO.delete_group_mapping(mapping, subject) == {:error, :directory_sync_not_available}
     end
 
     test "a downgraded plan can still delete — the connection outlived the plan, not the risk" do
@@ -1731,7 +1734,7 @@ defmodule Emisar.SSOTest do
       {_owner, account, _owner_subject} = enterprise_owner()
       provider = provider_fixture(account)
 
-      assert {:error, :unauthorized} = SSO.delete_provider(provider, viewer_in(account))
+      assert SSO.delete_provider(provider, viewer_in(account)) == {:error, :unauthorized}
       refute Repo.reload!(provider).deleted_at
     end
   end
@@ -1748,7 +1751,7 @@ defmodule Emisar.SSOTest do
     test "cannot delete the last enabled connection", %{account: account, subject: subject} do
       provider = provider_fixture(account)
 
-      assert {:error, :require_sso_last_provider} = SSO.delete_provider(provider, subject)
+      assert SSO.delete_provider(provider, subject) == {:error, :require_sso_last_provider}
       refute Repo.reload!(provider).deleted_at
     end
 
@@ -1788,15 +1791,15 @@ defmodule Emisar.SSOTest do
     test "a discovery failure surfaces the reason and writes no row" do
       {_owner, _account, subject} = enterprise_owner()
 
-      assert {:error, :discovery_failed} = SSO.test_provider("https://unreachable.test", subject)
+      assert SSO.test_provider("https://unreachable.test", subject) == {:error, :discovery_failed}
       refute Repo.one(IdentityProvider)
     end
 
     test "a non-https or malformed issuer is rejected before any fetch" do
       {_owner, _account, subject} = enterprise_owner()
 
-      assert {:error, :invalid_issuer} = SSO.test_provider("http://idp.test", subject)
-      assert {:error, :invalid_issuer} = SSO.test_provider("not a url", subject)
+      assert SSO.test_provider("http://idp.test", subject) == {:error, :invalid_issuer}
+      assert SSO.test_provider("not a url", subject) == {:error, :invalid_issuer}
     end
 
     test "an SSRF issuer (private/loopback/metadata) is blocked before any fetch" do
@@ -1804,21 +1807,21 @@ defmodule Emisar.SSOTest do
 
       # Each is blocked even though the stub would happily "discover" it — proving
       # the SSRF guard runs ahead of the fetch, not after.
-      assert {:error, :blocked_issuer} = SSO.test_provider("https://169.254.169.254", subject)
-      assert {:error, :blocked_issuer} = SSO.test_provider("https://10.0.0.5", subject)
-      assert {:error, :blocked_issuer} = SSO.test_provider("https://localhost:8443", subject)
+      assert SSO.test_provider("https://169.254.169.254", subject) == {:error, :blocked_issuer}
+      assert SSO.test_provider("https://10.0.0.5", subject) == {:error, :blocked_issuer}
+      assert SSO.test_provider("https://localhost:8443", subject) == {:error, :blocked_issuer}
     end
 
     test "a non-admin (no manage_sso) cannot test a connection" do
       {_owner, account, _owner_subject} = enterprise_owner()
 
-      assert {:error, :unauthorized} = SSO.test_provider("https://idp.test", viewer_in(account))
+      assert SSO.test_provider("https://idp.test", viewer_in(account)) == {:error, :unauthorized}
     end
 
     test "a free account cannot test a connection (Team-and-up gate)" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject(%{})
 
-      assert {:error, :sso_not_available} = SSO.test_provider("https://idp.test", subject)
+      assert SSO.test_provider("https://idp.test", subject) == {:error, :sso_not_available}
     end
   end
 
@@ -1866,12 +1869,12 @@ defmodule Emisar.SSOTest do
       {_user, account, _subject} = enterprise_owner()
       provider = provider_fixture(account, %{enabled: false})
 
-      assert {:error, :not_found} = SSO.fetch_provider_for_sign_in(provider.id)
+      assert SSO.fetch_provider_for_sign_in(provider.id) == {:error, :not_found}
     end
 
     test "an unknown or malformed id is :not_found, never a crash" do
-      assert {:error, :not_found} = SSO.fetch_provider_for_sign_in(Ecto.UUID.generate())
-      assert {:error, :not_found} = SSO.fetch_provider_for_sign_in("not-a-uuid")
+      assert SSO.fetch_provider_for_sign_in(Ecto.UUID.generate()) == {:error, :not_found}
+      assert SSO.fetch_provider_for_sign_in("not-a-uuid") == {:error, :not_found}
     end
   end
 
@@ -1948,7 +1951,7 @@ defmodule Emisar.SSOTest do
 
       claims = %{"sub" => "okta|other", "email" => "taken@acme.test", "email_verified" => true}
 
-      assert {:error, :email_taken} = SSO.complete_auth(provider, callback(claims), %{})
+      assert SSO.complete_auth(provider, callback(claims), %{}) == {:error, :email_taken}
 
       # The pre-existing user is untouched + no identity was bound to it.
       assert UserIdentity.Query.not_deleted()
@@ -2109,8 +2112,7 @@ defmodule Emisar.SSOTest do
 
       claims = %{"sub" => "okta|mid-flight", "email" => "mf@acme.test", "email_verified" => true}
 
-      assert {:error, :provider_disabled} =
-               SSO.complete_auth(disabled, callback(claims), %{})
+      assert SSO.complete_auth(disabled, callback(claims), %{}) == {:error, :provider_disabled}
     end
 
     test "a returning member cannot either" do
@@ -2122,8 +2124,7 @@ defmodule Emisar.SSOTest do
 
       {:ok, disabled} = SSO.update_provider(provider, %{enabled: false}, subject)
 
-      assert {:error, :provider_disabled} =
-               SSO.complete_auth(disabled, callback(claims), %{})
+      assert SSO.complete_auth(disabled, callback(claims), %{}) == {:error, :provider_disabled}
     end
   end
 
@@ -2142,8 +2143,8 @@ defmodule Emisar.SSOTest do
     test "a verified email outside the allowed domain is refused", %{provider: provider} do
       claims = %{"sub" => "okta|out", "email" => "x@evil.test", "email_verified" => true}
 
-      assert {:error, :email_domain_not_allowed} =
-               SSO.complete_auth(provider, callback(claims), %{})
+      assert SSO.complete_auth(provider, callback(claims), %{}) ==
+               {:error, :email_domain_not_allowed}
     end
 
     test "a Google hd claim matching the domain is admitted", %{provider: provider} do
@@ -2161,15 +2162,15 @@ defmodule Emisar.SSOTest do
         "hd" => "acme.test"
       }
 
-      assert {:error, :email_domain_not_allowed} =
-               SSO.complete_auth(provider, callback(claims), %{})
+      assert SSO.complete_auth(provider, callback(claims), %{}) ==
+               {:error, :email_domain_not_allowed}
     end
 
     test "no verified domain is refused when a domain is required", %{provider: provider} do
       claims = %{"sub" => "okta|nodomain"}
 
-      assert {:error, :email_domain_not_allowed} =
-               SSO.complete_auth(provider, callback(claims), %{})
+      assert SSO.complete_auth(provider, callback(claims), %{}) ==
+               {:error, :email_domain_not_allowed}
     end
   end
 
@@ -2198,11 +2199,11 @@ defmodule Emisar.SSOTest do
     end
 
     test "a garbage / too-short / wrong token is :unauthorized", %{token: token} do
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token("")
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token("ems-")
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token("ems-totally-wrong-secret")
+      assert SSO.authenticate_scim_token("") == {:error, :unauthorized}
+      assert SSO.authenticate_scim_token("ems-") == {:error, :unauthorized}
+      assert SSO.authenticate_scim_token("ems-totally-wrong-secret") == {:error, :unauthorized}
       # A correct prefix but a tampered tail must still fail the hash compare.
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token(token <> "x")
+      assert SSO.authenticate_scim_token(token <> "x") == {:error, :unauthorized}
     end
 
     test "a token whose provider has scim disabled is :unauthorized", %{
@@ -2212,7 +2213,7 @@ defmodule Emisar.SSOTest do
     } do
       {:ok, _provider} = SSO.disable_scim(provider, subject)
 
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token(token)
+      assert SSO.authenticate_scim_token(token) == {:error, :unauthorized}
     end
 
     test "token A resolves to provider A only — never account B's provider", %{
@@ -2306,8 +2307,8 @@ defmodule Emisar.SSOTest do
             %{client_id: "attacker-client"},
             %{identifier_claim: "oid"}
           ] do
-        assert {:error, :identity_namespace_locked} =
-                 SSO.update_provider(provider, attrs, subject),
+        assert SSO.update_provider(provider, attrs, subject) ==
+                 {:error, :identity_namespace_locked},
                "#{inspect(attrs)} must not be editable once identities exist"
       end
 
@@ -2487,11 +2488,10 @@ defmodule Emisar.SSOTest do
       })
 
       # The directory then presents the SAME identifier for someone else.
-      assert {:error, :email_taken} =
-               SSO.scim_provision_user(provider, %{
-                 external_id: "shared-identifier",
-                 email: second.email
-               })
+      assert SSO.scim_provision_user(provider, %{
+               external_id: "shared-identifier",
+               email: second.email
+             }) == {:error, :email_taken}
 
       request =
         SSO.LinkRequest.Query.all()
@@ -2531,11 +2531,10 @@ defmodule Emisar.SSOTest do
 
       # The directory pushes a DIFFERENT identifier for the same person; the email
       # collides, so it parks a link request rather than creating a second identity.
-      assert {:error, :email_taken} =
-               SSO.scim_provision_user(provider, %{
-                 external_id: "directory-external-E",
-                 email: user.email
-               })
+      assert SSO.scim_provision_user(provider, %{
+               external_id: "directory-external-E",
+               email: user.email
+             }) == {:error, :email_taken}
 
       request =
         SSO.LinkRequest.Query.all()
@@ -2726,7 +2725,7 @@ defmodule Emisar.SSOTest do
       existing = Fixtures.Users.create_user(%{email: "taken@acme.test"})
       attrs = scim_attrs(%{external_id: "okta|collide", email: "taken@acme.test"})
 
-      assert {:error, :email_taken} = SSO.scim_provision_user(provider, attrs)
+      assert SSO.scim_provision_user(provider, attrs) == {:error, :email_taken}
 
       # The pre-existing user is untouched + no identity was bound to it.
       assert UserIdentity.Query.not_deleted()
@@ -2868,11 +2867,10 @@ defmodule Emisar.SSOTest do
       # Refused, not absorbed. The identifier column is unique per connection and
       # Alice holds this value, so there is no row Bob can honestly occupy — the
       # directory is told, rather than handed someone else's identity.
-      assert {:error, :identifier_taken} =
-               SSO.scim_provision_user(provider, %{
-                 external_id: "collides",
-                 email: "bob@acme.test"
-               })
+      assert SSO.scim_provision_user(provider, %{
+               external_id: "collides",
+               email: "bob@acme.test"
+             }) == {:error, :identifier_taken}
 
       untouched = Repo.reload!(alices)
       assert untouched.scim_external_id == "alice-directory-id"
@@ -2924,12 +2922,11 @@ defmodule Emisar.SSOTest do
 
       update = %SCIMUserUpdate{name: {:replace, "Half Landed"}, active: false}
 
-      assert {:error, :last_owner} =
-               SSO.scim_update_user(
-                 provider,
-                 user_resource_id(provider, "okta|onlyowner"),
-                 update
-               )
+      assert SSO.scim_update_user(
+               provider,
+               user_resource_id(provider, "okta|onlyowner"),
+               update
+             ) == {:error, :last_owner}
 
       # Nothing landed: not the lifecycle, not the name, not the identity flag.
       unchanged = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
@@ -2971,8 +2968,8 @@ defmodule Emisar.SSOTest do
 
       update = %SCIMUserUpdate{name: {:replace, "New Name"}, active: false}
 
-      assert {:error, :not_found} =
-               SSO.scim_update_user(provider, user_resource_id(provider, "okta|removed"), update)
+      assert SSO.scim_update_user(provider, user_resource_id(provider, "okta|removed"), update) ==
+               {:error, :not_found}
 
       assert Repo.reload!(identity).scim_active
     end
@@ -3008,7 +3005,7 @@ defmodule Emisar.SSOTest do
                )
 
       # The connection's own session is gone…
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(sso_session)
+      assert Auth.fetch_user_and_token_by_session_token(sso_session) == {:error, :not_found}
 
       # …and the one that reaches the other workspace is untouched.
       assert {:ok, _user, _token} =
@@ -3067,12 +3064,11 @@ defmodule Emisar.SSOTest do
       Fixtures.Memberships.force_role(membership, "owner")
       demote_other_owners(account.id, except: user.id)
 
-      assert {:error, :last_owner} =
-               SSO.scim_update_user(
-                 provider,
-                 user_resource_id(provider, "okta|owner"),
-                 %SCIMUserUpdate{active: false}
-               )
+      assert SSO.scim_update_user(
+               provider,
+               user_resource_id(provider, "okta|owner"),
+               %SCIMUserUpdate{active: false}
+             ) == {:error, :last_owner}
 
       # The membership stays active and the SCIM flag is left untouched, so the
       # projection still answers active.
@@ -3084,8 +3080,8 @@ defmodule Emisar.SSOTest do
     test "returns :not_found when no identity matches the resource id" do
       %{provider: provider} = scim_provider()
 
-      assert {:error, :not_found} =
-               SSO.scim_update_user(provider, Ecto.UUID.generate(), %SCIMUserUpdate{active: false})
+      assert SSO.scim_update_user(provider, Ecto.UUID.generate(), %SCIMUserUpdate{active: false}) ==
+               {:error, :not_found}
     end
   end
 
@@ -3123,8 +3119,8 @@ defmodule Emisar.SSOTest do
     test "returns :not_found when no identity matches the resource id" do
       %{provider: provider} = scim_provider()
 
-      assert {:error, :not_found} =
-               SSO.scim_update_user(provider, Ecto.UUID.generate(), %SCIMUserUpdate{active: true})
+      assert SSO.scim_update_user(provider, Ecto.UUID.generate(), %SCIMUserUpdate{active: true}) ==
+               {:error, :not_found}
     end
 
     test "a manual break-glass suspension survives an IdP deactivate→reactivate cycle" do
@@ -3309,7 +3305,7 @@ defmodule Emisar.SSOTest do
 
     test "an unknown resource id is :not_found" do
       %{provider: provider} = scim_provider()
-      assert {:error, :not_found} = SSO.scim_fetch_user(provider, Ecto.UUID.generate())
+      assert SSO.scim_fetch_user(provider, Ecto.UUID.generate()) == {:error, :not_found}
     end
 
     test "is provider-scoped — provider B can't fetch provider A's user" do
@@ -3317,7 +3313,7 @@ defmodule Emisar.SSOTest do
       %{provider: provider_b} = scim_provider()
       %{identity: identity_a} = provision(provider_a, "okta|onlyA")
 
-      assert {:error, :not_found} = SSO.scim_fetch_user(provider_b, identity_a.id)
+      assert SSO.scim_fetch_user(provider_b, identity_a.id) == {:error, :not_found}
     end
   end
 
@@ -3388,7 +3384,7 @@ defmodule Emisar.SSOTest do
       %{provider: provider_b} = scim_provider()
       _ = provision(provider_a, "okta|onlyA")
 
-      assert {:ok, [], 0} = SSO.scim_list_users(provider_b)
+      assert SSO.scim_list_users(provider_b) === {:ok, [], 0}
     end
 
     test "returns a truthful total independently of the requested page", %{provider: provider} do
@@ -3498,11 +3494,9 @@ defmodule Emisar.SSOTest do
 
       # A mapping's administrative label does not rename the SCIM resource.
       # Filtering and serialization therefore use the same display precedence.
-      assert {:ok, [], 0} =
-               SSO.scim_list_groups(provider, display_name: "Stale mapping name")
+      assert SSO.scim_list_groups(provider, display_name: "Stale mapping name") === {:ok, [], 0}
 
-      assert {:ok, [], 0} =
-               SSO.scim_list_groups(provider, display_name: "grp-unmapped")
+      assert SSO.scim_list_groups(provider, display_name: "grp-unmapped") === {:ok, [], 0}
     end
 
     test "a group whose display was cleared still answers on its id", %{provider: provider} do
@@ -3580,7 +3574,7 @@ defmodule Emisar.SSOTest do
           member_ids: [identity.id]
         })
 
-      assert {:ok, [], 0} = SSO.scim_list_groups(provider_b)
+      assert SSO.scim_list_groups(provider_b) === {:ok, [], 0}
     end
   end
 
@@ -3748,7 +3742,7 @@ defmodule Emisar.SSOTest do
     end
 
     test "rejects a malformed id, but takes a blank display", %{provider: provider} do
-      assert {:error, :not_found} = SSO.scim_rename_group(provider, "not-a-uuid", "Platform")
+      assert SSO.scim_rename_group(provider, "not-a-uuid", "Platform") == {:error, :not_found}
 
       {:ok, group} = SSO.scim_upsert_group(provider, %{external_id: "grp-ops", member_ids: []})
 
@@ -4123,7 +4117,7 @@ defmodule Emisar.SSOTest do
       {_user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = provider_fixture(account)
 
-      assert {:error, :directory_sync_not_available} = SSO.enable_scim(provider, subject)
+      assert SSO.enable_scim(provider, subject) == {:error, :directory_sync_not_available}
       refute Repo.reload!(provider).scim_enabled
     end
 
@@ -4154,7 +4148,7 @@ defmodule Emisar.SSOTest do
       # The account IS enterprise, so this isolates the ROLE gate (manage_sso
       # fails before the plan check) — not the :directory_sync_not_available
       # plan denial the test above covers.
-      assert {:error, :unauthorized} = SSO.enable_scim(provider, viewer_in(account))
+      assert SSO.enable_scim(provider, viewer_in(account)) == {:error, :unauthorized}
       refute Repo.reload!(provider).scim_enabled
     end
 
@@ -4163,7 +4157,7 @@ defmodule Emisar.SSOTest do
       {_ub, _account_b, sb} = enterprise_owner()
       provider = provider_fixture(account_a)
 
-      assert {:error, :not_found} = SSO.enable_scim(provider, sb)
+      assert SSO.enable_scim(provider, sb) == {:error, :not_found}
     end
 
     test "a kind that can't push SCIM is refused, and keeps no token" do
@@ -4172,7 +4166,7 @@ defmodule Emisar.SSOTest do
 
       # Google has no inbound SCIM for a custom app, so a bearer minted here
       # could only ever authenticate a directory that cannot exist.
-      assert {:error, :scim_not_supported} = SSO.enable_scim(provider, subject)
+      assert SSO.enable_scim(provider, subject) == {:error, :scim_not_supported}
 
       reloaded = Repo.reload!(provider)
       refute reloaded.scim_enabled
@@ -4199,7 +4193,7 @@ defmodule Emisar.SSOTest do
 
       refute raw2 == raw1
       # The old bearer is dead the instant it's rotated; only the new one works.
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token(raw1)
+      assert SSO.authenticate_scim_token(raw1) == {:error, :unauthorized}
       assert {:ok, _} = SSO.authenticate_scim_token(raw2)
     end
 
@@ -4207,13 +4201,13 @@ defmodule Emisar.SSOTest do
       account: account,
       provider: provider
     } do
-      assert {:error, :unauthorized} = SSO.rotate_scim_token(provider, viewer_in(account))
+      assert SSO.rotate_scim_token(provider, viewer_in(account)) == {:error, :unauthorized}
     end
 
     test "a kind that can't push SCIM is refused", %{account: account, subject: subject} do
       google = provider_fixture(account, %{kind: :google_workspace, name: "Google"})
 
-      assert {:error, :scim_not_supported} = SSO.rotate_scim_token(google, subject)
+      assert SSO.rotate_scim_token(google, subject) == {:error, :scim_not_supported}
       assert is_nil(Repo.reload!(google).scim_token_prefix)
     end
 
@@ -4222,7 +4216,7 @@ defmodule Emisar.SSOTest do
     } do
       {_ub, _account_b, sb} = enterprise_owner()
 
-      assert {:error, :not_found} = SSO.rotate_scim_token(provider, sb)
+      assert SSO.rotate_scim_token(provider, sb) == {:error, :not_found}
     end
   end
 
@@ -4246,7 +4240,7 @@ defmodule Emisar.SSOTest do
       refute disabled.scim_enabled
       assert is_nil(disabled.scim_token_prefix)
       assert is_nil(disabled.scim_token_hash)
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token(raw)
+      assert SSO.authenticate_scim_token(raw) == {:error, :unauthorized}
     end
 
     test "discards the group snapshot, so re-enabling can't restore a revoked role", %{
@@ -4276,7 +4270,7 @@ defmodule Emisar.SSOTest do
       assert {:ok, disabled} = SSO.disable_scim(provider, subject)
       {:ok, reenabled, _raw} = SSO.enable_scim(disabled, subject)
 
-      assert {:ok, []} = SSO.list_synced_groups(reenabled, subject)
+      assert SSO.list_synced_groups(reenabled, subject) == {:ok, []}
 
       # SCIM does not order Users before Groups. Until the directory pushes
       # groups, there is no snapshot to reason from — so a user-first re-sync
@@ -4310,7 +4304,7 @@ defmodule Emisar.SSOTest do
       Fixtures.Accounts.create_subscription(account, "free")
 
       assert {:ok, %IdentityProvider{scim_enabled: false}} = SSO.disable_scim(provider, subject)
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token(raw)
+      assert SSO.authenticate_scim_token(raw) == {:error, :unauthorized}
     end
 
     test "hands role and runner access control back while retaining the last synced values", %{
@@ -4341,7 +4335,7 @@ defmodule Emisar.SSOTest do
       account: account,
       provider: provider
     } do
-      assert {:error, :unauthorized} = SSO.disable_scim(provider, viewer_in(account))
+      assert SSO.disable_scim(provider, viewer_in(account)) == {:error, :unauthorized}
     end
 
     test "cross-account: account B cannot disable account A's SCIM sync → :not_found", %{
@@ -4349,7 +4343,7 @@ defmodule Emisar.SSOTest do
     } do
       {_ub, _account_b, sb} = enterprise_owner()
 
-      assert {:error, :not_found} = SSO.disable_scim(provider, sb)
+      assert SSO.disable_scim(provider, sb) == {:error, :not_found}
     end
   end
 
@@ -4403,7 +4397,7 @@ defmodule Emisar.SSOTest do
       {_u, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = provider_fixture(account)
 
-      assert {:ok, []} = SSO.list_synced_groups(provider, subject)
+      assert SSO.list_synced_groups(provider, subject) == {:ok, []}
     end
 
     test "is account-scoped — another account's enterprise owner can't read it", %{
@@ -4411,7 +4405,7 @@ defmodule Emisar.SSOTest do
     } do
       {_u, _account_b, subject_b} = enterprise_owner()
 
-      assert {:error, :not_found} = SSO.list_synced_groups(provider, subject_b)
+      assert SSO.list_synced_groups(provider, subject_b) == {:error, :not_found}
     end
   end
 
@@ -4434,7 +4428,7 @@ defmodule Emisar.SSOTest do
     end
 
     test "denies a viewer (no manage_sso)", %{provider: provider, account: account} do
-      assert {:error, :unauthorized} = SSO.list_group_mappings(provider, viewer_in(account))
+      assert SSO.list_group_mappings(provider, viewer_in(account)) == {:error, :unauthorized}
     end
 
     test "a downgraded plan still reads its mappings — removing one needs no plan" do
@@ -4517,23 +4511,21 @@ defmodule Emisar.SSOTest do
     end
 
     test "denies a viewer (no manage_sso)", %{provider: provider, account: account} do
-      assert {:error, :unauthorized} =
-               SSO.create_group_mapping(
-                 provider,
-                 %{external_group_id: "grp-x", role: :admin},
-                 viewer_in(account)
-               )
+      assert SSO.create_group_mapping(
+               provider,
+               %{external_group_id: "grp-x", role: :admin},
+               viewer_in(account)
+             ) == {:error, :unauthorized}
     end
 
     test "denies a Team plan (:directory_sync_not_available)", %{provider: provider} do
       {_u, _team_account, team_subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
 
-      assert {:error, :directory_sync_not_available} =
-               SSO.create_group_mapping(
-                 provider,
-                 %{external_group_id: "grp-x", role: :admin},
-                 team_subject
-               )
+      assert SSO.create_group_mapping(
+               provider,
+               %{external_group_id: "grp-x", role: :admin},
+               team_subject
+             ) == {:error, :directory_sync_not_available}
     end
 
     test "cross-account: B can't create a mapping on A's provider (:not_found)", %{
@@ -4541,8 +4533,8 @@ defmodule Emisar.SSOTest do
     } do
       {_ub, _account_b, sb} = enterprise_owner()
 
-      assert {:error, :not_found} =
-               SSO.create_group_mapping(provider, %{external_group_id: "grp-x", role: :admin}, sb)
+      assert SSO.create_group_mapping(provider, %{external_group_id: "grp-x", role: :admin}, sb) ==
+               {:error, :not_found}
     end
   end
 
@@ -4625,7 +4617,7 @@ defmodule Emisar.SSOTest do
       {:ok, mapping_a} =
         SSO.create_group_mapping(provider, %{external_group_id: "grp-1", role: :admin}, subject)
 
-      assert {:error, :not_found} = SSO.update_group_mapping(mapping_a, %{role: :viewer}, sb)
+      assert SSO.update_group_mapping(mapping_a, %{role: :viewer}, sb) == {:error, :not_found}
     end
   end
 
@@ -4665,7 +4657,7 @@ defmodule Emisar.SSOTest do
       {:ok, mapping_a} =
         SSO.create_group_mapping(provider, %{external_group_id: "grp-1", role: :admin}, subject)
 
-      assert {:error, :not_found} = SSO.delete_group_mapping(mapping_a, sb)
+      assert SSO.delete_group_mapping(mapping_a, sb) == {:error, :not_found}
     end
   end
 
@@ -4699,8 +4691,8 @@ defmodule Emisar.SSOTest do
     end
 
     test "is permission and account scoped", %{provider: provider, account: account} do
-      assert {:error, :unauthorized} =
-               SSO.list_group_runner_access_mappings(provider, viewer_in(account))
+      assert SSO.list_group_runner_access_mappings(provider, viewer_in(account)) ==
+               {:error, :unauthorized}
 
       {_user, _other_account, other_subject} = enterprise_owner()
 
@@ -4816,47 +4808,44 @@ defmodule Emisar.SSOTest do
       {:ok, _membership} =
         Accounts.update_membership_runner_access(membership, db_access, owner_subject)
 
-      assert {:error, :runner_access_exceeds_subject} =
-               SSO.create_group_runner_access_mapping(
-                 provider,
-                 %{
-                   external_group_id: "grp-app",
-                   runner_access_mode: :restricted,
-                   scope: ["group:app"]
-                 },
-                 Fixtures.Subjects.membership_subject(membership)
-               )
+      assert SSO.create_group_runner_access_mapping(
+               provider,
+               %{
+                 external_group_id: "grp-app",
+                 runner_access_mode: :restricted,
+                 scope: ["group:app"]
+               },
+               Fixtures.Subjects.membership_subject(membership)
+             ) == {:error, :runner_access_exceeds_subject}
     end
 
     test "a malformed selection from another account is still not_found", %{provider: provider} do
       {_user, _other_account, other_subject} = enterprise_owner()
 
-      assert {:error, :not_found} =
-               SSO.create_group_runner_access_mapping(
-                 provider,
-                 %{
-                   external_group_id: "grp-x",
-                   runner_access_mode: :restricted,
-                   scope: ["not-a-selector"]
-                 },
-                 other_subject
-               )
+      assert SSO.create_group_runner_access_mapping(
+               provider,
+               %{
+                 external_group_id: "grp-x",
+                 runner_access_mode: :restricted,
+                 scope: ["not-a-selector"]
+               },
+               other_subject
+             ) == {:error, :not_found}
     end
 
     test "a malformed selection a viewer submits is still unauthorized", %{
       provider: provider,
       account: account
     } do
-      assert {:error, :unauthorized} =
-               SSO.create_group_runner_access_mapping(
-                 provider,
-                 %{
-                   external_group_id: "grp-x",
-                   runner_access_mode: :restricted,
-                   scope: ["not-a-selector"]
-                 },
-                 viewer_in(account)
-               )
+      assert SSO.create_group_runner_access_mapping(
+               provider,
+               %{
+                 external_group_id: "grp-x",
+                 runner_access_mode: :restricted,
+                 scope: ["not-a-selector"]
+               },
+               viewer_in(account)
+             ) == {:error, :unauthorized}
     end
 
     test "the database rejects an account/provider tenant mismatch", %{
@@ -4896,32 +4885,29 @@ defmodule Emisar.SSOTest do
 
       admin_subject = Fixtures.Subjects.membership_subject(membership)
 
-      assert {:error, :runner_access_exceeds_subject} =
-               SSO.create_group_runner_access_mapping(
-                 provider,
-                 %{external_group_id: "grp-all", runner_access_mode: :all},
-                 admin_subject
-               )
+      assert SSO.create_group_runner_access_mapping(
+               provider,
+               %{external_group_id: "grp-all", runner_access_mode: :all},
+               admin_subject
+             ) == {:error, :runner_access_exceeds_subject}
     end
 
     test "denies a viewer (no manage_sso)", %{provider: provider, account: account} do
-      assert {:error, :unauthorized} =
-               SSO.create_group_runner_access_mapping(
-                 provider,
-                 %{external_group_id: "grp-x", runner_access_mode: :all},
-                 viewer_in(account)
-               )
+      assert SSO.create_group_runner_access_mapping(
+               provider,
+               %{external_group_id: "grp-x", runner_access_mode: :all},
+               viewer_in(account)
+             ) == {:error, :unauthorized}
     end
 
     test "is account scoped", %{provider: provider} do
       {_user, _other_account, other_subject} = enterprise_owner()
 
-      assert {:error, :not_found} =
-               SSO.create_group_runner_access_mapping(
-                 provider,
-                 %{external_group_id: "grp-x", runner_access_mode: :all},
-                 other_subject
-               )
+      assert SSO.create_group_runner_access_mapping(
+               provider,
+               %{external_group_id: "grp-x", runner_access_mode: :all},
+               other_subject
+             ) == {:error, :not_found}
     end
   end
 
@@ -5034,12 +5020,11 @@ defmodule Emisar.SSOTest do
 
       {_user, _other_account, other_subject} = enterprise_owner()
 
-      assert {:error, :not_found} =
-               SSO.update_group_runner_access_mapping(
-                 mapping,
-                 %{runner_access_mode: :all},
-                 other_subject
-               )
+      assert SSO.update_group_runner_access_mapping(
+               mapping,
+               %{runner_access_mode: :all},
+               other_subject
+             ) == {:error, :not_found}
     end
   end
 
@@ -5087,8 +5072,8 @@ defmodule Emisar.SSOTest do
 
       {_user, _other_account, other_subject} = enterprise_owner()
 
-      assert {:error, :not_found} =
-               SSO.delete_group_runner_access_mapping(mapping, other_subject)
+      assert SSO.delete_group_runner_access_mapping(mapping, other_subject) ==
+               {:error, :not_found}
     end
   end
 
@@ -5152,7 +5137,7 @@ defmodule Emisar.SSOTest do
     end
 
     test "denies a viewer (no manage_sso)", %{account: account} do
-      assert {:error, :unauthorized} = SSO.list_pending_link_request_facts(viewer_in(account))
+      assert SSO.list_pending_link_request_facts(viewer_in(account)) == {:error, :unauthorized}
     end
 
     test "is account-scoped — B never sees A's pending", %{account: account} do
@@ -5178,8 +5163,8 @@ defmodule Emisar.SSOTest do
     end
 
     test "an unknown or malformed id is :not_found (approved/dismissed requests are gone)" do
-      assert {:error, :not_found} = SSO.fetch_pending_link_request(Ecto.UUID.generate())
-      assert {:error, :not_found} = SSO.fetch_pending_link_request("not-a-uuid")
+      assert SSO.fetch_pending_link_request(Ecto.UUID.generate()) == {:error, :not_found}
+      assert SSO.fetch_pending_link_request("not-a-uuid") == {:error, :not_found}
     end
   end
 
@@ -5223,12 +5208,11 @@ defmodule Emisar.SSOTest do
     end
 
     test "an admin can't map a group to owner", %{provider: provider, admin: admin} do
-      assert {:error, :role_exceeds_your_permissions} =
-               SSO.create_group_mapping(
-                 provider,
-                 %{"external_group_id" => "grp-founders", "role" => "owner"},
-                 admin
-               )
+      assert SSO.create_group_mapping(
+               provider,
+               %{"external_group_id" => "grp-founders", "role" => "owner"},
+               admin
+             ) == {:error, :role_exceeds_your_permissions}
     end
 
     # Admins hold manage_billing, so the finance seat grants them nothing new and
@@ -5302,12 +5286,11 @@ defmodule Emisar.SSOTest do
           "email_verified" => true
         })
 
-      assert {:error, :link_target_outranks_approver} =
-               SSO.approve_link_request(
-                 request,
-                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
-                 admin
-               )
+      assert SSO.approve_link_request(
+               request,
+               %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               admin
+             ) == {:error, :link_target_outranks_approver}
     end
 
     test "a request inserted after the sweep is still refused", %{
@@ -5343,12 +5326,11 @@ defmodule Emisar.SSOTest do
       # fingerprint, taken under the issuer that has since been replaced.
       {:ok, late} = Repo.insert(Map.put(request, :id, Ecto.UUID.generate()))
 
-      assert {:error, :identity_namespace_changed} =
-               SSO.approve_link_request(
-                 late,
-                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
-                 subject
-               )
+      assert SSO.approve_link_request(
+               late,
+               %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               subject
+             ) == {:error, :identity_namespace_changed}
 
       refute Repo.one(SSO.UserIdentity)
     end
@@ -5384,12 +5366,11 @@ defmodule Emisar.SSOTest do
                  subject
                )
 
-      assert {:error, :not_found} =
-               SSO.approve_link_request(
-                 request,
-                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
-                 subject
-               )
+      assert SSO.approve_link_request(
+               request,
+               %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               subject
+             ) == {:error, :not_found}
 
       refute Repo.one(SSO.UserIdentity)
     end
@@ -5482,12 +5463,11 @@ defmodule Emisar.SSOTest do
 
       Fixtures.Memberships.force_role(admin_membership, "viewer")
 
-      assert {:error, :unauthorized} =
-               SSO.approve_link_request(
-                 request,
-                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
-                 admin
-               )
+      assert SSO.approve_link_request(
+               request,
+               %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               admin
+             ) == {:error, :unauthorized}
 
       refute Repo.one(SSO.UserIdentity)
     end
@@ -5526,12 +5506,11 @@ defmodule Emisar.SSOTest do
 
       Fixtures.Memberships.force_role(approver_membership, "admin")
 
-      assert {:error, :link_target_outranks_approver} =
-               SSO.approve_link_request(
-                 request,
-                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
-                 approver
-               )
+      assert SSO.approve_link_request(
+               request,
+               %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               approver
+             ) == {:error, :link_target_outranks_approver}
     end
 
     test "an approver demoted while their page sat open is refused", %{
@@ -5571,12 +5550,11 @@ defmodule Emisar.SSOTest do
       # The subject in hand still says admin; the row no longer does.
       Fixtures.Memberships.force_role(admin_membership, "viewer")
 
-      assert {:error, :unauthorized} =
-               SSO.approve_link_request(
-                 request,
-                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
-                 admin
-               )
+      assert SSO.approve_link_request(
+               request,
+               %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               admin
+             ) == {:error, :unauthorized}
 
       refute Repo.one(SSO.UserIdentity)
     end
@@ -5623,12 +5601,11 @@ defmodule Emisar.SSOTest do
 
       Fixtures.Memberships.force_role(target_membership, "owner")
 
-      assert {:error, :link_target_outranks_approver} =
-               SSO.approve_link_request(
-                 request,
-                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
-                 admin
-               )
+      assert SSO.approve_link_request(
+               request,
+               %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               admin
+             ) == {:error, :link_target_outranks_approver}
 
       # Nothing was bound.
       refute Repo.one(SSO.UserIdentity)
@@ -5665,12 +5642,11 @@ defmodule Emisar.SSOTest do
           "email_verified" => true
         })
 
-      assert {:error, :link_target_in_other_accounts} =
-               SSO.approve_link_request(
-                 request,
-                 %RunnerAccess{mode: :none, groups: [], runner_ids: []},
-                 subject
-               )
+      assert SSO.approve_link_request(
+               request,
+               %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               subject
+             ) == {:error, :link_target_in_other_accounts}
     end
 
     test "rebinds the member's existing identity instead of giving them a second", %{
@@ -5865,8 +5841,8 @@ defmodule Emisar.SSOTest do
           "email_verified" => true
         })
 
-      assert {:error, :email_taken} =
-               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+      assert SSO.approve_link_request(request, RunnerAccess.none(), subject) ==
+               {:error, :email_taken}
 
       # The request survives so an admin can resolve it another way.
       assert [_still_pending] = link_requests(provider.id)
@@ -5875,8 +5851,8 @@ defmodule Emisar.SSOTest do
     test "denies a viewer and leaves the request pending", %{account: account, provider: provider} do
       request = capture_request(provider, %{"sub" => "okta|v", "email" => "v@acme.test"})
 
-      assert {:error, :unauthorized} =
-               SSO.approve_link_request(request, RunnerAccess.none(), viewer_in(account))
+      assert SSO.approve_link_request(request, RunnerAccess.none(), viewer_in(account)) ==
+               {:error, :unauthorized}
 
       assert [_still_pending] = link_requests(provider.id)
     end
@@ -5888,8 +5864,8 @@ defmodule Emisar.SSOTest do
       # request is even fetched — so a free-plan owner is denied outright.
       {_u, _free_account, free_subject} = Fixtures.Subjects.owner_subject(%{})
 
-      assert {:error, :sso_not_available} =
-               SSO.approve_link_request(request, RunnerAccess.none(), free_subject)
+      assert SSO.approve_link_request(request, RunnerAccess.none(), free_subject) ==
+               {:error, :sso_not_available}
 
       assert [_still_pending] = link_requests(provider.id)
     end
@@ -5898,8 +5874,7 @@ defmodule Emisar.SSOTest do
       {_ub, _account_b, sb} = enterprise_owner()
       request = capture_request(provider, %{"sub" => "okta|x", "email" => "x@acme.test"})
 
-      assert {:error, :not_found} =
-               SSO.approve_link_request(request, RunnerAccess.none(), sb)
+      assert SSO.approve_link_request(request, RunnerAccess.none(), sb) == {:error, :not_found}
 
       assert [_still_pending] = link_requests(provider.id)
     end
@@ -5922,7 +5897,7 @@ defmodule Emisar.SSOTest do
       attrs = %{external_id: "okta|scim", email: "member@acme.test", full_name: "Member"}
 
       # Collision → :email_taken (the controller renders 409), but a matched request is parked.
-      assert {:error, :email_taken} = SSO.scim_provision_user(provider, attrs)
+      assert SSO.scim_provision_user(provider, attrs) == {:error, :email_taken}
       assert [request] = link_requests(provider.id)
       assert request.matched_user_id == member.id
 
@@ -5958,7 +5933,7 @@ defmodule Emisar.SSOTest do
     test "denies a viewer", %{account: account, provider: provider} do
       request = capture_request(provider, %{"sub" => "okta|dv", "email" => "dv@acme.test"})
 
-      assert {:error, :unauthorized} = SSO.dismiss_link_request(request, viewer_in(account))
+      assert SSO.dismiss_link_request(request, viewer_in(account)) == {:error, :unauthorized}
       assert [_still_pending] = link_requests(provider.id)
     end
 
@@ -5966,7 +5941,7 @@ defmodule Emisar.SSOTest do
       {_ub, _account_b, sb} = enterprise_owner()
       request = capture_request(provider, %{"sub" => "okta|dx", "email" => "dx@acme.test"})
 
-      assert {:error, :not_found} = SSO.dismiss_link_request(request, sb)
+      assert SSO.dismiss_link_request(request, sb) == {:error, :not_found}
       assert [_still_pending] = link_requests(provider.id)
     end
   end
@@ -5989,7 +5964,7 @@ defmodule Emisar.SSOTest do
         })
         |> Repo.insert()
 
-      assert {:ok, 1} = SSO.retire_admin_approved_identities(user, Repo)
+      assert SSO.retire_admin_approved_identities(user, Repo) === {:ok, 1}
       assert Repo.reload!(admin_approved).deleted_at
     end
 
@@ -6009,7 +5984,7 @@ defmodule Emisar.SSOTest do
         })
         |> Repo.insert()
 
-      assert {:ok, 0} = SSO.retire_admin_approved_identities(user, Repo)
+      assert SSO.retire_admin_approved_identities(user, Repo) === {:ok, 0}
       refute Repo.reload!(from_the_directory).deleted_at
     end
   end

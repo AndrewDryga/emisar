@@ -44,18 +44,18 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
         await_blocked_by(contender_backend, inserter_backend)
 
         send(inserter.pid, :commit)
-        assert {:ok, :committed} = Task.await(inserter, 30_000)
-        assert :ok = Task.await(contender, 30_000)
+        assert Task.await(inserter, 30_000) == {:ok, :committed}
+        assert Task.await(contender, 30_000) == :ok
 
         for _ <- 1..4 do
-          assert :ok = Auth.check_security_attempt(user, :inbox_step_up, 5, 300_000)
+          assert Auth.check_security_attempt(user, :inbox_step_up, 5, 300_000) == :ok
         end
 
-        assert {:error, :rate_limited, :exhausted} =
-                 Auth.check_security_attempt(user, :inbox_step_up, 5, 300_000)
+        assert Auth.check_security_attempt(user, :inbox_step_up, 5, 300_000) ==
+                 {:error, :rate_limited, :exhausted}
 
-        assert {:error, :rate_limited, :capped} =
-                 Auth.check_security_attempt(user, :inbox_step_up, 5, 300_000)
+        assert Auth.check_security_attempt(user, :inbox_step_up, 5, 300_000) ==
+                 {:error, :rate_limited, :capped}
 
         assert [%SecurityAttemptWindow{attempt_count: 6}] =
                  Repo.all(SecurityAttemptWindow.Query.by_user_and_scope(user.id, :inbox_step_up))
@@ -69,7 +69,7 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
   test "the final allowance and first rejection serialize behind the same row lock" do
     unboxed_user(fn user ->
       for _ <- 1..4 do
-        assert :ok = Auth.check_security_attempt(user, :email_change_issue, 5, 300_000)
+        assert Auth.check_security_attempt(user, :email_change_issue, 5, 300_000) == :ok
       end
 
       parent = self()
@@ -119,7 +119,7 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
         |> await_any_blocked_by(locker_backend)
 
         send(locker.pid, :release)
-        assert {:ok, :released} = Task.await(locker, 30_000)
+        assert Task.await(locker, 30_000) == {:ok, :released}
 
         results = Enum.map(contenders, &Task.await(&1, 30_000))
         assert Enum.sort(results) == [:ok, {:error, :rate_limited, :exhausted}]
@@ -138,7 +138,7 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
 
   test "database time is sampled only after a contended row lock is acquired" do
     unboxed_user(fn user ->
-      assert :ok = Auth.check_security_attempt(user, :mfa_enrollment_issue, 1, 300_000)
+      assert Auth.check_security_attempt(user, :mfa_enrollment_issue, 1, 300_000) == :ok
 
       expires_at = DateTime.add(database_now(), 5, :second)
 
@@ -180,7 +180,7 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
 
         send(locker.pid, :release)
         assert {:ok, %SecurityAttemptWindow{}} = Task.await(locker, 30_000)
-        assert :ok = Task.await(waiter, 30_000)
+        assert Task.await(waiter, 30_000) == :ok
 
         assert %SecurityAttemptWindow{attempt_count: 1} =
                  Repo.get_by!(SecurityAttemptWindow,
@@ -197,7 +197,7 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
   test "concurrent over-limit MFA attempts emit one bounded audit signal" do
     unboxed_owner(fn user, account ->
       for _ <- 1..5 do
-        assert :ok = Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000)
+        assert Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000) == :ok
       end
 
       parent = self()
@@ -239,7 +239,7 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
         |> await_any_blocked_by(locker_backend)
 
         send(locker.pid, :release)
-        assert {:ok, :released} = Task.await(locker, 30_000)
+        assert Task.await(locker, 30_000) == {:ok, :released}
 
         results = Enum.map(contenders, &Task.await(&1, 30_000))
 

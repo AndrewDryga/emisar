@@ -62,8 +62,8 @@ defmodule Emisar.PoliciesPersistenceTest do
 
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} =
-               Policies.save_rules(rules("require_approval"), viewer_subject)
+      assert Policies.save_rules(rules("require_approval"), viewer_subject) ==
+               {:error, :unauthorized}
     end
   end
 
@@ -74,13 +74,13 @@ defmodule Emisar.PoliciesPersistenceTest do
     end
 
     test "an account with no policy default-denies every dispatch", %{account: account} do
-      assert {:deny, [], "No policy is configured for this account, so this action was denied.",
-              nil} =
-               Policies.evaluate_with_policy(
-                 account.id,
-                 %{action_id: "linux.uptime", risk: :low},
-                 nil
-               )
+      assert Policies.evaluate_with_policy(
+               account.id,
+               %{action_id: "linux.uptime", risk: :low},
+               nil
+             ) ==
+               {:deny, [], "No policy is configured for this account, so this action was denied.",
+                nil}
     end
 
     test "bridges the catalog's risk atom to the stored string tiers", %{account: account} do

@@ -21,7 +21,7 @@ defmodule EmisarWeb.MCP.ActionContractTest do
         ~s({"name":"db","count":1e3,"ratio":0.1234567890123456789,"force":true,"timeout":"1h30m","path":"/var/log/app.log","tags":["a","b"],"ports":[80,"443"]})
       )
 
-    assert :ok = ActionContract.validate(args, action)
+    assert ActionContract.validate(args, action) == :ok
   end
 
   test "rejects unknown, missing, mistyped, and out-of-range arguments" do
@@ -49,11 +49,10 @@ defmodule EmisarWeb.MCP.ActionContractTest do
         arg("tiny", "number", validation: %{"min" => 0})
       ])
 
-    assert :ok =
-             validate_json(
-               ~s({"ratio":1.250,"large":9007199254740993,"tiny":1e-400}),
-               exact
-             )
+    assert validate_json(
+             ~s({"ratio":1.250,"large":9007199254740993,"tiny":1e-400}),
+             exact
+           ) == :ok
 
     assert_issue_json(
       ~s({"ratio":1.2500000000000001,"large":9007199254740993,"tiny":1e-400}),
@@ -77,7 +76,7 @@ defmodule EmisarWeb.MCP.ActionContractTest do
     )
 
     zero = action([arg("value", "number", validation: %{"enum" => [0]})])
-    assert :ok = validate_json(~s({"value":-0}), zero)
+    assert validate_json(~s({"value":-0}), zero) == :ok
     assert_issue_json(~s({"value":1e-400}), zero, "value", "enum")
 
     decimal_max = action([arg("value", "number", validation: %{"max" => 1.25})])
@@ -93,7 +92,7 @@ defmodule EmisarWeb.MCP.ActionContractTest do
     action = action([arg("value", "number")])
 
     for raw <- ["2e-324", "3e-324", "1.797693134862315807e308"] do
-      assert :ok = validate_json(~s({"value":#{raw}}), action)
+      assert validate_json(~s({"value":#{raw}}), action) == :ok
     end
 
     for raw <- ["1.797693134862315808e308", "1e309"] do
@@ -116,7 +115,7 @@ defmodule EmisarWeb.MCP.ActionContractTest do
     assert_issue(%{"delay" => "500ms"}, action, "delay", "min_duration")
     assert_issue(%{"delay" => "2h"}, action, "delay", "max_duration")
     assert_issue(%{"file" => "relative.log"}, action, "file", "path")
-    assert :ok = ActionContract.validate(%{"delay" => "1h", "file" => "/var/log/app"}, action)
+    assert ActionContract.validate(%{"delay" => "1h", "file" => "/var/log/app"}, action) == :ok
   end
 
   test "defers patterns to the runner and matches Go duration range semantics" do
@@ -126,36 +125,32 @@ defmodule EmisarWeb.MCP.ActionContractTest do
         arg("delay", "duration", validation: %{"min_duration" => "1ns"})
       ])
 
-    assert :ok = ActionContract.validate(%{"name" => "safe\n"}, action)
+    assert ActionContract.validate(%{"name" => "safe\n"}, action) == :ok
     assert_issue(%{"delay" => "0.6ns0.6ns"}, action, "delay", "min_duration")
     assert_issue(%{"delay" => "2562048h"}, action, "delay", "type")
-    assert :ok = ActionContract.validate(%{"delay" => "0"}, action([arg("delay", "duration")]))
+    assert ActionContract.validate(%{"delay" => "0"}, action([arg("delay", "duration")])) == :ok
 
-    assert :ok =
-             ActionContract.validate(
-               %{"delay" => "1.0000000000000000000000000000000000000001ns"},
-               action([arg("delay", "duration", validation: %{"min_duration" => "1ns"})])
-             )
+    assert ActionContract.validate(
+             %{"delay" => "1.0000000000000000000000000000000000000001ns"},
+             action([arg("delay", "duration", validation: %{"min_duration" => "1ns"})])
+           ) == :ok
 
     tiny_fraction = "1." <> String.duplicate("0", 400) <> "1ns"
 
-    assert :ok =
-             ActionContract.validate(
-               %{"delay" => tiny_fraction},
-               action([arg("delay", "duration", validation: %{"min_duration" => "1ns"})])
-             )
+    assert ActionContract.validate(
+             %{"delay" => tiny_fraction},
+             action([arg("delay", "duration", validation: %{"min_duration" => "1ns"})])
+           ) == :ok
 
-    assert :ok =
-             ActionContract.validate(
-               %{"delay" => "2562047h47m16.854775807s"},
-               action([arg("delay", "duration")])
-             )
+    assert ActionContract.validate(
+             %{"delay" => "2562047h47m16.854775807s"},
+             action([arg("delay", "duration")])
+           ) == :ok
 
-    assert :ok =
-             ActionContract.validate(
-               %{"delay" => "-2562047h47m16.854775808s"},
-               action([arg("delay", "duration")])
-             )
+    assert ActionContract.validate(
+             %{"delay" => "-2562047h47m16.854775808s"},
+             action([arg("delay", "duration")])
+           ) == :ok
   end
 
   test "renders declared defaults as browser form values" do

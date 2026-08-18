@@ -21,15 +21,15 @@ defmodule EmisarWeb.MfaChallengeHandoffTest do
     end
 
     test "a forged, malformed, or non-binary handoff is refused" do
-      assert {:error, :invalid} = MfaChallengeHandoff.verify("not-a-real-token")
-      assert {:error, :invalid} = MfaChallengeHandoff.verify(nil)
-      assert {:error, :invalid} = MfaChallengeHandoff.verify(%{user_id: Ecto.UUID.generate()})
+      assert MfaChallengeHandoff.verify("not-a-real-token") == {:error, :invalid}
+      assert MfaChallengeHandoff.verify(nil) == {:error, :invalid}
+      assert MfaChallengeHandoff.verify(%{user_id: Ecto.UUID.generate()}) == {:error, :invalid}
     end
 
     test "a handoff signed under a different salt does not verify" do
       forged = Phoenix.Token.sign(EmisarWeb.Endpoint, "some other salt", %{user_id: "whoever"})
 
-      assert {:error, :invalid} = MfaChallengeHandoff.verify(forged)
+      assert MfaChallengeHandoff.verify(forged) == {:error, :invalid}
     end
   end
 end

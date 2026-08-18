@@ -91,7 +91,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     runner = Fixtures.Runners.create_runner(connected?: true)
     run = sent_run_for(runner, 5 * 60)
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :sent
@@ -106,7 +106,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     expired = sent_run_for(runner, 11 * 60)
     eligible = sent_run_for(runner, 9 * 60)
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     assert Runs.peek_run_by_id(expired.id).status == :error
     assert Runs.peek_run_by_id(eligible.id).status == :sent
@@ -116,7 +116,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     runner = Fixtures.Runners.create_runner(connected?: true)
     run = sent_run_for(runner, 20 * 60)
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
@@ -140,7 +140,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
 
     assert started.status == :running
     assert %DateTime{} = started.started_at
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
     assert Runs.peek_run_by_id(run.id).status == :running
   end
 
@@ -160,7 +160,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     assert {:ok, successor} = Runners.connect_runner(runner)
     assert successor.connection_generation > runner.connection_generation
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :sent
@@ -182,7 +182,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     :ok = Presence.untrack(self(), Presence.topic(runner.account_id), runner.id)
     assert {:ok, _successor} = Runners.connect_runner(runner)
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
@@ -195,7 +195,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     runner = backdate_disconnect!(runner, 10 * 60)
     run = running_run_for(runner)
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
@@ -212,7 +212,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
       |> Ecto.Changeset.change(status: :cancelling, reason_text: "operator requested stop")
       |> Repo.update!()
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
@@ -223,7 +223,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     runner = Fixtures.Runners.create_runner(connected?: true)
     run = running_run_for(runner)
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     assert Runs.peek_run_by_id(run.id).status == :running
   end
@@ -244,7 +244,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     assert {:ok, successor} = Runners.connect_runner(runner)
     assert successor.connection_generation > runner.connection_generation
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     assert Runs.peek_run_by_id(run.id).status == :running
   end
@@ -254,7 +254,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     runner = backdate_disconnect!(runner, 5)
     run = running_run_for(runner)
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     assert Runs.peek_run_by_id(run.id).status == :running
   end
@@ -270,7 +270,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     assert is_nil(Repo.reload!(runner).last_disconnected_at)
     run = running_run_for(runner)
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     assert Runs.peek_run_by_id(run.id).status == :error
   end
@@ -282,7 +282,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     runner = Fixtures.Runners.create_runner(connected?: false)
     run = sent_run_for(runner, 5 * 60)
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
@@ -296,7 +296,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     runner = backdate_disconnect!(runner, 10 * 60)
     runs = Enum.map(1..3, fn _ -> pending_run_for(runner, 5 * 60) end)
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     assert Enum.all?(runs, fn run ->
              reloaded = Runs.peek_run_by_id(run.id)
@@ -310,7 +310,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     sent = sent_run_for(runner, 20 * 60)
     pending = pending_run_for(runner, 0)
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     assert Runs.peek_run_by_id(sent.id).status == :error
     assert Runs.peek_run_by_id(pending.id).status == :sent
@@ -326,7 +326,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     {:ok, _} = Emisar.Runners.disable_runner(runner, subject)
     run = sent_run_for(runner, 5 * 60)
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
@@ -340,7 +340,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
 
     {:ok, _} = Emisar.Runners.delete_runner(runner, subject)
 
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error
@@ -353,7 +353,7 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     run = sent_run_for(runner, 5 * 60)
 
     {:ok, _} = Emisar.Runners.delete_runner(runner, subject)
-    assert :ok = DispatchTimeout.execute([])
+    assert DispatchTimeout.execute([]) == :ok
 
     reloaded = Runs.peek_run_by_id(run.id)
     assert reloaded.status == :error

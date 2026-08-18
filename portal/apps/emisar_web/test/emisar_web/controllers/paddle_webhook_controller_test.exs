@@ -38,14 +38,7 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
   # An account with a Paddle customer attached — the webhook resolves the
   # account by `data.customer_id`, so without this the event is a no-op.
   defp account_with_customer(customer_id) do
-    {_user, account, _subject} = Fixtures.Subjects.owner_subject()
-
-    {:ok, account} =
-      account
-      |> Ecto.Changeset.change(paddle_customer_id: customer_id)
-      |> Repo.update()
-
-    account
+    Fixtures.Accounts.create_account(paddle_customer_id: customer_id)
   end
 
   defp subscription_event(opts) do
@@ -287,8 +280,8 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
       payload = Jason.encode!(event)
       signature = "ts=1;h1=deadbeef"
 
-      assert :ok = Billing.ingest_paddle_webhook(payload, signature)
-      assert {:duplicate, "evt_ctx"} = Billing.ingest_paddle_webhook(payload, signature)
+      assert Billing.ingest_paddle_webhook(payload, signature) == :ok
+      assert Billing.ingest_paddle_webhook(payload, signature) == {:duplicate, "evt_ctx"}
 
       assert subscription_for(account.id).paddle_subscription_id == "sub_ctx"
     end

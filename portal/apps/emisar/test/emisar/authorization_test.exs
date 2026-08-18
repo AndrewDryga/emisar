@@ -36,8 +36,8 @@ defmodule Emisar.AuthorizationTest do
       # Account-less subject with the empty permission set — emulates a
       # caller from before login completes / from a misconfigured plug.
       subject = %Subject{account: nil, role: nil, permissions: MapSet.new()}
-      assert {:error, :unauthorized} = Emisar.Audit.list_events(subject)
-      assert {:error, :unauthorized} = Emisar.Audit.list_events(subject, page: [limit: 5])
+      assert Emisar.Audit.list_events(subject) == {:error, :unauthorized}
+      assert Emisar.Audit.list_events(subject, page: [limit: 5]) == {:error, :unauthorized}
     end
 
     test "list_events scopes to the subject's account (cross-account isolation)" do
@@ -61,7 +61,7 @@ defmodule Emisar.AuthorizationTest do
       {:ok, event_in_b} = Emisar.Audit.log(account_b.id, "secret.in.b", actor_kind: "system")
 
       subject = subject_with_role(account_a, :viewer)
-      assert {:error, :not_found} = Emisar.Audit.fetch_event_by_id(event_in_b.id, subject)
+      assert Emisar.Audit.fetch_event_by_id(event_in_b.id, subject) == {:error, :not_found}
     end
   end
 
@@ -80,11 +80,10 @@ defmodule Emisar.AuthorizationTest do
     test "viewer is rejected from save_rules", %{account: account} do
       subject = subject_with_role(account, :viewer)
 
-      assert {:error, :unauthorized} =
-               Emisar.Policies.save_rules(
-                 %{"schema_version" => 2, "defaults" => %{}, "overrides" => []},
-                 subject
-               )
+      assert Emisar.Policies.save_rules(
+               %{"schema_version" => 2, "defaults" => %{}, "overrides" => []},
+               subject
+             ) == {:error, :unauthorized}
     end
 
     test "admin can save_rules", %{account: account} do
@@ -117,7 +116,7 @@ defmodule Emisar.AuthorizationTest do
 
       subject = subject_with_role(account_a, :owner)
       # account_a never had a policy seeded → :not_found regardless.
-      assert {:error, :not_found} = Emisar.Policies.fetch_policy(subject)
+      assert Emisar.Policies.fetch_policy(subject) == {:error, :not_found}
     end
   end
 
@@ -134,16 +133,15 @@ defmodule Emisar.AuthorizationTest do
     test "viewer is rejected from create_runbook", %{account: account} do
       subject = subject_with_role(account, :viewer)
 
-      assert {:error, :unauthorized} =
-               Emisar.Runbooks.create_runbook(
-                 %{
-                   "name" => "x",
-                   "slug" => "x",
-                   "title" => "X",
-                   "definition" => Fixtures.Runbooks.default_definition()
-                 },
-                 subject
-               )
+      assert Emisar.Runbooks.create_runbook(
+               %{
+                 "name" => "x",
+                 "slug" => "x",
+                 "title" => "X",
+                 "definition" => Fixtures.Runbooks.default_definition()
+               },
+               subject
+             ) == {:error, :unauthorized}
     end
 
     test "admin can create_runbook", %{account: account} do
@@ -203,21 +201,19 @@ defmodule Emisar.AuthorizationTest do
          %{runbook_b: runbook_b, subject_a: subject_a} do
       base_sha = Emisar.Runbooks.definition_digest(runbook_b.draft_definition)
 
-      assert {:error, :not_found} =
-               Emisar.Runbooks.save_draft(
-                 runbook_b,
-                 %{description: "hijacked"},
-                 base_sha,
-                 subject_a
-               )
+      assert Emisar.Runbooks.save_draft(
+               runbook_b,
+               %{description: "hijacked"},
+               base_sha,
+               subject_a
+             ) == {:error, :not_found}
     end
 
     test "an owner of A can't dispatch B's runbook", %{
       runbook_b: runbook_b,
       subject_a: subject_a
     } do
-      assert {:error, :not_found} =
-               Emisar.Runbooks.dispatch_runbook(runbook_b, "go", subject_a)
+      assert Emisar.Runbooks.dispatch_runbook(runbook_b, "go", subject_a) == {:error, :not_found}
     end
   end
 

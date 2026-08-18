@@ -67,7 +67,7 @@ defmodule Emisar.RepoTest do
         end)
         |> Multi.run(:fail, fn _repo, _changes -> {:error, :forced_rollback} end)
 
-      assert {:error, :forced_rollback} = Repo.commit_multi(multi)
+      assert Repo.commit_multi(multi) == {:error, :forced_rollback}
 
       # The write rolled back...
       assert {:ok, %{full_name: "Original Name"}} = Users.fetch_user_by_id(user.id)

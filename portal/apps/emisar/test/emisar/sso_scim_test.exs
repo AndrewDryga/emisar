@@ -17,9 +17,10 @@ defmodule Emisar.SSOSCIMTest do
   end
 
   defp provider_fixture(account, attrs \\ %{}) do
-    attrs =
+    Fixtures.SSO.create_identity_provider(
       Map.merge(
         %{
+          account_id: account.id,
           kind: :okta,
           name: "Okta",
           issuer: "https://idp.test",
@@ -30,9 +31,7 @@ defmodule Emisar.SSOSCIMTest do
         },
         Map.new(attrs)
       )
-
-    {:ok, provider} = Repo.insert(IdentityProvider.Changeset.create(account.id, attrs))
-    provider
+    )
   end
 
   # Enterprise account + provider with directory sync enabled. Returns the
@@ -72,11 +71,11 @@ defmodule Emisar.SSOSCIMTest do
     end
 
     test "a garbage / too-short / wrong token is :unauthorized", %{token: token} do
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token("")
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token("ems-")
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token("ems-totally-wrong-secret")
+      assert SSO.authenticate_scim_token("") == {:error, :unauthorized}
+      assert SSO.authenticate_scim_token("ems-") == {:error, :unauthorized}
+      assert SSO.authenticate_scim_token("ems-totally-wrong-secret") == {:error, :unauthorized}
       # A correct prefix but a tampered tail must still fail the hash compare.
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token(token <> "x")
+      assert SSO.authenticate_scim_token(token <> "x") == {:error, :unauthorized}
     end
 
     test "a token whose provider has scim disabled is :unauthorized", %{
@@ -86,7 +85,7 @@ defmodule Emisar.SSOSCIMTest do
     } do
       {:ok, _provider} = SSO.disable_scim(provider, subject)
 
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token(token)
+      assert SSO.authenticate_scim_token(token) == {:error, :unauthorized}
     end
 
     test "a disabled account's retained SCIM token is unauthorized until re-enabled", %{
@@ -102,7 +101,7 @@ defmodule Emisar.SSOSCIMTest do
                  subject
                )
 
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token(token)
+      assert SSO.authenticate_scim_token(token) == {:error, :unauthorized}
 
       assert {:ok, _account} =
                Accounts.set_account_disabled_for_support(
@@ -240,8 +239,7 @@ defmodule Emisar.SSOSCIMTest do
 
       # An operator removed them from the team (membership soft-deleted) while
       # the identity lived on.
-      {:ok, _} =
-        membership |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update()
+      Fixtures.Memberships.mark_membership_as_deleted(membership)
 
       refute Accounts.peek_sync_membership(account.id, user.id)
 
@@ -257,7 +255,7 @@ defmodule Emisar.SSOSCIMTest do
       existing = Fixtures.Users.create_user(%{email: "taken@acme.test"})
       attrs = scim_attrs(%{external_id: "okta|collide", email: "taken@acme.test"})
 
-      assert {:error, :email_taken} = SSO.scim_provision_user(provider, attrs)
+      assert SSO.scim_provision_user(provider, attrs) == {:error, :email_taken}
 
       # The pre-existing user is untouched + no identity was bound to it.
       assert UserIdentity.Query.not_deleted()
@@ -462,8 +460,8 @@ defmodule Emisar.SSOSCIMTest do
       # single remaining active owner.
       demote_other_owners(account.id, except: user.id)
 
-      assert {:error, :last_owner} =
-               SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: false})
+      assert SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: false}) ==
+               {:error, :last_owner}
 
       # The membership stays active and the SCIM flag is left untouched, so the
       # projection still answers active.
@@ -475,8 +473,8 @@ defmodule Emisar.SSOSCIMTest do
     test "returns :not_found when no identity matches the resource id" do
       %{provider: provider} = scim_provider()
 
-      assert {:error, :not_found} =
-               SSO.scim_update_user(provider, Ecto.UUID.generate(), %SCIMUserUpdate{active: false})
+      assert SSO.scim_update_user(provider, Ecto.UUID.generate(), %SCIMUserUpdate{active: false}) ==
+               {:error, :not_found}
     end
   end
 
@@ -526,7 +524,7 @@ defmodule Emisar.SSOSCIMTest do
       assert {:ok, _provider, new_token} = SSO.rotate_scim_token(provider, subject)
       refute new_token == old_token
 
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token(old_token)
+      assert SSO.authenticate_scim_token(old_token) == {:error, :unauthorized}
       assert {:ok, _provider} = SSO.authenticate_scim_token(new_token)
     end
 
@@ -534,7 +532,7 @@ defmodule Emisar.SSOSCIMTest do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = %IdentityProvider{id: Ecto.UUID.generate()}
 
-      assert {:error, :directory_sync_not_available} = SSO.enable_scim(provider, subject)
+      assert SSO.enable_scim(provider, subject) == {:error, :directory_sync_not_available}
     end
 
     test "a non-admin (no manage_sso) cannot enable SCIM" do
@@ -551,7 +549,7 @@ defmodule Emisar.SSOSCIMTest do
 
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert {:error, :unauthorized} = SSO.enable_scim(provider, viewer_subject)
+      assert SSO.enable_scim(provider, viewer_subject) == {:error, :unauthorized}
     end
 
     test "account B's subject cannot enable SCIM on account A's provider (cross-account)" do
@@ -559,7 +557,7 @@ defmodule Emisar.SSOSCIMTest do
       {_ub, _account_b, sb} = enterprise_owner()
       provider = provider_fixture(account_a)
 
-      assert {:error, :not_found} = SSO.enable_scim(provider, sb)
+      assert SSO.enable_scim(provider, sb) == {:error, :not_found}
     end
 
     test "disable clears the token so a stale bearer can't authenticate" do
@@ -570,7 +568,7 @@ defmodule Emisar.SSOSCIMTest do
       refute disabled.scim_token_prefix
       refute disabled.scim_token_hash
 
-      assert {:error, :unauthorized} = SSO.authenticate_scim_token(token)
+      assert SSO.authenticate_scim_token(token) == {:error, :unauthorized}
     end
   end
 

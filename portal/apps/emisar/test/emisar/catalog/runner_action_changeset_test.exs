@@ -39,7 +39,7 @@ defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
       changeset = RunnerAction.Changeset.upsert(base_attrs(%{title: String.duplicate("t", 300)}))
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :title)
+      assert errors_on(changeset).title == ["should be at most 255 character(s)"]
     end
 
     test "rejects an oversized description" do
@@ -47,7 +47,7 @@ defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
         RunnerAction.Changeset.upsert(base_attrs(%{description: String.duplicate("d", 5_000)}))
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :description)
+      assert errors_on(changeset).description == ["should be at most 4096 character(s)"]
     end
 
     test "rejects an oversized args_schema" do
@@ -56,7 +56,7 @@ defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
       changeset = RunnerAction.Changeset.upsert(base_attrs(%{args_schema: huge}))
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :args_schema)
+      assert errors_on(changeset).args_schema == ["is too large (max 65536 bytes serialized)"]
     end
 
     test "bounds output schemas independently" do
@@ -70,7 +70,10 @@ defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
       huge = %{"type" => "object", "description" => String.duplicate("x", 8_192)}
       changeset = RunnerAction.Changeset.upsert(base_attrs(%{output_schema: huge}))
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :output_schema)
+
+      assert errors_on(changeset).output_schema == [
+               "is too large (max 8192 bytes serialized)"
+             ]
 
       for invalid <- [
             %{"type" => "object", "required" => "status"},
@@ -79,7 +82,10 @@ defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
           ] do
         changeset = RunnerAction.Changeset.upsert(base_attrs(%{output_schema: invalid}))
         refute changeset.valid?
-        assert Keyword.has_key?(changeset.errors, :output_schema)
+
+        assert errors_on(changeset).output_schema == [
+                 "must be a valid local Draft 2020-12 object schema"
+               ]
       end
     end
   end
@@ -96,7 +102,7 @@ defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
       changeset = RunnerAction.Changeset.upsert(base_attrs(%{action_id: "unprefixed"}))
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :action_id)
+      assert errors_on(changeset).action_id == ["has invalid format"]
     end
 
     test "rejects an id whose segment does not start with a lowercase letter" do
@@ -104,7 +110,7 @@ defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
         changeset = RunnerAction.Changeset.upsert(base_attrs(%{action_id: id}))
 
         refute changeset.valid?, id
-        assert Keyword.has_key?(changeset.errors, :action_id)
+        assert errors_on(changeset).action_id == ["has invalid format"]
       end
     end
 
@@ -113,7 +119,7 @@ defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
         changeset = RunnerAction.Changeset.upsert(base_attrs(%{action_id: id}))
 
         refute changeset.valid?, id
-        assert Keyword.has_key?(changeset.errors, :action_id)
+        assert errors_on(changeset).action_id == ["has invalid format"]
       end
     end
 
@@ -121,7 +127,7 @@ defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
       changeset = RunnerAction.Changeset.upsert(base_attrs(%{action_id: "linux.uptime\n"}))
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :action_id)
+      assert errors_on(changeset).action_id == ["has invalid format"]
     end
 
     test "rejects an oversized id past the 128-char cap" do
@@ -130,7 +136,7 @@ defmodule Emisar.Catalog.RunnerAction.ChangesetTest do
       changeset = RunnerAction.Changeset.upsert(base_attrs(%{action_id: id}))
 
       refute changeset.valid?
-      assert Keyword.has_key?(changeset.errors, :action_id)
+      assert errors_on(changeset).action_id == ["should be at most 128 character(s)"]
     end
 
     test "every id in the bundled catalog passes the new validation" do

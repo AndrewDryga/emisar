@@ -41,7 +41,7 @@ defmodule Emisar.AuthTest do
   end
 
   defp issue_mfa_enrollment_code(subject) do
-    assert {:ok, :sent} = Auth.issue_mfa_enrollment_code(subject)
+    assert Auth.issue_mfa_enrollment_code(subject) == {:ok, :sent}
     assert_received {:email, email}
     assert [code] = Regex.run(~r/\d{6}/, email.text_body)
     code
@@ -229,8 +229,8 @@ defmodule Emisar.AuthTest do
                  subject
                )
 
-      assert {:error, :account_disabled} =
-               Auth.complete_sso_account_sign_in(user, account.id, false, %RequestContext{})
+      assert Auth.complete_sso_account_sign_in(user, account.id, false, %RequestContext{}) ==
+               {:error, :account_disabled}
 
       refute Repo.one(UserToken.Query.by_context("session"))
     end
@@ -251,8 +251,8 @@ defmodule Emisar.AuthTest do
     end
 
     test "an unknown or non-binary token is :not_found, never a crash", %{user: _user} do
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token("nope")
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token("")
+      assert Auth.fetch_user_and_token_by_session_token("nope") == {:error, :not_found}
+      assert Auth.fetch_user_and_token_by_session_token("") == {:error, :not_found}
     end
 
     test "a session past its validity window no longer resolves", %{user: user} do
@@ -260,16 +260,16 @@ defmodule Emisar.AuthTest do
       # 61 days is past the 60-day session window.
       age_tokens(user.id, 61 * 24 * 60)
 
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
+      assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
     end
 
     test "a soft-deleted user's token reads as :not_found (preload scoped to live users)", %{
       user: user
     } do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, _} = user |> User.Changeset.delete() |> Repo.update()
+      Fixtures.Users.mark_user_as_deleted(user)
 
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
+      assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
     end
 
     test "a session holding a removed auth_method fails closed, never raising on load", %{
@@ -282,7 +282,7 @@ defmodule Emisar.AuthTest do
       # must resolve to :not_found, not raise ArgumentError and 500 the request.
       Ecto.Adapters.SQL.query!(Repo, "UPDATE auth_user_tokens SET auth_method = 'password'", [])
 
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
+      assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
     end
   end
 
@@ -346,19 +346,19 @@ defmodule Emisar.AuthTest do
       user = Fixtures.Users.create_user()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert :ok = Auth.delete_session_token(token)
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
+      assert Auth.delete_session_token(token) == :ok
+      assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
     end
 
     test "deleting an unknown token is an idempotent :ok" do
-      assert :ok = Auth.delete_session_token("never-existed")
+      assert Auth.delete_session_token("never-existed") == :ok
     end
 
     test "writes no user.signed_out — a forced invalidation is not a sign-out" do
       {user, _account, _subject} = Fixtures.Subjects.owner_subject()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert :ok = Auth.delete_session_token(token)
+      assert Auth.delete_session_token(token) == :ok
       assert events_of_type("user.signed_out") == []
     end
   end
@@ -369,9 +369,9 @@ defmodule Emisar.AuthTest do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       context = RequestContext.new(%{ip_address: "203.0.113.7", user_agent: "Firefox"})
 
-      assert :ok = Auth.complete_session_sign_out(token, context)
+      assert Auth.complete_session_sign_out(token, context) == :ok
 
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
+      assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
       assert [event] = events_of_type("user.signed_out")
       assert event.actor_id == user.id
       assert event.target_id == user.id
@@ -380,7 +380,7 @@ defmodule Emisar.AuthTest do
     end
 
     test "an unknown token is an idempotent :ok that audits nothing" do
-      assert :ok = Auth.complete_session_sign_out("never-existed")
+      assert Auth.complete_session_sign_out("never-existed") == :ok
       assert events_of_type("user.signed_out") == []
     end
 
@@ -404,7 +404,7 @@ defmodule Emisar.AuthTest do
       # 61 days is past the 60-day session window.
       age_tokens(user.id, 61 * 24 * 60)
 
-      assert :ok = Auth.complete_session_sign_out(token)
+      assert Auth.complete_session_sign_out(token) == :ok
 
       refute Repo.one(UserToken.Query.by_token_digest(Crypto.hash(token)))
       assert events_of_type("user.signed_out") == []
@@ -415,7 +415,7 @@ defmodule Emisar.AuthTest do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       Ecto.Adapters.SQL.query!(Repo, "UPDATE auth_user_tokens SET auth_method = 'password'", [])
 
-      assert :ok = Auth.complete_session_sign_out(token)
+      assert Auth.complete_session_sign_out(token) == :ok
 
       refute Repo.one(UserToken.Query.by_token_digest(Crypto.hash(token)))
       assert events_of_type("user.signed_out") == []
@@ -426,9 +426,9 @@ defmodule Emisar.AuthTest do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       other_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert :ok = Auth.complete_session_sign_out(token)
+      assert Auth.complete_session_sign_out(token) == :ok
 
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(token)
+      assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
       assert {:ok, %User{}, _token} = Auth.fetch_user_and_token_by_session_token(other_token)
     end
   end
@@ -439,7 +439,7 @@ defmodule Emisar.AuthTest do
       _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert {:ok, 2} = Auth.delete_all_session_tokens(user)
+      assert Auth.delete_all_session_tokens(user) === {:ok, 2}
 
       subject =
         Fixtures.Subjects.subject_for(user, Fixtures.Accounts.create_account(), role: :owner)
@@ -453,7 +453,7 @@ defmodule Emisar.AuthTest do
       _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       keep = Fixtures.Auth.create_session_token!(other, :magic_link, nil)
 
-      assert {:ok, 1} = Auth.delete_all_session_tokens(user)
+      assert Auth.delete_all_session_tokens(user) === {:ok, 1}
       # The other user's session is untouched.
       assert {:ok, %User{}, _} = Auth.fetch_user_and_token_by_session_token(keep)
     end
@@ -477,9 +477,9 @@ defmodule Emisar.AuthTest do
 
       magic_link = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert :ok = Auth.revoke_identity_sessions(user, [identity.id])
+      assert Auth.revoke_identity_sessions(user, [identity.id]) == :ok
 
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(sso)
+      assert Auth.fetch_user_and_token_by_session_token(sso) == {:error, :not_found}
       assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(magic_link)
     end
 
@@ -487,7 +487,7 @@ defmodule Emisar.AuthTest do
       user = Fixtures.Users.create_user()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert :ok = Auth.revoke_identity_sessions(user, [])
+      assert Auth.revoke_identity_sessions(user, []) == :ok
       assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(token)
     end
   end
@@ -519,8 +519,8 @@ defmodule Emisar.AuthTest do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       captured = Auth.capture_live_socket_topics(user)
 
-      assert :ok = Auth.disconnect_live_socket_topics(captured)
-      assert :ok = Auth.disconnect_live_socket_topics([])
+      assert Auth.disconnect_live_socket_topics(captured) == :ok
+      assert Auth.disconnect_live_socket_topics([]) == :ok
 
       assert {:ok, %User{}, _} = Auth.fetch_user_and_token_by_session_token(token)
     end
@@ -532,7 +532,7 @@ defmodule Emisar.AuthTest do
       )
 
       assert Code.ensure_loaded?(RaisingSessionDisconnector)
-      assert :ok = Auth.disconnect_live_socket_topics(["users_sessions:test"])
+      assert Auth.disconnect_live_socket_topics(["users_sessions:test"]) == :ok
     end
   end
 
@@ -574,8 +574,8 @@ defmodule Emisar.AuthTest do
       user = Fixtures.Users.create_user()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert :ok = Auth.broadcast_disconnect_for_user(user)
-      assert :ok = Auth.broadcast_disconnect_for_user(user, except: Crypto.hash(token))
+      assert Auth.broadcast_disconnect_for_user(user) == :ok
+      assert Auth.broadcast_disconnect_for_user(user, except: Crypto.hash(token)) == :ok
 
       # The session is still alive — broadcasting disconnects sockets, never rows.
       assert {:ok, %User{}, _} = Auth.fetch_user_and_token_by_session_token(token)
@@ -645,7 +645,7 @@ defmodule Emisar.AuthTest do
       _t2 = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       {:ok, [session | _], _} = Auth.list_sessions_for_user(nil, subject)
 
-      assert :ok = Auth.revoke_session(session.id, subject)
+      assert Auth.revoke_session(session.id, subject) == :ok
       {:ok, remaining, _} = Auth.list_sessions_for_user(nil, subject)
       assert length(remaining) == 1
     end
@@ -655,13 +655,13 @@ defmodule Emisar.AuthTest do
       _ = Fixtures.Auth.create_session_token!(other, :magic_link, nil)
       {:ok, [other_session], _} = Auth.list_sessions_for_user(nil, other_subject)
 
-      assert {:error, :not_found} = Auth.revoke_session(other_session.id, subject)
+      assert Auth.revoke_session(other_session.id, subject) == {:error, :not_found}
       # Still alive for its real owner.
       assert {:ok, [_], _} = Auth.list_sessions_for_user(nil, other_subject)
     end
 
     test "a non-uuid id is a clean :not_found (no DB touch)", %{subject: subject} do
-      assert {:error, :not_found} = Auth.revoke_session("not-a-uuid", subject)
+      assert Auth.revoke_session("not-a-uuid", subject) == {:error, :not_found}
     end
   end
 
@@ -874,8 +874,8 @@ defmodule Emisar.AuthTest do
 
       # An intercepted email gives token_id + secret but NOT the originating
       # browser's nonce → the core anti-hijack guarantee: no sign-in.
-      assert {:error, :invalid_or_expired} =
-               Auth.verify_magic_link(token_id, secret, "wrong-nonce")
+      assert Auth.verify_magic_link(token_id, secret, "wrong-nonce") ==
+               {:error, :invalid_or_expired}
 
       # …and the real browser still signs in — one wrong attempt only spent one
       # of the budget, it didn't burn the token.
@@ -887,12 +887,12 @@ defmodule Emisar.AuthTest do
       {token_id, nonce, secret} = request_magic_link(user)
       age_tokens(user.id, 16)
 
-      assert {:error, :invalid_or_expired} = Auth.verify_magic_link(token_id, secret, nonce)
+      assert Auth.verify_magic_link(token_id, secret, nonce) == {:error, :invalid_or_expired}
     end
 
     test "a malformed token id is invalid rather than a database cast error" do
-      assert {:error, :invalid_or_expired} =
-               Auth.verify_magic_link("not-a-uuid", "secret", "nonce")
+      assert Auth.verify_magic_link("not-a-uuid", "secret", "nonce") ==
+               {:error, :invalid_or_expired}
     end
 
     test "five wrong attempts lock the token — even the correct half then fails", %{user: user} do
@@ -900,12 +900,12 @@ defmodule Emisar.AuthTest do
 
       # Burn all five attempts (a wrong nonce always mismatches the high-entropy one).
       for _ <- 1..5 do
-        assert {:error, :invalid_or_expired} =
-                 Auth.verify_magic_link(token_id, secret, "wrong-nonce")
+        assert Auth.verify_magic_link(token_id, secret, "wrong-nonce") ==
+                 {:error, :invalid_or_expired}
       end
 
       # Locked: the correct (nonce, secret) no longer works.
-      assert {:error, :invalid_or_expired} = Auth.verify_magic_link(token_id, secret, nonce)
+      assert Auth.verify_magic_link(token_id, secret, nonce) == {:error, :invalid_or_expired}
     end
   end
 
@@ -1141,7 +1141,7 @@ defmodule Emisar.AuthTest do
     } do
       current = user.email
 
-      assert :ok = Auth.issue_email_change_code("new@example.com", subject)
+      assert Auth.issue_email_change_code("new@example.com", subject) == :ok
 
       assert_received {:email, email}
       assert [{_, ^current}] = email.to
@@ -1149,7 +1149,7 @@ defmodule Emisar.AuthTest do
       assert [code] = Regex.run(~r/\d{6}/, email.text_body)
 
       # The bound code confirms and hands back the new email.
-      assert {:ok, "new@example.com"} = Auth.verify_email_change_code(code, subject)
+      assert Auth.verify_email_change_code(code, subject) == {:ok, "new@example.com"}
     end
 
     test "emails the fresh DB address when the subject actor snapshot is stale", %{
@@ -1162,7 +1162,7 @@ defmodule Emisar.AuthTest do
 
       assert subject.actor.email == old_email
 
-      assert :ok = Auth.issue_email_change_code("new@example.com", subject)
+      assert Auth.issue_email_change_code("new@example.com", subject) == :ok
 
       assert_received {:email, email}
       assert [{_, ^current_email}] = email.to
@@ -1177,7 +1177,7 @@ defmodule Emisar.AuthTest do
       assert_received {:email, _second_email}
 
       # The first code is gone; only the latest issuance verifies.
-      assert {:error, :invalid} = Auth.verify_email_change_code(first_code, subject)
+      assert Auth.verify_email_change_code(first_code, subject) == {:error, :invalid}
     end
 
     test "direct starts and begin share one issuance budget without replacing on rejection", %{
@@ -1186,22 +1186,21 @@ defmodule Emisar.AuthTest do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
 
       for index <- 1..4 do
-        assert :ok = Auth.issue_email_change_code("direct-#{index}@example.com", subject)
+        assert Auth.issue_email_change_code("direct-#{index}@example.com", subject) == :ok
         assert_received {:email, _}
       end
 
-      assert {:ok, :code} = Auth.begin_email_change("latest@example.com", subject)
+      assert Auth.begin_email_change("latest@example.com", subject) == {:ok, :code}
       assert_received {:email, latest_email}
       [latest_code] = Regex.run(~r/\d{6}/, latest_email.text_body)
 
-      assert {:error, :rate_limited} =
-               Auth.issue_email_change_code("rejected@example.com", subject)
+      assert Auth.issue_email_change_code("rejected@example.com", subject) ==
+               {:error, :rate_limited}
 
       refute_received {:email, _}
 
       # A refused resend never deletes the live token it failed to replace.
-      assert {:ok, "latest@example.com"} =
-               Auth.verify_email_change_code(latest_code, subject)
+      assert Auth.verify_email_change_code(latest_code, subject) == {:ok, "latest@example.com"}
     end
   end
 
@@ -1216,9 +1215,9 @@ defmodule Emisar.AuthTest do
       assert_received {:email, email}
       [code] = Regex.run(~r/\d{6}/, email.text_body)
 
-      assert {:ok, "new@example.com"} = Auth.verify_email_change_code(code, subject)
+      assert Auth.verify_email_change_code(code, subject) == {:ok, "new@example.com"}
       # Consumed — a second verify of the same code fails.
-      assert {:error, :invalid} = Auth.verify_email_change_code(code, subject)
+      assert Auth.verify_email_change_code(code, subject) == {:error, :invalid}
     end
 
     test "a wrong code is rejected and spends an attempt; the right one still works", %{
@@ -1228,8 +1227,8 @@ defmodule Emisar.AuthTest do
       assert_received {:email, email}
       [code] = Regex.run(~r/\d{6}/, email.text_body)
 
-      assert {:error, :invalid} = Auth.verify_email_change_code("000000", subject)
-      assert {:ok, "new@example.com"} = Auth.verify_email_change_code(code, subject)
+      assert Auth.verify_email_change_code("000000", subject) == {:error, :invalid}
+      assert Auth.verify_email_change_code(code, subject) == {:ok, "new@example.com"}
     end
 
     test "the code locks after the attempt budget is spent", %{subject: subject} do
@@ -1239,11 +1238,11 @@ defmodule Emisar.AuthTest do
       [code] = Regex.run(~r/\d{6}/, email.text_body)
 
       for _ <- 1..5,
-          do: assert({:error, :invalid} = Auth.verify_email_change_code("000000", subject))
+          do: assert(Auth.verify_email_change_code("000000", subject) == {:error, :invalid})
 
       # Both the token-local and durable budgets are spent. The durable check
       # refuses the next attempt before the token is loaded.
-      assert {:error, :rate_limited} = Auth.verify_email_change_code(code, subject)
+      assert Auth.verify_email_change_code(code, subject) == {:error, :rate_limited}
     end
 
     test "replacement tokens cannot reset the durable inbox budget", %{subject: subject} do
@@ -1253,7 +1252,7 @@ defmodule Emisar.AuthTest do
       assert_received {:email, _first_email}
 
       for _ <- 1..3 do
-        assert {:error, :invalid} = Auth.verify_email_change_code("000000", subject)
+        assert Auth.verify_email_change_code("000000", subject) == {:error, :invalid}
       end
 
       :ok = Auth.issue_email_change_code("latest@example.com", subject)
@@ -1261,11 +1260,10 @@ defmodule Emisar.AuthTest do
       [latest_code] = Regex.run(~r/\d{6}/, latest_email.text_body)
 
       for _ <- 1..2 do
-        assert {:error, :invalid} = Auth.verify_email_change_code("000000", subject)
+        assert Auth.verify_email_change_code("000000", subject) == {:error, :invalid}
       end
 
-      assert {:error, :rate_limited} =
-               Auth.verify_email_change_code(latest_code, subject)
+      assert Auth.verify_email_change_code(latest_code, subject) == {:error, :rate_limited}
 
       window =
         Repo.get_by!(SecurityAttemptWindow,
@@ -1284,8 +1282,7 @@ defmodule Emisar.AuthTest do
 
       # The rate-limited attempt did not read, decrement, or consume the latest
       # token; it remains valid when the durable window resets.
-      assert {:ok, "latest@example.com"} =
-               Auth.verify_email_change_code(latest_code, subject)
+      assert Auth.verify_email_change_code(latest_code, subject) == {:ok, "latest@example.com"}
     end
 
     test "an expired code is rejected", %{user: user, subject: subject} do
@@ -1294,11 +1291,11 @@ defmodule Emisar.AuthTest do
       [code] = Regex.run(~r/\d{6}/, email.text_body)
 
       age_tokens(user.id, 16)
-      assert {:error, :invalid} = Auth.verify_email_change_code(code, subject)
+      assert Auth.verify_email_change_code(code, subject) == {:error, :invalid}
     end
 
     test "verifying with no outstanding code is rejected", %{subject: subject} do
-      assert {:error, :invalid} = Auth.verify_email_change_code("123456", subject)
+      assert Auth.verify_email_change_code("123456", subject) == {:error, :invalid}
     end
   end
 
@@ -1314,12 +1311,12 @@ defmodule Emisar.AuthTest do
     } do
       current = user.email
 
-      assert {:ok, :code} = Auth.begin_email_change("new@example.com", subject)
+      assert Auth.begin_email_change("new@example.com", subject) == {:ok, :code}
 
       assert_received {:email, email}
       assert [{_, ^current}] = email.to
       assert [code] = Regex.run(~r/\d{6}/, email.text_body)
-      assert {:ok, "new@example.com"} = Auth.verify_email_change_code(code, subject)
+      assert Auth.verify_email_change_code(code, subject) == {:ok, "new@example.com"}
     end
 
     test "an MFA user gets the TOTP factor — read from the fresh row, not the stale subject", %{
@@ -1333,7 +1330,7 @@ defmodule Emisar.AuthTest do
       refute subject.actor.mfa_enabled_at
 
       # The domain re-reads the row, sees MFA, and demands TOTP — no code emailed.
-      assert {:ok, :totp} = Auth.begin_email_change("new@example.com", subject)
+      assert Auth.begin_email_change("new@example.com", subject) == {:ok, :totp}
       refute_received {:email, _}
     end
   end
@@ -1396,7 +1393,7 @@ defmodule Emisar.AuthTest do
       {:ok, :code} = Auth.begin_email_change("new@example.com", subject)
       assert_received {:email, _email}
 
-      assert {:error, :invalid} = Auth.confirm_email_change("new@example.com", "000000", subject)
+      assert Auth.confirm_email_change("new@example.com", "000000", subject) == {:error, :invalid}
       assert Repo.reload!(user).email == user.email
     end
 
@@ -1423,7 +1420,7 @@ defmodule Emisar.AuthTest do
 
       {:ok, :totp} = Auth.begin_email_change("new@example.com", subject)
 
-      assert {:error, :invalid} = Auth.confirm_email_change("new@example.com", "000000", subject)
+      assert Auth.confirm_email_change("new@example.com", "000000", subject) == {:error, :invalid}
       assert Repo.reload!(user).email == user.email
     end
 
@@ -1433,13 +1430,13 @@ defmodule Emisar.AuthTest do
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
       for _ <- 1..5 do
-        assert {:error, :invalid_code} = Auth.disable_mfa("000000", subject)
+        assert Auth.disable_mfa("000000", subject) == {:error, :invalid_code}
       end
 
       # The disable misses spent the window, so the genuine TOTP is refused
       # before verification: the email stands and the code was never consumed.
       otp = NimbleTOTP.verification_code(secret)
-      assert {:error, :rate_limited} = Auth.confirm_email_change("new@example.com", otp, subject)
+      assert Auth.confirm_email_change("new@example.com", otp, subject) == {:error, :rate_limited}
 
       reloaded = Repo.reload!(user)
       assert reloaded.email == user.email
@@ -1463,7 +1460,7 @@ defmodule Emisar.AuthTest do
     test "issues a fresh token, emails the confirm link, and returns :ok" do
       user = Fixtures.Users.create_user(confirmed?: false)
 
-      assert :ok = Auth.deliver_confirmation_instructions(user)
+      assert Auth.deliver_confirmation_instructions(user) == :ok
 
       assert_received {:email, email}
       assert [{_, to}] = email.to
@@ -1486,7 +1483,7 @@ defmodule Emisar.AuthTest do
     end
 
     test "a garbage token returns invalid_or_expired" do
-      assert {:error, :invalid_or_expired} = Auth.confirm_user_by_token("not-a-real-token")
+      assert Auth.confirm_user_by_token("not-a-real-token") == {:error, :invalid_or_expired}
     end
 
     # 7-day window (confirm).
@@ -1503,16 +1500,16 @@ defmodule Emisar.AuthTest do
       # 7 days plus an hour is past the window.
       age_tokens(user.id, 7 * 24 * 60 + 60)
 
-      assert {:error, :invalid_or_expired} = Auth.confirm_user_by_token(raw)
+      assert Auth.confirm_user_by_token(raw) == {:error, :invalid_or_expired}
     end
 
     # A soft-deleted user behind a live token is the same dead-link outcome.
     test "a confirm link whose user was soft-deleted no longer confirms", %{user: user} do
       raw = Auth.issue_confirmation_token!(user)
 
-      {:ok, _} = user |> User.Changeset.delete() |> Repo.update()
+      Fixtures.Users.mark_user_as_deleted(user)
 
-      assert {:error, :invalid_or_expired} = Auth.confirm_user_by_token(raw)
+      assert Auth.confirm_user_by_token(raw) == {:error, :invalid_or_expired}
     end
   end
 
@@ -1576,7 +1573,7 @@ defmodule Emisar.AuthTest do
     test "reports sent delivery and records the credential request without sensitive payload", %{
       subject: subject
     } do
-      assert {:ok, :sent} = Auth.issue_mfa_enrollment_code(subject)
+      assert Auth.issue_mfa_enrollment_code(subject) == {:ok, :sent}
       assert_received {:email, _email}
 
       assert [event] = events_of_type("user.mfa_enrollment_requested")
@@ -1589,7 +1586,7 @@ defmodule Emisar.AuthTest do
     } do
       assert {:ok, _suppression} = Mail.suppress(user.email, :hard_bounce, "bounce")
 
-      assert {:ok, :suppressed} = Auth.issue_mfa_enrollment_code(subject)
+      assert Auth.issue_mfa_enrollment_code(subject) == {:ok, :suppressed}
       refute_received {:email, _email}
       refute Repo.one(UserToken.Query.by_context("mfa_enrollment"))
       refute Repo.one(UserToken.Query.by_context("mfa_enrollment_pending"))
@@ -1600,7 +1597,7 @@ defmodule Emisar.AuthTest do
     } do
       Emisar.Config.put_override(:emisar, :mailer_deliver_error, {:error, {:failed, :boom}})
 
-      assert {:error, {:failed, :boom}} = Auth.issue_mfa_enrollment_code(subject)
+      assert Auth.issue_mfa_enrollment_code(subject) == {:error, {:failed, :boom}}
       refute_received {:email, _email}
       refute Repo.one(UserToken.Query.by_context("mfa_enrollment"))
       refute Repo.one(UserToken.Query.by_context("mfa_enrollment_pending"))
@@ -1613,7 +1610,7 @@ defmodule Emisar.AuthTest do
       delivered_code = issue_mfa_enrollment_code(subject)
       assert {:ok, _suppression} = Mail.suppress(user.email, :hard_bounce, "bounce")
 
-      assert {:ok, :suppressed} = Auth.issue_mfa_enrollment_code(subject)
+      assert Auth.issue_mfa_enrollment_code(subject) == {:ok, :suppressed}
       refute_received {:email, _email}
       assert {:ok, _proof} = Auth.verify_mfa_enrollment_code(delivered_code, subject)
     end
@@ -1622,7 +1619,7 @@ defmodule Emisar.AuthTest do
       delivered_code = issue_mfa_enrollment_code(subject)
       Emisar.Config.put_override(:emisar, :mailer_deliver_error, {:error, {:failed, :boom}})
 
-      assert {:error, {:failed, :boom}} = Auth.issue_mfa_enrollment_code(subject)
+      assert Auth.issue_mfa_enrollment_code(subject) == {:error, {:failed, :boom}}
       refute_received {:email, _email}
       assert {:ok, _proof} = Auth.verify_mfa_enrollment_code(delivered_code, subject)
     end
@@ -1641,9 +1638,9 @@ defmodule Emisar.AuthTest do
     } do
       code = issue_mfa_enrollment_code(subject)
 
-      assert {:error, :invalid} = Auth.verify_mfa_enrollment_code("000000", subject)
+      assert Auth.verify_mfa_enrollment_code("000000", subject) == {:error, :invalid}
       assert {:ok, proof} = Auth.verify_mfa_enrollment_code(code, subject)
-      assert {:error, :invalid} = Auth.verify_mfa_enrollment_code(code, subject)
+      assert Auth.verify_mfa_enrollment_code(code, subject) == {:error, :invalid}
 
       assert {:ok, %User{id: id, mfa_enabled_at: %DateTime{}}, codes} =
                Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), proof, subject)
@@ -1657,16 +1654,15 @@ defmodule Emisar.AuthTest do
       subject: subject,
       secret: secret
     } do
-      assert {:error, :mfa_enrollment_proof_stale} =
-               Auth.enable_mfa(
-                 secret,
-                 NimbleTOTP.verification_code(secret),
-                 "forged",
-                 subject
-               )
+      assert Auth.enable_mfa(
+               secret,
+               NimbleTOTP.verification_code(secret),
+               "forged",
+               subject
+             ) == {:error, :mfa_enrollment_proof_stale}
 
       refute Repo.reload!(user).mfa_enabled_at
-      assert {:ok, :code} = Auth.begin_email_change("attacker@example.com", subject)
+      assert Auth.begin_email_change("attacker@example.com", subject) == {:ok, :code}
       assert_received {:email, _current_inbox_code}
     end
 
@@ -1678,7 +1674,7 @@ defmodule Emisar.AuthTest do
       new_email = Fixtures.Random.unique_email()
       Fixtures.Users.update_email(user, new_email)
 
-      assert {:error, :invalid} = Auth.verify_mfa_enrollment_code(code, subject)
+      assert Auth.verify_mfa_enrollment_code(code, subject) == {:error, :invalid}
 
       refute Repo.one(
                UserToken.Query.by_user_id(user.id)
@@ -1693,13 +1689,12 @@ defmodule Emisar.AuthTest do
       proof = Fixtures.Users.mfa_enrollment_proof(subject)
       assert {:ok, _updated} = Users.update_user_profile(%{full_name: "Changed"}, subject)
 
-      assert {:error, :mfa_enrollment_proof_stale} =
-               Auth.enable_mfa(
-                 secret,
-                 NimbleTOTP.verification_code(secret),
-                 proof,
-                 subject
-               )
+      assert Auth.enable_mfa(
+               secret,
+               NimbleTOTP.verification_code(secret),
+               proof,
+               subject
+             ) == {:error, :mfa_enrollment_proof_stale}
     end
 
     test "an expired proof is refused", %{subject: subject, secret: secret} do
@@ -1714,13 +1709,12 @@ defmodule Emisar.AuthTest do
           signed_at: System.system_time(:second) - 301
         )
 
-      assert {:error, :mfa_enrollment_proof_stale} =
-               Auth.enable_mfa(
-                 secret,
-                 NimbleTOTP.verification_code(secret),
-                 expired,
-                 subject
-               )
+      assert Auth.enable_mfa(
+               secret,
+               NimbleTOTP.verification_code(secret),
+               expired,
+               subject
+             ) == {:error, :mfa_enrollment_proof_stale}
     end
 
     test "two concurrent enrollments with one proof produce one winner", %{
@@ -1748,7 +1742,7 @@ defmodule Emisar.AuthTest do
         issue_mfa_enrollment_code(subject)
       end
 
-      assert {:error, :rate_limited} = Auth.issue_mfa_enrollment_code(subject)
+      assert Auth.issue_mfa_enrollment_code(subject) == {:error, :rate_limited}
       refute_received {:email, _}
 
       assert [event] = events_of_type("user.mfa_rate_limited")
@@ -1762,18 +1756,17 @@ defmodule Emisar.AuthTest do
       enrollment_code = issue_mfa_enrollment_code(subject)
 
       for _ <- 1..3 do
-        assert {:error, :invalid} = Auth.verify_mfa_enrollment_code("000000", subject)
+        assert Auth.verify_mfa_enrollment_code("000000", subject) == {:error, :invalid}
       end
 
-      assert :ok = Auth.issue_email_change_code("new@example.com", subject)
+      assert Auth.issue_email_change_code("new@example.com", subject) == :ok
       assert_received {:email, _email_change_code}
 
       for _ <- 1..2 do
-        assert {:error, :invalid} = Auth.verify_email_change_code("000000", subject)
+        assert Auth.verify_email_change_code("000000", subject) == {:error, :invalid}
       end
 
-      assert {:error, :rate_limited} =
-               Auth.verify_mfa_enrollment_code(enrollment_code, subject)
+      assert Auth.verify_mfa_enrollment_code(enrollment_code, subject) == {:error, :rate_limited}
 
       assert [_event] = events_of_type("user.inbox_step_up_rate_limited")
     end
@@ -1807,7 +1800,7 @@ defmodule Emisar.AuthTest do
       subject: subject
     } do
       proof = Fixtures.Users.mfa_enrollment_proof(subject)
-      assert {:error, :invalid_otp} = Auth.enable_mfa(secret, "000000", proof, subject)
+      assert Auth.enable_mfa(secret, "000000", proof, subject) == {:error, :invalid_otp}
     end
 
     # recovery codes are shown once in plaintext, and only their SHA-256
@@ -1864,14 +1857,14 @@ defmodule Emisar.AuthTest do
     test "rejects a wrong code and leaves MFA enabled", %{secret: secret, subject: subject} do
       {_user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
-      assert {:error, :invalid_code} = Auth.disable_mfa("not-a-real-code", subject)
+      assert Auth.disable_mfa("not-a-real-code", subject) == {:error, :invalid_code}
       assert %User{mfa_enabled_at: %DateTime{}} = Repo.reload!(subject.actor)
     end
 
     test "rejects a missing code and leaves MFA enabled", %{secret: secret, subject: subject} do
       {_user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
-      assert {:error, :invalid_code} = Auth.disable_mfa(nil, subject)
+      assert Auth.disable_mfa(nil, subject) == {:error, :invalid_code}
       assert %User{mfa_enabled_at: %DateTime{}} = Repo.reload!(subject.actor)
     end
 
@@ -1883,12 +1876,12 @@ defmodule Emisar.AuthTest do
       {user, [code | _]} = Fixtures.Users.enable_mfa!(secret, subject)
 
       for _ <- 1..5 do
-        assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:totp, "000000"})
+        assert Auth.verify_mfa_challenge(user, {:totp, "000000"}) == {:error, :invalid}
       end
 
       # The sign-in misses spent the window, so a genuine recovery code is
       # refused before the consume — MFA stays on and the code stays usable.
-      assert {:error, :rate_limited} = Auth.disable_mfa(code, subject)
+      assert Auth.disable_mfa(code, subject) == {:error, :rate_limited}
 
       reloaded = Repo.reload!(user)
       assert %DateTime{} = reloaded.mfa_enabled_at
@@ -1914,7 +1907,7 @@ defmodule Emisar.AuthTest do
 
       assert length(new_codes) == 10
       # MFA stays enabled; the old plaintext code no longer matches, a new one does.
-      assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:recovery_code, old_code})
+      assert Auth.verify_mfa_challenge(user, {:recovery_code, old_code}) == {:error, :invalid}
 
       assert {:ok, _proof} =
                Auth.verify_mfa_challenge(Repo.reload!(user), {:recovery_code, hd(new_codes)})
@@ -1978,10 +1971,10 @@ defmodule Emisar.AuthTest do
       {:ok, user, _codes} = Fixtures.Users.enroll_mfa(secret, subject)
       old_digests = user.mfa_recovery_codes
 
-      assert {:error, :invalid_code} =
-               Auth.regenerate_mfa_recovery_codes("not-a-recovery-code", subject)
+      assert Auth.regenerate_mfa_recovery_codes("not-a-recovery-code", subject) ==
+               {:error, :invalid_code}
 
-      assert {:error, :invalid_code} = Auth.regenerate_mfa_recovery_codes(nil, subject)
+      assert Auth.regenerate_mfa_recovery_codes(nil, subject) == {:error, :invalid_code}
       assert Repo.reload!(user).mfa_recovery_codes == old_digests
 
       assert [event] = events_of_type("user.mfa_failed")
@@ -1999,15 +1992,13 @@ defmodule Emisar.AuthTest do
       stale_otp = NimbleTOTP.verification_code(secret, time: System.os_time(:second) - 90)
 
       for _ <- 1..5 do
-        assert {:error, :invalid_code} =
-                 Auth.regenerate_mfa_recovery_codes(stale_otp, subject)
+        assert Auth.regenerate_mfa_recovery_codes(stale_otp, subject) == {:error, :invalid_code}
       end
 
-      assert {:error, :rate_limited} =
-               Auth.regenerate_mfa_recovery_codes(
-                 NimbleTOTP.verification_code(secret),
-                 subject
-               )
+      assert Auth.regenerate_mfa_recovery_codes(
+               NimbleTOTP.verification_code(secret),
+               subject
+             ) == {:error, :rate_limited}
 
       assert Repo.reload!(user).mfa_recovery_codes == old_digests
       assert [_event] = events_of_type("user.mfa_rate_limited")
@@ -2025,11 +2016,10 @@ defmodule Emisar.AuthTest do
                  audit: &Audit.user_changesets(&1, "user.mfa_disabled")
                )
 
-      assert {:error, :mfa_not_enabled} =
-               Auth.regenerate_mfa_recovery_codes(
-                 NimbleTOTP.verification_code(secret),
-                 subject
-               )
+      assert Auth.regenerate_mfa_recovery_codes(
+               NimbleTOTP.verification_code(secret),
+               subject
+             ) == {:error, :mfa_not_enabled}
 
       assert events_of_type("user.mfa_recovery_codes_regenerated") == []
     end
@@ -2056,14 +2046,14 @@ defmodule Emisar.AuthTest do
       user = subject.actor
 
       for _ <- 1..5 do
-        assert :ok = Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000)
+        assert Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000) == :ok
       end
 
-      assert {:error, :rate_limited, :exhausted} =
-               Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000)
+      assert Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000) ==
+               {:error, :rate_limited, :exhausted}
 
-      assert {:error, :rate_limited, :capped} =
-               Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000)
+      assert Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000) ==
+               {:error, :rate_limited, :capped}
 
       window = Repo.get_by!(SecurityAttemptWindow, user_id: user.id, scope: :mfa_challenge)
       assert window.attempt_count == 6
@@ -2077,7 +2067,7 @@ defmodule Emisar.AuthTest do
       )
       |> Repo.update!()
 
-      assert :ok = Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000)
+      assert Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000) == :ok
 
       reset = Repo.reload!(window)
       assert reset.attempt_count == 1
@@ -2088,8 +2078,8 @@ defmodule Emisar.AuthTest do
     test "a persistence failure rejects the credential attempt", %{subject: subject} do
       missing_user = %{subject.actor | id: Repo.generate_id()}
 
-      assert {:error, :rate_limited, :store_unavailable} =
-               Auth.check_security_attempt(missing_user, :mfa_challenge, 5, 300_000)
+      assert Auth.check_security_attempt(missing_user, :mfa_challenge, 5, 300_000) ==
+               {:error, :rate_limited, :store_unavailable}
     end
   end
 
@@ -2099,23 +2089,21 @@ defmodule Emisar.AuthTest do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
       context = %RequestContext{request_id: "req-direct-security-attempt"}
 
-      assert :ok =
-               Auth.check_security_attempt(
-                 subject.actor,
-                 :mfa_challenge,
-                 1,
-                 300_000,
-                 context
-               )
+      assert Auth.check_security_attempt(
+               subject.actor,
+               :mfa_challenge,
+               1,
+               300_000,
+               context
+             ) == :ok
 
-      assert {:error, :rate_limited, :exhausted} =
-               Auth.check_security_attempt(
-                 subject.actor,
-                 :mfa_challenge,
-                 1,
-                 300_000,
-                 context
-               )
+      assert Auth.check_security_attempt(
+               subject.actor,
+               :mfa_challenge,
+               1,
+               300_000,
+               context
+             ) == {:error, :rate_limited, :exhausted}
 
       assert [event] = events_of_type("user.mfa_rate_limited")
       assert event.request_id == "req-direct-security-attempt"
@@ -2128,13 +2116,13 @@ defmodule Emisar.AuthTest do
       for scope <- [:email_change_issue, :inbox_step_up] do
         context = %RequestContext{request_id: "req-#{scope}"}
 
-        assert :ok = Auth.check_security_attempt(subject.actor, scope, 1, 300_000, context)
+        assert Auth.check_security_attempt(subject.actor, scope, 1, 300_000, context) == :ok
 
-        assert {:error, :rate_limited, :exhausted} =
-                 Auth.check_security_attempt(subject.actor, scope, 1, 300_000, context)
+        assert Auth.check_security_attempt(subject.actor, scope, 1, 300_000, context) ==
+                 {:error, :rate_limited, :exhausted}
 
-        assert {:error, :rate_limited, :capped} =
-                 Auth.check_security_attempt(subject.actor, scope, 1, 300_000, context)
+        assert Auth.check_security_attempt(subject.actor, scope, 1, 300_000, context) ==
+                 {:error, :rate_limited, :capped}
       end
 
       assert [issue_event] = events_of_type("user.email_change_rate_limited")
@@ -2163,19 +2151,19 @@ defmodule Emisar.AuthTest do
       assert {:ok, _proof} = Auth.verify_mfa_challenge(user, {:totp, otp})
 
       user = Repo.reload!(user)
-      assert {:error, :replay} = Auth.verify_mfa_challenge(user, {:totp, otp})
+      assert Auth.verify_mfa_challenge(user, {:totp, otp}) == {:error, :replay}
     end
 
     test "rejects an invalid OTP", %{secret: secret, subject: subject} do
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
-      assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:totp, "000000"})
+      assert Auth.verify_mfa_challenge(user, {:totp, "000000"}) == {:error, :invalid}
     end
 
     test "a malformed factor is the catch-all :invalid" do
-      assert {:error, :invalid} = Auth.verify_mfa_challenge(%User{}, {:totp, nil})
-      assert {:error, :invalid} = Auth.verify_mfa_challenge(%User{}, {:recovery_code, nil})
-      assert {:error, :invalid} = Auth.verify_mfa_challenge(%User{}, {:sms, "000000"})
+      assert Auth.verify_mfa_challenge(%User{}, {:totp, nil}) == {:error, :invalid}
+      assert Auth.verify_mfa_challenge(%User{}, {:recovery_code, nil}) == {:error, :invalid}
+      assert Auth.verify_mfa_challenge(%User{}, {:sms, "000000"}) == {:error, :invalid}
     end
 
     # a non-numeric OTP is rejected, and because the replay guard only stamps
@@ -2187,7 +2175,7 @@ defmodule Emisar.AuthTest do
     } do
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
-      assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:totp, "abcdef"})
+      assert Auth.verify_mfa_challenge(user, {:totp, "abcdef"}) == {:error, :invalid}
 
       # The genuine current code is untouched by the failed attempt.
       otp = NimbleTOTP.verification_code(secret)
@@ -2207,7 +2195,7 @@ defmodule Emisar.AuthTest do
 
       # The old code validated against the stale struct's secret and would pass;
       # the locked verify reads the CURRENT row (MFA now disabled) and refuses.
-      assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:totp, otp})
+      assert Auth.verify_mfa_challenge(user, {:totp, otp}) == {:error, :invalid}
     end
 
     test "an OTP for a rotated secret can't complete sign-in (MAJOR-4)", %{subject: subject} do
@@ -2222,7 +2210,7 @@ defmodule Emisar.AuthTest do
 
       # `user` + `otp1` are for the OLD secret; the locked verify validates
       # against the current secret2 and refuses.
-      assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:totp, otp1})
+      assert Auth.verify_mfa_challenge(user, {:totp, otp1}) == {:error, :invalid}
     end
 
     # (sequential single-use; true-concurrent is out of scope) — a recovery
@@ -2237,7 +2225,7 @@ defmodule Emisar.AuthTest do
       assert {:ok, _proof} = Auth.verify_mfa_challenge(user, {:recovery_code, code})
 
       user = Repo.reload!(user)
-      assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:recovery_code, code})
+      assert Auth.verify_mfa_challenge(user, {:recovery_code, code}) == {:error, :invalid}
 
       # Consuming one code doesn't invalidate the rest of the set.
       assert {:ok, _proof} = Auth.verify_mfa_challenge(user, {:recovery_code, other_code})
@@ -2246,8 +2234,8 @@ defmodule Emisar.AuthTest do
     test "rejects an unknown recovery code as :invalid", %{secret: secret, subject: subject} do
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
-      assert {:error, :invalid} =
-               Auth.verify_mfa_challenge(user, {:recovery_code, "not-a-real-code"})
+      assert Auth.verify_mfa_challenge(user, {:recovery_code, "not-a-real-code"}) ==
+               {:error, :invalid}
     end
 
     test "counts both factors against one per-user window and refuses the sixth attempt", %{
@@ -2258,16 +2246,16 @@ defmodule Emisar.AuthTest do
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
       for _ <- 1..5 do
-        assert {:error, :invalid} = Auth.verify_mfa_challenge(user, {:totp, "000000"})
+        assert Auth.verify_mfa_challenge(user, {:totp, "000000"}) == {:error, :invalid}
       end
 
       # The window is exhausted: even the genuine current code is refused, and
       # switching to the recovery factor doesn't buy more attempts.
       otp = NimbleTOTP.verification_code(secret)
-      assert {:error, :rate_limited} = Auth.verify_mfa_challenge(user, {:totp, otp})
+      assert Auth.verify_mfa_challenge(user, {:totp, otp}) == {:error, :rate_limited}
 
-      assert {:error, :rate_limited} =
-               Auth.verify_mfa_challenge(user, {:recovery_code, "not-a-real-code"})
+      assert Auth.verify_mfa_challenge(user, {:recovery_code, "not-a-real-code"}) ==
+               {:error, :rate_limited}
 
       # The capped attempt never reached verification: the genuine code was
       # refused without being consumed (a verify would have stamped the row).
@@ -2330,17 +2318,20 @@ defmodule Emisar.AuthTest do
 
       assert Auth.mfa_proof_user_id(%{user_id: user.id}) == nil
 
-      assert Auth.mfa_proof_user_id(%{
-               user_id: user.id,
-               mfa_enabled_at: nil,
-               updated_at: DateTime.utc_now()
-             }) == nil
+      incomplete_enrollment = %{
+        user_id: user.id,
+        mfa_enabled_at: nil,
+        updated_at: DateTime.utc_now()
+      }
 
-      assert Auth.mfa_proof_user_id(%{
-               user_id: user.id,
-               mfa_enabled_at: DateTime.utc_now(),
-               updated_at: nil
-             }) == nil
+      incomplete_update = %{
+        user_id: user.id,
+        mfa_enabled_at: DateTime.utc_now(),
+        updated_at: nil
+      }
+
+      assert Auth.mfa_proof_user_id(incomplete_enrollment) == nil
+      assert Auth.mfa_proof_user_id(incomplete_update) == nil
     end
   end
 end
