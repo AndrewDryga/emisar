@@ -1182,7 +1182,11 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       render_click(lv, "start_disable_mfa", %{})
-      html = render_submit(lv, "disable_mfa", %{"mfa_disable" => %{"code" => "000000"}})
+
+      html =
+        render_submit(lv, "disable_mfa", %{
+          "mfa_disable" => %{"code" => "not-a-real-code"}
+        })
 
       assert html =~ "That code did not match. Try again."
       refute html =~ "Could not disable 2FA."

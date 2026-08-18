@@ -1864,7 +1864,7 @@ defmodule Emisar.AuthTest do
     test "rejects a wrong code and leaves MFA enabled", %{secret: secret, subject: subject} do
       {_user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
-      assert {:error, :invalid_code} = Auth.disable_mfa("000000", subject)
+      assert {:error, :invalid_code} = Auth.disable_mfa("not-a-real-code", subject)
       assert %User{mfa_enabled_at: %DateTime{}} = Repo.reload!(subject.actor)
     end
 
