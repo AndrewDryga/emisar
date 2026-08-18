@@ -99,12 +99,11 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
     assert DateTime.compare(reloaded.sent_at, run.sent_at) == :gt
   end
 
-  # The deadline Runs publishes is `queued_at + 600`, and the sweep expires a
-  # run once its own clock has reached it — so the run queued exactly ten
-  # minutes ago is already out of redelivery, not given one more sweep.
-  test "an online runner's sent run is expired the moment it reaches the deadline" do
+  # Keep this wall-clock integration test away from the exact boundary; the
+  # pure test above pins equality without assuming two UTC reads are monotonic.
+  test "an online runner expires a sent run past the deadline but not one inside it" do
     runner = Fixtures.Runners.create_runner(connected?: true)
-    expired = sent_run_for(runner, 10 * 60)
+    expired = sent_run_for(runner, 11 * 60)
     eligible = sent_run_for(runner, 9 * 60)
 
     assert :ok = DispatchTimeout.execute([])
