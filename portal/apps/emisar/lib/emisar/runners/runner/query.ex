@@ -190,9 +190,9 @@ defmodule Emisar.Runners.Runner.Query do
   end
 
   @doc """
-  The fleet-wide connection tally as ONE pass, mirroring the `connected/1`,
-  `disconnected/1`, `never_connected/1`, and `disabled/1` predicates. Those
-  four states are disjoint over live rows, so counting them as four separate
+  The fleet-wide connection tally as ONE pass, mirroring the connected,
+  disconnected, never_connected, and disabled states. Those four states
+  are disjoint over live rows, so counting them as four separate
   aggregates scanned `runners` four times for one telemetry sample.
 
   The caller supplies the not-deleted scope; disabled is counted across it
@@ -233,30 +233,10 @@ defmodule Emisar.Runners.Runner.Query do
     |> order_by([runners: r], asc: r.group)
   end
 
-  # Connection-record state from the DURABLE `last_connected_at` /
-  # `last_disconnected_at` columns — NOT live Presence. Drives the fleet-wide
-  # ops gauge (`Runners.connection_counts/0`); the per-account UI uses Presence
-  # (`by_connection/3`), which catches an ungraceful socket drop these columns
-  # only learn about on the next `disconnect_runner`/reconnect.
-  def disabled(queryable \\ all()),
-    do: where(queryable, [runners: r], not is_nil(r.disabled_at))
-
-  def never_connected(queryable \\ all()),
-    do: where(queryable, [runners: r], is_nil(r.last_connected_at))
-
-  def connected(queryable \\ all()) do
-    where(
-      queryable,
-      [runners: r],
-      not is_nil(r.last_connected_at) and
-        (is_nil(r.last_disconnected_at) or r.last_connected_at > r.last_disconnected_at)
-    )
-  end
-
   @doc """
   Connected, OR deliberately parked with `disable`.
 
-  Pack retention uses this rather than `connected/1`: a disabled runner is
+  Pack retention uses this rather than a connected-only check: a disabled runner is
   offline by definition, so the connected set excluded it and the sweep deleted
   its trust pins — including trusted ones — which re-enable could not recover.
   A merely DISCONNECTED runner is not shielded; that ages out normally.
