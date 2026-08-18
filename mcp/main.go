@@ -175,8 +175,7 @@ ENVIRONMENT
 
 CLIENT SETUP
   Install the bridge:
-    curl --proto '=https' --proto-redir '=https' --globoff \
-      -fsSL https://emisar.dev/install-mcp.sh | sudo bash
+    curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash
 
   An interactive install offers to configure the clients below itself —
   you approve the connection in the control plane and it writes the configs.

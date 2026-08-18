@@ -9,16 +9,16 @@
 #
 # Usage:
 #
-#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install-mcp.sh | sudo bash
+#   curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash
 #
 #   # Pin a version:
-#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://.../install-mcp.sh | sudo bash -s -- --version mcp-v0.1.0
+#   curl -fsSL https://.../install-mcp.sh | sudo bash -s -- --version mcp-v0.1.0
 #
 #   # Install to a per-user location (no sudo):
-#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://.../install-mcp.sh | INSTALL_DIR=$HOME/.local/bin bash
+#   curl -fsSL https://.../install-mcp.sh | INSTALL_DIR=$HOME/.local/bin bash
 #
 #   # Uninstall — binary, client-config entries, and rotated-key state:
-#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://.../install-mcp.sh | sudo bash -s -- --uninstall
+#   curl -fsSL https://.../install-mcp.sh | sudo bash -s -- --uninstall
 #
 # The script is idempotent. It does not register a service. After
 # installing, an interactive run scans for local LLM clients (Claude
@@ -1999,4 +1999,4 @@ dim "Verify install:"
 dim "  ${first_bin} --help"
 out ""
 dim "Uninstall:"
-dim "  curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --uninstall"
+dim "  curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --uninstall"

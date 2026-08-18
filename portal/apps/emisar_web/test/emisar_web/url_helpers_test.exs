@@ -53,18 +53,22 @@ defmodule EmisarWeb.UrlHelpersTest do
   describe "mcp_install_command/1" do
     test "the hosted portal keeps the minimal command" do
       assert UrlHelpers.mcp_install_command("https://emisar.dev") ==
-               {:ok,
-                "curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install-mcp.sh | sudo bash"}
+               {:ok, "curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"}
 
       assert UrlHelpers.mcp_install_command("https://emisar.dev/") ==
-               {:ok,
-                "curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install-mcp.sh | sudo bash"}
+               {:ok, "curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"}
     end
 
     test "any other portal rides its base URL in as EMISAR_URL" do
       assert UrlHelpers.mcp_install_command("http://localhost:4000") ==
                {:ok,
-                "curl --proto '=http,https' --proto-redir '=https' --globoff -fsSL http://localhost:4000/install-mcp.sh | sudo EMISAR_URL=http://localhost:4000 bash"}
+                "curl -fsSL http://localhost:4000/install-mcp.sh | sudo EMISAR_URL=http://localhost:4000 bash"}
+    end
+
+    test "quotes an IPv6 origin everywhere the shell sees it" do
+      assert UrlHelpers.mcp_install_command("http://[::1]:4000") ==
+               {:ok,
+                "curl -fsSL 'http://[::1]:4000/install-mcp.sh' | sudo EMISAR_URL='http://[::1]:4000' bash"}
     end
 
     test "public HTTP is refused" do

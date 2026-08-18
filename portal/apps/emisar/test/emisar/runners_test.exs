@@ -2991,7 +2991,7 @@ defmodule Emisar.RunnersTest do
                Runners.enrollment_install_command(@raw_secret, "https://emisar.dev")
 
       assert command ==
-               " curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=https://emisar.dev bash"
+               " curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=https://emisar.dev bash"
 
       # The leading space is load-bearing (HISTCONTROL=ignorespace), so it is
       # asserted on its own — a trim anywhere upstream leaks the key to history.
@@ -3003,7 +3003,7 @@ defmodule Emisar.RunnersTest do
                Runners.enrollment_install_command(@raw_secret, "https://emisar.dev/")
 
       assert command ==
-               " curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=https://emisar.dev bash"
+               " curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=https://emisar.dev bash"
     end
 
     test "a private self-hosted HTTP origin keeps its scheme and port" do
@@ -3011,7 +3011,15 @@ defmodule Emisar.RunnersTest do
                Runners.enrollment_install_command(@raw_secret, "http://192.168.10.20:4000")
 
       assert command ==
-               " curl --proto '=http,https' --proto-redir '=https' --globoff -fsSL http://192.168.10.20:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=http://192.168.10.20:4000 bash"
+               " curl -fsSL http://192.168.10.20:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=http://192.168.10.20:4000 bash"
+    end
+
+    test "quotes an IPv6 origin everywhere the shell sees it" do
+      assert {:ok, command} =
+               Runners.enrollment_install_command(@raw_secret, "http://[::1]:4000")
+
+      assert command ==
+               " curl -fsSL 'http://[::1]:4000/install.sh' | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL='http://[::1]:4000' bash"
     end
 
     test "refuses public and named HTTP origins" do

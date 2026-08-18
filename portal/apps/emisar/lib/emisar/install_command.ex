@@ -1,11 +1,12 @@
 defmodule Emisar.InstallCommand do
   @moduledoc """
   Builds the privileged runner and MCP installer fetch commands under one
-  transport policy.
+  initial-origin policy.
 
-  Public and named hosts require HTTPS. Plain HTTP exists only for local
-  development and private self-hosting addressed by `localhost` or a literal
-  loopback/private IP; redirects from that first HTTP hop must upgrade to HTTPS.
+  Public and named initial origins require HTTPS. Plain HTTP exists only for
+  local development and private self-hosting addressed by `localhost` or a
+  literal loopback/private IP. The installers separately constrain their
+  release API and artifact downloads to HTTPS.
   """
 
   @type error :: :invalid_base_url | :insecure_base_url
@@ -18,7 +19,8 @@ defmodule Emisar.InstallCommand do
          {:ok, curl} <- curl_for(uri) do
       base = URI.to_string(uri)
       script = if installer == :runner, do: "install.sh", else: "install-mcp.sh"
-      {:ok, base, "#{curl} #{base}/#{script}"}
+      fetch_url = shell_url("#{base}/#{script}", uri.host)
+      {:ok, base, "#{curl} #{fetch_url}"}
     end
   end
 
@@ -70,14 +72,18 @@ defmodule Emisar.InstallCommand do
   end
 
   defp curl_for(%URI{scheme: "https"}),
-    do: {:ok, "curl --proto '=https' --proto-redir '=https' --globoff -fsSL"}
+    do: {:ok, "curl -fsSL"}
 
   defp curl_for(%URI{scheme: "http", host: host}) do
     if private_http_host?(host) do
-      {:ok, "curl --proto '=http,https' --proto-redir '=https' --globoff -fsSL"}
+      {:ok, "curl -fsSL"}
     else
       {:error, :insecure_base_url}
     end
+  end
+
+  defp shell_url(url, host) do
+    if String.contains?(host, ":"), do: "'#{url}'", else: url
   end
 
   defp private_http_host?(host) do

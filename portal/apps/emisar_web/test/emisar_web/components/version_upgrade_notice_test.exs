@@ -97,7 +97,7 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
       # A non-hosted base URL rides into the installer as EMISAR_URL so its
       # LLM-client setup writes configs that target this portal.
       assert html =~
-               "curl --proto &#39;=https&#39; --proto-redir &#39;=https&#39; --globoff -fsSL https://control.example/install-mcp.sh | sudo EMISAR_URL=https://control.example bash"
+               "curl -fsSL https://control.example/install-mcp.sh | sudo EMISAR_URL=https://control.example bash"
     end
 
     test "the hosted portal's MCP upgrade command stays minimal" do
@@ -115,7 +115,7 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
 
       # The installer already defaults to the hosted portal — no env noise.
       assert html =~
-               "curl --proto &#39;=https&#39; --proto-redir &#39;=https&#39; --globoff -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
+               "curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
 
       refute html =~ "EMISAR_URL="
     end

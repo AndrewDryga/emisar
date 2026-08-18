@@ -470,13 +470,13 @@ means tombstoning the runner row while preserving its historical references.
 `install-mcp.sh` installs the stdio bridge. Both are public curl-pipe-shell
 entry points and both select binaries from GitHub Releases.
 
-The privileged fetch uses explicit curl protocol bounds. Public and named
-origins require HTTPS, and an HTTPS fetch follows HTTPS redirects only. Plain
-HTTP is supported only for `localhost`/`*.localhost`, IPv4 loopback or RFC1918
-literals, IPv6 loopback, and IPv6 ULA literals; that first HTTP hop may redirect
-only to HTTPS. Private DNS names are not resolved to infer safety and therefore
-require HTTPS. This keeps local development and private-address self-hosting
-available without allowing a public plaintext script to enter `sudo bash`.
+Generated bootstrap commands use the conventional `curl -fsSL` spelling. Their
+initial origin must use HTTPS; plain HTTP is accepted only for
+`localhost`/`*.localhost`, IPv4 loopback or RFC1918 literals, IPv6 loopback, and
+IPv6 ULA literals. Private DNS names are not resolved to infer safety and
+therefore require HTTPS. Once running, both installers constrain their GitHub
+API, release artifact, and checksum downloads to HTTPS with HTTPS-only
+redirects.
 
 **How they are versioned today.** The script interfaces are flag- and
 environment-based, not protocol-negotiated. `install.sh` accepts runner tags

@@ -211,7 +211,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     # intentional leading space (HISTCONTROL=ignorespace keeps the key out of
     # shell history; a trim anywhere in the handoff would leak it).
     assert html =~
-             "</span> curl --proto &#39;=http,https&#39; --proto-redir &#39;=https&#39; --globoff -fsSL http://localhost:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://localhost:4000 bash</pre>"
+             "</span> curl -fsSL http://localhost:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://localhost:4000 bash</pre>"
   end
 
   test "public HTTP keeps the explicit key reveal but refuses the convenience command", %{

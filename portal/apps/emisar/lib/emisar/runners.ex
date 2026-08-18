@@ -1818,9 +1818,11 @@ defmodule Emisar.Runners do
   def enrollment_install_command(raw_secret, base_url) do
     with :ok <- validate_enrollment_secret(raw_secret),
          {:ok, base, fetch} <- InstallCommand.fetch(base_url, :runner) do
+      shell_base = if String.contains?(base, "["), do: "'#{base}'", else: base
+
       # Leading space keeps the key out of shell history under
       # HISTCONTROL=ignorespace / HIST_IGNORE_SPACE.
-      {:ok, " #{fetch} | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=#{base} bash"}
+      {:ok, " #{fetch} | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=#{shell_base} bash"}
     end
   end
 

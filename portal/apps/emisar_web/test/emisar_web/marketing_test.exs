@@ -499,7 +499,7 @@ defmodule EmisarWeb.MarketingTest do
     # The whole incident is server-rendered for no-JS + crawlers — install,
     # the Claude tool call, the source-verification beat, and the approval beat.
     assert html =~
-             ">curl --proto &#39;=https&#39; --proto-redir &#39;=https&#39; --globoff -fsSL https://emisar.dev/install.sh | sudo bash</div>"
+             ">curl -fsSL https://emisar.dev/install.sh | sudo bash</div>"
 
     assert html =~ "emisar · nomad.alloc_stop(alloc:"
     assert html =~ "read NodeStageVolume in src/driver/index.js"
@@ -1342,7 +1342,7 @@ defmodule EmisarWeb.MarketingTest do
       # The bridge install command an operator copies verbatim. (The install URL
       # is wrapped in a syntax-highlight span, so assert the URL and the
       # `| sudo bash` tail as separate stable pieces, not one contiguous literal.)
-      assert html =~ "curl --proto &#39;=https&#39;"
+      assert html =~ "curl -fsSL"
       assert html =~ "https://emisar.dev/install-mcp.sh"
       assert html =~ "| sudo bash"
     end
@@ -1366,7 +1366,7 @@ defmodule EmisarWeb.MarketingTest do
       # interpolated, so assert the stable contiguous pieces, not the whole
       # line as one string.
       assert html =~
-               "curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh"
+               "curl -fsSL https://emisar.dev/install.sh"
 
       assert html =~ "sudo EMISAR_ENROLLMENT_KEY="
       assert html =~ "EMISAR_URL=https://emisar.dev bash"

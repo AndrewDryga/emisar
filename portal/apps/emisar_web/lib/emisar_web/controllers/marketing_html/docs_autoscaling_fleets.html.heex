@@ -115,12 +115,12 @@
         phx-no-format
         label="emisar-boot.sh"
         copy_text="export EMISAR_ENROLLMENT_KEY=&quot;$(your-secret-tool read emisar/enrollment-key)&quot;
-curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo -E env EMISAR_URL=https://emisar.dev RUNNER_GROUP=web bash -s -- --yes --packs linux-core"
+curl -fsSL https://emisar.dev/install.sh | sudo -E env EMISAR_URL=https://emisar.dev RUNNER_GROUP=web bash -s -- --yes --packs linux-core"
       ><span class="text-zinc-500">#!/usr/bin/env bash</span>
 <span class="text-zinc-500"># the key reaches the environment, never argv</span>
 export EMISAR_ENROLLMENT_KEY="<span class="text-brand-300">$(your-secret-tool read emisar/enrollment-key)</span>"
 
-curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh \
+curl -fsSL https://emisar.dev/install.sh \
   | sudo -E env EMISAR_URL=https://emisar.dev \
       RUNNER_GROUP=<span class="text-brand-300">web</span> \
       bash -s -- --yes --packs linux-core</.docs_code>

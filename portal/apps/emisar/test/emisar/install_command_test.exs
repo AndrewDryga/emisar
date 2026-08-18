@@ -2,15 +2,15 @@ defmodule Emisar.InstallCommandTest do
   use ExUnit.Case, async: true
   alias Emisar.InstallCommand
 
-  test "HTTPS uses an HTTPS-only fetch and redirect policy" do
+  test "HTTPS uses the conventional fetch command after origin validation" do
     assert {:ok, "https://emisar.dev", command} =
              InstallCommand.fetch("https://emisar.dev/", :runner)
 
     assert command ==
-             "curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh"
+             "curl -fsSL https://emisar.dev/install.sh"
   end
 
-  test "local and private HTTP origins allow only an initial HTTP hop" do
+  test "local and private HTTP origins use the conventional fetch command" do
     allowed = [
       "http://localhost:4000",
       "http://portal.localhost",
@@ -27,10 +27,16 @@ defmodule Emisar.InstallCommandTest do
 
     for base <- allowed do
       assert {:ok, ^base, command} = InstallCommand.fetch(base, :mcp)
+      fetch_url = "#{base}/install-mcp.sh"
+      fetch_url = if String.contains?(base, "["), do: "'#{fetch_url}'", else: fetch_url
 
-      assert command ==
-               "curl --proto '=http,https' --proto-redir '=https' --globoff -fsSL #{base}/install-mcp.sh"
+      assert command == "curl -fsSL #{fetch_url}"
     end
+  end
+
+  test "bracketed IPv6 fetch URLs are shell quoted" do
+    assert InstallCommand.fetch("http://[::1]:4000", :runner) ==
+             {:ok, "http://[::1]:4000", "curl -fsSL 'http://[::1]:4000/install.sh'"}
   end
 
   test "public, named, and non-private HTTP origins are refused" do

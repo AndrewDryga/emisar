@@ -16,14 +16,14 @@
 #
 # Usage:
 #
-#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh | sudo bash
 #
 #   # Pin a specific runner version (tag, with or without prefix):
-#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://.../install.sh | sudo bash -s -- --version runner-v0.3.0
-#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://.../install.sh | sudo bash -s -- --version 0.3.0
+#   curl -fsSL https://.../install.sh | sudo bash -s -- --version runner-v0.3.0
+#   curl -fsSL https://.../install.sh | sudo bash -s -- --version 0.3.0
 #
 #   # Unattended (no prompts) with a fixed pack set — for CI / cloud-init:
-#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://.../install.sh | sudo bash -s -- --yes --packs linux-core,postgres,redis
+#   curl -fsSL https://.../install.sh | sudo bash -s -- --yes --packs linux-core,postgres,redis
 #
 #   # Uninstall:
 #   sudo bash install.sh --uninstall
@@ -255,7 +255,7 @@ die_systemd_required() {
   die "this installer requires systemd on Linux (${reason}).
 
 For containers, cloud shells, CI runners, or hosts where you supervise the runner yourself, use --no-service:
-  curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... EMISAR_URL=https://emisar.dev bash -s -- --no-service
+  curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... EMISAR_URL=https://emisar.dev bash -s -- --no-service
 
 If you are reusing a portal-generated one-liner, keep its EMISAR_ENROLLMENT_KEY/EMISAR_URL values and replace the final 'bash' with:
   bash -s -- --no-service"
@@ -1831,7 +1831,7 @@ EOF
   echo
   # \$0 is "bash" when run as `curl ... | sudo bash`, so don't print that.
   # Show the canonical re-curl form instead.
-  echo "Uninstall:  curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo bash -s -- --uninstall"
+  echo "Uninstall:  curl -fsSL https://emisar.dev/install.sh | sudo bash -s -- --uninstall"
   echo "Update:     sudo ${BIN_DIR}/emisar update"
   echo "==============================================================="
 }

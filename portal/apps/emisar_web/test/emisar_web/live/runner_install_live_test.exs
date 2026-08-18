@@ -33,7 +33,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       # HISTCONTROL=ignorespace). Regression: copying via the element's
       # innerText used to strip that leading space.
       assert html =~
-               ~s(data-copy-text=" curl --proto &#39;=http,https&#39; --proto-redir &#39;=https&#39; --globoff -fsSL http://localhost:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://localhost:4000 bash")
+               ~s(data-copy-text=" curl -fsSL http://localhost:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://localhost:4000 bash")
     end
 
     test "public HTTP refuses before minting an install key", %{account: account} do
@@ -91,8 +91,8 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
         |> log_in_user(operator)
         |> live(~p"/app/#{account}/runners/install")
 
-      assert html =~ "curl --proto"
-      assert html =~ ~s(data-copy-text=" curl --proto)
+      assert html =~ "curl -fsSL"
+      assert html =~ ~s(data-copy-text=" curl -fsSL)
       refute html =~ "couldn't mint a bootstrap enrollment key"
     end
 
@@ -163,7 +163,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       # Static render falls through to the "generating…" placeholder, not a
       # real command…
       assert html =~ "Generating your install command"
-      refute html =~ ~s(data-copy-text=" curl --proto)
+      refute html =~ ~s(data-copy-text=" curl -fsSL)
       # …and crucially mints no enrollment key.
       assert Repo.all(EnrollmentKey) == []
     end
@@ -205,7 +205,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
       send(lv.pid, %{event: "presence_diff", payload: %{joins: %{other.id => %{metas: [%{}]}}}})
 
-      assert render(lv) =~ "curl --proto"
+      assert render(lv) =~ "curl -fsSL"
     end
 
     test "does NOT query or redirect for heartbeat metadata updates", %{
@@ -230,7 +230,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
         }
       })
 
-      assert render(lv) =~ "curl --proto"
+      assert render(lv) =~ "curl -fsSL"
     end
   end
 

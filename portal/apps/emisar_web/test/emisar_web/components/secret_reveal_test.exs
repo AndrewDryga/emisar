@@ -24,7 +24,7 @@ defmodule EmisarWeb.Components.SecretRevealTest do
         >
           Treat it like a password.
           <:install_command label="Install on a host">
-            curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo bash
+            curl -fsSL https://emisar.dev/install.sh | sudo bash
           </:install_command>
         </CoreComponents.secret_reveal>
         """)

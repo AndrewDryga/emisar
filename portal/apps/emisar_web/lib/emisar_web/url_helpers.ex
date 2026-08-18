@@ -37,11 +37,13 @@ defmodule EmisarWeb.UrlHelpers do
   """
   def mcp_install_command(base_url) do
     with {:ok, base, fetch} <- InstallCommand.fetch(base_url, :mcp) do
+      shell_base = if String.contains?(base, "["), do: "'#{base}'", else: base
+
       command =
         if base == @fallback_url do
           "#{fetch} | sudo bash"
         else
-          "#{fetch} | sudo EMISAR_URL=#{base} bash"
+          "#{fetch} | sudo EMISAR_URL=#{shell_base} bash"
         end
 
       {:ok, command}

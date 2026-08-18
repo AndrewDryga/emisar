@@ -89,7 +89,6 @@ Download first so failures are unambiguous and `--help` can be inspected:
 ```sh
 export EMISAR_URL="${EMISAR_URL:-https://emisar.dev}"
 EMISAR_URL="${EMISAR_URL%/}"
-installer_proto='=https'
 case "$EMISAR_URL" in
   https://*) ;;
   http://*)
@@ -128,15 +127,12 @@ except ValueError:
 if not allowed:
     sys.exit("Refusing a non-private HTTP installer origin; use HTTPS")
 PY
-    installer_proto='=http,https'
     ;;
   *) echo "Refusing an installer origin that is not HTTP or HTTPS" >&2; exit 1 ;;
 esac
 installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT HUP INT TERM
-curl --proto "$installer_proto" --proto-redir '=https' --globoff \
-  --fail --silent --show-error --location \
-  "$EMISAR_URL/install-mcp.sh" -o "$installer"
+curl -fsSL "$EMISAR_URL/install-mcp.sh" -o "$installer"
 bash "$installer" --help
 sudo EMISAR_URL="$EMISAR_URL" bash "$installer"
 rm -f "$installer"

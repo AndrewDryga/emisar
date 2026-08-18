@@ -20,7 +20,7 @@ available for development and evaluation.
 2. Run that command on the host:
 
    ```sh
-   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh \
+   curl -fsSL https://emisar.dev/install.sh \
      | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... EMISAR_URL=https://emisar.dev bash
    ```
 
@@ -240,7 +240,7 @@ Fresh unattended installs still require an explicit pack set. Pass reviewed
 pack IDs when provisioning a host, or set an empty value to add none:
 
 ```sh
-curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo EMISAR_PACKS="" bash -s -- --yes
+curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_PACKS="" bash -s -- --yes
 ```
 
 The installer bundled in a release tarball pins itself to that release and can

@@ -15,7 +15,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       # No runners yet → the empty state IS the installer, one-liner pre-minted,
       # so a first-time operator connects a host with no detour to a separate page.
       assert html =~ "Run this on the host"
-      assert html =~ "curl --proto"
+      assert html =~ "curl -fsSL"
       assert html =~ "EMISAR_ENROLLMENT_KEY=emkey-enroll-"
       assert has_element?(lv, "#runner-install-command")
       assert html =~ "min-h-9"
@@ -120,7 +120,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       # placeholder; nothing is minted until the socket confirms an empty fleet.
       html = conn |> get(~p"/app/#{account}/runners") |> html_response(200)
       assert html =~ "Loading"
-      refute html =~ "curl --proto"
+      refute html =~ "curl -fsSL"
     end
 
     test "lists runners grouped by their `group` field", %{conn: conn} do
@@ -700,7 +700,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
       assert html =~ "Connect a runner"
       assert html =~ "Connect a runner"
-      assert html =~ "curl --proto"
+      assert html =~ "curl -fsSL"
       assert html =~ "EMISAR_ENROLLMENT_KEY=emkey-enroll-"
 
       # The command embeds a live root-capable credential — the wizard must

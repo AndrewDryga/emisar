@@ -31,7 +31,7 @@ signed-in operator and their runner scope.
 ## Install the stdio bridge
 
 ```sh
-curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install-mcp.sh | sudo bash
+curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash
 ```
 
 The installer resolves the latest tagged release, verifies its checksum, and
@@ -53,7 +53,7 @@ Use `emisar-mcp --help` for current registration commands and config locations.
 Pin a reviewed release for managed rollouts:
 
 ```sh
-curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install-mcp.sh \
+curl -fsSL https://emisar.dev/install-mcp.sh \
   | sudo bash -s -- --version mcp-vX.Y.Z --yes
 ```
 
