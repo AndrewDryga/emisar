@@ -144,7 +144,7 @@ jobs:
               -H "Authorization: Bearer $EMISAR_API_KEY" \
               -H 'Content-Type: application/json' \
               -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_runners","arguments":{}}}' \
-              | jq '[.result.structuredContent.runners[]? | select(.status == "connected")] | length' || echo 0)
+              | jq '.result.structuredContent.summary.connected // 0' || echo 0)
             if [ "$connected" -ge 3 ]; then
               echo "$connected connected runners after ~$((i * 5))s"
               exit 0
