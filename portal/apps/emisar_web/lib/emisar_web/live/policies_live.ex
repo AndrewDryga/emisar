@@ -1389,10 +1389,11 @@ defmodule EmisarWeb.PoliciesLive do
          needs and a new decision label can never clip it. The trailing track is
          a FIXED trash width, not `auto` — a view-only row renders no trash, and
          a content-sized track would collapse there, sliding every field sideways
-         between the editable and blocked states. --%>
+         between the editable and blocked states. It reserves the icon button's
+         full 40px target even though its visible face matches the 32px fields. --%>
     <div class={[
       "space-y-2 @md:grid @md:items-start @md:gap-2 @md:space-y-0",
-      "@md:grid-cols-[minmax(0,3fr)_minmax(0,5fr)_max-content_2rem]"
+      "@md:grid-cols-[minmax(0,3fr)_minmax(0,5fr)_max-content_2.5rem]"
     ]}>
       <div>
         <.input
@@ -1435,18 +1436,18 @@ defmodule EmisarWeb.PoliciesLive do
         />
       </div>
       <%!-- Trash sits right after Decision (justify-start), not floated to the
-           far edge of its cell. pt-5 clears the eyebrow; h-8 then matches the
-           compact field box without an Action error shifting its row. --%>
-      <div class="@md:flex @md:items-start @md:justify-start @md:pt-5">
+           far edge of its cell. pt-4 centers the 40px target on the compact
+           field box; its 32px visual face aligns exactly with that box. --%>
+      <div class="@md:flex @md:items-start @md:justify-start @md:pt-4">
         <.icon_button
           :if={@can_manage}
           icon="hero-trash"
           label="Remove override"
           tone={:rose}
+          size={:compact}
           phx-click="remove_override"
           phx-value-editor={@editor_id}
           phx-value-index={@index}
-          class="grid h-8 w-8 place-items-center"
         />
       </div>
     </div>

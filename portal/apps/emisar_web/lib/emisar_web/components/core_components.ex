@@ -370,13 +370,15 @@ defmodule EmisarWeb.CoreComponents do
   An icon-only button. `label` is REQUIRED — it becomes both `aria-label` and
   `title`, so an icon-only control is never nameless to a screen reader or a
   mouse user. For a text+icon button use `<.button icon=>`. `tone` covers the
-  two treatments in use (neutral, danger-on-hover); pass any positioning via
-  `class`. Event bindings (`phx-click`, `phx-value-*`, `data-confirm`) and
-  `disabled` ride the global `:rest`.
+  two treatments in use (neutral, danger-on-hover). `size={:compact}` keeps the
+  40px target while drawing a 32px hover face beside compact form controls;
+  pass any positioning via `class`. Event bindings (`phx-click`,
+  `phx-value-*`, `data-confirm`) and `disabled` ride the global `:rest`.
   """
   attr :icon, :string, required: true
   attr :label, :string, required: true
   attr :tone, :atom, default: :neutral, values: [:neutral, :rose]
+  attr :size, :atom, default: :default, values: [:default, :compact]
   attr :class, :string, default: nil
   attr :rest, :global, include: ~w(disabled)
 
@@ -387,17 +389,28 @@ defmodule EmisarWeb.CoreComponents do
       aria-label={@label}
       title={@label}
       class={[
-        "inline-flex min-h-10 min-w-10 items-center justify-center rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-900 disabled:opacity-30 disabled:hover:bg-transparent",
+        "inline-flex min-h-10 min-w-10 items-center justify-center text-zinc-500 transition-colors disabled:opacity-30",
+        icon_button_size(@size),
         "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
         icon_button_tone(@tone),
         @class
       ]}
       {@rest}
     >
-      <.icon name={@icon} class="h-4 w-4" />
+      <.icon name={@icon} class={icon_button_icon_class(@size)} />
     </button>
     """
   end
+
+  defp icon_button_size(:default),
+    do: "rounded-md p-2 hover:bg-zinc-900 disabled:hover:bg-transparent"
+
+  defp icon_button_size(:compact) do
+    "relative rounded-md p-2 before:absolute before:inset-1 before:rounded-md before:content-[''] before:transition-colors hover:before:bg-zinc-900 disabled:hover:before:bg-transparent"
+  end
+
+  defp icon_button_icon_class(:default), do: "h-4 w-4"
+  defp icon_button_icon_class(:compact), do: "relative h-4 w-4"
 
   defp icon_button_tone(:neutral), do: "hover:text-zinc-200 focus-visible:outline-zinc-600"
   defp icon_button_tone(:rose), do: "hover:text-rose-300 focus-visible:outline-rose-400"

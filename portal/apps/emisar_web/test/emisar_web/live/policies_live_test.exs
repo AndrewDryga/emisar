@@ -873,10 +873,16 @@ defmodule EmisarWeb.PoliciesLiveTest do
         assert control_class(owner_html, field) == control_class(viewer_html, field)
       end
 
-      # The trash track is a fixed width in both, so the row cannot shift when the
-      # button is absent.
-      assert owner_html =~ "max-content_2rem"
-      assert viewer_html =~ "max-content_2rem"
+      # The trash track reserves the full 40px target in both, so the row cannot
+      # shift when the button is absent or let its target overlap Decision.
+      assert owner_html =~ "max-content_2.5rem"
+      assert viewer_html =~ "max-content_2.5rem"
+
+      # The target is centered on the 32px compact controls, while the hover face
+      # — inset 4px on each side — matches their visible box.
+      assert owner_html =~ "@md:pt-4"
+      assert owner_html =~ "before:inset-1"
+      assert owner_html =~ "hover:before:bg-zinc-900"
 
       # One height across the row: the pinned line box survives the mono and
       # text-xs faces, and the decision select reserves its chevron room.

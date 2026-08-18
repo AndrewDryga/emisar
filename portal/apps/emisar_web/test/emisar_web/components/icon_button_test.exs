@@ -34,6 +34,16 @@ defmodule EmisarWeb.Components.IconButtonTest do
                "hover:text-rose-300"
     end
 
+    test "compact keeps the 40px target and draws a 32px hover face" do
+      html =
+        render_icon_button(%{icon: "hero-trash", label: "Remove", size: :compact})
+
+      assert html =~ "min-h-10 min-w-10"
+      assert html =~ "before:inset-1"
+      assert html =~ "hover:before:bg-zinc-900"
+      refute html =~ "hover:bg-zinc-900"
+    end
+
     test "disabled + event bindings ride the global rest" do
       html =
         render_icon_button(%{

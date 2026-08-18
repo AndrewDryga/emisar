@@ -631,6 +631,12 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     control and breaks the row's shared edges (the policy override row shipped a 32px Name
     beside a 28px Action and Decision). Sweep: `size={:compact}` (or any shared control) call
     sites passing a `text-*` class, and rows mixing a mono identifier field with a prose one.
+    A trailing icon button beside those compact controls keeps its accessible 40px target but
+    uses `size={:compact}` for a 32px visible hover face, reserves a 2.5rem track, and centers
+    that target on the control box. A caller's `h-8 w-8` cannot override the shared button's
+    `min-h-10 min-w-10`; that conflict made the policy trash hover overflow its track and sit
+    below the fields. Sweep: compact form rows sizing an `icon_button` through `class`, and
+    icon tracks narrower than the component's minimum target.
 55. **A state change never moves the layout — and what must not move is the neighbouring
     CONTENT, not every control inside its own cluster.** View-only, plan-gated, and disabled
     states restyle in place: same height, same width, same position as the state that can act.
