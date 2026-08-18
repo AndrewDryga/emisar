@@ -245,13 +245,11 @@ defmodule Emisar.Repo do
   Example:
 
       Multi.new()
-      |> Multi.update(:policy, Policy.Changeset.update(policy, attrs))
-      |> Multi.insert(:audit, fn %{policy: updated} ->
-        Audit.Events.policy_updated(subject, policy, updated)
+      |> Multi.insert(:runbook, changeset)
+      |> Multi.insert(:audit, fn %{runbook: runbook} ->
+        Audit.Events.runbook_created(subject, runbook)
       end)
-      |> Repo.commit_multi(after_commit: fn %{policy: updated} ->
-        broadcast_policy_change(updated)
-      end)
+      |> Repo.commit_multi(after_commit: &broadcast_runbook_created(&1.runbook))
 
   Options:
 

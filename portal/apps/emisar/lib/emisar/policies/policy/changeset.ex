@@ -9,7 +9,7 @@ defmodule Emisar.Policies.Policy.Changeset do
   @doc """
   Validation-only changeset for the policy editor form. Casts the
   assembled `rules` map and runs the same `validate_rules/1` checks as
-  `create/1` + `update/1`, so the LiveView can back its form with a
+  `create/1`, so the LiveView can back its form with a
   changeset and render the rules-level error inline (rose border + message)
   instead of a flash. Persists nothing; the real write goes through
   `Policies.save_rules/2`.
@@ -27,14 +27,6 @@ defmodule Emisar.Policies.Policy.Changeset do
     |> validate_scope()
     |> validate_rules()
     |> unique_constraint([:account_id, :scope_type, :scope_value])
-  end
-
-  def update(%Policy{} = policy, attrs) do
-    policy
-    |> cast(attrs, [:rules, :updated_by_id])
-    |> validate_required([:rules])
-    |> validate_rules()
-    |> maybe_bump_vsn(policy)
   end
 
   # The account default carries an empty scope_value; a runner/group override
@@ -57,18 +49,6 @@ defmodule Emisar.Policies.Policy.Changeset do
 
       _ ->
         changeset
-    end
-  end
-
-  # Bump the version whenever the rules map actually changes. Pure
-  # cast (no rule change) shouldn't increment — protects against
-  # touching `updated_by_id` alone bumping the audit-correlation
-  # number without an actual decision-affecting edit.
-  defp maybe_bump_vsn(changeset, %Policy{vsn: current, rules: existing_rules}) do
-    case get_change(changeset, :rules) do
-      nil -> changeset
-      ^existing_rules -> changeset
-      _new_rules -> put_change(changeset, :vsn, (current || 1) + 1)
     end
   end
 

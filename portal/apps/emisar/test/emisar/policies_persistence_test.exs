@@ -37,6 +37,18 @@ defmodule Emisar.PoliciesPersistenceTest do
       assert updated.vsn > created.vsn
     end
 
+    test "saving identical rules keeps the same row and version" do
+      membership = Fixtures.Memberships.create_membership(role: "owner")
+      subject = Fixtures.Subjects.membership_subject(membership)
+      policy_rules = rules("require_approval")
+
+      assert {:ok, created} = Policies.save_rules(policy_rules, subject)
+      assert {:ok, unchanged} = Policies.save_rules(policy_rules, subject)
+
+      assert unchanged.id == created.id
+      assert unchanged.vsn == created.vsn
+    end
+
     test "a viewer can't save policy rules" do
       {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
       viewer = Fixtures.Users.create_user()
