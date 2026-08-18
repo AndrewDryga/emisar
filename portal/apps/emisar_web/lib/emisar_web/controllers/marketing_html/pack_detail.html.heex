@@ -191,12 +191,14 @@
           ← Back to registry
         </.link>
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <.link navigate={~p"/docs/action-packs"} class="text-zinc-400 hover:text-zinc-200">
-            Pack reference
-          </.link>
+          <.cta_link
+            tone={:muted}
+            navigate={~p"/docs/action-packs"}
+            class="inline-block min-h-10 py-2.5"
+          >Pack reference</.cta_link>
           <.link
             navigate={~p"/docs/publishing-packs"}
-            class="group font-semibold text-brand-300 hover:text-brand-200"
+            class="group inline-block min-h-10 py-2.5 font-semibold text-brand-300 hover:text-brand-200"
           >Publish your own&nbsp;<.cta_arrow /></.link>
         </div>
       </div>

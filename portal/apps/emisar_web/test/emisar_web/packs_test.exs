@@ -114,6 +114,18 @@ defmodule EmisarWeb.PacksTest do
       refute hidden =~ "Required binaries"
     end
 
+    test "the pack reference footer link carries the muted CTA affordance", %{conn: conn} do
+      html = conn |> get(~p"/packs/redis") |> html_response(200)
+
+      [pack_reference] =
+        Regex.run(~r{<a[^>]*href="/docs/action-packs"[^>]*>.*?</a>}s, html)
+
+      assert pack_reference =~ "Pack reference"
+      assert pack_reference =~ "hero-arrow-right"
+      assert pack_reference =~ "text-zinc-400"
+      assert pack_reference =~ "min-h-10"
+    end
+
     test "every external link on a pack detail page carries the safe-rel pair", %{conn: conn} do
       # Each action id + the "View on GitHub"/"Source" links open off-site,
       # so a missing rel="noopener" is a reverse-tabnabbing hole.
