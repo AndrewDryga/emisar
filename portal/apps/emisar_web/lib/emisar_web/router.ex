@@ -3,6 +3,11 @@ defmodule EmisarWeb.Router do
   import Phoenix.LiveDashboard.Router
   import EmisarWeb.UserAuth
 
+  @dev_routes Application.compile_env(:emisar_web, :dev_routes)
+
+  @doc false
+  def dev_routes?, do: @dev_routes
+
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -584,7 +589,7 @@ defmodule EmisarWeb.Router do
   # slowest queries / pool stats) on top of the Phoenix process /
   # request / memory views. `ecto_psql_extras_options` is honored when
   # the optional `ecto_psql_extras` dep is installed; ignored otherwise.
-  if Application.compile_env(:emisar_web, :dev_routes) do
+  if @dev_routes do
     scope "/dev" do
       pipe_through [:browser, :mailbox_preview]
 

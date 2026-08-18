@@ -188,23 +188,6 @@ if config_env() == :prod do
   # still complete sign-in.
   config :emisar_web, force_secure_cookies: https_fronted?
 
-  # Endpoints this deployment declares as its own identity providers, as exact
-  # `host:port` values, so the OIDC guard lets them through the private-address
-  # policy. EMPTY unless set: an IdP on the public internet needs nothing here, and
-  # a private address is otherwise indistinguishable from our own internal
-  # infrastructure — which is the SSRF the guard exists to refuse. The e2e harness
-  # sets it to its local Keycloak, because a test IdP cannot have a public address.
-  #
-  # The PORT is part of it. A host-only declaration admitted a machine rather than
-  # an endpoint: a discovery document naming a declared host could reach any
-  # TLS-speaking port on it.
-  config :emisar,
-         :sso_allowed_idp_hosts,
-         "EMISAR_SSO_ALLOWED_IDP_HOSTS"
-         |> System.get_env("")
-         |> String.split(",", trim: true)
-         |> Enum.map(&String.trim/1)
-
   # BEAM clustering on GCP MIGs. When EMISAR_CLUSTER_PROJECT is set (the instance
   # template sets it), libcluster's GCE strategy lists the project's RUNNING portal
   # instances via the Compute API and connects them as `emisar@<internal-ip>`
@@ -396,6 +379,35 @@ if config_env() == :prod do
       }
   end
 end
+
+# Exact `host:port` endpoints which the OIDC guard may exempt from its private-
+# address policy. This exists only for development and test builds, whose local
+# Keycloak cannot have a public address. The build-time dev-routes flag separates
+# the packaged local stack from a production image even if the same runtime env
+# variables are injected into both.
+allowed_idp_hosts_env = System.get_env("EMISAR_SSO_ALLOWED_IDP_HOSTS")
+
+development_or_test_build? =
+  config_env() in [:dev, :test] or EmisarWeb.Router.dev_routes?()
+
+if is_binary(allowed_idp_hosts_env) and allowed_idp_hosts_env != "" and
+     not development_or_test_build? do
+  IO.warn(
+    "EMISAR_SSO_ALLOWED_IDP_HOSTS is ignored outside development and test builds",
+    []
+  )
+end
+
+sso_allowed_idp_hosts =
+  if development_or_test_build? do
+    (allowed_idp_hosts_env || "")
+    |> String.split(",", trim: true)
+    |> Enum.map(&String.trim/1)
+  else
+    []
+  end
+
+config :emisar, :sso_allowed_idp_hosts, sso_allowed_idp_hosts
 
 # Always use the stub Paddle client in dev / test unless a real key was set
 # (the sandbox e2e harness exports one via `./run e2e billing`).

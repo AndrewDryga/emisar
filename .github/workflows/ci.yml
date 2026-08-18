@@ -293,6 +293,9 @@ jobs:
           # Validate the catalog bundled in this image. The published pointer can
           # still name the previous pack version until CD publishes this commit.
           EMISAR_PACK_CATALOG_URL: ""
+          EMISAR_SSO_ALLOWED_IDP_HOSTS: "private-idp.invalid:8443"
+          ELIXIR_ERL_OPTIONS: "-emisar_web dev_routes true"
+          ERL_AFLAGS: "-emisar_web dev_routes true"
           FORCE_SSL: "false"
         run: |
           set -euo pipefail
@@ -307,7 +310,9 @@ jobs:
 
           cid=$(docker run -d --network host \
             -e DATABASE_URL -e SECRET_KEY_BASE -e PHX_HOST -e PORT \
-            -e EMISAR_DISABLE_BILLING -e EMISAR_PACK_CATALOG_URL -e FORCE_SSL \
+            -e EMISAR_DISABLE_BILLING -e EMISAR_PACK_CATALOG_URL \
+            -e EMISAR_SSO_ALLOWED_IDP_HOSTS -e ELIXIR_ERL_OPTIONS \
+            -e ERL_AFLAGS -e FORCE_SSL \
             emisar/portal:ci)
 
           cleanup() {
@@ -353,6 +358,25 @@ jobs:
                 }
           done
           echo "release revision OK"
+
+          docker exec "$cid" /app/bin/emisar rpc \
+            'case Application.fetch_env!(:emisar, :sso_allowed_idp_hosts) do
+               [] -> :ok
+               _ -> raise "production release accepted private IdP hosts"
+             end'
+
+          portal_logs=$(docker logs "$cid" 2>&1)
+          warning="EMISAR_SSO_ALLOWED_IDP_HOSTS is ignored outside development and test builds"
+          warning_count=$(printf '%s\n' "$portal_logs" | grep -Fc "$warning" || true)
+          if [ "$warning_count" -ne 1 ]; then
+            echo "::error::Expected one ignored private-IdP warning, got ${warning_count}"
+            exit 1
+          fi
+          if printf '%s\n' "$portal_logs" | grep -Fq "$EMISAR_SSO_ALLOWED_IDP_HOSTS"; then
+            echo "::error::Private IdP warning leaked the configured endpoint"
+            exit 1
+          fi
+          echo "production private-IdP exemption refused"
 
           if docker logs "$cid" 2>&1 | grep -Fq '[UNIX-ESSIO] Failed open sctp dynamic library'; then
             echo "::error::Portal image is missing the SCTP runtime library"

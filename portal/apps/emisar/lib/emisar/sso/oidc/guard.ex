@@ -190,10 +190,9 @@ defmodule Emisar.SSO.OIDC.Guard do
   Has this deployment declared this exact `host:port` as one of its own identity
   providers?
 
-  A deployment may legitimately run its IdP on a private address — and every test
-  harness must, since a local Keycloak cannot be given a public one. Such an
-  endpoint is named EXACTLY, by whoever runs the deployment, and the list is empty
-  unless set.
+  Development and test builds run their IdP on a private address, since a local
+  Keycloak cannot be given a public one. Such an endpoint is named EXACTLY by the
+  harness, and the list is empty in production builds.
 
   **Host AND port.** The hostname reaching this function comes from a discovery
   document, which is attacker-influenced, so a host-only declaration let any
@@ -201,11 +200,9 @@ defmodule Emisar.SSO.OIDC.Guard do
   the declaration was meant to admit one endpoint, not a machine. The port closes
   that.
 
-  What it does NOT do is bind the exemption to the provider that asked. On a
-  deployment which declares an endpoint, any tenant's document may still name that
-  endpoint; scoping it per provider needs a profile per provider and is tracked
-  separately. In production the list is empty, so the capability does not exist
-  there.
+  What it does NOT do is bind the exemption to the provider that asked. In a
+  development or test build which declares an endpoint, any tenant's document may
+  still name that endpoint; production builds refuse to load the list.
 
   Public because the guard answers CONNECTs in a process with no relationship to
   any test, so this is the seam a test can actually reach.
