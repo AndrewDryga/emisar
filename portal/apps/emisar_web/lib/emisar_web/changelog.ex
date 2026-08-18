@@ -2,7 +2,7 @@ defmodule EmisarWeb.Changelog do
   @moduledoc """
   Single source for the product changelog — rendered on `/changelog` and as
   the `/changelog.xml` RSS feed, so the two never drift. Each entry is a real
-  product release and carries its git tag (`vMAJOR.MINOR.0`); the tag points at
+  product release and carries its git tag (`vMAJOR.MINOR.PATCH`); the tag points at
   the last commit of that version's window, so the commit history, the tags, and
   this changelog all line up. Newest first.
 
@@ -16,6 +16,14 @@ defmodule EmisarWeb.Changelog do
   @base "https://emisar.dev"
 
   @entries [
+    %{
+      date: ~D[2026-08-17],
+      slug: "pack-ci-runs-only-what-changed",
+      title: "Pack CI runs only what changed",
+      tag: "v0.41.1",
+      summary:
+        "A pack change now runs behavior tests only for the affected pack instead of replaying the entire matrix. Changes to the shared harness, loader, catalog, or runner execution path still run every behavior plan, and a test-only edit no longer queues an unchanged registry publication. The release path keeps the full checks wherever runtime behavior can move while shortening the routine feedback loop."
+    },
     %{
       date: ~D[2026-08-17],
       slug: "role-and-scope-changes-take-effect-immediately",
