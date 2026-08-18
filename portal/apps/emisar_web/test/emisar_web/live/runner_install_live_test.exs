@@ -6,6 +6,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
   describe "GET /app/runners/install" do
     test "states the key is one-time and points multi-use at Enrollment keys", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      conn = local_conn(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
 
       assert html =~ "one-time"
@@ -15,7 +16,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
     setup %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      %{conn: conn, account: account}
+      %{conn: local_conn(conn), account: account}
     end
 
     test "renders the install one-liner and copies it with its leading space", %{
@@ -32,7 +33,26 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       # HISTCONTROL=ignorespace). Regression: copying via the element's
       # innerText used to strip that leading space.
       assert html =~
-               ~s(data-copy-text=" curl -sSL http://www.example.com/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://www.example.com bash")
+               ~s(data-copy-text=" curl --proto &#39;=http,https&#39; --proto-redir &#39;=https&#39; --globoff -fsSL http://localhost:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://localhost:4000 bash")
+    end
+
+    test "public HTTP refuses before minting an install key", %{account: account} do
+      owner = Fixtures.Users.create_user()
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
+
+      {:ok, _lv, html} =
+        build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/runners/install")
+
+      assert html =~ "Install command unavailable over HTTP"
+      refute html =~ "Waiting for a runner to connect"
+      refute html =~ ~r/emkey-enroll-[A-Za-z0-9_-]{43}/
+      refute Repo.exists?(EnrollmentKey.Query.all())
     end
 
     test "puts the live wait status directly after the command, before the script details", %{
@@ -66,10 +86,13 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
         )
 
       {:ok, _lv, html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/runners/install")
+        build_conn()
+        |> local_conn()
+        |> log_in_user(operator)
+        |> live(~p"/app/#{account}/runners/install")
 
-      assert html =~ "curl -sSL"
-      assert html =~ ~s(data-copy-text=" curl -sSL)
+      assert html =~ "curl --proto"
+      assert html =~ ~s(data-copy-text=" curl --proto)
       refute html =~ "couldn't mint a bootstrap enrollment key"
     end
 
@@ -140,7 +163,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       # Static render falls through to the "generating…" placeholder, not a
       # real command…
       assert html =~ "Generating your install command"
-      refute html =~ ~s(data-copy-text=" curl -sSL)
+      refute html =~ ~s(data-copy-text=" curl --proto)
       # …and crucially mints no enrollment key.
       assert Repo.all(EnrollmentKey) == []
     end
@@ -182,7 +205,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
       send(lv.pid, %{event: "presence_diff", payload: %{joins: %{other.id => %{metas: [%{}]}}}})
 
-      assert render(lv) =~ "curl -sSL"
+      assert render(lv) =~ "curl --proto"
     end
 
     test "does NOT query or redirect for heartbeat metadata updates", %{
@@ -207,7 +230,9 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
         }
       })
 
-      assert render(lv) =~ "curl -sSL"
+      assert render(lv) =~ "curl --proto"
     end
   end
+
+  defp local_conn(conn), do: %{conn | host: "localhost", port: 4000}
 end

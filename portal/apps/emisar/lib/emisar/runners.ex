@@ -22,7 +22,7 @@ defmodule Emisar.Runners do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Billing, Compat, Crypto, Repo}
+  alias Emisar.{Accounts, Audit, Auth, Billing, Compat, Crypto, InstallCommand, Repo}
   alias Emisar.Auth.Subject
   alias Emisar.RequestContext
   alias Emisar.Runners.{Authorizer, ConnectionChange, EnrollmentKey, InactiveRetentionInput}
@@ -1811,16 +1811,16 @@ defmodule Emisar.Runners do
   @doc """
   The host install one-liner for a freshly minted enrollment key —
   `{:ok, command}`, or `{:error, :invalid_enrollment_key}` /
-  `{:error, :invalid_base_url}` when an input isn't the exact shape a pasteable
-  command may carry. Pure: reads nothing, writes nothing, logs nothing.
+  `{:error, :invalid_base_url | :insecure_base_url}` when an input isn't the
+  exact shape or transport a pasteable command may carry. Pure: reads nothing,
+  writes nothing, logs nothing.
   """
   def enrollment_install_command(raw_secret, base_url) do
     with :ok <- validate_enrollment_secret(raw_secret),
-         {:ok, base} <- normalize_base_url(base_url) do
+         {:ok, base, fetch} <- InstallCommand.fetch(base_url, :runner) do
       # Leading space keeps the key out of shell history under
       # HISTCONTROL=ignorespace / HIST_IGNORE_SPACE.
-      {:ok,
-       " curl -sSL #{base}/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=#{base} bash"}
+      {:ok, " #{fetch} | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=#{base} bash"}
     end
   end
 
@@ -1833,35 +1833,6 @@ defmodule Emisar.Runners do
   end
 
   defp validate_enrollment_secret(_raw_secret), do: {:error, :invalid_enrollment_key}
-
-  defp normalize_base_url(base_url) when is_binary(base_url) do
-    base = String.replace_suffix(base_url, "/", "")
-
-    case URI.new(base) do
-      {:ok, uri} -> if plain_origin?(uri), do: {:ok, base}, else: {:error, :invalid_base_url}
-      {:error, _part} -> {:error, :invalid_base_url}
-    end
-  end
-
-  defp normalize_base_url(_base_url), do: {:error, :invalid_base_url}
-
-  # A pasteable one-liner carries an origin and nothing else — no credentials,
-  # no path/query/fragment, and no character a shell would act on.
-  defp plain_origin?(%URI{
-         scheme: scheme,
-         userinfo: nil,
-         host: host,
-         port: port,
-         path: path,
-         query: nil,
-         fragment: nil
-       })
-       when scheme in ["http", "https"] and is_binary(host) and is_integer(port) and
-              port in 1..65_535 and path in [nil, ""] do
-    Regex.match?(~r/\A[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?\z/, host)
-  end
-
-  defp plain_origin?(_uri), do: false
 
   # -- PubSub ----------------------------------------------------------
 

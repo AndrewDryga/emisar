@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -406,7 +407,7 @@ func countLines(value string) int {
 
 // githubTokenHygiene proves both installers' github_api sends the optional
 // EMISAR_GITHUB_TOKEN as an Authorization header without exposing it on any
-// argv: the HTTP handler runs while curl is still blocked on the response,
+// argv: the TLS handler runs while curl is still blocked on the response,
 // so /proc/*/cmdline scanned at that instant covers every live process in
 // the pipeline. The no-token path must stay header-free under `set -u`.
 func githubTokenHygiene(h *harness, script string) error {
@@ -418,7 +419,7 @@ func githubTokenHygiene(h *harness, script string) error {
 	}
 	var mu sync.Mutex
 	probes := map[string]probe{}
-	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		mu.Lock()
 		probes[request.URL.Path] = probe{
 			authorization: request.Header.Get("Authorization"),
@@ -430,11 +431,20 @@ func githubTokenHygiene(h *harness, script string) error {
 		_, _ = io.WriteString(response, "{}")
 	}))
 	defer server.Close()
+	caFile := h.path("github-api-ca.pem")
+	certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	if err := writeFile(caFile, string(certificate), 0o600); err != nil {
+		return fmt.Errorf("writing test TLS certificate: %w", err)
+	}
 
 	result := h.functions(h.repoPath(script), []string{"github_api"}, `
 github_api "$SERVER_URL/authenticated" >/dev/null
 EMISAR_GITHUB_TOKEN="" github_api "$SERVER_URL/anonymous" >/dev/null
-`, map[string]string{"EMISAR_GITHUB_TOKEN": token, "SERVER_URL": server.URL})
+`, map[string]string{
+		"CURL_CA_BUNDLE":      caFile,
+		"EMISAR_GITHUB_TOKEN": token,
+		"SERVER_URL":          server.URL,
+	})
 	if _, err := requireOutput(result); err != nil {
 		return err
 	}

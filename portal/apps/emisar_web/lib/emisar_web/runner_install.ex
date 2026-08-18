@@ -5,7 +5,7 @@ defmodule EmisarWeb.RunnerInstall do
   install page and the runners list's empty-state wizard (an empty account drops
   straight into the wizard).
   """
-  alias Emisar.Runners
+  alias Emisar.{InstallCommand, Runners}
 
   # A runner usually joins within seconds of running the one-liner. If none has
   # after this grace period, reveal a troubleshooting checklist — the likely
@@ -18,14 +18,18 @@ defmodule EmisarWeb.RunnerInstall do
   @doc """
   Mints a fresh install key and returns `{command, key_id}` — `Runners`' curl
   one-liner for that key, plus the key id (so a presence-join handler can tell
-  THIS wizard's runner from any other host coming up). `{:mint_failed, nil}` on
-  error; a nil key id can never match a join.
+  THIS wizard's runner from any other host coming up). An insecure public HTTP
+  origin returns `{:insecure_transport, nil}` before a key is minted;
+  `{:mint_failed, nil}` covers mint failures. A nil key id can never match a join.
   """
   def mint_command(%Emisar.Auth.Subject{} = subject, base) do
-    with {:ok, raw, key} <- Runners.mint_install_key(subject),
+    with :ok <- InstallCommand.validate_origin(base),
+         {:ok, raw, key} <- Runners.mint_install_key(subject),
          {:ok, command} <- Runners.enrollment_install_command(raw, base) do
       {command, key.id}
     else
+      {:error, :insecure_base_url} -> {:insecure_transport, nil}
+      {:error, :invalid_base_url} -> {:unavailable, nil}
       {:error, _reason} -> {:mint_failed, nil}
     end
   end

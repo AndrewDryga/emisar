@@ -566,11 +566,23 @@ defmodule EmisarWeb.DomainComponents do
       class={@class}
     >
       <div class="space-y-4">
-        <p>{version_upgrade_message(@kind, @scope, @unsupported_count, @outdated_count)}</p>
-        <.code_line
-          id={"#{@id}-command"}
-          value={@command}
-        />
+        <%= case @command do %>
+          <% {:ok, command} -> %>
+            <p>{version_upgrade_message(@kind, @scope, @unsupported_count, @outdated_count)}</p>
+            <.code_line id={"#{@id}-command"} value={command} />
+          <% {:error, :insecure_base_url} -> %>
+            <p>{version_upgrade_fact(@kind, @unsupported_count, @outdated_count)}</p>
+            <.status_note
+              icon="hero-shield-exclamation"
+              tone={:rose}
+              title="Install command unavailable over HTTP"
+            >
+              Open this portal over HTTPS and refresh. Plain HTTP is allowed only for loopback and private addresses.
+            </.status_note>
+          <% _error -> %>
+            <p>{version_upgrade_fact(@kind, @unsupported_count, @outdated_count)}</p>
+            <.install_command_unavailable variant={:note} />
+        <% end %>
       </div>
     </.callout>
     """
@@ -654,18 +666,84 @@ defmodule EmisarWeb.DomainComponents do
       "Run the command once on each affected machine, then restart its LLM client."
   end
 
+  defp version_upgrade_fact(:mcp, unsupported_count, 0) do
+    "#{unsupported_count} #{agent_count_label(unsupported_count)} on this page last connected through a bridge below " <>
+      "the supported range (#{Emisar.Compat.mcp_minimum()})."
+  end
+
+  defp version_upgrade_fact(:mcp, 0, outdated_count) do
+    "#{outdated_count} #{agent_count_label(outdated_count)} on this page last connected through a bridge behind " <>
+      "#{version_label(Emisar.Compat.mcp_target())}."
+  end
+
+  defp version_upgrade_fact(:mcp, unsupported_count, outdated_count) do
+    "On this page, #{version_count_label(unsupported_count, "agent")} last connected through " <>
+      "a bridge below the supported range (#{Emisar.Compat.mcp_minimum()}) and " <>
+      "#{version_count_label(outdated_count, "agent")} behind #{version_label(Emisar.Compat.mcp_target())}."
+  end
+
   defp version_count_label(1, noun), do: "1 #{noun} is"
 
   defp version_count_label(count, noun), do: "#{count} #{noun}s are"
 
-  defp version_upgrade_command(:runner, _base_url), do: @runner_update_command
+  defp version_upgrade_command(:runner, _base_url), do: {:ok, @runner_update_command}
 
   defp version_upgrade_command(:mcp, base_url), do: UrlHelpers.mcp_install_command(base_url)
+
+  @doc "The shared refusal shown when a privileged installer cannot be fetched safely."
+  attr :class, :string, default: nil
+
+  def install_transport_refusal(assigns) do
+    ~H"""
+    <.event_block
+      icon="hero-shield-exclamation"
+      tone={:rose}
+      title="Install command unavailable over HTTP"
+      class={@class}
+    >
+      <:body>
+        Open this portal over HTTPS and refresh. Plain HTTP is allowed only for loopback and private addresses.
+      </:body>
+    </.event_block>
+    """
+  end
+
+  @doc "The shared fallback for a portal origin that cannot form a safe install URL."
+  attr :variant, :atom, default: :block, values: [:block, :note]
+  attr :class, :string, default: nil
+
+  def install_command_unavailable(%{variant: :note} = assigns) do
+    ~H"""
+    <.status_note
+      icon="hero-exclamation-triangle"
+      tone={:rose}
+      title="Could not create the install command"
+      class={@class}
+    >
+      The portal could not build a safe installer URL. Use the manual install instructions or ask an administrator to check the portal URL.
+    </.status_note>
+    """
+  end
+
+  def install_command_unavailable(assigns) do
+    ~H"""
+    <.event_block
+      icon="hero-exclamation-triangle"
+      tone={:rose}
+      title="Could not create the install command"
+      class={@class}
+    >
+      <:body>
+        The portal could not build a safe installer URL. Use the manual install instructions or ask an administrator to check the portal URL.
+      </:body>
+    </.event_block>
+    """
+  end
 
   @doc """
   Install-a-runner wizard — the standalone `/app/runners/install` page and
   the runners-list empty state. The caller pre-mints the install command and
-  passes it as a string (or `:mint_failed` to render the fallback); after a
+  passes it as a string (or a refusal atom to render the fallback); after a
   grace period with no runner it flips `show_troubleshooting` to reveal a
   checklist (the host must reach `base_url`).
 
@@ -695,7 +773,7 @@ defmodule EmisarWeb.DomainComponents do
          (design-system §5/§8.1 — pending and secret-in-hand, not an alarm),
          and the overdue escalation earns its spine rather than its hue. --%>
     <div>
-      <p class="text-sm leading-relaxed text-zinc-400">
+      <p :if={is_binary(@install_command)} class="text-sm leading-relaxed text-zinc-400">
         Two minutes — pick a Linux or macOS host, paste the one-liner.
       </p>
 
@@ -774,7 +852,7 @@ defmodule EmisarWeb.DomainComponents do
                     <.steps class="mt-3">
                       <:step>
                         It can reach <code class="font-mono text-zinc-300">{@base_url}</code>
-                        over outbound HTTPS (nothing needs to listen on it).
+                        from the host (outbound only; nothing needs to listen on the host).
                       </:step>
                       <:step>
                         You ran the whole line with <code class="font-mono text-zinc-300">sudo</code>
@@ -855,6 +933,10 @@ defmodule EmisarWeb.DomainComponents do
                   and create one manually, or refresh this page to try again.
                 </:body>
               </.event_block>
+            <% @install_command == :insecure_transport -> %>
+              <.install_transport_refusal />
+            <% @install_command == :unavailable -> %>
+              <.install_command_unavailable />
             <% true -> %>
               <div class="flex items-center gap-3 text-sm text-zinc-400">
                 <span class="hero-arrow-path h-4 w-4 animate-spin"></span>

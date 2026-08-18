@@ -304,7 +304,7 @@
         path back.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># replaces the emisar-mcp binary in place</span>
-<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install-mcp.sh | sudo bash
+<span class="text-zinc-500">$</span> curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install-mcp.sh | sudo bash
 
 <span class="text-zinc-500"># confirm the new version</span>
 <span class="text-zinc-500">$</span> emisar-mcp --version</.docs_code>
@@ -354,7 +354,7 @@
 <span class="text-zinc-500">$</span> sudo emisar update --version &lt;known-good-version&gt;
 
 <span class="text-zinc-500"># bridge — same idea, with its own release tag</span>
-<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --version &lt;known-good-version&gt;</.docs_code>
+<span class="text-zinc-500">$</span> curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --version &lt;known-good-version&gt;</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Two limits worth knowing before you rely on this. Only an immutable published release
         installs — the installer refuses a release GitHub still reports as mutable. And the

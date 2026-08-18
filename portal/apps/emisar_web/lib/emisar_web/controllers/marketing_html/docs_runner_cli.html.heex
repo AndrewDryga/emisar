@@ -483,10 +483,10 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
 <span class="text-zinc-500">$</span> sudo emisar update
 <span class="text-zinc-500">$</span> sudo emisar update --version X.Y.Z
 <span class="text-zinc-500"># install or provision a host</span>
-<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash
+<span class="text-zinc-500">$</span> curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo bash
 <span class="text-zinc-500"># provision unattended with a fixed pack set</span>
-<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --version runner-v0.3.0
-<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --yes --packs linux-core,postgres</.docs_code>
+<span class="text-zinc-500">$</span> curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo bash -s -- --version runner-v0.3.0
+<span class="text-zinc-500">$</span> curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo bash -s -- --yes --packs linux-core,postgres</.docs_code>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>

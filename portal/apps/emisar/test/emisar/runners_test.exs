@@ -2991,7 +2991,7 @@ defmodule Emisar.RunnersTest do
                Runners.enrollment_install_command(@raw_secret, "https://emisar.dev")
 
       assert command ==
-               " curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=https://emisar.dev bash"
+               " curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=https://emisar.dev bash"
 
       # The leading space is load-bearing (HISTCONTROL=ignorespace), so it is
       # asserted on its own — a trim anywhere upstream leaks the key to history.
@@ -3003,15 +3003,22 @@ defmodule Emisar.RunnersTest do
                Runners.enrollment_install_command(@raw_secret, "https://emisar.dev/")
 
       assert command ==
-               " curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=https://emisar.dev bash"
+               " curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=https://emisar.dev bash"
     end
 
-    test "a self-hosted http origin keeps its scheme and port" do
+    test "a private self-hosted HTTP origin keeps its scheme and port" do
       assert {:ok, command} =
-               Runners.enrollment_install_command(@raw_secret, "http://runners.internal:4000")
+               Runners.enrollment_install_command(@raw_secret, "http://192.168.10.20:4000")
 
       assert command ==
-               " curl -sSL http://runners.internal:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=http://runners.internal:4000 bash"
+               " curl --proto '=http,https' --proto-redir '=https' --globoff -fsSL http://192.168.10.20:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=http://192.168.10.20:4000 bash"
+    end
+
+    test "refuses public and named HTTP origins" do
+      for base <- ["http://emisar.dev", "http://runners.internal:4000"] do
+        assert Runners.enrollment_install_command(@raw_secret, base) ==
+                 {:error, :insecure_base_url}
+      end
     end
 
     test "refuses a key that isn't the minted enrollment-key shape" do

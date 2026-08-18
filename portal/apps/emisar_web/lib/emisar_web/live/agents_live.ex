@@ -1788,16 +1788,18 @@ defmodule EmisarWeb.AgentsLive do
           </div>
         </:actions>
       </.step_header>
-      <.code_panel
-        id="install-mcp-cmd"
-        label="macOS / Linux"
-        copy
-        code={UrlHelpers.mcp_install_command(@base_url)}
-      />
-      <p class="mt-2 text-xs leading-5 text-zinc-400">
-        The installer offers to add emisar to the LLM clients it finds on the machine —
-        approve the connection in your browser when it asks. No key to copy.
-      </p>
+      <%= case UrlHelpers.mcp_install_command(@base_url) do %>
+        <% {:ok, command} -> %>
+          <.code_panel id="install-mcp-cmd" label="macOS / Linux" copy code={command} />
+          <p class="mt-2 text-xs leading-5 text-zinc-400">
+            The installer offers to add emisar to the LLM clients it finds on the machine —
+            approve the connection in your browser when it asks. No key to copy.
+          </p>
+        <% {:error, :insecure_base_url} -> %>
+          <.install_transport_refusal />
+        <% _error -> %>
+          <.install_command_unavailable />
+      <% end %>
     </div>
     """
   end

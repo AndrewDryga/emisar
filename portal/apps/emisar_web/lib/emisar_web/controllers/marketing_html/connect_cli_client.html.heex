@@ -108,8 +108,8 @@
         <.docs_code
           phx-no-format
           label="shell"
-          copy_text="curl -sSL https://emisar.dev/install-mcp.sh | sudo bash"
-        ><span class="text-zinc-500">$</span> curl -sSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</.docs_code>
+          copy_text="curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
+        ><span class="text-zinc-500">$</span> curl --proto '=https' --proto-redir '=https' --globoff -fsSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</.docs_code>
         <p class="mt-3 text-sm leading-6 text-zinc-400">
           The installer finds your LLM clients and, once you approve in the browser, mints each one a
           key and writes its config — comments and other servers preserved. The by-hand configs below

@@ -9,16 +9,16 @@
 #
 # Usage:
 #
-#   curl -sSL https://emisar.dev/install-mcp.sh | sudo bash
+#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install-mcp.sh | sudo bash
 #
 #   # Pin a version:
-#   curl -sSL https://.../install-mcp.sh | sudo bash -s -- --version mcp-v0.1.0
+#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://.../install-mcp.sh | sudo bash -s -- --version mcp-v0.1.0
 #
 #   # Install to a per-user location (no sudo):
-#   curl -sSL https://.../install-mcp.sh | INSTALL_DIR=$HOME/.local/bin bash
+#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://.../install-mcp.sh | INSTALL_DIR=$HOME/.local/bin bash
 #
 #   # Uninstall — binary, client-config entries, and rotated-key state:
-#   curl -sSL https://.../install-mcp.sh | sudo bash -s -- --uninstall
+#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://.../install-mcp.sh | sudo bash -s -- --uninstall
 #
 # The script is idempotent. It does not register a service. After
 # installing, an interactive run scans for local LLM clients (Claude
@@ -152,19 +152,17 @@ safe_config_value "${EMISAR_URL}" ||
 
 # --proto-redir is https-only: this helper may carry EMISAR_GITHUB_TOKEN, and a
 # redirect that downgrades the scheme would put that bearer on the wire in the
-# clear. --proto still admits http because the URL is ours (hardcoded https to
-# api.github.com) and the installer's own behavior harness serves it over a
-# local http server to prove the token never reaches argv.
+# clear. The URL is either the hardcoded GitHub HTTPS API or a test TLS server.
 github_api() {
   if [ -n "${EMISAR_GITHUB_TOKEN:-}" ]; then
     # Header via process substitution, never argv — /proc/PID/cmdline is
     # world-readable while each API call runs.
-    curl --proto '=https,http' --proto-redir '=https' --connect-timeout 15 --max-time 120 --retry 2 -fsSL -H 'Accept: application/vnd.github+json' \
+    curl --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 --retry 2 -fsSL -H 'Accept: application/vnd.github+json' \
       -H @<(printf 'Authorization: Bearer %s\n' "${EMISAR_GITHUB_TOKEN}") "$@"
   else
     # Bash 3.2 (the macOS system Bash) treats an expanded empty local array as
     # unbound under `set -u`, so keep the no-token path array-free.
-    curl --proto '=https,http' --proto-redir '=https' --connect-timeout 15 --max-time 120 --retry 2 -fsSL -H 'Accept: application/vnd.github+json' "$@"
+    curl --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 --retry 2 -fsSL -H 'Accept: application/vnd.github+json' "$@"
   fi
 }
 
@@ -2001,4 +1999,4 @@ dim "Verify install:"
 dim "  ${first_bin} --help"
 out ""
 dim "Uninstall:"
-dim "  curl -sSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --uninstall"
+dim "  curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --uninstall"

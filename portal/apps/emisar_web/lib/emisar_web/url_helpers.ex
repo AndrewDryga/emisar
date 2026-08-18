@@ -5,6 +5,7 @@ defmodule EmisarWeb.UrlHelpers do
   (`http://localhost:4000`) and prod (`https://emisar.dev`) both
   produce a URL that targets THIS deployment, not a hardcoded host.
   """
+  alias Emisar.InstallCommand
 
   @fallback_url "https://emisar.dev"
 
@@ -16,14 +17,12 @@ defmodule EmisarWeb.UrlHelpers do
   real HTTP request).
   """
   def derive_base_url(%Plug.Conn{scheme: scheme, host: host, port: port}) do
-    scheme = to_string(scheme)
-    "#{scheme}://#{host}#{port_suffix(scheme, port)}"
+    origin_url(to_string(scheme), host, port)
   end
 
   def derive_base_url(%{host_uri: %URI{scheme: scheme, host: host, port: port}})
       when is_binary(host) do
-    scheme = scheme || "http"
-    "#{scheme}://#{host}#{port_suffix(scheme, port)}"
+    origin_url(scheme || "http", host, port)
   end
 
   def derive_base_url(_), do: @fallback_url
@@ -37,17 +36,18 @@ defmodule EmisarWeb.UrlHelpers do
   portal that issued the command.
   """
   def mcp_install_command(base_url) do
-    base = String.trim_trailing(base_url, "/")
+    with {:ok, base, fetch} <- InstallCommand.fetch(base_url, :mcp) do
+      command =
+        if base == @fallback_url do
+          "#{fetch} | sudo bash"
+        else
+          "#{fetch} | sudo EMISAR_URL=#{base} bash"
+        end
 
-    if base == @fallback_url do
-      "curl -sSL #{base}/install-mcp.sh | sudo bash"
-    else
-      "curl -sSL #{base}/install-mcp.sh | sudo EMISAR_URL=#{base} bash"
+      {:ok, command}
     end
   end
 
-  defp port_suffix(_scheme, nil), do: ""
-  defp port_suffix("https", 443), do: ""
-  defp port_suffix("http", 80), do: ""
-  defp port_suffix(_scheme, port), do: ":#{port}"
+  defp origin_url(scheme, host, port),
+    do: URI.to_string(%URI{scheme: scheme, host: host, port: port})
 end

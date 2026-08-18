@@ -68,6 +68,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "a below-minimum emisar-mcp bridge reads 'unsupported' in the status, not a chip",
          %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+      conn = %{conn | host: "localhost", port: 4000}
       subject = owner_subject(user, account)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "Bot"}, subject)
 
@@ -86,7 +87,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # The test host isn't the hosted portal, so the command carries
       # EMISAR_URL back to this deployment for the installer's client setup.
-      assert html =~ "/install-mcp.sh | sudo EMISAR_URL=http://www.example.com bash"
+      assert html =~ "/install-mcp.sh | sudo EMISAR_URL=http://localhost:4000 bash"
       assert html =~ "then restart its LLM client"
       assert has_element?(lv, "#mcp-upgrade.mb-10")
 
@@ -311,6 +312,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "selecting a client mints nothing; the manual disclosure mints on reveal", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+      conn = %{conn | host: "localhost", port: 4000}
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       html = lv |> render_click("select_client", %{"client" => "claude_desktop"})
@@ -324,7 +326,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # hosted default, so EMISAR_URL rides along), and the block says the
       # installer finishes the setup with a browser approval — no key copying.
       assert html =~ "Install the bridge"
-      assert html =~ "/install-mcp.sh | sudo EMISAR_URL=http://www.example.com bash"
+      assert html =~ "/install-mcp.sh | sudo EMISAR_URL=http://localhost:4000 bash"
       assert html =~ "offers to add emisar to the LLM clients it finds"
       assert html =~ "approve the connection in your browser"
       refute html =~ "Copy your API key"
@@ -351,6 +353,17 @@ defmodule EmisarWeb.AgentsLiveTest do
       # promotes it.
       assert {:ok, [], _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))
       flush_key_broadcast(lv)
+    end
+
+    test "a local client on public HTTP shows the transport refusal", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
+
+      html = render_click(lv, "select_client", %{"client" => "claude_desktop"})
+
+      assert html =~ "Install command unavailable over HTTP"
+      refute html =~ "id=\"install-mcp-cmd\""
+      refute html =~ "offers to add emisar"
     end
 
     test "the installer path flips waiting→connected on a grant-minted key's first call",

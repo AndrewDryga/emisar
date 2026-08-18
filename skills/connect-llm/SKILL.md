@@ -7,7 +7,7 @@ description: Connect an LLM or MCP client to Emisar and certify the connection e
 
 Execute this workflow on the machine that runs the customer's MCP client. Do
 not require an Emisar source checkout, fork, build toolchain, repository
-instructions, or internal contributor skill. Use the public HTTPS installer,
+instructions, or internal contributor skill. Use the public installer,
 the signed-in Emisar portal, the installed CLIs, and public documentation.
 
 This skill connects a client to an existing Emisar account. It assumes at
@@ -41,8 +41,10 @@ unless this is an explicit upgrade.
 - Treat `emk-` API keys, OAuth tokens, and browser-approval links as secrets.
   Never print, commit, report, or place their literal values in shell history.
   Sanitize captured output.
-- Use only the HTTPS installer from the operator-approved `EMISAR_URL`. Do not
-  build from source, hand-write another installer, or use an untrusted mirror.
+- Use HTTPS for installer downloads. Plain HTTP is limited to loopback,
+  `localhost`, and literal private addresses and must pass the validation below.
+  Do not build from source, hand-write another installer, or use an untrusted
+  mirror.
 - Prefer a pinned `mcp-vX.Y.Z` tag for repeatable automation; verify the tag
   exists. For an interactive latest install, report the exact installed
   version.
@@ -86,10 +88,55 @@ Download first so failures are unambiguous and `--help` can be inspected:
 
 ```sh
 export EMISAR_URL="${EMISAR_URL:-https://emisar.dev}"
+EMISAR_URL="${EMISAR_URL%/}"
+installer_proto='=https'
+case "$EMISAR_URL" in
+  https://*) ;;
+  http://*)
+    command -v python3 >/dev/null 2>&1 || {
+      echo "python3 is required to validate a private HTTP installer origin" >&2
+      exit 1
+    }
+    EMISAR_URL="$EMISAR_URL" python3 - <<'PY' || exit 1
+import ipaddress, os, sys
+from urllib.parse import urlsplit
+
+try:
+    origin = urlsplit(os.environ["EMISAR_URL"])
+    port = origin.port
+except ValueError:
+    sys.exit("Refusing an invalid HTTP installer origin")
+host = (origin.hostname or "").lower()
+plain_origin = (origin.scheme == "http" and origin.username is None and
+                origin.password is None and origin.path == "" and
+                origin.query == "" and origin.fragment == "" and
+                (port is None or 1 <= port <= 65535))
+host_chars = set("abcdefghijklmnopqrstuvwxyz0123456789.-")
+edge_chars = set("abcdefghijklmnopqrstuvwxyz0123456789")
+hostname = (bool(host) and host[:1] in edge_chars and
+            host[-1:] in edge_chars and set(host) <= host_chars)
+allowed = plain_origin and hostname and (host == "localhost" or host.endswith(".localhost"))
+try:
+    address = ipaddress.ip_address(host)
+    canonical = str(address) == host
+    networks = ("127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12",
+                "192.168.0.0/16", "::1/128", "fc00::/7")
+    allowed = allowed or (plain_origin and canonical and
+                          any(address in ipaddress.ip_network(net) for net in networks))
+except ValueError:
+    pass
+if not allowed:
+    sys.exit("Refusing a non-private HTTP installer origin; use HTTPS")
+PY
+    installer_proto='=http,https'
+    ;;
+  *) echo "Refusing an installer origin that is not HTTP or HTTPS" >&2; exit 1 ;;
+esac
 installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT HUP INT TERM
-curl --fail --silent --show-error --location \
-  "${EMISAR_URL%/}/install-mcp.sh" -o "$installer"
+curl --proto "$installer_proto" --proto-redir '=https' --globoff \
+  --fail --silent --show-error --location \
+  "$EMISAR_URL/install-mcp.sh" -o "$installer"
 bash "$installer" --help
 sudo EMISAR_URL="$EMISAR_URL" bash "$installer"
 rm -f "$installer"

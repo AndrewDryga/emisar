@@ -16,14 +16,14 @@
 #
 # Usage:
 #
-#   curl -sSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh | sudo bash
+#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh | sudo bash
 #
 #   # Pin a specific runner version (tag, with or without prefix):
-#   curl -sSL https://.../install.sh | sudo bash -s -- --version runner-v0.3.0
-#   curl -sSL https://.../install.sh | sudo bash -s -- --version 0.3.0
+#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://.../install.sh | sudo bash -s -- --version runner-v0.3.0
+#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://.../install.sh | sudo bash -s -- --version 0.3.0
 #
 #   # Unattended (no prompts) with a fixed pack set — for CI / cloud-init:
-#   curl -sSL https://.../install.sh | sudo bash -s -- --yes --packs linux-core,postgres,redis
+#   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://.../install.sh | sudo bash -s -- --yes --packs linux-core,postgres,redis
 #
 #   # Uninstall:
 #   sudo bash install.sh --uninstall
@@ -255,7 +255,7 @@ die_systemd_required() {
   die "this installer requires systemd on Linux (${reason}).
 
 For containers, cloud shells, CI runners, or hosts where you supervise the runner yourself, use --no-service:
-  curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... EMISAR_URL=https://emisar.dev bash -s -- --no-service
+  curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... EMISAR_URL=https://emisar.dev bash -s -- --no-service
 
 If you are reusing a portal-generated one-liner, keep its EMISAR_ENROLLMENT_KEY/EMISAR_URL values and replace the final 'bash' with:
   bash -s -- --no-service"
@@ -810,19 +810,17 @@ restore_enrollment_state() {
 
 # --proto-redir is https-only: this helper may carry EMISAR_GITHUB_TOKEN, and a
 # redirect that downgrades the scheme would put that bearer on the wire in the
-# clear. --proto still admits http because the URL is ours (hardcoded https to
-# api.github.com) and the installer's own behavior harness serves it over a
-# local http server to prove the token never reaches argv.
+# clear. The URL is either the hardcoded GitHub HTTPS API or a test TLS server.
 github_api() {
   if [ -n "${EMISAR_GITHUB_TOKEN:-}" ]; then
     # Header via process substitution, never argv — /proc/PID/cmdline is
     # world-readable while each API call runs.
-    curl --proto '=https,http' --proto-redir '=https' --connect-timeout 15 --max-time 120 --retry 2 -fsSL -H 'Accept: application/vnd.github+json' \
+    curl --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 --retry 2 -fsSL -H 'Accept: application/vnd.github+json' \
       -H @<(printf 'Authorization: Bearer %s\n' "${EMISAR_GITHUB_TOKEN}") "$@"
   else
     # Bash 3.2 (the macOS system Bash) treats an expanded empty local array as
     # unbound under `set -u`, so keep the no-token path array-free.
-    curl --proto '=https,http' --proto-redir '=https' --connect-timeout 15 --max-time 120 --retry 2 -fsSL -H 'Accept: application/vnd.github+json' "$@"
+    curl --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 --retry 2 -fsSL -H 'Accept: application/vnd.github+json' "$@"
   fi
 }
 
@@ -1833,7 +1831,7 @@ EOF
   echo
   # \$0 is "bash" when run as `curl ... | sudo bash`, so don't print that.
   # Show the canonical re-curl form instead.
-  echo "Uninstall:  curl -sSL https://emisar.dev/install.sh | sudo bash -s -- --uninstall"
+  echo "Uninstall:  curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo bash -s -- --uninstall"
   echo "Update:     sudo ${BIN_DIR}/emisar update"
   echo "==============================================================="
 }

@@ -22,7 +22,7 @@ open an inbound port on the host.
 2. Run it on the host:
 
    ```sh
-   curl -sSL https://emisar.dev/install.sh \
+   curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh \
      | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... EMISAR_URL=https://emisar.dev bash
    ```
 

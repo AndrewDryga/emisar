@@ -67,7 +67,8 @@ defmodule EmisarWeb.MarketingHTML do
     # --- Host: a storage node on the fleet, one curl to connect ------
     {1, "server", "srv-comment",
      "# nomad-hvn03 · Dell R640 · Pure FlashArray over iSCSI multipath · democratic-csi v1.9.5"},
-    {2, "server", "srv-prompt", "curl -sSL https://emisar.dev/install.sh | sudo bash"},
+    {2, "server", "srv-prompt",
+     "curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo bash"},
     {3, "server", "srv-install", "downloading emisar-0.16.0-linux-amd64.tar.gz"},
     {4, "server", "srv-install", "checksum verified  sha256:9f2c1e7b4a0d…  ·  installed v0.16.0"},
     {5, "server", "srv-banner",

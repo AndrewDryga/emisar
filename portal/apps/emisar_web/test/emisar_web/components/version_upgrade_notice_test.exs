@@ -97,7 +97,7 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
       # A non-hosted base URL rides into the installer as EMISAR_URL so its
       # LLM-client setup writes configs that target this portal.
       assert html =~
-               "curl -sSL https://control.example/install-mcp.sh | sudo EMISAR_URL=https://control.example bash"
+               "curl --proto &#39;=https&#39; --proto-redir &#39;=https&#39; --globoff -fsSL https://control.example/install-mcp.sh | sudo EMISAR_URL=https://control.example bash"
     end
 
     test "the hosted portal's MCP upgrade command stays minimal" do
@@ -114,8 +114,28 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
         """)
 
       # The installer already defaults to the hosted portal — no env noise.
-      assert html =~ "curl -sSL https://emisar.dev/install-mcp.sh | sudo bash"
+      assert html =~
+               "curl --proto &#39;=https&#39; --proto-redir &#39;=https&#39; --globoff -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
+
       refute html =~ "EMISAR_URL="
+    end
+
+    test "public HTTP shows the transport refusal without an impossible action" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <DomainComponents.version_upgrade_notice
+          id="mcp-upgrade"
+          kind={:mcp}
+          versions={["0.0.5"]}
+          base_url="http://control.example"
+        />
+        """)
+
+      assert html =~ "Install command unavailable over HTTP"
+      refute html =~ "Run the command"
+      refute html =~ "id=\"mcp-upgrade-command\""
     end
 
     test "renders nothing when versions are current or unknown" do

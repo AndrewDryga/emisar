@@ -196,6 +196,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
 
   test "the reveal shows the domain-built install command, leading space and all", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
+    conn = %{conn | host: "localhost", port: 4000}
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
     html =
@@ -210,7 +211,25 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     # intentional leading space (HISTCONTROL=ignorespace keeps the key out of
     # shell history; a trim anywhere in the handoff would leak it).
     assert html =~
-             "</span> curl -sSL http://www.example.com/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://www.example.com bash</pre>"
+             "</span> curl --proto &#39;=http,https&#39; --proto-redir &#39;=https&#39; --globoff -fsSL http://localhost:4000/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=http://localhost:4000 bash</pre>"
+  end
+
+  test "public HTTP keeps the explicit key reveal but refuses the convenience command", %{
+    conn: conn
+  } do
+    {conn, _user, account} = register_and_log_in(conn)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
+
+    html =
+      lv
+      |> form("#enrollment_key_form", %{"enrollment_key" => %{"description" => "manual"}})
+      |> render_submit()
+
+    assert html =~ ~r/emkey-enroll-[A-Za-z0-9_-]{43}/
+    assert html =~ "Install command unavailable over HTTP"
+    assert html =~ "The key above is still valid"
+    assert html =~ ~s(href="/docs/host-install")
+    refute html =~ "install.sh | sudo"
   end
 
   # one-time-secret hygiene: once the operator dismisses the

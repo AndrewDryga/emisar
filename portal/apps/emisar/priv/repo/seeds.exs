@@ -2265,7 +2265,7 @@ case Runners.list_enrollment_keys(owner_subject) do
         IO.puts(IO.ANSI.green() <> "Bootstrap a runner:" <> IO.ANSI.reset())
 
         IO.puts(
-          "  curl -sSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw} bash"
+          "  curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{raw} bash"
         )
 
         IO.puts("")

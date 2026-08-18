@@ -9,12 +9,13 @@ defmodule EmisarWeb.RunnersLiveTest do
 
     test "an empty fleet drops straight into the inline install wizard", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      conn = %{conn | host: "localhost", port: 4000}
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
 
       # No runners yet → the empty state IS the installer, one-liner pre-minted,
       # so a first-time operator connects a host with no detour to a separate page.
       assert html =~ "Run this on the host"
-      assert html =~ "curl -sSL"
+      assert html =~ "curl --proto"
       assert html =~ "EMISAR_ENROLLMENT_KEY=emkey-enroll-"
       assert has_element?(lv, "#runner-install-command")
       assert html =~ "min-h-9"
@@ -119,7 +120,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       # placeholder; nothing is minted until the socket confirms an empty fleet.
       html = conn |> get(~p"/app/#{account}/runners") |> html_response(200)
       assert html =~ "Loading"
-      refute html =~ "curl -sSL"
+      refute html =~ "curl --proto"
     end
 
     test "lists runners grouped by their `group` field", %{conn: conn} do
@@ -690,6 +691,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     test "always renders the install wizard with a pre-minted command",
          %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      conn = %{conn | host: "localhost", port: 4000}
 
       # Pre-existing runner shouldn't bypass the wizard — the user can
       # add a second runner the same way as the first.
@@ -698,7 +700,7 @@ defmodule EmisarWeb.RunnersLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/install")
       assert html =~ "Connect a runner"
       assert html =~ "Connect a runner"
-      assert html =~ "curl -sSL"
+      assert html =~ "curl --proto"
       assert html =~ "EMISAR_ENROLLMENT_KEY=emkey-enroll-"
 
       # The command embeds a live root-capable credential — the wizard must
@@ -712,6 +714,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
     test "reveals a troubleshooting checklist if no runner joins in time", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
+      conn = %{conn | host: "localhost", port: 4000}
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/install")
       # Hidden during the grace period — only the "waiting" pulse shows.

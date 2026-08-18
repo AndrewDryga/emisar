@@ -7,7 +7,7 @@ description: Install, configure, repair, and certify the Emisar runner on a host
 
 Execute this workflow on the customer's target environment. Do not require an
 Emisar source checkout, fork, build toolchain, repository instructions, or
-internal contributor skill. Use the public HTTPS installers, the signed-in
+internal contributor skill. Use the public installers, the signed-in
 Emisar portal, the installed CLIs, and public documentation.
 
 Treat onboarding as a security-sensitive production change. Complete every
@@ -44,9 +44,11 @@ installed artifact's contract unless this is an explicit upgrade.
 - Treat runner enrollment keys, MCP API keys, OAuth tokens, pack credentials,
   signing keys, and certificates as secrets. Never print, commit, report, or
   place their literal values in shell history. Sanitize captured output.
-- Use only HTTPS installers from the operator-approved `EMISAR_URL`. They verify
-  release checksums and activate binaries atomically. Do not silently build from
-  source, write another installer, or use an untrusted mirror.
+- Use HTTPS for installer downloads. Plain HTTP is limited to loopback,
+  `localhost`, and literal private addresses and must pass the validation below.
+  The installers verify release checksums and activate binaries atomically. Do
+  not silently build from source, write another installer, or use an untrusted
+  mirror.
 - Prefer a pinned `runner-vX.Y.Z` tag for repeatable automation.
   Verify a requested tag exists. For an interactive latest install, report the
   exact installed versions.
@@ -111,10 +113,55 @@ secrets in protected variables, never command literals:
 
 ```sh
 EMISAR_URL="${EMISAR_URL:-https://emisar.dev}"
+EMISAR_URL="${EMISAR_URL%/}"
+installer_proto='=https'
+case "$EMISAR_URL" in
+  https://*) ;;
+  http://*)
+    command -v python3 >/dev/null 2>&1 || {
+      echo "python3 is required to validate a private HTTP installer origin" >&2
+      exit 1
+    }
+    EMISAR_URL="$EMISAR_URL" python3 - <<'PY' || exit 1
+import ipaddress, os, sys
+from urllib.parse import urlsplit
+
+try:
+    origin = urlsplit(os.environ["EMISAR_URL"])
+    port = origin.port
+except ValueError:
+    sys.exit("Refusing an invalid HTTP installer origin")
+host = (origin.hostname or "").lower()
+plain_origin = (origin.scheme == "http" and origin.username is None and
+                origin.password is None and origin.path == "" and
+                origin.query == "" and origin.fragment == "" and
+                (port is None or 1 <= port <= 65535))
+host_chars = set("abcdefghijklmnopqrstuvwxyz0123456789.-")
+edge_chars = set("abcdefghijklmnopqrstuvwxyz0123456789")
+hostname = (bool(host) and host[:1] in edge_chars and
+            host[-1:] in edge_chars and set(host) <= host_chars)
+allowed = plain_origin and hostname and (host == "localhost" or host.endswith(".localhost"))
+try:
+    address = ipaddress.ip_address(host)
+    canonical = str(address) == host
+    networks = ("127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12",
+                "192.168.0.0/16", "::1/128", "fc00::/7")
+    allowed = allowed or (plain_origin and canonical and
+                          any(address in ipaddress.ip_network(net) for net in networks))
+except ValueError:
+    pass
+if not allowed:
+    sys.exit("Refusing a non-private HTTP installer origin; use HTTPS")
+PY
+    installer_proto='=http,https'
+    ;;
+  *) echo "Refusing an installer origin that is not HTTP or HTTPS" >&2; exit 1 ;;
+esac
 installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT HUP INT TERM
-curl --fail --silent --show-error --location \
-  "${EMISAR_URL%/}/install.sh" -o "$installer"
+curl --proto "$installer_proto" --proto-redir '=https' --globoff \
+  --fail --silent --show-error --location \
+  "$EMISAR_URL/install.sh" -o "$installer"
 bash "$installer" --help
 sudo env \
   EMISAR_URL="$EMISAR_URL" \

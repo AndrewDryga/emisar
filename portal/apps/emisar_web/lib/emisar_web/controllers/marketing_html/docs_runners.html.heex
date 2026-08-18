@@ -140,7 +140,7 @@ execution:
 
       <.docs_h2 id="updating">Updating</.docs_h2>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># runner binary — re-run the installer; configs and packs are preserved</span>
-<span class="text-zinc-500">$</span> curl -sSL https://emisar.dev/install.sh | sudo bash
+<span class="text-zinc-500">$</span> curl --proto '=https' --proto-redir '=https' --globoff -fsSL https://emisar.dev/install.sh | sudo bash
 
 <span class="text-zinc-500"># packs — update from the registry; the update reloads the runner (no restart, no dropped runs)</span>
 <span class="text-zinc-500">$</span> sudo emisar pack update linux-core</.docs_code>

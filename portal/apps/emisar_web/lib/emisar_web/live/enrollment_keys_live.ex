@@ -114,9 +114,12 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   defp do_create(socket, params) do
     case Runners.create_enrollment_key(params, socket.assigns.current_subject) do
       {:ok, raw, key} ->
-        # Both inputs come from our own producers (a just-minted key, the
-        # socket's own origin), so a rejected build is a bug, not a state.
-        {:ok, install_command} = Runners.enrollment_install_command(raw, socket.assigns.base_url)
+        install_command =
+          case Runners.enrollment_install_command(raw, socket.assigns.base_url) do
+            {:ok, command} -> command
+            {:error, :insecure_base_url} -> :insecure_transport
+            {:error, _reason} -> :unavailable
+          end
 
         # The reveal IS the success step on the /new page — no flash, and no
         # list reload (the list isn't shown here; :index remounts fresh).
@@ -282,12 +285,35 @@ defmodule EmisarWeb.EnrollmentKeysLive do
               />
 
               <.code_panel
+                :if={is_binary(@install_command)}
                 id="install-command"
                 label="Install on a host"
                 annotation="contains your enrollment key"
                 prompt
                 copy
                 code={@install_command}
+                class="mt-6"
+              />
+
+              <.status_note
+                :if={@install_command == :insecure_transport}
+                icon="hero-shield-exclamation"
+                tone={:rose}
+                title="Install command unavailable over HTTP"
+                class="mt-6"
+              >
+                The key above is still valid. Copy it now, then use the <.link
+                  href={~p"/docs/host-install"}
+                  class="font-medium text-brand-400 hover:text-brand-300"
+                >
+                  manual runner install instructions
+                </.link>.
+                Open the portal over HTTPS before generating another install command.
+              </.status_note>
+
+              <.install_command_unavailable
+                :if={@install_command == :unavailable}
+                variant={:note}
                 class="mt-6"
               />
 
