@@ -90,10 +90,7 @@
           / <code>secret=</code>
           / <code>token=</code>
           assignments — are masked <em>before</em>
-          the chunk leaves the runner. Per-action rules layer on
-          top, and per-rule hit counts are recorded so you can see what was masked.
-          Because it's pattern-based, a secret in a novel shape can still slip through — treat it as
-          defense-in-depth, not a guarantee the control plane never sees a secret.
+          the chunk leaves the runner. Per-action rules layer on top.
         </li>
         <li>
           <strong>Limits.</strong> Every action has a timeout and stdout/stderr byte

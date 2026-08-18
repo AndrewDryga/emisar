@@ -101,19 +101,19 @@
                 {"Short-lived, IdP-issued credentials — no static keys", "Foundation",
                  "OAuth 2.1 for remote MCP clients; scoped, revocable keys — read-only or execute — for everything else. No long-lived shell key sitting on the host."},
                 {"Parameter validation, tool-side", "Foundation",
-                 "The runner re-validates every argument against the action schema and clamps options to their min/max before exec — argv arrays, never a shell string."},
+                 "The runner re-validates every argument against the action schema and clamps options to their min/max before exec."},
                 {"Version-controlled, integrity-checked configuration", "Enterprise",
                  "Packs are versioned, content-addressed YAML. A hash the published catalog carries is trusted on sight; an unrecognized or changed one blocks dispatch until an admin reviews it, and the runner recomputes the hash and refuses a mismatch."},
                 {"Tamper-evident, hash-chained host journal", "Enterprise",
-                 "Every action is recorded to the searchable off-host portal audit and to a hash-chained JSONL journal retained on the runner. emisar audit verify reports breaks in that retained chain; it cannot prove that a privileged host operator did not replace or truncate the entire local journal."},
+                 "Every action is recorded to the searchable off-host portal audit and to a hash-chained JSONL journal retained on the runner. emisar audit verify reports breaks in that retained chain."},
                 {"Human-in-the-loop approval for high-risk actions", "Advanced",
                  "Risk-tiered policy holds destructive actions for a person. The approver sees the actor, the args, the target host, and the rule that fired — one click to allow or deny, recorded forever."},
                 {"Just-in-time / just-enough access", "Advanced",
                  "One-use approvals and scoped standing grants. The agent gets the capability for the task, not standing access that outlives it."},
                 {"Continuous audit ingest by your SIEM", "Advanced",
-                 "NDJSON audit export over a dedicated read-only audit-export token with cursor pagination. emisar does not push: a SIEM with a cursor-aware HTTP input polls it directly, otherwise a collector polls and forwards — either way your SIEM correlates emisar activity without ever holding a token that can execute an action."},
+                 "NDJSON audit export over a dedicated read-only audit-export token with cursor pagination. emisar does not push: a SIEM with a cursor-aware HTTP input polls it directly, otherwise a collector polls and forwards."},
                 {"Cryptographic non-origination — the platform can't act for you", "Advanced",
-                 "A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key. A compromised control plane can relay that signed request — it can't forge, alter, replay, or originate one. The capability to act on your behalf is removed from the platform, not throttled. Opt-in per runner."}
+                 "A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key. A compromised control plane can relay that signed request — it can't forge, alter, replay, or originate one. The capability to act on your behalf is removed from the platform. Opt-in per runner."}
               ] do %>
                 <tr class="hover:bg-zinc-900/30">
                   <td class="px-6 py-4 font-medium text-zinc-100">{control}</td>
