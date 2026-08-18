@@ -1677,7 +1677,8 @@ defmodule Emisar.Auth do
     if Regex.match?(~r/\A\d{6}\z/, code) do
       {:totp, code}
     else
-      {:recovery_code, Crypto.hash(String.downcase(code))}
+      digest = code |> String.downcase() |> Crypto.hash()
+      {:recovery_code, digest}
     end
   end
 
@@ -2034,7 +2035,7 @@ defmodule Emisar.Auth do
   # above, so a capped request keeps its code unspent.
   defp consume_mfa_recovery_code(%Users.User{} = user, raw, context) when is_binary(raw) do
     with :ok <- throttle_mfa_challenge(user, context) do
-      digest = Crypto.hash(String.downcase(String.trim(raw)))
+      digest = raw |> String.trim() |> String.downcase() |> Crypto.hash()
 
       case Users.consume_user_mfa_recovery_code(user.id, digest,
              audit: fn updated ->

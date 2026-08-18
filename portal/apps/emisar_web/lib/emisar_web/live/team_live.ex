@@ -13,7 +13,7 @@ defmodule EmisarWeb.TeamLive do
   # No mount gate, deliberately: every member may see who else is in the
   # workspace, so the roster read (`list_team_member_facts/3`) asks only for
   # `view_own_account`. Managing the team is gated where it acts — the render's
-  # `can_manage?/1` branches and `Permissions.gated/3` on every handler — which
+  # `@can_manage_team?` branches and `Permissions.gated/3` on every handler — which
   # is what leaves a billing manager a read-only Team page instead of a nav link
   # that flashes and bounces. Same shape as the Billing page.
   def mount(_params, _session, socket) do
@@ -23,6 +23,10 @@ defmodule EmisarWeb.TeamLive do
     {:ok,
      socket
      |> assign(:page_title, "Team")
+     |> assign(
+       :can_manage_team?,
+       Accounts.subject_can_manage_team?(socket.assigns.current_subject)
+     )
      |> assign(
        :pack_access_restricted?,
        socket.assigns.current_membership.pack_access_mode == :restricted
@@ -1101,15 +1105,6 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  # Mirrors the central Permissions module, but accepts the assigns map
-  # directly so it can be called from inside HEEx templates without a
-  # full socket.
-  defp can_manage?(%{assigns: %{current_subject: subject}}),
-    do: Accounts.subject_can_manage_team?(subject)
-
-  defp can_manage?(%{current_subject: subject}),
-    do: Accounts.subject_can_manage_team?(subject)
-
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
     assign(socket, :form, to_form(changeset, as: "invite"))
   end
@@ -1168,7 +1163,7 @@ defmodule EmisarWeb.TeamLive do
            role cards are the controls; the panel around them was an island). --%>
       <div :if={@live_action == :new} class="mt-4 max-w-2xl">
         <.empty_state
-          :if={not can_manage?(assigns)}
+          :if={not @can_manage_team?}
           variant={:bare}
           tone={:danger}
           icon="hero-lock-closed"
@@ -1181,7 +1176,7 @@ defmodule EmisarWeb.TeamLive do
              calm receipt. Delivery problems still use the attention spine
              because the operator has to act. --%>
         <.invite_result
-          :if={can_manage?(assigns) and @invited_email}
+          :if={@can_manage_team? and @invited_email}
           email={@invited_email}
           membership={@invited_membership}
           access={@invited_access}
@@ -1196,7 +1191,7 @@ defmodule EmisarWeb.TeamLive do
           </div>
         </.invite_result>
 
-        <div :if={can_manage?(assigns) and is_nil(@invited_email)}>
+        <div :if={@can_manage_team? and is_nil(@invited_email)}>
           <p class="text-sm leading-relaxed text-zinc-400">
             We'll email a join link for <span class="font-medium text-zinc-300">{@current_account.name}</span>. They'll sign in
             with a magic link or SSO — no password — and land in this workspace.
@@ -1329,7 +1324,7 @@ defmodule EmisarWeb.TeamLive do
            stays the paragraph's tail either way. --%>
       <.page_intro :if={@live_action == :index}>
         Members, roles, and invitations for this workspace — who can dispatch, approve,
-        and configure.{" "}<span :if={not can_manage?(assigns) and @current_role}>Only owners and admins can invite or manage members. Your role: {Emisar.Auth.role_label(
+        and configure.{" "}<span :if={not @can_manage_team? and @current_role}>Only owners and admins can invite or manage members. Your role: {Emisar.Auth.role_label(
           @current_role
         )}.{" "}</span><.doc_link href="/docs/teams-and-access">Team &amp; access docs</.doc_link>
       </.page_intro>
@@ -1490,7 +1485,7 @@ defmodule EmisarWeb.TeamLive do
             <%!-- Invite lives on the Members header — the action belongs to the
                roster it grows, not the page as a whole. --%>
             <.section_header title="Members">
-              <:actions :if={can_manage?(assigns)}>
+              <:actions :if={@can_manage_team?}>
                 <.button
                   navigate={~p"/app/#{@current_account}/settings/team/invite"}
                   size={:sm}
@@ -1615,7 +1610,7 @@ defmodule EmisarWeb.TeamLive do
                          the two activity segments can't strand a separator
                          after the email. --%>
                         <% show_activity? =
-                          can_manage?(assigns) or membership.user_id == @current_user.id %>
+                          @can_manage_team? or membership.user_id == @current_user.id %>
                         <.meta_line
                           id={"member-metadata-#{membership.id}"}
                           class="text-xs text-zinc-400"
@@ -1705,7 +1700,7 @@ defmodule EmisarWeb.TeamLive do
                      carrying two verbs grows rather than overflowing. --%>
                     <div class="flex shrink-0 items-center justify-end gap-1.5 pl-14 sm:min-w-[14.5rem] sm:pl-0">
                       <%= cond do %>
-                        <% can_manage?(assigns) and not member.self_owner? and not member.role_editable? -> %>
+                        <% @can_manage_team? and not member.self_owner? and not member.role_editable? -> %>
                           <%!-- Synced role: the IdP owns it (a role mapping, or the
                          provider default), so directory sync recomputes it and a manual
                          change here silently reverts. Read-only, pointing to where the
@@ -1718,7 +1713,7 @@ defmodule EmisarWeb.TeamLive do
                               {Emisar.Auth.role_label(membership.role)}
                             </.chip>
                           </.tooltip>
-                        <% can_manage?(assigns) and member.role_editable? -> %>
+                        <% @can_manage_team? and member.role_editable? -> %>
                           <%!-- A role change is a privilege grant — a dropdown (the exact
                          skin of the Actions menu beside it) whose items each OPEN their own
                          styled confirm modal (not a native data-confirm — we use our own
@@ -1757,7 +1752,7 @@ defmodule EmisarWeb.TeamLive do
                       <.member_actions
                         member={member}
                         current_user_id={@current_user.id}
-                        can_manage?={can_manage?(assigns)}
+                        can_manage?={@can_manage_team?}
                         can_view_member_activity?={
                           not Audit.subject_sees_billing_audit_only?(@current_subject)
                         }
@@ -1775,7 +1770,7 @@ defmodule EmisarWeb.TeamLive do
                   <.confirm_dialog
                     :for={role <- @roles}
                     :if={
-                      can_manage?(assigns) and member.role_editable? and
+                      @can_manage_team? and member.role_editable? and
                         role != to_string(membership.role)
                     }
                     id={"change-role-#{membership.id}-#{role}"}
@@ -1913,7 +1908,7 @@ defmodule EmisarWeb.TeamLive do
                 >
                   Invite a teammate to dispatch runs, approve actions, or watch the audit trail.
                   <:cta
-                    :if={can_manage?(assigns)}
+                    :if={@can_manage_team?}
                     navigate={~p"/app/#{@current_account}/settings/team/invite"}
                   >
                     Invite member

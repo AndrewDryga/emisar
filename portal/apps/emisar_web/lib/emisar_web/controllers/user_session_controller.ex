@@ -362,8 +362,6 @@ defmodule EmisarWeb.UserSessionController do
   # into one `:not_member` (the deliberate no-leak property), so the denial flash
   # never names the team — naming it would confirm a tenant exists on the
   # slug-probing path.
-  @branded_denied_message "Signed you in. You don't have access to that team's workspace yet — ask an admin for an invite."
-
   # Factor one is verified (the magic link proved inbox possession); `Auth`
   # decides everything else from the CURRENT user row — whether a second factor
   # is still owed, which account to land on, and whether a session may be minted
@@ -445,7 +443,10 @@ defmodule EmisarWeb.UserSessionController do
       |> delete_session(:user_return_to)
       |> log_in.(user, token, registered?)
 
-    put_flash(conn, :info, @branded_denied_message)
+    denied_message =
+      "Signed you in. You don't have access to that team's workspace yet — ask an admin for an invite."
+
+    put_flash(conn, :info, denied_message)
   end
 
   defp install_magic_link_session(conn, :no_target, user, token, registered?, log_in),

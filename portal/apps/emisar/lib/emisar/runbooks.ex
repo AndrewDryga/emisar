@@ -513,31 +513,29 @@ defmodule Emisar.Runbooks do
   end
 
   defp commit_mcp_draft(facts, id, operation_attrs, %Subject{account: account} = subject) do
-    with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
-      multi =
-        Multi.merge(multi, fn
-          %{mcp_operation: %{fresh?: false}} ->
-            Multi.new()
+    with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject),
+         multi =
+           Multi.merge(multi, fn
+             %{mcp_operation: %{fresh?: false}} ->
+               Multi.new()
 
-          %{mcp_operation: %{fresh?: true}} ->
-            Multi.new()
-            |> Multi.run(:definition, fn _repo, _changes ->
-              Definition.validate(facts.definition)
-            end)
-            |> Multi.insert(:runbook, fn %{definition: definition} ->
-              attrs = mcp_draft_attrs(facts, definition, id)
-              Runbook.Changeset.create(account.id, Subject.user_id(subject), attrs)
-            end)
-            |> Multi.insert(:audit, fn %{runbook: runbook} ->
-              Audit.Events.runbook_created(subject, runbook)
-            end)
-        end)
-
-      with {:ok, %{mcp_operation: reservation}} <-
-             Repo.commit_multi(multi, after_commit: &after_mcp_draft_committed/1),
-           {:ok, runbook} <- fetch_mcp_draft(id, subject) do
-        {:ok, if(reservation.fresh?, do: :created, else: :replay), runbook}
-      end
+             %{mcp_operation: %{fresh?: true}} ->
+               Multi.new()
+               |> Multi.run(:definition, fn _repo, _changes ->
+                 Definition.validate(facts.definition)
+               end)
+               |> Multi.insert(:runbook, fn %{definition: definition} ->
+                 attrs = mcp_draft_attrs(facts, definition, id)
+                 Runbook.Changeset.create(account.id, Subject.user_id(subject), attrs)
+               end)
+               |> Multi.insert(:audit, fn %{runbook: runbook} ->
+                 Audit.Events.runbook_created(subject, runbook)
+               end)
+           end),
+         {:ok, %{mcp_operation: reservation}} <-
+           Repo.commit_multi(multi, after_commit: &after_mcp_draft_committed/1),
+         {:ok, runbook} <- fetch_mcp_draft(id, subject) do
+      {:ok, if(reservation.fresh?, do: :created, else: :replay), runbook}
     end
   end
 
@@ -618,21 +616,19 @@ defmodule Emisar.Runbooks do
   end
 
   defp commit_mcp_draft_update(facts, id, operation_attrs, %Subject{} = subject) do
-    with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
-      multi =
-        Multi.merge(multi, fn
-          %{mcp_operation: %{fresh?: false}} ->
-            Multi.new()
+    with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject),
+         multi =
+           Multi.merge(multi, fn
+             %{mcp_operation: %{fresh?: false}} ->
+               Multi.new()
 
-          %{mcp_operation: %{fresh?: true}} ->
-            compose_fresh_mcp_draft_update(facts, id, subject)
-        end)
-
-      with {:ok, %{mcp_operation: reservation}} <-
-             Repo.commit_multi(multi, after_commit: &after_mcp_draft_update_committed/1),
-           {:ok, runbook} <- fetch_mcp_draft(id, subject) do
-        {:ok, if(reservation.fresh?, do: :created, else: :replay), runbook}
-      end
+             %{mcp_operation: %{fresh?: true}} ->
+               compose_fresh_mcp_draft_update(facts, id, subject)
+           end),
+         {:ok, %{mcp_operation: reservation}} <-
+           Repo.commit_multi(multi, after_commit: &after_mcp_draft_update_committed/1),
+         {:ok, runbook} <- fetch_mcp_draft(id, subject) do
+      {:ok, if(reservation.fresh?, do: :created, else: :replay), runbook}
     end
   end
 
@@ -1061,22 +1057,20 @@ defmodule Emisar.Runbooks do
          kind,
          %Subject{} = subject
        ) do
-    with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject) do
-      multi =
-        Multi.merge(multi, fn
-          %{mcp_operation: %{fresh?: false}} ->
-            Multi.new()
+    with {:ok, multi} <- MCPOperations.reserve_in_multi(Multi.new(), operation_attrs, subject),
+         multi =
+           Multi.merge(multi, fn
+             %{mcp_operation: %{fresh?: false}} ->
+               Multi.new()
 
-          %{mcp_operation: %{fresh?: true, operation: operation}} ->
-            compose_fresh_mcp_execution(facts, execution_id, operation, kind, subject)
-        end)
-
-      with {:ok, changes} <-
-             Repo.commit_multi(multi,
-               after_commit: &Approvals.after_runbook_execution_request_committed/1
-             ) do
-        settle_mcp_execution(changes, execution_id, subject)
-      end
+             %{mcp_operation: %{fresh?: true, operation: operation}} ->
+               compose_fresh_mcp_execution(facts, execution_id, operation, kind, subject)
+           end),
+         {:ok, changes} <-
+           Repo.commit_multi(multi,
+             after_commit: &Approvals.after_runbook_execution_request_committed/1
+           ) do
+      settle_mcp_execution(changes, execution_id, subject)
     end
   end
 
@@ -1157,9 +1151,10 @@ defmodule Emisar.Runbooks do
     created_execution = Map.get(changes, {:runbook_execution, execution_id})
 
     _ =
-      if reservation.fresh? and match?(%RunbookExecution{status: :active}, created_execution),
-        do: Scheduler.advance_execution(execution_id),
-        else: :ok
+      case {reservation.fresh?, created_execution} do
+        {true, %RunbookExecution{status: :active}} -> Scheduler.advance_execution(execution_id)
+        _ -> :ok
+      end
 
     case fetch_execution_recovery_identity(execution_id, subject) do
       {:ok, execution} ->

@@ -212,7 +212,10 @@ defmodule Emisar.SSO.OIDC.Guard do
 
     :emisar
     |> Emisar.Config.get_env(:sso_allowed_idp_hosts, [])
-    |> Enum.any?(&(String.downcase(String.trim(&1)) == wanted))
+    |> Enum.any?(fn declared ->
+      normalized = declared |> String.trim() |> String.downcase()
+      normalized == wanted
+    end)
   end
 
   # Still resolved, and still dialled by the address we resolved — being declared

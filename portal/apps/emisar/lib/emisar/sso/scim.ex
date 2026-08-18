@@ -704,7 +704,9 @@ defmodule Emisar.SSO.SCIM do
     user_ids = Enum.map(identities, & &1.user_id)
 
     memberships =
-      Map.new(Accounts.list_sync_memberships(provider.account_id, user_ids), &{&1.user_id, &1})
+      provider.account_id
+      |> Accounts.list_sync_memberships(user_ids)
+      |> Map.new(&{&1.user_id, &1})
 
     Enum.map(identities, &scim_user(&1, &1.user, memberships[&1.user_id]))
   end
@@ -792,28 +794,27 @@ defmodule Emisar.SSO.SCIM do
     display = attrs[:display] || attrs["display"]
     member_ids = attrs[:member_ids] || attrs["member_ids"] || []
 
-    with :ok <- validate_scim_group_values(external_group_id, display, member_ids) do
-      with {:ok, {current_provider, affected, group}} <-
-             Repo.transaction(fn ->
-               {locked_provider, first_push?} = lock_provider!(provider)
+    with :ok <- validate_scim_group_values(external_group_id, display, member_ids),
+         {:ok, {current_provider, affected, group}} <-
+           Repo.transaction(fn ->
+             {locked_provider, first_push?} = lock_provider!(provider)
 
-               group =
-                 create_or_fetch_directory_group!(locked_provider, external_group_id, display)
+             group =
+               create_or_fetch_directory_group!(locked_provider, external_group_id, display)
 
-               desired_ids = resolve_member_identity_ids(locked_provider, member_ids)
+             desired_ids = resolve_member_identity_ids(locked_provider, member_ids)
 
-               affected = replace_group_members(locked_provider, group, display, desired_ids)
+             affected = replace_group_members(locked_provider, group, display, desired_ids)
 
-               affected = identities_to_recompute(locked_provider, affected, first_push?)
+             affected = identities_to_recompute(locked_provider, affected, first_push?)
 
-               current_provider =
-                 prepare_scim_group_authorization_change!(locked_provider, affected)
+             current_provider =
+               prepare_scim_group_authorization_change!(locked_provider, affected)
 
-               {current_provider, affected, group}
-             end),
-           :ok <- recompute_role_for_affected(current_provider, affected) do
-        scim_fetch_group(provider, group.id)
-      end
+             {current_provider, affected, group}
+           end),
+         :ok <- recompute_role_for_affected(current_provider, affected) do
+      scim_fetch_group(provider, group.id)
     end
   end
 
@@ -829,25 +830,24 @@ defmodule Emisar.SSO.SCIM do
     with true <- Repo.valid_uuid?(id),
          :ok <- validate_optional_scim_string(external_group_id),
          :ok <- validate_optional_scim_string(display),
-         :ok <- validate_scim_member_ids(member_ids) do
-      with {:ok, {current_provider, affected, group}} <-
-             Repo.transaction(fn ->
-               {locked_provider, first_push?} = lock_provider!(provider)
-               group = fetch_group_row!(locked_provider, id)
-               :ok = ensure_group_external_id(group, external_group_id)
-               group = put_group_display!(locked_provider, group, display)
-               desired_ids = resolve_member_identity_ids(locked_provider, member_ids)
-               affected = replace_group_members(locked_provider, group, display, desired_ids)
-               affected = identities_to_recompute(locked_provider, affected, first_push?)
+         :ok <- validate_scim_member_ids(member_ids),
+         {:ok, {current_provider, affected, group}} <-
+           Repo.transaction(fn ->
+             {locked_provider, first_push?} = lock_provider!(provider)
+             group = fetch_group_row!(locked_provider, id)
+             :ok = ensure_group_external_id(group, external_group_id)
+             group = put_group_display!(locked_provider, group, display)
+             desired_ids = resolve_member_identity_ids(locked_provider, member_ids)
+             affected = replace_group_members(locked_provider, group, display, desired_ids)
+             affected = identities_to_recompute(locked_provider, affected, first_push?)
 
-               current_provider =
-                 prepare_scim_group_authorization_change!(locked_provider, affected)
+             current_provider =
+               prepare_scim_group_authorization_change!(locked_provider, affected)
 
-               {current_provider, affected, group}
-             end),
-           :ok <- recompute_role_for_affected(current_provider, affected) do
-        scim_fetch_group(provider, group.id)
-      end
+             {current_provider, affected, group}
+           end),
+         :ok <- recompute_role_for_affected(current_provider, affected) do
+      scim_fetch_group(provider, group.id)
     else
       false -> {:error, :not_found}
       error -> error
@@ -940,29 +940,27 @@ defmodule Emisar.SSO.SCIM do
       ) do
     with true <- Repo.valid_uuid?(id),
          :ok <- validate_optional_scim_string(display),
-         :ok <- validate_scim_patch_member_ids(add_ids, remove_ids) do
-      with {:ok, {current_provider, added, removed, affected, group}} <-
-             Repo.transaction(fn ->
-               {locked_provider, first_push?} = lock_provider!(provider)
-               group = fetch_group_row!(locked_provider, id)
-               group = put_group_display!(locked_provider, group, display)
-               add_ids = resolve_member_identity_ids(locked_provider, add_ids)
-               remove_ids = resolve_member_identity_ids(locked_provider, remove_ids)
-               added = add_group_members(locked_provider, group, add_ids)
-               removed = remove_group_members(locked_provider, group, remove_ids)
-               touched = Enum.uniq(added ++ removed)
-               affected = identities_to_recompute(locked_provider, touched, first_push?)
+         :ok <- validate_scim_patch_member_ids(add_ids, remove_ids),
+         {:ok, {current_provider, added, removed, affected, group}} <-
+           Repo.transaction(fn ->
+             {locked_provider, first_push?} = lock_provider!(provider)
+             group = fetch_group_row!(locked_provider, id)
+             group = put_group_display!(locked_provider, group, display)
+             add_ids = resolve_member_identity_ids(locked_provider, add_ids)
+             remove_ids = resolve_member_identity_ids(locked_provider, remove_ids)
+             added = add_group_members(locked_provider, group, add_ids)
+             removed = remove_group_members(locked_provider, group, remove_ids)
+             touched = Enum.uniq(added ++ removed)
+             affected = identities_to_recompute(locked_provider, touched, first_push?)
 
-               current_provider =
-                 prepare_scim_group_authorization_change!(locked_provider, affected)
+             current_provider =
+               prepare_scim_group_authorization_change!(locked_provider, affected)
 
-               {current_provider, added, removed, affected, group}
-             end),
-           :ok <- recompute_role_for_affected(current_provider, affected) do
-        with {:ok, summary} <- scim_fetch_group(provider, group.id) do
-          {:ok, Map.merge(summary, %{added: length(added), removed: length(removed)})}
-        end
-      end
+             {current_provider, added, removed, affected, group}
+           end),
+         :ok <- recompute_role_for_affected(current_provider, affected),
+         {:ok, summary} <- scim_fetch_group(provider, group.id) do
+      {:ok, Map.merge(summary, %{added: length(added), removed: length(removed)})}
     else
       false -> {:error, :not_found}
       error -> error

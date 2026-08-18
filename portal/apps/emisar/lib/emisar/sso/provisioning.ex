@@ -181,7 +181,9 @@ defmodule Emisar.SSO.Provisioning do
     user_ids = Enum.map(identities, & &1.user_id)
 
     membership_by_user =
-      Map.new(Accounts.list_sync_memberships(provider.account_id, user_ids), &{&1.user_id, &1})
+      provider.account_id
+      |> Accounts.list_sync_memberships(user_ids)
+      |> Map.new(&{&1.user_id, &1})
 
     Enum.each(membership_by_user, fn {_user_id, membership} ->
       if is_integer(membership.directory_authorization_pending_version) do

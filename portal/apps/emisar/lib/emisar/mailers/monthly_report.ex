@@ -119,8 +119,12 @@ defmodule Emisar.Mailers.MonthlyReport do
   # Label/value rows aligned to their own widest label and count, so a block
   # of numbers scans as a column in a monospaced mail client.
   defp text_rows(rows) do
-    label_width = rows |> Enum.map(&String.length(elem(&1, 0))) |> Enum.max()
-    value_width = rows |> Enum.map(&String.length(number(elem(&1, 1)))) |> Enum.max()
+    label_width = rows |> Enum.map(fn {label, _value} -> String.length(label) end) |> Enum.max()
+
+    value_width =
+      rows
+      |> Enum.map(fn {_label, value} -> value |> number() |> String.length() end)
+      |> Enum.max()
 
     Enum.map_join(rows, "\n", fn {label, value} ->
       "  " <>

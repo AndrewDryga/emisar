@@ -73,9 +73,10 @@ defmodule Emisar.Runbooks.Scheduler do
       |> RunbookExecution.Query.lock_for_update()
       |> repo.one()
 
-    if match?(%RunbookExecution{status: :pending_approval}, execution),
-      do: {:ok, execution},
-      else: {:error, :runbook_execution_not_approvable}
+    case execution do
+      %RunbookExecution{status: :pending_approval} -> {:ok, execution}
+      _ -> {:error, :runbook_execution_not_approvable}
+    end
   end
 
   @doc "Inside an approval transaction, confirm a physical attempt's parent is still active."
@@ -186,9 +187,13 @@ defmodule Emisar.Runbooks.Scheduler do
         |> ExecutionItem.Query.lock_for_update()
         |> repo.all()
 
-      if match?(%RunbookExecution{status: :pending_approval}, execution),
-        do: {:ok, %{execution: execution, stages: stages, items: items}},
-        else: {:error, :runbook_execution_not_approvable}
+      case execution do
+        %RunbookExecution{status: :pending_approval} ->
+          {:ok, %{execution: execution, stages: stages, items: items}}
+
+        _ ->
+          {:error, :runbook_execution_not_approvable}
+      end
     end)
     |> Multi.merge(fn %{^key => locked} ->
       compose_pending_approval_halt(locked, code, message)

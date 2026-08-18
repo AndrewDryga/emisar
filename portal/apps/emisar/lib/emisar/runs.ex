@@ -80,15 +80,13 @@ defmodule Emisar.Runs do
     %{
       status: run.status,
       terminal?: terminal?,
-      error_message: safe_error_message(run),
+      error_message: status_error_message(run.status),
       output_complete: if(terminal?, do: run.output_complete),
       approval_pending?: run.status == :pending_approval,
       dispatch_deadline_at: dispatch_deadline_at(run),
       local_audit_failed?: run.local_audit_failed
     }
   end
-
-  defp safe_error_message(%ActionRun{status: status}), do: status_error_message(status)
 
   # The cause is the lifecycle outcome and nothing else. A runner message, a
   # policy reason, and an operator reason are all untrusted or sensitive text —
@@ -1469,13 +1467,14 @@ defmodule Emisar.Runs do
          execution_id
        )
        when is_binary(execution_id) do
+    attrs = Map.merge(attrs, policy_attrs(policy, "require_approval", reason, matched))
+
     if Emisar.Approvals.runbook_execution_approved?(execution_id, attrs[:account_id]) do
       {:ok,
        %{
          attrs:
-           attrs
-           |> Map.merge(policy_attrs(policy, "require_approval", reason, matched))
-           |> Map.put(
+           Map.put(
+             attrs,
              :policy_reason,
              append_policy_reason(
                reason,
@@ -1488,9 +1487,7 @@ defmodule Emisar.Runs do
       {:ok,
        %{
          attrs:
-           attrs
-           |> Map.merge(policy_attrs(policy, "require_approval", reason, matched))
-           |> Map.merge(%{
+           Map.merge(attrs, %{
              status: :denied,
              policy_reason:
                append_policy_reason(reason, "This runbook execution still needs approval.")
@@ -2205,14 +2202,9 @@ defmodule Emisar.Runs do
     # (policy_decision/policy_reason/matched_rules), and the run's own terminal
     # audit row proves it ran (audit-logging-diet #1). Dispatch to the runner only
     # after the run row is durable.
-    case create_run(attrs) do
-      {:ok, run} ->
-        with :ok <- dispatch_to_runner(run) do
-          {:ok, :running, run}
-        end
-
-      {:error, changeset} ->
-        {:error, changeset}
+    with {:ok, run} <- create_run(attrs),
+         :ok <- dispatch_to_runner(run) do
+      {:ok, :running, run}
     end
   end
 
@@ -2261,14 +2253,9 @@ defmodule Emisar.Runs do
     audit = &Audit.Events.grant_used(&1, grant, policy)
     compose = &Emisar.Approvals.consume_grant_in_multi(&1, :run, grant)
 
-    case create_run(attrs, audit: audit, compose: compose) do
-      {:ok, run} ->
-        with :ok <- dispatch_to_runner(run) do
-          {:ok, :running, run}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
+    with {:ok, run} <- create_run(attrs, audit: audit, compose: compose),
+         :ok <- dispatch_to_runner(run) do
+      {:ok, :running, run}
     end
   end
 
@@ -2595,7 +2582,7 @@ defmodule Emisar.Runs do
       "type" => "run_action",
       "request_id" => run.request_id,
       "action_id" => run.action_id,
-      "args" => runner_args(run),
+      "args" => Jason.Fragment.new(run.args_raw),
       "opts" => run.opts || %{},
       # Use `run.reason` (the operator's freeform "why I'm running this")
       # — NOT `run.reason_text`, which holds cancel/error reasons that
@@ -2618,8 +2605,6 @@ defmodule Emisar.Runs do
     do: Map.put(payload, "attestation", att)
 
   defp maybe_put_attestation(payload, %ActionRun{}), do: payload
-
-  defp runner_args(%ActionRun{args_raw: raw}), do: Jason.Fragment.new(raw)
 
   defp maybe_put_signed_contract(payload, %ActionRun{
          pack_ref: pack_ref,
@@ -3042,19 +3027,16 @@ defmodule Emisar.Runs do
         {status, nil, nil}
 
       true ->
-        case output_contract_schema(run) do
-          {:ok, schema} ->
-            case check_structured_output(payload["structured_output"], schema) do
-              {:ok, output} ->
-                {status, output, nil}
+        with {:ok, schema} <- output_contract_schema(run),
+             {:ok, output} <- check_structured_output(payload["structured_output"], schema) do
+          {status, output, nil}
+        else
+          {:error, :invalid_structured_output} ->
+            {:validation_failed, nil, "runner sent an invalid structured output value"}
 
-              {:error, :invalid_structured_output} ->
-                {:validation_failed, nil, "runner sent an invalid structured output value"}
-
-              {:error, :schema_mismatch} ->
-                {:validation_failed, nil,
-                 "runner structured output does not match the trusted schema"}
-            end
+          {:error, :schema_mismatch} ->
+            {:validation_failed, nil,
+             "runner structured output does not match the trusted schema"}
 
           {:error, :invalid_contract} ->
             {:validation_failed, nil, "trusted output schema snapshot is unavailable"}

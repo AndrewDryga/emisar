@@ -3118,7 +3118,9 @@ defmodule Emisar.Catalog do
     |> Authorizer.for_subject(subject)
     |> Repo.all()
     |> Enum.reject(&MapSet.member?(in_scope, &1))
-    |> Enum.filter(&String.contains?(String.downcase(&1), name))
+    |> Enum.filter(fn pack_id ->
+      pack_id |> String.downcase() |> String.contains?(name)
+    end)
     |> Enum.sort()
   end
 

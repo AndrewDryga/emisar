@@ -102,7 +102,7 @@ defmodule Emisar.OutputSchema do
   defp safe_profile?(_value, _root?), do: true
 
   defp valid_against_meta_schema?(schema) do
-    match?(:ok, JSONSchex.validate(compiled_meta_schema(), schema))
+    JSONSchex.validate(compiled_meta_schema(), schema) == :ok
   end
 
   defp compiled_meta_schema do
@@ -129,7 +129,11 @@ defmodule Emisar.OutputSchema do
   end
 
   defp acyclic_refs?(defs, refs) do
-    graph = Map.new(refs, fn token -> {token, local_ref_tokens(Map.get(defs, token), [])} end)
+    graph =
+      Map.new(refs, fn token ->
+        value = Map.get(defs, token)
+        {token, local_ref_tokens(value, [])}
+      end)
 
     Enum.reduce_while(refs, {:ok, %{}}, fn token, {:ok, colors} ->
       case visit_ref(token, graph, colors) do

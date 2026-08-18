@@ -168,6 +168,28 @@ crash was inside one. Fixture-verified both ways: it fires on the original
 buggy markup and stays silent on the normalized form and on the 11 draft sites.
 **Verdict: broad AST check rejected; narrow template check wired.**
 
+## 7. `match?/2` on a struct field value
+
+**The smell (readability sweep, 2026-08-18).** A value whose contract already
+guarantees `%RunnerAccess{}` was read through guarded patterns such as
+`match?(%RunnerAccess{mode: mode} when mode != :none, access)`. The code was
+only comparing fields, but made the reader parse a shape test and a guard.
+
+**Why the broad form was rejected — shape is sometimes the real question.** The
+production tree initially carried eight `match?(%Struct{...}, value)` sites.
+Six field-value conditionals became clearer as direct field reads or explicit
+`case` dispatch. The other two are deliberate shape filters: one pipeline
+accepts either an invalid changeset or nil, and one web collection accepts a
+loaded `%Runbook{}` among values that may not be a runbook. A prewalk can see
+the struct pattern but cannot know whether the value's upstream contract
+guarantees that struct. Flagging both idioms would either create standing noise
+or force a verbose `case` where `match?/2` says exactly what is being tested.
+
+**Verdict:** keep the direct-field rule in `portal/AGENTS.md` as review judgment.
+The existing `MatchOnMapFieldValue` check stays intentionally narrower because
+bare-map field matches can silently survive a schema move; a struct pattern at
+least validates its named fields at compile time.
+
 ---
 
 **If reopened:** re-measure first (the prototype for #1 was a path-scoped

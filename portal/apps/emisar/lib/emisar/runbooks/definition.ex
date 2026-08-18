@@ -46,7 +46,9 @@ defmodule Emisar.Runbooks.Definition do
   """
   @spec decode_json(term()) :: {:ok, map()} | {:error, [issue()]}
   def decode_json(encoded) when is_binary(encoded) do
-    if byte_size(encoded) <= limit!(:max_definition_bytes) do
+    max_definition_bytes = limit!(:max_definition_bytes)
+
+    if byte_size(encoded) <= max_definition_bytes do
       case Jason.decode(encoded) do
         {:ok, definition} ->
           validate(definition)
@@ -60,7 +62,7 @@ defmodule Emisar.Runbooks.Definition do
          issue(
            "invalid_definition",
            "",
-           "JSON exceeds the #{limit!(:max_definition_bytes)} byte limit."
+           "JSON exceeds the #{max_definition_bytes} byte limit."
          )
        ]}
     end

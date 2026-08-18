@@ -48,9 +48,13 @@ defmodule EmisarWeb.RunnerScope do
   attr :rest, :global
 
   def runner_scope_select(assigns) do
+    tree = tree(assigns.runners, assigns.selected)
+
     assigns =
       assigns
-      |> assign(:tree, tree(assigns.runners, assigns.selected))
+      |> assign(:tree, tree)
+      |> assign(:empty?, empty_tree?(tree))
+      |> assign(:ready?, not assigns.loading? and is_nil(assigns.load_error))
       |> assign(
         :visible_error,
         assigns.validation_error ||
@@ -72,14 +76,14 @@ defmodule EmisarWeb.RunnerScope do
       </div>
 
       <div
-        :if={not @loading? and is_nil(@load_error) and empty_tree?(@tree)}
+        :if={@ready? and @empty?}
         class={scope_empty_class(@variant)}
       >
         No runners registered yet.
       </div>
 
       <div
-        :if={not @loading? and is_nil(@load_error) and not empty_tree?(@tree)}
+        :if={@ready? and not @empty?}
         class={scope_tree_class(@variant)}
       >
         <div :for={group <- @tree.groups}>
@@ -337,9 +341,13 @@ defmodule EmisarWeb.RunnerScope do
   attr :rest, :global
 
   def pack_scope_select(assigns) do
+    nodes = pack_nodes(assigns.packs, assigns.selected)
+
     assigns =
       assigns
-      |> assign(:nodes, pack_nodes(assigns.packs, assigns.selected))
+      |> assign(:nodes, nodes)
+      |> assign(:empty?, empty_pack_nodes?(nodes))
+      |> assign(:ready?, not assigns.loading? and is_nil(assigns.load_error))
       |> assign(
         :visible_error,
         assigns.validation_error ||
@@ -361,14 +369,14 @@ defmodule EmisarWeb.RunnerScope do
       </div>
 
       <div
-        :if={not @loading? and is_nil(@load_error) and empty_pack_nodes?(@nodes)}
+        :if={@ready? and @empty?}
         class={scope_empty_class(@variant)}
       >
         {@empty_message}
       </div>
 
       <div
-        :if={not @loading? and is_nil(@load_error) and not empty_pack_nodes?(@nodes)}
+        :if={@ready? and not @empty?}
         class={scope_tree_class(@variant)}
       >
         <.checkbox

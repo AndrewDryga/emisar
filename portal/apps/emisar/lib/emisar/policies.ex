@@ -636,16 +636,15 @@ defmodule Emisar.Policies do
   def policy_management_capabilities(%Subject{} = subject) do
     can_manage? = subject_can_manage_policies?(subject)
     access = Accounts.runner_access_for_subject(subject)
-    has_runner_access? = match?(%Accounts.RunnerAccess{mode: mode} when mode != :none, access)
-    has_full_pack_access? = match?(%Accounts.RunnerAccess{pack_mode: :all}, access)
+    has_runner_access? = access.mode != :none
+    has_all_runner_access? = access.mode == :all
+    has_all_pack_access? = access.pack_mode == :all
 
     %{
       can_manage?: can_manage?,
       has_runner_access?: has_runner_access?,
-      can_manage_scoped?: can_manage? and has_runner_access? and has_full_pack_access?,
-      can_manage_account?:
-        can_manage? and
-          match?(%Accounts.RunnerAccess{mode: :all, pack_mode: :all}, access)
+      can_manage_scoped?: can_manage? and has_runner_access? and has_all_pack_access?,
+      can_manage_account?: can_manage? and has_all_runner_access? and has_all_pack_access?
     }
   end
 

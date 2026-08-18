@@ -188,14 +188,15 @@ defmodule Emisar.Admin do
   end
 
   defp dispatch("emisar.admin.account.find", %{"query" => term}) do
-    accounts = Query.accounts_matching(String.trim(term)) |> Repo.all()
+    accounts = term |> String.trim() |> Query.accounts_matching() |> Repo.all()
     {:ok, %{accounts: Enum.map(accounts, &account_result/1)}}
   end
 
   defp dispatch("emisar.admin.account.show", args) do
     with {:ok, account} <- fetch_account(args),
          {:ok, plan} <- Billing.support_plan(account) do
-      {:ok, Map.put(account_result(account), :billing, plan)}
+      result = account |> account_result() |> Map.put(:billing, plan)
+      {:ok, result}
     end
   end
 

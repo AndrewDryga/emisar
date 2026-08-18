@@ -489,15 +489,19 @@ defmodule EmisarWeb.PoliciesLive do
   # (fewer required approvals, or self-approval the default forbids). Empty when
   # it's at least as strict. The account default itself is never compared.
   defp approval_weakenings(scoped, default) do
-    Enum.reject(
-      [
-        scoped["min_approvals"] < default["min_approvals"] &&
-          "requires fewer approvals (#{scoped["min_approvals"]} vs #{default["min_approvals"]})",
-        (scoped["allow_self_approval"] and not default["allow_self_approval"]) &&
-          "lets the requester approve their own action"
-      ],
-      &(&1 == false)
-    )
+    fewer_approvals =
+      if scoped["min_approvals"] < default["min_approvals"],
+        do: [
+          "requires fewer approvals (#{scoped["min_approvals"]} vs #{default["min_approvals"]})"
+        ],
+        else: []
+
+    self_approval =
+      if scoped["allow_self_approval"] and not default["allow_self_approval"],
+        do: ["lets the requester approve their own action"],
+        else: []
+
+    fewer_approvals ++ self_approval
   end
 
   # A "require approval" gate that adds no SECOND party — one approval needed and
