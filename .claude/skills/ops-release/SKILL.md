@@ -23,5 +23,5 @@ Do not duplicate or improvise the release procedure here. The invariants are:
   confirmation because it leaves the machine.
 
 After publication, verify the signed tag, GitHub release, changelog page/feed,
-and any release workflow triggered by the tag, then record the result in the
-local portal agent log.
+and any release workflow triggered by the tag. The owning Coop task and git
+history are the completion record.

@@ -174,7 +174,6 @@ Never title a product release with a bare `vX.Y.Z`.
 14. **Push the tag** (`git push origin v0.25.0`). *Outward-facing — confirm first.*
 15. **Write the release notes** (Markdown, via `/content-director`) and **create the
     GitHub release**: `gh release create v0.25.0 --verify-tag --title "Portal v0.25.0 — <title>" --notes-file <file>`. *Outward-facing — confirm first.*
-16. **Record** the completed release in `portal/.agent/LOG.md`.
 
 ## Verify
 

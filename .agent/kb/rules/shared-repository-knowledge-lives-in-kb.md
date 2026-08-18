@@ -19,6 +19,10 @@ Do not create a top-level `docs/` directory. It becomes a second, stale
 documentation site beside the actual website and makes agents guess which copy
 is authoritative.
 
+Do not create a workspace- or project-level `.agent/LOG.md` or
+`.agent/LOG.archive.md`. Active work belongs in the owning task's `state.md` and
+append-only `log.md`; completed work belongs in the done task and git history.
+
 ## Why
 
 One routing index lets agents load only the knowledge relevant to the task.
@@ -43,10 +47,12 @@ dist/cursor-plugin/README.md
 docs/architecture.md
 docs/mcp-api-schemas.json
 docs/distribution/cursor-plugin/
+.agent/LOG.md
 ```
 
 Those paths mix agent knowledge, executable application inputs, and published
-artifacts under an unused repository documentation surface.
+artifacts under an unused repository documentation surface, or create a second
+task-history stream with no lifecycle owner.
 
 ## Enforcement
 
@@ -54,7 +60,8 @@ artifacts under an unused repository documentation surface.
 directories, validates descriptive cards separately from specs and runbooks,
 reads public-skill MCP tool names from the portal-owned schema, and exercises
 Git's ignore matcher to prove `dist/cursor-plugin/` is trackable while generated
-`dist/` siblings stay ignored.
+`dist/` siblings stay ignored. It also rejects deprecated agent logs and any
+manual, runbook, or contributor skill that tells an agent to recreate one.
 
 Sweep new Markdown, JSON specifications, release procedures, and distribution
 assets for a `docs/` owner before adding them. A new tracked `dist/` subtree

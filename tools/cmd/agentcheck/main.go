@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	staleManualText = regexp.MustCompile(`coop tasks list|xx_done|dev/run\b|\.agent/screenshots\b`)
+	staleManualText = regexp.MustCompile("coop tasks list|xx_done|dev/run\\b|\\.agent/screenshots\\b|(^|[[:space:]`/])LOG(\\.archive)?\\.md\\b|(?i:agent log)")
 	staleSkillText  = regexp.MustCompile("(?i)(/code-review|/security-review)|v0\\.2|never shells out|never-a-shell|argv arrays, never shell strings|(^|[[:space:]`(])/(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|make-interfaces-feel-better|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api|work)\\b|`(boundaries|context-fn|creative-director|deploy|deps-audit|frontend|investigate|iron-review|new-context|perf|recurrent-jobs|release|seo-marketing|ship-review|spec|sweep|testing|ux-designer|verify-api)`")
 	// Deliberately BROADER than the shipped tool set: its job is to catch a
 	// citation of a tool that does not exist, so it cannot be derived from the
@@ -162,7 +162,7 @@ func (c *checker) files(paths []string) []string {
 
 func (c *checker) checkManualText() {
 	paths := []string{
-		"AGENTS.md", "dev/README.md", ".claude/skills", "skills", "portal/AGENTS.md",
+		"AGENTS.md", "dev/README.md", ".claude/skills", "skills", ".agent/kb/runbooks", "portal/AGENTS.md",
 		"portal/.agent/kb/rules/design-ui-fix-screenshot-proof.md",
 		"runner/AGENTS.md", "mcp/AGENTS.md", "packs/AGENTS.md", "infra/AGENTS.md",
 	}
@@ -171,8 +171,20 @@ func (c *checker) checkManualText() {
 		fmt.Fprintln(c.errOut, finding)
 	}
 	if len(findings) > 0 {
-		c.fail("manuals or skills still mention stale task commands or screenshot paths")
+		c.fail("manuals, runbooks, or skills still mention stale task commands, screenshot paths, or agent logs")
 	}
+}
+
+func (c *checker) checkDeprecatedAgentLogs() {
+	c.walkRepository(func(relative string, entry fs.DirEntry) {
+		if entry.IsDir() {
+			return
+		}
+		if relative == ".agent/LOG.md" || relative == ".agent/LOG.archive.md" ||
+			strings.HasSuffix(relative, "/.agent/LOG.md") || strings.HasSuffix(relative, "/.agent/LOG.archive.md") {
+			c.fail("%s is deprecated; working state belongs in the owning task and git history", relative)
+		}
+	})
 }
 
 // The task README is scanned for retired slash commands alongside the skills,
@@ -959,7 +971,8 @@ func hasJSONKey(value any, key string) bool {
 
 func (c *checker) run(requireCoop bool) int {
 	c.checkLinks()
-	c.group("manuals and skills use current task commands and screenshot paths", c.checkManualText)
+	c.group("manuals, runbooks, and skills use current task commands and state paths", c.checkManualText)
+	c.group("deprecated workspace and project agent logs are absent", c.checkDeprecatedAgentLogs)
 	c.group("skills use current review commands and product/security wording", c.checkSkillText)
 	c.group("manual code examples define only fictional modules", c.checkManualExamples)
 	if _, err := exec.LookPath("coop"); err == nil {
