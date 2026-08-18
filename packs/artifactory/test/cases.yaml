@@ -5,6 +5,10 @@ versions:
     default: true
 risk_accountability:
   mode: complete
+# A case boots an Artifactory JVM and database. Four concurrent SUTs starve on
+# the hosted runner; split the plan and keep only two SUTs active per row.
+shards: 3
+workers: 2
 secret_env: [ARTIFACTORY_PASSWORD]
 env:
   ARTIFACTORY_URL: "http://artifactory:8082"

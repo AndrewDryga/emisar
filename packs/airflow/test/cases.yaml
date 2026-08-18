@@ -5,6 +5,9 @@ versions:
     default: true
 risk_accountability:
   mode: complete
+# Each case boots a complete Airflow standalone service and database. Forty
+# cases cannot finish inside one 20-minute CI row even though each case passes.
+shards: 3
 secret_env: [AIRFLOW_PASSWORD]
 env:
   AIRFLOW_URL: "http://airflow:8080"
