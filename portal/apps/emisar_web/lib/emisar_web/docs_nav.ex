@@ -278,7 +278,7 @@ defmodule EmisarWeb.DocsNav do
               icon: "hero-finger-print",
               keywords: "certificate ca leaf signing key",
               desc:
-                "A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key."
+                "A customer-authorized bridge signs each request with a key the cloud never holds."
             }
           ]
         }

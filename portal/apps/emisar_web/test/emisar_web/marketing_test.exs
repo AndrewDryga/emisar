@@ -952,10 +952,20 @@ defmodule EmisarWeb.MarketingTest do
     # surfaces — without pinning brittle full sentences a copy tweak would
     # break.
 
+    test "the home FAQ states the runner exit outcome without process internals", %{conn: conn} do
+      html = conn |> get(~p"/") |> html_response(200)
+
+      assert html =~ "the runner stops the action if it exits"
+      assert html =~ "marks its in-flight runs as errored within minutes"
+      refute html =~ "PR_SET_PDEATHSIG"
+      refute html =~ "setpgid"
+      refute html =~ "dispatch-timeout sweep"
+    end
+
     test "the how-emisar-works guide explains both enforcement planes and their limits", %{
       conn: conn
     } do
-      html = conn |> get(~p"/guides/how-emisar-works") |> html_response(200)
+      html = conn |> get(~p"/guides/how-emisar-works") |> html_response(200) |> squish()
 
       assert html =~ "What the agent can do"
       assert html =~ "Following one request"
@@ -964,7 +974,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Signed dispatch"
 
       assert html =~
-               "A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key."
+               "A customer-authorized bridge signs each request with a key the cloud never holds."
 
       assert html =~
                "The runner opens an outbound TLS WebSocket and exposes no inbound listener; commands return through that established connection."
@@ -985,7 +995,7 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/deployment") |> html_response(200) |> squish()
 
       assert html =~
-               "A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key."
+               "A customer-authorized bridge signs each request with a key the cloud never holds."
 
       refute html =~ "a human&#39;s signature"
     end
@@ -1030,7 +1040,7 @@ defmodule EmisarWeb.MarketingTest do
 
     test "the security page renders the trust-boundary diagram, key claims, and disclosures",
          %{conn: conn} do
-      html = conn |> get(~p"/security") |> html_response(200)
+      html = conn |> get(~p"/security") |> html_response(200) |> squish()
 
       # The trust-boundary diagram: the gate between the untrusted client
       # and the host, with the pending → approved state chips.
@@ -1041,13 +1051,14 @@ defmodule EmisarWeb.MarketingTest do
 
       # The concrete claims a security reviewer scans for.
       assert html =~ "20 built-in patterns"
-      assert html =~ "RFC 6238"
-      assert html =~ "read-only audit-export token"
+      assert html =~ "TOTP MFA is available on every plan"
+      assert html =~ "dedicated read-only credential"
 
       assert html =~
-               "A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key."
+               "A customer-authorized bridge signs each request with a key the cloud never holds."
 
       assert html =~ "MCP bridge keys are short-lived and rotate themselves"
+      assert html =~ "Runner credentials rotate automatically"
 
       assert html =~
                "Runner output is redacted before leaving the host; Emisar retains the resulting redacted output in audit log."
@@ -1056,6 +1067,9 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "privileged host operator"
       refute html =~ "action a real person signed"
       refute html =~ "Recorded byte-for-byte"
+      refute html =~ "RFC 6238"
+      refute html =~ "cursor pagination"
+      refute html =~ "expires after 90 days"
 
       # The honest not-affiliated note (this is a security product; the
       # framing is "we implement it", never "they endorse us").
@@ -1132,6 +1146,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Foundation"
       assert html =~ "Enterprise"
       assert html =~ "Advanced"
+      assert html =~ "Your SIEM reads the cloud audit through a dedicated read-only credential."
+      refute html =~ "cursor-aware HTTP input"
 
       # The honesty rails (also covered by the copy test above, asserted
       # here as part of the page's required sections).
@@ -1396,7 +1412,7 @@ defmodule EmisarWeb.MarketingTest do
     # an operator copies. Stable, apostrophe-free anchors per the describe note.
     test "the signed-dispatch page renders setup, CA distribution, rotation, and revocation",
          %{conn: conn} do
-      html = conn |> get(~p"/docs/signed-dispatch") |> html_response(200)
+      html = conn |> get(~p"/docs/signed-dispatch") |> html_response(200) |> squish()
 
       # The section spine of the how-to.
       assert html =~ "Distributing the CA across a fleet"
@@ -1412,7 +1428,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "max_attestation_age"
 
       assert html =~
-               "A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key."
+               "A customer-authorized bridge signs each request with a key the cloud never holds."
 
       refute html =~ "The MCP client signs"
 
@@ -1765,7 +1781,9 @@ defmodule EmisarWeb.MarketingTest do
       assert keys =~ "writable and persistent"
 
       assert keys =~
-               "OAuth tokens, arbitrary Bearer tokens, non-expiring quick-connect keys, and audit-export tokens bypass local rotation state."
+               "OAuth tokens, arbitrary Bearer tokens, and audit-export tokens bypass local rotation state."
+
+      refute keys =~ "non-expiring quick-connect keys"
 
       cli = conn |> get(~p"/docs/runner-cli") |> html_response(200)
       assert cli =~ "emisar audit verify --all"
@@ -1905,7 +1923,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Review can turn into a reflex"
       assert html =~ "That is the worst of both worlds"
       assert html =~ "Nothing on its own. You run every command."
-      assert html =~ "Copy-paste may be enough"
+      assert html =~ "Copy-paste fits one-off work"
       assert html =~ "When the command comes back, make it an action"
       assert html =~ "/images/screenshots/audit-successes.webp"
       assert html =~ "<table"

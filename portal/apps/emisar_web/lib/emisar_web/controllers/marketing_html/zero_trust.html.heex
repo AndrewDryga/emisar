@@ -111,9 +111,9 @@
                 {"Just-in-time / just-enough access", "Advanced",
                  "One-use approvals and scoped standing grants. The agent gets the capability for the task, not standing access that outlives it."},
                 {"Continuous audit ingest by your SIEM", "Advanced",
-                 "NDJSON audit export over a dedicated read-only audit-export token with cursor pagination. emisar does not push: a SIEM with a cursor-aware HTTP input polls it directly, otherwise a collector polls and forwards."},
+                 "Your SIEM reads the cloud audit through a dedicated read-only credential."},
                 {"Cryptographic non-origination — the platform can't act for you", "Advanced",
-                 "A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key. A compromised control plane can relay that signed request — it can't forge, alter, replay, or originate one. The capability to act on your behalf is removed from the platform. Opt-in per runner."}
+                 "A customer-authorized bridge signs each request with a key the cloud never holds. A compromised control plane can relay that signed request — it can't forge, alter, replay, or originate one. The capability to act on your behalf is removed from the platform. Opt-in per runner."}
               ] do %>
                 <tr class="hover:bg-zinc-900/30">
                   <td class="px-6 py-4 font-medium text-zinc-100">{control}</td>

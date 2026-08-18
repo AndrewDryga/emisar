@@ -259,7 +259,8 @@
     policy, and send eligible work.
   </p>
   <p>
-    Signed dispatch is optional. {"A customer-authorized MCP bridge signed the dispatch frame with its locally held Ed25519 key."} The bridge binds the exact action, pack, arguments, targets,
+    Signed dispatch is optional. A customer-authorized bridge signs each request with a key the
+    cloud never holds. The bridge binds the exact action, pack, arguments, targets,
     reason, operation, nonce, and time with a key the cloud does not hold. An enforcing
     runner verifies that signature before execution.
   </p>
