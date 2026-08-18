@@ -377,6 +377,37 @@ defmodule EmisarWeb.RunnersLiveTest do
       refute assigns.show_wizard?
     end
 
+    test "a restricted member's empty search remains a filter result", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      member = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        )
+
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "reachable-runner",
+        group: "production"
+      )
+
+      {:ok, restricted} = Emisar.Accounts.RunnerAccess.restricted(["production"], [])
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+
+      {:ok, lv, html} =
+        build_conn()
+        |> log_in_user(member)
+        |> live(~p"/app/#{account}/runners?group_or_name=missing")
+
+      assert html =~ "No runners match this search."
+      assert has_element?(lv, "#runners-filter input[name='group_or_name'][value='missing']")
+      refute html =~ "No runners in your access"
+      refute html =~ "An owner or admin can update it"
+    end
+
     # a hand-edited page cursor makes the runner list read
     # return {:error, …} with non-empty params; `load/1` retries once with clean
     # params (first page) rather than recursing forever or rendering the

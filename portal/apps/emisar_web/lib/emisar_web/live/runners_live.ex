@@ -391,7 +391,8 @@ defmodule EmisarWeb.RunnersLive do
           <.empty_state icon="hero-cpu-chip" title="No runner access">
             You don't have access to any runners. An owner or admin can grant it from Team.
           </.empty_state>
-        <% not @has_full_runner_access? and @runners == [] -> %>
+        <% not @has_full_runner_access? and @metadata.count == 0 and
+             not LiveTable.has_active_filters?(@filter_params, @filters) -> %>
           <.empty_state icon="hero-cpu-chip" title="No runners in your access">
             No runners match your assigned scope. An owner or admin can update it from Team.
           </.empty_state>
