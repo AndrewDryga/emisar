@@ -41,11 +41,15 @@ defmodule EmisarWeb.Components.ChoiceCardsTest do
       assert html =~ "The requester's own approval can count."
     end
 
-    test "selection is NEUTRAL (bright ring + check), never a semantic hue" do
+    test "the loaded selection gets a clear neutral frame and check" do
       html = render_pair(%{value: true, disabled: false})
 
-      assert html =~ "bg-white/[0.04]"
-      assert html =~ "ring-white/25"
+      assert html =~
+               ~r/<label[^>]*bg-white\/\[0\.06\][^>]*ring-2[^>]*ring-white\/40[^>]*>\s*<input[^>]*value="true"[^>]*checked/
+
+      assert html =~
+               ~r/<label[^>]*bg-black\/20[^>]*ring-zinc-800[^>]*>\s*<input[^>]*value="false"/
+
       assert html =~ "hero-check-circle-solid"
       # The only brand usage is the keyboard focus ring.
       refute html =~ "bg-brand-500"

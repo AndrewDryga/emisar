@@ -544,20 +544,22 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
-      # An unchecked self-approval checkbox sends only the hidden "false"; the
-      # number input sends "2". Push the change as the browser would.
-      render_change(lv, "form_change", %{
-        "editor" => "account",
-        "policy" => %{
-          "defaults" => %{
-            "low" => "allow",
-            "medium" => "allow",
-            "high" => "require_approval",
-            "critical" => "deny"
-          },
-          "approval" => %{"min_approvals" => "2", "allow_self_approval" => "false"}
-        }
-      })
+      html =
+        render_change(lv, "form_change", %{
+          "editor" => "account",
+          "policy" => %{
+            "defaults" => %{
+              "low" => "allow",
+              "medium" => "allow",
+              "high" => "require_approval",
+              "critical" => "deny"
+            },
+            "approval" => %{"min_approvals" => "2", "allow_self_approval" => "false"}
+          }
+        })
+
+      assert html =~
+               ~r/<label[^>]*ring-2[^>]*ring-white\/40[^>]*>\s*<input[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="false"[^>]*checked/
 
       lv |> form("#policy-form-account") |> render_submit()
 
@@ -684,6 +686,9 @@ defmodule EmisarWeb.PoliciesLiveTest do
         )
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      assert html =~
+               ~r/<label[^>]*ring-2[^>]*ring-white\/40[^>]*>\s*<input[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="true"[^>]*checked/
 
       # The verdict states the effect AND folds in the guidance in one place
       # (no separate warning banner).

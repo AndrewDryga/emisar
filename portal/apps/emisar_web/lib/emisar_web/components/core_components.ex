@@ -2653,12 +2653,12 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   defp choice_card_frame(_selected?, true) do
-    "rounded-t-lg border border-b-0 border-white/25 bg-white/[0.04] " <>
+    "rounded-t-lg border border-b-0 border-white/40 bg-white/[0.06] " <>
       "focus-within:border-brand-500/70"
   end
 
   defp choice_card_frame(true, false) do
-    "rounded-lg bg-white/[0.04] ring-1 ring-white/25 " <>
+    "rounded-lg bg-white/[0.06] ring-2 ring-white/40 " <>
       "focus-within:ring-2 focus-within:ring-brand-500/50"
   end
 
