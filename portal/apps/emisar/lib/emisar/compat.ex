@@ -46,9 +46,6 @@ defmodule Emisar.Compat do
   @doc "The configured minimum runner-version requirement string, for operator-facing messages."
   def runner_minimum, do: raw(:runner_minimum)
 
-  @doc "The configured recommended runner-version requirement string, for operator-facing messages."
-  def runner_recommended, do: raw(:runner_recommended)
-
   @doc """
   The runner release an update hint names, or the recommended requirement
   string when no release is configured — so copy always has something true to
@@ -67,9 +64,6 @@ defmodule Emisar.Compat do
 
   @doc "The configured minimum MCP-bridge-version requirement string, for operator-facing messages."
   def mcp_minimum, do: raw(:mcp_minimum)
-
-  @doc "The configured recommended MCP-bridge requirement string, for operator-facing messages."
-  def mcp_recommended, do: raw(:mcp_recommended)
 
   @doc "The bridge release an update hint names; falls back to the recommended requirement."
   def mcp_target, do: raw(:mcp_current) || raw(:mcp_recommended)

@@ -111,17 +111,13 @@ defmodule Emisar.CompatTest do
       )
 
       assert Compat.runner_minimum() == ">= 0.4.0"
-      assert Compat.runner_recommended() == ">= 0.5.0"
       assert Compat.mcp_minimum() == "~> 0.5"
-      assert Compat.mcp_recommended() == ">= 0.6.0"
     end
 
     test "are nil when unset" do
       put_policy([])
       assert Compat.runner_minimum() == nil
-      assert Compat.runner_recommended() == nil
       assert Compat.mcp_minimum() == nil
-      assert Compat.mcp_recommended() == nil
     end
   end
 end
