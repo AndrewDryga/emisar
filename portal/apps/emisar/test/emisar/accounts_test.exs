@@ -1874,6 +1874,69 @@ defmodule Emisar.AccountsTest do
       assert length(facts) == 2
     end
 
+    test "only managers receive an account-local suspension author label", %{
+      account: account,
+      owner: owner,
+      owner_membership: owner_membership,
+      subject: subject
+    } do
+      target = Fixtures.Memberships.create_membership(account_id: account.id)
+      assert {:ok, suspended} = Accounts.suspend_membership(target, subject)
+
+      assert {:ok, manager_facts, _metadata} =
+               Accounts.list_team_member_facts(account, subject)
+
+      manager_fact = Enum.find(manager_facts, &(&1.membership.id == target.id))
+
+      assert manager_fact.suspended_by_label ==
+               Accounts.member_display_name(owner_membership, owner)
+
+      assert is_nil(manager_fact.membership.disabled_by_id)
+
+      viewer = Fixtures.Users.create_user()
+
+      viewer_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      viewer_subject = Fixtures.Subjects.membership_subject(viewer_membership)
+
+      assert {:ok, viewer_facts, _metadata} =
+               Accounts.list_team_member_facts(account, viewer_subject)
+
+      viewer_fact = Enum.find(viewer_facts, &(&1.membership.id == suspended.id))
+      refute Map.has_key?(viewer_fact, :suspended_by_label)
+      assert is_nil(viewer_fact.membership.disabled_by_id)
+    end
+
+    test "a former suspension author resolves to no manager-visible label", %{
+      account: account,
+      subject: subject
+    } do
+      admin = Fixtures.Users.create_user(full_name: "Former Admin")
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      target = Fixtures.Memberships.create_membership(account_id: account.id)
+      admin_subject = Fixtures.Subjects.membership_subject(admin_membership)
+      assert {:ok, _suspended} = Accounts.suspend_membership(target, admin_subject)
+      Fixtures.Memberships.mark_membership_as_deleted(admin_membership)
+
+      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
+      target_fact = Enum.find(facts, &(&1.membership.id == target.id))
+
+      assert is_nil(target_fact.suspended_by_label)
+      assert is_nil(target_fact.membership.disabled_by_id)
+    end
+
     test "a subject from another account is refused", %{account: account} do
       {_other_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
@@ -3533,14 +3596,19 @@ defmodule Emisar.AccountsTest do
     end
 
     test "owner can suspend an operator and reinstate", %{
+      owner: owner,
       target: target,
       owner_subject: owner_subject
     } do
       assert {:ok, suspended} = Accounts.suspend_membership(target, owner_subject)
       assert Membership.disabled?(suspended)
+      assert suspended.disabled_by_id == owner.id
+      assert Repo.reload!(target).disabled_by_id == owner.id
 
       assert {:ok, reinstated} = Accounts.reinstate_membership(suspended, owner_subject)
       refute Membership.disabled?(reinstated)
+      assert is_nil(reinstated.disabled_by_id)
+      assert is_nil(Repo.reload!(target).disabled_by_id)
     end
 
     test "suspending a member revokes the API keys they minted", %{
@@ -3582,7 +3650,7 @@ defmodule Emisar.AccountsTest do
       assert Accounts.suspend_membership(target, operator_subject) == {:error, :unauthorized}
     end
 
-    test "suspending a member keeps the seat — count_memberships still includes them", %{
+    test "a repeated suspension keeps the seat and the first hold provenance", %{
       account: account,
       target: target,
       owner_subject: owner_subject
@@ -3592,10 +3660,16 @@ defmodule Emisar.AccountsTest do
       # does — see delete_membership).
       assert Accounts.count_memberships(account.id) == 2
 
-      assert {:ok, _} = Accounts.suspend_membership(target, owner_subject)
+      assert {:ok, first} = Accounts.suspend_membership(target, owner_subject)
+      :ok = Accounts.subscribe_account_team(account.id)
+      assert {:ok, repeated} = Accounts.suspend_membership(target, owner_subject)
 
       assert Accounts.count_memberships(account.id) == 2
+      assert repeated.disabled_at == first.disabled_at
+      assert repeated.disabled_by_id == first.disabled_by_id
       assert Membership.disabled?(Repo.reload!(target))
+      assert length(Repo.all(Emisar.Audit.Event)) == 1
+      refute_receive {:list_changed, :team, "membership.suspended", _user_id}
     end
 
     test "can't suspend yourself", %{owner: owner, account: account, owner_subject: owner_subject} do
@@ -3675,6 +3749,25 @@ defmodule Emisar.AccountsTest do
       refute Membership.disabled?(
                Fixtures.Memberships.fetch_membership(account.id, target.user_id)
              )
+
+      assert is_nil(Repo.reload!(target).disabled_by_id)
+    end
+
+    test "a human retry cannot claim a directory-owned suspension", %{
+      account: account,
+      target: target,
+      owner_subject: owner_subject
+    } do
+      provider = provider_fixture(account)
+      assert {:ok, directory_suspended, true} = Accounts.sync_suspend_membership(target, provider)
+      assert directory_suspended.directory_suspended
+      assert is_nil(directory_suspended.disabled_by_id)
+
+      assert {:ok, unchanged} = Accounts.suspend_membership(directory_suspended, owner_subject)
+      assert unchanged.disabled_at == directory_suspended.disabled_at
+      assert unchanged.directory_suspended
+      assert is_nil(unchanged.disabled_by_id)
+      assert length(Repo.all(Emisar.Audit.Event)) == 1
     end
 
     test "operator cannot reinstate anyone", %{
@@ -3769,6 +3862,7 @@ defmodule Emisar.AccountsTest do
                Accounts.sync_suspend_membership(member, provider)
 
       assert Membership.disabled?(suspended)
+      assert is_nil(suspended.disabled_by_id)
       assert Membership.disabled?(Repo.reload!(member))
     end
 

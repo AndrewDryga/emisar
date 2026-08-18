@@ -915,7 +915,20 @@ defmodule Emisar.Accounts do
          :ok <- Subject.ensure_in_account(subject, account_id, :unauthorized),
          {:ok, memberships, metadata} <- list_team_memberships(account_id, subject, opts) do
       access_by_membership = runner_access_for_memberships(memberships)
-      facts = Enum.map(memberships, &team_member_facts(&1, access_by_membership, subject))
+      manager? = subject_can_manage_team?(subject)
+      suspended_by_labels = suspended_by_labels(memberships, account_id, manager?)
+
+      facts =
+        Enum.map(
+          memberships,
+          &team_member_facts(
+            &1,
+            access_by_membership,
+            suspended_by_labels,
+            manager?,
+            subject
+          )
+        )
 
       {:ok, facts, metadata}
     end
@@ -946,8 +959,17 @@ defmodule Emisar.Accounts do
            ),
          {:ok, membership} <- fetch_team_membership(membership_id, subject) do
       access_by_membership = runner_access_for_memberships([membership])
+      manager? = subject_can_manage_team?(subject)
+      suspended_by_labels = suspended_by_labels([membership], membership.account_id, manager?)
 
-      {:ok, team_member_facts(membership, access_by_membership, subject)}
+      {:ok,
+       team_member_facts(
+         membership,
+         access_by_membership,
+         suspended_by_labels,
+         manager?,
+         subject
+       )}
     end
   end
 
@@ -966,17 +988,23 @@ defmodule Emisar.Accounts do
   # Suspension and a still-open invitation are independent facts — a suspended
   # member who never accepted is both — so each keeps its own boolean and the
   # actions that depend on the pair say so (`resend_invitation?`).
-  defp team_member_facts(%Membership{} = membership, access_by_membership, %Subject{} = subject) do
+  defp team_member_facts(
+         %Membership{} = membership,
+         access_by_membership,
+         suspended_by_labels,
+         manager?,
+         %Subject{} = subject
+       ) do
     pending_invitation? = pending_invitation?(membership)
     disabled? = Membership.disabled?(membership)
     mfa_enrolled? = member_mfa_enrolled?(membership.user)
     confirmation_pending? = member_confirmation_pending?(membership.user)
     self_owner? = self_owner?(membership, subject)
 
-    %{
-      # The digest is credential material behind the join link; the roster needs
-      # the pending STATE, never the secret that satisfies it.
-      membership: %{membership | invitation_token_digest: nil},
+    facts = %{
+      # The digest is credential material behind the join link, and the raw
+      # suspender id is manager-only provenance. The roster needs neither.
+      membership: %{membership | invitation_token_digest: nil, disabled_by_id: nil},
       pending_invitation?: pending_invitation?,
       self_owner?: self_owner?,
       disabled?: disabled?,
@@ -990,7 +1018,21 @@ defmodule Emisar.Accounts do
         confirmation_pending? and membership.user_id == Subject.actor_id(subject),
       reset_mfa?: mfa_enrolled?
     }
+
+    if manager? do
+      Map.put(facts, :suspended_by_label, Map.get(suspended_by_labels, membership.disabled_by_id))
+    else
+      facts
+    end
   end
+
+  defp suspended_by_labels(memberships, account_id, true) do
+    memberships
+    |> Enum.map(& &1.disabled_by_id)
+    |> user_labels_for_ids(account_id)
+  end
+
+  defp suspended_by_labels(_memberships, _account_id, false), do: %{}
 
   defp pending_invitation?(%Membership{
          invitation_accepted_at: nil,
@@ -2416,32 +2458,40 @@ defmodule Emisar.Accounts do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id) do
-      Membership.Query.not_deleted()
-      |> Membership.Query.by_id(membership.id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(Membership.Query,
-        with: fn loaded_membership ->
-          # The guards judge the row's CURRENT role under the lock — the
-          # caller's struct is a stale socket snapshot.
-          with :ok <- ensure_can_modify_membership(loaded_membership, subject),
-               :ok <- ensure_not_last_active_owner(loaded_membership) do
-            Membership.Changeset.suspend(loaded_membership)
-          else
-            {:error, reason} -> reason
-          end
-        end,
-        audit: &Audit.Events.membership_suspended(subject, &1),
-        after_commit: [
-          # Broadcast first so the team-page LV refreshes the row before
-          # we kill the user's sessions — keeps the visual ordering sane.
-          &broadcast_membership_suspended/1,
-          # Session + key kill are side effects — only fire after the
-          # suspension actually commits. Otherwise a rolled-back update
-          # would still kick the user out of every tab / kill their keys.
-          &end_account_sessions/1,
-          &revoke_membership_api_keys/1
-        ]
-      )
+      result =
+        Membership.Query.not_deleted()
+        |> Membership.Query.by_id(membership.id)
+        |> Authorizer.for_subject(subject)
+        |> Repo.fetch_and_update(Membership.Query,
+          with: fn loaded_membership ->
+            # The guards judge the row's CURRENT role and suspension under the
+            # lock — the caller's struct is a stale socket snapshot. A retry is
+            # a no-op so it cannot replace the actor who placed the live hold.
+            with :ok <- ensure_can_modify_membership(loaded_membership, subject),
+                 :ok <- ensure_not_suspended(loaded_membership),
+                 :ok <- ensure_not_last_active_owner(loaded_membership) do
+              Membership.Changeset.suspend(loaded_membership, Subject.user_id(subject))
+            else
+              {:error, reason} -> reason
+            end
+          end,
+          audit: &Audit.Events.membership_suspended(subject, &1),
+          after_commit: [
+            # Broadcast first so the team-page LV refreshes the row before
+            # we kill the user's sessions — keeps the visual ordering sane.
+            &broadcast_membership_suspended/1,
+            # Session + key kill are side effects — only fire after the
+            # suspension actually commits. Otherwise a rolled-back update
+            # would still kick the user out of every tab / kill their keys.
+            &end_account_sessions/1,
+            &revoke_membership_api_keys/1
+          ]
+        )
+
+      case result do
+        {:error, {:noop, %Membership{} = loaded_membership}} -> {:ok, loaded_membership}
+        other -> other
+      end
     end
   end
 

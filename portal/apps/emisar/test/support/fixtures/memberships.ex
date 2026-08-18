@@ -111,7 +111,7 @@ defmodule Emisar.Fixtures.Memberships do
   def suspend_membership(%Membership{} = membership) do
     {:ok, suspended} =
       membership
-      |> Membership.Changeset.suspend()
+      |> Membership.Changeset.suspend(nil)
       |> Repo.update()
 
     suspended

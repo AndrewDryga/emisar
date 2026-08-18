@@ -75,7 +75,9 @@ defmodule Emisar.Accounts.Membership.Changeset do
 
   def delete(%Membership{} = membership), do: change(membership, deleted_at: DateTime.utc_now())
 
-  def suspend(%Membership{} = membership), do: change(membership, disabled_at: DateTime.utc_now())
+  def suspend(%Membership{} = membership, disabled_by_id) do
+    change(membership, disabled_at: DateTime.utc_now(), disabled_by_id: disabled_by_id)
+  end
 
   # Directory sync deactivated the member (SCIM active:false/DELETE) — mark the
   # suspension IdP-owned so a manual reinstate refuses; only the IdP reactivating
@@ -104,8 +106,13 @@ defmodule Emisar.Accounts.Membership.Changeset do
 
   # Reinstating always clears the IdP-owned mark — a member back in is not
   # IdP-deactivated (a manual reinstate is only reachable when it's already false).
-  def reinstate(%Membership{} = membership),
-    do: change(membership, disabled_at: nil, directory_suspended: false)
+  def reinstate(%Membership{} = membership) do
+    change(membership,
+      disabled_at: nil,
+      disabled_by_id: nil,
+      directory_suspended: false
+    )
+  end
 
   def accept_invitation(%Membership{} = membership) do
     change(membership, invitation_token_digest: nil, invitation_accepted_at: DateTime.utc_now())

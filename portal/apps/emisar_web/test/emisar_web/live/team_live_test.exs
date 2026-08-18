@@ -1645,9 +1645,10 @@ defmodule EmisarWeb.TeamLiveTest do
       assert_team_broadcast(lv, "membership.reinstated", membership.user_id)
     end
 
-    test "the Suspended chip appears on a suspended row and clears on reinstate", %{
+    test "the Suspended chip names the manager who placed the hold and clears on reinstate", %{
       account: account,
       lv: lv,
+      owner: owner,
       membership: membership
     } do
       # The roster reflects the state change live — the "Suspended" chip is the
@@ -1657,11 +1658,43 @@ defmodule EmisarWeb.TeamLiveTest do
       subscribe_team(account)
       suspended = render_click(lv, "suspend", %{"membership_id" => membership.id})
       assert suspended =~ "Suspended"
+      assert has_element?(lv, "#member-suspended-#{membership.id}", "Suspended")
+
+      assert has_element?(
+               lv,
+               "#member-suspended-by-#{membership.id}",
+               "by #{Emisar.Accounts.user_display_name(owner)}"
+             )
+
       assert_team_broadcast(lv, "membership.suspended", membership.user_id)
 
       restored = render_click(lv, "reinstate", %{"membership_id" => membership.id})
       refute restored =~ "Suspended"
+      refute has_element?(lv, "#member-suspended-by-#{membership.id}")
       assert_team_broadcast(lv, "membership.reinstated", membership.user_id)
+    end
+
+    test "an ordinary roster reader sees the hold but not its author", %{
+      account: account,
+      owner: owner,
+      membership: membership
+    } do
+      owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      assert {:ok, _suspended} = Emisar.Accounts.suspend_membership(membership, owner_subject)
+
+      viewer = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+      {:ok, lv, _html} =
+        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/settings/team")
+
+      assert has_element?(lv, "#member-suspended-#{membership.id}", "Suspended")
+      refute has_element?(lv, "#member-suspended-by-#{membership.id}")
     end
 
     test "remove soft-deletes the membership through the typed-confirm dialog", %{

@@ -317,6 +317,7 @@ defmodule Emisar.AdminTest do
 
       assert {:ok, suspended} = Admin.execute("emisar.admin.member.suspend", args)
       assert suspended.id == membership.id
+      assert is_nil(Repo.reload!(membership).disabled_by_id)
 
       # The written row carries no :user preload, so the email has to come from
       # the membership the dispatcher already fetched.

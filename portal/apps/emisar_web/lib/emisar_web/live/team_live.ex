@@ -1516,13 +1516,14 @@ defmodule EmisarWeb.TeamLive do
                 <li class="py-4">
                   <% membership = member.membership %>
                   <% directory = Map.get(@directory_by_user_id, membership.user_id) %>
+                  <% suspended_by_label = Map.get(member, :suspended_by_label) %>
                   <%!-- On a phone the role/Actions controls stack BELOW the
                    name+email instead of cramming the row (which truncated
                    "Sam Patel" to "Sa…"); they sit on the right at sm+. --%>
                   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                     <div class={[
                       "flex min-w-0 flex-1 items-start gap-4",
-                      member.disabled? && "opacity-60"
+                      member.disabled? && "opacity-75"
                     ]}>
                       <.avatar name={Accounts.member_display_name(membership, membership.user) || "?"} />
 
@@ -1543,9 +1544,20 @@ defmodule EmisarWeb.TeamLive do
                           >
                             {Accounts.member_display_name(membership, membership.user) || "(unknown)"}
                           </span>
-                          <.chip :if={member.disabled?} tone={:amber}>
+                          <.chip
+                            :if={member.disabled?}
+                            id={"member-suspended-#{membership.id}"}
+                            tone={:amber}
+                          >
                             Suspended
                           </.chip>
+                          <span
+                            :if={member.disabled? and suspended_by_label}
+                            id={"member-suspended-by-#{membership.id}"}
+                            class="min-w-0 max-w-full break-words text-xs text-zinc-400"
+                          >
+                            by {suspended_by_label}
+                          </span>
                           <%!-- Unconfirmed = signed up but never clicked the
                          email confirmation link. Useful signal when an
                          admin is wondering why a member can't sign in. --%>
