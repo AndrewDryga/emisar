@@ -41,19 +41,18 @@ defmodule EmisarWeb.Components.ChoiceCardsTest do
       assert html =~ "The requester's own approval can count."
     end
 
-    test "the loaded selection gets a clear neutral frame and check" do
+    test "the loaded selection gets the active brand ring and a neutral check" do
       html = render_pair(%{value: true, disabled: false})
 
       assert html =~
-               ~r/<label[^>]*bg-white\/\[0\.06\][^>]*ring-2[^>]*ring-white\/40[^>]*>\s*<input[^>]*value="true"[^>]*checked/
+               ~r/<label[^>]*bg-white\/\[0\.06\][^>]*ring-2[^>]*ring-brand-500\/50[^>]*>\s*<input[^>]*value="true"[^>]*checked/
 
       assert html =~
                ~r/<label[^>]*bg-black\/20[^>]*ring-zinc-800[^>]*>\s*<input[^>]*value="false"/
 
       assert html =~ "hero-check-circle-solid"
-      # The only brand usage is the keyboard focus ring.
+      # Brand marks the active input; it never becomes a semantic fill.
       refute html =~ "bg-brand-500"
-      refute html =~ "ring-brand-500/40"
     end
 
     test "icon disc renders only when a card declares an icon" do

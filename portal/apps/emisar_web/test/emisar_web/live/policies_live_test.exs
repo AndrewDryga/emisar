@@ -559,7 +559,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
         })
 
       assert html =~
-               ~r/<label[^>]*ring-2[^>]*ring-white\/40[^>]*>\s*<input[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="false"[^>]*checked/
+               ~r/<label[^>]*ring-2[^>]*ring-brand-500\/50[^>]*>\s*<input[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="false"[^>]*checked/
 
       lv |> form("#policy-form-account") |> render_submit()
 
@@ -688,7 +688,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       assert html =~
-               ~r/<label[^>]*ring-2[^>]*ring-white\/40[^>]*>\s*<input[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="true"[^>]*checked/
+               ~r/<label[^>]*ring-2[^>]*ring-brand-500\/50[^>]*>\s*<input[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="true"[^>]*checked/
 
       # The verdict states the effect AND folds in the guidance in one place
       # (no separate warning banner).

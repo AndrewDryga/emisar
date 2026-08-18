@@ -117,9 +117,10 @@ surface rather than the field wrapper's label gap. Peer row actions share one
 enclosure treatment and optical height; a labeled toggle beside a bare icon
 button is not one control family. A selected default or option is ordinary
 authoring state, not proof that an operation passed: keep its surface, text,
-ring, and radio/check in the neutral zinc palette. Use structure and contrast
-to make selection unmistakable; reserve semantic color for a real verdict or
-consequence. LiveView click metadata uses domain-specific
+and radio/check in the neutral zinc palette. The shared choice-card group may
+use the brand ring to locate the active input, but never a green fill or status
+treatment. Use structure and contrast to make selection unmistakable; reserve
+semantic color for a real verdict or consequence. LiveView click metadata uses domain-specific
 `phx-value-*` names such as `enum`, never `phx-value-value`: the client
 replaces that generic key with the native element's `.value`. Routine defaults
 and constraints remain visible; disclosure is for genuinely secondary detail,
@@ -264,7 +265,8 @@ never a reduced model.
   bounds already explain the sequence.
 - A generic text field for boolean or numeric defaults.
 - A separate free-text enum default that can differ from every allowed value.
-- A selected default or ordinary option wearing green pass/allowed chrome.
+- A selected default or ordinary option wearing a green fill or pass/allowed
+  status chrome rather than the choice-card active ring.
 - Unequal Required and Sensitive widths, a shorter monospace ID control, or a
   repeated-row action aligned above the control it changes.
 - A bordered row toggle beside a bare peer icon, or `phx-value-value` on a
@@ -296,8 +298,9 @@ in-form selection, repeated-row actions aligned to wrapper space rather than the
 control box, headings that restate their field labels, and dividers that merely
 preserve a removed disclosure's shell. Sweep button event metadata for generic
 `phx-value-value`, and repeated rows for mismatched peer enclosures. Rendered
-tests pin selected authoring controls to neutral classes and reject semantic
-brand classes inside them. Sweep capped form collections for a second inner
+tests pin selected authoring surfaces, text, and checks to neutral classes and
+reject semantic brand fills or status chrome; the shared choice-card active
+ring is the exception. Sweep capped form collections for a second inner
 `max-w-*` around card fields; rendered tests pin one page-level cap and reject
 the nested field cap. Sweep repeated contract rows for delimiter-joined schema
 metadata, unlabeled source/value controls, and explanatory placeholders standing

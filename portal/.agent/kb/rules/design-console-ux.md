@@ -53,13 +53,15 @@ with meaning assigned at the call site:
   `<.link>` carries its forward action as this inline brand line, not a nested chip.
 - `:pass | :pending | :deny | :neutral` stays **only** on policy-verdict components
   (`status_tone/1`, `state_chip`, LiveTable `card_accent`) — it names a verdict, not a hue.
-- **Ordinary authoring selection stays neutral.** A selected default, radio card,
-  or option is not a pass/allowed verdict: distinguish it with a check or filled
-  radio plus neutral surface/ring contrast. A neutral checked checkbox uses a
+- **Ordinary authoring selection stays distinct without impersonating a verdict.**
+  A selected default, radio card, or option is not a pass/allowed verdict: keep
+  its surface, text, and check/radio neutral. The shared choice-card group uses
+  the brand ring to mark the active input on first render and after interaction;
+  that ring is location, not a safe verdict. A neutral checked checkbox uses a
   mid-tone zinc fill with a high-contrast check; a near-white fill that erases
   the checkmark is not a legible selected state. Semantic color is earned only
-  when the selected fact itself means pass, pending, or deny; keyboard focus
-  may still use the brand focus ring.
+  when the selected fact itself means pass, pending, or deny; never use a green
+  fill or status treatment merely because an option is selected.
 - Enums are **atoms**, never strings (`variant={:primary}`, not `"primary"`); every enum
   attr carries `values:` so a stray atom is a compile error (no catch-all clauses).
 - No dead aliases: one class ramp per meaning. (`button "success"` ≡ `"primary"` and

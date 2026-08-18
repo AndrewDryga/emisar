@@ -1179,10 +1179,9 @@ defmodule EmisarWeb.PoliciesLive do
       <%!-- Approval requirements: WHO may approve (allow_self_approval) and HOW MANY
            (min_approvals) — two independent NAKED knobs (the choice cards and the
            count input are self-contained controls; the recessed wash that used to
-           group them was one more island). Selection stays color-neutral on
-           purpose — emerald and amber are reserved for the verdict below, the one
-           place who + count are judged together, so the risky self-approval choice
-           never wears the safe color. The verdict resolves the pair into English. --%>
+           group them was one more island). The brand ring marks the active input;
+           the neutral card surface and check avoid turning that choice into a safe
+           verdict. The verdict below resolves who + count into English. --%>
       <div>
         <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Approval requirements

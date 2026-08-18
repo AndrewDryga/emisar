@@ -2562,9 +2562,9 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   The ONE radio choice-card group — a deliberate pick between a few options,
   each a full-card `<label>` (optional meaning-icon disc, title, one-line
-  rationale) wrapping an sr-only radio. Selection is NEUTRAL by design
-  (design-console-ux: a chosen risky option must never wear the safe brand hue);
-  the check icon marks the current pick. Values compare as strings.
+  rationale) wrapping an sr-only radio. The selected card keeps a neutral
+  surface and check, with the brand ring marking which input is active on first
+  render as well as after interaction. Values compare as strings.
 
       <.choice_cards name="invite[role]" value={@form[:role].value}>
         <:card :for={role <- @roles} value={role} title={Emisar.Auth.role_label(role)}>
@@ -2616,8 +2616,8 @@ defmodule EmisarWeb.CoreComponents do
           <span class="flex items-center gap-1.5">
             <span class="text-sm font-medium text-zinc-100">{card.title}</span>
             <%!-- Every card shows a pick affordance: the quiet radio ring says
-                 "choose one" before any hover; the check marks the current
-                 pick. Both stay NEUTRAL (selection never wears a hue). --%>
+                 "choose one" before any hover; the check and active brand ring
+                 mark the current pick. The surface and check stay neutral. --%>
             <.icon
               :if={to_string(@value) == card.value}
               name="hero-check-circle-solid"
@@ -2640,9 +2640,8 @@ defmodule EmisarWeb.CoreComponents do
   defp choice_cards_grid(1), do: "peer/attached-panel grid grid-cols-1 gap-2"
   defp choice_cards_grid(2), do: "peer/attached-panel grid grid-cols-1 gap-2 sm:grid-cols-2"
 
-  # Neutral-bright when selected — never a semantic safe/warn hue on a
-  # selection affordance. focus-within lifts the ring for keyboard users
-  # (the radio itself is sr-only).
+  # The selected surface stays neutral while the brand ring marks the active
+  # input before focus as well as after interaction (the radio is sr-only).
   defp choice_card_class(selected?, disabled?, attached?) do
     [
       "flex items-start gap-3 p-3 transition-[background-color,border-color,box-shadow]",
@@ -2658,7 +2657,7 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   defp choice_card_frame(true, false) do
-    "rounded-lg bg-white/[0.06] ring-2 ring-white/40 " <>
+    "rounded-lg bg-white/[0.06] ring-2 ring-brand-500/50 " <>
       "focus-within:ring-2 focus-within:ring-brand-500/50"
   end
 
