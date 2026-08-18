@@ -164,7 +164,7 @@ After the first rollout, trust the exact `emisar-admin@0.1.1` hash advertised by
 the new runners in the management account. Critical erasure actions remain
 subject to the management account's normal policy and approval rules.
 
-The pinned `runner-v0.20.0` release understands the structured output schema
+The pinned `runner-v0.20.1` release understands the structured output schema
 used by the current pack catalog; the private pack does not require a custom
 runner build.
 
