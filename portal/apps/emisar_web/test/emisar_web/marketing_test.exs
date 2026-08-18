@@ -1266,6 +1266,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "v0.38.0"
       assert html =~ "v0.39.0"
       assert html =~ "v0.40.0"
+      assert html =~ "v0.41.0"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.

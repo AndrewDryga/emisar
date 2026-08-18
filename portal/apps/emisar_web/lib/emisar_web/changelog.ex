@@ -17,6 +17,34 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-08-17],
+      slug: "role-and-scope-changes-take-effect-immediately",
+      title: "Role and scope changes take effect immediately",
+      tag: "v0.41.0",
+      summary:
+        "Changing a member's role, runner access, or pack access now reconnects their open web session before it can keep acting on stale authority. Billing managers get a finance-only console; operators can own agents, approvals, and runbooks without team or policy administration; and scoped admins cannot delegate more reach than they hold or arm account-wide pack cleanup. Runner and pack scopes govern current discovery, targeting, and new work, while account run and audit history stays available to roles allowed to read it — including the names needed to investigate what happened.",
+      details: [
+        {"Security",
+         [
+           "Role and scope changes disconnect the member's live session and force a fresh authorization check. Account-wide pack cleanup requires full pack access, and helper reads that expose pack versions or exact run commands now require the caller's checked subject.",
+           "The read-only staff console is available only after MFA, and its proof is tied to the current enrollment rather than surviving a disable-and-reenroll cycle."
+         ]},
+        {"Console",
+         [
+           "Each role now sees the navigation, actions, filters, and empty states it can actually use. Billing managers land on Billing without a dead Dashboard link; no runner access is explained as a permission state rather than mistaken for a new account; and restricted pack and action views say why their results are limited.",
+           "SSO group mappings paginate in both directions. Filters keep their compact grouped treatment, timestamp and source tooltips flip away from viewport edges, and action menus close on Escape or an outside click across both app and marketing pages."
+         ]},
+        {"Packs",
+         [
+           "The 100-pack catalog now carries 1,689 actions. New diagnostics cover Consul registration churn, bounded process context and connections, GCP Cloud Logging names and entries, and Terraform replacement paths."
+         ]},
+        {"Platform",
+         [
+           "The Runner and MCP Bridge are rebuilt with Go 1.26.6 for the current standard-library advisory batch."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-08-13],
       slug: "large-runbooks-finish-and-results-stay-readable",
       title: "Large runbooks finish, and every result stays readable",
