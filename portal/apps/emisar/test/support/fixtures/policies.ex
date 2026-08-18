@@ -35,21 +35,21 @@ defmodule Emisar.Fixtures.Policies do
 
     rules = Map.put_new(rules, "approval", %{"min_approvals" => 1, "allow_self_approval" => true})
 
-    case Policies.peek_policy_for_account(account_id) do
-      nil ->
-        {:ok, _} = Policies.seed_policy(account_id, user_id, rules)
-        Policies.peek_policy_for_account(account_id)
+    changeset =
+      Policies.Policy.Changeset.create(%{
+        account_id: account_id,
+        updated_by_id: user_id,
+        rules: rules
+      })
 
-      policy ->
-        {:ok, updated} =
-          Repo.update(
-            Policies.Policy.Changeset.update(policy, %{
-              rules: rules,
-              updated_by_id: user_id
-            })
-          )
+    {:ok, policy} =
+      Repo.insert(changeset,
+        on_conflict: Policies.Policy.Query.rules_upsert_conflict(),
+        conflict_target:
+          {:unsafe_fragment, "(account_id, scope_type, scope_value) WHERE deleted_at IS NULL"},
+        returning: true
+      )
 
-        updated
-    end
+    policy
   end
 end

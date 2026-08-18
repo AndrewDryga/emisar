@@ -586,12 +586,17 @@ defmodule Emisar.AuthAuditTest do
 
       result =
         Ecto.Multi.new()
-        |> Ecto.Multi.update(
+        |> Ecto.Multi.insert(
           :policy,
-          Emisar.Policies.Policy.Changeset.update(
-            policy,
-            %{rules: new_rules, updated_by_id: subject.actor.id}
-          )
+          Emisar.Policies.Policy.Changeset.create(%{
+            account_id: policy.account_id,
+            updated_by_id: subject.actor.id,
+            rules: new_rules
+          }),
+          on_conflict: Emisar.Policies.Policy.Query.rules_upsert_conflict(),
+          conflict_target:
+            {:unsafe_fragment, "(account_id, scope_type, scope_value) WHERE deleted_at IS NULL"},
+          returning: true
         )
         |> Ecto.Multi.insert(:audit, fn %{policy: p} ->
           Audit.changeset(p.account_id, "policy.updated",

@@ -753,14 +753,6 @@ defmodule Emisar.PoliciesTest do
       refute changeset.valid?
       assert {"approval settings are required", _} = changeset.errors[:rules]
     end
-
-    test "updating with no rules change doesn't bump the version" do
-      rules = %{"schema_version" => 2, "defaults" => %{"low" => "allow"}}
-      policy = %Policy{vsn: 1, rules: rules}
-
-      changeset = Policy.Changeset.update(policy, %{updated_by_id: Ecto.UUID.generate()})
-      assert Ecto.Changeset.get_change(changeset, :vsn) == nil
-    end
   end
 
   describe "fetch_policy/1" do

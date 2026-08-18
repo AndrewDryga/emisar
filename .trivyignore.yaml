@@ -46,3 +46,6 @@ vulnerabilities:
   - id: CVE-2026-57433
     statement: the non-root portal process does not execute Perl or deserialize attacker-supplied Storable data.
     expired_at: 2026-12-09
+  - id: CVE-2026-14456
+    statement: OpenSSL 3.0 predates the affected QUIC server implementation, which was added in 3.5.
+    expired_at: 2027-01-06

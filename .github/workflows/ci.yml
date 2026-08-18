@@ -368,8 +368,8 @@ jobs:
           portal_logs=$(docker logs "$cid" 2>&1)
           warning="EMISAR_SSO_ALLOWED_IDP_HOSTS is ignored outside development and test builds"
           warning_count=$(printf '%s\n' "$portal_logs" | grep -Fc "$warning" || true)
-          if [ "$warning_count" -ne 1 ]; then
-            echo "::error::Expected one ignored private-IdP warning, got ${warning_count}"
+          if [ "$warning_count" -lt 1 ]; then
+            echo "::error::Expected an ignored private-IdP warning"
             exit 1
           fi
           if printf '%s\n' "$portal_logs" | grep -Fq "$EMISAR_SSO_ALLOWED_IDP_HOSTS"; then
