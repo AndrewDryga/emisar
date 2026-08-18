@@ -15,7 +15,7 @@ defmodule EmisarWeb.ApprovalsLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{Approvals, Audit, Runners}
-  alias EmisarWeb.{LiveTable, Permissions}
+  alias EmisarWeb.{ConfirmDialog, LiveTable, Permissions}
   alias Phoenix.LiveView.JS
 
   @reload_debounce_ms 500
@@ -23,6 +23,7 @@ defmodule EmisarWeb.ApprovalsLive do
   def mount(_params, _session, socket) do
     {:ok,
      socket
+     |> ConfirmDialog.init()
      |> assign(:page_title, "Approvals")
      |> assign(
        :pack_access_restricted?,
@@ -62,6 +63,12 @@ defmodule EmisarWeb.ApprovalsLive do
 
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
 
+  def handle_event("confirm_typed", params, socket),
+    do: {:noreply, ConfirmDialog.put_typed(socket, params)}
+
+  def handle_event("confirm_reset", _params, socket),
+    do: {:noreply, ConfirmDialog.reset(socket)}
+
   def handle_event("revoke_grant", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
@@ -93,6 +100,14 @@ defmodule EmisarWeb.ApprovalsLive do
     )
   end
 
+  def handle_event("revoke_all_grants", _params, socket) do
+    Permissions.gated(
+      socket,
+      Approvals.subject_can_manage_grants?(socket.assigns.current_subject),
+      &revoke_all_grants/1
+    )
+  end
+
   # The max grant-lifetime cap (account setting) governs how long the standing
   # grants below can keep auto-approving, so it's edited here, beside them.
   # Approvals owns what the raw value MEANS — including that 0 disables standing
@@ -113,7 +128,7 @@ defmodule EmisarWeb.ApprovalsLive do
          socket
          |> assign(:current_account, account)
          |> load(socket.assigns.filter_params)
-         |> put_flash(:error, grants_partially_revoked_flash(revoked_count))}
+         |> put_flash(:error, grant_cap_partially_revoked_flash(revoked_count))}
 
       {:error, :unauthorized} ->
         {:noreply, put_flash(socket, :error, "Only owners and admins can change this setting.")}
@@ -123,6 +138,29 @@ defmodule EmisarWeb.ApprovalsLive do
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Could not update the grant-lifetime cap.")}
+    end
+  end
+
+  defp revoke_all_grants(socket) do
+    case Approvals.revoke_all_grants(socket.assigns.current_subject) do
+      {:ok, revoked_count} ->
+        {:noreply,
+         socket
+         |> reload()
+         |> put_flash(:info, grants_revoked_flash(revoked_count))}
+
+      {:error, :grants_partially_revoked, revoked_count, _reason} ->
+        {:noreply,
+         socket
+         |> reload()
+         |> put_flash(:error, grants_partially_revoked_flash(revoked_count))}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "You don't have permission to do that.")}
+
+      {:error, _reason} ->
+        {:noreply,
+         put_flash(socket, :error, "Could not revoke standing grants. Refresh and try again.")}
     end
   end
 
@@ -353,10 +391,36 @@ defmodule EmisarWeb.ApprovalsLive do
   defp grants_disabled_flash(n),
     do: "Standing grants disabled — #{n} active grants revoked; every approval is now single-use."
 
-  defp grants_partially_revoked_flash(revoked_count) do
+  defp grant_cap_partially_revoked_flash(revoked_count) do
     "Standing grants are disabled — every approval is now single-use — but only " <>
       "#{revoked_count} #{plural(revoked_count, "grant")} could be revoked. The rest can no " <>
       "longer authorize anything; try again to clear them from the list."
+  end
+
+  defp grants_revoked_flash(0), do: "No active standing grants remained in your access."
+
+  defp grants_revoked_flash(1) do
+    "Revoked 1 standing grant in your access. The affected client's next matching call will need fresh approval."
+  end
+
+  defp grants_revoked_flash(revoked_count) do
+    "Revoked #{revoked_count} standing grants in your access. The affected clients' next matching calls will need fresh approval."
+  end
+
+  defp grants_partially_revoked_flash(0) do
+    "No standing grants were revoked. Some grants in your access may remain active. Retry Revoke all."
+  end
+
+  defp grants_partially_revoked_flash(1) do
+    "1 standing grant was revoked and stays revoked. Some grants in your access may remain active. Retry Revoke all."
+  end
+
+  defp grants_partially_revoked_flash(revoked_count) do
+    "#{revoked_count} standing grants were revoked and stay revoked. Some grants in your access may remain active. Retry Revoke all."
+  end
+
+  defp can_revoke_all_grants?(subject, metadata, grants_error?) do
+    not grants_error? and metadata.count > 0 and Approvals.subject_can_manage_grants?(subject)
   end
 
   # What a member who can't change the cap reads in its place. Worded like the
@@ -547,7 +611,47 @@ defmodule EmisarWeb.ApprovalsLive do
               <:subtitle :if={grants_disabled?(@current_account)}>
                 Disabled for this account — every approval is single-use.
               </:subtitle>
+              <:actions :if={
+                can_revoke_all_grants?(
+                  @current_subject,
+                  @grants_metadata,
+                  @grants_error?
+                )
+              }>
+                <.button
+                  id="revoke-all-grants"
+                  variant={:secondary}
+                  tone={:rose}
+                  size={:sm}
+                  phx-click={show_confirm_dialog("revoke-all-grants-dialog")}
+                >
+                  Revoke all
+                </.button>
+              </:actions>
             </.section_header>
+
+            <.confirm_dialog
+              :if={
+                can_revoke_all_grants?(
+                  @current_subject,
+                  @grants_metadata,
+                  @grants_error?
+                )
+              }
+              id="revoke-all-grants-dialog"
+              title="Revoke all grants in your access?"
+              confirm_label="Revoke all grants"
+              confirm_token="REVOKE ALL"
+              typed={@typed}
+              on_confirm={
+                JS.push("revoke_all_grants")
+                |> hide_confirm_dialog("revoke-all-grants-dialog")
+              }
+            >
+              <:body>
+                This immediately revokes every active standing grant within your runner and pack access, including grants on other pages. Each affected client's next matching call will need fresh approval.
+              </:body>
+            </.confirm_dialog>
 
             <LiveTable.live_table
               layout={:cards}

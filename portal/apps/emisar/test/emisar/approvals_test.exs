@@ -4145,7 +4145,7 @@ defmodule Emisar.ApprovalsTest do
   end
 
   describe "revoke_all_grants/1" do
-    test "revokes every un-revoked grant in the account, each with its audit row" do
+    test "revokes every active grant in the account, each with its audit row" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
 
@@ -4160,6 +4160,13 @@ defmodule Emisar.ApprovalsTest do
       insert_grant(account, key, action_id: "a.one", granted_by_id: user.id)
       insert_grant(account, key, action_id: "a.two", granted_by_id: user.id)
 
+      expired =
+        insert_grant(account, key,
+          action_id: "a.expired",
+          granted_by_id: user.id,
+          expires_at: DateTime.add(DateTime.utc_now(), -1, :hour)
+        )
+
       # Cross-account isolation: B's grant survives A's sweep.
       account_b = Fixtures.Accounts.create_account()
       user_b = Fixtures.Users.create_user()
@@ -4172,8 +4179,9 @@ defmodule Emisar.ApprovalsTest do
       assert Approvals.revoke_all_grants(subject) == {:ok, 2}
 
       assert Grant.Query.not_revoked() |> Grant.Query.by_account_id(account.id) |> Repo.all() ==
-               []
+               [expired]
 
+      refute Repo.reload!(expired).revoked_at
       refute Repo.reload!(grant_b).revoked_at
 
       {:ok, events, _} = Emisar.Audit.list_events(subject)

@@ -278,6 +278,30 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     assert html =~ "Grant revoked. New calls will require fresh approval."
   end
 
+  test "an owner confirms and revokes every standing grant in their access", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(user, account)
+
+    request = pending_mcp_request!(account, user, "grant me a day")
+    {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :one_day)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals")
+
+    assert has_element?(lv, "#revoke-all-grants", "Revoke all")
+    assert has_element?(lv, ~s(#revoke-all-grants-dialog input[name="confirm_token"]))
+    assert html =~ "including grants on other pages"
+
+    type_confirm_token(lv, "revoke-all-grants-dialog", "REVOKE ALL")
+    html = confirm_dialog(lv, "revoke-all-grants-dialog", "Revoke all grants")
+
+    assert html =~ "Revoked 1 standing grant in your access."
+    refute has_element?(lv, "#revoke-all-grants")
+    assert {:ok, [], _metadata} = Approvals.list_grants_for_account(subject)
+
+    {:ok, events, _metadata} = Audit.list_events(subject)
+    assert Enum.count(events, &(&1.event_type == "approval.grant_revoked")) == 1
+  end
+
   test "a grant's expiry + last-used render through <.local_time>, with spacing kept", %{
     conn: conn
   } do
@@ -474,10 +498,11 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     # each secondary section, not a blank gap.
     {conn, _user, account} = register_and_log_in(conn)
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
     assert html =~ "No active grants."
     assert html =~ "No decided approvals yet."
+    refute has_element?(lv, "#revoke-all-grants")
   end
 
   test "grants and decided load errors say the read failed, never that there is nothing", %{
@@ -490,7 +515,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     # the account currently allows.
     {conn, _user, account} = register_and_log_in(conn)
 
-    {:ok, _lv, html} =
+    {:ok, lv, html} =
       live(
         conn,
         ~p"/app/#{account}/approvals?grants_after=not-a-cursor&decided_after=also-not"
@@ -503,16 +528,12 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     # Pending read fine — its own section is unaffected.
     refute html =~ "Couldn&#39;t load pending approvals."
     assert html =~ "Nothing waiting."
+    refute has_element?(lv, "#revoke-all-grants")
   end
 
   test "an operator's crafted revoke_grant is denied gracefully", %{conn: conn} do
-    # BUG. The Revoke button's UI predicate is
-    # `subject_can_decide_approval?` (operator+), but `fetch_grant_by_id` requires
-    # `manage_grants` (admin+) and returns {:error,:unauthorized} for an operator.
-    # `ApprovalsLive.handle_event("revoke_grant", …)` only matches {:error,:not_found}
-    # and {:ok, grant}, so the :unauthorized return raises CaseClauseError
-    # (approvals_live.ex:42) instead of flashing a denial. A crafted event must be
-    # refused, not crash the view.
+    # Buttons are only affordances. Both revoke events keep the same server-side
+    # manage-grants boundary when an operator crafts the event directly.
     {_owner_conn, owner, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(owner, account)
 
@@ -532,8 +553,13 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     {:ok, lv, _html} =
       build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/approvals")
 
+    refute has_element?(lv, "#revoke-all-grants")
+
     html = render_click(lv, "revoke_grant", %{"id" => grant.id})
 
+    assert html =~ "You don&#39;t have permission to do that."
+
+    html = render_click(lv, "revoke_all_grants", %{})
     assert html =~ "You don&#39;t have permission to do that."
     {:ok, [%{revoked_at: nil}], _meta} = Approvals.list_grants_for_account(subject)
   end

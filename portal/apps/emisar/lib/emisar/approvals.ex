@@ -1961,10 +1961,10 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
-  Revokes EVERY un-revoked grant in the subject's account — the "disable
-  standing grants" sweep. Each grant goes through `revoke_grant/2` (its own
-  row lock + audit event), so the trail records every capability that was
-  cut. Returns `{:ok, count}`, or
+  Revokes every active grant in the subject's runner and pack access. Each
+  grant goes through `revoke_grant/2` (its own row lock + audit event), so the
+  trail records every capability that was cut. Expired grants are already inert
+  and remain historical rows. Returns `{:ok, count}`, or
   `{:error, :grants_partially_revoked, count, reason}` when one grant's
   revocation failed — the `count` already revoked stays revoked, and the caller
   decides what to tell the operator about the rest. `%Subject{}` needs
@@ -1978,6 +1978,7 @@ defmodule Emisar.Approvals do
            ) do
       grants =
         Grant.Query.not_revoked()
+        |> Grant.Query.not_expired()
         |> scope_grants_to_subject(subject)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
