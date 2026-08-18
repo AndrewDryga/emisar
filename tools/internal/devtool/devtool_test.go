@@ -1313,7 +1313,7 @@ func TestMainHelpListsEveryPublicCommand(t *testing.T) {
 
 func TestReadToolVersionsAndVersionParsers(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".tool-versions")
-	if err := os.WriteFile(path, []byte("# pins\nerlang 29.0.3\nelixir 1.20.2-otp-29\ngolang 1.26.5\nterraform 1.15.8\ntflint 0.64.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("# pins\nerlang 29.0.3\nelixir 1.20.2-otp-29\ngolang 1.26.6\nterraform 1.15.8\ntflint 0.64.0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	pins, err := readToolVersions(path)

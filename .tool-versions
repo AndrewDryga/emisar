@@ -8,7 +8,7 @@
 # Go has no asdf plugin by default — run `asdf plugin add golang` once, then install.
 erlang 29.0.3
 elixir 1.20.2-otp-29
-golang 1.26.5
+golang 1.26.6
 # infra/ — Google Cloud DNS in Terraform; run `asdf plugin add terraform` once.
 terraform 1.15.8
 # infra/ — the canonical gate and CI use this same linter release.
