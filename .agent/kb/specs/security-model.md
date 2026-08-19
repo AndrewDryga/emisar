@@ -77,18 +77,24 @@
 13. **Bridge-attested dispatch (optional).** With `signing.enforce_signatures`
     on, the runner runs a dispatch only if it carries a valid Ed25519 signature
     over the canonical portal origin, action, immutable pack, digest of the
-    exact JSON args, digest of the complete generation-bound runner-ref set,
-    reason, operation ID, nonce, and timestamp. The leaf key is vouched for by
+    exact JSON args, digest of the complete identity-bound runner-ref set,
+    reason, digests of the evidence and expected result, operation ID, nonce,
+    and timestamp. The leaf key is vouched for by
     a still-valid, in-scope certificate signed by a trusted, offline certificate
     authority. The runner requires exactly one ref with its locally derived
-    generation suffix in the signed target set; the certificate's CA-asserted
+    identity suffix in the signed target set; the certificate's CA-asserted
     scope is a second group/label ceiling. The leaf private key lives only in the
     customer-authorized MCP bridge and the CA private key stays offline; the
     control plane holds neither, so it can relay a bridge-signed action but never
-    forge, alter, widen its signed targets, replay it on a selected runner, or
-    originate one. Replay state is process-owned and durable: every hot-reloaded verifier
+    forge, alter, widen its signed targets, or originate one. Preserved replay
+    state prevents nonce reuse on that runner identity. Replay state is
+    process-owned and durable: every hot-reloaded verifier
     shares the same nonce store, so a policy swap cannot forget a nonce consumed
-    during reload. The runner advertises enforcement and the cloud then disables
+    during reload. A replacement that reuses an external ID must preserve the
+    nonce store or rotate its identity and trust material. The narrative digests
+    bind what the bridge supplied, but they do not independently authenticate
+    text rendered by a compromised control plane. The runner advertises
+    enforcement and the cloud then disables
     its own (operator/runbook/API) dispatch to that host. See
     [`signed-dispatch.md`](signed-dispatch.md).
 
@@ -163,7 +169,7 @@ its actions from itself:
 | Compromised runner declares a looser policy `group` | Accepted: `group` is runner-declared and the host is the trust anchor — a host that can forge it already owns the box the runner executes on, so widening its own policy buys nothing. Pin `group` to the auth key for operator-authoritative scoping. |
 | TOFU pack understates an action's `risk`/`kind`     | Accepted: those are runner-declared, so trusting a pack's *hash* = trusting its declared risk. A pack whose hash matches the configured published catalog carries its risk inside the hash that catalog authorized; a TOFU pack (no catalog entry) has no such anchor. Pin risk at trust-time if you need it author-independent. |
 | Compromised publisher of the configured catalog     | Accepted, bounded: whoever can write the catalog a portal fetches can authorize matching bytes already installed on a host, choose the trusted risk and kind that policy evaluates for those bytes, and set, lower, drop, or raise retirement floors. They cannot install bytes, bypass the runner's descriptor equality, argument validation, or local admission checks, or erase audit. The catalog is fetched over HTTPS, validated as a complete document, and its tarball URLs are pinned under the configured registry base, so an off-base or malformed document is refused and the last accepted snapshot is kept. |
-| Compromised control plane forges or replays a dispatch | With `signing.enforce_signatures` on, the runner requires a valid v4 Ed25519 client signature over an unambiguous claim containing canonical origin, action, immutable pack, exact-args digest, complete generation-bound runner-ref digest, reason, operation, nonce, and time, under a leaf key vouched for by a trusted offline CA. The cloud holds neither private key, so it cannot forge the claim or widen its signed targets; the freshness window and bounded, fsynced replay journal prevent reuse without evicting live nonces, and CA scope adds a group/label ceiling. Limitations: the cloud can withhold a call or lie about the display-name/suffix mapping during discovery, and a queued call can become stale. Verify suffixes out of band and use narrow cert scopes for the highest-trust workflows. See [`signed-dispatch.md`](signed-dispatch.md). |
+| Compromised control plane forges or replays a dispatch | With `signing.enforce_signatures` on, the runner requires a valid v5 Ed25519 client signature. The claim binds the canonical origin, action, immutable pack, exact arguments, complete identity-bound runner references, reason, evidence and expected-result digests, operation, nonce, and time. A trusted offline CA vouches for the leaf key. The cloud holds neither private key, so it cannot forge or widen the claim. The freshness window and fsynced replay journal prevent nonce reuse while durable replay state is preserved. A replacement that reuses an external ID must preserve that state or rotate its identity and trust material. CA scope adds a group or label ceiling. The cloud can still withhold a call, lie about display names during discovery, or render narrative text that does not match the signed digests. A queued call can also become stale. Verify runner suffixes and bridge-supplied approval narratives out of band, and use narrow certificate scopes for the highest-trust workflows. See [`signed-dispatch.md`](signed-dispatch.md). |
 
 ## Threats *not* considered (yet)
 

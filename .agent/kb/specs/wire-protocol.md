@@ -59,8 +59,11 @@ the runner on its existing token; it never blocks a connect.
 presented — the websocket upgrade and `POST /runner/token/refresh` both answer
 `401 {"error":"token_expired"}` — so a leaked credential cannot renew itself and
 a retired one really does stop working when its grace window closes. `401` is
-the recoverable shape on purpose: the runner discards its cached token and
-re-registers with its enrollment key, no operator involved.
+the recoverable shape on purpose: the runner discards its cached token and exits.
+When its supervisor starts it again, it attempts registration if an enrollment
+key remains configured. A spent single-use key recovers only the original
+external ID while the key remains eligible. If the key is absent, expired, or
+revoked, an operator must supply a fresh key.
 
 A token with **no** `expires_at` never expires, and that is every token minted
 before rotation existed. Those runners run a build with no refresh path, so
@@ -76,7 +79,7 @@ at-most-255-character value and returns
 `400 {"error":"invalid_external_id"}` without consuming the enrollment key when
 it is missing or invalid. Reconnects from the same host present the same value;
 an ephemeral replacement with a new hostname enrolls as a new runner.
-MCP runner references derive their generation suffix as the first 32 lowercase
+MCP runner references derive their identity suffix as the first 32 lowercase
 hex characters of `sha256(external_id)`; the full external ID is never exposed
 to MCP.
 

@@ -6,8 +6,9 @@ signature produced by a customer-authorized MCP bridge — and that signature is
 vouched for by a **certificate** issued by a trusted, offline certificate
 authority. The control plane **relays** the signature and the certificate; it
 holds no private key, so it cannot forge or alter one, widen its signed runner
-set, or replay it on a selected runner. It cannot originate a run at all. The
-signature, not the cloud, is the authority.
+set, or originate a valid signed run. A preserved replay journal prevents nonce
+reuse on that runner identity. A replacement that reuses the external ID must
+preserve that state or rotate its identity and trust material.
 
 This is the strongest defense emisar offers against a compromised control plane.
 It is **opt-in per runner** and a deliberate trade: while it's on, the portal,
@@ -41,7 +42,7 @@ short-lived certificates that vouch for each operator's signing key. So:
 
 1. The MCP bridge signs a fixed v5 JSON claim for `run_action`: canonical portal
    origin, exact action ID and immutable `pack_ref`, SHA-256 of the exact JSON
-   argument bytes, SHA-256 of the complete sorted generation-bound runner refs,
+   argument bytes, SHA-256 of the complete sorted identity-bound runner refs,
    exact reason, SHA-256 of the `evidence` and `expected` narrative, bridge
    operation ID, one-time nonce, and timestamp.
 
@@ -49,22 +50,25 @@ short-lived certificates that vouch for each operator's signing key. So:
    fields run to 6,000 characters against an 8 KiB envelope, and the argument
    bytes already establish that a large field is signed as a hash. Both are
    optional and both are always hashed — an absent one signs as the digest of
-   the empty string, which is the load-bearing half: it binds *"the caller gave
-   no justification"*, so a control plane cannot invent one for an action nobody
-   justified. v4 signed what runs; v5 also signs what a human approver is told
-   about it. The
+   the empty string. This binds the narrative the bridge supplied. The portal
+   compares the text it accepts with those signed digests. The runner receives
+   only the digests, not the narrative text, so signing does not independently
+   authenticate what a compromised portal renders to an approver. v4 signed what
+   runs; v5 also binds the bridge-supplied evidence and expected result. The
    Ed25519 **leaf** private key never leaves the operator's machine. The bridge
    never decodes and re-encodes the action arguments, so values above `2^53`,
    exponent spellings, object order, and escapes remain exactly what was signed.
 2. The portal bounds and stores the known envelope fields, resolves the selected
    refs, requires that exact set and all preflight operation facts to match the
-   signed claim, and relays the claim with the exact argument bytes. It cannot
+   signed claim, compares `evidence` and `expected` with their signed digests,
+   and relays the claim with the exact argument bytes. It cannot
    change the action, pack, args, reason, operation, origin, or target set without
    invalidating the signature, cannot alter the CA-signed certificate, and has
    no key to mint either.
 3. The runner verifies, in order: the certificate is signed by a CA it trusts →
-   the certificate is inside its validity window → this runner's durable local id
-   generation suffix occurs exactly once in the signed target set → the signed
+   the certificate is inside its validity window → this runner's identity suffix,
+   derived from its local external ID, occurs exactly once in the signed target
+   set → the signed
    portal origin, action, immutable pack bytes, exact arguments, reason, and
    operation match the delivered dispatch → the certificate's **scope** matches
    this runner's own group/labels → the attestation is inside the freshness
@@ -74,8 +78,8 @@ short-lived certificates that vouch for each operator's signing key. So:
 
 The v5 signature binds the **exact runner set** with refs shaped as
 `name~first32hex(sha256(external_id))`. The runner independently verifies the
-generation suffix against its local external ID; the name remains portal-owned
-display context. A compromised relay cannot add another runner generation after
+identity suffix against its local external ID; the name remains portal-owned
+display context. A compromised relay cannot add another runner identity after
 the bridge signs. The certificate's scope is an independent, coarser ceiling
 asserted by the offline CA and matched against each runner's local
 `group`/`labels`. A scoped certificate
@@ -160,7 +164,7 @@ the CA **private** key to store offline, and the two MCP env vars.
 - empty (the default if `--scope` is omitted) — valid on any runner that trusts
   the CA.
 
-The runner first requires exactly one ref with its generation suffix in the
+The runner first requires exactly one ref with its identity suffix in the
 per-call signed target set, then matches certificate scope against its **own**
 configured group/labels. Scope is
 defense in depth and a useful blast-radius ceiling; it no longer substitutes for
@@ -194,11 +198,16 @@ Be clear-eyed about what this does and doesn't guarantee:
 - **Integrity, not availability.** A compromised control plane can still
   *withhold* or refuse to relay a signed dispatch. Signing stops it from
   *forging* one; it does not force it to deliver yours.
-- **Discovery names come from the portal.** The signature binds generation
-  suffixes derived from durable runner IDs; it does not make the display-name
+- **Discovery names come from the portal.** The signature binds identity
+  suffixes derived from external runner IDs; it does not make the display-name
   prefix truthful. A compromised portal can lie while presenting that mapping
   before the call is signed. Use narrow certificate scopes and verify suffixes
   out of band for the highest-trust workflows.
+- **Approval text comes from the portal.** The portal verifies `evidence` and
+  `expected` against the signed digests before it accepts an ordinary request,
+  but the runner never receives the narrative text. A compromised portal can
+  render different text to an approver. Verify the bridge-supplied narrative out
+  of band when approval-screen integrity must not depend on the control plane.
 - **Replay journal durability.** Enforcement requires `paths.data_dir`. The
   runner appends and fsyncs each accepted nonce under that directory before it
   admits the dispatch; every hot-reloaded verifier shares the same live store.
@@ -207,6 +216,8 @@ Be clear-eyed about what this does and doesn't guarantee:
   refuses new dispatches without evicting a still-fresh nonce. A restart reloads
   the same state. Unreadable, corrupt, torn, full, or unwritable state fails
   closed with `nonce_store_unavailable` rather than reopening replay.
+  A replacement that reuses the same external ID must also preserve this
+  journal. Otherwise rotate the runner identity and trust material before use.
 - **Choose the freshness horizon up front.** The journal persists the largest
   `max_attestation_age` it may safely protect. Narrowing and later restoring that
   value is safe because records remain for the persisted horizon; increasing it

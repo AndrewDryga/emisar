@@ -35,7 +35,7 @@ trusted actions and execute them through the same governed path every time.
 - Make natural-language retrieval deterministic, explainable, and measurable.
 - Publish exact input schemas once in `tools/list` without repeating action
   contracts in every search result.
-- Use readable, generation-bound runner references for every dispatch.
+- Use readable, identity-bound runner references for every dispatch.
 - Refuse execution when a selected runner no longer has the inspected pack.
 - Bind signed dispatch to action, pack, arguments, targets, reason, and operation.
 - Show only statically executable capabilities by default, with explicit
@@ -795,9 +795,10 @@ owns them.
 `reason`, `evidence`, and `expected` form an optional justification chain. Only
 `reason` is required; `evidence` and `expected` are unenforced — nothing
 validates the cited run ids and no policy requires them — but Emisar persists
-all three and renders the chain to human approvers and in the audit log, so a
-caller that states what it observed and what it expects leaves a record an
-operator can follow.
+all three with the run and renders the chain to approvers and in run history.
+The terminal audit event does not copy this justification chain; its optional
+`reason` is the cancellation explanation. A caller that states what it observed
+and what it expects still leaves a record an operator can follow in run history.
 
 ### Exact argument-byte contract
 
@@ -1076,12 +1077,12 @@ The model may perform the supplied refresh and retry once. Offline, renamed,
 out-of-scope, untrusted, retired, and descriptor-drifted targets use the same
 error so stale execution cannot distinguish hidden catalog facts.
 
-## Signed action dispatch v4
+## Signed action dispatch v5
 
 The bridge and runner replace the current pre-release attestation in lockstep.
 There is no compatibility mode.
 
-The fixed-JSON v4 claim binds:
+The fixed-JSON v5 claim binds:
 
 - attestation version;
 - literal tool name `run_action` and canonical HTTP request origin;
@@ -1089,6 +1090,7 @@ The fixed-JSON v4 claim binds:
 - SHA-256 of the exact validated argument JSON bytes;
 - SHA-256 of the sorted complete runner refs;
 - exact reason UTF-8 bytes;
+- SHA-256 of the approver-facing `evidence` and `expected` text;
 - bridge-generated `operation_id`;
 - nonce and RFC3339 issuance time.
 
@@ -1113,7 +1115,7 @@ target digest, and requires exactly one member whose suffix matches the hash of
 its durable local external ID. Nonce replay protection remains runner-local; target binding
 prevents a valid claim from being fanned out to an unsigned runner set.
 
-The v4 attestation is the only bridge signature in this API. It authorizes one
+The v5 attestation is the only bridge signature in this API. It authorizes one
 exact action intent end to end; it does not authenticate the HTTPS request and
 is not reused for drafts, cancellation, recovery, or other mutations. The
 portal may validate its bounded structure and compare its fields for early
@@ -2191,7 +2193,7 @@ production actions.
   introduces a hidden ref.
 - `(pack_ref, action_id)` never bypasses current scope, trust, retirement,
   policy, approval, audit, schema validation, or runner verification.
-- Every target is explicit and generation-bound. Enforcing targets verify the
+- Every target is explicit and identity-bound. Enforcing targets verify the
   customer-CA action signature locally before execution.
 - Preflight creates either the complete fan-out operation or nothing.
 - The runner verifies exact signed pack and argument bytes
@@ -2214,7 +2216,7 @@ production actions.
   metadata.
 - **Raw or display-only runner identity:** raw IDs are poor model UX; reusable
   names cannot prevent redirect. `runner_ref` carries both readability and a
-  locally verifiable generation tag without pretending that self-signing proves
+  locally verifiable identity tag without pretending that self-signing proves
   who is authorized to claim a name.
 - **`max_risk` or `contract_count`:** neither represents an agent decision.
 - **Runner counts on every action:** duplicated context without deployment
@@ -2240,8 +2242,8 @@ production actions.
    whose transaction atomically records policy outcomes, every target run and
    approval, and only eligible dispatch jobs; expose its minimal typed recovery
    projection through `get_operation`.
-4. **Bridge and runner**: implement action-attestation v4 fixed vectors,
-   generation-bound refs, exact argument/target preimage carriage, correlated
+4. **Bridge and runner**: implement action-attestation v5 fixed vectors,
+   identity-bound refs, exact argument/target preimage carriage, correlated
    errors, concurrent stdio, cancellation, replay protection, and deadlines.
 5. **Runs and runbooks**: persist `pack_ref`, operation identity, output
    integrity fields, immutable runbook refs, and the explicit enforcing-runner
