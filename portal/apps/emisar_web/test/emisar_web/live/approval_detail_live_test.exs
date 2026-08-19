@@ -138,7 +138,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       })
 
     assert html =~ "Runbook approved. Eligible actions are being dispatched."
-    assert html =~ "Approved"
+    assert has_element?(lv, ~s([data-shot="approval-verdict"]), "approved")
+    assert has_element?(lv, ~s([data-shot="approval-decisions"]), "change window confirmed")
     subject = Fixtures.Subjects.subject_for(user, account)
     request_id = request.id
 
@@ -1074,7 +1075,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "Casey Approver"
   end
 
-  test "an approved multi-approver verdict names every approver", %{conn: conn} do
+  test "an approved multi-approver request lists every approver in Decisions", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
     owner_membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -1124,11 +1125,16 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
+    assert has_element?(lv, ~s([data-shot="approval-verdict"]), "approved")
+
     assert has_element?(
              lv,
-             ~s([data-shot="approval-verdict"]),
-             "by Casey Approver and Riley Reviewer"
+             ~s([data-shot="approval-decisions"]),
+             "Casey Approver"
            )
+
+    assert has_element?(lv, ~s([data-shot="approval-decisions"]), "Riley Reviewer")
+    refute has_element?(lv, ~s([data-shot="approval-verdict"]), "Casey Approver")
   end
 
   test "an exact request broadcast re-assigns its tally + Decisions live", %{
@@ -1174,12 +1180,9 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert rendered =~ "Casey Approver"
   end
 
-  test "a single-approver request hides the multi-approver tally and Decisions card", %{
+  test "a pending single-approver request hides the tally and empty Decisions section", %{
     conn: conn
   } do
-    # (single side) — a `min_approvals = 1` request reads no
-    # differently than the plain single-approver flow: no "Approvals" tally, no
-    # Decisions card (both are `min_approvals > 1` only).
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
 
@@ -1187,6 +1190,27 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     refute html =~ ~r/Approvals<\/dt>/
     refute html =~ "Decisions</h3>"
+  end
+
+  test "a completed single-approver request renders its legacy final decision in Decisions", %{
+    conn: conn
+  } do
+    {conn, user, account} = register_and_log_in(conn)
+
+    request =
+      Fixtures.Approvals.create_request(%{
+        account_id: account.id,
+        status: :approved,
+        decided_by_id: user.id,
+        decision_reason: "Reviewed the final plan."
+      })
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert has_element?(lv, ~s([data-shot="approval-verdict"]), "approved")
+    assert has_element?(lv, ~s([data-shot="approval-decisions"]), user.full_name)
+    assert has_element?(lv, ~s([data-shot="approval-decisions"]), "Reviewed the final plan.")
+    refute has_element?(lv, ~s([data-shot="approval-verdict"]), user.full_name)
   end
 
   test "a soft-deleted target runner makes the approval unavailable", %{conn: conn} do

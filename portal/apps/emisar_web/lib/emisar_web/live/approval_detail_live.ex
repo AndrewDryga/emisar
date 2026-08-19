@@ -245,8 +245,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
     end
   end
 
-  defp decision_event_id(refs, decider_id), do: refs.decisions[decider_id]
-
   defp user_labels_for(request, decisions, subject) do
     decision_ids = Enum.map(decisions, & &1.decider_id)
     ids = [request.requested_by_id, request.decided_by_id | decision_ids]
@@ -713,8 +711,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
       </:actions>
       <.loading_state :if={not @loaded?} />
       <%!-- The page owns its rhythm (§3.3): ONE space-y-12 child, mt-4 for air
-           under the title; the STATUS block groups the naked meta row with the
-           verdict that elaborates it. --%>
+           under the title. The status field is the compact verdict; human
+           decision provenance lives once in the Decisions ledger below. --%>
       <div :if={@loaded?} class="mt-4 space-y-12">
         <div>
           <%!-- Request facts on the CANVAS — the naked meta row (run-detail
@@ -729,7 +727,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <%!-- wrap: a badge is a composite, not a text run — truncation shears
              its pill instead of ellipsizing (§7.35). --%>
             <.meta_field label="Status" wrap>
-              <.status_badge status={@request_facts.status} />
+              <span data-shot="approval-verdict">
+                <.status_badge status={@request_facts.status} />
+              </span>
             </.meta_field>
             <%!-- No ACTION/RUNBOOK meta field: its value was `request_title/1`, the
              very string the page title above already prints in full (mono for an
@@ -820,51 +820,17 @@ defmodule EmisarWeb.ApprovalDetailLive do
           </div>
 
           <% verdict = @request_facts.status %>
-
-          <%!-- Lead with the verdict — anchored to the status it elaborates
-               (the run-detail correction), as an EVENT BLOCK, not a wash box:
-               brand = approved, rose = denied/expired/cancelled. Decider +
-               time + note ride the body. --%>
-          <.event_block
-            :if={verdict != :pending}
-            icon={verdict_icon(verdict)}
-            tone={verdict_tone(verdict)}
-            title={verdict_title(verdict)}
-            class="mt-8 max-w-4xl"
-            data-shot="approval-verdict"
+          <p :if={verdict == :expired} class="mt-5 max-w-prose text-sm leading-relaxed text-zinc-400">
+            <span class="font-medium text-zinc-200">Expired — auto-denied.</span>
+            No one decided before the deadline, so the {target_noun(@execution_request?)} will not
+            run. The requester can re-issue it if it's still needed.
+          </p>
+          <p
+            :if={verdict == :cancelled}
+            class="mt-5 max-w-prose text-sm leading-relaxed text-zinc-400"
           >
-            <:body>
-              <%= case verdict do %>
-                <% :expired -> %>
-                  This request expired before anyone decided, so it was auto-denied — the {target_noun(
-                    @execution_request?
-                  )} will not run. The requester can re-issue it if
-                  it's still needed.
-                <% :cancelled -> %>
-                  This request was withdrawn before a decision, so the {target_noun(
-                    @execution_request?
-                  )} did not run.
-                <% _ -> %>
-                  <span :if={@request.decided_at}>
-                    by {verdict_actor_label(verdict, @request, @decisions, @user_labels)} ·
-                    <.local_time value={@request.decided_at} mode={:forensic} class="tabular-nums" />
-                  </span>
-                  <span
-                    :if={@request.decision_reason && @request.decision_reason != ""}
-                    class="mt-1.5 block"
-                  >
-                    “{@request.decision_reason}”
-                  </span>
-              <% end %>
-            </:body>
-            <.link
-              :if={@approval_event_refs.final}
-              navigate={~p"/app/#{@current_account}/audit/#{@approval_event_refs.final}"}
-              class="group mt-3 inline-flex min-h-10 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
-            >
-              View audit record <.cta_arrow />
-            </.link>
-          </.event_block>
+            This request was withdrawn before a decision, so the {target_noun(@execution_request?)} did not run.
+          </p>
         </div>
 
         <%!-- On the pending state the 340px rail already caps the record column
@@ -1012,15 +978,20 @@ defmodule EmisarWeb.ApprovalDetailLive do
               </dl>
             </section>
 
-            <%!-- Who has voted so far — surfaced for any multi-approver gate so
-               an approver sees who's already signed off (and that a deny
-               finalized). A single-approver request shows it only once decided
-               (the decision-history panel covers the lone vote). --%>
-            <%!-- The vote trail ON THE CANVAS — hairline rows under a section
-               header (the approvals-list grammar), not a boxed split panel. --%>
-            <section :if={(@decisions != [] or @decisions_error?) and @request.min_approvals > 1}>
+            <%!-- One canonical human decision ledger. Pending single-approver
+                 requests have no decision to show; terminal single-approver
+                 requests use the request's final decision as a fallback for
+                 records created before per-vote rows existed. --%>
+            <% displayed_decisions = displayed_decisions(@request, @decisions, @decisions_error?) %>
+            <section
+              :if={
+                (displayed_decisions != [] or @decisions_error?) and
+                  (@request.min_approvals > 1 or verdict in [:approved, :denied])
+              }
+              data-shot="approval-decisions"
+            >
               <.section_header title="Decisions">
-                <:subtitle :if={not @decisions_error?}>
+                <:subtitle :if={@request.min_approvals > 1 and not @decisions_error?}>
                   {@approved_count} of {@request.min_approvals} approvals
                 </:subtitle>
               </.section_header>
@@ -1032,39 +1003,58 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 variant={:hint}
                 tone={:danger}
                 icon="hero-exclamation-triangle"
-                title="Couldn't load the decisions"
+                title={
+                  if(displayed_decisions == [],
+                    do: "Couldn't load the decisions",
+                    else: "Full decision history unavailable"
+                  )
+                }
               >
-                This is a load error, not an untouched request — approvals may already be
-                recorded. Refresh the page before deciding.
+                <%= if displayed_decisions == [] do %>
+                  This is a load error, not an untouched request — approvals may already be
+                  recorded. Refresh the page before deciding.
+                <% else %>
+                  The final decision is shown below, but earlier votes may be missing. Refresh
+                  the page to load the complete history.
+                <% end %>
               </.empty_state>
-              <ul :if={not @decisions_error?} class="divide-y divide-zinc-800/70">
+              <ul :if={displayed_decisions != []} class="divide-y divide-zinc-800/70">
                 <li
-                  :for={decision <- @decisions}
-                  class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-sm"
+                  :for={decision <- displayed_decisions}
+                  class="flex items-start gap-3 py-3 text-sm"
                 >
                   <.icon
                     name={decision_icon(decision.decision)}
-                    class={"h-4 w-4 flex-none " <> decision_icon_class(decision.decision)}
+                    class={"mt-0.5 h-4 w-4 flex-none " <> decision_icon_class(decision.decision)}
                   />
-                  <span class="min-w-0 flex-1 truncate text-zinc-200">
-                    {user_label(@user_labels, decision.decider_id)}
-                  </span>
-                  <span class="text-xs text-zinc-400">{decision_verb(decision.decision)}</span>
-                  <.local_time
-                    id={"decision-when-#{decision.id}"}
-                    value={decision.decided_at}
-                    mode={:forensic}
-                    class="text-xs tabular-nums text-zinc-400"
-                  />
-                  <.link
-                    :if={decision_event_id(@approval_event_refs, decision.decider_id)}
-                    navigate={
-                      ~p"/app/#{@current_account}/audit/#{decision_event_id(@approval_event_refs, decision.decider_id)}"
-                    }
-                    class="inline-flex min-h-10 items-center text-xs font-medium text-brand-400 hover:text-brand-300"
-                  >
-                    Audit record
-                  </.link>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span class="min-w-0 flex-1 truncate text-zinc-200">
+                        {user_label(@user_labels, decision.decider_id)}
+                      </span>
+                      <span class="text-xs text-zinc-400">{decision_verb(decision.decision)}</span>
+                      <.local_time
+                        id={"decision-when-#{decision.id}"}
+                        value={decision.decided_at}
+                        mode={:forensic}
+                        class="text-xs tabular-nums text-zinc-400"
+                      />
+                      <% event_id = decision_event_id(@approval_event_refs, @request, decision) %>
+                      <.link
+                        :if={event_id}
+                        navigate={~p"/app/#{@current_account}/audit/#{event_id}"}
+                        class="inline-flex min-h-10 items-center text-xs font-medium text-brand-400 hover:text-brand-300"
+                      >
+                        View audit record
+                      </.link>
+                    </div>
+                    <p
+                      :if={decision_reason(@request, decision)}
+                      class="mt-1.5 text-sm leading-relaxed text-zinc-300"
+                    >
+                      “{decision_reason(@request, decision)}”
+                    </p>
+                  </div>
                 </li>
               </ul>
             </section>
@@ -1072,8 +1062,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
           <%!-- Right: the decision panel, only while the request is genuinely live
              (sticky on desktop so it stays in reach past a long args/reason). A
-             decided or lapsed request has no rail — its outcome leads the page in
-             the verdict callout above, so the column goes full-width. --%>
+             decided or lapsed request has no rail, so the column goes full-width. --%>
           <aside :if={verdict == :pending} class="xl:sticky xl:top-6 xl:self-start">
             <.decision_panel
               can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
@@ -1409,23 +1398,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp reuse_clause(_options), do: ". Your"
 
-  # Verdict presentation, keyed on the effective status Approvals projected
-  # (never :pending — the callout only renders once that status is terminal).
-  defp verdict_tone(:approved), do: :brand
-  defp verdict_tone(:denied), do: :rose
-  defp verdict_tone(:expired), do: :rose
-  defp verdict_tone(:cancelled), do: :neutral
-
-  defp verdict_title(:approved), do: "Approved"
-  defp verdict_title(:denied), do: "Denied"
-  defp verdict_title(:expired), do: "Expired — auto-denied"
-  defp verdict_title(:cancelled), do: "Cancelled"
-
-  defp verdict_icon(:approved), do: "hero-check-circle"
-  defp verdict_icon(:denied), do: "hero-x-circle"
-  defp verdict_icon(:expired), do: "hero-clock"
-  defp verdict_icon(:cancelled), do: "hero-no-symbol"
-
   # Decision-list rendering helpers (the enum loads as an atom).
   defp decision_icon(:approve), do: "hero-check-circle"
   defp decision_icon(:deny), do: "hero-x-circle"
@@ -1436,26 +1408,38 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp decision_verb(:approve), do: "approved"
   defp decision_verb(:deny), do: "denied"
 
-  defp verdict_actor_label(:approved, %Approvals.Request{} = request, decisions, labels) do
-    approver_labels =
-      decisions
-      |> Enum.filter(&(&1.decision == :approve))
-      |> Enum.map(&user_label(labels, &1.decider_id))
-
-    case approver_labels do
-      [] -> user_label(labels, request.decided_by_id)
-      names -> actor_labels_sentence(names)
-    end
+  defp displayed_decisions(%Approvals.Request{} = request, [], _decisions_error?)
+       when request.status in [:approved, :denied] do
+    [
+      %{
+        id: request.id,
+        decider_id: request.decided_by_id,
+        decision: if(request.status == :approved, do: :approve, else: :deny),
+        decided_at: request.decided_at
+      }
+    ]
   end
 
-  defp verdict_actor_label(_verdict, %Approvals.Request{} = request, _decisions, labels),
-    do: user_label(labels, request.decided_by_id)
+  defp displayed_decisions(_request, decisions, false), do: decisions
 
-  defp actor_labels_sentence([name]), do: name
-  defp actor_labels_sentence([first, second]), do: "#{first} and #{second}"
+  defp displayed_decisions(%Approvals.Request{} = request, _decisions, true)
+       when request.status in [:approved, :denied],
+       do: displayed_decisions(request, [], true)
 
-  defp actor_labels_sentence(names) do
-    [last | reversed_leading] = Enum.reverse(names)
-    "#{reversed_leading |> Enum.reverse() |> Enum.join(", ")}, and #{last}"
-  end
+  defp displayed_decisions(_request, _decisions, true), do: []
+
+  defp decision_event_id(refs, request, decision)
+       when request.status in [:approved, :denied] and
+              decision.decider_id == request.decided_by_id,
+       do: refs.final || refs.decisions[decision.decider_id]
+
+  defp decision_event_id(refs, _request, decision), do: refs.decisions[decision.decider_id]
+
+  defp decision_reason(request, decision)
+       when request.status in [:approved, :denied] and
+              decision.decider_id == request.decided_by_id and
+              is_binary(request.decision_reason) and request.decision_reason != "",
+       do: request.decision_reason
+
+  defp decision_reason(_request, _decision), do: nil
 end
