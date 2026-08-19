@@ -19,8 +19,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/andrewdryga/emisar/main/install.sh | sudo bash
 #
 #   # Pin a specific runner version (tag, with or without prefix):
-#   curl -fsSL https://.../install.sh | sudo bash -s -- --version runner-v0.3.0
-#   curl -fsSL https://.../install.sh | sudo bash -s -- --version 0.3.0
+#   curl -fsSL https://.../install.sh | sudo bash -s -- --version runner-vX.Y.Z
+#   curl -fsSL https://.../install.sh | sudo bash -s -- --version X.Y.Z
 #
 #   # Unattended (no prompts) with a fixed pack set — for CI / cloud-init:
 #   curl -fsSL https://.../install.sh | sudo bash -s -- --yes --packs linux-core,postgres,redis
@@ -129,9 +129,9 @@ USAGE
 
 # Normalize --version into the canonical `runner-vX.Y.Z` shape so
 # `download_release` doesn't have to. Accepts:
-#   runner-v0.3.0  → runner-v0.3.0  (verbatim)
-#   v0.3.0         → runner-v0.3.0
-#   0.3.0          → runner-v0.3.0
+#   runner-vX.Y.Z  → runner-vX.Y.Z  (verbatim)
+#   vX.Y.Z         → runner-vX.Y.Z
+#   X.Y.Z          → runner-vX.Y.Z
 normalize_version() {
   case "$1" in
     runner-v*) printf '%s\n' "$1";;
@@ -861,7 +861,7 @@ resolve_latest_version() {
 
 download_release() {
   local version="$1" tmp="$2"
-  # `version` is the full tag (e.g. `runner-v0.3.0`). The tarball
+  # `version` is the full tag (e.g. `runner-vX.Y.Z`). The tarball
   # inside the release uses just the semver portion — strip the
   # `runner-v` prefix.
   local version_num="${version#runner-v}"
