@@ -59,10 +59,11 @@ type Config struct {
 // The runner ALSO advertises this to the cloud, which then disables its own
 // (operator/runbook) dispatch to this runner.
 //
-// Each v4 attestation binds the complete execution intent and exact public runner
-// reference set; the runner verifies its generation suffix locally. A cert's
-// offline-CA-authored scope is an independent group/label ceiling. Trusting one CA
-// instead of every leaf key makes onboarding one signature and no runner edits.
+// Each v5 attestation binds the complete execution intent, including the exact
+// argument, evidence, and expected-value digests and public runner reference set;
+// the runner verifies each identity suffix locally. A cert's offline-CA-authored
+// scope is an independent group/label ceiling. Trusting one CA instead of every
+// leaf key makes onboarding one signature and no runner edits.
 type Signing struct {
 	EnforceSignatures bool        `yaml:"enforce_signatures,omitempty"`
 	TrustedCAs        []TrustedCA `yaml:"trusted_cas,omitempty"`

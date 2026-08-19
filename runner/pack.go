@@ -27,19 +27,22 @@ func packCmd() *cobra.Command {
 		Short:   "Manage action packs",
 		Long: `Packs are the runner's action catalog: versioned bundles of action schemas
 this host may execute. Install them from a registry — the public one at
-https://emisar.dev by default, or your own (--registry / EMISAR_PACKS_REGISTRY;
-any static host serving the registry layout works). Installs can pin an exact
-content hash with --hash, and the runner always re-hashes packs on load.
+https://emisar.dev by default, or another server that implements the same
+name-based /packs/... facade (--registry / EMISAR_PACKS_REGISTRY). Installs can
+pin an exact content hash with --hash, and the runner always re-hashes packs on
+load.
 
 Author your own packs and host a private registry with packctl — the same tool
-that builds and publishes the public registry. Guide:
+that builds and publishes the public catalog tree. Install its exact immutable
+tarball URL from v1/catalog.json; packctl does not build the name-based facade.
+Guide:
 https://emisar.dev/docs/pack-registry`,
 		Example: `  # See what fits this host, then install with the hash the control plane advertises
   emisar pack suggest
   emisar pack install redis --hash sha256:...
 
-  # Install from YOUR registry (or set EMISAR_PACKS_REGISTRY)
-  emisar pack install billing-tools --registry https://packs.acme.internal --hash sha256:...
+  # Install from a packctl static tree
+  emisar pack install https://packs.acme.internal/v1/packs/billing-tools/0.4.0/<sha256>/pack.tar.gz --hash sha256:...
 
   # Validate a pack you're authoring
   emisar pack validate ./my-pack`,

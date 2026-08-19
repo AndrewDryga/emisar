@@ -59,8 +59,8 @@ For every action, the runner:
 4. Applies the host-local action allowlist, denylist, and optional risk ceiling.
 5. Clamps timeout and output limits to the pack's declared bounds.
 6. Executes the pack-authored binary and argv with `os/exec`.
-7. Runner output is redacted before leaving the host; Emisar retains the
-   resulting redacted output in audit log.
+7. Redacts runner output before it leaves the host. The control plane keeps the
+   redacted output in run history and records terminal metadata in the audit.
 8. Appends the attempt to a hash-chained local JSONL journal.
 
 Fixed shell programs may be authored inside a pack when pipes or shell features
