@@ -1074,6 +1074,63 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "Casey Approver"
   end
 
+  test "an approved multi-approver verdict names every approver", %{conn: conn} do
+    {conn, owner, account} = register_and_log_in(conn)
+    owner_membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    Fixtures.Catalog.create_action(runner: runner)
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "operator",
+        reason: "needs review",
+        args: %{},
+        initiating_membership_id: owner_membership.id,
+        status: :pending_approval
+      })
+
+    {:ok, request} =
+      Approvals.create_request(run, owner.id, "please approve", min_approvals: 2)
+
+    first_approver = Fixtures.Users.create_user(full_name: "Casey Approver")
+
+    first_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: first_approver.id,
+        role: "operator"
+      )
+
+    second_approver = Fixtures.Users.create_user(full_name: "Riley Reviewer")
+
+    second_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: second_approver.id,
+        role: "operator"
+      )
+
+    first_subject = Fixtures.Subjects.membership_subject(first_membership)
+    second_subject = Fixtures.Subjects.membership_subject(second_membership)
+
+    assert {:ok, {%Approvals.Request{status: :pending}, :pending}} =
+             Approvals.approve_request(request, first_subject, "first")
+
+    assert {:ok, {%Approvals.Request{status: :approved}, %Runs.ActionRun{status: :sent}}} =
+             Approvals.approve_request(request, second_subject, "second")
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert has_element?(
+             lv,
+             ~s([data-shot="approval-verdict"]),
+             "by Casey Approver and Riley Reviewer"
+           )
+  end
+
   test "an exact request broadcast re-assigns its tally + Decisions live", %{
     conn: conn
   } do

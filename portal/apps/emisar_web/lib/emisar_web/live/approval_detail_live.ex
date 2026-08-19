@@ -831,6 +831,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             tone={verdict_tone(verdict)}
             title={verdict_title(verdict)}
             class="mt-8 max-w-4xl"
+            data-shot="approval-verdict"
           >
             <:body>
               <%= case verdict do %>
@@ -845,7 +846,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   )} did not run.
                 <% _ -> %>
                   <span :if={@request.decided_at}>
-                    by {user_label(@user_labels, @request.decided_by_id)} ·
+                    by {verdict_actor_label(verdict, @request, @decisions, @user_labels)} ·
                     <.local_time value={@request.decided_at} mode={:forensic} class="tabular-nums" />
                   </span>
                   <span
@@ -1434,4 +1435,27 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp decision_verb(:approve), do: "approved"
   defp decision_verb(:deny), do: "denied"
+
+  defp verdict_actor_label(:approved, %Approvals.Request{} = request, decisions, labels) do
+    approver_labels =
+      decisions
+      |> Enum.filter(&(&1.decision == :approve))
+      |> Enum.map(&user_label(labels, &1.decider_id))
+
+    case approver_labels do
+      [] -> user_label(labels, request.decided_by_id)
+      names -> actor_labels_sentence(names)
+    end
+  end
+
+  defp verdict_actor_label(_verdict, %Approvals.Request{} = request, _decisions, labels),
+    do: user_label(labels, request.decided_by_id)
+
+  defp actor_labels_sentence([name]), do: name
+  defp actor_labels_sentence([first, second]), do: "#{first} and #{second}"
+
+  defp actor_labels_sentence(names) do
+    [last | reversed_leading] = Enum.reverse(names)
+    "#{reversed_leading |> Enum.reverse() |> Enum.join(", ")}, and #{last}"
+  end
 end
