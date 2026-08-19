@@ -24,6 +24,16 @@ defmodule EmisarWeb.Router do
     plug EmisarWeb.Plugs.MailboxPreviewCSP
   end
 
+  pipeline :live_dashboard_csp do
+    plug :allow_live_dashboard_data_fonts
+  end
+
+  # LiveDashboard's same-origin stylesheet embeds its font as a data URL. Keep
+  # that exception on the staff dashboard instead of widening every HTML page.
+  defp allow_live_dashboard_data_fonts(conn, _opts) do
+    Plug.Conn.assign(conn, :csp_extra, %{"font-src" => ["data:"]})
+  end
+
   # `noindex` on every authenticated and auth-bound route. Indexable
   # marketing/docs pages skip this pipeline.
   pipeline :noindex do
@@ -617,12 +627,17 @@ defmodule EmisarWeb.Router do
       live "/accounts/:id", AdminAccountLive
     end
 
-    # A distinct `live_session_name` keeps the LiveDashboard isolated from the
-    # console mount above and from the dev-routes mount.
-    live_dashboard "/live",
-      metrics: EmisarWeb.Telemetry,
-      ecto_repos: [Emisar.Repo],
-      live_session_name: :admin_dashboard,
-      on_mount: [{EmisarWeb.UserAuth, :ensure_admin}]
+    scope "/" do
+      pipe_through :live_dashboard_csp
+
+      # A distinct `live_session_name` keeps the LiveDashboard isolated from the
+      # console mount above and from the dev-routes mount.
+      live_dashboard "/live",
+        metrics: EmisarWeb.Telemetry,
+        ecto_repos: [Emisar.Repo],
+        csp_nonce_assign_key: :csp_nonce,
+        live_session_name: :admin_dashboard,
+        on_mount: [{EmisarWeb.UserAuth, :ensure_admin}]
+    end
   end
 end

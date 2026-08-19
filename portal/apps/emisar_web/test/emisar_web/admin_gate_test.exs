@@ -51,6 +51,22 @@ defmodule EmisarWeb.AdminGateTest do
       assert redirected_to(conn) =~ "/admin/live"
     end
 
+    test "the dashboard reuses the CSP nonce and enables Ecto Stats", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
+      Fixtures.Users.mark_user_as_staff(user)
+
+      conn = conn |> complete_mfa_challenge(user) |> get("/admin/live/ecto_stats")
+      html = html_response(conn, 200)
+      [csp] = get_resp_header(conn, "content-security-policy")
+      [_, nonce] = Regex.run(~r/'nonce-([^']+)'/, csp)
+
+      assert csp =~ "font-src 'self' data:"
+      refute csp =~ ~r/script-src [^;]*'unsafe-inline'/
+      assert html =~ ~s(<script nonce="#{nonce}">)
+      assert html =~ "Ecto Stats"
+    end
+
     test "an admin who has not enrolled MFA is sent to set it up", %{conn: conn} do
       {conn, user, _account} = register_and_log_in(conn)
       Fixtures.Users.mark_user_as_staff(user)

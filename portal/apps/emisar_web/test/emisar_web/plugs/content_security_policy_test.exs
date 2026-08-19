@@ -29,6 +29,7 @@ defmodule EmisarWeb.Plugs.ContentSecurityPolicyTest do
     test "fonts are self-hosted — no third-party font CDN in the policy", %{conn: conn} do
       [csp] = conn |> get(~p"/") |> get_resp_header("content-security-policy")
       assert csp =~ "font-src 'self'"
+      refute csp =~ ~r/font-src [^;]*data:/
       refute csp =~ "rsms.me"
     end
 

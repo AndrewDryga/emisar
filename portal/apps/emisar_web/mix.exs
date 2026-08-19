@@ -48,6 +48,7 @@ defmodule EmisarWeb.MixProject do
       # and is no longer used (LV 1.0+ uses LazyHTML exclusively).
       {:lazy_html, ">= 0.1.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.8.7"},
+      {:ecto_psql_extras, "~> 0.8.8"},
       {:esbuild, "~> 0.10.0", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.5.1", runtime: Mix.env() == :dev},
       {:heroicons,
