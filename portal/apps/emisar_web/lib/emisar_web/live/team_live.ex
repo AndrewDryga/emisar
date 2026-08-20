@@ -1696,9 +1696,11 @@ defmodule EmisarWeb.TeamLive do
                      and an "Admin" row truncate the last-active fact at different
                      words. Right-anchoring is what puts the role beside its button
                      with one tight gap, and pins the role to the column's right edge
-                     on a row that has no button at all. `min-w` so the rare own row
-                     carrying two verbs grows rather than overflowing. --%>
-                    <div class="flex shrink-0 items-center justify-end gap-1.5 pl-14 sm:min-w-[14.5rem] sm:pl-0">
+                     on a row that has no button at all. The minimum fits the widest
+                     regular role + Actions pair without donating another 2rem of the
+                     identity line to empty track; a rare own row carrying two verbs
+                     grows rather than overflowing. --%>
+                    <div class="flex shrink-0 items-center justify-end gap-1.5 pl-14 sm:min-w-[12.5rem] sm:pl-0">
                       <%= cond do %>
                         <% @can_manage_team? and not member.self_owner? and not member.role_editable? -> %>
                           <%!-- Synced role: the IdP owns it (a role mapping, or the

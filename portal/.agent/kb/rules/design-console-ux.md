@@ -665,6 +665,13 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     tracks or flex rows that own their own width; per-control fixed tracks in a trailing
     action cluster; and an empty wrapper left where a conditional control renders nothing —
     it is still a flex item, so the cluster's gap pushes the value off the right edge.
+    **Reserve only the widest REGULAR cluster, not speculative air.** The trailing track's
+    right edge stays fixed, but its minimum width is no larger than the widest ordinary
+    role/action pair; a genuinely wider exceptional state may grow the row. An oversized
+    minimum makes the neighbouring identity or metadata ellipsize while leaving a visible
+    empty pocket before the right-aligned controls — exactly the Team roster defect that
+    reserved 14.5rem for a pair that fits in 12.5rem. Sweep: fixed/minimum trailing tracks
+    whose ordinary rendered controls leave enough unused width to finish the adjacent line.
 56. **A native select reserves room for its chevron.** The Tailwind forms plugin paints the arrow
     as a background image (1.5em wide, 0.5rem from the right edge) and sets `padding-right:
     2.5rem` — which our own `px-*` overrides, so the longest option prints over the arrow and
