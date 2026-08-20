@@ -131,13 +131,35 @@ func newHTTPClient() *http.Client {
 // from the release pipeline; "dev" when built locally.
 var Version = "dev"
 
-const helpText = `emisar-mcp - MCP stdio-to-HTTP bridge for emisar
+const helpText = `emisar-mcp - MCP bridge and direct CLI for emisar
+
+USAGE
+  emisar-mcp
+  emisar-mcp list_tools [--json]
+  emisar-mcp help <tool> [--json]
+  emisar-mcp <tool> [JSON | -]
 
 DESCRIPTION
   Proxies MCP JSON-RPC between a local LLM client and the emisar control plane
   at POST /api/mcp/rpc. The control plane owns tools, policy, approvals, and
   audit. Optional signed dispatch keeps the operator's Ed25519 key on this
   machine.
+
+  With no command, emisar-mcp speaks stdio for an MCP-aware client. Commands
+  expose that same server-owned tool surface to operators and shell scripts.
+
+COMMANDS
+  list_tools
+    List every MCP tool currently published by the control plane. Add --json
+    to print the exact descriptors.
+
+  help <tool>
+    Show one tool's server-owned description and top-level argument contract.
+    Add --json to print its exact descriptor. '<tool> --help' is equivalent.
+
+  <tool> [JSON | -]
+    Call an exact MCP tool name. Pass one JSON object inline, '-' to read it
+    from stdin, or omit it for {}. Results are pretty-printed JSON.
 
 ENVIRONMENT
   EMISAR_URL (required)
@@ -149,7 +171,7 @@ ENVIRONMENT
 
   EMISAR_CLIENT (optional)
     Audit-log label for this client, such as claude-code, cursor, codex, or
-    grok. Defaults to "unknown".
+    grok. Defaults to "emisar-mcp-cli" for commands and "unknown" for stdio.
 
   EMISAR_CLIENT_METADATA (optional)
     Self-reported client metadata as a JSON object whose values are strings or
@@ -286,24 +308,57 @@ FLAGS
     Print the version and exit.
 
 PROTOCOL
-  The bridge speaks line-delimited JSON-RPC 2.0 on stdin/stdout. Run it under
-  an MCP-aware client, not directly in a terminal.
+  With no command, the bridge speaks line-delimited JSON-RPC 2.0 on stdin and
+  stdout. CLI commands use the same HTTPS endpoint, credentials, signing,
+  policy, approval, and audit path.
 `
 
 func main() {
-	for _, a := range os.Args[1:] {
-		switch a {
-		case "-h", "--help":
-			fmt.Fprint(os.Stdout, helpText)
-			return
+	if code := runProgram(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); code != 0 {
+		os.Exit(code)
+	}
+}
+
+func runProgram(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) == 1 {
+		switch args[0] {
+		case "-h", "--help", "help":
+			fmt.Fprint(stdout, helpText)
+			return 0
 		case "-v", "--version":
-			fmt.Fprintf(os.Stdout, "%s %s\n", bridgeName, Version)
-			return
-		default:
-			fmt.Fprintf(os.Stderr, "unknown argument %q (try --help)\n", a)
-			os.Exit(2)
+			fmt.Fprintf(stdout, "%s %s\n", bridgeName, Version)
+			return 0
 		}
 	}
+	if len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		fmt.Fprintf(stderr, "unknown argument %q (try --help)\n", args[0])
+		return 2
+	}
+	if err := validateCLIInvocation(args); err != nil {
+		return cliUsageError(stderr, err.Error())
+	}
+
+	defaultClient := "unknown"
+	if len(args) > 0 {
+		defaultClient = "emisar-mcp-cli"
+	}
+	b, err := newBridgeFromEnv(defaultClient, stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "%s: %v\n", bridgeName, err)
+		return 1
+	}
+
+	if len(args) > 0 {
+		return b.runCLI(args, stdin, stdout, stderr)
+	}
+	if err := b.serve(stdin, stdout); err != nil && !errors.Is(err, io.EOF) {
+		fmt.Fprintf(stderr, "%s: serve: %v\n", bridgeName, err)
+		return 1
+	}
+	return 0
+}
+
+func newBridgeFromEnv(defaultClient string, diagnostics io.Writer) (*bridge, error) {
 
 	rawBase := os.Getenv("EMISAR_URL")
 	// A key pasted into a client config often carries a trailing newline or
@@ -315,11 +370,11 @@ func main() {
 	// operator hunting through a config where one of the two is already right.
 	switch {
 	case rawBase == "" && apiKey == "":
-		fatalln("EMISAR_URL and EMISAR_API_KEY must both be set (try --help)")
+		return nil, errors.New("EMISAR_URL and EMISAR_API_KEY must both be set (try --help)")
 	case rawBase == "":
-		fatalln("EMISAR_URL must be set (try --help)")
+		return nil, errors.New("EMISAR_URL must be set (try --help)")
 	case apiKey == "":
-		fatalln("EMISAR_API_KEY must be set (try --help)")
+		return nil, errors.New("EMISAR_API_KEY must be set (try --help)")
 	}
 
 	// Fail closed on a cleartext URL to a non-loopback host: an http:// base
@@ -328,7 +383,7 @@ func main() {
 	// opt-in so a localhost dev endpoint still works.
 	base, err := parseEndpoint(rawBase, os.Getenv("EMISAR_ALLOW_INSECURE") == "1")
 	if err != nil {
-		fatalln(err)
+		return nil, err
 	}
 
 	// Optional bridge-attested dispatch: when a signing key is configured, the
@@ -336,7 +391,7 @@ func main() {
 	// private key never leaves this process.
 	sign, err := newSigner(os.Getenv("EMISAR_SIGNING_KEY"), os.Getenv("EMISAR_SIGNING_CERT"))
 	if err != nil {
-		fatalln(err)
+		return nil, err
 	}
 	// Drop the key from the environment once it is parsed: it is readable from
 	// /proc/<pid>/environ for the life of the process, and every child the
@@ -349,44 +404,41 @@ func main() {
 	// retried unchanged after a lost request, response, or process restart.
 	credentialStore, credsErr := newRotationStore(base, apiKey)
 	if credsErr != nil {
-		fmt.Fprintf(os.Stderr, "emisar-mcp: no user config dir (%v); automatic key rotation disabled\n", credsErr)
+		fmt.Fprintf(diagnostics, "%s: no user config dir (%v); automatic key rotation disabled\n", bridgeName, credsErr)
 	}
 
 	// Self-reported client metadata: validated once at startup so a bad map is a
 	// clear local error, never a partial snapshot on the control plane.
 	clientMetadata, err := parseClientMetadata(os.Getenv("EMISAR_CLIENT_METADATA"))
 	if err != nil {
-		fatalln(err)
+		return nil, err
 	}
 
 	processNonce, err := newProcessNonce(rand.Reader)
 	if err != nil {
-		fatalln(err)
+		return nil, err
 	}
 
 	b := &bridge{
 		endpoint:        base + "/api/mcp/rpc",
 		portalOrigin:    base,
 		apiKey:          apiKey,
-		userAgent:       buildUserAgent(),
+		userAgent:       buildUserAgentWithDefault(defaultClient),
 		client:          newHTTPClient(),
 		processNonce:    processNonce,
 		signer:          sign,
 		clientMetadata:  clientMetadata,
 		credentialStore: credentialStore,
-		diagnostics:     os.Stderr,
+		diagnostics:     diagnostics,
 	}
 	readOnlyCredentials, err := b.initializeCredentialState()
 	if err != nil {
-		fatalln("credential state:", err)
+		return nil, fmt.Errorf("credential state: %w", err)
 	}
 	if readOnlyCredentials {
-		fmt.Fprintln(os.Stderr, "emisar-mcp: credential state is read-only; automatic key rotation disabled")
+		fmt.Fprintf(diagnostics, "%s: credential state is read-only; automatic key rotation disabled\n", bridgeName)
 	}
-
-	if err := b.serve(os.Stdin, os.Stdout); err != nil && !errors.Is(err, io.EOF) {
-		fatalln("serve:", err)
-	}
+	return b, nil
 }
 
 type bridge struct {
@@ -1567,9 +1619,13 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 // User-Agent header so each audit row carries "client=claude-desktop;
 // host=…; os=darwin" instead of "some MCP call from <IP>".
 func buildUserAgent() string {
+	return buildUserAgentWithDefault("unknown")
+}
+
+func buildUserAgentWithDefault(defaultClient string) string {
 	client := os.Getenv("EMISAR_CLIENT")
 	if client == "" {
-		client = "unknown"
+		client = defaultClient
 	}
 	host, err := os.Hostname()
 	if err != nil || host == "" {
@@ -1652,9 +1708,4 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
-}
-
-func fatalln(args ...any) {
-	fmt.Fprintln(os.Stderr, append([]any{"emisar-mcp:"}, args...)...)
-	os.Exit(1)
 }

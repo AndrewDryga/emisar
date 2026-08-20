@@ -408,8 +408,14 @@ value), and `cloud.enrollment_key_env` names the bootstrap credential (normally
 `EMISAR_ENROLLMENT_KEY`). `EMISAR_PACKS_REGISTRY` and
 the `--registry` flag select a pack registry.
 
-The MCP bridge has no subcommands. Its flags are `-h/--help` and
-`-v/--version`. Its environment is:
+With no command, the MCP bridge keeps its stdio behavior. Its direct CLI surface
+is descriptor-driven: `list_tools [--json]` lists the live server catalog,
+`help <tool> [--json]` and `<tool> --help` document one live descriptor, and
+`<tool> [JSON | -]` calls any exact tool name with an omitted `{}`, one inline
+JSON object, or an object read from stdin. Calls print `structuredContent` as
+JSON; server/tool failures exit 1 and local usage failures exit 2. Tool names and
+schemas remain owned by `tools/list`, not compiled into the bridge. Its global
+flags remain `-h/--help` and `-v/--version`. Its environment is:
 
 ```text
 EMISAR_URL              required control-plane origin

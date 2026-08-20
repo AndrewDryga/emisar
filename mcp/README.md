@@ -97,6 +97,56 @@ Do not commit this configuration with a real key. API keys inherit the member's
 runner scope and the account's server-side policy; use a separate key per client
 so attribution and revocation stay precise.
 
+## Use MCP tools from the shell
+
+The same binary exposes the control plane's live MCP catalog as direct commands.
+It does not carry a second tool registry: names, descriptions, annotations, and
+argument schemas come from `tools/list`, so a newly published tool appears without
+a bridge release.
+
+Set the same environment used by a local MCP client, then discover and inspect the
+available commands:
+
+```sh
+export EMISAR_URL=https://emisar.dev
+export EMISAR_API_KEY=emk-...
+
+emisar-mcp list_tools
+emisar-mcp help find_actions
+emisar-mcp get_action --help
+```
+
+`list_tools --json` prints the exact descriptor array. `help <tool> --json`
+prints one exact descriptor, including its complete input schema. Human-readable
+help summarizes only the top-level arguments and points back to that exact JSON
+when a schema has cross-field or nested constraints.
+
+Call a tool with one JSON object. Omit it when the tool accepts `{}`, or pass `-`
+to read the object from stdin:
+
+```sh
+emisar-mcp list_runners
+emisar-mcp find_actions '{"query":"diagnose postgres replication"}'
+emisar-mcp get_action \
+  '{"action_id":"postgres.replication_status","pack_ref":"postgres@0.1.0/sha256:..."}'
+
+emisar-mcp run_action - < run-action.json
+```
+
+Standard output is predictable:
+
+- successful calls print the tool's `structuredContent` as pretty JSON;
+- tool-domain failures print the same structured error JSON and exit 1;
+- JSON-RPC, authentication, or transport failures exit 1;
+- malformed JSON, extra arguments, and unknown CLI options exit 2.
+
+Use stdin when an argument contains operational details you do not want in the
+process list. Credentials are configuration, not tool arguments: keep the API key
+and optional signing key in the environment. The CLI does not auto-follow cursors,
+wait for later state, or add local confirmation prompts. It returns exactly one
+governed MCP call; scope, policy, approvals, signed dispatch, and audit remain
+server/runner-owned.
+
 ## What the bridge owns
 
 The bridge is intentionally thin. It owns only the transport between the
@@ -112,6 +162,10 @@ client and the control plane:
 - cancellation of observation without claiming to undo committed work;
 - endpoint-bound API-key rotation state;
 - optional client-side signing for `run_action`.
+
+The direct CLI adds only generic presentation: it fetches live descriptors for
+discovery/help, accepts one strict JSON argument object, and prints the returned
+structured JSON. It does not validate or reinterpret any individual tool.
 
 It writes only validated MCP frames to stdout. Diagnostics stay on stderr. A
 network failure becomes a correlated JSON-RPC error instead of corrupting the

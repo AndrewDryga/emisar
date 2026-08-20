@@ -12,13 +12,9 @@ import (
 	"testing"
 )
 
-// The bridge's main() — the flag loop, the required-env fatalln, the
-// scheme-check-fatal path, and the endpoint composition — all call os.Exit and
-// so can't be exercised in-process. We re-exec the test binary with a sentinel
-// env var so it runs main() as a child; the parent then asserts on the child's
-// stdout / stderr / exit code. This is the stdlib pattern (see os/exec's own
-// TestHelperProcess) and the only way to automate the startup glue the test
-// plan records as a gap.
+// Re-exec the test binary with a sentinel so the child runs main() and the
+// parent can assert on the process exit code as well as stdout and stderr. This
+// is the stdlib pattern used by os/exec's own TestHelperProcess tests.
 
 const runMainSentinel = "EMISAR_MCP_RUN_MAIN"
 
@@ -80,7 +76,7 @@ func TestMain_VersionFlagPrintsVersionExitsZero(t *testing.T) {
 		if strings.TrimSpace(stdout) != bridgeName+" "+Version {
 			t.Errorf("%s: stdout = %q, want %q", flag, stdout, bridgeName+" "+Version)
 		}
-		// Version flag short-circuits before any env is read — no fatalln noise.
+		// Version short-circuits before configuration is read.
 		if stderr != "" {
 			t.Errorf("%s: unexpected stderr %q", flag, stderr)
 		}
@@ -511,9 +507,9 @@ func TestMain_APIKeyNotFormatChecked(t *testing.T) {
 
 // secrets arrive via env, never as a CLI flag/argv. There is no
 // `--api-key` / `--signing-key` flag: passing one is rejected as an unknown
-// argument (exit 2), so a credential can't land in a process's visible arg list.
+// option (exit 2), so a credential can't land in a process's visible arg list.
 func TestMain_SecretsNotAcceptedAsFlags(t *testing.T) {
-	for _, arg := range []string{"--api-key=emk-secret", "--signing-key=deadbeef", "--token", "emk-secret"} {
+	for _, arg := range []string{"--api-key=emk-secret", "--signing-key=deadbeef", "--token"} {
 		stdout, stderr, code := runMain(t, "", []string{arg}, map[string]string{
 			"EMISAR_URL":     "https://emisar.dev",
 			"EMISAR_API_KEY": "emk-x",
