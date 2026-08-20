@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nomad
 name: HashiCorp Nomad
-version: 0.3.0
+version: 0.4.0
 retired_below: 0.2.8
 description: >
   Deep Nomad operations — full job lifecycle (inspect, history, scale
@@ -15,8 +15,8 @@ description: >
   probes (ping/info via alloc exec, no freeform command) + restart + signal +
   stop, bounded job health snapshots, job-spec-declared actions (run a command
   the job author defined),
-  native service discovery (no Consul) — the high-use reads take optional
-  namespace/region for cross-namespace incident debugging — node fleet
+  native service discovery (no Consul) — every namespace-bound action takes an
+  optional namespace, and high-use reads also take an optional region — node fleet
   management (drain, eligibility, purge), node pools, evaluation + deployment
   status and control (pause, resume, fail/abort a rollout), operator raft +
   autopilot, CSI volumes + plugin health, host volumes, variable metadata

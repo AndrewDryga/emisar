@@ -22,13 +22,21 @@ args:
     validation:
       max_length: 1024
       pattern: "^([a-zA-Z0-9_]{1,64}=[a-zA-Z0-9_./\\-]{0,256}(,[a-zA-Z0-9_]{1,64}=[a-zA-Z0-9_./\\-]{0,256})*)?$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
 execution:
   command:
     binary: /bin/sh
     argv:
       - "-c"
-      - "M=''; if [ -n ''\"$1\"'' ]; then for kv in $(echo ''\"$1\"'' | tr ',' ' '); do M=\"$M -meta $kv\"; done; fi; nomad job dispatch $M \"$2\""
+      - "ns=$1; meta=$2; job=$3; set -- job dispatch; [ -z \"$ns\" ] || set -- \"$@\" \"-namespace=$ns\"; if [ -n \"$meta\" ]; then oldifs=$IFS; IFS=,; for kv in $meta; do set -- \"$@\" -meta \"$kv\"; done; IFS=$oldifs; fi; exec nomad \"$@\" \"$job\""
       - "emisar"
+      - "{{ args.namespace }}"
       - "{{ args.meta_kv }}"
       - "{{ args.job }}"
   timeout: 60s

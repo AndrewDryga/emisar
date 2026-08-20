@@ -12,23 +12,26 @@
 #
 # Positional args (rendered by the cloud-validated template engine into argv
 # slots — never assembled into a shell string):
-#   $1 job         job ID
-#   $2 group       task group
-#   $3 task        task name ("" selects the group's sole task, else errors)
-#   $4 cpu         new CPU in MHz   (0 = leave unchanged)
-#   $5 memory      new MemoryMB     (0 = leave unchanged)
-#   $6 memory_max  new MemoryMaxMB  (0 = leave unchanged)
+#   $1 namespace   "" keeps the runner's ambient/default namespace
+#   $2 job         job ID
+#   $3 group       task group
+#   $4 task        task name ("" selects the group's sole task, else errors)
+#   $5 cpu         new CPU in MHz   (0 = leave unchanged)
+#   $6 memory      new MemoryMB     (0 = leave unchanged)
+#   $7 memory_max  new MemoryMaxMB  (0 = leave unchanged)
 #
 # Auth: the nomad CLI reads NOMAD_ADDR / NOMAD_TOKEN / NOMAD_NAMESPACE from the
 # runner's inherited env. Requires jq on the host.
 set -eu
 
-job=$1
-group=$2
-task=$3
-cpu=$4
-memory=$5
-memory_max=$6
+namespace=$1
+job=$2
+group=$3
+task=$4
+cpu=$5
+memory=$6
+memory_max=$7
+[ -z "$namespace" ] || export NOMAD_NAMESPACE="$namespace"
 
 if [ "$cpu" -le 0 ] && [ "$memory" -le 0 ] && [ "$memory_max" -le 0 ]; then
 	echo "nothing to change: set at least one of cpu / memory / memory_max to a value > 0" >&2

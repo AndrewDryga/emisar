@@ -24,13 +24,21 @@ args:
     description: Specific task (empty = all tasks).
     validation:
       pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
 execution:
   command:
     binary: /bin/sh
     argv:
       - "-c"
-      - "if [ -n \"${1}\" ]; then nomad alloc restart -task \"$1\" \"$2\"; else nomad alloc restart \"$2\"; fi"
+      - "ns=$1; task=$2; alloc=$3; set -- alloc restart; [ -z \"$ns\" ] || set -- \"$@\" \"-namespace=$ns\"; [ -z \"$task\" ] || set -- \"$@\" -task \"$task\"; exec nomad \"$@\" \"$alloc\""
       - "emisar"
+      - "{{ args.namespace }}"
       - "{{ args.task }}"
       - "{{ args.alloc_id }}"
   timeout: 60s

@@ -1,10 +1,10 @@
 #!/bin/sh
-# read_nsr.sh — packaged with the "nomad" emisar pack. emisar loads it from disk
+# nomad_nsr.sh — packaged with the "nomad" emisar pack. emisar loads it from disk
 # when the pack is trusted, journals its SHA-256 with every run, and runs it via
 # /bin/sh. It is never fetched or assembled at request time.
 #
-# Runs a read-only nomad command with OPTIONAL -namespace / -region flags, so a
-# single account can debug across namespaces/regions without changing the
+# Runs a fixed nomad command with OPTIONAL -namespace / -region flags, so a
+# single account can operate across namespaces/regions without changing the
 # runner's ambient NOMAD_NAMESPACE / NOMAD_REGION. The command itself is fixed by
 # the calling action — only the namespace, region, and the action's own bound
 # positionals come from the cloud, and all are validated by the action schema

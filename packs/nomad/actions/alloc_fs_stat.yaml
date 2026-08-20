@@ -1,7 +1,7 @@
 schema_version: 1
 id: nomad.alloc_fs_stat
 title: Stat a path in an allocation (nomad fs/stat API)
-kind: exec
+kind: script
 risk: low
 description: >
   Show the stat metadata of one path inside an allocation's filesystem — name,
@@ -29,10 +29,18 @@ args:
     validation:
       pattern: "^(/|\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*(/\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*)*)$"
       max_length: 256
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
 execution:
-  command:
-    binary: nomad
-    argv: ["operator", "api", "/v1/client/fs/stat/{{ args.alloc_id }}?path={{ args.path }}"]
+  script:
+    path: scripts/nomad_nsr.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.namespace }}", "", "operator api", "/v1/client/fs/stat/{{ args.alloc_id }}?path={{ args.path }}"]
   timeout: 30s
 output:
   parser: json

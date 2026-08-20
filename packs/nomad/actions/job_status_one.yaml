@@ -32,7 +32,7 @@ args:
       pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,63})?$"
 execution:
   script:
-    path: scripts/read_nsr.sh
+    path: scripts/nomad_nsr.sh
     interpreter: /bin/sh
   argv: ["{{ args.namespace }}", "{{ args.region }}", "job status -verbose", "{{ args.job }}"]
   timeout: 30s

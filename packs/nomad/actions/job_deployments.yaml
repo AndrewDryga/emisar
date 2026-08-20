@@ -1,7 +1,7 @@
 schema_version: 1
 id: nomad.job_deployments
 title: nomad job deployments <id>
-kind: exec
+kind: script
 risk: low
 description: List deployment history for one job (rolling updates, canary, blue-green).
 side_effects: ["One API call.", "Read-only."]
@@ -12,8 +12,18 @@ args:
     description: Job ID.
     validation:
       pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
 execution:
-  command: {binary: nomad, argv: ["job", "deployments", "-verbose", "{{ args.job }}"]}
+  script:
+    path: scripts/nomad_nsr.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.namespace }}", "", "job deployments -verbose", "{{ args.job }}"]
   timeout: 30s
 output:
   parser: text

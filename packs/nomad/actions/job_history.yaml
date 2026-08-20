@@ -1,7 +1,7 @@
 schema_version: 1
 id: nomad.job_history
 title: nomad job history <id>
-kind: exec
+kind: script
 risk: low
 description: List all versions of one job with submitter + timestamp.
 side_effects: ["One API call.", "Read-only."]
@@ -12,8 +12,18 @@ args:
     description: Job ID.
     validation:
       pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
 execution:
-  command: {binary: nomad, argv: ["job", "history", "-p", "{{ args.job }}"]}
+  script:
+    path: scripts/nomad_nsr.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.namespace }}", "", "job history -p", "{{ args.job }}"]
   timeout: 30s
 output:
   parser: text

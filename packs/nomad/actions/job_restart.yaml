@@ -51,11 +51,18 @@ args:
     description: Restrict the restart to one task (empty = running tasks; only valid with mode=in_place).
     validation:
       pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
 execution:
   script:
     path: scripts/job_restart.sh
     interpreter: /bin/sh
-  argv: ["{{ args.job }}", "{{ args.batch_size }}", "{{ args.mode }}", "{{ args.group }}", "{{ args.task }}"]
+  argv: ["{{ args.namespace }}", "{{ args.job }}", "{{ args.batch_size }}", "{{ args.mode }}", "{{ args.group }}", "{{ args.task }}"]
   timeout: 10m
 output:
   parser: text

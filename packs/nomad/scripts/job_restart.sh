@@ -9,21 +9,24 @@
 # per-alloc restarts. Always runs non-interactively: -yes answers the prompts
 # and -on-error=fail aborts instead of waiting for human input mid-run.
 #
-#   $1  job         job ID (validated, no shell metacharacters)
-#   $2  batch_size  allocations per batch — "N" or "N%" (validated)
-#   $3  mode        "in_place" → restart tasks inside the existing allocations
+#   $1  namespace   "" keeps the runner's ambient/default namespace
+#   $2  job         job ID (validated, no shell metacharacters)
+#   $3  batch_size  allocations per batch — "N" or "N%" (validated)
+#   $4  mode        "in_place" → restart tasks inside the existing allocations
 #                   "migrate"  → stop allocs and let the scheduler replace them
 #                   (enum-validated; migrate maps to -reschedule)
-#   $4  group       "" → all groups; else restrict to one task group
-#   $5  task        "" → running tasks; else restrict to one task
+#   $5  group       "" → all groups; else restrict to one task group
+#   $6  task        "" → running tasks; else restrict to one task
 #                   (only valid for in_place — the CLI rejects -task with
 #                   -reschedule, and we let that surface as the error)
 set -eu
-job=$1
-bs=$2
-mode=$3
-group=$4
-task=$5
+namespace=$1
+job=$2
+bs=$3
+mode=$4
+group=$5
+task=$6
+[ -z "$namespace" ] || export NOMAD_NAMESPACE="$namespace"
 
 set -- -yes -on-error=fail -batch-size="$bs"
 [ "$mode" = "migrate" ] && set -- "$@" -reschedule

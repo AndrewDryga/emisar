@@ -117,6 +117,16 @@ cases:
         - '"PACKTEST_DB_PASSWORD": "[REDACTED]"'
       stdout_not_contains:
         - packtest-canary-nomad-e57d31
+  - name: nomad.job_status_one-non-default-namespace
+    action: nomad.job_status_one
+    args:
+      job: packtest-stop
+      namespace: packtest-ns
+    arrange:
+      - argv: [nomad, namespace, apply, packtest-ns]
+      - argv: [nomad, job, run, -detach, -namespace=packtest-ns, /packs/nomad/test/fixtures/stop.nomad.hcl]
+    expect:
+      stdout_contains: [packtest-stop, packtest-ns]
   - action: nomad.job_stop
     args: {job: packtest-stop}
     arrange:
@@ -125,3 +135,19 @@ cases:
       - argv: [nomad, job, status, packtest-stop]
         expect:
           stdout_contains: ["Status", dead]
+  - name: nomad.job_stop-non-default-namespace
+    action: nomad.job_stop
+    args:
+      job: packtest-stop
+      namespace: packtest-ns
+    arrange:
+      - argv: [nomad, namespace, apply, packtest-ns]
+      - argv: [nomad, job, run, -detach, /packs/nomad/test/fixtures/stop.nomad.hcl]
+      - argv: [nomad, job, run, -detach, -namespace=packtest-ns, /packs/nomad/test/fixtures/stop.nomad.hcl]
+    probes:
+      - argv: [nomad, job, status, -namespace=packtest-ns, packtest-stop]
+        expect:
+          stdout_contains: ["Status", dead]
+      - argv: [nomad, job, status, packtest-stop]
+        expect:
+          stdout_contains: ["Status", pending]

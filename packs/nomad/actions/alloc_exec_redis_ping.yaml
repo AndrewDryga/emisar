@@ -1,7 +1,7 @@
 schema_version: 1
 id: nomad.alloc_exec_redis_ping
 title: Ping Redis inside an allocation (nomad alloc exec redis-cli ping)
-kind: exec
+kind: script
 risk: medium
 description: >
   Check whether the Redis inside one allocation's task is alive — runs the fixed
@@ -31,10 +31,18 @@ args:
     description: Task name inside the allocation that runs Redis.
     validation:
       pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
 execution:
-  command:
-    binary: nomad
-    argv: ["alloc", "exec", "-i=false", "-t=false", "-task", "{{ args.task }}", "{{ args.alloc_id }}", "redis-cli", "ping"]
+  script:
+    path: scripts/nomad_nsr.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.namespace }}", "", "alloc exec -i=false -t=false", "-task", "{{ args.task }}", "{{ args.alloc_id }}", "redis-cli", "ping"]
   timeout: 30s
 output:
   parser: text

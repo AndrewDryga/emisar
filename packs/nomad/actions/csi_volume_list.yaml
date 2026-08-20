@@ -1,13 +1,23 @@
 schema_version: 1
 id: nomad.csi_volume_list
 title: nomad volume status
-kind: exec
+kind: script
 risk: low
 description: List all registered CSI volumes with claim count + state.
 side_effects: ["One API call.", "Read-only."]
-args: []
+args:
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
 execution:
-  command: {binary: nomad, argv: ["volume", "status"]}
+  script:
+    path: scripts/nomad_nsr.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.namespace }}", "", "volume status"]
   timeout: 30s
 output:
   parser: text
@@ -16,3 +26,6 @@ output:
 examples:
   - title: CSI volumes
     args: {}
+  - title: CSI volumes in the "prod" namespace
+    args:
+      namespace: "prod"

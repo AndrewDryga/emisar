@@ -9,13 +9,17 @@
 # full jobspec via `nomad job inspect` and projects only the resource fields.
 #
 # Positional args:
-#   $1 job   job ID
+#   $1 namespace  "" keeps the runner's ambient/default namespace
+#   $2 job        job ID
 #
-# Auth: the nomad CLI reads NOMAD_ADDR / NOMAD_TOKEN / NOMAD_NAMESPACE from the
-# runner's inherited env. Requires jq on the host. Read-only.
+# Auth: the nomad CLI reads NOMAD_ADDR / NOMAD_TOKEN from the runner's inherited
+# env. An explicit namespace overrides inherited NOMAD_NAMESPACE for this run.
+# Requires jq on the host. Read-only.
 set -eu
 
-job=$1
+namespace=$1
+job=$2
+[ -z "$namespace" ] || export NOMAD_NAMESPACE="$namespace"
 
 # `--` stops flag parsing so a job name is never read as a nomad option.
 if ! spec=$(nomad job inspect -- "$job"); then

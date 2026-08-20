@@ -1,7 +1,7 @@
 schema_version: 1
 id: nomad.job_periodic_force
 title: nomad job periodic force <id>
-kind: exec
+kind: script
 risk: medium
 description: Force-run one periodic job NOW, ignoring schedule.
 side_effects:
@@ -17,8 +17,18 @@ args:
     description: Periodic job ID.
     validation:
       pattern: "^[a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127}$"
+  - name: namespace
+    type: string
+    required: false
+    default: ""
+    description: Nomad namespace to target. Empty (default) keeps the runner's ambient NOMAD_NAMESPACE or the default namespace.
+    validation:
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
 execution:
-  command: {binary: nomad, argv: ["job", "periodic", "force", "{{ args.job }}"]}
+  script:
+    path: scripts/nomad_nsr.sh
+    interpreter: /bin/sh
+  argv: ["{{ args.namespace }}", "", "job periodic force", "{{ args.job }}"]
   timeout: 30s
 output:
   parser: text
