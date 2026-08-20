@@ -4006,8 +4006,9 @@ defmodule EmisarWeb.CoreComponents do
   Centered, danger-toned confirmation modal with a **typed-confirm**: the
   operator must type `confirm_token` (the member's email, the runner's name, …)
   before the Confirm button enables. Reserve it for IRREVERSIBLE destructive
-  actions — removing a member, deleting a runner, revoking a key. Lower-stakes
-  reversible actions ("End all sessions", "Suspend") use a plain confirm modal.
+  actions — removing a member, deleting a runner, revoking a usable agent key.
+  Lower-stakes or already-inert actions ("End all sessions", "Suspend", revoking
+  an expired agent key) use a plain confirm modal.
 
   **The typed-confirm is UX friction to prevent accidents, NOT authorization.**
   It only decides whether Confirm *dispatches the event in the UI*; the real gate
@@ -4052,8 +4053,8 @@ defmodule EmisarWeb.CoreComponents do
   attr :title, :string, required: true
   attr :confirm_label, :string, required: true
   # Type-to-confirm is reserved for the genuinely catastrophic + irreversible
-  # (deleting an account, removing a member). A routine, reversible-by-reissue
-  # action (revoking a key that doesn't disconnect anyone) is a plain confirm —
+  # (deleting an account, removing a member). A routine or already-inert action
+  # (revoking an expired key) is a plain confirm —
   # `confirm_token={nil}` (the default) drops the typed gate and Confirm is
   # enabled immediately. A non-nil token requires the operator to type it.
   attr :confirm_token, :string, default: nil, doc: "when set, the string the operator must type"

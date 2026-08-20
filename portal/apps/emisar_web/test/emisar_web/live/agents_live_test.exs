@@ -1153,6 +1153,33 @@ defmodule EmisarWeb.AgentsLiveTest do
       flush_key_broadcast(lv)
     end
 
+    test "expired-key revoke is plain while a usable key still requires its name", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      {:ok, _raw, expired_key} = ApiKeys.create_key(%{name: "expired-bot"}, subject)
+      expired_key = Fixtures.ApiKeys.backdate_api_key_expiry(expired_key)
+      {:ok, _raw, usable_key} = ApiKeys.create_key(%{name: "usable-bot"}, subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+      expired_dialog = "revoke-agent-key-#{expired_key.id}"
+      usable_dialog = "revoke-agent-key-#{usable_key.id}"
+
+      refute has_element?(lv, ~s(##{expired_dialog} input[name="confirm_token"]))
+      refute has_element?(lv, "##{expired_dialog} button[disabled]", "Revoke key")
+      assert has_element?(lv, "##{expired_dialog}", "already expired and cannot authenticate")
+
+      assert has_element?(lv, ~s(##{usable_dialog} input[name="confirm_token"]))
+      assert has_element?(lv, "##{usable_dialog} button[disabled]", "Revoke key")
+
+      html = confirm_dialog(lv, expired_dialog, "Revoke key")
+
+      assert html =~ "API key revoked."
+      assert Repo.reload!(expired_key).revoked_at
+      refute html =~ "expired-bot"
+      flush_key_broadcast(lv)
+    end
+
     # Four verbs on a manager's live row is the labeled-menu threshold: one
     # bordered `Actions ▾` trigger with the verbs as menu rows — no per-row
     # ghost buttons. The confirm ladder is unchanged behind the menu.

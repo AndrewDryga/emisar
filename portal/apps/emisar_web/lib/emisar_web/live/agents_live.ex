@@ -1295,8 +1295,9 @@ defmodule EmisarWeb.AgentsLive do
                       key's first use, then it's revoked automatically.
                     </:body>
                   </.confirm_dialog>
-                  <%!-- IRREVERSIBLE credential kill — typed confirm, same tier
-                     as enrollment keys (one ladder for one action class).
+                  <%!-- A usable credential kill stays typed; an expired key is
+                     already unable to authenticate, so revoking that stale row
+                     drops to the plain destructive tier (§5).
                      Per-row dialog with the key's name baked in at render,
                      so it opens already-populated. A single page-level dialog
                      filled by an "open_revoke" round-trip flashed a blank
@@ -1309,7 +1310,7 @@ defmodule EmisarWeb.AgentsLive do
                     id={"revoke-agent-key-#{key.id}"}
                     title="Revoke this agent key"
                     confirm_label="Revoke key"
-                    confirm_token={key.name}
+                    confirm_token={if facts.expiry == :expired, do: nil, else: key.name}
                     typed={@typed}
                     on_confirm={
                       JS.push("revoke", value: %{id: key.id})
@@ -1317,10 +1318,16 @@ defmodule EmisarWeb.AgentsLive do
                     }
                   >
                     <:body>
-                      Permanently revokes
-                      <span class="font-mono font-medium text-zinc-200">{key.name}</span>
-                      — the connected client gets 401s on its next call. This can't be undone;
-                      connect the client again to mint a fresh key.
+                      <%= if facts.expiry == :expired do %>
+                        Permanently marks
+                        <span class="font-mono font-medium text-zinc-200">{key.name}</span>
+                        as revoked. It has already expired and cannot authenticate or run actions.
+                      <% else %>
+                        Permanently revokes
+                        <span class="font-mono font-medium text-zinc-200">{key.name}</span>
+                        — the connected client gets 401s on its next call. This can't be undone;
+                        connect the client again to mint a fresh key.
+                      <% end %>
                     </:body>
                   </.confirm_dialog>
                 </:actions>

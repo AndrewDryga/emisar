@@ -202,14 +202,21 @@ Confirm friction scales with blast radius; the copy states the **consequence**, 
 
 | Tier | Mechanism | When | Examples |
 |---|---|---|---|
-| **Typed** | `confirm_dialog` (type the token) | irreversible AND high blast radius, or credential/identity-destroying | delete runner/provider, remove member, revoke agent key, **reject pack** |
-| **Plain modal** | `confirm_button` (OUR styled modal, no typing) | every OTHER dangerous/consequential action — disruptive but reversible or self-healing | disable runner, suspend/reactivate member, revoke grant/token, rotate key/SCIM token, disable directory sync, delete group mapping, cancel run, reset 2FA, sign-out (self/others), regenerate recovery codes, remove ruleset/step; **pack trust** = the `tone={:amber}` variant (a caution-approve, not a destruction) |
+| **Typed** | `confirm_dialog` (type the token) | irreversible AND high blast radius, or credential/identity-destroying | delete runner/provider, remove member, revoke a USABLE agent key, **reject pack** |
+| **Plain modal** | `confirm_button` (OUR styled modal, no typing) | every OTHER dangerous/consequential action — disruptive but reversible, self-healing, or already inert | disable runner, suspend/reactivate member, revoke grant/token or an EXPIRED agent key, rotate key/SCIM token, disable directory sync, delete group mapping, cancel run, reset 2FA, sign-out (self/others), regenerate recovery codes, remove ruleset/step; **pack trust** = the `tone={:amber}` variant (a caution-approve, not a destruction) |
 | **None** | — | additive/creative actions, navigation | create, invite, save draft |
 
 **A dangerous action NEVER uses the native browser `data-confirm`** (the ugly OS dialog, inconsistent, un-styleable). It's `confirm_button` (plain modal, drop-in for data-confirm) or a typed `confirm_dialog`. `tone` on `confirm_button` colors the TRIGGER (`:rose`/`:amber`/`:neutral`); the modal's Confirm is always toned so it never looks like Cancel — a `:neutral` low-key trigger (suspend, rotate) still opens a rose confirm. The remaining native `data-confirm` holdouts are NON-button patterns pending a bespoke pass — the two enforcement `<.switch>` toggles (require MFA / require SSO), the role-change `<.menu_item>`, and the two form-submit run guards (dispatch, run runbook).
 
 One ladder, no per-page taste: if two pages confirm the same class of action differently,
 one of them is wrong.
+
+**Current state may lower friction when the consequence has already landed.** Revoking a
+usable agent key kills a credential and stays typed; revoking the same key after its expiry
+is cleanup of an already-inert credential and uses the plain destructive modal. This is UI
+friction only: both paths keep the same server-side authorization, scoped fetch, audit, and
+mutation. Sweep: typed confirmation chosen only from the action noun while the rendered
+resource state proves the destructive consequence has already happened.
 
 **Keyboard contract.** A typed confirmation is one form: its exact token match enables
 the Confirm submitter, and Enter in the input runs the same action as clicking Confirm.
