@@ -10,8 +10,12 @@ defmodule EmisarWeb.RunDetailLive do
   # live showing the newest N and a reload showing the oldest N. A note flags the
   # trim so partial output never reads as complete.
   @event_window 500
-
   defp event_window, do: @event_window
+
+  defp output_pre_classes do
+    "max-h-[60vh] overflow-auto whitespace-pre-wrap break-all bg-black/60 p-4 font-mono text-xs leading-normal text-zinc-300"
+  end
+
   defp events_truncated?(%{progress_event_count: count}), do: count > @event_window
   defp events_truncated?(_), do: false
 
@@ -228,6 +232,31 @@ defmodule EmisarWeb.RunDetailLive do
     else
       _ -> {:noreply, socket}
     end
+  end
+
+  # Both views are already present as escaped text. These commands only switch
+  # the local presentation and its matching Copy target, so reviewing or copying
+  # JSON never needs a LiveView round trip or a second authorization/data path.
+  defp show_raw_output do
+    JS.hide(to: "#run-output-json-view")
+    |> JS.hide(to: "#run-output-copy-json")
+    |> JS.show(to: "#run-output-raw-view")
+    |> JS.show(to: "#run-output-raw-legend", display: "inline")
+    |> JS.show(to: "#run-output-raw-tools", display: "flex")
+    |> JS.show(to: "#run-output-copy-raw", display: "inline-flex")
+    |> JS.set_attribute({"aria-pressed", "true"}, to: "#run-output-raw-toggle")
+    |> JS.set_attribute({"aria-pressed", "false"}, to: "#run-output-json-toggle")
+  end
+
+  defp show_json_output do
+    JS.hide(to: "#run-output-raw-view")
+    |> JS.hide(to: "#run-output-raw-legend")
+    |> JS.hide(to: "#run-output-raw-tools")
+    |> JS.hide(to: "#run-output-copy-raw")
+    |> JS.show(to: "#run-output-json-view")
+    |> JS.show(to: "#run-output-copy-json", display: "inline-flex")
+    |> JS.set_attribute({"aria-pressed", "false"}, to: "#run-output-raw-toggle")
+    |> JS.set_attribute({"aria-pressed", "true"}, to: "#run-output-json-toggle")
   end
 
   def render(assigns) do
@@ -644,10 +673,11 @@ defmodule EmisarWeb.RunDetailLive do
         <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — earned: the run terminal frame (the sanctioned hand-rolled code_panel) --%>
         <div
           :if={show_output?(@run, @output_present?, @output_state)}
+          data-shot="run-output"
           class="overflow-hidden rounded-xl bg-zinc-900/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-zinc-800"
         >
-          <header class="flex items-center justify-between gap-3 border-b border-zinc-800/70 px-4 py-2">
-            <div class="flex shrink-0 items-center gap-2">
+          <header class="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/70 px-4 py-2">
+            <div class="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
               <h3 class="font-display text-base font-semibold tracking-[-0.012em] text-zinc-100">
                 Output
               </h3>
@@ -660,26 +690,80 @@ defmodule EmisarWeb.RunDetailLive do
               >
                 <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-400"></span> streaming…
               </span>
-            </div>
-            <div class="flex shrink-0 items-center gap-3 font-mono text-[11px] text-zinc-400">
-              <%!-- Trimmed head: a running run can only show the live window, so it
-                   says so; a terminal run offers to page the earlier output back
-                   in (gated so backfill never fights the live stream's eviction). --%>
               <span
-                :if={@run.status in [:sent, :running, :cancelling] and events_truncated?(@run)}
-                class="text-amber-400/80"
+                :if={@output_present?}
+                id="run-output-raw-legend"
+                class="font-mono text-[11px] text-zinc-400"
+              >stderr in rose</span>
+            </div>
+            <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
+              <div
+                :if={
+                  (@run.status in [:sent, :running, :cancelling] and events_truncated?(@run)) or
+                    can_load_earlier?(@run, @more_earlier?)
+                }
+                id="run-output-raw-tools"
+                class="flex items-center gap-3 font-mono text-[11px] text-zinc-400"
               >
-                latest {event_window()} chunks · earlier output trimmed
-              </span>
-              <.button
-                :if={can_load_earlier?(@run, @more_earlier?)}
-                variant={:secondary}
-                size={:sm}
-                phx-click="load_earlier"
-              >
-                Load earlier output
-              </.button>
-              <span>stderr in rose</span>
+                <%!-- Trimmed head: a running run can only show the live window, so it
+                     says so; a terminal run offers to page the earlier output back
+                     in (gated so backfill never fights the live stream's eviction). --%>
+                <span
+                  :if={@run.status in [:sent, :running, :cancelling] and events_truncated?(@run)}
+                  class="text-amber-400/80"
+                >
+                  latest {event_window()} chunks · earlier output trimmed
+                </span>
+                <.button
+                  :if={can_load_earlier?(@run, @more_earlier?)}
+                  variant={:secondary}
+                  size={:sm}
+                  phx-click="load_earlier"
+                >
+                  Load earlier output
+                </.button>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <.segmented_filter_group
+                  :if={is_map(@run.structured_output)}
+                  label="Output view"
+                >
+                  <.segmented_filter
+                    id="run-output-raw-toggle"
+                    active?={true}
+                    aria-controls="run-output-raw-view"
+                    phx-click={show_raw_output()}
+                  >
+                    Raw
+                  </.segmented_filter>
+                  <.segmented_filter
+                    id="run-output-json-toggle"
+                    active?={false}
+                    aria-controls="run-output-json-view"
+                    phx-click={show_json_output()}
+                  >
+                    JSON
+                  </.segmented_filter>
+                </.segmented_filter_group>
+                <.copy_button
+                  :if={@output_present?}
+                  id="run-output-copy-raw"
+                  target="#run-output"
+                  aria-live="polite"
+                  class="shrink-0 bg-zinc-800 px-2 text-zinc-200 hover:bg-zinc-700"
+                >
+                  Copy
+                </.copy_button>
+                <.copy_button
+                  :if={is_map(@run.structured_output)}
+                  id="run-output-copy-json"
+                  target="#run-output-json-view"
+                  aria-live="polite"
+                  class="hidden shrink-0 bg-zinc-800 px-2 text-zinc-200 hover:bg-zinc-700"
+                >
+                  Copy
+                </.copy_button>
+              </div>
             </div>
           </header>
           <%!-- Each chunk already carries its trailing newline (the runner
@@ -688,60 +772,68 @@ defmodule EmisarWeb.RunDetailLive do
                concatenate and only the real newlines break lines. Block
                elements or template indentation here would double the
                spacing, since <pre> makes all whitespace significant. --%>
-          <%!-- The window hasn't been read yet (dead render) — never flash
-               "No output captured." at a run that may have plenty. --%>
-          <.loading_state :if={@output_state == :loading} />
+          <div id="run-output-raw-view">
+            <%!-- The window hasn't been read yet (dead render) — never flash
+                 "No output captured." at a run that may have plenty. --%>
+            <.loading_state :if={@output_state == :loading} />
 
-          <%!-- The read failed. "No output captured." here would state a fact
-               about the run from a query that never answered. --%>
-          <.callout
-            :if={@output_state == :error}
-            tone={:rose}
-            icon="hero-exclamation-triangle"
-            title="Couldn't load this run's output"
-            class="m-4"
-          >
-            This is a read error, not an empty result — the run may well have produced output.
-            Refresh the page to try again.
-          </.callout>
+            <%!-- The read failed. "No output captured." here would state a fact
+                 about the run from a query that never answered. --%>
+            <.callout
+              :if={@output_state == :error}
+              tone={:rose}
+              icon="hero-exclamation-triangle"
+              title="Couldn't load this run's output"
+              class="m-4"
+            >
+              This is a read error, not an empty result — the run may well have produced output.
+              Refresh the page to try again.
+            </.callout>
 
-          <%!-- A terminal run that streamed nothing gets one quiet line instead
-               of a 24rem black void (the in-flight min-height stays — more may
-               be coming). --%>
-          <p
-            :if={
-              @output_state == :loaded and not @output_present? and
-                @run.status not in [:sent, :running, :cancelling]
-            }
-            class="bg-black/60 p-4 font-mono text-xs text-zinc-400"
-          >
-            No output captured.
-          </p>
-          <%!-- min-height only while IN FLIGHT (room for chunks to stream into);
-               a terminal run's panel hugs its real output instead of padding a
-               two-line result with a 24rem void. "Load earlier output" prepends
-               into this scroll container; nothing sets `overflow-anchor`, so the
-               browser default (auto) keeps the operator's visible line put while
-               the earlier window is inserted above it. --%>
+            <%!-- A terminal run that streamed nothing gets one quiet line instead
+                 of a 24rem black void (the in-flight min-height stays — more may
+                 be coming). --%>
+            <p
+              :if={
+                @output_state == :loaded and not @output_present? and
+                  @run.status not in [:sent, :running, :cancelling]
+              }
+              class="bg-black/60 p-4 font-mono text-xs text-zinc-400"
+            >
+              No output captured.
+            </p>
+            <%!-- min-height only while IN FLIGHT (room for chunks to stream into);
+                 a terminal run's panel hugs its real output instead of padding a
+                 two-line result with a 24rem void. "Load earlier output" prepends
+                 into this scroll container; nothing sets `overflow-anchor`, so the
+                 browser default (auto) keeps the operator's visible line put while
+                 the earlier window is inserted above it. --%>
+            <pre
+              :if={
+                @output_state != :loading and
+                  (@output_present? or @run.status in [:sent, :running, :cancelling])
+              }
+              id="run-output"
+              phx-update="stream"
+              tabindex="0"
+              aria-label="Raw run output"
+              class={[
+                output_pre_classes(),
+                @run.status in [:sent, :running, :cancelling] && "min-h-[24rem]"
+              ]}
+            ><span
+                :for={{id, event} <- @streams.events}
+                id={id}
+                class={event.stream == "stderr" && "text-rose-300"}
+              >{event_chunk(event)}</span></pre>
+          </div>
           <pre
-            :if={
-              @output_state != :loading and
-                (@output_present? or @run.status in [:sent, :running, :cancelling])
-            }
-            id="run-output"
-            phx-update="stream"
+            :if={is_map(@run.structured_output)}
+            id="run-output-json-view"
             tabindex="0"
-            aria-label="Run output"
-            class={[
-              "max-h-[60vh] overflow-auto whitespace-pre-wrap break-all bg-black/60 p-4",
-              "font-mono text-xs leading-normal text-zinc-300",
-              @run.status in [:sent, :running, :cancelling] && "min-h-[24rem]"
-            ]}
-          ><span
-              :for={{id, event} <- @streams.events}
-              id={id}
-              class={event.stream == "stderr" && "text-rose-300"}
-            >{event_chunk(event)}</span></pre>
+            aria-label="Formatted JSON output"
+            class={["hidden", output_pre_classes()]}
+          >{format_json(@run.structured_output)}</pre>
         </div>
       </div>
     </.dashboard_shell>

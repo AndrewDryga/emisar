@@ -44,6 +44,16 @@ defmodule EmisarWeb.Components.SegmentedFilterTest do
       assert html =~ ~s(phx-value-window="1h")
       assert html =~ "bg-brand-500/10"
       assert html =~ "bg-zinc-900"
+      assert html =~ "aria-[pressed=true]:bg-brand-500/10"
+      assert html =~ "aria-[pressed=true]:hover:text-brand-300"
+
+      assert [active_classes, inactive_classes] =
+               html
+               |> LazyHTML.from_fragment()
+               |> LazyHTML.query("button")
+               |> LazyHTML.attribute("class")
+
+      assert active_classes == inactive_classes
     end
   end
 end

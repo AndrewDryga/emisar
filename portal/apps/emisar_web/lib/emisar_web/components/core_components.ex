@@ -353,10 +353,8 @@ defmodule EmisarWeb.CoreComponents do
       aria-pressed={to_string(@active?)}
       class={[
         "whitespace-nowrap border-l border-zinc-800 px-2 py-1 text-xs font-medium transition-colors first:rounded-l-md first:border-l-0 last:rounded-r-md disabled:cursor-not-allowed disabled:opacity-50",
-        if(@active?,
-          do: "bg-brand-500/10 text-brand-300",
-          else: "bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
-        ),
+        "bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100",
+        "aria-[pressed=true]:bg-brand-500/10 aria-[pressed=true]:text-brand-300 aria-[pressed=true]:hover:bg-brand-500/10 aria-[pressed=true]:hover:text-brand-300",
         @class
       ]}
       {@rest}

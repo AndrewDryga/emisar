@@ -18,6 +18,7 @@ alias Emisar.Billing
 alias Emisar.Billing.Subscription
 alias Emisar.Catalog
 alias Emisar.Catalog.{PackBaseline, PackVersion}
+alias Emisar.OutputSchema
 alias Emisar.Policies
 alias Emisar.Repo
 alias Emisar.Runbooks
@@ -326,6 +327,14 @@ invite_member = fn email, full_name, role ->
             invited
 
           membership ->
+            membership =
+              if Accounts.membership_disabled?(membership) do
+                {:ok, reinstated} = Accounts.reinstate_membership(membership, owner_subject)
+                reinstated
+              else
+                membership
+              end
+
             if is_nil(membership.invitation_accepted_at) do
               {:ok, _membership} = Accounts.mark_invitation_accepted(membership, existing_user)
             end
@@ -2412,6 +2421,140 @@ Runner.Query.not_deleted()
     advertise.(runner, linux_actions)
   end
 end)
+
+# One real typed action result keeps the run-detail Raw/JSON presentation
+# visible in every reseeded demo. Use the descriptor's own schema rather than
+# labeling merely JSON-looking stdout as typed output.
+typed_demo_reason = "review the sanitized Compose topology before a deployment"
+{:ok, typed_demo_runner} = Runners.fetch_runner_by_name("ops-jump-01", owner_subject)
+
+{:ok, typed_demo_action} =
+  Catalog.fetch_action_for_account(
+    "docker.compose_config",
+    typed_demo_runner.id,
+    account.id
+  )
+
+%{} = typed_demo_schema = typed_demo_action.output_schema
+
+typed_demo_output = %{
+  "valid" => true,
+  "file" => "/opt/northstar/docker-compose.yml",
+  "services" => ["api", "worker"],
+  "images" => [
+    "ghcr.io/northstar/api:2026.08.20",
+    "ghcr.io/northstar/worker:2026.08.20"
+  ],
+  "networks" => ["backend", "frontend"],
+  "volumes" => ["postgres-data"],
+  "profiles" => ["observability"],
+  "truncated" => %{
+    "services" => 0,
+    "images" => 0,
+    "networks" => 0,
+    "volumes" => 0,
+    "profiles" => 0
+  }
+}
+
+:ok = OutputSchema.validate_instance(typed_demo_schema, typed_demo_output)
+
+typed_demo_run =
+  ActionRun.Query.all()
+  |> ActionRun.Query.by_account_id(account.id)
+  |> ActionRun.Query.by_runner_id(typed_demo_runner.id)
+  |> ActionRun.Query.by_action_id(typed_demo_action.action_id)
+  |> Repo.all()
+  |> Enum.find(&(&1.reason == typed_demo_reason))
+
+typed_demo_run =
+  case typed_demo_run do
+    nil ->
+      {:ok, run} =
+        Repo.transaction(fn ->
+          {:ok, pack_ref} =
+            Catalog.MCPProjection.pack_ref(
+              typed_demo_action.pack_id,
+              typed_demo_action.pack_version,
+              typed_demo_action.pack_hash
+            )
+
+          started_at = mins_ago.(18)
+          finished_at = DateTime.add(started_at, 740, :millisecond)
+          stdout = Jason.encode!(typed_demo_output) <> "\n"
+          chunks = [{"stdout", stdout}]
+
+          {:ok, run} =
+            Runs.create_run(%{
+              account_id: account.id,
+              runner_id: typed_demo_runner.id,
+              action_id: typed_demo_action.action_id,
+              args: %{"file" => "/opt/northstar/docker-compose.yml"},
+              reason: typed_demo_reason,
+              source: "operator",
+              requested_by_id: user.id,
+              pack_ref: pack_ref,
+              expected_pack_hash: typed_demo_action.pack_hash,
+              structured_output_expected: true,
+              output_schema_snapshot: typed_demo_schema,
+              policy_id: policy && policy.id,
+              policy_decision: "allow",
+              policy_reason: "The account policy allows low-risk actions by default.",
+              status: "running"
+            })
+
+          run =
+            run
+            |> Ecto.Changeset.change(inserted_at: started_at, queued_at: started_at)
+            |> Repo.update!()
+
+          {:ok, _event} =
+            Runs.append_event(run, %{
+              seq: 1,
+              kind: "progress",
+              stream: "stdout",
+              payload: %{"chunk" => stdout}
+            })
+
+          {:ok, %{run: run}} =
+            Ecto.Multi.new()
+            |> Ecto.Multi.update(
+              :run,
+              ActionRun.Changeset.transition(run, :success, %{
+                sent_at: started_at,
+                started_at: started_at,
+                finished_at: finished_at,
+                exit_code: 0,
+                duration_ms: 740,
+                emitted_stdout_bytes: chunks_bytes.(chunks, "stdout"),
+                emitted_stderr_bytes: 0,
+                emitted_stdout_sha256: chunks_sha.(chunks, "stdout"),
+                output_complete: true,
+                structured_output: typed_demo_output,
+                event_id: "seed-" <> Ecto.UUID.generate()
+              })
+            )
+            |> Ecto.Multi.run(:audit, fn repo, %{run: completed} ->
+              completed
+              |> Audit.run_event_changeset()
+              |> Ecto.Changeset.change(occurred_at: completed.finished_at)
+              |> repo.insert()
+            end)
+            |> Repo.commit_multi()
+
+          run
+        end)
+
+      run
+
+    run ->
+      run
+  end
+
+IO.puts(
+  IO.ANSI.cyan() <>
+    "✓ Typed JSON run ready at /app/demo/runs/#{typed_demo_run.id}" <> IO.ANSI.reset()
+)
 
 IO.puts(
   IO.ANSI.cyan() <>

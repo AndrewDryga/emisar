@@ -453,7 +453,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
         payload: %{"chunk" => "boom-error\n"}
       })
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     # Terminal is one <pre>; each chunk is an inline <span> so chunks
     # concatenate and only their own newlines break lines. Stderr is
@@ -464,6 +464,10 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "boom-error"
     assert html =~ ~r/<span[^>]*text-rose-300[^>]*>[^<]*boom-error/
     refute html =~ ~r/<div[^>]*whitespace-pre-wrap/
+    assert has_element?(lv, ~s(#run-output-copy-raw[data-copy="#run-output"]))
+    refute has_element?(lv, ~s([role="group"][aria-label="Output view"]))
+    refute has_element?(lv, "#run-output-copy-json")
+    refute has_element?(lv, "#run-output-json-view")
   end
 
   # (IL-16) — runner output is attacker-influenced; a chunk
@@ -489,6 +493,78 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute html =~ "<script>alert('xss')</script>"
     # …it's escaped (the renderer interpolates, it doesn't `raw/1`).
     assert html =~ "&lt;script&gt;"
+  end
+
+  test "typed output offers a client-side raw and formatted JSON view", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    schema = %{
+      "type" => "object",
+      "required" => ["healthy", "message"],
+      "properties" => %{
+        "healthy" => %{"type" => "boolean"},
+        "message" => %{"type" => "string"}
+      },
+      "additionalProperties" => false
+    }
+
+    run =
+      run_with(account, %{
+        status: "running",
+        structured_output_expected: true,
+        output_schema_snapshot: schema
+      })
+
+    {:ok, _} =
+      Runs.append_event(run, %{
+        seq: 1,
+        kind: "progress",
+        stream: "stdout",
+        payload: %{"chunk" => ~s|{"healthy":true,"message":"<script>alert(1)</script>"}\n|}
+      })
+
+    {:ok, finished} =
+      Fixtures.Runs.finish(run, %{
+        "status" => "success",
+        "exit_code" => 0,
+        "structured_output" => %{
+          "healthy" => true,
+          "message" => "<script>alert(1)</script>"
+        }
+      })
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{finished.id}")
+
+    assert has_element?(lv, ~s([role="group"][aria-label="Output view"]))
+    assert has_element?(lv, "#run-output-raw-toggle[aria-pressed=true]")
+    assert has_element?(lv, "#run-output-json-toggle[aria-pressed=false]")
+    assert has_element?(lv, "#run-output-raw-legend", "stderr in rose")
+    assert has_element?(lv, ~s(#run-output-copy-raw[data-copy="#run-output"]))
+    assert has_element?(lv, ~s(#run-output-copy-json[data-copy="#run-output-json-view"].hidden))
+    assert has_element?(lv, "#run-output-json-view.hidden")
+    assert html =~ ~r/run-output-json-toggle.*run-output-copy-raw/s
+    refute html =~ "<script>alert(1)</script>"
+
+    document = LazyHTML.from_fragment(html)
+
+    assert document |> LazyHTML.query_by_id("run-output") |> LazyHTML.text() =~
+             ~s|{"healthy":true,"message":"<script>alert(1)</script>"}|
+
+    assert document |> LazyHTML.query_by_id("run-output-json-view") |> LazyHTML.text() ==
+             Jason.encode!(finished.structured_output, pretty: true)
+
+    [json_click] =
+      document
+      |> LazyHTML.query_by_id("run-output-json-toggle")
+      |> LazyHTML.attribute("phx-click")
+
+    assert json_click =~ "run-output-raw-view"
+    assert json_click =~ "run-output-json-view"
+    assert json_click =~ "run-output-raw-legend"
+    assert json_click =~ "run-output-copy-raw"
+    assert json_click =~ "run-output-copy-json"
+    assert json_click =~ "set_attr"
+    refute json_click =~ ~s("push")
   end
 
   # the output panel renders a BOUNDED, streamed slice
