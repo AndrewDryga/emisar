@@ -29,7 +29,8 @@ defmodule EmisarWeb.DocsNav do
               path: "/docs/quickstart",
               icon: "hero-rocket-launch",
               keywords: "getting started setup first action install",
-              desc: "Sign up, install a runner, run your first action in under five minutes."
+              desc:
+                "Sign up, install a runner, and run your first audited action in under five minutes."
             }
           ]
         }
@@ -61,7 +62,7 @@ defmodule EmisarWeb.DocsNav do
             },
             %{
               slug: "keys",
-              title: "API keys",
+              title: "MCP keys",
               path: "/docs/keys",
               icon: "hero-key",
               keywords: "token secret bearer mint rotate revoke scope",
@@ -264,6 +265,15 @@ defmodule EmisarWeb.DocsNav do
           label: nil,
           pages: [
             %{
+              slug: "run-an-action",
+              title: "Run an action",
+              path: "/docs/run-an-action",
+              icon: "hero-play",
+              keywords: "dispatch console reason arguments approval result",
+              desc:
+                "Select a runner and action, enter its arguments, dispatch it, and read the result."
+            },
+            %{
               slug: "policies-and-approvals",
               title: "Policies & approvals",
               path: "/docs/policies-and-approvals",
@@ -317,6 +327,15 @@ defmodule EmisarWeb.DocsNav do
                 "Create, publish, approve, and review a staged procedure built from declared actions."
             },
             %{
+              slug: "pack-updates",
+              title: "Roll out and roll back packs",
+              path: "/docs/pack-updates",
+              icon: "hero-arrows-right-left",
+              keywords: "update canary rollback content hash trust drift version",
+              desc:
+                "Install pack bytes on a canary, trust the hash, and keep the prior version ready."
+            },
+            %{
               slug: "upgrades",
               title: "Upgrade runners and MCP bridges",
               path: "/docs/upgrades",
@@ -365,11 +384,19 @@ defmodule EmisarWeb.DocsNav do
       ]
     },
     %{
-      label: "Build packs",
+      label: "Action packs",
       sections: [
         %{
           label: nil,
           pages: [
+            %{
+              slug: "use-a-published-pack",
+              title: "Use a published pack",
+              path: "/docs/use-a-published-pack",
+              icon: "hero-archive-box-arrow-down",
+              keywords: "pack suggest inspect install hash credentials trust",
+              desc: "Choose, inspect, install, configure, and verify a published action pack."
+            },
             %{
               slug: "action-packs",
               title: "Pack reference",
@@ -385,15 +412,6 @@ defmodule EmisarWeb.DocsNav do
               icon: "hero-arrow-up-tray",
               keywords: "write validate packctl publish sign",
               desc: "Write, validate, install, and trust a pack you maintain."
-            },
-            %{
-              slug: "pack-updates",
-              title: "Roll out and roll back packs",
-              path: "/docs/pack-updates",
-              icon: "hero-arrows-right-left",
-              keywords: "update canary rollback content hash trust drift version",
-              desc:
-                "Install new pack bytes on a canary, trust the exact hash, and reinstall the prior immutable version if validation fails."
             },
             %{
               slug: "pack-registry",
@@ -438,6 +456,15 @@ defmodule EmisarWeb.DocsNav do
               keywords: "components topology boundaries state disconnect failure",
               desc:
                 "Which component owns each decision, what crosses each boundary, and what happens when one drops out."
+            },
+            %{
+              slug: "compatibility",
+              title: "Compatibility and deprecation",
+              path: "/docs/compatibility",
+              icon: "hero-arrows-right-left",
+              keywords: "version semver support freeze breaking deprecation migration",
+              desc:
+                "The v1 compatibility promise, frozen public contracts, and deprecation window."
             },
             %{
               slug: "security-model",

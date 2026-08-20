@@ -313,8 +313,8 @@ defmodule EmisarWeb.DocsComponents do
       </summary>
       <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
         <p class="text-sm leading-7 text-zinc-400">
-          The installer checks the checksum itself; to prove the binary before it runs as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>, download it and run these
-          first — a green check names our source repository and the release workflow that built it.
+          The installer checks the checksum. To verify the binary before it runs as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>, download it and run these commands.
+          A green check names our source repository and the release workflow that built it.
         </p>
         <.docs_code phx-no-format label="shell">{@commands}</.docs_code>
         <p class="mt-3 text-xs leading-5 text-zinc-500">

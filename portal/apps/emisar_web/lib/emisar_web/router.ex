@@ -164,6 +164,7 @@ defmodule EmisarWeb.Router do
     get "/docs/connect-a-cli-client", MarketingController, :connect_cli_client
     get "/docs/mcp-reference", MarketingController, :docs_mcp_reference
     get "/docs/quickstart", MarketingController, :docs_quickstart
+    get "/docs/use-a-published-pack", MarketingController, :docs_use_published_pack
     get "/docs/action-packs", MarketingController, :docs_action_packs
     get "/docs/security-model", MarketingController, :docs_security_model
     get "/docs/signed-dispatch", MarketingController, :docs_signed_dispatch
@@ -190,6 +191,7 @@ defmodule EmisarWeb.Router do
     get "/packs/:id", MarketingController, :pack_detail
     get "/docs/publishing-packs", MarketingController, :docs_publishing_packs
     get "/docs/pack-registry", MarketingController, :docs_pack_registry
+    get "/docs/run-an-action", MarketingController, :docs_run_action
     get "/docs/policies-and-approvals", MarketingController, :docs_policies
     get "/docs/runbooks", MarketingController, :docs_runbooks
     get "/docs/authentication", MarketingController, :docs_authentication
@@ -221,6 +223,7 @@ defmodule EmisarWeb.Router do
     get "/docs/troubleshooting", MarketingController, :docs_troubleshooting
     get "/docs/security-incidents", MarketingController, :docs_security_incidents
     get "/docs/architecture", MarketingController, :docs_architecture
+    get "/docs/compatibility", MarketingController, :docs_compatibility
     get "/sitemap.xml", SitemapController, :show
     get "/changelog.xml", MarketingController, :changelog_feed
     get "/install.sh", InstallController, :show

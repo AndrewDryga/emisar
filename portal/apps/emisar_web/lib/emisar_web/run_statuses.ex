@@ -11,7 +11,7 @@ defmodule EmisarWeb.RunStatuses do
        "Created and queued. Waiting to be handed to its runner — or waiting for an offline runner to reconnect."},
     pending_approval:
       {"Pending approval",
-       "Policy required a human approval. The run is held until an approver decides; a denial cancels it."},
+       "Policy required human approval. The run waits for an approver. A denial cancels it."},
     sent: {"Sent", "Handed to the runner over its connection, not yet acknowledged."},
     running:
       {"Running", "The runner acknowledged the dispatch and is executing. Output is streaming."},
@@ -24,7 +24,7 @@ defmodule EmisarWeb.RunStatuses do
     failed: {"Failed", "The action ran and exited non-zero."},
     error:
       {"Error",
-       "The run could not complete — its runner went offline, was disabled or removed, dropped mid-run, or never acknowledged the send before the dispatch timeout. The reason is on the run."},
+       "The run did not complete. Its runner went offline, was disabled or removed, disconnected mid-run, or missed the dispatch timeout. The run records the reason."},
     timed_out: {"Timed out", "The action ran past its time limit and the runner stopped it."},
     validation_failed:
       {"Validation failed",
@@ -36,7 +36,7 @@ defmodule EmisarWeb.RunStatuses do
        "The runner rejected the dispatch on a pre-execution trust check — a bad, missing, or stale signature, a pack-hash mismatch, or a local admission block. Nothing executed."},
     denied:
       {"Denied",
-       "Policy rejected the dispatch at creation. The run was never sent to a runner; the matched rule and reason are recorded."},
+       "Policy rejected the dispatch when it was created. The runner never received it. The run records the matching rule and reason."},
     cancelled:
       {"Cancelled", "You, or a denied approval, pulled the run back. The reason is recorded."}
   ]

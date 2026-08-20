@@ -765,6 +765,32 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     the member has no reach. Never ask someone to connect, create, or dispatch through an entity
     their membership cannot access. Sweep: onboarding and empty states derived only from a scoped
     row count.
+62. **A roster row separates lifecycle metadata from exceptional state.** A title line establishes
+    the person or object's identity and may carry durable identity markers such as self, enrolled
+    2FA, or directory provenance. Normal workflow state stays in the ordinary metadata line: an
+    unaccepted invitation reads `invited … · pending`, never `joined … · never active`. The `invited`
+    timestamp already names the lifecycle, so the unresolved `pending` value may use amber text for
+    scanability, but it never gets
+    a marker or separate warning line. Exceptional account/access states render as separate compact
+    lines beneath identity with plain specific wording. Render `access suspended` as lowercase amber
+    metadata without a marker, and keep its muted manager attribution on the same baseline; retain
+    the amber marker for `Email unconfirmed`. Use the row's
+    ordinary line-height throughout the stack and adjacent metadata—a special margin or row gap makes
+    related facts visibly stutter. Never dim the parent row to communicate one state: inherited
+    opacity changes every semantic color beneath it, so the same warning appears weaker on a suspended
+    member. Do not merge different cautions into an opaque compound badge, promote routine lifecycle
+    state to a full warning treatment, or hide attribution in a tooltip. Sweep: invitation rows with
+    an amber pending marker or separate status line, `joined`/`never active` copy before acceptance,
+    adjacent same-tone status chips
+    beside a row title, caution prose joined into one ambiguous metadata line, and state-driven opacity
+    on the whole row.
+63. **A compact label/value fact starts on one row at every width.** Keep one max-content label
+    track and one `minmax(0, 1fr)` value track; the value column owns wrapping when its prose or
+    tags genuinely exhaust the remaining width. Do not switch the whole fact grid to one column at
+    a narrow breakpoint: that forces even `RUNNERS: All` and `PACKS: postgres` into four lines when
+    both pairs fit in two. Labels remain aligned across sibling facts, and a long value still wraps
+    beneath its own first value rather than beneath the label. Sweep: mobile `grid-cols-1` switches
+    around dense facts whose label plus ordinary value visibly fit together.
 
 
 ## 8. The kit is the contract
