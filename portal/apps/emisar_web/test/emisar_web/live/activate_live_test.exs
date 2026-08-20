@@ -34,6 +34,20 @@ defmodule EmisarWeb.ActivateLiveTest do
       assert html =~ "Approve connection"
     end
 
+    test "CLI-only and mixed approvals name where credentials will be stored", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {_device_code, cli_code, _grant} = open_grant(["emisar-mcp-cli"])
+
+      {:ok, _lv, cli_html} = live(conn, ~p"/app/#{account}/activate?code=#{cli_code}")
+      assert cli_html =~ "store the CLI credential"
+      refute cli_html =~ "client's config"
+
+      {_device_code, mixed_code, _grant} = open_grant(["emisar-mcp-cli", "codex"])
+      {:ok, _lv, mixed_html} = live(conn, ~p"/app/#{account}/activate?code=#{mixed_code}")
+      assert mixed_html =~ "store the CLI credential"
+      assert mixed_html =~ "write the selected client configs"
+    end
+
     test "an unknown or expired code shows the inline dead-code message", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 
@@ -81,6 +95,8 @@ defmodule EmisarWeb.ActivateLiveTest do
 
       approved = render_click(lv, "approve", %{})
       assert approved =~ "Approved — return to your terminal"
+      assert approved =~ "stores each credential"
+      assert approved =~ "that machine"
 
       assert {:ok, client_keys} = ApiKeys.claim_device_grant(device_code)
       assert Map.keys(client_keys) == ["codex"]

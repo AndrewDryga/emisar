@@ -409,19 +409,21 @@ value), and `cloud.enrollment_key_env` names the bootstrap credential (normally
 the `--registry` flag select a pack registry.
 
 With no command, the MCP bridge keeps its stdio behavior. Its direct CLI surface
-is descriptor-driven: `list_tools [--json]` lists the live server catalog,
-`help <tool> [--json]` and, for non-conflicting names, `<tool> --help` document
-one live descriptor. `<tool> [JSON | -]` calls any exact tool name with an omitted `{}`, one inline
-JSON object, or an object read from stdin. `-- <tool> [JSON | -]` bypasses the
-local command namespace for an exact conflicting name. Calls print
+has local `auth [status [URL]]` and `auth import URL` credential operations,
+then a descriptor-driven tool surface: `list_tools [--json]` lists the live
+server catalog, `help <tool> [--json]` and, for non-conflicting names,
+`<tool> --help` document one live descriptor. `<tool> [JSON | -]` calls any
+exact tool name with an omitted `{}`, one inline JSON object, or an object read
+from stdin. `-- <tool> [JSON | -]` bypasses the local command namespace for an
+exact conflicting name. Calls print
 `structuredContent` as JSON; server, tool, configuration, and transport failures
 exit 1 and local usage failures exit 2. Tool names and schemas remain owned by
 `tools/list`, not compiled into the bridge. Its global flags remain
 `-h/--help` and `-v/--version`. Its environment is:
 
 ```text
-EMISAR_URL              required control-plane origin
-EMISAR_API_KEY          required operator API key
+EMISAR_URL              required stdio origin; optional direct-CLI override
+EMISAR_API_KEY          required stdio key; optional direct-CLI override
 EMISAR_CLIENT           optional audit label
 EMISAR_CLIENT_METADATA  optional untrusted audit metadata
 EMISAR_ALLOW_INSECURE   development-only cleartext opt-in
@@ -430,8 +432,12 @@ EMISAR_SIGNING_CERT     optional certificate for that key
 ```
 
 With no command, it reads and writes line-delimited JSON-RPC 2.0 over stdio. In
-both modes it sends the user agent `emisar-mcp/<version>`. The attestation identifiers
-`emisar-attestation-v5` and `emisar-cert-v2` are also frozen security formats.
+stdio mode both authentication variables are required. Direct commands use the
+installer-created, owner-only CLI credential only when both variables are
+absent; an explicit pair overrides it, while a partial pair fails rather than
+mixing sources. In both modes it sends the user agent `emisar-mcp/<version>`.
+The attestation identifiers `emisar-attestation-v5` and `emisar-cert-v2` are
+also frozen security formats.
 `packctl` is a maintainer-only build tool, not a customer CLI compatibility
 surface.
 
@@ -506,14 +512,19 @@ host-matched recommendations.
 
 `install-mcp.sh` accepts `--version`, `--install-dir`, `--uninstall` (remove
 the installed binaries, the `emisar` entry and `.emisar-bak` backups in
-detected client configs, and the bridge's rotated-key state), and `--yes`.
+detected client configs, the stored direct-CLI credential, and bridge rotation
+state), and `--yes`.
 It accepts
 `VERSION`, `INSTALL_DIR`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`, `ASSUME_YES`,
-and `EMISAR_URL` (the portal its interactive LLM-client setup talks to and
+and `EMISAR_URL` (the portal its interactive CLI/client setup talks to and
 writes into configs; default `https://emisar.dev`). The interactive setup
-drives the portal's device-authorization pair, whose frozen contract lives in
-the OAuth authorization server section above; the installer is the deployed
-consumer its skew note describes. The current release tags are
+requests a dedicated `emisar-mcp-cli` key, imports it into the invoking user's
+owner-only bridge state over stdin, and may request separate keys for selected
+LLM clients. A CLI credential that authenticates against the same endpoint
+makes a rerun hands-off; a rejected credential starts a fresh approval. This
+drives the portal's device-authorization pair, whose frozen
+contract lives in the OAuth authorization server section above; the installer
+is the deployed consumer its skew note describes. The current release tags are
 `runner-v0.20.1` and `mcp-v0.7.1`. The
 bridge installer also requires the selected GitHub release to be marked
 immutable.

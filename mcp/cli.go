@@ -460,7 +460,7 @@ func renderToolHelp(descriptor cliToolDescriptor) (string, error) {
 
 func cliToolInvocation(name string) string {
 	safeName := shellQuote(terminalSafeText(name))
-	if name == "help" || name == "list_tools" || strings.HasPrefix(name, "-") {
+	if name == "auth" || name == "help" || name == "list_tools" || strings.HasPrefix(name, "-") {
 		return "emisar-mcp -- " + safeName
 	}
 	return "emisar-mcp " + safeName

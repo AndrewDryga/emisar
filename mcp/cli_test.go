@@ -210,7 +210,7 @@ func TestCLIToolCallsPreserveJSONAndReturnStructuredContent(t *testing.T) {
 }
 
 func TestCLIExactToolEscapeCallsNamesReservedByTheLocalCLI(t *testing.T) {
-	for _, name := range []string{"help", "list_tools", "--future"} {
+	for _, name := range []string{"auth", "help", "list_tools", "--future"} {
 		t.Run(name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				assertCLIRequestHeaders(t, r, "tools/call", name)
@@ -229,6 +229,22 @@ func TestCLIExactToolEscapeCallsNamesReservedByTheLocalCLI(t *testing.T) {
 				t.Fatalf("output = %s", stdout)
 			}
 		})
+	}
+}
+
+func TestMainCLIExactAuthToolBypassesLocalCredentialCommand(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertCLIRequestHeaders(t, r, "tools/call", "auth")
+		writeCLIResult(t, w, r, `{"structuredContent":{"ok":true},"content":[],"isError":false}`)
+	}))
+	defer srv.Close()
+
+	stdout, stderr, code := runMain(t, "", []string{"--", "auth"}, map[string]string{
+		"EMISAR_URL":     srv.URL,
+		"EMISAR_API_KEY": "emk-explicit",
+	})
+	if code != 0 || stderr != "" || !jsonEqual([]byte(stdout), []byte(`{"ok":true}`)) {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 }
 
@@ -585,18 +601,20 @@ func TestCLIRejectsDuplicateToolDescriptors(t *testing.T) {
 }
 
 func TestCLIToolHelpUsesExactEscapeForReservedNames(t *testing.T) {
-	descriptor := cliToolDescriptor{
-		Name:        "help",
-		Title:       "Server help tool",
-		Description: "A server-owned name that collides with local help.",
-		InputSchema: json.RawMessage(`{"type":"object"}`),
-	}
-	help, err := renderToolHelp(descriptor)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(help, "USAGE\n  emisar-mcp -- help [JSON | -]") {
-		t.Fatalf("reserved tool usage is ambiguous:\n%s", help)
+	for _, name := range []string{"auth", "help", "list_tools"} {
+		descriptor := cliToolDescriptor{
+			Name:        name,
+			Title:       "Server tool",
+			Description: "A server-owned name that collides with a local command.",
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+		}
+		help, err := renderToolHelp(descriptor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(help, "USAGE\n  emisar-mcp -- "+name+" [JSON | -]") {
+			t.Fatalf("reserved tool usage is ambiguous:\n%s", help)
+		}
 	}
 }
 

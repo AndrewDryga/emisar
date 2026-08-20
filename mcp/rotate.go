@@ -21,6 +21,7 @@ import (
 const (
 	credentialStateVersion  = 2
 	maxCredentialStateBytes = 4 << 10
+	cliCredentialFilename   = "cli.json"
 	apiKeyPrefixLength      = 12
 	apiKeyRandomBytes       = 32
 
@@ -158,6 +159,25 @@ func newCredentialStoreAt(configDir, endpointOrigin, bootstrapPrefix string) *cr
 	}
 }
 
+func newCLICredentialStore(endpointOrigin, bootstrapPrefix string) (*credentialStore, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	return newCLICredentialStoreAt(configDir, endpointOrigin, bootstrapPrefix), nil
+}
+
+func newCLICredentialStoreAt(configDir, endpointOrigin, bootstrapPrefix string) *credentialStore {
+	dir := filepath.Join(configDir, "emisar", "credentials")
+	return &credentialStore{
+		path:            filepath.Join(dir, cliCredentialFilename),
+		endpointOrigin:  endpointOrigin,
+		bootstrapPrefix: bootstrapPrefix,
+		random:          rand.Reader,
+		ops:             defaultCredentialFileOps(),
+	}
+}
+
 func (store *credentialStore) load(fallback string) (credentialState, error) {
 	if err := store.validateExistingPath(); err != nil {
 		return credentialState{}, err
@@ -176,6 +196,17 @@ func (store *credentialStore) load(fallback string) (credentialState, error) {
 		return credentialState{}, fmt.Errorf("read credential state: %w", err)
 	}
 
+	state, err := decodeCredentialState(data)
+	if err != nil {
+		return credentialState{}, err
+	}
+	if err := state.validate(store.endpointOrigin, store.bootstrapPrefix); err != nil {
+		return credentialState{}, err
+	}
+	return state, nil
+}
+
+func decodeCredentialState(data []byte) (credentialState, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var state credentialState
@@ -184,9 +215,6 @@ func (store *credentialStore) load(fallback string) (credentialState, error) {
 	}
 	if err := ensureJSONEOF(decoder); err != nil {
 		return credentialState{}, fmt.Errorf("decode credential state: %w", err)
-	}
-	if err := state.validate(store.endpointOrigin, store.bootstrapPrefix); err != nil {
-		return credentialState{}, err
 	}
 	return state, nil
 }

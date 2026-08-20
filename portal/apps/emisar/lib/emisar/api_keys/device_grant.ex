@@ -1,18 +1,20 @@
 defmodule Emisar.ApiKeys.DeviceGrant do
   @moduledoc """
-  A device-authorization grant (RFC 8628 shape) that connects a local MCP
-  client without the operator ever copying the API key: the installer opens
-  the grant and polls with the device code, the operator approves it in the
-  portal by user code, and the claim mints one `ApiKey` per requested client
-  — secrets delivered over the poll exactly once. The approver's identity,
-  bound at approval, is what authorizes the claim-time mint.
+  A device-authorization grant (RFC 8628 shape) that connects the direct CLI
+  and local MCP clients without the operator ever copying an API key: the
+  installer opens the grant and polls with the device code, the operator
+  approves it in the portal by user code, and the claim mints one `ApiKey` per
+  requested client — secrets delivered over the poll exactly once. The
+  approver's identity, bound at approval, is what authorizes the claim-time
+  mint.
   """
   use Emisar, :schema
 
-  # The clients the installer can auto-configure — EMISAR_CLIENT ids, and the
-  # only values a grant may request. Labels double as the minted key names
-  # (matching the connect page's quick-mint naming).
+  # The direct CLI and clients the installer can configure — EMISAR_CLIENT
+  # ids, and the only values a grant may request. Labels double as the minted
+  # key names (matching the connect page's quick-mint naming).
   @client_labels %{
+    "emisar-mcp-cli" => "Emisar CLI",
     "claude-code" => "Claude Code",
     "claude-desktop" => "Claude Desktop",
     "cursor" => "Cursor",

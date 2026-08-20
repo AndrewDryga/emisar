@@ -17,17 +17,19 @@
 #   # Install to a per-user location (no sudo):
 #   curl -fsSL https://.../install-mcp.sh | INSTALL_DIR=$HOME/.local/bin bash
 #
-#   # Uninstall — binary, client-config entries, and rotated-key state:
+#   # Uninstall — binary, client entries, CLI credential, and rotation state:
 #   curl -fsSL https://.../install-mcp.sh | sudo bash -s -- --uninstall
 #
 # The script is idempotent. It does not register a service. After
-# installing, an interactive run scans for local LLM clients (Claude
+# installing, an interactive run authenticates the direct CLI and scans for
+# local LLM clients (Claude
 # Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI, OpenClaw,
 # OpenCode, Windsurf, Pi, Copilot CLI, Zed, Hermes, Goose) and offers
 # to add emisar to each — asking per client; a non-interactive or --yes
-# run skips that entirely. The API keys come from a browser approval
+# run skips that entirely. The API keys come from one browser approval
 # (the script prints an approval link; no key is ever typed or copied)
-# and land straight in the client configs, pointed at EMISAR_URL.
+# and land in owner-only CLI state or straight in the client configs, pointed
+# at EMISAR_URL.
 # Manual per-client snippets stay available on the portal's
 # /app/agents page.
 
@@ -87,10 +89,12 @@ Flags:
   --uninstall         Remove the emisar-mcp binary (from the conventional
                       locations, or --install-dir), the emisar entry and
                       .emisar-bak backups in detected LLM client configs,
-                      and the bridge's rotated-key state. Removed API keys
-                      stay valid until revoked on the portal's /app/agents.
-  --yes               Skip the confirmation prompt and the interactive
-                      LLM-client setup.
+                      stored direct-CLI credential, and bridge rotation state.
+                      Connected keys stay valid until revoked on the portal's
+                      /app/agents; unused installer keys stay hidden and expire
+                      after 30 days.
+  --yes               Skip the confirmation prompt and interactive CLI/client
+                      authentication.
   --help              This message.
 
 Env vars accepted: VERSION, INSTALL_DIR, EMISAR_REPO, EMISAR_GITHUB_TOKEN,
@@ -441,9 +445,10 @@ scan_llm_clients() {
 # Uninstall
 # ---------------------------------------------------------------------
 # The reverse of the install path: drop the emisar entry from each detected
-# client config (and the install's .emisar-bak files), remove the bridge's
-# rotated-key state, then the binaries. A key removed from a config keeps
-# working until revoked in the portal, so the exit line points at /app/agents.
+# client config (and the install's .emisar-bak files), remove the stored
+# direct-CLI credential and bridge rotation state, then the binaries. A key removed from a config keeps
+# working until revoked in the portal. An unused installer key stays hidden and
+# expires after 30 days, so the exit line explains both cases.
 
 # Reverse of merge_json_config, same python3-then-jq ladder: drop the emisar
 # member while preserving every other key — and, for a JSONC file, its
@@ -799,7 +804,8 @@ remove_client_config() {
   esac
 }
 
-# The bridge's rotated-key state (mcp rotate.go, under Go's UserConfigDir).
+# The stored direct-CLI credential and bridge rotation state (mcp rotate.go,
+# under Go's UserConfigDir).
 # Removed like the runner uninstall removes its cached token + identity.
 remove_credential_state() {
   local user_home="$1" config_root
@@ -810,7 +816,7 @@ remove_credential_state() {
   esac
   if [ -d "${config_root}/emisar/credentials" ]; then
     rm -rf "${config_root}/emisar/credentials"
-    log "removed rotated-key state ${config_root}/emisar/credentials"
+    log "removed direct-CLI credential and bridge rotation state ${config_root}/emisar/credentials"
   fi
 }
 
@@ -825,7 +831,7 @@ do_uninstall() {
     fi
   done <<<"${install_dirs}"
 
-  if ! confirm "remove emisar-mcp and the emisar entry in detected LLM client configs?"; then
+  if ! confirm "remove emisar-mcp, its stored CLI credential, rotation state, and detected LLM client entries?"; then
     die "aborted by user"
   fi
 
@@ -861,7 +867,7 @@ do_uninstall() {
     rm -f -- "${dir}/.emisar-mcp.old."* "${dir}/.emisar-mcp.new."* 2>/dev/null || true
   done <<<"${install_dirs}"
 
-  log "uninstalled — removed keys stay valid until revoked: ${EMISAR_URL}/app/agents"
+  log "uninstalled — connected keys stay valid until revoked at ${EMISAR_URL}/app/agents; unused installer keys stay hidden and expire after 30 days"
 }
 
 # ---------------------------------------------------------------------
@@ -1187,18 +1193,21 @@ activate_installations() {
 activate_installations || die "installation failed; rolling back previous installations"
 
 # ---------------------------------------------------------------------
-# Offer to add emisar to local LLM clients
+# Authenticate the CLI and offer to add emisar to local LLM clients
 # ---------------------------------------------------------------------
-# Interactive-only: each client is offered individually and a client that
+# Interactive-only: the installed CLI gets its own key; each LLM client is
+# offered individually and a client that
 # already carries an emisar entry is left untouched (so the portal's
 # upgrade one-liner stays quiet). The API keys come from a device-grant
 # approval (RFC 8628 shape): the operator approves the printed link in
-# the portal and the poll delivers the keys straight into the configs —
-# no secret ever touches argv, env, history, or sudo's syslog.
+# the portal and the poll delivers the keys to the bridge or client configs —
+# no secret ever touches argv, env, history, or sudo's syslog. The CLI key is
+# handed to the installed bridge on stdin, which owns its secure state writer.
 # The file shapes mirror the portal's /app/agents snippets exactly.
 
 CONFIGURED_CLIENTS=""
-clients_phase_ran=0
+CLI_AUTHENTICATED=0
+connection_phase_ran=0
 CLIENTS_FOUND=0
 SCANNED=""
 CONSENTED=""
@@ -1744,6 +1753,46 @@ install_client_config() {
   esac
 }
 
+# Run local credential operations as the person who invoked sudo, so Go's
+# UserConfigDir and the resulting owner-only state belong to that person rather
+# than root. The API key reaches `auth import` only on stdin.
+run_cli_as_invoking_user() {
+  if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+    sudo -H -u "${SUDO_USER}" "${first_bin}" "$@"
+  else
+    "${first_bin}" "$@"
+  fi
+}
+
+run_cli_with_stored_auth() {
+  if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+    sudo -H -u "${SUDO_USER}" env -u EMISAR_URL -u EMISAR_API_KEY "${first_bin}" "$@"
+  else
+    env -u EMISAR_URL -u EMISAR_API_KEY "${first_bin}" "$@"
+  fi
+}
+
+cli_auth_matches() {
+  run_cli_as_invoking_user auth status "${EMISAR_URL}" >/dev/null 2>&1 &&
+    run_cli_with_stored_auth list_tools --json >/dev/null 2>&1
+}
+
+install_cli_auth() {
+  local key="$1"
+  printf '%s\n' "${key}" |
+    run_cli_as_invoking_user auth import "${EMISAR_URL}" >/dev/null
+}
+
+valid_emisar_api_key() {
+  local key="$1"
+  [ "${#key}" -eq 47 ] || return 1
+  case "${key}" in
+    emk-*[!a-zA-Z0-9_-]*) return 1 ;;
+    emk-*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # JSON response field readers — the same python3-then-jq ladder as config
 # merging; a machine with neither falls back to the portal's manual snippets.
 json_string_field() {
@@ -1896,7 +1945,7 @@ await_device_approval() {
   else
     out "Or enter code ${DEVICE_USER_CODE} by hand at ${EMISAR_URL}/activate."
   fi
-  out "Waiting for approval (Ctrl-C skips client setup)…"
+  out "Waiting for approval (Ctrl-C skips CLI/client setup)…"
   while :; do
     now=$(date +%s)
     if [ "${now}" -ge "${deadline}" ]; then
@@ -1930,7 +1979,7 @@ await_device_approval() {
       # token charset is a malformed response, not a code.
       authorization_pending | '' | *[!a-zA-Z0-9._-]*) : ;;
       access_denied)
-        warn "the request was denied in the portal — no clients configured"
+        warn "the request was denied in the portal — nothing configured"
         return 1
         ;;
       expired_token)
@@ -1951,15 +2000,16 @@ await_device_approval() {
   done
 }
 
-configure_llm_clients() {
-  local user_home="$1" ids="" label client_id kind config_file state key
+configure_clients() {
+  local user_home="$1" ids="" label client_id kind config_file state key cli_needs_auth=0 delivered_keys_valid=1 connected_clients=0
   CONFIGURED_CLIENTS=""
+  CLI_AUTHENTICATED=0
   CLIENTS_FOUND=0
   SCANNED=""
   CONSENTED=""
   [ "${ASSUME_YES}" = "1" ] && return 0
   tty_available || return 0
-  clients_phase_ran=1
+  connection_phase_ran=1
   # Overridable so the behavior harness can point these at its own sandbox — but
   # only WITHIN this run's temp dir. Taken from the environment unconditionally,
   # an inherited DEVICE_RESP redirected a root-run `curl -o` at any path on the
@@ -1976,26 +2026,42 @@ configure_llm_clients() {
 
   scan_llm_clients "${user_home}"
 
-  if [ "${CLIENTS_FOUND}" -eq 0 ]; then
-    out ""
-    out "No supported LLM clients found on this machine — connect one from"
-    out "${EMISAR_URL}/app/agents whenever you're ready."
-    return 0
+  if cli_auth_matches; then
+    CLI_AUTHENTICATED=1
+  else
+    cli_needs_auth=1
+    ids="emisar-mcp-cli"
   fi
 
   # The scan as one aligned table, then the questions — never interleaved.
   out ""
-  hdr "Connect your LLM clients"
+  hdr "Connect emisar"
   out ""
+  if [ "${cli_needs_auth}" -eq 1 ]; then
+    client_row "Emisar CLI" 33 "not authenticated"
+  else
+    client_row "Emisar CLI" 2 "credential verified"
+  fi
   while IFS='|' read -r label client_id kind config_file state; do
     [ -n "${client_id}" ] || continue
     if [ "${state}" = "connected" ]; then
+      connected_clients=$((connected_clients + 1))
       client_row "${label}" 2 "already connected"
     else
       client_row "${label}" 33 "not connected"
     fi
   done <<<"${SCANNED}"
   out ""
+
+  if [ "${cli_needs_auth}" -eq 1 ] && [ "${connected_clients}" -gt 0 ]; then
+    warn "Existing LLM client entries stay untouched. If EMISAR_URL changed, reconnect them from ${EMISAR_URL}/app/agents/connect."
+  fi
+
+  if [ "${CLIENTS_FOUND}" -eq 0 ]; then
+    out "No supported LLM clients found — the direct CLI can still be connected."
+    out "Connect an LLM client later from ${EMISAR_URL}/app/agents."
+    out ""
+  fi
 
   while IFS='|' read -r label client_id kind config_file state; do
     [ "${state}" = "candidate" ] || continue
@@ -2004,10 +2070,12 @@ configure_llm_clients() {
 }${label}|${client_id}|${kind}|${config_file}"
     fi
   done <<<"${SCANNED}"
-  [ -n "${CONSENTED}" ] || return 0
+  if [ -z "${CONSENTED}" ] && [ "${cli_needs_auth}" -eq 0 ]; then
+    return 0
+  fi
 
   if ! command -v python3 >/dev/null 2>&1 && ! command -v jq >/dev/null 2>&1; then
-    warn "python3 or jq is needed to finish setup here — use the manual snippets at ${EMISAR_URL}/app/agents/connect"
+    warn "python3 or jq is needed for browser setup — install one and re-run; manual client snippets: ${EMISAR_URL}/app/agents/connect"
     return 0
   fi
 
@@ -2016,13 +2084,40 @@ configure_llm_clients() {
   done <<<"${CONSENTED}"
 
   if ! request_device_grant "${ids}"; then
-    warn "could not start connection approval against ${EMISAR_URL} — use the manual snippets at ${EMISAR_URL}/app/agents/connect"
+    warn "could not start connection approval against ${EMISAR_URL} — re-run or use the manual client snippets at ${EMISAR_URL}/app/agents/connect"
     return 0
   fi
 
   await_device_approval || return 0
 
   out ""
+  # Validate the complete response before writing any local state. A partial
+  # response must not leave only some clients connected from a consumed grant.
+  if [ "${cli_needs_auth}" -eq 1 ]; then
+    if ! key=$(json_client_key "${TOKEN_RESP}" emisar-mcp-cli) || ! valid_emisar_api_key "${key}"; then
+      warn "Emisar CLI: the portal did not deliver a valid API key — nothing was configured"
+      delivered_keys_valid=0
+    fi
+  fi
+  while IFS='|' read -r label client_id kind config_file; do
+    [ -n "${client_id}" ] || continue
+    if ! key=$(json_client_key "${TOKEN_RESP}" "${client_id}") || ! valid_emisar_api_key "${key}"; then
+      warn "${label}: the portal did not deliver a valid API key — nothing was configured"
+      delivered_keys_valid=0
+    fi
+  done <<<"${CONSENTED}"
+  [ "${delivered_keys_valid}" -eq 1 ] || return 0
+
+  if [ "${cli_needs_auth}" -eq 1 ]; then
+    if ! key=$(json_client_key "${TOKEN_RESP}" emisar-mcp-cli); then
+      warn "Emisar CLI: no key was delivered — re-run the installer to try again"
+    elif install_cli_auth "${key}"; then
+      CLI_AUTHENTICATED=1
+      client_row "Emisar CLI" "1;32" "authenticated for ${EMISAR_URL}"
+    else
+      warn "Emisar CLI: could not store its credential — re-run the installer to try again"
+    fi
+  fi
   while IFS='|' read -r label client_id kind config_file; do
     [ -n "${client_id}" ] || continue
     if ! key=$(json_client_key "${TOKEN_RESP}" "${client_id}"); then
@@ -2056,19 +2151,25 @@ done <<<"${installed_paths}"
 
 first_bin=${installed_paths%%$'\n'*}
 
-configure_llm_clients "${user_home}" || \
-  warn "client setup did not complete — per-client snippets: ${EMISAR_URL}/app/agents/connect"
+configure_clients "${user_home}" || \
+  warn "CLI/client setup did not complete — per-client snippets: ${EMISAR_URL}/app/agents/connect"
 
-# After an interactive run the aligned client lines above have already said
+# After an interactive run the aligned connection lines above have already said
 # everything (connected / already connected / declined / none found) — no
 # trailing how-to block. Only a run that never offered setup (--yes or no
 # TTY) still owes the one pointer.
+if [ "${CLI_AUTHENTICATED}" = "1" ]; then
+  out ""
+  out "Try it: emisar-mcp list_tools"
+fi
 if [ -n "${CONFIGURED_CLIENTS}" ]; then
   out ""
   out "Restart each connected client to pick up emisar."
   out "Manage agents and their keys: ${EMISAR_URL}/app/agents"
-elif [ "${clients_phase_ran}" = "0" ]; then
+elif [ "${connection_phase_ran}" = "0" ]; then
   out ""
+  out "Direct CLI commands are not authenticated by this non-interactive run."
+  out "Re-run interactively, or set EMISAR_URL and EMISAR_API_KEY together."
   out "Connect an LLM client: ${EMISAR_URL}/app/agents/connect"
 fi
 

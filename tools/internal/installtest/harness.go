@@ -6,6 +6,7 @@ package installtest
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -500,9 +501,12 @@ func argvHolders(secret string) []string {
 // a 200 JSON body without client_keys, then success — every retryable
 // response class the installer must survive without announcing approval.
 type deviceServer struct {
-	server    *httptest.Server
-	polls     atomic.Int32
-	errorCode string
+	server      *httptest.Server
+	polls       atomic.Int32
+	requestedMu sync.Mutex
+	requested   []string
+	delivered   map[string]string
+	errorCode   string
 }
 
 func newDeviceServer(errorCode string) *deviceServer {
@@ -515,10 +519,26 @@ func (d *deviceServer) close() {
 	d.server.Close()
 }
 
+func (d *deviceServer) requestedClients() []string {
+	d.requestedMu.Lock()
+	defer d.requestedMu.Unlock()
+	return append([]string(nil), d.requested...)
+}
+
 func (d *deviceServer) handle(response http.ResponseWriter, request *http.Request) {
 	response.Header().Set("Content-Type", "application/json")
 	switch request.URL.Path {
 	case "/api/mcp/device_authorization":
+		var body struct {
+			Requested []string `json:"requested_clients"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			http.Error(response, "invalid request", http.StatusBadRequest)
+			return
+		}
+		d.requestedMu.Lock()
+		d.requested = append([]string(nil), body.Requested...)
+		d.requestedMu.Unlock()
 		_, _ = io.WriteString(response,
 			fmt.Sprintf(`{"device_code":"emdg-smoke","user_code":"FKZQ-2418",`+
 				`"verification_uri":"%s/activate","verification_uri_complete":"%s/activate?code=FKZQ-2418",`+
@@ -555,12 +575,20 @@ func (d *deviceServer) handle(response http.ResponseWriter, request *http.Reques
 			_, _ = io.WriteString(response, `{"status":"ok"}`)
 			return
 		}
-		_, _ = io.WriteString(response, `{"client_keys":{`+
-			`"claude-code":"emk-cc","cursor":"emk-cur","codex":"emk-cod",`+
-			`"openclaw":"emk-claw","opencode":"emk-oc","windsurf":"emk-ws",`+
-			`"pi":"emk-pi","copilot-cli":"emk-cop","zed":"emk-zed",`+
-			`"hermes":"emk-her","goose":"emk-goo"}}`)
+		keys := d.delivered
+		if keys == nil {
+			keys = make(map[string]string)
+			for _, client := range d.requestedClients() {
+				keys[client] = fixtureAPIKey(client)
+			}
+		}
+		_ = json.NewEncoder(response).Encode(map[string]any{"client_keys": keys})
 	default:
 		http.NotFound(response, request)
 	}
+}
+
+func fixtureAPIKey(client string) string {
+	digest := sha256.Sum256([]byte(client))
+	return "emk-" + base64.RawURLEncoding.EncodeToString(digest[:])
 }

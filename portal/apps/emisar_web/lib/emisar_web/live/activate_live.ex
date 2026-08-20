@@ -181,9 +181,9 @@ defmodule EmisarWeb.ActivateLive do
               </h1>
             </div>
             <p class="mt-3 text-sm leading-relaxed text-zinc-400">
-              The installer picks this up within seconds and writes each client's
-              config itself. The new agents appear in Agents after their first call —
-              revoke them there anytime.
+              The installer picks this up within seconds and stores each credential on
+              that machine. The new agents appear in Agents after their first call — revoke
+              them there anytime.
             </p>
             <.link
               navigate={~p"/app/#{@current_account}/agents"}
@@ -354,9 +354,21 @@ defmodule EmisarWeb.ActivateLive do
   end
 
   defp delivery_phrase(grant) do
-    case length(grant.requested_clients) do
-      1 -> "Deliver it to that machine once and write the client's config"
-      _many -> "Deliver them to that machine once and write each client's config"
+    cli? = "emisar-mcp-cli" in grant.requested_clients
+    client_count = length(grant.requested_clients) - if(cli?, do: 1, else: 0)
+
+    case {cli?, client_count} do
+      {true, 0} ->
+        "Deliver it to that machine once and store the CLI credential"
+
+      {true, _} ->
+        "Deliver them to that machine once, store the CLI credential, and write the selected client configs"
+
+      {false, 1} ->
+        "Deliver it to that machine once and write the client's config"
+
+      {false, _} ->
+        "Deliver them to that machine once and write each client's config"
     end
   end
 

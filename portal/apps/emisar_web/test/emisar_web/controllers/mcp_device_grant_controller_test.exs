@@ -26,7 +26,7 @@ defmodule EmisarWeb.MCPDeviceGrantControllerTest do
     test "opens a pending grant and returns the RFC 8628 envelope", %{conn: conn} do
       conn =
         post(conn, ~p"/api/mcp/device_authorization", %{
-          "requested_clients" => ["claude-code", "cursor"]
+          "requested_clients" => ["emisar-mcp-cli", "cursor"]
         })
 
       body = json_response(conn, 200)
@@ -45,7 +45,7 @@ defmodule EmisarWeb.MCPDeviceGrantControllerTest do
 
       assert [grant] = Repo.all(DeviceGrant)
       assert grant.status == :pending
-      assert grant.requested_clients == ["claude-code", "cursor"]
+      assert grant.requested_clients == ["emisar-mcp-cli", "cursor"]
     end
 
     test "an unknown client or empty list is invalid_request", %{conn: conn} do
@@ -73,13 +73,13 @@ defmodule EmisarWeb.MCPDeviceGrantControllerTest do
       subject = approver_subject()
 
       {:ok, device_code, user_code, _grant} =
-        ApiKeys.open_device_grant(["claude-code", "codex"], %Emisar.RequestContext{})
+        ApiKeys.open_device_grant(["emisar-mcp-cli", "codex"], %Emisar.RequestContext{})
 
       {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
 
       first = post(conn, ~p"/api/mcp/device_token", %{"device_code" => device_code})
       assert %{"client_keys" => client_keys} = json_response(first, 200)
-      assert client_keys |> Map.keys() |> Enum.sort() == ["claude-code", "codex"]
+      assert client_keys |> Map.keys() |> Enum.sort() == ["codex", "emisar-mcp-cli"]
       assert String.starts_with?(client_keys["codex"], "emk-")
 
       # Single-shot delivery: the next poll can never re-issue secrets.

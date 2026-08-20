@@ -2182,6 +2182,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "client_label/1" do
     test "renders the operator-facing label for a device-grant client id" do
+      assert ApiKeys.client_label("emisar-mcp-cli") == "Emisar CLI"
       assert ApiKeys.client_label("claude-code") == "Claude Code"
       assert ApiKeys.client_label("cursor") == "Cursor"
     end
@@ -2198,12 +2199,12 @@ defmodule Emisar.ApiKeysTest do
       context = %RequestContext{ip_address: "203.0.113.9"}
 
       assert {:ok, device_code, user_code, grant} =
-               ApiKeys.open_device_grant(["claude-code", "cursor"], context)
+               ApiKeys.open_device_grant(["emisar-mcp-cli", "cursor"], context)
 
       assert String.starts_with?(device_code, "emdg-")
       assert user_code =~ ~r/^[2-9ABCDEFGHJKMNPQRSTVWXYZ]{4}-[2-9ABCDEFGHJKMNPQRSTVWXYZ]{4}$/
       assert grant.status == :pending
-      assert grant.requested_clients == ["claude-code", "cursor"]
+      assert grant.requested_clients == ["emisar-mcp-cli", "cursor"]
       assert grant.requester_ip == "203.0.113.9"
       assert is_nil(grant.account_id)
 
@@ -2388,22 +2389,22 @@ defmodule Emisar.ApiKeysTest do
       other_account = Fixtures.Accounts.create_account()
 
       {:ok, device_code, user_code, _grant} =
-        ApiKeys.open_device_grant(["claude-code", "cursor"], %RequestContext{})
+        ApiKeys.open_device_grant(["emisar-mcp-cli", "cursor"], %RequestContext{})
 
       {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
 
       assert {:ok, client_keys} = ApiKeys.claim_device_grant(device_code)
-      assert client_keys |> Map.keys() |> Enum.sort() == ["claude-code", "cursor"]
+      assert client_keys |> Map.keys() |> Enum.sort() == ["cursor", "emisar-mcp-cli"]
 
       keys = Repo.all(ApiKey)
       assert length(keys) == 2
       assert Enum.all?(keys, &(&1.account_id == account.id))
       refute Enum.any?(keys, &(&1.account_id == other_account.id))
       assert Enum.all?(keys, &ApiKey.auto_unused?/1)
-      assert keys |> Enum.map(& &1.name) |> Enum.sort() == ["Claude Code", "Cursor"]
+      assert keys |> Enum.map(& &1.name) |> Enum.sort() == ["Cursor", "Emisar CLI"]
 
       # The delivered secrets authenticate (first use promotes the key).
-      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(client_keys["claude-code"])
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(client_keys["emisar-mcp-cli"])
 
       # Delivery is single-shot — a second poll never re-issues secrets.
       assert ApiKeys.claim_device_grant(device_code) == {:error, :invalid_grant}

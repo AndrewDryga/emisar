@@ -135,6 +135,8 @@ const helpText = `emisar-mcp - MCP bridge and direct CLI for emisar
 
 USAGE
   emisar-mcp
+  emisar-mcp auth [status [URL]]
+  emisar-mcp auth import URL
   emisar-mcp list_tools [--json]
   emisar-mcp help <tool> [--json]
   emisar-mcp <tool> [JSON | -]
@@ -150,6 +152,14 @@ DESCRIPTION
   expose that same server-owned tool surface to operators and shell scripts.
 
 COMMANDS
+  auth [status [URL]]
+    Show whether a direct-CLI credential is stored and optionally require an
+    exact endpoint match.
+
+  auth import URL
+    Read one emk- API key from stdin and store it for direct CLI commands.
+    Interactive install-mcp.sh does this automatically after browser approval.
+
   list_tools
     List every MCP tool currently published by the control plane. Add --json
     to print the exact descriptors.
@@ -179,12 +189,14 @@ OUTPUT AND EXIT STATUS
   2  Invalid command or JSON input. The diagnostic is on stderr.
 
 ENVIRONMENT
-  EMISAR_URL (required)
+  EMISAR_URL (required for stdio; optional for commands)
     Control-plane HTTP(S) origin. Do not include a path, credentials, query,
-    or fragment. Example: https://emisar.dev
+    or fragment. Example: https://emisar.dev. When both authentication env
+    vars are absent, direct commands use the credential saved by the installer.
 
-  EMISAR_API_KEY (required)
-    Operator API key. Example: emk-...
+  EMISAR_API_KEY (required for stdio; optional for commands)
+    Operator API key. Example: emk-... Both authentication env vars must be set
+    together; an explicit pair overrides the installed direct-CLI credential.
 
   EMISAR_CLIENT (optional)
     Audit-log label for this client, such as claude-code, cursor, codex, or
@@ -216,9 +228,9 @@ CLIENT SETUP
   Install the bridge:
     curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash
 
-  An interactive install offers to configure the clients below itself —
-  you approve the connection in the control plane and it writes the configs.
-  The manual forms follow. Replace emk-... below with a key from
+  An interactive install authenticates direct CLI commands and offers to
+  configure the clients below — one browser approval writes separate keys.
+  The manual client forms follow. Replace emk-... below with a key from
   https://emisar.dev/app/agents. These examples assume the bridge is
   installed in /usr/local/bin.
 
@@ -314,8 +326,13 @@ KEY ROTATION
   control plane may have revoked. If the control plane loses its side of that
   promotion (a rollback, a restore from backup), every request answers 401 and
   restarting does not help, because the stored state is still what it loads.
-  Delete this endpoint's file under <user-config-dir>/emisar/credentials/ and
-  start again from the key in your config.
+  For an env-configured MCP client, delete this endpoint's hashed state file
+  under <user-config-dir>/emisar/credentials/ and start again from the key in
+  the client config. For the installed direct CLI, rerun install-mcp.sh
+  interactively or import a fresh key; deleting cli.json leaves it without a
+  credential. Replacing local state does not revoke old keys. Connected keys
+  can be revoked in the control plane; unused installer keys stay hidden and
+  expire after 30 days.
 
 FLAGS
   -h, --help
@@ -347,6 +364,9 @@ func runProgram(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 0
 		}
 	}
+	if len(args) > 0 && args[0] == "auth" {
+		return runAuthCommand(args[1:], stdin, stdout, stderr)
+	}
 	if len(args) > 0 && strings.HasPrefix(args[0], "-") && args[0] != "--" {
 		fmt.Fprintf(stderr, "unknown argument %q (try --help)\n", args[0])
 		return 2
@@ -359,7 +379,7 @@ func runProgram(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
 		defaultClient = "emisar-mcp-cli"
 	}
-	b, err := newBridgeFromEnv(defaultClient, stderr)
+	b, err := newBridgeFromEnv(defaultClient, len(args) > 0, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", bridgeName, err)
 		return 1
@@ -375,22 +395,38 @@ func runProgram(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func newBridgeFromEnv(defaultClient string, diagnostics io.Writer) (*bridge, error) {
-
-	rawBase := os.Getenv("EMISAR_URL")
+func newBridgeFromEnv(defaultClient string, allowStoredCLI bool, diagnostics io.Writer) (*bridge, error) {
+	rawBase, urlSet := os.LookupEnv("EMISAR_URL")
 	// A key pasted into a client config often carries a trailing newline or
 	// space. Untrimmed it rides into the Authorization header, which the portal
 	// rejects on every request — a permanent failure with no clue why.
-	apiKey := strings.TrimSpace(os.Getenv("EMISAR_API_KEY"))
+	rawAPIKey, keySet := os.LookupEnv("EMISAR_API_KEY")
+	apiKey := strings.TrimSpace(rawAPIKey)
 
-	// Name the variable that is actually missing: "both must be set" sends an
-	// operator hunting through a config where one of the two is already right.
+	var credentialStore *credentialStore
+	if !urlSet && !keySet && allowStoredCLI {
+		store, state, err := loadCLICredential()
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil, errors.New("no stored CLI credential; run install-mcp.sh interactively or set both EMISAR_URL and EMISAR_API_KEY (try --help)")
+			}
+			return nil, fmt.Errorf("stored CLI credential: %w", err)
+		}
+		rawBase = state.EndpointOrigin
+		apiKey = state.Current
+		urlSet = true
+		keySet = true
+		credentialStore = store
+	}
+
+	// Never fill one authentication variable from stored state. A partial env
+	// override is almost certainly an endpoint/key mismatch and must fail closed.
 	switch {
-	case rawBase == "" && apiKey == "":
+	case !urlSet && !keySet:
 		return nil, errors.New("EMISAR_URL and EMISAR_API_KEY must both be set (try --help)")
-	case rawBase == "":
+	case !urlSet || rawBase == "":
 		return nil, errors.New("EMISAR_URL must be set (try --help)")
-	case apiKey == "":
+	case !keySet || apiKey == "":
 		return nil, errors.New("EMISAR_API_KEY must be set (try --help)")
 	}
 
@@ -419,9 +455,12 @@ func newBridgeFromEnv(defaultClient string, diagnostics io.Writer) (*bridge, err
 	// A durably promoted successor takes precedence over the bootstrap key in
 	// the client's config, which may have expired since. A pending successor is
 	// retried unchanged after a lost request, response, or process restart.
-	credentialStore, credsErr := newRotationStore(base, apiKey)
-	if credsErr != nil {
-		fmt.Fprintf(diagnostics, "%s: no user config dir (%v); automatic key rotation disabled\n", bridgeName, credsErr)
+	if credentialStore == nil {
+		var credsErr error
+		credentialStore, credsErr = newRotationStore(base, apiKey)
+		if credsErr != nil {
+			fmt.Fprintf(diagnostics, "%s: no user config dir (%v); automatic key rotation disabled\n", bridgeName, credsErr)
+		}
 	}
 
 	// Self-reported client metadata: validated once at startup so a bad map is a

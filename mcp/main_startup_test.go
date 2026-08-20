@@ -153,11 +153,14 @@ func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {
 		previous = at
 	}
 	for _, command := range []string{
+		"emisar-mcp auth [status [URL]]",
+		"emisar-mcp auth import URL",
 		"emisar-mcp list_tools [--json]",
 		"emisar-mcp help <tool> [--json]",
 		"emisar-mcp -- <tool> [JSON | -]",
 		"data.operation_id",
 		"get_operation",
+		"explicit pair overrides the installed direct-CLI credential",
 	} {
 		if !strings.Contains(helpText, command) {
 			t.Errorf("help does not document %q", command)

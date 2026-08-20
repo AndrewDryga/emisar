@@ -38,11 +38,23 @@ The installer resolves the latest tagged release, verifies its checksum, and
 installs `emisar-mcp` in `/usr/local/bin`. Set
 `INSTALL_DIR="$HOME/.local/bin"` for a no-sudo installation.
 
-In an interactive terminal it then finds supported MCP clients and offers to
-configure each one. Approve the device grant in the browser; emisar writes a
-separate scoped key into every selected client config, so the raw key never
-needs to pass through the clipboard. Existing client settings and other MCP
-servers are preserved.
+In an interactive terminal it opens one browser approval. That approval gives
+the direct CLI its own key and, when supported MCP clients are present, offers
+to configure each one with a separate key. The CLI key goes into owner-only
+bridge state; client keys go into their client configs. No key passes through
+the clipboard, and existing client settings and other MCP servers are
+preserved.
+
+After approval, direct commands work without shell-profile exports:
+
+```sh
+emisar-mcp auth
+emisar-mcp list_tools
+```
+
+A later interactive installer run verifies the stored CLI credential against
+the same endpoint and keeps it instead of minting another one. A revoked or
+expired credential starts a fresh browser approval.
 
 After installation, restart the client and confirm that the `emisar` server is
 connected. Ask the agent to list available infrastructure or inspect a known
@@ -57,10 +69,10 @@ curl -fsSL https://emisar.dev/install-mcp.sh \
   | sudo bash -s -- --version mcp-vX.Y.Z --yes
 ```
 
-## Manual configuration
+## Manual MCP-client configuration
 
-The bridge is configured through the environment in the MCP client's server
-entry:
+Stdio MCP clients are configured through the environment in their server
+entry. They never inherit the direct CLI's stored credential:
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
@@ -104,29 +116,35 @@ It does not carry a second tool registry: names, descriptions, annotations, and
 argument schemas come from `tools/list`, so a newly published tool appears without
 a bridge release.
 
-Set the same environment used by a local MCP client, then discover and inspect the
-available commands:
+An interactive install authenticates these commands. Discover and inspect the
+available tools directly:
 
 ```sh
-export EMISAR_URL=https://emisar.dev
-export EMISAR_API_KEY=emk-...
-
 emisar-mcp list_tools
 emisar-mcp help find_actions
 emisar-mcp get_action --help
 ```
+
+`emisar-mcp auth` checks local state and shows the stored endpoint without
+printing the key. For a
+different endpoint, set `EMISAR_URL` and `EMISAR_API_KEY` together for that
+command; the explicit pair overrides the stored credential. Setting only one
+is an error—the bridge never combines an environment value with half of a
+stored credential. Stdio mode still requires both variables in its MCP-client
+configuration.
 
 `list_tools --json` prints the exact descriptor array. `help <tool> --json`
 prints one exact descriptor, including its complete input schema. Human-readable
 help summarizes top-level arguments. It calls out conditional or mutually
 exclusive arguments, but the complete input schema remains authoritative.
 
-The local `help` and `list_tools` names are conveniences, not reserved MCP tool
+The local `auth`, `help`, and `list_tools` names are conveniences, not reserved MCP tool
 names. Use `--` before an exact tool name when it conflicts with a local command
 or begins with a hyphen:
 
 ```sh
 emisar-mcp -- help '{}'
+emisar-mcp -- auth '{}'
 ```
 
 Call a tool with one JSON object. Omit it when the tool accepts `{}`, or pass `-`
@@ -180,10 +198,11 @@ When piping commands directly, enable your shell's pipeline-failure handling so
 a downstream formatter does not hide a nonzero `emisar-mcp` exit.
 
 Use stdin when an argument contains operational details you do not want in the
-process list. Credentials are configuration, not tool arguments: keep the API key
-and optional signing key in the environment. The CLI does not auto-follow cursors,
-wait for later state, or add local confirmation prompts. It returns exactly one
-governed MCP call; scope, policy, approvals, signed dispatch, and audit remain
+process list. Credentials are configuration, not tool arguments: the installer
+stores the direct CLI key, while MCP clients and explicit endpoint overrides
+keep keys in their environment. The CLI does not auto-follow cursors, wait for
+later state, or add local confirmation prompts. It returns exactly one governed
+MCP call; scope, policy, approvals, signed dispatch, and audit remain
 server/runner-owned.
 
 ## What the bridge owns
@@ -249,11 +268,20 @@ Expiring MCP API keys rotate through a crash-safe, client-prepared exchange:
 3. The bridge promotes the acknowledged successor durably before using it.
    First successful use retires the replaced key chain.
 
-Credential state is stored per canonical endpoint and bootstrap prefix under
-the user's emisar config directory. The directory is mode 0700; files are mode
-0600 and updated through a cross-process lock, temporary write, filesystem sync,
-and atomic rename. Corrupt or endpoint-mismatched state is a startup error, not
-a reason to send a secret to another origin.
+Credential state is stored under the user's emisar config directory. MCP-client
+rotation state is namespaced by canonical endpoint and bootstrap prefix; the
+installed direct CLI uses one named default state. The directory is mode 0700;
+files are mode 0600 and updated through a cross-process lock, temporary write,
+filesystem sync, and atomic rename. Corrupt, unsafe, or endpoint-mismatched
+state is a startup error, not a reason to send a secret to another origin.
+
+`auth import` replaces the single direct-CLI credential but does not revoke its
+old server-side key. If the old key connected, revoke it from that endpoint's
+`/app/agents` page. Never-used installer keys stay hidden there and expire after
+30 days. For rotation recovery, env-configured MCP clients can delete only their
+endpoint's hashed state file and restart from the key in their config. The
+direct CLI instead needs a fresh interactive install or `auth import`; deleting
+`cli.json` leaves it unauthenticated.
 
 If durable storage is unavailable, the bridge keeps using the configured key
 but does not offer automatic rotation. Containers should persist `/config`.
