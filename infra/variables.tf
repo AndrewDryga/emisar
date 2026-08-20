@@ -83,7 +83,7 @@ variable "lb_request_log_sampling" {
 # ── Pack registry (the one public-read bucket) ────────────────────────────────
 variable "pack_registry_bucket" {
   type        = string
-  description = "GCS bucket name for public pack-registry artifacts (catalog.json, suggest.json, JSON schemas, immutable pack tarballs). Bucket names are GLOBALLY unique — override if the default is taken."
+  description = "GCS bucket name for public artifacts: pack catalogs, schemas, immutable pack tarballs, and binary releases. Bucket names are GLOBALLY unique — override if the default is taken."
   default     = "emisar-pack-registry"
 }
 

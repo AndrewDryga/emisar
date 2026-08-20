@@ -34,6 +34,8 @@
 set -Eeuo pipefail
 
 REPO="${EMISAR_REPO:-andrewdryga/emisar}"
+OFFICIAL_REPO="andrewdryga/emisar"
+RELEASE_BASE_URL="https://emisar.dev/releases/mcp"
 # Matched literally against the signing certificate's SubjectAlternativeName,
 # which carries GitHub's canonical owner casing (AndrewDryga) — NOT the
 # lowercase spelling REPO uses. Deriving this from REPO reads as obviously
@@ -173,6 +175,79 @@ require_immutable_release() {
     || die "could not verify release metadata for ${version}"
   grep -Eq '"immutable"[[:space:]]*:[[:space:]]*true' <<<"$release" || \
     die "release ${version} is mutable and is no longer trusted; install the latest immutable MCP release"
+}
+
+resolve_latest_from_github() {
+  local releases
+  releases=$(github_api "https://api.github.com/repos/${REPO}/releases?per_page=100") || return 1
+  printf '%s\n' "${releases}" \
+    | tr '{' '\n' \
+    | grep -v '"draft":[[:space:]]*true' \
+    | grep -v '"prerelease":[[:space:]]*true' \
+    | grep -oE '"tag_name":[[:space:]]*"mcp-v[0-9]+\.[0-9]+\.[0-9]+"' \
+    | sed -E 's/.*"mcp-v([0-9]+\.[0-9]+\.[0-9]+)".*/\1/' \
+    | sort -t. -k1,1n -k2,2n -k3,3n \
+    | tail -1 \
+    | sed -E 's/^/mcp-v/'
+}
+
+release_manifest_tag() {
+  local url="$1" component="$2" out tag version revision expected
+  out=$(curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 120 --retry 2 -fsSL "$url") || return 1
+  printf '%s\n' "$out" | grep -Eq '"schema_version"[[:space:]]*:[[:space:]]*1([,[:space:]}]|$)' || return 2
+  printf '%s\n' "$out" | grep -Eq '"component"[[:space:]]*:[[:space:]]*"'"$component"'"' || return 2
+  tag=$(printf '%s\n' "$out" | grep -oE '"tag"[[:space:]]*:[[:space:]]*"mcp-v[0-9]+\.[0-9]+\.[0-9]+"' | sed -E 's/.*"(mcp-v[0-9]+\.[0-9]+\.[0-9]+)"/\1/') || return 2
+  version=$(printf '%s\n' "$out" | grep -oE '"version"[[:space:]]*:[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+"' | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)"/\1/') || return 2
+  revision=$(printf '%s\n' "$out" | grep -oE '"source_revision"[[:space:]]*:[[:space:]]*"[0-9a-f]{40}"' | sed -E 's/.*"([0-9a-f]{40})"/\1/') || return 2
+  [ "$(printf '%s\n' "$tag" | wc -l | tr -d ' ')" -eq 1 ] || return 2
+  [ "$(printf '%s\n' "$version" | wc -l | tr -d ' ')" -eq 1 ] || return 2
+  [ "$(printf '%s\n' "$revision" | wc -l | tr -d ' ')" -eq 1 ] || return 2
+  expected=${tag#mcp-v}
+  [ "$version" = "$expected" ] || return 2
+  if printf '%s\n' "$version" | grep -Eq '(^|\.)0[0-9]'; then
+    return 2
+  fi
+  printf '%s\n' "$tag"
+}
+
+resolve_latest_version() {
+  local version status
+  if [ "$REPO" = "$OFFICIAL_REPO" ]; then
+    if version=$(release_manifest_tag "${RELEASE_BASE_URL}/latest.json" mcp); then
+      printf '%s\n' "$version"
+      return 0
+    else
+      status=$?
+      [ "$status" -ne 2 ] || die "the Emisar release mirror returned an invalid MCP latest.json"
+      warn "Emisar release mirror unavailable — falling back to the GitHub release mirror"
+    fi
+  fi
+  resolve_latest_from_github
+}
+
+mirror_release_base() {
+  local version="$1" tag status
+  if tag=$(release_manifest_tag "${RELEASE_BASE_URL}/${version}/manifest.json" mcp); then
+    [ "$tag" = "$version" ] || return 2
+    printf '%s/%s\n' "$RELEASE_BASE_URL" "$version"
+    return 0
+  else
+    status=$?
+    [ "$status" -ne 2 ] || return 2
+  fi
+  return 1
+}
+
+github_release_base() {
+  local version="$1"
+  require_immutable_release "$version"
+  printf 'https://github.com/%s/releases/download/%s\n' "$REPO" "$version"
+}
+
+fetch_release_files() {
+  local base="$1" tmp="$2"
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 300 --retry 2 -fsSL -o "${tmp}/${TARBALL}" "${base}/${TARBALL}" &&
+    curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 300 --retry 2 -fsSL -o "${tmp}/SHA256SUMS-MCP" "${base}/SHA256SUMS-MCP"
 }
 
 # Same TTY-fallback prompt the runner installer uses — curl|bash makes
@@ -826,19 +901,7 @@ if [ -z "${VERSION}" ]; then
   #
   # Assign first, then pipe, so a failed API call is distinguishable from a
   # successful one with no matching release.
-  releases=$(github_api "https://api.github.com/repos/${REPO}/releases?per_page=100") \
-    || die "could not query GitHub releases API"
-  VERSION=$(
-    printf '%s\n' "${releases}" \
-      | tr '{' '\n' \
-      | grep -v '"draft":[[:space:]]*true' \
-      | grep -v '"prerelease":[[:space:]]*true' \
-      | grep -oE '"tag_name":[[:space:]]*"mcp-v[0-9]+\.[0-9]+\.[0-9]+"' \
-      | sed -E 's/.*"mcp-v([0-9]+\.[0-9]+\.[0-9]+)".*/\1/' \
-      | sort -t. -k1,1n -k2,2n -k3,3n \
-      | tail -1 \
-      | sed -E 's/^/mcp-v/'
-  )
+  VERSION=$(resolve_latest_version) || die "could not resolve latest MCP release"
   [ -n "${VERSION}" ] || die "no mcp-v* release found yet"
   log "latest release: ${VERSION}"
 else
@@ -846,12 +909,24 @@ else
 fi
 [[ "${VERSION}" =~ ^mcp-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
   die "release version must match mcp-vMAJOR.MINOR.PATCH (got '${VERSION}')"
-require_immutable_release "${VERSION}"
 
 VERSION_NUM="${VERSION#mcp-v}"
 TAR_NAME="emisar-mcp-${VERSION_NUM}-${OS}-${ARCH}"
 TARBALL="${TAR_NAME}.tar.gz"
-BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
+BASE_URL=""
+RELEASE_SOURCE=""
+if [ "$REPO" = "$OFFICIAL_REPO" ]; then
+  if BASE_URL=$(mirror_release_base "$VERSION"); then
+    RELEASE_SOURCE="Emisar release mirror"
+  else
+    status=$?
+    [ "$status" -ne 2 ] || die "the Emisar release mirror returned an invalid manifest for ${VERSION}"
+  fi
+fi
+if [ -z "$BASE_URL" ]; then
+  BASE_URL=$(github_release_base "$VERSION") || die "could not verify GitHub release mirror metadata for ${VERSION}"
+  RELEASE_SOURCE="GitHub release mirror"
+fi
 
 if ! confirm "install emisar-mcp ${VERSION} to the listed target(s)?"; then
   die "aborted by user"
@@ -940,13 +1015,16 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-log "downloading ${TARBALL}"
-curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 300 --retry 2 -fsSL -o "${tmp}/${TARBALL}" "${BASE_URL}/${TARBALL}" \
-  || die "download failed: ${BASE_URL}/${TARBALL}"
-
-log "downloading SHA256SUMS-MCP"
-curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 300 --retry 2 -fsSL -o "${tmp}/SHA256SUMS-MCP" "${BASE_URL}/SHA256SUMS-MCP" \
-  || die "download failed: ${BASE_URL}/SHA256SUMS-MCP"
+log "downloading ${TARBALL} from ${RELEASE_SOURCE}"
+if ! fetch_release_files "$BASE_URL" "$tmp"; then
+  if [ "$RELEASE_SOURCE" != "Emisar release mirror" ]; then
+    die "failed to download ${VERSION} from ${BASE_URL}"
+  fi
+  warn "Emisar release download failed — falling back to the GitHub release mirror"
+  rm -f "${tmp}/${TARBALL}" "${tmp}/SHA256SUMS-MCP"
+  BASE_URL=$(github_release_base "$VERSION") || die "could not verify GitHub release mirror metadata for ${VERSION}"
+  fetch_release_files "$BASE_URL" "$tmp" || die "failed to download ${VERSION} from both release mirrors"
+fi
 
 log "verifying checksum"
 if command -v sha256sum >/dev/null 2>&1; then

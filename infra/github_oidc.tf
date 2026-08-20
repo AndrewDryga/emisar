@@ -1,10 +1,11 @@
-# Keyless GitHub Actions federation is used only by the pack publisher. Portal
-# delivery remains a reviewed HCP Terraform plan from this single workspace.
+# Keyless GitHub Actions federation is used only by the pack and release
+# publishers. Portal delivery remains a reviewed HCP Terraform plan from this
+# single workspace.
 resource "google_iam_workload_identity_pool" "github" {
   project                   = var.project_id
   workload_identity_pool_id = "github-actions"
   display_name              = "Emisar: GitHub Actions"
-  description               = "OIDC federation for the repository's production pack publisher"
+  description               = "OIDC federation for the repository's production artifact publishers"
   depends_on                = [google_project_service.apis]
 }
 
@@ -27,19 +28,16 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.environment"   = "assertion.environment"
   }
 
-  # Every claim below is a NAME, and GitHub does not reserve a repository path
-  # after a rename or transfer — so whoever claims the old path could satisfy
-  # all of them from their own workflow and mint a token that publishes packs
-  # customer runners execute. repository_id is immutable; pin it too when known.
-  # repository_id is the only IMMUTABLE claim here: the other four are names an
-  # attacker reproduces in a repo claimed at our old path after a rename or
-  # transfer. It is unconditional now — the variable is validated numeric and
-  # defaults to the real id, so there is no longer an "unset" case to branch on.
+  # repository_id is the immutable anchor; repository, workflow, ref, and
+  # environment names can all be reproduced after a rename or transfer. Each
+  # alternative below pins one exact publisher workflow and its admitted refs.
   attribute_condition = join(" && ", [
     "assertion.repository == \"${var.github_repository}\"",
-    "assertion.ref == \"refs/heads/main\"",
-    "assertion.workflow_ref == \"${var.github_repository}/.github/workflows/cd.yml@refs/heads/main\"",
-    "assertion.environment == \"pack-registry-production\"",
     "assertion.repository_id == \"${var.github_repository_id}\"",
+    "(${join(" || ", [
+      "(assertion.ref == \"refs/heads/main\" && assertion.workflow_ref == \"${var.github_repository}/.github/workflows/cd.yml@refs/heads/main\" && assertion.environment == \"pack-registry-production\")",
+      "(assertion.ref.startsWith(\"refs/tags/runner-v\") && assertion.workflow_ref.startsWith(\"${var.github_repository}/.github/workflows/runner-release.yml@refs/tags/runner-v\") && assertion.environment == \"public-releases\")",
+      "(assertion.ref.startsWith(\"refs/tags/mcp-v\") && assertion.workflow_ref.startsWith(\"${var.github_repository}/.github/workflows/mcp-release.yml@refs/tags/mcp-v\") && assertion.environment == \"public-releases\")",
+    ])})",
   ])
 }

@@ -18,7 +18,7 @@ Cloud DNS (DNSSEC) -> global IPv4/IPv6 HTTPS load balancer
                          |      |-> persistent notebook disk
                          |      |-> Cloud SQL IAM proxy
                          |      `-> explicit portal-node distribution
-                         `-> public-read, versioned pack registry in GCS
+                         `-> public-read, versioned packs and releases in GCS
 
 Private instances -> Cloud NAT for controlled egress
 Operators -> IAP + OS Login for SSH
@@ -46,7 +46,7 @@ Better Stack -> external probes, on-call escalation (severe GCP alarms page in),
 | Network | Dedicated VPC, flow logs, Cloud NAT, load-balancer-only application ingress, IAP-only SSH |
 | TLS | Certificate Manager DNS authorization, managed certificates, restricted TLS 1.2+ policy |
 | Secrets | Explicit Secret Manager versions fingerprint the VM template; VM access is per-secret and read-only |
-| Supply chain | Production runs an immutable portal GHCR digest built and tested by CI; COS installs a pinned immutable runner release with checksum verification, private packs are rendered by Terraform, and public pack artifacts are versioned in GCS |
+| Supply chain | Production runs an immutable portal GHCR digest built and tested by CI; COS installs a pinned immutable runner release from the Emisar release host with checksum verification, private packs are rendered by Terraform, and public pack and release artifacts are versioned in GCS |
 | DNS | Authoritative Cloud DNS zone with DNSSEC signing and the complete web and email record set |
 | Monitoring | Google Cloud alerts to email and Slack, with severe silent-failure alarms paging the Better Stack on-call; independent Better Stack probes, escalation, and status page |
 
@@ -118,9 +118,9 @@ health-check source ranges. Public traffic terminates TLS at the load balancer.
 
 Every portal VM runs a dedicated `emisar-admin` runner directly under systemd.
 Cloud-init fetches the pinned immutable runner bundle and its published
-`SHA256SUMS` directly, verifies the selected artifact, and installs it under
-`/run/emisar-admin-runner/bin`. This avoids a boot-time GitHub API dependency;
-the release assets themselves do not consume the anonymous API quota. COS
+`SHA256SUMS` from `https://emisar.dev/releases`, verifies the selected artifact,
+and installs it under `/run/emisar-admin-runner/bin`. This avoids a boot-time
+GitHub API dependency. COS
 mounts writable persistent paths `noexec`, so config, durable dispatch state,
 packs, and logs remain under `/var/lib/emisar-admin-runner` while the
 boot-recreatable binary lives on executable tmpfs. Cloud-init also writes the
@@ -446,6 +446,25 @@ gcloud storage ls -a gs://$(terraform output -raw pack_registry_bucket)/v1/catal
 
 Pack publication has a separate GitHub environment approval and is serialized
 so an active publication cannot be canceled halfway through.
+
+## Release artifacts
+
+`https://emisar.dev/releases/*` routes through the shared load balancer to the
+same public-read GCS bucket. Runner and MCP release workflows authenticate with
+the `emisar-release-publisher` identity. It can create objects only under
+`releases/`; a small custom role permits replacing the two `latest.json`
+pointers and nothing else.
+
+Versioned archives, checksums, and manifests are create-only. A workflow
+verifies the public Emisar copy before publishing the identical GitHub Release
+as a secondary mirror. The `latest.json` pointer advances only after every
+referenced object exists and never moves to an older semantic version. Bucket
+versioning retains previous pointer generations.
+
+```sh
+curl -fsS https://emisar.dev/releases/runner/latest.json | jq '.tag'
+curl -fsS https://emisar.dev/releases/mcp/latest.json | jq '.tag'
+```
 
 ## Recovery drills
 

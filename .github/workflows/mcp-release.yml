@@ -4,7 +4,8 @@ run-name: Release ${{ github.ref_name }}
 
 # Triggered by tag `mcp-vMAJOR.MINOR.PATCH` only. Builds the standalone
 # `emisar-mcp` stdio bridge for darwin + linux (amd64 + arm64),
-# signs build provenance via Sigstore, uploads to GitHub releases. The first
+# signs build provenance via Sigstore, publishes to the Emisar release tree,
+# then mirrors the files to GitHub Releases. The first
 # attempt requires current main; Actions UI reruns preserve the original
 # SHA/ref and require only that the signed tag remains on main.
 #
@@ -21,8 +22,10 @@ run-name: Release ${{ github.ref_name }}
 #   tarball  : emisar-mcp-0.1.0-<OS>-<ARCH>.tar.gz
 #   checksum : SHA256SUMS-MCP
 #
-# `install-mcp.sh` queries the latest release with prefix `mcp-v`
-# and downloads `emisar-mcp-${version}-${os}-${arch}.tar.gz`.
+# `install-mcp.sh` reads `https://emisar.dev/releases/mcp/latest.json` and
+# downloads the selected archive + `SHA256SUMS-MCP` from that GCS-backed tree.
+# GitHub Releases receives the identical files as a secondary mirror and
+# provenance record.
 
 on:
   push:
@@ -275,18 +278,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [build]
-    # No `environment:` block here — the ref restriction already applied at
-    # build, and publish only uploads what build attested. See
-    # runner-release.yml.
+    # Reuse the signed-tag environment for the GCS credential. The WIF provider
+    # additionally pins this exact workflow path and mcp-v tag prefix.
+    environment:
+      name: public-releases
     permissions:
       contents: write
+      id-token: write
     env:
+      GOTOOLCHAIN: local
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.ref }}
           persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.sum
 
       - name: Download release archives
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -313,7 +325,38 @@ jobs:
           echo "tag=${RELEASE_TAG}"   >> "$GITHUB_OUTPUT"
           echo "version=${version}"   >> "$GITHUB_OUTPUT"
 
-      - name: Publish immutable GitHub release
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: emisar-release-publisher@emisar.iam.gserviceaccount.com
+          token_format: access_token
+
+      - name: Publish primary Emisar release
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          go -C tools run ./cmd/releasepublish \
+            --dir ../release \
+            --bucket emisar-pack-registry \
+            --component mcp \
+            --tag "${RELEASE_TAG}" \
+            --source-revision "${GITHUB_SHA}"
+
+      - name: Verify primary Emisar release
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          base="https://emisar.dev/releases/mcp/${RELEASE_TAG}"
+          curl -fsS --retry 4 --retry-delay 2 "${base}/SHA256SUMS-MCP" -o /tmp/published-SHA256SUMS-MCP
+          cmp release/SHA256SUMS-MCP /tmp/published-SHA256SUMS-MCP
+          archive="emisar-mcp-${VERSION}-linux-amd64.tar.gz"
+          curl -fsS --retry 4 --retry-delay 2 "${base}/${archive}" -o "/tmp/${archive}"
+          cmp "release/${archive}" "/tmp/${archive}"
+
+      - name: Publish GitHub release mirror
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}

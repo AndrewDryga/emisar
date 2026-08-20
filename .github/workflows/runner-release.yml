@@ -28,8 +28,10 @@ run-name: Release ${{ github.ref_name }}
 #   tarball  : emisar-0.3.0-<OS>-<ARCH>.tar.gz
 #   checksum : SHA256SUMS (one combined file for all four arches)
 #
-# `install.sh` queries the latest release matching `runner-v*` and
-# downloads `emisar-${version}-${os}-${arch}.tar.gz` + `SHA256SUMS`.
+# `install.sh` reads `https://emisar.dev/releases/runner/latest.json` and
+# downloads the selected archive + `SHA256SUMS` from the same GCS-backed tree.
+# GitHub Releases receives the identical files as a secondary mirror and
+# provenance record.
 #
 # The release also publishes the official container image
 # `ghcr.io/<owner>/emisar-runner:<version>` (linux/amd64 + linux/arm64),
@@ -448,18 +450,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [build, image]
-    # No `environment:` block here — the ref restriction already applied at
-    # build, and publish only uploads what build attested. A second
-    # environment gate would add nothing.
+    # Reuse the signed-tag environment for the GCS credential. The WIF provider
+    # additionally pins this exact workflow path and runner-v tag prefix.
+    environment:
+      name: public-releases
     permissions:
       contents: write
+      id-token: write
     env:
+      GOTOOLCHAIN: local
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.ref }}
           persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.sum
 
       - name: Download release archives
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -484,7 +495,38 @@ jobs:
           echo "tag=${RELEASE_TAG}"   >> "$GITHUB_OUTPUT"
           echo "version=${version}"   >> "$GITHUB_OUTPUT"
 
-      - name: Publish immutable GitHub release
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: emisar-release-publisher@emisar.iam.gserviceaccount.com
+          token_format: access_token
+
+      - name: Publish primary Emisar release
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          go -C tools run ./cmd/releasepublish \
+            --dir ../release \
+            --bucket emisar-pack-registry \
+            --component runner \
+            --tag "${RELEASE_TAG}" \
+            --source-revision "${GITHUB_SHA}"
+
+      - name: Verify primary Emisar release
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          base="https://emisar.dev/releases/runner/${RELEASE_TAG}"
+          curl -fsS --retry 4 --retry-delay 2 "${base}/SHA256SUMS" -o /tmp/published-SHA256SUMS
+          cmp release/SHA256SUMS /tmp/published-SHA256SUMS
+          archive="emisar-${VERSION}-linux-amd64.tar.gz"
+          curl -fsS --retry 4 --retry-delay 2 "${base}/${archive}" -o "/tmp/${archive}"
+          cmp "release/${archive}" "/tmp/${archive}"
+
+      - name: Publish GitHub release mirror
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}

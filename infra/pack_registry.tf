@@ -1,4 +1,4 @@
-# ── Pack registry: the one deliberate public-read surface ───────────────────
+# ── Public artifacts: the one deliberate public-read bucket ──────────────
 resource "google_storage_bucket" "pack_registry" {
   depends_on = [google_project_service.apis]
 
@@ -29,7 +29,7 @@ resource "google_storage_bucket" "pack_registry" {
   }
 
   labels = {
-    surface = "public-pack-registry"
+    surface = "public-artifacts"
   }
 
   lifecycle {
@@ -115,6 +115,64 @@ resource "google_service_account_iam_member" "pack_publisher_wif" {
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.environment/pack-registry-production"
 }
 
+# Binary releases share the public-read bucket but not the pack publisher's
+# identity. A release workflow can create versioned objects and replace only
+# the two latest pointers; it cannot rewrite a published binary or pack bytes.
+resource "google_service_account" "release_publisher" {
+  depends_on = [google_project_service.apis]
+
+  project      = var.project_id
+  account_id   = "emisar-release-publisher"
+  display_name = "Emisar Binary Release Publisher"
+}
+
+resource "google_storage_bucket_iam_member" "release_immutable_publisher" {
+  bucket = google_storage_bucket.pack_registry.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.release_publisher.email}"
+
+  condition {
+    title       = "create-immutable-release-objects"
+    description = "Create versioned runner and MCP release objects without overwrite or delete permission."
+    expression  = "resource.name.startsWith('projects/_/buckets/${google_storage_bucket.pack_registry.name}/objects/releases/')"
+  }
+}
+
+resource "google_project_iam_custom_role" "release_pointer_publisher" {
+  depends_on = [google_project_service.apis]
+
+  project     = var.project_id
+  role_id     = "releasePointerPublisher"
+  title       = "Binary Release Pointer Publisher"
+  description = "Create, replace, or delete only the runner and MCP latest-release pointers."
+  permissions = [
+    "storage.objects.create",
+    "storage.objects.delete",
+  ]
+  stage = "GA"
+}
+
+resource "google_storage_bucket_iam_member" "release_pointer_publisher" {
+  bucket = google_storage_bucket.pack_registry.name
+  role   = google_project_iam_custom_role.release_pointer_publisher.name
+  member = "serviceAccount:${google_service_account.release_publisher.email}"
+
+  condition {
+    title       = "replace-latest-release-pointers"
+    description = "Replace only the two live latest-release pointers; versioned release objects remain create-only."
+    expression = join(" || ", [
+      "resource.name == 'projects/_/buckets/${google_storage_bucket.pack_registry.name}/objects/releases/runner/latest.json'",
+      "resource.name == 'projects/_/buckets/${google_storage_bucket.pack_registry.name}/objects/releases/mcp/latest.json'",
+    ])
+  }
+}
+
+resource "google_service_account_iam_member" "release_publisher_wif" {
+  service_account_id = google_service_account.release_publisher.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.environment/public-releases"
+}
+
 # ── Serving domain: registry.<domain> on the SHARED HTTPS LB ──────────────────
 # Vendor-neutral artifact URLs: published catalogs bake tarball URLs into
 # immutable objects forever, so they should name OUR domain, not a Google
@@ -135,7 +193,7 @@ resource "google_compute_backend_bucket" "pack_registry" {
   # carry `no-store` and are never edge-cached, so a fresh publish is visible
   # immediately. USE_ORIGIN_HEADERS is what makes that split hold — the edge
   # caches strictly per object, never a blanket default_ttl that would pin the
-  # mutable pointers.
+  # mutable pack or release pointers.
   enable_cdn = true
   cdn_policy {
     cache_mode = "USE_ORIGIN_HEADERS"

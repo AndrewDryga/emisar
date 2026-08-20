@@ -28,9 +28,11 @@ import (
 const (
 	officialRepository = "andrewdryga/emisar"
 	signerWorkflow     = "AndrewDryga/emisar/.github/workflows/runner-release.yml"
+	releaseBaseURL     = "https://emisar.dev/releases/runner"
 	apiBaseURL         = "https://api.github.com"
 	downloadBaseURL    = "https://github.com"
 	maxAPIBytes        = 4 << 20
+	maxManifestBytes   = 1 << 20
 	maxChecksumsBytes  = 1 << 20
 	maxArchiveBytes    = 256 << 20
 	maxInstallerBytes  = 512 << 10
@@ -52,6 +54,7 @@ type dependencies struct {
 	lookPath     func(string) (string, error)
 	runCommand   func(context.Context, string, []string, []string, io.Writer, io.Writer) error
 	httpClient   *http.Client
+	releaseBase  string
 	apiBase      string
 	downloadBase string
 	tempRoot     string
@@ -62,6 +65,16 @@ type release struct {
 	Draft      bool   `json:"draft"`
 	Prerelease bool   `json:"prerelease"`
 	Immutable  bool   `json:"immutable"`
+	BaseURL    string `json:"-"`
+	Fallback   bool   `json:"-"`
+}
+
+type mirrorManifest struct {
+	SchemaVersion  int    `json:"schema_version"`
+	Component      string `json:"component"`
+	Tag            string `json:"tag"`
+	Version        string `json:"version"`
+	SourceRevision string `json:"source_revision"`
 }
 
 type semver struct {
@@ -81,6 +94,7 @@ func Run(ctx context.Context, opts Options) error {
 		lookPath:     trustedLookPath,
 		runCommand:   execute,
 		httpClient:   client,
+		releaseBase:  releaseBaseURL,
 		apiBase:      apiBaseURL,
 		downloadBase: downloadBaseURL,
 	})
@@ -117,6 +131,9 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 	if err != nil {
 		return err
 	}
+	if target.Fallback {
+		fmt.Fprintln(opts.Stderr, "warning: Emisar release mirror unavailable; using the GitHub release mirror")
+	}
 	targetVersion := strings.TrimPrefix(target.TagName, "runner-v")
 	if sameOrNewer(opts.CurrentVersion, targetVersion, opts.Version == "") {
 		fmt.Fprintf(opts.Stdout, "emisar %s is already current.\n", opts.CurrentVersion)
@@ -136,15 +153,27 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 	archiveName := name + ".tar.gz"
 	archivePath := filepath.Join(temp, archiveName)
 	checksumsPath := filepath.Join(temp, "SHA256SUMS")
-	base := strings.TrimRight(deps.downloadBase, "/") + "/" + officialRepository +
-		"/releases/download/" + target.TagName
+	base := target.BaseURL
 
 	fmt.Fprintf(opts.Stdout, "Downloading emisar %s for %s/%s...\n", targetVersion, runtime.GOOS, runtime.GOARCH)
-	if err := download(ctx, deps.httpClient, base+"/"+archiveName, archivePath, maxArchiveBytes); err != nil {
-		return fmt.Errorf("download release archive: %w", err)
-	}
-	if err := download(ctx, deps.httpClient, base+"/SHA256SUMS", checksumsPath, maxChecksumsBytes); err != nil {
-		return fmt.Errorf("download release checksums: %w", err)
+	if err := downloadReleaseFiles(ctx, deps.httpClient, base, archiveName, archivePath, checksumsPath); err != nil {
+		if target.Fallback {
+			return err
+		}
+		fmt.Fprintln(opts.Stderr, "warning: Emisar release download failed; using the GitHub release mirror")
+		if err := os.Remove(archivePath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("remove partial release archive: %w", err)
+		}
+		if err := os.Remove(checksumsPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("remove partial release checksums: %w", err)
+		}
+		fallback, resolveErr := resolveGitHubRelease(ctx, target.TagName, deps)
+		if resolveErr != nil {
+			return fmt.Errorf("resolve GitHub release mirror after Emisar download failure: %w", resolveErr)
+		}
+		if err := downloadReleaseFiles(ctx, deps.httpClient, fallback.BaseURL, archiveName, archivePath, checksumsPath); err != nil {
+			return fmt.Errorf("both release mirrors failed: %w", err)
+		}
 	}
 	digest, err := verifyChecksum(archivePath, checksumsPath, archiveName)
 	if err != nil {
@@ -169,6 +198,74 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 }
 
 func resolveRelease(ctx context.Context, requested string, deps dependencies) (release, error) {
+	tag := ""
+	if requested != "" {
+		var err error
+		tag, err = normalizeVersion(requested)
+		if err != nil {
+			return release{}, err
+		}
+	}
+	found, unavailable, err := resolveMirrorRelease(ctx, tag, deps)
+	if err != nil {
+		return release{}, err
+	}
+	if !unavailable {
+		return found, nil
+	}
+	found, err = resolveGitHubRelease(ctx, tag, deps)
+	if err != nil {
+		return release{}, err
+	}
+	found.Fallback = true
+	return found, nil
+}
+
+func resolveMirrorRelease(ctx context.Context, tag string, deps dependencies) (release, bool, error) {
+	path := "/latest.json"
+	if tag != "" {
+		path = "/" + tag + "/manifest.json"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(deps.releaseBase, "/")+path, nil)
+	if err != nil {
+		return release{}, false, fmt.Errorf("build Emisar release request: %w", err)
+	}
+	resp, err := deps.httpClient.Do(req)
+	if err != nil {
+		return release{}, true, nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return release{}, true, nil
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxManifestBytes+1))
+	if err != nil {
+		return release{}, false, fmt.Errorf("read Emisar release manifest: %w", err)
+	}
+	if len(body) > maxManifestBytes {
+		return release{}, false, fmt.Errorf("emisar release manifest exceeds the %d-byte limit", maxManifestBytes)
+	}
+	var manifest mirrorManifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return release{}, false, fmt.Errorf("decode Emisar release manifest: %w", err)
+	}
+	version, ok := parseTag(manifest.Tag)
+	revision, revisionErr := hex.DecodeString(manifest.SourceRevision)
+	if manifest.SchemaVersion != 1 || manifest.Component != "runner" || !ok ||
+		manifest.Version != fmt.Sprintf("%d.%d.%d", version.major, version.minor, version.patch) ||
+		revisionErr != nil || len(revision) != 20 || manifest.SourceRevision != strings.ToLower(manifest.SourceRevision) {
+		return release{}, false, errors.New("emisar release mirror returned an invalid runner manifest")
+	}
+	if tag != "" && manifest.Tag != tag {
+		return release{}, false, fmt.Errorf("emisar release mirror returned %s for %s", manifest.Tag, tag)
+	}
+	return release{
+		TagName: manifest.Tag,
+		BaseURL: strings.TrimRight(deps.releaseBase, "/") + "/" + manifest.Tag,
+	}, false, nil
+}
+
+func resolveGitHubRelease(ctx context.Context, requested string, deps dependencies) (release, error) {
 	if requested != "" {
 		tag, err := normalizeVersion(requested)
 		if err != nil {
@@ -182,6 +279,7 @@ func resolveRelease(ctx context.Context, requested string, deps dependencies) (r
 		if found.TagName != tag || found.Draft || found.Prerelease || !found.Immutable {
 			return release{}, fmt.Errorf("release %s is not a stable immutable runner release", tag)
 		}
+		found.BaseURL = githubDownloadBase(deps, tag)
 		return found, nil
 	}
 
@@ -207,7 +305,23 @@ func resolveRelease(ctx context.Context, requested string, deps dependencies) (r
 	sort.Slice(candidates, func(i, j int) bool {
 		return compare(candidates[i].version, candidates[j].version) > 0
 	})
-	return candidates[0].release, nil
+	found := candidates[0].release
+	found.BaseURL = githubDownloadBase(deps, found.TagName)
+	return found, nil
+}
+
+func githubDownloadBase(deps dependencies, tag string) string {
+	return strings.TrimRight(deps.downloadBase, "/") + "/" + officialRepository + "/releases/download/" + tag
+}
+
+func downloadReleaseFiles(ctx context.Context, client *http.Client, base, archiveName, archivePath, checksumsPath string) error {
+	if err := download(ctx, client, base+"/"+archiveName, archivePath, maxArchiveBytes); err != nil {
+		return fmt.Errorf("download release archive: %w", err)
+	}
+	if err := download(ctx, client, base+"/SHA256SUMS", checksumsPath, maxChecksumsBytes); err != nil {
+		return fmt.Errorf("download release checksums: %w", err)
+	}
+	return nil
 }
 
 func getJSON(ctx context.Context, deps dependencies, path string, into any) error {

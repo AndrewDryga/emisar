@@ -28,6 +28,7 @@ func MCP(root string, out io.Writer) error {
 		{"install directory discovery", mcpInstallDirs},
 		{"install confirmation prompt", mcpConfirmPrompt},
 		{"GitHub token argv hygiene", func(h *harness) error { return githubTokenHygiene(h, "install-mcp.sh") }},
+		{"latest release resolution", mcpLatestRelease},
 		{"installation and rollback", mcpInstallRollback},
 		{"staging integrity", mcpStagingIntegrity},
 		{"atomic multi-target activation", mcpActivationTransaction},
@@ -43,6 +44,76 @@ func MCP(root string, out io.Writer) error {
 		}
 	}
 	fmt.Fprintln(out, "ok: mcp installer smoke test passed")
+	return nil
+}
+
+func mcpLatestRelease(h *harness) error {
+	const releases = `[` +
+		`{"tag_name":"mcp-v0.11.0","draft":true,"prerelease":false},` +
+		`{"tag_name":"mcp-v0.10.1","draft":false,"prerelease":true},` +
+		`{"tag_name":"mcp-v0.2.9","draft":false,"prerelease":false},` +
+		`{"tag_name":"mcp-v0.10.0","draft":false,"prerelease":false},` +
+		`{"tag_name":"runner-v9.9.9","draft":false,"prerelease":false}]`
+	const manifest = `{"schema_version":1,"component":"mcp","tag":"mcp-v0.12.0","version":"0.12.0","source_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`
+
+	parsed := h.functions(h.repoPath("install-mcp.sh"), []string{"release_manifest_tag"}, `
+curl() { printf '%s' "$MANIFEST"; }
+release_manifest_tag https://example.invalid/latest.json mcp
+`, map[string]string{"MANIFEST": manifest})
+	output, err := requireOutput(parsed)
+	if err != nil {
+		return fmt.Errorf("parse valid mirror manifest: %w", err)
+	}
+	if got := strings.TrimSpace(string(output)); got != "mcp-v0.12.0" {
+		return fmt.Errorf("parsed mirror tag = %q", got)
+	}
+	malformed := h.functions(h.repoPath("install-mcp.sh"), []string{"release_manifest_tag"}, `
+curl() { printf '%s' "$MANIFEST"; }
+release_manifest_tag https://example.invalid/latest.json mcp || {
+  status=$?
+  printf 'invalid manifest status %s\n' "$status" >&2
+  exit "$status"
+}
+`, map[string]string{"MANIFEST": strings.Replace(manifest, `"source_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`, `"source_revision":"not-a-commit"`, 1)})
+	if err := expectFailure(malformed, "invalid manifest status 2"); err != nil {
+		return fmt.Errorf("malformed mirror manifest did not fail closed: %w", err)
+	}
+
+	result := h.functions(h.repoPath("install-mcp.sh"), []string{"resolve_latest_from_github", "resolve_latest_version"}, `
+die() { printf '%s\n' "$1" >&2; exit 1; }
+warn() { :; }
+release_manifest_tag() { printf 'mcp-v0.12.0\n'; }
+github_api() { printf 'unexpected GitHub request\n' >&2; exit 9; }
+OFFICIAL_REPO=andrewdryga/emisar
+REPO=$OFFICIAL_REPO
+RELEASE_BASE_URL=https://emisar.dev/releases/mcp
+resolve_latest_version
+
+REPO=example/emisar
+github_api() { printf '%s' "$RELEASES"; }
+resolve_latest_version
+`, map[string]string{"RELEASES": releases})
+
+	output, err = requireOutput(result)
+	if err != nil {
+		return err
+	}
+	if got := strings.TrimSpace(string(output)); got != "mcp-v0.12.0\nmcp-v0.10.0" {
+		return fmt.Errorf("resolved latest = %q, want mirror then GitHub fallback", got)
+	}
+	invalid := h.functions(h.repoPath("install-mcp.sh"), []string{"resolve_latest_version"}, `
+die() { printf '%s\n' "$1" >&2; exit 1; }
+warn() { :; }
+release_manifest_tag() { return 2; }
+resolve_latest_from_github() { printf 'GitHub fallback must not run\n' >&2; exit 9; }
+OFFICIAL_REPO=andrewdryga/emisar
+REPO=$OFFICIAL_REPO
+RELEASE_BASE_URL=https://emisar.dev/releases/mcp
+resolve_latest_version
+`, nil)
+	if err := expectFailure(invalid, "invalid MCP latest.json"); err != nil {
+		return fmt.Errorf("invalid mirror manifest did not fail closed: %w", err)
+	}
 	return nil
 }
 

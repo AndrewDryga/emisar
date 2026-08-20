@@ -273,6 +273,13 @@ resource "google_compute_url_map" "https" {
     terraform_data.livebook_backend_ready,
   ]
 
+  # Release bytes use the apex origin operators already allowlist, but route
+  # straight to GCS rather than consuming Portal capacity or availability.
+  host_rule {
+    hosts        = [var.domain]
+    path_matcher = "apex"
+  }
+
   # registry.<domain> serves the public pack-registry bucket straight from the
   # LB (pack_registry.tf) — no portal hop, so `emisar pack install` keeps
   # working even when the app tier is down or mid-deploy.
@@ -296,6 +303,16 @@ resource "google_compute_url_map" "https" {
     content {
       hosts        = ["livebook.${var.domain}"]
       path_matcher = "livebook"
+    }
+  }
+
+  path_matcher {
+    name            = "apex"
+    default_service = google_compute_backend_service.app.id
+
+    path_rule {
+      paths   = ["/releases", "/releases/*"]
+      service = google_compute_backend_bucket.pack_registry.id
     }
   }
 
@@ -349,6 +366,20 @@ resource "google_compute_url_map" "https" {
       path        = "/sessions/example"
       service     = test.value.id
     }
+  }
+
+  test {
+    description = "Binary releases bypass the Portal application"
+    host        = var.domain
+    path        = "/releases/runner/latest.json"
+    service     = google_compute_backend_bucket.pack_registry.id
+  }
+
+  test {
+    description = "Apex application routes remain on Portal"
+    host        = var.domain
+    path        = "/healthz"
+    service     = google_compute_backend_service.app.id
   }
 }
 

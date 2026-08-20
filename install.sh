@@ -39,6 +39,8 @@ set -Eeuo pipefail
 # -----------------------------------------------------------------------
 
 REPO="${EMISAR_REPO:-andrewdryga/emisar}"
+OFFICIAL_REPO="andrewdryga/emisar"
+RELEASE_BASE_URL="https://emisar.dev/releases/runner"
 # The workflow identity Sigstore build provenance is checked against. It is
 # matched literally against the signing certificate's SubjectAlternativeName,
 # which carries GitHub's canonical owner casing (AndrewDryga) — NOT the
@@ -824,7 +826,7 @@ github_api() {
   fi
 }
 
-resolve_latest_version() {
+resolve_latest_from_github() {
   # The runner ships under the `runner-v*` tag prefix; the MCP bridge
   # uses `mcp-v*` and shouldn't be picked up here. We use the GitHub
   # releases API and grep the first matching tag. Callers that share an
@@ -859,23 +861,100 @@ resolve_latest_version() {
     | sed -E 's/^/runner-v/'
 }
 
+release_manifest_tag() {
+  local url="$1" component="$2" out tag version revision expected
+  out=$(curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 120 --retry 2 -fsSL "$url") || return 1
+  printf '%s\n' "$out" | grep -Eq '"schema_version"[[:space:]]*:[[:space:]]*1([,[:space:]}]|$)' || return 2
+  printf '%s\n' "$out" | grep -Eq '"component"[[:space:]]*:[[:space:]]*"'"$component"'"' || return 2
+  tag=$(printf '%s\n' "$out" | grep -oE '"tag"[[:space:]]*:[[:space:]]*"runner-v[0-9]+\.[0-9]+\.[0-9]+"' | sed -E 's/.*"(runner-v[0-9]+\.[0-9]+\.[0-9]+)"/\1/') || return 2
+  version=$(printf '%s\n' "$out" | grep -oE '"version"[[:space:]]*:[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+"' | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)"/\1/') || return 2
+  revision=$(printf '%s\n' "$out" | grep -oE '"source_revision"[[:space:]]*:[[:space:]]*"[0-9a-f]{40}"' | sed -E 's/.*"([0-9a-f]{40})"/\1/') || return 2
+  [ "$(printf '%s\n' "$tag" | wc -l | tr -d ' ')" -eq 1 ] || return 2
+  [ "$(printf '%s\n' "$version" | wc -l | tr -d ' ')" -eq 1 ] || return 2
+  [ "$(printf '%s\n' "$revision" | wc -l | tr -d ' ')" -eq 1 ] || return 2
+  expected=${tag#runner-v}
+  [ "$version" = "$expected" ] || return 2
+  if printf '%s\n' "$version" | grep -Eq '(^|\.)0[0-9]'; then
+    return 2
+  fi
+  printf '%s\n' "$tag"
+}
+
+resolve_latest_version() {
+  local version status
+  if [ "$REPO" = "$OFFICIAL_REPO" ]; then
+    if version=$(release_manifest_tag "${RELEASE_BASE_URL}/latest.json" runner); then
+      printf '%s\n' "$version"
+      return 0
+    else
+      status=$?
+      if [ "$status" -eq 2 ]; then
+        die "the Emisar release mirror returned an invalid runner latest.json"
+      fi
+      warn "Emisar release mirror unavailable — falling back to the GitHub release mirror"
+    fi
+  fi
+  resolve_latest_from_github
+}
+
+mirror_release_base() {
+  local version="$1" tag status
+  if tag=$(release_manifest_tag "${RELEASE_BASE_URL}/${version}/manifest.json" runner); then
+    [ "$tag" = "$version" ] || return 2
+    printf '%s/%s\n' "$RELEASE_BASE_URL" "$version"
+    return 0
+  else
+    status=$?
+    [ "$status" -ne 2 ] || return 2
+  fi
+  return 1
+}
+
+github_release_base() {
+  local version="$1"
+  require_immutable_release "$version"
+  printf 'https://github.com/%s/releases/download/%s\n' "$REPO" "$version"
+}
+
+fetch_release_files() {
+  local base="$1" tarball="$2" tmp="$3"
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 300 --retry 2 -sSL --fail -o "${tmp}/${tarball}" "${base}/${tarball}" &&
+    curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 300 --retry 2 -sSL --fail -o "${tmp}/SHA256SUMS" "${base}/SHA256SUMS"
+}
+
 download_release() {
   local version="$1" tmp="$2"
   # `version` is the full tag (e.g. `runner-vX.Y.Z`). The tarball
   # inside the release uses just the semver portion — strip the
   # `runner-v` prefix.
   local version_num="${version#runner-v}"
-  local base="https://github.com/${REPO}/releases/download/${version}"
+  local base source status
   local name="emisar-${version_num}-${OS}-${ARCH}"
   local tarball="${name}.tar.gz"
 
-  log "downloading ${tarball}"
-  curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 300 --retry 2 -sSL --fail -o "${tmp}/${tarball}" "${base}/${tarball}" \
-    || die "failed to download ${base}/${tarball}"
+  if [ "$REPO" = "$OFFICIAL_REPO" ]; then
+    if base=$(mirror_release_base "$version"); then
+      source="Emisar release mirror"
+    else
+      status=$?
+      [ "$status" -ne 2 ] || die "the Emisar release mirror returned an invalid manifest for ${version}"
+    fi
+  fi
+  if [ -z "${base:-}" ]; then
+    base=$(github_release_base "$version") || die "could not verify GitHub release mirror metadata for ${version}"
+    source="GitHub release mirror"
+  fi
 
-  log "downloading SHA256SUMS"
-  curl --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 15 --max-time 300 --retry 2 -sSL --fail -o "${tmp}/SHA256SUMS" "${base}/SHA256SUMS" \
-    || die "failed to download ${base}/SHA256SUMS"
+  log "downloading ${tarball} from ${source}"
+  if ! fetch_release_files "$base" "$tarball" "$tmp"; then
+    if [ "$source" != "Emisar release mirror" ]; then
+      die "failed to download ${version} from ${base}"
+    fi
+    warn "Emisar release download failed — falling back to the GitHub release mirror"
+    rm -f "${tmp}/${tarball}" "${tmp}/SHA256SUMS"
+    base=$(github_release_base "$version") || die "could not verify GitHub release mirror metadata for ${version}"
+    fetch_release_files "$base" "$tarball" "$tmp" || die "failed to download ${version} from both release mirrors"
+  fi
 
   # Pull the expected hash for our tarball out of SHA256SUMS so we can
   # show it in the status line. The verification itself is done by
@@ -1623,10 +1702,6 @@ do_install() {
   fi
   [[ "${VERSION}" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
     die "release version must match runner-vMAJOR.MINOR.PATCH (got '${VERSION}')"
-  if [ -z "${PREVERIFIED_BUNDLE}" ]; then
-    require_immutable_release "${VERSION}"
-  fi
-
   local prompt
   if [ "${INIT}" = "none" ]; then
     prompt="install emisar ${VERSION} to ${BIN_DIR}/emisar (binary only, no service)?"

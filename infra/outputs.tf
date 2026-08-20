@@ -55,8 +55,13 @@ output "packs_workload_identity_provider" {
 }
 
 output "pack_registry_bucket" {
-  description = "Single GCS bucket holding mutable registry pointers and immutable pack, catalog, and schema objects."
+  description = "Single public-artifact bucket holding mutable pointers and immutable pack, catalog, schema, and binary-release objects."
   value       = google_storage_bucket.pack_registry.name
+}
+
+output "release_base_url" {
+  description = "Canonical public HTTPS base URL for runner and MCP release artifacts."
+  value       = "https://${var.domain}/releases"
 }
 
 output "pack_registry_base_url" {

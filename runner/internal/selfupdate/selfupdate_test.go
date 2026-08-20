@@ -33,16 +33,18 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	archiveName := name + ".tar.gz"
 	checksums := hex.EncodeToString(digest[:]) + "  " + archiveName + "\n"
 
-	var apiToken string
+	var githubCalls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case strings.HasSuffix(r.URL.Path, "/releases"):
-			apiToken = r.Header.Get("Authorization")
-			fmt.Fprint(w, `[{"tag_name":"runner-v0.19.0","immutable":true}]`)
+		case r.URL.Path == "/latest.json":
+			fmt.Fprint(w, `{"schema_version":1,"component":"runner","tag":"runner-v0.19.0","version":"0.19.0","source_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
 		case strings.HasSuffix(r.URL.Path, "/"+archiveName):
 			w.Write(archive)
 		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
 			fmt.Fprint(w, checksums)
+		case strings.Contains(r.URL.Path, "/repos/"):
+			githubCalls++
+			http.Error(w, "GitHub fallback must not run", http.StatusInternalServerError)
 		default:
 			http.NotFound(w, r)
 		}
@@ -55,6 +57,7 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	var commandName string
 	var commandArgs, commandEnv []string
 	deps := testDependencies(executable)
+	deps.releaseBase = server.URL
 	deps.apiBase = server.URL
 	deps.downloadBase = server.URL
 	deps.httpClient = server.Client()
@@ -75,8 +78,8 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if apiToken != "Bearer secret-update-token" {
-		t.Errorf("API authorization = %q", apiToken)
+	if githubCalls != 0 {
+		t.Errorf("GitHub fallback calls = %d, want 0", githubCalls)
 	}
 	if commandName != "/bin/bash" {
 		t.Fatalf("command = %q, want /bin/bash", commandName)
@@ -103,6 +106,60 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "provenance was not checked") {
 		t.Errorf("missing verifier warning not surfaced: %s", stderr.String())
+	}
+}
+
+func TestRunFallsBackToImmutableGitHubMirrorWhenEmisarDownloadFails(t *testing.T) {
+	root := t.TempDir()
+	executable := writeReceiptFixture(t, root, officialRepository)
+	name := fmt.Sprintf("emisar-0.19.0-%s-%s", runtime.GOOS, runtime.GOARCH)
+	archive := releaseArchive(t, name, map[string]archiveEntry{
+		name + "/emisar":     {body: "runner-binary", mode: 0o755},
+		name + "/install.sh": {body: "#!/usr/bin/env bash\n", mode: 0o755},
+	})
+	digest := sha256.Sum256(archive)
+	archiveName := name + ".tar.gz"
+	checksums := hex.EncodeToString(digest[:]) + "  " + archiveName + "\n"
+
+	var apiToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/latest.json":
+			fmt.Fprint(w, `{"schema_version":1,"component":"runner","tag":"runner-v0.19.0","version":"0.19.0","source_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
+		case strings.Contains(r.URL.Path, "/repos/"):
+			apiToken = r.Header.Get("Authorization")
+			fmt.Fprint(w, `{"tag_name":"runner-v0.19.0","immutable":true}`)
+		case strings.Contains(r.URL.Path, "/releases/download/") && strings.HasSuffix(r.URL.Path, "/"+archiveName):
+			_, _ = w.Write(archive)
+		case strings.Contains(r.URL.Path, "/releases/download/") && strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
+			fmt.Fprint(w, checksums)
+		case strings.HasSuffix(r.URL.Path, "/"+archiveName):
+			http.Error(w, "mirror unavailable", http.StatusServiceUnavailable)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("EMISAR_GITHUB_TOKEN", "secret-update-token")
+	deps := testDependencies(executable)
+	deps.releaseBase = server.URL
+	deps.apiBase = server.URL
+	deps.downloadBase = server.URL
+	deps.httpClient = server.Client()
+	deps.tempRoot = root
+	var stderr bytes.Buffer
+	if err := run(context.Background(), Options{
+		CurrentVersion: "0.18.0",
+		Stderr:         &stderr,
+	}, deps); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if apiToken != "Bearer secret-update-token" {
+		t.Errorf("API authorization = %q", apiToken)
+	}
+	if !strings.Contains(stderr.String(), "GitHub release mirror") {
+		t.Fatalf("fallback was not surfaced: %s", stderr.String())
 	}
 }
 
@@ -141,7 +198,11 @@ func TestRunRequiresRootBeforeReadingInstallState(t *testing.T) {
 }
 
 func TestResolveReleaseSelectsHighestStableImmutableVersion(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/latest.json" {
+			http.NotFound(w, r)
+			return
+		}
 		fmt.Fprint(w, `[
 			{"tag_name":"runner-v0.20.0","immutable":false},
 			{"tag_name":"runner-v0.19.1","immutable":true,"prerelease":true},
@@ -152,6 +213,7 @@ func TestResolveReleaseSelectsHighestStableImmutableVersion(t *testing.T) {
 	}))
 	defer server.Close()
 	deps := testDependencies("/unused")
+	deps.releaseBase = server.URL
 	deps.apiBase = server.URL
 	deps.httpClient = server.Client()
 
@@ -178,11 +240,16 @@ func TestResolveReleaseRequiresExactImmutableVersion(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.Contains(r.URL.Path, "/manifest.json") {
+					http.NotFound(w, r)
+					return
+				}
 				fmt.Fprint(w, test.response)
 			}))
 			defer server.Close()
 			deps := testDependencies("/unused")
+			deps.releaseBase = server.URL
 			deps.apiBase = server.URL
 			deps.httpClient = server.Client()
 			got, err := resolveRelease(context.Background(), test.version, deps)
@@ -199,6 +266,31 @@ func TestResolveReleaseRequiresExactImmutableVersion(t *testing.T) {
 	}
 }
 
+func TestResolveReleaseRejectsInvalidMirrorWithoutGitHubFallback(t *testing.T) {
+	var githubCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/latest.json" {
+			fmt.Fprint(w, `{"schema_version":1,"component":"runner","tag":"runner-v0.19.0","version":"0.19.0","source_revision":"not-a-commit"}`)
+			return
+		}
+		githubCalls++
+		fmt.Fprint(w, `[{"tag_name":"runner-v0.19.0","immutable":true}]`)
+	}))
+	defer server.Close()
+	deps := testDependencies("/unused")
+	deps.releaseBase = server.URL
+	deps.apiBase = server.URL
+	deps.httpClient = server.Client()
+
+	_, err := resolveRelease(context.Background(), "", deps)
+	if err == nil || !strings.Contains(err.Error(), "invalid runner manifest") {
+		t.Fatalf("error = %v", err)
+	}
+	if githubCalls != 0 {
+		t.Fatalf("GitHub fallback calls = %d, want 0", githubCalls)
+	}
+}
+
 func testDependencies(executable string) dependencies {
 	return dependencies{
 		executable:   func() (string, error) { return executable, nil },
@@ -207,6 +299,7 @@ func testDependencies(executable string) dependencies {
 		lookPath:     func(string) (string, error) { return "", fs.ErrNotExist },
 		runCommand:   func(context.Context, string, []string, []string, io.Writer, io.Writer) error { return nil },
 		httpClient:   http.DefaultClient,
+		releaseBase:  releaseBaseURL,
 		apiBase:      apiBaseURL,
 		downloadBase: downloadBaseURL,
 	}

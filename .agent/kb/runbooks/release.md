@@ -86,13 +86,16 @@ tags with `-s` as well:
 ```sh
 git tag -s runner-vX.Y.Z <commit> -m "runner vX.Y.Z"
 git tag -v runner-vX.Y.Z          # "Good signature"
-git push origin runner-vX.Y.Z     # release workflow builds + attests
+git push origin runner-vX.Y.Z     # release workflow builds + publishes
 ```
 
 `git config --local tag.gpgsign true` (above) covers these too. Release workflows
 also verify GitHub's signature result and require the tag to target current
 `main`; a failed tag workflow is recovered by rerunning that same Actions run,
-not by moving or recreating the tag.
+not by moving or recreating the tag. The workflow attests the archives, uploads
+the immutable files and manifest below `https://emisar.dev/releases/`, advances
+`latest.json`, verifies the public bytes, and finally publishes GitHub Releases
+as the secondary mirror.
 
 ## GitHub release notes
 
@@ -186,7 +189,9 @@ Never title a product release with a bare `vX.Y.Z`.
 
 ## Verifying a downloaded binary (the recipe users run)
 
-The `runner-*`/`mcp-*` workflows already publish **SLSA Build Level 2 provenance**
+The `runner-*`/`mcp-*` workflows publish each checksum-verified archive at
+`https://emisar.dev/releases/`, then mirror the same bytes to GitHub Releases.
+They also publish **SLSA Build Level 2 provenance**
 (`actions/attest-build-provenance@v4`, Sigstore-signed) and a `SHA256SUMS`
 (`SHA256SUMS-MCP` for the bridge) on every release. A `runner-v*` release also
 publishes the official container image

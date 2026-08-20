@@ -120,16 +120,30 @@ if [ "$installed_version" != "$expected_version" ]; then
   release_tag="runner-v${runner_version}"
   release_name="emisar-${runner_version}-linux-$${runner_arch}"
   tarball="$${release_name}.tar.gz"
-  release_base="https://github.com/andrewdryga/emisar/releases/download/$${release_tag}"
+  release_base="https://emisar.dev/releases/runner/$${release_tag}"
+  github_release_base="https://github.com/andrewdryga/emisar/releases/download/$${release_tag}"
   bundle_dir=$(mktemp -d /run/emisar-admin-runner/release.XXXXXX)
   trap 'rm -rf "$bundle_dir"' EXIT
 
-  curl --fail --silent --show-error --location --retry 5 --retry-delay 2 \
-    --retry-connrefused --connect-timeout 5 --max-time 30 \
-    "$${release_base}/$${tarball}" -o "$${bundle_dir}/$${tarball}"
-  curl --fail --silent --show-error --location --retry 5 --retry-delay 2 \
-    --retry-connrefused --connect-timeout 5 --max-time 30 \
-    "$${release_base}/SHA256SUMS" -o "$${bundle_dir}/SHA256SUMS"
+  fetch_release_files() {
+    local base=$1
+    curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+      --fail --silent --show-error --location --retry 5 --retry-delay 2 \
+      --retry-connrefused --connect-timeout 5 --max-time 30 \
+      "$${base}/$${tarball}" -o "$${bundle_dir}/$${tarball}" || return 1
+    curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+      --fail --silent --show-error --location --retry 5 --retry-delay 2 \
+      --retry-connrefused --connect-timeout 5 --max-time 30 \
+      "$${base}/SHA256SUMS" -o "$${bundle_dir}/SHA256SUMS"
+  }
+  if ! fetch_release_files "$release_base"; then
+    echo "Emisar release host unavailable; using the GitHub release mirror" >&2
+    rm -f "$${bundle_dir}/$${tarball}" "$${bundle_dir}/SHA256SUMS"
+    fetch_release_files "$github_release_base" || {
+      echo "runner release is unavailable from both release mirrors" >&2
+      exit 1
+    }
+  fi
 
   expected_hash=$(awk -v artifact="$tarball" '$2 == artifact {print $1}' \
     "$${bundle_dir}/SHA256SUMS")

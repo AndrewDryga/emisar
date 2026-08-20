@@ -41,7 +41,7 @@ Configure these environments with deployment branches restricted to `main`:
 | `portal-production-plan` | Protected `main` only (no reviewer) | `TFC_PLAN_TOKEN` | Uploads the reviewed configuration and creates the saved production plan. Workspace auto-apply stays disabled and apply remains manual — the HCP Confirm & Apply is the human gate, so a second GitHub approval here would be redundant. |
 | `pack-registry-approval` | Required reviewer + protected `main` | None | Cancellable approval-only gate. This is the single human release decision for a pack publication; a newer selected pack release supersedes an older waiting approval. |
 | `pack-registry-production` | Protected `main` only (no reviewer) | None | Non-cancellable serialized publication through short-lived, environment-bound GCP WIF credentials. The release decision lives on `pack-registry-approval`; a bare rerun of an old publication job is refused by the workflow's superseded-release check when a newer release has since published. |
-| `public-releases` | `runner-v*` and `mcp-v*` tag policies (no reviewer) | None | Signed runner and MCP bridge builds. The signed annotated tag targeting current main is the release decision; the tag patterns bound which refs may mint Sigstore attestations. A failed tag run is recovered by rerunning that same run, preserving its original tag and source SHA. |
+| `public-releases` | `runner-v*` and `mcp-v*` tag policies (no reviewer) | None | Signed runner and MCP bridge builds plus GCS publication through short-lived, environment-bound WIF credentials. The signed annotated tag targeting current main is the release decision; the tag patterns and WIF condition bind attestation and artifact publication to the two release workflows. A failed tag run is recovered by rerunning that same run, preserving its original tag and source SHA. |
 | `mcp-registry-publication` | `v*` and `main` recovery policies (no reviewer) | `MCP_PRIVATE_KEY` | Publishes the hosted server listing. The workflow verifies the signed tag, its green Required - CI, and the live publisher-key proof before the secret is used. `main` is allowed only so the current hardened publisher can recover an existing immutable product release. |
 
 The single reviewer-gated environment is `pack-registry-approval` — one human
@@ -102,8 +102,8 @@ MCP Registry listing; infrastructure deploys only from reviewed `main` plans.
 
 | Workflow | Tag | Publishes |
 |---|---|---|
-| `Release - Runner` | `runner-vX.Y.Z` | On-host runner binaries, checksums, pack assets, and provenance. |
-| `Release - MCP Bridge` | `mcp-vX.Y.Z` | Local stdio-to-HTTP bridge binaries, checksums, and provenance. |
+| `Release - Runner` | `runner-vX.Y.Z` | On-host runner binaries, checksums, and manifests under `emisar.dev/releases`, the identical files on GitHub Releases as a secondary mirror, and GitHub provenance. |
+| `Release - MCP Bridge` | `mcp-vX.Y.Z` | Local stdio-to-HTTP bridge binaries, checksums, and manifests under `emisar.dev/releases`, the identical files on GitHub Releases as a secondary mirror, and GitHub provenance. |
 | `Portal - Publish MCP Registry Listing` | `vX.Y.Z`, manual reconcile after apply, + a six-hour schedule | The hosted server's signed `server.json` listing; no binary artifact. Reconciles against the LIVE deploy: it publishes a version only once `/healthz` on emisar.dev reports it (applies are founder-gated, so the tag can precede its deploy by days — the listing follows the apply, not the tag). |
 
 ## Apply and verify a production plan

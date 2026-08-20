@@ -14,8 +14,10 @@ client.
 ## Start with one host
 
 You need an [emisar account](https://emisar.dev/sign_up), a Linux host with
-systemd and `sudo`, and outbound HTTPS access to `emisar.dev:443`. You do not
-open an inbound port on the host.
+systemd and `sudo`, and outbound HTTPS access to `emisar.dev:443` and
+`registry.emisar.dev:443`. The first host serves the control plane, installer,
+and release archives; the second serves action packs. You do not need direct
+GCS access or an inbound port on the host.
 
 1. In the dashboard, choose **Connect a runner**. Copy the generated command;
    it contains a fresh, single-use enrollment key.

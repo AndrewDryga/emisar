@@ -232,9 +232,10 @@ sudo emisar update --version X.Y.Z
 The command accepts only an official install receipt written by `install.sh`.
 Copied development binaries, container images, and infrastructure-managed
 runners have no receipt and must be updated from their deployment source. The
-selected GitHub release must be stable and immutable; its archive is verified
-against `SHA256SUMS`, and an installed, authenticated `gh` CLI also verifies the
-release workflow attestation before the bundled installer runs.
+selected release is downloaded from `emisar.dev`, with GitHub Releases as a
+secondary mirror when that path is unavailable. Its archive is verified against
+`SHA256SUMS`, and an installed, authenticated `gh` CLI also verifies the release
+workflow attestation before the bundled installer runs.
 
 Fresh unattended installs still require an explicit pack set. Pass reviewed
 pack IDs when provisioning a host, or set an empty value to add none:
