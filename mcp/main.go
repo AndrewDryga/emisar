@@ -138,6 +138,7 @@ USAGE
   emisar-mcp list_tools [--json]
   emisar-mcp help <tool> [--json]
   emisar-mcp <tool> [JSON | -]
+  emisar-mcp -- <tool> [JSON | -]
 
 DESCRIPTION
   Proxies MCP JSON-RPC between a local LLM client and the emisar control plane
@@ -155,11 +156,27 @@ COMMANDS
 
   help <tool>
     Show one tool's server-owned description and top-level argument contract.
-    Add --json to print its exact descriptor. '<tool> --help' is equivalent.
+    Add --json to print its exact descriptor. For non-conflicting tool names,
+    '<tool> --help' is equivalent.
 
   <tool> [JSON | -]
     Call an exact MCP tool name. Pass one JSON object inline, '-' to read it
     from stdin, or omit it for {}. Results are pretty-printed JSON.
+
+  -- <tool> [JSON | -]
+    Call a tool whose name conflicts with a local command or begins with '-'.
+
+OUTPUT AND EXIT STATUS
+  0  Success. Tool calls write structuredContent JSON to stdout. list_tools and
+     help write text unless --json is present.
+
+  1  Tool, MCP, and tool-call transport/response errors write JSON to stdout. If
+     a call may have reached the server, its error includes data.operation_id;
+     a call rejected before transmission omits it. Recover a mutation with
+     get_operation before retrying it. A local diagnostic may also appear on
+     stderr. Configuration and list/help failures write diagnostics to stderr.
+
+  2  Invalid command or JSON input. The diagnostic is on stderr.
 
 ENVIRONMENT
   EMISAR_URL (required)
@@ -330,7 +347,7 @@ func runProgram(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 0
 		}
 	}
-	if len(args) > 0 && strings.HasPrefix(args[0], "-") {
+	if len(args) > 0 && strings.HasPrefix(args[0], "-") && args[0] != "--" {
 		fmt.Fprintf(stderr, "unknown argument %q (try --help)\n", args[0])
 		return 2
 	}

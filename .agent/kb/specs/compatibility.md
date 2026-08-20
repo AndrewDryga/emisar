@@ -410,12 +410,14 @@ the `--registry` flag select a pack registry.
 
 With no command, the MCP bridge keeps its stdio behavior. Its direct CLI surface
 is descriptor-driven: `list_tools [--json]` lists the live server catalog,
-`help <tool> [--json]` and `<tool> --help` document one live descriptor, and
-`<tool> [JSON | -]` calls any exact tool name with an omitted `{}`, one inline
-JSON object, or an object read from stdin. Calls print `structuredContent` as
-JSON; server/tool failures exit 1 and local usage failures exit 2. Tool names and
-schemas remain owned by `tools/list`, not compiled into the bridge. Its global
-flags remain `-h/--help` and `-v/--version`. Its environment is:
+`help <tool> [--json]` and, for non-conflicting names, `<tool> --help` document
+one live descriptor. `<tool> [JSON | -]` calls any exact tool name with an omitted `{}`, one inline
+JSON object, or an object read from stdin. `-- <tool> [JSON | -]` bypasses the
+local command namespace for an exact conflicting name. Calls print
+`structuredContent` as JSON; server, tool, configuration, and transport failures
+exit 1 and local usage failures exit 2. Tool names and schemas remain owned by
+`tools/list`, not compiled into the bridge. Its global flags remain
+`-h/--help` and `-v/--version`. Its environment is:
 
 ```text
 EMISAR_URL              required control-plane origin
@@ -427,8 +429,8 @@ EMISAR_SIGNING_KEY      optional local signing key
 EMISAR_SIGNING_CERT     optional certificate for that key
 ```
 
-It reads and writes line-delimited JSON-RPC 2.0 over stdio, and sends the user
-agent `emisar-mcp/<version>`. The attestation identifiers
+With no command, it reads and writes line-delimited JSON-RPC 2.0 over stdio. In
+both modes it sends the user agent `emisar-mcp/<version>`. The attestation identifiers
 `emisar-attestation-v5` and `emisar-cert-v2` are also frozen security formats.
 `packctl` is a maintainer-only build tool, not a customer CLI compatibility
 surface.

@@ -118,27 +118,66 @@ emisar-mcp get_action --help
 
 `list_tools --json` prints the exact descriptor array. `help <tool> --json`
 prints one exact descriptor, including its complete input schema. Human-readable
-help summarizes only the top-level arguments and points back to that exact JSON
-when a schema has cross-field or nested constraints.
+help summarizes top-level arguments. It calls out conditional or mutually
+exclusive arguments, but the complete input schema remains authoritative.
+
+The local `help` and `list_tools` names are conveniences, not reserved MCP tool
+names. Use `--` before an exact tool name when it conflicts with a local command
+or begins with a hyphen:
+
+```sh
+emisar-mcp -- help '{}'
+```
 
 Call a tool with one JSON object. Omit it when the tool accepts `{}`, or pass `-`
 to read the object from stdin:
 
 ```sh
 emisar-mcp list_runners
-emisar-mcp find_actions '{"query":"diagnose postgres replication"}'
-emisar-mcp get_action \
-  '{"action_id":"postgres.replication_status","pack_ref":"postgres@0.1.0/sha256:..."}'
-
-emisar-mcp run_action - < run-action.json
+emisar-mcp find_actions '{"query":"diagnose postgres replication"}' |
+  jq -ce '.candidates[0].next.arguments' |
+  emisar-mcp get_action -
 ```
 
-Standard output is predictable:
+Build JSON with `jq` when values come from shell variables, then parse the result
+as a separate step:
 
-- successful calls print the tool's `structuredContent` as pretty JSON;
-- tool-domain failures print the same structured error JSON and exit 1;
-- JSON-RPC, authentication, or transport failures exit 1;
-- malformed JSON, extra arguments, and unknown CLI options exit 2.
+```sh
+query='diagnose postgres replication'
+result=$(jq -cn --arg query "$query" '{query:$query}' |
+  emisar-mcp find_actions -) || {
+  status=$?
+  printf '%s\n' "$result" | jq .
+  exit "$status"
+}
+printf '%s\n' "$result" | jq -e '.candidates'
+```
+
+The process contract is:
+
+| Condition | Exit | stdout | stderr |
+| --- | ---: | --- | --- |
+| Successful tool call | 0 | `structuredContent` JSON | normally empty |
+| Successful `list_tools` or `help` | 0 | text, or JSON with `--json` | normally empty |
+| Tool or MCP error | 1 | structured error JSON | an authentication hint when relevant |
+| Tool call rejected locally before transmission | 1 | JSON without `data.operation_id` | diagnostic text |
+| Tool-call transport or response failure after transmission | 1 | JSON with `data.operation_id` | a safe local diagnostic when available |
+| Configuration or list/help transport error | 1 | empty | diagnostic text |
+| Invalid command or JSON input | 2 | empty | usage text |
+
+After an ambiguous mutation response, pass the returned `operation_id` to
+`get_operation` before deciding whether to retry. For example, if the failing
+command's stdout is in `call-error.json`:
+
+```sh
+jq -ce 'select(.data.operation_id != null) |
+  {operation_id:.data.operation_id}' call-error.json |
+  emisar-mcp get_operation -
+```
+
+Use this only when `data.operation_id` exists. Reads can be repeated normally.
+When piping commands directly, enable your shell's pipeline-failure handling so
+a downstream formatter does not hide a nonzero `emisar-mcp` exit.
 
 Use stdin when an argument contains operational details you do not want in the
 process list. Credentials are configuration, not tool arguments: keep the API key
@@ -167,9 +206,10 @@ The direct CLI adds only generic presentation: it fetches live descriptors for
 discovery/help, accepts one strict JSON argument object, and prints the returned
 structured JSON. It does not validate or reinterpret any individual tool.
 
-It writes only validated MCP frames to stdout. Diagnostics stay on stderr. A
-network failure becomes a correlated JSON-RPC error instead of corrupting the
-client stream.
+With no command, it writes only validated MCP frames to stdout. Diagnostics stay
+on stderr, and a network failure becomes a correlated JSON-RPC error instead of
+corrupting the client stream. Direct CLI commands use the stream and exit contract
+above.
 
 The control plane owns every tool and semantic response. The normative
 contract is [the MCP API specification](../.agent/kb/specs/mcp-api.md) with

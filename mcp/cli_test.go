@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -19,7 +20,10 @@ const cliTestDescriptor = `{
   "annotations":{"readOnlyHint":true,"destructiveHint":false},
   "inputSchema":{
     "type":"object",
-    "allOf":[{"$ref":"#/$defs/future_arguments"}],
+    "allOf":[
+      {"$ref":"#/$defs/future_arguments"},
+      {"not":{"required":["mode","ids"]}}
+    ],
     "$defs":{
       "future_arguments":{
         "type":"object",
@@ -105,7 +109,9 @@ func TestCLIToolHelpComesFromPublishedSchema(t *testing.T) {
 			"one of \"brief\", \"full\"",
 			"ids  array<integer> · optional",
 			"items 1–4; each item: value 1–9",
-			"Exact descriptor: emisar-mcp help future_tool --json",
+			"CROSS-FIELD RULES",
+			"Some arguments are conditionally required or mutually exclusive.",
+			"Complete input schema: emisar-mcp help future_tool --json",
 		} {
 			if !strings.Contains(stdout, want) {
 				t.Errorf("%v: output missing %q:\n%s", args, want, stdout)
@@ -198,6 +204,29 @@ func TestCLIToolCallsPreserveJSONAndReturnStructuredContent(t *testing.T) {
 			}
 			if !jsonEqual([]byte(stdout), []byte(tc.wantOutput)) {
 				t.Fatalf("output = %s, want %s", stdout, tc.wantOutput)
+			}
+		})
+	}
+}
+
+func TestCLIExactToolEscapeCallsNamesReservedByTheLocalCLI(t *testing.T) {
+	for _, name := range []string{"help", "list_tools", "--future"} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assertCLIRequestHeaders(t, r, "tools/call", name)
+				writeCLIResult(t, w, r, fmt.Sprintf(
+					`{"structuredContent":{"ok":true,"tool":%q},"content":[],"isError":false}`,
+					name,
+				))
+			}))
+			defer srv.Close()
+
+			stdout, stderr, code := runCLITest(newTestBridge(srv), []string{"--", name}, "")
+			if code != 0 || stderr != "" {
+				t.Fatalf("exit=%d stderr=%q", code, stderr)
+			}
+			if !jsonEqual([]byte(stdout), []byte(fmt.Sprintf(`{"ok":true,"tool":%q}`, name))) {
+				t.Fatalf("output = %s", stdout)
 			}
 		})
 	}
@@ -301,13 +330,92 @@ func TestCLIResponseFailuresDoNotLeakPortalBodyOrCredential(t *testing.T) {
 	b := newTestBridge(srv)
 	b.apiKey = apiKey
 	stdout, stderr, code := runCLITest(b, []string{"future_tool"}, "")
-	if code != 1 || stdout != "" {
+	if code != 1 || stderr != "" {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var failure struct {
+		Code int `json:"code"`
+		Data struct {
+			OperationID string `json:"operation_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &failure); err != nil {
+		t.Fatalf("transport failure is not JSON: %v\n%s", err, stdout)
+	}
+	if failure.Code != -32603 || failure.Data.OperationID == "" {
+		t.Fatalf("transport failure = %+v", failure)
 	}
 	for _, secret := range []string{portalSecret, "postgres://", "password", apiKey} {
 		if strings.Contains(stdout, secret) || strings.Contains(stderr, secret) {
 			t.Fatalf("secret %q leaked: stdout=%q stderr=%q", secret, stdout, stderr)
 		}
+	}
+}
+
+func TestCLIAmbiguousTransportFailureReturnsStableOperationID(t *testing.T) {
+	var mu sync.Mutex
+	var operationIDs []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		operationIDs = append(operationIDs, r.Header.Get(operationIDHeader))
+		mu.Unlock()
+		connection, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("hijack response: %v", err)
+			return
+		}
+		_ = connection.Close()
+	}))
+	defer srv.Close()
+
+	stdout, _, code := runCLITest(newTestBridge(srv), []string{"future_mutation", `{}`}, "")
+	if code != 1 {
+		t.Fatalf("exit=%d stdout=%s", code, stdout)
+	}
+	var failure struct {
+		Code int `json:"code"`
+		Data struct {
+			OperationID string `json:"operation_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &failure); err != nil {
+		t.Fatalf("transport failure is not JSON: %v\n%s", err, stdout)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(operationIDs) != 2 || operationIDs[0] == "" || operationIDs[0] != operationIDs[1] {
+		t.Fatalf("retry operation IDs = %#v", operationIDs)
+	}
+	if failure.Code != -32603 || failure.Data.OperationID != operationIDs[0] {
+		t.Fatalf("transport failure = %+v, request operation = %q", failure, operationIDs[0])
+	}
+}
+
+func TestCLILocalPreSendFailureDoesNotAdvertiseOperationRecovery(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		calls.Add(1)
+	}))
+	defer srv.Close()
+
+	wrapper := `{"value":""}`
+	arguments := `{"value":"` + strings.Repeat("x", maxFrameBytes-len(wrapper)) + `"}`
+	stdout, stderr, code := runCLITest(newTestBridge(srv), []string{"future_mutation", arguments}, "")
+	if code != 1 || !strings.Contains(stderr, "request frame exceeds") {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var failure map[string]any
+	if err := json.Unmarshal([]byte(stdout), &failure); err != nil {
+		t.Fatalf("local failure is not JSON: %v\n%s", err, stdout)
+	}
+	if failure["code"] != float64(-32603) || failure["message"] != "emisar bridge could not send this request" {
+		t.Fatalf("local failure = %#v", failure)
+	}
+	if _, exists := failure["data"]; exists {
+		t.Fatalf("unsent request advertised operation recovery: %#v", failure)
+	}
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("local failure made %d HTTP requests", got)
 	}
 }
 
@@ -329,6 +437,8 @@ func TestCLIPrintsJSONRPCDenialsAsStructuredJSON(t *testing.T) {
 
 func TestCLIValidatesCommandShapeBeforeConfiguration(t *testing.T) {
 	for _, args := range [][]string{
+		{"--"},
+		{"--", "future_tool", `{}`, `{}`},
 		{"list_tools", "--bogus"},
 		{"help", "future_tool", "--bogus"},
 		{"future_tool", `{}`, `{}`},
@@ -346,7 +456,7 @@ func TestCLIValidatesCommandShapeBeforeConfiguration(t *testing.T) {
 
 func TestCLIHumanOutputCannotEmitDescriptorControlCharacters(t *testing.T) {
 	descriptor := cliToolDescriptor{
-		Name:        "future\x1b]0;renamed\a_tool",
+		Name:        "future;\x1b touch /tmp/pwn\u202e",
 		Title:       "Future\rtool",
 		Description: "Inspect\nwithout terminal controls.",
 		Annotations: cliAnnotations{
@@ -371,7 +481,7 @@ func TestCLIHumanOutputCannotEmitDescriptorControlCharacters(t *testing.T) {
 		t.Fatal(err)
 	}
 	for label, output := range map[string]string{"list": list, "help": help} {
-		for _, control := range []string{"\x1b", "\a", "\r", "\t"} {
+		for _, control := range []string{"\x1b", "\a", "\r", "\t", "\u202e"} {
 			if strings.Contains(output, control) {
 				t.Errorf("%s output retained control byte %q:\n%s", label, control, output)
 			}
@@ -379,6 +489,114 @@ func TestCLIHumanOutputCannotEmitDescriptorControlCharacters(t *testing.T) {
 	}
 	if !strings.Contains(list, "[destructive]") || !strings.Contains(help, "destructive") {
 		t.Fatalf("conflicting annotations did not fail safe:\n%s\n%s", list, help)
+	}
+	if strings.Contains(help, "emisar-mcp future;") ||
+		!strings.Contains(help, "emisar-mcp 'future;  touch /tmp/pwn '") {
+		t.Fatalf("tool name is not safely shell-quoted:\n%s", help)
+	}
+}
+
+func TestCLIToolHelpCallsOutCrossFieldRules(t *testing.T) {
+	descriptor := cliToolDescriptor{
+		Name:        "execute_future_runbook",
+		Title:       "Execute future runbook",
+		Description: "Execute either a published runbook or one exact draft.",
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"required":["reason"],
+			"properties":{
+				"runbook_ref":{"type":"string"},
+				"slug":{"type":"string"},
+				"allow_draft":{"type":"boolean","default":false},
+				"reason":{"type":"string"}
+			},
+			"allOf":[{
+				"if":{"properties":{"allow_draft":{"const":true}}},
+				"then":{"required":["slug"],"not":{"required":["runbook_ref"]}},
+				"else":{"required":["runbook_ref"],"not":{"required":["slug"]}}
+			}]
+		}`),
+	}
+	help, err := renderToolHelp(descriptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"CROSS-FIELD RULES",
+		"conditionally required or mutually exclusive",
+		"complete input schema is authoritative; print it with the command below",
+		"reason  string · required",
+		"runbook_ref  string · optional",
+		"Complete input schema: emisar-mcp help execute_future_runbook --json",
+	} {
+		if !strings.Contains(help, want) {
+			t.Errorf("help missing %q:\n%s", want, help)
+		}
+	}
+}
+
+func TestCLIToolHelpBoundsRecursiveSchemasAndPreservesLargeNumbers(t *testing.T) {
+	recursive := cliToolDescriptor{
+		Name:        "recursive_tool",
+		Title:       "Recursive tool",
+		Description: "Exercise a hostile recursive schema.",
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{"nodes":{"$ref":"#/$defs/node"}},
+			"$defs":{"node":{"type":"array","items":{"$ref":"#/$defs/node"}}}
+		}`),
+	}
+	help, err := renderToolHelp(recursive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(help, "Complex or recursive JSON object") {
+		t.Fatalf("recursive schema did not fall back:\n%s", help)
+	}
+
+	largeNumber := cliToolDescriptor{
+		Name:        "large_number_tool",
+		Title:       "Large number tool",
+		Description: "Exercise exact schema-number presentation.",
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{"job_id":{"type":"integer","maximum":9007199254740993}}
+		}`),
+	}
+	help, err = renderToolHelp(largeNumber)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(help, "value at most 9007199254740993") {
+		t.Fatalf("large schema number changed:\n%s", help)
+	}
+}
+
+func TestCLIRejectsDuplicateToolDescriptors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeCLIResult(t, w, r, `{"tools":[`+cliTestDescriptor+`,`+cliTestDescriptor+`]}`)
+	}))
+	defer srv.Close()
+
+	stdout, stderr, code := runCLITest(newTestBridge(srv), []string{"list_tools"}, "")
+	if code != 1 || stdout != "" || !strings.Contains(stderr, `duplicate name "future_tool"`) {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+func TestCLIToolHelpUsesExactEscapeForReservedNames(t *testing.T) {
+	descriptor := cliToolDescriptor{
+		Name:        "help",
+		Title:       "Server help tool",
+		Description: "A server-owned name that collides with local help.",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+	}
+	help, err := renderToolHelp(descriptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(help, "USAGE\n  emisar-mcp -- help [JSON | -]") {
+		t.Fatalf("reserved tool usage is ambiguous:\n%s", help)
 	}
 }
 
@@ -407,6 +625,102 @@ func TestMainCLIDefaultsClientAttributionWithoutChangingStdIO(t *testing.T) {
 	}
 }
 
+func TestMainCLIEndToEndAcrossDiscoveryHelpCallsAndErrors(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		var request struct {
+			Method string `json:"method"`
+			Params struct {
+				Name      string          `json:"name"`
+				Arguments json.RawMessage `json:"arguments"`
+			} `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		assertCLIRequestHeaders(t, r, request.Method, request.Params.Name)
+		switch {
+		case request.Method == "tools/list":
+			writeCLIResult(t, w, r, `{"tools":[`+cliTestDescriptor+`]}`)
+		case request.Params.Name == "denied_tool":
+			writeCLIResult(t, w, r, `{"structuredContent":{"ok":false,"error":{"code":"denied"}},"content":[],"isError":true}`)
+		case request.Params.Name == "malformed_tool":
+			writeCLIResult(t, w, r, `{"content":[],"isError":false}`)
+		default:
+			arguments := request.Params.Arguments
+			if len(arguments) == 0 {
+				arguments = json.RawMessage(`{}`)
+			}
+			writeCLIResult(t, w, r, `{"structuredContent":{"ok":true,"tool":`+
+				fmt.Sprintf("%q", request.Params.Name)+`,"arguments":`+string(arguments)+`},"content":[],"isError":false}`)
+		}
+	}))
+	defer srv.Close()
+
+	env := map[string]string{"EMISAR_URL": srv.URL, "EMISAR_API_KEY": "e2e-token"}
+	stdout, stderr, code := runMain(t, "", []string{"list_tools", "--json"}, env)
+	if code != 0 || stderr != "" {
+		t.Fatalf("list_tools: exit=%d stderr=%q", code, stderr)
+	}
+	var descriptors []map[string]any
+	if err := json.Unmarshal([]byte(stdout), &descriptors); err != nil ||
+		len(descriptors) != 1 || descriptors[0]["name"] != "future_tool" {
+		t.Fatalf("list_tools output: err=%v value=%#v", err, descriptors)
+	}
+
+	stdout, stderr, code = runMain(t, "", []string{"help", "future_tool"}, env)
+	if code != 0 || stderr != "" ||
+		!strings.Contains(stdout, "target  string · required") ||
+		!strings.Contains(stdout, "CROSS-FIELD RULES") {
+		t.Fatalf("help: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	stdout, stderr, code = runMain(t, "", []string{
+		"future_tool", `{"target":"db-1","job_id":9007199254740993}`,
+	}, env)
+	if code != 0 || stderr != "" ||
+		!jsonEqual([]byte(stdout), []byte(`{"ok":true,"tool":"future_tool","arguments":{"target":"db-1","job_id":9007199254740993}}`)) {
+		t.Fatalf("inline call: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	stdout, stderr, code = runMain(t, `{"target":"db-2"}`, []string{"--", "help", "-"}, env)
+	if code != 0 || stderr != "" ||
+		!jsonEqual([]byte(stdout), []byte(`{"ok":true,"tool":"help","arguments":{"target":"db-2"}}`)) {
+		t.Fatalf("stdin exact call: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	stdout, stderr, code = runMain(t, "", []string{"denied_tool", `{}`}, env)
+	if code != 1 || stderr != "" ||
+		!jsonEqual([]byte(stdout), []byte(`{"ok":false,"error":{"code":"denied"}}`)) {
+		t.Fatalf("denied call: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	stdout, stderr, code = runMain(t, "", []string{"malformed_tool", `{}`}, env)
+	if code != 1 || !strings.Contains(stderr, "control plane returned no structuredContent object") {
+		t.Fatalf("malformed response: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var malformedFailure struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
+			OperationID string `json:"operation_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &malformedFailure); err != nil {
+		t.Fatalf("malformed response failure is not JSON: %v\n%s", err, stdout)
+	}
+	if malformedFailure.Code != -32603 ||
+		malformedFailure.Message != "invalid upstream tool response" ||
+		malformedFailure.Data.OperationID == "" {
+		t.Fatalf("malformed response failure = %+v", malformedFailure)
+	}
+	if got := calls.Load(); got != 6 {
+		t.Fatalf("HTTP requests = %d, want 6", got)
+	}
+}
+
 func TestCLIToolHelpFallsBackForUnresolvableSchema(t *testing.T) {
 	descriptor := cliToolDescriptor{
 		Name:        "future_tool",
@@ -418,7 +732,7 @@ func TestCLIToolHelpFallsBackForUnresolvableSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(help, "Complex JSON object. Use --json for the exact input schema.") {
+	if !strings.Contains(help, "Complex or recursive JSON object. Use the complete input schema.") {
 		t.Fatalf("fallback missing:\n%s", help)
 	}
 }

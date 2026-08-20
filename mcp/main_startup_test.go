@@ -130,7 +130,10 @@ func TestMain_HelpFlagPrintsHelpExitsZero(t *testing.T) {
 
 func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {
 	sections := []string{
+		"\nUSAGE\n",
 		"\nDESCRIPTION\n",
+		"\nCOMMANDS\n",
+		"\nOUTPUT AND EXIT STATUS\n",
 		"\nENVIRONMENT\n",
 		"\nCLIENT SETUP\n",
 		"\nKEY ROTATION\n",
@@ -148,6 +151,17 @@ func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {
 			t.Errorf("help section %q is out of order", strings.TrimSpace(section))
 		}
 		previous = at
+	}
+	for _, command := range []string{
+		"emisar-mcp list_tools [--json]",
+		"emisar-mcp help <tool> [--json]",
+		"emisar-mcp -- <tool> [JSON | -]",
+		"data.operation_id",
+		"get_operation",
+	} {
+		if !strings.Contains(helpText, command) {
+			t.Errorf("help does not document %q", command)
+		}
 	}
 
 	for _, name := range []string{
