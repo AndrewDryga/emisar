@@ -380,8 +380,14 @@ func testWindowsMCPInstaller(root, shell string) error {
 	if err != nil {
 		return err
 	}
-	if !bytes.Contains(configData, []byte(`"theme": "dark"`)) || bytes.Contains(configData, []byte(`"emisar"`)) || bytes.Contains(configData, []byte(cursorKey)) {
-		return fmt.Errorf("uninstall did not remove only the Emisar entry: %s", configData)
+	var uninstalledConfig map[string]any
+	if err := json.Unmarshal(configData, &uninstalledConfig); err != nil {
+		return fmt.Errorf("decode uninstalled Cursor config: %w", err)
+	}
+	uninstalledServers, _ := uninstalledConfig["mcpServers"].(map[string]any)
+	_, emisarRemains := uninstalledServers["emisar"]
+	if uninstalledConfig["theme"] != "dark" || emisarRemains || bytes.Contains(configData, []byte(cursorKey)) {
+		return errors.New("uninstall did not remove only the Emisar entry")
 	}
 	if _, err := os.Stat(credentials); !os.IsNotExist(err) {
 		return fmt.Errorf("uninstall left CLI credentials: %v", err)
