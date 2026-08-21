@@ -566,7 +566,8 @@ func clientEnvironment(home, portal string, assumeYes bool) map[string]string {
 	}
 	return map[string]string{
 		"CLIENT_HOME": home, "EMISAR_URL": portal, "ASSUME_YES": yes,
-		"OS": "linux", "first_bin": "/usr/local/bin/emisar-mcp",
+		"XDG_CONFIG_HOME": filepath.Join(home, ".config"),
+		"OS":              "linux", "first_bin": "/usr/local/bin/emisar-mcp",
 		"tmp": home, "DEVICE_RESP": filepath.Join(home, "device-authorization.json"),
 		"TOKEN_RESP":    filepath.Join(home, "device-token.json"),
 		"CLI_AUTH_FILE": filepath.Join(home, "cli-auth"),

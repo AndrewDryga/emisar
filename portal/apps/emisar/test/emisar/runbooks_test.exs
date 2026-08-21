@@ -1701,7 +1701,11 @@ defmodule Emisar.RunbooksTest do
 
       assert second.live_version == 2
       assert second.definition == revised
-      assert Enum.map(Repo.all(Runbooks.Release), & &1.version) == [1, 2]
+
+      assert Runbooks.Release
+             |> Repo.all()
+             |> Enum.map(& &1.version)
+             |> Enum.sort() == [1, 2]
     end
 
     test "refuses a runbook with nothing unpublished" do

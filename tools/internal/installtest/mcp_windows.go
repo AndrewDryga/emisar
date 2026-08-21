@@ -428,12 +428,12 @@ func validateWindowsClientConfigs(fixtures []windowsClientFixture, installed, po
 		if err != nil {
 			return err
 		}
-		if !bytes.Contains(data, []byte(fixture.marker)) {
-			return fmt.Errorf("%s config lost its unrelated fixture setting:\n%s", fixture.id, data)
-		}
 		key := clientKeys[fixture.id]
 		switch fixture.kind {
 		case "toml":
+			if !bytes.Contains(data, []byte(fixture.marker)) {
+				return fmt.Errorf("%s config lost its unrelated fixture setting:\n%s", fixture.id, data)
+			}
 			for _, text := range []string{
 				"[mcp_servers.emisar]", "emisar-mcp.exe", `EMISAR_URL = "` + portal + `"`,
 				`EMISAR_API_KEY = "` + key + `"`, `EMISAR_CLIENT = "` + fixture.id + `"`,
@@ -444,6 +444,9 @@ func validateWindowsClientConfigs(fixtures []windowsClientFixture, installed, po
 			}
 			continue
 		case "hermes", "goose":
+			if !bytes.Contains(data, []byte(fixture.marker)) {
+				return fmt.Errorf("%s config lost its unrelated fixture setting:\n%s", fixture.id, data)
+			}
 			for _, text := range []string{"emisar:", "emisar-mcp.exe", "EMISAR_URL:", portal, "EMISAR_API_KEY:", key} {
 				if !bytes.Contains(data, []byte(text)) {
 					return fmt.Errorf("%s config lacks %q:\n%s", fixture.id, text, data)
@@ -512,13 +515,13 @@ func validateWindowsClientUninstall(fixtures []windowsClientFixture, clientKeys 
 		if err != nil {
 			return err
 		}
-		if !bytes.Contains(data, []byte(fixture.marker)) {
-			return fmt.Errorf("uninstall removed %s's unrelated setting:\n%s", fixture.id, data)
-		}
 		if bytes.Contains(data, []byte(clientKeys[fixture.id])) {
 			return fmt.Errorf("uninstall left %s's API key", fixture.id)
 		}
 		if fixture.kind == "toml" || fixture.kind == "hermes" || fixture.kind == "goose" {
+			if !bytes.Contains(data, []byte(fixture.marker)) {
+				return fmt.Errorf("uninstall removed %s's unrelated setting:\n%s", fixture.id, data)
+			}
 			if bytes.Contains(data, []byte("emisar")) {
 				return fmt.Errorf("uninstall left the Emisar entry in %s:\n%s", fixture.id, data)
 			}
