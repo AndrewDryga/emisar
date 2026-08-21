@@ -554,7 +554,7 @@ makes a rerun hands-off; a rejected credential starts a fresh approval. This
 drives the portal's device-authorization pair, whose frozen contract lives in
 the OAuth authorization server section above; the installers and bridge are
 the deployed consumers its skew note describes. The current release tags are
-`runner-v0.20.1` and `mcp-v0.8.2`. The
+`runner-v0.20.1` and `mcp-v0.9.0`. The
 bridge installer also requires the selected GitHub release to be marked
 immutable.
 
