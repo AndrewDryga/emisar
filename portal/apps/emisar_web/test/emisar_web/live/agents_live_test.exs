@@ -17,7 +17,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "Connect an agent"
 
       for id <-
-            ~w(claude_web chatgpt claude_code claude_desktop cursor windsurf zed openclaw opencode pi copilot gemini codex goose hermes grok custom) do
+            ~w(claude_web chatgpt claude_code claude_desktop cursor vscode windsurf zed openclaw opencode pi copilot gemini codex goose hermes grok custom) do
         selector =
           "button.min-h-10.min-w-10[phx-click='select_client'][phx-value-client='#{id}']"
 
@@ -1036,6 +1036,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # One distinctive marker per verified upstream schema — a wrong key
       # name (mcpServers vs mcp.servers, env vs envs) breaks the client.
       shape_markers = %{
+        "vscode" => {"~/Library/Application Support/Code/User/mcp.json", "&quot;servers&quot;"},
         "windsurf" => {"~/.codeium/windsurf/mcp_config.json", "&quot;windsurf&quot;"},
         "pi" => {"~/.pi/agent/mcp.json", "&quot;pi&quot;"},
         "openclaw" => {"~/.openclaw/openclaw.json", "&quot;servers&quot;"},
@@ -1053,6 +1054,22 @@ defmodule EmisarWeb.AgentsLiveTest do
         assert html =~ marker, "#{client}: missing shape marker #{marker}"
       end
 
+      flush_key_broadcast(lv)
+    end
+
+    test "VS Code keeps its revealed key out of the syncable MCP config", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
+
+      lv |> render_click("select_client", %{"client" => "vscode"})
+      html = render_click(lv, "reveal_snippet", %{})
+      [_, raw] = Regex.run(~r/(emk-[A-Za-z0-9_-]{43})/, html)
+
+      assert html =~ "${input:emisar-api-key}"
+      assert html =~ "paste when the client prompts; shown once"
+      assert html =~ "does not contain your API key"
+      assert render(element(lv, "#secret-vscode")) =~ raw
+      refute render(element(lv, "#snippet-vscode")) =~ raw
       flush_key_broadcast(lv)
     end
 

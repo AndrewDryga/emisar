@@ -486,13 +486,14 @@ defmodule EmisarWeb.AgentsLive do
   # quick key + snippet, it surfaces a key-builder form instead. Keeps
   # the "I need a tighter scope" affordance discoverable next to the
   # client tabs, not hidden in a collapsed details further down.
-  @client_ids ~w(claude_web chatgpt claude_code claude_desktop cursor windsurf zed openclaw opencode pi copilot gemini codex goose hermes grok custom)
+  @client_ids ~w(claude_web chatgpt claude_code claude_desktop cursor vscode windsurf zed openclaw opencode pi copilot gemini codex goose hermes grok custom)
   @client_labels %{
     "claude_web" => "Claude.ai",
     "chatgpt" => "ChatGPT",
     "claude_code" => "Claude Code",
     "claude_desktop" => "Claude Desktop",
     "cursor" => "Cursor",
+    "vscode" => "VS Code",
     "windsurf" => "Windsurf",
     "zed" => "Zed",
     "openclaw" => "OpenClaw",
@@ -638,6 +639,42 @@ defmodule EmisarWeb.AgentsLive do
           "Cursor controls this globally, not per-server: in Settings, set the agent's tool-approval to auto-run (\"Yolo\" mode). There's no per-server allowlist in mcp.json.",
         doc_url: "https://docs.cursor.com/context/mcp"
       }
+    }
+  end
+
+  # VS Code may synchronize its user MCP configuration across machines. Keep
+  # the one-time key out of mcp.json; its password input is supplied locally
+  # when VS Code starts the bridge. The installers use an owner-only envFile
+  # instead so their browser-approved key never needs to be copied.
+  defp client_config("vscode", url, _key) do
+    %{
+      kind: :local,
+      location: "~/Library/Application Support/Code/User/mcp.json",
+      secret_separate: true,
+      body: """
+      {
+        "inputs": [
+          {
+            "type": "promptString",
+            "id": "emisar-api-key",
+            "description": "Emisar API key",
+            "password": true
+          }
+        ],
+        "servers": {
+          "emisar": {
+            "type": "stdio",
+            "command": "/usr/local/bin/emisar-mcp",
+            "args": [],
+            "env": {
+              "EMISAR_URL": "#{url}",
+              "EMISAR_API_KEY": "${input:emisar-api-key}",
+              "EMISAR_CLIENT": "vscode"
+            }
+          }
+        }
+      }\
+      """
     }
   end
 
@@ -1594,7 +1631,11 @@ defmodule EmisarWeb.AgentsLive do
                 <:summary>
                   <span class="font-medium">
                     Set up {client_label(@selected_client)} manually instead
-                    <span class="text-zinc-400">(shows a config snippet with a fresh key)</span>
+                    <span class="text-zinc-400">
+                      {if Map.get(@config, :secret_separate, false),
+                        do: "(shows a fresh key and config snippet)",
+                        else: "(shows a config snippet with a fresh key)"}
+                    </span>
                   </span>
                 </:summary>
                 <%= if @quick_secret do %>
@@ -1610,9 +1651,23 @@ defmodule EmisarWeb.AgentsLive do
                     <p class="text-sm text-zinc-400">Run this in your terminal:</p>
                   <% end %>
                   <.code_panel
+                    :if={Map.get(@config, :secret_separate, false)}
+                    id={"secret-#{@selected_client}"}
+                    label="API key"
+                    annotation="paste when the client prompts; shown once"
+                    copy
+                    copy_label="Copy key"
+                    code={@quick_secret}
+                    class="mt-3"
+                  />
+                  <.code_panel
                     id={"snippet-#{@selected_client}"}
                     label="Snippet"
-                    annotation="contains your API key"
+                    annotation={
+                      if Map.get(@config, :secret_separate, false),
+                        do: "does not contain your API key",
+                        else: "contains your API key"
+                    }
                     copy
                     copy_label="Copy snippet"
                     code={@config.body}
