@@ -37,37 +37,58 @@ defmodule EmisarWeb.DocsNav do
       ]
     },
     %{
-      label: "Connect an LLM",
+      label: "AI agents",
       sections: [
         %{
-          label: nil,
+          label: "Connect",
           pages: [
             %{
-              slug: "connect-an-llm",
-              title: "Connect a cloud LLM",
-              path: "/docs/connect-an-llm",
-              icon: "hero-cloud",
-              keywords: "claude.ai chatgpt remote mcp oauth",
-              desc:
-                "Point Claude.ai and ChatGPT at your catalog over remote MCP and OAuth — no key to manage."
-            },
-            %{
-              slug: "connect-a-cli-client",
-              title: "Connect a CLI agent",
-              path: "/docs/connect-a-cli-client",
+              slug: "connect-cli-agent",
+              title: "CLI agent",
+              path: "/docs/connect-cli-agent",
               icon: "hero-command-line",
               keywords: "claude code cursor claude desktop stdio bridge",
               desc:
                 "Wire Claude Code, Cursor, Claude Desktop, and the CLIs in with the emisar-mcp bridge or a raw API key."
             },
             %{
-              slug: "keys",
-              title: "MCP keys",
-              path: "/docs/keys",
-              icon: "hero-key",
-              keywords: "token secret bearer mint rotate revoke scope",
+              slug: "connect-claude-ai",
+              title: "Claude.ai",
+              path: "/docs/connect-claude-ai",
+              icon: "hero-cloud",
+              keywords: "claude anthropic connector custom oauth remote mcp",
+              desc: "Add emisar to Claude.ai as a custom connector — no key to manage."
+            },
+            %{
+              slug: "connect-chatgpt",
+              title: "ChatGPT",
+              path: "/docs/connect-chatgpt",
+              icon: "hero-cloud",
+              keywords: "chatgpt openai developer mode connector oauth remote mcp",
+              desc: "Add emisar to ChatGPT through Developer mode — no key to manage."
+            }
+          ]
+        },
+        %{
+          label: "The fleet",
+          pages: [
+            %{
+              slug: "agents-and-keys",
+              title: "Manage agents & keys",
+              path: "/docs/agents-and-keys",
+              icon: "hero-sparkles",
+              keywords: "agent key token secret bearer mint rotate revoke scope activity",
               desc:
-                "How an MCP key inherits its operator's runner scope, and how to mint, rotate, and revoke one."
+                "The agents connected to your account, what each row shows, and how to mint, rotate, and revoke the key behind one."
+            },
+            %{
+              slug: "bridge-upgrades",
+              title: "Upgrade the MCP bridge",
+              path: "/docs/bridge-upgrades",
+              icon: "hero-arrow-up-circle",
+              keywords: "update version emisar-mcp bridge rollback compatibility",
+              desc:
+                "Re-run the installer per workstation, prove the client relaunched the bridge, and pin a rollback."
             }
           ]
         }

@@ -114,7 +114,7 @@ and should not be installed on production runners.
 | Goal | Start here |
 | --- | --- |
 | Install, upgrade, harden, or diagnose a host | [`runner/README.md`](runner/README.md) |
-| Connect Claude, ChatGPT, Cursor, Codex, or another MCP client | [Connect an LLM](https://emisar.dev/docs/connect-an-llm) |
+| Connect Claude, ChatGPT, Cursor, Codex, or another MCP client | [Connect a CLI agent](https://emisar.dev/docs/connect-cli-agent) |
 | Inspect or develop the stdio bridge | [`mcp/README.md`](mcp/README.md) |
 | Browse, install, or author action packs | [`packs/README.md`](packs/README.md) |
 | Let an agent install emisar, connect a client, or author a pack | [`skills/README.md`](skills/README.md) |

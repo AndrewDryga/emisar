@@ -323,6 +323,73 @@ defmodule EmisarWeb.DocsComponents do
   end
 
   @doc """
+  The collapsible "What does the install script do?" block under the runner
+  install command. The quickstart and the Linux-host page both show the command,
+  so they share one answer — two hand-rolled copies had already drifted apart.
+  """
+  def docs_install_script_details(assigns) do
+    ~H"""
+    <details class="group mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
+      <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
+        <span class="flex items-center gap-2">
+          <.icon name="hero-command-line" class="h-4 w-4 text-zinc-500" />
+          What does the install script do?
+        </span>
+        <.icon
+          name="hero-chevron-down"
+          class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
+        />
+      </summary>
+      <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
+        <p class="text-base leading-7 text-zinc-400">
+          It's a plain shell script, and you can
+          <.link href="/install.sh" class="text-brand-400 hover:text-brand-300">
+            read it first
+          </.link>
+          if you'd rather. It:
+        </p>
+        <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
+          <li class="flex items-start gap-2.5">
+            <span class="flex-none text-zinc-500">—</span>
+            <span>checks the release checksum (SHA-256);</span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <span class="flex-none text-zinc-500">—</span>
+            <span>
+              creates an unprivileged <code class="font-mono">emisar</code>
+              system user, puts the binary at <code class="font-mono">/usr/local/bin/emisar</code>, and installs a hardened
+              <code class="font-mono">emisar.service</code>
+              unit (<code class="font-mono">Restart=on-failure</code>). Without systemd it stops
+              and points you at <code class="font-mono">--no-service</code>. On macOS it installs
+              a LaunchDaemon instead — fine for a laptop; production runs on Linux;
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <span class="flex-none text-zinc-500">—</span>
+            <span>
+              writes the settings to <code class="font-mono">/etc/emisar/config.yaml</code>
+              and the enrollment key to <code class="font-mono">/etc/emisar/runner.env</code>
+              (mode 0600). State and logs live under <code class="font-mono">/var/lib/emisar</code>
+              and <code class="font-mono">/var/log/emisar</code>;
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <span class="flex-none text-zinc-500">—</span>
+            <span>
+              installs the host-matched starter packs (on a typical Linux host: <code class="font-mono">linux-core</code>, <code class="font-mono">debugging</code>, and <code class="font-mono">systemd-deep</code>);
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <span class="flex-none text-zinc-500">—</span>
+            <span>starts the service, which connects out to the control plane.</span>
+          </li>
+        </ul>
+      </div>
+    </details>
+    """
+  end
+
+  @doc """
   A collapsible "Verify this download" block placed under an install command:
   the download-then-verify commands (SLSA provenance + checksum) with THIS
   release's artifact names, so a security team can prove the binary before it

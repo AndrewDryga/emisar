@@ -3,19 +3,18 @@
 
   <section class="py-12 sm:py-16">
     <.docs_layout
-      current="connect-an-llm"
-      updated="August 18, 2026"
+      current="connect-chatgpt"
+      updated="August 21, 2026"
       toc={[
-        {"claude-ai", "Claude.ai"},
-        {"chatgpt", "ChatGPT"},
+        {"connect", "Add the connector"},
         {"verify", "Verify the connection"},
         {"sign-in-grants", "What the sign-in grants"}
       ]}
     >
-      <.docs_header current="connect-an-llm">
+      <.docs_header current="connect-chatgpt">
         <:dek>
-          Connect Claude.ai or ChatGPT to emisar over remote MCP. OAuth signs you in. You do not
-          need to copy an agent key.
+          Connect ChatGPT to emisar through Developer mode over remote MCP. OAuth signs you in —
+          you do not need to copy an agent key.
         </:dek>
       </.docs_header>
 
@@ -23,9 +22,12 @@
         Using Claude Code, Cursor, Claude Desktop, or a CLI instead? Those connect through the
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
         stdio bridge — see <.link
-          navigate={~p"/docs/connect-a-cli-client"}
+          navigate={~p"/docs/connect-cli-agent"}
           class="text-brand-400 hover:text-brand-300"
-        >Connect a CLI agent</.link>.
+        >Connect a CLI agent</.link>. For Claude.ai, see <.link
+          navigate={~p"/docs/connect-claude-ai"}
+          class="text-brand-400 hover:text-brand-300"
+        >Claude.ai</.link>.
       </p>
 
       <.docs_prerequisites>
@@ -41,75 +43,14 @@
           Runners that do not require signed dispatch. Claude.ai and ChatGPT do not create emisar
           dispatch signatures, so a runner that requires one needs the
           <.link
-            navigate={~p"/docs/connect-a-cli-client"}
+            navigate={~p"/docs/connect-cli-agent"}
             class="text-brand-400 hover:text-brand-300"
           >local MCP bridge</.link>
           with a signing key and certificate instead.
         </:item>
       </.docs_prerequisites>
 
-      <p class="mt-8 text-base text-zinc-400">
-        There is no app to create and no client ID to paste. The connector registers itself from
-        the URL, then sends you to emisar to sign in once.
-      </p>
-
-      <%!-- ============================================================ --%>
-      <%!-- Claude.ai (cloud)                                            --%>
-      <%!-- ============================================================ --%>
-      <.docs_h2 id="claude-ai">Claude.ai</.docs_h2>
-      <ol class="mt-4 list-decimal space-y-3 pl-6 text-base text-zinc-300">
-        <li>
-          Open <strong>Settings → Connectors</strong>
-          (on Pro/Max it is <strong>Customize → Connectors</strong>).
-        </li>
-        <li>
-          Click <strong>+</strong> → <strong>Add custom connector</strong>.
-        </li>
-        <li>
-          Fill in the <strong>Connector name</strong>
-          and the URL field:
-          <.docs_value label="Connector name" copy_text="emisar">emisar</.docs_value>
-          <.docs_value label="Remote MCP server URL" copy_text="https://emisar.dev/api/mcp/rpc">
-            https://emisar.dev/api/mcp/rpc
-          </.docs_value>
-        </li>
-        <li>
-          Leave <strong>Advanced settings</strong>
-          (OAuth Client ID / Client Secret) <strong>empty</strong>
-          —
-          emisar registers your client for you via Dynamic Client
-          Registration. Click <strong>Add</strong>.
-        </li>
-        <li>
-          Claude opens an emisar tab. Sign in, review what the
-          connector is asking for, and click <strong>Authorize</strong>. The connector flips on.
-        </li>
-        <li>
-          Optional. Open <strong>Settings → Connectors → emisar</strong>. Under <strong>Tool permissions</strong>, set both
-          <strong>Read-only tools</strong>
-          and <strong>Write/delete tools</strong>
-          to <strong>Always allow</strong>. This removes Claude's own per-tool prompts. Emisar policy, approvals, and audit still apply.
-        </li>
-        <li>
-          Turn it on for a chat. The <strong>+</strong> button (lower-left of the composer)
-          → <strong>Connectors</strong> → toggle <strong>emisar</strong>.
-        </li>
-      </ol>
-      <.docs_callout kind={:note}>
-        <p>
-          <strong class="text-zinc-400">On Claude Team or Enterprise:</strong>
-          this is a setting in <em>Claude's</em>
-          workspace, not emisar. Only a Claude organization owner can add the connector, under <strong>Settings → Organization settings → Connectors → Add → Custom → Web</strong>.
-          Everyone else then opens <strong>Customize → Connectors</strong>
-          and clicks <strong>Connect</strong>
-          to run the same sign-in.
-        </p>
-      </.docs_callout>
-
-      <%!-- ============================================================ --%>
-      <%!-- ChatGPT                                                      --%>
-      <%!-- ============================================================ --%>
-      <.docs_h2 id="chatgpt">ChatGPT</.docs_h2>
+      <.docs_h2 id="connect">Add the connector</.docs_h2>
       <p class="mt-4 text-base text-zinc-400">
         ChatGPT reaches a custom MCP server through <strong>Developer mode</strong>. Access depends
         on your account and workspace policy.
@@ -124,7 +65,8 @@
             href="https://chatgpt.com/plugins"
             class="text-brand-400 hover:text-brand-300"
           >ChatGPT Plugins</a>
-          and select the plus button.
+          and select the small <strong>+</strong>
+          button just right of the search box — it is easy to miss.
         </li>
         <li>
           Fill the form:
@@ -137,7 +79,10 @@
             <li>
               <strong>Connection</strong> → <strong>Server URL</strong> — paste the URL below
             </li>
-            <li><strong>Authentication</strong> — choose <strong>OAuth</strong></li>
+            <li>
+              <strong>Authentication</strong> — choose <strong>OAuth</strong>. There is no client
+              ID or secret to paste; emisar registers the connector itself.
+            </li>
           </ul>
           <.docs_value label="Name" copy_text="emisar">emisar</.docs_value>
           <.docs_value label="Remote MCP server URL" copy_text="https://emisar.dev/api/mcp/rpc">
@@ -178,18 +123,15 @@
         </li>
       </ol>
 
-      <%!-- ============================================================ --%>
-      <%!-- What you are authorizing                                      --%>
-      <%!-- ============================================================ --%>
       <.docs_h2 id="sign-in-grants">What the sign-in grants</.docs_h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         The consent screen mints a key bound to <em>your</em>
         membership. The connector acts as you. Every call is attributed to you and the agent you are using. It reaches
         only the runners and actions your own access already allows (<.link
-          navigate={~p"/docs/keys#no-scope"}
+          navigate={~p"/docs/agents-and-keys#no-scope"}
           class="text-brand-400 hover:text-brand-300"
         >how a key inherits its operator's scope</.link>). Revoke it any time from
-        <strong>LLM agents</strong>
+        <strong>AI agents</strong>
         in the console, or from the connector settings in Claude or ChatGPT.
       </p>
     </.docs_layout>
@@ -197,7 +139,7 @@
 
   <.marketing_cta
     headline="Point your agent at real infrastructure — safely."
-    subcopy="Set up a runner first, then connect Claude, ChatGPT, or Cursor to your account's MCP endpoint and let policy decide what runs."
+    subcopy="Set up a runner first, then connect ChatGPT to your account's MCP endpoint and let policy decide what runs."
     secondary_label="Read the quickstart"
     secondary_path={~p"/docs/quickstart"}
   />

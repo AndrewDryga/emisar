@@ -22,7 +22,7 @@
         <:dek>
           The fixed tools, identifiers, and recovery semantics of the emisar MCP server. For client
           setup, see <.link
-            navigate={~p"/docs/connect-an-llm"}
+            navigate={~p"/docs/connect-claude-ai"}
             class="font-medium text-brand-300 hover:text-brand-200"
           >Connect an LLM</.link>.
         </:dek>
@@ -32,7 +32,7 @@
         <h2 id="calling-the-endpoint">Calling the endpoint</h2>
         <p>
           A custom client uses an agent key with the <code>emk-</code>
-          prefix. Create one from <.link navigate={~p"/docs/keys"}>Agent keys</.link>. Send JSON-RPC
+          prefix. Create one from <.link navigate={~p"/docs/agents-and-keys"}>Agent keys</.link>. Send JSON-RPC
           requests to the HTTPS endpoint below. Use the method sequence for your protocol version.
         </p>
         <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># This legacy-compatible request returns the tool list.</span>
@@ -44,7 +44,7 @@
         <h2 id="command-line">Use MCP tools from the shell</h2>
         <p>
           The
-          <.link navigate={~p"/docs/connect-a-cli-client#install-bridge"}>
+          <.link navigate={~p"/docs/connect-cli-agent#install-bridge"}>
             interactive bridge installer
           </.link>
           authenticates direct commands during browser approval and stores a separate CLI

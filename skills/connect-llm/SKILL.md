@@ -29,8 +29,8 @@ Verify commands before running them:
   contract.
 - Use the signed-in **Agents** page for current client configuration and the
   cloud-connector name and URL.
-- Use `https://emisar.dev/docs/connect-an-llm` for a cloud connector,
-  `https://emisar.dev/docs/connect-a-cli-client` for a local or CLI client, and
+- Use `https://emisar.dev/docs/connect-claude-ai` for a cloud connector,
+  `https://emisar.dev/docs/connect-cli-agent` for a local or CLI client, and
   `https://emisar.dev/docs/mcp-reference` when more detail is needed.
 - When a registered client lists no tools or a call fails,
   `https://emisar.dev/docs/troubleshooting` owns the client and bridge symptoms.

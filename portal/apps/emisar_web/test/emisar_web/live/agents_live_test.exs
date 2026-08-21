@@ -24,7 +24,7 @@ defmodule EmisarWeb.AgentsLiveTest do
         assert has_element?(lv, selector)
       end
 
-      assert html =~ ~s(href="/docs/connect-an-llm")
+      assert html =~ ~s(href="/docs/connect-claude-ai")
 
       # No key minted until a client is picked.
       assert Repo.all(ApiKey) == []

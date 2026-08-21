@@ -1,0 +1,139 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="connect-claude-ai"
+      updated="August 21, 2026"
+      toc={[
+        {"connect", "Add the connector"},
+        {"verify", "Verify the connection"},
+        {"sign-in-grants", "What the sign-in grants"}
+      ]}
+    >
+      <.docs_header current="connect-claude-ai">
+        <:dek>
+          Connect Claude.ai to emisar over remote MCP. OAuth signs you in — you do not need to
+          copy an agent key.
+        </:dek>
+      </.docs_header>
+
+      <p class="mt-6 text-base leading-7 text-zinc-400">
+        Using Claude Code, Cursor, Claude Desktop, or a CLI instead? Those connect through the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
+        stdio bridge — see <.link
+          navigate={~p"/docs/connect-cli-agent"}
+          class="text-brand-400 hover:text-brand-300"
+        >Connect a CLI agent</.link>. For ChatGPT, see <.link
+          navigate={~p"/docs/connect-chatgpt"}
+          class="text-brand-400 hover:text-brand-300"
+        >ChatGPT</.link>.
+      </p>
+
+      <.docs_prerequisites>
+        <:item>
+          An account with at least one runner online. Otherwise the agent signs in fine and finds
+          an empty catalog with nothing to call. New here? Run the
+          <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
+            quickstart
+          </.link>
+          first, then come back to wire in your LLM.
+        </:item>
+        <:item>
+          Runners that do not require signed dispatch. Claude.ai and ChatGPT do not create emisar
+          dispatch signatures, so a runner that requires one needs the
+          <.link
+            navigate={~p"/docs/connect-cli-agent"}
+            class="text-brand-400 hover:text-brand-300"
+          >local MCP bridge</.link>
+          with a signing key and certificate instead.
+        </:item>
+      </.docs_prerequisites>
+
+      <.docs_h2 id="connect">Add the connector</.docs_h2>
+      <ol class="mt-4 list-decimal space-y-3 pl-6 text-base text-zinc-300">
+        <li>
+          Open <strong>Settings → Connectors</strong>
+          (on Pro/Max it is <strong>Customize → Connectors</strong>).
+        </li>
+        <li>
+          Click <strong>+</strong> → <strong>Add custom connector</strong>.
+        </li>
+        <li>
+          Fill in the <strong>Connector name</strong>
+          and the URL field:
+          <.docs_value label="Connector name" copy_text="emisar">emisar</.docs_value>
+          <.docs_value label="Remote MCP server URL" copy_text="https://emisar.dev/api/mcp/rpc">
+            https://emisar.dev/api/mcp/rpc
+          </.docs_value>
+        </li>
+        <li>
+          Leave <strong>Advanced settings</strong>
+          (OAuth Client ID / Client Secret) <strong>empty</strong>
+          —
+          emisar registers your client for you via Dynamic Client
+          Registration. Click <strong>Add</strong>.
+        </li>
+        <li>
+          Claude opens an emisar tab. Sign in, review what the
+          connector is asking for, and click <strong>Authorize</strong>. The connector flips on.
+        </li>
+        <li>
+          Optional. Open <strong>Settings → Connectors → emisar</strong>. Under <strong>Tool permissions</strong>, set both
+          <strong>Read-only tools</strong>
+          and <strong>Write/delete tools</strong>
+          to <strong>Always allow</strong>. This removes Claude's own per-tool prompts. Emisar policy, approvals, and audit still apply.
+        </li>
+        <li>
+          Turn it on for a chat. The <strong>+</strong> button (lower-left of the composer)
+          → <strong>Connectors</strong> → toggle <strong>emisar</strong>.
+        </li>
+      </ol>
+      <.docs_callout kind={:note}>
+        <p>
+          <strong class="text-zinc-400">On Claude Team or Enterprise:</strong>
+          this is a setting in <em>Claude's</em>
+          workspace, not emisar. Only a Claude organization owner can add the connector, under <strong>Settings → Organization settings → Connectors → Add → Custom → Web</strong>.
+          Everyone else then opens <strong>Customize → Connectors</strong>
+          and clicks <strong>Connect</strong>
+          to run the same sign-in.
+        </p>
+      </.docs_callout>
+
+      <.docs_h2 id="verify">Verify the connection</.docs_h2>
+      <ol class="mt-4 list-decimal space-y-3 pl-6 text-base text-zinc-300">
+        <li>
+          Ask the client to run <code>linux.uptime</code> on any one of the connected runners.
+        </li>
+        <li>Confirm that the client returns the action output.</li>
+        <li>
+          Open <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>. Confirm that the event names the client, runner, action, and reason.
+        </li>
+      </ol>
+
+      <.docs_h2 id="sign-in-grants">What the sign-in grants</.docs_h2>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        The consent screen mints a key bound to <em>your</em>
+        membership. The connector acts as you. Every call is attributed to you and the agent you are using. It reaches
+        only the runners and actions your own access already allows (<.link
+          navigate={~p"/docs/agents-and-keys#no-scope"}
+          class="text-brand-400 hover:text-brand-300"
+        >how a key inherits its operator's scope</.link>). Revoke it any time from
+        <strong>AI agents</strong>
+        in the console, or from the connector settings in Claude or ChatGPT.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_cta
+    headline="Point your agent at real infrastructure — safely."
+    subcopy="Set up a runner first, then connect Claude.ai to your account's MCP endpoint and let policy decide what runs."
+    secondary_label="Read the quickstart"
+    secondary_path={~p"/docs/quickstart"}
+  />
+
+  <.marketing_footer />
+</div>

@@ -24,7 +24,7 @@ Claude Desktop, Claude Code, Cursor local mode, Codex CLI, Gemini CLI, Grok CLI,
 Zed, Windsurf, and similar stdio clients can use the bridge.
 
 The current per-client instructions are at
-[emisar.dev/docs/connect-an-llm](https://emisar.dev/docs/connect-an-llm). The
+[emisar.dev/docs/connect-claude-ai](https://emisar.dev/docs/connect-claude-ai). The
 dashboard's **LLM agents** page generates the exact configuration for the
 signed-in operator and their runner scope.
 

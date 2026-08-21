@@ -3,7 +3,7 @@
 
   <section class="py-12 sm:py-16">
     <.docs_layout
-      current="connect-a-cli-client"
+      current="connect-cli-agent"
       updated="August 21, 2026"
       toc={[
         {"stdio-bridge", "Set up a stdio client"},
@@ -12,7 +12,7 @@
         {"sign-in-grants", "What the sign-in grants"}
       ]}
     >
-      <.docs_header current="connect-a-cli-client">
+      <.docs_header current="connect-cli-agent">
         <:dek>
           Connect a local AI client to your action catalog through direct HTTPS or the
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
@@ -23,7 +23,7 @@
       <p class="mt-6 text-base leading-7 text-zinc-400">
         Using Claude.ai or ChatGPT instead? Those connect over OAuth with no key or bridge to
         manage — see <.link
-          navigate={~p"/docs/connect-an-llm"}
+          navigate={~p"/docs/connect-claude-ai"}
           class="text-brand-400 hover:text-brand-300"
         >Connect a cloud LLM</.link>.
       </p>
@@ -94,9 +94,26 @@
           >Use MCP tools from the shell</.link>.
         </p>
         <p class="mt-3 text-sm leading-6 text-zinc-400">
-          The list of tools comes from emisar, not from the bridge. An installed bridge keeps
-          seeing current tools on its own. Update it when emisar raises the lowest version it
-          supports.
+          The bridge is deliberately thin. It owns transport correctness only, and every tool, its
+          input schema, and its result come from the control plane — so an installed bridge keeps
+          seeing current tools without an update. The one exception is signed dispatch, where your
+          Ed25519 signing key stays on your machine and never reaches emisar.
+          <.link
+            navigate={~p"/docs/bridge-upgrades"}
+            class="text-brand-400 hover:text-brand-300"
+          >Upgrade the MCP bridge</.link>
+          covers the supported version floor and how to update.
+        </p>
+        <p class="mt-3 text-sm leading-6 text-zinc-400">
+          It will not leak your key: the bridge refuses to send your Bearer key over cleartext
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">http://</code>
+          to a non-loopback host, which would put it on the wire in plaintext. A loopback dev
+          endpoint is the only exception.
+        </p>
+        <p class="mt-3 text-sm leading-6 text-zinc-400">
+          Cloud clients skip the bridge entirely. Claude.ai and ChatGPT reach
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
+          over OAuth with no binary to install, which is why a cloud agent shows no bridge version.
         </p>
         <.docs_verify_download
           tarball="emisar-mcp-<version>-linux-amd64.tar.gz"
@@ -122,9 +139,8 @@
               >Connect an agent</a>, pick your client, and create its key. The console prefills the whole
               snippet for you, and the key is shown once.
             </p>
-
             <%!-- Claude Desktop --%>
-            <section>
+            <section id="claude-desktop">
               <h3 class="text-sm font-semibold text-zinc-100">Claude Desktop</h3>
               <p class="mt-2 text-base text-zinc-400">
                 Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/Library/Application Support/Claude/claude_desktop_config.json</code>:
@@ -148,7 +164,7 @@
             </section>
 
             <%!-- Cursor --%>
-            <section>
+            <section id="cursor">
               <h3 class="text-sm font-semibold text-zinc-100">Cursor</h3>
               <p class="mt-2 text-base text-zinc-400">
                 Same bridge. Cursor reads <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.cursor/mcp.json</code>:
@@ -169,7 +185,7 @@
                 Recent Cursor builds also speak remote MCP. Point them at
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
                 directly (see <.link
-                  navigate={~p"/docs/connect-an-llm"}
+                  navigate={~p"/docs/connect-claude-ai"}
                   class="text-brand-400 hover:text-brand-300"
                 >Connect a cloud LLM</.link>) to skip the bridge.
               </p>
@@ -214,7 +230,7 @@
             </section>
 
             <%!-- Zed --%>
-            <section>
+            <section id="zed">
               <h3 class="text-sm font-semibold text-zinc-100">Zed</h3>
               <p class="mt-2 text-base text-zinc-400">
                 By hand, Zed reads
@@ -240,7 +256,7 @@
             </section>
 
             <%!-- Claude Code (CLI) --%>
-            <section>
+            <section id="claude-code">
               <h3 class="text-sm font-semibold text-zinc-100">Claude Code</h3>
               <p class="mt-2 text-base text-zinc-400">
                 One-line register, user scope (every project):
@@ -260,7 +276,7 @@
             </section>
 
             <%!-- Gemini CLI --%>
-            <section>
+            <section id="gemini-cli">
               <h3 class="text-sm font-semibold text-zinc-100">Gemini CLI</h3>
               <p class="mt-2 text-base text-zinc-400">
                 Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.gemini/settings.json</code>:
@@ -280,7 +296,7 @@
             </section>
 
             <%!-- ChatGPT Codex CLI --%>
-            <section>
+            <section id="codex-cli">
               <h3 class="text-sm font-semibold text-zinc-100">ChatGPT Codex CLI</h3>
               <p class="mt-2 text-base text-zinc-400">
                 Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>:
@@ -301,7 +317,7 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
             </section>
 
             <%!-- Grok CLI --%>
-            <section>
+            <section id="grok-cli">
               <h3 class="text-sm font-semibold text-zinc-100">Grok CLI</h3>
               <p class="mt-2 text-base text-zinc-400">
                 Register the bridge in your user config:
@@ -357,11 +373,13 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
 
         <ol class="mt-4 list-decimal space-y-3 pl-6 text-base text-zinc-300">
           <li>
-            Open <a
+            Open
+            <a
               href={~p"/app/agents/connect"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-            >Connect an agent</a>, select <strong class="font-medium text-zinc-200">Custom</strong>,
-            create a dedicated key, and copy it before leaving the page. The key is shown once.
+            >Connect an agent</a>
+            and select <strong class="font-medium text-zinc-200">Custom</strong>.
+            Create a dedicated key and copy it before leaving the page. The key is shown once.
           </li>
           <li>
             Add an MCP server to your client, choose the
@@ -392,7 +410,7 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
             >signed dispatch</.link>. Rotate or revoke a direct client's key from <a
               href={~p"/app/agents"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-            >LLM agents</a>.
+            >AI agents</a>.
           </p>
         </.docs_callout>
       </section>
@@ -419,16 +437,16 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
         key is bound to <em>your</em>
         membership. The agent acts as you. Every call is attributed to you and the agent you are using. It reaches only the
         runners and actions your own access already allows (<.link
-          navigate={~p"/docs/keys#no-scope"}
+          navigate={~p"/docs/agents-and-keys#no-scope"}
           class="text-brand-400 hover:text-brand-300"
         >how a key inherits its operator's scope</.link>). Revoke it any time from
         <a
           href={~p"/app/agents"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >LLM agents</a>
+        >AI agents</a>
         in the console.
-        <.link navigate={~p"/docs/keys"} class="text-brand-400 hover:text-brand-300">
-          Agent keys
+        <.link navigate={~p"/docs/agents-and-keys"} class="text-brand-400 hover:text-brand-300">
+          Manage agents & keys
         </.link>
         covers rotation.
       </p>

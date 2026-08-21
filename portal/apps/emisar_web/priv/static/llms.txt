@@ -9,7 +9,7 @@ Remote MCP clients connect through OAuth at `https://emisar.dev/api/mcp/rpc`. Lo
 ## Start here
 
 - [Quickstart](https://emisar.dev/docs/quickstart): Connect one Linux host, run the first declared action, and verify the audit record.
-- [Connect an LLM](https://emisar.dev/docs/connect-an-llm): Connect remote OAuth clients or local stdio MCP clients.
+- [Connect an LLM](https://emisar.dev/docs/connect-claude-ai): Connect remote OAuth clients or local stdio MCP clients.
 - [MCP reference](https://emisar.dev/docs/mcp-reference): Review the fixed tools, parameters, continuations, errors, and signed-dispatch fields.
 
 ## Build and operate

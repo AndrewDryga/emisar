@@ -1,0 +1,272 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="agents-and-keys"
+      updated="August 4, 2026"
+      toc={[
+        {"the-list", "Your connected agents"},
+        {"what-is-a-key", "What an agent key is"},
+        {"no-scope", "A key has no scope of its own"},
+        {"minting", "Minting a key"},
+        {"rotating", "Rotating a key"},
+        {"revoking", "Revoking a key"}
+      ]}
+    >
+      <.docs_header current="agents-and-keys">
+        <:dek>
+          Manage the agents connected to your account, and the keys behind them.
+        </:dek>
+      </.docs_header>
+
+      <p class="mt-6 text-base leading-7 text-zinc-400">
+        To connect a new agent, see <.link
+          navigate={~p"/docs/connect-claude-ai"}
+          class="text-brand-400 hover:text-brand-300"
+        >Claude.ai</.link>, <.link
+          navigate={~p"/docs/connect-chatgpt"}
+          class="text-brand-400 hover:text-brand-300"
+        >ChatGPT</.link>, or <.link
+          navigate={~p"/docs/connect-cli-agent"}
+          class="text-brand-400 hover:text-brand-300"
+        >CLI agent</.link>. For bridge versions and updates, see <.link
+          navigate={~p"/docs/bridge-upgrades"}
+          class="text-brand-400 hover:text-brand-300"
+        >Upgrade the MCP bridge</.link>.
+      </p>
+
+      <.docs_screenshot
+        src="/images/screenshots/agents.webp"
+        title="emisar console · AI agents"
+        caption="Keys grouped by the member who owns them — status, last call, expiry, and per-agent rotate and revoke."
+        alt="The AI agents page, grouped by the person who owns each key: Jordan Lee's Claude Desktop, Gemini CLI, and Codex CLI; Maya Chen's Cursor, ChatGPT, and Claude Code. Each row shows the client, bridge version, a status dot (dormant, idle, never used, or a rose 'unsupported'), last-call and expiry, a 'swap pending' rotation in progress, and per-agent View activity, Rotate, and Revoke actions."
+      />
+
+      <.docs_h2 id="the-list">Your connected agents</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Every agent that has connected appears on <a
+          href={~p"/app/agents"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >AI agents</a>, grouped by the member who owns it. One row is one connection: the client
+        it runs in, the bridge version it last reported, when it last called, and when its key
+        expires. The list shows live connections by default.
+      </p>
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">The status is about the connection.</strong>
+            A row reads dormant, idle, or never used from its own last call — and
+            <strong class="text-zinc-200">unsupported</strong>
+            when the bridge it reported is below the version emisar supports. A rotation in flight
+            shows as a swap pending until the successor's first call retires the old key.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Each row carries its own actions.</strong>
+            View activity opens the audit trail filtered to that agent. Rotate and Revoke act on
+            the key behind it, which is the rest of this page.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Removing an agent is revoking its key.</strong>
+            There is no separate disconnect: the key is the connection, so revoking it ends the
+            agent's access on its very next call.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h2 id="what-is-a-key">What an agent key is</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        An agent key is the credential an AI agent presents to reach emisar's tool API. It rides as
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Authorization: Bearer emk-…</code>
+        on every call to the MCP endpoint. Keys start with
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
+        followed by a short public identifier.
+      </p>
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Shown once.</strong>
+            The full secret appears exactly once, at creation (and again at rotation). Copy it into
+            the client's config then — emisar keeps only the hash, so a lost key is replaced, never
+            recovered.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Identity, not authority.</strong>
+            A key is an identity, an optional expiry, and audit attribution — nothing more.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">One key per connection.</strong>
+            Each connected client gets its own key, so you can see and revoke agents one at a time.
+            Cloud clients that connect over OAuth follow the same idea.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h2 id="no-scope">A key has no scope of its own</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        An agent key carries no scope of its own — there is no per-key runner list or permission dial
+        to set, and none to forget. What a connected agent can do is decided by two things that live
+        on the member who minted the key, not on the key:
+      </p>
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Runner access.</strong>
+            The key can reach exactly the runners available to the member who minted it. A member is scoped to runner
+            groups on the Team page. The key inherits that scope, and emisar resolves it from that
+            member on <em>every call</em>, not once at mint time.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">What it can run there.</strong>
+            Your account's policies and the approvals they require — the same gate a human dispatch
+            passes. A key authenticates as a fixed
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">api_client</code>
+            role. It can discover the catalog, dispatch actions, and read run state. It cannot
+            approve its own requests or edit policy. The member role does not transfer. Owner and
+            operator keys have the same capability.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Scoping the person also scopes their agents. To limit an agent, narrow the key owner's access
+        on the
+        <.link
+          navigate={~p"/docs/teams-and-access"}
+          class="text-brand-400 hover:text-brand-300"
+        >Team page</.link>
+        page. You do not tune keys one by one. Remove that member's access to stop every key they
+        issued from resolving to a runner. An unbound key is never usable.
+      </p>
+
+      <.docs_h2 id="minting">Minting a key</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Keys are minted from
+        <a
+          href={~p"/app/agents"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >AI agents</a>
+        in the console — the same place you
+        connect and revoke agents. Pick the client you are connecting and emisar mints a key for it
+        on the spot. The secret drops into a pre-filled config snippet you copy into that client.
+        Cloud clients like Claude.ai and ChatGPT do not use a pasted key. They connect over OAuth.
+        emisar mints their backing key only after you approve the connection.
+      </p>
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Minted on demand, per client.</strong>
+            emisar mints a manual key when you open that client's snippet or approve its installer.
+            It does not mint one earlier. The agents list therefore shows real connections only.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Operator and above.</strong>
+            Connecting an agent — minting a key — needs an operator, admin, or owner role. A viewer
+            can see the agents list but cannot mint. Operators can rotate or revoke their own keys.
+            Admins and owners can manage any key in the account.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h2 id="rotating">Rotating a key</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Rotating swaps a key's secret without downtime. From an agent's row,
+        <strong>Rotate</strong>
+        mints a successor. It inherits the old key's name, scope, and kind. It has a new secret and
+        expiry. Both keys work through the overlap. The old one keeps authenticating
+        until the successor's first successful call, which retires the old key automatically. Update
+        the client's config with the new secret any time in that window — nothing breaks while you
+        do.
+      </p>
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Copy the new secret now.</strong>
+            Like the original, it is shown once. If you lose it before the client swaps, rotate
+            again.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">The old key is still yours to kill.</strong>
+            To skip the overlap, revoke the old key by hand. Rotation keeps this option available.
+            A predecessor the successor retired is <em>spent</em>, not revoked — revoke it yourself
+            when you need it provably dead rather than merely superseded.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">An OAuth-backed key does not rotate.</strong>
+            OAuth consent creates a non-expiring key for a Claude.ai or ChatGPT connection, and
+            OAuth manages its life through the refresh token. The client never receives a new
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
+            secret. Reconnect the client to replace that key, or revoke it to end access.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">MCP bridge keys are short-lived and rotate themselves.</strong>
+            The bridge rotates a key during its last seven days. It prepares and proposes a
+            successor. It promotes the successor only after emisar confirms the exact new key.
+            Long-running local agents keep working through the change. This needs the bridge's
+            credential directory to be writable and persistent. OAuth tokens, arbitrary Bearer
+            tokens, and audit-export tokens bypass local rotation state.
+          </span>
+        </li>
+      </ul>
+
+      <.docs_h2 id="revoking">Revoking a key</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <strong>Revoke</strong>
+        is the kill switch, and it is terminal. The moment you confirm, the
+        key is dead and the connected client gets a
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>
+        on its very next call. Reach for it when a key leaks, an agent misbehaves, or a connection
+        is finished. It asks you to type the agent's name first,
+        because it cannot be undone.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Revoking cascades: every downstream key in that key's rotation chain dies with it, and any
+        OAuth access or refresh token backed by it stops exchanging and refreshing. That reach is
+        what makes revoke, not rotate, the containment lever for a leak.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A key that suddenly returns
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>
+        has expired, been revoked, or been retired by a successor —
+        <.link
+          navigate={~p"/docs/troubleshooting#mcp"}
+          class="text-brand-400 hover:text-brand-300"
+        >Troubleshooting</.link>
+        walks the check.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

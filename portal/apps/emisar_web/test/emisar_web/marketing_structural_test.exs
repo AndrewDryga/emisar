@@ -27,8 +27,9 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/action-packs
     /docs/security-model
     /docs/signed-dispatch
-    /docs/connect-an-llm
-    /docs/connect-a-cli-client
+    /docs/connect-cli-agent
+    /docs/connect-claude-ai
+    /docs/connect-chatgpt
     /docs/publishing-packs
     /docs/pack-registry
     /docs/run-an-action
@@ -52,7 +53,8 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/nomad
     /docs/autoscaling-fleets
     /docs/runs
-    /docs/keys
+    /docs/agents-and-keys
+    /docs/bridge-upgrades
     /docs/runner-cli
     /docs/billing
     /docs/limits
@@ -313,10 +315,10 @@ defmodule EmisarWeb.MarketingStructuralTest do
       links_by_page = [
         {"/docs/quickstart",
          [
-           {"/app/runners/install", "Connect a runner"},
+           {"/app/runners/install", "Runners → Connect a runner"},
            {"/app/runners", "Runners"},
            {"/app/packs", "Packs"},
-           {"/app/agents", "LLM agents"}
+           {"/app/agents", "AI agents"}
          ]},
         {"/docs/host-install", [{"/app/runners/install", "Runners → Connect a runner"}]},
         {"/docs/runners",
@@ -349,7 +351,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
         {"/docs/pack-registry", [{"/app/packs", "Packs"}]},
         {"/docs/pack-updates", [{"/app/packs", "Packs"}]},
         {"/docs/mcp-reference", [{"/app/packs", "Packs"}, {"/app/runbooks", "Runbooks"}]},
-        {"/docs/keys", [{"/app/agents", "LLM agents"}, {"/app/audit/export", "Audit export"}]},
+        {"/docs/agents-and-keys", [{"/app/agents", "AI agents"}]},
         {"/docs/billing", [{"/app/billing", "Billing"}, {"/app/billing", "Settings → Billing"}]},
         {"/docs/teams-and-access",
          [

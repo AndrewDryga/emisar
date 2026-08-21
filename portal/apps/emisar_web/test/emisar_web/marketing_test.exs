@@ -11,8 +11,9 @@ defmodule EmisarWeb.MarketingTest do
     /docs/action-packs
     /docs/security-model
     /docs/signed-dispatch
-    /docs/connect-an-llm
-    /docs/connect-a-cli-client
+    /docs/connect-cli-agent
+    /docs/connect-claude-ai
+    /docs/connect-chatgpt
     /docs/publishing-packs
     /docs/pack-registry
     /docs/run-an-action
@@ -36,7 +37,8 @@ defmodule EmisarWeb.MarketingTest do
     /docs/nomad
     /docs/autoscaling-fleets
     /docs/runs
-    /docs/keys
+    /docs/agents-and-keys
+    /docs/bridge-upgrades
     /docs/runner-cli
     /docs/billing
     /docs/limits
@@ -144,7 +146,8 @@ defmodule EmisarWeb.MarketingTest do
           /compare/raw-ssh-for-ai
           /compare/custom-mcp-server
           /compare/copy-paste-ai-ops
-          /docs/connect-an-llm
+          /docs/connect-claude-ai
+          /docs/connect-chatgpt
           /security
         ) do
       html = conn |> get(route) |> html_response(200)
@@ -784,8 +787,9 @@ defmodule EmisarWeb.MarketingTest do
       # dead end. Pull the on-page hrefs and GET each documentation target.
       for path <- ~w(
             /docs/quickstart
-            /docs/connect-an-llm
-            /docs/connect-a-cli-client
+            /docs/connect-claude-ai
+          /docs/connect-chatgpt
+            /docs/connect-cli-agent
             /docs/policies-and-approvals
             /docs/runbooks
             /docs/authentication
@@ -1172,17 +1176,18 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Claude-eBook-Zero-Trust-for-AI-Agents"
     end
 
-    test "the cloud LLM page renders the OAuth connector setup for Claude and ChatGPT",
+    test "the cloud provider pages render the OAuth connector setup for Claude and ChatGPT",
          %{conn: conn} do
-      html = conn |> get(~p"/docs/connect-an-llm") |> html_response(200) |> squish()
+      chatgpt = conn |> get(~p"/docs/connect-chatgpt") |> html_response(200) |> squish()
+      html = conn |> get(~p"/docs/connect-claude-ai") |> html_response(200) |> squish()
 
       # Current ChatGPT Developer-mode setup path: OAuth, no static token.
-      assert html =~ "Settings → Security and login"
-      assert html =~ "ChatGPT Plugins"
-      assert html =~ "Developer mode"
-      assert html =~ "Access depends"
-      assert html =~ "Server URL"
-      assert html =~ "Review the connection permissions"
+      assert chatgpt =~ "Settings → Security and login"
+      assert chatgpt =~ "ChatGPT Plugins"
+      assert chatgpt =~ "Developer mode"
+      assert chatgpt =~ "Access depends"
+      assert chatgpt =~ "Server URL"
+      assert chatgpt =~ "Review the connection permissions"
 
       # Cloud connectors cannot sign dispatch, so runners that require a signature
       # are out of scope for this page — a prerequisite, not a mid-page warning.
@@ -1197,15 +1202,18 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Read-only tools"
       assert html =~ "Write/delete tools"
       assert html =~ "Always allow"
-      assert html =~ "Select <strong>Create</strong>"
-      assert html =~ "choose <strong>OAuth</strong>"
-      assert html =~ "Start a new chat"
-      assert html =~ "A listed tool proves metadata access only"
-      assert html =~ "Refresh"
+      assert chatgpt =~ "Select <strong>Create</strong>"
+      assert chatgpt =~ "choose <strong>OAuth</strong>"
+      assert chatgpt =~ "Start a new chat"
+      assert chatgpt =~ "A listed tool proves metadata access only"
+      assert chatgpt =~ "Refresh"
+
+      # Both carry the shared prerequisites.
+      assert chatgpt =~ "Before you start, you need:"
     end
 
     test "the CLI-client page renders every stdio client config block", %{conn: conn} do
-      html = conn |> get(~p"/docs/connect-a-cli-client") |> html_response(200)
+      html = conn |> get(~p"/docs/connect-cli-agent") |> html_response(200)
 
       # The stdio-bridge config for each supported desktop/CLI client.
       assert html =~ "claude_desktop_config.json"
@@ -1338,17 +1346,19 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "https://github.com/andrewdryga/emisar"
     end
 
-    test "the cloud LLM page renders the remote MCP endpoint", %{conn: conn} do
-      html = conn |> get(~p"/docs/connect-an-llm") |> html_response(200)
+    test "the cloud provider pages render the remote MCP endpoint", %{conn: conn} do
+      for route <- [~p"/docs/connect-claude-ai", ~p"/docs/connect-chatgpt"] do
+        html = conn |> get(route) |> html_response(200)
 
-      # The remote MCP server URL an operator pastes into the connector; no
-      # REST-style path is implied.
-      assert html =~ "https://emisar.dev/api/mcp/rpc"
-      refute html =~ "GET /api/mcp/runners"
+        # The remote MCP server URL an operator pastes into the connector; no
+        # REST-style path is implied.
+        assert html =~ "https://emisar.dev/api/mcp/rpc"
+        refute html =~ "GET /api/mcp/runners"
+      end
     end
 
     test "the CLI-client page renders the verbatim bridge install command", %{conn: conn} do
-      html = conn |> get(~p"/docs/connect-a-cli-client") |> html_response(200)
+      html = conn |> get(~p"/docs/connect-cli-agent") |> html_response(200)
 
       # The bridge install command an operator copies verbatim. (The install URL
       # is wrapped in a syntax-highlight span, so assert the URL and the
@@ -1361,7 +1371,7 @@ defmodule EmisarWeb.MarketingTest do
     test "the CLI-client page renders generic direct HTTP setup and its key source", %{
       conn: conn
     } do
-      html = conn |> get(~p"/docs/connect-a-cli-client") |> html_response(200) |> squish()
+      html = conn |> get(~p"/docs/connect-cli-agent") |> html_response(200) |> squish()
 
       assert html =~ "Direct HTTP — no bridge"
       assert html =~ "Any MCP client that supports Streamable HTTP"
@@ -1377,7 +1387,7 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     test "the CLI-client page explains what the sign-in grants", %{conn: conn} do
-      html = conn |> get(~p"/docs/connect-a-cli-client") |> html_response(200)
+      html = conn |> get(~p"/docs/connect-cli-agent") |> html_response(200)
 
       # The security posture of the key the bridge carries: it acts as its owner
       # and inherits their scope — the same claim the cloud connect page makes.
@@ -1414,8 +1424,9 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/quickstart") |> html_response(200)
 
       assert html =~ "curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
-      assert html =~ ~s(href="/docs/connect-an-llm")
-      assert html =~ ~s(href="/docs/connect-a-cli-client")
+      assert html =~ ~s(href="/docs/connect-claude-ai")
+      assert html =~ ~s(href="/docs/connect-chatgpt")
+      assert html =~ ~s(href="/docs/connect-cli-agent")
       assert html =~ ~s(href="/app/runs")
       assert html =~ "finds supported clients"
       assert html =~ "You are done when it returns the result from"
@@ -1864,7 +1875,7 @@ defmodule EmisarWeb.MarketingTest do
       assert runs =~ "most recent 500"
       assert runs =~ "SIGTERM"
 
-      keys = conn |> get(~p"/docs/keys") |> html_response(200) |> squish()
+      keys = conn |> get(~p"/docs/agents-and-keys") |> html_response(200) |> squish()
       assert keys =~ "emk-"
       assert keys =~ "no scope of its own"
       assert keys =~ "audit-export"
@@ -2048,11 +2059,13 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/upgrades") |> html_response(200)
 
       assert html =~ "emisar --version"
-      assert html =~ "emisar-mcp --version"
+
+      bridge = conn |> get(~p"/docs/bridge-upgrades") |> html_response(200)
+      assert bridge =~ "emisar-mcp --version"
+      assert bridge =~ "install-mcp.sh"
       assert html =~ "emisar doctor"
       assert html =~ "sudo emisar update --version &lt;target-version&gt;"
       assert html =~ "install.sh"
-      assert html =~ "install-mcp.sh"
 
       # A binary upgrade stops the service, so the page must not read as
       # zero-downtime — and rollback restores the runner, not the filesystem.
@@ -2075,9 +2088,10 @@ defmodule EmisarWeb.MarketingTest do
     test "upgrades keeps packs, bridges, and downgrades honestly bounded", %{conn: conn} do
       html = conn |> get(~p"/docs/upgrades") |> html_response(200)
 
-      assert html =~ "A running client keeps the binary it already loaded"
-      assert html =~ "Client config and API key are untouched"
-      assert html =~ "not a downgrade guarantee"
+      bridge = conn |> get(~p"/docs/bridge-upgrades") |> html_response(200) |> squish()
+      assert bridge =~ "A running client keeps the binary it already loaded"
+      assert bridge =~ "Client config and API key are untouched"
+      assert html =~ "Rollback works only within the supported"
       assert html =~ "Packs do not move with the binary"
       assert html =~ "infrastructure-managed runner is refused"
     end
@@ -2103,7 +2117,8 @@ defmodule EmisarWeb.MarketingTest do
       end
 
       # Every row hands the reader off to a real docs page.
-      for owner <- ~w(/docs/keys /docs/audit-and-siem /docs/runners /docs/sso /docs/scim
+      for owner <-
+            ~w(/docs/agents-and-keys /docs/audit-and-siem /docs/runners /docs/sso /docs/scim
                       /docs/signed-dispatch) do
         assert html =~ ~s(href="#{owner}")
       end
@@ -2286,7 +2301,7 @@ defmodule EmisarWeb.MarketingTest do
 
       # Each symptom hands off rather than restating the reference.
       for owner <- ~w(/docs/runners /docs/host-install /docs/pack-updates /docs/action-packs
-                      /docs/runs /docs/mcp-reference /docs/keys /docs/audit-and-siem
+                      /docs/runs /docs/mcp-reference /docs/agents-and-keys /docs/audit-and-siem
                       /docs/network-requirements /docs/policies-and-approvals) do
         assert html =~ ~s(href="#{owner}"), "troubleshooting never links #{owner}"
       end
@@ -2570,7 +2585,7 @@ defmodule EmisarWeb.MarketingTest do
 
       surfaces = ~w(
         /docs/audit-and-siem /docs/deployment /docs/billing /docs/limits /docs/runs
-        /docs/security-model /docs/keys /docs/runner-cli /docs/troubleshooting
+        /docs/security-model /docs/agents-and-keys /docs/runner-cli /docs/troubleshooting
         /docs/credentials /how-it-works /zero-trust /security /trust / /privacy /dpa
         /compare/copy-paste-ai-ops /compare/custom-mcp-server
       )
@@ -2714,25 +2729,25 @@ defmodule EmisarWeb.MarketingTest do
     #
     @cross_links %{
       "/docs/security-model" =>
-        ~w(/security /docs/action-packs /docs/connect-an-llm /docs/signed-dispatch),
+        ~w(/security /docs/action-packs /docs/connect-claude-ai /docs/signed-dispatch),
       "/docs/publishing-packs" => ~w(/packs /docs/action-packs /docs/pack-registry),
       "/docs/pack-registry" => ~w(/docs/publishing-packs /docs/action-packs /packs),
       "/docs/policies-and-approvals" =>
         ~w(/docs/runbooks /docs/audit-and-siem /docs/security-model),
       "/docs/runbooks" =>
-        ~w(/docs/policies-and-approvals /docs/connect-an-llm /docs/action-packs),
+        ~w(/docs/policies-and-approvals /docs/connect-claude-ai /docs/action-packs),
       "/docs/authentication" => ~w(/docs/teams-and-access /docs/sso /docs/scim),
       "/docs/upgrades" =>
-        ~w(/changelog /docs/pack-updates /docs/keys /docs/deployment /docs/runners),
+        ~w(/changelog /docs/pack-updates /docs/agents-and-keys /docs/deployment /docs/runners),
       "/docs/credentials" =>
-        ~w(/docs/keys /docs/audit-and-siem /docs/runners /docs/sso /docs/scim /docs/signed-dispatch),
+        ~w(/docs/agents-and-keys /docs/audit-and-siem /docs/runners /docs/sso /docs/scim /docs/signed-dispatch),
       "/docs/pack-updates" =>
         ~w(/docs/upgrades /docs/action-packs /docs/publishing-packs /docs/pack-registry /packs),
       "/docs/network-requirements" =>
         ~w(/docs/host-install /docs/upgrades /docs/pack-registry /docs/containers /docs/kubernetes /docs/nomad /docs/runners),
       "/docs/troubleshooting" =>
         ~w(/docs/runners /docs/host-install /docs/pack-updates /docs/action-packs /docs/runs
-           /docs/mcp-reference /docs/keys /docs/credentials /docs/upgrades /docs/audit-and-siem
+           /docs/mcp-reference /docs/agents-and-keys /docs/credentials /docs/upgrades /docs/audit-and-siem
            /docs/network-requirements /docs/policies-and-approvals /docs/teams-and-access
            /docs/signed-dispatch /docs/security-incidents /support),
       "/docs/security-incidents" =>
@@ -2744,7 +2759,7 @@ defmodule EmisarWeb.MarketingTest do
            /docs/troubleshooting /docs/policies-and-approvals /docs/signed-dispatch /how-it-works
            /changelog),
       "/docs/teams-and-access" =>
-        ~w(/docs/sso /docs/connect-an-llm /docs/policies-and-approvals /docs/audit-and-siem),
+        ~w(/docs/sso /docs/connect-claude-ai /docs/policies-and-approvals /docs/audit-and-siem),
       "/use-cases/cassandra-migration" => ~w(/packs/cassandra /docs/security-model),
       "/use-cases/ingress-502" =>
         ~w(/use-cases/csi-data-loss /docs/security-model /docs/action-packs),
@@ -2752,7 +2767,7 @@ defmodule EmisarWeb.MarketingTest do
       "/compare/custom-mcp-server" =>
         ~w(/docs/security-model /docs/action-packs /compare/raw-ssh-for-ai),
       "/compare/copy-paste-ai-ops" =>
-        ~w(/docs/connect-an-llm /docs/audit-and-siem /docs/security-model /docs/action-packs /compare/raw-ssh-for-ai)
+        ~w(/docs/connect-claude-ai /docs/audit-and-siem /docs/security-model /docs/action-packs /compare/raw-ssh-for-ai)
     }
 
     for {page, links} <- @cross_links do
@@ -3072,11 +3087,11 @@ defmodule EmisarWeb.MarketingTest do
   end
 
   describe "install scripts match their documented endpoints" do
-    test "the installer URLs quoted on /docs/connect-a-cli-client are live endpoints",
+    test "the installer URLs quoted on /docs/connect-cli-agent are live endpoints",
          %{conn: conn} do
       # The docs commands execute these responses directly, so both URLs must
       # resolve to the real scripts rather than a 404 or HTML page.
-      html = conn |> get(~p"/docs/connect-a-cli-client") |> html_response(200)
+      html = conn |> get(~p"/docs/connect-cli-agent") |> html_response(200)
       assert html =~ "https://emisar.dev/install-mcp.sh"
       assert html =~ "https://emisar.dev/install-mcp.ps1"
 

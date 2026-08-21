@@ -51,7 +51,7 @@
         In the console, click <a
           href={~p"/app/runners/install"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Connect a runner</a>. You'll get a one-line install command
+        >Runners → Connect a runner</a>. You'll get a one-line install command
         with a single-use enrollment key
         (<code class="font-mono text-brand-300">emkey-enroll-…</code>, shown <em>once</em>
         — copy it now). Run it on the host you want to give your LLM access to:
@@ -63,58 +63,7 @@
       ><span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh \
     | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… bash</.docs_code>
       <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
-      <details class="group mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
-        <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
-          <span class="flex items-center gap-2">
-            <.icon name="hero-command-line" class="h-4 w-4 text-zinc-500" />
-            What does the install script do?
-          </span>
-          <.icon
-            name="hero-chevron-down"
-            class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
-          />
-        </summary>
-        <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
-          <p class="text-base leading-7 text-zinc-400">
-            It is a plain shell script. You can
-            <.link href={~p"/install.sh"} class="text-brand-400 hover:text-brand-300">
-              read it first
-            </.link>
-            before you run it. The script:
-          </p>
-          <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
-            <li class="flex items-start gap-2.5">
-              <span class="flex-none text-zinc-500">—</span>
-              <span>verifies the download's SHA-256.</span>
-            </li>
-            <li class="flex items-start gap-2.5">
-              <span class="flex-none text-zinc-500">—</span>
-              <span>
-                creates a dedicated <code class="font-mono">emisar</code>
-                system user and an <code class="font-mono">emisar.service</code>
-                systemd unit (<code class="font-mono">Restart=on-failure</code>).
-              </span>
-            </li>
-            <li class="flex items-start gap-2.5">
-              <span class="flex-none text-zinc-500">—</span>
-              <span>
-                writes the enrollment key to <code class="font-mono">/etc/emisar/runner.env</code>
-                and the control-plane URL to <code class="font-mono">/etc/emisar/config.yaml</code>.
-              </span>
-            </li>
-            <li class="flex items-start gap-2.5">
-              <span class="flex-none text-zinc-500">—</span>
-              <span>
-                installs the host-matched starter packs (on a typical Linux + systemd host: <code class="font-mono">linux-core</code>, <code class="font-mono">debugging</code>, and <code class="font-mono">systemd-deep</code>).
-              </span>
-            </li>
-            <li class="flex items-start gap-2.5">
-              <span class="flex-none text-zinc-500">—</span>
-              <span>starts the service. This dials out to the control plane over WSS.</span>
-            </li>
-          </ul>
-        </div>
-      </details>
+      <.docs_install_script_details />
 
       <.docs_h2 id="watch-connect">3. Watch it connect</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -244,20 +193,25 @@
         <a
           href={~p"/app/agents"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >LLM agents</a>
+        >AI agents</a>
         and select your client. Claude.ai and ChatGPT connect over remote MCP with OAuth, and the page walks you through it. Local and CLI clients use the
         <code>emisar-mcp</code>
-        bridge. On macOS or Linux, one command sets it up:
+        bridge. Install it on the machine where your client runs:
       </p>
       <.docs_code
         phx-no-format
-        label="shell"
+        label="macOS or Linux"
         copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
       ><span class="text-zinc-500">$</span> curl -fsSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</.docs_code>
+      <.docs_code
+        phx-no-format
+        label="PowerShell"
+        copy_text="irm https://emisar.dev/install-mcp.ps1 | iex"
+      ><span class="text-zinc-500">PS&gt;</span> irm <span class="text-brand-300">https://emisar.dev/install-mcp.ps1</span> | iex</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The installer finds supported clients, opens a browser approval, and adds emisar to each
-        client you select. For Windows or manual setup, see <.link
-          navigate={~p"/docs/connect-a-cli-client"}
+        client you select. For manual setup, see <.link
+          navigate={~p"/docs/connect-cli-agent"}
           class="text-brand-400 hover:text-brand-300"
         >Connect a local AI client</.link>.
       </p>
@@ -338,7 +292,7 @@
                 <code class="font-mono">default_tools_approval_mode = "approve"</code>
                 under <code class="font-mono">[mcp_servers.emisar]</code>. The
                 <.link navigate={~p"/app/agents"} class="text-brand-400 hover:text-brand-300">
-                  LLM agents
+                  AI agents
                 </.link>
                 page has the exact per-client steps.
               </span>
