@@ -1361,7 +1361,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Direct HTTP — no bridge"
       assert html =~ "Any MCP client that supports Streamable HTTP"
       assert html =~ ~s(href="/app/agents/connect")
-      assert html =~ "Custom key (advanced)"
+      assert html =~ "select <strong class=\"font-medium text-zinc-200\">Custom</strong>"
       assert html =~ "https://emisar.dev/api/mcp/rpc"
       assert html =~ "Authorization: Bearer"
       assert html =~ "Do not commit it in a project configuration file"
