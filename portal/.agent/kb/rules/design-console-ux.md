@@ -268,8 +268,9 @@ The danger reads from the icon + the button + the consequence copy — the surfa
    artifact it describes.
 2. **Choice→consequence editors.** A control whose settings produce a real consequence
    renders that consequence as the color-coded verdict (warning-only); option cards argue
-   toward it; **selection state stays neutral** — a risky option must never wear the safe
-   hue.
+   toward it; **selection state stays neutral** — a risky option never wears the safe
+   hue as a fill or status treatment; the choice-card brand ring marks the active
+   input as location, not a verdict.
 3. **Empty placeholder = muted em-dash** (`text-zinc-500`) on its OWN span — never the
    value's bright/mono styling; adjacent no-value cells match.
 4. **Default value ≠ active filter.** A control at its default never renders as
