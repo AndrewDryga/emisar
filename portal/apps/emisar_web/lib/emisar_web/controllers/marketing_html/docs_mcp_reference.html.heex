@@ -191,8 +191,9 @@
         <p>
           Human <code>execute_runbook</code>
           follows only continuations tied to the returned execution, waits through approval or
-          expiry, and drains returned public outputs. Ctrl-C stops observation only. Add
-          <code>--json</code>
+          expiry, and retrieves the available output for each action. It prints up to 16,384
+          characters per action and links to the run page when more remains. Ctrl-C stops
+          observation only. Add <code>--json</code>
           when a script or LLM should receive the original execution response and decide whether
           to call <code>wait_for_run</code>
           itself.
