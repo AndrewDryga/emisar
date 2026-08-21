@@ -245,7 +245,10 @@ func testWindowsMCPInstaller(root, shell string) error {
 	entry, entryOK := servers["emisar"].(map[string]any)
 	clientEnv, envOK := entry["env"].(map[string]any)
 	themeOK := config["theme"] == "dark"
-	commandOK := entry["command"] == installed
+	configuredCommand, commandValueOK := entry["command"].(string)
+	configuredInfo, configuredErr := os.Stat(configuredCommand)
+	installedInfo, installedErr := os.Stat(installed)
+	commandOK := commandValueOK && configuredErr == nil && installedErr == nil && os.SameFile(configuredInfo, installedInfo)
 	keyOK := clientEnv["EMISAR_API_KEY"] == cursorKey
 	if !themeOK || !serversOK || !entryOK || !envOK || !commandOK || !keyOK {
 		return fmt.Errorf(
