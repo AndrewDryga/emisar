@@ -35,7 +35,7 @@ defmodule Emisar.Runners do
   @token_prefix_size 12
 
   # Per-account ring cap for auto-generated, unused install keys.
-  # Dashboard mounts mint into the ring; when capacity is exceeded the
+  # Console mounts mint into the ring; when capacity is exceeded the
   # oldest auto-unused entry is evicted (see `mint_install_key/2`).
   @install_ring_cap 42
   @install_eviction_grace_seconds 60
@@ -1960,7 +1960,7 @@ defmodule Emisar.Runners do
     do: "account:#{account_id}:runner:#{runner_id}:control"
 
   @doc """
-  Mints a fresh, single-use bootstrap enrollment key for the dashboard's
+  Mints a fresh, single-use bootstrap enrollment key for the console's
   install command, marks it auto-generated, and evicts the oldest
   auto-unused key beyond the per-account ring cap of #{@install_ring_cap}.
 
@@ -1990,7 +1990,7 @@ defmodule Emisar.Runners do
       Multi.new()
       # Insert first, then evict — so the account never momentarily has
       # zero auto-unused keys (which would race against concurrent
-      # dashboard mounts).
+      # console mounts).
       |> Multi.insert(
         :key,
         EnrollmentKey.Changeset.mint_install(account_id, user_id, prefix, hash, %{})

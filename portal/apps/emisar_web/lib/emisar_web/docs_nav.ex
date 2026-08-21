@@ -377,7 +377,7 @@ defmodule EmisarWeb.DocsNav do
               path: "/docs/audit-and-siem",
               icon: "hero-document-magnifying-glass",
               keywords: "ndjson export cursor poller journal ingest",
-              desc: "What gets recorded, the dashboard, NDJSON export, and the runner journal."
+              desc: "What gets recorded, the console, NDJSON export, and the runner journal."
             }
           ]
         }

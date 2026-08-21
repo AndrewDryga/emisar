@@ -114,7 +114,7 @@ defmodule Emisar.Runners.EnrollmentKey.Changeset do
   def mint_install(account_id, user_id, prefix, hash, attrs \\ %{}) do
     %EnrollmentKey{}
     |> cast(attrs, [:description])
-    |> put_default_value(:description, "Dashboard install command")
+    |> put_default_value(:description, "Console install command")
     |> put_change(:account_id, account_id)
     |> put_change(:created_by_id, user_id)
     |> put_change(:key_prefix, prefix)

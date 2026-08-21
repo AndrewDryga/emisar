@@ -21,7 +21,7 @@ defmodule Emisar.Runners.EnrollmentKey do
     field :revoked_at, :utc_datetime_usec
     field :deleted_at, :utc_datetime_usec
 
-    # Set when the dashboard auto-mints this key for the install
+    # Set when the console auto-mints this key for the install
     # command. Cleared the moment a runner successfully registers with
     # it (at which point the key becomes permanent and visible in
     # lists). While this is non-nil AND last_used_at is nil, the key
