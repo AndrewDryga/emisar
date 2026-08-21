@@ -4,43 +4,40 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="connect-a-cli-client"
-      updated="August 3, 2026"
+      updated="August 20, 2026"
       toc={[
-        {"api-key", "Mint an API key"},
         {"stdio-bridge", "Set up a stdio client"},
+        {"direct-http", "Direct HTTP — no bridge"},
+        {"verify", "Verify the connection"},
         {"sign-in-grants", "What the sign-in grants"}
       ]}
     >
       <.docs_header current="connect-a-cli-client">
         <:dek>
-          Local AI agents — Claude Desktop, Claude Code, Cursor, Windsurf, Zed, and a dozen
-          CLIs — reach your catalog through the tiny
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-sm">emisar-mcp</code>
-          stdio bridge, authenticated with an
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-sm">emk-</code>
-          API key.
+          Connect a local AI client to your action catalog through direct HTTPS or the
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
+          stdio bridge.
         </:dek>
       </.docs_header>
 
-      <.docs_callout kind={:note} title="Using Claude.ai or ChatGPT?">
-        <p>
-          Cloud apps connect over OAuth with no key or bridge to manage — see <.link
-            navigate={~p"/docs/connect-an-llm"}
-            class="text-brand-400 hover:text-brand-300"
-          >Connect a cloud LLM</.link>.
-        </p>
-      </.docs_callout>
+      <p class="mt-6 text-base leading-7 text-zinc-400">
+        Using Claude.ai or ChatGPT instead? Those connect over OAuth with no key or bridge to
+        manage — see <.link
+          navigate={~p"/docs/connect-an-llm"}
+          class="text-brand-400 hover:text-brand-300"
+        >Connect a cloud LLM</.link>.
+      </p>
 
-      <.docs_callout kind={:note} icon="hero-clipboard-document-check" title="Before you connect">
-        <p>
-          Point your client at an account that already has at least one runner online — otherwise the
-          agent signs in fine but finds an empty catalog with nothing to call. New here? Run the
+      <.docs_prerequisites>
+        <:item>
+          An account with at least one runner online. Otherwise the agent signs in fine and finds
+          an empty catalog with nothing to call. New here? Run the
           <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
             quickstart
           </.link>
-          first (install a runner, run one action), then come back to wire in your client.
-        </p>
-      </.docs_callout>
+          first, then come back to wire in your client.
+        </:item>
+      </.docs_prerequisites>
 
       <.agent_skill_cta
         class="mt-6"
@@ -52,56 +49,24 @@
       </.agent_skill_cta>
 
       <%!-- ============================================================ --%>
-      <%!-- Mint an API key (bridge + direct MCP)                         --%>
-      <%!-- ============================================================ --%>
-      <section>
-        <.docs_h2 id="api-key">1. Mint an API key</.docs_h2>
-
-        <p class="mt-4 text-base text-zinc-400">
-          You rarely mint a key by hand: the installer in step 2 mints one per client it finds, and
-          cloud apps use OAuth with no key at all (<.link
-            navigate={~p"/docs/connect-an-llm"}
-            class="text-brand-400 hover:text-brand-300"
-          >Connect a cloud LLM</.link>). To do it yourself, open <strong>LLM agents</strong>
-          in the dashboard, pick your client, and reveal its prefilled snippet — shown once.
-        </p>
-
-        <p class="mt-4 text-base text-zinc-400">
-          There's nothing to configure on the key: it runs under your account
-          <strong>policy</strong>
-          and its owner's runner scope. Rotation, revocation, and scope are covered in <.link
-            navigate={~p"/docs/keys"}
-            class="text-brand-400 hover:text-brand-300"
-          >MCP keys</.link>.
-        </p>
-      </section>
-
-      <%!-- ============================================================ --%>
       <%!-- Stdio bridge                                                  --%>
       <%!-- ============================================================ --%>
       <section>
-        <.docs_h2 id="stdio-bridge">2. Set up a stdio client</.docs_h2>
+        <.docs_h2 id="stdio-bridge">Set up a stdio client</.docs_h2>
 
         <p class="mt-4 text-base text-zinc-400">
-          For clients that only speak stdio MCP — Claude Desktop, Claude
-          Code, Cursor (local mode), Windsurf, Zed, OpenClaw, OpenCode, Pi,
-          Copilot CLI, Gemini CLI, Codex CLI, Goose, Hermes, Grok CLI — install the
-          tiny <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
-          binary. It's a thin shim that forwards stdio JSON-RPC frames
-          to the same <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
-          endpoint.
-          Every MCP semantic — tool descriptors, content blocks,
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
-          — is implemented in the portal,
-          so MCP spec updates land server-side — you only redownload the bridge when the portal
-          raises its minimum supported version.
+          Most local clients speak stdio. The
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
+          bridge is a small binary that sits in between the agent and emisar control plane. Your
+          client starts it, and it passes each call to your account. Install it once per machine —
+          every client uses the same one.
         </p>
 
         <.docs_h3 id="install-bridge">Install</.docs_h3>
         <p class="mt-2 text-base text-zinc-300">
-          One-liner — auto-resolves the latest
+          On macOS or Linux, this command resolves the latest
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mcp-v*</code>
-          release, verifies sha256, drops
+          release, verifies its checksum, and installs
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
           into <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin</code>:
         </p>
@@ -110,10 +75,28 @@
           label="shell"
           copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
         ><span class="text-zinc-500">$</span> curl -fsSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</.docs_code>
+        <p class="mt-5 text-base text-zinc-300">
+          On 64-bit Windows, open PowerShell and run:
+        </p>
+        <.docs_code
+          phx-no-format
+          label="PowerShell"
+          copy_text="irm https://emisar.dev/install-mcp.ps1 | iex"
+        ><span class="text-zinc-500">PS&gt;</span> irm <span class="text-brand-300">https://emisar.dev/install-mcp.ps1</span> | iex</.docs_code>
         <p class="mt-3 text-sm leading-6 text-zinc-400">
-          The installer finds your LLM clients and, once you approve in the browser, mints each one a
-          key and writes its config — comments and other servers preserved. The by-hand configs below
-          are just for reference or unattended setups.
+          Both installers find supported clients. You choose which clients to connect. Browser
+          approval creates one key for direct <code>emisar-mcp</code>
+          commands and a separate key for each selected client. Direct commands then work without
+          shell-profile exports. The installer preserves comments and other MCP servers in each
+          client config. See <.link
+            navigate={~p"/docs/mcp-reference#command-line"}
+            class="text-brand-400 hover:text-brand-300"
+          >Use MCP tools from the shell</.link>.
+        </p>
+        <p class="mt-3 text-sm leading-6 text-zinc-400">
+          The list of tools comes from emisar, not from the bridge. An installed bridge keeps
+          seeing current tools on its own. Update it when emisar raises the lowest version it
+          supports.
         </p>
         <.docs_verify_download
           tarball="emisar-mcp-<version>-linux-amd64.tar.gz"
@@ -132,14 +115,21 @@
             />
           </summary>
           <div class="border-t border-zinc-900 px-5 pb-5 pt-4 space-y-8">
+            <p class="text-base leading-7 text-zinc-400">
+              Every snippet here needs an agent key. Open <a
+                href={~p"/app/agents/connect"}
+                class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+              >Connect an agent</a>, pick your client, and create its key. The console prefills the whole
+              snippet for you, and the key is shown once.
+            </p>
+
             <%!-- Claude Desktop --%>
             <section>
-              <h3 class="text-xl font-semibold text-zinc-50">Claude Desktop</h3>
+              <h3 class="text-sm font-semibold text-zinc-100">Claude Desktop</h3>
               <p class="mt-2 text-base text-zinc-400">
                 Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/Library/Application Support/Claude/claude_desktop_config.json</code>:
               </p>
-              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
+              <.docs_code phx-no-format label="json" copy_id="mcp-config-claude-desktop">&#123;
   "mcpServers": &#123;
     "emisar": &#123;
       "command": "/usr/local/bin/emisar-mcp",
@@ -150,8 +140,7 @@
       &#125;
     &#125;
   &#125;
-&#125;</pre>
-              </div>
+&#125;</.docs_code>
               <p class="mt-3 text-base text-zinc-400">
                 Restart Claude Desktop. Tools appear under the tool icon
                 as "emisar".
@@ -160,12 +149,11 @@
 
             <%!-- Cursor --%>
             <section>
-              <h3 class="text-xl font-semibold text-zinc-50">Cursor</h3>
+              <h3 class="text-sm font-semibold text-zinc-100">Cursor</h3>
               <p class="mt-2 text-base text-zinc-400">
                 Same bridge. Cursor reads <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.cursor/mcp.json</code>:
               </p>
-              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
+              <.docs_code phx-no-format label="json" copy_id="mcp-config-cursor">&#123;
   "mcpServers": &#123;
     "emisar": &#123;
       "command": "/usr/local/bin/emisar-mcp",
@@ -176,21 +164,20 @@
       &#125;
     &#125;
   &#125;
-&#125;</pre>
-              </div>
+&#125;</.docs_code>
               <p class="mt-3 text-base text-zinc-400">
-                Recent Cursor builds also speak remote MCP — point them at
+                Recent Cursor builds also speak remote MCP. Point them at
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
                 directly (see <.link
                   navigate={~p"/docs/connect-an-llm"}
                   class="text-brand-400 hover:text-brand-300"
-                >Connect a cloud LLM</.link>) if you'd rather skip the bridge.
+                >Connect a cloud LLM</.link>) to skip the bridge.
               </p>
             </section>
 
             <%!-- Zed --%>
             <section>
-              <h3 class="text-xl font-semibold text-zinc-50">Zed</h3>
+              <h3 class="text-sm font-semibold text-zinc-100">Zed</h3>
               <p class="mt-2 text-base text-zinc-400">
                 By hand, Zed reads
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
@@ -198,8 +185,7 @@
                 </code>
                 and nests MCP servers under <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">context_servers</code>, not <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mcpServers</code>:
               </p>
-              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
+              <.docs_code phx-no-format label="json" copy_id="mcp-config-zed">&#123;
   "context_servers": &#123;
     "emisar": &#123;
       "source": "custom",
@@ -212,26 +198,24 @@
       &#125;
     &#125;
   &#125;
-&#125;</pre>
-              </div>
+&#125;</.docs_code>
             </section>
 
             <%!-- Claude Code (CLI) --%>
             <section>
-              <h3 class="text-xl font-semibold text-zinc-50">Claude Code</h3>
+              <h3 class="text-sm font-semibold text-zinc-100">Claude Code</h3>
               <p class="mt-2 text-base text-zinc-400">
                 One-line register, user scope (every project):
               </p>
-              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-                <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
-                  terminal
-                </div>
-                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> claude mcp add emisar --scope user \
+              <.docs_code
+                phx-no-format
+                label="terminal"
+                copy_text="claude mcp add emisar --scope user -e EMISAR_URL=https://emisar.dev -e EMISAR_API_KEY=emk-... -e EMISAR_CLIENT=claude-code -- /usr/local/bin/emisar-mcp"
+              ><span class="text-zinc-500">$</span> claude mcp add emisar --scope user \
     -e EMISAR_URL=https://emisar.dev \
     -e EMISAR_API_KEY=emk-... \
     -e EMISAR_CLIENT=claude-code \
-    -- /usr/local/bin/emisar-mcp</pre>
-              </div>
+    -- /usr/local/bin/emisar-mcp</.docs_code>
               <p class="mt-3 text-base text-zinc-400">
                 Verify with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">claude mcp list</code>.
               </p>
@@ -239,12 +223,11 @@
 
             <%!-- Gemini CLI --%>
             <section>
-              <h3 class="text-xl font-semibold text-zinc-50">Gemini CLI</h3>
+              <h3 class="text-sm font-semibold text-zinc-100">Gemini CLI</h3>
               <p class="mt-2 text-base text-zinc-400">
                 Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.gemini/settings.json</code>:
               </p>
-              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">&#123;
+              <.docs_code phx-no-format label="json" copy_id="mcp-config-gemini">&#123;
   "mcpServers": &#123;
     "emisar": &#123;
       "command": "/usr/local/bin/emisar-mcp",
@@ -255,21 +238,18 @@
       &#125;
     &#125;
   &#125;
-&#125;</pre>
-              </div>
+&#125;</.docs_code>
             </section>
 
             <%!-- ChatGPT Codex CLI --%>
             <section>
-              <h3 class="text-xl font-semibold text-zinc-50">ChatGPT Codex CLI</h3>
+              <h3 class="text-sm font-semibold text-zinc-100">ChatGPT Codex CLI</h3>
               <p class="mt-2 text-base text-zinc-400">
                 Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>:
               </p>
-              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300">[mcp_servers.emisar]
+              <.docs_code phx-no-format label="toml" copy_id="mcp-config-codex">[mcp_servers.emisar]
 command = "/usr/local/bin/emisar-mcp"
-env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMISAR_CLIENT = "codex" &#125;</pre>
-              </div>
+env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMISAR_CLIENT = "codex" &#125;</.docs_code>
               <p class="mt-3 text-base text-zinc-400">
                 To let emisar calls run without Codex prompts, add
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
@@ -278,26 +258,25 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
                 below
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[mcp_servers.emisar]</code>
                 in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>.
-                This trusts only the emisar MCP server; emisar still applies its own policies and approvals.
+                This trusts only the emisar MCP server. Emisar still applies its own policies and approvals.
               </p>
             </section>
 
             <%!-- Grok CLI --%>
             <section>
-              <h3 class="text-xl font-semibold text-zinc-50">Grok CLI</h3>
+              <h3 class="text-sm font-semibold text-zinc-100">Grok CLI</h3>
               <p class="mt-2 text-base text-zinc-400">
                 Register the bridge in your user config:
               </p>
-              <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
-                <div class="border-b border-zinc-900 px-3 py-2 font-mono text-[11px] text-zinc-500">
-                  terminal
-                </div>
-                <pre class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500">$</span> grok mcp add emisar \
+              <.docs_code
+                phx-no-format
+                label="terminal"
+                copy_text="grok mcp add emisar -e EMISAR_URL=https://emisar.dev -e EMISAR_API_KEY=emk-... -e EMISAR_CLIENT=grok -- /usr/local/bin/emisar-mcp"
+              ><span class="text-zinc-500">$</span> grok mcp add emisar \
     -e EMISAR_URL=https://emisar.dev \
     -e EMISAR_API_KEY=emk-... \
     -e EMISAR_CLIENT=grok \
-    -- /usr/local/bin/emisar-mcp</pre>
-              </div>
+    -- /usr/local/bin/emisar-mcp</.docs_code>
               <p class="mt-3 text-base text-zinc-400">
                 To stop Grok's per-tool prompts for emisar only, add
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">"MCPTool(emisar__*)"</code>
@@ -314,29 +293,107 @@ env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMIS
             If a runner enforces <.link
               navigate={~p"/docs/signed-dispatch"}
               class="text-brand-400 hover:text-brand-300"
-            >signed dispatch</.link>, add
+            >signed dispatch</.link>, the bridge needs
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
             and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
-            (printed by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing init</code>)
-            to the same <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">env</code>
-            block — the bridge signs every action dispatch so an enforcing runner will run it. Keep both secret,
-            never on the portal. The cloud connectors — Claude.ai and ChatGPT — sign nothing, so they can't reach an
-            enforcing runner.
+            in its environment. Put them wherever your client passes environment to the bridge: the
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">env</code>
+            block in its config file, or another
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">-e</code>
+            flag if you registered it with
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">claude mcp add</code>
+            or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">grok mcp add</code>.
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing init</code>
+            prints both values. The bridge signs each action dispatch. Keep both values secret and
+            off the portal.
           </p>
         </.docs_callout>
       </section>
+
+      <section>
+        <.docs_h2 id="direct-http">Direct HTTP — no bridge</.docs_h2>
+        <p class="mt-4 text-base text-zinc-400">
+          Any MCP client that supports Streamable HTTP and a custom authorization header can
+          connect straight to emisar. There is no bridge binary to install.
+        </p>
+
+        <ol class="mt-4 list-decimal space-y-3 pl-6 text-base text-zinc-300">
+          <li>
+            Open <a
+              href={~p"/app/agents/connect"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Connect an agent</a>. Under <strong class="font-medium text-zinc-200">Roll your own</strong>,
+            select <strong class="font-medium text-zinc-200">Custom key (advanced)</strong>. Create
+            a dedicated key and copy it before leaving the page. The key is shown once.
+          </li>
+          <li>
+            Add an MCP server to your client, choose the
+            <strong class="font-medium text-zinc-200">Streamable HTTP</strong>
+            transport, and give it these two values:
+          </li>
+        </ol>
+        <.docs_value label="Server URL" copy_text="https://emisar.dev/api/mcp/rpc">
+          https://emisar.dev/api/mcp/rpc
+        </.docs_value>
+        <.docs_value
+          label="Authorization header"
+          copy_text="Authorization: Bearer emk-..."
+        >
+          Authorization: Bearer emk-...
+        </.docs_value>
+        <p class="mt-3 text-base leading-7 text-zinc-400">
+          Replace <code>emk-...</code> with the key you copied. Store it in the client's secret or
+          user-level configuration. Do not commit it in a project configuration file.
+        </p>
+
+        <.docs_callout kind={:note} title="What direct HTTP leaves out">
+          <p>
+            A direct HTTP client cannot sign dispatches and does not rotate its agent key
+            automatically. Use the stdio bridge when a runner requires <.link
+              navigate={~p"/docs/signed-dispatch"}
+              class="text-brand-400 hover:text-brand-300"
+            >signed dispatch</.link>. Rotate or revoke a direct client's key from <a
+              href={~p"/app/agents"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >LLM agents</a>.
+          </p>
+        </.docs_callout>
+      </section>
+
+      <.docs_h2 id="verify">Verify the connection</.docs_h2>
+      <ol class="mt-4 list-decimal space-y-3 pl-6 text-base text-zinc-300">
+        <li>Restart or reconnect the client after its config changes.</li>
+        <li>Confirm that the client lists the emisar MCP tools.</li>
+        <li>
+          Ask it to run <code>linux.uptime</code> on any one of the connected runners.
+        </li>
+        <li>Confirm that the client returns the action output.</li>
+        <li>
+          Open <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>. Confirm that the event names the client, runner, action, and reason.
+        </li>
+      </ol>
 
       <.docs_h2 id="sign-in-grants">What the sign-in grants</.docs_h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         Whether the installer minted it after your browser approval or you pasted one by hand, the
         key is bound to <em>your</em>
-        membership — the agent acts as you. Every call is attributed to you and the agent you're using, and it reaches only the
+        membership. The agent acts as you. Every call is attributed to you and the agent you are using. It reaches only the
         runners and actions your own access already allows (<.link
           navigate={~p"/docs/keys#no-scope"}
           class="text-brand-400 hover:text-brand-300"
         >how a key inherits its operator's scope</.link>). Revoke it any time from
-        <strong>LLM agents</strong>
-        in the dashboard.
+        <a
+          href={~p"/app/agents"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >LLM agents</a>
+        in the console.
+        <.link navigate={~p"/docs/keys"} class="text-brand-400 hover:text-brand-300">
+          Agent keys
+        </.link>
+        covers rotation.
       </p>
     </.docs_layout>
   </section>

@@ -1351,17 +1351,38 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "| sudo bash"
     end
 
+    test "the CLI-client page renders generic direct HTTP setup and its key source", %{
+      conn: conn
+    } do
+      html = conn |> get(~p"/docs/connect-a-cli-client") |> html_response(200) |> squish()
+
+      assert html =~ "Direct HTTP — no bridge"
+      assert html =~ "Any MCP client that supports Streamable HTTP"
+      assert html =~ ~s(href="/app/agents/connect")
+      assert html =~ "Custom key (advanced)"
+      assert html =~ "https://emisar.dev/api/mcp/rpc"
+      assert html =~ "Authorization: Bearer"
+      assert html =~ "Do not commit it in a project configuration file"
+      assert html =~ "cannot sign dispatches"
+      assert html =~ "does not rotate its agent key automatically"
+      assert html =~ ~s(href="/docs/signed-dispatch")
+      refute html =~ "claude mcp add --transport http"
+      refute html =~ "MCP: Open User Configuration"
+    end
+
     test "the CLI-client page explains what the sign-in grants", %{conn: conn} do
       html = conn |> get(~p"/docs/connect-a-cli-client") |> html_response(200)
 
       # The security posture of the key the bridge carries: it acts as its owner
       # and inherits their scope — the same claim the cloud connect page makes.
       assert html =~ "What the sign-in grants"
-      assert html =~ "the agent acts as you"
+      assert html =~ "The agent acts as you"
       assert html =~ "inherits its operator"
     end
 
-    test "the quickstart renders the install command pinned to the TLS endpoint", %{conn: conn} do
+    test "the quickstart renders the interactive install command pinned to the TLS endpoint", %{
+      conn: conn
+    } do
       html = conn |> get(~p"/docs/quickstart") |> html_response(200)
 
       # The one-command install — the URL must be the literal TLS endpoint
