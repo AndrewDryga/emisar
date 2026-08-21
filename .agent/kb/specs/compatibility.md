@@ -17,7 +17,7 @@ same product contract.
 Before 1.0, a normal product feature is a minor bump and a release hotfix is a
 patch bump. Pre-1.0 releases do not promise long-lived compatibility between
 components. The current release snapshot is product `v0.41.1`, runner
-`0.20.1`, and `emisar-mcp` `0.7.1`. Those component versions are release tips;
+`0.20.1`, and `emisar-mcp` `0.8.0`. Those component versions are release tips;
 unstamped local builds report `dev`.
 
 At 1.0:
@@ -545,7 +545,7 @@ makes a rerun hands-off; a rejected credential starts a fresh approval. This
 drives the portal's device-authorization pair, whose frozen contract lives in
 the OAuth authorization server section above; the installers and bridge are
 the deployed consumers its skew note describes. The current release tags are
-`runner-v0.20.1` and `mcp-v0.7.1`. The
+`runner-v0.20.1` and `mcp-v0.8.0`. The
 bridge installer also requires the selected GitHub release to be marked
 immutable.
 
