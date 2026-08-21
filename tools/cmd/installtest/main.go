@@ -10,8 +10,8 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 2 || os.Args[1] != "runner" && os.Args[1] != "mcp" {
-		fmt.Fprintln(os.Stderr, "usage: installtest runner|mcp")
+	if len(os.Args) != 2 || os.Args[1] != "runner" && os.Args[1] != "mcp" && os.Args[1] != "mcp-windows" {
+		fmt.Fprintln(os.Stderr, "usage: installtest runner|mcp|mcp-windows")
 		os.Exit(2)
 	}
 
@@ -26,6 +26,8 @@ func main() {
 		err = installtest.Runner(root, os.Stdout)
 	case "mcp":
 		err = installtest.MCP(root, os.Stdout)
+	case "mcp-windows":
+		err = installtest.MCPWindows(root, os.Stdout)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "installtest:", err)

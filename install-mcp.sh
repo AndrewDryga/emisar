@@ -24,9 +24,13 @@
 # installing, an interactive run authenticates the direct CLI and scans for
 # local LLM clients (Claude
 # Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI, OpenClaw,
-# OpenCode, Windsurf, Pi, Copilot CLI, Zed, Hermes, Goose) and offers
+# OpenCode, Windsurf, Pi, Copilot CLI, Zed, Hermes, Goose, Grok CLI) and offers
 # to add emisar to each — asking per client; a non-interactive or --yes
-# run skips that entirely. The API keys come from one browser approval
+# run skips that entirely. For the clients whose "stop asking" setting can be
+# scoped to the emisar server alone (Claude Code, Gemini CLI, Codex CLI, Grok
+# CLI), it then offers once to silence that client's own per-tool prompt for
+# emisar; declining is the default and no global approval setting is ever
+# touched. The API keys come from one browser approval
 # (the script prints an approval link; no key is ever typed or copied)
 # and land in owner-only CLI state or straight in the client configs, pointed
 # at EMISAR_URL.
@@ -89,7 +93,8 @@ Flags:
   --uninstall         Remove the emisar-mcp binary (from the conventional
                       locations, or --install-dir), the emisar entry and
                       .emisar-bak backups in detected LLM client configs,
-                      stored direct-CLI credential, and bridge rotation state.
+                      every stored direct-CLI account, and bridge rotation
+                      state.
                       Connected keys stay valid until revoked on the portal's
                       /app/agents; unused installer keys stay hidden and expire
                       after 30 days.
@@ -439,6 +444,9 @@ scan_llm_clients() {
   if [ -d "${user_home}/.config/goose" ]; then
     scan_client "Goose" goose goose "${user_home}/.config/goose/config.yaml"
   fi
+  if [ -d "${user_home}/.grok" ]; then
+    scan_client "Grok CLI" grok toml "${user_home}/.grok/config.toml"
+  fi
 }
 
 # ---------------------------------------------------------------------
@@ -446,7 +454,7 @@ scan_llm_clients() {
 # ---------------------------------------------------------------------
 # The reverse of the install path: drop the emisar entry from each detected
 # client config (and the install's .emisar-bak files), remove the stored
-# direct-CLI credential and bridge rotation state, then the binaries. A key removed from a config keeps
+# direct-CLI accounts and bridge rotation state, then the binaries. A key removed from a config keeps
 # working until revoked in the portal. An unused installer key stays hidden and
 # expires after 30 days, so the exit line explains both cases.
 
@@ -730,13 +738,14 @@ PY
   return 1
 }
 
-# Reverse of append_codex_toml: drop the [mcp_servers.emisar] table — its
-# exact header through the next table header or EOF.
-remove_codex_toml_emisar() {
+# Reverse of append_toml_config: drop [mcp_servers.emisar] and its child tables
+# through the next unrelated table header or EOF. Grok's own CLI writes env as
+# [mcp_servers.emisar.env], while this installer uses an inline table.
+remove_toml_emisar() {
   local file="$1"
   local tmp_out; tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")"
   awk '
-    /^\[mcp_servers\.emisar\]$/ { skip = 1; next }
+    /^\[mcp_servers\.emisar(\.[^]]+)?\]$/ { skip = 1; next }
     /^\[/ { skip = 0 }
     { if (!skip) print }
   ' "${file}" >"${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
@@ -789,6 +798,81 @@ remove_yaml_emisar() {
 }
 
 # Kind → removal, mirroring install_client_config's kind → merge mapping.
+# The reverse of apply_auto_permit: drop the emisar-scoped permission this
+# installer added, and only that one. A line we did not write, and an array
+# entry that is not ours, stays. Absent is success — an operator who never took
+# the offer, or already cleaned it up, is not a failure to report.
+remove_auto_permit() {
+  local client_id="$1" config_file="$2" user_home="$3"
+  case "${client_id}" in
+    claude-code)
+      json_deny_emisar_tools "${user_home}/.claude/settings.json" 'mcp__emisar__*'
+      ;;
+    # Codex and Gemini carry the setting INSIDE the emisar server block, which
+    # remove_client_config has already taken out in full.
+    codex|gemini) return 0 ;;
+    grok)
+      toml_drop_permission_allow "${config_file}" 'MCPTool(emisar__*)'
+      ;;
+    *) return 0 ;;
+  esac
+}
+
+# Grok: remove the whole [permission] table only when it is exactly the one this
+# installer appended — our single entry and nothing else. An operator who added
+# their own rules beside it keeps the table.
+toml_drop_permission_allow() {
+  local file="$1" entry="$2" tmp_out
+  [ -e "${file}" ] || return 0
+  grep -Fq "${entry}" "${file}" || return 0
+  tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")" || return 1
+  cp -p "${file}" "${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
+  awk -v entry="allow = [\"${entry}\"]" '
+    $0 == "[permission]" { header = NR; buffered = $0; next }
+    header && NR == header + 1 && $0 == entry { header = 0; buffered = ""; next }
+    header { print buffered; header = 0; buffered = "" }
+    { print }
+    END { if (header) print buffered }
+  ' "${file}" >"${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
+  mv -f "${tmp_out}" "${file}" || return 1
+  # Still there means the table carries the operator's own rules too, so it was
+  # left whole on purpose. Say so rather than reporting a removal that did not
+  # happen — a permission we added must not outlive the uninstall silently.
+  grep -Fq "${entry}" "${file}" && return 1
+  return 0
+}
+
+# Claude Code: its settings file is not an emisar file, so only our entry goes.
+# An emptied permissions.allow is left in place rather than pruned — the shape
+# is the operator's, not ours to tidy.
+json_deny_emisar_tools() {
+  local file="$1" entry="$2" tmp_out
+  [ -e "${file}" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 1
+  tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")" || return 1
+  cp -p "${file}" "${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
+  if ! MCP_FILE="${file}" MCP_OUT="${tmp_out}" MCP_ENTRY="${entry}" python3 - 2>/dev/null <<'DENYPY'
+import json, os
+with open(os.environ["MCP_FILE"]) as fh:
+    text = fh.read()
+if not text.strip():
+    raise SystemExit(0)
+doc = json.loads(text)
+allow = doc.get("permissions", {}).get("allow")
+if isinstance(allow, list):
+    entry = os.environ["MCP_ENTRY"]
+    doc["permissions"]["allow"] = [item for item in allow if item != entry]
+with open(os.environ["MCP_OUT"], "w") as fh:
+    json.dump(doc, fh, indent=2)
+    fh.write("\n")
+DENYPY
+  then
+    rm -f "${tmp_out}"
+    return 1
+  fi
+  mv -f "${tmp_out}" "${file}"
+}
+
 remove_client_config() {
   local kind="$1" config_file="$2"
   case "${kind}" in
@@ -798,13 +882,13 @@ remove_client_config() {
       command -v python3 >/dev/null 2>&1 || return 1
       remove_json_emisar "${config_file}" "${kind}"
       ;;
-    toml) remove_codex_toml_emisar "${config_file}" ;;
+    toml) remove_toml_emisar "${config_file}" ;;
     hermes|goose) remove_yaml_emisar "${kind}" "${config_file}" ;;
     *) return 1 ;;
   esac
 }
 
-# The stored direct-CLI credential and bridge rotation state (mcp rotate.go,
+# The stored direct-CLI accounts and bridge rotation state (mcp rotate.go,
 # under Go's UserConfigDir).
 # Removed like the runner uninstall removes its cached token + identity.
 remove_credential_state() {
@@ -816,7 +900,7 @@ remove_credential_state() {
   esac
   if [ -d "${config_root}/emisar/credentials" ]; then
     rm -rf "${config_root}/emisar/credentials"
-    log "removed direct-CLI credential and bridge rotation state ${config_root}/emisar/credentials"
+    log "removed direct-CLI accounts and bridge rotation state ${config_root}/emisar/credentials"
   fi
 }
 
@@ -831,7 +915,7 @@ do_uninstall() {
     fi
   done <<<"${install_dirs}"
 
-  if ! confirm "remove emisar-mcp, its stored CLI credential, rotation state, and detected LLM client entries?"; then
+  if ! confirm "remove emisar-mcp, all stored CLI accounts, rotation state, and detected LLM client entries?"; then
     die "aborted by user"
   fi
 
@@ -841,6 +925,9 @@ do_uninstall() {
     if [ "${state}" = "connected" ]; then
       if remove_client_config "${kind}" "${config_file}"; then
         own_config_file "${config_file}"
+        if ! remove_auto_permit "${client_id}" "${config_file}" "${user_home}"; then
+          warn "${label}: left its emisar auto-permit entry in place — remove it by hand"
+        fi
         log "removed emisar from ${label}: ${config_file}"
       else
         warn "${label}: could not remove the emisar entry from ${config_file} — remove it by hand"
@@ -1631,10 +1718,10 @@ PY
   return 1
 }
 
-# Codex config is TOML; appending a new table to a complete document is
-# always valid, and the caller already checked the table doesn't exist.
-append_codex_toml() {
-  local file="$1" bin="$2" url="$3" key="$4"
+# Codex and Grok configs are TOML; appending a new table to a complete document
+# is always valid, and the caller already checked the table doesn't exist.
+append_toml_config() {
+  local file="$1" bin="$2" url="$3" key="$4" client="$5"
   local tmp_out; tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")"
   if [ -e "${file}" ]; then
     cp -p "${file}" "${tmp_out}" || return 1
@@ -1647,8 +1734,8 @@ append_codex_toml() {
   {
     printf '[mcp_servers.emisar]\n'
     printf 'command = "%s"\n' "${bin}"
-    printf 'env = { EMISAR_URL = "%s", EMISAR_API_KEY = "%s", EMISAR_CLIENT = "codex" }\n' \
-      "${url}" "${key}"
+    printf 'env = { EMISAR_URL = "%s", EMISAR_API_KEY = "%s", EMISAR_CLIENT = "%s" }\n' \
+      "${url}" "${key}" "${client}"
   } >>"${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
   chmod 0600 "${tmp_out}" && mv "${tmp_out}" "${file}"
 }
@@ -1704,6 +1791,154 @@ append_yaml_config() {
   chmod 0600 "${tmp_out}" && mv "${tmp_out}" "${file}"
 }
 
+# The clients whose "stop asking" setting can be scoped to the emisar MCP
+# server alone. Cursor's auto-run is a GLOBAL agent toggle and Claude.ai's lives
+# in connector settings, so neither is offered: this installer never widens
+# approval for tools that are not ours.
+auto_permit_supported() {
+  case "$1" in
+    claude-code|gemini|codex|grok) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Insert one key directly under a TOML table header, leaving every other byte
+# alone. The table is the one this run just appended, so the header exists
+# exactly once and an existing key means the work is already done.
+toml_insert_in_table() {
+  local file="$1" header="$2" line="$3" tmp_out
+  grep -Fqx "${header}" "${file}" || return 1
+  grep -Fqx "${line}" "${file}" && return 0
+  tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")" || return 1
+  cp -p "${file}" "${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
+  awk -v header="${header}" -v line="${line}" '
+    { print }
+    $0 == header && !done { print line; done = 1 }
+  ' "${file}" >"${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
+  mv -f "${tmp_out}" "${file}"
+}
+
+# Grok keeps tool permissions in its own [permission] table. A second one is
+# invalid TOML, and hand-merging into an existing allow array is the kind of
+# edit that silently corrupts a config we do not own — so an existing table is
+# left untouched and the caller prints the manual snippet instead.
+toml_append_permission_allow() {
+  local file="$1" entry="$2" tmp_out
+  # Our entry first: on a re-run the table below is the one we appended, and
+  # reporting "could not silence" for work already done sends the operator to a
+  # snippet they do not need.
+  grep -Fq "${entry}" "${file}" && return 0
+  grep -Eq '^[[:space:]]*\[permission\]' "${file}" && return 1
+  tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")" || return 1
+  cp -p "${file}" "${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
+  {
+    printf '\n[permission]\n'
+    printf 'allow = ["%s"]\n' "${entry}"
+  } >>"${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
+  mv -f "${tmp_out}" "${file}"
+}
+
+# Gemini carries the setting on the server block this run just wrote, so the
+# edit is one key on one known object. python3 only: a half-applied permission
+# edit is worse than none, and jq is not guaranteed to have written this file.
+json_set_emisar_trust() {
+  local file="$1" tmp_out
+  command -v python3 >/dev/null 2>&1 || return 1
+  tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")" || return 1
+  cp -p "${file}" "${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
+  if ! MCP_FILE="${file}" MCP_OUT="${tmp_out}" python3 - 2>/dev/null <<'TRUSTPY'
+import json, os
+with open(os.environ["MCP_FILE"]) as fh:
+    doc = json.load(fh)
+servers = doc.get("mcpServers")
+if not isinstance(servers, dict):
+    raise SystemExit(1)
+entry = servers.get("emisar")
+if not isinstance(entry, dict):
+    raise SystemExit(1)
+entry["trust"] = True
+with open(os.environ["MCP_OUT"], "w") as fh:
+    json.dump(doc, fh, indent=2)
+    fh.write("\n")
+TRUSTPY
+  then
+    rm -f "${tmp_out}"
+    return 1
+  fi
+  mv -f "${tmp_out}" "${file}"
+}
+
+# Claude Code keeps permissions in its OWN settings file, not the MCP config
+# this run wrote — a separate file that may not exist yet. The entry is added to
+# permissions.allow; whatever is already allowed stays allowed.
+json_allow_emisar_tools() {
+  local file="$1" entry="$2" dir tmp_out
+  command -v python3 >/dev/null 2>&1 || return 1
+  dir="$(dirname "${file}")"
+  if [ ! -d "${dir}" ]; then
+    mkdir -p "${dir}" || return 1
+    own_config_file "${dir}"
+  fi
+  tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")" || return 1
+  if file_has_content "${file}"; then
+    cp -p "${file}" "${file}.emisar-bak" || { rm -f "${tmp_out}"; return 1; }
+    cp -p "${file}" "${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
+  fi
+  if ! MCP_FILE="${file}" MCP_OUT="${tmp_out}" MCP_ENTRY="${entry}" python3 - 2>/dev/null <<'ALLOWPY'
+import json, os
+path = os.environ["MCP_FILE"]
+try:
+    with open(path) as fh:
+        text = fh.read()
+except OSError:
+    text = ""
+doc = json.loads(text) if text.strip() else {}
+if not isinstance(doc, dict):
+    raise SystemExit(1)
+permissions = doc.setdefault("permissions", {})
+if not isinstance(permissions, dict):
+    raise SystemExit(1)
+allow = permissions.setdefault("allow", [])
+if not isinstance(allow, list):
+    raise SystemExit(1)
+entry = os.environ["MCP_ENTRY"]
+if entry not in allow:
+    allow.append(entry)
+with open(os.environ["MCP_OUT"], "w") as fh:
+    json.dump(doc, fh, indent=2)
+    fh.write("\n")
+ALLOWPY
+  then
+    rm -f "${tmp_out}"
+    return 1
+  fi
+  mv -f "${tmp_out}" "${file}" || return 1
+  own_config_file "${file}"
+}
+
+# Silence one client's own "allow this tool?" prompt for the emisar server, and
+# only that server. Runs after the client's emisar entry is written, so each
+# branch edits a block this run already put there.
+apply_auto_permit() {
+  local client_id="$1" config_file="$2" user_home="$3"
+  case "${client_id}" in
+    claude-code)
+      json_allow_emisar_tools "${user_home}/.claude/settings.json" 'mcp__emisar__*'
+      ;;
+    gemini)
+      json_set_emisar_trust "${config_file}"
+      ;;
+    codex)
+      toml_insert_in_table "${config_file}" '[mcp_servers.emisar]' \
+        'default_tools_approval_mode = "approve"'
+      ;;
+    grok)
+      toml_append_permission_allow "${config_file}" 'MCPTool(emisar__*)'
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 install_client_config() {
   local kind="$1" config_file="$2" key="$3" client_id="$4"
   local config_dir
@@ -1741,7 +1976,7 @@ install_client_config() {
       if file_has_content "${config_file}"; then
         cp -p "${config_file}" "${config_file}.emisar-bak" || return 1
       fi
-      append_codex_toml "${config_file}" "${first_bin}" "${EMISAR_URL}" "${key}"
+      append_toml_config "${config_file}" "${first_bin}" "${EMISAR_URL}" "${key}" "${client_id}"
       ;;
     hermes|goose)
       if file_has_content "${config_file}"; then
@@ -1755,7 +1990,7 @@ install_client_config() {
 
 # Run local credential operations as the person who invoked sudo, so Go's
 # UserConfigDir and the resulting owner-only state belong to that person rather
-# than root. The API key reaches `auth import` only on stdin.
+# than root. The browser approval reaches `auth import` only on stdin.
 run_cli_as_invoking_user() {
   if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
     sudo -H -u "${SUDO_USER}" "${first_bin}" "$@"
@@ -1778,9 +2013,7 @@ cli_auth_matches() {
 }
 
 install_cli_auth() {
-  local key="$1"
-  printf '%s\n' "${key}" |
-    run_cli_as_invoking_user auth import "${EMISAR_URL}" >/dev/null
+  run_cli_as_invoking_user auth import "${EMISAR_URL}" <"${TOKEN_RESP}"
 }
 
 valid_emisar_api_key() {
@@ -2001,9 +2234,11 @@ await_device_approval() {
 }
 
 configure_clients() {
-  local user_home="$1" ids="" label client_id kind config_file state key cli_needs_auth=0 delivered_keys_valid=1 connected_clients=0
+  local user_home="$1" ids="" label client_id kind config_file state key cli_needs_auth=0 delivered_keys_valid=1 connected_clients=0 auto_permit_labels=""
+  local cli_label="Emisar CLI"
   CONFIGURED_CLIENTS=""
   CLI_AUTHENTICATED=0
+  AUTO_PERMIT=0
   CLIENTS_FOUND=0
   SCANNED=""
   CONSENTED=""
@@ -2038,9 +2273,9 @@ configure_clients() {
   hdr "Connect emisar"
   out ""
   if [ "${cli_needs_auth}" -eq 1 ]; then
-    client_row "Emisar CLI" 33 "not authenticated"
+    client_row "${cli_label}" 33 "not authenticated"
   else
-    client_row "Emisar CLI" 2 "credential verified"
+    client_row "${cli_label}" 2 "credential verified"
   fi
   while IFS='|' read -r label client_id kind config_file state; do
     [ -n "${client_id}" ] || continue
@@ -2070,6 +2305,23 @@ configure_clients() {
 }${label}|${client_id}|${kind}|${config_file}"
     fi
   done <<<"${SCANNED}"
+
+  # Asked once, after the per-client questions and before anything is written:
+  # emisar decides every call server-side, so a client's own prompt adds nothing
+  # for OUR tools — but it is the operator's setting in the operator's file, so
+  # it is opt-in and never assumed by --yes or a non-interactive run.
+  while IFS='|' read -r label client_id kind config_file; do
+    auto_permit_supported "${client_id}" || continue
+    auto_permit_labels="${auto_permit_labels}${auto_permit_labels:+, }${label}"
+  done <<<"${CONSENTED}"
+  if [ -n "${auto_permit_labels}" ]; then
+    out ""
+    out "emisar decides every action on the server, so a client's own \"allow this tool?\" prompt adds nothing for emisar's tools. Policy and approvals still apply."
+    if ask_tty "Silence that prompt for the emisar server only in ${auto_permit_labels}?"; then
+      AUTO_PERMIT=1
+    fi
+  fi
+
   if [ -z "${CONSENTED}" ] && [ "${cli_needs_auth}" -eq 0 ]; then
     return 0
   fi
@@ -2095,7 +2347,7 @@ configure_clients() {
   # response must not leave only some clients connected from a consumed grant.
   if [ "${cli_needs_auth}" -eq 1 ]; then
     if ! key=$(json_client_key "${TOKEN_RESP}" emisar-mcp-cli) || ! valid_emisar_api_key "${key}"; then
-      warn "Emisar CLI: the portal did not deliver a valid API key — nothing was configured"
+      warn "${cli_label}: the portal did not deliver a valid API key — nothing was configured"
       delivered_keys_valid=0
     fi
   fi
@@ -2110,12 +2362,11 @@ configure_clients() {
 
   if [ "${cli_needs_auth}" -eq 1 ]; then
     if ! key=$(json_client_key "${TOKEN_RESP}" emisar-mcp-cli); then
-      warn "Emisar CLI: no key was delivered — re-run the installer to try again"
-    elif install_cli_auth "${key}"; then
+      warn "${cli_label}: no key was delivered — re-run the installer to try again"
+    elif install_cli_auth; then
       CLI_AUTHENTICATED=1
-      client_row "Emisar CLI" "1;32" "authenticated for ${EMISAR_URL}"
     else
-      warn "Emisar CLI: could not store its credential — re-run the installer to try again"
+      warn "${cli_label}: could not store its credential — re-run the installer to try again"
     fi
   fi
   while IFS='|' read -r label client_id kind config_file; do
@@ -2130,6 +2381,10 @@ configure_clients() {
     fi
     if install_client_config "${kind}" "${config_file}" "${key}" "${client_id}"; then
       own_config_file "${config_file}"
+      if [ "${AUTO_PERMIT}" = "1" ] && auto_permit_supported "${client_id}" &&
+        ! apply_auto_permit "${client_id}" "${config_file}" "${user_home}"; then
+        warn "${label}: emisar is connected, but its per-tool prompt could not be silenced — the snippet is at ${EMISAR_URL}/app/agents/connect"
+      fi
       CONFIGURED_CLIENTS="${CONFIGURED_CLIENTS}${CONFIGURED_CLIENTS:+
 }${label}: ${config_file}"
       client_row "${label}" "1;32" "connected → ${config_file}"
@@ -2152,7 +2407,7 @@ done <<<"${installed_paths}"
 first_bin=${installed_paths%%$'\n'*}
 
 configure_clients "${user_home}" || \
-  warn "CLI/client setup did not complete — per-client snippets: ${EMISAR_URL}/app/agents/connect"
+  warn "CLI/client setup did not complete — run emisar-mcp auth for the CLI; connect an LLM client at ${EMISAR_URL}/app/agents/connect"
 
 # After an interactive run the aligned connection lines above have already said
 # everything (connected / already connected / declined / none found) — no
@@ -2168,8 +2423,7 @@ if [ -n "${CONFIGURED_CLIENTS}" ]; then
   out "Manage agents and their keys: ${EMISAR_URL}/app/agents"
 elif [ "${connection_phase_ran}" = "0" ]; then
   out ""
-  out "Direct CLI commands are not authenticated by this non-interactive run."
-  out "Re-run interactively, or set EMISAR_URL and EMISAR_API_KEY together."
+  out "Authenticate the CLI in a terminal: emisar-mcp auth"
   out "Connect an LLM client: ${EMISAR_URL}/app/agents/connect"
 fi
 

@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -37,7 +36,7 @@ func (a *App) serveLock(port int, publicURL string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := lockFile(lock, true); err != nil {
 		data, _ := io.ReadAll(lock)
 		lock.Close()
 		return nil, fmt.Errorf("another ./run serve already owns Phoenix at %s (%s)", publicURL, string(data))
@@ -222,7 +221,7 @@ func (a *App) serveDetached(ctx context.Context) error {
 	command.Dir = a.Root
 	command.Env = os.Environ()
 	command.Stdin, command.Stdout, command.Stderr = nil, logFile, logFile
-	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	configureDetachedProcess(command)
 	if err := command.Start(); err != nil {
 		return err
 	}
@@ -276,7 +275,7 @@ func (a *App) serveStop(ctx context.Context) error {
 	// happens to lead one, which a foreground or nohup'd server does not — and
 	// the failure is silent, which is how a stop that stopped nothing reported
 	// success.
-	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+	if err := stopProcessID(pid); err != nil {
 		return fmt.Errorf("signalling ./run serve (pid %d): %w", pid, err)
 	}
 	if err := waitForPortState(ctx, port, false, 20*time.Second); err != nil {
@@ -361,7 +360,7 @@ func (a *App) serve(ctx context.Context, interactive bool) error {
 		return err
 	}
 	defer func() {
-		_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+		_ = unlockFile(lock)
 		_ = lock.Close()
 	}()
 	if portListening(listenPort) {
@@ -410,7 +409,7 @@ func (a *App) serve(ctx context.Context, interactive bool) error {
 		"EMISAR_LISTEN_IP="+listenIP,
 	)
 	command.Stdin, command.Stdout, command.Stderr = a.In, a.Out, a.Err
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	configureProcessGroup(command)
 	if err := command.Start(); err != nil {
 		return err
 	}
@@ -420,12 +419,12 @@ func (a *App) serve(ctx context.Context, interactive bool) error {
 	case err := <-done:
 		return err
 	case <-ctx.Done():
-		_ = syscall.Kill(-command.Process.Pid, syscall.SIGTERM)
+		_ = stopProcessGroup(command, false)
 		select {
 		case <-done:
 			return nil
 		case <-time.After(5 * time.Second):
-			_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+			_ = stopProcessGroup(command, true)
 			<-done
 			return nil
 		}

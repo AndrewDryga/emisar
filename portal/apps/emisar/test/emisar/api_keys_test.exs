@@ -2393,7 +2393,18 @@ defmodule Emisar.ApiKeysTest do
 
       {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
 
-      assert {:ok, client_keys} = ApiKeys.claim_device_grant(device_code)
+      assert {:ok,
+              %{
+                account_id: account_id,
+                account_slug: account_slug,
+                account_name: account_name,
+                client_keys: client_keys
+              }} =
+               ApiKeys.claim_device_grant(device_code)
+
+      assert account_id == account.id
+      assert account_slug == account.slug
+      assert account_name == account.name
       assert client_keys |> Map.keys() |> Enum.sort() == ["cursor", "emisar-mcp-cli"]
 
       keys = Repo.all(ApiKey)
@@ -2418,7 +2429,7 @@ defmodule Emisar.ApiKeysTest do
         ApiKeys.open_device_grant(["claude-code", "cursor"], context)
 
       {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
-      assert {:ok, _client_keys} = ApiKeys.claim_device_grant(device_code)
+      assert {:ok, %{client_keys: _client_keys}} = ApiKeys.claim_device_grant(device_code)
 
       {:ok, events, _meta} =
         Audit.list_events(subject, filter: [event_type: ["api_key.created"]])
@@ -2521,7 +2532,8 @@ defmodule Emisar.ApiKeysTest do
                  subject
                )
 
-      assert {:ok, %{"claude-code" => _raw_key}} = ApiKeys.claim_device_grant(device_code)
+      assert {:ok, %{client_keys: %{"claude-code" => _raw_key}}} =
+               ApiKeys.claim_device_grant(device_code)
     end
   end
 

@@ -5,10 +5,13 @@
 // The bridge owns transport correctness: bounded newline framing, request-id
 // correlation, Streamable HTTP headers, and validation that stdout contains
 // only valid MCP messages. All tool descriptors, content blocks, and synthetic
-// tools are produced by the portal. The one semantic exception is bridge-attested
-// dispatch (sign.go): the bridge recognizes only `run_action` and carries its
-// Ed25519 intent signature in a private HTTP header, because the signing key
-// must stay in the bridge and never reach the control plane.
+// tools are produced by the portal. Stdio mode does not reinterpret them. The
+// direct CLI adds bounded, terminal-safe views for the fixed tool contracts and
+// may follow exact read-only continuations after a human-mode mutation; --json
+// remains one logical invocation and follows no continuations. Bridge-attested
+// dispatch (sign.go) recognizes only `run_action` and carries its Ed25519 intent
+// signature in a private HTTP header, because the signing key must stay here and
+// never reach the control plane.
 //
 // Configure your client to launch:
 //
@@ -49,6 +52,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
@@ -133,70 +137,125 @@ var Version = "dev"
 
 const helpText = `emisar-mcp - MCP bridge and direct CLI for emisar
 
-USAGE
-  emisar-mcp
-  emisar-mcp auth [status [URL]]
-  emisar-mcp auth import URL
-  emisar-mcp list_tools [--json]
-  emisar-mcp help <tool> [--json]
-  emisar-mcp <tool> [JSON | -]
-  emisar-mcp -- <tool> [JSON | -]
-
 DESCRIPTION
-  Proxies MCP JSON-RPC between a local LLM client and the emisar control plane
-  at POST /api/mcp/rpc. The control plane owns tools, policy, approvals, and
-  audit. Optional signed dispatch keeps the operator's Ed25519 key on this
-  machine.
+  Run a command from a terminal, script, or LLM. Human-readable output is the
+  default. Add --json for the exact MCP structuredContent object and stable
+  script output. Pass '-' instead of JSON to read one object from stdin.
 
-  With no command, emisar-mcp speaks stdio for an MCP-aware client. Commands
-  expose that same server-owned tool surface to operators and shell scripts.
+  With no command, emisar-mcp speaks MCP over stdin and stdout for an MCP
+  client. Both modes use the same server-owned tools, policy, approvals, and
+  audit controls.
 
 COMMANDS
-  auth [status [URL]]
-    Show whether a direct-CLI credential is stored and optionally require an
-    exact endpoint match.
+  FLEET
+    emisar-mcp list_runners [JSON | -]
+      List runners, connectivity, groups, packs, issues, and exact refs.
 
-  auth import URL
-    Read one emk- API key from stdin and store it for direct CLI commands.
-    Interactive install-mcp.sh does this automatically after browser approval.
+    emisar-mcp list_packs [JSON | -]
+      List trusted packs, availability, action counts, issues, and exact refs.
 
-  list_tools
-    List every MCP tool currently published by the control plane. Add --json
-    to print the exact descriptors.
+  ACTIONS
+    emisar-mcp find_actions [TEXT | JSON | -]
+      Search executable actions. Plain text works for the common case.
 
-  help <tool>
-    Show one tool's server-owned description and top-level argument contract.
-    Add --json to print its exact descriptor. For non-conflicting tool names,
-    '<tool> --help' is equivalent.
+    emisar-mcp get_action [JSON | -]
+      Inspect one action and its input contract.
 
-  <tool> [JSON | -]
-    Call an exact MCP tool name. Pass one JSON object inline, '-' to read it
-    from stdin, or omit it for {}. Results are pretty-printed JSON.
+    emisar-mcp run_action [JSON | -]
+      Dispatch an action. Human mode waits for the result.
 
-  -- <tool> [JSON | -]
-    Call a tool whose name conflicts with a local command or begins with '-'.
+    emisar-mcp get_operation [JSON | -]
+      Recover a request by operation ID before retrying a mutation.
+
+    emisar-mcp recent_runs [JSON | -]
+      List recent action runs and their status.
+
+  RUNBOOKS
+    emisar-mcp list_runbooks [JSON | -]
+    emisar-mcp get_runbook [JSON | -]
+    emisar-mcp execute_runbook [JSON | -]
+    emisar-mcp create_runbook_draft [JSON | -]
+    emisar-mcp update_runbook_draft [JSON | -]
+      List, inspect, execute, and draft governed runbooks.
+
+  CONTINUATIONS
+    emisar-mcp wait_for_run [JSON | -]
+      Observe one run or runbook execution without repeating the mutation.
+
+  ACCOUNTS AND AUTH
+    emisar-mcp auth [login [URL]]
+      Open the browser, choose an account, and authenticate this CLI. URL
+      defaults to the current account, or https://emisar.dev the first time.
+
+    emisar-mcp auth status [URL]
+      Show the current or --account credential without printing its key. URL
+      optionally requires an exact endpoint match.
+
+    emisar-mcp accounts list
+      List locally authenticated accounts. A star marks the current account.
+
+    emisar-mcp accounts use <slug-or-id>
+      Make one stored account current for later commands.
+
+  MCP CLIENT AND DISCOVERY
+    emisar-mcp
+      Speak MCP over stdin and stdout for an MCP-aware client.
+
+    emisar-mcp list_tools
+      List live tools by category.
+
+    emisar-mcp help <tool>
+      Show live arguments. '<tool> --help' works for non-conflicting names.
+
+    emisar-mcp <tool> [JSON | -]
+      Call any exact tool name. Omit JSON when the tool accepts {}.
+
+    emisar-mcp -- <tool> [JSON | -]
+      Call a tool whose name conflicts with a local command or starts with '-'.
+
+  SHARED COMMAND OPTIONS
+    --account <slug-or-id>
+      Use one stored account for auth status, discovery, or a tool call without
+      changing the current account.
+
+    --json
+      Print exact JSON for accounts list, discovery, help, or a tool call.
+      Put it last when calling a tool.
 
 OUTPUT AND EXIT STATUS
-  0  Success. Tool calls write structuredContent JSON to stdout. list_tools and
-     help write text unless --json is present.
+  0  Success. Commands write readable text unless --json is present. In JSON
+     mode, tool calls write the exact structuredContent object; list_tools and
+     help write exact server-owned descriptors.
 
-  1  Tool, MCP, and tool-call transport/response errors write JSON to stdout. If
-     a call may have reached the server, its error includes data.operation_id;
-     a call rejected before transmission omits it. Recover a mutation with
-     get_operation before retrying it. A local diagnostic may also appear on
-     stderr. Configuration and list/help failures write diagnostics to stderr.
+  1  Tool, MCP, and tool-call transport/response errors use the selected output
+     format on stdout. In JSON mode, a call that may have reached the server
+     includes data.operation_id; a call rejected before transmission omits it.
+     Recover a mutation with get_operation before retrying it. A safe local
+     diagnostic may also appear on stderr. Configuration and list/help failures
+     write diagnostics to stderr.
 
-  2  Invalid command or JSON input. The diagnostic is on stderr.
+     Human run_action also exits 1 for every terminal status except success.
+     Human execute_runbook exits 1 when the execution is halted or cancelled.
+
+  2  Invalid command or input. The diagnostic is on stderr.
+
+  130  Ctrl-C stopped human-mode waiting. The action or runbook was not
+       cancelled; stderr shows the get_operation recovery command.
+
+  Direct-command errors explain what failed and what to do next. Color is used
+  only in a terminal. Set NO_COLOR to disable it. Redirected and piped output
+  never contains color codes.
 
 ENVIRONMENT
   EMISAR_URL (required for stdio; optional for commands)
     Control-plane HTTP(S) origin. Do not include a path, credentials, query,
     or fragment. Example: https://emisar.dev. When both authentication env
-    vars are absent, direct commands use the credential saved by the installer.
+    vars are absent, direct commands use the current stored account credential.
 
   EMISAR_API_KEY (required for stdio; optional for commands)
     Operator API key. Example: emk-... Both authentication env vars must be set
-    together; an explicit pair overrides the installed direct-CLI credential.
+    together; an explicit pair overrides the current stored account credential.
+    Do not combine an explicit pair with --account.
 
   EMISAR_CLIENT (optional)
     Audit-log label for this client, such as claude-code, cursor, codex, or
@@ -228,111 +287,20 @@ CLIENT SETUP
   Install the bridge:
     curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash
 
-  An interactive install authenticates direct CLI commands and offers to
-  configure the clients below — one browser approval writes separate keys.
-  The manual client forms follow. Replace emk-... below with a key from
-  https://emisar.dev/app/agents. These examples assume the bridge is
-  installed in /usr/local/bin.
+  An interactive install authenticates direct CLI commands and can configure
+  supported local clients with separate keys from one browser approval.
 
-  Claude Desktop (macOS)
-    Add this to:
-    ~/Library/Application Support/Claude/claude_desktop_config.json
-
-    {
-      "mcpServers": {
-        "emisar": {
-          "command": "/usr/local/bin/emisar-mcp",
-          "env": {
-            "EMISAR_URL": "https://emisar.dev",
-            "EMISAR_API_KEY": "emk-...",
-            "EMISAR_CLIENT": "claude-desktop"
-          }
-        }
-      }
-    }
-
-  Claude Code
-    claude mcp add emisar --scope user \
-      -e EMISAR_URL=https://emisar.dev \
-      -e EMISAR_API_KEY=emk-... \
-      -e EMISAR_CLIENT=claude-code \
-      -- /usr/local/bin/emisar-mcp
-
-    To skip per-tool prompts for this server, add "mcp__emisar__*" to
-    permissions.allow in ~/.claude/settings.json.
-
-  Cursor
-    Add this to ~/.cursor/mcp.json:
-
-    {
-      "mcpServers": {
-        "emisar": {
-          "command": "/usr/local/bin/emisar-mcp",
-          "env": {
-            "EMISAR_URL": "https://emisar.dev",
-            "EMISAR_API_KEY": "emk-...",
-            "EMISAR_CLIENT": "cursor"
-          }
-        }
-      }
-    }
-
-  Codex
-    codex mcp add emisar \
-      --env EMISAR_URL=https://emisar.dev \
-      --env EMISAR_API_KEY=emk-... \
-      --env EMISAR_CLIENT=codex \
-      -- /usr/local/bin/emisar-mcp
-
-    To let emisar calls run without Codex prompts, add this below
-    [mcp_servers.emisar] in ~/.codex/config.toml:
-
-      default_tools_approval_mode = "approve"
-
-    This trusts only the emisar MCP server. Emisar still applies its own
-    policies and approvals.
-
-  Gemini
-    gemini mcp add --scope user --trust \
-      -e EMISAR_URL=https://emisar.dev \
-      -e EMISAR_API_KEY=emk-... \
-      -e EMISAR_CLIENT=gemini \
-      emisar /usr/local/bin/emisar-mcp
-
-  Grok
-    grok mcp add emisar \
-      -e EMISAR_URL=https://emisar.dev \
-      -e EMISAR_API_KEY=emk-... \
-      -e EMISAR_CLIENT=grok \
-      -- /usr/local/bin/emisar-mcp
-
-    To skip per-tool prompts for this server, add this to
-    ~/.grok/config.toml:
-
-      [permission]
-      allow = ["MCPTool(emisar__*)"]
+  Manual client setup:
+    https://emisar.dev/docs/connect-a-cli-client
 
 KEY ROTATION
-  The bridge prepares and durably stores a successor before asking the
-  control plane to rotate an expiring key. It activates that successor only
-  after the control plane acknowledges the exact digest and the promoted
-  state is durable. State is bound to the endpoint origin in owner-only files
-  under <user-config-dir>/emisar/credentials/. Keep that directory persistent.
-  OAuth and arbitrary Bearer tokens bypass this state. Without durable storage,
-  automatic rotation is off.
+  emisar-mcp replaces expiring emk- keys automatically. It saves the new key
+  before using it, so a restart cannot lose the working credential.
 
-  Once a successor is promoted the bridge uses it and does NOT fall back to
-  the EMISAR_API_KEY in your config — falling back would resurrect a key the
-  control plane may have revoked. If the control plane loses its side of that
-  promotion (a rollback, a restore from backup), every request answers 401 and
-  restarting does not help, because the stored state is still what it loads.
-  For an env-configured MCP client, delete this endpoint's hashed state file
-  under <user-config-dir>/emisar/credentials/ and start again from the key in
-  the client config. For the installed direct CLI, rerun install-mcp.sh
-  interactively or import a fresh key; deleting cli.json leaves it without a
-  credential. Replacing local state does not revoke old keys. Connected keys
-  can be revoked in the control plane; unused installer keys stay hidden and
-  expire after 30 days.
+  If a direct command stops authenticating, run 'emisar-mcp auth' again and
+  choose that account. If an MCP client stops authenticating, reconnect it from
+  https://emisar.dev/app/agents/connect. Reconnecting does not revoke old keys;
+  revoke connected keys in LLM agents.
 
 FLAGS
   -h, --help
@@ -348,12 +316,37 @@ PROTOCOL
 `
 
 func main() {
-	if code := runProgram(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); code != 0 {
+	if code := runProgramMode(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, readerIsTerminal(os.Stdin)); code != 0 {
 		os.Exit(code)
 	}
 }
 
-func runProgram(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func runProgramMode(args []string, stdin io.Reader, stdout, stderr io.Writer, interactive bool) int {
+	if len(args) == 0 && interactive {
+		fmt.Fprint(stdout, helpText)
+		return 0
+	}
+	if len(args) == 1 {
+		switch args[0] {
+		case "-h", "--help", "help":
+			fmt.Fprint(stdout, helpText)
+			return 0
+		case "-v", "--version":
+			fmt.Fprintf(stdout, "%s %s\n", bridgeName, Version)
+			return 0
+		}
+	}
+	account := ""
+	if len(args) > 0 {
+		var err error
+		account, args, err = parseCLIAccount(args)
+		if err != nil {
+			return cliUsageError(stderr, err.Error())
+		}
+		if len(args) == 0 {
+			return cliUsageError(stderr, "usage: emisar-mcp [--account <slug-or-id>] <command>")
+		}
+	}
 	if len(args) == 1 {
 		switch args[0] {
 		case "-h", "--help", "help":
@@ -365,11 +358,20 @@ func runProgram(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 	if len(args) > 0 && args[0] == "auth" {
-		return runAuthCommand(args[1:], stdin, stdout, stderr)
+		return runAuthCommand(account, args[1:], stdin, stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "accounts" {
+		if account != "" {
+			return cliUsageError(stderr, "--account cannot be used with the accounts command")
+		}
+		return runAccountsCommand(args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && strings.HasPrefix(args[0], "-") && args[0] != "--" {
-		fmt.Fprintf(stderr, "unknown argument %q (try --help)\n", args[0])
-		return 2
+		return cliInputError(
+			stderr,
+			fmt.Sprintf("Unknown option %q", displayCLIOption(args[0])),
+			"Run `emisar-mcp --help` to see available commands and options.",
+		)
 	}
 	if err := validateCLIInvocation(args); err != nil {
 		return cliUsageError(stderr, err.Error())
@@ -379,14 +381,19 @@ func runProgram(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
 		defaultClient = "emisar-mcp-cli"
 	}
-	b, err := newBridgeFromEnv(defaultClient, len(args) > 0, stderr)
+	b, err := newBridgeFromEnv(defaultClient, len(args) > 0, account, stderr)
 	if err != nil {
+		if len(args) > 0 {
+			return cliConfigurationFailure(stderr, err, account)
+		}
 		fmt.Fprintf(stderr, "%s: %v\n", bridgeName, err)
 		return 1
 	}
 
 	if len(args) > 0 {
-		return b.runCLI(args, stdin, stdout, stderr)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		return b.runCLIContext(ctx, args, stdin, stdout, stderr)
 	}
 	if err := b.serve(stdin, stdout); err != nil && !errors.Is(err, io.EOF) {
 		fmt.Fprintf(stderr, "%s: serve: %v\n", bridgeName, err)
@@ -395,20 +402,44 @@ func runProgram(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func newBridgeFromEnv(defaultClient string, allowStoredCLI bool, diagnostics io.Writer) (*bridge, error) {
+func readerIsTerminal(reader io.Reader) bool {
+	file, ok := reader.(*os.File)
+	return ok && fileIsTerminal(file)
+}
+
+func parseCLIAccount(args []string) (string, []string, error) {
+	account := ""
+	if len(args) > 0 && args[0] == "--account" {
+		if len(args) < 2 || args[1] == "" || strings.HasPrefix(args[1], "-") {
+			return "", nil, errors.New("usage: emisar-mcp --account <slug-or-id> <command>")
+		}
+		account = args[1]
+		args = args[2:]
+	}
+	if account != "" && !validAccountSelector(account) {
+		return "", nil, errors.New("account must be an exact slug or account ID")
+	}
+	return account, args, nil
+}
+
+func newBridgeFromEnv(defaultClient string, allowStoredCLI bool, account string, diagnostics io.Writer) (*bridge, error) {
 	rawBase, urlSet := os.LookupEnv("EMISAR_URL")
 	// A key pasted into a client config often carries a trailing newline or
 	// space. Untrimmed it rides into the Authorization header, which the portal
 	// rejects on every request — a permanent failure with no clue why.
 	rawAPIKey, keySet := os.LookupEnv("EMISAR_API_KEY")
 	apiKey := strings.TrimSpace(rawAPIKey)
+	if account != "" && (urlSet || keySet) {
+		return nil, errors.New("--account selects a stored credential and cannot be combined with EMISAR_URL or EMISAR_API_KEY")
+	}
 
 	var credentialStore *credentialStore
+	usesStoredCLIAccount := false
 	if !urlSet && !keySet && allowStoredCLI {
-		store, state, err := loadCLICredential()
+		store, state, err := loadCLICredential(account)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				return nil, errors.New("no stored CLI credential; run install-mcp.sh interactively or set both EMISAR_URL and EMISAR_API_KEY (try --help)")
+				return nil, fmt.Errorf("no stored CLI credential for this account; %s or set both EMISAR_URL and EMISAR_API_KEY (try --help)", accountAuthHint(account))
 			}
 			return nil, fmt.Errorf("stored CLI credential: %w", err)
 		}
@@ -417,6 +448,7 @@ func newBridgeFromEnv(defaultClient string, allowStoredCLI bool, diagnostics io.
 		urlSet = true
 		keySet = true
 		credentialStore = store
+		usesStoredCLIAccount = true
 	}
 
 	// Never fill one authentication variable from stored state. A partial env
@@ -459,7 +491,16 @@ func newBridgeFromEnv(defaultClient string, allowStoredCLI bool, diagnostics io.
 		var credsErr error
 		credentialStore, credsErr = newRotationStore(base, apiKey)
 		if credsErr != nil {
-			fmt.Fprintf(diagnostics, "%s: no user config dir (%v); automatic key rotation disabled\n", bridgeName, credsErr)
+			if allowStoredCLI {
+				writeCLIWarning(
+					diagnostics,
+					"Automatic key rotation is off",
+					[]string{"The user configuration directory is unavailable: " + credsErr.Error()},
+					"Tool commands still work. Fix the configuration directory before relying on automatic rotation.",
+				)
+			} else {
+				fmt.Fprintf(diagnostics, "%s: no user config dir (%v); automatic key rotation disabled\n", bridgeName, credsErr)
+			}
 		}
 	}
 
@@ -476,23 +517,35 @@ func newBridgeFromEnv(defaultClient string, allowStoredCLI bool, diagnostics io.
 	}
 
 	b := &bridge{
-		endpoint:        base + "/api/mcp/rpc",
-		portalOrigin:    base,
-		apiKey:          apiKey,
-		userAgent:       buildUserAgentWithDefault(defaultClient),
-		client:          newHTTPClient(),
-		processNonce:    processNonce,
-		signer:          sign,
-		clientMetadata:  clientMetadata,
-		credentialStore: credentialStore,
-		diagnostics:     diagnostics,
+		endpoint:         base + "/api/mcp/rpc",
+		portalOrigin:     base,
+		apiKey:           apiKey,
+		userAgent:        buildUserAgentWithDefault(defaultClient),
+		client:           newHTTPClient(),
+		processNonce:     processNonce,
+		signer:           sign,
+		clientMetadata:   clientMetadata,
+		credentialStore:  credentialStore,
+		storedCLIAccount: usesStoredCLIAccount,
+		cliAccount:       account,
+		directCLI:        allowStoredCLI,
+		diagnostics:      diagnostics,
 	}
 	readOnlyCredentials, err := b.initializeCredentialState()
 	if err != nil {
 		return nil, fmt.Errorf("credential state: %w", err)
 	}
 	if readOnlyCredentials {
-		fmt.Fprintf(diagnostics, "%s: credential state is read-only; automatic key rotation disabled\n", bridgeName)
+		if allowStoredCLI {
+			writeCLIWarning(
+				diagnostics,
+				"Automatic key rotation is off",
+				[]string{"The credential state is read-only."},
+				"Tool commands still work. Fix the credential file permissions before relying on automatic rotation.",
+			)
+		} else {
+			fmt.Fprintf(diagnostics, "%s: credential state is read-only; automatic key rotation disabled\n", bridgeName)
+		}
 	}
 	return b, nil
 }
@@ -522,7 +575,16 @@ type bridge struct {
 	protocolVersion    string
 	credentialStore    *credentialStore
 	credentialReadOnly bool
-	pendingKey         string
+	storedCLIAccount   bool
+	// cliAccount is the explicit, validated --account selector used for this
+	// process. Human continuations preserve it so a copyable next command cannot
+	// silently switch back to the current account.
+	cliAccount string
+	// cliSequence gives every direct command request a distinct request token.
+	// A normal command makes one call; human mutation observation may make more.
+	cliSequence uint64
+	directCLI   bool
+	pendingKey  string
 	// credentialStamp fingerprints the last on-disk credential state this
 	// process synced; a match lets the per-request refresh/proposal skip the
 	// flock + read. Guarded by stateMu like the keys it shadows.
@@ -532,8 +594,8 @@ type bridge struct {
 	// deliberately opaque. main() points it at stderr; nil keeps a bridge quiet.
 	diagnostics io.Writer
 	// authFailureOnce keeps the rejected-key hint to a single line: the
-	// condition is permanent for the life of the process (the key comes from the
-	// environment), so repeating it per request would bury the client's log.
+	// condition is permanent for the life of the process, so repeating it per
+	// request would bury the client's log.
 	authFailureOnce sync.Once
 }
 
@@ -1290,6 +1352,31 @@ func (b *bridge) forwardRequestContext(
 	// on stderr, where an operator can act on it. The wire answer is unchanged.
 	if result.status == http.StatusUnauthorized {
 		b.authFailureOnce.Do(func() {
+			if b.storedCLIAccount {
+				if b.directCLI {
+					writeCLIDiagnostic(b.diagnostics, cliDiagnostic{
+						Kind:    cliDiagnosticError,
+						Summary: "The account credential was rejected",
+						Details: []string{"The control plane no longer accepts the stored credential for this account."},
+						Next:    []string{"Run `emisar-mcp auth` and choose the account again."},
+					})
+					return
+				}
+				b.diagnose("the control plane rejected this account credential — " +
+					"run 'emisar-mcp auth' and choose the account again")
+				return
+			}
+			if b.directCLI {
+				writeCLIDiagnostic(b.diagnostics, cliDiagnostic{
+					Kind:    cliDiagnosticError,
+					Summary: "The API key was rejected",
+					Details: []string{"The control plane no longer accepts EMISAR_API_KEY."},
+					Next: []string{
+						"Check EMISAR_API_KEY, or create a new key at " + b.portalOrigin + "/app/agents.",
+					},
+				})
+				return
+			}
 			b.diagnose("the control plane rejected this API key — "+
 				"check EMISAR_API_KEY or mint a new one at %s/app/agents", b.portalOrigin)
 		})
@@ -1710,30 +1797,30 @@ func newProcessNonce(r io.Reader) (string, error) {
 func parseEndpoint(raw string, allowInsecure bool) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", fmt.Errorf("EMISAR_URL %q is not a valid URL: %w", raw, err)
+		return "", errors.New("EMISAR_URL is not a valid URL")
 	}
 	if !u.IsAbs() || u.Opaque != "" || u.Hostname() == "" {
-		return "", fmt.Errorf("EMISAR_URL %q must be an absolute URL with a host", raw)
+		return "", errors.New("EMISAR_URL must be an absolute URL with a host")
 	}
 	if u.User != nil {
-		return "", fmt.Errorf("EMISAR_URL %q must not contain user information", raw)
+		return "", errors.New("EMISAR_URL must not contain user information")
 	}
 	if u.RawQuery != "" || u.ForceQuery {
-		return "", fmt.Errorf("EMISAR_URL %q must not contain a query", raw)
+		return "", errors.New("EMISAR_URL must not contain a query")
 	}
 	if u.Fragment != "" || strings.Contains(raw, "#") {
-		return "", fmt.Errorf("EMISAR_URL %q must not contain a fragment", raw)
+		return "", errors.New("EMISAR_URL must not contain a fragment")
 	}
 	if u.RawPath != "" || (u.Path != "" && u.Path != "/") {
-		return "", fmt.Errorf("EMISAR_URL %q must be an origin without a path", raw)
+		return "", errors.New("EMISAR_URL must be an origin without a path")
 	}
 	if strings.HasSuffix(u.Host, ":") {
-		return "", fmt.Errorf("EMISAR_URL %q has an empty port", raw)
+		return "", errors.New("EMISAR_URL has an empty port")
 	}
 	if port := u.Port(); port != "" {
 		n, err := strconv.Atoi(port)
 		if err != nil || n < 1 || n > 65_535 {
-			return "", fmt.Errorf("EMISAR_URL %q has an invalid port", raw)
+			return "", errors.New("EMISAR_URL has an invalid port")
 		}
 	}
 
@@ -1749,11 +1836,11 @@ func parseEndpoint(raw string, allowInsecure bool) (string, error) {
 		if allowInsecure || isLoopbackHost(u.Hostname()) {
 			return scheme + "://" + host, nil
 		}
-		return "", fmt.Errorf("EMISAR_URL %q uses cleartext http to a non-loopback host, "+
-			"which sends the API key in plaintext; use https, or set "+
-			"EMISAR_ALLOW_INSECURE=1 to override", raw)
+		return "", errors.New("EMISAR_URL uses cleartext http to a non-loopback host, " +
+			"which sends the API key in plaintext; use https, or set " +
+			"EMISAR_ALLOW_INSECURE=1 to override")
 	default:
-		return "", fmt.Errorf("EMISAR_URL %q must be http or https, got scheme %q", raw, u.Scheme)
+		return "", errors.New("EMISAR_URL must use http or https")
 	}
 }
 

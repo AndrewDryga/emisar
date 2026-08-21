@@ -16,7 +16,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	devbrowser "github.com/andrewdryga/emisar/tools/internal/browser"
@@ -241,7 +240,7 @@ func stopProcess(command *exec.Cmd) {
 	if command == nil || command.Process == nil {
 		return
 	}
-	_ = syscall.Kill(-command.Process.Pid, syscall.SIGTERM)
+	_ = stopProcessGroup(command, false)
 	done := make(chan struct{})
 	go func() {
 		_ = command.Wait()
@@ -250,7 +249,7 @@ func stopProcess(command *exec.Cmd) {
 	select {
 	case <-done:
 	case <-time.After(3 * time.Second):
-		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		_ = stopProcessGroup(command, true)
 		<-done
 	}
 }
@@ -374,7 +373,7 @@ func (a *App) e2eBilling(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN); _ = lock.Close() }()
+	defer func() { _ = unlockFile(lock); _ = lock.Close() }()
 	if portListening(4000) {
 		return fmt.Errorf("localhost:4000 is already in use")
 	}
@@ -409,7 +408,7 @@ where slug = 'demo' and paddle_customer_id like 'ctm_stub_%';`
 		}
 		ngrok = exec.Command("ngrok", "http", "4000")
 		ngrok.Stdout, ngrok.Stderr = logFile, logFile
-		ngrok.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		configureProcessGroup(ngrok)
 		if err := ngrok.Start(); err != nil {
 			logFile.Close()
 			return err
@@ -446,7 +445,7 @@ where slug = 'demo' and paddle_customer_id like 'ctm_stub_%';`
 	server.Dir = a.Portal
 	server.Env = mergedEnv(env)
 	server.Stdout, server.Stderr = serverLog, serverLog
-	server.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	configureProcessGroup(server)
 	if err := server.Start(); err != nil {
 		serverLog.Close()
 		return err

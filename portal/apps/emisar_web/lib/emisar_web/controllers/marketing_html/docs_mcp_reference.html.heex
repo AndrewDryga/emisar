@@ -4,9 +4,10 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="mcp-reference"
-      updated="August 4, 2026"
+      updated="August 20, 2026"
       toc={[
         {"calling-the-endpoint", "Calling the endpoint"},
+        {"command-line", "Use tools from the shell"},
         {"protocol-methods", "Protocol methods"},
         {"tools", "Thirteen fixed tools"},
         {"discovery", "Discovery"},
@@ -30,62 +31,288 @@
       <article class="mt-4 [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:scroll-mt-24 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:text-zinc-50 [&_p]:my-4 [&_p]:leading-7 [&_p]:text-zinc-400 [&_code]:rounded [&_code]:bg-zinc-900 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-brand-300 [&_a]:font-medium [&_a]:text-brand-300 [&_a:hover]:text-brand-200 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5 [&_li]:text-zinc-400">
         <h2 id="calling-the-endpoint">Calling the endpoint</h2>
         <p>
-          A custom client authenticates with an <code>emk-</code>
-          API key (mint one from <.link navigate={~p"/docs/keys"}>API keys</.link>) and POSTs
-          JSON-RPC to a single endpoint. Send <code>initialize</code>, then
-          <code>tools/list</code>
-          and <code>tools/call</code>
-          — the full contract is below.
+          A custom client uses an agent key with the <code>emk-</code>
+          prefix. Create one from <.link navigate={~p"/docs/keys"}>Agent keys</.link>. Send JSON-RPC
+          requests to the HTTPS endpoint below. Use the method sequence for your protocol version.
         </p>
-        <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># Try it from a shell — should return the tool list.</span>
+        <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># This legacy-compatible request returns the tool list.</span>
 <span class="text-zinc-500">$</span> curl -X POST <span class="text-brand-300">https://emisar.dev/api/mcp/rpc</span> \
     -H <span class="text-brand-300">"Authorization: Bearer $EMISAR_API_KEY"</span> \
     -H <span class="text-brand-300">"Content-Type: application/json"</span> \
     -d <span class="text-brand-300">'&#123;"jsonrpc":"2.0","id":1,"method":"tools/list"&#125;'</span></.docs_code>
 
-        <h2 id="protocol-methods">Protocol methods</h2>
+        <h2 id="command-line">Use MCP tools from the shell</h2>
         <p>
-          emisar speaks JSON-RPC 2.0 over MCP Streamable HTTP and serves three protocol
-          revisions on one endpoint. A <code>2026-07-28</code>
-          client declares its version per request in <code>_meta</code>
-          and sends the <code>MCP-Protocol-Version</code>
-          and <code>Mcp-Method</code>
-          headers (plus <code>Mcp-Name</code>
-          on <code>tools/call</code>); its results carry <code>resultType</code>
-          and cache hints. A <code>2025-11-25</code>
-          or <code>2025-06-18</code>
-          client negotiates at <code>initialize</code>
-          instead. The endpoint is stateless in every revision: it does not issue an
-          <code>Mcp-Session-Id</code>
-          or require sticky routing.
+          The
+          <.link navigate={~p"/docs/connect-a-cli-client#install-bridge"}>
+            interactive bridge installer
+          </.link>
+          authenticates direct commands during browser approval and stores a separate CLI
+          credential in owner-only local state. After approval, direct commands do not need
+          <code>EMISAR_URL</code>
+          or <code>EMISAR_API_KEY</code>
+          exports.
         </p>
-        <ul>
+        <p>
+          Run <code>emisar-mcp</code>
+          by itself to see one command reference grouped into Fleet, Actions, Runbooks,
+          Continuations, Accounts, and MCP client commands. <code>list_tools</code>
+          shows the live server catalog in the same operational groups. MCP clients start this
+          program automatically and send MCP requests through stdin.
+        </p>
+        <.docs_code
+          phx-no-format
+          label="shell"
+          copy_text="emisar-mcp auth\nemisar-mcp list_tools\nemisar-mcp help find_actions\nemisar-mcp get_action --help"
+        ><span class="text-zinc-500">$</span> emisar-mcp auth
+<span class="text-zinc-500">$</span> emisar-mcp list_tools
+<span class="text-zinc-500">$</span> emisar-mcp help find_actions
+<span class="text-zinc-500">$</span> emisar-mcp get_action --help</.docs_code>
+        <p>
+          <code>auth</code>
+          opens the approval page in your browser. Choose an account there. The CLI stores a
+          dedicated key for that account and makes it current.
+          Use <code>auth status</code>
+          to inspect the current account and endpoint without contacting the control plane or
+          printing the key.
+        </p>
+        <p>
+          <code>list_tools</code>
+          fetches and groups the live catalog. <code>help &lt;tool&gt;</code>
+          shows the server-owned description and top-level arguments.
+          <code>&lt;tool&gt; --help</code>
+          is a shorthand for non-conflicting tool names. Add <code>--json</code>
+          to <code>list_tools</code>
+          or <code>help</code>
+          for exact descriptors and complete input schemas.
+        </p>
+        <p>
+          Authenticate each account once. <code>accounts list</code>
+          shows the accounts stored on this machine. It marks the current one with a star.
+          <code>accounts use &lt;slug-or-id&gt;</code>
+          changes the current account. A leading <code>--account &lt;slug-or-id&gt;</code>
+          uses another account for one command without changing the current one.
+        </p>
+        <.docs_code
+          phx-no-format
+          label="shell"
+          copy_text="emisar-mcp auth\nemisar-mcp accounts list\nemisar-mcp accounts use immersive\nemisar-mcp --account blitz list_runners"
+        ><span class="text-zinc-500">$</span> emisar-mcp auth
+<span class="text-zinc-500">$</span> emisar-mcp accounts list
+<span class="text-zinc-500">$</span> emisar-mcp accounts use immersive
+<span class="text-zinc-500">$</span> emisar-mcp --account blitz list_runners</.docs_code>
+        <p>
+          On macOS, Go's user config directory is <code>~/Library/Application Support</code>, so CLI credentials live under <code>~/Library/Application Support/emisar/credentials/</code>. Linux uses
+          <code>$XDG_CONFIG_HOME/emisar/credentials/</code>
+          when set and <code>~/.config/emisar/credentials/</code>
+          otherwise. Windows uses the current user's AppData config directory. The directory and
+          files are owner-only. Credential filenames are internal. Use <code>accounts list</code>
+          instead of reading them.
+        </p>
+        <.docs_callout kind={:note} title="Use --json in scripts and LLM workflows">
+          <p>
+            <code>--json</code>
+            makes one logical tool invocation, follows no continuations, and prints the exact
+            <code>structuredContent</code>
+            object with no styling. The transport may resend that identical request once under the
+            same operation ID after a network failure. Put <code>--json</code>
+            last, pass <code>-</code>
+            to read one JSON object from stdin, and parse stdout as JSON. For conditional or
+            mutually exclusive arguments, use <code>help &lt;tool&gt; --json</code>
+            and treat that complete schema as authoritative.
+          </p>
+        </.docs_callout>
+
+        <.docs_h3 id="cli-fleet">Fleet</.docs_h3>
+        <p>
+          These commands cover fleet inventory. Their default output is written for a person
+          scanning a terminal: runner records and compact pack summaries. Add <code>--json</code>
+          to receive the exact MCP <code>structuredContent</code>
+          object instead.
+        </p>
+        <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
           <li>
-            <code>server/discover</code> returns supported versions, capabilities, and operating
-            instructions (2026-07-28).
+            <code>list_runners</code>
+            shows connectivity, hostname, group, labels, packs, issues, and exact
+            <code>runner_ref</code>
+            values. JSON arguments can filter by status, runner name/group/host text, runner,
+            pack, action, or issues.
           </li>
           <li>
-            <code>initialize</code>
-            returns capabilities and operating instructions (2025-11-25 / 2025-06-18).
-          </li>
-          <li><code>ping</code> remains responsive while another request waits.</li>
-          <li><code>tools/list</code> always returns the same thirteen tool descriptors.</li>
-          <li><code>tools/call</code> invokes one fixed tool.</li>
-          <li>
-            <code>notifications/cancelled</code> stops observation of one in-flight request and
-            receives no response.
+            <code>list_packs</code>
+            shows trusted versions, availability, action counts, issues, and exact
+            <code>pack_ref</code>
+            values. The default includes executable packs; use <code>availability: "all"</code>
+            to diagnose trusted unavailable packs.
           </li>
         </ul>
+        <.docs_code
+          phx-no-format
+          label="shell"
+          copy_text={"emisar-mcp list_runners\nemisar-mcp list_runners '{\"statuses\":[\"connected\"]}'\nemisar-mcp list_packs\nemisar-mcp list_packs '{\"availability\":\"all\"}'"}
+        ><span class="text-zinc-500">$</span> emisar-mcp list_runners
+<span class="text-zinc-500">$</span> emisar-mcp list_runners <span class="text-brand-300">'&#123;"statuses":["connected"]&#125;'</span>
+<span class="text-zinc-500">$</span> emisar-mcp list_packs
+<span class="text-zinc-500">$</span> emisar-mcp list_packs <span class="text-brand-300">'&#123;"availability":"all"&#125;'</span></.docs_code>
+
+        <.docs_h3 id="cli-actions">Actions</.docs_h3>
+        <p>
+          <code>find_actions</code>
+          accepts a plain-text task and shows ranked matches. <code>get_action</code>
+          shows the selected action's side effects, trusted arguments, and compatible runner refs.
+          <code>recent_runs</code>
+          and <code>get_operation</code>
+          provide run history and mutation recovery.
+        </p>
+        <p>
+          Human <code>run_action</code>
+          prints the operation ID, then follows only exact <code>wait_for_run</code>
+          continuations tied to the returned runs. It waits on several runners concurrently and
+          shows approvals, terminal status, exit codes, and output. Ctrl-C stops waiting and exits
+          130; it does not cancel the action. The diagnostic prints a <code>get_operation</code>
+          command for later recovery.
+        </p>
+        <.docs_code
+          phx-no-format
+          label="shell"
+          copy_text={"emisar-mcp find_actions \"postgres replication\"\nemisar-mcp get_action '{\"action_id\":\"postgres.status\",\"pack_ref\":\"postgres@1.2.0/sha256:...\"}'\nemisar-mcp recent_runs '{\"scope\":\"own\",\"limit\":10}'\nemisar-mcp get_operation '{\"operation_id\":\"op_...\"}'"}
+        ><span class="text-zinc-500">$</span> emisar-mcp find_actions <span class="text-brand-300">"postgres replication"</span>
+<span class="text-zinc-500">$</span> emisar-mcp get_action <span class="text-brand-300">'&#123;"action_id":"postgres.status","pack_ref":"postgres@1.2.0/sha256:..."&#125;'</span>
+<span class="text-zinc-500">$</span> emisar-mcp recent_runs <span class="text-brand-300">'&#123;"scope":"own","limit":10&#125;'</span>
+<span class="text-zinc-500">$</span> emisar-mcp get_operation <span class="text-brand-300">'&#123;"operation_id":"op_..."&#125;'</span></.docs_code>
+
+        <.docs_h3 id="cli-runbooks">Runbooks</.docs_h3>
+        <p>
+          <code>list_runbooks</code>
+          shows live releases, unpublished changes, and workflow size. <code>get_runbook</code>
+          shows inputs, stages, and action steps. Draft commands show the content digest, current
+          live release, and review link.
+        </p>
+        <p>
+          Human <code>execute_runbook</code>
+          follows only continuations tied to the returned execution, waits through approval or
+          expiry, and drains returned public outputs. Ctrl-C stops observation only. Add
+          <code>--json</code>
+          when a script or LLM should receive the original execution response and decide whether
+          to call <code>wait_for_run</code>
+          itself.
+        </p>
+        <p>
+          Call an exact tool name with one JSON object. Omit the object when the tool accepts <code>&#123;&#125;</code>, or pass
+          <code>-</code>
+          to read it from stdin. Stdin keeps operational details out of the process list and works
+          cleanly with JSON-producing tools such as <code>jq</code>. Put <code>--json</code>
+          last when a script needs the exact <code>structuredContent</code>
+          object.
+        </p>
+        <.docs_code
+          phx-no-format
+          label="shell"
+          copy_text={"query='diagnose postgres replication'\njq -cn --arg query \"$query\" '{query:$query}' | emisar-mcp find_actions - --json >actions.json\njq -e '.candidates' actions.json"}
+        ><span class="text-zinc-500">$</span> query=<span class="text-brand-300">'diagnose postgres replication'</span>
+<span class="text-zinc-500">$</span> jq -cn --arg query <span class="text-brand-300">"$query"</span> <span class="text-brand-300">'&#123;query:$query&#125;'</span> \
+    | emisar-mcp find_actions - --json &gt;actions.json
+<span class="text-zinc-500">$</span> jq -e <span class="text-brand-300">'.candidates'</span> actions.json</.docs_code>
+        <p>
+          A successful tool call exits 0 and writes readable text, or exact JSON when
+          <code>--json</code>
+          is present. Tool, MCP, authentication, and post-send transport failures exit 1. Invalid
+          commands or JSON exit 2. In JSON mode, when the CLI cannot rule out server receipt of a
+          mutation, stdout includes <code>data.operation_id</code>. Recover it with
+          <code>get_operation</code>
+          before sending new work. Human <code>run_action</code>
+          exits 1 for any terminal status except <code>success</code>. Human
+          <code>execute_runbook</code>
+          exits 1 for <code>halted</code>
+          or <code>cancelled</code>. Policy, approvals, signed
+          dispatch, and audit still apply.
+        </p>
+        <p>
+          Tool and MCP error objects stay on stdout in the selected format, so a script can read
+          recovery data such as <code>data.operation_id</code>. A safe local diagnostic may also
+          appear on stderr. Configuration and usage failures write their diagnostic to stderr.
+          Color appears only in a terminal; pipes and redirected output stay plain. Set
+          <code>NO_COLOR</code>
+          to turn terminal color off. <code>--json</code>
+          output on stdout never contains styling.
+        </p>
+        <p>
+          When both authentication environment variables are absent, direct commands use the
+          current account. A leading <code>--account &lt;slug-or-id&gt;</code>
+          selects another stored account for that command. Use <code>accounts list --json</code>
+          to see immutable account IDs. Setting <code>EMISAR_URL</code>
+          and <code>EMISAR_API_KEY</code>
+          together overrides it for that command. Setting only one is an error.
+          Do not combine the pair with <code>--account</code>.
+          Stdio MCP clients never use direct-CLI account storage. Run <code>emisar-mcp auth</code>
+          and choose the account again if its credential expires or is revoked. Revoke connected keys from <a
+            href={~p"/app/agents"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >LLM agents</a>.
+        </p>
+        <p>
+          The local <code>auth</code>, <code>accounts</code>, <code>help</code>, and
+          <code>list_tools</code>
+          commands do not hide server tools with the same names. Prefix an exact tool call with <code>--</code>, for example <code>emisar-mcp -- help '&#123;&#125;'</code>.
+        </p>
+
+        <h2 id="protocol-methods">Protocol methods</h2>
+        <p>
+          emisar serves three protocol revisions on one stateless endpoint. It does not issue an <code>Mcp-Session-Id</code>. It does not require sticky routing.
+        </p>
+        <div class="my-6 overflow-x-auto rounded-xl border border-zinc-900">
+          <table class="w-full min-w-[760px] text-left text-sm">
+            <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-400">
+              <tr>
+                <th class="px-4 py-3 font-medium">Revision</th>
+                <th class="px-4 py-3 font-medium">Start</th>
+                <th class="px-4 py-3 font-medium">Other methods</th>
+                <th class="px-4 py-3 font-medium">Cancellation</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-900 text-zinc-400">
+              <tr>
+                <td class="px-4 py-3 align-top"><code>2026-07-28</code></td>
+                <td class="px-4 py-3 align-top"><code>server/discover</code></td>
+                <td class="px-4 py-3 align-top">
+                  <code>tools/list</code>, <code>tools/call</code>
+                </td>
+                <td class="px-4 py-3 align-top">No protocol cancellation method.</td>
+              </tr>
+              <tr>
+                <td class="px-4 py-3 align-top">
+                  <code>2025-11-25</code><br /><code>2025-06-18</code>
+                </td>
+                <td class="px-4 py-3 align-top"><code>initialize</code></td>
+                <td class="px-4 py-3 align-top">
+                  <code>ping</code>, <code>tools/list</code>, <code>tools/call</code>
+                </td>
+                <td class="px-4 py-3 align-top">
+                  <code>notifications/cancelled</code> stops observation. It sends no response.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          A <code>2026-07-28</code>
+          request declares its version in <code>_meta</code>. It also sends
+          <code>MCP-Protocol-Version</code>
+          and <code>Mcp-Method</code>
+          headers. A <code>tools/call</code>
+          request also sends <code>Mcp-Name</code>. Modern results include <code>resultType</code>
+          and cache hints.
+        </p>
         <p>
           Request IDs are strings or integers and are returned with the same JSON type. A frame
-          without an ID is a notification. Mutation notifications never execute: a mutation needs
-          a request ID so its operation can be recovered safely.
+          without an ID is a notification. Mutation notifications never run. A mutation needs a
+          request ID for safe recovery.
         </p>
 
         <h2 id="tools">Thirteen fixed tools</h2>
         <p>
           Actions are data, not MCP tool descriptors. Runner and pack changes appear in discovery
-          results, so clients never need a hand-maintained action allowlist and never load hundreds
+          results. Clients never need a hand-maintained action allowlist and never load hundreds
           of action schemas during setup.
         </p>
         <div class="my-6 overflow-x-auto rounded-xl border border-zinc-900">
@@ -124,24 +351,24 @@
         <h2 id="discovery">Discovery</h2>
         <p>
           Start broad only when the task needs it. <code>list_packs</code>
-          gives a bounded overview; <code>find_actions</code>
-          ranks candidates; <code>get_action</code>
-          returns the exact
-          argument schema and current compatible runner refs. Use <code>list_runners</code>
+          gives a bounded overview. <code>find_actions</code>
+          ranks candidates. <code>get_action</code>
+          returns the exact argument schema. It also returns current compatible runner refs. Use
+          <code>list_runners</code>
           for fleet
-          diagnosis or target selection. Pack and runner pages default to 15 items; continue a list
+          diagnosis or target selection. Pack and runner pages default to 15 items. Continue a list
           by passing the previous response's <code>next_cursor</code>
           (find_actions returns a ready-to-send <code>next</code>
-          call), and a cursor is bound to the identical query — a mismatched one is rejected.
+          call), and a cursor is bound to the identical query. A mismatched one is rejected.
         </p>
         <p>
           <code>availability: "executable"</code>
           is the normal path and omits capabilities that
           cannot run anywhere in scope. <code>availability: "all"</code>
-          is diagnostic: it preserves
+          is diagnostic. It preserves
           trusted but unavailable packs and actions together with deployment issues such as no
           connected runner, a missing executable, or descriptor mismatch. Pending, rejected,
-          revoked, and retirement-blocked pack refs are operator-only facts; MCP discovery omits
+          revoked, and retirement-blocked pack refs are operator-only facts. MCP discovery omits
           them. When an expected ref is absent, review it in <a
             href={~p"/app/packs"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -150,8 +377,9 @@
         <p>
           A <code>pack_ref</code>
           has the immutable form <code>pack@version/sha256:hash</code>. A <code>runner_ref</code>
-          has the generation-bound form <code>name~sha256-prefix</code>. Copy both exactly from discovery; a reconnect, reinstall,
-          rename, or pack change can make an earlier selection stale.
+          has the identity-bound form <code>name~sha256-prefix</code>. Copy both exactly from
+          discovery. Reconnects and reinstalls that reuse the same external ID keep the ref. A new
+          external ID, rename, or pack change can make a selection stale.
         </p>
 
         <h2 id="running-an-action">Running an action</h2>
@@ -173,8 +401,8 @@
                 {"args", "Required", "One JSON object validated against the trusted action schema."},
                 {"reason", "Required", "Operator-facing audit reason for this execution."},
                 {"evidence", "Optional", "What you already observed that makes the action necessary — prior findings or run ids."},
-                {"expected", "Optional", "The outcome you expect if it works — recorded for approvers and the audit log."},
-                {"wait", "Optional", "Duration string — \"0\", \"1s\"–\"60s\", or \"1ms\"–\"60000ms\"; default and maximum 60s."}
+                {"expected", "Optional", "The outcome you expect if it works. It is stored with the run and shown to approvers."},
+                {"wait", "Optional", "Duration string: \"0\", \"1s\"–\"60s\", or \"1ms\"–\"60000ms\". The default and maximum are 60s."}
               ] do %>
                 <tr>
                   <td class="px-4 py-3 align-top font-mono text-xs text-brand-300">{field}</td>
@@ -190,11 +418,11 @@
         <p>
           Dispatch preflight re-resolves the complete target set, pack trust, descriptor, schema,
           policy, certificate window, and signature requirement. It creates the complete fan-out or
-          nothing; it never silently drops a stale target. Policy can still produce a mix of allowed,
+          nothing. It never silently drops a stale target. Policy can still produce a mix of allowed,
           pending-approval, and denied runs inside the accepted operation. A parked run is not an
-          error: it comes back in a successful response with run status <code>pending_approval</code>, an approval URL, and a
+          error. It comes back in a successful response with run status <code>pending_approval</code>, an approval URL, and a
           <code>wait_for_run</code>
-          continuation — wait on it rather than treating it as a failure.
+          continuation. Wait on it rather than treating it as a failure.
         </p>
 
         <h2 id="operations">Operations and recovery</h2>
@@ -202,11 +430,10 @@
           Every <code>run_action</code>, <code>execute_runbook</code>, <code>create_runbook_draft</code>, and
           <code>update_runbook_draft</code>
           receives a private <code>operation_id</code>. The stdio bridge derives it from its private
-          process nonce and request sequence; for native HTTP clients, the portal derives it from
-          the exact request and credential lineage — the API key together with its automatic-rotation
-          successors. The portal reserves it in the same transaction
-          as the mutation.
-          Repeating the same request and facts returns the original resource; changed facts
+          process nonce and request sequence. For native HTTP clients, the portal derives it from
+          the exact request and credential lineage. Automatic rotation successors share that
+          lineage. The portal reserves the operation ID in the same transaction as the mutation.
+          Repeating the same request and facts returns the original resource. Changed facts
           conflict. Models do not create operation identifiers.
         </p>
         <p>
@@ -214,7 +441,7 @@
           correlated JSON-RPC error includes that same ID. After a mutation, pass it to
           <code>get_operation</code>
           before deciding whether to issue new work. Read calls retry
-          normally. Run history is for investigation; it is not a substitute for exact operation
+          normally. Run history is for investigation. It is not a substitute for exact operation
           recovery.
         </p>
 
@@ -223,10 +450,10 @@
           <code>run_action</code>
           waits up to 60 seconds. <code>wait_for_run</code>
           waits up to 60 seconds and returns the current state when its deadline expires. One
-          credential lineage may hold eight waits per portal node. The stdio bridge also keeps up
-          to eight requests in flight and uses a 90-second HTTP deadline, so pings and unrelated
-          calls remain responsive. Cancelling after send stops observation only; it does not roll
-          back committed infrastructure work.
+          credential lineage can hold eight waits per portal node. The stdio bridge keeps up to
+          eight requests in flight. It uses a 90-second HTTP deadline. Other calls remain
+          responsive during a wait. Legacy clients can also use <code>ping</code>. Cancellation
+          stops observation only. It does not undo committed infrastructure work.
         </p>
 
         <h2 id="runbooks-signing">Runbooks and signing</h2>
@@ -235,12 +462,12 @@
           unpublished change. Discovery returns the live release by default. To edit an existing
           runbook, read it, then call <code>update_runbook_draft</code>
           with the <code>definition_sha256</code>
-          you read: the slug never changes, the edit lands as the runbook's one unpublished
+          you read. The slug never changes, the edit lands as the runbook's one unpublished
           change, and a concurrent write answers <code>draft_changed</code>
           instead of being overwritten.
         </p>
         <p>
-          Execution runs the live release — an older <code>slug@N</code>
+          Execution runs the live release. An older <code>slug@N</code>
           answers <code>not_live</code>
           rather than silently running current content. An unpublished change never enters ordinary
           discovery or default execution. Read it with <code>status: "draft"</code>, then pass the
@@ -249,18 +476,18 @@
           and the exact <code>definition_sha256</code>
           you consent to run. A draft test uses the same target, trust, policy, approval,
           scheduler, runner, and audit path as a live execution. It can cause the actions' real
-          effects, but it publishes nothing; publication remains a human action in <a
+          effects. It publishes nothing. Publication remains a human action in <a
             href={~p"/app/runbooks"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
           >Runbooks</a>.
         </p>
         <p>
-          A definition may contain 32 inputs, 16 stages, and 16 target refs per step within 64 KiB.
-          A resolved execution may contain 256 items. Execution returns after the durable execution
+          A definition can contain 32 inputs, 16 stages, and 16 target refs per step within 64 KiB.
+          A resolved execution can contain 256 items. Execution returns after the durable execution
           and its initial stage state commit. The response groups exact items under stages and shows
           extracted output and condition evidence, wait state, stable blocking reason, and only the
           latest physical attempt. Follow its <code>wait_for_run</code>
-          continuation while it remains active; use <code>recent_runs</code>
+          continuation while it remains active. Use <code>recent_runs</code>
           for paginated attempt history.
         </p>
         <p>
@@ -282,7 +509,7 @@
               <%= for {code, meaning, next} <- [
                 {"target_contract_changed", "The selected action, pack, or runner generation is stale.", "Call get_action again and make a fresh selection."},
                 {"action_unavailable", "No currently visible exact action contract is executable.", "Follow the returned list_runners continuation to see why no runner can execute it."},
-                {"operation_conflict", "One operation ID was reused with different facts.", "Treat it as a security error; do not retry."},
+                {"operation_conflict", "One operation ID was reused with different facts.", "Treat it as a security error. Do not retry."},
                 {"signed_runbook_unsupported", "A runbook includes signature-enforcing targets.", "Use individually signed run_action calls."}
               ] do %>
                 <tr>
@@ -296,17 +523,22 @@
         </div>
 
         <p>
-          These codes are the contract. When you have a symptom instead of a code — the client
-          won't connect, the bridge reports itself outdated, a tool call is refused — start from <.link navigate={
+          These codes are the contract. When you have a symptom instead of a code, start from <.link navigate={
             ~p"/docs/troubleshooting#mcp"
-          }>troubleshooting</.link>, which routes back
-          here once it knows what you're looking at.
+          }>troubleshooting</.link>. Examples include a client that cannot connect, an outdated
+          bridge, or a refused tool call. The troubleshooting guide routes back here after it
+          identifies the problem.
         </p>
 
         <p>
-          Every dispatch, approval, denial, and terminal result is recorded. See
+          Approval gates, denials, decisions, and terminal results are recorded. See
           <.link navigate={~p"/docs/audit-and-siem"}>the audit trail</.link>
           and <.link navigate={~p"/docs/policies-and-approvals"}>policies &amp; approvals</.link>.
+        </p>
+        <p>
+          MCP methods and tool inputs are v1 compatibility surfaces. Read <.link navigate={
+            ~p"/docs/compatibility"
+          }>Compatibility and deprecation</.link>.
         </p>
       </article>
     </.docs_layout>

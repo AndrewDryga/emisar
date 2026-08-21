@@ -1369,6 +1369,34 @@ func TestServe_RejectedKeyIsExplainedOnceWithTheConsoleLink(t *testing.T) {
 	}
 }
 
+func TestServe_RejectedStoredAccountExplainsBrowserRecovery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var frame struct {
+			ID json.RawMessage `json:"id"`
+		}
+		_ = json.Unmarshal(body, &frame)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32001,"message":"unauthorized"}}`, frame.ID)
+	}))
+	defer srv.Close()
+
+	var diagnostics bytes.Buffer
+	b := newTestBridge(srv)
+	b.storedCLIAccount = true
+	b.diagnostics = &diagnostics
+
+	var out bytes.Buffer
+	_ = b.serve(strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`+"\n"), &out)
+
+	got := diagnostics.String()
+	if !strings.Contains(got, "run 'emisar-mcp auth'") ||
+		strings.Contains(got, "EMISAR_API_KEY") || strings.Contains(got, "/app/agents") {
+		t.Fatalf("stored-account recovery hint = %q", got)
+	}
+}
+
 func TestServe_TransportErrorCarriesOnlyRequestOperationID(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)

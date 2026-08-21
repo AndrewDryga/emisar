@@ -50,6 +50,22 @@ defmodule EmisarWeb.UrlHelpers do
     end
   end
 
+  @doc "The copy-pasteable PowerShell command that installs the Windows MCP bridge."
+  def mcp_windows_install_command(base_url) do
+    with {:ok, base, _fetch} <- InstallCommand.fetch(base_url, :mcp) do
+      script_url = "#{base}/install-mcp.ps1"
+
+      command =
+        if base == @fallback_url do
+          "irm #{script_url} | iex"
+        else
+          "& ([scriptblock]::Create((irm '#{script_url}'))) -PortalOrigin '#{base}'"
+        end
+
+      {:ok, command}
+    end
+  end
+
   defp origin_url(scheme, host, port),
     do: URI.to_string(%URI{scheme: scheme, host: host, port: port})
 end

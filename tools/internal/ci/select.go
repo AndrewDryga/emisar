@@ -112,7 +112,7 @@ func (selection *Selection) include(file string) {
 
 	packFile := isPackFile(file)
 	packRuntimeSource := packFile && !isPackTestFile(file)
-	if strings.HasPrefix(file, "portal/") || member(file, ".dockerignore", "install.sh", "install-mcp.sh", ".tool-versions") {
+	if strings.HasPrefix(file, "portal/") || member(file, ".dockerignore", "install.sh", "install-mcp.sh", "install-mcp.ps1", ".tool-versions") {
 		selection.Portal = true
 		selection.PortalRelease = true
 	}
@@ -142,7 +142,7 @@ func (selection *Selection) include(file string) {
 	if strings.HasPrefix(file, "runner/") || jsonCorpus || runnerInstallerHarness || member(file, "install.sh", "README.md", "go.work", "go.work.sum") {
 		selection.Runner = true
 	}
-	if strings.HasPrefix(file, "mcp/") || jsonCorpus || mcpInstallerHarness || member(file, "install-mcp.sh", "go.work", "go.work.sum") {
+	if strings.HasPrefix(file, "mcp/") || jsonCorpus || mcpInstallerHarness || member(file, "install-mcp.sh", "install-mcp.ps1", "go.work", "go.work.sum") {
 		selection.MCP = true
 	}
 	if file == "server.json" {
@@ -439,8 +439,8 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 	if err != nil {
 		return err
 	}
-	output := fmt.Sprintf("portal=%t\npacks=%t\ninfra=%t\ndeps=%t\nworkflows=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\nrunner_image=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\n",
-		selection.Portal, selection.Packs, selection.Infra, selection.Deps,
+	output := fmt.Sprintf("portal=%t\nmcp=%t\npacks=%t\ninfra=%t\ndeps=%t\nworkflows=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\nrunner_image=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\n",
+		selection.Portal, selection.MCP, selection.Packs, selection.Infra, selection.Deps,
 		selection.Workflows, selection.MCPListing, modules,
 		selection.PortalRelease, selection.PacksRelease, selection.RunnerImage, packBehavior,
 		selection.SigningE2E, selection.SSOE2E)
@@ -454,9 +454,9 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 		}
 		return "skip"
 	}
-	summary := fmt.Sprintf("### Gates for this change\n| Area | |\n|---|---|\n| Portal - Test | %s |\n| Portal - Image | %s |\n| Go - Runner | %s |\n| Go - MCP | %s |\n| Go - Tools | %s |\n| Packs - Validate | %s |\n| Packs - Behavior (%d) | %s |\n| Runner - Image | %s |\n| E2E - Signing | %s |\n| E2E - SSO | %s |\n| Terraform - Validate | %s |\n| Dependencies - Release age | %s |\n| Actions - Validate workflows | %s |\n| Portal - MCP Registry Listing | %s |\n",
+	summary := fmt.Sprintf("### Gates for this change\n| Area | |\n|---|---|\n| Portal - Test | %s |\n| Portal - Image | %s |\n| Go - Runner | %s |\n| Go - MCP | %s |\n| MCP - Windows | %s |\n| Go - Tools | %s |\n| Packs - Validate | %s |\n| Packs - Behavior (%d) | %s |\n| Runner - Image | %s |\n| E2E - Signing | %s |\n| E2E - SSO | %s |\n| Terraform - Validate | %s |\n| Dependencies - Release age | %s |\n| Actions - Validate workflows | %s |\n| Portal - MCP Registry Listing | %s |\n",
 		mark(selection.Portal), mark(selection.Portal), mark(selection.Runner),
-		mark(selection.MCP), mark(selection.Tools), mark(selection.Packs),
+		mark(selection.MCP), mark(selection.MCP), mark(selection.Tools), mark(selection.Packs),
 		len(selection.PackBehavior), mark(len(selection.PackBehavior) > 0),
 		mark(selection.RunnerImage),
 		mark(selection.SigningE2E), mark(selection.SSOE2E),

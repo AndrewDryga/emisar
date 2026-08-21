@@ -98,7 +98,7 @@ defmodule EmisarWeb.ActivateLiveTest do
       assert approved =~ "stores each credential"
       assert approved =~ "that machine"
 
-      assert {:ok, client_keys} = ApiKeys.claim_device_grant(device_code)
+      assert {:ok, %{client_keys: client_keys}} = ApiKeys.claim_device_grant(device_code)
       assert Map.keys(client_keys) == ["codex"]
 
       [key] = Repo.all(ApiKey)

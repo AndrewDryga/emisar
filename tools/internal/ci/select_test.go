@@ -335,6 +335,7 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		}{
 			{name: "runner", file: "tools/internal/installtest/runner.go", wantRunner: true},
 			{name: "mcp", file: "tools/internal/installtest/mcp.go", wantMCP: true},
+			{name: "mcp windows", file: "tools/internal/installtest/mcp_windows.go", wantMCP: true},
 			{name: "shared harness", file: "tools/internal/installtest/harness.go", wantRunner: true, wantMCP: true},
 			{name: "command", file: "tools/cmd/installtest/main.go", wantRunner: true, wantMCP: true},
 		} {
@@ -398,6 +399,36 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		}
 		if !selection.Portal || !selection.PortalRelease || selection.Infra {
 			t.Fatalf("installer selection = %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("PowerShell MCP installer selects portal and MCP", func(t *testing.T) {
+		writeFixture(t, root, "install-mcp.ps1", "param()\n")
+		commitAll(t, root, "Windows MCP installer")
+		selection, err := Select(context.Background(), root, "push", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.Portal || !selection.PortalRelease || !selection.MCP || selection.Infra {
+			t.Fatalf("PowerShell installer selection = %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("PowerShell MCP installer exports the native Windows gate", func(t *testing.T) {
+		writeFixture(t, root, "install-mcp.ps1", "param()\n")
+		commitAll(t, root, "Windows MCP installer")
+		output := filepath.Join(t.TempDir(), "output")
+		summary := filepath.Join(t.TempDir(), "summary")
+		if err := WriteSelection(context.Background(), root, "pull_request", base, output, summary); err != nil {
+			t.Fatal(err)
+		}
+		if data, err := os.ReadFile(output); err != nil || !strings.Contains(string(data), "mcp=true\n") {
+			t.Fatalf("selection output = %q, %v", data, err)
+		}
+		if data, err := os.ReadFile(summary); err != nil || !strings.Contains(string(data), "MCP - Windows | run") {
+			t.Fatalf("selection summary = %q, %v", data, err)
 		}
 		resetHard(t, root, base)
 	})

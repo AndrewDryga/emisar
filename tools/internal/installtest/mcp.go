@@ -1,3 +1,5 @@
+//go:build !windows
+
 package installtest
 
 import (
@@ -214,7 +216,6 @@ func mcpInstallRollback(h *harness) error {
 		!strings.Contains(string(result.output), "flag --version requires a value") {
 		return fmt.Errorf("ambiguous --version parsing was accepted:\n%s", result.output)
 	}
-
 	credential := h.path("home", ".config", "emisar", "mcp-credentials.json")
 	if err := h.mkdir(filepath.Dir(credential)); err != nil {
 		return err
@@ -507,10 +508,12 @@ printf 'INSTALLED=%s\n' "$installed_paths"
 var clientFunctions = []string{
 	"tty_available", "ask_tty", "json_config_has_emisar",
 	"toml_config_has_emisar", "yaml_config_has_emisar", "file_has_content",
-	"write_fresh_json_config", "merge_json_config", "append_codex_toml",
+	"write_fresh_json_config", "merge_json_config", "append_toml_config",
 	"append_yaml_config", "own_config_file", "install_client_config",
 	"run_cli_as_invoking_user", "run_cli_with_stored_auth", "cli_auth_matches",
 	"install_cli_auth", "valid_emisar_api_key",
+	"auto_permit_supported", "apply_auto_permit", "json_allow_emisar_tools",
+	"json_set_emisar_trust", "toml_insert_in_table", "toml_append_permission_allow",
 	"json_string_field", "json_client_key", "json_has_client_keys",
 	"safe_config_value", "safe_user_code", "safe_verification_uri",
 	"bounded_decimal_field", "request_device_grant",
@@ -539,7 +542,9 @@ run_cli_as_invoking_user() {
       ;;
     auth:import)
       case "$*" in *emk-*) printf 'API key reached CLI argv\n' >&2; return 9;; esac
-      IFS= read -r imported_key
+      imported=$(cat)
+      [ "${imported}" = "$(cat "${TOKEN_RESP}")" ] || { printf 'wrong approval response\n' >&2; return 9; }
+      imported_key=$(json_client_key "${TOKEN_RESP}" emisar-mcp-cli)
       printf '%s\n%s\n' "${3:-}" "${imported_key}" >"${CLI_AUTH_FILE}"
       ;;
     list_tools:--json)
@@ -583,8 +588,9 @@ DEVICE_EXPIRES_IN=900
 configure_clients "$CLIENT_HOME"
 printf '\nCONFIGURED_BEGIN\n%s\nCONFIGURED_END\n' "$CONFIGURED_CLIENTS"
 `
+	env := clientEnvironment(home, portal, assumeYes)
 	return h.functions(h.repoPath("install-mcp.sh"), clientFunctions, body,
-		clientEnvironment(home, portal, assumeYes))
+		env)
 }
 
 func configuredClients(output string) string {
@@ -714,9 +720,9 @@ test "$(bounded_decimal_field '1 -a -x /bin/sh' 1 120 5)" = 5
 func mcpClientConfiguration(h *harness) error {
 	home := h.path("clients-home")
 	directories := []string{
-		".cursor", ".codex", ".claude", ".openclaw", ".config/opencode",
+		".cursor", ".codex", ".claude", ".gemini", ".openclaw", ".config/opencode",
 		".codeium/windsurf", ".pi", ".copilot", ".config/zed", ".hermes",
-		".config/goose",
+		".config/goose", ".grok",
 	}
 	for _, directory := range directories {
 		if err := h.mkdir(filepath.Join(home, filepath.FromSlash(directory))); err != nil {
@@ -731,6 +737,13 @@ func mcpClientConfiguration(h *harness) error {
 }
 `,
 		".codex/config.toml": "[model]\nname = \"gpt\"\n",
+		".gemini/settings.json": `{
+  "mcpServers": {
+    "other": { "command": "other-mcp" }
+  }
+}
+`,
+		".grok/config.toml": "[permission]\nallow = [\"MCPTool(other__*)\"]\n",
 		".config/opencode/opencode.json": `{
   "mcp": {
     "other": { "type": "local", "command": ["other-mcp"] }
@@ -766,8 +779,8 @@ func mcpClientConfiguration(h *harness) error {
 	if err != nil {
 		return err
 	}
-	if countLines(configuredClients(string(output))) != 10 {
-		return fmt.Errorf("configured clients = %q, expected 10", configuredClients(string(output)))
+	if countLines(configuredClients(string(output))) != 12 {
+		return fmt.Errorf("configured clients = %q, expected 12", configuredClients(string(output)))
 	}
 	if !strings.Contains(string(output), "Goose") {
 		return fmt.Errorf("the Goose merge refusal was not reported:\n%s", output)
@@ -780,6 +793,12 @@ func mcpClientConfiguration(h *harness) error {
 		return fmt.Errorf("the Goose configuration changed despite an existing extensions key")
 	}
 	if err := inspectClientConfigs(home, server.server.URL); err != nil {
+		return err
+	}
+	if err := inspectAutoPermit(home, string(output)); err != nil {
+		return err
+	}
+	if err := declinedAutoPermitLeavesClientsAlone(h, server); err != nil {
 		return err
 	}
 	cliKey := fixtureAPIKey("emisar-mcp-cli")
@@ -1034,7 +1053,7 @@ func mcpUninstall(h *harness) error {
 	if err := h.mkdir(bin, credentials,
 		filepath.Join(home, ".cursor"), filepath.Join(home, ".codex"),
 		filepath.Join(home, ".config", "zed"), filepath.Join(home, ".hermes"),
-		filepath.Join(home, ".config", "goose")); err != nil {
+		filepath.Join(home, ".config", "goose"), filepath.Join(home, ".grok")); err != nil {
 		return err
 	}
 	files := map[string]string{
@@ -1049,6 +1068,11 @@ func mcpUninstall(h *harness) error {
 		".codex/config.toml": "[model]\nname = \"gpt\"\n\n[mcp_servers.emisar]\n" +
 			"command = \"/usr/local/bin/emisar-mcp\"\n" +
 			"env = { EMISAR_URL = \"https://emisar.dev\", EMISAR_API_KEY = \"emk-cod\", EMISAR_CLIENT = \"codex\" }\n",
+		".grok/config.toml": "[mcp_servers.emisar]\n" +
+			"command = \"/usr/local/bin/emisar-mcp\"\n" +
+			"enabled = true\n\n[mcp_servers.emisar.env]\n" +
+			"EMISAR_URL = \"https://emisar.dev\"\nEMISAR_API_KEY = \"emk-grok\"\n" +
+			"EMISAR_CLIENT = \"grok\"\n\n[permission]\nallow = [\"MCPTool(other__*)\"]\n",
 		".config/zed/settings.json": `{
   // my editor
   "theme": "One Dark",
@@ -1121,6 +1145,16 @@ func mcpUninstall(h *harness) error {
 		return err
 	}
 
+	grok := filepath.Join(home, ".grok", "config.toml")
+	for _, text := range []string{`[permission]`, `allow = ["MCPTool(other__*)"]`} {
+		if err := containsFile(grok, text); err != nil {
+			return err
+		}
+	}
+	if err := lacksFile(grok, "mcp_servers.emisar"); err != nil {
+		return err
+	}
+
 	zed := filepath.Join(home, ".config", "zed", "settings.json")
 	for _, text := range []string{"// my editor", `"theme": "One Dark"`, `"other"`} {
 		if err := containsFile(zed, text); err != nil {
@@ -1156,6 +1190,122 @@ func mcpUninstall(h *harness) error {
 	if _, err := h.successful(h.root, environment,
 		"bash", h.repoPath("install-mcp.sh"), "--uninstall", "--yes", "--install-dir", bin); err != nil {
 		return err
+	}
+	return nil
+}
+
+// Declining the offer must connect the client and change nothing else: the
+// prompt is the operator's setting in the operator's file, so silence is never
+// the default. Only the auto-permit question is answered no here, so a client
+// that fails to connect would show up as a missing config rather than a pass.
+func declinedAutoPermitLeavesClientsAlone(h *harness, server *deviceServer) error {
+	home := h.path("declined-home")
+	for _, directory := range []string{".claude", ".gemini", ".codex"} {
+		if err := h.mkdir(filepath.Join(home, filepath.FromSlash(directory))); err != nil {
+			return err
+		}
+	}
+	if err := writeFile(filepath.Join(home, ".gemini", "settings.json"), "{}\n", 0o600); err != nil {
+		return err
+	}
+	result := runClientFlow(h, home, server.server.URL, false, `
+ask_tty() { case "$1" in Silence*) return 1 ;; *) return 0 ;; esac; }
+`)
+	if _, err := requireOutput(result); err != nil {
+		return err
+	}
+	gemini, err := os.ReadFile(filepath.Join(home, ".gemini", "settings.json"))
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(gemini), "emisar") {
+		return fmt.Errorf("declining auto-permit also skipped the client connection:\n%s", gemini)
+	}
+	if strings.Contains(string(gemini), "trust") {
+		return fmt.Errorf("the Gemini server was trusted despite a declined offer:\n%s", gemini)
+	}
+	codex, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
+	if err != nil {
+		return err
+	}
+	if strings.Contains(string(codex), "default_tools_approval_mode") {
+		return fmt.Errorf("the Codex approval mode was set despite a declined offer:\n%s", codex)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "settings.json")); !os.IsNotExist(err) {
+		return fmt.Errorf("the Claude Code settings were written despite a declined offer")
+	}
+	return nil
+}
+
+// The offer is per-server by construction: every client that took it names
+// emisar (or emisar's tool prefix) and nothing wider, Cursor is never touched
+// because its only control is a global agent toggle, and Grok's pre-existing
+// [permission] table is reported rather than rewritten.
+func inspectAutoPermit(home, output string) error {
+	claudeSettings, err := jsonFile(filepath.Join(home, ".claude", "settings.json"))
+	if err != nil {
+		return fmt.Errorf("reading the Claude Code settings: %w", err)
+	}
+	permissions, ok := claudeSettings["permissions"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("the Claude Code settings carry no permissions object")
+	}
+	allow, ok := permissions["allow"].([]any)
+	if !ok || len(allow) != 1 || allow[0] != "mcp__emisar__*" {
+		return fmt.Errorf("the Claude Code permissions.allow = %v, expected [mcp__emisar__*]", permissions["allow"])
+	}
+
+	gemini, err := jsonFile(filepath.Join(home, ".gemini", "settings.json"))
+	if err != nil {
+		return err
+	}
+	servers, ok := gemini["mcpServers"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("the Gemini config lost its mcpServers object")
+	}
+	emisar, ok := servers["emisar"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("the Gemini config lost its emisar server")
+	}
+	if emisar["trust"] != true {
+		return fmt.Errorf("the Gemini emisar server has trust = %v, expected true", emisar["trust"])
+	}
+	if other, ok := servers["other"].(map[string]any); !ok {
+		return fmt.Errorf("the Gemini config lost its unrelated server")
+	} else if _, trusted := other["trust"]; trusted {
+		return fmt.Errorf("trust reached a Gemini server that is not emisar")
+	}
+
+	codex, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(codex), "[mcp_servers.emisar]\ndefault_tools_approval_mode = \"approve\"\n") {
+		return fmt.Errorf("the Codex approval mode is not inside the emisar table:\n%s", codex)
+	}
+
+	// Grok's fixture already carries a [permission] table, so the entry must be
+	// reported instead of merged — hand-editing an array we did not author is
+	// how a config we do not own gets corrupted.
+	grok, err := os.ReadFile(filepath.Join(home, ".grok", "config.toml"))
+	if err != nil {
+		return err
+	}
+	if strings.Contains(string(grok), "emisar__") {
+		return fmt.Errorf("the existing Grok permission table was rewritten:\n%s", grok)
+	}
+	if !strings.Contains(output, "Grok CLI") {
+		return fmt.Errorf("the Grok auto-permit refusal was not reported:\n%s", output)
+	}
+
+	cursor, err := os.ReadFile(filepath.Join(home, ".cursor", "mcp.json"))
+	if err != nil {
+		return err
+	}
+	for _, forbidden := range []string{"trust", "approval", "allow"} {
+		if strings.Contains(string(cursor), forbidden) {
+			return fmt.Errorf("the Cursor config gained an approval setting (%q) it can only apply globally:\n%s", forbidden, cursor)
+		}
 	}
 	return nil
 }
@@ -1252,9 +1402,19 @@ func inspectClientConfigs(home, portal string) error {
 	}
 	codex := filepath.Join(home, ".codex", "config.toml")
 	for _, text := range []string{
-		`[mcp_servers.emisar]`, `EMISAR_API_KEY = "` + fixtureAPIKey("codex") + `"`, `name = "gpt"`,
+		`[mcp_servers.emisar]`, `EMISAR_API_KEY = "` + fixtureAPIKey("codex") + `"`,
+		`EMISAR_CLIENT = "codex"`, `name = "gpt"`,
 	} {
 		if err := containsFile(codex, text); err != nil {
+			return err
+		}
+	}
+	grok := filepath.Join(home, ".grok", "config.toml")
+	for _, text := range []string{
+		`[mcp_servers.emisar]`, `EMISAR_API_KEY = "` + fixtureAPIKey("grok") + `"`,
+		`EMISAR_CLIENT = "grok"`, `[permission]`, `allow = ["MCPTool(other__*)"]`,
+	} {
+		if err := containsFile(grok, text); err != nil {
 			return err
 		}
 	}

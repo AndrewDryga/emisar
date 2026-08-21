@@ -327,6 +327,11 @@ defmodule EmisarWeb.AgentsLiveTest do
       # installer finishes the setup with a browser approval — no key copying.
       assert html =~ "Install the bridge"
       assert html =~ "/install-mcp.sh | sudo EMISAR_URL=http://localhost:4000 bash"
+
+      assert html =~
+               "&amp; ([scriptblock]::Create((irm &#39;http://localhost:4000/install-mcp.ps1&#39;))) -PortalOrigin &#39;http://localhost:4000&#39;"
+
+      assert html =~ "id=\"install-mcp-windows-cmd\""
       assert html =~ "offers to add emisar to the LLM clients it finds"
       assert html =~ "approve the connection in your browser"
       refute html =~ "Copy your API key"
@@ -389,7 +394,7 @@ defmodule EmisarWeb.AgentsLiveTest do
         ApiKeys.open_device_grant(["claude-code"], %Emisar.RequestContext{})
 
       {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
-      {:ok, client_keys} = ApiKeys.claim_device_grant(device_code)
+      {:ok, %{client_keys: client_keys}} = ApiKeys.claim_device_grant(device_code)
       assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(client_keys["claude-code"])
 
       assert render(lv) =~ "Connected — your agent is live"

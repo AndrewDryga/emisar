@@ -7,14 +7,25 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 const cliProtocolVersion = "2026-07-28"
 
+const findActionsToolName = "find_actions"
+
+const cliOperationRecoveryStep = "The request may have reached the server. Use the operation ID in stdout with `get_operation` before retrying a mutation."
+
 const maxCLISchemaRenderDepth = 32
+const maxCLIOutputRenderDepth = 64
+const maxCLIHumanStringRunes = 240
+const maxCLIHumanUnbrokenStringRunes = 96
+const maxCLIHumanFieldAlignmentRunes = 32
 
 type cliRPCResponse struct {
 	Result json.RawMessage `json:"result"`
@@ -40,8 +51,16 @@ func validateCLIInvocation(args []string) error {
 	}
 	switch args[0] {
 	case "--":
-		if len(args) < 2 || len(args) > 3 {
-			return errors.New("usage: emisar-mcp -- <tool> [JSON | -]")
+		if len(args) < 2 {
+			return errors.New("usage: emisar-mcp -- <tool> [JSON | -] [--json]")
+		}
+		usage := cliToolCallUsage(args[1], true)
+		callArgs, _, err := splitCLIJSONOutputFlag(args[2:])
+		if err != nil {
+			return fmt.Errorf("%w; usage: %s", err, usage)
+		}
+		if len(callArgs) > 1 {
+			return fmt.Errorf("usage: %s", usage)
 		}
 	case "list_tools":
 		if len(args) > 2 || (len(args) == 2 && args[1] != "--json") {
@@ -52,28 +71,54 @@ func validateCLIInvocation(args []string) error {
 			return errors.New("usage: emisar-mcp help <tool> [--json]")
 		}
 	default:
-		if len(args) > 2 {
-			return errors.New("usage: emisar-mcp <tool> [JSON | -]")
+		usage := cliToolCallUsage(args[0], false)
+		callArgs, _, err := splitCLIJSONOutputFlag(args[1:])
+		if err != nil {
+			return fmt.Errorf("%w; usage: %s", err, usage)
 		}
-		if len(args) == 2 && strings.HasPrefix(args[1], "--") && args[1] != "--help" {
-			return fmt.Errorf("unknown option %q; usage: emisar-mcp <tool> [JSON | -]", args[1])
+		if len(callArgs) > 1 {
+			return fmt.Errorf("usage: %s", usage)
+		}
+		if len(callArgs) == 1 && strings.HasPrefix(callArgs[0], "--") && callArgs[0] != "--help" {
+			return fmt.Errorf("unknown option %q; usage: %s", displayCLIOption(callArgs[0]), usage)
 		}
 	}
 	return nil
 }
 
+func cliToolCallUsage(toolName string, exact bool) string {
+	if toolName == findActionsToolName {
+		prefix := "emisar-mcp "
+		if exact {
+			prefix += "-- "
+		}
+		return prefix + findActionsToolName + " [TEXT | JSON | -] [--json]"
+	}
+	if exact {
+		return "emisar-mcp -- <tool> [JSON | -] [--json]"
+	}
+	return "emisar-mcp <tool> [JSON | -] [--json]"
+}
+
 func (b *bridge) runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	return b.runCLIContext(context.Background(), args, stdin, stdout, stderr)
+}
+
+func (b *bridge) runCLIContext(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	b.directCLI = true
+	b.diagnostics = stderr
 	if err := validateCLIInvocation(args); err != nil {
 		return cliUsageError(stderr, err.Error())
 	}
 	command := args[0]
 	switch command {
 	case "--":
-		arguments, err := readCLIArguments(args[2:], stdin)
+		callArgs, exactJSON, _ := splitCLIJSONOutputFlag(args[2:])
+		arguments, err := readCLIArguments(args[1], callArgs, stdin)
 		if err != nil {
 			return cliUsageError(stderr, err.Error())
 		}
-		return b.runToolCall(args[1], arguments, stdout, stderr)
+		return b.runToolCallContext(ctx, args[1], arguments, exactJSON, stdout, stderr)
 
 	case "list_tools":
 		return b.runListTools(len(args) == 2, stdout, stderr)
@@ -82,19 +127,36 @@ func (b *bridge) runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer
 		return b.runToolHelp(args[1], len(args) == 3, stdout, stderr)
 
 	default:
-		if len(args) == 2 && (args[1] == "-h" || args[1] == "--help") {
-			return b.runToolHelp(command, false, stdout, stderr)
+		callArgs, exactJSON, _ := splitCLIJSONOutputFlag(args[1:])
+		if len(callArgs) == 1 && (callArgs[0] == "-h" || callArgs[0] == "--help") {
+			return b.runToolHelp(command, exactJSON, stdout, stderr)
 		}
-		arguments, err := readCLIArguments(args[1:], stdin)
+		arguments, err := readCLIArguments(command, callArgs, stdin)
 		if err != nil {
 			return cliUsageError(stderr, err.Error())
 		}
-		return b.runToolCall(command, arguments, stdout, stderr)
+		return b.runToolCallContext(ctx, command, arguments, exactJSON, stdout, stderr)
 	}
 }
 
+func splitCLIJSONOutputFlag(args []string) ([]string, bool, error) {
+	if len(args) == 0 {
+		return args, false, nil
+	}
+	for index, arg := range args {
+		if arg != "--json" {
+			continue
+		}
+		if index != len(args)-1 {
+			return nil, false, errors.New("--json must be the final argument")
+		}
+		return args[:index], true, nil
+	}
+	return args, false, nil
+}
+
 func (b *bridge) runListTools(exactJSON bool, stdout, stderr io.Writer) int {
-	tools, descriptors, code := b.fetchToolDescriptors(stdout, stderr)
+	tools, descriptors, code := b.fetchToolDescriptors(exactJSON, stdout, stderr)
 	if code != 0 {
 		return code
 	}
@@ -115,7 +177,7 @@ func (b *bridge) runListTools(exactJSON bool, stdout, stderr io.Writer) int {
 }
 
 func (b *bridge) runToolHelp(name string, exactJSON bool, stdout, stderr io.Writer) int {
-	_, descriptors, code := b.fetchToolDescriptors(stdout, stderr)
+	_, descriptors, code := b.fetchToolDescriptors(exactJSON, stdout, stderr)
 	if code != 0 {
 		return code
 	}
@@ -142,16 +204,20 @@ func (b *bridge) runToolHelp(name string, exactJSON bool, stdout, stderr io.Writ
 		}
 		return 0
 	}
-	return cliUsageError(stderr, fmt.Sprintf("unknown MCP tool %q; run 'emisar-mcp list_tools'", name))
+	return cliInputError(
+		stderr,
+		fmt.Sprintf("Unknown MCP tool %q", name),
+		"Run `emisar-mcp list_tools` to see the tools published by this server.",
+	)
 }
 
-func (b *bridge) runToolCall(name string, arguments json.RawMessage, stdout, stderr io.Writer) int {
-	response, operationID, err := b.cliRoundTrip("tools/call", name, arguments)
+func (b *bridge) runToolCallContext(ctx context.Context, name string, arguments json.RawMessage, exactJSON bool, stdout, stderr io.Writer) int {
+	response, operationID, err := b.cliRoundTripContext(ctx, "tools/call", name, arguments)
 	if err != nil {
-		return b.writeCLICallFailure(operationID, err, stdout, stderr)
+		return b.writeCLICallFailure(operationID, err, exactJSON, stdout, stderr)
 	}
 	if len(response.Error) > 0 {
-		if err := writePrettyJSON(stdout, response.Error); err != nil {
+		if err := writeCLIOutput(stdout, response.Error, exactJSON); err != nil {
 			return cliFailure(stderr, "write MCP error", err)
 		}
 		return 1
@@ -162,33 +228,44 @@ func (b *bridge) runToolCall(name string, arguments json.RawMessage, stdout, std
 		IsError           bool            `json:"isError"`
 	}
 	if err := json.Unmarshal(response.Result, &result); err != nil {
-		return b.writeCLICallResponseFailure(operationID, "decode tool result", err, stdout, stderr)
+		return b.writeCLICallResponseFailure(operationID, "decode tool result", err, exactJSON, stdout, stderr)
 	}
 	if len(result.StructuredContent) == 0 || firstJSONByte(result.StructuredContent) != '{' {
 		return b.writeCLICallResponseFailure(
 			operationID,
 			"decode tool result",
 			errors.New("control plane returned no structuredContent object"),
+			exactJSON,
 			stdout,
 			stderr,
 		)
 	}
-	if err := writePrettyJSON(stdout, result.StructuredContent); err != nil {
+	if !exactJSON && !result.IsError {
+		if err := validateCLIHumanMutation(name, operationID, result.StructuredContent); err != nil {
+			return b.writeCLIFollowFailure(stderr, operationID, err)
+		}
+	}
+	if err := writeCLIToolOutput(stdout, name, arguments, result.StructuredContent, b.cliAccount, exactJSON, !result.IsError); err != nil {
 		return cliFailure(stderr, "write tool result", err)
 	}
 	if result.IsError {
 		return 1
 	}
+	if !exactJSON {
+		if handled, code := b.followCLIMutation(ctx, name, operationID, result.StructuredContent, stdout, stderr); handled {
+			return code
+		}
+	}
 	return 0
 }
 
-func (b *bridge) fetchToolDescriptors(stdout, stderr io.Writer) (json.RawMessage, []json.RawMessage, int) {
+func (b *bridge) fetchToolDescriptors(exactJSON bool, stdout, stderr io.Writer) (json.RawMessage, []json.RawMessage, int) {
 	response, _, err := b.cliRoundTrip("tools/list", "", nil)
 	if err != nil {
 		return nil, nil, cliFailure(stderr, "list tools", err)
 	}
 	if len(response.Error) > 0 {
-		if err := writePrettyJSON(stdout, response.Error); err != nil {
+		if err := writeCLIOutput(stdout, response.Error, exactJSON); err != nil {
 			return nil, nil, cliFailure(stderr, "write MCP error", err)
 		}
 		return nil, nil, 1
@@ -232,6 +309,10 @@ func validateToolDescriptors(descriptors []json.RawMessage) error {
 }
 
 func (b *bridge) cliRoundTrip(method, name string, arguments json.RawMessage) (cliRPCResponse, string, error) {
+	return b.cliRoundTripContext(context.Background(), method, name, arguments)
+}
+
+func (b *bridge) cliRoundTripContext(ctx context.Context, method, name string, arguments json.RawMessage) (cliRPCResponse, string, error) {
 	frame, err := buildCLIFrame(method, name, arguments)
 	if err != nil {
 		return cliRPCResponse{}, "", localBridge(err)
@@ -240,9 +321,13 @@ func (b *bridge) cliRoundTrip(method, name string, arguments json.RawMessage) (c
 		return cliRPCResponse{}, "", localBridge(fmt.Errorf("request frame exceeds %d bytes", maxFrameBytes))
 	}
 	meta := parseRequestMeta(frame)
-	requestToken := b.requestToken(1)
+	b.stateMu.Lock()
+	b.cliSequence++
+	sequence := b.cliSequence
+	b.stateMu.Unlock()
+	requestToken := b.requestToken(sequence)
 	operationID := toolCallOperationID(meta, requestToken)
-	body, err := b.forwardRequestContext(context.Background(), frame, meta, requestHeaders{
+	body, err := b.forwardRequestContext(ctx, frame, meta, requestHeaders{
 		requestToken: requestToken,
 		operationID:  operationID,
 	})
@@ -283,7 +368,7 @@ func buildCLIFrame(method, name string, arguments json.RawMessage) ([]byte, erro
 	return frame, nil
 }
 
-func readCLIArguments(args []string, stdin io.Reader) (json.RawMessage, error) {
+func readCLIArguments(toolName string, args []string, stdin io.Reader) (json.RawMessage, error) {
 	if len(args) == 0 {
 		return json.RawMessage(`{}`), nil
 	}
@@ -307,6 +392,21 @@ func readCLIArguments(args []string, stdin io.Reader) (json.RawMessage, error) {
 	if len(raw) > maxFrameBytes {
 		return nil, fmt.Errorf("JSON arguments exceed %d bytes", maxFrameBytes)
 	}
+	if toolName == findActionsToolName && raw[0] != '{' && raw[0] != '[' {
+		if !utf8.Valid(raw) {
+			return nil, errors.New("find_actions text query must be valid UTF-8")
+		}
+		arguments, err := json.Marshal(struct {
+			Query string `json:"query"`
+		}{Query: string(raw)})
+		if err != nil {
+			return nil, fmt.Errorf("encode find_actions text query: %w", err)
+		}
+		if len(arguments) > maxFrameBytes {
+			return nil, fmt.Errorf("JSON arguments exceed %d bytes", maxFrameBytes)
+		}
+		return arguments, nil
+	}
 	if err := validateStrictJSON(raw); err != nil {
 		return nil, fmt.Errorf("tool arguments are not strict JSON: %w", err)
 	}
@@ -326,38 +426,379 @@ func writePrettyJSON(w io.Writer, raw []byte) error {
 	return err
 }
 
-func cliUsageError(stderr io.Writer, message string) int {
-	fmt.Fprintf(stderr, "%s: %s\n", bridgeName, terminalSafeText(message))
-	return 2
+func writeCLIOutput(w io.Writer, raw []byte, exactJSON bool) error {
+	if exactJSON {
+		return writePrettyJSON(w, raw)
+	}
+	return writeHumanJSON(w, raw)
 }
 
-func cliFailure(stderr io.Writer, action string, err error) int {
-	fmt.Fprintf(stderr, "%s: %s: %s\n", bridgeName, terminalSafeText(action), terminalSafeText(err.Error()))
-	return 1
+func writeCLIToolOutput(
+	w io.Writer,
+	toolName string,
+	arguments, raw []byte,
+	account string,
+	exactJSON, successful bool,
+) error {
+	if exactJSON {
+		return writePrettyJSON(w, raw)
+	}
+	if successful {
+		if handled, err := writeCLIFleetOutput(w, toolName, arguments, raw, account); handled {
+			return err
+		}
+	}
+	if handled, err := writeCLIOperatorOutput(w, toolName, arguments, raw, account, successful); handled {
+		return err
+	}
+	return writeHumanJSON(w, raw)
 }
 
-func (b *bridge) writeCLICallFailure(operationID string, callErr error, stdout, stderr io.Writer) int {
+func writeHumanJSON(w io.Writer, raw []byte) error {
+	if err := validateStrictJSON(raw); err != nil {
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	var out strings.Builder
+	renderer := cliHumanRenderer{out: &out}
+	renderer.renderValue(value, "", 0)
+	rendered := strings.TrimRight(out.String(), "\n")
+	if rendered == "" {
+		rendered = "No data."
+	}
+	_, err := io.WriteString(w, rendered+"\n")
+	return err
+}
+
+type cliHumanRenderer struct {
+	out *strings.Builder
+}
+
+type cliHumanField struct {
+	key   string
+	label string
+	value any
+}
+
+func (r cliHumanRenderer) renderValue(value any, indent string, depth int) {
+	if depth > maxCLIOutputRenderDepth {
+		r.line(indent, "More details omitted; use --json.")
+		return
+	}
+	if scalar, ok := humanJSONScalar(value); ok {
+		r.line(indent, scalar)
+		return
+	}
+	switch value := value.(type) {
+	case map[string]any:
+		r.renderObject(value, indent, depth)
+	case []any:
+		r.renderArray(value, indent, depth)
+	}
+}
+
+func (r cliHumanRenderer) renderObject(value map[string]any, indent string, depth int) {
+	if depth > maxCLIOutputRenderDepth {
+		r.line(indent, "More details omitted; use --json.")
+		return
+	}
+	fields := humanJSONFields(value)
+	if len(fields) == 0 {
+		r.line(indent, "Empty object")
+		return
+	}
+	var simple, complex []cliHumanField
+	for _, field := range fields {
+		if _, ok := humanJSONFieldValue(field); ok {
+			simple = append(simple, field)
+			continue
+		}
+		complex = append(complex, field)
+	}
+	if len(simple) > 0 {
+		r.renderFields(simple, indent)
+	}
+	for index, field := range complex {
+		if len(simple) > 0 || index > 0 {
+			r.blank()
+		}
+		switch child := field.value.(type) {
+		case []any:
+			r.line(indent, fmt.Sprintf("%s (%d)", field.label, len(child)))
+			r.blank()
+			r.renderArray(child, indent, depth+1)
+		case map[string]any:
+			r.line(indent, field.label)
+			r.renderObject(child, indent+"  ", depth+1)
+		}
+	}
+}
+
+func (r cliHumanRenderer) renderArray(value []any, indent string, depth int) {
+	if depth > maxCLIOutputRenderDepth {
+		r.line(indent, "More details omitted; use --json.")
+		return
+	}
+	if len(value) == 0 {
+		r.line(indent, "Empty list")
+		return
+	}
+	allScalars := true
+	allObjects := true
+	for _, child := range value {
+		if _, ok := humanJSONScalar(child); !ok {
+			allScalars = false
+		}
+		if _, ok := child.(map[string]any); !ok {
+			allObjects = false
+		}
+	}
+	if allScalars {
+		for _, child := range value {
+			scalar, _ := humanJSONScalar(child)
+			r.line(indent+"• ", scalar)
+		}
+		return
+	}
+	if allObjects {
+		for index, child := range value {
+			if index > 0 {
+				r.blank()
+			}
+			r.renderRecord(index+1, len(value), child.(map[string]any), indent, depth+1)
+		}
+		return
+	}
+	for index, child := range value {
+		if index > 0 {
+			r.blank()
+		}
+		if object, ok := child.(map[string]any); ok {
+			r.renderRecord(index+1, len(value), object, indent, depth+1)
+			continue
+		}
+		marker := fmt.Sprintf("Item %d of %d", index+1, len(value))
+		if simple, ok := humanJSONSimpleValue(child); ok {
+			r.line(indent+marker+" — ", simple)
+			continue
+		}
+		r.line(indent, marker)
+		r.renderValue(child, indent+"  ", depth+1)
+	}
+}
+
+func (r cliHumanRenderer) renderRecord(number, total int, value map[string]any, indent string, depth int) {
+	marker := fmt.Sprintf("Item %d of %d", number, total)
+	contentIndent := indent + "  "
+	if len(value) == 0 {
+		r.line(indent+marker+" — ", "Empty object")
+		return
+	}
+	r.line(indent, marker)
+	r.renderObject(value, contentIndent, depth)
+}
+
+func (r cliHumanRenderer) renderFields(fields []cliHumanField, indent string) {
+	width := 0
+	for _, field := range fields {
+		if length := len([]rune(field.label)); length > width && width < maxCLIHumanFieldAlignmentRunes {
+			width = length
+			if width > maxCLIHumanFieldAlignmentRunes {
+				width = maxCLIHumanFieldAlignmentRunes
+			}
+		}
+	}
+	for _, field := range fields {
+		value, _ := humanJSONFieldValue(field)
+		paddingWidth := width - len([]rune(field.label))
+		if paddingWidth < 0 {
+			paddingWidth = 0
+		}
+		padding := strings.Repeat(" ", paddingWidth)
+		prefix := indent + field.label + padding + "  "
+		r.line(prefix, value)
+	}
+}
+
+func (r cliHumanRenderer) line(prefix, text string) {
+	r.out.WriteString(prefix)
+	r.out.WriteString(text)
+	r.out.WriteByte('\n')
+}
+
+func (r cliHumanRenderer) blank() {
+	if r.out.Len() > 0 && !strings.HasSuffix(r.out.String(), "\n\n") {
+		r.out.WriteByte('\n')
+	}
+}
+
+func humanJSONScalar(value any) (string, bool) {
+	switch value := value.(type) {
+	case nil:
+		return "Not set (null)", true
+	case bool:
+		if value {
+			return "Yes", true
+		}
+		return "No", true
+	case json.Number:
+		return value.String(), true
+	case string:
+		if value == "" {
+			return "Empty string", true
+		}
+		safe := terminalSafeLine(value)
+		if strings.TrimSpace(safe) == "" {
+			return "Blank string", true
+		}
+		runes := []rune(safe)
+		limit := maxCLIHumanStringRunes
+		if !strings.ContainsFunc(safe, unicode.IsSpace) {
+			limit = maxCLIHumanUnbrokenStringRunes
+		}
+		if len(runes) > limit {
+			short := string(runes[:limit])
+			if lastSpace := strings.LastIndexFunc(short, unicode.IsSpace); lastSpace >= limit/2 {
+				short = strings.TrimSpace(short[:lastSpace])
+			}
+			safe = short + "… [truncated; use --json]"
+		}
+		return safe, true
+	default:
+		return "", false
+	}
+}
+
+func humanJSONSimpleValue(value any) (string, bool) {
+	if scalar, ok := humanJSONScalar(value); ok {
+		return scalar, true
+	}
+	switch value := value.(type) {
+	case []any:
+		if len(value) == 0 {
+			return "Empty list", true
+		}
+	case map[string]any:
+		if len(value) == 0 {
+			return "Empty object", true
+		}
+	}
+	return "", false
+}
+
+func humanJSONFieldValue(field cliHumanField) (string, bool) {
+	return humanJSONSimpleValue(field.value)
+}
+
+func humanJSONFields(value map[string]any) []cliHumanField {
+	fields := make([]cliHumanField, 0, len(value))
+	for key, child := range value {
+		fields = append(fields, cliHumanField{key: key, label: humanJSONLabel(key), value: child})
+	}
+	sort.Slice(fields, func(i, j int) bool {
+		return fields[i].key < fields[j].key
+	})
+	labels := make(map[string]int, len(fields))
+	for _, field := range fields {
+		labels[field.label]++
+	}
+	for index, field := range fields {
+		if labels[field.label] > 1 {
+			fields[index].label += " [key " + strconv.QuoteToASCII(field.key) + "]"
+		}
+	}
+	return fields
+}
+
+func humanJSONLabel(key string) string {
+	safe := terminalSafeText(key)
+	words := strings.FieldsFunc(safe, func(r rune) bool {
+		return r == '_' || r == '-' || unicode.IsSpace(r)
+	})
+	if len(words) == 0 {
+		return "Unnamed field [key " + strconv.QuoteToASCII(key) + "]"
+	}
+	for index, word := range words {
+		switch strings.ToLower(word) {
+		case "api", "id", "mcp", "ok", "sha", "sha256", "uri", "url":
+			words[index] = strings.ToUpper(word)
+		case "":
+			continue
+		default:
+			if index == 0 {
+				runes := []rune(word)
+				runes[0] = unicode.ToUpper(runes[0])
+				words[index] = string(runes)
+			}
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+func (b *bridge) writeCLICallFailure(operationID string, callErr error, exactJSON bool, stdout, stderr io.Writer) int {
 	message := "upstream transport error"
 	if bridgeProducedError(callErr) {
 		message = "emisar bridge could not send this request"
 		operationID = ""
 	}
-	if localTransportError(callErr) || bridgeProducedError(callErr) {
-		b.diagnose("%v", callErr)
+	summary := "The control plane request failed"
+	next := []string{"Check the control plane status and version, then try again."}
+	if localTransportError(callErr) {
+		summary = "Could not reach the control plane"
+		next = []string{"Check the server URL and your network connection, then try again."}
 	}
-	return writeCLICallError(message, operationID, stdout, stderr)
+	if bridgeProducedError(callErr) {
+		summary = "The request could not be sent"
+		next = []string{"Fix the local error above, then try again."}
+		switch message := callErr.Error(); {
+		case strings.Contains(message, "request frame exceeds"):
+			summary = "The request is too large"
+			next = []string{"Reduce the JSON arguments, then try again."}
+		case strings.Contains(message, "attest") || strings.Contains(message, "sign"):
+			summary = "The request could not be signed"
+			next = []string{"Check EMISAR_SIGNING_KEY and EMISAR_SIGNING_CERT, then try again."}
+		case strings.Contains(message, "credential"):
+			summary = "The account credential could not be used"
+			next = []string{"Check the credential file permissions, then run `emisar-mcp auth` again if needed."}
+		}
+	}
+	if operationID != "" {
+		next = append([]string{cliOperationRecoveryStep}, next...)
+	}
+	writeCLIDiagnostic(stderr, cliDiagnostic{
+		Kind:    cliDiagnosticError,
+		Summary: summary,
+		Details: []string{callErr.Error()},
+		Next:    next,
+	})
+	return writeCLICallError(message, operationID, exactJSON, stdout, stderr)
 }
 
 func (b *bridge) writeCLICallResponseFailure(
 	operationID, action string,
 	responseErr error,
+	exactJSON bool,
 	stdout, stderr io.Writer,
 ) int {
-	b.diagnose("%s: %v", action, responseErr)
-	return writeCLICallError("invalid upstream tool response", operationID, stdout, stderr)
+	next := []string{"Upgrade the Emisar server and CLI together, then try again."}
+	if operationID != "" {
+		next = append([]string{cliOperationRecoveryStep}, next...)
+	}
+	writeCLIDiagnostic(stderr, cliDiagnostic{
+		Kind:    cliDiagnosticError,
+		Summary: "The control plane returned an invalid tool response",
+		Details: []string{action + ": " + responseErr.Error()},
+		Next:    next,
+	})
+	return writeCLICallError("invalid upstream tool response", operationID, exactJSON, stdout, stderr)
 }
 
-func writeCLICallError(message, operationID string, stdout, stderr io.Writer) int {
+func writeCLICallError(message, operationID string, exactJSON bool, stdout, stderr io.Writer) int {
 	var data *transportErrorData
 	if operationID != "" {
 		data = &transportErrorData{OperationID: operationID}
@@ -371,15 +812,15 @@ func writeCLICallError(message, operationID string, stdout, stderr io.Writer) in
 	if err != nil {
 		panic("marshal fixed CLI error: " + err.Error())
 	}
-	if err := writePrettyJSON(stdout, raw); err != nil {
+	if err := writeCLIOutput(stdout, raw, exactJSON); err != nil {
 		return cliFailure(stderr, "write transport error", err)
 	}
 	return 1
 }
 
 func renderToolList(rawDescriptors []json.RawMessage) (string, error) {
-	var out strings.Builder
-	fmt.Fprintf(&out, "%d MCP tools\n", len(rawDescriptors))
+	descriptors := make([]cliToolDescriptor, 0, len(rawDescriptors))
+	byName := make(map[string]cliToolDescriptor, len(rawDescriptors))
 	for _, raw := range rawDescriptors {
 		var descriptor cliToolDescriptor
 		if err := json.Unmarshal(raw, &descriptor); err != nil {
@@ -388,11 +829,53 @@ func renderToolList(rawDescriptors []json.RawMessage) (string, error) {
 		if descriptor.Name == "" {
 			return "", errors.New("decode tool descriptor: name is empty")
 		}
-		fmt.Fprintf(&out, "\n  %s  [%s]\n", terminalSafeText(descriptor.Name), descriptorKind(descriptor.Annotations))
-		out.WriteString(wrapCLIText(descriptor.Description, "    ", 80))
-		out.WriteByte('\n')
+		descriptors = append(descriptors, descriptor)
+		byName[descriptor.Name] = descriptor
 	}
-	out.WriteString("\nUse 'emisar-mcp help <tool>' for arguments and the input schema.\n")
+
+	groups := []struct {
+		title string
+		names []string
+	}{
+		{"FLEET", []string{"list_runners", "list_packs"}},
+		{"ACTIONS", []string{"find_actions", "get_action", "run_action", "get_operation", "recent_runs"}},
+		{"RUNBOOKS", []string{"list_runbooks", "get_runbook", "execute_runbook", "create_runbook_draft", "update_runbook_draft"}},
+		{"CONTINUATIONS", []string{"wait_for_run"}},
+	}
+	used := make(map[string]bool, len(descriptors))
+	var out strings.Builder
+	fmt.Fprintf(&out, "%d MCP tools\n", len(rawDescriptors))
+	writeGroup := func(title string, members []cliToolDescriptor) {
+		if len(members) == 0 {
+			return
+		}
+		fmt.Fprintf(&out, "\n%s\n", title)
+		for _, descriptor := range members {
+			fmt.Fprintf(&out, "\n  %s  [%s]\n", terminalSafeText(descriptor.Name), descriptorKind(descriptor.Annotations))
+			out.WriteString("    ")
+			out.WriteString(terminalSafeLine(descriptor.Description))
+			out.WriteByte('\n')
+			used[descriptor.Name] = true
+		}
+	}
+	for _, group := range groups {
+		members := make([]cliToolDescriptor, 0, len(group.names))
+		for _, name := range group.names {
+			if descriptor, ok := byName[name]; ok {
+				members = append(members, descriptor)
+			}
+		}
+		writeGroup(group.title, members)
+	}
+	other := make([]cliToolDescriptor, 0)
+	for _, descriptor := range descriptors {
+		if !used[descriptor.Name] {
+			other = append(other, descriptor)
+		}
+	}
+	writeGroup("OTHER MCP TOOLS", other)
+	out.WriteString("\nUse 'emisar-mcp help <tool>' for live arguments.\n")
+	out.WriteString("Add --json for the exact descriptors used by scripts and LLMs.\n")
 	return out.String(), nil
 }
 
@@ -415,8 +898,16 @@ func renderToolHelp(descriptor cliToolDescriptor) (string, error) {
 	safeName := terminalSafeText(descriptor.Name)
 	fmt.Fprintf(&out, "%s — %s\n", safeName, terminalSafeText(title))
 	fmt.Fprintf(&out, "%s\n\n", descriptorKind(descriptor.Annotations))
-	out.WriteString(wrapCLIText(descriptor.Description, "", 80))
-	fmt.Fprintf(&out, "\n\nUSAGE\n  %s [JSON | -]\n", cliToolInvocation(descriptor.Name))
+	out.WriteString(terminalSafeLine(descriptor.Description))
+	argumentUsage := "JSON | -"
+	if descriptor.Name == findActionsToolName {
+		argumentUsage = "TEXT | JSON | -"
+	}
+	fmt.Fprintf(&out, "\n\nUSAGE\n  %s [%s] [--json]\n", cliToolInvocation(descriptor.Name), argumentUsage)
+	if descriptor.Name == findActionsToolName {
+		out.WriteString("\nTEXT INPUT\n")
+		out.WriteString("  Plain text is sent as the query argument. Use JSON for filters or cursors.\n")
+	}
 
 	arguments, crossFieldRules, ok := describeTopLevelArguments(schema)
 	if crossFieldRules {
@@ -439,15 +930,17 @@ func renderToolHelp(descriptor cliToolDescriptor) (string, error) {
 			}
 			fmt.Fprintf(&out, "\n  %s  %s · %s", terminalSafeText(argument.Name), terminalSafeText(argument.Type), status)
 			if argument.Default != "" {
-				fmt.Fprintf(&out, " · default %s", argument.Default)
+				fmt.Fprintf(&out, " · default %s", terminalSafeLine(argument.Default))
 			}
 			out.WriteByte('\n')
 			if argument.Description != "" {
-				out.WriteString(wrapCLIText(argument.Description, "    ", 80))
+				out.WriteString("    ")
+				out.WriteString(terminalSafeLine(argument.Description))
 				out.WriteByte('\n')
 			}
 			if argument.Constraints != "" {
-				out.WriteString(wrapCLIText("Constraints: "+argument.Constraints, "    ", 80))
+				out.WriteString("    ")
+				out.WriteString(terminalSafeLine("Constraints: " + argument.Constraints))
 				out.WriteByte('\n')
 			}
 		}
@@ -459,11 +952,20 @@ func renderToolHelp(descriptor cliToolDescriptor) (string, error) {
 }
 
 func cliToolInvocation(name string) string {
-	safeName := shellQuote(terminalSafeText(name))
-	if name == "auth" || name == "help" || name == "list_tools" || strings.HasPrefix(name, "-") {
-		return "emisar-mcp -- " + safeName
+	return cliToolInvocationForOS(name, "", runtime.GOOS)
+}
+
+func cliToolInvocationForOS(name, account, goos string) string {
+	safeName := shellQuoteForOS(terminalSafeText(name), goos)
+	prefix := "emisar-mcp "
+	if account != "" {
+		prefix += "--account " + shellQuoteForOS(terminalSafeText(account), goos) + " "
 	}
-	return "emisar-mcp " + safeName
+	if name == "accounts" || name == "auth" || name == "help" ||
+		name == "list_tools" || strings.HasPrefix(name, "-") {
+		prefix += "-- "
+	}
+	return prefix + safeName
 }
 
 type cliArgument struct {
@@ -814,42 +1316,24 @@ func descriptorKind(annotations cliAnnotations) string {
 	}
 }
 
-func wrapCLIText(text, indent string, width int) string {
-	words := strings.Fields(terminalSafeText(text))
-	if len(words) == 0 {
-		return indent
-	}
-	var out strings.Builder
-	lineLength := len(indent)
-	out.WriteString(indent)
-	for _, word := range words {
-		if lineLength > len(indent) && lineLength+1+len(word) > width {
-			out.WriteByte('\n')
-			out.WriteString(indent)
-			out.WriteString(word)
-			lineLength = len(indent) + len(word)
-			continue
-		}
-		if lineLength > len(indent) {
-			out.WriteByte(' ')
-			lineLength++
-		}
-		out.WriteString(word)
-		lineLength += len(word)
-	}
-	return out.String()
-}
-
 func terminalSafeText(value string) string {
 	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) || r == '\u2028' || r == '\u2029' {
 			return ' '
 		}
 		return r
 	}, value)
 }
 
+func terminalSafeLine(value string) string {
+	return strings.Join(strings.Fields(terminalSafeText(value)), " ")
+}
+
 func shellQuote(value string) string {
+	return shellQuoteForOS(value, runtime.GOOS)
+}
+
+func shellQuoteForOS(value, goos string) string {
 	if value == "" {
 		return "''"
 	}
@@ -866,6 +1350,9 @@ func shellQuote(value string) string {
 	}) == -1
 	if bare {
 		return value
+	}
+	if goos == "windows" {
+		return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 	}
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }

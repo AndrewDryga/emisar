@@ -273,6 +273,7 @@ response via `expires_in`, not frozen contract. The device-authorization
 response fields (`device_code`, `user_code`, `verification_uri`,
 `verification_uri_complete`, `expires_in`, `interval`) and the token poll's
 emisar-specific success payload — a `client_keys` map of per-client API keys,
+plus `account_id`, `account_slug`, and `account_name` for the approved account,
 not an OAuth token response — are frozen; today's poll errors are
 `authorization_pending`, `access_denied`, `expired_token`, and
 `invalid_grant`, and `slow_down` is never emitted.
@@ -409,17 +410,32 @@ value), and `cloud.enrollment_key_env` names the bootstrap credential (normally
 the `--registry` flag select a pack registry.
 
 With no command, the MCP bridge keeps its stdio behavior. Its direct CLI surface
-has local `auth [status [URL]]` and `auth import URL` credential operations,
-then a descriptor-driven tool surface: `list_tools [--json]` lists the live
-server catalog, `help <tool> [--json]` and, for non-conflicting names,
-`<tool> --help` document one live descriptor. `<tool> [JSON | -]` calls any
-exact tool name with an omitted `{}`, one inline JSON object, or an object read
-from stdin. `-- <tool> [JSON | -]` bypasses the local command namespace for an
-exact conflicting name. Calls print
-`structuredContent` as JSON; server, tool, configuration, and transport failures
-exit 1 and local usage failures exit 2. Tool names and schemas remain owned by
-`tools/list`, not compiled into the bridge. Its global flags remain
-`-h/--help` and `-v/--version`. Its environment is:
+has a local `auth` / `auth login [URL]` browser device flow, local
+`auth status [URL]`, an installer-facing `auth import [URL]`, `accounts list
+[--json]`, and `accounts use <slug-or-id>`, then a descriptor-driven tool
+surface: `list_tools [--json]` lists the live server catalog, `help <tool>
+[--json]` and, for non-conflicting names, `<tool> --help` document one live
+descriptor. `<tool> [JSON | -]` calls any exact tool name with an omitted `{}`,
+one inline JSON object, or an object read from stdin. `-- <tool> [JSON | -]`
+bypasses the local command namespace for an exact conflicting name. Calls print
+purpose-built readable text for the thirteen fixed tools by default; an unknown
+future tool falls back to the generic structured-object renderer. `list_tools`
+groups the live catalog for people, while `list_tools --json` remains the exact
+descriptor array. `--json` makes one logical tool invocation, follows no
+continuations, and prints its exact `structuredContent`; the transport may
+resend the identical request under the same operation ID during bounded network
+or credential recovery. Default-output `run_action` and `execute_runbook` may
+make additional `wait_for_run` calls, but only by following exact
+server-returned continuations correlated to the same run or execution; they
+never issue a second mutation. Server, tool, configuration, and transport failures exit 1, local
+usage failures exit 2, and Ctrl-C during human mutation observation exits 130
+without claiming to cancel the work. Human `run_action` also exits 1 for
+terminal `failed`, `error`, `validation_failed`, `unknown_action`, `denied`,
+`cancelled`, `timed_out`, or `refused`; `execute_runbook` exits 1 for `halted`
+or `cancelled`. Tool names and schemas remain owned by
+`tools/list`, not compiled into an independent bridge registry. `--account
+<slug-or-id>` selects one stored account for one command; the other global flags
+remain `-h/--help` and `-v/--version`. Its environment is:
 
 ```text
 EMISAR_URL              required stdio origin; optional direct-CLI override
@@ -433,7 +449,7 @@ EMISAR_SIGNING_CERT     optional certificate for that key
 
 With no command, it reads and writes line-delimited JSON-RPC 2.0 over stdio. In
 stdio mode both authentication variables are required. Direct commands use the
-installer-created, owner-only CLI credential only when both variables are
+current owner-only stored account credential only when both variables are
 absent; an explicit pair overrides it, while a partial pair fails rather than
 mixing sources. In both modes it sends the user agent `emisar-mcp/<version>`.
 The attestation identifiers `emisar-attestation-v5` and `emisar-cert-v2` are
@@ -486,8 +502,10 @@ means tombstoning the runner row while preserving its historical references.
 ### Install scripts
 
 **What they are.** `install.sh` installs the runner and its service integration;
-`install-mcp.sh` installs the stdio bridge. Both are public curl-pipe-shell
-entry points and both select binaries from GitHub Releases.
+`install-mcp.sh` installs the stdio bridge on macOS and Linux, and
+`install-mcp.ps1` installs it on Windows. They are public script entry points
+that select binaries from the Emisar release mirror, with GitHub Releases as
+the fallback.
 
 Generated bootstrap commands use the conventional `curl -fsSL` spelling. Their
 initial origin must use HTTPS; plain HTTP is accepted only for
@@ -512,7 +530,7 @@ host-matched recommendations.
 
 `install-mcp.sh` accepts `--version`, `--install-dir`, `--uninstall` (remove
 the installed binaries, the `emisar` entry and `.emisar-bak` backups in
-detected client configs, the stored direct-CLI credential, and bridge rotation
+detected client configs, every stored direct-CLI account, and bridge rotation
 state), and `--yes`.
 It accepts
 `VERSION`, `INSTALL_DIR`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`, `ASSUME_YES`,
@@ -520,14 +538,23 @@ and `EMISAR_URL` (the portal its interactive CLI/client setup talks to and
 writes into configs; default `https://emisar.dev`). The interactive setup
 requests a dedicated `emisar-mcp-cli` key, imports it into the invoking user's
 owner-only bridge state over stdin, and may request separate keys for selected
-LLM clients. A CLI credential that authenticates against the same endpoint
+LLM clients. The bridge's own `auth` command consumes the same device contract
+for a dedicated CLI key without configuring MCP clients. A CLI credential that
+authenticates against the same endpoint
 makes a rerun hands-off; a rejected credential starts a fresh approval. This
-drives the portal's device-authorization pair, whose frozen
-contract lives in the OAuth authorization server section above; the installer
-is the deployed consumer its skew note describes. The current release tags are
+drives the portal's device-authorization pair, whose frozen contract lives in
+the OAuth authorization server section above; the installers and bridge are
+the deployed consumers its skew note describes. The current release tags are
 `runner-v0.20.1` and `mcp-v0.7.1`. The
 bridge installer also requires the selected GitHub release to be marked
 immutable.
+
+`install-mcp.ps1` accepts `-Version`, `-InstallDir`,
+`-PortalOrigin`, `-Uninstall`, `-Yes`, and `-ConnectAll`. It installs the
+`windows-amd64` zip per user, verifies `SHA256SUMS-MCP`, checks Sigstore
+provenance when an authenticated GitHub CLI is available, and uses protected
+Windows DACLs for the binary directory, direct-CLI credentials, and generated
+client configuration files.
 
 **What happens on skew.** A renamed installer flag or environment variable
 fails the one-liner with an unknown-option or missing-configuration error. A

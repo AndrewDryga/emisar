@@ -2,50 +2,344 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
-func TestAuthImportStoresOwnerOnlyCredentialWithoutEchoingSecret(t *testing.T) {
+const (
+	blitzAccountID     = "018f0000-0000-7000-8000-000000000001"
+	immersiveAccountID = "018f0000-0000-7000-8000-000000000002"
+)
+
+func TestBrowserAuthOpensApprovalAndStoresAccountCredential(t *testing.T) {
+	configDir, _ := useTestUserConfigDir(t)
+	key := testAPIKey(89)
+	const deviceCode = "emdg-0123456789abcdef"
+	var polls int
+	var opened string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Header.Get("Authorization") != "" {
+			t.Error("device flow sent an Authorization header")
+		}
+		switch r.URL.Path {
+		case "/api/mcp/device_authorization":
+			origin := "http://" + r.Host
+			var request struct {
+				RequestedClients []string `json:"requested_clients"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decode authorization request: %v", err)
+			}
+			if !slices.Equal(request.RequestedClients, []string{deviceAuthClientID}) {
+				t.Errorf("requested clients = %#v", request.RequestedClients)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"device_code":               deviceCode,
+				"user_code":                 "ABCD-2345",
+				"verification_uri":          origin + "/activate",
+				"verification_uri_complete": origin + "/activate?code=ABCD-2345",
+				"expires_in":                60,
+				"interval":                  1,
+			})
+		case "/api/mcp/device_token":
+			polls++
+			if polls == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = io.WriteString(w, `{"error":"authorization_pending"}`)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"account_id":   blitzAccountID,
+				"account_slug": "blitz",
+				"account_name": "Blitz\x1b Operations",
+				"client_keys":  map[string]string{deviceAuthClientID: key},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	authenticator := deviceAuthenticator{
+		client: server.Client(),
+		openBrowser: func(rawURL string) bool {
+			opened = rawURL
+			return true
+		},
+		stdoutIsTTY: func(io.Writer) bool { return true },
+		now:         time.Now,
+		wait:        func(context.Context, time.Duration) error { return nil },
+	}
+	var stdout, stderr bytes.Buffer
+	code := runAuthCommandWithDeviceAuth(
+		"",
+		[]string{"login", server.URL},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		authenticator,
+	)
+	if code != 0 || stderr.Len() != 0 {
+		t.Fatalf("login exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if opened != server.URL+"/activate?code=ABCD-2345" ||
+		!strings.Contains(stdout.String(), "Approve Emisar CLI in your browser\n\n  "+server.URL) ||
+		!strings.Contains(stdout.String(), "If prompted, enter this code: ABCD-2345") ||
+		!strings.Contains(stdout.String(), "Sent the link to your default browser") ||
+		strings.Contains(stdout.String(), "Approved.") ||
+		!strings.Contains(stdout.String(), "Waiting for approval (Ctrl-C to cancel)…\n\n✓ Authenticated") ||
+		!strings.Contains(stdout.String(), "Blitz Operations (blitz)") {
+		t.Fatalf("opened=%q stdout=%q", opened, stdout.String())
+	}
+	if strings.Contains(stdout.String(), key) || strings.Contains(stderr.String(), key) ||
+		strings.Contains(stdout.String(), deviceCode) || strings.Contains(stdout.String(), "\x1b[") {
+		t.Fatal("browser authentication disclosed a secret or styled captured output")
+	}
+	store := newCLIAccountCredentialStoreAt(configDir, blitzAccountID, server.URL, keyPrefix(key))
+	state, err := store.load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Current != key || state.AccountID != blitzAccountID ||
+		state.AccountSlug != "blitz" || state.AccountName != "Blitz Operations" || state.Pending != "" {
+		t.Fatalf("stored state = %#v", state)
+	}
+	selection, err := readAccountSelection()
+	if err != nil || selection.AccountID != blitzAccountID || selection.EndpointOrigin != server.URL {
+		t.Fatalf("selection = %#v, err=%v", selection, err)
+	}
+}
+
+func TestMainBrowserAuthEndToEnd(t *testing.T) {
+	_, configEnv := useTestUserConfigDir(t)
+	configEnv["EMISAR_URL"] = "https://override.example"
+	key := testAPIKey(90)
+	server := newBrowserAuthServer(t, immersiveAccountID, "immersive", "Immersive", key)
+	defer server.Close()
+
+	stdout, stderr, code := runMain(t, "", []string{"auth", "login", server.URL}, configEnv)
+	if code != 0 || !strings.Contains(stderr, "Authentication environment is incomplete") ||
+		!strings.Contains(stderr, "EMISAR_API_KEY is not") ||
+		!strings.Contains(stdout, "Open the link above") ||
+		!strings.Contains(stdout, "✓ Authenticated as Immersive (immersive)") ||
+		strings.Contains(stdout, "Approved.") || strings.Contains(stdout, "\x1b[") {
+		t.Fatalf("login exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if strings.Contains(stdout, key) || strings.Contains(stderr, key) {
+		t.Fatal("process-level browser authentication disclosed the API key")
+	}
+	_, state, err := loadCLICredential("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Current != key || state.AccountID != immersiveAccountID || state.AccountSlug != "immersive" {
+		t.Fatalf("stored state = %#v", state)
+	}
+}
+
+func TestAuthImportWarnsWhenEnvironmentOverridesSelection(t *testing.T) {
+	_, configEnv := useTestUserConfigDir(t)
+	configEnv["EMISAR_URL"] = "https://override.example"
+	configEnv["EMISAR_API_KEY"] = testAPIKey(92)
+	key := testAPIKey(91)
+	approval := browserApprovalJSON(t, blitzAccountID, "blitz", "Blitz", key)
+
+	stdout, stderr, code := runMain(t, approval, []string{"auth", "import", testEndpointOrigin}, configEnv)
+	if code != 0 || !strings.Contains(stdout, "Authenticated as Blitz (blitz)") ||
+		!strings.Contains(stderr, "overrides stored accounts") {
+		t.Fatalf("import exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if strings.Contains(stdout, key) || strings.Contains(stderr, key) {
+		t.Fatal("process-level credential import disclosed the API key")
+	}
+}
+
+func TestBrowserAuthDenialAndHostileURLStoreNothing(t *testing.T) {
+	tests := []struct {
+		name             string
+		verificationURL  func(string) string
+		pollError        string
+		want             string
+		wantApprovalPage bool
+	}{
+		{
+			name:             "denied",
+			verificationURL:  func(origin string) string { return origin + "/activate?code=ABCD-2345" },
+			pollError:        "access_denied",
+			want:             "Browser sign-in was denied",
+			wantApprovalPage: true,
+		},
+		{
+			name:             "cross-origin verification URL",
+			verificationURL:  func(string) string { return "https://attacker.example/activate?code=ABCD-2345" },
+			want:             "invalid complete verification URL",
+			wantApprovalPage: false,
+		},
+		{
+			name:             "terminal-hostile verification URL",
+			verificationURL:  func(origin string) string { return origin + "/activate?code=ABCD-\u202e1234" },
+			want:             "invalid complete verification URL",
+			wantApprovalPage: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			useTestUserConfigDir(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/api/mcp/device_authorization":
+					origin := "http://" + r.Host
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"device_code":               "emdg-0123456789abcdef",
+						"user_code":                 "ABCD-2345",
+						"verification_uri":          origin + "/activate",
+						"verification_uri_complete": test.verificationURL(origin),
+						"expires_in":                60,
+						"interval":                  1,
+					})
+				case "/api/mcp/device_token":
+					w.WriteHeader(http.StatusBadRequest)
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": test.pollError})
+				}
+			}))
+			defer server.Close()
+
+			opened := false
+			authenticator := deviceAuthenticator{
+				client:      server.Client(),
+				openBrowser: func(string) bool { opened = true; return true },
+				stdoutIsTTY: func(io.Writer) bool { return true },
+				now:         time.Now,
+				wait:        func(context.Context, time.Duration) error { return nil },
+			}
+			var stdout, stderr bytes.Buffer
+			code := runAuthCommandWithDeviceAuth(
+				"",
+				[]string{"login", server.URL},
+				strings.NewReader(""),
+				&stdout,
+				&stderr,
+				authenticator,
+			)
+			if code != 1 || !strings.Contains(stderr.String(), test.want) {
+				t.Fatalf("login exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+			}
+			if opened != test.wantApprovalPage {
+				t.Fatalf("browser opened=%t, want %t", opened, test.wantApprovalPage)
+			}
+			accounts, err := loadStoredCLIAccounts()
+			if err != nil || len(accounts) != 0 {
+				t.Fatalf("denied login stored accounts: %#v, %v", accounts, err)
+			}
+		})
+	}
+}
+
+func TestMainBrowserAuthUnsupportedExplainsHowToRecover(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusNotFound} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			_, configEnv := useTestUserConfigDir(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				if request.URL.Path != "/api/mcp/device_authorization" {
+					t.Fatalf("path = %q", request.URL.Path)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				if status == http.StatusBadRequest {
+					_, _ = io.WriteString(w, `{"error":"invalid_request"}`)
+				}
+			}))
+			defer server.Close()
+
+			stdout, stderr, code := runMain(t, "", []string{"auth", "login", server.URL}, configEnv)
+			if code != 1 || stdout != "" ||
+				!strings.Contains(stderr, "Error: Browser sign-in is not available") ||
+				!strings.Contains(stderr, "The server at "+server.URL) ||
+				!strings.Contains(stderr, "interactive MCP installer") ||
+				!strings.Contains(stderr, "/api/mcp/device_authorization") ||
+				!strings.Contains(stderr, "EMISAR_URL and EMISAR_API_KEY together") {
+				t.Fatalf("login exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+			if strings.Contains(stderr, "emisar-mcp:") || strings.Contains(stderr, "\x1b[") {
+				t.Fatalf("captured diagnostic contains a prefix or terminal color: %q", stderr)
+			}
+		})
+	}
+}
+
+func TestBrowserAuthRejectsSecretBearingEndpointWithoutEcho(t *testing.T) {
+	useTestUserConfigDir(t)
+	for _, endpoint := range []string{
+		"https://review-user:review-secret@example.com",
+		"https://example.com?token=review-secret",
+		"https://example.com#review-secret",
+		"https://example.com/review-secret",
+		"https://example.com/%zz-review-secret",
+	} {
+		var stdout, stderr bytes.Buffer
+		code := runAuthCommandWithDeviceAuth(
+			"",
+			[]string{"login", endpoint},
+			strings.NewReader(""),
+			&stdout,
+			&stderr,
+			deviceAuthenticator{},
+		)
+		if code != 1 || stdout.Len() != 0 || stderr.Len() == 0 {
+			t.Fatalf("endpoint rejection exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+		}
+		if strings.Contains(stderr.String(), "review-secret") || strings.Contains(stderr.String(), endpoint) {
+			t.Fatalf("endpoint rejection disclosed input: %q", stderr.String())
+		}
+	}
+}
+
+func TestAuthImportStoresOwnerOnlyAccountCredentialWithoutEchoingSecrets(t *testing.T) {
 	configDir, _ := useTestUserConfigDir(t)
 	key := testAPIKey(71)
+	approval := browserApprovalJSON(t, blitzAccountID, "blitz", "Blitz", key)
 	var stdout, stderr bytes.Buffer
 
-	if code := runAuthCommand([]string{"import", testEndpointOrigin}, strings.NewReader(key+"\n"), &stdout, &stderr); code != 0 {
+	if code := runAuthCommand("", []string{"import", testEndpointOrigin}, strings.NewReader(approval), &stdout, &stderr); code != 0 {
 		t.Fatalf("import exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 	if strings.Contains(stdout.String(), key) || strings.Contains(stderr.String(), key) {
 		t.Fatal("credential import echoed the API key")
 	}
 
-	store := newCLICredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(key))
+	store := newCLIAccountCredentialStoreAt(configDir, blitzAccountID, testEndpointOrigin, keyPrefix(key))
 	state, err := store.load("")
 	if err != nil {
 		t.Fatalf("load imported state: %v", err)
 	}
-	if state.Current != key || state.EndpointOrigin != testEndpointOrigin || state.Pending != "" {
+	if state.Current != key || state.EndpointOrigin != testEndpointOrigin || state.AccountID != blitzAccountID {
 		t.Fatalf("imported state = %#v", state)
-	}
-	if filepath.Base(store.path) != cliCredentialFilename {
-		t.Fatalf("CLI credential path = %q", store.path)
 	}
 	if runtime.GOOS != "windows" {
 		assertMode(t, store.path, 0o600)
 		assertMode(t, filepath.Dir(store.path), 0o700)
+		assertMode(t, filepath.Join(filepath.Dir(store.path), accountSelectionFilename), 0o600)
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := runAuthCommand([]string{"status", testEndpointOrigin}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+	if code := runAuthCommand("", []string{"status", testEndpointOrigin}, strings.NewReader(""), &stdout, &stderr); code != 0 {
 		t.Fatalf("status exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "Credential stored for "+testEndpointOrigin) || stderr.Len() != 0 {
+	if !strings.Contains(stdout.String(), "Account: Blitz (blitz)") || stderr.Len() != 0 {
 		t.Fatalf("status stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 	if strings.Contains(stdout.String(), key) {
@@ -53,49 +347,155 @@ func TestAuthImportStoresOwnerOnlyCredentialWithoutEchoingSecret(t *testing.T) {
 	}
 }
 
-func TestMainAuthImportThenDirectCLIEndToEnd(t *testing.T) {
+func TestAccountsListUseAndOneCommandSelectionEndToEnd(t *testing.T) {
 	_, configEnv := useTestUserConfigDir(t)
-	key := testAPIKey(77)
-	var authorization string
+	blitzKey := testAPIKey(83)
+	immersiveKey := testAPIKey(84)
+	authorizations := make(chan string, 3)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authorization = r.Header.Get("Authorization")
+		authorizations <- r.Header.Get("Authorization")
 		writeCLIResult(t, w, r, `{"tools":[]}`)
 	}))
 	defer srv.Close()
 
-	stdout, stderr, code := runMain(t, key+"\n", []string{"auth", "import", srv.URL}, configEnv)
-	if code != 0 || !strings.Contains(stdout, "Credential stored for "+srv.URL) || stderr != "" {
-		t.Fatalf("import exit=%d stdout=%q stderr=%q", code, stdout, stderr)
-	}
-	if strings.Contains(stdout, key) || strings.Contains(stderr, key) {
-		t.Fatal("process-level import echoed the API key")
+	for _, approval := range []string{
+		browserApprovalJSON(t, blitzAccountID, "blitz", "Blitz", blitzKey),
+		browserApprovalJSON(t, immersiveAccountID, "immersive", "Immersive", immersiveKey),
+	} {
+		stdout, stderr, code := runMain(t, approval, []string{"auth", "import", srv.URL}, configEnv)
+		if code != 0 || stderr != "" || !strings.Contains(stdout, "Authenticated as") {
+			t.Fatalf("import: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+		}
 	}
 
-	stdout, stderr, code = runMain(t, "", []string{"list_tools", "--json"}, configEnv)
-	if code != 0 || strings.TrimSpace(stdout) != "[]" || stderr != "" {
-		t.Fatalf("list_tools exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	stdout, stderr, code := runMain(t, "", []string{"accounts", "list"}, configEnv)
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if code != 0 || stderr != "" || len(lines) != 3 ||
+		!strings.Contains(lines[0], "CURRENT") || !strings.Contains(lines[1], "Blitz") ||
+		!slices.Equal(strings.Fields(lines[2]), []string{"*", "Immersive", "immersive", srv.URL}) {
+		t.Fatalf("accounts list: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	if authorization != "Bearer "+key {
-		t.Fatalf("Authorization = %q", authorization)
+	for _, key := range []string{blitzKey, immersiveKey} {
+		if strings.Contains(stdout, key) || strings.Contains(stderr, key) {
+			t.Fatal("accounts list disclosed an API key")
+		}
+	}
+
+	stdout, stderr, code = runMain(t, "", []string{"accounts", "list", "--json"}, configEnv)
+	var listed []accountListEntry
+	if code != 0 || stderr != "" || json.Unmarshal([]byte(stdout), &listed) != nil ||
+		len(listed) != 2 || listed[0].Current || !listed[1].Current {
+		t.Fatalf("accounts list JSON: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	stdout, stderr, code = runMain(t, "", []string{"accounts", "use", "blitz"}, configEnv)
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "Using Blitz (blitz)") {
+		t.Fatalf("accounts use: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	stdout, stderr, code = runMain(t, "", []string{"list_tools", "--json"}, configEnv)
+	if code != 0 || stderr != "" || strings.TrimSpace(stdout) != "[]" || <-authorizations != "Bearer "+blitzKey {
+		t.Fatalf("current account call: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	stdout, stderr, code = runMain(t, "", []string{"--account", "immersive", "list_tools", "--json"}, configEnv)
+	if code != 0 || stderr != "" || strings.TrimSpace(stdout) != "[]" || <-authorizations != "Bearer "+immersiveKey {
+		t.Fatalf("one-command account call: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	_, state, err := loadCLICredential("")
+	if err != nil || state.AccountID != blitzAccountID {
+		t.Fatalf("one-command selection changed current account: %#v, %v", state, err)
 	}
 }
 
-func TestAuthImportWarnsWhenReplacingWithoutDisclosingEitherKey(t *testing.T) {
+func TestAccountSlugAmbiguityFailsClosed(t *testing.T) {
+	configDir, _ := useTestUserConfigDir(t)
+	storeTestCLIAccount(t, configDir, "https://one.example", blitzAccountID, "shared", "One", testAPIKey(1), false)
+	storeTestCLIAccount(t, configDir, "https://two.example", immersiveAccountID, "shared", "Two", testAPIKey(2), false)
+
+	var stdout, stderr bytes.Buffer
+	code := runAccountsCommand([]string{"use", "shared"}, &stdout, &stderr)
+	if code != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "multiple endpoints") {
+		t.Fatalf("ambiguous use exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = runAccountsCommand([]string{"use", blitzAccountID}, &stdout, &stderr)
+	if code != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "Using One (shared)") {
+		t.Fatalf("ID use exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestAccountSelectorsAreValidatedBeforeConfiguration(t *testing.T) {
+	for _, account := range []string{"../blitz", "Blitz", "-blitz", "ab", strings.Repeat("a", 65)} {
+		stdout, stderr, code := runMain(t, "", []string{"--account", account, "auth", "status"}, nil)
+		if code != 2 || stdout != "" ||
+			(!strings.Contains(stderr, "Account must be") && !strings.Contains(stderr, "--account <slug-or-id>")) {
+			t.Errorf("account %q: exit=%d stdout=%q stderr=%q", account, code, stdout, stderr)
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runAccountsCommand([]string{"use", "../blitz"}, &stdout, &stderr)
+	if code != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "Account must be") {
+		t.Fatalf("accounts use: exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestAccountFlagOnlySelectsStoredCommandsAndAuthStatus(t *testing.T) {
+	useTestUserConfigDir(t)
+	for _, args := range [][]string{
+		{"--account", "blitz", "auth"},
+		{"--account", "blitz", "auth", "login"},
+		{"--account", "blitz", "auth", "import", testEndpointOrigin},
+	} {
+		stdout, stderr, code := runMain(t, "", args, nil)
+		if code != 2 || stdout != "" ||
+			!strings.Contains(stderr, "Error: --account only works with auth status") ||
+			!strings.Contains(stderr, "Usage:\n  emisar-mcp auth") {
+			t.Errorf("%v: exit=%d stdout=%q stderr=%q", args, code, stdout, stderr)
+		}
+	}
+}
+
+func TestInteractiveNoCommandPrintsHelpWithoutConfiguration(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := runProgramMode(nil, strings.NewReader(""), &stdout, &stderr, true)
+	if code != 0 || stdout.String() != helpText || stderr.Len() != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestAuthStatusExplainsHowToAuthenticateOrChooseAnAccount(t *testing.T) {
+	useTestUserConfigDir(t)
+	var stdout, stderr bytes.Buffer
+	code := runAuthCommand("", []string{"status"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 1 || stdout.Len() != 0 ||
+		!strings.Contains(stderr.String(), "Error: No account is selected") ||
+		!strings.Contains(stderr.String(), "Run `emisar-mcp auth`") ||
+		!strings.Contains(stderr.String(), "Run `emisar-mcp accounts list`") {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestAuthImportWarnsOnlyWhenReplacingSameAccountCredential(t *testing.T) {
 	useTestUserConfigDir(t)
 	oldKey := testAPIKey(81)
 	newKey := testAPIKey(82)
 	var stdout, stderr bytes.Buffer
-	if code := runAuthCommand([]string{"import", testEndpointOrigin}, strings.NewReader(oldKey), &stdout, &stderr); code != 0 {
+	first := browserApprovalJSON(t, blitzAccountID, "blitz", "Blitz", oldKey)
+	if code := runAuthCommand("", []string{"import", testEndpointOrigin}, strings.NewReader(first), &stdout, &stderr); code != 0 {
 		t.Fatalf("first import exit=%d stderr=%q", code, stderr.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := runAuthCommand([]string{"import", testEndpointOrigin}, strings.NewReader(newKey), &stdout, &stderr); code != 0 {
+	replacement := browserApprovalJSON(t, blitzAccountID, "blitz-renamed", "Blitz Renamed", newKey)
+	if code := runAuthCommand("", []string{"import", testEndpointOrigin}, strings.NewReader(replacement), &stdout, &stderr); code != 0 {
 		t.Fatalf("replacement exit=%d stderr=%q", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "replaced the stored CLI credential") ||
-		!strings.Contains(stderr.String(), testEndpointOrigin+"/app/agents") {
+	wantWarning := "Warning: Previous credential replaced. The old key was not revoked automatically. " +
+		"Revoke it at " + testEndpointOrigin + "/app/agents if it is still listed.\n\n"
+	if stderr.String() != wantWarning {
 		t.Fatalf("replacement warning = %q", stderr.String())
 	}
 	for _, secret := range []string{oldKey, newKey} {
@@ -103,15 +503,9 @@ func TestAuthImportWarnsWhenReplacingWithoutDisclosingEitherKey(t *testing.T) {
 			t.Fatal("replacement disclosed an API key")
 		}
 	}
-
-	stdout.Reset()
-	stderr.Reset()
-	otherOrigin := "https://other.example"
-	if code := runAuthCommand([]string{"import", otherOrigin}, strings.NewReader(newKey), &stdout, &stderr); code != 0 {
-		t.Fatalf("endpoint replacement exit=%d stderr=%q", code, stderr.String())
-	}
-	if !strings.Contains(stderr.String(), testEndpointOrigin+"/app/agents") {
-		t.Fatalf("endpoint replacement warning = %q", stderr.String())
+	_, state, err := loadCLICredential("blitz-renamed")
+	if err != nil || state.AccountName != "Blitz Renamed" {
+		t.Fatalf("renamed account state = %#v, %v", state, err)
 	}
 }
 
@@ -123,11 +517,38 @@ func TestAuthHelpAndUsageDoNotRequireConfiguration(t *testing.T) {
 
 	secret := testAPIKey(78)
 	stdout, stderr, code = runMain(t, "", []string{"auth", "import", testEndpointOrigin, secret}, nil)
-	if code != 2 || stdout != "" || stderr != authUsageText {
+	if code != 2 || stdout != "" ||
+		!strings.Contains(stderr, "Error: Invalid auth command") ||
+		!strings.Contains(stderr, "Usage:\n  emisar-mcp auth") {
 		t.Fatalf("usage exit=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	if strings.Contains(stderr, secret) {
 		t.Fatal("invalid auth invocation echoed an argv secret")
+	}
+
+	stdout, stderr, code = runMain(t, "", []string{"accounts", "--help"}, nil)
+	if code != 0 || stdout != accountsHelpText || stderr != "" {
+		t.Fatalf("accounts help exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	for _, args := range [][]string{
+		{"auth", "login", "--help"},
+		{"auth", "status", "--help"},
+		{"auth", "import", "--help"},
+	} {
+		stdout, stderr, code = runMain(t, "", args, nil)
+		if code != 0 || stdout != authHelpText || stderr != "" {
+			t.Errorf("%v: exit=%d stdout=%q stderr=%q", args, code, stdout, stderr)
+		}
+	}
+	for _, args := range [][]string{
+		{"accounts", "list", "--help"},
+		{"accounts", "use", "--help"},
+	} {
+		stdout, stderr, code = runMain(t, "", args, nil)
+		if code != 0 || stdout != accountsHelpText || stderr != "" {
+			t.Errorf("%v: exit=%d stdout=%q stderr=%q", args, code, stdout, stderr)
+		}
 	}
 }
 
@@ -140,22 +561,21 @@ func TestAuthImportRejectsUnsafeCredentialPath(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	key := testAPIKey(72)
+	store := newCLIAccountCredentialStoreAt(configDir, blitzAccountID, testEndpointOrigin, keyPrefix(key))
 	target := filepath.Join(t.TempDir(), "target")
 	if err := os.WriteFile(target, []byte("leave me\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(target, filepath.Join(dir, cliCredentialFilename)); err != nil {
+	if err := os.Symlink(target, store.path); err != nil {
 		t.Fatal(err)
 	}
 
-	key := testAPIKey(72)
+	approval := browserApprovalJSON(t, blitzAccountID, "blitz", "Blitz", key)
 	var stdout, stderr bytes.Buffer
-	code := runAuthCommand([]string{"import", testEndpointOrigin}, strings.NewReader(key), &stdout, &stderr)
+	code := runAuthCommand("", []string{"import", testEndpointOrigin}, strings.NewReader(approval), &stdout, &stderr)
 	if code != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "not a regular file") {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
-	}
-	if strings.Contains(stderr.String(), key) {
-		t.Fatal("unsafe-path error disclosed the API key")
 	}
 	data, err := os.ReadFile(target)
 	if err != nil || string(data) != "leave me\n" {
@@ -163,11 +583,17 @@ func TestAuthImportRejectsUnsafeCredentialPath(t *testing.T) {
 	}
 }
 
-func TestAuthImportRejectsInvalidAndOversizedInput(t *testing.T) {
+func TestAuthImportRejectsInvalidOversizedAndIncompleteInput(t *testing.T) {
 	useTestUserConfigDir(t)
-	for _, input := range []string{"not-a-key", strings.Repeat("x", maxCredentialInputBytes+1)} {
+	inputs := []string{
+		"not JSON",
+		strings.Repeat("x", maxCredentialImportBytes+1),
+		`{"account_id":"018f0000-0000-7000-8000-000000000001","client_keys":{}}`,
+		browserApprovalJSON(t, blitzAccountID, "Blitz", "Blitz", testAPIKey(1)),
+	}
+	for _, input := range inputs {
 		var stdout, stderr bytes.Buffer
-		code := runAuthCommand([]string{"import", testEndpointOrigin}, strings.NewReader(input), &stdout, &stderr)
+		code := runAuthCommand("", []string{"import", testEndpointOrigin}, strings.NewReader(input), &stdout, &stderr)
 		if code != 1 || stdout.Len() != 0 || stderr.Len() == 0 {
 			t.Errorf("input length %d: exit=%d stdout=%q stderr=%q", len(input), code, stdout.String(), stderr.String())
 		}
@@ -177,7 +603,32 @@ func TestAuthImportRejectsInvalidAndOversizedInput(t *testing.T) {
 	}
 }
 
-func TestStoredCLICredentialFailsClosedOnUnsafeState(t *testing.T) {
+func TestDeviceCredentialRequiresCompleteSafeAccountIdentity(t *testing.T) {
+	key := testAPIKey(1)
+	valid := deviceTokenResponse{
+		AccountID:   blitzAccountID,
+		AccountSlug: "blitz",
+		AccountName: "Blitz",
+		ClientKeys:  map[string]string{deviceAuthClientID: key},
+	}
+	for name, mutate := range map[string]func(*deviceTokenResponse){
+		"missing ID":   func(response *deviceTokenResponse) { response.AccountID = "" },
+		"invalid slug": func(response *deviceTokenResponse) { response.AccountSlug = "Blitz" },
+		"empty name":   func(response *deviceTokenResponse) { response.AccountName = "\x1b\u202e" },
+		"invalid key":  func(response *deviceTokenResponse) { response.ClientKeys[deviceAuthClientID] = "emk-short" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			response := valid
+			response.ClientKeys = map[string]string{deviceAuthClientID: key}
+			mutate(&response)
+			if _, err := response.cliCredential(); err == nil {
+				t.Fatal("unsafe approval identity was accepted")
+			}
+		})
+	}
+}
+
+func TestStoredCLIAccountFailsClosedOnUnsafeState(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
@@ -188,6 +639,17 @@ func TestStoredCLICredentialFailsClosedOnUnsafeState(t *testing.T) {
 		{"multiple values", "{} {}\n", 0o600, "decode credential state"},
 		{"oversized", strings.Repeat("x", maxCredentialStateBytes+1), 0o600, "limit is"},
 		{"unsafe mode", "{}\n", 0o644, "want owner-only"},
+		{
+			"terminal-empty account name",
+			fmt.Sprintf(
+				`{"version":1,"endpoint_origin":%q,"account_id":%q,"account_slug":"blitz","account_name":"\u001b\u202e","bootstrap_prefix":"emk-prefix","current":%q}`,
+				testEndpointOrigin,
+				blitzAccountID,
+				testAPIKey(1),
+			),
+			0o600,
+			"invalid account name",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -195,7 +657,7 @@ func TestStoredCLICredentialFailsClosedOnUnsafeState(t *testing.T) {
 				t.Skip("Windows does not expose Unix permission bits")
 			}
 			configDir, _ := useTestUserConfigDir(t)
-			store := newCLICredentialStoreAt(configDir, "", "")
+			store := newCLIAccountCredentialStoreAt(configDir, blitzAccountID, testEndpointOrigin, "emk-prefix")
 			if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
 				t.Fatal(err)
 			}
@@ -207,7 +669,7 @@ func TestStoredCLICredentialFailsClosedOnUnsafeState(t *testing.T) {
 			}
 
 			var stdout, stderr bytes.Buffer
-			code := runAuthCommand(nil, strings.NewReader(""), &stdout, &stderr)
+			code := runAccountsCommand([]string{"list"}, &stdout, &stderr)
 			if code != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), test.want) {
 				t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 			}
@@ -215,7 +677,7 @@ func TestStoredCLICredentialFailsClosedOnUnsafeState(t *testing.T) {
 	}
 }
 
-func TestDirectCLIUsesStoredCredentialButStdioDoesNot(t *testing.T) {
+func TestDirectCLIUsesStoredAccountButStdioDoesNot(t *testing.T) {
 	configDir, configEnv := useTestUserConfigDir(t)
 	key := testAPIKey(73)
 	var authorization string
@@ -224,17 +686,7 @@ func TestDirectCLIUsesStoredCredentialButStdioDoesNot(t *testing.T) {
 		writeCLIResult(t, w, r, `{"tools":[]}`)
 	}))
 	defer srv.Close()
-
-	store := newCLICredentialStoreAt(configDir, srv.URL, keyPrefix(key))
-	state := credentialState{
-		Version:         credentialStateVersion,
-		EndpointOrigin:  srv.URL,
-		BootstrapPrefix: keyPrefix(key),
-		Current:         key,
-	}
-	if err := store.persist(state); err != nil {
-		t.Fatal(err)
-	}
+	storeTestCLIAccount(t, configDir, srv.URL, blitzAccountID, "blitz", "Blitz", key, true)
 
 	stdout, stderr, code := runMain(t, "", []string{"list_tools", "--json"}, configEnv)
 	if code != 0 || strings.TrimSpace(stdout) != "[]" || stderr != "" {
@@ -250,18 +702,9 @@ func TestDirectCLIUsesStoredCredentialButStdioDoesNot(t *testing.T) {
 	}
 }
 
-func TestDirectCLIExplicitEnvironmentOverridesStoredCredential(t *testing.T) {
+func TestDirectCLIExplicitEnvironmentOverridesStoredAccount(t *testing.T) {
 	configDir, configEnv := useTestUserConfigDir(t)
-	storedKey := testAPIKey(74)
-	storedStore := newCLICredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(storedKey))
-	if err := storedStore.persist(credentialState{
-		Version:         credentialStateVersion,
-		EndpointOrigin:  testEndpointOrigin,
-		BootstrapPrefix: keyPrefix(storedKey),
-		Current:         storedKey,
-	}); err != nil {
-		t.Fatal(err)
-	}
+	storeTestCLIAccount(t, configDir, testEndpointOrigin, blitzAccountID, "blitz", "Blitz", testAPIKey(74), true)
 
 	explicitKey := "explicit-bearer"
 	var authorization string
@@ -282,18 +725,131 @@ func TestDirectCLIExplicitEnvironmentOverridesStoredCredential(t *testing.T) {
 	}
 }
 
-func TestDirectCLINeverCompletesPartialEnvironmentFromStoredCredential(t *testing.T) {
+func TestDirectCLIRejectsAccountFlagWithExplicitEnvironment(t *testing.T) {
+	_, configEnv := useTestUserConfigDir(t)
+	configEnv["EMISAR_URL"] = testEndpointOrigin
+	configEnv["EMISAR_API_KEY"] = testAPIKey(74)
+
+	stdout, stderr, code := runMain(t, "", []string{"--account", "blitz", "list_tools"}, configEnv)
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "cannot be combined") {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+func TestAccountSelectionRefusesEnvironmentOverride(t *testing.T) {
+	configDir, configEnv := useTestUserConfigDir(t)
+	storeTestCLIAccount(t, configDir, testEndpointOrigin, blitzAccountID, "blitz", "Blitz", testAPIKey(74), true)
+	storeTestCLIAccount(t, configDir, "https://other.example", immersiveAccountID, "immersive", "Immersive", testAPIKey(75), false)
+	configEnv["EMISAR_URL"] = testEndpointOrigin
+	configEnv["EMISAR_API_KEY"] = testAPIKey(76)
+
+	stdout, stderr, code := runMain(t, "", []string{"accounts", "use", "immersive"}, configEnv)
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "overrides stored accounts") {
+		t.Fatalf("use exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	_, state, err := loadCLICredential("")
+	if err != nil || state.AccountID != blitzAccountID {
+		t.Fatalf("environment override changed current account: %#v, %v", state, err)
+	}
+}
+
+func TestAuthStatusWarnsWhenEnvironmentOverridesStoredAccount(t *testing.T) {
+	configDir, configEnv := useTestUserConfigDir(t)
+	storeTestCLIAccount(t, configDir, testEndpointOrigin, blitzAccountID, "blitz", "Blitz", testAPIKey(74), true)
+	configEnv["EMISAR_URL"] = testEndpointOrigin
+	configEnv["EMISAR_API_KEY"] = testAPIKey(75)
+
+	stdout, stderr, code := runMain(t, "", []string{"auth", "status"}, configEnv)
+	if code != 0 || !strings.Contains(stdout, "Account: Blitz (blitz)") ||
+		!strings.Contains(stderr, "overrides stored accounts") {
+		t.Fatalf("status exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+func TestAccountsListHasNoCurrentAccountDuringEnvironmentOverride(t *testing.T) {
+	configDir, configEnv := useTestUserConfigDir(t)
+	storeTestCLIAccount(t, configDir, testEndpointOrigin, blitzAccountID, "blitz", "Blitz", testAPIKey(74), true)
+	configEnv["EMISAR_URL"] = testEndpointOrigin
+	configEnv["EMISAR_API_KEY"] = testAPIKey(75)
+
+	stdout, stderr, code := runMain(t, "", []string{"accounts", "list"}, configEnv)
+	if code != 0 || strings.Contains(stdout, "*") ||
+		!strings.Contains(stderr, "overrides stored accounts") {
+		t.Fatalf("human list exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	stdout, stderr, code = runMain(t, "", []string{"accounts", "list", "--json"}, configEnv)
+	var entries []accountListEntry
+	if code != 0 || json.Unmarshal([]byte(stdout), &entries) != nil || len(entries) != 1 ||
+		entries[0].Current || !strings.Contains(stderr, "overrides stored accounts") {
+		t.Fatalf("JSON list exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+func TestPartialAuthenticationEnvironmentWarnsWithoutHidingCurrentAccount(t *testing.T) {
+	configDir, configEnv := useTestUserConfigDir(t)
+	storeTestCLIAccount(t, configDir, testEndpointOrigin, blitzAccountID, "blitz", "Blitz", testAPIKey(74), true)
+	configEnv["EMISAR_URL"] = testEndpointOrigin
+
+	stdout, stderr, code := runMain(t, "", []string{"accounts", "list"}, configEnv)
+	if code != 0 || !strings.Contains(stdout, "*") || !strings.Contains(stdout, "Blitz") ||
+		!strings.Contains(stderr, "Warning: Authentication environment is incomplete") ||
+		!strings.Contains(stderr, "EMISAR_API_KEY is not") ||
+		strings.Contains(stderr, "Environment credentials are active") {
+		t.Fatalf("list exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	stdout, stderr, code = runMain(t, "", []string{"accounts", "use", "blitz"}, configEnv)
+	if code != 1 || stdout != "" ||
+		!strings.Contains(stderr, "Error: Authentication environment is incomplete") ||
+		!strings.Contains(stderr, "Set both EMISAR_URL and EMISAR_API_KEY") {
+		t.Fatalf("use exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+func TestEmptyAuthenticationEnvironmentIsNotAnActiveOverride(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "both empty",
+			env:  map[string]string{"EMISAR_URL": "", "EMISAR_API_KEY": ""},
+			want: "EMISAR_URL is empty",
+		},
+		{
+			name: "whitespace key",
+			env: map[string]string{
+				"EMISAR_URL":     testEndpointOrigin,
+				"EMISAR_API_KEY": " \n\t ",
+			},
+			want: "EMISAR_API_KEY is empty",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configDir, configEnv := useTestUserConfigDir(t)
+			storeTestCLIAccount(t, configDir, testEndpointOrigin, blitzAccountID, "blitz", "Blitz", testAPIKey(74), true)
+			for name, value := range test.env {
+				configEnv[name] = value
+			}
+
+			stdout, stderr, code := runMain(t, "", []string{"accounts", "list"}, configEnv)
+			if code != 0 || !strings.Contains(stdout, "*") ||
+				!strings.Contains(stderr, "Warning: Authentication environment is incomplete") ||
+				!strings.Contains(stderr, test.want) ||
+				strings.Contains(stderr, "Environment credentials are active") {
+				t.Fatalf("list exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+		})
+	}
+}
+
+func TestDirectCLINeverCompletesPartialEnvironmentFromStoredAccount(t *testing.T) {
 	configDir, configEnv := useTestUserConfigDir(t)
 	key := testAPIKey(75)
-	store := newCLICredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(key))
-	if err := store.persist(credentialState{
-		Version:         credentialStateVersion,
-		EndpointOrigin:  testEndpointOrigin,
-		BootstrapPrefix: keyPrefix(key),
-		Current:         key,
-	}); err != nil {
-		t.Fatal(err)
-	}
+	storeTestCLIAccount(t, configDir, testEndpointOrigin, blitzAccountID, "blitz", "Blitz", key, true)
 
 	for name, override := range map[string]map[string]string{
 		"URL only":       {"EMISAR_URL": testEndpointOrigin},
@@ -314,25 +870,21 @@ func TestDirectCLINeverCompletesPartialEnvironmentFromStoredCredential(t *testin
 	}
 }
 
-func TestStoredCLICredentialKeepsRotationInNamedState(t *testing.T) {
+func TestStoredCLIAccountKeepsRotationInAccountState(t *testing.T) {
 	configDir, _ := useTestUserConfigDir(t)
 	key := testAPIKey(76)
-	store := newCLICredentialStoreAt(configDir, testEndpointOrigin, keyPrefix(key))
-	if err := store.persist(credentialState{
-		Version:         credentialStateVersion,
-		EndpointOrigin:  testEndpointOrigin,
-		BootstrapPrefix: keyPrefix(key),
-		Current:         key,
-	}); err != nil {
-		t.Fatal(err)
-	}
+	storeTestCLIAccount(t, configDir, testEndpointOrigin, blitzAccountID, "blitz", "Blitz", key, true)
+	store := newCLIAccountCredentialStoreAt(configDir, blitzAccountID, testEndpointOrigin, keyPrefix(key))
 
-	b, err := newBridgeFromEnv("emisar-mcp-cli", true, io.Discard)
+	b, err := newBridgeFromEnv("emisar-mcp-cli", true, "blitz", io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if b.credentialStore == nil || b.credentialStore.path != store.path {
 		t.Fatalf("bridge credential store = %#v, want %s", b.credentialStore, store.path)
+	}
+	if !strings.HasPrefix(filepath.Base(store.path), cliAccountFilePrefix) {
+		t.Fatalf("account credential path = %q", store.path)
 	}
 	prefix, hash := b.rotationProposal()
 	if prefix == "" || hash == "" {
@@ -344,6 +896,80 @@ func TestStoredCLICredentialKeepsRotationInNamedState(t *testing.T) {
 	}
 	if loaded.Current != key || loaded.Pending == "" || keyPrefix(loaded.Pending) != prefix {
 		t.Fatalf("rotated state = %#v", loaded)
+	}
+}
+
+func newBrowserAuthServer(
+	t *testing.T,
+	accountID, accountSlug, accountName, key string,
+) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/mcp/device_authorization":
+			origin := "http://" + r.Host
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"device_code":               "emdg-0123456789abcdef",
+				"user_code":                 "ABCD-2345",
+				"verification_uri":          origin + "/activate",
+				"verification_uri_complete": origin + "/activate?code=ABCD-2345",
+				"expires_in":                60,
+				"interval":                  1,
+			})
+		case "/api/mcp/device_token":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"account_id":   accountID,
+				"account_slug": accountSlug,
+				"account_name": accountName,
+				"client_keys":  map[string]string{deviceAuthClientID: key},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func browserApprovalJSON(t *testing.T, accountID, accountSlug, accountName, key string) string {
+	t.Helper()
+	data, err := json.Marshal(deviceTokenResponse{
+		AccountID:   accountID,
+		AccountSlug: accountSlug,
+		AccountName: accountName,
+		ClientKeys:  map[string]string{deviceAuthClientID: key},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func storeTestCLIAccount(
+	t *testing.T,
+	configDir, endpoint, accountID, accountSlug, accountName, key string,
+	current bool,
+) {
+	t.Helper()
+	store := newCLIAccountCredentialStoreAt(configDir, accountID, endpoint, keyPrefix(key))
+	if err := store.persist(credentialState{
+		Version:         credentialStateVersion,
+		EndpointOrigin:  endpoint,
+		AccountID:       accountID,
+		AccountSlug:     accountSlug,
+		AccountName:     accountName,
+		BootstrapPrefix: keyPrefix(key),
+		Current:         key,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if current {
+		if err := writeAccountSelection(accountSelection{
+			Version:        accountSelectionVersion,
+			EndpointOrigin: endpoint,
+			AccountID:      accountID,
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

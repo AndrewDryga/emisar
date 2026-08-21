@@ -45,4 +45,21 @@ defmodule EmisarWeb.InstallControllersTest do
     body = conn |> get(~p"/install-mcp.sh?x=1") |> response(200)
     assert body == File.read!(Path.join(@repo_root, "install-mcp.sh"))
   end
+
+  test "GET /install-mcp.ps1 serves the embedded Windows MCP installer", %{conn: conn} do
+    conn = get(conn, ~p"/install-mcp.ps1")
+
+    assert response_content_type(conn, :plain) =~ "text/plain"
+    assert response(conn, 200) =~ "# Install or upgrade the emisar-mcp bridge on 64-bit Windows."
+  end
+
+  test "GET /install-mcp.ps1 is byte-identical to the repo-root install-mcp.ps1", %{conn: conn} do
+    body = conn |> get(~p"/install-mcp.ps1") |> response(200)
+    assert body == File.read!(Path.join(@repo_root, "install-mcp.ps1"))
+  end
+
+  test "GET /install-mcp.ps1 ignores junk query params", %{conn: conn} do
+    body = conn |> get(~p"/install-mcp.ps1?x=1") |> response(200)
+    assert body == File.read!(Path.join(@repo_root, "install-mcp.ps1"))
+  end
 end

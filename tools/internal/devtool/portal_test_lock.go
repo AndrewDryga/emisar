@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 // portalTestLock serializes portal test runs that share a database.
@@ -33,13 +32,13 @@ func (a *App) portalTestLock(env map[string]string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
+	if err := lockFile(lock, true); err == nil {
 		return lock, nil
 	}
 	// Say why the run is sitting still. An unexplained pause before the first
 	// phase reads as a hang, which is how people learn to reach for Ctrl-C.
 	fmt.Fprintf(a.Out, "waiting: another portal test run holds %s\n", portalTestDatabaseKey(env))
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+	if err := lockFile(lock, false); err != nil {
 		lock.Close()
 		return nil, err
 	}
@@ -47,7 +46,7 @@ func (a *App) portalTestLock(env map[string]string) (*os.File, error) {
 }
 
 func releasePortalTestLock(lock *os.File) {
-	_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	_ = unlockFile(lock)
 	_ = lock.Close()
 }
 
@@ -58,7 +57,7 @@ func portalTestLockDir() (string, error) {
 	if root == "" {
 		root = os.TempDir()
 	}
-	dir := filepath.Join(root, fmt.Sprintf("emisar-dev-%d", os.Getuid()), "portal-test")
+	dir := filepath.Join(root, "emisar-dev-"+currentUserLockID(), "portal-test")
 	return dir, os.MkdirAll(dir, 0o700)
 }
 

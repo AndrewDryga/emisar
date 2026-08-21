@@ -3,7 +3,8 @@ name: Release - MCP Bridge
 run-name: Release ${{ github.ref_name }}
 
 # Triggered by tag `mcp-vMAJOR.MINOR.PATCH` only. Builds the standalone
-# `emisar-mcp` stdio bridge for darwin + linux (amd64 + arm64),
+# `emisar-mcp` stdio bridge for darwin + linux (amd64 + arm64) and
+# Windows (amd64),
 # signs build provenance via Sigstore, publishes to the Emisar release tree,
 # then mirrors the files to GitHub Releases. The first
 # attempt requires current main; Actions UI reruns preserve the original
@@ -20,6 +21,7 @@ run-name: Release ${{ github.ref_name }}
 #   tag      : mcp-v0.1.0
 #   version  : 0.1.0
 #   tarball  : emisar-mcp-0.1.0-<OS>-<ARCH>.tar.gz
+#   zip      : emisar-mcp-0.1.0-windows-amd64.zip
 #   checksum : SHA256SUMS-MCP
 #
 # `install-mcp.sh` reads `https://emisar.dev/releases/mcp/latest.json` and
@@ -151,12 +153,24 @@ jobs:
         include:
           - os: linux
             arch: amd64
+            binary: emisar-mcp
+            archive: tar.gz
           - os: linux
             arch: arm64
+            binary: emisar-mcp
+            archive: tar.gz
           - os: darwin
             arch: amd64
+            binary: emisar-mcp
+            archive: tar.gz
           - os: darwin
             arch: arm64
+            binary: emisar-mcp
+            archive: tar.gz
+          - os: windows
+            arch: amd64
+            binary: emisar-mcp.exe
+            archive: zip
     permissions:
       contents: read
       id-token: write
@@ -188,22 +202,26 @@ jobs:
           echo "version=${version}"   >> "$GITHUB_OUTPUT"
 
       - name: Build deterministic archive
+        id: archive
         env:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: "0"
           VERSION: ${{ steps.ver.outputs.version }}
+          BINARY: ${{ matrix.binary }}
+          ARCHIVE: ${{ matrix.archive }}
         run: |
+          set -euo pipefail
           mkdir -p dist
           (cd mcp && go build -trimpath \
             -ldflags "-buildid= -s -w -X main.Version=${VERSION}" \
-            -o "../dist/emisar-mcp" .)
-          # The MCP bridge ships as a tiny tarball — just the binary,
+            -o "../dist/${BINARY}" .)
+          # The MCP bridge ships as a tiny archive — just the binary,
           # LICENSE, and a short README. No installer script: the
           # binary is a single CLI that operators drop into PATH.
           name="emisar-mcp-${VERSION}-${GOOS}-${GOARCH}"
           mkdir -p "dist/${name}"
-          cp dist/emisar-mcp "dist/${name}/emisar-mcp"
+          cp "dist/${BINARY}" "dist/${name}/${BINARY}"
           # mcp/LICENSE (Apache-2.0 — the license of the shipped binary)
           # is a repo invariant; missing it is a malformed release, fail
           # loudly rather than silently shipping without one.
@@ -221,17 +239,24 @@ jobs:
           MCP-aware client (Claude Desktop, Cursor, Claude Code,
           Gemini CLI, Codex CLI, ...) via stdin/stdout.
 
-          Drop the binary somewhere on $PATH (`/usr/local/bin` is the
-          convention). Then point your MCP client at the binary path
-          and set `EMISAR_URL` + `EMISAR_API_KEY` in the launcher's
-          env block. The portal at https://emisar.dev/app/agents
-          generates a copy-pasteable snippet per client.
+          Extract the archive and put the binary on PATH. Then point your MCP
+          client at the binary path and set `EMISAR_URL` + `EMISAR_API_KEY` in
+          the launcher's env block. The portal at
+          https://emisar.dev/app/agents generates a copy-pasteable snippet per
+          client.
           EOF
           sed -i "s/__VERSION__/${VERSION}/g; s/__GOOS__/${GOOS}/g; s/__GOARCH__/${GOARCH}/g" \
             "dist/${name}/README.md"
-          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
-            -C dist -czf "dist/${name}.tar.gz" "${name}"
-          shasum -a 256 "dist/${name}.tar.gz" | awk '{print $1}' > "dist/${name}.tar.gz.sha256"
+          if [ "$ARCHIVE" = zip ]; then
+            find "dist/${name}" -exec touch -t 198001010000 {} +
+            (cd dist && zip -X -q -r "${name}.zip" "${name}")
+          else
+            tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+              -C dist -czf "dist/${name}.tar.gz" "${name}"
+          fi
+          archive="dist/${name}.${ARCHIVE}"
+          shasum -a 256 "$archive" | awk '{print $1}' > "${archive}.sha256"
+          echo "path=${archive}" >> "$GITHUB_OUTPUT"
           ls -la dist/
 
       - name: Verify release archive
@@ -239,17 +264,24 @@ jobs:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
           VERSION: ${{ steps.ver.outputs.version }}
+          BINARY: ${{ matrix.binary }}
+          ARCHIVE: ${{ matrix.archive }}
         run: |
           set -euo pipefail
           name="emisar-mcp-${VERSION}-${GOOS}-${GOARCH}"
           mkdir -p /tmp/release-check
-          tar -xzf "dist/${name}.tar.gz" -C /tmp/release-check
-          test -x "/tmp/release-check/${name}/emisar-mcp"
+          if [ "$ARCHIVE" = zip ]; then
+            unzip -q "dist/${name}.zip" -d /tmp/release-check
+          else
+            tar -xzf "dist/${name}.tar.gz" -C /tmp/release-check
+            test -x "/tmp/release-check/${name}/${BINARY}"
+          fi
+          test -f "/tmp/release-check/${name}/${BINARY}"
           test -f "/tmp/release-check/${name}/LICENSE"
           test -f "/tmp/release-check/${name}/README.md"
-          go version -m "/tmp/release-check/${name}/emisar-mcp"
+          go version -m "/tmp/release-check/${name}/${BINARY}"
           if [ "$GOOS/$GOARCH" = linux/amd64 ]; then
-            test "$("/tmp/release-check/${name}/emisar-mcp" --version)" = "emisar-mcp ${VERSION}"
+            test "$("/tmp/release-check/${name}/${BINARY}" --version)" = "emisar-mcp ${VERSION}"
           fi
 
       - name: Attest build provenance
@@ -260,16 +292,15 @@ jobs:
         if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
         with:
-          subject-path: |
-            dist/emisar-mcp-${{ steps.ver.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+          subject-path: ${{ steps.archive.outputs.path }}
 
       - name: Upload release archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: emisar-mcp-${{ steps.ver.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
           path: |
-            dist/*.tar.gz
-            dist/*.sha256
+            ${{ steps.archive.outputs.path }}
+            ${{ steps.archive.outputs.path }}.sha256
           retention-days: 7
           overwrite: true
 
@@ -309,12 +340,14 @@ jobs:
         run: |
           mkdir -p release
           find artefacts/ -name "emisar-mcp-*.tar.gz" -exec cp {} release/ \;
+          find artefacts/ -name "emisar-mcp-*.zip" -exec cp {} release/ \;
           find artefacts/ -name "emisar-mcp-*.tar.gz.sha256" -exec cp {} release/ \;
+          find artefacts/ -name "emisar-mcp-*.zip.sha256" -exec cp {} release/ \;
           # Suffix the combined checksum file with -MCP so it can't
           # collide with the runner's SHA256SUMS on the same release.
           # (In practice the two streams use separate releases, but
           # the rename costs nothing and is unambiguous.)
-          ( cd release && shasum -a 256 emisar-mcp-*.tar.gz > SHA256SUMS-MCP )
+          ( cd release && shasum -a 256 emisar-mcp-*.tar.gz emisar-mcp-*.zip > SHA256SUMS-MCP )
           ls -la release/
 
       - name: Derive version
@@ -355,6 +388,9 @@ jobs:
           archive="emisar-mcp-${VERSION}-linux-amd64.tar.gz"
           curl -fsS --retry 4 --retry-delay 2 "${base}/${archive}" -o "/tmp/${archive}"
           cmp "release/${archive}" "/tmp/${archive}"
+          windows_archive="emisar-mcp-${VERSION}-windows-amd64.zip"
+          curl -fsS --retry 4 --retry-delay 2 "${base}/${windows_archive}" -o "/tmp/${windows_archive}"
+          cmp "release/${windows_archive}" "/tmp/${windows_archive}"
 
       - name: Publish GitHub release mirror
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
@@ -369,5 +405,7 @@ jobs:
           files: |
             release/emisar-mcp-*.tar.gz
             release/emisar-mcp-*.tar.gz.sha256
+            release/emisar-mcp-*.zip
+            release/emisar-mcp-*.zip.sha256
             release/SHA256SUMS-MCP
           fail_on_unmatched_files: true

@@ -23,7 +23,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 )
 
 type harness struct {
@@ -283,7 +282,7 @@ func (h *harness) functions(file string, names []string, body string, env map[st
 	// A session of its own, so the script has no controlling terminal:
 	// /dev/tty stays unopenable even when the smoke test runs from an
 	// interactive shell, keeping prompt-fallback paths deterministic.
-	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	configureWithoutControllingTerminal(command)
 	command.Stdin = strings.NewReader(script.String())
 	output, err := command.CombinedOutput()
 	return commandResult{output: output, err: err}
@@ -582,7 +581,12 @@ func (d *deviceServer) handle(response http.ResponseWriter, request *http.Reques
 				keys[client] = fixtureAPIKey(client)
 			}
 		}
-		_ = json.NewEncoder(response).Encode(map[string]any{"client_keys": keys})
+		_ = json.NewEncoder(response).Encode(map[string]any{
+			"account_id":   "018f0000-0000-7000-8000-000000000001",
+			"account_slug": "blitz",
+			"account_name": "Blitz Operations",
+			"client_keys":  keys,
+		})
 	default:
 		http.NotFound(response, request)
 	}

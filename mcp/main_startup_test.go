@@ -65,6 +65,26 @@ func runMain(t *testing.T, stdinData string, args []string, env map[string]strin
 	return outBuf.String(), errBuf.String(), exitCode
 }
 
+func TestReaderIsTerminalRejectsDevNull(t *testing.T) {
+	file, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if readerIsTerminal(file) {
+		t.Fatal("os.DevNull was identified as a terminal")
+	}
+}
+
+func TestRootHelpAndVersionIgnoreUnrelatedEnvironment(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {"--version"}} {
+		stdout, stderr, code := runMain(t, "", args, map[string]string{"UNRELATED_SETTING": "ignored"})
+		if code != 0 || stdout == "" || stderr != "" {
+			t.Errorf("%v: exit=%d stdout=%q stderr=%q", args, code, stdout, stderr)
+		}
+	}
+}
+
 // `--version` / `-v` print `emisar-mcp <Version>` and exit 0. The
 // build is not ldflag-stamped here, so Version is its "dev" default.
 func TestMain_VersionFlagPrintsVersionExitsZero(t *testing.T) {
@@ -130,7 +150,6 @@ func TestMain_HelpFlagPrintsHelpExitsZero(t *testing.T) {
 
 func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {
 	sections := []string{
-		"\nUSAGE\n",
 		"\nDESCRIPTION\n",
 		"\nCOMMANDS\n",
 		"\nOUTPUT AND EXIT STATUS\n",
@@ -153,17 +172,57 @@ func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {
 		previous = at
 	}
 	for _, command := range []string{
-		"emisar-mcp auth [status [URL]]",
-		"emisar-mcp auth import URL",
-		"emisar-mcp list_tools [--json]",
-		"emisar-mcp help <tool> [--json]",
+		"emisar-mcp auth [login [URL]]",
+		"emisar-mcp auth status [URL]",
+		"emisar-mcp accounts list",
+		"emisar-mcp accounts use <slug-or-id>",
+		"emisar-mcp list_runners [JSON | -]",
+		"emisar-mcp list_packs [JSON | -]",
+		"emisar-mcp find_actions [TEXT | JSON | -]",
+		"emisar-mcp get_action [JSON | -]",
+		"emisar-mcp run_action [JSON | -]",
+		"emisar-mcp get_operation [JSON | -]",
+		"emisar-mcp recent_runs [JSON | -]",
+		"emisar-mcp wait_for_run [JSON | -]",
+		"emisar-mcp list_runbooks [JSON | -]",
+		"emisar-mcp get_runbook [JSON | -]",
+		"emisar-mcp execute_runbook [JSON | -]",
+		"emisar-mcp create_runbook_draft [JSON | -]",
+		"emisar-mcp update_runbook_draft [JSON | -]",
+		"emisar-mcp list_tools",
+		"emisar-mcp help <tool>",
 		"emisar-mcp -- <tool> [JSON | -]",
+		"SHARED COMMAND OPTIONS",
+		"--account <slug-or-id>",
+		"--json",
 		"data.operation_id",
 		"get_operation",
-		"explicit pair overrides the installed direct-CLI credential",
+		"Ctrl-C stopped human-mode waiting",
+		"explicit pair overrides the current stored account credential",
 	} {
 		if !strings.Contains(helpText, command) {
 			t.Errorf("help does not document %q", command)
+		}
+	}
+	if strings.Contains(helpText, "\nUSAGE\n") {
+		t.Error("help duplicates the command reference with a USAGE section")
+	}
+	commands := helpText[strings.Index(helpText, "\nCOMMANDS\n"):strings.Index(helpText, "\nOUTPUT AND EXIT STATUS\n")]
+	for _, option := range []string{"--account <slug-or-id>", "--json"} {
+		if count := strings.Count(commands, option); count != 1 {
+			t.Errorf("command reference contains %d copies of shared option %q, want 1", count, option)
+		}
+	}
+	for _, category := range []string{
+		"FLEET",
+		"ACTIONS",
+		"RUNBOOKS",
+		"CONTINUATIONS",
+		"ACCOUNTS AND AUTH",
+		"MCP CLIENT AND DISCOVERY",
+	} {
+		if count := strings.Count(helpText, "\n  "+category+"\n"); count != 1 {
+			t.Errorf("help contains %d %s groups, want 1", count, category)
 		}
 	}
 
@@ -188,7 +247,10 @@ func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {
 		}
 	}
 
-	for _, setup := range []string{
+	if !strings.Contains(helpText, "https://emisar.dev/docs/connect-a-cli-client") {
+		t.Error("help does not link to manual client setup documentation")
+	}
+	for _, removed := range []string{
 		"~/Library/Application Support/Claude/claude_desktop_config.json",
 		"claude mcp add emisar --scope user",
 		"~/.cursor/mcp.json",
@@ -205,8 +267,8 @@ func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {
 		"EMISAR_CLIENT=gemini",
 		"EMISAR_CLIENT=grok",
 	} {
-		if !strings.Contains(helpText, setup) {
-			t.Errorf("help is missing client setup contract %q", setup)
+		if strings.Contains(helpText, removed) {
+			t.Errorf("help still embeds manual client setup %q", removed)
 		}
 	}
 }
@@ -219,7 +281,7 @@ func TestMain_UnknownFlagExitsTwo(t *testing.T) {
 	if code != 2 {
 		t.Errorf("exit code = %d, want 2", code)
 	}
-	if !strings.Contains(stderr, "unknown argument") || !strings.Contains(stderr, "--bogus") {
+	if !strings.Contains(stderr, "Unknown option") || !strings.Contains(stderr, "--bogus") {
 		t.Errorf("stderr should name the unknown argument, got %q", stderr)
 	}
 	if stdout != "" {
@@ -534,8 +596,11 @@ func TestMain_SecretsNotAcceptedAsFlags(t *testing.T) {
 		if code != 2 {
 			t.Errorf("%q: exit code = %d, want 2 (no secret-bearing flags exist)", arg, code)
 		}
-		if !strings.Contains(stderr, "unknown argument") {
+		if !strings.Contains(stderr, "Unknown option") {
 			t.Errorf("%q: stderr should reject the unknown flag, got %q", arg, stderr)
+		}
+		if strings.Contains(stderr, "emk-secret") || strings.Contains(stderr, "deadbeef") {
+			t.Errorf("%q: stderr disclosed an argv value: %q", arg, stderr)
 		}
 		if stdout != "" {
 			t.Errorf("%q: nothing should reach stdout, got %q", arg, stdout)

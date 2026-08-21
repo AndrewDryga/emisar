@@ -30,13 +30,23 @@ signed-in operator and their runner scope.
 
 ## Install the stdio bridge
 
+macOS or Linux:
+
 ```sh
 curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash
 ```
 
-The installer resolves the latest tagged release, verifies its checksum, and
-installs `emisar-mcp` in `/usr/local/bin`. Set
-`INSTALL_DIR="$HOME/.local/bin"` for a no-sudo installation.
+Windows PowerShell:
+
+```powershell
+irm https://emisar.dev/install-mcp.ps1 | iex
+```
+
+Both installers resolve the latest tagged release and verify its checksum. The
+Unix installer puts `emisar-mcp` in `/usr/local/bin`; set
+`INSTALL_DIR="$HOME/.local/bin"` for a no-sudo installation. The Windows
+installer puts `emisar-mcp.exe` in the current user's Programs directory and
+adds that directory to the user's `PATH`.
 
 In an interactive terminal it opens one browser approval. That approval gives
 the direct CLI its own key and, when supported MCP clients are present, offers
@@ -45,22 +55,50 @@ bridge state; client keys go into their client configs. No key passes through
 the clipboard, and existing client settings and other MCP servers are
 preserved.
 
-After approval, direct commands work without shell-profile exports:
+You can authenticate the direct CLI without rerunning the installer. This opens
+the approval page in your browser and stores a dedicated CLI key locally:
 
 ```sh
 emisar-mcp auth
 emisar-mcp list_tools
 ```
 
+Authenticate each account once. The last account you authenticate becomes the
+current account for bare commands. List your stored accounts, change the
+current one, or choose one for a single command:
+
+```sh
+emisar-mcp auth
+emisar-mcp accounts list
+emisar-mcp accounts use immersive
+emisar-mcp --account blitz list_runners
+```
+
+`accounts list` shows a star beside the current account. Add `--json` for a
+script-friendly list. Account names and slugs come from the account you approved
+in the browser; they are not local aliases. The credential remains tied to the
+account's immutable ID if its name or slug changes.
+
+Credentials follow the operating system's user config directory:
+`~/Library/Application Support/emisar/credentials/` on macOS,
+`$XDG_CONFIG_HOME/emisar/credentials/` on Linux when that variable is set
+(otherwise `~/.config/emisar/credentials/`), and the user's AppData config
+directory on Windows. The directory and files are owner-only. This is why macOS
+does not put them under `~/.config`.
+
 A later interactive installer run verifies the stored CLI credential against
-the same endpoint and keeps it instead of minting another one. A revoked or
-expired credential starts a fresh browser approval.
+the same endpoint and keeps it instead of minting another one. Run
+`emisar-mcp auth` to replace a revoked or expired direct-CLI credential through
+the same browser approval without reinstalling anything.
 
 After installation, restart the client and confirm that the `emisar` server is
 connected. Ask the agent to list available infrastructure or inspect a known
 runner. You are done when the client can discover the in-scope action catalog;
 run a low-risk action such as `linux.uptime` to certify execution and audit.
 
+Run `emisar-mcp` in a terminal to see its command help. You can run any name
+shown by `list_tools`, including `list_runners`. MCP clients start the same
+program automatically and send MCP requests through stdin.
 Use `emisar-mcp --help` for current registration commands and config locations.
 Pin a reviewed release for managed rollouts:
 
@@ -112,9 +150,9 @@ so attribution and revocation stay precise.
 ## Use MCP tools from the shell
 
 The same binary exposes the control plane's live MCP catalog as direct commands.
-It does not carry a second tool registry: names, descriptions, annotations, and
-argument schemas come from `tools/list`, so a newly published tool appears without
-a bridge release.
+Names, descriptions, annotations, and argument schemas come from `tools/list`.
+The thirteen fixed tools have purpose-built human output; an unknown future
+tool still appears and remains callable through the generic fallback.
 
 An interactive install authenticates these commands. Discover and inspect the
 available tools directly:
@@ -125,37 +163,123 @@ emisar-mcp help find_actions
 emisar-mcp get_action --help
 ```
 
-`emisar-mcp auth` checks local state and shows the stored endpoint without
-printing the key. For a
-different endpoint, set `EMISAR_URL` and `EMISAR_API_KEY` together for that
-command; the explicit pair overrides the stored credential. Setting only one
-is an error—the bridge never combines an environment value with half of a
-stored credential. Stdio mode still requires both variables in its MCP-client
-configuration.
+`emisar-mcp auth` opens browser approval and stores the account you choose. Use
+`emisar-mcp auth login [URL]` for a custom endpoint. `auth status` checks the
+current account's local state without contacting the control plane or printing
+the key. `accounts list` shows stored accounts; `accounts use <slug-or-id>`
+changes the current one. A leading `--account <slug-or-id>` selects one account
+for one command without changing the current account. Use
+`accounts list --json` when you need an immutable account ID.
 
-`list_tools --json` prints the exact descriptor array. `help <tool> --json`
-prints one exact descriptor, including its complete input schema. Human-readable
-help summarizes top-level arguments. It calls out conditional or mutually
-exclusive arguments, but the complete input schema remains authoritative.
+For a one-off endpoint, set `EMISAR_URL` and `EMISAR_API_KEY` together. That
+explicit pair overrides stored credentials. Setting only one is an error—the
+bridge never combines an environment value with half of a stored credential.
+Do not combine the explicit pair with `--account`.
+Stdio mode ignores direct-CLI account storage and still requires both variables
+in its MCP-client configuration.
 
-The local `auth`, `help`, and `list_tools` names are conveniences, not reserved MCP tool
-names. Use `--` before an exact tool name when it conflicts with a local command
-or begins with a hyphen:
+Plain `list_tools` groups the live catalog into Fleet, Actions, Runbooks, and
+Continuations. `list_tools --json` prints the exact descriptor array.
+`help <tool> --json` prints one exact descriptor, including its complete input
+schema. Human-readable help summarizes top-level arguments. It calls out
+conditional or mutually exclusive arguments, but the complete input schema
+remains authoritative.
+
+### Scripts and LLMs
+
+Use `--json` for automation. It makes one logical tool invocation, follows no
+continuations, and prints the exact `structuredContent` object with pretty
+whitespace only. The transport may resend that identical request once, under
+the same operation ID, after a network failure. Put `--json` last, pass `-` to
+read one JSON object from stdin, and parse stdout as JSON. Diagnostics stay on
+stderr and pipes never contain color.
+
+```sh
+emisar-mcp find_actions "diagnose postgres replication" --json |
+  jq -ce '.candidates[0].next.arguments' |
+  emisar-mcp get_action - --json
+```
+
+Without `--json`, every fixed tool uses a view made for a terminal. Fleet
+results show inventory, action details show their trusted argument contract,
+runs show status and output, and runbooks show their workflow and stage state.
+These views are for people; scripts should use `--json`.
+
+### Fleet
+
+Fleet commands omit protocol fields such as `ok` and `observed_at`, summarize
+large catalogs, and leave line wrapping to your terminal.
+
+| Command | What it shows | Input worth knowing |
+| --- | --- | --- |
+| `list_runners` | Runner status, hostname, group, labels, available packs, issues, and exact `runner_ref` values | Use JSON to filter by status, runner name/group/host text, runner refs, pack, action, or issues. |
+| `list_packs` | Trusted pack versions, availability, action counts, issues, and exact `pack_ref` values | The default is executable packs. Pass `{"availability":"all"}` to include trusted unavailable packs. |
+
+```sh
+emisar-mcp list_runners
+emisar-mcp list_runners '{"statuses":["connected"]}'
+emisar-mcp list_packs
+emisar-mcp list_packs '{"availability":"all"}'
+```
+
+Use `emisar-mcp help <tool>` for every argument and its constraints. Fleet list
+commands return bounded pages. Their human output says when more results exist;
+use `--json` to copy the returned cursor or continuation exactly.
+
+### Actions
+
+| Command | Human output |
+| --- | --- |
+| `find_actions` | Ranked matches with risk, immutable pack ref, and a safe inspection command. |
+| `get_action` | Description, side effects, trusted arguments, and compatible runner refs. |
+| `run_action` | Operation ID, per-runner status, approvals, exit codes, and action output. |
+| `get_operation` | The durable mutation identity and its safe recovery command. |
+| `recent_runs` | Recent run status, errors, output, and exact run IDs. |
+
+Human `run_action` waits when the response contains an exact `wait_for_run`
+continuation for the same run. It can wait on several runners concurrently and
+returns after every run is terminal and available output is drained. The
+operation ID is printed before waiting. Ctrl-C stops waiting, exits 130, and
+prints a `get_operation` command; it does not cancel the action. Any terminal
+status except `success`—`failed`, `error`, `validation_failed`,
+`unknown_action`, `denied`, `cancelled`, `timed_out`, or `refused`—makes the
+human command exit 1.
+
+```sh
+emisar-mcp find_actions "postgres replication"
+emisar-mcp get_action \
+  '{"action_id":"postgres.status","pack_ref":"postgres@1.2.0/sha256:..."}'
+emisar-mcp get_operation '{"operation_id":"op_..."}'
+emisar-mcp recent_runs '{"scope":"own","limit":10}'
+```
+
+### Runbooks
+
+| Command | Human output |
+| --- | --- |
+| `list_runbooks` | Live release, unpublished-change marker, description, and workflow size. |
+| `get_runbook` | Runbook identity, inputs, stages, and action steps. |
+| `execute_runbook` | Operation ID, approvals, stage/item status, attempts, errors, and outputs. |
+| `create_runbook_draft` | Draft identity, content digest, review link, and current live release. |
+| `update_runbook_draft` | The same draft result after an optimistic, digest-bound update. |
+
+Human `execute_runbook` follows only exact continuations tied to the returned
+execution, waits through approval or expiry, and drains returned public output
+pages. Ctrl-C has the same observation-only behavior as `run_action`.
+It exits 1 when the execution is `halted` or `cancelled`.
+
+The local `auth`, `accounts`, `help`, and `list_tools` names are conveniences,
+not reserved MCP tool names. Use `--` before an exact tool name when it conflicts
+with a local command or begins with a hyphen:
 
 ```sh
 emisar-mcp -- help '{}'
 emisar-mcp -- auth '{}'
 ```
 
-Call a tool with one JSON object. Omit it when the tool accepts `{}`, or pass `-`
-to read the object from stdin:
-
-```sh
-emisar-mcp list_runners
-emisar-mcp find_actions '{"query":"diagnose postgres replication"}' |
-  jq -ce '.candidates[0].next.arguments' |
-  emisar-mcp get_action -
-```
+Call any tool with one JSON object. Omit it when the tool accepts `{}`, or
+pass `-` to read the object from stdin. Tool results are readable text by
+default. Put `--json` last when a script needs the exact object.
 
 Build JSON with `jq` when values come from shell variables, then parse the result
 as a separate step:
@@ -163,7 +287,7 @@ as a separate step:
 ```sh
 query='diagnose postgres replication'
 result=$(jq -cn --arg query "$query" '{query:$query}' |
-  emisar-mcp find_actions -) || {
+  emisar-mcp find_actions - --json) || {
   status=$?
   printf '%s\n' "$result" | jq .
   exit "$status"
@@ -175,13 +299,21 @@ The process contract is:
 
 | Condition | Exit | stdout | stderr |
 | --- | ---: | --- | --- |
-| Successful tool call | 0 | `structuredContent` JSON | normally empty |
+| Successful tool call | 0 | readable text, or exact `structuredContent` with `--json` | normally empty |
 | Successful `list_tools` or `help` | 0 | text, or JSON with `--json` | normally empty |
-| Tool or MCP error | 1 | structured error JSON | an authentication hint when relevant |
-| Tool call rejected locally before transmission | 1 | JSON without `data.operation_id` | diagnostic text |
-| Tool-call transport or response failure after transmission | 1 | JSON with `data.operation_id` | a safe local diagnostic when available |
+| Tool or MCP error | 1 | readable text, or structured error with `--json` | an authentication hint when relevant |
+| Human mutation reaches a failed terminal state | 1 | final action or runbook status and available output | normally empty |
+| Tool call rejected locally before transmission | 1 | selected format; JSON omits `data.operation_id` | diagnostic text |
+| Tool-call transport or response failure after transmission | 1 | selected format; JSON includes `data.operation_id` | safe diagnostic and operation-recovery step |
 | Configuration or list/help transport error | 1 | empty | diagnostic text |
 | Invalid command or JSON input | 2 | empty | usage text |
+| Ctrl-C while human mode is waiting | 130 | initial mutation result | observation-stopped warning and `get_operation` command |
+
+Direct-command errors use the same small shape: what failed, any safe local
+detail that explains why, and a **Next** section with recovery commands. Color
+is used only when stderr is a terminal. Redirected output and pipes stay plain;
+set `NO_COLOR` to disable color in a terminal too. Exact JSON on stdout is never
+decorated.
 
 After an ambiguous mutation response, pass the returned `operation_id` to
 `get_operation` before deciding whether to retry. For example, if the failing
@@ -190,7 +322,7 @@ command's stdout is in `call-error.json`:
 ```sh
 jq -ce 'select(.data.operation_id != null) |
   {operation_id:.data.operation_id}' call-error.json |
-  emisar-mcp get_operation -
+  emisar-mcp get_operation - --json
 ```
 
 Use this only when `data.operation_id` exists. Reads can be repeated normally.
@@ -200,10 +332,10 @@ a downstream formatter does not hide a nonzero `emisar-mcp` exit.
 Use stdin when an argument contains operational details you do not want in the
 process list. Credentials are configuration, not tool arguments: the installer
 stores the direct CLI key, while MCP clients and explicit endpoint overrides
-keep keys in their environment. The CLI does not auto-follow cursors, wait for
-later state, or add local confirmation prompts. It returns exactly one governed
-MCP call; scope, policy, approvals, signed dispatch, and audit remain
-server/runner-owned.
+keep keys in their environment. Human `run_action` and `execute_runbook` may
+follow exact read-only continuations for the same durable work after the
+mutation response. No CLI mode adds a local authorization or confirmation gate;
+scope, policy, approvals, signed dispatch, and audit remain server/runner-owned.
 
 ## What the bridge owns
 
@@ -221,9 +353,11 @@ client and the control plane:
 - endpoint-bound API-key rotation state;
 - optional client-side signing for `run_action`.
 
-The direct CLI adds only generic presentation: it fetches live descriptors for
-discovery/help, accepts one strict JSON argument object, and prints the returned
-structured JSON. It does not validate or reinterpret any individual tool.
+The direct CLI fetches live descriptors for discovery and help, accepts one
+strict JSON argument object, and renders exact JSON or a bounded semantic view
+for each fixed tool. Unknown future tools use the generic renderer. Human
+`run_action` and `execute_runbook` follow only correlated server-issued
+observation continuations. `--json` always prints the exact result of one call.
 
 With no command, it writes only validated MCP frames to stdout. Diagnostics stay
 on stderr, and a network failure becomes a correlated JSON-RPC error instead of
@@ -258,30 +392,23 @@ does not assert that infrastructure work was rolled back or never committed.
 
 ## API-key rotation
 
-Expiring MCP API keys rotate through a crash-safe, client-prepared exchange:
-
-1. The bridge generates a successor and persists it as pending before making a
-   request.
-2. It sends only the successor prefix and digest. The control plane installs
-   those exact values atomically when the current key enters its rotation
-   window.
-3. The bridge promotes the acknowledged successor durably before using it.
-   First successful use retires the replaced key chain.
+The bridge replaces expiring `emk-` keys automatically. It saves the new key
+before using it, so a restart cannot lose the working credential. The new key
+stays bound to the same endpoint and credential lineage.
 
 Credential state is stored under the user's emisar config directory. MCP-client
-rotation state is namespaced by canonical endpoint and bootstrap prefix; the
-installed direct CLI uses one named default state. The directory is mode 0700;
-files are mode 0600 and updated through a cross-process lock, temporary write,
-filesystem sync, and atomic rename. Corrupt, unsafe, or endpoint-mismatched
-state is a startup error, not a reason to send a secret to another origin.
+rotation state is namespaced by canonical endpoint and bootstrap prefix; direct
+CLI state is namespaced by canonical endpoint and immutable account ID. The
+directory is mode 0700; files are mode 0600 and updated through a cross-process
+lock, temporary write, filesystem sync, and atomic rename. Corrupt, unsafe, or
+endpoint-mismatched state is a startup error, not a reason to send a secret to
+another origin.
 
-`auth import` replaces the single direct-CLI credential but does not revoke its
-old server-side key. If the old key connected, revoke it from that endpoint's
-`/app/agents` page. Never-used installer keys stay hidden there and expire after
-30 days. For rotation recovery, env-configured MCP clients can delete only their
-endpoint's hashed state file and restart from the key in their config. The
-direct CLI instead needs a fresh interactive install or `auth import`; deleting
-`cli.json` leaves it unauthenticated.
+If a direct command stops authenticating, run `emisar-mcp auth` again and choose
+that account. If an MCP client stops authenticating,
+reconnect it from `/app/agents/connect`. Reconnecting does not revoke old keys;
+revoke connected keys in LLM agents. Never-used installer keys stay hidden
+there and expire after 30 days.
 
 If durable storage is unavailable, the bridge keeps using the configured key
 but does not offer automatic rotation. Containers should persist `/config`.
@@ -296,8 +423,10 @@ complete runner set, reason, operation identity, nonce, and time. A
 signature-enforcing runner verifies that intent against a trusted offline CA
 and refuses altered, replayed, stale, or out-of-scope calls.
 
-Signing is the only place where the bridge inspects tool semantics. The public
-MCP frame remains unchanged; the attestation travels in a private HTTP header.
+Signing is the only stdio transport path that inspects tool semantics. The
+direct CLI also understands fixed result contracts for presentation and safe
+observation. The public MCP frame remains unchanged; the attestation travels in
+a private HTTP header.
 Setup and rotation are documented in
 [the signed-dispatch specification](../.agent/kb/specs/signed-dispatch.md).
 

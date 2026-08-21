@@ -1,3 +1,5 @@
+//go:build !windows
+
 package installtest
 
 import (
@@ -6,7 +8,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -538,9 +539,6 @@ func nonRootAccount() (string, string, int, int, error) {
 }
 
 func runnerPolicyOwnership(h *harness) error {
-	if runtime.GOOS == "windows" {
-		return nil
-	}
 	serviceUser, serviceGroup, uid, gid, err := nonRootAccount()
 	if err != nil {
 		return err

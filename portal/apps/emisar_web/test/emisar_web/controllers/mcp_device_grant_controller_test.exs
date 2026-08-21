@@ -78,7 +78,11 @@ defmodule EmisarWeb.MCPDeviceGrantControllerTest do
       {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
 
       first = post(conn, ~p"/api/mcp/device_token", %{"device_code" => device_code})
-      assert %{"client_keys" => client_keys} = json_response(first, 200)
+      body = json_response(first, 200)
+      assert body["account_id"] == subject.account.id
+      assert body["account_slug"] == subject.account.slug
+      assert body["account_name"] == subject.account.name
+      assert %{"client_keys" => client_keys} = body
       assert client_keys |> Map.keys() |> Enum.sort() == ["codex", "emisar-mcp-cli"]
       assert String.starts_with?(client_keys["codex"], "emk-")
 

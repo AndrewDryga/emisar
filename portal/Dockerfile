@@ -74,7 +74,7 @@ ENV EMISAR_DEV_HOST_EXCLUDES=${EMISAR_DEV_HOST_EXCLUDES}
 ARG EMISAR_DEV_ROUTES=""
 ENV EMISAR_DEV_ROUTES=${EMISAR_DEV_ROUTES}
 
-# Place install.sh / install-mcp.sh where InstallController +
+# Place the runner and MCP installers where their controllers can embed them.
 # These must stay ABOVE `mix assets.deploy`, however much they look like a
 # compile-only input. The install controllers read them in their MODULE BODY
 # (install_controller.ex:22), and every mix task compiles the project first — so
@@ -83,6 +83,7 @@ ENV EMISAR_DEV_ROUTES=${EMISAR_DEV_ROUTES}
 # and the portal gate does not catch it because the gate never builds the image.
 COPY install.sh /install.sh
 COPY install-mcp.sh /install-mcp.sh
+COPY install-mcp.ps1 /install-mcp.ps1
 
 # Application configuration is a compile input, not a dependency input.
 RUN mkdir -p config

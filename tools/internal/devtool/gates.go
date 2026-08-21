@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -41,16 +42,10 @@ const staticcheckVersion = "honnef.co/go/tools/cmd/staticcheck@2026.1"
 // Keep this in step with the version any workflow installs directly.
 const actionlintVersion = "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
 
-// The platforms each module must still compile for. The first four are what
-// runner-release.yml and mcp-release.yml publish; keep them in step, because a
-// target that ships without compiling here is a broken release.
-//
-// windows/amd64 is compile-only and bridge-only. The bridge is the binary an
-// operator runs beside their LLM client, so its Windows file-locking and
-// credential paths are real code kept from rotting until Windows is published.
-// The runner has no such case: it is server-side, and its Windows token cache
-// returns "unsupported", so `connect` — the verb the daemon exists for — cannot
-// work there at all.
+// The platforms each module publishes. Keep this in step with the release
+// workflows: a target that ships without compiling here is a broken release.
+// The runner remains Unix-only; windows/amd64 is the local MCP bridge beside a
+// Windows LLM client, not the on-host action runner.
 var releaseTargets = map[string][]string{
 	"runner": {"linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64"},
 	"mcp":    {"linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "windows/amd64"},
@@ -360,6 +355,23 @@ func (a *App) crossBuildGate(ctx context.Context, module, dir string) error {
 }
 
 func (a *App) installerGate(ctx context.Context, module string) error {
+	if runtime.GOOS == "windows" {
+		if module != "mcp" {
+			return fmt.Errorf("the %s installer gate is not supported on Windows", module)
+		}
+		if err := a.gatePhase("mcp installer PowerShell", func() error {
+			const parse = `$tokens=$null; $errors=$null; [void][System.Management.Automation.Language.Parser]::ParseFile($env:EMISAR_INSTALLER_SCRIPT, [ref]$tokens, [ref]$errors); if ($errors.Count) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }`
+			return a.run(ctx, a.Root, map[string]string{
+				"EMISAR_INSTALLER_SCRIPT": filepath.Join(a.Root, "install-mcp.ps1"),
+			}, "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", parse)
+		}); err != nil {
+			return err
+		}
+		return a.gatePhase("mcp installer behavior", func() error {
+			return a.run(ctx, a.Root, nil, "go", "run", "./tools/cmd/installtest", "mcp-windows")
+		})
+	}
+
 	script := "install.sh"
 	if module == "mcp" {
 		script = "install-mcp.sh"

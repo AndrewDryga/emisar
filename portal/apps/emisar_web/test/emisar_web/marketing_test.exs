@@ -1605,7 +1605,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "pack@version/sha256:hash"
       assert html =~ "name~sha256-prefix"
       assert html =~ "signed_runbook_unsupported"
-      assert html =~ "A resolved execution may contain 256 items"
+      assert html =~ "A resolved execution can contain 256 items"
       assert html =~ "initial stage state commit"
 
       # The "Calling the endpoint" on-ramp — the verbatim curl a custom client copies.
@@ -1613,6 +1613,33 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "https://emisar.dev/api/mcp/rpc"
       assert html =~ "Authorization: Bearer"
       refute html =~ "GET /api/mcp/runners"
+
+      # The direct CLI uses the live descriptor surface and its installer-owned credential.
+      assert html =~ "Use MCP tools from the shell"
+      assert html =~ "owner-only local state"
+      assert html =~ "emisar-mcp auth"
+      assert html =~ "emisar-mcp list_tools"
+      assert html =~ "emisar-mcp help find_actions"
+      assert html =~ "emisar-mcp get_action --help"
+      assert html =~ "help &lt;tool&gt; --json"
+      assert html =~ "emisar-mcp accounts list"
+      assert html =~ "emisar-mcp accounts use immersive"
+      assert html =~ "emisar-mcp --account blitz list_runners"
+      assert html =~ ~s(id="cli-fleet")
+      assert html =~ ~s(id="cli-actions")
+      assert html =~ ~s(id="cli-runbooks")
+      assert html =~ "emisar-mcp list_packs"
+      assert html =~ ~s(&quot;availability&quot;:&quot;all&quot;)
+      assert html =~ "Application Support/emisar/credentials/"
+      assert html =~ "find_actions - --json"
+      assert html =~ "structuredContent"
+      assert html =~ "makes one logical tool invocation"
+      assert html =~ "follows no continuations"
+      assert html =~ "Ctrl-C stops waiting"
+      assert html =~ "data.operation_id"
+      assert html =~ "never use direct-CLI account storage"
+      assert html =~ "emisar-mcp -- help"
+      assert html =~ "emisar-mcp CLI and MCP API reference"
     end
 
     test "the limits and runbooks pages state the shipped output range and runbook schema bounds",
@@ -3039,18 +3066,23 @@ defmodule EmisarWeb.MarketingTest do
   end
 
   describe "install scripts match their documented endpoints" do
-    test "the install-mcp.sh URL quoted on /docs/connect-a-cli-client is the live endpoint",
+    test "the installer URLs quoted on /docs/connect-a-cli-client are live endpoints",
          %{conn: conn} do
-      # The docs page tells operators to `curl … /install-mcp.sh | sudo bash`;
-      # that exact URL must resolve to the real script, never a 404/HTML —
-      # a `curl | bash` integrity guarantee.
+      # The docs commands execute these responses directly, so both URLs must
+      # resolve to the real scripts rather than a 404 or HTML page.
       html = conn |> get(~p"/docs/connect-a-cli-client") |> html_response(200)
       assert html =~ "https://emisar.dev/install-mcp.sh"
+      assert html =~ "https://emisar.dev/install-mcp.ps1"
 
       conn = get(conn, ~p"/install-mcp.sh")
       assert response(conn, 200) =~ "#!/"
       [content_type] = get_resp_header(conn, "content-type")
       assert content_type =~ "shellscript"
+
+      windows_conn = conn |> recycle() |> get(~p"/install-mcp.ps1")
+      assert response(windows_conn, 200) =~ "# Install or upgrade"
+      [content_type] = get_resp_header(windows_conn, "content-type")
+      assert content_type =~ "text/plain"
     end
   end
 

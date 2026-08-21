@@ -1433,8 +1433,10 @@ defmodule Emisar.ApiKeys do
   authorization — this path has no subject by design, like magic-link
   redemption), writes an `api_key.created` audit row per key with the
   approver as actor, flips the grant to `claimed`, and returns
-  `{:ok, client_keys}` as a `client id => raw secret` map — the only time
-  the secrets exist.
+  `{:ok, %{client_keys: client_keys, account_id: account_id,
+  account_slug: account_slug, account_name: account_name}}`, where `client_keys`
+  is a `client id => raw secret` map — the only time the secrets exist — and
+  the account fields identify the credential the local CLI stores.
   Every other state maps to its poll error:
   `{:error, :authorization_pending | :access_denied | :expired_token | :invalid_grant}`.
   """
@@ -1471,8 +1473,17 @@ defmodule Emisar.ApiKeys do
     end)
     |> Repo.commit_multi()
     |> case do
-      {:ok, %{client_keys: client_keys}} -> {:ok, client_keys}
-      {:error, reason} -> {:error, reason}
+      {:ok, %{account: account, client_keys: client_keys}} ->
+        {:ok,
+         %{
+           account_id: account.id,
+           account_slug: account.slug,
+           account_name: account.name,
+           client_keys: client_keys
+         }}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

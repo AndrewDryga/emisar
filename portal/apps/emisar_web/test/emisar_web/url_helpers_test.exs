@@ -76,4 +76,22 @@ defmodule EmisarWeb.UrlHelpersTest do
                {:error, :insecure_base_url}
     end
   end
+
+  describe "mcp_windows_install_command/1" do
+    test "the hosted portal keeps the minimal PowerShell command" do
+      assert UrlHelpers.mcp_windows_install_command("https://emisar.dev") ==
+               {:ok, "irm https://emisar.dev/install-mcp.ps1 | iex"}
+    end
+
+    test "a different portal passes its origin to the downloaded installer" do
+      assert UrlHelpers.mcp_windows_install_command("http://localhost:4000") ==
+               {:ok,
+                "& ([scriptblock]::Create((irm 'http://localhost:4000/install-mcp.ps1'))) -PortalOrigin 'http://localhost:4000'"}
+    end
+
+    test "public HTTP is refused" do
+      assert UrlHelpers.mcp_windows_install_command("http://emisar.dev") ==
+               {:error, :insecure_base_url}
+    end
+  end
 end

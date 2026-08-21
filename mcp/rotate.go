@@ -21,7 +21,7 @@ import (
 const (
 	credentialStateVersion  = 2
 	maxCredentialStateBytes = 4 << 10
-	cliCredentialFilename   = "cli.json"
+	cliAccountFilePrefix    = "account-"
 	apiKeyPrefixLength      = 12
 	apiKeyRandomBytes       = 32
 
@@ -33,6 +33,9 @@ const (
 type credentialState struct {
 	Version         int    `json:"version"`
 	EndpointOrigin  string `json:"endpoint_origin"`
+	AccountID       string `json:"account_id,omitempty"`
+	AccountSlug     string `json:"account_slug,omitempty"`
+	AccountName     string `json:"account_name,omitempty"`
 	BootstrapPrefix string `json:"bootstrap_prefix"`
 	Current         string `json:"current"`
 	Pending         string `json:"pending,omitempty"`
@@ -159,18 +162,20 @@ func newCredentialStoreAt(configDir, endpointOrigin, bootstrapPrefix string) *cr
 	}
 }
 
-func newCLICredentialStore(endpointOrigin, bootstrapPrefix string) (*credentialStore, error) {
+func newCLIAccountCredentialStore(accountID, endpointOrigin, bootstrapPrefix string) (*credentialStore, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return nil, err
 	}
-	return newCLICredentialStoreAt(configDir, endpointOrigin, bootstrapPrefix), nil
+	return newCLIAccountCredentialStoreAt(configDir, accountID, endpointOrigin, bootstrapPrefix), nil
 }
 
-func newCLICredentialStoreAt(configDir, endpointOrigin, bootstrapPrefix string) *credentialStore {
+func newCLIAccountCredentialStoreAt(configDir, accountID, endpointOrigin, bootstrapPrefix string) *credentialStore {
 	dir := filepath.Join(configDir, "emisar", "credentials")
+	digest := sha256.Sum256([]byte(endpointOrigin + "\x00" + accountID))
+	filename := cliAccountFilePrefix + hex.EncodeToString(digest[:]) + ".json"
 	return &credentialStore{
-		path:            filepath.Join(dir, cliCredentialFilename),
+		path:            filepath.Join(dir, filename),
 		endpointOrigin:  endpointOrigin,
 		bootstrapPrefix: bootstrapPrefix,
 		random:          rand.Reader,
@@ -223,7 +228,11 @@ func (store *credentialStore) persist(state credentialState) error {
 	if err := state.validate(store.endpointOrigin, store.bootstrapPrefix); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(state, "", "  ")
+	return store.persistJSON(state)
+}
+
+func (store *credentialStore) persistJSON(value any) error {
+	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode credential state: %w", err)
 	}
@@ -249,6 +258,9 @@ func (store *credentialStore) persist(state credentialState) error {
 	}()
 
 	if err := tmp.Chmod(0o600); err != nil {
+		return fmt.Errorf("secure credential temp file: %w", err)
+	}
+	if err := validateCredentialTempFileAccess(tmp); err != nil {
 		return fmt.Errorf("secure credential temp file: %w", err)
 	}
 	if n, err := store.ops.write(tmp, data); err != nil {
@@ -285,9 +297,27 @@ func (store *credentialStore) secureDirectory(dir string) (*os.Root, error) {
 	if err := store.ops.chmod(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("secure credential directory: %w", err)
 	}
+	securedDirectory, err := secureCredentialDirectoryAccess(dir)
+	if err != nil {
+		return nil, fmt.Errorf("secure credential directory %s: %w", dir, err)
+	}
+	defer securedDirectory.Close()
 	root, err := store.ops.openRoot(dir)
 	if err != nil {
 		return nil, fmt.Errorf("open credential directory: %w", err)
+	}
+	securedInfo, securedErr := securedDirectory.Stat()
+	rootInfo, rootErr := root.Stat(".")
+	if securedErr != nil || rootErr != nil || !os.SameFile(securedInfo, rootInfo) {
+		_ = root.Close()
+		switch {
+		case securedErr != nil:
+			return nil, fmt.Errorf("inspect secured credential directory %s: %w", dir, securedErr)
+		case rootErr != nil:
+			return nil, fmt.Errorf("inspect opened credential directory %s: %w", dir, rootErr)
+		default:
+			return nil, fmt.Errorf("credential directory %s changed while it was being secured", dir)
+		}
 	}
 	return root, nil
 }
@@ -308,11 +338,8 @@ func (store *credentialStore) validateExistingPath() error {
 	if info.Size() > maxCredentialStateBytes {
 		return fmt.Errorf("credential state %s is %d bytes, limit is %d", store.path, info.Size(), maxCredentialStateBytes)
 	}
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	if info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("credential state %s permissions are %04o, want owner-only", store.path, info.Mode().Perm())
+	if err := validateCredentialFileAccess(store.path, info); err != nil {
+		return fmt.Errorf("credential state %s is unsafe: %w", store.path, err)
 	}
 	dir := filepath.Dir(store.path)
 	if err := rejectUnsafeCredentialDirectory(dir); err != nil {
@@ -322,8 +349,8 @@ func (store *credentialStore) validateExistingPath() error {
 	if err != nil {
 		return fmt.Errorf("inspect credential directory %s: %w", dir, err)
 	}
-	if dirInfo.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("credential directory %s permissions are %04o, want owner-only", dir, dirInfo.Mode().Perm())
+	if err := validateCredentialDirectoryAccess(dir, dirInfo); err != nil {
+		return fmt.Errorf("credential directory %s is unsafe: %w", dir, err)
 	}
 	return nil
 }
@@ -343,6 +370,11 @@ func rejectUnsafeCredentialDirectory(path string) error {
 }
 
 func (state credentialState) validate(endpointOrigin, bootstrapPrefix string) error {
+	if state.AccountID != "" || state.AccountSlug != "" || state.AccountName != "" {
+		if err := validateAccountIdentity(state.AccountID, state.AccountSlug, state.AccountName); err != nil {
+			return fmt.Errorf("credential state: %w", err)
+		}
+	}
 	switch {
 	case state.Version != credentialStateVersion:
 		return fmt.Errorf("unsupported credential state version %d", state.Version)

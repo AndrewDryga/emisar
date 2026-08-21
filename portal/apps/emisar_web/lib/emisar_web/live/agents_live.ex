@@ -604,6 +604,7 @@ defmodule EmisarWeb.AgentsLive do
       # `mcp__<server>__*` auto-approves every tool from that MCP server
       # (server name `emisar` matches the `claude mcp add emisar` above).
       auto_permit: %{
+        installer: true,
         location: "~/.claude/settings.json (Claude Code's settings — not an emisar file)",
         body: """
         {
@@ -649,6 +650,7 @@ defmodule EmisarWeb.AgentsLive do
       # bypasses all tool-call confirmations for that server. Same file as
       # the snippet above — add the one key to the existing `emisar` block.
       auto_permit: %{
+        installer: true,
         location: "~/.gemini/settings.json — add to the \"emisar\" server block above",
         body: """
         "emisar": {
@@ -669,6 +671,7 @@ defmodule EmisarWeb.AgentsLive do
       env = { EMISAR_URL = "#{url}", EMISAR_API_KEY = "#{key}", EMISAR_CLIENT = "codex" }\
       """,
       auto_permit: %{
+        installer: true,
         pointer:
           "Add default_tools_approval_mode = \"approve\" below [mcp_servers.emisar] in ~/.codex/config.toml. This trusts only the emisar MCP server; emisar still applies its own policies and approvals.",
         doc_url: "https://developers.openai.com/codex/mcp"
@@ -844,6 +847,7 @@ defmodule EmisarWeb.AgentsLive do
       # Grok's native permission rules accept a server-scoped MCPTool wildcard.
       # This drops only Grok's prompt; emisar policy and approvals still apply.
       auto_permit: %{
+        installer: true,
         location: "~/.grok/config.toml — add to the existing [permission] section",
         body: """
         allow = ["MCPTool(emisar__*)"]\
@@ -1795,14 +1799,21 @@ defmodule EmisarWeb.AgentsLive do
           </div>
         </:actions>
       </.step_header>
-      <%= case UrlHelpers.mcp_install_command(@base_url) do %>
-        <% {:ok, command} -> %>
+      <%= case {UrlHelpers.mcp_install_command(@base_url), UrlHelpers.mcp_windows_install_command(@base_url)} do %>
+        <% {{:ok, command}, {:ok, windows_command}} -> %>
           <.code_panel id="install-mcp-cmd" label="macOS / Linux" copy code={command} />
+          <.code_panel
+            id="install-mcp-windows-cmd"
+            class="mt-3"
+            label="Windows PowerShell"
+            copy
+            code={windows_command}
+          />
           <p class="mt-2 text-xs leading-5 text-zinc-400">
-            The installer offers to add emisar to the LLM clients it finds on the machine —
+            The installer for your platform offers to add emisar to the LLM clients it finds —
             approve the connection in your browser when it asks. No key to copy.
           </p>
-        <% {:error, :insecure_base_url} -> %>
+        <% {{:error, :insecure_base_url}, _windows} -> %>
           <.install_transport_refusal />
         <% _error -> %>
           <.install_command_unavailable />
@@ -1834,6 +1845,7 @@ defmodule EmisarWeb.AgentsLive do
         </span>
       </:summary>
       <.auto_permit_why client_label={@client_label} />
+      <.auto_permit_installer_note :if={@auto_permit[:installer]} />
       <p class="mt-3 text-[11px] text-zinc-400 font-mono">{@auto_permit.location}</p>
       <.code_panel
         id={"permit-#{@client_id}"}
@@ -1856,6 +1868,7 @@ defmodule EmisarWeb.AgentsLive do
         </span>
       </:summary>
       <.auto_permit_why client_label={@client_label} />
+      <.auto_permit_installer_note :if={@auto_permit[:installer]} />
       <p class="mt-3 text-xs text-zinc-400">{@auto_permit.pointer}</p>
       <p :if={@auto_permit.doc_url} class="mt-2 text-[11px] text-zinc-400">
         <.link
@@ -1868,6 +1881,14 @@ defmodule EmisarWeb.AgentsLive do
         </.link>
       </p>
     </.disclosure>
+    """
+  end
+
+  defp auto_permit_installer_note(assigns) do
+    ~H"""
+    <p class="mt-2 text-xs text-zinc-400">
+      The bridge installer offers to set this for you. Do it by hand if you declined.
+    </p>
     """
   end
 

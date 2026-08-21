@@ -1,19 +1,19 @@
 defmodule EmisarWeb.MCPDeviceGrantController do
   @moduledoc """
-  Device authorization for the MCP installer (RFC 8628 shape): `authorize`
-  opens a pending grant for the requested clients; `token` is the poll that
-  redeems an approved grant for its per-client API keys.
+  Device authorization for the MCP installers and direct CLI authentication
+  (RFC 8628 shape): `authorize` opens a pending grant for the requested clients;
+  `token` is the poll that redeems an approved grant for its per-client API keys.
 
   Both actions are UNAUTHENTICATED by design (the IL-15 note): the installer
   has no credential yet — acquiring one is the point. The authorization is
   the operator's approval on the authed portal page; these endpoints only
   shepherd the grant, and the context functions they call own every state
-  transition. Field names and poll-error semantics follow RFC 8628 so a
-  future bridge-side flow can reuse them unchanged; the success payload is
-  emisar's per-client key map, which is why this is NOT the OAuth AS's token
-  endpoint (whose advertised contract stays standard OAuth). Abusive polling
-  is cut by the IP rate limits — there is no distinct `slow_down` signal; the
-  installer treats any non-terminal response as retry-after-interval.
+  transition. Field names and poll-error semantics follow RFC 8628. The success
+  payload is emisar's per-client key map, which is why this is NOT the OAuth AS's
+  token endpoint (whose advertised contract stays standard OAuth). Abusive
+  polling is cut by the IP rate limits — there is no distinct `slow_down`
+  signal; the CLI and both installers treat any non-terminal response as
+  retry-after-interval.
   """
   use EmisarWeb, :controller
   alias Emisar.ApiKeys
@@ -65,7 +65,7 @@ defmodule EmisarWeb.MCPDeviceGrantController do
     end
   end
 
-  defp respond_token(conn, {:ok, client_keys}), do: json(conn, %{client_keys: client_keys})
+  defp respond_token(conn, {:ok, payload}), do: json(conn, payload)
 
   defp respond_token(conn, {:error, reason})
        when reason in [:authorization_pending, :access_denied, :expired_token, :invalid_grant],
