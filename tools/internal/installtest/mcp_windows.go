@@ -209,6 +209,7 @@ func testWindowsMCPInstaller(root, shell string) error {
 		server.URL,
 		"-Yes",
 		"-ConnectAll",
+		"-Verbose",
 	)
 	if err != nil {
 		return fmt.Errorf("install: %w\n%s", err, output)
