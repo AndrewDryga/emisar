@@ -49,3 +49,6 @@ vulnerabilities:
   - id: CVE-2026-14456
     statement: OpenSSL 3.0 predates the affected QUIC server implementation, which was added in 3.5.
     expired_at: 2027-01-06
+  - id: CVE-2026-53613
+    statement: the non-root portal cannot gain mount's SUID privileges under no-new-privileges, drops all capabilities, and has no user-mount fstab entry.
+    expired_at: 2027-01-06
