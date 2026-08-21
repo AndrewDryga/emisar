@@ -52,6 +52,10 @@ type cliRunResult struct {
 	ErrorMessage       string             `json:"error_message"`
 	Stdout             string             `json:"stdout"`
 	Stderr             string             `json:"stderr"`
+	EmittedStdoutBytes int64              `json:"emitted_stdout_bytes"`
+	EmittedStderrBytes int64              `json:"emitted_stderr_bytes"`
+	TruncatedStdout    bool               `json:"truncated_stdout"`
+	TruncatedStderr    bool               `json:"truncated_stderr"`
 	Output             []cliRunOutput     `json:"output"`
 	OutputComplete     *bool              `json:"output_complete"`
 	StructuredOutput   json.RawMessage    `json:"structured_output"`

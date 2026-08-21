@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"runtime"
 	"sort"
 	"strings"
@@ -14,6 +15,8 @@ const (
 	maxCLIRunbookStepArgs        = 6
 	maxCLIRunbookStepTargets     = 4
 	maxCLIRunbookStepDetailRunes = 720
+	maxCLIRunbookPreviewLines    = 8
+	maxCLIRunbookPreviewRunes    = 720
 )
 
 type cliRunbookSide struct {
@@ -99,6 +102,7 @@ type cliRunbookExecution struct {
 	Stages             []cliRunbookStageResult `json:"stages"`
 	Approval           *cliApprovalResult      `json:"approval"`
 	WaitUntil          string                  `json:"wait_until"`
+	RunsNext           cliToolResultNext       `json:"runs_next"`
 	Next               cliToolResultNext       `json:"next"`
 	OutputsNext        cliToolResultNext       `json:"outputs_next"`
 }
@@ -480,16 +484,13 @@ func renderCLIRunbookDraft(w io.Writer, raw []byte, account string) (string, boo
 
 func renderCLIExecuteRunbook(w io.Writer, raw []byte, account string) (string, bool) {
 	var result struct {
-		OK          bool            `json:"ok"`
-		OperationID string          `json:"operation_id"`
-		Execution   json.RawMessage `json:"execution"`
+		OK          bool                `json:"ok"`
+		OperationID string              `json:"operation_id"`
+		Execution   cliRunbookExecution `json:"execution"`
 	}
 	if json.Unmarshal(raw, &result) != nil || !result.OK || result.OperationID == "" ||
-		firstJSONByte(result.Execution) != '{' {
-		return "", false
-	}
-	rendered, ok := renderCLIRunbookExecution(w, result.Execution)
-	if !ok {
+		result.Execution.RunbookExecutionID == "" || result.Execution.RunbookRef == "" ||
+		result.Execution.Status == "" {
 		return "", false
 	}
 	var out strings.Builder
@@ -497,9 +498,361 @@ func renderCLIExecuteRunbook(w io.Writer, raw []byte, account string) (string, b
 	if command := cliOperationInspectCommandForOS(result.OperationID, account, runtime.GOOS); command != "" {
 		fmt.Fprintf(&out, "Inspect       %s\n", command)
 	}
-	out.WriteByte('\n')
-	out.WriteString(rendered)
+	fmt.Fprintf(&out, "\n%s\n", cliStyledText(w, "1", cliResultText(result.Execution.RunbookRef, maxCLIFleetRefRunes)))
+	fmt.Fprintf(&out, "Execution ID  %s\n", cliResultText(result.Execution.RunbookExecutionID, maxCLIFleetRefRunes))
+	writeCLIResultField(&out, "Definition", result.Execution.DefinitionSHA256, maxCLIFleetRefRunes)
+	if result.Execution.Approval != nil {
+		writeCLIResultField(&out, "Approval", result.Execution.Approval.URL, maxCLIFleetCommand)
+		writeCLIResultField(&out, "Expires", cliFleetTime(result.Execution.Approval.ExpiresAt), 80)
+	}
+	if result.Execution.Blocking != nil {
+		fmt.Fprintf(&out, "%s  %s\n", cliStyledText(w, "31", "Blocked"), cliResultText(result.Execution.Blocking.Message, maxCLIHumanStringRunes))
+	}
+	stages, items := cliRunbookExecutionSize(result.Execution)
+	fmt.Fprintf(&out, "%d %s across %d %s\n", items, plural(items, "action", "actions"), stages, plural(stages, "stage", "stages"))
+	if len(result.Execution.Stages) > 0 {
+		out.WriteString("\nProgress\n")
+		writeCLIRunbookProgress(&out, w, nil, result.Execution.Stages)
+	}
 	return out.String(), true
+}
+
+func cliRunbookExecutionSize(execution cliRunbookExecution) (int, int) {
+	items := 0
+	for _, stage := range execution.Stages {
+		items += len(stage.Items)
+	}
+	return len(execution.Stages), items
+}
+
+func writeCLIRunbookProgress(out *strings.Builder, w io.Writer, previous, current []cliRunbookStageResult) {
+	previousByID := make(map[string]string, len(previous))
+	for _, stage := range previous {
+		previousByID[stage.StageID] = cliRunbookStageProgressKey(stage)
+	}
+	for _, stage := range current {
+		if previousByID[stage.StageID] == cliRunbookStageProgressKey(stage) {
+			continue
+		}
+		fmt.Fprintf(out, "  %s %s — %s\n", cliRunbookStageGlyph(w, stage.Status), cliRunbookStageTitle(stage), cliRunbookStageProgress(stage))
+	}
+}
+
+func cliRunbookStageProgressKey(stage cliRunbookStageResult) string {
+	counts := cliRunbookItemStatusCounts(stage.Items)
+	return fmt.Sprintf("%s:%d:%d:%d:%d:%d", stage.Status, counts.succeeded, counts.failed, counts.running, counts.waiting, counts.pending)
+}
+
+type cliRunbookItemCounts struct {
+	succeeded int
+	failed    int
+	running   int
+	waiting   int
+	pending   int
+}
+
+func cliRunbookItemStatusCounts(items []cliRunbookItemResult) cliRunbookItemCounts {
+	var counts cliRunbookItemCounts
+	for _, item := range items {
+		switch item.Status {
+		case "succeeded":
+			counts.succeeded++
+		case "failed", "cancelled":
+			counts.failed++
+		case "running":
+			counts.running++
+		case "waiting":
+			counts.waiting++
+		case "pending":
+			counts.pending++
+		}
+	}
+	return counts
+}
+
+func cliRunbookStageTitle(stage cliRunbookStageResult) string {
+	title := stage.Title
+	if title == "" {
+		title = stage.StageID
+	}
+	return cliResultText(title, 160)
+}
+
+func cliRunbookStageGlyph(w io.Writer, status string) string {
+	switch status {
+	case "succeeded":
+		return cliStyledText(w, "32", "✓")
+	case "halted", "cancelled":
+		return cliStyledText(w, "31", "✗")
+	case "active":
+		return cliStyledText(w, "33", "●")
+	default:
+		return "○"
+	}
+}
+
+func cliRunbookStageProgress(stage cliRunbookStageResult) string {
+	total := len(stage.Items)
+	counts := cliRunbookItemStatusCounts(stage.Items)
+	complete := counts.succeeded + counts.failed
+	switch stage.Status {
+	case "succeeded":
+		return fmt.Sprintf("%d/%d succeeded", counts.succeeded, total)
+	case "halted", "cancelled":
+		return fmt.Sprintf("%d/%d complete · %s", complete, total, stage.Status)
+	case "pending":
+		return fmt.Sprintf("waiting · %d %s", total, plural(total, "action", "actions"))
+	default:
+		parts := []string{fmt.Sprintf("%d/%d complete", complete, total)}
+		if counts.running > 0 {
+			parts = append(parts, fmt.Sprintf("%d running", counts.running))
+		}
+		if counts.waiting > 0 {
+			parts = append(parts, fmt.Sprintf("%d retrying", counts.waiting))
+		}
+		return strings.Join(parts, " · ")
+	}
+}
+
+func renderCLIRunbookCompletion(w io.Writer, execution cliRunbookExecution) string {
+	_, total := cliRunbookExecutionSize(execution)
+	var counts cliRunbookItemCounts
+	for _, stage := range execution.Stages {
+		stageCounts := cliRunbookItemStatusCounts(stage.Items)
+		counts.succeeded += stageCounts.succeeded
+		counts.failed += stageCounts.failed
+	}
+	status := cliResultStatus(w, execution.Status)
+	if execution.Status == "succeeded" {
+		return fmt.Sprintf("%s Runbook %s — %d/%d actions succeeded\n", cliStyledText(w, "32", "✓"), status, counts.succeeded, total)
+	}
+	return fmt.Sprintf("%s Runbook %s — %d succeeded · %d failed · %d total\n", cliStyledText(w, "31", "✗"), status, counts.succeeded, counts.failed, total)
+}
+
+func renderCLIRunbookResults(
+	w io.Writer,
+	execution cliRunbookExecution,
+	runs map[string]cliRunResult,
+	account string,
+) string {
+	if len(execution.Stages) == 0 {
+		return ""
+	}
+	var out strings.Builder
+	out.WriteString("Results\n")
+	for _, stage := range execution.Stages {
+		fmt.Fprintf(&out, "\n%s\n", cliStyledText(w, "1", cliRunbookStageTitle(stage)))
+		for _, item := range stage.Items {
+			var run cliRunResult
+			hasRun := item.LatestAttempt != nil
+			if hasRun {
+				run, hasRun = runs[item.LatestAttempt.RunID]
+			}
+			writeCLIRunbookResult(&out, w, item, run, hasRun, account)
+		}
+	}
+	return out.String()
+}
+
+func writeCLIRunbookResult(
+	out *strings.Builder,
+	w io.Writer,
+	item cliRunbookItemResult,
+	run cliRunResult,
+	hasRun bool,
+	account string,
+) {
+	status := item.Status
+	if hasRun {
+		status = run.Status
+	}
+	step := cliResultText(item.StepID, 160)
+	runner := cliRunbookRunnerName(item.RunnerRef)
+	fmt.Fprintf(out, "\n  %s %s · %s", cliRunbookResultGlyph(w, status), step, runner)
+	if hasRun && run.DurationMS != nil {
+		fmt.Fprintf(out, " · %s", cliResultDuration(*run.DurationMS))
+	}
+	if status != "success" && status != "succeeded" {
+		fmt.Fprintf(out, " · %s", cliResultStatus(w, status))
+	}
+	out.WriteByte('\n')
+	fmt.Fprintf(out, "    %s", cliResultText(item.ActionID, 160))
+	if item.AttemptCount > 1 {
+		fmt.Fprintf(out, " · %d attempts", item.AttemptCount)
+	}
+	out.WriteByte('\n')
+	if item.Error != nil && item.Error.Message != "" {
+		fmt.Fprintf(out, "    %s  %s\n", cliStyledText(w, "31", "Error"), cliResultText(item.Error.Message, maxCLIHumanStringRunes))
+	} else if hasRun && run.ErrorMessage != "" {
+		fmt.Fprintf(out, "    %s  %s\n", cliStyledText(w, "31", "Error"), cliResultText(run.ErrorMessage, maxCLIHumanStringRunes))
+	}
+	if !hasRun {
+		out.WriteString("    Output\n      No action attempt was recorded.\n")
+		return
+	}
+
+	detailsNeeded := writeCLIRunbookRunOutput(out, run)
+	if cliRunFailed(run.Status) {
+		detailsNeeded = true
+	}
+	if detailsNeeded {
+		if command := cliRunbookRunDetailsCommand(run, account); command != "" {
+			fmt.Fprintf(out, "    More  %s\n", command)
+		} else if runURL := safeCLIRunURL(run.RunURL); runURL != "" {
+			fmt.Fprintf(out, "    Details  %s\n", cliStyledText(w, "4", runURL))
+		}
+	}
+}
+
+func cliRunbookResultGlyph(w io.Writer, status string) string {
+	if status == "success" || status == "succeeded" {
+		return cliStyledText(w, "32", "✓")
+	}
+	if cliRunFailed(status) || status == "failed" || status == "cancelled" {
+		return cliStyledText(w, "31", "✗")
+	}
+	return "–"
+}
+
+func cliRunbookRunnerName(runnerRef string) string {
+	name, _, _ := strings.Cut(runnerRef, "~")
+	if name == "" {
+		name = runnerRef
+	}
+	return cliResultText(name, 160)
+}
+
+func writeCLIRunbookRunOutput(out *strings.Builder, run cliRunResult) bool {
+	wrote := false
+	detailsNeeded := run.StructuredOmitted || (run.OutputComplete != nil && !*run.OutputComplete)
+	if run.Stdout != "" || run.EmittedStdoutBytes > 0 {
+		wrote = true
+		clipped := writeCLIRunbookPreview(out, "Output", run.Stdout)
+		if clipped || run.TruncatedStdout {
+			writeCLIRunbookPreviewNotice(out, run.EmittedStdoutBytes)
+			detailsNeeded = true
+		}
+	}
+	if run.Stderr != "" || run.EmittedStderrBytes > 0 {
+		wrote = true
+		clipped := writeCLIRunbookPreview(out, "Error output", run.Stderr)
+		if clipped || run.TruncatedStderr {
+			writeCLIRunbookPreviewNotice(out, run.EmittedStderrBytes)
+			detailsNeeded = true
+		}
+	}
+	for _, segment := range run.Output {
+		if segment.Text == "" {
+			continue
+		}
+		wrote = true
+		label := "Output"
+		if segment.Stream == "stderr" {
+			label = "Error output"
+		}
+		if writeCLIRunbookPreview(out, label, segment.Text) {
+			detailsNeeded = true
+		}
+	}
+	if firstJSONByte(run.StructuredOutput) != 0 && firstJSONByte(run.StructuredOutput) != 'n' {
+		var pretty bytes.Buffer
+		if json.Indent(&pretty, bytes.TrimSpace(run.StructuredOutput), "", "  ") == nil {
+			wrote = true
+			if writeCLIRunbookPreview(out, "Result", pretty.String()) {
+				detailsNeeded = true
+			}
+		}
+	}
+	if !wrote {
+		out.WriteString("    Output\n      No output.\n")
+	}
+	if run.StructuredOmitted {
+		out.WriteString("    … structured result omitted from this preview\n")
+	}
+	if run.OutputComplete != nil && !*run.OutputComplete {
+		out.WriteString("    … output may have gaps\n")
+	}
+	return detailsNeeded
+}
+
+func writeCLIRunbookPreview(out *strings.Builder, label, value string) bool {
+	fmt.Fprintf(out, "    %s\n", label)
+	if value == "" {
+		out.WriteString("      Preview unavailable.\n")
+		return false
+	}
+	lines := strings.Split(value, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	clipped := len(lines) > maxCLIRunbookPreviewLines
+	if clipped {
+		lines = lines[:maxCLIRunbookPreviewLines]
+	}
+	remaining := maxCLIRunbookPreviewRunes
+	for index, line := range lines {
+		safe := []rune(terminalSafeText(line))
+		if len(safe) > remaining {
+			safe = safe[:remaining]
+			clipped = true
+		}
+		fmt.Fprintf(out, "      %s\n", string(safe))
+		remaining -= len(safe)
+		if remaining == 0 {
+			clipped = clipped || index < len(lines)-1
+			break
+		}
+	}
+	return clipped
+}
+
+func writeCLIRunbookPreviewNotice(out *strings.Builder, emittedBytes int64) {
+	if emittedBytes > 0 {
+		fmt.Fprintf(out, "    … preview truncated · %s total\n", cliHumanBytes(emittedBytes))
+		return
+	}
+	out.WriteString("    … preview truncated\n")
+}
+
+func cliHumanBytes(size int64) string {
+	const (
+		kilobyte = int64(1_000)
+		megabyte = int64(1_000_000)
+	)
+	switch {
+	case size < kilobyte:
+		return fmt.Sprintf("%d B", size)
+	case size < megabyte:
+		return cliHumanUnit(size, kilobyte, "kB")
+	default:
+		return cliHumanUnit(size, megabyte, "MB")
+	}
+}
+
+func cliHumanUnit(size, unit int64, label string) string {
+	if size%unit == 0 {
+		return fmt.Sprintf("%d %s", size/unit, label)
+	}
+	return fmt.Sprintf("%.1f %s", float64(size)/float64(unit), label)
+}
+
+func cliRunbookRunDetailsCommand(run cliRunResult, account string) string {
+	if !validCLIRunContinuation(run.Next, run.RunID) {
+		return ""
+	}
+	return cliSafeReadContinuation(run.Next, account)
+}
+
+func safeCLIRunURL(raw string) string {
+	if raw == "" || len(raw) > 2048 || terminalSafeText(raw) != raw {
+		return ""
+	}
+	parsed, err := url.ParseRequestURI(raw)
+	if err != nil || parsed.Host == "" || parsed.User != nil ||
+		(parsed.Scheme != "https" && parsed.Scheme != "http") {
+		return ""
+	}
+	return raw
 }
 
 func renderCLIRunbookExecution(w io.Writer, raw []byte) (string, bool) {

@@ -259,7 +259,7 @@ emisar-mcp recent_runs '{"scope":"own","limit":10}'
 | --- | --- |
 | `list_runbooks` | Live release, unpublished-change marker, description, workflow size, and exact live/draft inspection commands. |
 | `get_runbook` | Runbook identity, inputs, stages, action steps with target and argument context, and an editable execution template. |
-| `execute_runbook` | Operation ID and inspection command, approvals, stage/item status, attempts, errors, and outputs. |
+| `execute_runbook` | Operation ID and inspection command, compact stage progress, a terminal summary, and bounded latest-action output grouped by stage. |
 | `create_runbook_draft` | Draft identity, content digest, operation inspection command, review link, and current live release. |
 | `update_runbook_draft` | The same draft result after an optimistic, digest-bound update. |
 
@@ -269,10 +269,17 @@ reads, **Run** is an editable mutation template with visible placeholders,
 workflow. Commands preserve an explicit `--account`; `--json` remains the exact
 MCP `structuredContent` object without these presentation helpers.
 
-Human `execute_runbook` follows only exact continuations tied to the returned
-execution, waits through approval or expiry, and drains returned public output
-pages. Ctrl-C has the same observation-only behavior as `run_action`.
-It exits 1 when the execution is `halted` or `cancelled`.
+Human `execute_runbook` follows only read continuations tied to the returned
+execution. While it waits, it prints a stage again only when that stage's
+progress changes. At completion it uses the returned `runs_next` history to
+show the latest physical attempt for every action in workflow order. Output
+previews are line- and size-bounded; a truncated result includes the exact
+returned output continuation or the run-detail URL. Extracted public runbook
+outputs are shown separately when the execution returns `outputs_next`.
+
+Ctrl-C stops observation without cancelling the runbook. The command exits 1
+when the execution is `halted` or `cancelled`. `--json` does none of this
+following: it returns the original call's exact `structuredContent`.
 
 The local `auth`, `accounts`, `help`, and `list_tools` names are conveniences,
 not reserved MCP tool names. Use `--` before an exact tool name when it conflicts
@@ -364,7 +371,9 @@ The direct CLI fetches live descriptors for discovery and help, accepts one
 strict JSON argument object, and renders exact JSON or a bounded semantic view
 for each fixed tool. Unknown future tools use the generic renderer. Human
 `run_action` and `execute_runbook` follow only correlated server-issued
-observation continuations. `--json` always prints the exact result of one call.
+observation continuations. For runbook result pagination, the CLI preserves the
+execution filter and adds only the opaque `next_cursor` returned by the previous
+`recent_runs` page. `--json` always prints the exact result of one call.
 
 With no command, it writes only validated MCP frames to stdout. Diagnostics stay
 on stderr, and a network failure becomes a correlated JSON-RPC error instead of

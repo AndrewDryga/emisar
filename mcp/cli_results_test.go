@@ -80,10 +80,11 @@ func TestCLIFixedToolsHavePurposeBuiltHumanOutput(t *testing.T) {
 			},
 		},
 		{
-			name:   "runbook execution",
-			tool:   executeRunbookToolName,
-			result: `{"ok":true,"operation_id":"op-2","execution":{"runbook_execution_id":"exec-1","runbook_ref":"database-check@3","kind":"published","definition_sha256":"sha256:live","status":"succeeded","stages":[{"stage_id":"inspect","title":"Inspect","mode":"sequential","status":"succeeded","items":[{"id":"item-1","step_id":"status","runner_ref":"db-1~abc","status":"succeeded","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","risk":"low","attempt_count":1,"outputs":[{"output_id":"role","source":"structured","sensitive":false,"status":"captured","value":"primary"}],"output_count":1}]}]}}`,
-			want:   []string{"Runbook execution started", "Operation ID  op-2", `Inspect       emisar-mcp get_operation '{"operation_id":"op-2"}'`, "database-check@3 — succeeded", "Inspect — succeeded", "status on db-1~abc — succeeded", "postgres.status · low risk", "Output role — captured", "\"primary\""},
+			name:     "runbook execution",
+			tool:     executeRunbookToolName,
+			result:   `{"ok":true,"operation_id":"op-2","execution":{"runbook_execution_id":"exec-1","runbook_ref":"database-check@3","kind":"published","definition_sha256":"sha256:live","status":"succeeded","stages":[{"stage_id":"inspect","title":"Inspect","mode":"sequential","status":"succeeded","items":[{"id":"item-1","step_id":"status","runner_ref":"db-1~abc","status":"succeeded","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","risk":"low","attempt_count":1,"outputs":[{"output_id":"role","source":"structured","sensitive":false,"status":"captured","value":"primary"}],"output_count":1}]}]}}`,
+			want:     []string{"Runbook execution started", "Operation ID  op-2", `Inspect       emisar-mcp get_operation '{"operation_id":"op-2"}'`, "database-check@3", "1 action across 1 stage", "Progress", "✓ Inspect — 1/1 succeeded"},
+			wantNone: []string{"status on db-1~abc", "Output role", "Final status"},
 		},
 		{
 			name:   "draft",

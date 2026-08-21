@@ -130,6 +130,118 @@ func TestCLIJSONMutationMakesExactlyOneCall(t *testing.T) {
 	}
 }
 
+func TestCLIJSONExecuteRunbookMakesExactlyOneCall(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		operationID := r.Header.Get(operationIDHeader)
+		writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"operation_id":%q,"execution":{"runbook_execution_id":"exec-1","runbook_ref":"database-check@3","kind":"published","definition_sha256":"sha256:live","status":"active","stages":[],"runs_next":{"tool":"recent_runs","arguments":{"runbook_execution_id":"exec-1","limit":15}},"next":{"tool":"wait_for_run","arguments":{"runbook_execution_id":"exec-1","timeout":"60s"}}}},"content":[],"isError":false}`, operationID))
+	}))
+	defer srv.Close()
+
+	stdout, stderr, code := runCLITest(newTestBridge(srv), []string{executeRunbookToolName, `{}`, "--json"}, "")
+	if code != 0 || stderr != "" || !json.Valid([]byte(stdout)) {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("--json calls = %d, want exactly 1", calls.Load())
+	}
+	if !strings.Contains(stdout, `"runs_next"`) || !strings.Contains(stdout, `"next"`) {
+		t.Fatalf("exact structuredContent was not preserved: %s", stdout)
+	}
+}
+
+func TestCLIHumanExecuteRunbookRejectsMutationResultsContinuation(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		operationID := r.Header.Get(operationIDHeader)
+		writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"operation_id":%q,"execution":{"runbook_execution_id":"exec-1","runbook_ref":"database-check@3","kind":"published","definition_sha256":"sha256:live","status":"succeeded","stages":[{"stage_id":"inspect","title":"Inspect","status":"succeeded","items":[{"item_id":"item-1","step_id":"status","runner_ref":"db-1~abc","status":"succeeded","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","latest_attempt":{"run_id":"run-1","attempt_number":1,"status":"success"}}]}],"runs_next":{"tool":"run_action","arguments":{"action_id":"danger.erase"}}}},"content":[],"isError":false}`, operationID))
+	}))
+	defer srv.Close()
+
+	stdout, stderr, code := runCLITest(newTestBridge(srv), []string{executeRunbookToolName, `{}`}, "")
+	if code != 1 || calls.Load() != 1 {
+		t.Fatalf("exit=%d calls=%d stdout=%q stderr=%q", code, calls.Load(), stdout, stderr)
+	}
+	if !strings.Contains(stderr, "invalid action-results continuation") ||
+		strings.Contains(stdout, "danger.erase") || strings.Contains(stderr, "danger.erase") {
+		t.Fatalf("unsafe results continuation was not rejected safely:\nstdout=%s\nstderr=%s", stdout, stderr)
+	}
+}
+
+func TestCLIHumanExecuteRunbookRejectsChangedActionResult(t *testing.T) {
+	var calls atomic.Int32
+	var operationID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := calls.Add(1)
+		if call == 1 {
+			operationID = r.Header.Get(operationIDHeader)
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"operation_id":%q,"execution":{"runbook_execution_id":"exec-1","runbook_ref":"database-check@3","kind":"published","definition_sha256":"sha256:live","status":"succeeded","stages":[{"stage_id":"inspect","title":"Inspect","status":"succeeded","items":[{"item_id":"item-1","step_id":"status","runner_ref":"db-1~abc","status":"succeeded","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","latest_attempt":{"run_id":"run-1","attempt_number":1,"status":"success"}}]}],"runs_next":{"tool":"recent_runs","arguments":{"runbook_execution_id":"exec-1","limit":15}}}},"content":[],"isError":false}`, operationID))
+			return
+		}
+		writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"runs":[{"run_id":"run-1","operation_id":%q,"runbook_execution_id":"exec-1","step_id":"status","runner_ref":"hostile~def","action_id":"danger.erase","pack_ref":"danger@1/sha256:def","status":"success","stdout":"do not print me"}],"next_cursor":null},"content":[],"isError":false}`, operationID))
+	}))
+	defer srv.Close()
+
+	stdout, stderr, code := runCLITest(newTestBridge(srv), []string{executeRunbookToolName, `{}`}, "")
+	if code != 1 || calls.Load() != 2 {
+		t.Fatalf("exit=%d calls=%d stdout=%q stderr=%q", code, calls.Load(), stdout, stderr)
+	}
+	if !strings.Contains(stderr, "outside this runbook execution") ||
+		strings.Contains(stdout, "danger.erase") || strings.Contains(stdout, "do not print me") {
+		t.Fatalf("changed action identity reached output:\nstdout=%s\nstderr=%s", stdout, stderr)
+	}
+}
+
+func TestCLIHumanExecuteRunbookRejectsRepeatedResultsCursor(t *testing.T) {
+	var calls atomic.Int32
+	var operationID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch call := calls.Add(1); call {
+		case 1:
+			operationID = r.Header.Get(operationIDHeader)
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"operation_id":%q,"execution":{"runbook_execution_id":"exec-1","runbook_ref":"database-check@3","kind":"published","definition_sha256":"sha256:live","status":"succeeded","stages":[{"stage_id":"inspect","title":"Inspect","status":"succeeded","items":[{"item_id":"item-1","step_id":"status","runner_ref":"db-1~abc","status":"succeeded","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","latest_attempt":{"run_id":"run-latest","attempt_number":3,"status":"success"}}]}],"runs_next":{"tool":"recent_runs","arguments":{"runbook_execution_id":"exec-1","limit":15}}}},"content":[],"isError":false}`, operationID))
+		case 2, 3:
+			runID := fmt.Sprintf("run-old-%d", call)
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"runs":[{"run_id":%q,"operation_id":%q,"runbook_execution_id":"exec-1","step_id":"status","runner_ref":"db-1~abc","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","status":"success","stdout":"old output"}],"next_cursor":"same-cursor"},"content":[],"isError":false}`, runID, operationID))
+		default:
+			t.Errorf("unexpected request %d", call)
+		}
+	}))
+	defer srv.Close()
+
+	stdout, stderr, code := runCLITest(newTestBridge(srv), []string{executeRunbookToolName, `{}`}, "")
+	if code != 1 || calls.Load() != 3 {
+		t.Fatalf("exit=%d calls=%d stdout=%q stderr=%q", code, calls.Load(), stdout, stderr)
+	}
+	if !strings.Contains(stderr, "repeated a cursor") || strings.Contains(stdout, "old output") {
+		t.Fatalf("repeated cursor was not rejected before output:\nstdout=%s\nstderr=%s", stdout, stderr)
+	}
+}
+
+func TestCLIHumanExecuteRunbookRejectsChangedFrozenItem(t *testing.T) {
+	var calls atomic.Int32
+	var operationID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			operationID = r.Header.Get(operationIDHeader)
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"operation_id":%q,"execution":{"runbook_execution_id":"exec-1","runbook_ref":"database-check@3","kind":"published","definition_sha256":"sha256:live","status":"active","stages":[{"stage_id":"inspect","title":"Inspect","mode":"parallel","status":"active","items":[{"item_id":"item-1","step_id":"status","runner_ref":"db-1~abc","status":"running","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc"}]}],"next":{"tool":"wait_for_run","arguments":{"runbook_execution_id":"exec-1","timeout":"60s"}}}},"content":[],"isError":false}`, operationID))
+			return
+		}
+		writeCLIResult(t, w, r, `{"structuredContent":{"ok":true,"execution":{"runbook_execution_id":"exec-1","runbook_ref":"database-check@3","kind":"published","definition_sha256":"sha256:live","status":"succeeded","stages":[{"stage_id":"inspect","title":"Inspect","mode":"parallel","status":"succeeded","items":[{"item_id":"item-1","step_id":"status","runner_ref":"db-1~abc","status":"succeeded","action_id":"danger.erase","pack_ref":"danger@1/sha256:def","latest_attempt":{"run_id":"run-1","attempt_number":1,"status":"success"}}]}],"runs_next":{"tool":"recent_runs","arguments":{"runbook_execution_id":"exec-1","limit":15}}}},"content":[],"isError":false}`)
+	}))
+	defer srv.Close()
+
+	stdout, stderr, code := runCLITest(newTestBridge(srv), []string{executeRunbookToolName, `{}`}, "")
+	if code != 1 || calls.Load() != 2 {
+		t.Fatalf("exit=%d calls=%d stdout=%q stderr=%q", code, calls.Load(), stdout, stderr)
+	}
+	if !strings.Contains(stderr, "different or invalid runbook execution") || strings.Contains(stdout, "danger.erase") {
+		t.Fatalf("changed frozen item reached output:\nstdout=%s\nstderr=%s", stdout, stderr)
+	}
+}
+
 func TestCLIProcessRejectsSpoofedMutationOperationBeforeOutput(t *testing.T) {
 	var transportOperationID string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -267,39 +379,85 @@ func TestCLIHumanExecuteRunbookFollowsStatusAndOutputs(t *testing.T) {
 		call := calls.Add(1)
 		var request struct {
 			Params struct {
-				Name string `json:"name"`
+				Name      string          `json:"name"`
+				Arguments json.RawMessage `json:"arguments"`
 			} `json:"params"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
+			t.Errorf("decode request: %v", err)
+			return
 		}
 		switch call {
 		case 1:
 			mutationOperationID = r.Header.Get(operationIDHeader)
-			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"operation_id":%q,"execution":{"runbook_execution_id":"exec-1","runbook_ref":"database-check@3","kind":"published","definition_sha256":"sha256:live","status":"active","stages":[],"next":{"tool":"wait_for_run","arguments":{"runbook_execution_id":"exec-1","timeout":"60s"}}}},"content":[],"isError":false}`, mutationOperationID))
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"operation_id":%q,"execution":{"runbook_execution_id":"exec-1","runbook_ref":"database-check@3","kind":"published","definition_sha256":"sha256:live","status":"active","stages":[{"stage_id":"inspect","title":"Inspect databases","mode":"parallel","status":"active","items":[{"item_id":"item-1","step_id":"primary_status","runner_ref":"db-1~abc","status":"running","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","attempt_count":1},{"item_id":"item-2","step_id":"replica_status","runner_ref":"db-2~def","status":"pending","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc"}]},{"stage_id":"report","title":"Build report","mode":"sequential","status":"pending","items":[{"item_id":"item-3","step_id":"render_report","runner_ref":"ops-1~ghi","status":"pending","action_id":"linux.uptime","pack_ref":"linux@1/sha256:def"}]}],"next":{"tool":"wait_for_run","arguments":{"runbook_execution_id":"exec-1","timeout":"60s"}}}},"content":[],"isError":false}`, mutationOperationID))
 		case 2:
-			if request.Params.Name != waitForRunToolName {
-				t.Errorf("status follow tool = %q", request.Params.Name)
+			if request.Params.Name != waitForRunToolName || !jsonEqual(request.Params.Arguments, []byte(`{"runbook_execution_id":"exec-1","timeout":"60s"}`)) {
+				t.Errorf("first status follow = %s %s", request.Params.Name, request.Params.Arguments)
 			}
-			writeCLIResult(t, w, r, `{"structuredContent":{"ok":true,"execution":{"runbook_execution_id":"exec-1","runbook_ref":"database-check@3","kind":"published","definition_sha256":"sha256:live","status":"succeeded","stages":[],"outputs_next":{"tool":"wait_for_run","arguments":{"runbook_execution_id":"exec-1","cursor":"outputs-1","timeout":"0"}}}},"content":[],"isError":false}`)
+			writeCLIResult(t, w, r, `{"structuredContent":{"ok":true,"execution":{"runbook_execution_id":"exec-1","runbook_ref":"database-check@3","kind":"published","definition_sha256":"sha256:live","status":"active","stages":[{"stage_id":"inspect","title":"Inspect databases","mode":"parallel","status":"active","items":[{"item_id":"item-1","step_id":"primary_status","runner_ref":"db-1~abc","status":"succeeded","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","attempt_count":1,"latest_attempt":{"run_id":"run-1","attempt_number":1,"status":"success","duration_ms":4}},{"item_id":"item-2","step_id":"replica_status","runner_ref":"db-2~def","status":"running","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","attempt_count":1}]},{"stage_id":"report","title":"Build report","mode":"sequential","status":"pending","items":[{"item_id":"item-3","step_id":"render_report","runner_ref":"ops-1~ghi","status":"pending","action_id":"linux.uptime","pack_ref":"linux@1/sha256:def"}]}],"next":{"tool":"wait_for_run","arguments":{"runbook_execution_id":"exec-1","cursor":"status-2","timeout":"60s"}}}},"content":[],"isError":false}`)
 		case 3:
-			if request.Params.Name != waitForRunToolName {
-				t.Errorf("output follow tool = %q", request.Params.Name)
+			if request.Params.Name != waitForRunToolName || !jsonEqual(request.Params.Arguments, []byte(`{"runbook_execution_id":"exec-1","cursor":"status-2","timeout":"60s"}`)) {
+				t.Errorf("second status follow = %s %s", request.Params.Name, request.Params.Arguments)
 			}
-			writeCLIResult(t, w, r, `{"structuredContent":{"ok":true,"execution_outputs":{"runbook_execution_id":"exec-1","total_count":1,"returned_count":1,"remaining_count":0,"outputs":[{"output_id":"role","stage_id":"inspect","step_id":"status","runner_ref":"db-1~abc","source":"structured","sensitive":false,"status":"captured","value":"primary"}]}},"content":[],"isError":false}`)
+			writeCLIResult(t, w, r, `{"structuredContent":{"ok":true,"execution":{"runbook_execution_id":"exec-1","runbook_ref":"database-check@3","kind":"published","definition_sha256":"sha256:live","status":"succeeded","stages":[{"stage_id":"inspect","title":"Inspect databases","mode":"parallel","status":"succeeded","items":[{"item_id":"item-1","step_id":"primary_status","runner_ref":"db-1~abc","status":"succeeded","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","attempt_count":1,"latest_attempt":{"run_id":"run-1","attempt_number":1,"status":"success","duration_ms":4}},{"item_id":"item-2","step_id":"replica_status","runner_ref":"db-2~def","status":"succeeded","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","attempt_count":1,"latest_attempt":{"run_id":"run-2","attempt_number":1,"status":"success","duration_ms":7}}]},{"stage_id":"report","title":"Build report","mode":"sequential","status":"succeeded","items":[{"item_id":"item-3","step_id":"render_report","runner_ref":"ops-1~ghi","status":"succeeded","action_id":"linux.uptime","pack_ref":"linux@1/sha256:def","attempt_count":2,"latest_attempt":{"run_id":"run-3","attempt_number":2,"status":"success","duration_ms":1250}}]}],"runs_next":{"tool":"recent_runs","arguments":{"runbook_execution_id":"exec-1","limit":15}},"outputs_next":{"tool":"wait_for_run","arguments":{"runbook_execution_id":"exec-1","cursor":"outputs-1","timeout":"0"}}}},"content":[],"isError":false}`)
+		case 4:
+			if request.Params.Name != recentRunsToolName || !jsonEqual(request.Params.Arguments, []byte(`{"runbook_execution_id":"exec-1","limit":15}`)) {
+				t.Errorf("first results page = %s %s", request.Params.Name, request.Params.Arguments)
+			}
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"runs":[{"run_id":"run-1","operation_id":%q,"runbook_execution_id":"exec-1","step_id":"primary_status","runner_ref":"db-1~abc","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","status":"success","duration_ms":4,"stdout":"primary healthy"},{"run_id":"run-3","operation_id":%q,"runbook_execution_id":"exec-1","step_id":"render_report","runner_ref":"ops-1~ghi","action_id":"linux.uptime","pack_ref":"linux@1/sha256:def","status":"success","duration_ms":1250,"stdout":"up 24 days","structured_output_omitted":true,"run_url":"https://emisar.dev/app/demo/runs/run-3"}],"next_cursor":"runs-2"},"content":[],"isError":false}`, mutationOperationID, mutationOperationID))
+		case 5:
+			if request.Params.Name != recentRunsToolName || !jsonEqual(request.Params.Arguments, []byte(`{"runbook_execution_id":"exec-1","limit":15,"cursor":"runs-2"}`)) {
+				t.Errorf("second results page = %s %s", request.Params.Name, request.Params.Arguments)
+			}
+			writeCLIResult(t, w, r, fmt.Sprintf(`{"structuredContent":{"ok":true,"runs":[{"run_id":"run-2","operation_id":%q,"runbook_execution_id":"exec-1","step_id":"replica_status","runner_ref":"db-2~def","action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","status":"success","duration_ms":7,"stdout":"line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\u001b[31m\u202evil","emitted_stdout_bytes":1200000,"truncated_stdout":true,"run_url":"https://emisar.dev/app/demo/runs/run-2","next":{"tool":"wait_for_run","arguments":{"run_id":"run-2","cursor":"output-2","timeout":"0"}}}],"next_cursor":null},"content":[],"isError":false}`, mutationOperationID))
+		case 6:
+			if request.Params.Name != waitForRunToolName || !jsonEqual(request.Params.Arguments, []byte(`{"runbook_execution_id":"exec-1","cursor":"outputs-1","timeout":"0"}`)) {
+				t.Errorf("output follow = %s %s", request.Params.Name, request.Params.Arguments)
+			}
+			writeCLIResult(t, w, r, `{"structuredContent":{"ok":true,"execution_outputs":{"runbook_execution_id":"exec-1","total_count":1,"returned_count":1,"remaining_count":0,"outputs":[{"output_id":"role","stage_id":"inspect","step_id":"primary_status","runner_ref":"db-1~abc","source":"structured","sensitive":false,"status":"captured","value":"primary"}]}},"content":[],"isError":false}`)
 		default:
 			t.Errorf("unexpected request %d", call)
 		}
 	}))
 	defer srv.Close()
 
-	stdout, stderr, code := runCLITest(newTestBridge(srv), []string{executeRunbookToolName, `{}`}, "")
-	if code != 0 || stderr != "" || calls.Load() != 3 {
+	env := map[string]string{"EMISAR_URL": srv.URL, "EMISAR_API_KEY": "e2e-token"}
+	stdout, stderr, code := runMain(t, "", []string{executeRunbookToolName, `{}`}, env)
+	if code != 0 || stderr != "" || calls.Load() != 6 {
 		t.Fatalf("exit=%d calls=%d stderr=%q\n%s", code, calls.Load(), stderr, stdout)
 	}
-	for _, want := range []string{"Operation ID  " + mutationOperationID, "Waiting for completion", "Final status", "database-check@3 — succeeded", "1 of 1 runbook outputs", "\"primary\""} {
+	for _, want := range []string{
+		"Operation ID  " + mutationOperationID,
+		"3 actions across 2 stages",
+		"● Inspect databases — 0/2 complete · 1 running",
+		"○ Build report — waiting · 1 action",
+		"● Inspect databases — 1/2 complete · 1 running",
+		"✓ Inspect databases — 2/2 succeeded",
+		"✓ Build report — 1/1 succeeded",
+		"✓ Runbook succeeded — 3/3 actions succeeded",
+		"Results\n\nInspect databases",
+		"✓ primary_status · db-1 · 4 ms",
+		"primary healthy",
+		"✓ replica_status · db-2 · 7 ms",
+		"… preview truncated · 1.2 MB total",
+		`More  emisar-mcp wait_for_run '{"run_id":"run-2","cursor":"output-2","timeout":"0"}'`,
+		"Build report",
+		"✓ render_report · ops-1 · 1.2 s",
+		"linux.uptime · 2 attempts",
+		"up 24 days",
+		"… structured result omitted from this preview",
+		"Details  https://emisar.dev/app/demo/runs/run-3",
+		"1 of 1 runbook outputs",
+		"\"primary\"",
+	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+	for _, unwanted := range []string{"Final status", "primary_status on db-1~abc", "line 9", "\x1b", "\u202e"} {
+		if strings.Contains(stdout, unwanted) {
+			t.Errorf("stdout contains %q:\n%s", unwanted, stdout)
 		}
 	}
 }

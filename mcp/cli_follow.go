@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"strings"
 	"sync"
 )
 
@@ -14,6 +15,23 @@ type cliFollowedRun struct {
 	index int
 	run   cliRunResult
 	err   error
+}
+
+const (
+	maxCLIRunbookItems       = 256
+	maxCLIRunbookResultPages = 256
+)
+
+type cliRunbookItemIdentity struct {
+	stepID    string
+	runnerRef string
+	actionID  string
+	packRef   string
+}
+
+type cliRunbookExpectedRun struct {
+	identity cliRunbookItemIdentity
+	status   string
 }
 
 func validateCLIHumanMutation(toolName, operationID string, raw []byte) error {
@@ -235,7 +253,10 @@ func (b *bridge) followCLIRunbook(
 	}
 	_ = json.Unmarshal(raw, &initial)
 	execution := initial.Execution
-	if !cliToolContinuationPresent(execution.Next) && !cliToolContinuationPresent(execution.OutputsNext) {
+	previousStages := execution.Stages
+	if !cliToolContinuationPresent(execution.Next) &&
+		!cliToolContinuationPresent(execution.OutputsNext) &&
+		!cliToolContinuationPresent(execution.RunsNext) {
 		if cliRunbookFailed(execution.Status) {
 			return 1
 		}
@@ -249,7 +270,9 @@ func (b *bridge) followCLIRunbook(
 		return b.writeCLIFollowFailure(stderr, operationID, errors.New("the runbook response contained an invalid wait continuation"))
 	}
 
-	_, _ = io.WriteString(stdout, "\nWaiting for completion. Ctrl-C stops waiting; the runbook keeps running.\n")
+	if cliToolContinuationPresent(execution.Next) {
+		_, _ = io.WriteString(stdout, "\nWaiting for completion. Ctrl-C stops waiting; the runbook keeps running.\n")
+	}
 	for cliToolContinuationPresent(execution.Next) {
 		raw, err := b.callCLIContinuation(ctx, execution.Next)
 		if err != nil {
@@ -264,6 +287,7 @@ func (b *bridge) followCLIRunbook(
 		}
 		if json.Unmarshal(raw, &envelope) != nil || !envelope.OK ||
 			!sameCLIRunbookIdentity(initial.Execution, envelope.Execution) ||
+			!sameCLIRunbookLayout(initial.Execution, envelope.Execution) ||
 			envelope.Execution.Status == "" {
 			return b.writeCLIFollowFailure(stderr, operationID, errors.New("wait_for_run returned a different or invalid runbook execution"))
 		}
@@ -272,9 +296,23 @@ func (b *bridge) followCLIRunbook(
 			!validCLIExecutionContinuation(execution.Next, execution.RunbookExecutionID) {
 			return b.writeCLIFollowFailure(stderr, operationID, errors.New("the server changed or malformed the runbook wait continuation"))
 		}
+		var progress strings.Builder
+		writeCLIRunbookProgress(&progress, stdout, previousStages, execution.Stages)
+		if progress.Len() > 0 {
+			_, _ = io.WriteString(stdout, progress.String())
+		}
+		previousStages = execution.Stages
 	}
 	if !cliRunbookTerminal(execution.Status) {
 		return b.writeCLIFollowFailure(stderr, operationID, errors.New("wait_for_run stopped before the runbook reached a terminal status"))
+	}
+
+	runs, err := b.collectCLIRunbookResults(ctx, operationID, execution)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return b.writeCLIRunbookResultsCancelled(stderr, operationID)
+		}
+		return b.writeCLIFollowFailure(stderr, operationID, err)
 	}
 
 	var outputPages []string
@@ -313,10 +351,9 @@ func (b *bridge) followCLIRunbook(
 		next = page.Next
 	}
 
-	_, _ = io.WriteString(stdout, "\nFinal status\n\n")
-	executionRaw, _ := json.Marshal(execution)
-	if rendered, ok := renderCLIRunbookExecution(stdout, executionRaw); ok {
-		_, _ = io.WriteString(stdout, rendered)
+	_, _ = io.WriteString(stdout, "\n"+renderCLIRunbookCompletion(stdout, execution))
+	if rendered := renderCLIRunbookResults(stdout, execution, runs, b.cliAccount); rendered != "" {
+		_, _ = io.WriteString(stdout, "\n"+rendered)
 	}
 	for _, page := range outputPages {
 		_, _ = io.WriteString(stdout, "\n"+page)
@@ -327,6 +364,190 @@ func (b *bridge) followCLIRunbook(
 	return 0
 }
 
+func (b *bridge) collectCLIRunbookResults(
+	ctx context.Context,
+	operationID string,
+	execution cliRunbookExecution,
+) (map[string]cliRunResult, error) {
+	expected, identities, err := expectedCLIRunbookRuns(execution)
+	if err != nil {
+		return nil, err
+	}
+	if len(expected) == 0 {
+		return map[string]cliRunResult{}, nil
+	}
+	base, ok := parseCLIRunbookRunsNext(execution.RunsNext, execution.RunbookExecutionID)
+	if !ok {
+		return nil, errors.New("the runbook response contained an invalid action-results continuation")
+	}
+
+	found := make(map[string]cliRunResult, len(expected))
+	seenRuns := make(map[string]struct{})
+	seenCursors := make(map[string]struct{})
+	next := execution.RunsNext
+	for pageNumber := 0; pageNumber < maxCLIRunbookResultPages; pageNumber++ {
+		pageRaw, callErr := b.callCLIContinuation(ctx, next)
+		if callErr != nil {
+			return nil, callErr
+		}
+		var page struct {
+			OK         bool            `json:"ok"`
+			Runs       []cliRunResult  `json:"runs"`
+			NextCursor json.RawMessage `json:"next_cursor"`
+		}
+		if json.Unmarshal(pageRaw, &page) != nil || !page.OK || len(page.Runs) > 100 {
+			return nil, errors.New("recent_runs returned invalid runbook action results")
+		}
+		for _, run := range page.Runs {
+			identity := cliRunbookItemIdentity{
+				stepID: run.StepID, runnerRef: run.RunnerRef,
+				actionID: run.ActionID, packRef: run.PackRef,
+			}
+			if run.RunID == "" || run.OperationID != operationID ||
+				run.RunbookExecutionID != execution.RunbookExecutionID ||
+				!cliRunTerminal(run.Status) || run.EmittedStdoutBytes < 0 || run.EmittedStderrBytes < 0 ||
+				(run.OutputComplete != nil && *run.OutputComplete) {
+				return nil, errors.New("recent_runs returned a different or invalid runbook action")
+			}
+			if cliToolContinuationPresent(run.Next) && !validCLIRunContinuation(run.Next, run.RunID) {
+				return nil, errors.New("recent_runs returned an invalid action-output continuation")
+			}
+			if _, belongs := identities[identity]; !belongs {
+				return nil, errors.New("recent_runs returned a run outside this runbook execution")
+			}
+			if _, duplicate := seenRuns[run.RunID]; duplicate {
+				return nil, errors.New("recent_runs repeated a run while loading runbook results")
+			}
+			seenRuns[run.RunID] = struct{}{}
+			if expectedRun, wanted := expected[run.RunID]; wanted {
+				if identity != expectedRun.identity || run.Status != expectedRun.status {
+					return nil, errors.New("recent_runs changed a runbook action identity")
+				}
+				found[run.RunID] = run
+			}
+		}
+
+		cursor, cursorOK := cliRunbookNextCursor(page.NextCursor)
+		if !cursorOK {
+			return nil, errors.New("recent_runs returned an invalid runbook results cursor")
+		}
+		if len(found) == len(expected) {
+			return found, nil
+		}
+		if cursor == "" {
+			return nil, errors.New("recent_runs ended before every runbook action result was returned")
+		}
+		if _, duplicate := seenCursors[cursor]; duplicate {
+			return nil, errors.New("recent_runs repeated a cursor while loading runbook results")
+		}
+		seenCursors[cursor] = struct{}{}
+		next, ok = cliRunbookRunsPageNext(base, cursor)
+		if !ok {
+			return nil, errors.New("could not preserve the runbook results continuation")
+		}
+	}
+	return nil, errors.New("runbook action results exceeded the safe pagination limit")
+}
+
+func expectedCLIRunbookRuns(execution cliRunbookExecution) (
+	map[string]cliRunbookExpectedRun,
+	map[cliRunbookItemIdentity]struct{},
+	error,
+) {
+	expected := make(map[string]cliRunbookExpectedRun)
+	identities := make(map[cliRunbookItemIdentity]struct{})
+	itemCount := 0
+	for _, stage := range execution.Stages {
+		for _, item := range stage.Items {
+			itemCount++
+			identity := cliRunbookItemIdentity{
+				stepID: item.StepID, runnerRef: item.RunnerRef,
+				actionID: item.ActionID, packRef: item.PackRef,
+			}
+			if item.StepID == "" || item.RunnerRef == "" || item.ActionID == "" || item.PackRef == "" ||
+				!cliRunbookItemTerminal(item.Status) {
+				return nil, nil, errors.New("the runbook response contained an invalid action identity")
+			}
+			identities[identity] = struct{}{}
+			if item.LatestAttempt == nil {
+				continue
+			}
+			if item.LatestAttempt.RunID == "" || !cliRunTerminal(item.LatestAttempt.Status) {
+				return nil, nil, errors.New("the terminal runbook response contained an invalid latest action attempt")
+			}
+			if _, duplicate := expected[item.LatestAttempt.RunID]; duplicate {
+				return nil, nil, errors.New("the runbook response repeated a latest action attempt")
+			}
+			expected[item.LatestAttempt.RunID] = cliRunbookExpectedRun{
+				identity: identity,
+				status:   item.LatestAttempt.Status,
+			}
+		}
+	}
+	if itemCount > maxCLIRunbookItems {
+		return nil, nil, errors.New("the runbook response exceeded the published 256-action limit")
+	}
+	return expected, identities, nil
+}
+
+func cliRunbookItemTerminal(status string) bool {
+	switch status {
+	case "succeeded", "failed", "cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
+type cliRunbookRunsArguments struct {
+	RunbookExecutionID string `json:"runbook_execution_id"`
+	Limit              int    `json:"limit"`
+}
+
+func parseCLIRunbookRunsNext(next cliToolResultNext, executionID string) (cliRunbookRunsArguments, bool) {
+	if next.Tool != recentRunsToolName || firstJSONByte(next.Arguments) != '{' ||
+		len(next.Arguments) > maxCLIFleetCommand || validateStrictJSON(next.Arguments) != nil {
+		return cliRunbookRunsArguments{}, false
+	}
+	var fields map[string]json.RawMessage
+	var arguments cliRunbookRunsArguments
+	if json.Unmarshal(next.Arguments, &fields) != nil || len(fields) != 2 ||
+		json.Unmarshal(next.Arguments, &arguments) != nil ||
+		arguments.RunbookExecutionID != executionID || arguments.Limit < 1 || arguments.Limit > 100 {
+		return cliRunbookRunsArguments{}, false
+	}
+	if _, ok := fields["runbook_execution_id"]; !ok {
+		return cliRunbookRunsArguments{}, false
+	}
+	if _, ok := fields["limit"]; !ok {
+		return cliRunbookRunsArguments{}, false
+	}
+	return arguments, true
+}
+
+func cliRunbookNextCursor(raw json.RawMessage) (string, bool) {
+	if firstJSONByte(raw) == 0 || firstJSONByte(raw) == 'n' {
+		return "", true
+	}
+	var cursor string
+	if json.Unmarshal(raw, &cursor) != nil || cursor == "" || len(cursor) > 4096 {
+		return "", false
+	}
+	return cursor, true
+}
+
+func cliRunbookRunsPageNext(base cliRunbookRunsArguments, cursor string) (cliToolResultNext, bool) {
+	arguments, err := json.Marshal(struct {
+		RunbookExecutionID string `json:"runbook_execution_id"`
+		Limit              int    `json:"limit"`
+		Cursor             string `json:"cursor"`
+	}{base.RunbookExecutionID, base.Limit, cursor})
+	if err != nil || len(arguments) > maxCLIFleetCommand {
+		return cliToolResultNext{}, false
+	}
+	return cliToolResultNext{Tool: recentRunsToolName, Arguments: arguments}, true
+}
+
 func sameCLIRunbookIdentity(initial, next cliRunbookExecution) bool {
 	return next.RunbookExecutionID == initial.RunbookExecutionID &&
 		next.RunbookRef == initial.RunbookRef &&
@@ -334,20 +555,49 @@ func sameCLIRunbookIdentity(initial, next cliRunbookExecution) bool {
 		next.DefinitionSHA256 == initial.DefinitionSHA256
 }
 
+func sameCLIRunbookLayout(initial, next cliRunbookExecution) bool {
+	if len(initial.Stages) != len(next.Stages) {
+		return false
+	}
+	for stageIndex := range initial.Stages {
+		beforeStage := initial.Stages[stageIndex]
+		afterStage := next.Stages[stageIndex]
+		if beforeStage.StageID != afterStage.StageID || beforeStage.Title != afterStage.Title ||
+			beforeStage.Mode != afterStage.Mode || beforeStage.MaxParallel != afterStage.MaxParallel ||
+			len(beforeStage.Items) != len(afterStage.Items) {
+			return false
+		}
+		for itemIndex := range beforeStage.Items {
+			beforeItem := beforeStage.Items[itemIndex]
+			afterItem := afterStage.Items[itemIndex]
+			if beforeItem.ItemID != afterItem.ItemID || beforeItem.StepID != afterItem.StepID ||
+				beforeItem.RunnerRef != afterItem.RunnerRef || beforeItem.ActionID != afterItem.ActionID ||
+				beforeItem.PackRef != afterItem.PackRef || beforeItem.Risk != afterItem.Risk {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (b *bridge) callCLIContinuation(ctx context.Context, next cliToolResultNext) (json.RawMessage, error) {
+	continuation := "observation continuation"
+	if next.Tool == waitForRunToolName || next.Tool == recentRunsToolName {
+		continuation = next.Tool
+	}
 	response, _, err := b.cliRoundTripContext(ctx, "tools/call", next.Tool, next.Arguments)
 	if err != nil {
 		return nil, fmt.Errorf("observe running work: %w", err)
 	}
 	if len(response.Error) > 0 {
-		return nil, errors.New("wait_for_run returned an MCP error")
+		return nil, fmt.Errorf("%s returned an MCP error", continuation)
 	}
 	var result struct {
 		StructuredContent json.RawMessage `json:"structuredContent"`
 		IsError           bool            `json:"isError"`
 	}
 	if json.Unmarshal(response.Result, &result) != nil || firstJSONByte(result.StructuredContent) != '{' {
-		return nil, errors.New("wait_for_run returned an invalid tool response")
+		return nil, fmt.Errorf("%s returned an invalid tool response", continuation)
 	}
 	if result.IsError {
 		var failure struct {
@@ -356,9 +606,9 @@ func (b *bridge) callCLIContinuation(ctx context.Context, next cliToolResultNext
 			} `json:"error"`
 		}
 		if json.Unmarshal(result.StructuredContent, &failure) == nil && failure.Error.Message != "" {
-			return nil, fmt.Errorf("wait_for_run: %s", cliResultText(failure.Error.Message, maxCLIHumanStringRunes))
+			return nil, fmt.Errorf("%s: %s", continuation, cliResultText(failure.Error.Message, maxCLIHumanStringRunes))
 		}
-		return nil, errors.New("wait_for_run reported an error")
+		return nil, fmt.Errorf("%s reported an error", continuation)
 	}
 	return result.StructuredContent, nil
 }
@@ -456,10 +706,20 @@ func (b *bridge) writeCLIWaitCancelled(stderr io.Writer, operationID, kind strin
 	return 130
 }
 
+func (b *bridge) writeCLIRunbookResultsCancelled(stderr io.Writer, operationID string) int {
+	writeCLIDiagnostic(stderr, cliDiagnostic{
+		Kind:    cliDiagnosticWarning,
+		Summary: "Stopped loading runbook results",
+		Details: []string{"The runbook was not cancelled. Its result remains available in Emisar."},
+		Next:    []string{b.cliOperationRecoveryCommand(operationID)},
+	})
+	return 130
+}
+
 func (b *bridge) writeCLIFollowFailure(stderr io.Writer, operationID string, followErr error) int {
 	writeCLIDiagnostic(stderr, cliDiagnostic{
 		Kind:    cliDiagnosticError,
-		Summary: "Could not finish waiting for the operation",
+		Summary: "Could not finish observing the operation",
 		Details: []string{followErr.Error(), "The mutation was not retried and may still be running."},
 		Next:    []string{b.cliOperationRecoveryCommand(operationID)},
 	})
