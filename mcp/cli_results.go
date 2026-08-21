@@ -84,9 +84,9 @@ func writeCLIOperatorOutput(
 	var ok bool
 	switch toolName {
 	case getActionToolName:
-		rendered, ok = renderCLIGetAction(w, raw)
+		rendered, ok = renderCLIGetAction(w, raw, account)
 	case runActionToolName:
-		rendered, ok = renderCLIRunAction(w, raw)
+		rendered, ok = renderCLIRunAction(w, raw, account)
 	case getOperationToolName:
 		rendered, ok = renderCLIGetOperation(w, raw, account)
 	case waitForRunToolName:
@@ -94,13 +94,13 @@ func writeCLIOperatorOutput(
 	case recentRunsToolName:
 		rendered, ok = renderCLIRecentRuns(w, raw)
 	case listRunbooksToolName:
-		rendered, ok = renderCLIListRunbooks(w, arguments, raw)
+		rendered, ok = renderCLIListRunbooks(w, arguments, raw, account)
 	case getRunbookToolName:
-		rendered, ok = renderCLIGetRunbook(w, raw)
+		rendered, ok = renderCLIGetRunbook(w, raw, account)
 	case executeRunbookToolName:
-		rendered, ok = renderCLIExecuteRunbook(w, raw)
+		rendered, ok = renderCLIExecuteRunbook(w, raw, account)
 	case createRunbookDraftToolName, updateRunbookDraftToolName:
-		rendered, ok = renderCLIRunbookDraft(w, raw)
+		rendered, ok = renderCLIRunbookDraft(w, raw, account)
 	default:
 		return false, nil
 	}

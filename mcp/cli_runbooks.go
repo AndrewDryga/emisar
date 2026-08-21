@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"runtime"
 	"strings"
 )
 
@@ -141,7 +142,7 @@ type cliRunbookOutputPage struct {
 	Next               cliToolResultNext        `json:"next"`
 }
 
-func renderCLIListRunbooks(w io.Writer, arguments, raw []byte) (string, bool) {
+func renderCLIListRunbooks(w io.Writer, arguments, raw []byte, account string) (string, bool) {
 	var result struct {
 		OK         bool                `json:"ok"`
 		Runbooks   []cliRunbookSummary `json:"runbooks"`
@@ -177,9 +178,15 @@ func renderCLIListRunbooks(w io.Writer, arguments, raw []byte) (string, bool) {
 		fmt.Fprintf(&out, "  %s\n", cliRunbookCounts(runbook.InputCount, runbook.StageCount, runbook.StepCount))
 		if runbook.Live != nil {
 			fmt.Fprintf(&out, "  Live  %s\n", cliResultText(runbook.Live.RunbookRef, maxCLIFleetRefRunes))
+			if command := cliRunbookInspectCommandForOS(runbook.Slug, "published", account, runtime.GOOS); command != "" {
+				fmt.Fprintf(&out, "  Inspect live  %s\n", command)
+			}
 		}
 		if runbook.Draft != nil {
 			out.WriteString("  Draft  unpublished changes\n")
+			if command := cliRunbookInspectCommandForOS(runbook.Slug, "draft", account, runtime.GOOS); command != "" {
+				fmt.Fprintf(&out, "  Inspect draft  %s\n", command)
+			}
 		}
 		if !runbook.Available && runbook.UnavailableReason != "" {
 			fmt.Fprintf(&out, "  %s  %s\n", cliStyledText(w, "33", "Issue"), cliResultText(runbook.UnavailableReason, maxCLIHumanStringRunes))
@@ -191,7 +198,25 @@ func renderCLIListRunbooks(w io.Writer, arguments, raw []byte) (string, bool) {
 	return out.String(), true
 }
 
-func renderCLIGetRunbook(w io.Writer, raw []byte) (string, bool) {
+func cliRunbookInspectCommandForOS(slug, status, account, goos string) string {
+	if slug == "" || len(slug) > 160 || terminalSafeLine(slug) != slug ||
+		(status != "published" && status != "draft") {
+		return ""
+	}
+	arguments, err := json.Marshal(struct {
+		Slug   string `json:"slug"`
+		Status string `json:"status"`
+	}{Slug: slug, Status: status})
+	if err != nil {
+		return ""
+	}
+	return cliFleetNextCommandForOS(cliFleetNext{
+		Tool:      getRunbookToolName,
+		Arguments: arguments,
+	}, getRunbookToolName, account, goos)
+}
+
+func renderCLIGetRunbook(w io.Writer, raw []byte, account string) (string, bool) {
 	var result struct {
 		OK      bool             `json:"ok"`
 		Runbook cliRunbookDetail `json:"runbook"`
@@ -218,8 +243,47 @@ func renderCLIGetRunbook(w io.Writer, raw []byte) (string, bool) {
 	}
 	writeCLIResultField(&out, "Live release", runbook.LiveRef, maxCLIFleetRefRunes)
 	writeCLIRunbookDefinition(&out, w, runbook.Definition)
+	if command := cliRunbookExecuteTemplateForOS(runbook, account, runtime.GOOS); command != "" {
+		fmt.Fprintf(&out, "\n%s\n  %s\n", cliStyledText(w, "1", "Run"), command)
+	}
 	out.WriteString("\nUse --json for the complete definition and exact values.\n")
 	return out.String(), true
+}
+
+func cliRunbookExecuteTemplateForOS(runbook cliRunbookDetail, account, goos string) string {
+	var identity []byte
+	var err error
+	switch runbook.Status {
+	case "published":
+		if runbook.RunbookRef == "" || len(runbook.RunbookRef) > maxCLIFleetRefRunes ||
+			terminalSafeLine(runbook.RunbookRef) != runbook.RunbookRef {
+			return ""
+		}
+		identity, err = json.Marshal(struct {
+			RunbookRef string `json:"runbook_ref"`
+		}{RunbookRef: runbook.RunbookRef})
+	case "draft":
+		if runbook.Slug == "" || runbook.DefinitionSHA256 == "" || len(runbook.Slug) > 160 ||
+			len(runbook.DefinitionSHA256) > maxCLIFleetRefRunes || terminalSafeLine(runbook.Slug) != runbook.Slug ||
+			terminalSafeLine(runbook.DefinitionSHA256) != runbook.DefinitionSHA256 {
+			return ""
+		}
+		identity, err = json.Marshal(struct {
+			Slug             string `json:"slug"`
+			AllowDraft       bool   `json:"allow_draft"`
+			DefinitionSHA256 string `json:"definition_sha256"`
+		}{Slug: runbook.Slug, AllowDraft: true, DefinitionSHA256: runbook.DefinitionSHA256})
+	default:
+		return ""
+	}
+	if err != nil {
+		return ""
+	}
+	arguments := strings.TrimSuffix(string(identity), "}") + `,"reason":"<reason>","input_values":<input-values-json>}`
+	if len(arguments) > maxCLIFleetCommand || terminalSafeText(arguments) != arguments {
+		return ""
+	}
+	return cliToolInvocationForOS(executeRunbookToolName, account, goos) + " " + shellQuoteForOS(arguments, goos)
 }
 
 func writeCLIRunbookDefinition(out *strings.Builder, w io.Writer, raw json.RawMessage) {
@@ -269,7 +333,7 @@ func writeCLIRunbookDefinition(out *strings.Builder, w io.Writer, raw json.RawMe
 	}
 }
 
-func renderCLIRunbookDraft(w io.Writer, raw []byte) (string, bool) {
+func renderCLIRunbookDraft(w io.Writer, raw []byte, account string) (string, bool) {
 	var result struct {
 		OK               bool   `json:"ok"`
 		OperationID      string `json:"operation_id"`
@@ -289,14 +353,17 @@ func renderCLIRunbookDraft(w io.Writer, raw []byte) (string, bool) {
 	fmt.Fprintf(&out, "\nRunbook      %s\n", cliResultText(result.Slug, 160))
 	fmt.Fprintf(&out, "Draft ID     %s\n", cliResultText(result.DraftID, maxCLIFleetRefRunes))
 	fmt.Fprintf(&out, "Definition   %s\n", cliResultText(result.DefinitionSHA256, maxCLIFleetRefRunes))
-	fmt.Fprintf(&out, "Operation ID %s\n", cliResultText(result.OperationID, maxCLIFleetRefRunes))
+	fmt.Fprintf(&out, "Operation ID  %s\n", cliResultText(result.OperationID, maxCLIFleetRefRunes))
+	if command := cliOperationInspectCommandForOS(result.OperationID, account, runtime.GOOS); command != "" {
+		fmt.Fprintf(&out, "Inspect       %s\n", command)
+	}
 	writeCLIResultField(&out, "Live release", result.LiveRef, maxCLIFleetRefRunes)
 	writeCLIResultField(&out, "Review", result.ReviewURL, maxCLIFleetCommand)
 	out.WriteString("\nThe draft is not live until an operator reviews and publishes it.\n")
 	return out.String(), true
 }
 
-func renderCLIExecuteRunbook(w io.Writer, raw []byte) (string, bool) {
+func renderCLIExecuteRunbook(w io.Writer, raw []byte, account string) (string, bool) {
 	var result struct {
 		OK          bool            `json:"ok"`
 		OperationID string          `json:"operation_id"`
@@ -310,7 +377,14 @@ func renderCLIExecuteRunbook(w io.Writer, raw []byte) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return fmt.Sprintf("%s\n\nOperation ID  %s\n\n%s", cliStyledText(w, "1", "Runbook execution started"), cliResultText(result.OperationID, maxCLIFleetRefRunes), rendered), true
+	var out strings.Builder
+	fmt.Fprintf(&out, "%s\n\nOperation ID  %s\n", cliStyledText(w, "1", "Runbook execution started"), cliResultText(result.OperationID, maxCLIFleetRefRunes))
+	if command := cliOperationInspectCommandForOS(result.OperationID, account, runtime.GOOS); command != "" {
+		fmt.Fprintf(&out, "Inspect       %s\n", command)
+	}
+	out.WriteByte('\n')
+	out.WriteString(rendered)
+	return out.String(), true
 }
 
 func renderCLIRunbookExecution(w io.Writer, raw []byte) (string, bool) {

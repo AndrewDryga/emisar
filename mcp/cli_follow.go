@@ -48,6 +48,18 @@ func validateCLIHumanMutation(toolName, operationID string, raw []byte) error {
 			result.Execution.Status == "" {
 			return errors.New("the runbook response did not match its transport operation ID")
 		}
+	case createRunbookDraftToolName, updateRunbookDraftToolName:
+		var result struct {
+			OK          bool   `json:"ok"`
+			OperationID string `json:"operation_id"`
+			DraftID     string `json:"draft_id"`
+			Slug        string `json:"slug"`
+			Status      string `json:"status"`
+		}
+		if json.Unmarshal(raw, &result) != nil || !result.OK || result.OperationID != operationID ||
+			result.DraftID == "" || result.Slug == "" || result.Status != "draft" {
+			return errors.New("the runbook draft response did not match its transport operation ID")
+		}
 	}
 	return nil
 }
@@ -455,7 +467,5 @@ func (b *bridge) writeCLIFollowFailure(stderr io.Writer, operationID string, fol
 }
 
 func (b *bridge) cliOperationRecoveryCommand(operationID string) string {
-	arguments, _ := json.Marshal(map[string]string{"operation_id": operationID})
-	return cliToolInvocationForOS(getOperationToolName, b.cliAccount, runtime.GOOS) +
-		" " + shellQuoteForOS(string(arguments), runtime.GOOS)
+	return cliOperationInspectCommandForOS(operationID, b.cliAccount, runtime.GOOS)
 }

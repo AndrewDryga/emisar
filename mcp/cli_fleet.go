@@ -233,12 +233,31 @@ func renderCLIListPacks(w io.Writer, arguments, raw []byte, account string) (str
 		out.WriteString("\n")
 		fmt.Fprintf(&out, "  %s\n", cliFleetActionCount(pack.Actions))
 		fmt.Fprintf(&out, "  Pack ref  %s\n", cliFleetText(pack.PackRef, maxCLIFleetRefRunes))
+		if command := cliFleetPackActionsCommandForOS(pack.PackRef, account, runtime.GOOS); command != "" {
+			fmt.Fprintf(&out, "  Actions  %s\n", command)
+		}
 		writeCLIFleetIssues(&out, w, pack.Issues)
 	}
 	if hasJSONValue(result.NextCursor) {
 		out.WriteString("\nMore packs are available. Use --json to continue with the returned cursor.\n")
 	}
 	return out.String(), true
+}
+
+func cliFleetPackActionsCommandForOS(packRef, account, goos string) string {
+	if packRef == "" || len(packRef) > maxCLIFleetRefRunes || terminalSafeLine(packRef) != packRef {
+		return ""
+	}
+	arguments, err := json.Marshal(struct {
+		PackRef string `json:"pack_ref"`
+	}{PackRef: packRef})
+	if err != nil {
+		return ""
+	}
+	return cliFleetNextCommandForOS(cliFleetNext{
+		Tool:      findActionsToolName,
+		Arguments: arguments,
+	}, findActionsToolName, account, goos)
 }
 
 func renderCLIFindActions(w io.Writer, arguments, raw []byte, account string) (string, bool) {

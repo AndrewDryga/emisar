@@ -17,9 +17,6 @@ type cliActionDetail struct {
 	Risk        string          `json:"risk"`
 	SideEffects []string        `json:"side_effects"`
 	ArgsSchema  json.RawMessage `json:"args_schema"`
-	Examples    []struct {
-		Args json.RawMessage `json:"args"`
-	} `json:"examples"`
 }
 
 type cliCompatibleRunner struct {
@@ -31,7 +28,12 @@ type cliCompatibleRunner struct {
 	EnforceSignature bool   `json:"enforce_signatures"`
 }
 
-func renderCLIGetAction(w io.Writer, raw []byte) (string, bool) {
+type cliCompatibleRunnerGroup struct {
+	Name    string
+	Runners []cliCompatibleRunner
+}
+
+func renderCLIGetAction(w io.Writer, raw []byte, account string) (string, bool) {
 	var result struct {
 		OK                    bool                  `json:"ok"`
 		Action                cliActionDetail       `json:"action"`
@@ -68,40 +70,77 @@ func renderCLIGetAction(w io.Writer, raw []byte) (string, bool) {
 		}
 	}
 	writeCLIActionArguments(&out, action.ArgsSchema)
+	if command := cliActionRunTemplateForOS(action, account, runtime.GOOS); command != "" {
+		fmt.Fprintf(&out, "\n%s\n  %s\n", cliStyledText(w, "1", "Run"), command)
+	}
 
 	fmt.Fprintf(&out, "\n%s (%d)\n", cliStyledText(w, "1", "Compatible runners"), len(result.CompatibleRunners))
 	if len(result.CompatibleRunners) == 0 {
 		out.WriteString("  None currently available.\n")
 	}
-	for _, runner := range result.CompatibleRunners[:min(len(result.CompatibleRunners), maxCLIResultItems)] {
-		name := cliResultText(runner.Name, 160)
-		if name == "" {
-			name = cliResultText(runner.RunnerRef, maxCLIFleetRefRunes)
-		}
-		fmt.Fprintf(&out, "\n  %s — %s\n", cliStyledText(w, "1", name), cliResultStatus(w, runner.Status))
-		location := cliResultText(runner.Hostname, 160)
-		group := cliResultText(runner.Group, 160)
-		if location != "" || group != "" {
-			out.WriteString("    ")
-			out.WriteString(location)
-			if location != "" && group != "" {
-				out.WriteString(" · ")
+	for _, group := range groupCLICompatibleRunners(result.CompatibleRunners[:min(len(result.CompatibleRunners), maxCLIResultItems)]) {
+		fmt.Fprintf(&out, "\n  %s (%d)\n", cliStyledText(w, "1", group.Name), len(group.Runners))
+		for _, runner := range group.Runners {
+			name := cliResultText(runner.Name, 160)
+			if name == "" {
+				name = cliResultText(runner.Hostname, 160)
 			}
-			if group != "" {
-				out.WriteString("group ")
-				out.WriteString(group)
+			if name == "" {
+				name = cliResultText(runner.RunnerRef, maxCLIFleetRefRunes)
+			}
+			fmt.Fprintf(&out, "    %s — %s — %s", cliStyledText(w, "1", name), cliResultStatus(w, runner.Status), cliResultText(runner.RunnerRef, maxCLIFleetRefRunes))
+			if runner.EnforceSignature {
+				out.WriteString(" · signed dispatch required")
 			}
 			out.WriteByte('\n')
-		}
-		fmt.Fprintf(&out, "    Runner ref  %s\n", cliResultText(runner.RunnerRef, maxCLIFleetRefRunes))
-		if runner.EnforceSignature {
-			out.WriteString("    Signed dispatch required.\n")
 		}
 	}
 	if result.MoreCompatibleRunners || len(result.CompatibleRunners) > maxCLIResultItems {
 		out.WriteString("\nMore compatible runners are available; use --json for continuation data.\n")
 	}
 	return out.String(), true
+}
+
+func groupCLICompatibleRunners(runners []cliCompatibleRunner) []cliCompatibleRunnerGroup {
+	groups := make([]cliCompatibleRunnerGroup, 0)
+	indexes := make(map[string]int)
+	for _, runner := range runners {
+		name := strings.TrimSpace(cliResultText(runner.Group, 160))
+		if name == "" {
+			name = "Ungrouped"
+		}
+		index, ok := indexes[name]
+		if !ok {
+			index = len(groups)
+			indexes[name] = index
+			groups = append(groups, cliCompatibleRunnerGroup{Name: name})
+		}
+		groups[index].Runners = append(groups[index].Runners, runner)
+	}
+	return groups
+}
+
+func cliActionRunTemplateForOS(action cliActionDetail, account, goos string) string {
+	if action.ActionID == "" || action.PackRef == "" || len(action.ActionID) > 160 || len(action.PackRef) > maxCLIFleetRefRunes ||
+		terminalSafeLine(action.ActionID) != action.ActionID || terminalSafeLine(action.PackRef) != action.PackRef {
+		return ""
+	}
+
+	identity, err := json.Marshal(struct {
+		ActionID string `json:"action_id"`
+		PackRef  string `json:"pack_ref"`
+	}{
+		ActionID: action.ActionID,
+		PackRef:  action.PackRef,
+	})
+	if err != nil {
+		return ""
+	}
+	arguments := strings.TrimSuffix(string(identity), "}") + `,"runner_refs":["<runner-ref>"],"args":<arguments-json>,"reason":"<reason>"}`
+	if len(arguments) > maxCLIFleetCommand || terminalSafeText(arguments) != arguments {
+		return ""
+	}
+	return cliToolInvocationForOS(runActionToolName, account, goos) + " " + shellQuoteForOS(arguments, goos)
 }
 
 func writeCLIActionArguments(out *strings.Builder, raw json.RawMessage) {
@@ -142,7 +181,7 @@ func writeCLIActionArguments(out *strings.Builder, raw json.RawMessage) {
 	}
 }
 
-func renderCLIRunAction(w io.Writer, raw []byte) (string, bool) {
+func renderCLIRunAction(w io.Writer, raw []byte, account string) (string, bool) {
 	var result struct {
 		OK          bool           `json:"ok"`
 		OperationID string         `json:"operation_id"`
@@ -177,11 +216,28 @@ func renderCLIRunAction(w io.Writer, raw []byte) (string, bool) {
 	fmt.Fprintf(&out, "\nAction        %s\n", cliResultText(result.ActionID, 160))
 	fmt.Fprintf(&out, "Pack          %s\n", cliResultText(result.PackRef, maxCLIFleetRefRunes))
 	fmt.Fprintf(&out, "Operation ID  %s\n", cliResultText(result.OperationID, maxCLIFleetRefRunes))
+	if command := cliOperationInspectCommandForOS(result.OperationID, account, runtime.GOOS); command != "" {
+		fmt.Fprintf(&out, "Inspect       %s\n", command)
+	}
 	if len(result.Runs) > 0 {
 		out.WriteByte('\n')
 		out.WriteString(renderCLIRuns(w, result.Runs, true))
 	}
 	return out.String(), true
+}
+
+func cliOperationInspectCommandForOS(operationID, account, goos string) string {
+	if operationID == "" || len(operationID) > maxCLIFleetRefRunes ||
+		terminalSafeLine(operationID) != operationID {
+		return ""
+	}
+	arguments, err := json.Marshal(struct {
+		OperationID string `json:"operation_id"`
+	}{OperationID: operationID})
+	if err != nil || len(arguments) > maxCLIFleetCommand || terminalSafeText(string(arguments)) != string(arguments) {
+		return ""
+	}
+	return cliToolInvocationForOS(getOperationToolName, account, goos) + " " + shellQuoteForOS(string(arguments), goos)
 }
 
 func renderCLIRecentRuns(w io.Writer, raw []byte) (string, bool) {

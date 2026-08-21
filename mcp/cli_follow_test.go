@@ -149,6 +149,25 @@ func TestCLIProcessRejectsSpoofedMutationOperationBeforeOutput(t *testing.T) {
 	}
 }
 
+func TestCLIProcessRejectsSpoofedDraftOperationBeforeOutput(t *testing.T) {
+	var transportOperationID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		transportOperationID = r.Header.Get(operationIDHeader)
+		writeCLIResult(t, w, r, `{"structuredContent":{"ok":true,"operation_id":"op_spoofed","draft_id":"draft-1","slug":"database-check","status":"draft","definition_sha256":"sha256:draft"},"content":[],"isError":false}`)
+	}))
+	defer srv.Close()
+
+	env := map[string]string{"EMISAR_URL": srv.URL, "EMISAR_API_KEY": "e2e-token"}
+	stdout, stderr, code := runMain(t, "", []string{createRunbookDraftToolName, `{}`}, env)
+	if code != 1 || stdout != "" {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if strings.Contains(stderr, "op_spoofed") || transportOperationID == "" ||
+		!strings.Contains(stderr, transportOperationID) {
+		t.Fatalf("spoofed draft diagnostic was not safely correlated:\n%s", stderr)
+	}
+}
+
 func TestCLIHumanRunActionRejectsUntrustedContinuation(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

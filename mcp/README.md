@@ -213,7 +213,7 @@ large catalogs, and leave line wrapping to your terminal.
 | Command | What it shows | Input worth knowing |
 | --- | --- | --- |
 | `list_runners` | Runner status, hostname, group, labels, available packs, issues, and exact `runner_ref` values | Use JSON to filter by status, runner name/group/host text, runner refs, pack, action, or issues. |
-| `list_packs` | Trusted pack versions, availability, action counts, issues, and exact `pack_ref` values | The default is executable packs. Pass `{"availability":"all"}` to include trusted unavailable packs. |
+| `list_packs` | Trusted pack versions, availability, action counts, exact `pack_ref` values, and a command that finds the pack's actions | The default is executable packs. Pass `{"availability":"all"}` to include trusted unavailable packs. |
 
 ```sh
 emisar-mcp list_runners
@@ -231,8 +231,8 @@ use `--json` to copy the returned cursor or continuation exactly.
 | Command | Human output |
 | --- | --- |
 | `find_actions` | Ranked matches with risk, immutable pack ref, and a safe inspection command. |
-| `get_action` | Description, side effects, trusted arguments, and compatible runner refs. |
-| `run_action` | Operation ID, per-runner status, approvals, exit codes, and action output. |
+| `get_action` | Description, side effects, trusted arguments, an editable `run_action` template, and compatible runner refs. |
+| `run_action` | Operation ID and inspection command, per-runner status, approvals, exit codes, and action output. |
 | `get_operation` | The durable mutation identity and its safe recovery command. |
 | `recent_runs` | Recent run status, errors, output, and exact run IDs. |
 
@@ -257,11 +257,17 @@ emisar-mcp recent_runs '{"scope":"own","limit":10}'
 
 | Command | Human output |
 | --- | --- |
-| `list_runbooks` | Live release, unpublished-change marker, description, and workflow size. |
-| `get_runbook` | Runbook identity, inputs, stages, and action steps. |
-| `execute_runbook` | Operation ID, approvals, stage/item status, attempts, errors, and outputs. |
-| `create_runbook_draft` | Draft identity, content digest, review link, and current live release. |
+| `list_runbooks` | Live release, unpublished-change marker, description, workflow size, and exact live/draft inspection commands. |
+| `get_runbook` | Runbook identity, inputs, stages, action steps, and an editable execution template. |
+| `execute_runbook` | Operation ID and inspection command, approvals, stage/item status, attempts, errors, and outputs. |
+| `create_runbook_draft` | Draft identity, content digest, operation inspection command, review link, and current live release. |
 | `update_runbook_draft` | The same draft result after an optimistic, digest-bound update. |
+
+Human copy-paste labels have one meaning: **Inspect** and **Actions** issue safe
+reads, **Run** is an editable mutation template with visible placeholders,
+**Next** is an exact server-owned continuation, and **Review** opens the operator
+workflow. Commands preserve an explicit `--account`; `--json` remains the exact
+MCP `structuredContent` object without these presentation helpers.
 
 Human `execute_runbook` follows only exact continuations tied to the returned
 execution, waits through approval or expiry, and drains returned public output

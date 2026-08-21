@@ -115,12 +115,25 @@ func TestCLIListPacksSummarizesInsteadOfDumpingActions(t *testing.T) {
 	if err := writeCLIToolOutput(&stdout, listPacksToolName, json.RawMessage(`{}`), raw, "", false, true); err != nil {
 		t.Fatal(err)
 	}
-	want := "1 pack\n\npostgres 1.2.3 — executable\n  119 executable actions\n  Pack ref  postgres@1.2.3/sha256:abc\n"
+	want := "1 pack\n\npostgres 1.2.3 — executable\n  119 executable actions\n  Pack ref  postgres@1.2.3/sha256:abc\n" +
+		"  Actions  emisar-mcp find_actions '{\"pack_ref\":\"postgres@1.2.3/sha256:abc\"}'\n"
 	if stdout.String() != want {
 		t.Fatalf("output = %q, want %q", stdout.String(), want)
 	}
 	if strings.Contains(stdout.String(), "postgres.action_") || strings.Contains(stdout.String(), "Item 119") {
 		t.Fatalf("pack inventory dumped its action catalog:\n%s", stdout.String())
+	}
+}
+
+func TestCLIListPacksActionsCommandPreservesAccountAndRejectsUnsafeRefs(t *testing.T) {
+	want := `emisar-mcp --account immersive find_actions '{"pack_ref":"postgres@1.2.3/sha256:abc"}'`
+	if got := cliFleetPackActionsCommandForOS("postgres@1.2.3/sha256:abc", "immersive", "linux"); got != want {
+		t.Fatalf("command = %q, want %q", got, want)
+	}
+	for _, packRef := range []string{"", "postgres@1/sha256:safe\u202espoof"} {
+		if got := cliFleetPackActionsCommandForOS(packRef, "", "linux"); got != "" {
+			t.Fatalf("unsafe pack ref %q rendered as %q", packRef, got)
+		}
 	}
 }
 
