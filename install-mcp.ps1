@@ -22,6 +22,7 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+Add-Type -AssemblyName System.Net.Http
 
 $script:Repository = if ($env:EMISAR_REPO) { $env:EMISAR_REPO } else { "andrewdryga/emisar" }
 $script:OfficialRepository = "andrewdryga/emisar"
