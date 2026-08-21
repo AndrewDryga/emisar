@@ -619,6 +619,33 @@ function Get-ClientKey($TokenResponse, [string]$ClientId) {
     return [string]$property.Value
 }
 
+function Import-CLIAuth([string]$Executable, [string]$Origin, [string]$Payload) {
+    $startInfo = New-Object Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $Executable
+    $startInfo.Arguments = "auth import `"$Origin`""
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.StandardInputEncoding = $script:Utf8NoBom
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = $startInfo
+    $started = $false
+    try {
+        $started = $process.Start()
+        if (-not $started) { throw "could not start emisar-mcp auth import" }
+        $process.StandardInput.Write($Payload)
+        $process.StandardInput.Close()
+        $process.WaitForExit()
+        return $process.ExitCode
+    } finally {
+        if ($started -and -not $process.HasExited) {
+            $process.Kill()
+            $process.WaitForExit()
+        }
+        $process.Dispose()
+    }
+}
+
 function Configure-Clients([string]$Executable, [string]$HomeDirectory, [string]$AppDataDirectory) {
     if ($Yes -and -not $ConnectAll) { return }
     $script:ConnectionPhaseRan = $true
@@ -675,8 +702,13 @@ function Configure-Clients([string]$Executable, [string]$HomeDirectory, [string]
     }
 
     if ($cliNeedsAuth) {
-        $token | ConvertTo-Json -Depth 6 -Compress | & $Executable auth import $script:PortalOrigin
-        if ($LASTEXITCODE -ne 0) { throw "could not store the direct CLI credential" }
+        $approval = $token | ConvertTo-Json -Depth 6 -Compress
+        try {
+            $importExitCode = Import-CLIAuth $Executable $script:PortalOrigin $approval
+        } finally {
+            $approval = $null
+        }
+        if ($importExitCode -ne 0) { throw "could not store the direct CLI credential" }
         $script:CLIAuthenticated = $true
     } else {
         $script:CLIAuthenticated = $true
