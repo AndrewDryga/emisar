@@ -536,7 +536,7 @@ defmodule EmisarWeb.AgentsLive do
   defp client_config("claude_web", url, _key) do
     %{
       kind: :remote,
-      connector_name: "Emisar",
+      connector_name: "emisar",
       connector_name_label: "Connector name",
       rpc_url: "#{url}/api/mcp/rpc",
       rpc_url_label: "Remote MCP server URL",
@@ -564,7 +564,7 @@ defmodule EmisarWeb.AgentsLive do
   defp client_config("chatgpt", url, _key) do
     %{
       kind: :remote,
-      connector_name: "Emisar",
+      connector_name: "emisar",
       connector_name_label: "Name",
       rpc_url: "#{url}/api/mcp/rpc",
       rpc_url_label: "MCP Server URL",

@@ -1171,20 +1171,21 @@ defmodule EmisarWeb.MarketingTest do
 
     test "the cloud LLM page renders the OAuth connector setup for Claude and ChatGPT",
          %{conn: conn} do
-      html = conn |> get(~p"/docs/connect-an-llm") |> html_response(200)
+      html = conn |> get(~p"/docs/connect-an-llm") |> html_response(200) |> squish()
 
       # Current ChatGPT Developer-mode setup path: OAuth, no static token.
-      # Developer mode lives under Settings → Security and login (also linked at
-      # the bottom of Settings → Plugins); the connector is created under Settings
-      # → Plugins; switching Permissions to "Allow all actions" drops the prompts.
       assert html =~ "Settings → Security and login"
-      assert html =~ "Settings → Plugins"
+      assert html =~ "ChatGPT Plugins"
       assert html =~ "Developer mode"
-      assert html =~ "Available on all ChatGPT plans"
+      assert html =~ "Access depends"
       assert html =~ "Server URL"
-      assert html =~ "I understand and want to continue"
-      assert html =~ "Allow low-risk actions"
-      assert html =~ "Allow all actions"
+      assert html =~ "Review the connection permissions"
+
+      # Cloud connectors cannot sign dispatch, so runners that require a signature
+      # are out of scope for this page — a prerequisite, not a mid-page warning.
+      assert html =~ "Before you start, you need:"
+      assert html =~ "do not create emisar dispatch signatures"
+      assert html =~ "Runners that do not require signed dispatch"
 
       # Claude's connector block on the same page.
       assert html =~ "Settings → Connectors"

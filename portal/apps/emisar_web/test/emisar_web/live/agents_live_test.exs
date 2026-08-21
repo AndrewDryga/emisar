@@ -263,7 +263,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # Remote-MCP UI is shown:
       assert html =~ "/api/mcp/rpc"
-      assert has_element?(lv, "#connector-name-claude_web", "Emisar")
+      assert has_element?(lv, "#connector-name-claude_web", "emisar")
       assert html =~ "Connector name"
       assert html =~ "Copy name"
       assert html =~ "Leave OAuth credentials empty"
@@ -299,7 +299,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       assert Repo.all(ApiKey) == []
       assert html =~ "/api/mcp/rpc"
-      assert has_element?(lv, "#connector-name-chatgpt", "Emisar")
+      assert has_element?(lv, "#connector-name-chatgpt", "emisar")
       assert html =~ "Steps for ChatGPT"
       # Current Developer-mode path: Security and login, create under Plugins,
       # then Permissions → Allow all actions to drop the per-call prompts.
