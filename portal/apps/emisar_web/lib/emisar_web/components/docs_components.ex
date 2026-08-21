@@ -285,10 +285,18 @@ defmodule EmisarWeb.DocsComponents do
   a redirect URI, an issuer URL.
 
   `docs_code` is built for a transcript: a label bar stacked over a padded
-  `<pre>`. Around a single word that is two rows of chrome and a box taller than
-  the value it carries, so this is the same affordance on one line — label,
-  value, Copy. Reach for `docs_code` when the content is a command, a file, or
-  more than one line.
+  `<pre>`. Around a single word that is a box several times taller than the value
+  in it. This is the same affordance at one row.
+
+  The label is an eyebrow ABOVE the row, not inline beside the value: labels
+  differ in width, so an inline one starts each value at a different x and a
+  stacked pair never lines up. The value carries `bg-transparent`/`p-0` because
+  the marketing stylesheet chips every bare `<code>` (app.css) — inside a
+  bordered row that chip reads as a filled, disabled input. It clips rather than
+  scrolls; Copy carries the full value.
+
+  Reach for `docs_code` when the content is a command, a file, or more than one
+  line.
   """
   attr :label, :string, required: true
   attr :copy_text, :string, required: true
@@ -296,20 +304,20 @@ defmodule EmisarWeb.DocsComponents do
 
   def docs_value(assigns) do
     ~H"""
-    <div class="mt-3 flex items-center gap-3 rounded-lg border border-zinc-900 bg-black/40 py-1.5 pl-3 pr-1.5">
-      <span class="shrink-0 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
-        {@label}
-      </span>
-      <code class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs text-zinc-300">{render_slot(
-        @inner_block
-      )}</code>
-      <button
-        type="button"
-        data-copy-text={@copy_text}
-        class="shrink-0 rounded px-2 py-1 font-mono text-[11px] font-medium text-zinc-400 transition-colors hover:text-zinc-200"
-      >
-        Copy
-      </button>
+    <div class="mt-4">
+      <p class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">{@label}</p>
+      <div class="mt-1.5 flex min-h-9 items-center gap-3 rounded-lg border border-zinc-900 bg-black/40 py-1 pl-3 pr-1.5">
+        <code class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap bg-transparent p-0 font-mono text-xs leading-6 text-zinc-300">{render_slot(
+          @inner_block
+        )}</code>
+        <button
+          type="button"
+          data-copy-text={@copy_text}
+          class="shrink-0 rounded px-2 py-1 font-mono text-[11px] font-medium text-zinc-400 transition-colors hover:text-zinc-200"
+        >
+          Copy
+        </button>
+      </div>
     </div>
     """
   end
