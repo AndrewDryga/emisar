@@ -177,29 +177,28 @@
               Back on the connection you opened in step 1, paste the client ID and secret, and
               build the issuer from your Keycloak host and realm:
             </p>
-            <.docs_code
-              phx-no-format
+            <.docs_value
               label="Issuer URL"
               copy_text="https://YOUR-KEYCLOAK-HOST/realms/YOUR-REALM"
-            >https://YOUR-KEYCLOAK-HOST/realms/YOUR-REALM</.docs_code>
+            >
+              https://YOUR-KEYCLOAK-HOST/realms/YOUR-REALM
+            </.docs_value>
             <p class="mt-4">
               Press <strong class="text-zinc-200">Test connection</strong>
               — it fetches the realm's discovery document, so a wrong host or realm fails here
               rather than at someone's first sign-in. Then tick
               <strong class="text-zinc-200">Enabled</strong>
-              and save. In a private window, sign in as a Keycloak user who is not in emisar yet:
-              with auto-provisioning they land at the default role, and with manual provisioning
-              an admin gets a pending request instead.
+              and save. Open a private window and sign in as a Keycloak user who is not in emisar.
+              Auto-provisioning assigns the default role. Manual provisioning creates a pending
+              request for an administrator.
             </p>
             <.docs_callout kind={:warn} title="Your Keycloak has to be reachable from emisar">
               <p>
-                Self-hosted means this is worth checking before you start. emisar fetches the realm's
-                discovery document, its JWKS and the token endpoint from its own network, so the
-                realm URL must resolve to a PUBLIC address and present a certificate from a
-                public CA — a private or internal address is refused outright, because from where we
-                stand it is indistinguishable from our own infrastructure. A Keycloak behind a VPN
-                or on an internal-only hostname needs to be published, or reached through a gateway
-                that is.
+                Check network reachability before you start. emisar fetches the realm discovery
+                document, JWKS, and token endpoint from its own network. The realm URL must resolve
+                to a public address and use a certificate from a public CA. Private and internal
+                addresses are refused. emisar cannot distinguish them from its own infrastructure.
+                Publish an internal Keycloak through a gateway that emisar can reach.
               </p>
             </.docs_callout>
 

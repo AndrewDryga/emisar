@@ -281,6 +281,40 @@ defmodule EmisarWeb.DocsComponents do
   end
 
   @doc """
+  One short value the reader types into someone else's form — a connector name,
+  a redirect URI, an issuer URL.
+
+  `docs_code` is built for a transcript: a label bar stacked over a padded
+  `<pre>`. Around a single word that is two rows of chrome and a box taller than
+  the value it carries, so this is the same affordance on one line — label,
+  value, Copy. Reach for `docs_code` when the content is a command, a file, or
+  more than one line.
+  """
+  attr :label, :string, required: true
+  attr :copy_text, :string, required: true
+  slot :inner_block, required: true
+
+  def docs_value(assigns) do
+    ~H"""
+    <div class="mt-3 flex items-center gap-3 rounded-lg border border-zinc-900 bg-black/40 py-1.5 pl-3 pr-1.5">
+      <span class="shrink-0 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+        {@label}
+      </span>
+      <code class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs text-zinc-300">{render_slot(
+        @inner_block
+      )}</code>
+      <button
+        type="button"
+        data-copy-text={@copy_text}
+        class="shrink-0 rounded px-2 py-1 font-mono text-[11px] font-medium text-zinc-400 transition-colors hover:text-zinc-200"
+      >
+        Copy
+      </button>
+    </div>
+    """
+  end
+
+  @doc """
   A collapsible "Verify this download" block placed under an install command:
   the download-then-verify commands (SLSA provenance + checksum) with THIS
   release's artifact names, so a security team can prove the binary before it

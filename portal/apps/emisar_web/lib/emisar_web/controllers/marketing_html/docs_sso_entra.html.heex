@@ -68,11 +68,9 @@
               choose the <strong class="text-zinc-200">Web</strong>
               platform and enter emisar's callback:
             </p>
-            <.docs_code
-              phx-no-format
-              label="Redirect URI"
-              copy_text="https://emisar.dev/sign_in/sso/callback"
-            >https://emisar.dev/sign_in/sso/callback</.docs_code>
+            <.docs_value label="Redirect URI" copy_text="https://emisar.dev/sign_in/sso/callback">
+              https://emisar.dev/sign_in/sso/callback
+            </.docs_value>
 
             <.docs_screenshot
               src="/images/docs/sso/entra-app-registration.webp"
@@ -134,23 +132,26 @@
             <.docs_step_venue>emisar</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Paste them into the connection.</p>
             <p class="mt-1.5">
-              Back on the connection you opened in step 1, the client ID is the
+              Return to the connection from step 1. Use
               <strong class="text-zinc-200">Application (client) ID</strong>
-              and the secret is the one from step 3. Build the issuer from your tenant ID:
+              as the client ID. Use
+              the secret from step 3. Build the issuer from your tenant ID.
             </p>
-            <.docs_code
-              phx-no-format
+            <.docs_value
               label="Issuer URL"
               copy_text="https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0"
-            >https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0</.docs_code>
+            >
+              https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0
+            </.docs_value>
             <p class="mt-4">
               The trailing <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/v2.0</code>
-              is what selects Entra's v2.0 endpoint; without it you get v1.0 tokens. The
-              identifier claim already reads
+              selects Entra's v2.0 endpoint. Without it, Entra returns v1.0 tokens. The identifier
+              claim is already <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>.
+              Entra assigns a different
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+              to each application. The
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
-              — Entra hands every application a different <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>, so
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
-              is the only id that also matches what directory sync sends. Tick <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
+              claim also matches the value directory sync sends. Select <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/entra-emisar-credentials.webp"
@@ -207,12 +208,12 @@
             <p class="font-semibold text-zinc-100">Point it at emisar.</p>
             <p class="mt-1.5">
               On the new application's <strong class="text-zinc-200">Provisioning</strong>
-              blade set <strong class="text-zinc-200">Provisioning Mode</strong>
-              to <strong class="text-zinc-200">Automatic</strong>, then fill in the two values emisar gave you —
-              the SCIM base URL as <strong class="text-zinc-200">Tenant URL</strong>
-              and the bearer as <strong class="text-zinc-200">Secret Token</strong>:
+              page, set <strong class="text-zinc-200">Provisioning Mode</strong>
+              to <strong class="text-zinc-200">Automatic</strong>. Enter the SCIM base URL as <strong class="text-zinc-200">Tenant URL</strong>. Enter the bearer as <strong class="text-zinc-200">Secret Token</strong>.
             </p>
-            <.docs_code phx-no-format label="Tenant URL" copy_text="https://emisar.dev/scim/v2">https://emisar.dev/scim/v2</.docs_code>
+            <.docs_value label="Tenant URL" copy_text="https://emisar.dev/scim/v2">
+              https://emisar.dev/scim/v2
+            </.docs_value>
 
             <.docs_screenshot
               src="/images/docs/sso/entra-provisioning.webp"
