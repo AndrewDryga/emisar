@@ -404,7 +404,7 @@ function Find-Clients([string]$HomeDirectory, [string]$AppDataDirectory) {
             $clients.Add($client)
         }
     }
-    return @($clients)
+    return $clients.ToArray()
 }
 
 function Test-ClientConnected($Client) {
@@ -663,7 +663,7 @@ function Configure-Clients([string]$Executable, [string]$HomeDirectory, [string]
         return
     }
 
-    $grant = Request-DeviceGrant @($ids)
+    $grant = Request-DeviceGrant ($ids.ToArray())
     $token = Wait-DeviceGrant $grant
     $keys = @{}
     foreach ($id in $ids) {
