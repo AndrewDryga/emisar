@@ -31,8 +31,18 @@ Verify commands before running them:
   agent session. When none exists, use the public `connect-llm` skill for client
   installation, registration, authentication, and functional proof. Do not
   duplicate or reconstruct its client-specific flow here.
-- Use the public guides at `https://emisar.dev/docs/quickstart` and
+- Use the public guides at `https://emisar.dev/docs/quickstart`,
+  `https://emisar.dev/docs/host-install`, and
   `https://emisar.dev/docs/action-packs` when more detail is needed.
+- When a runner installs but never appears in the fleet, read the host log
+  first (`sudo journalctl -u emisar -n 200`) and take the registration status
+  from it rather than guessing. A `401` means the enrollment key was spent,
+  expired, or revoked; a `409` means another runner already holds this name,
+  which a rebuilt host or a restored image produces — a runner is named after
+  the host it registered from and cannot be renamed, so the operator deletes
+  the existing runner or gives this host a different hostname; a `402` means
+  the account is at its plan's runner limit. `https://emisar.dev/docs/troubleshooting`
+  covers each symptom and its check.
 
 Never reconstruct a flag or config shape from memory when current help or a
 portal-generated snippet is available. If installed help differs from public
@@ -41,7 +51,7 @@ installed artifact's contract unless this is an explicit upgrade.
 
 ## Safety rules
 
-- Treat runner enrollment keys, MCP API keys, OAuth tokens, pack credentials,
+- Treat runner enrollment keys, agent keys, OAuth tokens, pack credentials,
   signing keys, and certificates as secrets. Never print, commit, report, or
   place their literal values in shell history. Sanitize captured output.
 - Use HTTPS for installer downloads. Plain HTTP is limited to loopback,

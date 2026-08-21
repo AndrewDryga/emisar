@@ -62,7 +62,7 @@ validator, installed help, or a public reference can confirm it.
   argv, never YAML literals, never stdout, never shell history. Mark secret
   args `sensitive: true`.
 - Pack bytes are public to the fleet: hashed, advertised, and shown in the
-  dashboard. Nothing secret goes in a pack directory.
+  console. Nothing secret goes in a pack directory.
 - Keep publisher credentials off fleet hosts. `packctl` runs on a workstation
   or CI job; runners only ever fetch and verify.
 - Pin installs with `--hash` everywhere past the first authoring host. Never
@@ -145,7 +145,7 @@ schema_version: 1
 id: my-pack
 name: My ops pack
 version: 0.1.0
-description: Short one-line summary shown on the runner and dashboard.
+description: Short one-line summary shown on the runner and console.
 vendor: acme
 requires:
   os: [linux]

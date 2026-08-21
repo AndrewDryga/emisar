@@ -29,8 +29,11 @@ Verify commands before running them:
   contract.
 - Use the signed-in **Agents** page for current client configuration and the
   cloud-connector name and URL.
-- Use `https://emisar.dev/docs/connect-an-llm` and
+- Use `https://emisar.dev/docs/connect-an-llm` for a cloud connector,
+  `https://emisar.dev/docs/connect-a-cli-client` for a local or CLI client, and
   `https://emisar.dev/docs/mcp-reference` when more detail is needed.
+- When a registered client lists no tools or a call fails,
+  `https://emisar.dev/docs/troubleshooting` owns the client and bridge symptoms.
 
 If installed help differs from public documentation, preserve the machine,
 report the exact version skew, and follow the installed artifact's contract
@@ -143,6 +146,15 @@ The installer takes no client argument. It detects the clients already present
 on the machine, asks about each one, then mints that client's key through a
 browser approval and writes it into that client's own config — so run it where
 it can prompt, and let it finish the registration.
+
+After the per-client questions it asks once whether to silence that client's own
+"allow this tool?" prompt for the emisar server. It offers this only for the
+clients whose setting can name emisar alone (Claude Code, Gemini CLI, Codex CLI,
+Grok CLI) and never touches a global approval setting. Answering no changes
+nothing, and either answer leaves Emisar policy and approvals in force. This
+edits a security setting in a file the operator owns, so answer it from their
+instruction — do not enable it on their behalf, and report which clients were
+changed.
 
 Adapt only with flags present in the downloaded installer's help. Drop `sudo`
 and add `--install-dir "$HOME/.local/bin"` to install without root; pin a
