@@ -258,7 +258,7 @@ emisar-mcp recent_runs '{"scope":"own","limit":10}'
 | Command | Human output |
 | --- | --- |
 | `list_runbooks` | Live release, unpublished-change marker, description, workflow size, and exact live/draft inspection commands. |
-| `get_runbook` | Runbook identity, inputs, stages, action steps, and an editable execution template. |
+| `get_runbook` | Runbook identity, inputs, stages, action steps with target and argument context, and an editable execution template. |
 | `execute_runbook` | Operation ID and inspection command, approvals, stage/item status, attempts, errors, and outputs. |
 | `create_runbook_draft` | Draft identity, content digest, operation inspection command, review link, and current live release. |
 | `update_runbook_draft` | The same draft result after an optimistic, digest-bound update. |

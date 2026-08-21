@@ -69,10 +69,13 @@ func TestCLIFixedToolsHavePurposeBuiltHumanOutput(t *testing.T) {
 		{
 			name:   "runbook detail",
 			tool:   getRunbookToolName,
-			result: `{"ok":true,"runbook":{"runbook_ref":"database-check@3","status":"published","definition_sha256":"sha256:live","title":"Database check","description":"Inspect database health.","summary":{"input_count":0,"stage_count":1,"step_count":1},"definition":{"schema_version":1,"inputs":[],"stages":[{"id":"inspect","title":"Inspect","mode":"sequential","steps":[{"id":"status","action":"postgres.status","pack":{"id":"postgres"}}]}]}}}`,
+			result: `{"ok":true,"runbook":{"runbook_ref":"database-check@3","status":"published","definition_sha256":"sha256:live","title":"Database check","description":"Inspect database health.","summary":{"input_count":0,"stage_count":1,"step_count":1},"definition":{"schema_version":1,"inputs":[],"stages":[{"id":"inspect","title":"Inspect","mode":"sequential","steps":[{"id":"status","action":"postgres.status","pack":{"id":"postgres"},"targets":{"selection":"random_one","refs":["group:database"]},"args":{"database":{"source":"literal","value":"primary"},"previous":{"source":"output","ref":"discover.database"},"threshold":{"source":"input","ref":"lag_threshold"}}}]}]}}}`,
 			want: []string{
 				"Database check", "database-check@3 · published", "0 inputs · 1 stage · 1 step", "Workflow",
-				"1. Inspect — sequential, 1 step", "status — postgres.status", "Run\n  emisar-mcp execute_runbook",
+				"1. Inspect — sequential, 1 step", "status — postgres.status",
+				"Pack postgres · Target one of group:database",
+				"Args database=primary · previous=output:discover.database · threshold=input:lag_threshold",
+				"Run\n  emisar-mcp execute_runbook",
 				`emisar-mcp execute_runbook '{"runbook_ref":"database-check@3","reason":"<reason>","input_values":<input-values-json>}'`,
 			},
 		},
@@ -298,6 +301,50 @@ func TestCLIRunbookExecuteTemplateQuotesPowerShellAndRejectsUnsafeIdentity(t *te
 		if got := cliRunbookExecuteTemplateForOS(runbook, "", "linux"); got != "" {
 			t.Fatalf("unsafe runbook %#v rendered as %q", runbook, got)
 		}
+	}
+}
+
+func TestCLIRunbookStepDetailsAreBoundedAndTerminalSafe(t *testing.T) {
+	arguments := map[string]cliRunbookBinding{
+		"a":             {Source: "literal", Value: json.RawMessage(`9007199254740993`)},
+		"b\u202eunsafe": {Source: "input", Ref: "threshold\n\x1b[31munsafe"},
+		"c":             {Source: "literal", Value: json.RawMessage(`"` + strings.Repeat("x", 300) + `"`)},
+		"d":             {Source: "literal", Value: json.RawMessage(`true`)},
+		"e":             {Source: "output", Ref: "discover.value"},
+		"f":             {Source: "literal", Value: json.RawMessage(`{"nested":"value"}`)},
+		"g":             {Source: "literal", Value: json.RawMessage(`null`)},
+		"h":             {Source: "literal", Value: json.RawMessage(`false`)},
+	}
+	got := cliRunbookStepArguments(arguments)
+	for _, want := range []string{
+		"a=9007199254740993",
+		"b unsafe=input:threshold [31munsafe",
+		"c=" + strings.Repeat("x", 160) + "…",
+		`e=output:discover.value`,
+		`f={"nested":"value"}`,
+		"+2 more",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("arguments missing %q: %q", want, got)
+		}
+	}
+	if strings.ContainsAny(got, "\n\r\x1b") || strings.ContainsRune(got, '\u202e') {
+		t.Fatalf("arguments contain terminal control characters: %q", got)
+	}
+	if len([]rune(got)) > maxCLIRunbookStepDetailRunes+1 {
+		t.Fatalf("arguments contain %d runes, want at most %d plus ellipsis", len([]rune(got)), maxCLIRunbookStepDetailRunes)
+	}
+
+	var step cliRunbookStep
+	if err := json.Unmarshal([]byte(`{
+		"pack":{"id":"victoria\u001bmetrics"},
+		"targets":{"selection":"random_one","refs":["group:a","group:b","group:c","group:d","group:e","group:f"]}
+	}`), &step); err != nil {
+		t.Fatal(err)
+	}
+	context := cliRunbookStepContext(step)
+	if want := "Pack victoria metrics · Target one of group:a, group:b, group:c, group:d +2 more"; context != want {
+		t.Fatalf("context = %q, want %q", context, want)
 	}
 }
 

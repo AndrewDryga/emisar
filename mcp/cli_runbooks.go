@@ -6,7 +6,14 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"sort"
 	"strings"
+)
+
+const (
+	maxCLIRunbookStepArgs        = 6
+	maxCLIRunbookStepTargets     = 4
+	maxCLIRunbookStepDetailRunes = 720
 )
 
 type cliRunbookSide struct {
@@ -56,15 +63,30 @@ type cliRunbookDefinition struct {
 		Description string `json:"description"`
 	} `json:"inputs"`
 	Stages []struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
-		Mode  string `json:"mode"`
-		Steps []struct {
-			ID     string          `json:"id"`
-			Action string          `json:"action"`
-			Pack   json.RawMessage `json:"pack"`
-		} `json:"steps"`
+		ID    string           `json:"id"`
+		Title string           `json:"title"`
+		Mode  string           `json:"mode"`
+		Steps []cliRunbookStep `json:"steps"`
 	} `json:"stages"`
+}
+
+type cliRunbookStep struct {
+	ID     string `json:"id"`
+	Action string `json:"action"`
+	Pack   struct {
+		ID string `json:"id"`
+	} `json:"pack"`
+	Targets struct {
+		Selection string   `json:"selection"`
+		Refs      []string `json:"refs"`
+	} `json:"targets"`
+	Args map[string]cliRunbookBinding `json:"args"`
+}
+
+type cliRunbookBinding struct {
+	Source string          `json:"source"`
+	Value  json.RawMessage `json:"value"`
+	Ref    string          `json:"ref"`
 }
 
 type cliRunbookExecution struct {
@@ -323,6 +345,12 @@ func writeCLIRunbookDefinition(out *strings.Builder, w io.Writer, raw json.RawMe
 		fmt.Fprintf(out, "  %d. %s — %s, %d %s\n", index+1, cliStyledText(w, "1", cliResultText(title, 160)), cliResultText(stage.Mode, 80), len(stage.Steps), plural(len(stage.Steps), "step", "steps"))
 		for _, step := range stage.Steps[:min(len(stage.Steps), maxCLIResultItems)] {
 			fmt.Fprintf(out, "     %s — %s\n", cliResultText(step.ID, 160), cliResultText(step.Action, 160))
+			if context := cliRunbookStepContext(step); context != "" {
+				fmt.Fprintf(out, "       %s\n", context)
+			}
+			if arguments := cliRunbookStepArguments(step.Args); arguments != "" {
+				fmt.Fprintf(out, "       Args %s\n", arguments)
+			}
 		}
 		if len(stage.Steps) > maxCLIResultItems {
 			fmt.Fprintf(out, "     %d more steps; use --json for the complete definition.\n", len(stage.Steps)-maxCLIResultItems)
@@ -331,6 +359,93 @@ func writeCLIRunbookDefinition(out *strings.Builder, w io.Writer, raw json.RawMe
 	if len(definition.Stages) > maxCLIResultItems {
 		fmt.Fprintf(out, "  %d more stages; use --json for the complete definition.\n", len(definition.Stages)-maxCLIResultItems)
 	}
+}
+
+func cliRunbookStepContext(step cliRunbookStep) string {
+	parts := make([]string, 0, 2)
+	if pack := cliRunbookInlineText(step.Pack.ID, 160); pack != "" {
+		parts = append(parts, "Pack "+pack)
+	}
+
+	selection := ""
+	switch step.Targets.Selection {
+	case "all":
+		selection = "all of "
+	case "random_one":
+		selection = "one of "
+	}
+	refs := make([]string, 0, min(len(step.Targets.Refs), maxCLIRunbookStepTargets))
+	for _, ref := range step.Targets.Refs {
+		if safe := cliRunbookInlineText(ref, 160); safe != "" {
+			refs = append(refs, safe)
+		}
+	}
+	if selection != "" && len(refs) > 0 {
+		visible := refs[:min(len(refs), maxCLIRunbookStepTargets)]
+		target := selection + strings.Join(visible, ", ")
+		if len(refs) > len(visible) {
+			target += fmt.Sprintf(" +%d more", len(refs)-len(visible))
+		}
+		parts = append(parts, "Target "+target)
+	}
+	return cliResultText(strings.Join(parts, " · "), maxCLIRunbookStepDetailRunes)
+}
+
+func cliRunbookStepArguments(arguments map[string]cliRunbookBinding) string {
+	if len(arguments) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(arguments))
+	for key := range arguments {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	parts := make([]string, 0, min(len(keys), maxCLIRunbookStepArgs))
+	for _, key := range keys[:min(len(keys), maxCLIRunbookStepArgs)] {
+		name := cliRunbookInlineText(key, 80)
+		value := cliRunbookBindingValue(arguments[key])
+		if name != "" && value != "" {
+			parts = append(parts, name+"="+value)
+		}
+	}
+	if len(keys) > maxCLIRunbookStepArgs {
+		parts = append(parts, fmt.Sprintf("+%d more", len(keys)-maxCLIRunbookStepArgs))
+	}
+	return cliResultText(strings.Join(parts, " · "), maxCLIRunbookStepDetailRunes)
+}
+
+func cliRunbookBindingValue(binding cliRunbookBinding) string {
+	switch binding.Source {
+	case "input", "output":
+		if ref := cliRunbookInlineText(binding.Ref, 160); ref != "" {
+			return binding.Source + ":" + ref
+		}
+	case "literal":
+		raw := bytes.TrimSpace(binding.Value)
+		if len(raw) == 0 {
+			return ""
+		}
+		if firstJSONByte(raw) == '"' {
+			var value string
+			if json.Unmarshal(raw, &value) != nil {
+				return ""
+			}
+			if value == "" {
+				return `""`
+			}
+			return cliRunbookInlineText(value, 160)
+		}
+		var compact bytes.Buffer
+		if json.Compact(&compact, raw) == nil {
+			return cliRunbookInlineText(compact.String(), 160)
+		}
+	}
+	return ""
+}
+
+func cliRunbookInlineText(value string, limit int) string {
+	return cliResultText(terminalSafeLine(value), limit)
 }
 
 func renderCLIRunbookDraft(w io.Writer, raw []byte, account string) (string, bool) {
