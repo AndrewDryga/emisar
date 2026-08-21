@@ -25,7 +25,7 @@ GCS access or an inbound port on the host.
 
    ```sh
    curl -fsSL https://emisar.dev/install.sh \
-     | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... EMISAR_URL=https://emisar.dev bash
+     | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... bash
    ```
 
    The installer verifies the release checksum, creates the service, installs

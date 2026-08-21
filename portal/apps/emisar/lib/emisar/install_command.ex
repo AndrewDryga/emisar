@@ -11,6 +11,15 @@ defmodule Emisar.InstallCommand do
 
   @type error :: :invalid_base_url | :insecure_base_url
 
+  # The origin install.sh assumes when EMISAR_URL is unset. A one-liner for this
+  # origin omits the variable; anything else must carry it. Kept beside the
+  # command builders so the two cannot drift from the installer's own default.
+  @default_base_url "https://emisar.dev"
+
+  @doc "The base URL the shipped installers default to."
+  @spec default_base_url() :: String.t()
+  def default_base_url, do: @default_base_url
+
   @doc "Build the curl command that fetches one of the two shipped installers."
   @spec fetch(term(), :runner | :mcp) ::
           {:ok, String.t(), String.t()} | {:error, error()}

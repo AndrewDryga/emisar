@@ -62,6 +62,14 @@ LOG_DIR="${LOG_DIR:-/var/log/emisar}"
 SERVICE_USER="${SERVICE_USER:-emisar}"
 SERVICE_GROUP="${SERVICE_GROUP:-emisar}"
 ASSUME_YES="${ASSUME_YES:-0}"
+# The hosted control plane is the supported product, so the one-liner does not
+# have to carry its URL. EMISAR_URL stays for test and evaluation portals. We
+# remember whether the operator actually supplied one: the "was NOT applied"
+# warning on a re-install compares against the config on disk, and must not fire
+# for a value this line invented — a self-hosted host re-running the installer
+# never asked to be pointed at emisar.dev.
+EMISAR_URL_EXPLICIT=0; [ -n "${EMISAR_URL:-}" ] && EMISAR_URL_EXPLICIT=1
+EMISAR_URL="${EMISAR_URL:-https://emisar.dev}"
 # Pack selection. EMISAR_PACKS being *present in the environment* — even
 # empty — means the operator is managing packs explicitly: install exactly
 # the listed set (possibly none) and skip host detection / suggestions. So
@@ -116,7 +124,9 @@ NO_SERVICE, EMISAR_REPO, EMISAR_GITHUB_TOKEN, EMISAR_URL,
 EMISAR_ENROLLMENT_KEY, RUNNER_GROUP, RUNNER_LABEL_<KEY>.
 
 EMISAR_URL + EMISAR_ENROLLMENT_KEY are baked into config.yaml + runner.env
-at install time so the runner boots without a follow-up edit.
+at install time so the runner boots without a follow-up edit. EMISAR_URL
+defaults to https://emisar.dev — the hosted control plane is the supported
+product, and the variable exists for test and evaluation portals.
 RUNNER_GROUP defaults to `hostname -s`. Each RUNNER_LABEL_<KEY>=<value>
 (e.g. RUNNER_LABEL_ROLE=web) is baked in as a runner label the console
 filters on; set as many as you like.
@@ -257,7 +267,7 @@ die_systemd_required() {
   die "this installer requires systemd on Linux (${reason}).
 
 For containers, cloud shells, CI runners, or hosts where you supervise the runner yourself, use --no-service:
-  curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... EMISAR_URL=https://emisar.dev bash -s -- --no-service
+  curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... bash -s -- --no-service
 
 If you are reusing a portal-generated one-liner, keep its EMISAR_ENROLLMENT_KEY/EMISAR_URL values and replace the final 'bash' with:
   bash -s -- --no-service"
@@ -1111,7 +1121,7 @@ drop_config_skeleton() {
     # generated config + env are complete and the runner can boot. Only
     # flag NEEDS_CONFIGURATION when an operator-edit is actually needed.
     local needs=0
-    if [ -z "${EMISAR_URL:-}" ] || [ -z "${EMISAR_ENROLLMENT_KEY:-}" ]; then
+    if [ -z "${EMISAR_ENROLLMENT_KEY:-}" ]; then
       needs=1
     fi
     if [ "${needs}" = "1" ]; then
@@ -1162,7 +1172,8 @@ drop_config_skeleton() {
     # re-run of our own documented one-liner (the upgrade and key-rotation
     # paths), telling the operator their URL was rejected and inviting them to
     # move a working config aside.
-    configured_url="${EMISAR_URL:-}"
+    configured_url=""
+    [ "${EMISAR_URL_EXPLICIT}" = "1" ] && configured_url="${EMISAR_URL}"
     case "${configured_url}" in
       https://*) configured_url="wss://${configured_url#https://}";;
       http://*)  configured_url="ws://${configured_url#http://}";;

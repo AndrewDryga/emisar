@@ -1820,9 +1820,15 @@ defmodule Emisar.Runners do
          {:ok, base, fetch} <- InstallCommand.fetch(base_url, :runner) do
       shell_base = if String.contains?(base, "["), do: "'#{base}'", else: base
 
+      # install.sh defaults EMISAR_URL to the hosted control plane, so the
+      # production one-liner carries only the key. A test or evaluation portal
+      # is the case the variable exists for, and still gets it.
+      url_env =
+        if base == InstallCommand.default_base_url(), do: "", else: "EMISAR_URL=#{shell_base} "
+
       # Leading space keeps the key out of shell history under
       # HISTCONTROL=ignorespace / HIST_IGNORE_SPACE.
-      {:ok, " #{fetch} | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} EMISAR_URL=#{shell_base} bash"}
+      {:ok, " #{fetch} | sudo EMISAR_ENROLLMENT_KEY=#{raw_secret} #{url_env}bash"}
     end
   end
 

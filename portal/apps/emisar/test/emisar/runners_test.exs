@@ -2980,12 +2980,17 @@ defmodule Emisar.RunnersTest do
     # under test is byte-for-byte the one an operator pastes.
     @raw_secret "emkey-enroll-" <> String.duplicate("a", 43)
 
+    # install.sh defaults EMISAR_URL to the hosted control plane, so a command for
+    # THAT origin omits it and only a test/evaluation portal carries it — the
+    # self-hosted and IPv6 cases below are what pin the other branch.
     test "builds the canonical one-liner, leading space included" do
       assert {:ok, command} =
                Runners.enrollment_install_command(@raw_secret, "https://emisar.dev")
 
       assert command ==
-               " curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=https://emisar.dev bash"
+               " curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} bash"
+
+      refute command =~ "EMISAR_URL="
 
       # The leading space is load-bearing (HISTCONTROL=ignorespace), so it is
       # asserted on its own — a trim anywhere upstream leaks the key to history.
@@ -2997,7 +3002,7 @@ defmodule Emisar.RunnersTest do
                Runners.enrollment_install_command(@raw_secret, "https://emisar.dev/")
 
       assert command ==
-               " curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} EMISAR_URL=https://emisar.dev bash"
+               " curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=#{@raw_secret} bash"
     end
 
     test "a private self-hosted HTTP origin keeps its scheme and port" do
