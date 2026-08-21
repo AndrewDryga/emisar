@@ -18,10 +18,10 @@ defmodule EmisarWeb.DocsNavTest do
     sso scim integrations-okta integrations-entra integrations-jumpcloud
     integrations-keycloak integrations-google-workspace
     billing
-    policies-and-approvals signed-dispatch
-    runners runs runbooks upgrades credentials troubleshooting security-incidents audit-and-siem
-    action-packs publishing-packs pack-updates pack-registry
-    mcp-reference runner-cli architecture security-model limits
+    run-an-action policies-and-approvals signed-dispatch
+    runners runs runbooks pack-updates upgrades credentials troubleshooting security-incidents audit-and-siem
+    use-a-published-pack action-packs publishing-packs pack-registry
+    mcp-reference runner-cli architecture compatibility security-model limits
   )
 
   describe "groups/0" do
@@ -33,7 +33,7 @@ defmodule EmisarWeb.DocsNavTest do
                "Team & account",
                "Govern actions",
                "Operate",
-               "Build packs",
+               "Action packs",
                "Reference"
              ]
     end
@@ -85,13 +85,13 @@ defmodule EmisarWeb.DocsNavTest do
       assert Enum.map(DocsNav.flat(), & &1.slug) == @ordered_slugs
     end
 
-    test "carries 40 pages with unique slugs and unique /docs paths" do
+    test "carries 43 pages with unique slugs and unique /docs paths" do
       pages = DocsNav.flat()
       paths = Enum.map(pages, & &1.path)
 
-      assert length(pages) == 40
-      assert pages |> Enum.map(& &1.slug) |> Enum.uniq() |> length() == 40
-      assert paths |> Enum.uniq() |> length() == 40
+      assert length(pages) == 43
+      assert pages |> Enum.map(& &1.slug) |> Enum.uniq() |> length() == 43
+      assert paths |> Enum.uniq() |> length() == 43
       assert Enum.all?(paths, &String.starts_with?(&1, "/docs/"))
     end
 
@@ -121,7 +121,7 @@ defmodule EmisarWeb.DocsNavTest do
 
   describe "fetch!/1" do
     test "returns the page for a slug" do
-      assert %{title: "API keys", path: "/docs/keys"} = DocsNav.fetch!("keys")
+      assert %{title: "MCP keys", path: "/docs/keys"} = DocsNav.fetch!("keys")
     end
 
     test "raises on an unknown slug" do
@@ -146,7 +146,7 @@ defmodule EmisarWeb.DocsNavTest do
     test "walks the flattened order across subgroup and group boundaries" do
       assert {%{slug: "teams-and-access"}, %{slug: "scim"}} = DocsNav.prev_next("sso")
 
-      assert {%{slug: "integrations-google-workspace"}, %{slug: "policies-and-approvals"}} =
+      assert {%{slug: "integrations-google-workspace"}, %{slug: "run-an-action"}} =
                DocsNav.prev_next("billing")
     end
 

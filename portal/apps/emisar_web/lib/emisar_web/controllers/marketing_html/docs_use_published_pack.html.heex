@@ -1,0 +1,132 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="use-a-published-pack"
+      updated="August 18, 2026"
+      toc={[
+        {"choose", "Choose a pack"},
+        {"inspect", "Inspect the pack"},
+        {"install", "Install a fixed version"},
+        {"configure", "Configure credentials"},
+        {"verify", "Verify the pack"}
+      ]}
+    >
+      <.docs_header current="use-a-published-pack">
+        <:dek>
+          Add a published pack to one runner. Review its actions and requirements first. Then
+          install a fixed version, provide its credentials, and verify one action.
+        </:dek>
+      </.docs_header>
+
+      <.docs_h2 id="choose">1. Choose a pack</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Ask the runner which published packs match the host. This command checks pack detection
+        signals such as programs, processes, and ports. It does not install anything.
+      </p>
+      <.docs_code phx-no-format label="shell">sudo emisar pack suggest</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        You can also browse the <.link
+          navigate={~p"/packs"}
+          class="text-brand-400 hover:text-brand-300"
+        >
+          public pack catalog
+        </.link>. Select one pack for the service on this runner.
+      </p>
+
+      <.docs_h2 id="inspect">2. Inspect the pack</.docs_h2>
+      <.docs_callout kind={:warn} title="A pack contains executable commands">
+        <p>
+          Review the exact version and hash before installation. Check every action, argument,
+          side effect, required program, environment variable, and risk level.
+        </p>
+      </.docs_callout>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The catalog page shows the current version and content hash. It also lists each action and
+        host requirement. Record the pack ID, version, and full <code>sha256</code> hash.
+      </p>
+
+      <.docs_h2 id="install">3. Install a fixed version</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Use <code>&lt;pack&gt;=&lt;version&gt;</code>
+        to select the published version. Use <code>--hash</code>
+        to require the reviewed bytes. The runner rejects a different hash.
+      </p>
+      <.docs_code phx-no-format label="shell">sudo emisar pack install redis=0.2.3 \
+  --hash sha256:&lt;full-reviewed-hash&gt;</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The command validates the pack and reloads a running runner. A public catalog hash becomes
+        trusted automatically. A custom hash stays pending on <a
+          href={~p"/app/packs"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Packs</a>.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A private <code>packctl</code>
+        registry uses immutable URLs. Follow
+        <.link
+          navigate={~p"/docs/pack-registry"}
+          class="text-brand-400 hover:text-brand-300"
+        >Host your own pack registry</.link>
+        for that workflow.
+      </p>
+
+      <.docs_h2 id="configure">4. Configure credentials</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Read the installed pack setup and its live host checks.
+      </p>
+      <.docs_code phx-no-format label="shell">sudo emisar pack info redis</.docs_code>
+      <ol class="mt-5 list-decimal space-y-3 pl-6 text-base text-zinc-400">
+        <li>Install every missing program named by the pack.</li>
+        <li>Put each credential value in <code>/etc/emisar/runner.env</code>.</li>
+        <li>
+          Add each required variable name to <code>execution.inherit_env</code>
+          in <code>/etc/emisar/config.yaml</code>.
+        </li>
+        <li>Run the pack's verification command.</li>
+        <li>Restart the service with <code>sudo systemctl restart emisar</code>.</li>
+      </ol>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Keep credential values out of action arguments and pack YAML. See
+        <.link
+          navigate={~p"/docs/runners" <> "#pack-credentials"}
+          class="text-brand-400 hover:text-brand-300"
+        >Pack credentials</.link>
+        for the complete environment pattern.
+      </p>
+
+      <.docs_h2 id="verify">5. Verify the pack</.docs_h2>
+      <ol class="mt-5 list-decimal space-y-3 pl-6 text-base text-zinc-400">
+        <li>Run <code>sudo emisar doctor</code>. Fix every pack error.</li>
+        <li>
+          Open <a
+            href={~p"/app/runners"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Runners</a>. Confirm that the runner advertises the new actions.
+        </li>
+        <li>
+          Open <a
+            href={~p"/app/packs"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Packs</a>. Confirm the exact version, hash, and trust state.
+        </li>
+        <li>Run one low-risk read action from the pack.</li>
+        <li>
+          Open <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>. Confirm that the event names the pack, action, runner, and operator.
+        </li>
+      </ol>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        For a fleet change, use a canary and bounded batches. See <.link
+          navigate={~p"/docs/pack-updates"}
+          class="text-brand-400 hover:text-brand-300"
+        >Roll out and roll back packs</.link>.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

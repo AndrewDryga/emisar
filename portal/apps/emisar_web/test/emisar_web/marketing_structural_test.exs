@@ -23,6 +23,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /security
     /docs
     /docs/quickstart
+    /docs/use-a-published-pack
     /docs/action-packs
     /docs/security-model
     /docs/signed-dispatch
@@ -30,6 +31,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/connect-a-cli-client
     /docs/publishing-packs
     /docs/pack-registry
+    /docs/run-an-action
     /docs/policies-and-approvals
     /docs/runbooks
     /docs/authentication
@@ -61,6 +63,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/troubleshooting
     /docs/security-incidents
     /docs/architecture
+    /docs/compatibility
     /changelog
     /about
     /support

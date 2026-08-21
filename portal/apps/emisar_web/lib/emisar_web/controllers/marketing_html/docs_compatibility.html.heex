@@ -1,0 +1,132 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="compatibility"
+      updated="August 18, 2026"
+      toc={[
+        {"promise", "The v1 promise"},
+        {"surfaces", "Frozen public contracts"},
+        {"changes", "Compatible changes"},
+        {"versions", "Component versions"},
+        {"deprecation", "Deprecation and removal"}
+      ]}
+    >
+      <.docs_header current="compatibility">
+        <:dek>
+          emisar is pre-1.0 today. Version 1.0 will freeze the public contracts used by deployed
+          runners, clients, scripts, and saved configuration.
+        </:dek>
+      </.docs_header>
+
+      <.docs_h2 id="promise">The v1 promise</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Pre-1.0 components move together. No 0.x component pair has a cross-version compatibility
+        promise. The first v1 release will end that rule for the contracts on this page.
+      </p>
+      <ul class="mt-5 space-y-3 pl-5 text-base text-zinc-400">
+        <li class="list-disc">
+          <code>1.0.0</code> establishes the public compatibility baseline.
+        </li>
+        <li class="list-disc">A 1.x minor release can add compatible behavior.</li>
+        <li class="list-disc">
+          A patch release contains compatible fixes and documentation changes.
+        </li>
+        <li class="list-disc">
+          A breaking contract change needs a new major version or a versioned successor.
+        </li>
+      </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The freeze protects contract shape and meaning. It does not freeze every pack, action,
+        policy, or internal implementation. New packs and optional fields can still be added.
+      </p>
+
+      <.docs_h2 id="surfaces">Frozen public contracts</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The v1 freeze covers these operator and integration surfaces:
+      </p>
+      <ul class="mt-4 space-y-3 pl-5 text-base text-zinc-400">
+        <li class="list-disc">
+          The portal-to-runner WebSocket protocol and its message versions.
+        </li>
+        <li class="list-disc">
+          Pack, action, catalog, trusted-manifest, runbook, and runner-config schemas.
+        </li>
+        <li class="list-disc">
+          MCP transport revisions, tool names, tool inputs, and identifiers.
+        </li>
+        <li class="list-disc">
+          OAuth metadata, endpoints, device authorization, and saved credentials.
+        </li>
+        <li class="list-disc">
+          OIDC callback values, SCIM paths, resources, filters, and token behavior.
+        </li>
+        <li class="list-disc">Audit export parameters, fields, cursors, and CSV format.</li>
+        <li class="list-disc">
+          Runner and bridge commands, flags, configuration, and environment variables.
+        </li>
+        <li class="list-disc">
+          Runner state files, installer inputs, release assets, and container image paths.
+        </li>
+        <li class="list-disc">
+          The versioned registry tree and the runner registry facade paths.
+        </li>
+      </ul>
+
+      <.docs_h2 id="changes">Compatible changes</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A 1.x release can add a new optional field, command, endpoint, tool, pack, or action. Old
+        clients must keep working without that addition.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A 1.x release does not rename, remove, narrow, or reinterpret a frozen value. A strict
+        schema change uses a new schema version. A wire change uses a new protocol version.
+      </p>
+
+      <.docs_h2 id="versions">Component versions</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The product uses one semantic version. Runner and bridge binaries also have component
+        release tags. The v1 release notes name the runner and bridge versions shipped with <code>1.0.0</code>.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        After v1 ships, later 1.x portals will keep the v1 wire and MCP contracts compatible.
+        Check the supported minimum and recommended versions before each rollout. Use
+        <.link
+          navigate={~p"/docs/upgrades"}
+          class="text-brand-400 hover:text-brand-300"
+        >Upgrade runners and MCP bridges</.link>
+        for canary and rollback steps.
+      </p>
+      <.docs_callout kind={:note} title="Version checks are operational controls">
+        <p>
+          The portal warns about a parseable version below its minimum. Enforcement is off today.
+          An unknown self-reported version is not blocked. These checks do not grant authority.
+        </p>
+      </.docs_callout>
+
+      <.docs_h2 id="deprecation">Deprecation and removal</.docs_h2>
+      <ol class="mt-5 list-decimal space-y-3 pl-6 text-base text-zinc-400">
+        <li>
+          Release notes name the old contract, replacement, migration, affected versions, and
+          earliest removal release.
+        </li>
+        <li>
+          emisar keeps the old contract for at least two minor releases or 12 months. The longer
+          period applies.
+        </li>
+        <li>
+          Console, audit, CLI, and startup warnings name the replacement and removal release.
+        </li>
+        <li>Both versions remain accepted during the window.</li>
+        <li>Removal happens in a major release and returns an actionable error.</li>
+      </ol>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A security issue can shorten the window when the old behavior is unsafe. Release notes must
+        explain the exception and name the safe replacement.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

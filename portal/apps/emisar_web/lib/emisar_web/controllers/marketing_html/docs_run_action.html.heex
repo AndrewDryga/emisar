@@ -1,0 +1,130 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="run-an-action"
+      updated="August 18, 2026"
+      toc={[
+        {"before", "Before you dispatch"},
+        {"select", "Select a runner and action"},
+        {"arguments", "Enter arguments and reason"},
+        {"dispatch", "Dispatch and approve"},
+        {"result", "Read the result"},
+        {"retry", "Before you retry"}
+      ]}
+    >
+      <.docs_header current="run-an-action">
+        <:dek>
+          Dispatch one declared action from the console. Review the action contract, enter its
+          arguments and reason, pass policy, and read the recorded result.
+        </:dek>
+      </.docs_header>
+
+      <.docs_h2 id="before">Before you dispatch</.docs_h2>
+      <.docs_prerequisites>
+        <:item>Your role is Operator, Admin, or Owner.</:item>
+        <:item>The target runner is online and enabled.</:item>
+        <:item>The runner advertises the action and its required program.</:item>
+        <:item>The exact pack version and hash are trusted.</:item>
+      </.docs_prerequisites>
+      <.docs_callout kind={:note} title="Signed-only runners use an MCP client">
+        <p>
+          The console does not sign dispatches. If the runner requires signatures, run the action
+          from a configured MCP bridge. See <.link
+            navigate={~p"/docs/signed-dispatch"}
+            class="text-brand-400 hover:text-brand-300"
+          >Signed dispatch</.link>.
+        </p>
+      </.docs_callout>
+
+      <.docs_h2 id="select">1. Select a runner and action</.docs_h2>
+      <ol class="mt-5 list-decimal space-y-3 pl-6 text-base text-zinc-400">
+        <li>
+          Open <a
+            href={~p"/app/runners"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Runners</a>.
+        </li>
+        <li>Select the runner that owns the target service or host.</li>
+        <li>Find the action in its action catalog.</li>
+        <li>Review the risk, title, and pack.</li>
+        <li>Select <strong>Run</strong>.</li>
+      </ol>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A disabled Run button names the blocking fact. Common causes include an offline runner, an
+        untrusted pack, a missing program, or signed-only dispatch.
+      </p>
+
+      <.docs_h2 id="arguments">2. Enter arguments and reason</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Read the action summary and every listed side effect. Then fill each required argument. The
+        form enforces the pack's types, choices, sizes, and path limits.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Enter a short, specific reason. Audit records this reason. Describe the goal, not a generic
+        label such as <em>maintenance</em>.
+      </p>
+      <.docs_code phx-no-format label="Example reason">Confirm database health after the primary failover.</.docs_code>
+
+      <.docs_h2 id="dispatch">3. Dispatch and approve</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Select <strong>Dispatch to &lt;runner&gt;</strong>. High-risk and critical actions show a final
+        confirmation with the target and arguments.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Policy now returns Allow, Require approval, or Deny. A denied run stops immediately. A run
+        that needs approval waits on <a
+          href={~p"/app/approvals"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Approvals</a>. The runner receives the action only after approval.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Review the action, runner, arguments, reason, evidence, and expected result before approval.
+        A changed pack, target, or policy fact makes the approval fail closed.
+      </p>
+
+      <.docs_h2 id="result">4. Read the result</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        After dispatch, emisar opens the run page. It shows status, output, arguments, executed
+        command, policy facts, actor, timestamps, and exit code.
+      </p>
+      <ol class="mt-5 list-decimal space-y-3 pl-6 text-base text-zinc-400">
+        <li>Wait for a terminal status.</li>
+        <li>Read both standard output and standard error.</li>
+        <li>Check the exit code and any structured result.</li>
+        <li>Confirm that the result matches the reason for the run.</li>
+        <li>
+          Open
+          <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>
+          when you need the full event trail.
+        </li>
+      </ol>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        See
+        <.link navigate={~p"/docs/runs"} class="text-brand-400 hover:text-brand-300">
+          Runs and history
+        </.link>
+        for status meanings, output limits, cancellation, and grouped operations.
+      </p>
+
+      <.docs_h2 id="retry">Before you retry</.docs_h2>
+      <.docs_callout kind={:warn} title="An unknown result is not a failed action">
+        <p>
+          Check the target system before you retry an unknown result. The action can finish after a
+          runner or network failure hides its final response. emisar never repeats it automatically.
+        </p>
+      </.docs_callout>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Fix denied, refused, or failed runs at the reported gate. Then create a new run with a new
+        reason. Do not use the local <code>emisar action run</code>
+        command as a cloud retry. That command bypasses cloud policy and approvals.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

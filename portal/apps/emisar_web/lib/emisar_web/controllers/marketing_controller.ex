@@ -46,6 +46,9 @@ defmodule EmisarWeb.MarketingController do
     {"/docs/quickstart", :docs_quickstart, :docs_quickstart,
      "Quickstart — install the runner + run your first action",
      "Zero to your first audited action in five minutes: install the emisar runner on a Linux host with one command, watch it connect, run linux.uptime gated by policy and recorded in the audit trail, then point your LLM at the same catalog over MCP."},
+    {"/docs/use-a-published-pack", :docs_use_published_pack, :docs_use_published_pack,
+     "Use a published action pack",
+     "Choose, inspect, install, configure, trust, and verify a published emisar action pack."},
     {"/docs/action-packs", :docs_action_packs, :docs_action_packs,
      "Action packs — YAML reference",
      "Full YAML schema reference for action packs: how to declare actions, argument validation, limits, redaction, and side-effects."},
@@ -87,6 +90,8 @@ defmodule EmisarWeb.MarketingController do
     {"/docs/policies-and-approvals", :docs_policies, :docs_policies,
      "Policies & approvals — control what runs",
      "How emisar decides allow / require-approval / deny per action: risk-tier defaults, ordered per-action overrides, human approvals with a 24-hour TTL, and revocable standing grants scoped to a key, action, runner, and arguments."},
+    {"/docs/run-an-action", :docs_run_action, :docs_run_action, "Run an action",
+     "Select a runner and action, enter its arguments and reason, dispatch it, and read the result."},
     {"/docs/runbooks", :docs_runbooks, :docs_runbooks,
      "Runbooks — build and run staged infrastructure procedures",
      "Build staged procedures with typed inputs, extracted outputs, success conditions, and bounded waits, then publish one frozen plan through policy and approval."},
@@ -160,7 +165,10 @@ defmodule EmisarWeb.MarketingController do
      "Respond to a leaked emisar credential: one containment sequence, the evidence to preserve first, and compact playbooks for MCP keys, audit-export tokens, enrollment keys, runner tokens and hosts, packs and registries, signed-dispatch keys and CAs, and OIDC or SCIM credentials."},
     {"/docs/architecture", :docs_architecture, :docs_architecture,
      "Architecture and failure behavior",
-     "How emisar is put together: the hosted control plane, the outbound-only runner, the optional MCP bridge, and versioned packs — who owns each decision, what each component stores, and exactly what happens when one disconnects, dies mid-execution, or falls behind while work is in flight."}
+     "How emisar is put together: the hosted control plane, the outbound-only runner, the optional MCP bridge, and versioned packs — who owns each decision, what each component stores, and exactly what happens when one disconnects, dies mid-execution, or falls behind while work is in flight."},
+    {"/docs/compatibility", :docs_compatibility, :docs_compatibility,
+     "Compatibility and deprecation",
+     "The emisar v1 compatibility promise, frozen public contracts, supported changes, and deprecation window."}
   ]
 
   # Home FAQ — the single source of truth for both the visible FAQ

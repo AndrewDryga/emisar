@@ -7,6 +7,7 @@ defmodule EmisarWeb.MarketingTest do
     /security
     /docs
     /docs/quickstart
+    /docs/use-a-published-pack
     /docs/action-packs
     /docs/security-model
     /docs/signed-dispatch
@@ -14,6 +15,7 @@ defmodule EmisarWeb.MarketingTest do
     /docs/connect-a-cli-client
     /docs/publishing-packs
     /docs/pack-registry
+    /docs/run-an-action
     /docs/policies-and-approvals
     /docs/runbooks
     /docs/authentication
@@ -45,6 +47,7 @@ defmodule EmisarWeb.MarketingTest do
     /docs/troubleshooting
     /docs/security-incidents
     /docs/architecture
+    /docs/compatibility
     /changelog
     /about
     /support
@@ -1194,12 +1197,11 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Read-only tools"
       assert html =~ "Write/delete tools"
       assert html =~ "Always allow"
-      assert html =~ "click <strong>Create</strong>"
+      assert html =~ "Select <strong>Create</strong>"
       assert html =~ "choose <strong>OAuth</strong>"
-      assert html =~ "Use it from a <strong>new chat</strong>"
-      assert html =~ "choose <strong>More</strong>"
-      assert html =~ "conversation context"
-      assert html =~ "choose <strong>Refresh</strong>"
+      assert html =~ "Start a new chat"
+      assert html =~ "A listed tool proves metadata access only"
+      assert html =~ "Refresh"
     end
 
     test "the CLI-client page renders every stdio client config block", %{conn: conn} do
