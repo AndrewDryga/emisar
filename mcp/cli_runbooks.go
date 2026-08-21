@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"runtime"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -510,7 +512,7 @@ func renderCLIExecuteRunbook(w io.Writer, raw []byte, account string) (string, b
 	}
 	stages, items := cliRunbookExecutionSize(result.Execution)
 	fmt.Fprintf(&out, "%d %s across %d %s\n", items, plural(items, "action", "actions"), stages, plural(stages, "stage", "stages"))
-	if len(result.Execution.Stages) > 0 {
+	if len(result.Execution.Stages) > 0 && !cliToolContinuationPresent(result.Execution.Next) {
 		out.WriteString("\nProgress\n")
 		writeCLIRunbookProgress(&out, w, nil, result.Execution.Stages)
 	}
@@ -534,8 +536,102 @@ func writeCLIRunbookProgress(out *strings.Builder, w io.Writer, previous, curren
 		if previousByID[stage.StageID] == cliRunbookStageProgressKey(stage) {
 			continue
 		}
-		fmt.Fprintf(out, "  %s %s — %s\n", cliRunbookStageGlyph(w, stage.Status), cliRunbookStageTitle(stage), cliRunbookStageProgress(stage))
+		out.WriteString(cliRunbookProgressLine(w, stage))
+		out.WriteByte('\n')
 	}
+}
+
+type cliRunbookProgressDisplay struct {
+	writer       io.Writer
+	terminalSize func() (int, int, bool)
+	previous     []cliRunbookStageResult
+	redraw       bool
+	lineCount    int
+}
+
+func newCLIRunbookProgressDisplay(writer io.Writer, stages []cliRunbookStageResult) cliRunbookProgressDisplay {
+	width, height, terminal := cliRunbookProgressTerminalSize(writer)
+	return cliRunbookProgressDisplay{
+		writer: writer,
+		terminalSize: func() (int, int, bool) {
+			return cliRunbookProgressTerminalSize(writer)
+		},
+		redraw: terminal && cliRunbookProgressFitsTerminal(stages, width, height),
+	}
+}
+
+func (display *cliRunbookProgressDisplay) writeInitial(stages []cliRunbookStageResult) {
+	display.writeAll(stages, false)
+	display.previous = stages
+	display.lineCount = len(stages)
+}
+
+func (display *cliRunbookProgressDisplay) writeUpdate(stages []cliRunbookStageResult) {
+	var changed strings.Builder
+	writeCLIRunbookProgress(&changed, display.writer, display.previous, stages)
+	if changed.Len() == 0 {
+		display.previous = stages
+		return
+	}
+	if display.redraw {
+		width, height, terminal := display.terminalSize()
+		if !terminal || display.lineCount != len(stages) ||
+			!cliRunbookProgressFitsTerminal(stages, width, height) {
+			display.redraw = false
+		}
+	}
+	if display.redraw {
+		fmt.Fprintf(display.writer, "\x1b[%dA", display.lineCount)
+		display.writeAll(stages, true)
+	} else {
+		_, _ = io.WriteString(display.writer, changed.String())
+	}
+	display.previous = stages
+}
+
+func (display *cliRunbookProgressDisplay) writeAll(stages []cliRunbookStageResult, clear bool) {
+	for _, stage := range stages {
+		if clear {
+			_, _ = io.WriteString(display.writer, "\r\x1b[2K")
+		}
+		_, _ = io.WriteString(display.writer, cliRunbookProgressLine(display.writer, stage)+"\n")
+	}
+}
+
+func cliRunbookProgressLine(w io.Writer, stage cliRunbookStageResult) string {
+	return fmt.Sprintf("  %s %s — %s", cliRunbookStageGlyph(w, stage.Status), cliRunbookStageTitle(stage), cliRunbookStageProgress(stage))
+}
+
+func cliRunbookProgressTerminalSize(writer io.Writer) (int, int, bool) {
+	if runtime.GOOS == "windows" || os.Getenv("TERM") == "dumb" {
+		return 0, 0, false
+	}
+	file, ok := writer.(*os.File)
+	if !ok {
+		return 0, 0, false
+	}
+	return fileTerminalSize(file)
+}
+
+func cliRunbookProgressFitsWidth(stages []cliRunbookStageResult, width int) bool {
+	if len(stages) == 0 || width < 1 {
+		return false
+	}
+	for _, stage := range stages {
+		title := cliRunbookStageTitle(stage)
+		if strings.IndexFunc(title, func(r rune) bool { return r > unicode.MaxASCII }) >= 0 {
+			return false
+		}
+		line := "  ● " + title + " — " + cliRunbookStageProgress(stage)
+		if len([]rune(line)) >= width {
+			return false
+		}
+	}
+	return true
+}
+
+func cliRunbookProgressFitsTerminal(stages []cliRunbookStageResult, width, height int) bool {
+	return len(stages) < height && cliRunbookProgressFitsWidth(stages, width)
 }
 
 func cliRunbookStageProgressKey(stage cliRunbookStageResult) string {

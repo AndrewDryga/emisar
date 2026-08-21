@@ -462,6 +462,69 @@ func TestCLIHumanExecuteRunbookFollowsStatusAndOutputs(t *testing.T) {
 	}
 }
 
+func TestCLIRunbookProgressDisplayRedrawsOneLinePerStage(t *testing.T) {
+	initial := []cliRunbookStageResult{
+		{
+			StageID: "inspect", Title: "Inspect databases", Status: "active",
+			Items: []cliRunbookItemResult{{Status: "running"}, {Status: "pending"}},
+		},
+		{
+			StageID: "report", Title: "Build report", Status: "pending",
+			Items: []cliRunbookItemResult{{Status: "pending"}},
+		},
+	}
+	updated := []cliRunbookStageResult{
+		{
+			StageID: "inspect", Title: "Inspect databases", Status: "succeeded",
+			Items: []cliRunbookItemResult{{Status: "succeeded"}, {Status: "succeeded"}},
+		},
+		{
+			StageID: "report", Title: "Build report", Status: "active",
+			Items: []cliRunbookItemResult{{Status: "running"}},
+		},
+	}
+
+	var out bytes.Buffer
+	display := cliRunbookProgressDisplay{
+		writer:       &out,
+		terminalSize: func() (int, int, bool) { return 120, 40, true },
+		redraw:       true,
+	}
+	display.writeInitial(initial)
+	display.writeUpdate(updated)
+	afterUpdate := out.Len()
+	display.writeUpdate(updated)
+	if out.Len() != afterUpdate {
+		t.Fatal("unchanged progress was redrawn")
+	}
+
+	want := "\x1b[2A\r\x1b[2K  ✓ Inspect databases — 2/2 succeeded\n" +
+		"\r\x1b[2K  ● Build report — 0/1 complete · 1 running\n"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("progress was not redrawn in place:\n%q", out.String())
+	}
+}
+
+func TestCLIRunbookProgressRedrawRequiresLinesThatFit(t *testing.T) {
+	stages := []cliRunbookStageResult{{
+		StageID: "inspect", Title: "Inspect databases", Status: "active",
+		Items: []cliRunbookItemResult{{Status: "running"}},
+	}}
+	if !cliRunbookProgressFitsWidth(stages, 80) {
+		t.Fatal("ordinary progress line should fit an 80-column terminal")
+	}
+	if cliRunbookProgressFitsWidth(stages, 20) {
+		t.Fatal("wrapped progress line must not use cursor redraw")
+	}
+	if cliRunbookProgressFitsTerminal(stages, 80, 1) {
+		t.Fatal("progress taller than the terminal must not use cursor redraw")
+	}
+	stages[0].Title = "Inspect données"
+	if cliRunbookProgressFitsWidth(stages, 80) {
+		t.Fatal("ambiguous-width server text must not use cursor redraw")
+	}
+}
+
 func TestCLIHumanExecuteRunbookRequiresProgressingOutputContinuation(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"runtime"
-	"strings"
 	"sync"
 )
 
@@ -253,7 +252,6 @@ func (b *bridge) followCLIRunbook(
 	}
 	_ = json.Unmarshal(raw, &initial)
 	execution := initial.Execution
-	previousStages := execution.Stages
 	if !cliToolContinuationPresent(execution.Next) &&
 		!cliToolContinuationPresent(execution.OutputsNext) &&
 		!cliToolContinuationPresent(execution.RunsNext) {
@@ -270,8 +268,18 @@ func (b *bridge) followCLIRunbook(
 		return b.writeCLIFollowFailure(stderr, operationID, errors.New("the runbook response contained an invalid wait continuation"))
 	}
 
+	progress := newCLIRunbookProgressDisplay(stdout, execution.Stages)
 	if cliToolContinuationPresent(execution.Next) {
-		_, _ = io.WriteString(stdout, "\nWaiting for completion. Ctrl-C stops waiting; the runbook keeps running.\n")
+		if progress.redraw && len(execution.Stages) > 0 {
+			_, _ = io.WriteString(stdout, "\nWaiting for completion. Ctrl-C stops waiting; the runbook keeps running.\n\nProgress\n")
+			progress.writeInitial(execution.Stages)
+		} else {
+			if len(execution.Stages) > 0 {
+				_, _ = io.WriteString(stdout, "\nProgress\n")
+				progress.writeInitial(execution.Stages)
+			}
+			_, _ = io.WriteString(stdout, "\nWaiting for completion. Ctrl-C stops waiting; the runbook keeps running.\n")
+		}
 	}
 	for cliToolContinuationPresent(execution.Next) {
 		raw, err := b.callCLIContinuation(ctx, execution.Next)
@@ -296,12 +304,7 @@ func (b *bridge) followCLIRunbook(
 			!validCLIExecutionContinuation(execution.Next, execution.RunbookExecutionID) {
 			return b.writeCLIFollowFailure(stderr, operationID, errors.New("the server changed or malformed the runbook wait continuation"))
 		}
-		var progress strings.Builder
-		writeCLIRunbookProgress(&progress, stdout, previousStages, execution.Stages)
-		if progress.Len() > 0 {
-			_, _ = io.WriteString(stdout, progress.String())
-		}
-		previousStages = execution.Stages
+		progress.writeUpdate(execution.Stages)
 	}
 	if !cliRunbookTerminal(execution.Status) {
 		return b.writeCLIFollowFailure(stderr, operationID, errors.New("wait_for_run stopped before the runbook reached a terminal status"))
