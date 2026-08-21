@@ -42,6 +42,11 @@ credibility. It connects the outcome to mechanisms a technical buyer can inspect
 - Explain the extensibility claim concretely: install the MCP integration once, then
   add capabilities as packs and actions.
 - Put the exact limit beside the security claim when it changes the decision.
+- State the scope as ongoing production work — reads and changes, inside policy.
+  An incident is the sharpest example of that work, never the boundary of it.
+- When naming a boundary, name the practice we advise against, not a capability
+  the product lacks. emisar makes changes; what it should not be is the system of
+  record for standing configuration.
 
 ## Bad
 
@@ -54,11 +59,21 @@ credibility. It connects the outcome to mechanisms a technical buyer can inspect
   destructive actions still have real effects.
 - Call emisar literally the last MCP a team will ever install. State the concrete
   design goal: one stable infrastructure MCP surface that grows through actions.
+- Narrow the product to one occasion — "built for the incident, not the steady
+  state", "for when things break", "your break-glass tool". That reads as a
+  product you open a few times a year, and it contradicts the bounded-autonomy
+  promise of work the operator can leave running.
+- Turn the configuration-management boundary into an inability. "It is not your
+  configuration manager" is advice about drift, not a statement that the agent
+  cannot act: a gated action changes things on purpose. Say why the practice is
+  bad — a change made straight on a live host is drift nobody can reproduce.
 
 ## Enforcement
 
 Use `content-director` for positioning and `security-engineer` for trust claims.
 Apply the hierarchy test in the content skill, then sweep adjacent marketing,
-product, SEO, and creative-direction guidance for approval-first framing. This rule
+product, SEO, and creative-direction guidance for approval-first framing, for
+copy that scopes emisar to incidents or break-glass, and for a stated boundary
+that reads as a missing capability rather than advice. This rule
 depends on editorial judgment and verified product behavior, so enforce it in review
 rather than with banned-word checks.
