@@ -645,10 +645,12 @@ function Configure-Clients([string]$Executable, [string]$HomeDirectory, [string]
     try {
         Remove-Item Env:EMISAR_URL -ErrorAction SilentlyContinue
         Remove-Item Env:EMISAR_API_KEY -ErrorAction SilentlyContinue
-        & $Executable auth status $script:PortalOrigin *> $null
-        if ($LASTEXITCODE -eq 0) {
+        $storedAccountWorks = & {
+            $ErrorActionPreference = "Continue"
+            & $Executable auth status $script:PortalOrigin *> $null
+            if ($LASTEXITCODE -ne 0) { return $false }
             & $Executable list_tools --json *> $null
-            $storedAccountWorks = $LASTEXITCODE -eq 0
+            return $LASTEXITCODE -eq 0
         }
     } finally {
         if ($urlWasSet) { $env:EMISAR_URL = $savedUrl } else { Remove-Item Env:EMISAR_URL -ErrorAction SilentlyContinue }
