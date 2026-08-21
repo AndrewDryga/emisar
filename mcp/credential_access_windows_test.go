@@ -25,6 +25,21 @@ func TestCredentialStore_WindowsACLsAreOwnerOnly(t *testing.T) {
 	}
 }
 
+func TestValidateWindowsCredentialSDDLAcceptsCanonicalCurrentTrustee(t *testing.T) {
+	sid, err := currentWindowsUserSID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	trustee, err := canonicalWindowsCredentialTrustee(sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sddl := "D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;" + trustee + ")"
+	if err := validateWindowsCredentialSDDL(sddl, sid); err != nil {
+		t.Fatalf("validate canonical current trustee %q for %s: %v", trustee, sid, err)
+	}
+}
+
 func TestCredentialStore_WindowsRejectsBroadFileACL(t *testing.T) {
 	current := testAPIKey(102)
 	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))

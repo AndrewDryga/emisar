@@ -247,6 +247,10 @@ func securityDescriptorString(descriptor uintptr) (string, error) {
 }
 
 func validateWindowsCredentialSDDL(sddl, currentSID string) error {
+	currentTrustee, err := canonicalWindowsCredentialTrustee(currentSID)
+	if err != nil {
+		return fmt.Errorf("canonicalize current user SID: %w", err)
+	}
 	if !strings.HasPrefix(sddl, "D:") {
 		return errors.New("DACL is missing")
 	}
@@ -269,6 +273,7 @@ func validateWindowsCredentialSDDL(sddl, currentSID string) error {
 	aliases := map[string]string{
 		"S-1-5-18":     "SY",
 		"S-1-5-32-544": "BA",
+		currentTrustee: currentSID,
 	}
 	seen := map[string]bool{}
 	rest := sddl[firstACE:]
@@ -306,6 +311,33 @@ func validateWindowsCredentialSDDL(sddl, currentSID string) error {
 		return errors.New("DACL has an unexpected number of access entries")
 	}
 	return nil
+}
+
+// Windows may serialize a numeric well-known SID with its SDDL token. In
+// particular, the built-in local Administrator account becomes LA. Derive the
+// current token's spelling through the same API instead of treating every LA
+// principal as the caller or maintaining a broader alias allowlist.
+func canonicalWindowsCredentialTrustee(sid string) (string, error) {
+	descriptor, err := securityDescriptorFromString("D:P(A;;FA;;;" + sid + ")")
+	if err != nil {
+		return "", err
+	}
+	defer localFree(descriptor)
+
+	sddl, err := securityDescriptorString(descriptor)
+	if err != nil {
+		return "", err
+	}
+	start := strings.IndexByte(sddl, '(')
+	end := strings.IndexByte(sddl, ')')
+	if start < 0 || end <= start {
+		return "", errors.New("canonical DACL has no access entry")
+	}
+	fields := strings.Split(sddl[start+1:end], ";")
+	if len(fields) != 6 || fields[5] == "" {
+		return "", errors.New("canonical DACL has an invalid trustee")
+	}
+	return fields[5], nil
 }
 
 func localFree(pointer uintptr) {
