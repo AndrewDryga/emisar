@@ -22,7 +22,7 @@ GitHub is the optional release fallback. To permit that fallback, also allow
 `api.github.com:443`, `github.com:443`, and
 `release-assets.githubusercontent.com:443`.
 
-1. In the dashboard, choose **Connect a runner**. Copy the generated command;
+1. In the console, choose **Connect a runner**. Copy the generated command;
    it contains a fresh, single-use enrollment key.
 2. Run it on the host:
 
@@ -33,7 +33,7 @@ GitHub is the optional release fallback. To permit that fallback, also allow
 
    The installer verifies the release checksum, creates the service, installs
    host-matched starter packs, and starts the runner.
-3. Confirm the runner is online in the dashboard, then dispatch
+3. Confirm the runner is online in the console, then dispatch
    `linux.uptime` with a reason. You are done when the output appears and the
    run is present in the audit trail.
 4. Open **LLM agents** and connect your client. Remote MCP clients use OAuth;
