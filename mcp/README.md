@@ -25,7 +25,7 @@ Zed, Windsurf, and similar stdio clients can use the bridge.
 
 The current per-client instructions are at
 [emisar.dev/docs/connect-an-llm](https://emisar.dev/docs/connect-an-llm). The
-dashboard's **LLM agents** page generates the exact configuration for the
+console's **LLM agents** page generates the exact configuration for the
 signed-in operator and their runner scope.
 
 ## Install the stdio bridge
