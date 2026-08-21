@@ -535,11 +535,19 @@ jobs:
           overwrite: true
 
   mcp-windows:
-    name: MCP - Windows
+    name: MCP - Windows (${{ matrix.arch }})
     needs: changes
     if: needs.changes.outputs.mcp == 'true'
-    runs-on: windows-2025
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: windows-2025
+          - arch: arm64
+            runner: windows-11-arm
     env:
       GOTOOLCHAIN: local
     steps:

@@ -4,7 +4,7 @@ run-name: Release ${{ github.ref_name }}
 
 # Triggered by tag `mcp-vMAJOR.MINOR.PATCH` only. Builds the standalone
 # `emisar-mcp` stdio bridge for darwin + linux (amd64 + arm64) and
-# Windows (amd64),
+# Windows (amd64 + arm64),
 # signs build provenance via Sigstore, publishes to the Emisar release tree,
 # then mirrors the files to GitHub Releases. The first
 # attempt requires current main; Actions UI reruns preserve the original
@@ -21,7 +21,7 @@ run-name: Release ${{ github.ref_name }}
 #   tag      : mcp-v0.1.0
 #   version  : 0.1.0
 #   tarball  : emisar-mcp-0.1.0-<OS>-<ARCH>.tar.gz
-#   zip      : emisar-mcp-0.1.0-windows-amd64.zip
+#   zip      : emisar-mcp-0.1.0-windows-<ARCH>.zip
 #   checksum : SHA256SUMS-MCP
 #
 # `install-mcp.sh` reads `https://emisar.dev/releases/mcp/latest.json` and
@@ -169,6 +169,10 @@ jobs:
             archive: tar.gz
           - os: windows
             arch: amd64
+            binary: emisar-mcp.exe
+            archive: zip
+          - os: windows
+            arch: arm64
             binary: emisar-mcp.exe
             archive: zip
     permissions:
@@ -388,9 +392,11 @@ jobs:
           archive="emisar-mcp-${VERSION}-linux-amd64.tar.gz"
           curl -fsS --retry 4 --retry-delay 2 "${base}/${archive}" -o "/tmp/${archive}"
           cmp "release/${archive}" "/tmp/${archive}"
-          windows_archive="emisar-mcp-${VERSION}-windows-amd64.zip"
-          curl -fsS --retry 4 --retry-delay 2 "${base}/${windows_archive}" -o "/tmp/${windows_archive}"
-          cmp "release/${windows_archive}" "/tmp/${windows_archive}"
+          for arch in amd64 arm64; do
+            windows_archive="emisar-mcp-${VERSION}-windows-${arch}.zip"
+            curl -fsS --retry 4 --retry-delay 2 "${base}/${windows_archive}" -o "/tmp/${windows_archive}"
+            cmp "release/${windows_archive}" "/tmp/${windows_archive}"
+          done
 
       - name: Publish GitHub release mirror
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2

@@ -187,7 +187,7 @@ func TestPublishIsIdempotentAndDoesNotMoveLatestBackward(t *testing.T) {
 	}
 }
 
-func TestPublishMCPIncludesWindowsArchive(t *testing.T) {
+func TestPublishMCPIncludesWindowsArchives(t *testing.T) {
 	dir := buildRelease(t, "mcp", "1.2.3")
 	fake := newFakeGCS(t)
 
@@ -195,25 +195,30 @@ func TestPublishMCPIncludesWindowsArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	name := "emisar-mcp-1.2.3-windows-amd64.zip"
-	objectName := "releases/mcp/mcp-v1.2.3/" + name
-	if got := fake.objects[objectName].contentType; got != "application/zip" {
-		t.Errorf("%s Content-Type = %q, want application/zip", objectName, got)
+	names := []string{
+		"emisar-mcp-1.2.3-windows-amd64.zip",
+		"emisar-mcp-1.2.3-windows-arm64.zip",
+	}
+	for _, name := range names {
+		objectName := "releases/mcp/mcp-v1.2.3/" + name
+		if got := fake.objects[objectName].contentType; got != "application/zip" {
+			t.Errorf("%s Content-Type = %q, want application/zip", objectName, got)
+		}
 	}
 
 	var manifest releaseManifest
 	if err := json.Unmarshal(fake.objects["releases/mcp/latest.json"].data, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if len(manifest.Artifacts) != 5 || manifest.Artifacts[4].Name != name {
+	if len(manifest.Artifacts) != 6 || manifest.Artifacts[4].Name != names[0] || manifest.Artifacts[5].Name != names[1] {
 		t.Fatalf("latest manifest artifacts = %+v", manifest.Artifacts)
 	}
 }
 
 func TestPublishRunnerRejectsUnexpectedWindowsArchive(t *testing.T) {
 	dir := buildRelease(t, "runner", "1.2.3")
-	name := "emisar-1.2.3-windows-amd64.zip"
-	data := []byte("runner-windows-amd64")
+	name := "emisar-1.2.3-windows-arm64.zip"
+	data := []byte("runner-windows-arm64")
 	if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -294,13 +299,13 @@ func buildRelease(t *testing.T, component, version string) string {
 	}
 	platforms := []string{"darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"}
 	if component == "mcp" {
-		platforms = append(platforms, "windows-amd64")
+		platforms = append(platforms, "windows-amd64", "windows-arm64")
 	}
 
 	var checksums strings.Builder
 	for _, platform := range platforms {
 		extension := ".tar.gz"
-		if platform == "windows-amd64" {
+		if strings.HasPrefix(platform, "windows-") {
 			extension = ".zip"
 		}
 		name := prefix + version + "-" + platform + extension

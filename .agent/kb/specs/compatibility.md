@@ -554,16 +554,16 @@ makes a rerun hands-off; a rejected credential starts a fresh approval. This
 drives the portal's device-authorization pair, whose frozen contract lives in
 the OAuth authorization server section above; the installers and bridge are
 the deployed consumers its skew note describes. The current release tags are
-`runner-v0.20.1` and `mcp-v0.8.1`. The
+`runner-v0.20.1` and `mcp-v0.8.2`. The
 bridge installer also requires the selected GitHub release to be marked
 immutable.
 
 `install-mcp.ps1` accepts `-Version`, `-InstallDir`,
-`-PortalOrigin`, `-Uninstall`, `-Yes`, and `-ConnectAll`. It installs the
-`windows-amd64` zip per user, verifies `SHA256SUMS-MCP`, checks Sigstore
-provenance when an authenticated GitHub CLI is available, and uses protected
-Windows DACLs for the binary directory, direct-CLI credentials, and generated
-client configuration files.
+`-PortalOrigin`, `-Uninstall`, `-Yes`, and `-ConnectAll`. It installs the native
+`windows-amd64` or `windows-arm64` zip per user, verifies `SHA256SUMS-MCP`, and
+checks Sigstore provenance when an authenticated GitHub CLI is available. It
+uses protected Windows DACLs for the binary directory, direct-CLI credentials,
+and generated client configuration files.
 
 **What happens on skew.** A renamed installer flag or environment variable
 fails the one-liner with an unknown-option or missing-configuration error. A

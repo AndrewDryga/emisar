@@ -98,6 +98,9 @@ func MCPWindows(root string, out io.Writer) error {
 }
 
 func testWindowsMCPInstaller(root, shell string) error {
+	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+		return fmt.Errorf("unsupported Windows test architecture %s", runtime.GOARCH)
+	}
 	temp, err := os.MkdirTemp("", "emisar-mcp-windows-installtest-*")
 	if err != nil {
 		return err
@@ -105,7 +108,7 @@ func testWindowsMCPInstaller(root, shell string) error {
 	defer os.RemoveAll(temp)
 
 	releaseDir := filepath.Join(temp, "release")
-	archiveRoot := "emisar-mcp-" + windowsMCPVersion + "-windows-amd64"
+	archiveRoot := "emisar-mcp-" + windowsMCPVersion + "-windows-" + runtime.GOARCH
 	stagedRoot := filepath.Join(temp, archiveRoot)
 	if err := os.MkdirAll(stagedRoot, 0o700); err != nil {
 		return err
@@ -258,6 +261,9 @@ func testWindowsMCPInstaller(root, shell string) error {
 	)
 	if err != nil {
 		return fmt.Errorf("install: %w\n%s", err, output)
+	}
+	if !bytes.Contains(output, []byte("install target: windows/"+runtime.GOARCH)) {
+		return fmt.Errorf("installer did not select windows/%s\n%s", runtime.GOARCH, output)
 	}
 	if outputContainsWindowsKey(output, cliKey, clientKeys) {
 		return fmt.Errorf("installer output disclosed a delivered API key")

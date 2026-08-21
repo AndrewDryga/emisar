@@ -44,11 +44,11 @@ const actionlintVersion = "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
 
 // The platforms each module publishes. Keep this in step with the release
 // workflows: a target that ships without compiling here is a broken release.
-// The runner remains Unix-only; windows/amd64 is the local MCP bridge beside a
-// Windows LLM client, not the on-host action runner.
+// The runner remains Unix-only; the Windows targets are the local MCP bridge
+// beside a Windows LLM client, not the on-host action runner.
 var releaseTargets = map[string][]string{
 	"runner": {"linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64"},
-	"mcp":    {"linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "windows/amd64"},
+	"mcp":    {"linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "windows/amd64", "windows/arm64"},
 }
 
 const (

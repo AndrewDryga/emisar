@@ -58,6 +58,24 @@ function Stop-Install([string]$Message) {
     throw "[install-mcp] $Message"
 }
 
+function Get-WindowsReleaseArchitecture {
+    try {
+        $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+    } catch {
+        $architecture = if ($env:PROCESSOR_ARCHITEW6432) {
+            $env:PROCESSOR_ARCHITEW6432
+        } else {
+            $env:PROCESSOR_ARCHITECTURE
+        }
+    }
+    switch ($architecture.ToUpperInvariant()) {
+        "X64" { return "amd64" }
+        "AMD64" { return "amd64" }
+        "ARM64" { return "arm64" }
+        default { Stop-Install "this release supports 64-bit x86 and ARM Windows only" }
+    }
+}
+
 function Test-SafePortalOrigin([string]$Value) {
     $uri = $null
     if (-not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$uri)) { return $false }
@@ -1065,9 +1083,7 @@ function Uninstall-Bridge([string]$Executable, [string]$HomeDirectory, [string]$
 }
 
 if ($env:OS -ne "Windows_NT") { Stop-Install "this installer requires Windows" }
-if ($env:PROCESSOR_ARCHITECTURE -ne "AMD64" -and $env:PROCESSOR_ARCHITEW6432 -ne "AMD64") {
-    Stop-Install "this release supports 64-bit x86 Windows only"
-}
+$releaseArchitecture = Get-WindowsReleaseArchitecture
 if (-not (Test-SafePortalOrigin $script:PortalOrigin)) { Stop-Install "EMISAR_URL must be an HTTPS origin without credentials, path, query, or fragment" }
 
 $homeDirectory = if ($env:EMISAR_MCP_TEST_HOME) { $env:EMISAR_MCP_TEST_HOME } else { $HOME }
@@ -1086,9 +1102,9 @@ if ($Uninstall) {
 if ($Version) { $Version = Normalize-Version $Version }
 $release = Resolve-Release $Version
 $versionNumber = $release.Tag.Substring(5)
-$archiveRoot = "emisar-mcp-$versionNumber-windows-amd64"
+$archiveRoot = "emisar-mcp-$versionNumber-windows-$releaseArchitecture"
 $archiveName = "$archiveRoot.zip"
-Write-Info "install target: windows/amd64"
+Write-Info "install target: windows/$releaseArchitecture"
 Write-Info "  -> $executable"
 Write-Info "$($release.Source): $($release.Tag)"
 if (-not (Confirm-Install "install emisar-mcp $($release.Tag)?")) { Stop-Install "aborted by user" }

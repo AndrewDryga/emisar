@@ -20,9 +20,10 @@ Run from the repository root:
 It checks client-module boundaries and formatting, module checksums, `go vet`,
 `staticcheck`, tidy-as-a-no-op plus the stdlib-only assertion (no `go.sum` may
 exist), attestation parity against the runner's copy, race tests, and a
-cross-build of every published platform including `windows/amd64`. CI also runs
-this gate natively on Windows so the PowerShell installer, credential ACLs, and
-process adapters execute rather than merely compile. Use
+cross-build of every published platform including `windows/amd64` and
+`windows/arm64`. CI also runs this gate natively on both Windows architectures
+so the PowerShell installer, credential ACLs, and process adapters execute
+rather than merely compile. Use
 `./run test mcp [go-test-args...]` for focused feedback; direct Go commands are
 diagnostic, not final verification.
 

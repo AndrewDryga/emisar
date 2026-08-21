@@ -170,12 +170,14 @@ func buildObjects(opts options, version semver) ([]object, []byte, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("read %s: %w", checksumName, err)
 	}
-	wantNames := make([]string, 0, 5)
+	wantNames := make([]string, 0, 6)
 	for _, platform := range []string{"darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"} {
 		wantNames = append(wantNames, archivePrefix+versionText+"-"+platform+".tar.gz")
 	}
 	if opts.component == "mcp" {
-		wantNames = append(wantNames, archivePrefix+versionText+"-windows-amd64.zip")
+		for _, platform := range []string{"windows-amd64", "windows-arm64"} {
+			wantNames = append(wantNames, archivePrefix+versionText+"-"+platform+".zip")
+		}
 	}
 	wantHashes, err := parseChecksums(checksums, wantNames)
 	if err != nil {
