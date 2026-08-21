@@ -241,12 +241,12 @@ func testWindowsMCPInstaller(root, shell string) error {
 	if err := json.Unmarshal(configData, &config); err != nil {
 		return fmt.Errorf("decode Cursor config: %w", err)
 	}
-	if config["theme"] != "dark" || !bytes.Contains(configData, []byte(cursorKey)) || !bytes.Contains(configData, []byte(installed)) {
-		return fmt.Errorf(
-			"Cursor config did not preserve existing state and install the verified bridge: %s\n%s",
-			configData,
-			output,
-		)
+	servers, serversOK := config["mcpServers"].(map[string]any)
+	entry, entryOK := servers["emisar"].(map[string]any)
+	clientEnv, envOK := entry["env"].(map[string]any)
+	if config["theme"] != "dark" || !serversOK || !entryOK || !envOK ||
+		entry["command"] != installed || clientEnv["EMISAR_API_KEY"] != cursorKey {
+		return errors.New("Cursor config did not preserve existing state and install the verified bridge")
 	}
 	backupData, err := os.ReadFile(cursorConfig + ".emisar-bak")
 	if err != nil || !bytes.Equal(backupData, []byte("{\"theme\":\"dark\"}\n")) {
