@@ -356,10 +356,9 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     block starts with a real `hero-*` glyph; `<.event_block>` rejects empty/invalid names
     and `<.callout>` provides a tone default. Match the metaphor to the prescribed
     action: installing a newer version uses download semantics; `arrow-path` means
-    refresh, retry, or work in progress. When introducing a new Heroicon class, verify
-    the built asset or its browser-computed mask — a present `<span>` with
-    `mask-image: none` is not an icon. Sweep: spine roots without a Heroicon child,
-    action/icon mismatches, and computed empty masks.
+    refresh, retry, or work in progress. Verify the built asset or its browser-computed
+    mask — a present `<span>` with `mask-image: none` is not an icon. Sweep: spine roots
+    without a Heroicon child, action/icon mismatches, and computed empty masks.
 22. **Spacing utilities only work between element siblings.** When prose and a command,
     secret, or action need a deliberate gap, wrap the prose in `<p>` (or another semantic
     element) before applying `space-y-*`. Raw HEEx text nodes do not match Tailwind's
