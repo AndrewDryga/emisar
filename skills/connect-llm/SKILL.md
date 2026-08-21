@@ -87,6 +87,11 @@ choosing the intended account on the consent screen. Then continue at step 4.
 
 ## 3. Local client: install the bridge and register
 
+On Windows, run `irm https://emisar.dev/install-mcp.ps1 | iex` in PowerShell;
+that installer does the same client detection, browser approval, and
+per-client registration as the script below, then continue at step 4. The
+sequence below is the macOS and Linux flow.
+
 Download first so failures are unambiguous and `--help` can be inspected:
 
 ```sh
