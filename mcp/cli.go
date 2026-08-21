@@ -245,7 +245,11 @@ func (b *bridge) runToolCallContext(ctx context.Context, name string, arguments 
 			return b.writeCLIFollowFailure(stderr, operationID, err)
 		}
 	}
-	if err := writeCLIToolOutput(stdout, name, arguments, result.StructuredContent, b.cliAccount, exactJSON, !result.IsError); err != nil {
+	var inputSchema json.RawMessage
+	if !exactJSON && result.IsError && cliInvalidArgumentsFailure(result.StructuredContent) {
+		inputSchema = b.fetchCLIInputSchema(ctx, name)
+	}
+	if err := writeCLIToolOutputWithSchema(stdout, name, arguments, result.StructuredContent, inputSchema, b.cliAccount, exactJSON, !result.IsError); err != nil {
 		return cliFailure(stderr, "write tool result", err)
 	}
 	if result.IsError {
@@ -257,6 +261,39 @@ func (b *bridge) runToolCallContext(ctx context.Context, name string, arguments 
 		}
 	}
 	return 0
+}
+
+func cliInvalidArgumentsFailure(raw json.RawMessage) bool {
+	var result struct {
+		OK              bool `json:"ok"`
+		DispatchStarted bool `json:"dispatch_started"`
+		Error           struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	return json.Unmarshal(raw, &result) == nil && !result.OK && !result.DispatchStarted &&
+		result.Error.Code == "invalid_args"
+}
+
+func (b *bridge) fetchCLIInputSchema(ctx context.Context, toolName string) json.RawMessage {
+	response, _, err := b.cliRoundTripContext(ctx, "tools/list", "", nil)
+	if err != nil || len(response.Error) > 0 {
+		return nil
+	}
+	var result struct {
+		Tools []json.RawMessage `json:"tools"`
+	}
+	if json.Unmarshal(response.Result, &result) != nil || validateToolDescriptors(result.Tools) != nil {
+		return nil
+	}
+	for _, raw := range result.Tools {
+		var descriptor cliToolDescriptor
+		if json.Unmarshal(raw, &descriptor) == nil && descriptor.Name == toolName &&
+			firstJSONByte(descriptor.InputSchema) == '{' && validateStrictJSON(descriptor.InputSchema) == nil {
+			return descriptor.InputSchema
+		}
+	}
+	return nil
 }
 
 func (b *bridge) fetchToolDescriptors(exactJSON bool, stdout, stderr io.Writer) (json.RawMessage, []json.RawMessage, int) {
@@ -440,6 +477,16 @@ func writeCLIToolOutput(
 	account string,
 	exactJSON, successful bool,
 ) error {
+	return writeCLIToolOutputWithSchema(w, toolName, arguments, raw, nil, account, exactJSON, successful)
+}
+
+func writeCLIToolOutputWithSchema(
+	w io.Writer,
+	toolName string,
+	arguments, raw, inputSchema []byte,
+	account string,
+	exactJSON, successful bool,
+) error {
 	if exactJSON {
 		return writePrettyJSON(w, raw)
 	}
@@ -448,7 +495,7 @@ func writeCLIToolOutput(
 			return err
 		}
 	}
-	if handled, err := writeCLIOperatorOutput(w, toolName, arguments, raw, account, successful); handled {
+	if handled, err := writeCLIOperatorOutput(w, toolName, arguments, raw, inputSchema, account, successful); handled {
 		return err
 	}
 	return writeHumanJSON(w, raw)

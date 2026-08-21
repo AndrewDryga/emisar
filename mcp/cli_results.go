@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -75,7 +76,7 @@ type cliRunOutput struct {
 func writeCLIOperatorOutput(
 	w io.Writer,
 	toolName string,
-	arguments, raw []byte,
+	arguments, raw, inputSchema []byte,
 	account string,
 	successful bool,
 ) (bool, error) {
@@ -83,7 +84,7 @@ func writeCLIOperatorOutput(
 		return false, nil
 	}
 	if !successful {
-		return writeCLIToolError(w, toolName, arguments, raw, account)
+		return writeCLIToolError(w, toolName, arguments, raw, inputSchema, account)
 	}
 
 	var rendered string
@@ -117,7 +118,7 @@ func writeCLIOperatorOutput(
 	return true, err
 }
 
-func writeCLIToolError(w io.Writer, toolName string, arguments, raw []byte, account string) (bool, error) {
+func writeCLIToolError(w io.Writer, toolName string, arguments, raw, inputSchema []byte, account string) (bool, error) {
 	var result struct {
 		OK              bool `json:"ok"`
 		DispatchStarted bool `json:"dispatch_started"`
@@ -141,7 +142,7 @@ func writeCLIToolError(w io.Writer, toolName string, arguments, raw []byte, acco
 	if result.Error.Code != "" {
 		fmt.Fprintf(&out, "\nCode  %s\n", cliResultText(result.Error.Code, 120))
 	}
-	detailsRendered := writeCLIErrorIssues(&out, arguments, result.Error.Details)
+	detailsRendered := writeCLIErrorIssues(&out, arguments, result.Error.Details, inputSchema)
 	if result.Error.Path != "" && !detailsRendered {
 		fmt.Fprintf(&out, "Path  %s\n", cliResultText(result.Error.Path, 240))
 	}
@@ -166,7 +167,7 @@ type cliErrorIssue struct {
 	Message string `json:"message"`
 }
 
-func writeCLIErrorIssues(out *strings.Builder, arguments, raw json.RawMessage) bool {
+func writeCLIErrorIssues(out *strings.Builder, arguments, raw, inputSchema json.RawMessage) bool {
 	var details struct {
 		IssueCount      int             `json:"issue_count"`
 		IssuesTruncated bool            `json:"issues_truncated"`
@@ -178,10 +179,12 @@ func writeCLIErrorIssues(out *strings.Builder, arguments, raw json.RawMessage) b
 
 	visible := details.Issues[:min(len(details.Issues), maxCLIErrorIssues)]
 	total := max(details.IssueCount, len(details.Issues))
+	schema := cliDecodedSchema(inputSchema)
 	fmt.Fprintf(out, "\n%s\n", plural(total, "Problem", "Problems"))
 	for _, issue := range visible {
 		path := cliErrorIssuePath(issue.Path)
-		message := cliErrorIssueMessage(issue, cliArgumentValueKind(arguments, issue.Path))
+		valueKind := cliArgumentValueKind(arguments, issue.Path)
+		message := cliErrorIssueMessage(issue, valueKind, cliSchemaAtPath(schema, issue.Path))
 		fmt.Fprintf(out, "  %s  %s\n", path, message)
 	}
 
@@ -205,17 +208,20 @@ func cliErrorIssuePath(path string) string {
 	}
 }
 
-func cliErrorIssueMessage(issue cliErrorIssue, valueKind string) string {
+func cliErrorIssueMessage(issue cliErrorIssue, valueKind string, schema map[string]any) string {
+	if message := cliErrorConstraintMessage(issue.Code, valueKind, schema); message != "" {
+		return message
+	}
 	if message := cliResultText(terminalSafeLine(issue.Message), maxCLIHumanStringRunes); message != "" {
 		return message
 	}
 	switch issue.Code {
 	case "required":
-		return "Is required."
+		return "Add this required argument."
 	case "unknown", "unknown_arg":
-		return "Is not an accepted argument."
+		return "Remove this argument; it is not accepted."
 	case "type":
-		return "Has the wrong JSON type."
+		return "Use the required JSON type."
 	case "format":
 		return "Does not match the required format."
 	case "duration":
@@ -223,7 +229,7 @@ func cliErrorIssueMessage(issue cliErrorIssue, valueKind string) string {
 	case "path":
 		return "Must be a valid path."
 	case "enum", "allowed":
-		return "Is not one of the allowed values."
+		return "Use one of the allowed values."
 	case "range":
 		return "Is outside the allowed range."
 	case "min":
@@ -248,13 +254,166 @@ func cliErrorIssueMessage(issue cliErrorIssue, valueKind string) string {
 	case "max_items":
 		return "Contains too many items."
 	case "unique":
-		return "Contains duplicate items."
+		return "Remove duplicate items."
 	case "conflict":
-		return "Conflicts with another argument."
+		return "Remove one of the conflicting arguments."
 	case "dependency":
 		return "Requires another argument."
 	default:
 		return "Does not match the published schema."
+	}
+}
+
+func cliDecodedSchema(raw json.RawMessage) map[string]any {
+	if firstJSONByte(raw) != '{' || validateStrictJSON(raw) != nil {
+		return nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var schema map[string]any
+	if decoder.Decode(&schema) != nil {
+		return nil
+	}
+	return schema
+}
+
+func cliSchemaAtPath(root map[string]any, path string) map[string]any {
+	if root == nil || path == "" || path == "$" || len(path) > 1024 || !strings.HasPrefix(path, "$.") {
+		return nil
+	}
+	current := root
+	for _, segment := range strings.Split(strings.TrimPrefix(path, "$."), ".") {
+		resolved, ok := resolveSchema(current, root, map[string]bool{}, 0)
+		if !ok {
+			return nil
+		}
+		for typeValue(resolved["type"]) == "array" {
+			items, ok := resolved["items"].(map[string]any)
+			if !ok {
+				return nil
+			}
+			resolved, ok = resolveSchema(items, root, map[string]bool{}, 0)
+			if !ok {
+				return nil
+			}
+		}
+		properties := make(map[string]any)
+		if !collectTopLevelSchema(resolved, root, properties, map[string]bool{}, map[string]bool{}, 0) {
+			return nil
+		}
+		next, ok := properties[segment].(map[string]any)
+		if !ok {
+			return nil
+		}
+		current = next
+	}
+	resolved, ok := resolveSchema(current, root, map[string]bool{}, 0)
+	if !ok {
+		return nil
+	}
+	return resolved
+}
+
+func cliErrorConstraintMessage(code, valueKind string, schema map[string]any) string {
+	if schema == nil {
+		return ""
+	}
+	if valueKind == "" {
+		valueKind = typeValue(schema["type"])
+	}
+	switch code {
+	case "min":
+		if valueKind == "string" {
+			return cliErrorBoundMessage(schema["minLength"], "at least", "character", "characters")
+		}
+		if valueKind == "array" {
+			return cliErrorBoundMessage(schema["minItems"], "at least", "item", "items")
+		}
+		return cliErrorBoundMessage(schema["minimum"], "at least", "", "")
+	case "max":
+		if valueKind == "string" {
+			return cliErrorBoundMessage(schema["maxLength"], "at most", "character", "characters")
+		}
+		if valueKind == "array" {
+			return cliErrorBoundMessage(schema["maxItems"], "at most", "item", "items")
+		}
+		return cliErrorBoundMessage(schema["maximum"], "at most", "", "")
+	case "max_length":
+		return cliErrorBoundMessage(schema["maxLength"], "at most", "character", "characters")
+	case "max_items":
+		return cliErrorBoundMessage(schema["maxItems"], "at most", "item", "items")
+	case "enum", "allowed":
+		return cliErrorAllowedValues(schema["enum"])
+	case "type":
+		return cliErrorTypeMessage(typeValue(schema["type"]))
+	case "format":
+		if stringValue(schema["pattern"]) == `\S` {
+			return "Use a non-blank value."
+		}
+	}
+	return ""
+}
+
+func cliErrorBoundMessage(value any, relation, singular, pluralValue string) string {
+	number, ok := value.(json.Number)
+	if !ok || len(number.String()) > 32 {
+		return ""
+	}
+	if _, err := strconv.ParseFloat(number.String(), 64); err != nil {
+		return ""
+	}
+	encoded := schemaJSONValue(value)
+	if encoded == "" {
+		return ""
+	}
+	if singular == "" {
+		if relation == "at least" {
+			return cliResultText(fmt.Sprintf("Use %s or greater.", encoded), maxCLIHumanStringRunes)
+		}
+		if relation == "at most" {
+			return cliResultText(fmt.Sprintf("Use %s or less.", encoded), maxCLIHumanStringRunes)
+		}
+		return ""
+	}
+	unit := pluralValue
+	if encoded == "1" {
+		unit = singular
+	}
+	return cliResultText(fmt.Sprintf("Use %s %s %s.", relation, encoded, unit), maxCLIHumanStringRunes)
+}
+
+func cliErrorAllowedValues(value any) string {
+	values, ok := value.([]any)
+	if !ok || len(values) == 0 || len(values) > 16 {
+		return ""
+	}
+	rendered := make([]string, 0, len(values))
+	for _, value := range values {
+		encoded := schemaJSONValue(value)
+		if encoded == "" || len(encoded) > 160 {
+			return ""
+		}
+		rendered = append(rendered, encoded)
+	}
+	return cliResultText("Use one of: "+strings.Join(rendered, ", ")+".", maxCLIHumanStringRunes)
+}
+
+func cliErrorTypeMessage(value string) string {
+	switch value {
+	case "string":
+		return "Use a JSON string."
+	case "integer":
+		return "Use a whole JSON number."
+	case "number":
+		return "Use a JSON number."
+	case "array":
+		return "Use a JSON array."
+	case "object":
+		return "Use a JSON object."
+	case "boolean":
+		return "Use true or false."
+	default:
+		return ""
 	}
 }
 

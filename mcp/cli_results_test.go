@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -410,9 +411,10 @@ func TestCLIToolErrorsExplainFailureAndSafeRecovery(t *testing.T) {
 
 func TestCLIToolValidationErrorsExplainFieldsWithoutEchoingValues(t *testing.T) {
 	arguments := []byte(`{"reason":"cli test","runner_refs":["secret-runner"],"scope":"global"}`)
-	raw := []byte(`{"ok":false,"dispatch_started":false,"error":{"code":"invalid_args","message":"Tool arguments do not match the published input schema.","retryable":false,"details":{"schema_version":1,"stage":"arguments","kind":"range","issues":[{"path":"$.reason","code":"min"},{"path":"$.runner_refs","code":"max_items"},{"path":"$.scope","code":"enum"},{"path":"$.missing","code":"required"}]}}}`)
+	inputSchema := []byte(`{"type":"object","properties":{"reason":{"$ref":"#/$defs/reason"},"runner_refs":{"type":"array","maxItems":2},"scope":{"type":"string","enum":["own","account"]},"missing":{"type":"string"}},"$defs":{"reason":{"type":"string","minLength":12}}}`)
+	raw := []byte(`{"ok":false,"dispatch_started":false,"error":{"code":"invalid_args","message":"Tool arguments do not match the published input schema.","retryable":false,"details":{"schema_version":1,"stage":"arguments","kind":"range","issues":[{"path":"$.reason","code":"min","message":"Is too short."},{"path":"$.runner_refs","code":"max_items"},{"path":"$.scope","code":"enum"},{"path":"$.missing","code":"required"}]}}}`)
 	var stdout bytes.Buffer
-	if err := writeCLIToolOutput(&stdout, executeRunbookToolName, arguments, raw, "immersive", false, false); err != nil {
+	if err := writeCLIToolOutputWithSchema(&stdout, executeRunbookToolName, arguments, raw, inputSchema, "immersive", false, false); err != nil {
 		t.Fatal(err)
 	}
 	output := stdout.String()
@@ -420,10 +422,10 @@ func TestCLIToolValidationErrorsExplainFieldsWithoutEchoingValues(t *testing.T) 
 		"Error: Tool arguments do not match the published input schema.",
 		"Code  invalid_args",
 		"Problems",
-		"reason  Is shorter than the allowed minimum.",
-		"runner_refs  Contains too many items.",
-		"scope  Is not one of the allowed values.",
-		"missing  Is required.",
+		"reason  Use at least 12 characters.",
+		"runner_refs  Use at most 2 items.",
+		`scope  Use one of: "own", "account".`,
+		"missing  Add this required argument.",
 		"View the accepted arguments and constraints:",
 		"emisar-mcp --account immersive help execute_runbook",
 	} {
@@ -446,6 +448,63 @@ func TestCLIToolValidationErrorsExplainFieldsWithoutEchoingValues(t *testing.T) 
 	}
 }
 
+func TestCLIProcessLoadsPublishedConstraintForValidationError(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Method string `json:"method"`
+			Params struct {
+				Name string `json:"name"`
+			} `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		switch calls.Add(1) {
+		case 1:
+			if request.Method != "tools/call" || request.Params.Name != executeRunbookToolName {
+				t.Errorf("tool call = %s %s", request.Method, request.Params.Name)
+			}
+			writeCLIResult(t, w, r, `{"structuredContent":{"ok":false,"dispatch_started":false,"error":{"code":"invalid_args","message":"Tool arguments do not match the published input schema.","retryable":false,"details":{"schema_version":1,"stage":"arguments","kind":"range","issues":[{"path":"$.reason","code":"min"}]}}},"content":[],"isError":true}`)
+		case 2:
+			if request.Method != "tools/list" || request.Params.Name != "" {
+				t.Errorf("schema call = %s %s", request.Method, request.Params.Name)
+			}
+			writeCLIResult(t, w, r, `{"tools":[{"name":"execute_runbook","title":"Execute runbook","description":"Execute one runbook.","inputSchema":{"type":"object","properties":{"reason":{"$ref":"#/$defs/reason"}},"$defs":{"reason":{"type":"string","minLength":12,"maxLength":2000}}}}]}`)
+		default:
+			t.Errorf("unexpected request")
+		}
+	}))
+	defer srv.Close()
+
+	env := map[string]string{"EMISAR_URL": srv.URL, "EMISAR_API_KEY": "e2e-token"}
+	stdout, stderr, code := runMain(t, "", []string{executeRunbookToolName, `{"reason":"cli test"}`}, env)
+	if code != 1 || stderr != "" || calls.Load() != 2 {
+		t.Fatalf("exit=%d calls=%d stdout=%q stderr=%q", code, calls.Load(), stdout, stderr)
+	}
+	if !strings.Contains(stdout, "reason  Use at least 12 characters.") || strings.Contains(stdout, "cli test") {
+		t.Fatalf("validation correction is not precise and secret-safe:\n%s", stdout)
+	}
+}
+
+func TestCLIJSONValidationErrorMakesExactlyOneCall(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		writeCLIResult(t, w, r, `{"structuredContent":{"ok":false,"dispatch_started":false,"error":{"code":"invalid_args","message":"Invalid arguments.","retryable":false,"details":{"schema_version":1,"stage":"arguments","kind":"range","issues":[{"path":"$.reason","code":"min"}]}}},"content":[],"isError":true}`)
+	}))
+	defer srv.Close()
+
+	stdout, stderr, code := runCLITest(newTestBridge(srv), []string{executeRunbookToolName, `{"reason":"cli test"}`, "--json"}, "")
+	if code != 1 || stderr != "" || calls.Load() != 1 || !json.Valid([]byte(stdout)) {
+		t.Fatalf("exit=%d calls=%d stdout=%q stderr=%q", code, calls.Load(), stdout, stderr)
+	}
+	if !strings.Contains(stdout, `"code": "min"`) {
+		t.Fatalf("exact validation result was not preserved:\n%s", stdout)
+	}
+}
+
 func TestCLIToolErrorIssuesAreBoundedAndTerminalSafe(t *testing.T) {
 	issues := make([]cliErrorIssue, 10)
 	for index := range issues {
@@ -464,7 +523,7 @@ func TestCLIToolErrorIssuesAreBoundedAndTerminalSafe(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out strings.Builder
-	if !writeCLIErrorIssues(&out, nil, details) {
+	if !writeCLIErrorIssues(&out, nil, details, nil) {
 		t.Fatal("expected issue details to render")
 	}
 	output := out.String()
