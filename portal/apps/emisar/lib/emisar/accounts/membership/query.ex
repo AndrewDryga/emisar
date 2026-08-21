@@ -1,5 +1,7 @@
 defmodule Emisar.Accounts.Membership.Query do
   use Emisar, :query
+  alias Emisar.Repo.{Filter, Like}
+  alias Emisar.Auth
 
   def all,
     do: from(memberships in Emisar.Accounts.Membership, as: :memberships)
@@ -241,6 +243,105 @@ defmodule Emisar.Accounts.Membership.Query do
   end
 
   # -- Pagination + preloads -------------------------------------------
+
+  @impl Emisar.Repo.Query
+  def filters do
+    role_values = Enum.map(Auth.roles(), &{Atom.to_string(&1), Auth.role_label(&1)})
+
+    [
+      %Filter{
+        name: :name_or_email,
+        title: "Name or email",
+        type: :string,
+        fun: fn queryable, term ->
+          queryable = with_joined_user(queryable)
+          pattern = Like.contains(term)
+
+          {queryable,
+           dynamic(
+             [memberships: m, user: u],
+             ilike(m.directory_display_name, ^pattern) or
+               ilike(u.full_name, ^pattern) or
+               ilike(u.email, ^pattern)
+           )}
+        end
+      },
+      %Filter{
+        name: :role,
+        title: "Role",
+        type: {:list, :string},
+        values: role_values,
+        fun: fn queryable, roles -> {queryable, role_dynamic(roles)} end
+      },
+      %Filter{
+        name: :status,
+        title: "Status",
+        type: {:list, :string},
+        values: [
+          {"active", "Active"},
+          {"pending_invitation", "Pending invitation"},
+          {"suspended", "Suspended"},
+          {"email_unconfirmed", "Email unconfirmed"}
+        ],
+        fun: fn queryable, statuses ->
+          queryable = with_joined_user(queryable)
+          {queryable, status_dynamic(statuses)}
+        end
+      }
+    ]
+  end
+
+  defp role_dynamic(roles) do
+    chosen =
+      Auth.roles()
+      |> Enum.filter(&(Atom.to_string(&1) in roles))
+
+    if chosen == [],
+      do: dynamic(true),
+      else: dynamic([memberships: m], m.role in ^chosen)
+  end
+
+  # Statuses intentionally overlap. A suspended invitation remains both
+  # suspended and pending, so either lens can find it. "Active" is the clean
+  # complement: enabled, confirmed, and no unresolved invitation.
+  defp status_dynamic(statuses) do
+    case Enum.filter(statuses, &(&1 in status_values())) do
+      [] -> dynamic(true)
+      chosen -> Enum.reduce(chosen, dynamic(false), &status_or/2)
+    end
+  end
+
+  defp status_or("active", acc) do
+    dynamic(
+      [memberships: m, user: u],
+      ^acc or
+        (is_nil(m.disabled_at) and
+           not (is_nil(m.invitation_accepted_at) and not is_nil(m.invitation_token_digest)) and
+           not is_nil(u.confirmed_at))
+    )
+  end
+
+  defp status_or("pending_invitation", acc) do
+    dynamic(
+      [memberships: m],
+      ^acc or (is_nil(m.invitation_accepted_at) and not is_nil(m.invitation_token_digest))
+    )
+  end
+
+  defp status_or("suspended", acc),
+    do: dynamic([memberships: m], ^acc or not is_nil(m.disabled_at))
+
+  defp status_or("email_unconfirmed", acc) do
+    dynamic(
+      [memberships: m, user: u],
+      ^acc or
+        (is_nil(u.confirmed_at) and
+           not (is_nil(m.invitation_accepted_at) and not is_nil(m.invitation_token_digest)))
+    )
+  end
+
+  defp status_values,
+    do: ["active", "pending_invitation", "suspended", "email_unconfirmed"]
 
   @impl Emisar.Repo.Query
   def cursor_fields,

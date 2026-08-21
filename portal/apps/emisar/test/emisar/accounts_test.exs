@@ -16,6 +16,15 @@ defmodule Emisar.AccountsTest do
   alias Emisar.Users
   alias Emisar.Users.User
 
+  defp filtered_membership_ids(account, subject, filter) do
+    {:ok, facts, _metadata} =
+      Accounts.list_team_member_facts(account, subject, filter: filter)
+
+    facts
+    |> Enum.map(& &1.membership.id)
+    |> MapSet.new()
+  end
+
   describe "fetch_account_by_id/1" do
     test "resolves a live account by its id" do
       account = Fixtures.Accounts.create_account()
@@ -1663,6 +1672,29 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "team_member_filters/0" do
+    test "exposes the roster's name, role, and lifecycle vocabulary" do
+      filters = Accounts.team_member_filters()
+
+      assert Enum.map(filters, & &1.name) == [:name_or_email, :role, :status]
+
+      assert Enum.find(filters, &(&1.name == :role)).values == [
+               {"owner", "Owner"},
+               {"admin", "Admin"},
+               {"billing_manager", "Billing manager"},
+               {"operator", "Operator"},
+               {"viewer", "Viewer"}
+             ]
+
+      assert Enum.find(filters, &(&1.name == :status)).values == [
+               {"active", "Active"},
+               {"pending_invitation", "Pending invitation"},
+               {"suspended", "Suspended"},
+               {"email_unconfirmed", "Email unconfirmed"}
+             ]
+    end
+  end
+
   describe "list_team_member_facts/3" do
     setup do
       account = Fixtures.Accounts.create_account()
@@ -1694,6 +1726,105 @@ defmodule Emisar.AccountsTest do
       assert length(facts) == 2
       assert Enum.all?(facts, &match?(%User{}, &1.membership.user))
       assert owner.id in Enum.map(facts, & &1.membership.user_id)
+    end
+
+    test "searches account-local name, user name, and email case-insensitively", %{
+      account: account,
+      subject: subject
+    } do
+      directory_user = Fixtures.Users.create_user(full_name: "Personal Name")
+
+      directory_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: directory_user.id
+        )
+        |> Fixtures.Memberships.sync_display_name("Platform Rowan")
+
+      named_user = Fixtures.Users.create_user(full_name: "Casey Search")
+
+      named_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: named_user.id)
+
+      email_user = Fixtures.Users.create_user(email: "needle.team@example.com")
+
+      email_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: email_user.id)
+
+      percent_user = Fixtures.Users.create_user(full_name: "Percent % Person")
+
+      percent_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: percent_user.id)
+
+      for {term, expected_id} <- [
+            {"platform ROW", directory_membership.id},
+            {"CASEY sea", named_membership.id},
+            {"NEEDLE.TEAM@", email_membership.id},
+            {"%", percent_membership.id}
+          ] do
+        assert {:ok, facts, _metadata} =
+                 Accounts.list_team_member_facts(account, subject, filter: [name_or_email: term])
+
+        assert Enum.map(facts, & &1.membership.id) == [expected_id]
+      end
+    end
+
+    test "role and status filters compose, while lifecycle statuses retain overlap", %{
+      account: account,
+      owner_membership: owner_membership,
+      subject: subject
+    } do
+      active = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      pending_user = Fixtures.Users.create_user(confirmed?: false)
+
+      pending =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: pending_user.id,
+          role: "viewer",
+          invitation_token_digest: "pending"
+        )
+
+      unconfirmed_user = Fixtures.Users.create_user(confirmed?: false)
+
+      unconfirmed =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: unconfirmed_user.id,
+          role: "viewer"
+        )
+
+      suspended =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.suspend_membership()
+
+      suspended_pending_user = Fixtures.Users.create_user(confirmed?: false)
+
+      suspended_pending =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: suspended_pending_user.id,
+          invitation_token_digest: "suspended-pending"
+        )
+        |> Fixtures.Memberships.suspend_membership()
+
+      assert filtered_membership_ids(account, subject, status: ["active"]) ==
+               MapSet.new([owner_membership.id, active.id])
+
+      assert filtered_membership_ids(account, subject, status: ["pending_invitation"]) ==
+               MapSet.new([pending.id, suspended_pending.id])
+
+      assert filtered_membership_ids(account, subject, status: ["suspended"]) ==
+               MapSet.new([suspended.id, suspended_pending.id])
+
+      assert filtered_membership_ids(account, subject, status: ["email_unconfirmed"]) ==
+               MapSet.new([unconfirmed.id])
+
+      assert filtered_membership_ids(account, subject,
+               role: ["viewer"],
+               status: ["email_unconfirmed"]
+             ) == MapSet.new([unconfirmed.id])
     end
 
     test "never hands the web an invitation token digest", %{account: account, subject: subject} do
@@ -1936,10 +2067,14 @@ defmodule Emisar.AccountsTest do
       assert is_nil(target_fact.membership.disabled_by_id)
     end
 
-    test "a subject from another account is refused", %{account: account} do
+    test "a subject from another account is refused even when filters are supplied", %{
+      account: account
+    } do
       {_other_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
-      assert Accounts.list_team_member_facts(account, other_subject) == {:error, :unauthorized}
+      assert Accounts.list_team_member_facts(account, other_subject,
+               filter: [role: ["owner"], status: ["active"]]
+             ) == {:error, :unauthorized}
     end
   end
 
