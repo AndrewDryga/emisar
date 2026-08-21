@@ -271,8 +271,13 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
     `ring-white/10` + `shadow-xl shadow-black/60` so content never ghosts
     through. Interactive control chrome (inputs, icon buttons, dashed add-rows)
     deliberately KEEPS gray borders — border = control, ring-light = surface.
-- **Icons:** Heroicons via `<.icon name="hero-…" />` (outline 24 default; `-solid`,
-  `-mini` 20, `-micro` 16). Sizes `h-4 w-4` (inline), `h-5`, `h-6` (feature).
+- **Icons:** the approved system is semantic: product code requests a namespaced
+  meaning from the canonical registry, never a source-library drawing name.
+  Existing direct Heroicon calls are migration debt, not precedent; do not add
+  another raw glyph choice. First-party masters use the centered 24-unit grid,
+  literal-size optical correction, and the rendered approval gate in
+  `design-semantic-icon-system.md`. Visible sizes remain 16 px (inline), 20 px,
+  and 24 px (feature) unless the owning component specifies otherwise.
 
 ### 3.4 Materiality primitives (marketing signature — `app.css`)
 
@@ -627,6 +632,8 @@ after being taught, so every one is checked EVERY time, mechanically:
 - **Logo assets:** `priv/static/images/brand/`, favicon family at the static root.
 - **Engagement history + locked decisions:** `[[marketing-redesign-gate-direction]]`
   (memory). **Component/shape rules:** `.agent/kb/rules/design-ui-shared-components.md`.
+  **Icon semantics, geometry, and review:**
+  `.agent/kb/rules/design-semantic-icon-system.md`.
 - **The console IA/UX doctrine — page archetypes, the component-first law, the ONE tone
   system, confirm ladder, state matrix, density budgets:** `.agent/kb/rules/design-console-ux.md`.
   This file is the visual layer; that one is the structural layer. Read both before any
