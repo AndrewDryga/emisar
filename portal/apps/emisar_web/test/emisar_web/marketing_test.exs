@@ -355,10 +355,13 @@ defmodule EmisarWeb.MarketingTest do
        %{conn: conn} do
     html = conn |> get(~p"/docs/quickstart") |> html_response(200)
 
-    # The optional subsection + the WHY (safe BECAUSE emisar gates server-side).
-    assert html =~ "Optional: stop the per-tool prompts"
+    # The collapsible + the WHY (safe BECAUSE emisar gates server-side).
+    assert html =~ "Stop your AI client asking permission for every emisar action"
     assert html =~ "server-side"
     assert html =~ "never bypasses emisar"
+    # install-mcp.sh offers to write this for the clients whose setting names
+    # emisar alone, so the page must not present it as hand-editing only.
+    assert html =~ "The installer offers to do this for"
     # The verified Claude Code rule, server-rendered for the SEO surface.
     assert html =~ "mcp__emisar__*"
     assert html =~ "MCPTool(emisar__*)"
@@ -1369,8 +1372,28 @@ defmodule EmisarWeb.MarketingTest do
                "curl -fsSL https://emisar.dev/install.sh"
 
       assert html =~ "sudo EMISAR_ENROLLMENT_KEY="
-      assert html =~ "EMISAR_URL=https://emisar.dev bash"
+      assert html =~ "emkey-enroll-… bash"
+      # EMISAR_URL defaults to the hosted control plane (install.sh), so the
+      # documented command must not carry it — it exists for test portals.
+      refute html =~ "EMISAR_URL="
+      refute html =~ "--yes"
+      refute html =~ "--packs linux-core"
+      assert html =~ "host-matched starter packs"
       assert html =~ ~s(href="/install.sh")
+    end
+
+    test "the quickstart routes each LLM client and proves the first MCP run", %{conn: conn} do
+      html = conn |> get(~p"/docs/quickstart") |> html_response(200)
+
+      assert html =~ "curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
+      assert html =~ ~s(href="/docs/connect-an-llm")
+      assert html =~ ~s(href="/docs/connect-a-cli-client")
+      assert html =~ ~s(href="/app/runs")
+      assert html =~ "finds supported clients"
+      assert html =~ "You are done when it returns the result from"
+      refute html =~ "stable tools"
+      refute html =~ "Cloud apps:"
+      refute html =~ "Local and CLI clients:"
     end
 
     test "the action-packs reference renders the YAML sections and registry links",

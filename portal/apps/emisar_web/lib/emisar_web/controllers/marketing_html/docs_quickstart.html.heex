@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="quickstart"
-      updated="August 4, 2026"
+      updated="August 20, 2026"
       toc={[
         {"create-account", "Create your account"},
         {"install-runner", "Install the runner"},
@@ -16,58 +16,52 @@
     >
       <.docs_header current="quickstart">
         <:dek>
-          Zero to your first audited action in about five minutes. You'll install the runner on a
-          Linux host, watch it connect, run
-          <code class="font-mono text-brand-300">linux.uptime</code>
-          — gated by policy, recorded in the audit trail — and then point your LLM at the same
-          catalog.
+          Connect one Linux host, run <code class="font-mono text-brand-300">linux.uptime</code>
+          through policy, then point your LLM at the same catalog. About five minutes.
         </:dek>
       </.docs_header>
 
       <.docs_prerequisites>
         <:item>
           A Linux host with <strong class="text-zinc-300">systemd</strong>
-          — a VM, a cloud instance, or bare metal. (The default installer sets up a systemd
-          service; containers work too — see <.link
+          — a VM, a cloud instance, or bare metal. The installer sets up a systemd service; for
+          containers, see <.link
             navigate={~p"/docs/containers"}
             class="text-brand-400 hover:text-brand-300"
           >
-                Containers &amp; Kubernetes</.link>.)
+                Containers &amp; Kubernetes</.link>.
         </:item>
         <:item><code class="text-zinc-300">sudo</code> on that host.</:item>
         <:item>
-          Outbound HTTPS to <code class="text-zinc-300">emisar.dev:443</code>
-          for the runner (it
-          dials out; nothing listens on the host, so there's no inbound port to open), plus
-          <code class="text-zinc-300">api.github.com</code>
-          and <code class="text-zinc-300">github.com</code>
-          for the installer — it downloads the runner release and checksums from GitHub.
+          Allow outbound HTTPS to <code class="text-zinc-300">emisar.dev:443</code>
+          for the runner, installer, and release files, and to
+          <code class="text-zinc-300">registry.emisar.dev:443</code>
+          for action packs.
         </:item>
       </.docs_prerequisites>
 
       <.docs_h2 id="create-account">1. Create your account</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Sign up at <.link href={~p"/sign_up"} class="text-brand-400 hover:text-brand-300">/sign_up</.link>. Free covers
-        <strong class="text-zinc-300">3 runners and 1 user</strong>
-        — no credit card.
+        <.link href={~p"/sign_up"} class="text-brand-400 hover:text-brand-300">Sign up</.link>
+        to create your account. It's your control plane: runners connect to it, your LLM's MCP calls arrive there, and it applies your policy and writes the audit trail. The free plan covers <strong class="text-zinc-300">3 runners and 1 user</strong>. No credit card required.
       </p>
 
       <.docs_h2 id="install-runner">2. Install the runner</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        In the dashboard, click <a
+        In the console, click <a
           href={~p"/app/runners/install"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Connect a runner</a>. emisar shows a one-line command
-        carrying a single-use enrollment key
+        >Connect a runner</a>. You'll get a one-line install command
+        with a single-use enrollment key
         (<code class="font-mono text-brand-300">emkey-enroll-…</code>, shown <em>once</em>
-        — copy it now). Run it on your host:
+        — copy it now). Run it on the host you want to give your LLM access to:
       </p>
       <.docs_code
         phx-no-format
         label="shell"
-        copy_text="curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash"
+        copy_text="curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… bash"
       ><span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh \
-    | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… EMISAR_URL=https://emisar.dev bash</.docs_code>
+    | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… bash</.docs_code>
       <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
       <details class="group mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
         <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
@@ -82,40 +76,41 @@
         </summary>
         <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
           <p class="text-base leading-7 text-zinc-400">
-            It's a plain, readable shell script —
+            It is a plain shell script. You can
             <.link href={~p"/install.sh"} class="text-brand-400 hover:text-brand-300">
               read it first
             </.link>
-            if you'd rather. It:
+            before you run it. The script:
           </p>
           <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
-              <span>verifies the download's SHA-256;</span>
+              <span>verifies the download's SHA-256.</span>
             </li>
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
               <span>
                 creates a dedicated <code class="font-mono">emisar</code>
                 system user and an <code class="font-mono">emisar.service</code>
-                systemd unit (<code class="font-mono">Restart=on-failure</code>);
+                systemd unit (<code class="font-mono">Restart=on-failure</code>).
               </span>
             </li>
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
               <span>
-                bakes the key and URL into <code class="font-mono">/etc/emisar/runner.env</code>;
+                writes the enrollment key to <code class="font-mono">/etc/emisar/runner.env</code>
+                and the control-plane URL to <code class="font-mono">/etc/emisar/config.yaml</code>.
               </span>
             </li>
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
               <span>
-                installs the host-matched starter packs (on a typical Linux + systemd host: <code class="font-mono">linux-core</code>, <code class="font-mono">debugging</code>, and <code class="font-mono">systemd-deep</code>);
+                installs the host-matched starter packs (on a typical Linux + systemd host: <code class="font-mono">linux-core</code>, <code class="font-mono">debugging</code>, and <code class="font-mono">systemd-deep</code>).
               </span>
             </li>
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
-              <span>starts the service, which dials out to the control plane over WSS.</span>
+              <span>starts the service. This dials out to the control plane over WSS.</span>
             </li>
           </ul>
         </div>
@@ -123,138 +118,244 @@
 
       <.docs_h2 id="watch-connect">3. Watch it connect</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The moment the runner connects, the dashboard follows on its own — your host appears under <a
+        The console updates on its own: your host appears under <a
           href={~p"/app/runners"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Runners</a>, online, advertising its action catalog. On the host you can watch
-        the same thing:
+        >Runners</a>, online, advertising the actions it can run. On the host, the same event is
+        in the journal:
       </p>
       <.docs_code phx-no-format label="shell" copy_text="journalctl -u emisar -f"><span class="text-zinc-500">$</span> journalctl -u emisar -f
-<span class="text-zinc-500">level=INFO msg=cloud.connected actions=89 packs=3 inflight_runs=0</span></.docs_code>
+<span class="text-zinc-500">level=INFO msg=cloud.connected actions=… packs=… inflight_runs=0</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The stock <code class="font-mono">linux-core</code>
-        pack is trusted automatically — its bytes match the catalog emisar publishes, so the hash
-        auto-pins as trusted. (A <em>custom or edited</em>
-        pack lands as <strong class="text-zinc-300">pending</strong>
-        instead and waits for one click on the
+        pack is trusted automatically because its hash matches the one emisar publishes. A
+        <em>custom or edited</em>
+        pack lands <strong class="text-zinc-300">pending</strong>
+        instead, and nothing can dispatch its actions until you trust that exact hash on the
         <a
           href={~p"/app/packs"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Packs</a>
-        page before anything can dispatch it. That's the drift guard.)
+        page. That is the drift guard.
       </p>
+      <details class="group mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
+        <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
+          <span class="flex items-center gap-2">
+            <.icon name="hero-wrench-screwdriver" class="h-4 w-4 text-zinc-500" />
+            The runner is not showing up
+          </span>
+          <.icon
+            name="hero-chevron-down"
+            class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
+          />
+        </summary>
+        <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
+          <p class="text-base leading-7 text-zinc-400">
+            Work through these on the host, in order:
+          </p>
+          <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                <code class="font-mono">systemctl status emisar</code>
+                — check the service is running. If it is not, start it and read the error.
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                <code class="font-mono">sudo journalctl -u emisar -n 200</code>
+                — the log names the failure. A <code class="font-mono">401</code>
+                means the enrollment key was already used, expired, or revoked. Create a new key
+                and run the installer again.
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                A <code class="font-mono">409</code>
+                means another runner already holds this name. A runner is named after the host it
+                registered from, so this is what a reinstall, or a second host with the same
+                hostname, looks like. Delete the existing one under
+                <a
+                  href={~p"/app/runners"}
+                  class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+                >Runners</a>
+                to free the name, or give this host a different hostname.
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                A <code class="font-mono">402</code>
+                means the account is at its plan's runner limit — three on the free plan. Delete a
+                runner you no longer use, or move to a larger plan.
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                A connect that hangs instead of failing is a blocked path, not a bad key. Allow
+                outbound HTTPS to <code class="font-mono">emisar.dev:443</code>.
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                <code class="font-mono">sudo emisar doctor</code>
+                — checks the config, credentials, packs, and action binaries in one pass.
+              </span>
+            </li>
+          </ul>
+          <p class="mt-3 text-base leading-7 text-zinc-400">
+            More symptoms and fixes: <.link
+              navigate={~p"/docs/troubleshooting"}
+              class="text-brand-400 hover:text-brand-300"
+            >Troubleshooting</.link>.
+          </p>
+        </div>
+      </details>
 
       <.docs_h2 id="first-action">4. Run your first action</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Open the runner from <a
+        Open the runner you just added from <a
           href={~p"/app/runners"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Runners</a>, pick <code class="font-mono text-brand-300">linux.uptime</code>, add the
-        required <strong>reason</strong>
-        (one line — it's logged), and <strong>Dispatch</strong>. The output streams back live:
+        >Runners</a>. Select the <code class="font-mono text-brand-300">linux.uptime</code>
+        action. Add a short <strong>reason</strong>, then click <strong>Dispatch</strong>. The output streams back:
       </p>
       <.docs_code phx-no-format label="output"> 14:32:07 up 18 days,  4:01,  load average: 0.42, 0.51, 0.48</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code class="font-mono">linux.uptime</code>
         is <code class="text-brand-300">low</code>
-        risk, so the default policy runs it on the spot. A <code class="text-amber-300">high</code>-risk
-        action — killing a process, restarting a service — would stop here for a human approval
-        instead. Either way the run is now in the searchable cloud
-        audit and the runner's hash-chained journal, tagged with your reason.
+        risk, so the default policy runs it without approval. A <code class="text-amber-300">high</code>-risk action would stop for human approval instead. You set what each risk tier does
+        in your policy. The cloud
+        audit and runner journal record the run and its reason. See
+        <.link
+          navigate={~p"/docs/run-an-action"}
+          class="text-brand-400 hover:text-brand-300"
+        >Run an action</.link>
+        for the full console workflow.
       </p>
 
       <.docs_h2 id="connect-llm">5. Point your LLM at it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        In the dashboard, open
+        In the console, open
         <a
           href={~p"/app/agents"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >LLM agents</a>
-        and pick your client. Claude.ai and ChatGPT connect over remote MCP with OAuth; local
-        clients — Claude Code, Cursor, Zed, Copilot CLI, and nine more — run a one-line installer that
-        opens a browser approval and writes a scoped key into the client's config, so the secret
-        never touches your clipboard.
+        and select your client. Claude.ai and ChatGPT connect over remote MCP with OAuth, and the page walks you through it. Local and CLI clients use the
+        <code>emisar-mcp</code>
+        bridge. On macOS or Linux, one command sets it up:
+      </p>
+      <.docs_code
+        phx-no-format
+        label="shell"
+        copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
+      ><span class="text-zinc-500">$</span> curl -fsSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The installer finds supported clients, opens a browser approval, and adds emisar to each
+        client you select. For Windows or manual setup, see <.link
+          navigate={~p"/docs/connect-a-cli-client"}
+          class="text-brand-400 hover:text-brand-300"
+        >Connect a local AI client</.link>.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Your model now has {mcp_tool_count()} stable tools and sees only the packs, actions, and runners in its
-        scope. Ask <em>"what's the load on web-01?"</em>
-        and it runs <code class="font-mono">linux.uptime</code>; ask it to restart a service and that
-        high-risk action stops for your approval. Full walkthrough: <.link
-          navigate={~p"/docs/connect-an-llm"}
-          class="text-brand-400 hover:text-brand-300"
-        >/docs/connect-an-llm</.link>.
+        Restart your AI client, then ask it
+        <em>"list my emisar runners and check the load on each one."</em>
+        You are done when it returns the result from <code class="font-mono">linux.uptime</code>
+        and the run appears in <a
+          href={~p"/app/runs"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runs</a>.
       </p>
 
       <%!-- Optional, secondary to step 5: most clients prompt "allow this tool?"
            per call. Because emisar gates server-side, that client prompt is
            redundant for emisar's tools and safe to silence — the framing the
            agents page uses, repeated here for the public docs/SEO surface. --%>
-      <.docs_callout kind={:note} title="Optional: stop the per-tool prompts">
-        <p>
-          Most clients ask <em>"allow this tool?"</em>
-          the first time a model calls one. emisar already gates every action
-          <strong class="text-zinc-200">server-side</strong>
-          — per-account policy, and human approval on risky ones — so that client prompt is
-          redundant for emisar's tools. You can safely tell your client to stop prompting for the
-          <code class="font-mono text-brand-300">emisar</code>
-          MCP server: it only silences the client's prompt. A risky action still pauses for
-          approval at emisar, and an out-of-policy one is still denied — auto-permitting in the
-          client never bypasses emisar's gate.
-        </p>
-        <ul class="mt-3 space-y-2">
-          <li class="flex items-start gap-2.5">
-            <span class="flex-none text-zinc-500">—</span>
-            <span>
-              <strong class="text-zinc-300">Claude Code</strong>
-              — add <code class="font-mono text-brand-300">"mcp__emisar__*"</code>
-              to <code class="font-mono">permissions.allow</code>
-              in <code class="font-mono">~/.claude/settings.json</code>.
-            </span>
-          </li>
-          <li class="flex items-start gap-2.5">
-            <span class="flex-none text-zinc-500">—</span>
-            <span>
-              <strong class="text-zinc-300">Gemini CLI</strong>
-              — set <code class="font-mono text-brand-300">"trust": true</code>
-              on the <code class="font-mono">emisar</code>
-              server in <code class="font-mono">~/.gemini/settings.json</code>.
-            </span>
-          </li>
-          <li class="flex items-start gap-2.5">
-            <span class="flex-none text-zinc-500">—</span>
-            <span>
-              <strong class="text-zinc-300">Grok CLI</strong>
-              — add <code class="font-mono text-brand-300">"MCPTool(emisar__*)"</code>
-              to <code class="font-mono">[permission].allow</code>
-              in <code class="font-mono">~/.grok/config.toml</code>.
-            </span>
-          </li>
-          <li class="flex items-start gap-2.5">
-            <span class="flex-none text-zinc-500">—</span>
-            <span>
-              <strong class="text-zinc-300">Cursor, Codex CLI</strong>
-              — Cursor approves globally through agent auto-run; Codex can trust only emisar with
-              <code class="font-mono">default_tools_approval_mode = "approve"</code>
-              under <code class="font-mono">[mcp_servers.emisar]</code>. The
-              <.link navigate={~p"/app"} class="text-brand-400 hover:text-brand-300">
-                LLM agents
-              </.link>
-              page has the exact per-client steps.
-            </span>
-          </li>
-        </ul>
-      </.docs_callout>
+      <details class="group mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
+        <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
+          <span class="flex items-center gap-2">
+            <.icon name="hero-bell-slash" class="h-4 w-4 text-zinc-500" />
+            Stop your AI client asking permission for every emisar action
+          </span>
+          <.icon
+            name="hero-chevron-down"
+            class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
+          />
+        </summary>
+        <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
+          <p class="text-base leading-7 text-zinc-400">
+            Most clients ask <em>"allow this tool?"</em>
+            the first time a model calls one. That prompt is redundant for emisar's tools, because
+            emisar gates every action <strong class="text-zinc-200">server-side</strong>: account
+            policy applies to every call, risky actions wait for human approval, and out-of-policy
+            ones are denied.
+          </p>
+          <p class="mt-3 text-base leading-7 text-zinc-400">
+            The installer offers to do this for Claude Code, Gemini CLI, Codex CLI, and Grok CLI —
+            the four clients whose setting can name the
+            <code class="font-mono text-brand-300">emisar</code>
+            server alone. It leaves Cursor alone, because Cursor's only control is global.
+            Whichever way you answer, auto-permitting in a client never bypasses emisar's gate. To
+            set it yourself:
+          </p>
+          <ul class="mt-3 space-y-2 text-base leading-7 text-zinc-400">
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                <strong class="text-zinc-300">Claude Code</strong>
+                — add <code class="font-mono text-brand-300">"mcp__emisar__*"</code>
+                to <code class="font-mono">permissions.allow</code>
+                in <code class="font-mono">~/.claude/settings.json</code>.
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                <strong class="text-zinc-300">Gemini CLI</strong>
+                — set <code class="font-mono text-brand-300">"trust": true</code>
+                on the <code class="font-mono">emisar</code>
+                server in <code class="font-mono">~/.gemini/settings.json</code>.
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                <strong class="text-zinc-300">Grok CLI</strong>
+                — add <code class="font-mono text-brand-300">"MCPTool(emisar__*)"</code>
+                to <code class="font-mono">[permission].allow</code>
+                in <code class="font-mono">~/.grok/config.toml</code>.
+              </span>
+            </li>
+            <li class="flex items-start gap-2.5">
+              <span class="flex-none text-zinc-500">—</span>
+              <span>
+                <strong class="text-zinc-300">Cursor, Codex CLI</strong>
+                — Cursor approves globally through agent auto-run. Codex can trust only emisar with
+                <code class="font-mono">default_tools_approval_mode = "approve"</code>
+                under <code class="font-mono">[mcp_servers.emisar]</code>. The
+                <.link navigate={~p"/app/agents"} class="text-brand-400 hover:text-brand-300">
+                  LLM agents
+                </.link>
+                page has the exact per-client steps.
+              </span>
+            </li>
+          </ul>
+        </div>
+      </details>
 
       <.docs_h2 id="workflow">6. The workflow we recommend</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        emisar is built for the incident, not the steady state. What it
-        is <em>not</em>
-        is your configuration manager. Standing changes an agent makes on a live host are how you
-        get drift nobody can reproduce.
+        emisar gives an agent eyes and hands on production, restrained by the policy you set. It can make
+        changes — that is what a gated action is for — but don't use it as your configuration
+        manager. Standing changes an agent makes on a live host are how you get drift nobody can
+        reproduce.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        So the durable pattern pairs the agent with your
-        infrastructure-as-code:
+        So the durable pattern pairs the agent with your infrastructure-as-code:
       </p>
       <ol class="mt-4 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
         <li>
@@ -264,13 +365,15 @@
         </li>
         <li>
           If it's on fire, it <strong class="text-zinc-200">hot-patches</strong>
-          through one gated action to contain it — approved by a human, audited.
+          through one gated action to contain it — a person approves, and the side effect waits
+          until they do.
         </li>
         <li>
           Then it <strong class="text-zinc-200">writes the durable fix as code</strong>
           — Terraform, Ansible, a Kubernetes manifest, whatever your fleet runs — and hands you a
           change you <strong class="text-zinc-200">review and apply</strong>
-          through your normal pipeline.
+          through your normal pipeline. The hot-patch bought time; this is the part that survives
+          the next converge.
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -280,16 +383,20 @@
         >the 33-hour wipe</.link>.
       </p>
 
-      <.docs_callout kind={:tip} title="What you just set up.">
-        A finite, reviewed action catalog sitting between an AI agent and your host — instead of an
-        SSH key and a prayer. The model can only call what you declared, risky calls stop for a
-        human, configured patterns redact matching output before it leaves the box, and there's a
-        searchable audit of who ran what, and why.
-      </.docs_callout>
-
-      <.docs_callout kind={:warn} title="Runner not showing up?">
-        Check <code class="font-mono text-xs">journalctl -u emisar -f</code>
-        on the host. The two usual causes are a stale enrollment key (mint a fresh one) and an outbound firewall blocking <code class="font-mono">emisar.dev:443</code>.
+      <.docs_callout kind={:tip} title="What you just set up">
+        <p>
+          There is now a finite, reviewed catalog between an AI agent and your host: the model can
+          call only declared actions, risky calls wait for a person, and configured patterns
+          redact matching output on the host. The audit records who ran what, and why.
+        </p>
+        <p class="mt-3">
+          Next,
+          <.link
+            navigate={~p"/docs/use-a-published-pack"}
+            class="text-brand-400 hover:text-brand-300"
+          >add a published pack</.link>
+          for a service you operate.
+        </p>
       </.docs_callout>
     </.docs_layout>
   </section>
