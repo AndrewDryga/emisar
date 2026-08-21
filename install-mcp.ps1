@@ -732,7 +732,12 @@ function Configure-Clients([string]$Executable, [string]$HomeDirectory, [string]
             } else {
                 "none"
             }
-            Write-Verbose "$($client.Label) config update failed with $($_.Exception.GetType().FullName) (inner: $innerType)"
+            $targetMethod = if ($null -ne $_.Exception.InnerException -and $null -ne $_.Exception.InnerException.TargetSite) {
+                $_.Exception.InnerException.TargetSite.Name
+            } else {
+                "none"
+            }
+            Write-Verbose "$($client.Label) config update failed at line $($_.InvocationInfo.ScriptLineNumber) with $($_.Exception.GetType().FullName) (inner: $innerType; target: $targetMethod)"
             Write-WarningLine "$($client.Label): could not update $($client.Path); use Custom at $($script:PortalOrigin)/app/agents/connect"
         }
     }
