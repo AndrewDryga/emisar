@@ -631,7 +631,13 @@ function Import-CLIAuth([string]$Executable, [string]$Origin, [string]$Payload) 
     $started = $false
     $payloadBytes = $script:Utf8NoBom.GetBytes($Payload)
     try {
-        $started = $process.Start()
+        $consoleInputEncoding = [Console]::InputEncoding
+        try {
+            [Console]::InputEncoding = $script:Utf8NoBom
+            $started = $process.Start()
+        } finally {
+            [Console]::InputEncoding = $consoleInputEncoding
+        }
         if (-not $started) { throw "could not start emisar-mcp auth import" }
         $process.StandardInput.BaseStream.Write($payloadBytes, 0, $payloadBytes.Length)
         $process.StandardInput.BaseStream.Flush()
