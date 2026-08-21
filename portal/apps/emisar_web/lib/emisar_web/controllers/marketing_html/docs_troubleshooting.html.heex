@@ -66,8 +66,48 @@
             from registration means the enrollment key was spent, expired, out of uses, or revoked
             — mint a fresh one and reinstall with it. A
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">400 invalid_external_id</code>
-            means the host offered no usable identity: the runner registers under its configured <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>, or its hostname
-            when none is set, and that value must be nonblank and at most 255 characters.
+            means the host offered no usable identity. The runner uses its configured <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>.
+            If none is set, it uses its hostname. The value must contain at least one nonblank
+            character and no more than 255 characters.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">A
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">409 runner_name_taken</code>
+            is a name conflict, not a credential problem.</strong>
+            Another runner in this account already holds that name, online or not. A runner is
+            named after the host it registered from, and that name is fixed at registration —
+            nothing renames a runner afterwards, and
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
+            sets the identity, not the name. A rebuilt host, a restored image, and two hosts
+            sharing a hostname all land here. Delete the existing runner under
+            <.link
+              navigate={~p"/app/runners"}
+              class="text-brand-300 hover:text-brand-200"
+            >Runners</.link>
+            to free the name, or give this host a different hostname. Deleting is terminal —
+            <.link
+              navigate={~p"/docs/runners"}
+              class="text-brand-300 hover:text-brand-200"
+            >Runner fleet</.link>
+            covers the difference from disabling.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">A
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">402 runner_limit_exceeded</code>
+            is the plan's runner cap.</strong>
+            The response names the plan and its limit; the free plan allows three. Delete a runner
+            the account no longer uses, or move to a plan with more —
+            <.link
+              navigate={~p"/docs/billing"}
+              class="text-brand-300 hover:text-brand-200"
+            >Billing and plans</.link>
+            has the per-plan numbers.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

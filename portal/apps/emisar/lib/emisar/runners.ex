@@ -2487,8 +2487,9 @@ defmodule Emisar.Runners do
   end
 
   # Names are unique among live runners: another live runner holding this
-  # name — online or not — is a conflict the operator resolves (rename or
-  # delete the holder in the dashboard). The partial unique index is the
+  # name — online or not — is a conflict the operator resolves by deleting the
+  # holder in the console, or by renaming the HOST (derive_name/1 takes the
+  # reported hostname; nothing can rename a runner row). The partial unique index is the
   # race backstop in `insert_runner/4`.
   defp ensure_name_available(key, name) do
     taken? =
