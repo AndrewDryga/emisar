@@ -792,9 +792,15 @@ func writeCLIRunbookResult(
 		detailsNeeded = true
 	}
 	if detailsNeeded {
-		if command := cliRunbookRunDetailsCommand(run, account); command != "" {
+		runURL := safeCLIRunURL(run.RunURL)
+		command := cliRunbookRunDetailsCommand(run, account)
+		if run.localOutputClipped {
+			if runURL != "" {
+				fmt.Fprintf(out, "    Details  %s\n", cliStyledText(w, "4", runURL))
+			}
+		} else if command != "" {
 			fmt.Fprintf(out, "    More  %s\n", command)
-		} else if runURL := safeCLIRunURL(run.RunURL); runURL != "" {
+		} else if runURL != "" {
 			fmt.Fprintf(out, "    Details  %s\n", cliStyledText(w, "4", runURL))
 		}
 	}
@@ -821,33 +827,42 @@ func cliRunbookRunnerName(runnerRef string) string {
 func writeCLIRunbookRunOutput(out *strings.Builder, run cliRunResult) bool {
 	wrote := false
 	detailsNeeded := run.StructuredOmitted || (run.OutputComplete != nil && !*run.OutputComplete)
-	if run.Stdout != "" || run.EmittedStdoutBytes > 0 {
-		wrote = true
-		clipped := writeCLIRunbookPreview(out, "Output", run.Stdout)
-		if clipped || run.TruncatedStdout {
-			writeCLIRunbookPreviewNotice(out, run.EmittedStdoutBytes)
+	if len(run.Output) > 0 {
+		remaining := maxCLIResultOutputRunes
+		outputClipped := run.localOutputClipped
+		for _, segment := range run.Output {
+			if segment.Text == "" {
+				continue
+			}
+			wrote = true
+			label := "Output"
+			if segment.Stream == "stderr" {
+				label = "Error output"
+			}
+			var clipped bool
+			remaining, clipped = writeCLIRunbookOutput(out, label, segment.Text, remaining)
+			outputClipped = outputClipped || clipped
+		}
+		if outputClipped {
+			out.WriteString("    … output exceeds the 16,384-character terminal display limit\n")
 			detailsNeeded = true
 		}
-	}
-	if run.Stderr != "" || run.EmittedStderrBytes > 0 {
-		wrote = true
-		clipped := writeCLIRunbookPreview(out, "Error output", run.Stderr)
-		if clipped || run.TruncatedStderr {
-			writeCLIRunbookPreviewNotice(out, run.EmittedStderrBytes)
-			detailsNeeded = true
+	} else {
+		if run.Stdout != "" || run.EmittedStdoutBytes > 0 {
+			wrote = true
+			clipped := writeCLIRunbookPreview(out, "Output", run.Stdout)
+			if clipped || run.TruncatedStdout {
+				writeCLIRunbookPreviewNotice(out, run.EmittedStdoutBytes)
+				detailsNeeded = true
+			}
 		}
-	}
-	for _, segment := range run.Output {
-		if segment.Text == "" {
-			continue
-		}
-		wrote = true
-		label := "Output"
-		if segment.Stream == "stderr" {
-			label = "Error output"
-		}
-		if writeCLIRunbookPreview(out, label, segment.Text) {
-			detailsNeeded = true
+		if run.Stderr != "" || run.EmittedStderrBytes > 0 {
+			wrote = true
+			clipped := writeCLIRunbookPreview(out, "Error output", run.Stderr)
+			if clipped || run.TruncatedStderr {
+				writeCLIRunbookPreviewNotice(out, run.EmittedStderrBytes)
+				detailsNeeded = true
+			}
 		}
 	}
 	if firstJSONByte(run.StructuredOutput) != 0 && firstJSONByte(run.StructuredOutput) != 'n' {
@@ -869,6 +884,22 @@ func writeCLIRunbookRunOutput(out *strings.Builder, run cliRunResult) bool {
 		out.WriteString("    … output may have gaps\n")
 	}
 	return detailsNeeded
+}
+
+func writeCLIRunbookOutput(out *strings.Builder, label, value string, remaining int) (int, bool) {
+	runes := []rune(value)
+	clipped := len(runes) > remaining
+	if clipped {
+		runes = runes[:remaining]
+	}
+	if len(runes) == 0 {
+		return remaining, clipped
+	}
+	fmt.Fprintf(out, "    %s\n", label)
+	for _, line := range strings.Split(string(runes), "\n") {
+		fmt.Fprintf(out, "      %s\n", terminalSafeText(line))
+	}
+	return remaining - len(runes), clipped
 }
 
 func writeCLIRunbookPreview(out *strings.Builder, label, value string) bool {

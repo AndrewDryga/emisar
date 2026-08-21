@@ -274,10 +274,12 @@ execution. On macOS and Linux, compatible interactive terminals redraw the
 stage list in place. Piped or redirected output prints a new line only when a
 stage changes.
 At completion it uses the returned `runs_next` history to show the latest
-physical attempt for every action in workflow order. Output previews are line-
-and size-bounded; a truncated result includes the exact returned output
-continuation or the run-detail URL. Extracted public runbook outputs are shown
-separately when the execution returns `outputs_next`.
+physical attempt for every action in workflow order. For each result, it
+follows the exact returned `wait_for_run` continuation for that same run and
+replaces any clipped preview with the recovered output. It prints up to 16,384
+characters per action; if more remains, it links to the run page. Extracted
+public runbook outputs are shown separately when the execution returns
+`outputs_next`.
 
 Ctrl-C stops observation without cancelling the runbook. The command exits 1
 when the execution is `halted` or `cancelled`. `--json` does none of this

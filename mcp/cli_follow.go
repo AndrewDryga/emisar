@@ -16,6 +16,12 @@ type cliFollowedRun struct {
 	err   error
 }
 
+type cliFollowedRunbookResult struct {
+	runID string
+	run   cliRunResult
+	err   error
+}
+
 const (
 	maxCLIRunbookItems       = 256
 	maxCLIRunbookResultPages = 256
@@ -435,7 +441,7 @@ func (b *bridge) collectCLIRunbookResults(
 			return nil, errors.New("recent_runs returned an invalid runbook results cursor")
 		}
 		if len(found) == len(expected) {
-			return found, nil
+			return b.followCLIRunbookResultOutputs(ctx, found)
 		}
 		if cursor == "" {
 			return nil, errors.New("recent_runs ended before every runbook action result was returned")
@@ -450,6 +456,199 @@ func (b *bridge) collectCLIRunbookResults(
 		}
 	}
 	return nil, errors.New("runbook action results exceeded the safe pagination limit")
+}
+
+func (b *bridge) followCLIRunbookResultOutputs(
+	ctx context.Context,
+	runs map[string]cliRunResult,
+) (map[string]cliRunResult, error) {
+	targets := make([]cliRunResult, 0, len(runs))
+	completed := make(map[string]cliRunResult, len(runs))
+	for runID, run := range runs {
+		completed[runID] = run
+		if cliToolContinuationPresent(run.Next) {
+			targets = append(targets, run)
+		}
+	}
+	if len(targets) == 0 {
+		return completed, nil
+	}
+
+	followCtx, stopFollowing := context.WithCancel(ctx)
+	defer stopFollowing()
+	results := make(chan cliFollowedRunbookResult, len(targets))
+	semaphore := make(chan struct{}, maxConcurrentRequests)
+	var waits sync.WaitGroup
+	for _, target := range targets {
+		waits.Add(1)
+		go func(run cliRunResult) {
+			defer waits.Done()
+			select {
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+			case <-followCtx.Done():
+				results <- cliFollowedRunbookResult{runID: run.RunID, run: run, err: followCtx.Err()}
+				return
+			}
+			followed, err := b.followOneCLIRunbookResult(followCtx, run)
+			if err != nil {
+				stopFollowing()
+			}
+			results <- cliFollowedRunbookResult{runID: run.RunID, run: followed, err: err}
+		}(target)
+	}
+	waits.Wait()
+	close(results)
+
+	var followErr error
+	for result := range results {
+		if result.err == nil {
+			completed[result.runID] = result.run
+			continue
+		}
+		if !errors.Is(result.err, context.Canceled) && followErr == nil {
+			followErr = result.err
+		}
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if followErr != nil {
+		return nil, followErr
+	}
+	return completed, nil
+}
+
+func (b *bridge) followOneCLIRunbookResult(
+	ctx context.Context,
+	initial cliRunResult,
+) (cliRunResult, error) {
+	current := initial
+	var output []cliRunOutput
+	remaining := maxCLIResultOutputRunes
+	seen := make(map[string]struct{})
+	structuredOutput := append(json.RawMessage(nil), initial.StructuredOutput...)
+	structuredOmitted := initial.StructuredOmitted
+	outputIncomplete := initial.OutputComplete != nil && !*initial.OutputComplete
+	runURL := safeCLIRunURL(initial.RunURL)
+
+	for pageNumber := 0; pageNumber < maxCLIRunbookResultPages; pageNumber++ {
+		if !cliToolContinuationPresent(current.Next) {
+			return current, nil
+		}
+		if !validCLIRunContinuation(current.Next, initial.RunID) {
+			return current, errors.New("the server changed or malformed an action-output continuation")
+		}
+		continuationKey := current.Next.Tool + "\x00" + string(current.Next.Arguments)
+		if _, duplicate := seen[continuationKey]; duplicate {
+			return current, errors.New("wait_for_run repeated an action-output continuation")
+		}
+		seen[continuationKey] = struct{}{}
+		fetchingOutput := cliRunContinuationHasCursor(current.Next)
+
+		raw, err := b.callCLIContinuation(ctx, current.Next)
+		if err != nil {
+			return current, err
+		}
+		var envelope struct {
+			OK  bool         `json:"ok"`
+			Run cliRunResult `json:"run"`
+		}
+		if json.Unmarshal(raw, &envelope) != nil || !envelope.OK ||
+			!sameCLIRunIdentity(initial, envelope.Run) || envelope.Run.Status != initial.Status ||
+			!cliRunTerminal(envelope.Run.Status) || envelope.Run.EmittedStdoutBytes < 0 ||
+			envelope.Run.EmittedStderrBytes < 0 ||
+			(envelope.Run.OutputComplete != nil && *envelope.Run.OutputComplete) {
+			return current, errors.New("wait_for_run returned a different or invalid runbook action")
+		}
+		if fetchingOutput && (envelope.Run.Stdout != "" || envelope.Run.Stderr != "") {
+			return current, errors.New("wait_for_run mixed an output cursor with a preview")
+		}
+		if !fetchingOutput && len(envelope.Run.Output) > 0 {
+			return current, errors.New("wait_for_run returned output without an output cursor")
+		}
+
+		next := envelope.Run
+		if safeRunURL := safeCLIRunURL(next.RunURL); safeRunURL != "" {
+			runURL = safeRunURL
+		}
+		if firstJSONByte(next.StructuredOutput) != 0 && firstJSONByte(next.StructuredOutput) != 'n' {
+			structuredOutput = append(structuredOutput[:0], next.StructuredOutput...)
+			structuredOmitted = false
+		} else if next.StructuredOmitted {
+			structuredOmitted = true
+		}
+		if next.OutputComplete != nil && !*next.OutputComplete {
+			outputIncomplete = true
+		}
+
+		if fetchingOutput {
+			var clipped bool
+			output, remaining, clipped, err = appendBoundedCLIRunOutput(output, remaining, next.Output...)
+			if err != nil {
+				return current, err
+			}
+			next.Stdout = ""
+			next.Stderr = ""
+			next.Output = output
+			if clipped || (remaining == 0 && cliToolContinuationPresent(next.Next)) {
+				next.localOutputClipped = true
+			}
+		}
+		next.StructuredOutput = structuredOutput
+		next.StructuredOmitted = structuredOmitted
+		next.RunURL = runURL
+		if outputIncomplete {
+			complete := false
+			next.OutputComplete = &complete
+		} else {
+			next.OutputComplete = nil
+		}
+		current = next
+		if current.localOutputClipped {
+			return current, nil
+		}
+		if !cliToolContinuationPresent(current.Next) {
+			return current, nil
+		}
+	}
+	return current, errors.New("runbook action output exceeded the safe pagination limit")
+}
+
+func cliRunContinuationHasCursor(next cliToolResultNext) bool {
+	var arguments map[string]json.RawMessage
+	if json.Unmarshal(next.Arguments, &arguments) != nil {
+		return false
+	}
+	_, ok := arguments["cursor"]
+	return ok
+}
+
+func appendBoundedCLIRunOutput(
+	outputs []cliRunOutput,
+	remaining int,
+	additions ...cliRunOutput,
+) ([]cliRunOutput, int, bool, error) {
+	clipped := false
+	for _, addition := range additions {
+		if addition.Stream != "stdout" && addition.Stream != "stderr" {
+			return outputs, remaining, clipped, errors.New("wait_for_run returned an invalid output stream")
+		}
+		if addition.Text == "" {
+			continue
+		}
+		runes := []rune(addition.Text)
+		if len(runes) > remaining {
+			runes = runes[:remaining]
+			clipped = true
+		}
+		if len(runes) == 0 {
+			continue
+		}
+		outputs = appendCLIRunOutput(outputs, cliRunOutput{Stream: addition.Stream, Text: string(runes)})
+		remaining -= len(runes)
+	}
+	return outputs, remaining, clipped, nil
 }
 
 func expectedCLIRunbookRuns(execution cliRunbookExecution) (

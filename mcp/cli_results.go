@@ -66,6 +66,7 @@ type cliRunResult struct {
 	WaitUntil          string             `json:"wait_until"`
 	RunURL             string             `json:"run_url"`
 	Next               cliToolResultNext  `json:"next"`
+	localOutputClipped bool
 }
 
 type cliRunOutput struct {
