@@ -1,0 +1,2 @@
+# Keep gofmt byte-stable on Git for Windows and native Windows CI.
+*.go text eol=lf
