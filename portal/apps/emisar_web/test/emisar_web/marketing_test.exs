@@ -1221,6 +1221,11 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s("EMISAR_CLIENT": "claude-desktop")
       assert html =~ ~s("EMISAR_CLIENT": "cursor")
       assert html =~ ~s(EMISAR_CLIENT = "codex")
+      # VS Code prompts for the secret instead of writing a raw key to the
+      # user-level MCP file, which can be synchronized between machines.
+      assert html =~ "MCP: Open User Configuration"
+      assert html =~ ~s("password": true)
+      assert html =~ ~s($&#123;input:emisar-api-key&#125;)
       # Zed nests under context_servers (not mcpServers) — its own shape.
       assert html =~ ".config/zed/settings.json"
       assert html =~ "context_servers"
@@ -1369,7 +1374,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "does not rotate its agent key automatically"
       assert html =~ ~s(href="/docs/signed-dispatch")
       refute html =~ "claude mcp add --transport http"
-      refute html =~ "MCP: Open User Configuration"
     end
 
     test "the CLI-client page explains what the sign-in grants", %{conn: conn} do
