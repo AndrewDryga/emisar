@@ -1614,7 +1614,7 @@ defmodule EmisarWeb.CoreComponents do
   slot :title, required: true
   slot :actions
 
-  def dashboard_shell(assigns) do
+  def console_shell(assigns) do
     ~H"""
     <div class="flex min-h-screen bg-zinc-950 text-zinc-100">
       <%!-- Desktop sidebar (lg and up). `sticky top-0 h-screen` pins
@@ -3173,7 +3173,7 @@ defmodule EmisarWeb.CoreComponents do
 
   @doc """
   The intro line that sits directly under an index page's title — one place so
-  every list page opens the same way (a `<.dashboard_shell>` `:title` carries
+  every list page opens the same way (a `<.console_shell>` `:title` carries
   the page name; this carries the explanation under it). The default slot is the
   subtitle (a readable-width lead paragraph); `:actions` right-aligns alongside
   it; `:help` renders a longer "how it works" card below, for pages that need to
@@ -3801,7 +3801,7 @@ defmodule EmisarWeb.CoreComponents do
   @doc """
   The title block for a title-less detail page (run, approval, runner, audit,
   SSO connection, runbook editor) — a `<.back_link>` breadcrumb to the parent
-  list followed by the entity heading. Goes in the `<.dashboard_shell>`
+  list followed by the entity heading. Goes in the `<.console_shell>`
   `:title` slot, so every detail page opens with the same "where am I / what
   is this" shape and one place owns the breadcrumb + heading grammar.
 

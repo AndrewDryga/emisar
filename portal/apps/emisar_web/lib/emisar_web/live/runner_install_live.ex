@@ -98,7 +98,7 @@ defmodule EmisarWeb.RunnerInstallLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.console_shell
       current_subject={@current_subject}
       current_membership={@current_membership}
       pending_approvals_count={@pending_approvals_count}
@@ -124,7 +124,7 @@ defmodule EmisarWeb.RunnerInstallLive do
         keys_path={~p"/app/#{@current_account}/runners/keys"}
         show_keys_link={Runners.subject_can_manage_enrollment_keys?(@current_subject)}
       />
-    </.dashboard_shell>
+    </.console_shell>
     """
   end
 end

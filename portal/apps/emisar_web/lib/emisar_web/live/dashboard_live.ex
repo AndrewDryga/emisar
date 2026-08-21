@@ -270,7 +270,7 @@ defmodule EmisarWeb.DashboardLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.console_shell
       current_subject={@current_subject}
       current_membership={@current_membership}
       pending_approvals_count={@pending_approvals_count}
@@ -319,7 +319,7 @@ defmodule EmisarWeb.DashboardLive do
         can_issue_agent_key?={@can_issue_agent_key?}
         can_invite_members?={@can_invite_members?}
       />
-    </.dashboard_shell>
+    </.console_shell>
     """
   end
 

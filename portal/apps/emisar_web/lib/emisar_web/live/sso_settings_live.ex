@@ -1313,7 +1313,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.console_shell
       current_subject={@current_subject}
       current_membership={@current_membership}
       pending_approvals_count={@pending_approvals_count}
@@ -1800,7 +1800,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           <div :if={not @loaded?} class="text-sm text-zinc-400">Loading…</div>
         </div>
       </div>
-    </.dashboard_shell>
+    </.console_shell>
     """
   end
 

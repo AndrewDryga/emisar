@@ -221,7 +221,7 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
 - **Section rhythm (marketing):** `py-24 sm:py-32` between sections; content in
   `mx-auto max-w-7xl px-6 lg:px-8`; prose columns `max-w-2xl/3xl`.
 - **Console rhythm — the shell OWNS inter-block spacing; don't hand-roll `mt-*`
-  between top-level blocks.** `dashboard_shell`'s content wrapper is `space-y-6`,
+  between top-level blocks.** `console_shell`'s content wrapper is `space-y-6`,
   which emits `.space-y-6 > * ~ * { margin-top: 24px }` at specificity (0,3,0) —
   it BEATS any `mt-*` (0,1,0) on a direct shell child. So a per-block `mt-*`
   between top-level page blocks is **silently overridden** to 24px; only the
@@ -433,7 +433,7 @@ genuinely missing (then it's shared, not one-off).
   words so the promise is fulfilled verbatim on click. Sweep target: any
   empty-state/CTA whose action text ≈ its title.
 - **A page's sub-feature side door rides the TITLE row** — a quiet secondary
-  `<.button size={:md}>` in `dashboard_shell`'s `<:actions>` slot, right of the
+  `<.button size={:md}>` in `console_shell`'s `<:actions>` slot, right of the
   H1 (audit's "Stream to SIEM" → `/audit/export`). `:md`, not `:sm` — a control
   beside a 28px H1 needs the full-size button to hold its own. Never in the
   intro prose, never below the content it configures.

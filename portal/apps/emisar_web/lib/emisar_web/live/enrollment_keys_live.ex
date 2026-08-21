@@ -203,7 +203,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.console_shell
       current_subject={@current_subject}
       current_membership={@current_membership}
       pending_approvals_count={@pending_approvals_count}
@@ -420,7 +420,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
 
         <%!-- Key list — the LiveTable :cards shell renders the filter row, the
              bordered card list, and the count in its paginator footer, so this
-             page matches audit / runs. The page heading is the dashboard_shell
+             page matches audit / runs. The page heading is the console_shell
              <:title> above — no extra section card around it. --%>
         <LiveTable.live_table
           layout={:cards}
@@ -562,7 +562,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
           </:empty>
         </LiveTable.live_table>
       </div>
-    </.dashboard_shell>
+    </.console_shell>
     """
   end
 

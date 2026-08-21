@@ -18,7 +18,7 @@ its Tailwind. The canonical surfaces:
 | Searchable finite catalog | `<.searchable_select id= name= value= selected_label= groups=>` — concise closed identity, grouped searchable metadata in the panel, disabled values skipped by keyboard selection | long native selects, metadata-concatenated triggers, or a local combobox implementation |
 | Collapsible details | `<.disclosure size={:sm\|:md}>` (`open` server-owned when state must survive re-renders) | a raw `<details>`/`<summary>` with a chevron |
 | Empty / zero state | `<.empty_state icon= title=>` (`:boxed` default, `:bare` for in-card, `tone={:danger}` for load-failure) | a dashed `border-dashed` box with icon + `<p>`s |
-| Page width + rhythm | `<.dashboard_shell width={:table\|:detail\|:form\|:settings}>` owns it | `mx-auto max-w-*` / `<.page_container>` (deleted) |
+| Page width + rhythm | `<.console_shell width={:table\|:detail\|:form\|:settings}>` owns it | `mx-auto max-w-*` / `<.page_container>` (deleted) |
 | Index lead line | `<.page_intro>` (under the shell `:title`) | a hand-rolled `<header>` + `<p>` intro |
 | Detail breadcrumb + heading | `<.detail_header back= navigate=>` in the `:title` slot | a bespoke back-link + `<h1>` |
 | Auth footer switch-line | `<.auth_footer_link navigate=\|href=>` (`:lead` slot) | a per-page `<p class="mt-… text-center">` + link |

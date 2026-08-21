@@ -200,7 +200,7 @@ defmodule EmisarWeb.RunsLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.console_shell
       current_subject={@current_subject}
       current_membership={@current_membership}
       pending_approvals_count={@pending_approvals_count}
@@ -383,7 +383,7 @@ defmodule EmisarWeb.RunsLive do
           <span class="text-xs tabular-nums text-zinc-400">{format_duration(run.duration_ms)}</span>
         </:col>
       </LiveTable.live_table>
-    </.dashboard_shell>
+    </.console_shell>
     """
   end
 

@@ -77,7 +77,7 @@ defmodule EmisarWeb.AuditDetailLive do
 
   def render(assigns) do
     ~H"""
-    <.dashboard_shell
+    <.console_shell
       current_subject={@current_subject}
       current_membership={@current_membership}
       pending_approvals_count={@pending_approvals_count}
@@ -240,7 +240,7 @@ defmodule EmisarWeb.AuditDetailLive do
           code={pretty_payload(@event.payload)}
         />
       </div>
-    </.dashboard_shell>
+    </.console_shell>
     """
   end
 

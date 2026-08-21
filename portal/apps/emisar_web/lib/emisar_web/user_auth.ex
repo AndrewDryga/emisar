@@ -617,7 +617,7 @@ defmodule EmisarWeb.UserAuth do
 
   # Wires a global "resend confirmation email" handler onto every
   # authenticated LiveView so the unverified-email banner (rendered by
-  # `dashboard_shell`) can re-send the link from any page without each
+  # `console_shell`) can re-send the link from any page without each
   # host LV defining the event. The banner reads `@current_user.confirmed_at`
   # directly, so this hook only needs to handle the button's event.
   def on_mount(:email_confirmation, _params, _session, socket) do
