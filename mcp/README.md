@@ -315,10 +315,11 @@ The process contract is:
 | Invalid command or JSON input | 2 | empty | usage text |
 | Ctrl-C while human mode is waiting | 130 | initial mutation result | observation-stopped warning and `get_operation` command |
 
-Direct-command errors use the same small shape: what failed, any safe local
-detail that explains why, and a **Next** section with recovery commands. Color
-is used only when stderr is a terminal. Redirected output and pipes stay plain;
-set `NO_COLOR` to disable color in a terminal too. Exact JSON on stdout is never
+Direct-command errors use the same small shape: what failed, field-level schema
+problems when the server returns them, and a recovery command or live
+`help <tool>` command when useful. Submitted values are never echoed. Color is
+used only when stderr is a terminal. Redirected output and pipes stay plain; set
+`NO_COLOR` to disable color in a terminal too. Exact JSON on stdout is never
 decorated.
 
 After an ambiguous mutation response, pass the returned `operation_id` to

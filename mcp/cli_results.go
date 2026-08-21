@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ const (
 	updateRunbookDraftToolName = "update_runbook_draft"
 	maxCLIResultItems          = 50
 	maxCLIResultOutputRunes    = 16_384
+	maxCLIErrorIssues          = 8
 )
 
 type cliToolResultNext struct {
@@ -77,7 +79,7 @@ func writeCLIOperatorOutput(
 		return false, nil
 	}
 	if !successful {
-		return writeCLIToolError(w, raw, account)
+		return writeCLIToolError(w, toolName, arguments, raw, account)
 	}
 
 	var rendered string
@@ -111,7 +113,7 @@ func writeCLIOperatorOutput(
 	return true, err
 }
 
-func writeCLIToolError(w io.Writer, raw []byte, account string) (bool, error) {
+func writeCLIToolError(w io.Writer, toolName string, arguments, raw []byte, account string) (bool, error) {
 	var result struct {
 		OK              bool `json:"ok"`
 		DispatchStarted bool `json:"dispatch_started"`
@@ -135,7 +137,8 @@ func writeCLIToolError(w io.Writer, raw []byte, account string) (bool, error) {
 	if result.Error.Code != "" {
 		fmt.Fprintf(&out, "\nCode  %s\n", cliResultText(result.Error.Code, 120))
 	}
-	if result.Error.Path != "" {
+	detailsRendered := writeCLIErrorIssues(&out, arguments, result.Error.Details)
+	if result.Error.Path != "" && !detailsRendered {
 		fmt.Fprintf(&out, "Path  %s\n", cliResultText(result.Error.Path, 240))
 	}
 	if result.DispatchStarted {
@@ -143,10 +146,163 @@ func writeCLIToolError(w io.Writer, raw []byte, account string) (bool, error) {
 	}
 	if command := cliSafeReadContinuation(result.Error.Next, account); command != "" {
 		fmt.Fprintf(&out, "\nNext  %s\n", command)
+	} else if detailsRendered && result.Error.Code == "invalid_args" {
+		if command := cliToolHelpCommand(toolName, account); command != "" {
+			fmt.Fprintf(&out, "\nView the accepted arguments and constraints:\n  %s\n", command)
+		}
 	} else if len(result.Error.Details) > 0 && firstJSONByte(result.Error.Details) != 'n' {
 		out.WriteString("\nMore details are available with --json.\n")
 	}
 	return true, writeString(w, out.String())
+}
+
+type cliErrorIssue struct {
+	Path    string `json:"path"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func writeCLIErrorIssues(out *strings.Builder, arguments, raw json.RawMessage) bool {
+	var details struct {
+		IssueCount      int             `json:"issue_count"`
+		IssuesTruncated bool            `json:"issues_truncated"`
+		Issues          []cliErrorIssue `json:"issues"`
+	}
+	if firstJSONByte(raw) != '{' || json.Unmarshal(raw, &details) != nil || len(details.Issues) == 0 {
+		return false
+	}
+
+	visible := details.Issues[:min(len(details.Issues), maxCLIErrorIssues)]
+	total := max(details.IssueCount, len(details.Issues))
+	fmt.Fprintf(out, "\n%s\n", plural(total, "Problem", "Problems"))
+	for _, issue := range visible {
+		path := cliErrorIssuePath(issue.Path)
+		message := cliErrorIssueMessage(issue, cliArgumentValueKind(arguments, issue.Path))
+		fmt.Fprintf(out, "  %s  %s\n", path, message)
+	}
+
+	if total > len(visible) {
+		fmt.Fprintf(out, "  %d more %s; use --json for the complete report.\n", total-len(visible), plural(total-len(visible), "problem", "problems"))
+	} else if details.IssuesTruncated {
+		out.WriteString("  More problems are available with --json.\n")
+	}
+	return true
+}
+
+func cliErrorIssuePath(path string) string {
+	path = cliResultText(terminalSafeLine(path), 240)
+	switch {
+	case path == "" || path == "$":
+		return "arguments"
+	case strings.HasPrefix(path, "$."):
+		return strings.TrimPrefix(path, "$.")
+	default:
+		return path
+	}
+}
+
+func cliErrorIssueMessage(issue cliErrorIssue, valueKind string) string {
+	if message := cliResultText(terminalSafeLine(issue.Message), maxCLIHumanStringRunes); message != "" {
+		return message
+	}
+	switch issue.Code {
+	case "required":
+		return "Is required."
+	case "unknown", "unknown_arg":
+		return "Is not an accepted argument."
+	case "type":
+		return "Has the wrong JSON type."
+	case "format":
+		return "Does not match the required format."
+	case "duration":
+		return "Must be a valid duration."
+	case "path":
+		return "Must be a valid path."
+	case "enum", "allowed":
+		return "Is not one of the allowed values."
+	case "range":
+		return "Is outside the allowed range."
+	case "min":
+		switch valueKind {
+		case "string":
+			return "Is shorter than the allowed minimum."
+		case "array":
+			return "Contains fewer items than allowed."
+		default:
+			return "Is below the allowed minimum."
+		}
+	case "max":
+		return "Is above the allowed maximum."
+	case "min_duration":
+		return "Is shorter than the minimum duration."
+	case "max_duration":
+		return "Is longer than the maximum duration."
+	case "size":
+		return "Exceeds the allowed size."
+	case "max_length":
+		return "Is longer than allowed."
+	case "max_items":
+		return "Contains too many items."
+	case "unique":
+		return "Contains duplicate items."
+	case "conflict":
+		return "Conflicts with another argument."
+	case "dependency":
+		return "Requires another argument."
+	default:
+		return "Does not match the published schema."
+	}
+}
+
+func cliArgumentValueKind(arguments []byte, path string) string {
+	if firstJSONByte(arguments) == 0 || validateStrictJSON(arguments) != nil {
+		return ""
+	}
+	decoder := json.NewDecoder(bytes.NewReader(arguments))
+	decoder.UseNumber()
+	var value any
+	if decoder.Decode(&value) != nil {
+		return ""
+	}
+	if strings.HasPrefix(path, "$.") {
+		for _, segment := range strings.Split(strings.TrimPrefix(path, "$."), ".") {
+			object, ok := value.(map[string]any)
+			if !ok {
+				return ""
+			}
+			value, ok = object[segment]
+			if !ok {
+				return ""
+			}
+		}
+	} else if path != "$" {
+		return ""
+	}
+	switch value.(type) {
+	case string:
+		return "string"
+	case []any:
+		return "array"
+	case json.Number:
+		return "number"
+	case map[string]any:
+		return "object"
+	case bool:
+		return "boolean"
+	default:
+		return ""
+	}
+}
+
+func cliToolHelpCommand(toolName, account string) string {
+	if toolName == "" || len(toolName) > 128 || terminalSafeLine(toolName) != toolName {
+		return ""
+	}
+	prefix := "emisar-mcp "
+	if account != "" {
+		prefix += "--account " + shellQuoteForOS(terminalSafeText(account), runtime.GOOS) + " "
+	}
+	return prefix + "help " + shellQuoteForOS(toolName, runtime.GOOS)
 }
 
 func cliSafeReadContinuation(next cliToolResultNext, account string) string {

@@ -407,6 +407,79 @@ func TestCLIToolErrorsExplainFailureAndSafeRecovery(t *testing.T) {
 	}
 }
 
+func TestCLIToolValidationErrorsExplainFieldsWithoutEchoingValues(t *testing.T) {
+	arguments := []byte(`{"reason":"cli test","runner_refs":["secret-runner"],"scope":"global"}`)
+	raw := []byte(`{"ok":false,"dispatch_started":false,"error":{"code":"invalid_args","message":"Tool arguments do not match the published input schema.","retryable":false,"details":{"schema_version":1,"stage":"arguments","kind":"range","issues":[{"path":"$.reason","code":"min"},{"path":"$.runner_refs","code":"max_items"},{"path":"$.scope","code":"enum"},{"path":"$.missing","code":"required"}]}}}`)
+	var stdout bytes.Buffer
+	if err := writeCLIToolOutput(&stdout, executeRunbookToolName, arguments, raw, "immersive", false, false); err != nil {
+		t.Fatal(err)
+	}
+	output := stdout.String()
+	for _, want := range []string{
+		"Error: Tool arguments do not match the published input schema.",
+		"Code  invalid_args",
+		"Problems",
+		"reason  Is shorter than the allowed minimum.",
+		"runner_refs  Contains too many items.",
+		"scope  Is not one of the allowed values.",
+		"missing  Is required.",
+		"View the accepted arguments and constraints:",
+		"emisar-mcp --account immersive help execute_runbook",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("output missing %q:\n%s", want, output)
+		}
+	}
+	for _, unwanted := range []string{"cli test", "secret-runner", "More details are available"} {
+		if strings.Contains(output, unwanted) {
+			t.Errorf("output contains submitted value or stale fallback %q:\n%s", unwanted, output)
+		}
+	}
+
+	stdout.Reset()
+	if err := writeCLIToolOutput(&stdout, executeRunbookToolName, arguments, raw, "immersive", true, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), `"path": "$.reason"`) || !strings.Contains(stdout.String(), `"code": "min"`) {
+		t.Fatalf("exact JSON lost validation details:\n%s", stdout.String())
+	}
+}
+
+func TestCLIToolErrorIssuesAreBoundedAndTerminalSafe(t *testing.T) {
+	issues := make([]cliErrorIssue, 10)
+	for index := range issues {
+		issues[index] = cliErrorIssue{
+			Path:    fmt.Sprintf("/stages/0/steps/%d\n\x1b[31m\u202e", index),
+			Code:    "invalid_definition",
+			Message: "Fix this field.\n\x1b[31m\u202e",
+		}
+	}
+	details, err := json.Marshal(map[string]any{
+		"issue_count":      10,
+		"issues_truncated": false,
+		"issues":           issues,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if !writeCLIErrorIssues(&out, nil, details) {
+		t.Fatal("expected issue details to render")
+	}
+	output := out.String()
+	if strings.Count(output, "Fix this field.") != maxCLIErrorIssues {
+		t.Fatalf("rendered issue count = %d, want %d:\n%s", strings.Count(output, "Fix this field."), maxCLIErrorIssues, output)
+	}
+	if !strings.Contains(output, "2 more problems; use --json for the complete report.") {
+		t.Fatalf("output omitted bounded-report notice:\n%s", output)
+	}
+	for _, unsafe := range []string{"\n\x1b", "\x1b", "\u202e"} {
+		if strings.Contains(output, unsafe) {
+			t.Fatalf("output retained unsafe terminal text %q:\n%s", unsafe, output)
+		}
+	}
+}
+
 func TestCLIPurposeBuiltOutputSanitizesHostileTerminalText(t *testing.T) {
 	raw := []byte(`{"ok":true,"runs":[{"run_id":"run-1","runner_ref":"safe\u001b[31m\u202evil","status":"failed","error_message":"bad\nnews\u0007"}],"next_cursor":null}`)
 	var stdout bytes.Buffer
