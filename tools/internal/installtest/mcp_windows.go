@@ -220,11 +220,13 @@ func testWindowsMCPInstaller(root, shell string) error {
 	firstRequested := append([]string(nil), requested...)
 	firstDeviceGrants := deviceGrants
 	serverMu.Unlock()
-	if !slicesEqual(firstRequested, []string{"emisar-mcp-cli", "cursor"}) {
-		return fmt.Errorf("requested clients = %v, want CLI and Cursor", firstRequested)
-	}
-	if firstDeviceGrants != 1 {
-		return fmt.Errorf("device grants = %d after first install, want 1", firstDeviceGrants)
+	if firstDeviceGrants != 1 || !slicesEqual(firstRequested, []string{"emisar-mcp-cli", "cursor"}) {
+		return fmt.Errorf(
+			"device grants = %d, requested clients = %v; want one grant for CLI and Cursor\n%s",
+			firstDeviceGrants,
+			firstRequested,
+			output,
+		)
 	}
 	installed := filepath.Join(localAppData, "Programs", "Emisar", "bin", "emisar-mcp.exe")
 	versionOutput, err := exec.Command(installed, "--version").CombinedOutput()
