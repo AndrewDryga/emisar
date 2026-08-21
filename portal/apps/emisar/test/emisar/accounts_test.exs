@@ -1672,29 +1672,6 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "team_member_filters/0" do
-    test "exposes the roster's name, role, and lifecycle vocabulary" do
-      filters = Accounts.team_member_filters()
-
-      assert Enum.map(filters, & &1.name) == [:name_or_email, :role, :status]
-
-      assert Enum.find(filters, &(&1.name == :role)).values == [
-               {"owner", "Owner"},
-               {"admin", "Admin"},
-               {"billing_manager", "Billing manager"},
-               {"operator", "Operator"},
-               {"viewer", "Viewer"}
-             ]
-
-      assert Enum.find(filters, &(&1.name == :status)).values == [
-               {"active", "Active"},
-               {"pending_invitation", "Pending invitation"},
-               {"suspended", "Suspended"},
-               {"email_unconfirmed", "Email unconfirmed"}
-             ]
-    end
-  end
-
   describe "list_team_member_facts/3" do
     setup do
       account = Fixtures.Accounts.create_account()

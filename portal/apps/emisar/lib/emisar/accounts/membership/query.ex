@@ -1,7 +1,7 @@
 defmodule Emisar.Accounts.Membership.Query do
   use Emisar, :query
-  alias Emisar.Repo.{Filter, Like}
   alias Emisar.Auth
+  alias Emisar.Repo.{Filter, Like}
 
   def all,
     do: from(memberships in Emisar.Accounts.Membership, as: :memberships)
