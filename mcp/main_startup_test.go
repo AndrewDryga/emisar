@@ -189,6 +189,7 @@ func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {
 		"emisar-mcp execute_runbook [JSON | -]",
 		"emisar-mcp create_runbook_draft [JSON | -]",
 		"emisar-mcp update_runbook_draft [JSON | -]",
+		"Human execute_runbook waits for completion and prints action output.",
 		"emisar-mcp list_tools",
 		"emisar-mcp help <tool>",
 		"emisar-mcp -- <tool> [JSON | -]",

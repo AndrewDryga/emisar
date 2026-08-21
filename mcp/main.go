@@ -177,6 +177,7 @@ COMMANDS
     emisar-mcp create_runbook_draft [JSON | -]
     emisar-mcp update_runbook_draft [JSON | -]
       List, inspect, execute, and draft governed runbooks.
+      Human execute_runbook waits for completion and prints action output.
 
   CONTINUATIONS
     emisar-mcp wait_for_run [JSON | -]
