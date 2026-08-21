@@ -727,6 +727,12 @@ function Configure-Clients([string]$Executable, [string]$HomeDirectory, [string]
             $script:ConfiguredClients.Add("$($client.Label): $($client.Path)")
             Write-Host ("  {0,-16} connected -> {1}" -f $client.Label, $client.Path) -ForegroundColor Green
         } catch {
+            $innerType = if ($null -ne $_.Exception.InnerException) {
+                $_.Exception.InnerException.GetType().FullName
+            } else {
+                "none"
+            }
+            Write-Verbose "$($client.Label) config update failed with $($_.Exception.GetType().FullName) (inner: $innerType)"
             Write-WarningLine "$($client.Label): could not update $($client.Path); use Custom at $($script:PortalOrigin)/app/agents/connect"
         }
     }
