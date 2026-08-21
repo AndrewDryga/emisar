@@ -445,10 +445,10 @@ function Write-AtomicText([string]$Path, [string]$Text) {
     try {
         [IO.File]::WriteAllText($temporary, $Text, $script:Utf8NoBom)
         if (Test-Path -LiteralPath $Path) {
-            Assert-NoReparsePoint "$Path.emisar-bak" "client config backup"
-            Copy-Item -LiteralPath $Path -Destination "$Path.emisar-bak" -Force
-            Set-PrivateFileACL "$Path.emisar-bak"
-            [IO.File]::Replace($temporary, $Path, $null, $true)
+            $backup = "$Path.emisar-bak"
+            Assert-NoReparsePoint $backup "client config backup"
+            [IO.File]::Replace($temporary, $Path, $backup, $true)
+            Set-PrivateFileACL $backup
         } else {
             [IO.File]::Move($temporary, $Path)
         }
@@ -727,17 +727,6 @@ function Configure-Clients([string]$Executable, [string]$HomeDirectory, [string]
             $script:ConfiguredClients.Add("$($client.Label): $($client.Path)")
             Write-Host ("  {0,-16} connected -> {1}" -f $client.Label, $client.Path) -ForegroundColor Green
         } catch {
-            $innerType = if ($null -ne $_.Exception.InnerException) {
-                $_.Exception.InnerException.GetType().FullName
-            } else {
-                "none"
-            }
-            $targetMethod = if ($null -ne $_.Exception.InnerException -and $null -ne $_.Exception.InnerException.TargetSite) {
-                $_.Exception.InnerException.TargetSite.Name
-            } else {
-                "none"
-            }
-            Write-Verbose "$($client.Label) config update failed at line $($_.InvocationInfo.ScriptLineNumber) with $($_.Exception.GetType().FullName) (inner: $innerType; target: $targetMethod)"
             Write-WarningLine "$($client.Label): could not update $($client.Path); use Custom at $($script:PortalOrigin)/app/agents/connect"
         }
     }
