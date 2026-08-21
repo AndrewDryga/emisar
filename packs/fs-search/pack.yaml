@@ -2,7 +2,7 @@ schema_version: 1
 
 id: fs-search
 name: Filesystem search and inspection
-version: 0.1.9
+version: 0.1.10
 # 0.1.8 and below let a low-risk, no-approval read reach /etc/emisar and
 # /var/lib/emisar — the enrollment key, the operator's pack credentials, and
 # this runner's bearer token. Those versions are unsafe to keep running.

@@ -1,0 +1,25 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/fs-search/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+    image: emisar-packtest-fs-search-tools:latest
+
+  # These actions read the filesystem of the machine the ACTION runs on, which
+  # is the client container — so this pack has no service to drive, and every
+  # case arranges its own tree there. The version row still names a real system
+  # under test: what fs-search actually exercises is that Debian release's
+  # coreutils and findutils, the same build the client resolves du, find, and
+  # stat from. Declaring it keeps the compatibility matrix able to say which
+  # userland these assertions were proved against.
+  fs-target:
+    image: debian:${PACKTEST_VERSION:-13-slim}${PACKTEST_DIGEST-}
+    command: [sleep, infinity]
+    healthcheck:
+      test: [CMD, "true"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10

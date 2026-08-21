@@ -1,0 +1,252 @@
+# fs-search reads the filesystem of the machine the ACTION runs on, which is the
+# client container rather than a service to drive — so every case arranges the
+# exact tree it asserts on under /tmp, and nothing here depends on state that
+# outlives its own case. See compose.yaml for why a version row still names a
+# real system under test.
+services: [fs-target]
+versions:
+  - version: "13-slim"
+    digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
+    default: true
+risk_accountability:
+  mode: complete
+cases:
+  # The pack's headline read, and the one shape a glob got wrong: `.cache` holds
+  # more than any visible sibling and has to rank first, `toplevel.bin` proves a
+  # file at that level still ranks alongside directories, and `.ssh` proves a
+  # denied name stays out even now that dot-entries are listed. The trailing
+  # newline in the last assertion is the point of it: every child line continues
+  # with a '/', so only du's own total for the requested path could end a line
+  # there — this pins the output to one row per entry underneath it.
+  - action: fs.du_top
+    args: {path: /tmp/packtest-du}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            mkdir -p /tmp/packtest-du/.cache /tmp/packtest-du/.ssh /tmp/packtest-du/visible
+            dd if=/dev/zero of=/tmp/packtest-du/.cache/blob bs=1M count=8 2>/dev/null
+            dd if=/dev/zero of=/tmp/packtest-du/.ssh/id_ed25519 bs=1M count=12 2>/dev/null
+            dd if=/dev/zero of=/tmp/packtest-du/visible/blob bs=1M count=2 2>/dev/null
+            dd if=/dev/zero of=/tmp/packtest-du/toplevel.bin bs=1M count=4 2>/dev/null
+    expect:
+      # One contiguous substring, so this asserts the ranking order and not just
+      # that three paths were mentioned somewhere.
+      stdout_contains:
+        - "8.0M\t/tmp/packtest-du/.cache\n4.0M\t/tmp/packtest-du/toplevel.bin\n2.0M\t/tmp/packtest-du/visible\n"
+      stdout_not_contains:
+        - /tmp/packtest-du/.ssh
+        - "/tmp/packtest-du\n"
+
+  # The pipeline exits with head's status, so without the guard this path would
+  # report success with no rows — "the directory is empty" rather than "there is
+  # no such directory".
+  - name: fs.du-top-missing-path
+    action: fs.du_top
+    args: {path: /tmp/packtest-du-absent}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["not a readable directory: /tmp/packtest-du-absent"]
+
+  - action: fs.find_large_files
+    args: {path: /tmp/packtest-large, min_mb: 5}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            mkdir -p /tmp/packtest-large/nested
+            dd if=/dev/zero of=/tmp/packtest-large/nested/culprit.bin bs=1M count=12 2>/dev/null
+            dd if=/dev/zero of=/tmp/packtest-large/small.bin bs=1M count=1 2>/dev/null
+    expect:
+      stdout_contains: [/tmp/packtest-large/nested/culprit.bin]
+      stdout_not_contains: [small.bin]
+
+  - action: fs.find_by_name
+    args: {path: /tmp/packtest-find, glob: "*.log"}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/packtest-find/nested && : > /tmp/packtest-find/nested/app.log && : > /tmp/packtest-find/app.conf"
+    expect:
+      stdout_contains: [/tmp/packtest-find/nested/app.log]
+      stdout_not_contains: [app.conf]
+
+  # The stale file carries an mtime far outside the window, so this asserts the
+  # window really filtered rather than that the directory happened to hold one file.
+  - action: fs.find_recent_modified
+    args: {path: /tmp/packtest-recent, minutes: 10}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            mkdir -p /tmp/packtest-recent
+            : > /tmp/packtest-recent/fresh.log
+            : > /tmp/packtest-recent/stale.log
+            touch -d '2020-01-01 00:00:00' /tmp/packtest-recent/stale.log
+    expect:
+      stdout_contains: [/tmp/packtest-recent/fresh.log]
+      stdout_not_contains: [stale.log]
+
+  # A file owner may set the setuid bit on their own file, so the fixture needs
+  # no privileged identity to plant what this scan is meant to find.
+  - action: fs.find_setuid
+    args: {path: /tmp/packtest-setuid}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/packtest-setuid && : > /tmp/packtest-setuid/helper && chmod 4755 /tmp/packtest-setuid/helper && : > /tmp/packtest-setuid/plain && chmod 0644 /tmp/packtest-setuid/plain"
+    expect:
+      stdout_contains: [/tmp/packtest-setuid/helper]
+      stdout_not_contains: ["/plain"]
+
+  - action: fs.find_world_writable
+    args: {path: /tmp/packtest-worldwritable}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/packtest-worldwritable && : > /tmp/packtest-worldwritable/open.conf && chmod 0666 /tmp/packtest-worldwritable/open.conf && : > /tmp/packtest-worldwritable/closed.conf && chmod 0644 /tmp/packtest-worldwritable/closed.conf"
+    expect:
+      stdout_contains: [/tmp/packtest-worldwritable/open.conf]
+      stdout_not_contains: [closed.conf]
+
+  - action: fs.ls_long
+    args: {path: /tmp/packtest-ls}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/packtest-ls/subdir && printf 'x' > /tmp/packtest-ls/entry.txt"
+    expect:
+      stdout_contains: ["total ", entry.txt, subdir]
+
+  - action: fs.stat_path
+    args: {path: /tmp/packtest-stat/notes.txt}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/packtest-stat && printf 'alpha\\nbravo\\ncharlie\\n' > /tmp/packtest-stat/notes.txt"
+    expect:
+      stdout_contains: ["File: /tmp/packtest-stat/notes.txt", "Size: 20", regular file]
+
+  # The digest is of the exact bytes the arrange step writes, so this proves the
+  # action hashed the file rather than that sha256sum exited cleanly.
+  - action: fs.sha256_file
+    args: {path: /tmp/packtest-hash/hashme.txt}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/packtest-hash && printf 'emisar-packtest-sha256\\n' > /tmp/packtest-hash/hashme.txt"
+    expect:
+      stdout_contains:
+        - "a17a0507a770b1cfa801348fe868347b062d35ce0499fb3d444265f210ec5ee3  /tmp/packtest-hash/hashme.txt"
+
+  - action: fs.head_file
+    args: {path: /tmp/packtest-head/app.log, lines: 2}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/packtest-head && printf 'line-one\\nline-two\\nline-three\\n' > /tmp/packtest-head/app.log"
+    expect:
+      stdout_contains: [line-one, line-two]
+      stdout_not_contains: [line-three]
+
+  # The pack ships a PEM redaction rule for exactly this read; nothing executed
+  # it before. The key body has to disappear across the line boundaries it spans
+  # while the surrounding config still comes back.
+  - name: fs.head-file-redacts-private-key
+    action: fs.head_file
+    args: {path: /tmp/packtest-pem/server.conf}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            mkdir -p /tmp/packtest-pem
+            printf '%s\n' \
+              'listen 0.0.0.0:8443' \
+              '-----BEGIN OPENSSH PRIVATE KEY-----' \
+              'NOTAREALKEYpacktestNOTAREALKEYpacktest' \
+              'NOTAREALKEYpacktestNOTAREALKEYpacktest' \
+              '-----END OPENSSH PRIVATE KEY-----' \
+              'server_name packtest.invalid' > /tmp/packtest-pem/server.conf
+    expect:
+      stdout_contains: ["[REDACTED PRIVATE KEY]", "listen 0.0.0.0:8443", server_name packtest.invalid]
+      stdout_not_contains: [NOTAREALKEYpacktest]
+
+  - action: fs.tail_file
+    args: {path: /tmp/packtest-tail/app.log, lines: 2}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/packtest-tail && printf 'line-one\\nline-two\\nline-three\\n' > /tmp/packtest-tail/app.log"
+    expect:
+      stdout_contains: [line-two, line-three]
+      stdout_not_contains: [line-one]
+
+  - action: fs.count_lines
+    args: {path: /tmp/packtest-count/notes.txt}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/packtest-count && printf 'alpha\\nbravo\\ncharlie\\n' > /tmp/packtest-count/notes.txt"
+    expect:
+      stdout_contains: ["3 /tmp/packtest-count/notes.txt"]
+
+  - action: fs.grep_file
+    args: {path: /tmp/packtest-grep/app.log, pattern: "ERROR"}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/packtest-grep && printf 'alpha ok\\nbravo ERROR connect refused\\ncharlie ok\\n' > /tmp/packtest-grep/app.log"
+    expect:
+      stdout_contains: ["bravo ERROR connect refused"]
+      stdout_not_contains: [alpha ok, charlie ok]
+
+  # Same guard as du_top, and the same failure it hides: grep's exit status is
+  # lost to head, so an unreadable file would come back as "no matches".
+  - name: fs.grep-file-missing-path
+    action: fs.grep_file
+    args: {path: /tmp/packtest-grep/absent.log, pattern: "ERROR"}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["file not readable: /tmp/packtest-grep/absent.log"]
+
+  - action: fs.grep_recursive
+    args: {path: /tmp/packtest-rgrep, pattern: "ERROR"}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            mkdir -p /tmp/packtest-rgrep/nested
+            printf 'alpha ok\nbravo ERROR connect refused\n' > /tmp/packtest-rgrep/nested/app.log
+            printf 'nothing to see\n' > /tmp/packtest-rgrep/quiet.log
+    expect:
+      stdout_contains: ["/tmp/packtest-rgrep/nested/app.log:2:bravo ERROR connect refused"]
+      stdout_not_contains: [quiet.log]
+
+  - action: fs.file_type
+    args: {path: /tmp/packtest-filetype/notes.txt}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/packtest-filetype && printf 'alpha\\n' > /tmp/packtest-filetype/notes.txt"
+    expect:
+      stdout_contains: ["/tmp/packtest-filetype/notes.txt: ASCII text"]

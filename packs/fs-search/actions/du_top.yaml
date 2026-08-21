@@ -1,9 +1,11 @@
 schema_version: 1
 id: fs.du_top
-title: du -sh — top N subdirs
+title: du -d1 — top N entries
 kind: exec
 risk: low
-description: Show the top 20 immediate subdirs of one path by size.
+description: >
+  Show the 20 largest entries directly under one path, largest first — files and
+  directories, hidden ones included. Use to find where the space went.
 side_effects:
   - One file-system traversal.
   - Read-only.
@@ -37,12 +39,18 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
+      # du walks the tree itself rather than being handed a "$1"/* glob, because
+      # a /bin/sh glob never matches a leading dot: every dot-directory under the
+      # requested path was absent from the ranking, and on a home or app directory
+      # .cache/.local/.venv IS usually the answer. -a keeps top-level files in the
+      # ranking the way the glob did; awk drops du's own total for "$1" so the
+      # output stays one line per entry underneath it.
       # 2>/dev/null suppresses per-entry permission noise, and the pipeline exits
       # with head's status — so a nonexistent path would report success with no
       # output, reading as "empty directory". Guard it explicitly.
       - |
         [ -d "$1" ] || { echo "not a readable directory: $1" >&2; exit 1; }
-        du -sh --exclude=.ssh --exclude=ssh --exclude=private --exclude=sudoers.d "$1"/* 2>/dev/null | sort -rh | head -20
+        du -ah --max-depth=1 --exclude=.ssh --exclude=ssh --exclude=private --exclude=sudoers.d "$1" 2>/dev/null | awk -F'\t' -v root="$1" '$2 != root' | sort -rh | head -20
       - "emisar"
       - "{{ args.path }}"
   timeout: 5m
