@@ -23,10 +23,17 @@ defmodule EmisarWeb.MCPDeviceGrantControllerTest do
   end
 
   describe "POST /api/mcp/device_authorization" do
+    test "the known-client contract matches every installer adapter" do
+      expected =
+        ~w(claude-code claude-desktop codex copilot-cli cursor emisar-mcp-cli gemini goose grok hermes openclaw opencode pi vscode windsurf zed)
+
+      assert DeviceGrant.known_clients() |> Enum.sort() == expected
+    end
+
     test "opens a pending grant and returns the RFC 8628 envelope", %{conn: conn} do
       conn =
         post(conn, ~p"/api/mcp/device_authorization", %{
-          "requested_clients" => ["emisar-mcp-cli", "cursor"]
+          "requested_clients" => ["emisar-mcp-cli", "cursor", "grok", "vscode"]
         })
 
       body = json_response(conn, 200)
@@ -45,7 +52,7 @@ defmodule EmisarWeb.MCPDeviceGrantControllerTest do
 
       assert [grant] = Repo.all(DeviceGrant)
       assert grant.status == :pending
-      assert grant.requested_clients == ["emisar-mcp-cli", "cursor"]
+      assert grant.requested_clients == ["emisar-mcp-cli", "cursor", "grok", "vscode"]
     end
 
     test "an unknown client or empty list is invalid_request", %{conn: conn} do

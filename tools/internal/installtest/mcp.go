@@ -508,7 +508,8 @@ printf 'INSTALLED=%s\n' "$installed_paths"
 var clientFunctions = []string{
 	"tty_available", "ask_tty", "json_config_has_emisar",
 	"toml_config_has_emisar", "yaml_config_has_emisar", "file_has_content",
-	"write_fresh_json_config", "merge_json_config", "append_toml_config",
+	"write_fresh_json_config", "vscode_env_file", "write_vscode_env_file",
+	"write_fresh_vscode_config", "merge_json_config", "append_toml_config",
 	"append_yaml_config", "own_config_file", "install_client_config",
 	"run_cli_as_invoking_user", "run_cli_with_stored_auth", "cli_auth_matches",
 	"install_cli_auth", "valid_emisar_api_key",
@@ -721,7 +722,7 @@ func mcpClientConfiguration(h *harness) error {
 	home := h.path("clients-home")
 	directories := []string{
 		".cursor", ".codex", ".claude", ".gemini", ".openclaw", ".config/opencode",
-		".codeium/windsurf", ".pi", ".copilot", ".config/zed", ".hermes",
+		".codeium/windsurf", ".pi", ".copilot", ".config/zed", ".config/Code/User", ".hermes",
 		".config/goose", ".grok",
 	}
 	for _, directory := range directories {
@@ -758,6 +759,14 @@ func mcpClientConfiguration(h *harness) error {
   },
 }
 `,
+		".config/Code/User/mcp.json": `{
+  // synced editor config
+  "inputs": [],
+  "servers": {
+    "other": { "type": "stdio", "command": "other-mcp" },
+  },
+}
+`,
 		".hermes/config.yaml":       "model: hermes-4\n",
 		".config/goose/config.yaml": "extensions:\n  developer:\n    enabled: true\n",
 	}
@@ -779,8 +788,8 @@ func mcpClientConfiguration(h *harness) error {
 	if err != nil {
 		return err
 	}
-	if countLines(configuredClients(string(output))) != 12 {
-		return fmt.Errorf("configured clients = %q, expected 12", configuredClients(string(output)))
+	if countLines(configuredClients(string(output))) != 13 {
+		return fmt.Errorf("configured clients = %q, expected 13", configuredClients(string(output)))
 	}
 	if !strings.Contains(string(output), "Goose") {
 		return fmt.Errorf("the Goose merge refusal was not reported:\n%s", output)
@@ -795,6 +804,14 @@ func mcpClientConfiguration(h *harness) error {
 	if err := inspectClientConfigs(home, server.server.URL); err != nil {
 		return err
 	}
+	wantRequested := []string{
+		"emisar-mcp-cli", "claude-code", "cursor", "vscode", "gemini", "codex",
+		"openclaw", "opencode", "windsurf", "pi", "copilot-cli", "zed", "hermes",
+		"goose", "grok",
+	}
+	if got := server.requestedClients(); !slices.Equal(got, wantRequested) {
+		return fmt.Errorf("device grant requested %v, expected %v", got, wantRequested)
+	}
 	if err := inspectAutoPermit(home, string(output)); err != nil {
 		return err
 	}
@@ -805,10 +822,6 @@ func mcpClientConfiguration(h *harness) error {
 	if err := exactFile(filepath.Join(home, "cli-auth"), server.server.URL+"\n"+cliKey+"\n"); err != nil {
 		return fmt.Errorf("direct CLI credential: %w", err)
 	}
-	if !slices.Contains(server.requestedClients(), "emisar-mcp-cli") {
-		return fmt.Errorf("device grant omitted emisar-mcp-cli: %v", server.requestedClients())
-	}
-
 	cursor := filepath.Join(home, ".cursor", "mcp.json")
 	codex := filepath.Join(home, ".codex", "config.toml")
 	cursorBefore, err := fileSHA(cursor)
@@ -1047,10 +1060,12 @@ func mcpUninstall(h *harness) error {
 	// where the script's darwin branch actually looks, or the removal is
 	// only ever tested on Linux.
 	credentials := filepath.Join(home, ".config", "emisar", "credentials")
+	vscodeConfig := filepath.Join(home, ".config", "Code", "User", "mcp.json")
 	if runtime.GOOS == "darwin" {
 		credentials = filepath.Join(home, "Library", "Application Support", "emisar", "credentials")
+		vscodeConfig = filepath.Join(home, "Library", "Application Support", "Code", "User", "mcp.json")
 	}
-	if err := h.mkdir(bin, credentials,
+	if err := h.mkdir(bin, credentials, filepath.Dir(vscodeConfig),
 		filepath.Join(home, ".cursor"), filepath.Join(home, ".codex"),
 		filepath.Join(home, ".config", "zed"), filepath.Join(home, ".hermes"),
 		filepath.Join(home, ".config", "goose"), filepath.Join(home, ".grok")); err != nil {
@@ -1096,6 +1111,26 @@ func mcpUninstall(h *harness) error {
 			return err
 		}
 	}
+	vscodeContents := `{
+  // synced editor config
+  "inputs": [],
+  "servers": {
+    "emisar": {
+      "type": "stdio",
+      "command": "/usr/local/bin/emisar-mcp",
+      "args": [],
+      "envFile": "/home/operator/.config/emisar/credentials/vscode.env"
+    },
+    "other": { "type": "stdio", "command": "other-mcp" },
+  },
+}
+`
+	if err := writeFile(vscodeConfig, vscodeContents, 0o600); err != nil {
+		return err
+	}
+	if err := writeFile(vscodeConfig+".emisar-bak", "{}\n", 0o600); err != nil {
+		return err
+	}
 	if err := writeFile(filepath.Join(credentials, "state.json"), "{}\n", 0o600); err != nil {
 		return err
 	}
@@ -1119,6 +1154,7 @@ func mcpUninstall(h *harness) error {
 		filepath.Join(bin, "emisar-mcp"),
 		filepath.Join(bin, ".emisar-mcp.old.123"),
 		filepath.Join(home, ".cursor", "mcp.json.emisar-bak"),
+		vscodeConfig + ".emisar-bak",
 		credentials,
 	} {
 		if err := requireAbsent(path); err != nil {
@@ -1135,6 +1171,15 @@ func mcpUninstall(h *harness) error {
 	}
 	if _, err := nested(cursor, "mcpServers", "emisar"); err == nil {
 		return fmt.Errorf("cursor config still carries emisar")
+	}
+
+	for _, text := range []string{"// synced editor config", `"inputs": []`, `"other"`} {
+		if err := containsFile(vscodeConfig, text); err != nil {
+			return err
+		}
+	}
+	if err := lacksFile(vscodeConfig, `"emisar"`); err != nil {
+		return err
 	}
 
 	codex := filepath.Join(home, ".codex", "config.toml")
@@ -1380,6 +1425,42 @@ func inspectClientConfigs(home, portal string) error {
 		if err := requireNestedString(config, client, "mcpServers", "emisar", "env", "EMISAR_CLIENT"); err != nil {
 			return err
 		}
+	}
+
+	vscode := filepath.Join(home, ".config", "Code", "User", "mcp.json")
+	for _, text := range []string{
+		"// synced editor config", `"inputs": []`, `"other"`,
+		`"type": "stdio"`, `"command": "/usr/local/bin/emisar-mcp"`,
+		`"envFile": "` + filepath.ToSlash(filepath.Join(home, ".config", "emisar", "credentials", "vscode.env")) + `"`,
+	} {
+		if err := containsFile(vscode, text); err != nil {
+			return err
+		}
+	}
+	if err := lacksFile(vscode, fixtureAPIKey("vscode")); err != nil {
+		return fmt.Errorf("VS Code config disclosed its API key: %w", err)
+	}
+	vscodeEnvironment := filepath.Join(home, ".config", "emisar", "credentials", "vscode.env")
+	if err := exactFile(vscodeEnvironment,
+		"EMISAR_URL="+portal+"\n"+
+			"EMISAR_API_KEY="+fixtureAPIKey("vscode")+"\n"+
+			"EMISAR_CLIENT=vscode\n"); err != nil {
+		return fmt.Errorf("VS Code private environment: %w", err)
+	}
+	if info, err := os.Stat(vscodeEnvironment); err != nil {
+		return err
+	} else if info.Mode().Perm() != 0o600 {
+		return fmt.Errorf("VS Code private environment mode = %o, expected 600", info.Mode().Perm())
+	}
+	if err := exactFile(vscode+".emisar-bak", `{
+  // synced editor config
+  "inputs": [],
+  "servers": {
+    "other": { "type": "stdio", "command": "other-mcp" },
+  },
+}
+`); err != nil {
+		return fmt.Errorf("VS Code config backup: %w", err)
 	}
 
 	zed := filepath.Join(home, ".config", "zed", "settings.json")

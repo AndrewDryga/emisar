@@ -2,7 +2,7 @@
 # install-mcp.sh — Install or upgrade the emisar-mcp stdio bridge.
 #
 # The bridge is a single self-contained Go binary that an MCP-aware
-# client (Claude Desktop, Claude Code, Cursor, Gemini CLI, Codex CLI,
+# client (Claude Desktop, Claude Code, Cursor, VS Code, Gemini CLI, Codex CLI,
 # Grok, …) launches as a child process and talks to over stdin/stdout. It
 # proxies JSON-RPC frames to the emisar control plane's
 # `/api/mcp/rpc` endpoint and forwards responses back.
@@ -23,7 +23,7 @@
 # The script is idempotent. It does not register a service. After
 # installing, an interactive run authenticates the direct CLI and scans for
 # local LLM clients (Claude
-# Code, Claude Desktop, Cursor, Gemini CLI, Codex CLI, OpenClaw,
+# Code, Claude Desktop, Cursor, VS Code, Gemini CLI, Codex CLI, OpenClaw,
 # OpenCode, Windsurf, Pi, Copilot CLI, Zed, Hermes, Goose, Grok CLI) and offers
 # to add emisar to each — asking per client; a non-interactive or --yes
 # run skips that entirely. For the clients whose "stop asking" setting can be
@@ -32,8 +32,8 @@
 # emisar; declining is the default and no global approval setting is ever
 # touched. The API keys come from one browser approval
 # (the script prints an approval link; no key is ever typed or copied)
-# and land in owner-only CLI state or straight in the client configs, pointed
-# at EMISAR_URL.
+# and land in owner-only CLI state, client configs, or VS Code's private
+# environment file, pointed at EMISAR_URL.
 # Manual per-client snippets stay available on the portal's
 # /app/agents page.
 
@@ -399,7 +399,7 @@ scan_client() {
 # whether each already carries emisar. Install offers the candidates;
 # uninstall cleans the connected ones.
 scan_llm_clients() {
-  local user_home="$1" desktop_dir
+  local user_home="$1" desktop_dir vscode_dir
   CLIENTS_FOUND=0
   SCANNED=""
 
@@ -413,6 +413,11 @@ scan_llm_clients() {
   fi
   if [ -d "${user_home}/.cursor" ]; then
     scan_client "Cursor" cursor json "${user_home}/.cursor/mcp.json"
+  fi
+  vscode_dir="${user_home}/Library/Application Support/Code"
+  [ "${OS}" = "linux" ] && vscode_dir="${XDG_CONFIG_HOME:-${user_home}/.config}/Code"
+  if [ -d "${vscode_dir}" ]; then
+    scan_client "VS Code" vscode vscode "${vscode_dir}/User/mcp.json"
   fi
   if [ -d "${user_home}/.gemini" ]; then
     scan_client "Gemini CLI" gemini json "${user_home}/.gemini/settings.json"
@@ -674,6 +679,8 @@ def shape_container(shape):
         return ['mcp']
     if shape == 'zed':
         return ['context_servers']
+    if shape == 'vscode':
+        return ['servers']
     raise SystemExit('unknown shape: ' + shape)
 
 def main():
@@ -877,7 +884,7 @@ remove_client_config() {
   local kind="$1" config_file="$2"
   case "${kind}" in
     json) remove_json_emisar "${config_file}" std ;;
-    opencode|openclaw|copilot|zed)
+    opencode|openclaw|copilot|zed|vscode)
       # Non-standard JSON schemas need the real removal — python3 only.
       command -v python3 >/dev/null 2>&1 || return 1
       remove_json_emisar "${config_file}" "${kind}"
@@ -1450,6 +1457,61 @@ write_fresh_json_config() {
   chmod 0600 "${tmp_out}" && mv "${tmp_out}" "${file}"
 }
 
+vscode_env_file() {
+  local user_home="$1" config_root
+  case "${OS}" in
+    darwin) config_root="${user_home}/Library/Application Support" ;;
+    *) config_root="${XDG_CONFIG_HOME:-${user_home}/.config}" ;;
+  esac
+  printf '%s\n' "${config_root}/emisar/credentials/vscode.env"
+}
+
+# VS Code can sync mcp.json. Its per-client key therefore lives beside the
+# bridge's owner-only credential state, and mcp.json carries only envFile.
+write_vscode_env_file() {
+  local file="$1" url="$2" key="$3" client="$4" dir emisar_dir tmp_out
+  dir=$(dirname "${file}")
+  emisar_dir=$(dirname "${dir}")
+  [ ! -L "${emisar_dir}" ] && [ ! -L "${dir}" ] && [ ! -L "${file}" ] || return 1
+  mkdir -p "${dir}" || return 1
+  chmod 0700 "${emisar_dir}" "${dir}" || return 1
+  own_config_file "${emisar_dir}"
+  own_config_file "${dir}"
+  tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")" || return 1
+  {
+    printf 'EMISAR_URL=%s\n' "${url}"
+    printf 'EMISAR_API_KEY=%s\n' "${key}"
+    printf 'EMISAR_CLIENT=%s\n' "${client}"
+  } >"${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
+  chmod 0600 "${tmp_out}" || { rm -f "${tmp_out}"; return 1; }
+  own_config_file "${tmp_out}"
+  mv -f "${tmp_out}" "${file}" || { rm -f "${tmp_out}"; return 1; }
+  own_config_file "${file}"
+}
+
+write_fresh_vscode_config() {
+  local file="$1" bin="$2" env_file="$3" tmp_out
+  tmp_out="$(mktemp "${file}.emisar-new.XXXXXX")" || return 1
+  if ! MCP_BIN="${bin}" MCP_ENV_FILE="${env_file}" python3 - >"${tmp_out}" <<'PY'
+import json, os
+print(json.dumps({
+    "servers": {
+        "emisar": {
+            "type": "stdio",
+            "command": os.environ["MCP_BIN"],
+            "args": [],
+            "envFile": os.environ["MCP_ENV_FILE"],
+        }
+    }
+}, indent=2))
+PY
+  then
+    rm -f "${tmp_out}"
+    return 1
+  fi
+  chmod 0600 "${tmp_out}" && mv "${tmp_out}" "${file}"
+}
+
 # Merge into an existing JSON config, preserving every other key — and, for a
 # JSONC file (Zed and VS Code ship commented settings), its comments and
 # trailing commas, via a textual insert since json.dump would reformat them
@@ -1457,11 +1519,12 @@ write_fresh_json_config() {
 # covers only the standard mcpServers shape on comment-free JSON; no tool, or a
 # commented multi-level config → fail so the caller prints the manual path.
 merge_json_config() {
-  local file="$1" bin="$2" url="$3" key="$4" client="$5" shape="${6:-std}"
+  local file="$1" bin="$2" url="$3" key="$4" client="$5" shape="${6:-std}" env_file="${7:-}"
   local status=0
   if command -v python3 >/dev/null 2>&1; then
     MCP_FILE="${file}" MCP_BIN="${bin}" MCP_URL="${url}" MCP_KEY="${key}" \
-      MCP_CLIENT="${client}" MCP_SHAPE="${shape}" python3 - 2>/dev/null <<'PY' || status=1
+      MCP_CLIENT="${client}" MCP_SHAPE="${shape}" MCP_ENV_FILE="${env_file}" \
+      python3 - 2>/dev/null <<'PY' || status=1
 import json, os, re, tempfile
 
 # A rich editor config (Zed, VS Code) is JSONC — it carries // and /* */
@@ -1659,6 +1722,13 @@ def shape_target(shape, bin_path, entry_env):
         return ['mcpServers'], {'type': 'local', 'command': bin_path, 'args': [], 'env': entry_env, 'tools': ['*']}
     if shape == 'zed':
         return ['context_servers'], {'source': 'custom', 'command': bin_path, 'args': [], 'env': entry_env}
+    if shape == 'vscode':
+        return ['servers'], {
+            'type': 'stdio',
+            'command': bin_path,
+            'args': [],
+            'envFile': os.environ['MCP_ENV_FILE'],
+        }
     raise SystemExit('unknown shape: ' + shape)
 
 def main():
@@ -1940,8 +2010,8 @@ apply_auto_permit() {
 }
 
 install_client_config() {
-  local kind="$1" config_file="$2" key="$3" client_id="$4"
-  local config_dir
+  local kind="$1" config_file="$2" key="$3" client_id="$4" user_home="${5:-}"
+  local config_dir env_file
   config_dir=$(dirname "${config_file}")
   if [ ! -d "${config_dir}" ]; then
     mkdir -p "${config_dir}" || return 1
@@ -1971,6 +2041,17 @@ install_client_config() {
         mv -f "${seed_tmp}" "${config_file}" || { rm -f "${seed_tmp}"; return 1; }
       fi
       merge_json_config "${config_file}" "${first_bin}" "${EMISAR_URL}" "${key}" "${client_id}" "${kind}"
+      ;;
+    vscode)
+      command -v python3 >/dev/null 2>&1 || return 1
+      env_file=$(vscode_env_file "${user_home}") || return 1
+      write_vscode_env_file "${env_file}" "${EMISAR_URL}" "${key}" "${client_id}" || return 1
+      if file_has_content "${config_file}"; then
+        cp -p "${config_file}" "${config_file}.emisar-bak" || return 1
+        merge_json_config "${config_file}" "${first_bin}" "${EMISAR_URL}" "${key}" "${client_id}" vscode "${env_file}"
+      else
+        write_fresh_vscode_config "${config_file}" "${first_bin}" "${env_file}"
+      fi
       ;;
     toml)
       if file_has_content "${config_file}"; then
@@ -2379,7 +2460,7 @@ configure_clients() {
       warn "${label}: the delivered key is not a value we will write to a config file"
       continue
     fi
-    if install_client_config "${kind}" "${config_file}" "${key}" "${client_id}"; then
+    if install_client_config "${kind}" "${config_file}" "${key}" "${client_id}" "${user_home}"; then
       own_config_file "${config_file}"
       if [ "${AUTO_PERMIT}" = "1" ] && auto_permit_supported "${client_id}" &&
         ! apply_auto_permit "${client_id}" "${config_file}" "${user_home}"; then

@@ -18,6 +18,7 @@ defmodule Emisar.ApiKeys.DeviceGrant do
     "claude-code" => "Claude Code",
     "claude-desktop" => "Claude Desktop",
     "cursor" => "Cursor",
+    "vscode" => "VS Code",
     "gemini" => "Gemini CLI",
     "codex" => "Codex CLI",
     "openclaw" => "OpenClaw",
@@ -27,7 +28,8 @@ defmodule Emisar.ApiKeys.DeviceGrant do
     "copilot-cli" => "Copilot CLI",
     "zed" => "Zed",
     "hermes" => "Hermes",
-    "goose" => "Goose"
+    "goose" => "Goose",
+    "grok" => "Grok CLI"
   }
 
   schema "api_key_device_grants" do

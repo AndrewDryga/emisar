@@ -376,9 +376,9 @@ function Install-Bridge([string]$Destination, [string]$Source, [string]$Expected
     }
 }
 
-function New-Client([string]$Label, [string]$Id, [string]$Kind, [string]$Path, [string]$Marker = "") {
+function New-Client([string]$Label, [string]$Id, [string]$Kind, [string]$Path, [string]$Marker = "", [string]$EnvPath = "") {
     if (-not $Marker) { $Marker = Split-Path -Parent $Path }
-    return [pscustomobject]@{ Label = $Label; Id = $Id; Kind = $Kind; Path = $Path; Marker = $Marker }
+    return [pscustomobject]@{ Label = $Label; Id = $Id; Kind = $Kind; Path = $Path; Marker = $Marker; EnvPath = $EnvPath }
 }
 
 function Find-Clients([string]$HomeDirectory, [string]$AppDataDirectory) {
@@ -387,6 +387,7 @@ function Find-Clients([string]$HomeDirectory, [string]$AppDataDirectory) {
         (New-Client "Claude Code" "claude-code" "json" (Join-Path $HomeDirectory ".claude.json") (Join-Path $HomeDirectory ".claude")),
         (New-Client "Claude Desktop" "claude-desktop" "json" (Join-Path $AppDataDirectory "Claude\claude_desktop_config.json")),
         (New-Client "Cursor" "cursor" "json" (Join-Path $HomeDirectory ".cursor\mcp.json")),
+        (New-Client "VS Code" "vscode" "vscode" (Join-Path $AppDataDirectory "Code\User\mcp.json") (Join-Path $AppDataDirectory "Code") (Join-Path $AppDataDirectory "emisar\credentials\vscode.env")),
         (New-Client "Gemini CLI" "gemini" "json" (Join-Path $HomeDirectory ".gemini\settings.json")),
         (New-Client "Codex CLI" "codex" "toml" (Join-Path $HomeDirectory ".codex\config.toml")),
         (New-Client "OpenClaw" "openclaw" "openclaw" (Join-Path $HomeDirectory ".openclaw\openclaw.json")),
@@ -458,6 +459,253 @@ function Write-AtomicText([string]$Path, [string]$Text) {
     }
 }
 
+function Write-PrivateText([string]$Path, [string]$Text) {
+    $directory = Split-Path -Parent $Path
+    $parent = Split-Path -Parent $directory
+    Assert-NoReparsePoint $parent "private parent directory"
+    if (-not (Test-Path -LiteralPath $directory)) {
+        [void](New-Item -ItemType Directory -Path $directory -Force)
+    }
+    Set-PrivateDirectoryACL $directory
+    Assert-NoReparsePoint $Path "private file"
+    $temporary = Join-Path $directory (".emisar-mcp." + [Guid]::NewGuid().ToString("N") + ".tmp")
+    try {
+        [IO.File]::WriteAllText($temporary, $Text, $script:Utf8NoBom)
+        Set-PrivateFileACL $temporary
+        if (Test-Path -LiteralPath $Path) {
+            [IO.File]::Replace($temporary, $Path, $null, $true)
+        } else {
+            [IO.File]::Move($temporary, $Path)
+        }
+        Set-PrivateFileACL $Path
+    } finally {
+        if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
+    }
+}
+
+function Skip-JsoncWhitespace([string]$Text, [int]$Index) {
+    while ($Index -lt $Text.Length) {
+        if ([char]::IsWhiteSpace($Text[$Index])) {
+            $Index++
+            continue
+        }
+        if ($Text[$Index] -eq '/' -and $Index + 1 -lt $Text.Length -and $Text[$Index + 1] -eq '/') {
+            $Index += 2
+            while ($Index -lt $Text.Length -and $Text[$Index] -ne "`n") { $Index++ }
+            continue
+        }
+        if ($Text[$Index] -eq '/' -and $Index + 1 -lt $Text.Length -and $Text[$Index + 1] -eq '*') {
+            $Index += 2
+            while ($Index + 1 -lt $Text.Length -and -not ($Text[$Index] -eq '*' -and $Text[$Index + 1] -eq '/')) { $Index++ }
+            if ($Index + 1 -ge $Text.Length) { throw "unterminated JSONC comment" }
+            $Index += 2
+            continue
+        }
+        break
+    }
+    return $Index
+}
+
+function Find-JsoncStringEnd([string]$Text, [int]$Index) {
+    $Index++
+    while ($Index -lt $Text.Length) {
+        if ($Text[$Index] -eq '\') {
+            $Index += 2
+            continue
+        }
+        if ($Text[$Index] -eq '"') { return $Index + 1 }
+        $Index++
+    }
+    throw "unterminated JSON string"
+}
+
+function Find-JsoncClose([string]$Text, [int]$Index, [char]$Open, [char]$Close) {
+    $depth = 0
+    while ($Index -lt $Text.Length) {
+        $character = $Text[$Index]
+        if ($character -eq '"') {
+            $Index = Find-JsoncStringEnd $Text $Index
+            continue
+        }
+        if ($character -eq '/' -and $Index + 1 -lt $Text.Length -and $Text[$Index + 1] -in @('/', '*')) {
+            $Index = Skip-JsoncWhitespace $Text $Index
+            continue
+        }
+        if ($character -eq $Open) { $depth++ }
+        if ($character -eq $Close) {
+            $depth--
+            if ($depth -eq 0) { return $Index }
+        }
+        $Index++
+    }
+    throw "unterminated JSON container"
+}
+
+function Skip-JsoncValue([string]$Text, [int]$Index) {
+    $Index = Skip-JsoncWhitespace $Text $Index
+    if ($Index -ge $Text.Length) { throw "missing JSON value" }
+    switch ($Text[$Index]) {
+        '"' { return Find-JsoncStringEnd $Text $Index }
+        '{' { return (Find-JsoncClose $Text $Index '{' '}') + 1 }
+        '[' { return (Find-JsoncClose $Text $Index '[' ']') + 1 }
+    }
+    while ($Index -lt $Text.Length -and $Text[$Index] -notin @(',', '}', ']')) { $Index++ }
+    return $Index
+}
+
+function Find-JsoncMember([string]$Text, [int]$ObjectBrace, [string]$Name) {
+    $objectEnd = Find-JsoncClose $Text $ObjectBrace '{' '}'
+    $target = '"' + $Name + '"'
+    $index = $ObjectBrace + 1
+    while ($index -lt $objectEnd) {
+        $index = Skip-JsoncWhitespace $Text $index
+        if ($index -ge $objectEnd) { break }
+        if ($Text[$index] -eq ',') {
+            $index++
+            continue
+        }
+        if ($Text[$index] -ne '"') { throw "invalid JSON object member" }
+        $keyEnd = Find-JsoncStringEnd $Text $index
+        $member = $Text.Substring($index, $keyEnd - $index)
+        $valueStart = Skip-JsoncWhitespace $Text $keyEnd
+        if ($valueStart -ge $objectEnd -or $Text[$valueStart] -ne ':') { throw "invalid JSON object member" }
+        $valueStart = Skip-JsoncWhitespace $Text ($valueStart + 1)
+        if ($member -eq $target) {
+            return [pscustomobject]@{ Found = $true; Start = $index; Value = $valueStart }
+        }
+        $index = Skip-JsoncValue $Text $valueStart
+    }
+    return [pscustomobject]@{ Found = $false; Start = -1; Value = -1 }
+}
+
+function Get-JsoncMemberIndent([string]$Text, [int]$Brace) {
+    $lineStart = $Text.LastIndexOf("`n", [Math]::Max(0, $Brace - 1)) + 1
+    $prefix = $Text.Substring($lineStart, $Brace - $lineStart)
+    return ([regex]::Match($prefix, '^[ \t]*').Value + '  ')
+}
+
+function Format-JsoncMember([string]$Name, $Value, [string]$Indent, [string]$Newline) {
+    $json = $Value | ConvertTo-Json -Depth 20
+    $lines = [regex]::Split($json, '\r?\n')
+    $builder = New-Object Text.StringBuilder
+    [void]$builder.Append('"' + $Name + '": ' + $lines[0])
+    for ($index = 1; $index -lt $lines.Length; $index++) {
+        [void]$builder.Append($Newline + $Indent + $lines[$index])
+    }
+    return $builder.ToString()
+}
+
+function Remove-JsoncSyntax([string]$Text) {
+    $builder = New-Object Text.StringBuilder
+    $index = 0
+    while ($index -lt $Text.Length) {
+        if ($Text[$index] -eq '"') {
+            $end = Find-JsoncStringEnd $Text $index
+            [void]$builder.Append($Text.Substring($index, $end - $index))
+            $index = $end
+            continue
+        }
+        if ($Text[$index] -eq '/' -and $index + 1 -lt $Text.Length -and $Text[$index + 1] -in @('/', '*')) {
+            $end = Skip-JsoncWhitespace $Text $index
+            $index = $end
+            continue
+        }
+        [void]$builder.Append($Text[$index])
+        $index++
+    }
+    return [regex]::Replace($builder.ToString(), ',(?=\s*[}\]])', '')
+}
+
+function Add-VSCodeJsoncConfig([string]$Raw, [string]$Executable, [string]$EnvPath) {
+    $root = Skip-JsoncWhitespace $Raw 0
+    if ($root -ge $Raw.Length -or $Raw[$root] -ne '{') { throw "top-level JSON is not an object" }
+    $newline = if ($Raw.Contains("`r`n")) { "`r`n" } else { "`n" }
+    $entry = [ordered]@{ type = "stdio"; command = $Executable; args = @(); envFile = $EnvPath }
+    $servers = Find-JsoncMember $Raw $root "servers"
+    if ($servers.Found) {
+        if ($Raw[$servers.Value] -ne '{') { throw "existing config key is not an object: servers" }
+        $existing = Find-JsoncMember $Raw $servers.Value "emisar"
+        if ($existing.Found) { return $Raw }
+        $indent = Get-JsoncMemberIndent $Raw $servers.Value
+        $member = Format-JsoncMember "emisar" $entry $indent $newline
+        $next = Skip-JsoncWhitespace $Raw ($servers.Value + 1)
+        $suffix = if ($next -lt $Raw.Length -and $Raw[$next] -eq '}') { '' } else { ',' }
+        $updated = $Raw.Insert($servers.Value + 1, $newline + $indent + $member + $suffix)
+    } else {
+        $indent = Get-JsoncMemberIndent $Raw $root
+        $entryIndent = $indent + '  '
+        $member = Format-JsoncMember "emisar" $entry $entryIndent $newline
+        $next = Skip-JsoncWhitespace $Raw ($root + 1)
+        $suffix = if ($next -lt $Raw.Length -and $Raw[$next] -eq '}') { '' } else { ',' }
+        $block = $newline + $indent + '"servers": {' + $newline + $entryIndent + $member + $newline + $indent + '}' + $suffix
+        $updated = $Raw.Insert($root + 1, $block)
+    }
+    $check = (Remove-JsoncSyntax $updated) | ConvertFrom-Json
+    $configured = $check.servers.emisar
+    if ($configured.type -ne "stdio" -or $configured.command -ne $Executable -or $configured.envFile -ne $EnvPath) {
+        throw "VS Code config validation failed after insert"
+    }
+    return $updated
+}
+
+function Find-JsoncMemberSpan([string]$Text, [int]$ObjectBrace, [string]$Name) {
+    $objectEnd = Find-JsoncClose $Text $ObjectBrace '{' '}'
+    $target = '"' + $Name + '"'
+    $previousComma = -1
+    $index = $ObjectBrace + 1
+    while ($index -lt $objectEnd) {
+        $index = Skip-JsoncWhitespace $Text $index
+        if ($index -ge $objectEnd) { break }
+        if ($Text[$index] -eq ',') {
+            $previousComma = $index
+            $index++
+            continue
+        }
+        if ($Text[$index] -ne '"') { throw "invalid JSON object member" }
+        $keyStart = $index
+        $keyEnd = Find-JsoncStringEnd $Text $index
+        $member = $Text.Substring($keyStart, $keyEnd - $keyStart)
+        $valueStart = Skip-JsoncWhitespace $Text $keyEnd
+        if ($valueStart -ge $objectEnd -or $Text[$valueStart] -ne ':') { throw "invalid JSON object member" }
+        $valueStart = Skip-JsoncWhitespace $Text ($valueStart + 1)
+        $valueEnd = Skip-JsoncValue $Text $valueStart
+        if ($member -eq $target) {
+            $after = Skip-JsoncWhitespace $Text $valueEnd
+            if ($after -lt $objectEnd -and $Text[$after] -eq ',') {
+                return [pscustomobject]@{ Start = $keyStart; End = $after + 1 }
+            }
+            if ($previousComma -ge 0) {
+                return [pscustomobject]@{ Start = $previousComma; End = $valueEnd }
+            }
+            return [pscustomobject]@{ Start = $keyStart; End = $valueEnd }
+        }
+        $index = $valueEnd
+    }
+    throw "no emisar member to remove"
+}
+
+function Remove-VSCodeJsoncConfig([string]$Raw) {
+    $root = Skip-JsoncWhitespace $Raw 0
+    if ($root -ge $Raw.Length -or $Raw[$root] -ne '{') { throw "top-level JSON is not an object" }
+    $servers = Find-JsoncMember $Raw $root "servers"
+    if (-not $servers.Found -or $Raw[$servers.Value] -ne '{') { throw "no servers object" }
+    $span = Find-JsoncMemberSpan $Raw $servers.Value "emisar"
+    $lineStart = $Raw.LastIndexOf("`n", [Math]::Max(0, $span.Start - 1)) + 1
+    if ($Raw.Substring($lineStart, $span.Start - $lineStart).Trim() -eq '') {
+        if ($span.End + 1 -lt $Raw.Length -and $Raw.Substring($span.End, 2) -eq "`r`n") {
+            $span.Start = $lineStart
+            $span.End += 2
+        } elseif ($span.End -lt $Raw.Length -and $Raw[$span.End] -eq "`n") {
+            $span.Start = $lineStart
+            $span.End++
+        }
+    }
+    $updated = $Raw.Remove($span.Start, $span.End - $span.Start)
+    $check = (Remove-JsoncSyntax $updated) | ConvertFrom-Json
+    if ($null -ne $check.servers.PSObject.Properties["emisar"]) { throw "VS Code config validation failed after removal" }
+    return $updated
+}
+
 function New-ClientEnvironment([string]$Key, [string]$ClientId) {
     return [ordered]@{
         EMISAR_URL = $script:PortalOrigin
@@ -470,6 +718,10 @@ function Set-JsonClientConfig($Client, [string]$Executable, [string]$Key) {
     if (Test-Path -LiteralPath $Client.Path) {
         $raw = [IO.File]::ReadAllText($Client.Path)
         if ($raw -match '(?m)(^|[^:])//|/\*') {
+            if ($Client.Kind -eq "vscode") {
+                Write-AtomicText $Client.Path (Add-VSCodeJsoncConfig $raw $Executable $Client.EnvPath)
+                return
+            }
             throw "commented JSON must be updated from the portal snippet"
         }
         $config = if ($raw.Trim()) { $raw | ConvertFrom-Json } else { [pscustomobject]@{} }
@@ -495,6 +747,10 @@ function Set-JsonClientConfig($Client, [string]$Executable, [string]$Key) {
         "zed" {
             $container = Get-OrAddObject $config "context_servers"
             $entry = [ordered]@{ source = "custom"; command = $Executable; args = @(); env = $environment }
+        }
+        "vscode" {
+            $container = Get-OrAddObject $config "servers"
+            $entry = [ordered]@{ type = "stdio"; command = $Executable; args = @(); envFile = $Client.EnvPath }
         }
         default {
             $container = Get-OrAddObject $config "mcpServers"
@@ -529,7 +785,11 @@ function Install-ClientConfig($Client, [string]$Executable, [string]$Key) {
     if (-not (Test-SafeConfigValue $script:PortalOrigin) -or -not (Test-SafeConfigValue $Executable) -or -not (Test-SafeConfigValue $Key)) {
         throw "a config value contains unsupported characters"
     }
-    if ($Client.Kind -in @("toml", "hermes", "goose")) {
+    if ($Client.Kind -eq "vscode") {
+        $environment = "EMISAR_URL=$($script:PortalOrigin)`r`nEMISAR_API_KEY=$Key`r`nEMISAR_CLIENT=vscode`r`n"
+        Write-PrivateText $Client.EnvPath $environment
+        Set-JsonClientConfig $Client $Executable $Key
+    } elseif ($Client.Kind -in @("toml", "hermes", "goose")) {
         Set-TextClientConfig $Client $Executable $Key
     } else {
         Set-JsonClientConfig $Client $Executable $Key
@@ -738,12 +998,19 @@ function Remove-JsonClientConfig($Client) {
     if (-not (Test-Path -LiteralPath $Client.Path)) { return }
     try {
         $raw = [IO.File]::ReadAllText($Client.Path)
-        if ($raw -match '(?m)(^|[^:])//|/\*') { throw "commented JSON" }
+        if ($raw -match '(?m)(^|[^:])//|/\*') {
+            if ($Client.Kind -eq "vscode") {
+                Write-AtomicText $Client.Path (Remove-VSCodeJsoncConfig $raw)
+                return
+            }
+            throw "commented JSON"
+        }
         $config = $raw | ConvertFrom-Json
         $containers = switch ($Client.Kind) {
             "openclaw" { @("mcp", "servers") }
             "opencode" { @("mcp") }
             "zed" { @("context_servers") }
+            "vscode" { @("servers") }
             default { @("mcpServers") }
         }
         $node = $config

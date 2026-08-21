@@ -538,7 +538,16 @@ and `EMISAR_URL` (the portal its interactive CLI/client setup talks to and
 writes into configs; default `https://emisar.dev`). The interactive setup
 requests a dedicated `emisar-mcp-cli` key, imports it into the invoking user's
 owner-only bridge state over stdin, and may request separate keys for selected
-LLM clients. The bridge's own `auth` command consumes the same device contract
+LLM clients. Its automatic client contract is Claude Code, Claude Desktop,
+Cursor, VS Code, Gemini CLI, Codex CLI, OpenClaw, OpenCode, Windsurf, Pi,
+Copilot CLI, Zed, Hermes, Goose, and Grok CLI. Each advertised adapter's
+install, hands-off rerun, unrelated-setting preservation, backup, and uninstall
+path is covered by the native installer harness. VS Code means the stable
+default user profile: the installer preserves JSONC in its user-level
+`mcp.json` and references an owner-only `vscode.env` beside the bridge's
+credential state instead of storing its API key in the potentially synchronized
+editor file. Other profiles and VS Code Insiders use the console's manual
+snippet. The bridge's own `auth` command consumes the same device contract
 for a dedicated CLI key without configuring MCP clients. A CLI credential that
 authenticates against the same endpoint
 makes a rerun hands-off; a rejected credential starts a fresh approval. This
