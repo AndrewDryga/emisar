@@ -244,9 +244,19 @@ func testWindowsMCPInstaller(root, shell string) error {
 	servers, serversOK := config["mcpServers"].(map[string]any)
 	entry, entryOK := servers["emisar"].(map[string]any)
 	clientEnv, envOK := entry["env"].(map[string]any)
-	if config["theme"] != "dark" || !serversOK || !entryOK || !envOK ||
-		entry["command"] != installed || clientEnv["EMISAR_API_KEY"] != cursorKey {
-		return errors.New("Cursor config did not preserve existing state and install the verified bridge")
+	themeOK := config["theme"] == "dark"
+	commandOK := entry["command"] == installed
+	keyOK := clientEnv["EMISAR_API_KEY"] == cursorKey
+	if !themeOK || !serversOK || !entryOK || !envOK || !commandOK || !keyOK {
+		return fmt.Errorf(
+			"Cursor config validation failed: theme=%t servers=%t entry=%t env=%t command=%t key=%t",
+			themeOK,
+			serversOK,
+			entryOK,
+			envOK,
+			commandOK,
+			keyOK,
+		)
 	}
 	backupData, err := os.ReadFile(cursorConfig + ".emisar-bak")
 	if err != nil || !bytes.Equal(backupData, []byte("{\"theme\":\"dark\"}\n")) {
