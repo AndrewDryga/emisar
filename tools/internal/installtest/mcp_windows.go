@@ -209,7 +209,6 @@ func testWindowsMCPInstaller(root, shell string) error {
 		server.URL,
 		"-Yes",
 		"-ConnectAll",
-		"-Verbose",
 	)
 	if err != nil {
 		return fmt.Errorf("install: %w\n%s", err, output)
@@ -248,6 +247,10 @@ func testWindowsMCPInstaller(root, shell string) error {
 			configData,
 			output,
 		)
+	}
+	backupData, err := os.ReadFile(cursorConfig + ".emisar-bak")
+	if err != nil || !bytes.Equal(backupData, []byte("{\"theme\":\"dark\"}\n")) {
+		return fmt.Errorf("Cursor config backup did not preserve the original file: %w", err)
 	}
 	verify := exec.Command(installed, "list_tools", "--json")
 	verify.Env = environmentWithout(map[string]string{
@@ -369,6 +372,9 @@ func testWindowsMCPInstaller(root, shell string) error {
 	}
 	if _, err := os.Stat(credentials); !os.IsNotExist(err) {
 		return fmt.Errorf("uninstall left CLI credentials: %v", err)
+	}
+	if _, err := os.Stat(cursorConfig + ".emisar-bak"); !os.IsNotExist(err) {
+		return fmt.Errorf("uninstall left Cursor config backup: %v", err)
 	}
 	return nil
 }
