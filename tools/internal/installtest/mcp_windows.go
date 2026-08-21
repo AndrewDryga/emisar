@@ -242,7 +242,11 @@ func testWindowsMCPInstaller(root, shell string) error {
 		return fmt.Errorf("decode Cursor config: %w", err)
 	}
 	if config["theme"] != "dark" || !bytes.Contains(configData, []byte(cursorKey)) || !bytes.Contains(configData, []byte(installed)) {
-		return fmt.Errorf("Cursor config did not preserve existing state and install the verified bridge: %s", configData)
+		return fmt.Errorf(
+			"Cursor config did not preserve existing state and install the verified bridge: %s\n%s",
+			configData,
+			output,
+		)
 	}
 	verify := exec.Command(installed, "list_tools", "--json")
 	verify.Env = environmentWithout(map[string]string{
