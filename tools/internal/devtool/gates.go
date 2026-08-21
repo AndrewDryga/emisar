@@ -152,7 +152,10 @@ func (a *App) test(ctx context.Context, args []string) error {
 	case "runner", "mcp", "tools":
 		arguments := append([]string{"test"}, rest...)
 		if len(rest) == 0 {
-			arguments = append(arguments, "-race", "-count=1", "./...")
+			if goRaceSupported(runtime.GOOS, runtime.GOARCH) {
+				arguments = append(arguments, "-race")
+			}
+			arguments = append(arguments, "-count=1", "./...")
 		}
 		return a.run(ctx, filepath.Join(a.Root, target), nil, "go", arguments...)
 	case "packs":
@@ -318,11 +321,17 @@ func (a *App) goGate(ctx context.Context, module, coverage string) error {
 	}); err != nil {
 		return err
 	}
-	testArgs := []string{"test", "-race", "-count=1"}
+	testArgs := []string{"test"}
+	testLabel := module + " tests"
+	if goRaceSupported(runtime.GOOS, runtime.GOARCH) {
+		testArgs = append(testArgs, "-race")
+		testLabel = module + " race tests"
+	}
+	testArgs = append(testArgs, "-count=1")
 	if coverage != "" {
 		testArgs = append(testArgs, "-coverprofile="+coverage)
 	}
-	if err := a.gatePhase(module+" race tests", func() error {
+	if err := a.gatePhase(testLabel, func() error {
 		return a.run(ctx, dir, nil, "go", append(testArgs, "./...")...)
 	}); err != nil {
 		return err
@@ -334,6 +343,12 @@ func (a *App) goGate(ctx context.Context, module, coverage string) error {
 		return a.installerGate(ctx, module)
 	}
 	return nil
+}
+
+func goRaceSupported(goos, goarch string) bool {
+	// The Go toolchain has no race runtime for windows/arm64. Keep the native
+	// tests and installer harness in the gate instead of failing before them.
+	return goos != "windows" || goarch != "arm64"
 }
 
 // crossBuildGate proves every published target still compiles. It is pure

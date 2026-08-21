@@ -1529,6 +1529,26 @@ func TestRunnerGateUsesModuleDirectoryAndCoverage(t *testing.T) {
 	}
 }
 
+func TestGoRaceSupported(t *testing.T) {
+	tests := []struct {
+		name   string
+		goos   string
+		goarch string
+		want   bool
+	}{
+		{"linux amd64", "linux", "amd64", true},
+		{"windows amd64", "windows", "amd64", true},
+		{"windows arm64", "windows", "arm64", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := goRaceSupported(tt.goos, tt.goarch); got != tt.want {
+				t.Fatalf("goRaceSupported(%q, %q) = %t, want %t", tt.goos, tt.goarch, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMCPGateRejectsDependencyChecksumFile(t *testing.T) {
 	root := t.TempDir()
 	module := filepath.Join(root, "mcp")
