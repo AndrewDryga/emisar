@@ -15,7 +15,7 @@ permitted command into a sandbox.
 The supported production target is Linux with systemd. macOS with launchd is
 available for development and evaluation.
 
-1. In the emisar dashboard, choose **Connect a runner**. The generated command
+1. In the emisar console, choose **Connect a runner**. The generated command
    contains the control-plane URL and a fresh, single-use enrollment key.
 2. Run that command on the host:
 
@@ -35,7 +35,7 @@ available for development and evaluation.
    sudo journalctl -u emisar -f
    ```
 
-4. Confirm the runner is online in the dashboard. Dispatch `linux.uptime` with
+4. Confirm the runner is online in the console. Dispatch `linux.uptime` with
    a reason and check that the result appears in the audit trail.
 
 `emisar doctor` is the first troubleshooting command. It checks configuration,
