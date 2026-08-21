@@ -112,6 +112,7 @@ func (selection *Selection) include(file string) {
 
 	packFile := isPackFile(file)
 	packRuntimeSource := packFile && !isPackTestFile(file)
+	goCheckoutContract := file == ".gitattributes"
 	if strings.HasPrefix(file, "portal/") || member(file, ".dockerignore", "install.sh", "install-mcp.sh", "install-mcp.ps1", ".tool-versions") {
 		selection.Portal = true
 		selection.PortalRelease = true
@@ -139,10 +140,10 @@ func (selection *Selection) include(file string) {
 	sharedInstallerHarness := hasAnyPrefix(file, "tools/cmd/installtest/", "tools/internal/installtest/harness")
 	runnerInstallerHarness := sharedInstallerHarness || strings.HasPrefix(file, "tools/internal/installtest/runner")
 	mcpInstallerHarness := sharedInstallerHarness || strings.HasPrefix(file, "tools/internal/installtest/mcp")
-	if strings.HasPrefix(file, "runner/") || jsonCorpus || runnerInstallerHarness || member(file, "install.sh", "README.md", "go.work", "go.work.sum") {
+	if strings.HasPrefix(file, "runner/") || jsonCorpus || runnerInstallerHarness || goCheckoutContract || member(file, "install.sh", "README.md", "go.work", "go.work.sum") {
 		selection.Runner = true
 	}
-	if strings.HasPrefix(file, "mcp/") || jsonCorpus || mcpInstallerHarness || member(file, "install-mcp.sh", "install-mcp.ps1", "go.work", "go.work.sum") {
+	if strings.HasPrefix(file, "mcp/") || jsonCorpus || mcpInstallerHarness || goCheckoutContract || member(file, "install-mcp.sh", "install-mcp.ps1", "go.work", "go.work.sum") {
 		selection.MCP = true
 	}
 	if file == "server.json" {
@@ -155,7 +156,7 @@ func (selection *Selection) include(file string) {
 	// printed "Actions - Validate workflows | run". .githooks and .gitignore
 	// selected no job at all, though agentcheck asserts the commit-msg hook and
 	// the distribution ignore policy from inside that same gate.
-	if hasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", ".github/workflows/", ".githooks/") || strings.Contains(file, "/.agent/") || member(file, "run", "go.work", "go.work.sum", ".gitignore", ".tool-versions") || filepath.Ext(file) == ".md" {
+	if hasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", ".github/workflows/", ".githooks/") || strings.Contains(file, "/.agent/") || member(file, "run", "go.work", "go.work.sum", ".gitattributes", ".gitignore", ".tool-versions") || filepath.Ext(file) == ".md" {
 		selection.Tools = true
 	}
 	// Pack behavior plans are validation inputs but are not loaded into registry

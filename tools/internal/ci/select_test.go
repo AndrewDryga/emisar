@@ -132,6 +132,22 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		}
 	})
 
+	t.Run("Go checkout attributes select every Go gate", func(t *testing.T) {
+		writeFixture(t, root, ".gitattributes", "*.go text eol=lf\n")
+		commitAll(t, root, "Go checkout contract")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := selection.GoModules(); strings.Join(got, ",") != "runner,mcp,tools" {
+			t.Fatalf("GoModules() = %q, want every Go module", got)
+		}
+		if selection.Portal || selection.PortalRelease || selection.PacksRelease {
+			t.Fatalf("Go checkout attributes selected an unrelated release: %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
 	t.Run("pack change selects only its behavior plan", func(t *testing.T) {
 		writeFixture(t, root, "packs/postgres/actions/uptime.yaml", "id: postgres.uptime\n")
 		commitAll(t, root, "postgres")
