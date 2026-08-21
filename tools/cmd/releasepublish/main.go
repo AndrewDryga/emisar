@@ -170,9 +170,12 @@ func buildObjects(opts options, version semver) ([]object, []byte, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("read %s: %w", checksumName, err)
 	}
-	wantNames := make([]string, 0, 4)
+	wantNames := make([]string, 0, 5)
 	for _, platform := range []string{"darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"} {
 		wantNames = append(wantNames, archivePrefix+versionText+"-"+platform+".tar.gz")
+	}
+	if opts.component == "mcp" {
+		wantNames = append(wantNames, archivePrefix+versionText+"-windows-amd64.zip")
 	}
 	wantHashes, err := parseChecksums(checksums, wantNames)
 	if err != nil {
@@ -199,8 +202,12 @@ func buildObjects(opts options, version semver) ([]object, []byte, error) {
 		if strings.TrimSpace(string(sidecar)) != got {
 			return nil, nil, fmt.Errorf("%s does not match %s", sidecarName, name)
 		}
+		contentType := "application/gzip"
+		if strings.HasSuffix(name, ".zip") {
+			contentType = "application/zip"
+		}
 		objects = append(objects,
-			object{name: base + name, contentType: "application/gzip", data: data, immutable: true},
+			object{name: base + name, contentType: contentType, data: data, immutable: true},
 			object{name: base + sidecarName, contentType: "text/plain", data: sidecar, immutable: true},
 		)
 		artifacts = append(artifacts, artifact{Name: name, SHA256: got})

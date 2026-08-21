@@ -22,6 +22,7 @@ import (
 type storedObject struct {
 	data         []byte
 	generation   int
+	contentType  string
 	cacheControl string
 }
 
@@ -64,6 +65,7 @@ func (f *fakeGCS) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	var metadata struct {
 		Name         string `json:"name"`
+		ContentType  string `json:"contentType"`
 		CacheControl string `json:"cacheControl"`
 	}
 	if err := json.NewDecoder(metadataPart).Decode(&metadata); err != nil {
@@ -94,7 +96,12 @@ func (f *fakeGCS) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	generation := current.generation + 1
-	f.objects[metadata.Name] = storedObject{data: data, generation: generation, cacheControl: metadata.CacheControl}
+	f.objects[metadata.Name] = storedObject{
+		data:         data,
+		generation:   generation,
+		contentType:  metadata.ContentType,
+		cacheControl: metadata.CacheControl,
+	}
 	f.order = append(f.order, metadata.Name)
 	w.WriteHeader(http.StatusOK)
 }
@@ -180,6 +187,57 @@ func TestPublishIsIdempotentAndDoesNotMoveLatestBackward(t *testing.T) {
 	}
 }
 
+func TestPublishMCPIncludesWindowsArchive(t *testing.T) {
+	dir := buildRelease(t, "mcp", "1.2.3")
+	fake := newFakeGCS(t)
+
+	if err := publish(context.Background(), testOptions(dir, fake, "mcp", "mcp-v1.2.3", strings.Repeat("c", 40))); err != nil {
+		t.Fatal(err)
+	}
+
+	name := "emisar-mcp-1.2.3-windows-amd64.zip"
+	objectName := "releases/mcp/mcp-v1.2.3/" + name
+	if got := fake.objects[objectName].contentType; got != "application/zip" {
+		t.Errorf("%s Content-Type = %q, want application/zip", objectName, got)
+	}
+
+	var manifest releaseManifest
+	if err := json.Unmarshal(fake.objects["releases/mcp/latest.json"].data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Artifacts) != 5 || manifest.Artifacts[4].Name != name {
+		t.Fatalf("latest manifest artifacts = %+v", manifest.Artifacts)
+	}
+}
+
+func TestPublishRunnerRejectsUnexpectedWindowsArchive(t *testing.T) {
+	dir := buildRelease(t, "runner", "1.2.3")
+	name := "emisar-1.2.3-windows-amd64.zip"
+	data := []byte("runner-windows-amd64")
+	if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	line := fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), name)
+	checksumsPath := filepath.Join(dir, "SHA256SUMS")
+	checksums, err := os.ReadFile(checksumsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(checksumsPath, append(checksums, line...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	fake := newFakeGCS(t)
+	err = publish(context.Background(), testOptions(dir, fake, "runner", "runner-v1.2.3", strings.Repeat("d", 40)))
+	if err == nil || !strings.Contains(err.Error(), "unexpected checksum line") {
+		t.Fatalf("error = %v", err)
+	}
+	if len(fake.order) != 0 {
+		t.Fatalf("uploaded before validation: %v", fake.order)
+	}
+}
+
 func TestPublishRejectsChecksumMismatchBeforeUpload(t *testing.T) {
 	dir := buildRelease(t, "runner", "1.2.3")
 	path := filepath.Join(dir, "emisar-1.2.3-linux-amd64.tar.gz")
@@ -234,9 +292,18 @@ func buildRelease(t *testing.T, component, version string) string {
 		prefix = "emisar-mcp-"
 		checksumsName = "SHA256SUMS-MCP"
 	}
+	platforms := []string{"darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"}
+	if component == "mcp" {
+		platforms = append(platforms, "windows-amd64")
+	}
+
 	var checksums strings.Builder
-	for _, platform := range []string{"darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64"} {
-		name := prefix + version + "-" + platform + ".tar.gz"
+	for _, platform := range platforms {
+		extension := ".tar.gz"
+		if platform == "windows-amd64" {
+			extension = ".zip"
+		}
+		name := prefix + version + "-" + platform + extension
 		data := []byte(component + "-" + platform)
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
 			t.Fatal(err)
