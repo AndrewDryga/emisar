@@ -232,6 +232,9 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 					fmt.Printf("%d to update, %d up to date, %d not in registry, %d failed.\n",
 						updated, current, skipped, failed)
 					if updated > 0 {
+						// Point at the diff rather than inline it: across a stale
+						// fleet the changed lines would bury this summary.
+						fmt.Println("Review a change before applying: emisar pack diff <id>")
 						fmt.Println("Run without --dry-run to apply.")
 					}
 				}

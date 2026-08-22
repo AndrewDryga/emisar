@@ -355,6 +355,44 @@ func TestPackUpdate_DryRunTouchesNothing(t *testing.T) {
 	}
 }
 
+// --dry-run points at `pack diff` rather than inlining the changed lines: one
+// stale pack's diff is worth reading, a fleet's worth would bury this summary.
+func TestPackUpdate_DryRunPointsAtPackDiff(t *testing.T) {
+	dest := t.TempDir()
+	installPackInto(t, dest, "redis")
+	registry := fakeRegistry(t, []registryPack{
+		{ID: "redis", Version: "9.9.9", Hash: "sha256:" + strings.Repeat("b", 64)},
+	}, nil)
+
+	out, err := runUpdate(t, dest, registry, "--dry-run")
+	if err != nil {
+		t.Fatalf("update --dry-run: %v", err)
+	}
+	if !strings.Contains(out, "emisar pack diff <id>") {
+		t.Errorf("--dry-run should point at pack diff; output:\n%s", out)
+	}
+	if strings.Contains(out, "@@ -") {
+		t.Errorf("--dry-run must not inline the diff; output:\n%s", out)
+	}
+}
+
+// Nothing stale means nothing to review, so the pointer stays out of the way.
+func TestPackUpdate_DryRunOmitsThePointerWhenUpToDate(t *testing.T) {
+	dest := t.TempDir()
+	hash := installPackInto(t, dest, "redis")
+	registry := fakeRegistry(t, []registryPack{
+		{ID: "redis", Version: "0.0.1", Hash: hash},
+	}, nil)
+
+	out, err := runUpdate(t, dest, registry, "--dry-run")
+	if err != nil {
+		t.Fatalf("update --dry-run: %v", err)
+	}
+	if strings.Contains(out, "pack diff") {
+		t.Errorf("an up-to-date sweep should not suggest a diff; output:\n%s", out)
+	}
+}
+
 // A requested id that isn't installed anywhere is surfaced as "not installed"
 // rather than a silent no-op (packupdate.go:122-127), so an operator's typo is
 // visible instead of looking like "nothing to do".

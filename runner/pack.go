@@ -61,6 +61,7 @@ https://emisar.dev/docs/pack-registry`,
 	add("install", emitsJSON(packSuggestCmd()))
 	add("install", packInstallCmd())
 	add("install", emitsJSON(packUpdateCmd()))
+	add("install", emitsJSON(packDiffCmd()))
 	add("installed", emitsJSON(packListCmd()))
 	add("installed", emitsJSON(packInfoCmd()))
 	add("installed", packUninstallCmd())
