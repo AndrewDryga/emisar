@@ -80,7 +80,7 @@ func TestWriteSuggestions_ReloadGuidance(t *testing.T) {
 	suggestions := []hostscan.Suggestion{{ID: "linux-core", Name: "Linux core", Evidence: []string{"baseline"}}}
 
 	var buf strings.Builder
-	writeSuggestions(&buf, suggestions)
+	writeSuggestions(&buf, suggestions, nil)
 	out := buf.String()
 	for _, want := range []string{"reloads a running runner automatically", "if it cannot", "prints the manual reload step"} {
 		if !strings.Contains(out, want) {
@@ -304,5 +304,159 @@ func TestPackSuggest_NoArgs(t *testing.T) {
 	cmd.SetArgs([]string{"extra"})
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("pack suggest must reject positional args")
+	}
+}
+
+// serveCatalog publishes a fixture index at /v1/catalog.json on a loopback
+// server and returns its URL. Loopback HTTP is what `pack suggest` accepts
+// without an insecure opt-in, so the fetch path under test is the real one.
+func serveCatalog(t *testing.T, body string) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/catalog.json" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL + "/v1/catalog.json"
+}
+
+const fixtureHash = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+
+// catalogFixture is a two-pack catalog.json: a baseline pack every host
+// matches, and a baseline pack no host we build for matches. Both carry the
+// immutable tarball URL and content hash a published catalog.json carries.
+func catalogFixture() string {
+	return `{"packs":[
+		{"id":"linux-core","name":"Linux core","version":"0.1.0",
+		 "requires":{"os":[]},"detect":{},
+		 "tarball_url":"https://packs.acme.internal/v1/packs/linux-core/0.1.0/abc/pack.tar.gz",
+		 "content_hash":"` + fixtureHash + `"},
+		{"id":"debugging","name":"Debugging","version":"0.1.0",
+		 "requires":{"os":["plan9"]},"detect":{},
+		 "tarball_url":"https://packs.acme.internal/v1/packs/debugging/0.1.0/def/pack.tar.gz",
+		 "content_hash":"` + fixtureHash + `"}
+	]}`
+}
+
+// `--catalog <url>` fetches the index instead of requiring a hand-downloaded
+// copy, and a catalog.json source prints the immutable tarball URL pinned to
+// its published hash. A bare `pack install <id>` line would resolve against the
+// PUBLIC registry — a 404 for a private-only pack, or someone else's bytes for
+// a shared id — so the name form must not appear for a pack the catalog placed.
+func TestPackSuggest_CatalogURLPrintsPinnedInstallLines(t *testing.T) {
+	out, err := runSuggest(t, serveCatalog(t, catalogFixture()), t.TempDir())
+	if err != nil {
+		t.Fatalf("suggest --catalog <url>: %v", err)
+	}
+	want := "emisar pack install https://packs.acme.internal/v1/packs/linux-core/0.1.0/abc/pack.tar.gz --hash " + fixtureHash
+	if !strings.Contains(out, want) {
+		t.Errorf("want pinned install line %q; output:\n%s", want, out)
+	}
+	if strings.Contains(out, "emisar pack install linux-core") {
+		t.Errorf("a pack the catalog gave a tarball for must not print the name form; output:\n%s", out)
+	}
+}
+
+// catalog.json keeps the OS allowlist under `requires`, where suggest.json
+// keeps it at the top level. Reading only the top level would leave every entry
+// with an empty allowlist, and an empty allowlist matches ANY host — so a linux
+// pack would be recommended on macOS. The fixture's second baseline pack allows
+// only plan9, a host this suite never runs on, so it may never be suggested.
+func TestPackSuggest_CatalogURLHonorsRequiresOS(t *testing.T) {
+	out, err := runSuggest(t, serveCatalog(t, catalogFixture()), t.TempDir())
+	if err != nil {
+		t.Fatalf("suggest --catalog <url>: %v", err)
+	}
+	if !strings.Contains(out, "linux-core") {
+		t.Errorf("a baseline pack matching this host's OS should be recommended; output:\n%s", out)
+	}
+	if strings.Contains(out, "debugging") {
+		t.Errorf("requires.os must exclude a pack this host does not match; output:\n%s", out)
+	}
+}
+
+// --json carries the same install source the human guide prints, so a script
+// installs the bytes the operator would have.
+func TestPackSuggest_CatalogURLJSONCarriesInstallSource(t *testing.T) {
+	withFlags(t)
+	flagPacksDir = []string{t.TempDir()}
+	withJSONOut(t, true)
+
+	cmd := packSuggestCmd()
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs([]string{"--catalog", serveCatalog(t, catalogFixture())})
+
+	var err error
+	out := captureStdout(t, func() { err = cmd.Execute() })
+	if err != nil {
+		t.Fatalf("suggest --json --catalog <url>: %v", err)
+	}
+	var doc struct {
+		Suggestions []struct {
+			ID          string `json:"id"`
+			TarballURL  string `json:"tarball_url"`
+			ContentHash string `json:"content_hash"`
+		} `json:"suggestions"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("invalid JSON %q: %v", out, err)
+	}
+	if len(doc.Suggestions) != 1 || doc.Suggestions[0].ID != "linux-core" {
+		t.Fatalf("want the single OS-matching baseline pack, got %+v", doc.Suggestions)
+	}
+	if doc.Suggestions[0].TarballURL == "" || doc.Suggestions[0].ContentHash != fixtureHash {
+		t.Fatalf("suggestion should carry its pinned install source: %+v", doc.Suggestions[0])
+	}
+}
+
+// The printed install line is a command an operator pastes as root, so a
+// catalog-supplied tarball URL faces the same transport gate as the fetch that
+// returned it: a cleartext URL to a non-loopback host fails the whole run
+// rather than being printed. A tampered catalog cannot forge a plaintext
+// download the operator then runs.
+func TestDecodeCatalog_RejectsCleartextTarballURL(t *testing.T) {
+	_, err := decodeCatalog(strings.NewReader(`{"packs":[
+		{"id":"linux-core","name":"Linux core","requires":{"os":[]},"detect":{},
+		 "tarball_url":"http://packs.acme.internal/v1/packs/linux-core/0.1.0/abc/pack.tar.gz",
+		 "content_hash":"` + fixtureHash + `"}]}`))
+	if err == nil {
+		t.Fatal("a cleartext tarball URL must fail the catalog")
+	}
+	if !strings.Contains(err.Error(), "linux-core") || !strings.Contains(err.Error(), "tarball_url") {
+		t.Fatalf("error %q should name the pack and the field", err)
+	}
+}
+
+// An unpinned install line is worse than no install line: the operator would
+// fetch whatever that URL serves today. A tarball URL without a hash fails.
+func TestDecodeCatalog_RejectsTarballWithoutHash(t *testing.T) {
+	_, err := decodeCatalog(strings.NewReader(`{"packs":[
+		{"id":"linux-core","name":"Linux core","requires":{"os":[]},"detect":{},
+		 "tarball_url":"https://packs.acme.internal/v1/packs/linux-core/0.1.0/abc/pack.tar.gz"}]}`))
+	if err == nil {
+		t.Fatal("a tarball URL with no content hash must fail the catalog")
+	}
+	if !strings.Contains(err.Error(), "content_hash") {
+		t.Fatalf("error %q should name the missing field", err)
+	}
+}
+
+// A suggest.json source carries no tarball, so its packs keep the name-based
+// install line that resolves against the public registry facade.
+func TestPackSuggest_SuggestIndexKeepsNameInstallLine(t *testing.T) {
+	catalog := writeCatalogFile(t, `{"id":"linux-core","name":"Linux core","os":[],"detect":{}}`)
+	out, err := runSuggest(t, catalog, t.TempDir())
+	if err != nil {
+		t.Fatalf("suggest: %v", err)
+	}
+	if !strings.Contains(out, "emisar pack install linux-core") {
+		t.Errorf("a lean index should still print the name form; output:\n%s", out)
+	}
+	if strings.Contains(out, "--hash") {
+		t.Errorf("nothing to pin from a lean index; output:\n%s", out)
 	}
 }
