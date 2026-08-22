@@ -3,10 +3,10 @@
 
   <section class="py-12 sm:py-16">
     <.docs_layout
-      current="upgrades"
+      current="runner-upgrades"
       updated="August 21, 2026"
       toc={[
-        {"what-moves", "What upgrades on its own"},
+        {"what-moves", "Who upgrades what"},
         {"versions", "Find the versions you run"},
         {"compatibility", "Compatibility status"},
         {"plan", "Plan the rollout"},
@@ -16,7 +16,7 @@
         {"rollback", "Return to a known-good release"}
       ]}
     >
-      <.docs_header current="upgrades">
+      <.docs_header current="runner-upgrades">
         <:dek>
           Move a runner fleet to a new release. Start with one canary, verify the result, and
           keep the previous version ready for rollback.
@@ -32,7 +32,8 @@
 
       <.docs_prerequisites>
         <:item>
-          Owner or admin in the account. You can read runner versions and run history.
+          Owner or admin in the account — you will read runner versions and run history in the
+          console.
         </:item>
         <:item>
           Root or sudo on each runner host. The installer writes to
@@ -45,9 +46,9 @@
         </:item>
       </.docs_prerequisites>
 
-      <.docs_h2 id="what-moves">What upgrades on its own</.docs_h2>
+      <.docs_h2 id="what-moves">Who upgrades what</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Four things version separately. Upgrading one never upgrades another.
+        Four parts upgrade separately — upgrading one never upgrades another.
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
         <table class="w-full min-w-[680px] text-left text-sm">
@@ -73,7 +74,7 @@
               <td class="px-4 py-3 font-semibold text-zinc-100">Runner binary</td>
               <td class="px-4 py-3">You, per host</td>
               <td class="px-4 py-3">
-                Run <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar update</code>. Stops and restarts the service.
+                Run <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar update</code>. It stops and restarts the service.
               </td>
             </tr>
             <tr>
@@ -90,7 +91,7 @@
               <td class="px-4 py-3 font-semibold text-zinc-100">Action packs</td>
               <td class="px-4 py-3">You, per runner</td>
               <td class="px-4 py-3">
-                A separate lifecycle with its own trust decision — <.link
+                Updated separately, with their own trust decision — <.link
                   navigate={~p"/docs/pack-updates"}
                   class="text-brand-300 hover:text-brand-200"
                 >Roll out and roll back packs</.link>.
@@ -103,41 +104,33 @@
       <.docs_h2 id="versions">Find the versions you run</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The console shows the version that each runner last reported — the Runners list carries
-        it per host. On the host, ask the binary itself.
+        it per host. On the host, run:
       </p>
-      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># one machine-readable line: "emisar version 0.16.0"</span>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># one machine-readable line: "emisar version X.Y.Z"</span>
 <span class="text-zinc-500">$</span> emisar --version
 
 <span class="text-zinc-500"># the same version plus Go, platform, and build metadata</span>
 <span class="text-zinc-500">$</span> emisar version</.docs_code>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        A locally built binary reports <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">dev</code>. This is neither current nor stale. It is
-        simply unclassifiable. The control plane never blocks it.
-      </p>
-
       <.docs_h2 id="compatibility">Compatibility status</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The control plane compares each runner's reported version with two published values. The minimum is
-        the oldest supported range. The recommended release is the current update target.
+        Each version a runner reports is compared against two published numbers: the oldest
+        release we still support, and the one we recommend you run.
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
         <table class="w-full min-w-[560px] text-left text-sm">
           <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
             <tr>
-              <th class="px-4 py-3">Component</th>
               <th class="px-4 py-3">Value</th>
               <th class="px-4 py-3">Current setting</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-300">
             <tr>
-              <td class="px-4 py-3 font-semibold text-zinc-100">Runner</td>
-              <td class="px-4 py-3">Minimum</td>
+              <td class="px-4 py-3 font-semibold text-zinc-100">Minimum</td>
               <td class="px-4 py-3"><code>{Emisar.Compat.runner_minimum()}</code></td>
             </tr>
             <tr>
-              <td class="px-4 py-3 font-semibold text-zinc-100">Runner</td>
-              <td class="px-4 py-3">Recommended release</td>
+              <td class="px-4 py-3 font-semibold text-zinc-100">Recommended release</td>
               <td class="px-4 py-3"><code>{Emisar.Compat.runner_target()}</code></td>
             </tr>
           </tbody>
@@ -148,28 +141,24 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">outdated</strong>
-            is above the minimum but behind the recommended version. It runs normally. The console
-            shows a version chip and nothing else changes.
+            is above the minimum but behind the one we recommend. It keeps working. The console
+            shows a version chip, and nothing else changes.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">unsupported</strong>
-            is below the minimum. Enforcement is a deployment setting and is off today. The control
-            plane warns about unsupported peers. When enforcement is on, it rejects an unsupported
-            runner during connection, and the error names the minimum version.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">A version the control plane cannot parse is never blocked</strong>, even
-            with enforcement on. The version is self-reported. Treat it as an operational hygiene
-            signal, not an authorization control.
+            is below the minimum. The runner is flagged on the Runners page. It still connects
+            today, but that is not a promise. Upgrade it.
           </span>
         </li>
       </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The version is self-reported, so treat it as housekeeping, never a security control —
+        what a runner may do is decided by your policies and pack trust, not by the version it
+        claims.
+      </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Upgrade your runners and bridges in the same pass. For which versions work together, see <.link
           navigate={~p"/docs/compatibility"}
@@ -206,47 +195,40 @@
       <.docs_h2 id="canary">Upgrade one runner</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The runner updates to the latest stable immutable release by default. Pin the release on
-        the canary so every later host receives the same bytes.
+        the canary so every later host gets the exact same release.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># on the canary host</span>
 <span class="text-zinc-500">$</span> sudo emisar update --version &lt;target-version&gt;</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        This command works only for a runner installed by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install.sh</code>. This records the paths it owns in a root-owned receipt. A copied binary,
-        container image, or infrastructure-managed runner is refused. Update that deployment at its
-        source instead of letting the host drift from it.
+        This command works only for a runner installed by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install.sh</code>, which records the paths it owns in a root-owned receipt. A copied
+        binary, container image, or infrastructure-managed runner is refused — update that
+        deployment at its source instead of letting the host drift from it.
       </p>
       <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The update preserves
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>
-        and leaves an existing file unchanged. It also preserves
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/runner.env</code>
-        and the cached runner token. It preserves installed packs under <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/packs</code>, the dispatch
-        log, and the local audit journal. The command verifies the immutable release and archive
-        checksum. An authenticated <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">gh</code>
-        CLI also verifies the GitHub workflow attestation. The bundled installer then stages the
-        binary and checks its version. It also verifies that the binary can read the current
-        dispatch state. These checks finish before the service stops.
+        The update touches only the binary: <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">config.yaml</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.env</code>, the cached token, installed packs, the dispatch log, and the local
+        audit journal all stay as they are. Before the service stops, it verifies the release and
+        archive checksum (an authenticated
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">gh</code>
+        CLI also checks the build attestation), stages the binary, checks its version, and
+        confirms the new binary can read the current dispatch state.
       </p>
-      <.docs_callout kind={:warn} title="The service does stop.">
+      <.docs_callout kind={:warn} title="The service does stop">
         <p>
-          Once the preflight passes, the installer stops the service, swaps the binary, and starts
-          it again. A runner kills its children when it exits. An action in flight on that host
-          is interrupted. Drain the host first. Do not treat a binary upgrade as invisible to
-          running work.
+          Once the preflight passes, the installer stops the service, swaps the binary, and
+          starts it again. A runner kills its children when it exits, so an action in flight on
+          that host is interrupted — let running work finish first.
         </p>
       </.docs_callout>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        If any later step fails, the installer restores the previous binary,
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.env</code>
-        and cached token. It restarts the service when the service was running before the update.
-        Then it exits with a nonzero status. This restores the runner and service state, not the
-        whole filesystem. Packs installed during that attempt remain installed.
+        If any later step fails, the installer restores the previous binary, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.env</code>, and cached
+        token, restarts the service if it was running before, and exits nonzero. Packs installed
+        during the attempt stay installed.
       </p>
 
       <.docs_h2 id="verify">Verify the canary</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Six checks, in order. Stop at the first one that fails.
+        Six checks, in order — stop at the first one that fails.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># 1. the binary is the version you pinned</span>
 <span class="text-zinc-500">$</span> emisar --version
@@ -267,22 +249,22 @@
         Run one low-risk read-only action. Confirm that it succeeds and appears in <a
           href={~p"/app/audit"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Audit</a>. That audit record is the completion condition. A green
+        >Audit</a>. The audit row is what completes the check —
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>
-        result proves only host readiness. It does not prove end-to-end dispatch.
+        covers the host, and only a real run shows the whole path works.
       </p>
 
       <.docs_h2 id="fleet">Roll through the fleet</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Repeat the same two steps. Upgrade, then the full verification. In bounded batches, one
-        runner group at a time. Halt the batch and stop rolling when any of these happens:
+        Repeat the same two steps — upgrade, then the full verification — in bounded batches,
+        one runner group at a time. Halt when any of these happens:
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            The update exits non-zero. If the swap had started, that host is already back on its previous binary. Read
-            the output before you touch the next host.
+            The update exits non-zero. If the swap had started, that host is already back on its
+            previous binary — read the output before you touch the next host.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -305,41 +287,31 @@
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <.link navigate={~p"/docs/deployment"} class="text-brand-300 hover:text-brand-200">Production rollout</.link>
+        <.link navigate={~p"/docs/production"} class="text-brand-300 hover:text-brand-200">Go to production</.link>
         owns fleet shape and batch sizing.
         <.link
-          navigate={~p"/docs/runners"}
+          navigate={~p"/docs/runner-fleet"}
           class="text-brand-300 hover:text-brand-200"
-        >Runner fleet</.link>
+        >Manage the runner fleet</.link>
         owns groups, labels, and host-side removal.
       </p>
 
       <.docs_h2 id="rollback">Return to a known-good release</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Going back is the same update command with the version you wrote down, followed by the
-        same verification. The bridge rolls back with its own release tag — see <.link
-          navigate={~p"/docs/bridge-upgrades"}
-          class="text-brand-400 hover:text-brand-300"
-        >Upgrade the MCP bridge</.link>.
+        same verification.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># runner — the release you were on before</span>
 <span class="text-zinc-500">$</span> sudo emisar update --version &lt;known-good-version&gt;</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Know two limits before relying on rollback. Only immutable published releases install. The
-        installer rejects a release that GitHub still reports as mutable. The older binary checks
-        the current dispatch state before the swap. If it cannot read that state, the installer
-        refuses the rollback. The current installation keeps running instead of entering a crash
-        loop.
+        Rollback has two limits. Only a finished, published release installs — a draft or one
+        still being written is refused. And the older binary must be able to read the current
+        dispatch state; if it cannot, the installer refuses and the current installation keeps
+        running. Rollback works only within the supported release line — go back no further than
+        the minimum above.
       </p>
-      <.docs_callout kind={:note} title="Return to a supported release">
-        <p>
-          Return to the last release that worked with your current portal. Do not choose an older
-          version outside the supported minimum. Rollback works only within the supported release
-          line. Include the portal, runner, and bridge versions in a support request.
-        </p>
-      </.docs_callout>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Packs do not move with the binary in either direction. If the problem is an action's
+        An upgrade or rollback never touches packs. If the problem is an action's
         behavior rather than the runner, the version to change is the pack's. See <.link
           navigate={~p"/docs/pack-updates"}
           class="text-brand-300 hover:text-brand-200"

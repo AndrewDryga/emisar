@@ -89,9 +89,9 @@
             >Runners</.link>
             to free the name, or give this host a different hostname. Deleting is terminal —
             <.link
-              navigate={~p"/docs/runners"}
+              navigate={~p"/docs/runner-fleet"}
               class="text-brand-300 hover:text-brand-200"
-            >Runner fleet</.link>
+            >Manage the runner fleet</.link>
             covers the difference from disabling.
           </span>
         </li>
@@ -128,9 +128,9 @@
             <strong class="text-zinc-200">Escalate</strong>
             when a freshly minted, unused key still returns <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>, or registration
             returns a status the log cannot explain. Enrollment keys and their caps are owned by <.link
-              navigate={~p"/docs/runners"}
+              navigate={~p"/docs/runner-fleet"}
               class="text-brand-300 hover:text-brand-200"
-            >Runner fleet</.link>.
+            >Manage the runner fleet</.link>.
           </span>
         </li>
       </ul>
@@ -327,7 +327,7 @@
                {~p"/docs/signed-dispatch", "Signed dispatch"}},
               {"The run lands Error without reaching the host",
                "The runner was offline, disabled, or removed, or never acknowledged the send before the dispatch timeout.",
-               {~p"/docs/runners", "Runner fleet"}}
+               {~p"/docs/runner-fleet", "Runner fleet"}}
             ] do %>
               <tr>
                 <td class="px-4 py-3 align-top font-semibold text-zinc-100">{seen}</td>
@@ -444,9 +444,9 @@
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp --version</code>
             confirms what is on disk. A running client keeps the binary it already loaded, so
             restart the client after installing — see <.link
-              navigate={~p"/docs/upgrades"}
+              navigate={~p"/docs/runner-upgrades"}
               class="text-brand-300 hover:text-brand-200"
-            >Upgrade runners and MCP bridges</.link>.
+            >Upgrade runners</.link>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

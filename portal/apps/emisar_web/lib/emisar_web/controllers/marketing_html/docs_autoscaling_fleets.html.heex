@@ -7,43 +7,63 @@
       updated="August 4, 2026"
       toc={[
         {"model", "How it works"},
-        {"key", "Create a reusable key"},
+        {"key", "Create a reusable enrollment key"},
         {"boot", "The boot install"},
         {"clouds", "GCP, AWS, and Azure"},
         {"identity", "A new runner each boot"},
-        {"cleanup", "Reaping terminated instances"}
+        {"cleanup", "Reaping terminated instances"},
+        {"next", "After it is connected"}
       ]}
     >
       <.docs_header current="autoscaling-fleets">
         <:dek>
-          An autoscaling group boots and terminates hosts on its own — a GCP managed instance
-          group, an AWS Auto Scaling group, an Azure Scale Set. To put a runner on each one, bake a
-          single <strong>reusable</strong>
-          enrollment key into the launch template and let every instance install and enroll itself
-          on boot: no per-host key, no manual approval, no click.
+          An autoscaling group — a GCP managed instance group, an AWS Auto Scaling group, an
+          Azure Scale Set — creates and terminates hosts on its own. Give the launch template one
+          reusable enrollment key, and each instance enrolls a runner during boot with no per-host
+          key or approval.
         </:dek>
       </.docs_header>
 
+      <p class="mt-6 text-base leading-7 text-zinc-400">
+        For hosts that stay put, see <.link
+          navigate={~p"/docs/host-install"}
+          class="text-brand-400 hover:text-brand-300"
+        >Linux host</.link>.
+      </p>
+
+      <.docs_prerequisites>
+        <:item>
+          An autoscaling group on GCP, AWS, or Azure — or anything else that boots instances from
+          a launch template.
+        </:item>
+        <:item>A secret manager the boot script can read the enrollment key from.</:item>
+        <:item>
+          Outbound HTTPS from every instance to <code class="text-zinc-300">emisar.dev:443</code>
+          and <code class="text-zinc-300">registry.emisar.dev:443</code>. See
+          <.link
+            navigate={~p"/docs/network-requirements"}
+            class="text-brand-400 hover:text-brand-300"
+          >Network requirements</.link>
+          for the optional GitHub fallback domains.
+        </:item>
+      </.docs_prerequisites>
+
       <.docs_h2 id="model">How it works</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A host install pastes a fresh single-use key for one machine. A fleet can't do that — every
-        instance boots from the same template — so it uses one
+        A host install uses a new single-use key for one machine; a fleet uses one
         <strong class="text-zinc-200">reusable</strong>
-        key instead. Each instance runs the same
-        <.link
+        key, because every instance starts from the same template. On boot each instance runs the
+        same <.link
           href={~p"/install.sh"}
           class="text-brand-400 hover:text-brand-300"
-        >installer</.link>
-        on boot: it downloads the runner, trades the key for the runner's own token, and
-        connects. Enrollment is <strong class="text-zinc-200">zero-touch</strong>
-        — a valid key is the credential, so the runner is live the moment it registers; nobody
-        approves each new host.
+        >installer</.link>, which downloads the runner, exchanges the key for the runner's own token,
+        and connects. Holding a valid key is the whole enrollment check — no one approves each
+        host.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Each instance can name its own fleet tier with
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_GROUP</code>
-        in the boot script (below), which is how a runbook or a runner scope later targets "the web
-        fleet" instead of one host.
+        Set <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_GROUP</code> in the boot
+        script to name the instance's fleet tier. Runbooks and runner scopes then target the fleet
+        instead of one host.
       </p>
 
       <.docs_h2 id="key">Create a reusable enrollment key</.docs_h2>
@@ -68,84 +88,95 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Expiry.</strong>
-            A date after which the key stops enrolling, so a template you forget about can't keep
-            adding runners forever.
+            Set the date when the key stops enrolling runners, so a forgotten template cannot add
+            runners forever.
           </span>
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emkey-enroll-…</code>
-        secret is shown once. Put it in the boot script — or, better, in the cloud's secret manager
-        with the boot script reading it at start — never committed into an image.
+        secret appears once. Store it in the secret manager, and let the boot script read it at
+        start. Never bake the key into an image.
       </p>
-      <.docs_callout kind={:warn} title="A reusable key is a fleet-wide credential.">
+      <.docs_callout kind={:warn} title="A reusable key is a fleet-wide credential">
         <p>
-          Anyone holding it can enroll a runner into your account — bounded by its max-uses, its
-          expiry, and what your policy lets any runner do, but still worth guarding. Scope it with an
-          expiry, cap it with max-uses, and rotate by minting a new key, updating the template, and
-          then <strong>Revoke</strong>-ing the old one on the same page. Revoking stops new
-          enrollments at once; <b>runners already connected hold their own tokens and keep running</b>.
+          Anyone holding this key can enroll a runner into your account — the limits above and
+          account policy still apply, but treat it like the credential it is. Rotating and
+          revoking it, and what each step reaches, is covered in <.link
+            navigate={~p"/docs/runner-credentials"}
+            class="text-brand-300 hover:text-brand-200"
+          >Runner credentials</.link>.
         </p>
       </.docs_callout>
 
       <.docs_h2 id="boot">The boot install</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The boot script is the ordinary host installer, run non-interactively. Environment values go
-        before <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">bash</code>; the unattended
-        flags go after <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">bash -s --</code>. The
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--yes --packs</code>
-        pair is the contract for a no-TTY install — without it the installer refuses to run rather
-        than guess:
+        The boot script runs the same installer as a normal host install, plus two flags:
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--yes</code>
+        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--packs</code>. Without both, the installer stops to ask questions no one is
+        there to answer.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The key is the one value that does <em>not</em>
-        go on the command line. Anything before
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">bash</code>
-        becomes part of <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>'s command
-        line, and on Linux
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/proc/&lt;pid&gt;/cmdline</code>
-        is world-readable (mode 0444) — any local user on that instance can read it while the
-        install runs. The process environment is not:
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/proc/&lt;pid&gt;/environ</code>
-        is mode 0400, readable only by the process owner. So export the key and let
+        Keep the enrollment key off the command line. Every user on the host can read any
+        process's command line; only the process owner can read its environment. So the script
+        exports the key first, then uses
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo -E</code>
-        carry it across the privilege change:
+        to keep it in the environment through <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>:
       </p>
       <.docs_code
         phx-no-format
         label="emisar-boot.sh"
         copy_text="export EMISAR_ENROLLMENT_KEY=&quot;$(your-secret-tool read emisar/enrollment-key)&quot;
-curl -fsSL https://emisar.dev/install.sh | sudo -E env EMISAR_URL=https://emisar.dev RUNNER_GROUP=web bash -s -- --yes --packs linux-core"
+curl -fsSL https://emisar.dev/install.sh | sudo -E env RUNNER_GROUP=web bash -s -- --yes --packs linux-core"
       ><span class="text-zinc-500">#!/usr/bin/env bash</span>
 <span class="text-zinc-500"># the key reaches the environment, never argv</span>
 export EMISAR_ENROLLMENT_KEY="<span class="text-brand-300">$(your-secret-tool read emisar/enrollment-key)</span>"
 
 curl -fsSL https://emisar.dev/install.sh \
-  | sudo -E env EMISAR_URL=https://emisar.dev \
-      RUNNER_GROUP=<span class="text-brand-300">web</span> \
+  | sudo -E env RUNNER_GROUP=<span class="text-brand-300">web</span> \
       bash -s -- --yes --packs linux-core</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo -E</code>
-        keeps your environment across the privilege change, so only the non-secret values sit on the
-        command line. This narrows who can read the key from every local user to root alone — it
-        does not hide it from the host itself, and on a cloud instance the key still passes through
-        whatever delivered your boot script.
+        The command line then carries nothing secret, and only root can read the key. The
+        example reads it from your secret manager at boot because cloud user data is not a safe
+        place for a secret.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--yes</code>
-        skips the prompts a host install would show;
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--packs</code>
-        is the pack set to install and is required alongside it (an empty value installs none, and
-        you add packs later).
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_GROUP</code>
-        — plus any <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_LABEL_*</code>
-        labels (e.g. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_LABEL_ROLE=web</code>) — tags the runner for targeting. Everything else about the installer, its flags, and
-        the config it writes is on the
+        The pieces of that command:
+      </p>
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span><code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--yes</code>
+          skips the prompts.</span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--packs</code>
+            names the packs to install, and is required with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--yes</code>. An empty
+            value installs none; you can add packs later.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span><code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_GROUP</code>
+          names the fleet the runner joins.</span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_LABEL_*</code>
+            variables add free-form labels — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_LABEL_ROLE=web</code>.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The
         <.link
           navigate={~p"/docs/host-install"}
           class="text-brand-400 hover:text-brand-300"
-        >host install</.link>
-        page.
+        >Linux host</.link>
+        page covers every other installer flag and config setting.
       </p>
 
       <.docs_h2 id="clouds">GCP, AWS, and Azure</.docs_h2>
@@ -181,75 +212,75 @@ curl -fsSL https://emisar.dev/install.sh \
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Each runs the script as root on first boot, exactly as if you'd pasted the host-install
-        command — the runner comes up, enrolls, and shows in your fleet within seconds. For faster
-        boots, bake the binary into a custom image first (run the installer with
+        Each cloud runs the script as root during first boot; the runner enrolls and appears in
+        the fleet within seconds. For faster boots, bake the binary into a custom image with
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-start</code>
-        during the image build, then let the boot script start and enroll) — just <b>don't bake an
-        enrollment key into it.</b>
+        and let the boot script start and enroll it.
       </p>
 
       <.docs_h2 id="identity">A new runner each boot</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A runner's identity is its hostname, unless you pin
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
-        yourself. A scale-out instance boots with a hostname the group generated for it, so it
-        registers as a <strong class="text-zinc-200">new</strong>
-        runner; a reboot keeps the hostname and reconnects the same one. That's the shape of an
-        ephemeral fleet — scaling out by ten gives you ten new runners, not ten reconnects — and
-        it's fine. Two things follow from it:
+        A runner uses its hostname as its identity unless you set <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>. A new scale-out
+        instance receives a generated hostname and registers as a new runner. A reboot keeps the
+        hostname and reconnects the same runner, so scaling out by ten creates ten runners — the
+        expected shape of an ephemeral fleet. Two rules follow:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Never bake a credential into an image.</strong>
-            The runner writes the per-runner token it gets at first connect into <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/lib/emisar</code>, so a build
-            host you snapshot after it enrolled ships one runner's credential to every instance
-            launched from that image. Build the image with
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-start</code>
-            and let each instance enroll on its own boot.
+            At first connect, the runner stores its token in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/lib/emisar</code>. A snapshot
+            taken after enrollment copies one runner token into every instance built from that
+            image. Build the image with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-start</code>. Let each instance
+            enroll during its own boot.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Want an id that isn't the hostname?</strong>
-            Where the group recycles hostnames, or they carry nothing an operator recognizes, pin
+            <strong class="text-zinc-200">Use a stable runner ID when the hostname is unsuitable.</strong>
+            If the group recycles hostnames, set
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
-            in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">config.yaml</code>
-            from the instance's own metadata in the boot script; the cloud's instance id makes a
-            natural, unique runner id.
+            from the instance
+            metadata in the boot script. A cloud instance ID is a natural unique runner ID.
           </span>
         </li>
       </ul>
 
       <.docs_h2 id="cleanup">Reaping terminated instances</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A terminated instance doesn't remove its runner — the record goes <em>offline</em>
-        and stays in your fleet. Two things then pile up: the Runners list fills with dead hosts, and
-        each one counts against your plan's runner limit until it's gone.
+        A terminated instance does not remove its runner — the record just goes <em>offline</em>
+        and stays in the fleet, where each dead host counts against the plan runner limit until
+        removal.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        To solve this turn on retention. On <a
+        Turn on retention to remove them. On <a
           href={~p"/app/runners"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runners</a>,
-        an owner or admin sets <strong>Remove runners inactive for</strong>
-        to a window; an hourly sweep then deletes any runner disconnected longer than that. Connected
-        and disabled runners are never touched, and a host that comes back re-enrolls as a fresh
-        runner. It's off by default — pick a window comfortably longer than your longest expected
-        blip (a rolling deploy, a zone outage) so a brief disconnect isn't mistaken for a dead host,
-        but short enough that dead hosts don't linger in the fleet.
+        an owner or admin sets <strong>Remove runners inactive for</strong>, and an hourly sweep
+        removes runners past the window — never a connected or disabled one. It is off by default.
+        Pick a window longer than an expected disconnect, a rolling deployment or a zone outage,
+        but short enough to clear dead hosts promptly. A removed host that returns enrolls as a
+        new runner.
       </p>
-      <.docs_callout kind={:note} title="The sweep is hourly.">
-        <p>
-          A high-churn group can still carry terminated
-          runners against its limit before the next sweep. If that crowds your plan, size the limit
-          for the churn, or trim it sooner with <strong>Clean up now</strong>
-          on the same page. A removed runner's audit history is kept either way.
-        </p>
-      </.docs_callout>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Between sweeps, a high-churn group can still carry dead runners against its plan limit —
+        trim them sooner with <strong>Clean up now</strong>
+        on the same page. Removal, by sweep or by hand, keeps the runner's audit history.
+      </p>
+      <.docs_h2 id="next">After it is connected</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <.link navigate={~p"/docs/runner-fleet"} class="text-brand-400 hover:text-brand-300">
+          Manage the runner fleet
+        </.link>
+        covers work after the first connection — groups, labels, pack credentials, updates,
+        reconnects, and removal. To take a fleet to production in phases, see the <.link
+          navigate={~p"/docs/production"}
+          class="text-brand-400 hover:text-brand-300"
+        >Go to production</.link>.
+      </p>
     </.docs_layout>
   </section>
 

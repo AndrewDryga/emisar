@@ -204,8 +204,8 @@ defmodule EmisarWeb.Router do
     get "/docs/integrations/keycloak", MarketingController, :docs_sso_keycloak
     get "/docs/integrations/google-workspace", MarketingController, :docs_sso_google_workspace
     get "/docs/scim", MarketingController, :docs_scim
-    get "/docs/runners", MarketingController, :docs_runners
-    get "/docs/deployment", MarketingController, :docs_deployment
+    get "/docs/runner-fleet", MarketingController, :docs_runner_fleet
+    get "/docs/production", MarketingController, :docs_production
     get "/docs/audit-and-siem", MarketingController, :docs_audit
     get "/docs/host-install", MarketingController, :docs_host_install
     get "/docs/containers", MarketingController, :docs_containers
@@ -218,7 +218,8 @@ defmodule EmisarWeb.Router do
     get "/docs/runner-cli", MarketingController, :docs_runner_cli
     get "/docs/billing", MarketingController, :docs_billing
     get "/docs/limits", MarketingController, :docs_limits
-    get "/docs/upgrades", MarketingController, :docs_upgrades
+    get "/docs/runner-upgrades", MarketingController, :docs_runner_upgrades
+    get "/docs/runner-credentials", MarketingController, :docs_runner_credentials
     get "/docs/credentials", MarketingController, :docs_credentials
     get "/docs/pack-updates", MarketingController, :docs_pack_updates
     get "/docs/network-requirements", MarketingController, :docs_network_requirements

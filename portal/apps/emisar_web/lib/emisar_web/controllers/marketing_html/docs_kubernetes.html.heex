@@ -4,46 +4,90 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="kubernetes"
-      updated="August 3, 2026"
+      updated="August 18, 2026"
       toc={[
+        {"prepare", "Prepare the deployment"},
         {"daemonset", "The DaemonSet"},
+        {"deploy", "Deploy and verify"},
         {"visibility", "What the pod spec grants"},
-        {"mutating", "Letting a node action mutate"}
+        {"mutating", "Letting a node action mutate"},
+        {"next", "After it is connected"}
       ]}
     >
       <.docs_header current="kubernetes">
         <:dek>
-          To operate the nodes themselves, run one runner per node as a DaemonSet. The runner can
-          only act on what the pod spec grants — which makes the manifest your blast-radius dial.
-          This page is the worked manifest; the mechanics it relies on (the official runner image
-          and a persistent state volume) are on <.link
-            navigate={~p"/docs/containers"}
-            class="text-brand-400 hover:text-brand-300"
-          >Containers</.link>.
+          Run one runner per node with a DaemonSet. The pod spec controls what each runner can read
+          or change. This example uses the official image and persistent host storage.
         </:dek>
       </.docs_header>
 
+      <p class="mt-6 text-base leading-7 text-zinc-400">
+        To read what a containerized runner can reach, see <.link
+          navigate={~p"/docs/containers"}
+          class="text-brand-400 hover:text-brand-300"
+        >Install in a container</.link>.
+      </p>
+
+      <.docs_prerequisites>
+        <:item>
+          <code class="text-zinc-300">kubectl</code>
+          access that can create namespaces, Secrets, and DaemonSets.
+        </:item>
+        <:item>
+          Outbound HTTPS from every node to <code class="text-zinc-300">emisar.dev:443</code>
+          and <code class="text-zinc-300">registry.emisar.dev:443</code>. See
+          <.link
+            navigate={~p"/docs/network-requirements"}
+            class="text-brand-400 hover:text-brand-300"
+          >Network requirements</.link>
+          for the optional GitHub fallback domains.
+        </:item>
+      </.docs_prerequisites>
+
+      <.docs_h2 id="prepare">Prepare the deployment</.docs_h2>
+      <.docs_callout kind={:warn} title="This manifest grants node-wide access">
+        <p>
+          This manifest runs as root and reads node processes, networks, journals, and files.
+          Remove every grant that your packs do not need.
+        </p>
+      </.docs_callout>
+      <ol class="mt-5 list-decimal space-y-3 pl-6 text-base text-zinc-400">
+        <li>
+          Create a namespace named <code>emisar-system</code>. Configure its admission policy to
+          allow this host-access profile.
+        </li>
+        <li>
+          Create a <.link
+            navigate={~p"/docs/runner-fleet" <> "#enrollment-keys"}
+            class="text-brand-400 hover:text-brand-300"
+          >reusable enrollment key</.link>.
+        </li>
+        <li>
+          Create the Secret. Enter the key at the hidden prompt.
+        </li>
+      </ol>
+      <.docs_code phx-no-format label="shell">kubectl create namespace emisar-system
+read -rsp "Enrollment key: " EMISAR_ENROLLMENT_KEY
+printf '\n'
+kubectl -n emisar-system create secret generic emisar-runner \
+  --from-literal=enrollment-key="$EMISAR_ENROLLMENT_KEY"
+unset EMISAR_ENROLLMENT_KEY</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Pick the image: each runner release notes its image digest. Replace
+        <code>&lt;image-digest&gt;</code>
+        with the 64 hex characters after <code>sha256:</code>.
+      </p>
+
       <.docs_h2 id="daemonset">The DaemonSet</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The manifest below is the observation-heavy variant: one runner per node that can watch
-        anything running on it, from processes to ports to journals. It reuses a
-        <strong class="text-zinc-200">reusable enrollment key</strong>
-        (via a Secret) and a per-node <code class="font-mono">/var/lib/emisar</code>
-        state volume so each node's runner keeps its token and durable dispatch state across pod
-        restarts — see the <.link
-          navigate={~p"/docs/containers" <> "#building-blocks"}
-          class="text-brand-400 hover:text-brand-300"
-        >shared mechanics</.link>. <code class="font-mono">EMISAR_GROUP</code>
-        gives the fleet its own dispatch-targeting group instead of the image's shared
-        <code class="font-mono">containers</code>
-        default, and <code class="font-mono">EMISAR_RUNNER_ID</code>
-        takes the node name via <code class="font-mono">fieldRef</code>, so each runner's identity
-        is the node it operates no matter how pods are named or rescheduled.
+        This spec lets the runner observe each node. The node name is the runner identity, and
+        the runner token, dispatch state, and local journal stay on the node.
       </p>
       <.docs_code phx-no-format label="yaml"><span class="text-sky-300">apiVersion</span>: apps/v1
 <span class="text-sky-300">kind</span>: DaemonSet
 <span class="text-sky-300">metadata</span>:
   <span class="text-sky-300">name</span>: emisar-runner
+  <span class="text-sky-300">namespace</span>: emisar-system
 <span class="text-sky-300">spec</span>:
   <span class="text-sky-300">selector</span>:
     <span class="text-sky-300">matchLabels</span>:
@@ -57,14 +101,12 @@
       <span class="text-sky-300">hostNetwork</span>: <span class="text-amber-300">true</span>  <span class="text-zinc-600"># see the node's real interfaces and ports</span>
       <span class="text-sky-300">containers</span>:
         - <span class="text-sky-300">name</span>: runner
-          <span class="text-sky-300">image</span>: ghcr.io/andrewdryga/emisar-runner:X.Y.Z  <span class="text-zinc-600"># pin the current runner release</span>
+          <span class="text-sky-300">image</span>: ghcr.io/andrewdryga/emisar-runner@sha256:&lt;image-digest&gt;
           <span class="text-sky-300">securityContext</span>:
             <span class="text-sky-300">runAsUser</span>: <span class="text-brand-300">0</span>  <span class="text-zinc-600"># journald + /host reads are root-only; see below</span>
           <span class="text-sky-300">env</span>:
-            - <span class="text-sky-300">name</span>: EMISAR_URL
-              <span class="text-sky-300">value</span>: <span class="text-brand-300">"https://emisar.dev"</span>
             - <span class="text-sky-300">name</span>: EMISAR_GROUP
-              <span class="text-sky-300">value</span>: <span class="text-brand-300">"k8s-nodes"</span>  <span class="text-zinc-600"># a group is a dispatch target — one per fleet</span>
+              <span class="text-sky-300">value</span>: <span class="text-brand-300">"k8s-nodes"</span>  <span class="text-zinc-600"># actions can target the whole group — one per fleet</span>
             - <span class="text-sky-300">name</span>: EMISAR_RUNNER_ID
               <span class="text-sky-300">valueFrom</span>:
                 <span class="text-sky-300">fieldRef</span>:
@@ -77,6 +119,8 @@
           <span class="text-sky-300">volumeMounts</span>:
             - <span class="text-sky-300">name</span>: state
               <span class="text-sky-300">mountPath</span>: /var/lib/emisar
+            - <span class="text-sky-300">name</span>: audit-journal
+              <span class="text-sky-300">mountPath</span>: /var/log/emisar
             - <span class="text-sky-300">name</span>: host-root      <span class="text-zinc-600"># node filesystem, read-only, for file inspection</span>
               <span class="text-sky-300">mountPath</span>: /host
               <span class="text-sky-300">readOnly</span>: <span class="text-amber-300">true</span>
@@ -91,6 +135,10 @@
           <span class="text-sky-300">hostPath</span>:
             <span class="text-sky-300">path</span>: /var/lib/emisar
             <span class="text-sky-300">type</span>: DirectoryOrCreate
+        - <span class="text-sky-300">name</span>: audit-journal
+          <span class="text-sky-300">hostPath</span>:
+            <span class="text-sky-300">path</span>: /var/log/emisar
+            <span class="text-sky-300">type</span>: DirectoryOrCreate
         - <span class="text-sky-300">name</span>: host-root
           <span class="text-sky-300">hostPath</span>:
             <span class="text-sky-300">path</span>: /
@@ -101,44 +149,75 @@
           <span class="text-sky-300">hostPath</span>:
             <span class="text-sky-300">path</span>: /run/systemd</.docs_code>
 
+      <.docs_h2 id="deploy">Deploy and verify</.docs_h2>
+      <ol class="mt-5 list-decimal space-y-3 pl-6 text-base text-zinc-400">
+        <li>Save the manifest as <code>emisar-runner.yaml</code>.</li>
+        <li>Run <code>kubectl apply -f emisar-runner.yaml</code>.</li>
+        <li>
+          Run <code>kubectl -n emisar-system rollout status daemonset/emisar-runner --timeout=5m</code>.
+        </li>
+        <li>
+          Open <a
+            href={~p"/app/runners"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Runners</a>. Confirm each node has one online runner. Tainted control-plane nodes
+          are skipped unless you add a toleration.
+        </li>
+        <li>Run <code>debugging.loadavg</code> on one node runner.</li>
+        <li>
+          Open <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>. Confirm that the event names the runner, action, operator, and reason.
+        </li>
+      </ol>
+
       <.docs_h2 id="visibility">What the pod spec grants</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        With the manifest above, process packs see every node process
-        (<code class="font-mono">hostPID</code>), network packs see the node's real ports
-        (<code class="font-mono">hostNetwork</code>), journal reads work against the mounted
-        journal, and file-inspection actions reach node paths under <code class="font-mono">/host</code>. Node-level reads are why the manifest sets <code class="font-mono">runAsUser: 0</code>: journald and most of
-        <code class="font-mono">/host</code>
-        are readable only by root, and the <code class="font-mono">hostPath</code>
-        state dir is root-owned — the image itself defaults to non-root uid <code class="font-mono">65532</code>. Two limits: pack binaries run from the container's
-        image — the official image ships the container observation set, so
-        <.link
+        <code class="font-mono">hostPID</code>
+        exposes node processes. <code class="font-mono">hostNetwork</code>
+        exposes node interfaces and ports. The read-only mounts expose the journal, systemd state,
+        and node files under <code>/host</code>.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The manifest uses <code class="font-mono">runAsUser: 0</code>
+        because most node files and journals require root; the image otherwise runs as user <code>65532</code>. Actions run the programs inside the image, and the official image
+        carries only its documented observation tools — if a pack needs another program, <.link
           navigate={~p"/docs/containers" <> "#extending"}
           class="text-brand-400 hover:text-brand-300"
-        >extend it</.link>
-        with the node tools your packs call; and the mounts above are read-only
-        on purpose. This is a privileged host-observer profile, not a baseline workload —
-        <code class="font-mono">hostPath</code>
-        and root are both outside Kubernetes' Restricted pod security standard, so deploy it in a
-        namespace that permits privileged pods, deliberately. Every grant here is yours to narrow
-        — drop <code class="font-mono">runAsUser</code>, <code class="font-mono">hostPID</code>/<code class="font-mono">hostNetwork</code>, and the wider
-        mounts for a tighter runner that only inspects what you allow.
+        >build an extended image</.link>.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The host mounts are read-only except for runner state and its local journal. Remove <code>runAsUser</code>, <code>hostPID</code>, <code>hostNetwork</code>, or any mount your
+        packs do not need.
       </p>
 
       <.docs_h2 id="mutating">Letting a node action mutate</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A verb that <em>mutates</em>
-        the node — restarting a unit, say — needs the systemd/dbus socket writable, a grant you
-        make deliberately rather than by default: mount
+        A node mutation needs more than the read-only profile. Restarting a unit, for example,
+        needs writable systemd and D-Bus sockets — mount
         <code class="font-mono">/run/systemd</code>
         and <code class="font-mono">/run/dbus</code>
-        writable and give the runner the privileges that action calls for (see the runner's user
-        and the sudoers pattern on the <.link
+        writable. Grant exactly what the intended actions need and nothing more; the runner's user
+        and polkit pattern on the
+        <.link
           navigate={~p"/docs/host-install" <> "#user"}
           class="text-brand-400 hover:text-brand-300"
         >
-          host-install page
-        </.link>). Keep those grants scoped to the exact actions you intend the node runner to
-        perform.
+          Linux host page
+        </.link>
+        is the same discipline on a host.
+      </p>
+      <.docs_h2 id="next">After it is connected</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <.link navigate={~p"/docs/runner-fleet"} class="text-brand-400 hover:text-brand-300">
+          Manage the runner fleet
+        </.link>
+        covers work after the first connection — groups, labels, pack credentials, updates,
+        reconnects, and removal. To roll the DaemonSet across clusters in phases, see the <.link
+          navigate={~p"/docs/production"}
+          class="text-brand-400 hover:text-brand-300"
+        >Go to production</.link>.
       </p>
     </.docs_layout>
   </section>

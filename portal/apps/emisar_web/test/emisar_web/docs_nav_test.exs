@@ -13,13 +13,14 @@ defmodule EmisarWeb.DocsNavTest do
   @ordered_slugs ~w(
     quickstart
     connect-cli-agent connect-claude-ai connect-chatgpt agents-and-keys bridge-upgrades
-    host-install containers kubernetes nomad autoscaling-fleets deployment network-requirements
+    host-install containers kubernetes nomad autoscaling-fleets
+    network-requirements runner-fleet production runner-upgrades runner-credentials
     authentication teams-and-access
     sso scim integrations-okta integrations-entra integrations-jumpcloud
     integrations-keycloak integrations-google-workspace
     billing
     run-an-action policies-and-approvals signed-dispatch
-    runners runs runbooks pack-updates upgrades credentials troubleshooting security-incidents audit-and-siem
+    runs runbooks pack-updates credentials troubleshooting security-incidents audit-and-siem
     use-a-published-pack action-packs publishing-packs pack-registry
     mcp-reference runner-cli architecture compatibility security-model limits
   )
@@ -29,7 +30,7 @@ defmodule EmisarWeb.DocsNavTest do
       assert Enum.map(DocsNav.groups(), & &1.label) == [
                "Get started",
                "AI agents",
-               "Deploy runners",
+               "Runners",
                "Team & account",
                "Govern actions",
                "Operate",
@@ -46,6 +47,7 @@ defmodule EmisarWeb.DocsNavTest do
 
       assert subgrouped == [
                {"AI agents", ["Connect", "The fleet"]},
+               {"Runners", ["Deploy on", "The fleet"]},
                {"Team & account", ["Access", "Identity concepts", "Provider guides", "Account"]}
              ]
     end
@@ -71,7 +73,8 @@ defmodule EmisarWeb.DocsNavTest do
     end
 
     test "every other group is one unlabelled section, so consumers never special-case a shape" do
-      for group <- DocsNav.groups(), group.label not in ["AI agents", "Team & account"] do
+      for group <- DocsNav.groups(),
+          group.label not in ["Runners", "AI agents", "Team & account"] do
         assert [%{label: nil, pages: [_ | _]}] = group.sections
       end
     end
@@ -86,13 +89,13 @@ defmodule EmisarWeb.DocsNavTest do
       assert Enum.map(DocsNav.flat(), & &1.slug) == @ordered_slugs
     end
 
-    test "carries 45 pages with unique slugs and unique /docs paths" do
+    test "carries 46 pages with unique slugs and unique /docs paths" do
       pages = DocsNav.flat()
       paths = Enum.map(pages, & &1.path)
 
-      assert length(pages) == 45
-      assert pages |> Enum.map(& &1.slug) |> Enum.uniq() |> length() == 45
-      assert paths |> Enum.uniq() |> length() == 45
+      assert length(pages) == 46
+      assert pages |> Enum.map(& &1.slug) |> Enum.uniq() |> length() == 46
+      assert paths |> Enum.uniq() |> length() == 46
       assert Enum.all?(paths, &String.starts_with?(&1, "/docs/"))
     end
 
@@ -136,7 +139,8 @@ defmodule EmisarWeb.DocsNavTest do
       assert DocsNav.group_label("integrations-okta") == "Team & account"
       assert DocsNav.group_label("billing") == "Team & account"
       assert DocsNav.group_label("agents-and-keys") == "AI agents"
-      assert DocsNav.group_label("upgrades") == "Operate"
+      assert DocsNav.group_label("runner-upgrades") == "Runners"
+      assert DocsNav.group_label("use-a-published-pack") == "Action packs"
     end
 
     test "raises on an unknown slug" do
@@ -153,8 +157,14 @@ defmodule EmisarWeb.DocsNavTest do
     end
 
     test "the first page has no previous and the last has no next" do
-      assert {nil, %{slug: "connect-cli-agent"}} = DocsNav.prev_next(List.first(@ordered_slugs))
+      assert {nil, %{slug: "connect-cli-agent"}} =
+               DocsNav.prev_next(List.first(@ordered_slugs))
+
       assert {%{slug: "security-model"}, nil} = DocsNav.prev_next(List.last(@ordered_slugs))
     end
+  end
+
+  test "compatibility uses a visible icon on the docs index" do
+    assert DocsNav.fetch!("compatibility").icon == "hero-arrows-right-left"
   end
 end

@@ -17,23 +17,56 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="containers"
-      updated="August 4, 2026"
+      updated="August 19, 2026"
       toc={[
         {"what-it-sees", "What a containerized runner sees"},
         {"official-image", "The official image"},
         {"building-blocks", "Identity and state"},
         {"extending", "Extend it for your packs"},
         {"sidecar", "A sidecar next to one app"},
-        {"orchestrators", "One per node: Kubernetes and Nomad"}
+        {"orchestrators", "One per node: Kubernetes and Nomad"},
+        {"next", "After it is connected"}
       ]}
     >
       <.docs_header current="containers">
         <:dek>
-          The runner is a plain foreground process — it runs fine in a container. What changes
-          isn't whether it runs; it's what it can see.
+          The runner is a plain foreground process, so it runs in a container. The container
+          changes what the runner can see, not whether it runs.
         </:dek>
       </.docs_header>
 
+      <p class="mt-6 text-base leading-7 text-zinc-400">
+        To install straight onto a machine instead, see <.link
+          navigate={~p"/docs/host-install"}
+          class="text-brand-400 hover:text-brand-300"
+        >Linux host</.link>.
+      </p>
+
+      <.docs_prerequisites>
+        <:item>A host with a container runtime. The examples use Docker.</:item>
+        <:item>
+          Outbound HTTPS from the container to <code class="text-zinc-300">emisar.dev:443</code>
+          for the control plane, plus <code class="text-zinc-300">registry.emisar.dev:443</code>
+          for pack installs and updates. Nothing listens inbound, so there is no port to publish.
+          See
+          <.link
+            navigate={~p"/docs/network-requirements"}
+            class="text-brand-400 hover:text-brand-300"
+          >Network requirements</.link>
+          for the optional GitHub fallback domains.
+        </:item>
+      </.docs_prerequisites>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Take the enrollment key from <a
+          href={~p"/app/runners/install"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runners → Connect a runner</a>. Replace <code class="font-mono">X.Y.Z</code>
+        with the current version from the <.external_link
+          href="https://emisar.dev/releases/runner/latest.json"
+          class="text-brand-400 hover:text-brand-300"
+        >runner release manifest</.external_link>, then start the container:
+      </p>
       <.docs_code
         phx-no-format
         label="docker host"
@@ -44,56 +77,58 @@
     ghcr.io/andrewdryga/emisar-runner:X.Y.Z
 <span class="text-zinc-500">$</span> docker logs -f emisar</.docs_code>
 
-      <.docs_callout kind={:note} title="Egress-only">
-        Nothing listens inbound — the container dials out to
-        <code class="text-zinc-300">emisar.dev</code>
-        like any other runner.
-      </.docs_callout>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        In the console, open
+        <a
+          href={~p"/app/runners"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runners</a>
+        — the container appears online, with the actions its packs advertise.
+      </p>
 
       <.docs_h2 id="what-it-sees">What a containerized runner sees</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A runner can only act on what its own namespace can reach. On a VM or bare metal that's
-        the whole machine — which is why the
+        A runner acts only on resources available in its namespace. On a VM or bare metal, that
+        namespace covers the whole machine. Most packs target hosts, and some need systemd —
+        that is why the
         <.link navigate={~p"/docs/host-install"} class="text-brand-400 hover:text-brand-300">
           host install
         </.link>
-        is the default: most packs are host-oriented, and some literally require a systemd
-        host. Put the same runner in a bare container and those packs now see the container —
-        its processes, its filesystem, its network.
+        is the default. In a bare container, those packs see only the container's processes,
+        filesystem, and network.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        It gives you the freedom to design the runner scope that fits your specific use case.
-        A sidecar that can only see one app is a tightly scoped runner — the agent operating
-        through it can't touch anything else. You just have to pick the shape that matches
-        what you want the agent to operate: one app, a node, or every node.
+        The same limit is the control. A sidecar can join one app's process and network
+        namespaces and mount selected volumes — it then reaches every process, interface, and
+        endpoint in them. You choose whether the agent operates one app, one node, or every node.
       </p>
 
       <.docs_h2 id="official-image">The official image</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Every runner release publishes
         <code class="font-mono">ghcr.io/andrewdryga/emisar-runner</code>
-        for linux/amd64 and linux/arm64, tagged with the release version — replace
-        <code class="font-mono">X.Y.Z</code>
-        with the current one from the <.external_link
-          href="https://github.com/andrewdryga/emisar/releases"
-          class="text-brand-400 hover:text-brand-300"
-        >releases page</.external_link>. There is no <code class="font-mono">latest</code>
-        tag: the image contents are part of the runner's capability boundary, so moving to a new
-        version is a deliberate act, like trusting a pack.
+        for linux/amd64 and linux/arm64. The registry has no <code class="font-mono">latest</code>
+        tag — you always deploy a version you named. What is in the image is part of what the
+        runner can do, so treat an image change with the same care as trusting a new pack.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The image carries the exact release-built runner binary and three packs matched to what a
-        container can see — <code class="font-mono">fs-search</code>
-        (its filesystem), <code class="font-mono">debugging</code>
-        (its processes), and <code class="font-mono">network-tls</code>
-        (its network) — with exactly the tools those packs call, nothing more. It runs as a
-        non-root user (uid <code class="font-mono">65532</code>), connects to
+        The image contains the release-built runner binary and three packs that cover what a
+        container can see: <code class="font-mono">fs-search</code>
+        for its filesystem, <code class="font-mono">debugging</code>
+        for its processes, and <code class="font-mono">network-tls</code>
+        for its network — plus only the tools those packs call.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        It runs as the non-root user <code class="font-mono">65532</code>, connects to
         <code class="font-mono">emisar.dev</code>
-        unless <code class="font-mono">EMISAR_URL</code>
-        points at a self-hosted control plane, reads the enrollment key from <code class="font-mono">EMISAR_ENROLLMENT_KEY</code>, and keeps its state under <code class="font-mono">/var/lib/emisar</code>. The baked config also caps admission at
-        low-risk actions, so the default image is observation-only — the debugging pack's fix-it
-        verbs stay refused until you mount a config that admits them. Each release's notes carry
-        the image digest, and the image ships signed build provenance and an SBOM:
+        (set <code class="font-mono">EMISAR_URL</code>
+        for a self-hosted control plane), reads <code class="font-mono">EMISAR_ENROLLMENT_KEY</code>, and keeps state under <code class="font-mono">/var/lib/emisar</code>. The baked config admits only low-risk
+        actions, so the default image can observe but not fix — mount your own config to allow
+        the debugging pack's fix actions.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Each release notes its image digest, and the image carries signed build provenance and an
+        SBOM:
       </p>
       <.docs_code
         phx-no-format
@@ -111,16 +146,35 @@
         in a volume so restarts preserve the same runner and its durable dispatch state.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
+        The other model is to keep nothing, the way
+        <.link
+          navigate={~p"/docs/autoscaling-fleets"}
+          class="text-brand-400 hover:text-brand-300"
+        >autoscaling fleets</.link>
+        treat hosts: no volume, a reusable enrollment key in the template, and a unique hostname
+        per container — Docker's default, the container ID, already is one. Each replacement then
+        registers as a new runner, and the old record sits offline until <.link
+          navigate={~p"/docs/autoscaling-fleets" <> "#cleanup"}
+          class="text-brand-400 hover:text-brand-300"
+        >retention removes it</.link>. The unique hostname is required — registration refuses a
+        name another runner already holds — and dispatch state is not preserved: a replaced
+        container abandons whatever it was running.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Two environment variables relabel a fleet without a config file.
         <code class="font-mono">EMISAR_GROUP</code>
-        sets <code class="font-mono">runner.group</code>
-        — the image bakes <code class="font-mono">containers</code>, and a group is a dispatch
-        target ("every runner in group web"), so give each fleet its own instead of pooling
-        unrelated fleets in the default. <code class="font-mono">EMISAR_RUNNER_ID</code>
+        sets <code class="font-mono">runner.group</code>. The image uses
+        <code class="font-mono">containers</code>
+        by default. Actions and runbooks can target a
+        whole
+        <.link
+          navigate={~p"/docs/runner-fleet" <> "#groups-labels"}
+          class="text-brand-400 hover:text-brand-300"
+        >group</.link>
+        at once, so give each fleet its own group instead of pooling unrelated fleets.
+        <code class="font-mono">EMISAR_RUNNER_ID</code>
         pins <code class="font-mono">runner.id</code>
-        when the orchestrator changes hostnames across placements but the workload is still one
-        logical runner. Everything else — labels, admission — changes by mounting your own file
-        over <code class="font-mono">/etc/emisar/config.yaml</code>:
+        when rescheduling changes the container hostname but it is still the same runner. For labels or admission settings, mount your own file over <code class="font-mono">/etc/emisar/config.yaml</code>:
       </p>
       <.docs_code phx-no-format label="config.yaml"><span class="text-sky-300">schema_version</span>: <span class="text-brand-300">1</span>
 <span class="text-sky-300">runner</span>:
@@ -134,13 +188,8 @@
   <span class="text-sky-300">enrollment_key_env</span>: <span class="text-brand-300">"EMISAR_ENROLLMENT_KEY"</span>
   <span class="text-sky-300">token_path</span>: <span class="text-brand-300">"/var/lib/emisar/token.json"</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        One more thing before a fleet: the key from
-        <a
-          href={~p"/app/runners/install"}
-          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Connect a runner</a>
-        is single-use —
-        right for one host, wrong for a template that scales. For DaemonSets and system jobs,
+        The key you started with is single-use — right for one container, wrong for a template
+        that scales. For DaemonSets and system jobs,
         mint a
         <a
           href={~p"/app/runners/keys/new"}
@@ -148,7 +197,7 @@
         >reusable enrollment key</a>
         (optionally capped at a number of uses) and hand that to the template. See
         <.link
-          navigate={~p"/docs/runners" <> "#enrollment-keys"}
+          navigate={~p"/docs/runner-fleet" <> "#enrollment-keys"}
           class="text-brand-400 hover:text-brand-300"
         >enrollment keys</.link>
         for the lifecycle details.
@@ -156,12 +205,10 @@
 
       <.docs_h2 id="extending">Extend it for your packs</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A pack that talks to your stack needs its client in the image — actions run from the
-        container, so a <code class="font-mono">postgres</code>
+        Actions run inside the container, so a pack's client must be in the image too — the
+        <code class="font-mono">postgres</code>
         pack needs <code class="font-mono">psql</code>
-        where the runner is. Build on the official image: install the tools the pack calls, then
-        bake the pack itself with <code class="font-mono">emisar pack install</code>
-        (the runner binary is already in the image):
+        there. Extend the official image with the tools your packs call, then install the packs:
       </p>
       <.docs_code phx-no-format label="Dockerfile">FROM ghcr.io/andrewdryga/emisar-runner:X.Y.Z
 USER root
@@ -171,15 +218,17 @@ RUN apt-get update \
     && emisar pack install postgres=X.Y.Z --hash sha256:…
 USER 65532</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Pin the pack version and content hash —
-        <a
-          href={~p"/app/packs"}
-          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Packs</a>
-        shows both — so the
-        image build is reproducible and a tampered registry copy is rejected. Keep the additions
-        as narrow as the workload allows. Building your own image from scratch instead — a
-        different distro, a hardened golden base? Install the release binary with <code class="font-mono text-brand-300">--no-service</code>: it skips init detection, the
+        Pin the pack version and content hash — the pack's page in the
+        <.link navigate={~p"/packs"} class="text-brand-400 hover:text-brand-300">
+          pack catalog
+        </.link>
+        shows both, with the install command ready to copy — so the image build is reproducible
+        and a tampered registry copy is rejected. Keep the additions
+        as narrow as the workload allows.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Building your own image from scratch instead — a different distro, a hardened base?
+        Install the release binary with <code class="font-mono text-brand-300">--no-service</code>: it skips init detection, the
         service user, and the systemd unit, and just puts the binary in place. Supervision belongs
         to whatever runs the container: <code class="font-mono">docker run --restart</code>, a
         Kubernetes restart policy, or the Nomad client.
@@ -192,62 +241,73 @@ USER 65532</.docs_code>
 
       <.docs_h2 id="sidecar">A sidecar next to one app</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        When the thing you want the agent to operate <em>is</em> the app — read its logs,
-        inspect its processes, poke its admin CLI — run the runner as a second container that joins
-        the app container's PID, network, and (read-only) volumes. The runner then sees exactly that
-        app and nothing else; policy, approvals, and audit work unchanged.
+        If the agent operates one app, run the runner as a second container beside it. Join the
+        app's PID namespace, network, and read-only volumes; the runner then sees the app's
+        processes and files, and reaches every destination that network can. It cannot see the
+        host's processes or filesystem unless you grant them. Policy, approvals, and audit work
+        unchanged.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> docker run -d --restart unless-stopped \
-    --name emisar-runner \
+    --name emisar-payments \
     --pid container:payments \
     --network container:payments \
     --volumes-from payments:ro \
-    -e EMISAR_URL=https://emisar.dev \
     -e EMISAR_ENROLLMENT_KEY=emkey-enroll-… \
     -v /etc/emisar/config.yaml:/etc/emisar/config.yaml:ro \
-    -v emisar-runner-data:/var/lib/emisar \
+    -v emisar-payments-data:/var/lib/emisar \
     ghcr.io/andrewdryga/emisar-runner:X.Y.Z</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The official image already covers a sidecar's core job — reading the app's files,
-        processes, and network state; the command above supplies an operator-owned config and a
-        persistent token volume. When the app's own CLI belongs in the loop,
+        The official image already covers the core sidecar work: reading the app's files,
+        processes, and network state. The command above adds an operator-owned config and a
+        persistent token volume. Name the container, the volume, and the config's
+        <code class="font-mono">runner.id</code>
+        after the app — the sidecar shares the app container's hostname, so a second sidecar on
+        the same host would otherwise collide on all three. If the agent needs the app's CLI,
         <a
           href="#extending"
           class="text-brand-400 hover:text-brand-300"
         >extend the image</a>
-        with exactly that client.
+        with that client.
       </p>
 
       <.docs_h2 id="orchestrators">One per node: Kubernetes and Nomad</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        To operate the <em>nodes</em> instead of a single app, run one runner per node — a
-        Kubernetes DaemonSet or a Nomad system job. Both reuse the mechanics above (an image, a
-        persistent state volume) and a reusable enrollment key; each has its own worked manifest:
+        To operate nodes instead of one app, run one runner per node — a Kubernetes DaemonSet
+        or a Nomad system job. Both need an image, a persistent state volume, and a reusable
+        enrollment key. Each guide provides a complete manifest:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <.link navigate={~p"/docs/kubernetes"} class="text-brand-400 hover:text-brand-300">
-              <strong class="text-zinc-200">Kubernetes</strong>
+              <strong class="text-zinc-200">Kubernetes DaemonSet</strong>
             </.link>
-            — a DaemonSet whose pod spec is your blast-radius dial: <code class="font-mono">hostPID</code>/<code class="font-mono">hostNetwork</code>
-            and read-only host mounts decide exactly what each node's runner can see.
+            — the pod spec decides exactly what each node's runner can see: <code class="font-mono">hostPID</code>, <code class="font-mono">hostNetwork</code>, and read-only host mounts.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <.link navigate={~p"/docs/nomad"} class="text-brand-400 hover:text-brand-300">
-              <strong class="text-zinc-200">Nomad</strong>
+              <strong class="text-zinc-200">Nomad system job</strong>
             </.link>
-            — a <code class="font-mono">system</code>
-            job placing one instance on every client node, with the release binary fetched in an
-            <code class="font-mono">artifact</code>
-            stanza and the token and dispatch state persisted on a host volume.
+            — one runner on every client node; an artifact stanza fetches the release binary, and
+            a host volume keeps the token and dispatch state.
           </span>
         </li>
       </ul>
+      <.docs_h2 id="next">After it is connected</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <.link navigate={~p"/docs/runner-fleet"} class="text-brand-400 hover:text-brand-300">
+          Manage the runner fleet
+        </.link>
+        covers work after the first connection — groups, labels, pack credentials, updates,
+        reconnects, and removal. To roll a container fleet out in phases, see the <.link
+          navigate={~p"/docs/production"}
+          class="text-brand-400 hover:text-brand-300"
+        >Go to production</.link>.
+      </p>
     </.docs_layout>
   </section>
 

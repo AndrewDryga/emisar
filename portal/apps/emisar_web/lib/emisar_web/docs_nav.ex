@@ -95,14 +95,14 @@ defmodule EmisarWeb.DocsNav do
       ]
     },
     %{
-      label: "Deploy runners",
+      label: "Runners",
       sections: [
         %{
-          label: nil,
+          label: "Deploy on",
           pages: [
             %{
               slug: "host-install",
-              title: "Install on a host",
+              title: "Linux host",
               path: "/docs/host-install",
               icon: "hero-server",
               keywords: "install.sh systemd service linux user",
@@ -111,7 +111,7 @@ defmodule EmisarWeb.DocsNav do
             },
             %{
               slug: "containers",
-              title: "Run in a container",
+              title: "Container",
               path: "/docs/containers",
               icon: "hero-cube",
               keywords: "docker podman image sidecar",
@@ -120,7 +120,7 @@ defmodule EmisarWeb.DocsNav do
             },
             %{
               slug: "kubernetes",
-              title: "Kubernetes",
+              title: "Kubernetes DaemonSet",
               path: "/docs/kubernetes",
               icon: "hero-squares-2x2",
               keywords: "k8s daemonset pod manifest",
@@ -129,7 +129,7 @@ defmodule EmisarWeb.DocsNav do
             },
             %{
               slug: "nomad",
-              title: "Nomad",
+              title: "Nomad system job",
               path: "/docs/nomad",
               icon: "hero-rectangle-stack",
               keywords: "hashicorp hcl system job",
@@ -144,16 +144,12 @@ defmodule EmisarWeb.DocsNav do
               keywords: "ephemeral reusable enrollment key mig asg vmss",
               desc:
                 "Enroll ephemeral runners from one reusable key as autoscaling groups — GCP MIG, AWS ASG, Azure VMSS — boot and terminate hosts."
-            },
-            %{
-              slug: "deployment",
-              title: "Production rollout",
-              path: "/docs/deployment",
-              icon: "hero-clipboard-document-check",
-              keywords: "go-live checklist monitoring phased production",
-              desc:
-                "Go from one runner to a governed fleet, with a phased rollout and a checklist."
-            },
+            }
+          ]
+        },
+        %{
+          label: "The fleet",
+          pages: [
             %{
               slug: "network-requirements",
               title: "Network requirements",
@@ -162,6 +158,41 @@ defmodule EmisarWeb.DocsNav do
               keywords: "firewall egress ports proxy dns tls websocket allowlist",
               desc:
                 "What a runner host must reach on the way out — and why nothing has to reach in."
+            },
+            %{
+              slug: "runner-fleet",
+              title: "Manage the runner fleet",
+              path: "/docs/runner-fleet",
+              icon: "hero-server-stack",
+              keywords: "groups labels enrollment key offline remove",
+              desc: "Groups and labels, enrollment keys, pack credentials, updates, and removal."
+            },
+            %{
+              slug: "production",
+              title: "Go to production",
+              path: "/docs/production",
+              icon: "hero-clipboard-document-check",
+              keywords: "go-live checklist monitoring phased production",
+              desc:
+                "Go from one runner to a governed fleet, with a phased rollout and a checklist."
+            },
+            %{
+              slug: "runner-upgrades",
+              title: "Upgrade runners",
+              path: "/docs/runner-upgrades",
+              icon: "hero-arrow-up-circle",
+              keywords: "update version canary rollback compatibility",
+              desc:
+                "Canary a runner release, verify each batch, and keep the last known-good version ready."
+            },
+            %{
+              slug: "runner-credentials",
+              title: "Runner credentials",
+              path: "/docs/runner-credentials",
+              icon: "hero-arrow-path-rounded-square",
+              keywords: "enrollment key runner token pack credential rotate revoke",
+              desc:
+                "Rotate enrollment keys, understand per-runner tokens, and swap the provider credentials packs read."
             }
           ]
         }
@@ -322,14 +353,6 @@ defmodule EmisarWeb.DocsNav do
           label: nil,
           pages: [
             %{
-              slug: "runners",
-              title: "Runner fleet",
-              path: "/docs/runners",
-              icon: "hero-server-stack",
-              keywords: "groups labels enrollment key offline remove",
-              desc: "Groups and labels, enrollment keys, pack credentials, updates, and removal."
-            },
-            %{
               slug: "runs",
               title: "Runs & history",
               path: "/docs/runs",
@@ -355,15 +378,6 @@ defmodule EmisarWeb.DocsNav do
               keywords: "update canary rollback content hash trust drift version",
               desc:
                 "Install pack bytes on a canary, trust the hash, and keep the prior version ready."
-            },
-            %{
-              slug: "upgrades",
-              title: "Upgrade runners and MCP bridges",
-              path: "/docs/upgrades",
-              icon: "hero-arrow-up-circle",
-              keywords: "update version canary rollback compatibility emisar-mcp",
-              desc:
-                "Canary runner and bridge releases, verify each batch, and keep the last known-good version ready."
             },
             %{
               slug: "credentials",

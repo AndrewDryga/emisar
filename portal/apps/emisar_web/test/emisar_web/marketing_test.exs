@@ -28,8 +28,9 @@ defmodule EmisarWeb.MarketingTest do
     /docs/integrations/keycloak
     /docs/integrations/google-workspace
     /docs/scim
-    /docs/runners
-    /docs/deployment
+    /docs/runner-fleet
+    /docs/runner-credentials
+    /docs/production
     /docs/audit-and-siem
     /docs/host-install
     /docs/containers
@@ -42,7 +43,7 @@ defmodule EmisarWeb.MarketingTest do
     /docs/runner-cli
     /docs/billing
     /docs/limits
-    /docs/upgrades
+    /docs/runner-upgrades
     /docs/credentials
     /docs/pack-updates
     /docs/network-requirements
@@ -386,7 +387,7 @@ defmodule EmisarWeb.MarketingTest do
     html = conn |> get(~p"/docs/containers") |> html_response(200)
 
     # The honest core: a containerized runner acts on its own namespace.
-    assert html =~ "act on what its own namespace can reach"
+    assert html =~ "acts only on resources available in its namespace"
     # The official image and its FROM-based extension mechanic.
     assert html =~ "ghcr.io/andrewdryga/emisar-runner"
     assert html =~ "emisar pack install"
@@ -398,7 +399,7 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "EMISAR_RUNNER_ID"
     # Fleet templates need a reusable key, not the dashboard's single-use one.
     assert html =~ "reusable enrollment key"
-    assert html =~ ~s(href="/docs/runners#enrollment-keys")
+    assert html =~ ~s(href="/docs/runner-fleet#enrollment-keys")
     # The three shapes.
     assert html =~ "DaemonSet"
     assert html =~ "system"
@@ -672,7 +673,7 @@ defmodule EmisarWeb.MarketingTest do
 
   describe "structured data" do
     test "a docs page emits BreadcrumbList JSON-LD (Home → Docs → page)", %{conn: conn} do
-      html = conn |> get(~p"/docs/runners") |> html_response(200)
+      html = conn |> get(~p"/docs/runner-fleet") |> html_response(200)
       assert html =~ ~s(type="application/ld+json")
       assert html =~ "BreadcrumbList"
       assert html =~ ~s("name":"Home")
@@ -801,7 +802,7 @@ defmodule EmisarWeb.MarketingTest do
     /docs/integrations/keycloak
     /docs/integrations/google-workspace
             /docs/scim
-            /docs/runners
+            /docs/runner-fleet
             /docs/audit-and-siem
             /docs/action-packs
             /docs/publishing-packs
@@ -1002,10 +1003,10 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     test "the deployment guide attributes signed dispatch to the bridge key", %{conn: conn} do
-      html = conn |> get(~p"/docs/deployment") |> html_response(200) |> squish()
+      html = conn |> get(~p"/docs/production") |> html_response(200) |> squish()
 
       assert html =~
-               "A customer-authorized bridge signs each request with a key the cloud never holds."
+               "A customer-authorized bridge signs each request with a key the control plane never holds."
 
       refute html =~ "a human&#39;s signature"
     end
@@ -1817,7 +1818,7 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     test "the runners page renders the host CLI and uninstall flags", %{conn: conn} do
-      html = conn |> get(~p"/docs/runners") |> html_response(200)
+      html = conn |> get(~p"/docs/runner-fleet") |> html_response(200)
 
       # The host-side toolbox + clean removal + the TLS install endpoint.
       assert html =~ "emisar audit verify --all"
@@ -1830,14 +1831,14 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     test "the runners page documents both enrollment-key models", %{conn: conn} do
-      html = conn |> get(~p"/docs/runners") |> html_response(200)
+      html = conn |> get(~p"/docs/runner-fleet") |> html_response(200)
 
       # The key-model contract must match the shipped product (EnrollmentKey:
       # single-use default + reusable with max-uses/expiry) — UI-008 regression.
       assert html =~ "Two key models"
       assert html =~ "single-use"
       assert html =~ "reusable"
-      assert html =~ "max-uses cap"
+      assert html =~ "maximum use count"
       assert html =~ "mint one reusable key"
       refute html =~ "enrolls exactly one runner"
       refute html =~ "Mint per host"
@@ -2045,7 +2046,7 @@ defmodule EmisarWeb.MarketingTest do
 
     test "upgrades derives its compatibility thresholds instead of hard-coding a snapshot",
          %{conn: conn} do
-      html = conn |> get(~p"/docs/upgrades") |> html_response(200)
+      html = conn |> get(~p"/docs/runner-upgrades") |> html_response(200)
 
       # The page interpolates the requirement strings, so the rendered form is
       # escaped (">= 0.10.0" arrives as "&gt;= 0.10.0").
@@ -2056,7 +2057,7 @@ defmodule EmisarWeb.MarketingTest do
 
     test "upgrades states the verified version commands and the interruption they cause",
          %{conn: conn} do
-      html = conn |> get(~p"/docs/upgrades") |> html_response(200)
+      html = conn |> get(~p"/docs/runner-upgrades") |> html_response(200)
 
       assert html =~ "emisar --version"
 
@@ -2075,7 +2076,7 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     test "upgrades pins a placeholder release, never an example tag that ages", %{conn: conn} do
-      html = conn |> get(~p"/docs/upgrades") |> html_response(200)
+      html = conn |> get(~p"/docs/runner-upgrades") |> html_response(200)
 
       assert html =~ "--version &lt;target-version&gt;"
       assert html =~ "--version &lt;known-good-version&gt;"
@@ -2086,14 +2087,15 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     test "upgrades keeps packs, bridges, and downgrades honestly bounded", %{conn: conn} do
-      html = conn |> get(~p"/docs/upgrades") |> html_response(200)
+      html = conn |> get(~p"/docs/runner-upgrades") |> html_response(200) |> squish()
+
+      assert html =~ "only within the supported release line"
+      assert html =~ "An upgrade or rollback never touches packs"
+      assert html =~ "infrastructure-managed runner is refused"
 
       bridge = conn |> get(~p"/docs/bridge-upgrades") |> html_response(200) |> squish()
       assert bridge =~ "A running client keeps the binary it already loaded"
       assert bridge =~ "Client config and API key are untouched"
-      assert html =~ "Rollback works only within the supported"
-      assert html =~ "Packs do not move with the binary"
-      assert html =~ "infrastructure-managed runner is refused"
     end
 
     test "credentials opens with a matrix carrying every field the reader compares on",
@@ -2118,7 +2120,7 @@ defmodule EmisarWeb.MarketingTest do
 
       # Every row hands the reader off to a real docs page.
       for owner <-
-            ~w(/docs/agents-and-keys /docs/audit-and-siem /docs/runners /docs/sso /docs/scim
+            ~w(/docs/agents-and-keys /docs/audit-and-siem /docs/runner-fleet /docs/sso /docs/scim
                       /docs/signed-dispatch) do
         assert html =~ ~s(href="#{owner}")
       end
@@ -2205,33 +2207,37 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Several packs update independently"
     end
 
-    test "network requirements names the real runner endpoints and no inbound listener",
+    test "network requirements names required and fallback domains without delivery internals",
          %{conn: conn} do
-      html = conn |> get(~p"/docs/network-requirements") |> html_response(200)
+      html = conn |> get(~p"/docs/network-requirements") |> html_response(200) |> squish()
 
       assert html =~ "/runner/register"
       assert html =~ "/runner/socket/websocket"
       assert html =~ "/api/mcp/rpc"
+      assert html =~ "emisar.dev:443"
       assert html =~ "registry.emisar.dev"
       assert html =~ "api.github.com"
-      assert html =~ "needs no open port"
-
-      assert html =~
-               "The runner opens an outbound TLS WebSocket and exposes no inbound listener; commands return through that established connection."
+      assert html =~ "github.com"
+      assert html =~ "release-assets.githubusercontent.com"
+      assert html =~ "To permit the optional GitHub release fallback"
+      refute html =~ "GCS"
+      refute html =~ "Google Storage"
+      refute html =~ "needs no open port"
+      refute html =~ "What never needs an inbound rule"
     end
 
     test "network requirements claims only the transport behavior the clients implement",
          %{conn: conn} do
-      html = conn |> get(~p"/docs/network-requirements") |> html_response(200)
+      html = conn |> get(~p"/docs/network-requirements") |> html_response(200) |> squish()
 
       assert html =~ "HTTPS_PROXY"
       assert html =~ "TLS 1.2 or newer"
-      assert html =~ "Redirects are refused"
+      assert html =~ "Redirects are not followed"
 
       # No SSE/WebSocket/session on the bridge, and the page says outright
       # that emisar owns no trust-store, pinning, or client-certificate knob.
-      assert html =~ "no session for a network appliance"
-      assert html =~ "certificate pinning, or client-certificate configuration"
+      assert html =~ "open network session"
+      assert html =~ "certificate pinning, or client certificate settings"
       refute html =~ "mutual TLS"
     end
 
@@ -2262,11 +2268,11 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/network-requirements") |> html_response(200)
 
       assert html =~ ~s(id="verify")
-      assert html =~ "no emisar command that tests your firewall"
+      assert html =~ "fails in a recognizable place"
 
       assert html =~ "sudo emisar doctor"
       assert html =~ "emisar-mcp --version"
-      assert html =~ "one discovery call from the LLM client"
+      assert html =~ "LLM discovery call"
     end
 
     test "the wide day-two tables scroll sideways instead of clipping", %{conn: conn} do
@@ -2275,7 +2281,7 @@ defmodule EmisarWeb.MarketingTest do
       for {path, min_width} <- [
             {~p"/docs/credentials", "1280px"},
             {~p"/docs/network-requirements", "1120px"},
-            {~p"/docs/upgrades", "680px"}
+            {~p"/docs/runner-upgrades", "680px"}
           ] do
         html = conn |> get(path) |> html_response(200)
 
@@ -2300,7 +2306,7 @@ defmodule EmisarWeb.MarketingTest do
       end
 
       # Each symptom hands off rather than restating the reference.
-      for owner <- ~w(/docs/runners /docs/host-install /docs/pack-updates /docs/action-packs
+      for owner <- ~w(/docs/runner-fleet /docs/host-install /docs/pack-updates /docs/action-packs
                       /docs/runs /docs/mcp-reference /docs/agents-and-keys /docs/audit-and-siem
                       /docs/network-requirements /docs/policies-and-approvals) do
         assert html =~ ~s(href="#{owner}"), "troubleshooting never links #{owner}"
@@ -2584,7 +2590,7 @@ defmodule EmisarWeb.MarketingTest do
       ]
 
       surfaces = ~w(
-        /docs/audit-and-siem /docs/deployment /docs/billing /docs/limits /docs/runs
+        /docs/audit-and-siem /docs/production /docs/billing /docs/limits /docs/runs
         /docs/security-model /docs/agents-and-keys /docs/runner-cli /docs/troubleshooting
         /docs/credentials /how-it-works /zero-trust /security /trust / /privacy /dpa
         /compare/copy-paste-ai-ops /compare/custom-mcp-server
@@ -2615,16 +2621,16 @@ defmodule EmisarWeb.MarketingTest do
     # a rotation, or an incident response from a reference table.
 
     @owner_links [
-      {"/docs/runners",
-       ~w(/docs/upgrades /docs/pack-updates /docs/troubleshooting /docs/security-incidents)},
-      {"/docs/runner-cli", ~w(/docs/upgrades /docs/troubleshooting)},
+      {"/docs/runner-fleet",
+       ~w(/docs/runner-upgrades /docs/pack-updates /docs/troubleshooting /docs/security-incidents)},
+      {"/docs/runner-cli", ~w(/docs/runner-upgrades /docs/troubleshooting)},
       {"/docs/authentication",
        ~w(/docs/credentials /docs/security-incidents /docs/troubleshooting)},
       {"/docs/sso", ~w(/docs/credentials /docs/security-incidents /docs/troubleshooting)},
       {"/docs/scim", ~w(/docs/credentials /docs/security-incidents /docs/troubleshooting)},
       {"/docs/mcp-reference", ~w(/docs/troubleshooting)},
       {"/support", ~w(/docs/troubleshooting /docs/security-incidents)},
-      {"/docs/deployment", ~w(/docs/upgrades /docs/pack-updates /docs/audit-and-siem)},
+      {"/docs/production", ~w(/docs/runner-upgrades /docs/pack-updates /docs/audit-and-siem)},
       {"/docs/security-model",
        ~w(/docs/architecture /docs/security-incidents /docs/audit-and-siem)},
       {"/docs/audit-and-siem", ~w(/docs/credentials /docs/policies-and-approvals)}
@@ -2657,7 +2663,7 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     test "the changelog stays the release notes the upgrade page points at", %{conn: conn} do
-      html = conn |> get(~p"/docs/upgrades") |> html_response(200)
+      html = conn |> get(~p"/docs/runner-upgrades") |> html_response(200)
 
       assert html =~ ~s(href="/changelog")
     end
@@ -2737,17 +2743,17 @@ defmodule EmisarWeb.MarketingTest do
       "/docs/runbooks" =>
         ~w(/docs/policies-and-approvals /docs/connect-claude-ai /docs/action-packs),
       "/docs/authentication" => ~w(/docs/teams-and-access /docs/sso /docs/scim),
-      "/docs/upgrades" =>
-        ~w(/changelog /docs/pack-updates /docs/agents-and-keys /docs/deployment /docs/runners),
+      "/docs/runner-upgrades" =>
+        ~w(/changelog /docs/pack-updates /docs/agents-and-keys /docs/production /docs/runner-fleet),
       "/docs/credentials" =>
-        ~w(/docs/agents-and-keys /docs/audit-and-siem /docs/runners /docs/sso /docs/scim /docs/signed-dispatch),
+        ~w(/docs/agents-and-keys /docs/audit-and-siem /docs/runner-fleet /docs/sso /docs/scim /docs/signed-dispatch),
       "/docs/pack-updates" =>
-        ~w(/docs/upgrades /docs/action-packs /docs/publishing-packs /docs/pack-registry /packs),
+        ~w(/docs/runner-upgrades /docs/action-packs /docs/publishing-packs /docs/pack-registry /packs),
       "/docs/network-requirements" =>
-        ~w(/docs/host-install /docs/upgrades /docs/pack-registry /docs/containers /docs/kubernetes /docs/nomad /docs/runners),
+        ~w(/docs/host-install /docs/runner-upgrades /docs/pack-registry /docs/containers /docs/kubernetes /docs/nomad /docs/runner-fleet),
       "/docs/troubleshooting" =>
-        ~w(/docs/runners /docs/host-install /docs/pack-updates /docs/action-packs /docs/runs
-           /docs/mcp-reference /docs/agents-and-keys /docs/credentials /docs/upgrades /docs/audit-and-siem
+        ~w(/docs/runner-fleet /docs/host-install /docs/pack-updates /docs/action-packs /docs/runs
+           /docs/mcp-reference /docs/agents-and-keys /docs/credentials /docs/runner-upgrades /docs/audit-and-siem
            /docs/network-requirements /docs/policies-and-approvals /docs/teams-and-access
            /docs/signed-dispatch /docs/security-incidents /support),
       "/docs/security-incidents" =>
@@ -2755,7 +2761,7 @@ defmodule EmisarWeb.MarketingTest do
            /docs/signed-dispatch /docs/sso /docs/scim /docs/authentication /docs/troubleshooting
            /support),
       "/docs/architecture" =>
-        ~w(/docs/security-model /docs/network-requirements /docs/upgrades /docs/runs
+        ~w(/docs/security-model /docs/network-requirements /docs/runner-upgrades /docs/runs
            /docs/troubleshooting /docs/policies-and-approvals /docs/signed-dispatch /how-it-works
            /changelog),
       "/docs/teams-and-access" =>

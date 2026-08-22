@@ -44,8 +44,9 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/integrations/keycloak
     /docs/integrations/google-workspace
     /docs/scim
-    /docs/runners
-    /docs/deployment
+    /docs/runner-fleet
+    /docs/runner-credentials
+    /docs/production
     /docs/audit-and-siem
     /docs/host-install
     /docs/containers
@@ -58,7 +59,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/runner-cli
     /docs/billing
     /docs/limits
-    /docs/upgrades
+    /docs/runner-upgrades
     /docs/credentials
     /docs/pack-updates
     /docs/network-requirements
@@ -320,13 +321,21 @@ defmodule EmisarWeb.MarketingStructuralTest do
            {"/app/packs", "Packs"},
            {"/app/agents", "AI agents"}
          ]},
-        {"/docs/host-install", [{"/app/runners/install", "Runners → Connect a runner"}]},
-        {"/docs/runners",
+        {"/docs/host-install",
+         [
+           {"/app/runners/install", "Runners → Connect a runner"},
+           {"/app/runners", "Runners"}
+         ]},
+        {"/docs/runner-fleet",
          [
            {"/app/runners/install", "Runners → Connect a runner"},
            {"/app/runners/keys", "Runners → Enrollment keys"},
-           {"/app/runners", "Runners"},
-           {"/app/packs", "Packs"}
+           {"/app/runners", "Runners"}
+         ]},
+        {"/docs/runner-credentials",
+         [
+           {"/app/runners/keys", "Runners → Enrollment keys"},
+           {"/app/runners", "Runners"}
          ]},
         {"/docs/runner-cli", [{"/app/runners", "Runners"}, {"/app/packs", "Packs"}]},
         {"/docs/autoscaling-fleets",
@@ -343,9 +352,9 @@ defmodule EmisarWeb.MarketingStructuralTest do
          ]},
         {"/docs/containers",
          [
-           {"/app/runners/install", "Connect a runner"},
-           {"/app/runners/keys/new", "reusable enrollment key"},
-           {"/app/packs", "Packs"}
+           {"/app/runners/install", "Runners → Connect a runner"},
+           {"/app/runners", "Runners"},
+           {"/app/runners/keys/new", "reusable enrollment key"}
          ]},
         {"/docs/publishing-packs", [{"/app/packs", "Packs"}, {"/app/runners", "Runners"}]},
         {"/docs/pack-registry", [{"/app/packs", "Packs"}]},
@@ -372,10 +381,10 @@ defmodule EmisarWeb.MarketingStructuralTest do
         {"/docs/troubleshooting",
          [{"/app/runners", "Runners"}, {"/app/packs", "Packs"}, {"/app/agents", "LLM agents"}]},
         {"/docs/runs", [{"/app/runs", "Runs"}]},
-        {"/docs/deployment",
+        {"/docs/production",
          [{"/app/audit", "Audit"}, {"/app/audit/export", "audit-export token"}]},
         {"/docs/signed-dispatch", [{"/app/runners", "Runners"}]},
-        {"/docs/upgrades",
+        {"/docs/runner-upgrades",
          [
            {"/app/runs", "Runs"},
            {"/app/runners", "Runners"},

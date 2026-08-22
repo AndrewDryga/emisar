@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="network-requirements"
-      updated="August 7, 2026"
+      updated="August 20, 2026"
       toc={[
         {"table", "What has to be reachable"},
         {"control-plane", "The runner's control connection"},
@@ -14,31 +14,19 @@
         {"providers", "Provider and action traffic"},
         {"proxies", "Proxies and TLS inspection"},
         {"dns-time", "DNS and the clock"},
-        {"inbound", "What never needs an inbound rule"},
-        {"verify", "Prove the path works"}
+        {"verify", "Check your egress rules"}
       ]}
     >
       <.docs_header current="network-requirements">
         <:dek>
-          What a runner host and a workstation have to reach on the way out — and why nothing has
-          to reach in.
+          The domains, ports, and protocols runner hosts and workstations need to reach.
         </:dek>
       </.docs_header>
 
-      <.docs_prerequisites>
-        <:item>
-          The emisar origin you connect to. On the hosted control plane that is <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://emisar.dev</code>.
-        </:item>
-        <:item>Whoever can change egress rules for the hosts you are about to install on.</:item>
-        <:item>
-          The pack registry you install from, if it is not the default.
-        </:item>
-      </.docs_prerequisites>
-
       <.docs_h2 id="table">What has to be reachable</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Every network row is outbound from your host. Nothing here is an inbound rule — the last
-        row says so explicitly.
+        Use these rows to build outbound rules for runner hosts and workstations. "Your emisar
+        origin" is the control plane you connect to — on the hosted control plane, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://emisar.dev</code>.
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
         <table class="w-full min-w-[1120px] text-left text-sm">
@@ -58,14 +46,14 @@
                "Outbound",
                "Your emisar origin, TCP 443",
                "HTTPS POST /runner/register",
-               "Trades the enrollment key for this runner's own token",
+               "Exchanges the enrollment key for this runner's own token",
                "First connect, and again after an enrollment-key change"},
               {"Runner token refresh",
                "Outbound",
                "Your emisar origin, TCP 443",
                "HTTPS POST /runner/token/refresh",
                "Swaps the runner's token for a successor before the old one expires",
-               "Once its token is 60 days old, on the next connect — no new egress rule"},
+               "On the next connect after its token is 60 days old"},
               {"Runner control connection",
                "Outbound",
                "Your emisar origin, TCP 443",
@@ -74,13 +62,19 @@
                "Continuously, for as long as the runner runs"},
               {"Installer release download (runner and bridge)",
                "Outbound",
-               "api.github.com, github.com and its release-asset host, TCP 443",
+               "Your emisar origin, TCP 443",
                "HTTPS",
-               "Resolves the release, then downloads the tarball and its checksums",
+               "Downloads the release manifest, tarball, and checksums from /releases",
                "Only while install.sh or install-mcp.sh runs"},
+              {"GitHub release mirror fallback",
+               "Outbound",
+               "api.github.com, github.com, and release-assets.githubusercontent.com, TCP 443",
+               "HTTPS",
+               "Provides the optional secondary release source",
+               "Only when the Emisar release path is unavailable or EMISAR_REPO names another repository"},
               {"Pack install and update",
                "Outbound",
-               "The configured registry and the storage host it redirects to, TCP 443",
+               "Your emisar origin and registry.emisar.dev, TCP 443, or your configured artifact hosts",
                "HTTPS",
                "Fetches the immutable pack tarball named by the registry index",
                "Only while emisar pack install or pack update runs"},
@@ -88,7 +82,7 @@
                "Outbound",
                "Whatever that pack's command talks to, on the provider's own port",
                "The provider's own protocol",
-               "The action does its work; this traffic never passes through emisar",
+               "The action does its work. This traffic never passes through emisar.",
                "While that action runs"},
               {"MCP bridge",
                "Outbound",
@@ -100,26 +94,20 @@
                "Local, no network",
                "The bridge process on the same machine",
                "stdio pipes",
-               "The client spawns the bridge as a child process",
+               "The client starts the bridge as a child process",
                "Whenever the client is running"},
               {"Name resolution",
                "Outbound",
                "Your configured resolver",
                "DNS",
-               "Resolves the emisar origin, and the GitHub and registry hosts",
-               "On connect and each reconnect; also during install and update"},
-              {"Clock synchronisation",
+               "Resolves the emisar, registry, provider, and optional GitHub fallback hosts",
+               "On connect, reconnect, install, and update"},
+              {"Clock synchronization",
                "Outbound",
                "Whatever time source the host already uses, commonly UDP 123",
                "NTP",
                "Certificate validity — and signed-dispatch freshness — is judged against this clock",
-               "Continuously"},
-              {"Inbound runner listener",
-               "None",
-               "No listener, no port, no NAT rule",
-               "—",
-               "The runner opens an outbound TLS WebSocket and exposes no inbound listener; commands return through that established connection.",
-               "Never"}
+               "Continuously"}
             ] do %>
               <tr>
                 <td class="px-4 py-3 align-top font-semibold text-zinc-100">{operation}</td>
@@ -136,28 +124,27 @@
 
       <.docs_h2 id="control-plane">The runner's control connection</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A runner opens one long-lived outbound connection and keeps it. On first connect it trades
-        its enrollment key for a token over <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">POST /runner/register</code>, then
-        upgrades to a WebSocket at
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/runner/socket/websocket</code>
-        and carries its token as a bearer on the upgrade. Every dispatch, result, and heartbeat
-        rides that one connection. It listens on nothing.
+        A runner opens one long-lived outbound connection. On first connect it exchanges its
+        enrollment key for a token (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">POST /runner/register</code>), then upgrades to a
+        WebSocket at <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/runner/socket/websocket</code>, sending the token as a bearer
+        during the upgrade. Every dispatch, result, and heartbeat rides that one connection.
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">TLS 1.2 or newer, validated against the host's trust store.</strong>
-            The runner requires a modern TLS floor and refuses cleartext to a non-loopback host
-            unless you deliberately set
+            <strong class="text-zinc-200">TLS 1.2 or newer, validated against the host trust store.</strong>
+            Loopback HTTP is accepted without a flag. The runner rejects cleartext HTTP and
+            WebSocket connections to non-loopback hosts unless
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cloud.allow_insecure</code>
-            — which exists for a loopback development portal, not for production.
+            is set — that sends runner credentials without TLS, so use it only on an isolated
+            development network.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Redirects are refused, not followed.</strong>
+            <strong class="text-zinc-200">Redirects are not followed.</strong>
             Registration and the socket upgrade both stop at a
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">3xx</code>
             rather than chase the bearer token to whatever host answered. A captive portal or a
@@ -168,37 +155,38 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Disconnects are expected; a blocked path is not.</strong>
-            The runner reconnects with backoff and re-advertises. A connect that times out rather
-            than being refused usually means outbound 443 is filtered —
+            <strong class="text-zinc-200">The runner reconnects on its own.</strong>
+            After a drop it retries with backoff and advertises again. A connection timeout often
+            means outbound port 443 is filtered — use
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar doctor</code>
-            probes reachability as one of its checks.
+            to check that the control plane is reachable.
           </span>
         </li>
       </ul>
 
       <.docs_h2 id="installers">Installing and upgrading binaries</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Both installers resolve and download releases from GitHub, so they need more than your
-        emisar origin — but only while they run. They ask
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">api.github.com</code>
-        for the release, then download the tarball and its checksums from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">github.com</code>, which redirects to
-        GitHub's release-asset host. Allow the redirect target too, or the download stops with a
-        checksum file it never fetched.
+        Allow outbound HTTPS to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.dev:443</code>. Both installers download releases from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://emisar.dev/releases</code>.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        On a host that cannot reach GitHub at all, download the release tarball elsewhere and place
-        the binary yourself — see
+        To permit the optional GitHub release fallback, also allow outbound HTTPS to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">api.github.com:443</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">github.com:443</code>, and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">release-assets.githubusercontent.com:443</code>.
+        A malformed primary manifest or checksum failure stops the install instead of switching
+        sources.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A custom <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_REPO</code>
+        uses GitHub directly. For a host with neither release path, download the tarball and
+        checksum elsewhere and install the binary manually — the
         <.link
           navigate={~p"/docs/host-install"}
           class="text-brand-300 hover:text-brand-200"
-        >Install on a host</.link>
-        for what the installer sets up around it, and
+        >Linux host</.link>
+        page covers the surrounding setup, and
         <.link
-          navigate={~p"/docs/upgrades"}
+          navigate={~p"/docs/runner-upgrades"}
           class="text-brand-300 hover:text-brand-200"
-        >Upgrade runners and MCP bridges</.link>
-        for the upgrade path.
+        >Upgrade runners</.link>
+        the upgrade path.
       </p>
 
       <.docs_h2 id="registry">The pack registry</.docs_h2>
@@ -208,13 +196,15 @@
         fetch from the registry configured by
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--registry</code>
         or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_PACKS_REGISTRY</code>,
-        defaulting to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://emisar.dev</code>. That
-        default answers a pack fetch with a redirect to the immutable tarball on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">registry.emisar.dev</code>, and the
-        runner follows it — over HTTPS only, refusing a downgrade to cleartext. Allowlist both.
+        defaulting to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://emisar.dev</code>.
+        By default, a pack fetch redirects to the immutable tarball on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">registry.emisar.dev</code>. The runner
+        follows only HTTPS redirects and rejects a cleartext downgrade. Allowlist both hosts.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A private registry is any static host serving the registry layout, so its origin is the one
-        you allow instead. Running one is covered in <.link
+        These commands look packs up by name, and the public emisar origin serves those
+        lookups. A static tree built with <code>packctl</code>
+        has a different layout — install from its exact immutable tarball URL instead of passing
+        that host to <code>--registry</code>. Running one is covered in <.link
           navigate={~p"/docs/pack-registry"}
           class="text-brand-300 hover:text-brand-200"
         >Host your own registry</.link>.
@@ -222,12 +212,11 @@
 
       <.docs_h2 id="bridge">The MCP bridge</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The bridge is a child process of your LLM client. The client talks to it over stdin and
-        stdout — no port, no socket — and the bridge makes one plain HTTPS
+        The LLM client starts the bridge as a child process and talks to it over stdin and
+        stdout — no port, no socket. The bridge sends one HTTPS
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">POST</code>
-        per JSON-RPC frame to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>. There is no
-        server-sent-event stream, no WebSocket, and no session for a network appliance to hold
-        open.
+        to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
+        per JSON-RPC frame, with no server-sent events, WebSocket, or open network session.
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -244,10 +233,11 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">It refuses to put your key on the wire in the clear.</strong>
-            A cleartext <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">http://</code>
-            URL to a non-loopback host is rejected at startup unless you explicitly override it;
-            loopback is the one exception. It also refuses to follow a redirect, for the same
-            reason the runner does.
+            Loopback HTTP is accepted without an override; a cleartext
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">http://</code>
+            URL to any other host is rejected unless insecure transport is explicitly enabled —
+            that sends the key without TLS and is only for an isolated development network.
+            Redirects are refused for the same reason.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -262,21 +252,18 @@
 
       <.docs_h2 id="providers">Provider and action traffic</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A pack's action runs a real command on the host, and that command talks to whatever it
-        talks to — your Nomad cluster, a database, a cloud API. That traffic is between your host
-        and your systems; it never goes through emisar, and emisar cannot publish one allowlist for
-        it. Work it out per pack:
+        A pack action runs a real command on the host, and that command talks to its own systems
+        — Nomad, a database, a cloud API — directly. The traffic never passes through emisar, so
+        build each pack's allowlist from the pack itself:
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack info &lt;id&gt;</code>
-        prints the binaries an installed pack needs and the environment variables its tool reads to
-        authenticate, which is the shortest route to the endpoints it will reach.
+        lists the binaries it needs and the environment variables it authenticates with, and
+        those name the endpoints.
       </p>
 
       <.docs_h2 id="proxies">Proxies and TLS inspection</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Neither the runner nor the bridge has an emisar-specific proxy setting, CA-bundle option,
-        certificate pinning, or client-certificate configuration. Both build on the platform's
-        standard HTTP client, so the process environment is where a proxy is configured and the
-        host's own trust store is what validates certificates.
+        The runner and the bridge use the platform's standard HTTP client, with no
+        emisar-specific proxy, CA bundle, certificate pinning, or client certificate settings.
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -285,80 +272,52 @@
             <strong class="text-zinc-200">Proxy variables come from the process environment.</strong>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">HTTP_PROXY</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">HTTPS_PROXY</code>, and
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">NO_PROXY</code>
-            apply. On a systemd host the service reads <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/runner.env</code>, so
-            that is where they go; for the bridge, set them wherever your LLM client's environment
-            is defined.
+            apply. On a systemd host, put them in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/runner.env</code>. For the bridge,
+            define them in the LLM client environment.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Whatever sits in the path has to pass an Upgrade and hold the connection.</strong>
-            The runner's connection is a long-lived WebSocket. An appliance that strips the
+            <strong class="text-zinc-200">Every intermediary must pass the Upgrade header and keep the connection open.</strong>
+            The runner uses a long-lived WebSocket. An appliance that strips the
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Upgrade</code>
-            header, buffers frames, or idles the connection out shows up as a runner that keeps
-            reconnecting rather than as an outright failure.
+            header, buffers frames, or closes idle connections makes the runner reconnect over
+            and over — often with no clear error to find.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">TLS interception is a host trust-store question.</strong>
-            If you terminate and re-sign TLS, the interception CA has to be trusted by the host, in
-            the ordinary way that host trusts CAs. There is nothing to configure in emisar, and
-            nothing in emisar will bypass a certificate it cannot validate.
+            If you terminate and re-sign TLS, the host has to trust the interception CA the same
+            way it trusts any CA. emisar needs no configuration for this, and accepts only
+            certificates the host trust store validates.
           </span>
         </li>
       </ul>
 
       <.docs_h2 id="dns-time">DNS and the clock</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A runner host resolves your emisar origin when it connects and again on every reconnect —
-        not once at boot — and resolves the GitHub and registry hosts while it installs or updates
-        packs. Split-horizon DNS that answers your emisar origin with an internal address only some
-        hosts can reach is a common cause of "it works on one box."
+        A runner resolves the emisar origin on every connection, not only at boot. It resolves
+        the registry during pack installs and GitHub only when the release fallback is used.
+        Split-horizon DNS can send some hosts to an unreachable internal address. This often
+        explains why one host works and another fails.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Keep the clock synchronised. Certificate validity is judged against it, so a skewed host
-        fails TLS at connect. If you use <.link
+        Keep the clock synchronized. TLS judges certificate validity against the host clock, and
+        <.link
           navigate={~p"/docs/signed-dispatch"}
           class="text-brand-300 hover:text-brand-200"
-        >signed dispatch</.link>, the runner also judges a signature's freshness and its
-        certificate's window against the same clock, so skew there surfaces as refused actions on
-        one host while the rest of the fleet is fine.
+        >signed dispatch</.link>
+        checks signature freshness against it too — so one skewed host can refuse actions while
+        the rest of the fleet works.
       </p>
 
-      <.docs_h2 id="inbound">What never needs an inbound rule</.docs_h2>
+      <.docs_h2 id="verify">Check your egress rules</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Everything that looks like it should be inbound terminates on the hosted control plane
-        instead of on your infrastructure: your identity provider's OIDC callback and its SCIM
-        connector, remote MCP and OAuth from Claude.ai or ChatGPT, and the approval emails your
-        team clicks. Those reach emisar, not you. A runner host needs no open port, no public
-        address, and no NAT rule — which is what makes it deployable inside a network that does not
-        accept inbound connections at all.
-      </p>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        Runtime-specific networking — container namespaces, pod specs, Nomad host networks — stays
-        with its deployment page: <.link
-          navigate={~p"/docs/containers"}
-          class="text-brand-300 hover:text-brand-200"
-        >Run in a container</.link>, <.link
-          navigate={~p"/docs/kubernetes"}
-          class="text-brand-300 hover:text-brand-200"
-        >Kubernetes</.link>, and <.link
-          navigate={~p"/docs/nomad"}
-          class="text-brand-300 hover:text-brand-200"
-        >Nomad</.link>. If a runner will not connect, start with <.link
-          navigate={~p"/docs/runners"}
-          class="text-brand-300 hover:text-brand-200"
-        >Runner fleet</.link>.
-      </p>
-
-      <.docs_h2 id="verify">Prove the path works</.docs_h2>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        There is no emisar command that tests your firewall. What you have instead are the ordinary
-        product checks, and they are enough: each one fails in a recognisable place when a rule is
-        missing.
+        The product's own commands are the test — each fails in a recognizable place when a
+        rule is missing:
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># on the runner host — config, credential, packs, action binaries, reachability</span>
 <span class="text-zinc-500">$</span> sudo emisar doctor
@@ -366,40 +325,39 @@
 <span class="text-zinc-500"># on the workstation that runs your LLM client</span>
 <span class="text-zinc-500">$</span> emisar-mcp --version</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The egress path is open when all of these hold:
+        The egress path is open when all of these are true:
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar doctor</code>
-            passes, and the runner then shows <strong class="text-zinc-200">online</strong>
-            in the console — the first covers the host, the second proves the WebSocket upgrade
-            survived whatever sits in the path.
+            passes — the host side works. The runner appears
+            <strong class="text-zinc-200">online</strong>
+            in the console — the WebSocket connection made it through.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            That runner advertises the packs and actions you installed. A pack that never
-            downloaded is a registry rule, not a runner problem.
+            That runner advertises the packs and actions you installed. If a pack never
+            downloaded, fix the registry rule.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            If the host runs a pack that talks to a provider, one low-risk read-only action from it
-            succeeds. There is no generic probe for that leg: provider traffic leaves your host
-            directly, so the real action is the useful end-to-end check.
+            If the host runs a pack that talks to a provider, one low-risk read-only action from
+            it succeeds. Provider traffic leaves your host directly, so a real action is the
+            end-to-end check for that leg.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp --version</code>
-            answers on the workstation, and one discovery call from the LLM client — ask it to list
-            runners or find an action — returns. The version proves the binary is there; only the
-            call proves the bridge reached the control plane.
+            works on the workstation — the binary is installed. One LLM discovery call lists
+            runners or finds an action — the bridge can reach the control plane.
           </span>
         </li>
       </ul>

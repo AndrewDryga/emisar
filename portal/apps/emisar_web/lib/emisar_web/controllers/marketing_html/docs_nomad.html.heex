@@ -4,41 +4,109 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="nomad"
-      updated="August 3, 2026"
+      updated="August 19, 2026"
       toc={[
+        {"before-you-deploy", "Prepare the deployment"},
         {"system-job", "The system job"},
+        {"deploy", "Deploy and verify"},
         {"visibility", "Driver and visibility"},
-        {"credentials", "Keys and pack credentials"}
+        {"credentials", "Keys and pack credentials"},
+        {"next", "After it is connected"}
       ]}
     >
       <.docs_header current="nomad">
         <:dek>
-          On Nomad, a <code class="font-mono">system</code>
-          job places one runner on every client node — the same "operate the node" shape as a
-          Kubernetes DaemonSet. This page is the worked job; the two mechanics it relies on (a
-          service-less binary and a persistent state volume) are on <.link
-            navigate={~p"/docs/containers"}
-            class="text-brand-400 hover:text-brand-300"
-          >Containers</.link>.
+          A Nomad <code class="font-mono">system</code>
+          job places one runner on every client node. This example uses the release archive and a
+          persistent host volume.
         </:dek>
       </.docs_header>
 
+      <p class="mt-6 text-base leading-7 text-zinc-400">
+        To read what a containerized runner can reach, see <.link
+          navigate={~p"/docs/containers"}
+          class="text-brand-400 hover:text-brand-300"
+        >Install in a container</.link>.
+      </p>
+
+      <.docs_prerequisites>
+        <:item>
+          The <code class="text-zinc-300">nomad</code>
+          CLI pointed at your cluster, with permission to submit system jobs and write Nomad
+          Variables.
+        </:item>
+        <:item>
+          amd64 Linux client nodes. The example pins the linux-amd64 archive; for arm64 clients
+          change the architecture in the artifact source and the binary path.
+        </:item>
+        <:item>
+          Outbound HTTPS from every client node to
+          <code class="text-zinc-300">emisar.dev:443</code>
+          and <code class="text-zinc-300">registry.emisar.dev:443</code>. See
+          <.link
+            navigate={~p"/docs/network-requirements"}
+            class="text-brand-400 hover:text-brand-300"
+          >Network requirements</.link>
+          for the optional GitHub fallback domains.
+        </:item>
+      </.docs_prerequisites>
+
+      <.docs_h2 id="before-you-deploy">Prepare the deployment</.docs_h2>
+      <.docs_callout kind={:warn} title="This job can act on each client node">
+        <p>
+          The <code>raw_exec</code>
+          driver has no filesystem or process isolation, so the runner has the same access as the
+          Nomad client process. Enable the driver only on nodes that need host actions.
+        </p>
+      </.docs_callout>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Complete these steps before you submit the job:
+      </p>
+      <ol class="mt-4 list-decimal space-y-3 pl-6 text-base text-zinc-400">
+        <li>
+          Enable <code>raw_exec</code> on every client that should run a runner.
+        </li>
+        <li>
+          Register a host volume named <code>emisar-state</code>
+          at <code>/var/lib/emisar</code>
+          on each client.
+        </li>
+        <li>
+          Create a <.link
+            navigate={~p"/docs/runner-fleet" <> "#enrollment-keys"}
+            class="text-brand-400 hover:text-brand-300"
+          >reusable enrollment key</.link>.
+        </li>
+        <li>
+          Store the key as <code>enrollment_key</code>
+          in the Nomad Variable <code>nomad/jobs/emisar-runner</code>.
+        </li>
+        <li>
+          Open the
+          <.external_link
+            href="https://emisar.dev/releases/runner/latest.json"
+            class="text-brand-400 hover:text-brand-300"
+          >runner release manifest</.external_link>
+          and copy the version and the linux-amd64 archive's <code>sha256</code>.
+        </li>
+      </ol>
+
       <.docs_h2 id="system-job">The system job</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The job fetches the release binary in an <code class="font-mono">artifact</code>
-        stanza, passes <code class="font-mono">EMISAR_URL</code>
-        and a <strong class="text-zinc-200">reusable enrollment key</strong>
-        through the environment, and persists <code class="font-mono">/var/lib/emisar</code>
-        on a host volume so each node's runner keeps its token and durable dispatch state across
-        reschedules — the
-        <.link
-          navigate={~p"/docs/containers" <> "#building-blocks"}
-          class="text-brand-400 hover:text-brand-300"
-        >shared mechanics</.link>
-        again, in Nomad's shape.
+        The artifact stanza checks the archive digest before extraction. One template writes the
+        runner config, the other reads the enrollment key from Nomad Variables, and the host
+        volume keeps the runner token and durable dispatch state.
       </p>
-      <.docs_code phx-no-format label="emisar-runner.nomad.hcl"><span class="text-sky-300">job</span> <span class="text-brand-300">"emisar-runner"</span> &#123;
-  type = <span class="text-brand-300">"system"</span>            <span class="text-zinc-600"># one instance on every client node</span>
+      <.docs_code phx-no-format label="emisar-runner.nomad.hcl"><span class="text-sky-300">variable</span> <span class="text-brand-300">"runner_version"</span> &#123;
+  type = string
+&#125;
+
+<span class="text-sky-300">variable</span> <span class="text-brand-300">"archive_sha256"</span> &#123;
+  type = string
+&#125;
+
+<span class="text-sky-300">job</span> <span class="text-brand-300">"emisar-runner"</span> &#123;
+  type = <span class="text-brand-300">"system"</span>
 
   <span class="text-sky-300">group</span> <span class="text-brand-300">"runner"</span> &#123;
     <span class="text-sky-300">volume</span> <span class="text-brand-300">"state"</span> &#123;
@@ -47,23 +115,45 @@
     &#125;
 
     <span class="text-sky-300">task</span> <span class="text-brand-300">"runner"</span> &#123;
-      <span class="text-zinc-600"># raw_exec runs on the node with no isolation — the runner sees the node,</span>
-      <span class="text-zinc-600"># like a host install. Enable it in the client's plugin config. (Use the</span>
-      <span class="text-zinc-600"># "docker" driver instead for a container-scoped runner + explicit mounts.)</span>
       driver = <span class="text-brand-300">"raw_exec"</span>
 
       <span class="text-sky-300">artifact</span> &#123;
-        source = <span class="text-brand-300">"https://github.com/andrewdryga/emisar/releases/download/runner-v&lt;version&gt;/emisar-&lt;version&gt;-linux-amd64.tar.gz"</span>
+        source = <span class="text-brand-300">"https://emisar.dev/releases/runner/runner-v$&#123;var.runner_version&#125;/emisar-$&#123;var.runner_version&#125;-linux-amd64.tar.gz"</span>
+        <span class="text-sky-300">options</span> &#123;
+          checksum = <span class="text-brand-300">"sha256:$&#123;var.archive_sha256&#125;"</span>
+        &#125;
+      &#125;
+
+      <span class="text-sky-300">template</span> &#123;
+        destination = <span class="text-brand-300">"local/config.yaml"</span>
+        perms        = <span class="text-brand-300">"0600"</span>
+        data = <span class="text-brand-300">&lt;&lt;-EOH
+schema_version: 1
+runner:
+  group: nomad
+cloud:
+  url: https://emisar.dev
+  enrollment_key_env: EMISAR_ENROLLMENT_KEY
+paths:
+  data_dir: /var/lib/emisar
+  packs:
+    - emisar-$&#123;var.runner_version&#125;-linux-amd64/packs
+events:
+  jsonl_path: /var/lib/emisar/events.jsonl
+EOH</span>
+      &#125;
+
+      <span class="text-sky-300">template</span> &#123;
+        destination = <span class="text-brand-300">"secrets/emisar.env"</span>
+        env         = <span class="text-amber-300">true</span>
+        data = <span class="text-brand-300">&lt;&lt;-EOH
+EMISAR_ENROLLMENT_KEY=&#123;&#123; with nomadVar "nomad/jobs/emisar-runner" &#125;&#125;&#123;&#123; .enrollment_key | toJSON &#125;&#125;&#123;&#123; end &#125;&#125;
+EOH</span>
       &#125;
 
       <span class="text-sky-300">config</span> &#123;
-        command = <span class="text-brand-300">"local/emisar"</span>
-        args    = [<span class="text-brand-300">"--config"</span>, <span class="text-brand-300">"/etc/emisar/config.yaml"</span>]
-      &#125;
-
-      <span class="text-sky-300">env</span> &#123;
-        EMISAR_URL            = <span class="text-brand-300">"https://emisar.dev"</span>
-        EMISAR_ENROLLMENT_KEY = <span class="text-brand-300">"emkey-enroll-…"</span>   <span class="text-zinc-600"># template from Vault in production</span>
+        command = <span class="text-brand-300">"local/emisar-$&#123;var.runner_version&#125;-linux-amd64/emisar"</span>
+        args    = [<span class="text-brand-300">"connect"</span>, <span class="text-brand-300">"--config"</span>, <span class="text-brand-300">"local/config.yaml"</span>]
       &#125;
 
       <span class="text-sky-300">volume_mount</span> &#123;
@@ -78,48 +168,90 @@
     &#125;
   &#125;
 &#125;</.docs_code>
+
+      <.docs_h2 id="deploy">Deploy and verify</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Register the host volume on each client (<code class="font-mono">client &#123; host_volume "emisar-state" &#123; path = "/var/lib/emisar" &#125; &#125;</code>),
-        then <code class="font-mono">nomad job run emisar-runner.nomad.hcl</code>.
+        Set the release version and its digest, then validate, plan, and run:
       </p>
+      <.docs_code phx-no-format label="shell">export EMISAR_VERSION=&lt;version&gt;
+export EMISAR_ARCHIVE_SHA256=&lt;64-character-sha256&gt;
+
+nomad job validate \
+  -var "runner_version=$EMISAR_VERSION" \
+  -var "archive_sha256=$EMISAR_ARCHIVE_SHA256" \
+  emisar-runner.nomad.hcl
+
+nomad job plan \
+  -var "runner_version=$EMISAR_VERSION" \
+  -var "archive_sha256=$EMISAR_ARCHIVE_SHA256" \
+  emisar-runner.nomad.hcl
+
+nomad job run \
+  -var "runner_version=$EMISAR_VERSION" \
+  -var "archive_sha256=$EMISAR_ARCHIVE_SHA256" \
+  emisar-runner.nomad.hcl</.docs_code>
+      <ol class="mt-5 list-decimal space-y-3 pl-6 text-base text-zinc-400">
+        <li>
+          Run <code>nomad job status emisar-runner</code>. Confirm every client has one running
+          allocation.
+        </li>
+        <li>
+          Open <a
+            href={~p"/app/runners"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Runners</a>. Confirm each client's runner is online.
+        </li>
+        <li>Run <code>linux.uptime</code> on one client runner.</li>
+        <li>
+          Open <a
+            href={~p"/app/audit"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Audit</a>. Confirm that the event names the runner, action, operator, and reason.
+        </li>
+      </ol>
 
       <.docs_h2 id="visibility">Driver and visibility</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The driver decides what the runner can reach — the same
+        The driver decides what the runner can reach. This is the same
         <.link
           navigate={~p"/docs/containers" <> "#what-it-sees"}
           class="text-brand-400 hover:text-brand-300"
         >
           namespace question
         </.link>
-        as any container shape. <code class="font-mono">raw_exec</code>
-        runs the binary directly on the client, so it sees the node exactly as a host install does
-        — right when you want packs to inspect and act on the node itself. It's disabled by default,
-        so enable it deliberately on the clients that should run node-level actions. Prefer the
-        <code class="font-mono">docker</code>
-        driver for a container-scoped runner: it sees only what you mount into it, so a runner that
-        should only watch one service can't reach the rest of the node.
+        as any container deployment. <code class="font-mono">raw_exec</code>
+        runs the binary straight on the client. Use the <code class="font-mono">docker</code>
+        driver instead when the runner only needs mounted files and services.
       </p>
 
       <.docs_h2 id="credentials">Keys and pack credentials</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Mint a
+        Use a
         <.link
-          navigate={~p"/docs/runners" <> "#enrollment-keys"}
+          navigate={~p"/docs/runner-fleet" <> "#enrollment-keys"}
           class="text-brand-400 hover:text-brand-300"
         >reusable enrollment key</.link>
-        for the job — a single-use key is spent by the first node and the rest fail to enroll. If
-        the packs on these runners talk to Nomad, Consul, or Vault, hand those credentials to the
-        runner through allow-listed environment variables (Nomad's
-        <code class="font-mono">template</code>
-        + Vault integration is the clean source), never through action arguments — the
-        <.link
-          navigate={~p"/docs/runners" <> "#pack-credentials"}
+        — with a single-use key the first node spends it, and every other node fails to enroll.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Give packs their credentials through environment variables on the runner's
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">inherit_env</code>
+        allowlist, never through action arguments. A Nomad template can read the values from
+        Nomad Variables or Vault. The allowlist is covered in <.link
+          navigate={~p"/docs/runner-fleet" <> "#pack-credentials"}
           class="text-brand-400 hover:text-brand-300"
-        >
-          pack-credentials
+        >Giving packs their credentials</.link>.
+      </p>
+      <.docs_h2 id="next">After it is connected</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <.link navigate={~p"/docs/runner-fleet"} class="text-brand-400 hover:text-brand-300">
+          Manage the runner fleet
         </.link>
-        pattern applies unchanged.
+        covers work after the first connection — groups, labels, pack credentials, updates,
+        reconnects, and removal. To roll the system job across datacenters in phases, see the <.link
+          navigate={~p"/docs/production"}
+          class="text-brand-400 hover:text-brand-300"
+        >Go to production</.link>.
       </p>
     </.docs_layout>
   </section>

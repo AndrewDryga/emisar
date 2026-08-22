@@ -1,0 +1,253 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="runner-fleet"
+      updated="August 19, 2026"
+      toc={[
+        {"groups-labels", "Groups and labels"},
+        {"enrollment-keys", "Enrollment keys"},
+        {"pack-credentials", "Giving packs their credentials"},
+        {"connectivity", "Online, offline, and stuck runs"},
+        {"updating", "Updating"},
+        {"toolbox", "The host-side toolbox"},
+        {"removing", "Removing a runner"}
+      ]}
+    >
+      <.docs_header current="runner-fleet">
+        <:dek>
+          The
+          <.link
+            navigate={~p"/docs/quickstart"}
+            class="text-brand-400 hover:text-brand-300"
+          >quickstart</.link>
+          gets one runner online. This page covers everything after: groups and labels,
+          enrollment keys, pack credentials, connectivity, updates, and removal.
+        </:dek>
+      </.docs_header>
+
+      <.docs_screenshot
+        src="/images/screenshots/runner-fleet.webp"
+        title="emisar console · Runners"
+        caption="The fleet by group — each runner's version, hostname, last heartbeat, and connection status."
+        alt="The Runners page: the fleet grouped by runner group — each runner's name, agent version, hostname, last heartbeat, and connection status. One runner carries a signed-only badge because it requires signed dispatch."
+      />
+
+      <.docs_h2 id="groups-labels">Groups and labels</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Every runner declares one group string and free-form labels in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>.
+        Group examples include
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra-prod</code>
+        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">web</code>. Label examples include
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">role=db</code>
+        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">region=us-east-1</code>. Groups do real
+        work: runbook steps target them, per-member runner scopes follow them, and an agent can
+        address every runner in one group at once. Name a group after a fleet tier. The installer
+        defaults the group to the hostname, which works for one host — change it when you add a
+        second.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Install packs generously. Give each group every pack that matches what runs there — the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">postgres</code>
+        pack on the database tier,
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">nginx</code>
+        on the web tier — and the observation packs everywhere. The more actions an agent can
+        reach, the more it can do for you, and breadth is safe: policy decides what actually
+        runs, so reads run at once while risky work waits for a person.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar pack suggest</code>
+        lists the published packs that match a host.
+      </p>
+
+      <.docs_h2 id="enrollment-keys">Enrollment keys</.docs_h2>
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Two key models.</strong>
+            An <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emkey-enroll-…</code>
+            key is <strong class="text-zinc-200">single-use</strong>
+            by default: its first registration spends it, and concurrent attempts with the same
+            key cannot both succeed — right for connecting one host. Mark it
+            <strong class="text-zinc-200">reusable</strong>
+            to keep enrolling hosts until it expires or reaches its maximum use count (blank for
+            unlimited) — right for launch templates and fleet provisioning.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Shown once, exchanged for a token.</strong>
+            The raw key appears once, at creation. On first connect the runner exchanges it for
+            its own <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">rnrtok-…</code>
+            token, which handles every reconnect from then on.
+            <.link
+              navigate={~p"/docs/runner-credentials"}
+              class="text-brand-300 hover:text-brand-200"
+            >Runner credentials</.link>
+            covers the token's lifetime, refresh, and recovery.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Mint at install time.</strong>
+            <a
+              href={~p"/app/runners/install"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Runners → Connect a runner</a>
+            generates the install one-liner with a
+            fresh single-use key filled in. For fleet provisioning (cloud-init, Packer, Ansible),
+            mint one reusable key under
+            <a
+              href={~p"/app/runners/keys"}
+              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+            >Runners → Enrollment keys</a>
+            and inject it as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Revoke from the console.</strong>
+            Revoking a key blocks new registrations; hosts already enrolled keep running on their
+            own tokens. To take a runner itself offline — disable (reversible) or delete
+            (terminal) — see <.link
+              navigate={~p"/docs/runner-credentials"}
+              class="text-brand-300 hover:text-brand-200"
+            >Runner credentials</.link>.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        To change the key a host carries, reinstall with the new
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>
+        — the runner re-registers under its
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
+        or current hostname;
+        <.link
+          navigate={~p"/docs/runner-credentials"}
+          class="text-brand-300 hover:text-brand-200"
+        >Runner credentials</.link>
+        has the step-by-step. A replacement host with a new hostname simply enrolls as a new
+        runner.
+      </p>
+
+      <.docs_h2 id="pack-credentials">Giving packs their credentials</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Packs that talk to a service — Nomad, Consul, Postgres — read credentials from the
+        runner's <em>environment</em>, never from call arguments, and the control plane does not
+        distribute or store them. An action can still print a value, and if redaction misses it,
+        it can appear in run output. Two steps on the host:
+      </p>
+      <.docs_code phx-no-format label="config"><span class="text-zinc-500"># 1. /etc/emisar/runner.env (mode 0600) — the values</span>
+NOMAD_ADDR=http://127.0.0.1:4646
+NOMAD_TOKEN=&lt;acl-token&gt;
+
+<span class="text-zinc-500"># 2. /etc/emisar/config.yaml — allowlist the names</span>
+execution:
+  inherit_env:
+    - NOMAD_ADDR
+    - NOMAD_TOKEN</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Only allowlisted names reach an action's process, in addition to the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">PATH</code>
+        and locale baseline. The runner's own environment and token never reach it. Restart the
+        service after editing. Run
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack info &lt;id&gt;</code>
+        to see what each pack needs.
+      </p>
+
+      <.docs_h2 id="connectivity">Online, offline, and stuck runs</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The runner sends a heartbeat every 30 seconds, and the console's online badge reflects
+        it. Either side closes a connection that goes quiet; the runner reconnects on its own
+        with backoff and advertises its catalog again. In-flight actions keep running through
+        the gap, and their results arrive on the new connection. If a runner stays offline past
+        a two-minute grace period, its in-flight runs become errored with an explanation —
+        nothing stays "running" forever.
+      </p>
+
+      <.docs_h2 id="updating">Updating</.docs_h2>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># runner binary — re-run the installer; configs and packs are preserved</span>
+<span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh | sudo bash
+
+<span class="text-zinc-500"># packs — update from the registry; the update reloads the runner (no restart, no dropped runs)</span>
+<span class="text-zinc-500">$</span> sudo emisar pack update linux-core</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Reload (SIGHUP) re-reads packs and re-advertises the catalog on the live connection. A
+        hash that matches the published catalog is trusted automatically; a hash emisar does not
+        recognize — your own pack, or an edited one — lands as
+        <strong class="text-zinc-200">pending</strong>
+        on the Packs page until someone trusts it.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        To roll the binary across a fleet with canaries, batches, and rollback, see <.link
+          navigate={~p"/docs/runner-upgrades"}
+          class="text-brand-400 hover:text-brand-300"
+        >Upgrade runners</.link>. To do the same for packs, see <.link
+          navigate={~p"/docs/pack-updates"}
+          class="text-brand-400 hover:text-brand-300"
+        >Roll out and roll back packs</.link>. A binary upgrade never touches packs, and a
+        pack update never touches the binary.
+      </p>
+
+      <.docs_h2 id="toolbox">The host-side toolbox</.docs_h2>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> journalctl -u emisar -f          <span class="text-zinc-500"># service logs</span>
+<span class="text-zinc-500">$</span> sudo emisar action list           <span class="text-zinc-500"># what this host advertises</span>
+<span class="text-zinc-500">$</span> sudo emisar pack list             <span class="text-zinc-500"># loaded packs + hashes</span>
+<span class="text-zinc-500">$</span> sudo emisar events tail -f        <span class="text-zinc-500"># the local JSONL journal, live</span>
+<span class="text-zinc-500">$</span> sudo emisar audit verify --all    <span class="text-zinc-500"># verify the journal's hash chain</span></.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The CLI defaults to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--config /etc/emisar/config.yaml</code>,
+        so these commands work on an installed host. The runner runs as its own unprivileged
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+        user; granting an action root — a scoped polkit rule, or running the service as root —
+        is covered on the <.link
+          navigate={~p"/docs/host-install" <> "#user"}
+          class="text-brand-400 hover:text-brand-300"
+        >Linux host page</.link>, and the
+        <.link
+          navigate={~p"/docs/security-model"}
+          class="text-brand-400 hover:text-brand-300"
+        >security model</.link>
+        covers the rest of the host protections.
+      </p>
+
+      <.docs_h2 id="removing">Removing a runner</.docs_h2>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># remove binary + service + cached token</span>
+<span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh | sudo bash -s -- --uninstall
+<span class="text-zinc-500"># …or purge everything, including the local journal</span>
+<span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh | sudo bash -s -- --uninstall --purge</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Then delete the runner from <a
+          href={~p"/app/runners"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runners</a>. Its run history and audit events stay.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
+        also deletes the local journal, configuration, and
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.env</code>
+        secrets. Export the journal first if you want to keep it.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        That is the routine retirement. For a host you no longer trust, follow
+        <.link
+          navigate={~p"/docs/security-incidents" <> "#runner-host"}
+          class="text-brand-400 hover:text-brand-300"
+        >security incidents</.link>
+        instead — evidence first, then containment.
+      </p>
+
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A runner that will not connect, or dropped off and stayed away —
+        <.link
+          navigate={~p"/docs/troubleshooting" <> "#runner"}
+          class="text-brand-400 hover:text-brand-300"
+        >Troubleshooting</.link>
+        walks the checks in order.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

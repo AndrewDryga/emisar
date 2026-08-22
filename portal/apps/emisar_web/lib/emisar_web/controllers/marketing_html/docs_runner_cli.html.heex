@@ -130,7 +130,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         On a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
         host (a container, CI box, or cloud shell) there is no unit; run the daemon yourself with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar connect --config /etc/emisar/config.yaml</code>. The full fleet lifecycle — groups, enrollment keys, pack credentials — is in the
         <.link
-          navigate={~p"/docs/runners"}
+          navigate={~p"/docs/runner-fleet"}
           class="text-brand-400 hover:text-brand-300"
         >runner fleet</.link>
         guide.
@@ -469,7 +469,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         (use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
         for hosts without a real init). This section is the flag reference; running an upgrade
         across a fleet — canary, verification, batches, rollback — is <.link
-          navigate={~p"/docs/upgrades"}
+          navigate={~p"/docs/runner-upgrades"}
           class="text-brand-400 hover:text-brand-300"
         >upgrade runners and MCP bridges</.link>.
       </p>
@@ -565,7 +565,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         — its run history and audit events
         survive the host. Removing a runner cleanly, and what changing its enrollment key does, is
         covered in <.link
-          navigate={~p"/docs/runners"}
+          navigate={~p"/docs/runner-fleet"}
           class="text-brand-400 hover:text-brand-300"
         >the runner fleet guide</.link>.
       </p>

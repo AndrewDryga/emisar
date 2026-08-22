@@ -390,6 +390,24 @@ defmodule EmisarWeb.DocsComponents do
   end
 
   @doc """
+  An inline risk-tier name in docs prose, toned to match the console's
+  `risk_pill` (`EmisarWeb.DomainComponents.risk_classes/1` — keep the tone
+  mapping in sync with it).
+  """
+  attr :tier, :string, required: true, values: ~w(low medium high critical)
+
+  def docs_risk(assigns) do
+    ~H"""
+    <code class={["rounded px-1 py-0.5 font-mono text-xs ring-1 ring-inset", docs_risk_classes(@tier)]}>{@tier}</code>
+    """
+  end
+
+  defp docs_risk_classes("low"), do: "bg-zinc-500/10 text-zinc-300 ring-zinc-500/30"
+  defp docs_risk_classes("medium"), do: "bg-amber-500/10 text-amber-300 ring-amber-500/30"
+  defp docs_risk_classes("high"), do: "bg-rose-500/10 text-rose-300 ring-rose-500/30"
+  defp docs_risk_classes("critical"), do: "bg-rose-600/15 text-rose-200 ring-rose-500/40"
+
+  @doc """
   A collapsible "Verify this download" block placed under an install command:
   the download-then-verify commands (SLSA provenance + checksum) with THIS
   release's artifact names, so a security team can prove the binary before it
