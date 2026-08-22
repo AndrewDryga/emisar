@@ -17,8 +17,8 @@
       <.docs_header current="action-packs">
         <:dek>
           An action pack is a versioned, content-addressed directory of YAML
-          action declarations. The runner loads the pack at boot, advertises
-          every action to the control plane, and refuses anything not in this
+          action declarations. The runner loads the pack, advertises every
+          action to the control plane, and refuses anything outside this
           catalog. This is the contract between your ops team and the LLM.
         </:dek>
       </.docs_header>
@@ -34,10 +34,12 @@
 
       <.docs_h2 id="layout">Layout</.docs_h2>
       <.docs_code phx-no-format>my-pack/
-  pack.yaml              # pack-level metadata
+  pack.yaml                # pack-level metadata
   actions/
     nodetool_status.yaml   # one declared action per file
-    nodetool_repair.yaml</.docs_code>
+    nodetool_repair.yaml
+  scripts/                 # optional — packaged scripts for kind: script actions
+    repair_report.sh</.docs_code>
 
       <.docs_h2 id="pack-yaml">pack.yaml</.docs_h2>
       <.docs_code phx-no-format label="yaml">schema_version: 1
@@ -48,12 +50,34 @@ description: Cassandra triage + scoped repair
 vendor: acme
 homepage: https://github.com/acme/cassandra-pack
 allow_symlinks: false
+
+requires:
+  os: [linux]
+  binaries: [nodetool]
+
+setup:
+  summary: >
+    How the pack reaches its target and authenticates.
+  env:
+    - name: CQLSH_PASSWORD
+      description: Password for cqlsh-backed actions.
+  verify: cassandra.nodetool_status
+
 actions:
   - actions/nodetool_status.yaml
   - actions/nodetool_repair.yaml</.docs_code>
-      <p class="mt-3 text-base text-zinc-400">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         <code>allow_symlinks</code> defaults to <code>false</code>. The loader rejects
         symlinked action YAMLs and scripts unless you opt in.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <code>requires</code>
+        lists what the pack's host needs — OS and binaries. They are advertised as host
+        readiness, and a missing binary fails at run time, not at load. The <code>setup</code>
+        block powers <code>emisar pack info</code>, <code>pack verify</code>, and the
+        install probe: a summary, the env names the tool reads, and one low-risk
+        <code>verify</code>
+        action.
       </p>
 
       <.docs_h2 id="action-yaml">An action YAML</.docs_h2>
@@ -105,9 +129,9 @@ examples:
       pattern: ' 5\d\d '</.docs_code>
 
       <.docs_h2 id="field-reference">Field reference</.docs_h2>
-      <ul class="mt-4 space-y-3 text-base text-zinc-300">
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li>
-          <strong>kind</strong>
+          <code>kind</code>
           — <code>exec</code>
           (run a binary with an explicit argv) or <code>script</code>
           (run a script packaged in the pack, its contents SHA-256-verified at
@@ -121,89 +145,78 @@ examples:
           program itself.
         </li>
         <li>
-          <strong>risk</strong> — <code>low | medium | high | critical</code>.
-          The policy engine assigns a default decision per tier. Higher
-          tiers must be at least as restrictive as lower tiers. The runner
-          declares risk in the pack. The caller cannot override it.
+          <code>risk</code> — <code>low | medium | high | critical</code>.
+          The policy engine assigns a default decision per tier, and a higher tier must be
+          at least as restrictive as a lower one. Risk is declared in the pack — the caller
+          cannot override it.
         </li>
         <li>
-          <strong>args</strong>
+          <code>args</code>
           — every argument is declared. Types: <code>string</code>, <code>integer</code>, <code>number</code>, <code>boolean</code>, <code>duration</code>, <code>path</code>, <code>string_array</code>, <code>integer_array</code>. Validation tightens the type. Enum, regex
           pattern, allowed_prefixes / denied_prefixes for paths, max_items for
           arrays, min/max for numbers, max_duration for durations.
         </li>
         <li>
-          <strong>execution.user</strong>
+          <code>side_effects</code>
+          — the plain-language list of what the action touches. The LLM reads it verbatim
+          when it decides what to call, so an honest list is a safety control, not
+          documentation polish.
+        </li>
+        <li>
+          <code>execution.user</code>
           — Linux-only. Drops the child process to that local user's uid and primary gid before
           exec. A runner under a privileged service account still runs the action as the
           declared, lower-privilege user.
         </li>
         <li>
-          <strong>output.parser</strong>
+          <code>output.parser</code>
           — <code>text</code>
           (default), <code>json</code>, or <code>json (parser_required: true)</code>
           to force the run to fail if stdout
           is not valid JSON.
         </li>
         <li>
-          <strong>output.max_*_bytes</strong> — stdout/stderr ceilings. The cloud
-          can lower these per-call via opts. It cannot raise them past the
-          declared maximum.
+          <code>output.max_*_bytes</code> — stdout/stderr ceilings. The control plane
+          can lower these per call, and it cannot raise them past the declared maximum.
         </li>
         <li>
-          <strong>redact</strong> — per-action rules layered on top of 20 built-in patterns
+          <code>redact</code> — per-action rules layered on top of 20 built-in patterns
           (AWS keys, GitHub, GitLab, Slack tokens, JWTs, authentication, and secret assignments).
-          Redaction runs before output leaves the host. The control plane receives the resulting
-          stream. The local journal records each rule's hit count. The terminal result also sends
-          rule names, types, and counts to the control plane.
+          Redaction runs before output leaves the host, so the control plane receives the
+          redacted stream. The local journal records each rule's hit count, and the terminal
+          result sends rule names, types, and counts to the control plane.
         </li>
         <li>
-          <strong>examples</strong>
+          <code>examples</code>
           — optional list of <code>&#123;title, args&#125;</code>
-          entries. Each one renders as a clickable hint on the dispatch
-          form. Operators and LLMs see realistic invocations before
-          they type. Examples do not validate any tighter than the
-          declared argument schema. They are documentation, not policy.
+          entries. Each one renders as a clickable hint on the dispatch form, so operators
+          and LLMs see a realistic invocation before they type. Examples do not validate
+          anything — they are documentation, not policy.
         </li>
       </ul>
 
       <.docs_h2 id="pack-trust">Pack trust</.docs_h2>
-      <p class="mt-3 text-base leading-6 text-zinc-300">
-        Every pack is content-addressed by a SHA-256 hash over all its files. The control plane pins
-        the exact hash that the account trusts. The runner recomputes this hash and refuses to
-        load files that do not match. The control plane automatically trusts a hash carried by the
-        published catalog. An administrator must trust any other hash before dispatch. This
-        includes a pack you wrote, a hand-edited tree, or an unpublished hash. This protects
-        content integrity, not publisher identity.
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Every pack is content-addressed: a SHA-256 hash over all its files. The control
+        plane pins the exact hash the account trusts, and the runner recomputes it and
+        refuses to load files that do not match. A hash carried by the published catalog is
+        trusted automatically — any other, like a pack you wrote or a hand-edited tree,
+        waits for an administrator before dispatch. This protects content integrity, not
+        publisher identity.
       </p>
-      <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">Match packs to what runs on the host.</strong>
-            A web box has no use for the <code class="font-mono">postgres</code>
-            pack — but give a host every pack that matches its software. Policy decides what
-            runs, so coverage is capability, not exposure.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">Keep the break-glass pack off production.</strong>
-            The <code class="font-mono">shell</code>
-            pack lets the operator supply the whole command. It is
-            <.docs_risk tier="critical" />-risk and denied by default. Use it on staging to verify a fix
-            before you encode a real action. Never install it on a production runner.
-          </span>
-        </li>
-      </ul>
 
       <.docs_h2 id="drift-detection">Drift detection</.docs_h2>
-      <p class="mt-3 text-base text-zinc-300">
-        Once a pack is installed on at least one runner, the in-app Packs page groups every
-        observed <code>(pack_id, version, hash)</code> in your account. Two runners on the same
-        pack version with different hashes means somebody hand-edited a pack on a host. The page
-        flags it as drift. Re-deploy from the canonical source to clear it.
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Once a pack is installed on at least one runner, the console's
+        <a
+          href={~p"/app/packs"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Packs</a>
+        page groups every observed <code>(pack_id, version, hash)</code>
+        in your account.
+        Two runners on the same pack version with different hashes mean somebody hand-edited
+        a pack on a host — the page flags it as drift, and re-deploying from the canonical
+        source clears it.
       </p>
 
       <p class="mt-8 text-base text-zinc-400">

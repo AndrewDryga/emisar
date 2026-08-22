@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="billing"
-      updated="August 18, 2026"
+      updated="August 23, 2026"
       toc={[
         {"plans", "Plans and limits"},
         {"entitlements", "What each plan unlocks"},
@@ -19,20 +19,19 @@
         <:dek>
           Your plan sets this account's hard limits — how many runners connect, how many people you
           can invite, how long the audit log is kept, and which features are on. Billing runs on
-          Paddle; you manage it from
+          Paddle; manage it on the
           <a
             href={~p"/app/billing"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
           >Billing</a>
-          under Settings.
+          page in the console.
         </:dek>
       </.docs_header>
 
       <.docs_h2 id="plans">Plans and limits</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        emisar has three plans. A new account is on Free until someone upgrades it, and the plan
-        comes from your subscription — there's no separate plan switch on the account to drift out
-        of sync. Each plan sets three hard limits.
+        emisar has three plans; a new account starts on Free. Each plan sets three hard
+        limits.
       </p>
       <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
         <table class="w-full min-w-[520px] text-left text-sm">
@@ -67,10 +66,10 @@
         </table>
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Free needs no card and has no time limit. Team is billed per enabled runner, monthly or
-        annually. Annual billing costs about two months less than monthly billing. Checkout uses
-        the current enabled-runner count, with a minimum quantity of one. Enterprise is a custom,
-        sales-led plan with tailored limits. For the current per-runner price, <.link
+        Free does not require a credit card and has no time limit. Team is billed per enabled runner, monthly
+        or annually — annual costs about two months less, and checkout uses your current
+        enabled-runner count (minimum one). Enterprise is a custom, sales-led plan with
+        tailored limits. For the current per-runner price, <.link
           href={~p"/pricing" <> "#compare"}
           class="text-brand-400 hover:text-brand-300"
         >compare the plans</.link>.
@@ -78,8 +77,8 @@
 
       <.docs_h2 id="entitlements">What each plan unlocks</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Some features also depend on the plan. Free includes the console, audit trail, policies,
-        approvals, and runbooks. Paid plans add features for teams and external systems.
+        Free includes the console, audit trail, policies, approvals, and runbooks; paid plans
+        add the features below.
       </p>
       <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
         <table class="w-full min-w-[520px] text-left text-sm">
@@ -120,8 +119,8 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Audit export.</strong>
-            Every plan keeps the full audit trail in the console. CSV download and the NDJSON API
-            export that data. Export is a paid feature. See <.link
+            Every plan keeps the full trail in the console; taking it out — the CSV download
+            and the NDJSON API — is what the plan gates. See <.link
               navigate={~p"/docs/audit-and-siem"}
               class="text-brand-400 hover:text-brand-300"
             >audit &amp; SIEM</.link>.
@@ -140,17 +139,17 @@
 
       <.docs_h2 id="usage-and-limits">When you reach a limit</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The runner and member caps are enforced when you add the next one, not retroactively — so a
-        plan never silently disables something you already have.
+        The runner and member caps are enforced when you add the next one, not retroactively
+        — a plan never silently disables something you already have. The Billing page shows
+        live usage against each cap.
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Runners.</strong>
-            Enrolling a runner past your plan's cap is refused. The new host's registration fails
-            with an over-limit error instead of half-joining. Existing enabled runners keep their
-            current state and can continue executing actions.
+            Enrolling a runner past the cap is refused — the registration fails with an
+            over-limit error, and existing runners keep working.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -164,18 +163,8 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Watch it before you hit it.</strong>
-            The Billing page shows live usage against each cap — a runner meter and a member meter
-            that turn amber as you approach the limit — so you see the wall coming rather than
-            discovering it when the next install fails.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
             <strong class="text-zinc-200">Audit retention</strong>
-            is a duration limit. Events older than their fixed retention window are pruned. Plan
-            changes affect new events only. See <.link
+            is a time window, not a cap — plan changes and pruning are covered <.link
               href="#retention"
               class="text-brand-400 hover:text-brand-300"
             >below</.link>.
@@ -190,47 +179,43 @@
           href={~p"/app/billing"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Billing</a>
-        and read the plan, its limits, and how much of them is in use.
-        An owner, admin, or billing manager can change the plan, update the card, or cancel. Those
-        roles can also open the plan catalog and read invoices. Operators and viewers cannot. See <.link
+        and read the plan, its limits, and how much of them is in use. Changing the plan,
+        updating the card, and cancelling take an owner, admin, or billing manager — a role
+        owners and admins can grant to the person who owns invoices but not infrastructure.
+        For the list of roles and permissions, see <.link
           navigate={~p"/docs/teams-and-access"}
           class="text-brand-400 hover:text-brand-300"
-        >roles</.link>.
+        >Teams &amp; access</.link>.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         To upgrade, open <a
           href={~p"/app/billing"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Settings → Billing</a>, pick <strong class="text-zinc-200">Monthly</strong>
-        or <strong class="text-zinc-200">Annual</strong>, and choose a plan. Checkout opens in a
-        Paddle overlay on the page. After payment clears, you return to Billing. The new plan and
-        its limits take effect after Paddle confirms the charge.
+        or <strong class="text-zinc-200">Annual</strong>, choose a plan, and pay in the
+        Paddle checkout that opens on the page. The new plan and its limits take effect once
+        Paddle confirms the charge.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Use the Paddle customer portal to downgrade or cancel. Open <a
+        To downgrade or cancel, open
+        <a
           href={~p"/app/billing"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Settings → Billing</a>, use <strong class="text-zinc-200">Manage subscription</strong>
-        to open the portal. Do not start another checkout for this change.
+        >Settings → Billing</a>
+        and choose <strong class="text-zinc-200">Manage subscription</strong>
+        — it opens the Paddle customer portal. Do not start another checkout for this change.
       </p>
-      <.docs_callout kind={:note} title="Cancellation status is advisory">
+      <.docs_callout kind={:note} title="Cancelling keeps your plan until the period ends">
         <p>
-          A cancellation does not remove emisar plan access today. The current plan and limits stay
-          active until the mirrored subscription plan changes. Billing shows the cancellation date
-          from Paddle.
+          Cancelling does not cut access immediately: the plan and its limits stay active
+          until the cancellation date Paddle schedules, and Billing shows that date.
         </p>
-      </.docs_callout>
-      <.docs_callout kind={:note} title="Who can change billing.">
-        Owners and admins can manage billing. Either can grant the billing-manager role. A billing
-        manager handles the subscription, payment method, and invoices. The role can also read the
-        member list and billing audit events. It cannot access runners, policies, or actions. Give
-        it to the person who owns invoices but not infrastructure.
       </.docs_callout>
 
       <.docs_h2 id="invoices">Invoices and payment method</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The Billing page shows recent invoice dates, amounts, numbers, and status. Each invoice has
-        a PDF download. You can check the latest charge without leaving the console.
+        The Billing page shows recent invoices — date, amount, number, and status — each
+        with a PDF download.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Open the Paddle customer portal for full invoice history, payment methods, billing
@@ -239,27 +224,30 @@
           href={~p"/app/billing"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Settings → Billing</a>
-        and choose <strong class="text-zinc-200">Manage subscription</strong>. Paddle is emisar's merchant
-        of record. It owns the complete ledger and card details.
+        and choose <strong class="text-zinc-200">Manage subscription</strong>. Paddle is
+        emisar's merchant of record and holds the complete ledger and card details — it is
+        PCI DSS compliant and SOC 2 Type II audited (see <a
+          href="https://trust.paddle.com/"
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Paddle's trust center</a>).
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Manage subscription appears after Paddle creates a customer for the account. This happens
-        after the first paid-plan checkout. A Free account without that checkout has nothing to
-        manage.
+        Manage subscription appears after your first paid checkout — a Free account that has
+        never checked out has nothing to manage.
       </p>
 
       <.docs_h2 id="payment-failure">If a payment fails</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A failed renewal does not lock you out. Paddle retries the charge and emails the billing
-        contact. Your current plan and limits stay active because billing status is advisory.
+        A failed renewal does not lock you out: Paddle retries the charge and emails the
+        billing contact, and your plan and limits stay active while it retries.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Open <a
           href={~p"/app/billing"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Settings → Billing</a>, choose <strong class="text-zinc-200">Manage subscription</strong>,
-        and update the payment method. Paddle uses it for the next retry. If you want to stop
-        renewal, cancel in the Paddle portal. Every plan change is written to the <.link
+        and update the payment method — Paddle uses it for the next retry. To stop renewing
+        instead, cancel in the Paddle portal. Every plan change is recorded in the <.link
           navigate={~p"/docs/audit-and-siem"}
           class="text-brand-400 hover:text-brand-300"
         >audit log</.link>.
@@ -267,18 +255,18 @@
 
       <.docs_h2 id="retention">Plan changes and audit retention</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Each audit event gets a fixed retention deadline when it is written. The deadline is 7 days
-        on Free, 90 on Team, and 365 on Enterprise. A plan change affects only later events.
-        Upgrades keep new history longer. Downgrades shorten the window for new events without
-        deleting older retained history. Retention pruning runs daily. Plan changes and prunes are
-        recorded in the audit log.
+        Each audit event gets a fixed retention deadline when it is written, so a plan change
+        affects only later events: an upgrade keeps new history longer, and a downgrade shortens
+        the window for new events without deleting older retained history. The windows are in the <a
+          href="#plans"
+          class="text-brand-300 hover:text-brand-200"
+        >table above</a>;
+        retention behavior — pruning, the export API, and keeping history past
+        the window in your SIEM — is in <.link
+          navigate={~p"/docs/audit-and-siem" <> "#retention"}
+          class="text-brand-300 hover:text-brand-200"
+        >Audit &amp; SIEM</.link>.
       </p>
-      <.docs_callout kind={:tip} title="Ingest ahead of the window.">
-        If you keep audit history longer than your plan's retention, poll it into your SIEM before
-        the horizon passes. Then how long it is kept becomes your SIEM's policy, not ours. The
-        <.link navigate={~p"/docs/audit-and-siem"}>export API</.link>
-        is built for exactly this.
-      </.docs_callout>
     </.docs_layout>
   </section>
 

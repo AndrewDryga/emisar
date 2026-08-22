@@ -21,9 +21,9 @@
     >
       <.docs_header current="runbooks">
         <:dek>
-          Build a procedure from declared actions. Publish it only when every target resolves. Then
-          run one frozen plan through policy and approval. Stages stop at the first failure. Each
-          command, output, and decision remains reviewable.
+          Build a procedure from declared actions and publish it only when every target
+          resolves. A run executes one frozen plan through policy and approval, and stages
+          stop at the first failure. Each command, output, and decision remains reviewable.
         </:dek>
       </.docs_header>
 
@@ -31,10 +31,10 @@
         <:item>
           At least one
           <.link
-            href="/docs/production"
+            href="/docs/runner-fleet"
             class="text-brand-400 hover:text-brand-300"
           >runner</.link>
-          enrolled in the account and assigned to the groups the runbook will target.
+          enrolled in the account that the runbook can target — by name, or through a group.
         </:item>
         <:item>
           The required
@@ -106,8 +106,8 @@
       <p class="mt-5 text-base text-zinc-400">
         Declare only the values that change between executions. An input can be a string, integer,
         number, boolean, or enum. Make it required, constrain its range or length, or give it a
-        same-type default. An integer is a whole number. A number can contain a decimal. Sensitive
-        inputs have no stored default. Plans, approvals, and results show them as
+        same-type default. An integer is a whole number, and a number can contain a decimal.
+        Sensitive inputs have no stored default and show as
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[REDACTED]</code>
         in plans, approvals, and results.
       </p>
@@ -170,28 +170,29 @@
       <ul class="mt-4 space-y-3 text-base text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
-          <span><strong class="text-zinc-200">Runner name</strong> freezes that runner.</span>
+          <span><strong class="text-zinc-200">Runner name</strong>
+          runs the step on that specific runner.</span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Every runner in group</strong>
-            expands the group to one logical item per online member.
+            runs the step on every online runner in the group.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">One random runner</strong>
-            accepts one group and freezes one member during preflight.
+            picks one online runner from the group.
           </span>
         </li>
       </ul>
       <p class="mt-5 text-base text-zinc-400">
-        One-runner selection validates the action, trusted pack, and compatible contract on every
-        online group member. It validates before choosing. The start page and execution use the
-        same frozen runner. If that runner disconnects before dispatch, the execution stops. It
-        does not move the work to another member.
+        The one-runner pick happens once, during preflight, after emisar checks the action,
+        trusted pack, and contract on every online group member. The start page and the
+        execution both use that same runner — if it disconnects before dispatch, the
+        execution stops, and the work does not move to another member.
       </p>
       <.docs_screenshot
         src="/images/docs/runbooks/targets.webp"
@@ -267,17 +268,17 @@
 
       <.docs_h2 id="publish">3. Publish a resolvable release</.docs_h2>
       <p class="mt-5 text-base text-zinc-400">
-        Save whenever you need to keep incomplete work. Unpublished changes are not runnable.
-        Publishing has a higher bar. The strict definition must be valid. Every target must resolve
-        in your scope. Each selected runner must expose one compatible action contract. The current
-        trusted pack and policy plan must also resolve. The editor lists every issue beside
-        <strong class="text-zinc-200">Publish check</strong>
+        Save whenever you need to keep incomplete work — unpublished changes are not
+        runnable. Publishing has a higher bar: the strict definition must be valid, every
+        target must resolve in your scope, each selected runner must expose one compatible
+        action contract, and the current trusted pack and policy plan must resolve. The
+        editor lists every issue beside <strong class="text-zinc-200">Publish check</strong>
         and disables Publish until the check
         passes.
       </p>
       <p class="mt-5 text-base text-zinc-400">
         Publish shows exactly what changes from the live definition, then mints the next release: <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">slug@1</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">slug@2</code>, and so on.
-        Only the live release runs. Editing later changes nothing until you publish again. The edit
+        Only the live release runs. Editing later does not change what runs until you publish again. The edit
         remains the runbook's one unpublished change. Every execution keeps the exact definition
         and plan it started with. If runners, actions, or packs later drift, a new execution is
         blocked until you publish a working release.
@@ -300,14 +301,16 @@
         on a runbook with a live release. Supply its
         run-time inputs and a reason for running it now. Before
         <strong class="text-zinc-200">Start runbook</strong>
-        becomes available, emisar resolves the
-        exact runner for every item. It also resolves the current trusted pack, content hash, action arguments,
-        policy decisions, and stage concurrency.
+        becomes available, emisar resolves the exact runner for every item, plus the current
+        trusted pack, content hash, action arguments, policy decisions, and stage
+        concurrency.
       </p>
       <p class="mt-5 text-base text-zinc-400">
-        Read the plan as the dispatch receipt. A one-runner group item names both the selected
-        runner and its source group. The run will not silently add or replace a target, reinterpret
-        an argument, or move work between stages after it starts.
+        The plan is exactly what will run, so read it before you start. When a step picks one
+        runner from a group, the plan shows which runner it picked and which group that runner
+        came from. After the run starts, the plan does not change: emisar does not add or replace
+        a target, it uses your arguments exactly as you entered them, and every step stays in its
+        stage.
       </p>
       <.docs_screenshot
         src="/images/docs/runbooks/start.webp"
@@ -467,26 +470,32 @@
 
       <.docs_h2 id="agents">LLMs and MCP</.docs_h2>
       <p class="mt-5 text-base text-zinc-400">
-        Connected agents use
+        An agent reads runbooks with
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">list_runbooks</code>
-        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>
-        to inspect the live release.
-        Use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">create_runbook_draft</code>
-        to start a new runbook. Use
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">update_runbook_draft</code>
-        to replace the existing unpublished change without changing its slug. The agent passes
-        the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">definition_sha256</code>
-        it read. This prevents a concurrent edit from being overwritten.
+        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>. By default
+        it sees the live release; asking with
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">status: "draft"</code>
+        shows the unpublished change instead.
       </p>
       <p class="mt-5 text-base text-zinc-400">
-        Reading the unpublished change requires <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">status: "draft"</code>.
-        An agent can run that exact content with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">allow_draft: true</code>, and its hash. Without that
-        explicit consent, execution runs only the live release. Naming an older one answers
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">create_runbook_draft</code>
+        starts a new runbook.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">update_runbook_draft</code>
+        replaces the one unpublished change, and it must send the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">definition_sha256</code>
+        it read — if someone else edited the draft in the meantime, the update is refused
+        instead of overwriting their work. Publishing stays a human step in the console.
+      </p>
+      <p class="mt-5 text-base text-zinc-400">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>
+        runs the live release. To test draft content, the agent must ask for it clearly —
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">allow_draft: true</code>
+        plus the draft's hash — and the test goes through the same policy and approvals as any
+        run without publishing anything. Asking for an older release answers
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">not_live</code>
-        instead of silently running current content. A draft test uses the normal policy and
-        approval path and publishes nothing. An operator still reviews and publishes in the
-        console. While work or approval remains, the response names the blocking reason. It also returns
-        an exact <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
+        instead of quietly running the current one. While work or an approval remains, the
+        response shows what is still blocking and returns an exact
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
         continuation.
       </p>
       <p class="mt-5 text-base text-zinc-400">
@@ -497,21 +506,86 @@
       </p>
 
       <.docs_h2 id="limits">Limits</.docs_h2>
-      <p class="mt-5 text-base text-zinc-400">
-        One definition is at most 64 KiB. It contains up to 32 inputs, 16 stages, and 16 target refs
-        per step. A resolved execution contains at most 256 logical items. A parallel stage can run
-        1 through 16 attempts at once. It runs 5 unless the definition sets another value. Each step can retain 16
-        outputs and evaluate 16 success conditions. A wait polls every 5 seconds
-        to 1 hour and makes 2 to 100 attempts. The frozen execution plan is at most 1 MiB. An
-        execution, including waits, ends within 24 hours. A title is at most 80 characters and 320
-        bytes. A description is at most 4,096 characters and 8 KiB.
-      </p>
+      <div class="mt-8 overflow-x-auto rounded-xl border border-zinc-900">
+        <table class="w-full border-collapse text-left text-sm">
+          <thead>
+            <tr class="border-b border-zinc-900 bg-zinc-950/80 text-[11px] uppercase tracking-widest text-zinc-500">
+              <th class="px-4 py-2.5 font-medium">What</th>
+              <th class="px-4 py-2.5 font-medium">Limit</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-400">
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Definition</td>
+              <td class="px-4 py-3 align-top leading-6">64 KiB</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Run-time inputs</td>
+              <td class="px-4 py-3 align-top leading-6">Up to 32</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Stages</td>
+              <td class="px-4 py-3 align-top leading-6">Up to 16</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Target refs per step</td>
+              <td class="px-4 py-3 align-top leading-6">Up to 16</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Resolved execution</td>
+              <td class="px-4 py-3 align-top leading-6">256 items — one per runner per step</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">
+                Parallel attempts in a stage
+              </td>
+              <td class="px-4 py-3 align-top leading-6">
+                1 to 16 at once — 5 by default
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">
+                Retained outputs per step
+              </td>
+              <td class="px-4 py-3 align-top leading-6">Up to 16</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">
+                Success conditions per step
+              </td>
+              <td class="px-4 py-3 align-top leading-6">Up to 16</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Wait</td>
+              <td class="px-4 py-3 align-top leading-6">
+                Polls every 5 seconds to 1 hour, 2 to 100 attempts
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Frozen execution plan</td>
+              <td class="px-4 py-3 align-top leading-6">1 MiB</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Execution duration</td>
+              <td class="px-4 py-3 align-top leading-6">Ends within 24 hours, waits included</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Title</td>
+              <td class="px-4 py-3 align-top leading-6">80 characters, 320 bytes</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">Description</td>
+              <td class="px-4 py-3 align-top leading-6">4,096 characters, 8 KiB</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <p class="mt-5 text-base text-zinc-400">
         These are the only limits you need to track. An agent reads a runbook through one MCP
         response. That response budget comes from the limits above. Anything you can save and
-        publish is something an agent can read and run. If a runbook exceeds the budget, the agent
-        reports that it is too large. It directs the user to open the runbook in the console. It
-        never reports that the runbook does not exist.
+        publish is something an agent can read and run. If a runbook exceeds the budget, the
+        agent reports that it is too large and directs the user to the console — it never
+        reports that the runbook does not exist.
       </p>
       <p class="mt-5 text-base text-zinc-400">
         See the
@@ -522,10 +596,11 @@
         for the wider API, output, and retention caps.
       </p>
 
-      <.docs_callout kind={:note} title="Keep investigation outside the runbook.">
-        Use a runbook when the stages, stopping rules, and expected result are known. Keep
-        open-ended diagnosis in the action catalog, where an operator or agent can inspect evidence
-        and choose the next exact action.
+      <.docs_callout kind={:note} title="A runbook runs a known plan.">
+        Use a runbook when the steps, stopping rules, and expected result are known before you
+        start. For open-ended diagnosis, dispatch actions one at a time instead — read each
+        result and choose the next action from what it shows. A runbook cannot change its plan
+        mid-run.
       </.docs_callout>
     </.docs_layout>
   </section>

@@ -4,14 +4,15 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runs"
-      updated="August 4, 2026"
+      updated="August 23, 2026"
       toc={[
         {"the-list", "The Runs list"},
         {"statuses", "Run statuses"},
         {"run-detail", "A single run"},
         {"output", "Live output and caps"},
         {"cancelling", "Cancelling a run"},
-        {"operations", "Operations and retries"}
+        {"operations", "Operations and retries"},
+        {"troubleshooting", "Troubleshooting"}
       ]}
     >
       <.docs_header current="runs">
@@ -23,16 +24,17 @@
 
       <.docs_h2 id="the-list">The Runs list</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Each row shows one invocation against one host. It shows the time, action ID, target runner,
-        dispatcher, status, and duration. Rows update as a run moves through its lifecycle. You can
-        watch a dispatch move from queued to finished without reloading. On a phone, the first line
-        shows the action and status. The second line shows the origin, runner, and time.
+        Each row is one invocation against one host: the time, action ID, target runner,
+        dispatcher, status, and duration. Rows update live as a run moves through its
+        lifecycle, so you can watch a dispatch go from queued to finished without reloading.
+        On a phone, the first line carries the action and status, and the second the origin,
+        runner, and time.
       </p>
       <.docs_screenshot
         src="/images/screenshots/runs.webp"
         title="emisar console · Runs"
         caption="Every dispatch with who asked for it, where it ran, and a color-coded outcome."
-        alt="The Runs list: columns for When, Action, Runner, Dispatched by, Status, and Duration. Rows show actions like caddy.reload_config and postgres.replication_lag dispatched across runners edge-fra-01, api-iad-02, and pg-primary-iad, each attributed to a named operator or agent, with color-coded statuses — awaiting approval, success, cancelled, and failed — and a per-run duration."
+        alt="The Runs list: columns for When, Action, Runner, Dispatched by, Status, and Duration. Rows show actions like caddy.reload_config and postgres.replication_lag dispatched across runners edge-fra-01, api-iad-02, and pg-primary-iad, each attributed to a named operator or agent, with color-coded statuses — success, and two runs awaiting approval — and a per-run duration."
       />
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Four filters narrow the feed. Each one lives in the URL. The back button, a refresh,
@@ -89,7 +91,7 @@
           navigate={~p"/docs/policies-and-approvals"}
           class="text-brand-400 hover:text-brand-300"
         >require-approval decision</.link>
-        parks it at <em>pending approval</em>, and a deny decision
+        parks it at <em>awaiting approval</em>, and a deny decision
         ends it at <em>denied</em>.
       </p>
       <div class="my-6 overflow-x-auto rounded-xl border border-zinc-900">
@@ -101,10 +103,10 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-400">
-            <%= for {status, meaning} <- EmisarWeb.RunStatuses.all() do %>
+            <%= for {status, {_label, meaning}} <- EmisarWeb.RunStatuses.entries() do %>
               <tr>
-                <td class="px-4 py-3 align-top whitespace-nowrap font-medium text-zinc-200">
-                  {status}
+                <td class="px-4 py-3 align-top whitespace-nowrap">
+                  <.status_badge status={status} />
                 </td>
                 <td class="px-4 py-3 align-top">{meaning}</td>
               </tr>
@@ -113,12 +115,10 @@
         </table>
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Three terminal statuses look similar but require different responses.
-        <strong class="text-zinc-200">Denied</strong>
-        requires a policy change. <strong class="text-zinc-200">Refused</strong>
-        usually requires pack trust or signing repair.
-        <strong class="text-zinc-200">Failed</strong>
-        is a real action result, not a gate.
+        Three terminal statuses look similar but call for different responses:
+        <.status_badge status={:denied} /> needs a policy change,
+        <.status_badge status={:refused} /> usually needs pack trust or signing repair, and
+        <.status_badge status={:failed} /> is a real action result, not a gate.
       </p>
 
       <.docs_h2 id="run-detail">A single run</.docs_h2>
@@ -128,17 +128,23 @@
           href={~p"/app/runs"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runs</a>
-        to see one invocation. The fact strip starts with the outcome. It shows <strong>Status</strong>, <strong>Runner</strong>, <strong>Dispatched by</strong>, <strong>Duration</strong>, <strong>Exit code</strong>, and
+        to see one invocation. The fact strip starts with the outcome — <strong>Status</strong>, <strong>Runner</strong>, <strong>Dispatched by</strong>, <strong>Duration</strong>, <strong>Exit code</strong>, and
         <strong>Started</strong>
-        time. The
-        Runner value links to that host.
+        — and the Runner value links to that host.
       </p>
+      <.docs_screenshot
+        src="/images/screenshots/run-detail.webp"
+        title="emisar console · Run"
+        caption="One invocation: the outcome strip, the reason, the exact arguments and executed command, and the bounded output."
+        alt="A successful caddy.reload_config run on edge-sfo-03 dispatched by Maya Chen via runbook: the success status with duration and exit code, the Why section with the reason, the JSON arguments, the executed command marked secrets redacted, and the command output."
+      />
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong>Dispatched by</strong>
-        names the accountable person first. An operator run shows the team member who ran it. An
-        agent run shows the human who owns the agent key. It also shows the client as secondary
-        context: <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">jordan@example.com via Claude Code</code>. A
-        runbook run names the runbook. This is the same human-first
+        shows the accountable person first. An operator run shows the team member who ran
+        it, an agent run shows the human who owns the agent key — with the client as
+        secondary context:
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">jordan@example.com via Claude Code</code>
+        — and a runbook run shows the runbook. This is the same human-first
         attribution the audit trail uses, so "who ran this, and through what" is answered on the row
         itself.
       </p>
@@ -146,26 +152,29 @@
         A <strong>Why</strong>
         section carries the justification. Every dispatch includes a
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>
-        from the operator or agent. An agent can also include evidence and expected outcome.
-        Evidence records what it observed. Expected records the outcome that confirms success. When
+        from the operator or agent. An agent can also include evidence and expected outcome:
+        evidence records what it observed, and expected records the outcome that confirms
+        success. When
         policy intervenes, the run shows the matching rules and exact policy version. A routine
         allow is omitted because every dispatched run already passed policy.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Below that, <strong>Arguments</strong>
-        shows the values passed to the action. It includes a
+        shows the values passed to the action, with a
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sha256</code>
-        fingerprint of the exact bytes. The control plane receives and stores the exact arguments.
-        It uses them for authorization, approval, dispatch, and hashing. UI and API views mask
-        fields that the action marks as sensitive. Secrets in unmarked or unknown fields remain in
-        the stored arguments. <strong>Executed command</strong>
-        shows the shell line that the runner ran. The runner applies configured redaction to the
-        command and output before egress. This is a best-effort backstop, not a guarantee. See
-        <.link
+        fingerprint of the exact bytes. The control plane stores the exact arguments and uses
+        them for authorization, approval, dispatch, and hashing. UI and API views mask fields
+        the action marks as sensitive, and secrets in unmarked fields remain in the stored
+        arguments.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <strong>Executed command</strong>
+        shows the shell line the runner ran. The runner applies configured redaction to the
+        command and output before they leave the host — a best-effort backstop, not a
+        guarantee. How the redaction pipeline works is in the <.link
           navigate={~p"/docs/security-model"}
           class="text-brand-400 hover:text-brand-300"
-        >security model</.link>
-        for how the redaction pipeline works.
+        >security model</.link>.
       </p>
 
       <.docs_h2 id="output">Live output and caps</.docs_h2>
@@ -188,27 +197,19 @@
         mid-run disconnect is visible rather than silent.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Every run carries a durable output budget. Up to 50,000 progress chunks and 64 MiB in total,
-        with any single chunk capped at 256 KiB. A run that will exceed the budget stops accepting
-        further chunks. The cap is charged under the run's row lock. It holds across runner
-        reconnects. A runaway or hostile runner cannot flood the control plane by streaming without
-        end.
+        Every run carries a durable output budget that holds across runner reconnects. A run
+        that reaches it stops accepting further chunks, visibly. The numbers are in <.link
+          navigate={~p"/docs/limits"}
+          class="text-brand-300 hover:text-brand-200"
+        >Limits</.link>.
       </p>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        To watch a runner from the host, tail its service log and local event journal over SSH:
-      </p>
-      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># the runner's service log and its local event journal, live</span>
-<span class="text-zinc-500">$</span> journalctl -u emisar -f
-<span class="text-zinc-500">$</span> sudo emisar events tail -f</.docs_code>
       <.docs_callout
         kind={:note}
         title="The Runs page is your live view; the audit trail is the record."
       >
-        Run output and events follow your plan's retention window. The audit trail exports terminal
-        outcomes, denials, approval gates, and approval decisions. Pending, sent, and running state
-        remains in run history. See the
+        Run output and events follow your plan's retention window. Export events through the
         <.link navigate={~p"/docs/audit-and-siem"}>audit trail</.link>
-        and export events before the retention window closes.
+        before the window closes.
       </.docs_callout>
 
       <.docs_h2 id="cancelling">Cancelling a run</.docs_h2>
@@ -244,10 +245,10 @@
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Cancellation is recorded in the audit trail and is idempotent. Asking to cancel a run that
-        already finished does nothing. A run that is <em>awaiting approval</em>
-        is not cancelled here. Deny its approval instead. This pulls the run back and records the
-        denial reason. See <.link
+        Cancellation is recorded in the audit trail and is idempotent: asking to cancel a
+        run that already finished does nothing. A run that is <em>awaiting approval</em>
+        is not cancelled here — deny its approval instead, which pulls the run back and
+        records the denial reason. See <.link
           navigate={~p"/docs/policies-and-approvals"}
           class="text-brand-400 hover:text-brand-300"
         >policies and approvals</.link>.
@@ -255,44 +256,109 @@
 
       <.docs_h2 id="operations">Operations and retries</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Each run records one action invocation. Running the action again from a runner page,
-        runbook, or agent creates a new run. emisar never retries a finished run without a new
-        request. An in-flight run survives a runner reconnect. A queued run dispatches after its
-        runner returns. See
+        emisar never retries a finished run. Running the action again — from a runner page,
+        a runbook, or an agent — is a new run with its own record. If the runner disconnects
+        mid-run, the action keeps running and its result arrives on the next connection. If
+        it disconnects before dispatch, the run waits in the queue until the runner returns.
+        The
         <.link
           navigate={~p"/docs/runner-fleet"}
           class="text-brand-400 hover:text-brand-300"
-        >the runner fleet</.link>
-        guide for reconnect and stuck-run behavior.
+        >runner fleet</.link>
+        guide covers reconnects and stuck runs.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        When one dispatch targets several hosts, each host gets its own run. This occurs when an
-        agent sends an action to a runner group over MCP. emisar groups those runs under one
-        operation. A fan-out supports up to 16 runners and returns one result per host. Replaying
-        the same operation returns the original runs instead of dispatching duplicates. A lost
-        response does not cause a second execution.
+        When an agent sends one action to a runner group, each host gets its own run, and
+        emisar groups them under one <strong class="text-zinc-200">operation</strong> — up
+        to 16 runners, one result per host. Replaying the operation returns the original
+        runs. A lost response never causes a second execution.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A runbook works the same way. One execution groups every run its steps produced, in dispatch
-        order. A multi-step sequence reads as one unit rather than a scatter of unrelated rows. See <.link
-          navigate={~p"/docs/runbooks"}
-          class="text-brand-400 hover:text-brand-300"
-        >runbooks</.link>. For
-        recovering an exact operation after an ambiguous response, the
+        A
+        <.link navigate={~p"/docs/runbooks"} class="text-brand-400 hover:text-brand-300">runbook</.link>
+        execution is grouped the same way: every run its steps produced, in dispatch order.
+        To recover an operation after a lost response, the
         <.link
           navigate={~p"/docs/mcp-reference"}
           class="text-brand-400 hover:text-brand-300"
         >MCP CLI &amp; reference</.link>
-        covers the idempotency and recovery contract.
+        has the contract.
       </p>
+
+      <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A run that failed, timed out, or looks stuck —
-        <.link
-          navigate={~p"/docs/troubleshooting" <> "#runs"}
-          class="text-brand-400 hover:text-brand-300"
-        >Troubleshooting</.link>
-        starts from the symptom.
+        Read the status first —
+        <a href="#statuses" class="text-brand-300 hover:text-brand-200">Run statuses</a>
+        above lists them all, and three are easy to confuse:
       </p>
+      <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
+        <table class="w-full min-w-[720px] text-left text-sm">
+          <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
+            <tr>
+              <th class="px-4 py-3">Status</th>
+              <th class="px-4 py-3">What it means</th>
+              <th class="px-4 py-3">What to do</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <%= for {status, move} <- [
+              {:failed, "Read the output — this is a real result, not a gate."},
+              {:error, "Check the runner's connection, then dispatch again once it is back."},
+              {:timed_out, "Check the target system — the action was stopped mid-work."}
+            ] do %>
+              <% {_label, meaning} = EmisarWeb.RunStatuses.entries()[status] %>
+              <tr>
+                <td class="px-4 py-3 align-top whitespace-nowrap">
+                  <.status_badge status={status} />
+                </td>
+                <td class="px-4 py-3 align-top leading-6">{meaning}</td>
+                <td class="px-4 py-3 align-top leading-6">{move}</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">A queued run is usually not stuck.</strong>
+            It waits for its runner and is delivered as soon as that runner reconnects. Only when
+            the host is still gone after a short grace window does the sweep end it as
+            <.status_badge status={:error} /> rather than leave it queued indefinitely.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">A run that ends with
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execution_outcome_unknown</code>
+            can have completed its work.</strong>
+            The runner reports this when its process or host dies after execution starts,
+            before the terminal result was durable. emisar never runs that dispatch again
+            automatically — check the target system before you retry.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Output stopped but the run is still running.</strong>
+            Output is bounded per action and truncation is reported, so a quiet run is more often a
+            quiet command than a lost stream. Check the host with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar events tail -f</code>,
+            which shows the local journal live.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Contact support</strong>
+            when the same dispatch reports
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execution_outcome_unknown</code>
+            repeatedly, or a run stays <.status_badge status={:running} />
+            with no progress while its runner is connected and idle.
+          </span>
+        </li>
+      </ul>
     </.docs_layout>
   </section>
 

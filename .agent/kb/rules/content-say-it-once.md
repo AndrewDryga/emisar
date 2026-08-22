@@ -43,6 +43,19 @@ you have something new to add. Every restatement is a sentence that failed the
   built" callout already says it.
 - A section that opens by naming the problem, then a callout that re-names the
   same problem before getting to the fix.
+- **Preamble that only announces what follows.** "emisar has four ordered roles
+  and one specialist role, billing manager." above the roles table — the table
+  IS the roles, and counting them first tells the reader nothing they won't read
+  one line later. Same for "Use this example to shape your runner fleet:",
+  "After setup, directory sync does the following:", "Two facts decide how you
+  revoke:". Delete the sentence and let the content start.
+- **A scope disclaimer at the top of a page, ruling out a confusion nobody has.**
+  "Sign-in identifies the person. What they can do is controlled by their role
+  and runner access — changing the sign-in method does not change either." on the
+  Authentication page. A reader on that page came to set up sign-in; opening by
+  telling them what sign-in is *not* spends their first paragraph on a question
+  they did not ask. If the boundary genuinely trips people, it belongs where they
+  hit it, not as a gate in front of the page.
 
 ## Sweep
 
@@ -52,6 +65,13 @@ the same thing more memorably," cut it or merge it. Watch especially for: a
 slogan/label paragraph following a list; a value prop that appears in both a step
 and the page's closing callout; and the same mechanism explained on two pages
 instead of one owning it and the other linking.
+
+The mirror sweep is the page's *first* sentence and every `<p>` sitting directly
+above a table or list: read the paragraph, then read what follows it. If the
+content below states the same thing in a form the reader can actually use — the
+table, the list, the form — the paragraph is preamble, and a heading already told
+them what section they are in. A lead-in earns its place only by carrying a fact
+the content below cannot: a caveat, a version note, a consequence, a limit.
 
 ## Enforcement
 

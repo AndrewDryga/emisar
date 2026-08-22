@@ -36,6 +36,11 @@ defmodule Emisar.ApiKeys do
 
   # 4 chars for "emk-" + 8 random chars => 12-char prefix.
   @prefix_size 12
+  # Audit-export tokens carry their kind in the prefix, so a pasted credential
+  # is identifiable at a glance and support never has to ask which kind it is.
+  # Same 8 random lookup characters as an agent key, after a longer literal.
+  @export_prefix "emk-export-"
+  @export_prefix_size byte_size(@export_prefix) + 8
 
   # last_used_at is a coarse activity indicator, not an audit record — audit
   # rows carry the exact trail. Rewriting it on every authenticated MCP call
@@ -443,7 +448,7 @@ defmodule Emisar.ApiKeys do
     with :ok <- Auth.Authorizer.ensure_has_permissions(subject, permissions_for_kind(kind)),
          {:ok, input} <- Ecto.Changeset.apply_action(input_changeset, :insert),
          :ok <- ensure_key_kind_available(input.kind, account) do
-      {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
+      {raw, prefix, hash} = mint_for_kind(input.kind)
       changeset = ApiKey.Changeset.create(account_id, user_id, membership_id, prefix, hash, attrs)
 
       Multi.new()
@@ -474,7 +479,7 @@ defmodule Emisar.ApiKeys do
   """
   def rotate_api_key(%ApiKey{} = key, %Subject{} = subject) do
     with :ok <- ensure_can_manage_key(key, subject) do
-      {raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
+      {raw, prefix, hash} = mint_for_kind(key.kind)
 
       source_queryable =
         ApiKey.Query.not_deleted()
@@ -641,6 +646,13 @@ defmodule Emisar.ApiKeys do
     do: broadcast_api_key_created(successor)
 
   defp broadcast_installed_successor(_changes), do: :ok
+
+  defp mint_for_kind(:audit_export), do: Crypto.mint(@export_prefix, @export_prefix_size)
+  defp mint_for_kind(_kind), do: Crypto.mint("emk-", @prefix_size)
+
+  defp raw_prefix_size(raw) do
+    if String.starts_with?(raw, @export_prefix), do: @export_prefix_size, else: @prefix_size
+  end
 
   defp valid_rotation_material?(prefix, hash) do
     is_binary(prefix) and byte_size(prefix) == @prefix_size and
@@ -855,6 +867,83 @@ defmodule Emisar.ApiKeys do
     end
   end
 
+  @doc """
+  Revoke every still-usable agent key a member owns — the lost-or-stolen-device
+  containment move. Requires `manage_api_keys`, or the member acting on their
+  own keys. Each key is revoked exactly like a single revoke — its own audit
+  event, rotation successors falling with their chain — in one transaction.
+  Audit-export tokens are a different credential kind (`:audit_export`) and
+  are revoked on the audit page. Returns `{:ok, revoked_count}` (0 when nothing was active) or
+  `{:error, :unauthorized}`.
+  """
+  def revoke_all_api_keys_for_member(membership_id, %Subject{} = subject)
+      when is_binary(membership_id) do
+    with :ok <- ensure_can_revoke_member_keys(membership_id, subject) do
+      by_user_id = Subject.actor_id(subject)
+
+      Multi.new()
+      |> Multi.run(:revocation, fn repo, _changes ->
+        revoke_member_key_chains(repo, membership_id, subject, by_user_id)
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{revocation: %{revoked: revoked}} ->
+          Enum.each(revoked, &broadcast_api_key_revoked/1)
+        end
+      )
+      |> case do
+        {:ok, %{revocation: %{revoked: revoked}}} -> {:ok, length(revoked)}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  defp revoke_member_key_chains(repo, membership_id, subject, by_user_id) do
+    queryable =
+      ApiKey.Query.not_deleted()
+      |> ApiKey.Query.by_created_by_membership_id(membership_id)
+      |> ApiKey.Query.by_kind(:mcp)
+      |> ApiKey.Query.not_revoked()
+      |> ApiKey.Query.lock_for_update()
+      |> Authorizer.for_subject(subject)
+
+    keys = repo.all(queryable)
+
+    Enum.reduce_while(keys, {:ok, []}, fn key, {:ok, revoked} ->
+      # A key already revoked earlier in this loop — as another key's rotation
+      # successor — stays revoked; re-running its chain would double its audit.
+      if Enum.any?(revoked, &(&1.id == key.id)) do
+        {:cont, {:ok, revoked}}
+      else
+        source_queryable =
+          ApiKey.Query.not_deleted()
+          |> ApiKey.Query.by_id(key.id)
+          |> ApiKey.Query.lock_for_update()
+          |> Authorizer.for_subject(subject)
+
+        case revoke_key_chain(repo, source_queryable, subject, by_user_id) do
+          {:ok, %{revoked: chain}} -> {:cont, {:ok, revoked ++ chain}}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end
+    end)
+    |> case do
+      {:ok, revoked} -> {:ok, %{revoked: revoked}}
+      error -> error
+    end
+  end
+
+  # Self-service uses the same permission that minting one's own key does; any
+  # other member's keys need account-wide manage.
+  defp ensure_can_revoke_member_keys(
+         membership_id,
+         %Subject{membership_id: membership_id, actor: %Users.User{}} = subject
+       )
+       when is_binary(membership_id),
+       do: Auth.Authorizer.ensure_has_permissions(subject, permissions_for_kind(:mcp))
+
+  defp ensure_can_revoke_member_keys(_membership_id, %Subject{} = subject),
+    do: Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_api_keys_permission())
+
   defp revoke_key_chain(repo, source_queryable, subject, by_user_id) do
     with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
          :ok <- ensure_can_manage_key(source, subject),
@@ -954,10 +1043,12 @@ defmodule Emisar.ApiKeys do
   nil-or-struct credential lookup).
   """
   def peek_api_key_by_secret(raw) when is_binary(raw) do
-    if String.length(raw) < @prefix_size do
+    prefix_size = raw_prefix_size(raw)
+
+    if String.length(raw) < prefix_size do
       nil
     else
-      prefix = String.slice(raw, 0, @prefix_size)
+      prefix = String.slice(raw, 0, prefix_size)
       hash = Crypto.hash(raw)
 
       # `key_prefix` is unique only among live rows. The row lock makes this
@@ -1591,6 +1682,11 @@ defmodule Emisar.ApiKeys do
   @doc "Whether `subject` may manage MCP API keys (admin+)."
   def subject_can_manage_api_keys?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_api_keys_permission())
+
+  @doc "True when the subject may bulk-revoke this member's agent keys (manage, or their own)."
+  def subject_can_revoke_member_keys?(membership_id, %Subject{} = subject)
+      when is_binary(membership_id),
+      do: ensure_can_revoke_member_keys(membership_id, subject) == :ok
 
   @doc """
   Whether `subject` may rotate or revoke THIS key — `manage_api_keys`, or the

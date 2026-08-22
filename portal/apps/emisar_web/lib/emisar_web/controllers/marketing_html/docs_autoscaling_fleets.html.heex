@@ -62,7 +62,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Set <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_GROUP</code> in the boot
-        script to name the instance's fleet tier. Runbooks and runner scopes then target the fleet
+        script to set the instance's fleet tier. Runbooks and runner scopes then target the fleet
         instead of one host.
       </p>
 
@@ -136,7 +136,7 @@ curl -fsSL https://emisar.dev/install.sh \
   | sudo -E env RUNNER_GROUP=<span class="text-brand-300">web</span> \
       bash -s -- --yes --packs linux-core</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The command line then carries nothing secret, and only root can read the key. The
+        The command line then does not carry the secret, and only root can read the key. The
         example reads it from your secret manager at boot because cloud user data is not a safe
         place for a secret.
       </p>
@@ -153,20 +153,28 @@ curl -fsSL https://emisar.dev/install.sh \
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--packs</code>
-            names the packs to install, and is required with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--yes</code>. An empty
+            lists the packs to install, and is required with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--yes</code>. An empty
             value installs none; you can add packs later.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span><code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_GROUP</code>
-          names the fleet the runner joins.</span>
+          sets which fleet the runner joins.</span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_LABEL_*</code>
             variables add free-form labels — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_LABEL_ROLE=web</code>.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_ID</code>
+            sets the name and identity the runner registers under, when the image's own
+            hostnames are generated or repeat.
           </span>
         </li>
       </ul>

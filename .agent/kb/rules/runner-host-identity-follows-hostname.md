@@ -3,7 +3,7 @@ name: runner-host-identity-follows-hostname
 description: Default runner identity to the current hostname instead of minting or persisting a parallel generated identifier
 subsystem: runner
 sources: [runner/connect.go, runner/common.go, runner/connect_test.go]
-updated: 2026-07-26
+updated: 2026-08-22
 ---
 
 # Host identity follows the hostname
@@ -11,8 +11,12 @@ updated: 2026-07-26
 ## Rule
 
 When `runner.id` is unset, the runner presents the current hostname as its
-external identity. An explicit `runner.id` may override that default. Never
-mint or persist a separate generated identity for the same host.
+external identity, and the control plane names it after that hostname. A
+declared `runner.id` (or `RUNNER_ID` at install) is the operator's ONE handle:
+it becomes both the identity and the console name, while the reported hostname
+stays the truthful OS fact — never overridden, so the fleet page always shows
+the real machine. Never mint or persist a separate GENERATED identity for the
+same host — the override is operator-declared, never invented.
 
 ## Why
 

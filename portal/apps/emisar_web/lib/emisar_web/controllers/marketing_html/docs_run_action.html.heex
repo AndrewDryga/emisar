@@ -7,10 +7,10 @@
       updated="August 18, 2026"
       toc={[
         {"before", "Before you dispatch"},
-        {"select", "Select a runner and action"},
-        {"arguments", "Enter arguments and reason"},
-        {"dispatch", "Dispatch and approve"},
-        {"result", "Read the result"},
+        {"select", "1. Select a runner and action"},
+        {"arguments", "2. Enter arguments and reason"},
+        {"dispatch", "3. Dispatch and approve"},
+        {"result", "4. Read the result"},
         {"retry", "Before you retry"}
       ]}
     >
@@ -52,20 +52,27 @@
         <li>Select <strong>Run</strong>.</li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A disabled Run button names the blocking fact. Common causes include an offline runner, an
+        A disabled Run button shows what is blocking it. Common causes include an offline runner, an
         untrusted pack, a missing program, or signed-only dispatch.
       </p>
 
       <.docs_h2 id="arguments">2. Enter arguments and reason</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Read the action summary and every listed side effect. Then fill each required argument. The
-        form enforces the pack's types, choices, sizes, and path limits.
+        Read the action summary and every listed side effect, then fill each required
+        argument — the form enforces the pack's types, choices, sizes, and path limits.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Enter a short, specific reason. Audit records this reason. Describe the goal, not a generic
+        Enter a short, specific reason — Audit records it. Describe the goal, not a generic
         label such as <em>maintenance</em>.
       </p>
       <.docs_code phx-no-format label="Example reason">Confirm database health after the primary failover.</.docs_code>
+      <.docs_screenshot
+        src="/images/screenshots/run-form.webp"
+        preview_h="max-h-[32rem]"
+        title="emisar console · Run an action"
+        caption="The action's contract sits above the form: summary, side effects, clickable examples, and risk — then each declared argument and the required reason."
+        alt="The Run linux.grep_log page on runner edge-fra-01: the action summary, its side-effects list, two clickable JSON examples, the low risk, exec kind, and linux-core pack facts, then the file, pattern, and max_lines argument fields, the reason box noting it is logged to the audit trail, and the Dispatch to edge-fra-01 button."
+      />
 
       <.docs_h2 id="dispatch">3. Dispatch and approve</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -73,15 +80,18 @@
         confirmation with the target and arguments.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Policy now returns Allow, Require approval, or Deny. A denied run stops immediately. A run
-        that needs approval waits on <a
+        Policy now returns Allow, Require approval, or Deny. A denied run stops immediately,
+        and a run that needs approval waits on
+        <a
           href={~p"/app/approvals"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Approvals</a>. The runner receives the action only after approval.
+        >Approvals</a>
+        — the runner receives the action only after someone approves.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Review the action, runner, arguments, reason, evidence, and expected result before approval.
-        A changed pack, target, or policy fact makes the approval fail closed.
+        The approver sees the action, runner, arguments, reason, evidence, and expected
+        result. If the pack, target, or a policy fact changed since the request, the
+        approval is refused.
       </p>
 
       <.docs_h2 id="result">4. Read the result</.docs_h2>
@@ -93,7 +103,7 @@
         <li>Wait for a terminal status.</li>
         <li>Read both standard output and standard error.</li>
         <li>Check the exit code and any structured result.</li>
-        <li>Confirm that the result matches the reason for the run.</li>
+        <li>Make sure the result matches the reason for the run.</li>
         <li>
           Open
           <a
@@ -119,9 +129,9 @@
         </p>
       </.docs_callout>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Fix denied, refused, or failed runs at the reported gate. Then create a new run with a new
-        reason. Do not use the local <code>emisar action run</code>
-        command as a cloud retry. That command bypasses cloud policy and approvals.
+        Fix denied, refused, or failed runs at the reported gate, then create a new run with
+        a new reason. Do not retry with the local <code>emisar action run</code>
+        command — it bypasses the control plane's policy and approvals.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A dispatch that is refused, or never reaches the runner at all —

@@ -30,6 +30,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/connect-claude-ai
     /docs/connect-chatgpt
     /docs/connect-cli-agent
+    /docs/connect-multiple-accounts
     /docs/publishing-packs
     /docs/pack-registry
     /docs/run-an-action
@@ -386,7 +387,6 @@ defmodule EmisarWeb.MarketingStructuralTest do
          [
            {"/app/runners/install", "Runners → Connect a runner"},
            {"/app/runners", "Runners"},
-           {"/app/packs", "Packs"},
            {"/app/agents", "AI agents"}
          ]},
         {"/docs/connect-cli-agent",
@@ -434,15 +434,14 @@ defmodule EmisarWeb.MarketingStructuralTest do
          ]},
         {"/docs/publishing-packs", [{"/app/packs", "Packs"}, {"/app/runners", "Runners"}]},
         {"/docs/pack-registry", [{"/app/packs", "Packs"}]},
-        {"/docs/pack-updates", [{"/app/packs", "Packs"}]},
+        {"/docs/pack-updates", [{"/app/packs", "Packs"}, {"/app/audit", "Audit"}]},
         {"/docs/mcp-reference", [{"/app/packs", "Packs"}, {"/app/runbooks", "Runbooks"}]},
         {"/docs/agents-and-keys", [{"/app/agents", "AI agents"}]},
         {"/docs/billing", [{"/app/billing", "Billing"}, {"/app/billing", "Settings → Billing"}]},
         {"/docs/teams-and-access",
          [
            {"/app/team/invite", "Team → Invite"},
-           {"/app/team", "Team"},
-           {"/app/agents", "AI agents"}
+           {"/app/team", "Team"}
          ]},
         {"/docs/policies-and-approvals",
          [{"/app/policies", "Policies"}, {"/app/approvals", "Approvals"}]},
@@ -454,8 +453,9 @@ defmodule EmisarWeb.MarketingStructuralTest do
            {"/app/runbooks/new", "New runbook"},
            {"/app/runbooks/import", "Import runbook"}
          ]},
-        {"/docs/troubleshooting",
-         [{"/app/runners", "Runners"}, {"/app/packs", "Packs"}, {"/app/agents", "AI agents"}]},
+        {"/docs/troubleshooting", [{"/app/runners", "Runners"}]},
+        {"/docs/pack-updates", [{"/app/packs", "Packs"}]},
+        {"/docs/connect-cli-agent", [{"/app/agents", "AI agents"}]},
         {"/docs/runs", [{"/app/runs", "Runs"}]},
         {"/docs/production",
          [{"/app/audit", "Audit"}, {"/app/audit/export", "audit-export token"}]},
@@ -472,7 +472,6 @@ defmodule EmisarWeb.MarketingStructuralTest do
         {"/docs/integrations/google-workspace", [{"/app/team", "Team"}]},
         {"/docs/integrations/jumpcloud",
          [{"/app/team", "Team"}, {"/app/sso", "Team → Single sign-on"}]},
-        {"/docs/security-model", [{"/app/audit/export", "Audit export"}]},
         {"/docs/security-incidents",
          [
            {"/app/agents", "AI agents"},

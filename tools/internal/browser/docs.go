@@ -86,6 +86,13 @@ func navigateRowLink(selector, contains, destination string) string {
 	return fmt.Sprintf(`(()=>{if(document.querySelector(%q))return true;const a=[...document.querySelectorAll(%q)].find(a=>((a.closest('li,tr')||a).textContent||'').includes(%q));if(a){location.href=a.href;return false}return false})()`, destination, selector, contains)
 }
 
+// navigateHrefSuffix follows the link whose href ends with the given suffix —
+// for controls whose visible text is a bare verb ("Run") and whose row wrapper
+// is not an li/tr, where navigateRowLink's text matching cannot reach.
+func navigateHrefSuffix(selector, suffix, destination string) string {
+	return fmt.Sprintf(`(()=>{if(document.querySelector(%q))return true;const a=[...document.querySelectorAll(%q)].find(a=>(a.getAttribute('href')||'').endsWith(%q));if(a){location.href=a.href;return false}return false})()`, destination, selector, suffix)
+}
+
 // openPanel clicks a LiveView disclosure and reports success only after its
 // content exists. Capture waits otherwise race the connected render and leave
 // conditional authoring controls collapsed in the published image.
@@ -145,13 +152,15 @@ const openIdPGuide = `(()=>{const s=[...document.querySelectorAll('summary')].fi
 // its page teaches, at docsWidth unless the content genuinely needs more room.
 var docsShots = []shot{
 	{Name: "policy-editor", Path: "/app/demo/policies", Anchor: Anchor{Heading: "Default policy", Climb: "section"}, Width: docsWidth, Output: "screenshots/policy-editor.webp"},
-	{Name: "audit-view", Path: "/app/demo/audit?event_type[]=group:Run", Anchor: Anchor{Selector: "#audit-events"}, Width: 1280, Output: "screenshots/audit-view.webp"},
+	// TopCSS trims the run-event list to the filter bar plus about seven rows —
+	// the full list is a wall that dwarfs the docs page it illustrates.
+	{Name: "audit-view", Path: "/app/demo/audit?event_type[]=group:Run", Anchor: Anchor{Selector: "#audit-events"}, Width: 1280, TopCSS: 640, Output: "screenshots/audit-view.webp"},
 	// Top-anchored, like team-page and for the same reason: #runners sits partway
 	// down the page, and chromedp mis-clips a tall element anchored there — with a
 	// live fleet the list grew past that threshold and lost its first group off the
 	// top. #shell-canvas starts at the top of the console content, so the crop is
 	// deterministic; TopCSS keeps the heading and the whole fleet.
-	{Name: "runner-fleet", Path: "/app/demo/runners", Anchor: Anchor{Selector: "#shell-canvas"}, Width: docsWidth, TopCSS: 1050, Output: "screenshots/runner-fleet.webp"},
+	{Name: "runner-fleet", Path: "/app/demo/runners", Anchor: Anchor{Selector: "#shell-canvas"}, Width: docsWidth, TopCSS: 900, Output: "screenshots/runner-fleet.webp"},
 	// The team page is a desktop 3-column layout: the member roster beside the
 	// Security/SSO rail. Anchor the whole console content (#shell-canvas — the page
 	// minus the nav rail) at a desktop width and keep the top TopCSS pixels: the
@@ -160,6 +169,10 @@ var docsShots = []shot{
 	// header (chromedp mis-clips a tall element anchored partway down the page);
 	// #shell-canvas is top-anchored, so it captures clean like the loop frames.
 	{Name: "team-page", Path: "/app/demo/settings/team", Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 820, Output: "screenshots/team-page.webp"},
+	// The invite form is one decision surface — email, role, then runner and
+	// pack access — so it is captured WHOLE rather than cropped to an overview:
+	// the controls below the fold are the ones the docs paragraph walks through.
+	{Name: "team-invite", Path: "/app/demo/settings/team/invite", Anchor: Anchor{Selector: "#invite_form"}, Width: docsWidth, Output: "screenshots/team-invite.webp"},
 	// TopCSS on both: these anchor a PAGINATED list, so the crop height follows
 	// whatever the seed happens to hold — the demo account now fills a page, and
 	// uncapped these grew to 2x and 4x their committed height. The caps keep the
@@ -167,6 +180,9 @@ var docsShots = []shot{
 	// job to exercise, not a teaching image's.
 	{Name: "runs", Path: "/app/demo/runs", Anchor: Anchor{Selector: "#runs"}, Width: 1280, TopCSS: 870, Output: "screenshots/runs.webp"},
 	{Name: "agents", Path: "/app/demo/agents", Anchor: Anchor{Selector: "#agents"}, Width: docsWidth, TopCSS: 900, Output: "screenshots/agents.webp"},
+	{Name: "packs", Path: "/app/demo/packs", Anchor: Anchor{Selector: "#packs"}, Width: docsWidth, TopCSS: 830, Output: "screenshots/packs.webp"},
+	{Name: "run-detail", Path: "/app/demo/runs?status[]=success", Clicks: []string{navigateRowLink(`a[href*="/runs/"]`, "caddy.reload_config", "#run-output")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 940, Output: "screenshots/run-detail.webp"},
+	{Name: "run-form", Path: "/app/demo/runners", Clicks: []string{navigateRowLink(`a[href*="/runners/"]`, "edge-fra-01", "#actions"), navigateHrefSuffix(`a[href*="/runs/new/"]`, "/linux.grep_log", "#dispatch_form")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1380, Output: "screenshots/run-form.webp"},
 	// Runbooks use one production-shaped seeded procedure across the complete
 	// guide. Content-addressed navigation avoids whichever audit draft happens to
 	// sort first, while the narrow anchors keep each image about the step beside
@@ -190,11 +206,18 @@ var docsShots = []shot{
 	// Do NOT add COMPOSE_PROFILES=test — runner-runbook pins the same
 	// edge-fra-01 identity with a linux-core-only pack set, wins the connection
 	// lease, and strips the caddy catalog this procedure resolves against.
-	{Name: "runbook-publish", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-actions-desktop-publish"), openPublishReview}, Anchor: Anchor{Selector: "#runbook-actions-desktop-review"}, Width: 1440, Output: "docs/runbooks/publish.webp"},
+	{Name: "runbook-publish", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/edit"]`, "Edge configuration rollout", "#runbook-actions-desktop-publish"), openPublishReview}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1440, TopCSS: 1060, Output: "docs/runbooks/publish.webp"}, // anchor the PAGE, not the panel — a sub-page crop upscales in the docs column and the type balloons; the crop ends after the review card, before the Publish check section opens. Recapture needs edge-fra-01 online advertising a TRUSTED caddy pack (the ./run smoke stack provides this), or Publish stays disabled and the review panel never opens.
 	{Name: "runbook-start", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1440, TopCSS: 1050, Output: "docs/runbooks/start.webp"},
 	{Name: "runbook-approval", Path: "/app/demo/approvals", Clicks: []string{navigateRowLink(`#pending a[href*="/approvals/"]`, "Edge configuration rollout", "#approval-decision-form")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1120, Output: "docs/runbooks/approval.webp"},
 	{Name: "runbook-result", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan, navigateRowLink(`a[href*="/runs/"]`, "completed Tuesday", "#runbook-execution-result")}, Anchor: Anchor{Selector: "#runbook-execution-result"}, Width: 1280, TopCSS: 1650, Output: "docs/runbooks/result.webp"},
 	{Name: "sso-directory-sync", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection, openIdPGuide, showProductionHost}, Anchor: Anchor{Heading: "Directory sync (SCIM)", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-directory-sync.webp"},
+	// The SSO concept page is vendor-neutral, so these three take the connection
+	// form with NO provider chosen — the generic field set every provider shares.
+	// One shot per field group, matching the page's own three h3 sections; the
+	// per-provider guides own the vendor-specific variants of the same form.
+	{Name: "sso-connection-fields", Path: "/app/demo/settings/sso/new", Clicks: []string{showProductionHost}, Anchor: Anchor{Heading: "OIDC connection", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-connection-fields.webp"},
+	{Name: "sso-provisioning-fields", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Heading: "Member provisioning", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-provisioning-fields.webp"},
+	{Name: "sso-activation-fields", Path: "/app/demo/settings/sso/new", Anchor: Anchor{Heading: "Security & activation", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-activation-fields.webp"},
 	// The two halves of group→role sync: the mappings an admin authors, and the
 	// synced roster they land on. Both are seeded directory state (seeds.exs maps
 	// two of three IdP groups, deliberately leaving one unmapped).
@@ -778,6 +801,14 @@ func captureShot(session *Session, config DocsConfig, s shot) (string, error) {
 		return "", err
 	}
 	if err := session.Navigate(s.Path); err != nil {
+		return "", err
+	}
+	// Readiness before the first mark, not just after clicks: a shot whose
+	// anchor exists only on the CONNECTED render (audit's #audit-events — the
+	// dead render shows the IL-18 loading placeholder) otherwise races the
+	// LiveView join and SKIPs with "anchor not found" whenever the machine is
+	// loaded enough for the mark to win.
+	if err := session.Ready(10*time.Second, ""); err != nil {
 		return "", err
 	}
 	for _, click := range s.Clicks {

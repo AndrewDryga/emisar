@@ -586,12 +586,9 @@ approval_draft_definition =
 
 IO.puts(IO.ANSI.cyan() <> "✓ Seeded edge configuration rollout runbook" <> IO.ANSI.reset())
 
-# The approvals queue is FIFO, so its filler has to be NEWER than the curated
-# requests to leave them on page one — and a request dispatched at seed time is
-# newest by construction. A runbook execution awaiting approval creates no
-# action runs, so this backlog adds pages to Approvals without touching the runs
-# list. Titled past "Morning edge readiness" so the runbooks list keeps its two
-# curated rows first (see the pagination volume section at the end of the file).
+# A couple of runbook executions waiting on an approver keep a small, believable
+# queue on Approvals. An execution awaiting approval creates no action runs, so
+# the queue rows never touch the runs list.
 backlog_attrs = %{
   slug: "rotate-edge-tls-certificates",
   title: "Rotate edge TLS certificates",
@@ -623,7 +620,7 @@ runner_specs = [
     hostname: "edge-fra-01.northstar.example",
     labels: %{"env" => "prod", "region" => "eu-central", "role" => "edge"},
     state: :connected,
-    version: "0.10.0",
+    version: Emisar.Compat.runner_target(),
     last_seen_min: 2
   },
   %{
@@ -633,7 +630,7 @@ runner_specs = [
     hostname: "api-iad-02.northstar.example",
     labels: %{"env" => "prod", "region" => "us-east-1", "service" => "checkout"},
     state: :connected,
-    version: "0.4.2",
+    version: Emisar.Compat.runner_target(),
     last_seen_min: 4
   },
   %{
@@ -643,7 +640,7 @@ runner_specs = [
     hostname: "pg-primary-iad.northstar.example",
     labels: %{"env" => "prod", "region" => "us-east-1", "role" => "primary"},
     state: :connected,
-    version: "0.10.0",
+    version: Emisar.Compat.runner_target(),
     last_seen_min: 6
   },
   %{
@@ -654,7 +651,7 @@ runner_specs = [
     labels: %{"env" => "prod", "region" => "us-west-2", "role" => "edge"},
     state: :disconnected,
     disconnect_reason: "drained for kernel upgrade",
-    version: "0.10.0",
+    version: Emisar.Compat.runner_target(),
     last_seen_min: 140
   }
 ]
@@ -777,6 +774,10 @@ linux_actions = [
 
 edge_actions = baseline_action_descriptors.("caddy")
 
+# The checkout tier runs in containers, so the API host carries the docker pack
+# too. The typed JSON demo run below dispatches docker.compose_config on it.
+docker_actions = baseline_action_descriptors.("docker")
+
 api_actions = [
   action_descriptor.("systemd-deep", %{
     "id" => "systemd.failed_units",
@@ -885,7 +886,7 @@ end
 Enum.each(runners, fn r ->
   case r.group do
     "edge-web" -> advertise.(r, edge_actions ++ linux_actions)
-    "app-api" -> advertise.(r, api_actions ++ linux_actions)
+    "app-api" -> advertise.(r, api_actions ++ docker_actions ++ linux_actions)
     "data-postgres" -> advertise.(r, postgres_actions ++ linux_actions)
     _ -> advertise.(r, linux_actions)
   end
@@ -956,6 +957,30 @@ IO.puts(
     IO.ANSI.reset()
 )
 
+# The roster orders newest-joined first, and "joined" is the membership row's
+# inserted_at — so a team stamped at seed time all reads "joined 1m ago", which
+# is the fixture showing through. Weeks-old, staggered joins put the standing
+# team in a sensible order; the SCIM directory batch (seeded near the end of
+# this file, when enabled) backdates itself behind them.
+[
+  {user.id, days_ago.(42)},
+  {jordan.id, days_ago.(35)},
+  {priya.id, days_ago.(28)},
+  {sam.id, days_ago.(21)},
+  {wren.id, days_ago.(12)}
+]
+|> Enum.each(fn {member_user_id, joined_at} ->
+  case Accounts.peek_sync_membership(account.id, member_user_id) do
+    nil ->
+      :ok
+
+    membership ->
+      membership
+      |> Ecto.Changeset.change(inserted_at: joined_at, invitation_accepted_at: joined_at)
+      |> Repo.update!()
+  end
+end)
+
 # -- Runbook execution history + whole-run approval ------------------
 #
 # The readiness runbook intentionally stays empty. The rollout runbook carries
@@ -1011,20 +1036,11 @@ end
 jordan_membership = Accounts.peek_sync_membership(account.id, jordan.id)
 jordan_subject = Subject.for_user(jordan, account, jordan_membership)
 
-# One reason per region and cause, so the queue reads as real work rather than
-# the same sentence 36 times. 36 + the curated request fills three pages of the
-# 15-row queue.
-backlog_reasons =
-  for region <- ~w[eu-central us-east-1 us-west-2 ap-south-1 sa-east-1 eu-west-2],
-      cause <- [
-        "the 90-day certificate window closes on Sunday",
-        "the upstream intermediate CA was rotated",
-        "the wildcard leaf was reissued after the SAN change",
-        "the ACME account key was migrated to the new provider",
-        "the staged renewal never reloaded after the deploy",
-        "the expiry monitor opened a ticket for this region"
-      ],
-      do: "Rotate the #{region} edge certificates - #{cause}."
+# A distinct region + cause per request, so the queue reads as real work.
+backlog_reasons = [
+  "Rotate the eu-central edge certificates - the 90-day certificate window closes on Sunday.",
+  "Rotate the us-east-1 edge certificates - the upstream intermediate CA was rotated."
+]
 
 seeded_execution_ids =
   try do
@@ -1074,11 +1090,10 @@ seeded_execution_ids =
     end)
   end
 
-# The queue only paginates while its rows are still pending, and
-# `Approvals.expire_overdue_requests/1` flips anything past `expires_at`. The
-# policy's 24h window is why this account's curated pending approvals decayed to
-# one over a few days; the backlog carries a change-freeze-length window instead
-# so the pages survive until the next reseed.
+# `Approvals.expire_overdue_requests/1` flips anything past `expires_at`, and
+# the policy's 24h window is why this account's curated pending approvals
+# decayed over a few days; the backlog carries a change-freeze-length window
+# instead so the queue survives until the next reseed.
 backlog_expires_at = DateTime.add(now.(), 21 * 86_400, :second)
 
 Enum.each(seeded_execution_ids.backlog, fn execution_id ->
@@ -1314,7 +1329,7 @@ agent_key =
       "name" => "claude-code",
       "title" => "Claude Code",
       "version" => "2.1.4",
-      "bridge_version" => "0.3.4"
+      "bridge_version" => Emisar.Compat.mcp_target()
     }
   )
   |> Repo.update!()
@@ -1326,15 +1341,14 @@ IO.puts(IO.ANSI.cyan() <> "✓ Seeded MCP API key for the LLM agent" <> IO.ANSI.
 # More MCP keys so the agents page shows the spread operators really see:
 # different clients (each reports its own clientInfo at `initialize`),
 # different owners (the list groups by the issuing human), a range of
-# liveness states, a stale bridge that earns the upgrade prompt, and a
-# rotation still mid-swap. Built directly (§7 seed style) and idempotent by
+# liveness states, and a rotation still mid-swap. Built directly (§7 seed style) and idempotent by
 # (name, owner) so re-seeding converges the state instead of duplicating.
 #
-# Bridge-version policy in dev (config/config.exs): supported at >= 0.3.0,
-# below that unsupported. `current` reads clean; `stale` earns the
-# "unsupported" chip on its row and the fleet-wide upgrade notice.
-mcp_bridge_current = "0.3.4"
-mcp_bridge_stale = "0.2.7"
+# Read from Compat rather than pinning a literal: a pinned bridge version
+# starts earning the "outdated" nudge — and eventually the rose "unsupported"
+# chip plus the fleet-wide upgrade notice — the day the target moves, and the
+# default demo account has to read healthy.
+mcp_bridge_current = Emisar.Compat.mcp_target()
 
 jordan_membership = Accounts.peek_sync_membership(account.id, jordan.id)
 days_out = &DateTime.add(now.(), &1 * 86_400, :second)
@@ -1396,10 +1410,9 @@ end
   {jordan, jordan_membership.id, "Codex CLI",
    %{"name" => "Codex", "version" => "0.9.2", "bridge_version" => mcp_bridge_current},
    mins_ago.(6), days_out.(30)},
-  # A stale bridge → the rose "unsupported" chip on the row AND the page-level
-  # "MCP bridge update" notice with the install command.
+  # A minimal client initialize — no title, no client version — still renders.
   {jordan, jordan_membership.id, "Gemini CLI",
-   %{"name" => "gemini-cli-mcp-client", "bridge_version" => mcp_bridge_stale}, hours_ago.(1),
+   %{"name" => "gemini-cli-mcp-client", "bridge_version" => mcp_bridge_current}, hours_ago.(1),
    days_out.(29)},
   # Drift: a key named for one client but actually driven by another (Claude
   # Code), gone quiet for weeks → dormant. Here the client seg earns its place —
@@ -1487,7 +1500,7 @@ cursor_predecessor
 
 IO.puts(
   IO.ANSI.cyan() <>
-    "✓ Seeded the agent fleet (multiple clients + owners, a stale bridge, a mid-swap rotation)" <>
+    "✓ Seeded the agent fleet (multiple clients + owners, a mid-swap rotation)" <>
     IO.ANSI.reset()
 )
 
@@ -2227,17 +2240,31 @@ ExecutionItem.Query.by_execution_id(seeded_execution_ids.succeeded)
           nil
       end
 
-    attempt
-    |> ActionRun.Changeset.transition(:success, %{
-      started_at: DateTime.add(succeeded_at, 6, :second),
-      finished_at: succeeded_finished_at,
-      exit_code: 0,
-      duration_ms: 12_000,
-      output_complete: true,
-      executed_command: executed_command,
-      event_id: "seed-runbook-" <> item.id
-    })
-    |> Repo.update!()
+    # The runs list orders by insertion and the audit trail records every
+    # terminal run, so the attempt lands where its execution sits in the
+    # timeline — not at seed time — and leaves a receipt like a live run would.
+    finished_attempt =
+      attempt
+      |> ActionRun.Changeset.transition(:success, %{
+        started_at: DateTime.add(succeeded_at, 6, :second),
+        finished_at: succeeded_finished_at,
+        exit_code: 0,
+        duration_ms: 12_000,
+        output_complete: true,
+        executed_command: executed_command,
+        event_id: "seed-runbook-" <> item.id
+      })
+      |> Repo.update!()
+      |> Ecto.Changeset.change(inserted_at: succeeded_at, queued_at: succeeded_at)
+      |> Repo.update!()
+
+    finished_attempt
+    |> Repo.preload(:runner)
+    |> Audit.run_event_changeset()
+    |> Ecto.Changeset.change(occurred_at: succeeded_finished_at)
+    |> Repo.insert!()
+
+    finished_attempt
   end)
 end)
 
@@ -2290,143 +2317,13 @@ case Runners.list_enrollment_keys(owner_subject) do
     :ok
 end
 
-# -- Pagination volume -------------------------------------------------
+# -- Typed JSON run ---------------------------------------------------
 #
-# Every paginated console list has to span more than one page on this account so
-# first/middle/last page and the cursor between them are all testable. The
-# paginator's page is 35 rows; the approvals tabs and the profile's session list
-# ask for 15. Each list below is filled to roughly two full pages plus a partial
-# third.
-#
-# Filler sits BEHIND the curated rows so page one still reads the way the docs
-# captures and the capture rig expect it. For a time-ordered list that means
-# stacking backwards from the OLDEST row already present, which keeps page one
-# right on a database seeded weeks ago as well as on a fresh one. The two
-# name-ordered lists get names that sort after every curated one: runners order
-# by group then name, so every filler group sorts after "edge-web"; runbooks
-# order by title, so every filler title starts past "Morning edge readiness".
-# The approvals queue is FIFO and is filled far above, where a dispatch at seed
-# time is newest by construction.
-#
-# Each block writes ONE insert_all and inserts only the rows that are missing,
-# so a reseed converges instead of doubling and never removes a row a developer
-# added by hand.
-
-# insert_all skips changesets, so validate first, then supply what it will not
-# autogenerate — the id and the timestamps.
-insert_seed_rows = fn schema, pairs ->
-  rows =
-    Enum.map(pairs, fn {changeset, extra} ->
-      if changeset.valid? do
-        Map.merge(changeset.changes, extra)
-      else
-        raise "seed volume built an invalid #{inspect(schema)}: #{inspect(changeset.errors)}"
-      end
-    end)
-
-  {count, _returned} = Repo.insert_all(schema, rows)
-  count
-end
-
-oldest_at = fn queryable, field -> Repo.aggregate(queryable, :min, field) || now.() end
-step_back = fn from, index, seconds -> DateTime.add(from, -(index + 1) * seconds, :second) end
-cycle = fn list, index -> Enum.at(list, rem(index, length(list))) end
-
-# -- Fleet volume ------------------------------------------------------
-
-filler_runner_hosts =
-  for {group, role} <- [
-        {"metrics-prom", "metrics"},
-        {"queue-rabbit", "queue"},
-        {"search-opensearch", "search"},
-        {"shard-mysql", "database"},
-        {"vault-secrets", "secrets"},
-        {"worker-batch", "worker"}
-      ],
-      region <- ~w[fra iad sfo bom gru lhr nrt],
-      ordinal <- ~w[01 02] do
-    %{
-      name: "#{group}-#{region}-#{ordinal}",
-      group: group,
-      hostname: "#{group}-#{region}-#{ordinal}.northstar.example",
-      labels: %{"env" => "prod", "region" => region, "role" => role}
-    }
-  end
-
-# The runner detail page paginates one runner's advertised actions, so the fleet
-# needs a host that carries a broad catalog rather than the handful the curated
-# runners advertise. A jump host is where an operator would expect to find one.
-jumphost_names = ~w[ops-jump-01 ops-jump-02]
-
-filler_runner_hosts =
-  filler_runner_hosts ++
-    Enum.map(jumphost_names, fn name ->
-      %{
-        name: name,
-        group: "ops-jumphost",
-        hostname: "#{name}.northstar.example",
-        labels: %{"env" => "prod", "region" => "iad", "role" => "jumphost"}
-      }
-    end)
-
-seeded_runner_names =
-  Runner.Query.not_deleted()
-  |> Runner.Query.by_account_id(account.id)
-  |> Repo.all()
-  |> MapSet.new(& &1.name)
-
-oldest_runner_at =
-  oldest_at.(
-    Runner.Query.not_deleted() |> Runner.Query.by_account_id(account.id),
-    :inserted_at
-  )
-
-runners_added =
-  filler_runner_hosts
-  |> Enum.reject(&MapSet.member?(seeded_runner_names, &1.name))
-  |> Enum.with_index()
-  |> Enum.map(fn {host, index} ->
-    at = step_back.(oldest_runner_at, index, 3600)
-
-    # Read from Compat rather than pinning a literal: the curated four carry the
-    # deliberately-behind versions that earn the fleet's "needs an update"
-    # notice, and filler on a stale literal would drown that story in 86 more
-    # rows the moment the target moves.
-    changeset =
-      host
-      |> Map.merge(%{
-        account_id: account.id,
-        external_id: host.name,
-        runner_version: Emisar.Compat.runner_target()
-      })
-      |> Runner.Changeset.register()
-
-    {changeset, %{id: Repo.generate_id(), inserted_at: at, updated_at: at, last_connected_at: at}}
-  end)
-  |> then(&insert_seed_rows.(Runner, &1))
-
-filler_runner_names = MapSet.new(filler_runner_hosts, & &1.name)
-
-jumphost_actions =
-  Enum.flat_map(~w[linux-core docker nginx debian], baseline_action_descriptors)
-
-Runner.Query.not_deleted()
-|> Runner.Query.by_account_id(account.id)
-|> Repo.all()
-|> Enum.filter(&MapSet.member?(filler_runner_names, &1.name))
-|> Enum.each(fn runner ->
-  if runner.name == "ops-jump-01" do
-    advertise.(runner, jumphost_actions)
-  else
-    advertise.(runner, linux_actions)
-  end
-end)
-
 # One real typed action result keeps the run-detail Raw/JSON presentation
 # visible in every reseeded demo. Use the descriptor's own schema rather than
 # labeling merely JSON-looking stdout as typed output.
 typed_demo_reason = "review the sanitized Compose topology before a deployment"
-{:ok, typed_demo_runner} = Runners.fetch_runner_by_name("ops-jump-01", owner_subject)
+{:ok, typed_demo_runner} = Runners.fetch_runner_by_name("api-iad-02", owner_subject)
 
 {:ok, typed_demo_action} =
   Catalog.fetch_action_for_account(
@@ -2554,633 +2451,6 @@ typed_demo_run =
 IO.puts(
   IO.ANSI.cyan() <>
     "✓ Typed JSON run ready at /app/demo/runs/#{typed_demo_run.id}" <> IO.ANSI.reset()
-)
-
-IO.puts(
-  IO.ANSI.cyan() <>
-    "✓ Fleet volume: +#{runners_added} runners (ops-jump-01 advertises #{length(jumphost_actions)} actions)" <>
-    IO.ANSI.reset()
-)
-
-# -- Runbook volume ----------------------------------------------------
-#
-# Published on insert (definition + live_version, no draft) so every filler row
-# is runnable rather than wearing the "Never published" state, which would make
-# the list read as a page of broken runbooks.
-
-filler_runbook_definition = %{
-  "schema_version" => 1,
-  "context_markdown" =>
-    "## Before you run\n\n- Confirm the change window is open.\n" <>
-      "- Watch the fleet for a full minute after the step reports success.",
-  "inputs" => [],
-  "stages" => [
-    %{
-      "id" => "check",
-      "title" => "Check the fleet",
-      "mode" => "parallel",
-      "max_parallel" => 2,
-      "steps" => [
-        %{
-          "id" => "uptime",
-          "pack" => %{"id" => "linux-core"},
-          "action" => "linux.uptime",
-          "targets" => %{"selection" => "all", "refs" => ["group:edge-web"]},
-          "args" => %{},
-          "outputs" => [],
-          "success" => [],
-          "wait" => nil
-        }
-      ]
-    }
-  ]
-}
-
-filler_runbook_digest = Runbooks.definition_digest(filler_runbook_definition)
-
-filler_runbook_titles =
-  for verb <- [
-        "Prune",
-        "Publish",
-        "Purge",
-        "Quarantine",
-        "Rebalance",
-        "Refresh",
-        "Reindex",
-        "Reload",
-        "Renew",
-        "Replay",
-        "Restart",
-        "Restore",
-        "Retire",
-        "Roll back",
-        "Scale",
-        "Snapshot",
-        "Stage",
-        "Sweep",
-        "Sync",
-        "Trim",
-        "Upgrade",
-        "Validate"
-      ],
-      target <- [
-        "the edge fleet",
-        "the checkout tier",
-        "the search cluster",
-        "the metrics pipeline"
-      ],
-      do: "#{verb} #{target}"
-
-seeded_runbook_slugs =
-  Runbook.Query.not_deleted()
-  |> Runbook.Query.by_account_id(account.id)
-  |> Repo.all()
-  |> MapSet.new(& &1.slug)
-
-oldest_runbook_at =
-  oldest_at.(
-    Runbook.Query.not_deleted() |> Runbook.Query.by_account_id(account.id),
-    :inserted_at
-  )
-
-filler_runbook_pairs =
-  filler_runbook_titles
-  |> Enum.map(fn title ->
-    Runbook.Changeset.create(account.id, user.id, %{
-      title: title,
-      description:
-        "#{title} on the standard change checklist, then confirm the fleet reports healthy.",
-      draft_definition: filler_runbook_definition
-    })
-  end)
-  |> Enum.reject(&MapSet.member?(seeded_runbook_slugs, Ecto.Changeset.get_field(&1, :slug)))
-  |> Enum.with_index()
-  |> Enum.map(fn {changeset, index} ->
-    at = step_back.(oldest_runbook_at, index, 3600)
-
-    {changeset,
-     %{
-       id: Repo.generate_id(),
-       inserted_at: at,
-       updated_at: at,
-       definition: filler_runbook_definition,
-       draft_definition: nil,
-       live_version: 1
-     }}
-  end)
-
-runbooks_added = insert_seed_rows.(Runbook, filler_runbook_pairs)
-
-filler_runbook_pairs
-|> Enum.map(fn {changeset, extra} ->
-  release =
-    Release.Changeset.create(%{
-      account_id: account.id,
-      runbook_id: extra.id,
-      version: 1,
-      title: Ecto.Changeset.get_field(changeset, :title),
-      description: Ecto.Changeset.get_field(changeset, :description),
-      definition: filler_runbook_definition,
-      definition_sha256: filler_runbook_digest,
-      published_by_id: user.id
-    })
-
-  {release,
-   %{id: Repo.generate_id(), inserted_at: extra.inserted_at, updated_at: extra.updated_at}}
-end)
-|> then(&insert_seed_rows.(Release, &1))
-
-IO.puts(
-  IO.ANSI.cyan() <> "✓ Runbook volume: +#{runbooks_added} published runbooks" <> IO.ANSI.reset()
-)
-
-# -- Roster volume -----------------------------------------------------
-
-filler_people =
-  for first <- ~w[amara bevan chidi dagny elif farrah gustavo hina imani],
-      last <- ~w[abara becker castellanos duarte eriksen fontaine grimaldi haugen ibarra] do
-    {"#{first}.#{last}@northstar.example",
-     "#{String.capitalize(first)} #{String.capitalize(last)}"}
-  end
-
-oldest_membership_at =
-  oldest_at.(
-    Accounts.Membership.Query.not_deleted()
-    |> Accounts.Membership.Query.by_account_id(account.id),
-    :inserted_at
-  )
-
-known_filler_user_ids =
-  Enum.reduce(filler_people, %{}, fn {email, _name}, acc ->
-    case Users.fetch_user_by_email(email) do
-      {:ok, %User{} = existing} -> Map.put(acc, email, existing.id)
-      {:error, :not_found} -> acc
-    end
-  end)
-
-minted_filler_user_ids =
-  filler_people
-  |> Enum.reject(fn {email, _name} -> Map.has_key?(known_filler_user_ids, email) end)
-  |> Enum.with_index()
-  |> Enum.map(fn {{email, full_name}, index} ->
-    at = step_back.(oldest_membership_at, index, 3600)
-    changeset = User.Changeset.registration(%User{}, %{email: email, full_name: full_name})
-
-    {email, changeset,
-     %{id: Repo.generate_id(), inserted_at: at, updated_at: at, confirmed_at: at}}
-  end)
-
-minted_filler_user_ids
-|> Enum.map(fn {_email, changeset, extra} -> {changeset, extra} end)
-|> then(&insert_seed_rows.(User, &1))
-
-filler_user_ids =
-  Enum.reduce(minted_filler_user_ids, known_filler_user_ids, fn {email, _changeset, extra}, acc ->
-    Map.put(acc, email, extra.id)
-  end)
-
-seeded_membership_user_ids =
-  Accounts.Membership.Query.not_deleted()
-  |> Accounts.Membership.Query.by_account_id(account.id)
-  |> Repo.all()
-  |> MapSet.new(& &1.user_id)
-
-memberships_added =
-  filler_people
-  |> Enum.map(fn {email, _name} -> Map.fetch!(filler_user_ids, email) end)
-  |> Enum.reject(&MapSet.member?(seeded_membership_user_ids, &1))
-  |> Enum.with_index()
-  |> Enum.map(fn {user_id, index} ->
-    at = step_back.(oldest_membership_at, index, 3600)
-
-    changeset =
-      Accounts.Membership.Changeset.create(%{
-        account_id: account.id,
-        user_id: user_id,
-        role: cycle.([:viewer, :operator, :operator, :viewer, :admin], index),
-        runner_access_mode: :all,
-        pack_access_mode: :all,
-        invitation_accepted_at: at
-      })
-
-    {changeset, %{id: Repo.generate_id(), inserted_at: at, updated_at: at}}
-  end)
-  |> then(&insert_seed_rows.(Accounts.Membership, &1))
-
-IO.puts(IO.ANSI.cyan() <> "✓ Roster volume: +#{memberships_added} members" <> IO.ANSI.reset())
-
-# -- Credential volume -------------------------------------------------
-#
-# Both key kinds are minted the way the product mints them — Crypto owns the
-# secret, its lookup prefix, and the stored digest — so no seeded row carries a
-# digest this file wrote by hand.
-
-priya_membership = Accounts.peek_sync_membership(account.id, priya.id)
-sam_membership = Accounts.peek_sync_membership(account.id, sam.id)
-
-filler_key_owners = [
-  {user, owner_membership.id},
-  {jordan, jordan_membership.id},
-  {priya, priya_membership.id},
-  {sam, sam_membership.id}
-]
-
-# `client_info` is what the named client really reports at `initialize`, so the
-# row's client segment agrees with its name. Pairing a name with whatever client
-# the owner rotation happened to land on printed "Claude Code - search / client
-# cursor" — the list reads that disagreement as credential drift, which is a
-# real state worth one row, not eighty-four.
-filler_key_specs =
-  for {client, client_info} <- [
-        {"Claude Code", %{"name" => "claude-code", "title" => "Claude Code"}},
-        {"Codex CLI", %{"name" => "Codex"}},
-        {"Cursor", %{"name" => "cursor"}},
-        {"Gemini CLI", %{"name" => "gemini-cli-mcp-client"}},
-        {"Windsurf", %{"name" => "windsurf"}},
-        {"Zed", %{"name" => "zed"}}
-      ],
-      squad <- ~w[payments checkout search catalog platform growth data
-                  mobile infra identity billing notifications media support],
-      do: {"#{client} - #{squad}", client_info}
-
-seeded_key_names =
-  ApiKeys.ApiKey.Query.not_deleted()
-  |> ApiKeys.ApiKey.Query.by_account_id(account.id)
-  |> Repo.all()
-  |> MapSet.new(& &1.name)
-
-oldest_key_at =
-  oldest_at.(
-    ApiKeys.ApiKey.Query.not_deleted() |> ApiKeys.ApiKey.Query.by_account_id(account.id),
-    :inserted_at
-  )
-
-keys_added =
-  filler_key_specs
-  |> Enum.reject(fn {name, _client_info} -> MapSet.member?(seeded_key_names, name) end)
-  |> Enum.with_index()
-  |> Enum.map(fn {{name, client_info}, index} ->
-    at = step_back.(oldest_key_at, index, 3600)
-    {owner, membership_id} = cycle.(filler_key_owners, index)
-    {_raw, prefix, hash} = Emisar.Crypto.mint("emk-", 12)
-
-    changeset =
-      ApiKeys.ApiKey.Changeset.create(account.id, owner.id, membership_id, prefix, hash, %{
-        name: name
-      })
-
-    {changeset,
-     %{
-       id: Repo.generate_id(),
-       inserted_at: at,
-       updated_at: at,
-       last_used_at: DateTime.add(at, 3600, :second),
-       # Current bridge, read from Compat: the curated fleet owns the stale-bridge
-       # story (one unsupported, the rest a release behind), and filler pinned to
-       # the same literal turned that quiet nudge into "33 agents are behind".
-       last_client_info: Map.put(client_info, "bridge_version", Emisar.Compat.mcp_target())
-     }}
-  end)
-  |> then(&insert_seed_rows.(ApiKeys.ApiKey, &1))
-
-filler_enrollment_descriptions =
-  for role <- ~w[metrics queue search database secrets worker jumphost],
-      region <- ~w[fra iad sfo bom gru lhr],
-      wave <- ~w[rollout rebuild],
-      do: "#{role} fleet #{region} - #{wave}"
-
-seeded_enrollment_descriptions =
-  Emisar.Runners.EnrollmentKey.Query.not_deleted()
-  |> Emisar.Runners.EnrollmentKey.Query.by_account_id(account.id)
-  |> Repo.all()
-  |> MapSet.new(& &1.description)
-
-oldest_enrollment_at =
-  oldest_at.(
-    Emisar.Runners.EnrollmentKey.Query.not_deleted()
-    |> Emisar.Runners.EnrollmentKey.Query.by_account_id(account.id),
-    :inserted_at
-  )
-
-enrollment_keys_added =
-  filler_enrollment_descriptions
-  |> Enum.reject(&MapSet.member?(seeded_enrollment_descriptions, &1))
-  |> Enum.with_index()
-  |> Enum.map(fn {description, index} ->
-    at = step_back.(oldest_enrollment_at, index, 3600)
-    {_raw, prefix, hash} = Emisar.Crypto.mint("emkey-enroll-", 29)
-
-    changeset =
-      Emisar.Runners.EnrollmentKey.Changeset.create(account.id, user.id, prefix, hash, %{
-        description: description,
-        reusable: true,
-        max_uses: 25
-      })
-
-    {changeset,
-     %{
-       id: Repo.generate_id(),
-       inserted_at: at,
-       updated_at: at,
-       uses_count: rem(index, 7),
-       last_used_at: DateTime.add(at, 7200, :second)
-     }}
-  end)
-  |> then(&insert_seed_rows.(Emisar.Runners.EnrollmentKey, &1))
-
-IO.puts(
-  IO.ANSI.cyan() <>
-    "✓ Credential volume: +#{keys_added} agent keys, +#{enrollment_keys_added} enrollment keys" <>
-    IO.ANSI.reset()
-)
-
-# -- Session volume ----------------------------------------------------
-#
-# The profile's session list is the demo owner's own, so the filler is theirs —
-# older than whatever the developer is signed in with, which keeps the live
-# session at the top where "this device" belongs.
-
-# Real user-agent strings, because the row label is PARSED from one: a friendly
-# "Chrome on Windows" written straight into the column comes back out of the
-# parser as a bare "Chrome".
-filler_session_devices = [
-  {"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) " <>
-     "Chrome/140.0.0.0 Safari/537.36", "203.0.113.24"},
-  {"Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) " <>
-     "Version/18.0 Mobile/15E148 Safari/604.1", "203.0.113.61"},
-  {"Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0", "198.51.100.32"},
-  {"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " <>
-     "Chrome/140.0.0.0 Safari/537.36", "198.51.100.88"},
-  {"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 " <>
-     "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", "203.0.113.147"}
-]
-
-demo_session_query =
-  Emisar.Auth.UserToken.Query.by_user_id(user.id)
-  |> Emisar.Auth.UserToken.Query.by_context("session")
-
-oldest_session_at = oldest_at.(demo_session_query, :inserted_at)
-session_shortfall = max(40 - Repo.aggregate(demo_session_query, :count, :id), 0)
-
-sessions_added =
-  0..(session_shortfall - 1)//1
-  |> Enum.map(fn index ->
-    at = step_back.(oldest_session_at, index, 43_200)
-    {device, ip} = cycle.(filler_session_devices, index)
-    {_token, digest} = Emisar.Crypto.session_token()
-
-    metadata = %{ip_address: ip, user_agent: device}
-    changeset = Emisar.Auth.UserToken.Changeset.session(user, digest, metadata, :magic_link, nil)
-
-    {changeset, %{id: Repo.generate_id(), inserted_at: at}}
-  end)
-  |> then(&insert_seed_rows.(Emisar.Auth.UserToken, &1))
-
-# -- Run + decision volume ---------------------------------------------
-#
-# Every filler run is older than the oldest curated one, so the runs list, the
-# dashboard's recent-runs rail and its 24h digest all keep reading exactly as
-# they do today; only pages two and beyond are new.
-
-filler_run_shapes = [
-  {edge, "linux.uptime", %{}, "scheduled edge readiness sweep"},
-  {edge, "caddy.reverse_proxy_upstreams", %{}, "confirm upstreams after the weekly deploy"},
-  {edge, "linux.disk_usage", %{"paths" => ["/", "/var/log"]}, "capacity check before the peak"},
-  {edge, "caddy.version", %{}, "record the running Caddy build for the change ticket"},
-  {api, "systemd.failed_units", %{}, "handoff health sweep"},
-  {api, "linux.journalctl", %{"unit" => "checkout-api.service", "since" => "1h"},
-   "review checkout-api warnings after the release"},
-  {api, "linux.uptime", %{}, "confirm the API tier stayed up through the window"},
-  {database, "postgres.replication_lag", %{}, "confirm replicas caught up after the import"},
-  {database, "postgres.vacuum_status", %{"schema" => "public", "limit" => 20},
-   "autovacuum check before the batch window"},
-  {database, "linux.disk_usage", %{"paths" => ["/var/lib/postgresql"]},
-   "watch WAL growth during the backfill"}
-]
-
-filler_run_requesters = [
-  {user.id, owner_membership.id},
-  {jordan.id, jordan_membership.id},
-  {priya.id, priya_membership.id}
-]
-
-run_query = ActionRun.Query.all() |> ActionRun.Query.by_account_id(account.id)
-oldest_run_at = oldest_at.(run_query, :inserted_at)
-run_shortfall = max(90 - Repo.aggregate(run_query, :count, :id), 0)
-
-filler_run_rows =
-  0..(run_shortfall - 1)//1
-  |> Enum.map(fn index ->
-    at = step_back.(oldest_run_at, index, 10_800)
-    {runner, action_id, args, reason} = cycle.(filler_run_shapes, index)
-    args_raw = Jason.encode!(args)
-    duration_ms = 240 + rem(index * 137, 1800)
-
-    # Every twelfth run failed and every twentieth was called off — enough for
-    # the status filter to have something to find without putting a fresh
-    # warning on a dashboard that should read healthy.
-    {status, exit_code} =
-      cond do
-        rem(index, 20) == 19 -> {"cancelled", nil}
-        rem(index, 12) == 11 -> {"failed", 1}
-        true -> {"success", 0}
-      end
-
-    # `Runs.create_run/1` derives the initiating membership from the requester
-    # and the runs list reads attribution through it — without one, a row falls
-    # back to the raw email while every curated row beside it reads as a name.
-    {requester_id, requester_membership_id} = cycle.(filler_run_requesters, index)
-
-    changeset =
-      ActionRun.Changeset.create(%{
-        account_id: account.id,
-        runner_id: runner.id,
-        request_id: Emisar.Crypto.run_request_id(),
-        action_id: action_id,
-        args: args,
-        args_sha256: Emisar.Crypto.hash_hex(args_raw),
-        source: "operator",
-        requested_by_id: requester_id,
-        initiating_membership_id: requester_membership_id,
-        reason: reason,
-        status: status,
-        policy_id: policy && policy.id,
-        policy_decision: "allow",
-        policy_reason: "The account policy allows low-risk actions by default.",
-        queued_at: at
-      })
-
-    finished_at = DateTime.add(at, duration_ms, :millisecond)
-
-    {changeset,
-     %{
-       id: Repo.generate_id(),
-       inserted_at: at,
-       updated_at: finished_at,
-       sent_at: at,
-       started_at: at,
-       finished_at: finished_at,
-       cancelled_at: if(status == "cancelled", do: finished_at),
-       exit_code: exit_code,
-       duration_ms: duration_ms,
-       output_complete: status != "cancelled",
-       error_message: if(status == "failed", do: "the action exited non-zero; see the output")
-     }}
-  end)
-
-runs_added = insert_seed_rows.(ActionRun, filler_run_rows)
-
-# Bulk-inserted volume rows bypass `Runs.transition/3`, so repair the terminal
-# receipt that transition normally writes. Check the exact request/status pair,
-# not merely whether the request has any event: a partially-seeded run may have
-# its dispatch row but still be missing its final outcome. Running this over the
-# account's terminal rows also repairs databases seeded before this block
-# existed, while leaving developer-created receipts alone.
-seeded_run_outcomes =
-  Audit.Event.Query.all()
-  |> Audit.Event.Query.by_account_id(account.id)
-  |> Repo.all()
-  |> MapSet.new(&{&1.request_id, &1.event_type})
-
-audits_added =
-  run_query
-  |> Repo.all()
-  |> Repo.preload(:runner)
-  |> Enum.count(fn run ->
-    outcome = {run.request_id, "action_run.#{run.status}"}
-
-    if ActionRun.terminal?(run.status) and not MapSet.member?(seeded_run_outcomes, outcome) do
-      run
-      |> Audit.run_event_changeset()
-      |> Ecto.Changeset.change(occurred_at: run.finished_at)
-      |> Repo.insert!()
-
-      true
-    else
-      false
-    end
-  end)
-
-# The approvals "Recent decisions" tab reads the same table as the queue but
-# newest-first, so its filler is the OLD end: one decided request against the
-# oldest runs that do not have one yet. Read back from the table rather than
-# from the batch just inserted, so the tab refills on its own when the runs are
-# already at volume.
-decision_query = ApprovalRequest.Query.all() |> ApprovalRequest.Query.by_account_id(account.id)
-oldest_decision_at = oldest_at.(decision_query, :requested_at)
-
-decided_shortfall =
-  max(40 - Repo.aggregate(ApprovalRequest.Query.decided(decision_query), :count, :id), 0)
-
-runs_already_requested =
-  decision_query
-  |> Repo.all()
-  |> MapSet.new(& &1.run_id)
-
-decisions_added =
-  run_query
-  |> Repo.all()
-  |> Enum.reject(&MapSet.member?(runs_already_requested, &1.id))
-  |> Enum.sort_by(& &1.inserted_at, DateTime)
-  |> Enum.take(decided_shortfall)
-  |> Enum.with_index()
-  |> Enum.map(fn {%ActionRun{} = run, index} ->
-    requested_at = step_back.(oldest_decision_at, index, 10_800)
-    approved? = rem(index, 3) != 2
-
-    changeset =
-      ApprovalRequest.Changeset.create(%{
-        account_id: account.id,
-        run_id: run.id,
-        requested_by_id: cycle.([priya.id, sam.id, jordan.id], index),
-        requested_at: requested_at,
-        min_approvals: 1,
-        allow_self_approval: true,
-        reason: "Change ticket is open and the smoke test is green.",
-        expires_at: DateTime.add(requested_at, 24 * 3600, :second),
-        # The decisions list names the action and its host from this snapshot,
-        # not from the run — a request written without it renders as "— on —".
-        context: %{
-          runner_id: run.runner_id,
-          action_id: run.action_id,
-          args_sha256: run.args_sha256
-        }
-      })
-
-    {changeset,
-     %{
-       id: Repo.generate_id(),
-       inserted_at: requested_at,
-       updated_at: requested_at,
-       status: if(approved?, do: :approved, else: :denied),
-       decided_by_id: if(approved?, do: jordan.id, else: user.id),
-       decided_at: DateTime.add(requested_at, 240, :second),
-       decision_reason:
-         if(approved?,
-           do: "Window is open and the plan matches the ticket.",
-           else: "Wait for the DBA-approved change window."
-         )
-     }}
-  end)
-  |> then(&insert_seed_rows.(ApprovalRequest, &1))
-
-# Standing grants: the same "ask once, then run" shape as the two curated ones,
-# spread across the actions the agent fleet actually calls.
-filler_grant_shapes =
-  for {pack_id, action_id, runner} <- [
-        {"caddy", "caddy.access_log_tail", edge},
-        {"caddy", "caddy.reverse_proxy_upstreams", edge},
-        {"caddy", "caddy.version", edge},
-        {"linux-core", "linux.uptime", edge},
-        {"linux-core", "linux.disk_usage", api},
-        {"systemd-deep", "systemd.failed_units", api},
-        {"linux-core", "linux.journalctl", api},
-        {"postgres", "postgres.replication_lag", database},
-        {"postgres", "postgres.vacuum_status", database},
-        {"linux-core", "linux.uptime", database}
-      ],
-      args <- [%{}, %{"lines" => 100}, %{"lines" => 500}, %{"lines" => 1000}],
-      do: {pack_id, action_id, runner, args}
-
-grant_query =
-  Emisar.Approvals.Grant.Query.all() |> Emisar.Approvals.Grant.Query.by_account_id(account.id)
-
-oldest_grant_at = oldest_at.(grant_query, :granted_at)
-grant_shortfall = max(40 - Repo.aggregate(grant_query, :count, :id), 0)
-
-grants_added =
-  filler_grant_shapes
-  |> Enum.take(grant_shortfall)
-  |> Enum.with_index()
-  |> Enum.map(fn {{pack_id, action_id, runner, args}, index} ->
-    granted_at = step_back.(oldest_grant_at, index, 21_600)
-
-    %{"version" => version, "hash" => hash} =
-      pack_descriptor.(pack_id, pack_version_overrides[pack_id])
-
-    changeset =
-      Emisar.Approvals.Grant.Changeset.create(%{
-        account_id: account.id,
-        api_key_id: agent_key.id,
-        action_id: action_id,
-        pack_ref: "#{pack_id}@#{version}/#{hash}",
-        runner_id: runner.id,
-        args_sha256: Emisar.Crypto.hash_hex(Jason.encode!(args)),
-        granted_by_id: cycle.([user.id, jordan.id], index),
-        granted_at: granted_at,
-        expires_at: DateTime.add(granted_at, 30 * 86_400, :second),
-        uses_count: rem(index * 3, 17)
-      })
-
-    {changeset, %{id: Repo.generate_id(), inserted_at: granted_at, updated_at: granted_at}}
-  end)
-  |> then(&insert_seed_rows.(Emisar.Approvals.Grant, &1))
-
-IO.puts(
-  IO.ANSI.cyan() <>
-    "✓ Activity volume: +#{runs_added} runs, +#{decisions_added} decided approvals, " <>
-    "+#{grants_added} grants, +#{sessions_added} sessions, +#{audits_added} run receipts" <>
-    IO.ANSI.reset()
 )
 
 # -- Keycloak OIDC + SCIM provider (./run e2e SSO) -----------------
@@ -3380,6 +2650,40 @@ if System.get_env("EMISAR_DEV_FIXED_SCIM_TOKEN") not in [nil, ""] do
         })
     end
 
+    # The push above lands at seed time, so without a backdate the roster's
+    # newest-first order leads with four identical never-active directory rows,
+    # and the connection card reads the amber "never synced" — a seeded fixture
+    # presenting itself as broken. The directory connected before the newest
+    # teammates joined, so its batch sorts behind every standing member, and the
+    # provider is stamped the way an authenticated SCIM request would.
+    scim_synced_at = days_ago.(45)
+
+    synced_identities =
+      Emisar.SSO.UserIdentity.Query.not_deleted()
+      |> Emisar.SSO.UserIdentity.Query.by_provider_id(scim_provider.id)
+      |> Repo.all()
+
+    Enum.each(synced_identities, fn identity ->
+      identity |> Ecto.Changeset.change(inserted_at: scim_synced_at) |> Repo.update!()
+
+      case Accounts.peek_sync_membership(account.id, identity.user_id) do
+        nil ->
+          :ok
+
+        membership ->
+          membership
+          |> Ecto.Changeset.change(inserted_at: scim_synced_at)
+          |> Repo.update!()
+      end
+    end)
+
+    scim_provider
+    |> Ecto.Changeset.change(
+      scim_last_seen_at: mins_ago.(14),
+      scim_groups_synced_at: scim_synced_at
+    )
+    |> Repo.update!()
+
     IO.puts(
       IO.ANSI.green() <>
         "✓ Seeded SCIM directory: #{length(scim_people)} identities, #{length(scim_groups)} groups" <>
@@ -3482,7 +2786,7 @@ for {name, slug, plan} <- [
       hostname: "#{runner_name}.example",
       labels: %{"env" => "prod", "account" => slug},
       last_connected_at: mins_ago.(35),
-      runner_version: "0.4.2"
+      runner_version: Emisar.Compat.runner_target()
     )
     |> Repo.update!()
 
@@ -3572,7 +2876,7 @@ bc_runner =
       |> Ecto.Changeset.change(
         hostname: "both-connected-prod-1.example",
         last_connected_at: mins_ago.(20),
-        runner_version: "0.4.2"
+        runner_version: Emisar.Compat.runner_target()
       )
       |> Repo.update!()
   end

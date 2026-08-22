@@ -74,7 +74,7 @@ defmodule EmisarWeb.DocsComponents do
           aria-label="On this page"
           class="sticky top-8 hidden max-h-[calc(100vh-4rem)] overflow-y-auto px-2 pb-10 xl:block"
         >
-          <p class="font-mono text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+          <p class="font-mono text-xs font-semibold uppercase tracking-widest text-zinc-500">
             On this page
           </p>
           <ul class="mt-3 space-y-1.5 border-l border-zinc-900">
@@ -144,7 +144,7 @@ defmodule EmisarWeb.DocsComponents do
         open={group.label == DocsNav.group_label(@current)}
         class="group/nav"
       >
-        <summary class="flex cursor-pointer list-none items-center justify-between gap-2 rounded px-2.5 py-1 font-mono text-[11px] font-semibold uppercase tracking-widest text-zinc-500 transition-colors hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-2 rounded px-2.5 py-1 font-mono text-xs font-semibold uppercase tracking-widest text-zinc-500 transition-colors hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
           {group.label}
           <.icon
             name="hero-chevron-down"
@@ -154,7 +154,7 @@ defmodule EmisarWeb.DocsComponents do
         <.docs_nav_group_pages group={group} current={@current} />
       </details>
       <div :if={!@collapsible}>
-        <p class="font-mono text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+        <p class="font-mono text-xs font-semibold uppercase tracking-widest text-zinc-500">
           {group.label}
         </p>
         <.docs_nav_group_pages group={group} current={@current} />
@@ -174,7 +174,7 @@ defmodule EmisarWeb.DocsComponents do
       <p
         :if={section.label}
         class={[
-          "px-2.5 font-mono text-[10px] font-medium uppercase tracking-wide text-zinc-500",
+          "px-2.5 font-mono text-[11px] font-medium uppercase tracking-wide text-zinc-500",
           if(section_index == 0, do: "mt-3", else: "mt-5")
         ]}
       >

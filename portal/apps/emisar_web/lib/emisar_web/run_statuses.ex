@@ -44,6 +44,9 @@ defmodule EmisarWeb.RunStatuses do
   @doc "The ordered `{label, meaning}` pairs, in /docs/runs status-table order."
   def all, do: Keyword.values(@statuses)
 
+  @doc "The ordered `{status_atom, {label, meaning}}` entries — the /docs/runs table renders the console's own status badge from the atom."
+  def entries, do: @statuses
+
   @doc "The operator-facing label for a run `status` atom; raises `KeyError` on an unknown status so drift is loud."
   def label(status), do: @statuses |> Keyword.fetch!(status) |> elem(0)
 

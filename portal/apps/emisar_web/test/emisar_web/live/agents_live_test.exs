@@ -496,6 +496,79 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert with_manual =~ "Rotate this key?"
     end
 
+    test "an owner bulk-revokes every key a member owns from the group header", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      member = Fixtures.Users.create_user(full_name: "Jordan Lee")
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        )
+
+      member_subject = Fixtures.Subjects.membership_subject(membership)
+      {:ok, _raw_one, key_one} = ApiKeys.create_key(%{name: "laptop"}, member_subject)
+      {:ok, _raw_two, key_two} = ApiKeys.create_key(%{name: "desktop"}, member_subject)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
+      assert html =~ "Revoke all"
+      assert html =~ "Revoke every key Jordan Lee owns?"
+
+      # The support handle: each key's Actions menu copies the key id.
+      assert has_element?(lv, "[data-copy-text='#{key_one.id}']", "Copy ID")
+
+      flash =
+        render_click(lv, "revoke_member_keys", %{"membership-id" => membership.id})
+
+      assert flash =~ "Revoked 2 keys."
+      assert %DateTime{} = Repo.reload!(key_one).revoked_at
+      assert %DateTime{} = Repo.reload!(key_two).revoked_at
+    end
+
+    # IL-15: the hidden button is not the gate — a crafted event from a member
+    # without manage lands on the context's denial and revokes nothing.
+    test "a crafted bulk revoke on another member's group is refused with a flash",
+         %{conn: conn} do
+      {_owner_conn, _user, account} = register_and_log_in(conn)
+
+      target = Fixtures.Users.create_user(full_name: "Priya Shah")
+
+      target_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: target.id,
+          role: "operator"
+        )
+
+      target_subject = Fixtures.Subjects.membership_subject(target_membership)
+      {:ok, _raw, target_key} = ApiKeys.create_key(%{name: "target"}, target_subject)
+
+      operator = Fixtures.Users.create_user(full_name: "Sam Okafor")
+
+      _operator_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: operator.id,
+          role: "operator"
+        )
+
+      operator_conn = log_in_user(build_conn(), operator)
+      {:ok, operator_lv, operator_html} = live(operator_conn, ~p"/app/#{account}/agents")
+
+      # The operator sees no bulk revoke on Priya's group…
+      refute operator_html =~ "Revoke every key Priya Shah owns?"
+
+      flash =
+        render_click(operator_lv, "revoke_member_keys", %{
+          "membership-id" => target_membership.id
+        })
+
+      assert flash =~ "Could not revoke this member"
+      assert is_nil(Repo.reload!(target_key).revoked_at)
+    end
+
     # The agents UI hides Rotate on an OAuth backing row (covered above); a
     # crafted `rotate` event bypassing the hidden button still can't rotate it —
     # the context rejects an OAuth backing key (IL-15), so the LV lands the error

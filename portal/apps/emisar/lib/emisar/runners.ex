@@ -2452,7 +2452,7 @@ defmodule Emisar.Runners do
   # An :unsafe_fragment is the only way to express that in Ecto; the
   # columns/predicate are literals here, so there's nothing to interpolate.
   defp insert_runner(repo, key, attrs, external_id) do
-    name = derive_name(attrs)
+    name = derive_name(attrs, external_id)
 
     with :ok <- ensure_name_available(key, name) do
       changeset =
@@ -2488,9 +2488,10 @@ defmodule Emisar.Runners do
 
   # Names are unique among live runners: another live runner holding this
   # name — online or not — is a conflict the operator resolves by deleting the
-  # holder in the console, or by renaming the HOST (derive_name/1 takes the
-  # reported hostname; nothing can rename a runner row). The partial unique index is the
-  # race backstop in `insert_runner/4`.
+  # holder in the console, or by declaring `runner.id` on the host (derive_name/2
+  # names the row after a declared id, else the reported hostname; nothing can
+  # rename a runner row). The partial unique index is the race backstop in
+  # `insert_runner/4`.
   defp ensure_name_available(key, name) do
     taken? =
       Runner.Query.not_deleted()
@@ -2560,7 +2561,17 @@ defmodule Emisar.Runners do
     end
   end
 
-  defp derive_name(attrs) do
-    attrs[:hostname] || attrs[:name] || "runner-#{Crypto.runner_name_suffix()}"
+  # A declared runner.id is the operator's handle for this runner, so it names
+  # the row too. The runner defaults its external_id to the hostname, so an id
+  # that differs from the reported hostname was declared on purpose; equal
+  # values collapse to the hostname-derived name either way.
+  defp derive_name(attrs, external_id) do
+    declared_id? = is_binary(external_id) and external_id != attrs[:hostname]
+
+    if declared_id? do
+      external_id
+    else
+      attrs[:hostname] || attrs[:name] || "runner-#{Crypto.runner_name_suffix()}"
+    end
   end
 end

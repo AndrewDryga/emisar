@@ -10,6 +10,12 @@ on through a stable customer-facing contract.
 - Omit the backing provider, storage service, internal routing, account, and
   deployment topology behind that contract.
 - Omit unsolicited statements about actions the reader does not need to take.
+- Omit the design rationale behind an error contract — a troubleshooting or
+  how-to page states the code, its meaning, and the reader's move (`follow the
+  refresh once, then retry once`), never why the responses are shaped that way
+  ("these gates deliberately share one response, so a stale caller cannot learn
+  which hidden fact changed"). Defense reasoning lives on the page that owns
+  the security design, when it changes a decision there.
 - Name an optional requirement only when the reader may choose the feature or
   fallback that requires it, and label it optional at the point of use.
 

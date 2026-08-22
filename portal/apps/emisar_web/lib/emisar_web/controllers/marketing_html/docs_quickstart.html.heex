@@ -87,14 +87,10 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The stock <code class="font-mono">linux-core</code>
         pack is trusted automatically because its hash matches the one emisar publishes. A
-        <em>custom or edited</em>
-        pack lands <strong class="text-zinc-300">pending</strong>
-        instead, and nothing can dispatch its actions until you trust that exact hash on the
-        <a
-          href={~p"/app/packs"}
-          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Packs</a>
-        page. That is the drift guard.
+        custom or edited pack waits for a trust decision instead — that flow is in <.link
+          navigate={~p"/docs/pack-updates"}
+          class="text-brand-400 hover:text-brand-300"
+        >Roll out and roll back packs</.link>.
       </p>
       <details class="group mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
         <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
@@ -123,7 +119,7 @@
               <span class="flex-none text-zinc-500">—</span>
               <span>
                 <code class="font-mono">sudo journalctl -u emisar -n 200</code>
-                — the log names the failure. A <code class="font-mono">401</code>
+                — the log shows what failed. A <code class="font-mono">401</code>
                 means the enrollment key was already used, expired, or revoked. Create a new key
                 and run the installer again.
               </span>
@@ -132,14 +128,15 @@
               <span class="flex-none text-zinc-500">—</span>
               <span>
                 A <code class="font-mono">409</code>
-                means another runner already holds this name. A runner is named after the host it
-                registered from, so this is what a reinstall, or a second host with the same
-                hostname, looks like. Delete the existing one under
+                means another runner already holds this name. A runner's name defaults to its
+                hostname and cannot be renamed, so this is what a rebuilt host or a restored
+                image looks like. Delete the existing one under
                 <a
                   href={~p"/app/runners"}
                   class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
                 >Runners</a>
-                to free the name, or give this host a different hostname.
+                to free the name, or set <code class="font-mono">runner.id</code>
+                in this host's config to register under a declared name.
               </span>
             </li>
             <li class="flex items-start gap-2.5">
@@ -349,11 +346,12 @@
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        And cover as much of your infrastructure as you can: install more runners, and give each
-        one every pack that matches what runs there. The more actions an agent can reach, the
-        more it can do for you — and breadth is safe, because policy decides what actually runs.
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar pack suggest</code>
-        lists the published packs that match a host.
+        And cover as much of your infrastructure as you can: the more actions an agent can
+        reach, the more it can do for you, and breadth is safe because policy decides what
+        actually runs. Adding runners and matching packs to each host is in <.link
+          navigate={~p"/docs/runner-fleet"}
+          class="text-brand-400 hover:text-brand-300"
+        >Manage the runner fleet</.link>.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         See it end to end on a real incident: <.link

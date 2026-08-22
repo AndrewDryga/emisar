@@ -170,6 +170,16 @@ defmodule EmisarWeb.DocsNav do
               icon: "hero-cloud",
               keywords: "chatgpt openai developer mode connector oauth remote mcp",
               desc: "Add emisar to ChatGPT through Developer mode — no key to manage."
+            },
+            %{
+              slug: "connect-multiple-accounts",
+              title: "Multiple accounts",
+              path: "/docs/connect-multiple-accounts",
+              icon: "hero-rectangle-stack",
+              keywords:
+                "multiple accounts staging production alias accounts use --account switch",
+              desc:
+                "One MCP server entry per account, the CLI's stored accounts, and one cloud connector per account."
             }
           ]
         },
@@ -319,7 +329,7 @@ defmodule EmisarWeb.DocsNav do
       ]
     },
     %{
-      label: "Govern actions",
+      label: "Govern access",
       sections: [
         %{
           label: nil,

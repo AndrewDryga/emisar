@@ -121,13 +121,15 @@ Flags:
 Env vars accepted: VERSION, BIN_DIR, ETC_DIR, DATA_DIR, LOG_DIR,
 SERVICE_USER, SERVICE_GROUP, ASSUME_YES, EMISAR_PACKS, NO_START,
 NO_SERVICE, EMISAR_REPO, EMISAR_GITHUB_TOKEN, EMISAR_URL,
-EMISAR_ENROLLMENT_KEY, RUNNER_GROUP, RUNNER_LABEL_<KEY>.
+EMISAR_ENROLLMENT_KEY, RUNNER_GROUP, RUNNER_ID, RUNNER_LABEL_<KEY>.
 
 EMISAR_URL + EMISAR_ENROLLMENT_KEY are baked into config.yaml + runner.env
 at install time so the runner boots without a follow-up edit. EMISAR_URL
 defaults to https://emisar.dev — the hosted control plane is the supported
 product, and the variable exists for test and evaluation portals.
-RUNNER_GROUP defaults to `hostname -s`. Each RUNNER_LABEL_<KEY>=<value>
+RUNNER_GROUP defaults to `hostname -s`. RUNNER_ID registers the runner
+under a declared name and identity instead of the hostname — for
+containers and hosts with colliding hostnames. Each RUNNER_LABEL_<KEY>=<value>
 (e.g. RUNNER_LABEL_ROLE=web) is baked in as a runner label the console
 filters on; set as many as you like.
 
@@ -619,6 +621,8 @@ config_skeleton() {
   local group="${RUNNER_GROUP:-${default_group}}"
   safe_config_value "${group}" ||
     die "runner group has characters that cannot be written to config.yaml: ${group}"
+  [ -z "${RUNNER_ID:-}" ] || safe_config_value "${RUNNER_ID}" ||
+    die "RUNNER_ID has characters that cannot be written to config.yaml: ${RUNNER_ID}"
   [ -z "${cloud_url}" ] || safe_config_value "${cloud_url}" ||
     die "EMISAR_URL has characters that cannot be written to config.yaml: ${EMISAR_URL:-}"
   cat <<EOF
@@ -629,6 +633,15 @@ runner:
   # short hostname; override by editing this line or by passing
   # RUNNER_GROUP=... to install.sh next time.
   group: ${group}
+EOF
+  if [ -n "${RUNNER_ID:-}" ]; then
+    cat <<EOF
+  # id is this runner's declared name + identity in the console; it
+  # defaults to the hostname when unset.
+  id: ${RUNNER_ID}
+EOF
+  fi
+  cat <<EOF
   labels:
     # Free-form tags. The console uses these for filtering / search.
     # Set RUNNER_LABEL_<KEY>=<value> at install time to bake them in

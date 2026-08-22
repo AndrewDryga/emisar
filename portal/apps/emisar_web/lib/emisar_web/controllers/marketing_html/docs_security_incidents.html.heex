@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="security-incidents"
-      updated="August 7, 2026"
+      updated="August 22, 2026"
       toc={[
         {"sequence", "The sequence, every time"},
         {"evidence", "Preserve this before you clean up"},
@@ -21,7 +21,7 @@
       <.docs_header current="security-incidents">
         <:dek>
           Take authority away from anyone without permission. Keep the evidence, restore a
-          known-good path, and prove the old one is dead.
+          known-good path, and make sure the old one is dead.
         </:dek>
       </.docs_header>
 
@@ -49,13 +49,13 @@
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
         <li>
           <strong class="text-zinc-200">Contain.</strong>
-          Take the authority away at the system that accepts it. Do this first. An unnecessary
-          revocation costs one rotation.
+          Take the authority away at the system that accepts it — an unnecessary revocation
+          only costs one rotation.
         </li>
         <li>
           <strong class="text-zinc-200">Preserve the evidence.</strong>
-          Before you destroy state, capture the evidence that the step removes. This includes
-          rebuilding a host or purging a runner install.
+          Before any destructive step — rebuilding a host, purging a runner install — capture
+          the evidence it would erase.
         </li>
         <li>
           <strong class="text-zinc-200">Rotate or revoke the rest.</strong>
@@ -81,9 +81,9 @@
       <.docs_callout kind={:warn} title="Never put the value anywhere that keeps it.">
         <p>
           Not in a ticket, a chat message, a run's reason field, an action argument, a shell
-          example, or your incident notes. Describe the credential by its kind, its name in the
-          console, and the time it was created — never by its bytes. Everything below is written so
-          you never need to paste one.
+          example, or your incident notes. Identify a credential by its ID — every key row's
+          Actions menu has <strong class="text-zinc-200">Copy ID</strong> — never by its value.
+          Everything below is written so you never need to paste one.
         </p>
       </.docs_callout>
       <p class="mt-6 text-base leading-7 text-zinc-400">
@@ -120,7 +120,7 @@
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/log/emisar/events.jsonl</code>
             and its rotated siblings off the host. Before any other change, run
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar audit verify --all</code>
-            to re-derive the hash chain and name the first break. Verification covers only the
+            to re-derive the hash chain and print the first break. Verification covers only the
             retained journal or retained suffix. It cannot prove that a privileged host operator
             did not replace or truncate the entire local journal. That limit makes the cloud
             record important.
@@ -154,9 +154,9 @@
 
       <.docs_h2 id="mcp-key">A leaked agent key</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The key calls MCP tools with its owner role and runner scope. Its holder gains the same
-        discovery and dispatch access as that operator. Policy, approvals, and pack trust still
-        apply. Everything within those gates remains reachable.
+        The key calls MCP tools with its owner's role and runner scope, so its holder gains the
+        same discovery and dispatch access as that operator. Policy, approvals, and pack trust
+        still apply — everything within those gates remains reachable.
       </p>
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
         <li>
@@ -167,7 +167,9 @@
           >AI agents</a>.
           Revocation also removes every successor in the key rotation chain. Any OAuth access or
           refresh token backed by the key also stops working. Rotation leaves the leaked predecessor
-          usable until its successor's first call.
+          usable until its successor's first call. For a lost or stolen device, use
+          <strong class="text-zinc-200">Revoke all</strong>
+          on the member's group instead — it revokes every key that member owns in one act.
         </li>
         <li>
           Read
@@ -191,16 +193,17 @@
         <li>
           Confirm the old key returns
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>
-          on its next call. If its scope was too wide, narrow the replacement runner or pack scope.
+          on its next call. If its scope was too wide, narrow the replacement's runner or pack scope.
         </li>
       </ol>
 
       <.docs_h2 id="audit-token">A leaked audit-export token</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        An audit-export token reads your account event history and does nothing else. It is a
-        different credential kind from an agent key. The MCP endpoint rejects it as the wrong kind.
-        It cannot list a runner or dispatch an action. The exposure reveals who did what, when, and
-        on which hosts. It does not grant execution.
+        An audit-export token starts <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-export-</code>, reads your
+        account event history, and does nothing else. It is
+        a different credential kind from an agent key — the MCP endpoint rejects it as the
+        wrong kind, so it cannot list a runner or dispatch an action. The exposure reveals
+        who did what, when, and on which hosts; it does not grant execution.
       </p>
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
         <li>
@@ -210,8 +213,9 @@
           >Audit export</a>.
         </li>
         <li>
-          Read the export events for the window. A poll that returns events is recorded. A
-          caught-up empty poll is not. An unfamiliar pattern of pulls appears in the same trail.
+          Read the export events for the window. A poll that returns events is recorded — a
+          caught-up empty poll is not — so an unfamiliar pattern of pulls shows in the same
+          trail.
         </li>
         <li>
           Mint a replacement from
@@ -269,9 +273,9 @@
 
       <.docs_h2 id="runner-host">A runner token or host you no longer trust</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        This is the case where the reversible lever is wrong. A runner token has no separate
-        revocation. Disabling an identity keeps its token. Enabling the identity restores the same
-        credential. Replace the identity after possible token or host compromise.
+        This is the case where the reversible lever is wrong: a runner token has no separate
+        revocation, disabling an identity keeps its token, and enabling it restores the same
+        credential. After a possible token or host compromise, replace the identity.
       </p>
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
         <li>
@@ -291,8 +295,8 @@
             href={~p"/app/runners"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
           >Delete the runner identity.</a>
-          That is terminal: the token stops authenticating, the next connection is refused, and the process exits
-          rather than retrying. Run and audit history for that runner is preserved.
+          That cannot be undone: the token stops authenticating, the next connection is refused, and
+          the process exits rather than retrying. Run and audit history for that runner is preserved.
         </li>
         <li>
           Rotate every credential that the host held. Pack and provider values in its environment
@@ -312,11 +316,10 @@
       <.docs_h2 id="pack">A pack, a registry, or an unexplained hash</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Pack contents execute as real commands on your hosts, so this incident has the widest
-        blast radius.
-        Trust normally binds one exact content hash. A configured catalog can automatically
-        authorize matching installed bytes. Its publisher can also change trusted risk, kind, and
-        retirement floors. Treat unexplained drift as a security event, even if the cause is a
-        mistake.
+        blast radius. Trust normally binds one exact content hash. A configured catalog can
+        automatically authorize a matching installed pack, and its publisher chooses the risk,
+        kind, and retirement floors the control plane reads — so a suspect catalog is itself a
+        lever. Treat unexplained drift as a security event, even if the cause is a mistake.
       </p>
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
         <li>
@@ -374,10 +377,10 @@
       </p>
       <.docs_callout kind={:warn} title="There is no per-certificate revocation list.">
         <p>
-          A leaked key works until its certificate expires. Short lifetimes limit routine exposure.
-          To contain it sooner, rotate the trust root. Add the new CA beside the old CA. Reissue
-          certificates, remove the old CA, and reload every runner. Every runner must reload. The
-          control plane cannot do this for you.
+          A leaked key works until its certificate expires, and short lifetimes limit routine
+          exposure. To contain it sooner, rotate the trust root: add the new CA beside the
+          old, reissue certificates, then remove the old CA and reload every runner — the
+          control plane cannot do that reload for you.
         </p>
       </.docs_callout>
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
@@ -430,8 +433,8 @@
 
       <.docs_h2 id="idp">A leaked OIDC secret or SCIM bearer</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        These sit on the same SSO connection and contain differently, so decide which one you are
-        responding to before you touch anything.
+        These sit on the same SSO connection but are contained in different ways, so decide
+        which one you are responding to before you touch anything.
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -442,9 +445,10 @@
               href={~p"/app/sso"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
             >Team → Single sign-on</a>. Complete a real sign-in, then remove the old provider
-            secret. Replacing the secret does not end existing sessions. To end them, disable or
-            delete the connection. This revokes sessions authenticated through it, but leaves API
-            keys and OAuth credentials active. Neither action suspends or deletes members.
+            secret. Replacing the secret does not end existing sessions — to end them, disable
+            or delete the connection, which revokes the sessions it authenticated while
+            leaving API keys and OAuth credentials active. Neither action suspends or deletes
+            members.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -454,10 +458,11 @@
             Rotate it from the connection under <a
               href={~p"/app/sso"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-            >Team → Single sign-on</a>. Rotation replaces the bearer immediately with no overlap.
-            The leaked value stops working at once. Provisioning fails until the connector has the
-            new value. This gap shows that containment works. Review directory events for the
-            incident window. Look for role or runner-access changes from an unknown directory.
+            >Team → Single sign-on</a>. Rotation replaces the bearer immediately with no
+            overlap, so the leaked value stops working at once. Provisioning fails until the
+            connector has the new value — that gap is your containment working. Review
+            directory events for the window, looking for role or runner-access changes you
+            did not make.
           </span>
         </li>
       </ul>
@@ -476,8 +481,9 @@
         <p>
           Report a suspected compromise of anything emisar issues to
           <a href={EmisarWeb.MailTo.security()}>security@emisar.dev</a>
-          after containment. Describe the credential by kind, name, and creation time. Never send
-          its value. For a broken feature instead of an exposure, see
+          after containment. Send the credential's ID — <strong class="text-zinc-200">Copy
+          ID</strong>
+          on its row. Never send its value. For a broken feature instead of an exposure, see
           <.link navigate={~p"/docs/troubleshooting"}>Troubleshooting</.link>
           or <.link navigate={~p"/support"}>Support</.link>.
         </p>

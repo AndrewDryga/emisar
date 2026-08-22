@@ -169,6 +169,24 @@ defmodule EmisarWeb.AgentsLive do
   def handle_event("revoke", %{"id" => id}, socket),
     do: with_manageable_key(socket, id, &do_revoke/2)
 
+  def handle_event("revoke_member_keys", %{"membership-id" => membership_id}, socket) do
+    # IL-15: the domain call re-checks permission; a scope reduced in another
+    # tab comes back {:error, :unauthorized} and lands in the flash below.
+    case ApiKeys.revoke_all_api_keys_for_member(membership_id, socket.assigns.current_subject) do
+      {:ok, 0} ->
+        {:noreply, socket |> put_flash(:info, "No usable keys to revoke.") |> reload()}
+
+      {:ok, count} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Revoked #{count} #{if count == 1, do: "key", else: "keys"}.")
+         |> reload()}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not revoke this member's keys.")}
+    end
+  end
+
   def handle_event("rotate", %{"id" => id}, socket),
     do: with_manageable_key(socket, id, &do_rotate/2)
 
@@ -441,15 +459,18 @@ defmodule EmisarWeb.AgentsLive do
     ApiKeys.with_bridge_compatibility(facts, Compat.mcp_status(facts.bridge_version))
   end
 
-  # The issuing human — the grouping key for the list. Falls back to "Auto"
+  # The issuing human — the grouping key for the list, carrying the membership
+  # id so the header's bulk revoke can act on the group. Falls back to "Auto"
   # for system-minted keys with no creator.
-  defp owner_label({%{created_by: %{} = user}, _facts}), do: Accounts.user_display_name(user)
-  defp owner_label({_key, _facts}), do: "Auto-minted"
+  defp owner_group({%{created_by: %{} = user} = key, _facts}),
+    do: {Accounts.user_display_name(user), key.created_by_membership_id}
 
-  # Pre-sort by owner so each `group_by={&owner_label/1}` cluster is one
+  defp owner_group({_key, _facts}), do: {"Auto-minted", nil}
+
+  # Pre-sort by owner so each `group_by={&owner_group/1}` cluster is one
   # contiguous run under a single header; within a cluster the context's
   # recent-first order holds.
-  defp sort_by_owner(rows), do: Enum.sort_by(rows, &owner_label/1)
+  defp sort_by_owner(rows), do: Enum.sort_by(rows, &elem(owner_group(&1), 0))
 
   defp default_params do
     %{"name" => "", "description" => "", "expires_at" => ""}
@@ -1171,14 +1192,48 @@ defmodule EmisarWeb.AgentsLive do
             filter_params={@filter_params}
             filters={@filters}
             wrapper_class="divide-y divide-zinc-800/70"
-            group_by={&owner_label/1}
+            group_by={&owner_group/1}
           >
             <%!-- The issuing human heads their run of keys ONCE (the runners
                  group-by-group grammar), so the per-row meta stops repeating
                  "owner Andrew Dryga" down the whole list. Rows are pre-sorted by
                  owner so each header opens one contiguous cluster. --%>
-            <:group_header :let={owner}>
-              <.list_group_header label={owner} />
+            <:group_header :let={{owner, membership_id}}>
+              <.list_group_header label={owner}>
+                <:action :if={
+                  membership_id &&
+                    ApiKeys.subject_can_revoke_member_keys?(membership_id, @current_subject)
+                }>
+                  <%!-- The stolen-laptop move: every key this member owns, one
+                       act. Typed on the member's name — a live-credential kill
+                       keeps the typed confirm (§5). --%>
+                  <.button
+                    size={:sm}
+                    variant={:secondary}
+                    tone={:rose}
+                    phx-click={show_confirm_dialog("revoke-member-keys-#{membership_id}")}
+                  >
+                    Revoke all
+                  </.button>
+                  <.confirm_dialog
+                    id={"revoke-member-keys-#{membership_id}"}
+                    title={"Revoke every key #{owner} owns?"}
+                    confirm_label="Revoke all keys"
+                    confirm_token={owner}
+                    typed={@typed}
+                    on_confirm={
+                      JS.push("revoke_member_keys", value: %{"membership-id" => membership_id})
+                      |> hide_confirm_dialog("revoke-member-keys-#{membership_id}")
+                    }
+                  >
+                    <:body>
+                      Every usable key in this group stops working — each connected client is
+                      refused on its very next call, and rotation successors fall with their
+                      chain. This cannot be undone. Use it when a device is lost or stolen.
+                    </:body>
+                  </.confirm_dialog>
+                </:action>
+              </.list_group_header>
             </:group_header>
             <:item :let={{key, facts}}>
               <.list_row padding="py-4" meta_wrap>
@@ -1295,6 +1350,18 @@ defmodule EmisarWeb.AgentsLive do
                         icon="hero-shield-check"
                       >
                         View audit trail
+                      </.menu_item>
+                      <%!-- The support handle: a pasted id beats describing a key
+                           by kind and name, and the secret is never viewable —
+                           the id is the one safe identifier to share. Delegated
+                           [data-copy-text] listener; the click stops at the
+                           button, so the menu stays open to show "Copied". --%>
+                      <.menu_item
+                        icon="hero-clipboard-document"
+                        data-copy-text={key.id}
+                        data-copy-label-copied="Copied"
+                      >
+                        Copy ID
                       </.menu_item>
                       <%!-- OAuth backing keys hide Rotate: a fresh emk- secret can't
                          reach the OAuth client (it holds tokens bound to the old
@@ -2059,7 +2126,7 @@ defmodule EmisarWeb.AgentsLive do
       <p class="text-xs text-zinc-400">
         Cloud LLM connectors need {@client_label} to be on a plan that
         supports custom OAuth MCP servers. Connection refused or 401?
-        <.doc_link href={~p"/docs/troubleshooting" <> "#mcp"}>Troubleshooting</.doc_link>
+        <.doc_link href={~p"/docs/connect-cli-agent" <> "#troubleshooting"}>Troubleshooting</.doc_link>
       </p>
     </div>
     """

@@ -108,9 +108,10 @@ defmodule EmisarWeb.RunnerConnectController do
           name: name,
           message:
             "The name #{inspect(name)} is already used by another runner in this account. " <>
-              "A runner is named after the host it registered from, and the name cannot be " <>
-              "changed afterwards. Delete that runner in the Emisar console (Runners) to free " <>
-              "the name, or give this host a different hostname, then it will connect."
+              "A runner's name defaults to its hostname and cannot be changed after it " <>
+              "registers. Delete that runner in the Emisar console (Runners) to free the " <>
+              "name, or set runner.id in this host's config to register under a declared " <>
+              "name, then it will connect."
         })
 
       {:error, _reason} ->

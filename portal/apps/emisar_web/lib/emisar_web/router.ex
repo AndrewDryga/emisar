@@ -163,6 +163,7 @@ defmodule EmisarWeb.Router do
     get "/docs/connect-claude-ai", MarketingController, :docs_connect_claude_ai
     get "/docs/connect-chatgpt", MarketingController, :docs_connect_chatgpt
     get "/docs/connect-cli-agent", MarketingController, :docs_connect_cli_agent
+    get "/docs/connect-multiple-accounts", MarketingController, :docs_connect_multiple_accounts
     get "/docs/mcp-reference", MarketingController, :docs_mcp_reference
     get "/docs/quickstart", MarketingController, :docs_quickstart
     get "/docs/use-a-published-pack", MarketingController, :docs_use_published_pack

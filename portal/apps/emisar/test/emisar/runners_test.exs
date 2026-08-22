@@ -3957,14 +3957,17 @@ defmodule Emisar.RunnersTest do
           reusable: true
         )
 
-      base = %{hostname: "samehost", group: "g"}
+      # The fixture connects the holder, so the conflict stands against a live,
+      # online row.
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "samehost",
+        external_id: "ext-a"
+      )
 
-      assert {:ok, %Runner{name: "samehost"} = holder, _, _} =
-               Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-a"))
+      attrs = %{hostname: "samehost", group: "g", external_id: "samehost"}
 
-      {:ok, _} = Runners.connect_runner(holder)
-
-      assert Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b")) ==
+      assert Runners.register_via_enrollment_key(raw, attrs) ==
                {:error, :runner_name_taken, "samehost"}
     end
 
@@ -3981,12 +3984,17 @@ defmodule Emisar.RunnersTest do
           reusable: true
         )
 
-      base = %{hostname: "samehost", group: "g"}
+      %Runner{id: holder_id} =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "samehost",
+          external_id: "ext-a",
+          connected?: false
+        )
 
-      assert {:ok, %Runner{id: holder_id, name: "samehost"}, _, _} =
-               Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-a"))
+      attrs = %{hostname: "samehost", group: "g", external_id: "samehost"}
 
-      assert Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b")) ==
+      assert Runners.register_via_enrollment_key(raw, attrs) ==
                {:error, :runner_name_taken, "samehost"}
 
       # The holder is untouched.
@@ -4003,22 +4011,53 @@ defmodule Emisar.RunnersTest do
           reusable: true
         )
 
-      base = %{hostname: "samehost", group: "g"}
+      # The fixture connects the holder — connected holders are never displaced,
+      # so the conflict stands.
+      holder =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "samehost",
+          external_id: "ext-a"
+        )
 
-      assert {:ok, %Runner{} = holder, _, _} =
-               Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-a"))
+      attrs = %{hostname: "samehost", group: "g", external_id: "samehost"}
 
-      # Connected holders are never displaced — the conflict stands.
-      {:ok, holder} = Runners.connect_runner(holder)
-
-      assert Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b")) ==
+      assert Runners.register_via_enrollment_key(raw, attrs) ==
                {:error, :runner_name_taken, "samehost"}
 
       # Deleting the holder soft-deletes it, freeing the name (partial index).
       {:ok, _} = Runners.delete_runner(holder, subject)
 
       assert {:ok, %Runner{name: "samehost"}, _, _} =
-               Runners.register_via_enrollment_key(raw, Map.put(base, :external_id, "ext-b"))
+               Runners.register_via_enrollment_key(raw, attrs)
+    end
+
+    test "a declared runner.id names the runner; the hostname default still does otherwise" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      {raw, _key} =
+        Fixtures.Runners.create_enrollment_key(
+          account_id: account.id,
+          created_by_id: user.id,
+          reusable: true
+        )
+
+      # The runner defaults external_id to its hostname, so a differing id was
+      # declared on purpose — it is the operator's handle, and it names the row.
+      assert {:ok, %Runner{name: "web-01", external_id: "web-01"}, _, _} =
+               Runners.register_via_enrollment_key(raw, %{
+                 hostname: "ip-10-0-3-17.ec2.internal",
+                 group: "web",
+                 external_id: "web-01"
+               })
+
+      assert {:ok, %Runner{name: "db-host.example", external_id: "db-host.example"}, _, _} =
+               Runners.register_via_enrollment_key(raw, %{
+                 hostname: "db-host.example",
+                 group: "db",
+                 external_id: "db-host.example"
+               })
     end
 
     test "rejects an invalid external_id before consuming the enrollment key" do

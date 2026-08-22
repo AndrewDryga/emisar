@@ -1,0 +1,140 @@
+<div class="bg-zinc-950 text-zinc-100">
+  <.marketing_nav current_user={@current_user} current={:docs} />
+
+  <section class="py-12 sm:py-16">
+    <.docs_layout
+      current="connect-multiple-accounts"
+      updated="August 22, 2026"
+      toc={[
+        {"binding", "One connection, one account"},
+        {"servers", "One MCP server entry per account"},
+        {"cli", "The CLI: stored accounts"},
+        {"cloud", "Cloud connectors: one per account"}
+      ]}
+    >
+      <.docs_header current="connect-multiple-accounts">
+        <:dek>
+          You can belong to several accounts — production and staging, or a client's account
+          beside your own. A connection binds one account, so working across several means one
+          connection per account, named so you and the model can always tell them apart.
+        </:dek>
+      </.docs_header>
+
+      <.docs_prerequisites>
+        <:item>Membership in each account you want to connect.</:item>
+        <:item>
+          For key-based connections, permission to mint an agent key in each account — any
+          member can mint their own.
+        </:item>
+      </.docs_prerequisites>
+
+      <.docs_h2 id="binding">One connection, one account</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        An <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
+        key belongs to the account that minted it, and a cloud connector's authorization is
+        granted for one account you choose in the browser. A connection does not switch
+        accounts mid-conversation — the account is decided when you wire it up, which is what
+        keeps every run and audit event attributed to the right place.
+      </p>
+
+      <.docs_h2 id="servers">One MCP server entry per account</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        For a client that runs the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
+        bridge — Claude Code, Cursor, and the other local clients — mint a key in each
+        account's <strong>AI agents</strong>
+        page, then add one server entry per account.
+        Put the account in the entry's name: the client namespaces tool calls by that name,
+        so "check staging" has an unambiguous target and the model cannot mix accounts up.
+      </p>
+      <.docs_code phx-no-format label="mcpServers — one entry per account">{~s({
+  "mcpServers": {
+    "emisar-prod": {
+      "command": "emisar-mcp",
+      "env": {
+        "EMISAR_URL": "https://emisar.dev",
+        "EMISAR_API_KEY": "emk-…the prod account's key…"
+      }
+    },
+    "emisar-staging": {
+      "command": "emisar-mcp",
+      "env": {
+        "EMISAR_URL": "https://emisar.dev",
+        "EMISAR_API_KEY": "emk-…the staging account's key…"
+      }
+    }
+  }
+})}</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The snippet shape and each client's config location are in
+        <.link
+          navigate={~p"/docs/connect-cli-agent"}
+          class="text-brand-400 hover:text-brand-300"
+        >Connect a CLI agent</.link>
+        — the console generates a ready snippet per client, and a
+        client registered with
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">claude mcp add</code>
+        takes a second registration under the other name.
+      </p>
+
+      <.docs_h2 id="cli">The CLI: stored accounts</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The bridge is also a shell CLI, and it holds credentials for several accounts at once.
+        Run <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp auth</code>
+        once per account — it opens the browser, you choose the account, and the credential is
+        stored locally. Then:
+      </p>
+      <.docs_code phx-no-format label="shell">emisar-mcp accounts list
+<span class="text-zinc-500">CURRENT  ACCOUNT         SLUG  ENDPOINT
+*        Northstar Labs  demo  https://emisar.dev
+         Acme Logistics  acme  https://emisar.dev</span></.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The star marks the current account — the one commands use when you name none. Switch
+        it, or point a single command somewhere else without switching:
+      </p>
+      <.docs_code phx-no-format label="shell">emisar-mcp accounts use acme
+<span class="text-zinc-500">Using Acme Logistics (acme) at https://emisar.dev</span></.docs_code>
+      <.docs_code phx-no-format label="shell">emisar-mcp --account demo recent_runs</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--account</code>
+        is how an agent works across accounts from one shell: tell it which account each
+        command targets, and the audit trail in each account shows exactly what ran there.
+        When <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_URL</code>
+        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_API_KEY</code>
+        are both set, that pair wins — direct commands use it, and
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--account</code>
+        is refused until you unset both. The complete command surface is in <.link
+          navigate={~p"/docs/mcp-reference"}
+          class="text-brand-400 hover:text-brand-300"
+        >MCP CLI &amp; reference</.link>.
+      </p>
+
+      <.docs_h2 id="cloud">Cloud connectors: one per account</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Claude.ai and ChatGPT hold one authorization per connector, and the authorization is
+        granted for one account you choose on the consent screen. To connect multiple
+        accounts, add a connector for each one and name it for its account. You sign in with
+        the same email each time. The walkthroughs are in
+        <.link
+          navigate={~p"/docs/connect-claude-ai"}
+          class="text-brand-400 hover:text-brand-300"
+        >Connect Claude.ai</.link>
+        and <.link
+          navigate={~p"/docs/connect-chatgpt"}
+          class="text-brand-400 hover:text-brand-300"
+        >Connect ChatGPT</.link>.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Every key and connector appears on that account's <strong>AI agents</strong>
+        page under the member who created it, with its own activity, rotation, and revoke —
+        <.link
+          navigate={~p"/docs/agents-and-keys"}
+          class="text-brand-400 hover:text-brand-300"
+        >Manage agents &amp; keys</.link>
+        covers the lifecycle.
+      </p>
+    </.docs_layout>
+  </section>
+
+  <.marketing_footer />
+</div>

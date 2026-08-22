@@ -14,7 +14,7 @@ defmodule EmisarWeb.DocsNavTest do
     quickstart
     host-install containers kubernetes nomad autoscaling-fleets
     network-requirements runner-fleet production runner-upgrades runner-credentials
-    connect-cli-agent connect-claude-ai connect-chatgpt agents-and-keys bridge-upgrades
+    connect-cli-agent connect-claude-ai connect-chatgpt connect-multiple-accounts agents-and-keys bridge-upgrades
     use-a-published-pack pack-updates publishing-packs pack-registry action-packs
     run-an-action runs runbooks troubleshooting security-incidents credentials
     policies-and-approvals signed-dispatch audit-and-siem
@@ -33,7 +33,7 @@ defmodule EmisarWeb.DocsNavTest do
                "AI agents",
                "Action packs",
                "Operate",
-               "Govern actions",
+               "Govern access",
                "Team & account",
                "Reference"
              ]
@@ -90,13 +90,13 @@ defmodule EmisarWeb.DocsNavTest do
       assert Enum.map(DocsNav.flat(), & &1.slug) == @ordered_slugs
     end
 
-    test "carries 46 pages with unique slugs and unique /docs paths" do
+    test "carries 47 pages with unique slugs and unique /docs paths" do
       pages = DocsNav.flat()
       paths = Enum.map(pages, & &1.path)
 
-      assert length(pages) == 46
-      assert pages |> Enum.map(& &1.slug) |> Enum.uniq() |> length() == 46
-      assert paths |> Enum.uniq() |> length() == 46
+      assert length(pages) == 47
+      assert pages |> Enum.map(& &1.slug) |> Enum.uniq() |> length() == 47
+      assert paths |> Enum.uniq() |> length() == 47
       assert Enum.all?(paths, &String.starts_with?(&1, "/docs/"))
     end
 

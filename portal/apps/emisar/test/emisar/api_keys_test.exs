@@ -718,6 +718,27 @@ defmodule Emisar.ApiKeysTest do
   end
 
   describe "create_key/2" do
+    test "the prefix carries the kind: agent keys emk-, audit-export tokens emk-export-" do
+      {_user, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      {:ok, agent_raw, _agent_key} = ApiKeys.create_key(%{name: "agent"}, subject)
+
+      {:ok, export_raw, export_key} =
+        ApiKeys.create_key(%{name: "siem", kind: :audit_export}, subject)
+
+      assert String.starts_with?(agent_raw, "emk-")
+      refute String.starts_with?(agent_raw, "emk-export-")
+      assert String.starts_with?(export_raw, "emk-export-")
+
+      # Both kinds authenticate through the one secret lookup.
+      assert %ApiKey{kind: :audit_export} = ApiKeys.peek_api_key_by_secret(export_raw)
+
+      # A rotation successor keeps its kind's prefix.
+      assert {:ok, successor_raw, _successor} = ApiKeys.rotate_api_key(export_key, subject)
+      assert String.starts_with?(successor_raw, "emk-export-")
+    end
+
     test "returns raw + persisted key" do
       {user, account, subject} = owner_subject_pair()
 
@@ -1664,6 +1685,100 @@ defmodule Emisar.ApiKeysTest do
 
       assert DateTime.compare(second, first) in [:eq, :gt]
       assert Repo.reload!(key).revoked_at
+    end
+  end
+
+  describe "revoke_all_api_keys_for_member/2" do
+    test "revokes every usable mcp key the member owns, chains included, with per-key audit" do
+      {_user, account, subject} = owner_subject_pair()
+      operator_subject = member_subject(account, :operator)
+      membership_id = operator_subject.membership_id
+
+      {:ok, laptop_raw, laptop_key} = ApiKeys.create_key(%{name: "laptop"}, operator_subject)
+      {:ok, desktop_raw, desktop_key} = ApiKeys.create_key(%{name: "desktop"}, operator_subject)
+      {:ok, successor_raw, successor} = ApiKeys.rotate_api_key(laptop_key, operator_subject)
+
+      assert ApiKeys.revoke_all_api_keys_for_member(membership_id, subject) == {:ok, 3}
+
+      for key <- [laptop_key, desktop_key, successor] do
+        assert %DateTime{} = Repo.reload!(key).revoked_at
+      end
+
+      for raw <- [laptop_raw, desktop_raw, successor_raw] do
+        refute ApiKeys.peek_api_key_by_secret(raw)
+      end
+
+      {:ok, events, _meta} =
+        Audit.list_events(subject, filter: [event_type: ["api_key.revoked"]])
+
+      assert events |> Enum.map(& &1.target_id) |> MapSet.new() ==
+               MapSet.new([laptop_key.id, desktop_key.id, successor.id])
+    end
+
+    test "leaves other members' keys, audit-export tokens, and revoked keys alone" do
+      {_user, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
+      operator_subject = member_subject(account, :operator)
+      membership_id = operator_subject.membership_id
+
+      {:ok, _active_raw, active_key} = ApiKeys.create_key(%{name: "active"}, operator_subject)
+      {:ok, _stale_raw, stale_key} = ApiKeys.create_key(%{name: "stale"}, operator_subject)
+      {:ok, _} = ApiKeys.revoke_api_key(stale_key, operator_subject)
+      stale_revoked_at = Repo.reload!(stale_key).revoked_at
+
+      {:ok, _export_raw, export_key} =
+        ApiKeys.create_key(%{name: "siem", kind: :audit_export}, subject)
+
+      {:ok, _other_raw, other_key} = ApiKeys.create_key(%{name: "teammate"}, subject)
+
+      assert ApiKeys.revoke_all_api_keys_for_member(membership_id, subject) == {:ok, 1}
+
+      assert %DateTime{} = Repo.reload!(active_key).revoked_at
+      assert Repo.reload!(stale_key).revoked_at == stale_revoked_at
+      assert is_nil(Repo.reload!(export_key).revoked_at)
+      assert is_nil(Repo.reload!(other_key).revoked_at)
+    end
+
+    test "an operator revokes all of their own keys" do
+      account = Fixtures.Accounts.create_account()
+      operator_subject = member_subject(account, :operator)
+
+      {:ok, _raw_one, key_one} = ApiKeys.create_key(%{name: "laptop"}, operator_subject)
+      {:ok, _raw_two, key_two} = ApiKeys.create_key(%{name: "phone"}, operator_subject)
+
+      assert ApiKeys.revoke_all_api_keys_for_member(
+               operator_subject.membership_id,
+               operator_subject
+             ) == {:ok, 2}
+
+      assert %DateTime{} = Repo.reload!(key_one).revoked_at
+      assert %DateTime{} = Repo.reload!(key_two).revoked_at
+    end
+
+    test "an operator is refused on another member's keys" do
+      account = Fixtures.Accounts.create_account()
+      target_subject = member_subject(account, :operator)
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "target"}, target_subject)
+      operator_subject = member_subject(account, :operator)
+
+      assert ApiKeys.revoke_all_api_keys_for_member(
+               target_subject.membership_id,
+               operator_subject
+             ) == {:error, :unauthorized}
+
+      assert is_nil(Repo.reload!(key).revoked_at)
+    end
+
+    test "a manager passing another account's membership revokes nothing" do
+      {_user, _account, subject} = owner_subject_pair()
+      other_account = Fixtures.Accounts.create_account()
+      other_subject = member_subject(other_account, :operator)
+      {:ok, _raw, other_key} = ApiKeys.create_key(%{name: "elsewhere"}, other_subject)
+
+      assert ApiKeys.revoke_all_api_keys_for_member(other_subject.membership_id, subject) ==
+               {:ok, 0}
+
+      assert is_nil(Repo.reload!(other_key).revoked_at)
     end
   end
 
@@ -2635,6 +2750,31 @@ defmodule Emisar.ApiKeysTest do
 
       refute ApiKeys.subject_can_manage_api_keys?(operator_subject)
       refute ApiKeys.subject_can_manage_api_keys?(viewer_subject)
+    end
+  end
+
+  describe "subject_can_revoke_member_keys?/2" do
+    test "true for a manager on any member, and for a member on themselves" do
+      {_user, account, subject} = owner_subject_pair()
+      operator_subject = member_subject(account, :operator)
+
+      assert ApiKeys.subject_can_revoke_member_keys?(operator_subject.membership_id, subject)
+
+      assert ApiKeys.subject_can_revoke_member_keys?(
+               operator_subject.membership_id,
+               operator_subject
+             )
+    end
+
+    test "false for a member on another member's keys" do
+      account = Fixtures.Accounts.create_account()
+      target_subject = member_subject(account, :operator)
+      operator_subject = member_subject(account, :operator)
+
+      refute ApiKeys.subject_can_revoke_member_keys?(
+               target_subject.membership_id,
+               operator_subject
+             )
     end
   end
 

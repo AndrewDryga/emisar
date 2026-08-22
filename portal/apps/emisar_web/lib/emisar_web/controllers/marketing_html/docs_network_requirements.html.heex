@@ -71,7 +71,7 @@
                "api.github.com, github.com, and release-assets.githubusercontent.com, TCP 443",
                "HTTPS",
                "Provides the optional secondary release source",
-               "Only when the Emisar release path is unavailable or EMISAR_REPO names another repository"},
+               "Only when the Emisar release path is unavailable or EMISAR_REPO points at another repository"},
               {"Pack install and update",
                "Outbound",
                "Your emisar origin and registry.emisar.dev, TCP 443, or your configured artifact hosts",
@@ -257,7 +257,7 @@
         build each pack's allowlist from the pack itself:
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack info &lt;id&gt;</code>
         lists the binaries it needs and the environment variables it authenticates with, and
-        those name the endpoints.
+        their values carry the endpoints.
       </p>
 
       <.docs_h2 id="proxies">Proxies and TLS inspection</.docs_h2>
@@ -332,8 +332,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar doctor</code>
-            passes — the host side works. The runner appears
-            <strong class="text-zinc-200">online</strong>
+            passes — the host side works. The runner appears <.status_badge status={:online} />
             in the console — the WebSocket connection made it through.
           </span>
         </li>

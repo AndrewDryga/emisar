@@ -90,6 +90,12 @@ type TrustedCA struct {
 
 // Runner describes this runner's identity.
 //
+// ID is the operator's declared handle for this runner: the control plane
+// registers it under this value as both its unique name and its identity.
+// Unset, both default to the host's hostname — so containers, golden
+// images, and hosts with colliding hostnames declare an id instead of
+// renaming the OS host. Changing it re-enrolls the host as a NEW runner.
+//
 // Group is the primary categorization label the runner advertises to
 // cloud. Cloud uses it to bucket runners in the UI without operator
 // configuration (e.g., "all runners in group cassandra-us-east1").
@@ -185,6 +191,13 @@ func (c *Config) Validate() error {
 	}
 	if c.Runner.Group == "" {
 		return fmt.Errorf("config: runner.group required")
+	}
+	// A declared id is the runner's name and identity, and the control plane
+	// bounds an identity to 1-255 nonblank characters — refuse a value the
+	// registration would refuse anyway.
+	c.Runner.ID = strings.TrimSpace(c.Runner.ID)
+	if len(c.Runner.ID) > 255 {
+		return fmt.Errorf("config: runner.id must be at most 255 characters")
 	}
 	// runner.id is optional; the host's current hostname is the default identity.
 	//

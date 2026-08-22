@@ -40,7 +40,7 @@
         src="/images/screenshots/agents.webp"
         title="emisar console · AI agents"
         caption="Keys grouped by the member who owns them — status, last call, expiry, and per-agent rotate and revoke."
-        alt="The AI agents page, grouped by the person who owns each key: Jordan Lee's Claude Desktop, Gemini CLI, and Codex CLI; Maya Chen's Cursor, ChatGPT, and Claude Code. Each row shows the client, bridge version, a status dot (dormant, idle, never used, or a rose 'unsupported'), last-call and expiry, a 'swap pending' rotation in progress, and per-agent View activity, Rotate, and Revoke actions."
+        alt="The AI agents page, grouped by the person who owns each key: Jordan Lee's Claude Desktop, Gemini CLI, and Codex CLI; Maya Chen's Cursor, ChatGPT, and Claude Code. Each row shows the client, bridge version, a status dot (active, idle, dormant, or never used), last-call and expiry, a 'swap pending' rotation in progress, per-agent View activity, Rotate, and Revoke actions, and a Revoke all button on each member's group."
       />
 
       <.docs_h2 id="the-list">Your connected agents</.docs_h2>
@@ -58,7 +58,7 @@
           <span>
             <strong class="text-zinc-200">The status is about the connection.</strong>
             A row reads dormant, idle, or never used from its own last call — and
-            <strong class="text-zinc-200">unsupported</strong>
+            <.chip tone={:rose} icon="hero-exclamation-triangle">unsupported</.chip>
             when the bridge it reported is below the version emisar supports. A rotation in flight
             shows as a swap pending until the successor's first call retires the old key.
           </span>
@@ -68,7 +68,9 @@
           <span>
             <strong class="text-zinc-200">Each row carries its own actions.</strong>
             View activity opens the audit trail filtered to that agent. Rotate and Revoke act on
-            the key behind it, which is the rest of this page.
+            the key behind it, which is the rest of this page. Copy ID copies the key's
+            identifier — the safe handle for a support request, since the secret is never shown
+            again.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -242,8 +244,7 @@
 
       <.docs_h2 id="revoking">Revoking a key</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong>Revoke</strong>
-        is the kill switch, and it is terminal. The moment you confirm, the
+        <strong>Revoke</strong> is the kill switch. The moment you confirm, the
         key is dead and the connected client is refused on its very next call. Reach for it when a key leaks, an agent misbehaves, or a connection
         is finished. It asks you to type the agent's name first,
         because it cannot be undone.
@@ -254,11 +255,17 @@
         what makes revoke, not rotate, the containment lever for a leak.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
+        For a lost or stolen device, revoke everything at once: <strong>Revoke all</strong>
+        on the member's group revokes every usable key that member owns — each connected client
+        is refused on its next call, with the same cascade per key. It asks you to type the
+        member's name. A member can do this for their own keys; anyone else's need an admin.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         A key that suddenly returns
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>
         has expired, been revoked, or been retired by a successor —
         <.link
-          navigate={~p"/docs/troubleshooting#mcp"}
+          navigate={~p"/docs/connect-cli-agent" <> "#troubleshooting"}
           class="text-brand-400 hover:text-brand-300"
         >Troubleshooting</.link>
         walks the check.

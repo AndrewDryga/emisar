@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="authentication"
-      updated="July 31, 2026"
+      updated="August 23, 2026"
       toc={[
         {"sign-in", "Choose a sign-in method"},
         {"enforcement", "Enforce account sign-in"},
@@ -21,12 +21,6 @@
         </:dek>
       </.docs_header>
 
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        Authentication proves who the person is. Their emisar role and runner access decide what
-        they can do and which hosts they can reach. Keep those as separate decisions: changing the
-        sign-in method does not widen a member's infrastructure access.
-      </p>
-
       <.docs_h2 id="sign-in">Choose a sign-in method</.docs_h2>
       <div class="mt-5 overflow-hidden rounded-xl border border-zinc-800">
         <table class="w-full text-left text-sm">
@@ -39,10 +33,10 @@
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-300">
             <tr>
-              <td class="px-4 py-3 font-semibold text-zinc-100">Magic link</td>
+              <td class="whitespace-nowrap px-4 py-3 font-semibold text-zinc-100">Magic link</td>
               <td class="px-4 py-3">
-                An expiring email code is paired with a nonce held by the browser that started the
-                sign-in. The code is single-use.
+                A single-use, expiring code goes to the member's email, paired with a nonce
+                held by the browser that started the sign-in.
               </td>
               <td class="px-4 py-3">
                 You do not need organization-managed sign-in, or you are testing account access
@@ -50,26 +44,24 @@
               </td>
             </tr>
             <tr>
-              <td class="px-4 py-3 font-semibold text-zinc-100">OIDC SSO</td>
+              <td class="whitespace-nowrap px-4 py-3 font-semibold text-zinc-100">OIDC SSO</td>
               <td class="px-4 py-3">
-                A confidential OpenID Connect client redirects the member to your identity
-                provider, then binds the returning identity to its stable provider subject.
+                emisar redirects the member to your identity provider to sign in, and matches
+                the returning identity by the provider's stable subject, never by email.
               </td>
               <td class="px-4 py-3">
-                Use OIDC SSO when your identity provider owns authentication and its MFA policy.
-                OIDC SSO is available on Team and Enterprise.
+                Your identity provider owns authentication and its MFA policy.
+                <.plan_note tier={:team} />
               </td>
             </tr>
           </tbody>
         </table>
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Read
-        <.link
-          navigate={~p"/docs/teams-and-access#sessions"}
-          class="text-brand-300 hover:text-brand-200"
-        >Sessions &amp; credentials</.link>
-        for the magic-link and session model. To connect an IdP, continue with <.link
+        Magic-link codes are stored hashed, and an intercepted email is not enough to sign
+        in — the browser nonce is required. Sign-in is rate-limited by IP and email address,
+        and failed attempts appear in the audit log. To connect an identity provider,
+        continue with <.link
           navigate={~p"/docs/sso"}
           class="text-brand-300 hover:text-brand-200"
         >Single sign-on</.link>.
@@ -81,45 +73,43 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Require MFA</strong>
-            routes members who have not enrolled TOTP to setup before they can use the account.
-            Before emisar reveals an authenticator secret, the member must enter a code sent to
-            their current email address. A provider that supplies no email leaves enrollment
-            closed until an administrator corrects the IdP identity. An SSO connection can satisfy
-            the requirement only when you mark that provider as enforcing MFA. Otherwise, emisar
-            still asks for TOTP. Regenerating recovery codes requires a current authenticator or
-            recovery code. The old set stays valid unless that proof succeeds.
+            sends members who have not enrolled TOTP (any standard authenticator app) to setup
+            before they can use the account.
+            Before emisar reveals an authenticator secret, the member confirms a code sent to
+            their current email address — a provider that supplies no email leaves enrollment
+            closed until an administrator corrects the identity. An SSO connection satisfies
+            the requirement only when you mark that provider as enforcing MFA; otherwise emisar
+            still asks for TOTP. Recovery codes are shown once and each works once.
+            Regenerating a new set requires a current authenticator or recovery code;
+            the old set works until the new one is issued.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Require SSO</strong>
-            accepts only an SSO identity issued for this account. Members who arrived through a
-            magic link return to the account provider on their next navigation. Before you enable
-            Require SSO, keep one provider enabled. The control blocks removal of the last provider
-            while SSO remains required.
+            accepts only an SSO identity issued for this account; a member who signed in with a
+            magic link is sent to your provider on their next page load.
           </span>
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Be precise about what Require SSO covers. It controls browser sign-in, not credentials that
-        already exist. It gates the account console, audit CSV download, and the OAuth consent
-        screen that mints a client key.
-        The rule covers every member, including owners and admins, with no bypass. It does not
-        authenticate MCP bearer tokens, SCIM, or the audit export API. It also does not authenticate
-        OAuth token exchanges or existing access tokens. Turning it on does not revoke existing API
-        keys or OAuth grants. End unwanted sessions and revoke unwanted credentials through <.link
+        Require SSO governs browser sign-in — the console, the audit CSV download, and the
+        OAuth consent screen — for every member, owners included, with no bypass. It does not
+        authenticate MCP bearer tokens, SCIM, or the audit export API.
+        Turning it on does not revoke existing API keys or OAuth grants — revoke those
+        through <.link
           navigate={~p"/docs/credentials"}
           class="text-brand-400 hover:text-brand-300"
-        >Rotate and revoke credentials</.link>. The requirement applies only while at least one
-        provider is enabled. That is why emisar blocks removal of the last provider. A broken or
-        unreachable enabled provider does not open the gate. Sign-in fails until the provider works.
+        >Rotate and revoke credentials</.link>. It applies only while at least one provider
+        stays enabled, and a broken provider does not open the gate: sign-in fails until it
+        works.
       </p>
       <.docs_callout kind={:warn} title="Complete a real SSO sign-in before requiring it">
         <p>
-          Test connection proves discovery and endpoint reachability. It does not prove client
-          assignment, the redirect URI, claims, or login policy. Keep an owner session open. Sign in
-          through the provider in another browser, then turn on Require SSO from <a href={
+          Test connection checks discovery and endpoint reachability — not client assignment,
+          the redirect URI, claims, or login policy. Keep an owner session open, sign in
+          through the provider in another browser, and only then turn on Require SSO from <a href={
             ~p"/app/team"
           }>Team → Security</a>.
         </p>
@@ -127,16 +117,17 @@
 
       <.docs_h2 id="provisioning">Provision and remove members</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Pick one system to own the lifecycle. The sign-in and lifecycle protocols are separate.
-        OIDC authenticates a person. SCIM creates, updates, suspends, and groups that person.
+        Pick one system to own the member lifecycle. Sign-in and lifecycle are separate
+        protocols: OIDC authenticates a person, and SCIM creates, updates, suspends, and
+        groups that person.
       </p>
       <ul class="mt-5 space-y-4 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Invitations</strong>
-            let an owner or admin create the membership and choose its role before the person signs
-            in. This is the direct emisar-managed path.
+            let an owner or admin create the membership and choose its role before the person
+            signs in.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -174,7 +165,6 @@
           <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
             <tr>
               <th class="px-4 py-3">Provider</th>
-              <th class="px-4 py-3">Identity claim</th>
               <th class="px-4 py-3">Directory sync</th>
             </tr>
           </thead>
@@ -188,7 +178,6 @@
                   Okta
                 </.link>
               </td>
-              <td class="px-4 py-3"><code>sub</code></td>
               <td class="px-4 py-3">Separate SCIM application</td>
             </tr>
             <tr>
@@ -200,7 +189,6 @@
                   Microsoft Entra
                 </.link>
               </td>
-              <td class="px-4 py-3"><code>oid</code></td>
               <td class="px-4 py-3">Separate enterprise application</td>
             </tr>
             <tr>
@@ -210,7 +198,6 @@
                   class="text-brand-300 hover:text-brand-200"
                 >JumpCloud</.link>
               </td>
-              <td class="px-4 py-3"><code>sub</code></td>
               <td class="px-4 py-3">Same custom application</td>
             </tr>
             <tr>
@@ -220,7 +207,6 @@
                   class="text-brand-300 hover:text-brand-200"
                 >Google Workspace</.link>
               </td>
-              <td class="px-4 py-3"><code>sub</code></td>
               <td class="px-4 py-3">No outbound SCIM for a custom app</td>
             </tr>
             <tr>
@@ -230,7 +216,6 @@
                   class="text-brand-300 hover:text-brand-200"
                 >Keycloak</.link>
               </td>
-              <td class="px-4 py-3"><code>sub</code></td>
               <td class="px-4 py-3">Needs a third-party outbound SCIM client</td>
             </tr>
             <tr>
@@ -242,7 +227,6 @@
                   Generic OpenID Connect
                 </.link>
               </td>
-              <td class="px-4 py-3"><code>sub</code></td>
               <td class="px-4 py-3">Any client that implements the documented SCIM subset</td>
             </tr>
           </tbody>
@@ -254,36 +238,39 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Members can inspect and revoke their active sessions. An administrator can suspend a
-            membership, which ends that account's sessions and revokes API keys minted from it.
+            Members manage their own sessions from Profile — it lists each active session with
+            device information, and one click signs out one session or every session except the
+            current one. An administrator can suspend a membership, which ends its sessions and
+            revokes API keys minted from it.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Disabling or deleting an SSO connection blocks new sign-ins and revokes sessions
-            authenticated through identities on that connection. It does not delete the users or
-            their audit history.
+            Disabling or deleting an SSO connection ends the sessions it authenticated — the
+            connection lifecycle is in <.link
+              navigate={~p"/docs/sso" <> "#disable-provider"}
+              class="text-brand-300 hover:text-brand-200"
+            >Single sign-on</.link>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            SCIM deprovisioning suspends rather than deletes. Reactivation can restore a directory
-            suspension, while a manual administrator suspension stays under administrator control.
+            SCIM deprovisioning suspends rather than deletes — the directory lifecycle is in <.link
+              navigate={~p"/docs/scim"}
+              class="text-brand-300 hover:text-brand-200"
+            >Directory sync</.link>.
           </span>
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Offboarding a person ends what that membership issued. It does not touch account-level
-        credentials held by another person. Examples include enrollment keys, audit-export tokens,
-        SCIM bearers, and signing material. Use
-        <.link
+        Offboarding a person ends what their membership issued: sessions, and every API key
+        they minted — audit-export tokens included. Enrollment keys, SCIM bearers, signing
+        keys, and keys held by other members keep working — rotate or revoke those through <.link
           navigate={~p"/docs/credentials"}
           class="text-brand-400 hover:text-brand-300"
-        >Rotate and revoke credentials</.link>
-        for those account-level secrets. During an incident,
-        follow
+        >Rotate and revoke credentials</.link>. During an incident, follow
         <.link
           navigate={~p"/docs/security-incidents"}
           class="text-brand-400 hover:text-brand-300"
@@ -293,23 +280,19 @@
 
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        If sign-in fails, start with the symptom table in <.link
+        When sign-in fails, start with the symptom table in <.link
           navigate={~p"/docs/sso#troubleshooting"}
           class="text-brand-300 hover:text-brand-200"
-        >SSO troubleshooting</.link>. If provisioning or group access is stale, use
+        >SSO troubleshooting</.link>; when provisioning or group access is stale, use
         <.link
           navigate={~p"/docs/scim#troubleshooting"}
           class="text-brand-300 hover:text-brand-200"
-        >
-          SCIM troubleshooting
-        </.link>
+        >SCIM troubleshooting</.link>
         and check the connection's <strong class="text-zinc-200">Last sync</strong>
-        signal first. Both pages are linked from the identity section of <.link
-          navigate={~p"/docs/troubleshooting" <> "#identity"}
+        first. If you are not sure identity is the cause, start at <.link
+          navigate={~p"/docs/troubleshooting"}
           class="text-brand-300 hover:text-brand-200"
-        >Troubleshooting</.link>. Start there when you are not sure whether identity caused the
-        problem.
-        For an account lockout with no working owner session, email <a
+        >Troubleshooting</.link>. For a lockout with no working owner session, email <a
           href={EmisarWeb.MailTo.support()}
           class="text-brand-300 hover:text-brand-200"
         >support</a>.

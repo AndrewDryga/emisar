@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="architecture"
-      updated="August 7, 2026"
+      updated="August 23, 2026"
       toc={[
         {"components", "The four pieces"},
         {"flow", "One action, end to end"},
@@ -18,15 +18,15 @@
     >
       <.docs_header current="architecture">
         <:dek>
-          This page explains which component decides what and what crosses each boundary. It also
-          explains what happens when a component disappears during work.
+          Which component decides what, what crosses each boundary, and what happens when a
+          component disappears mid-work.
         </:dek>
       </.docs_header>
 
       <.docs_prerequisites>
         <:item>
-          Nothing installed. Read this page during a security review, design discussion, or failure
-          investigation.
+          Nothing to install — read this during a security review, design discussion, or
+          failure investigation.
         </:item>
         <:item>
           A rough picture of the product from <.link
@@ -38,13 +38,13 @@
       </.docs_prerequisites>
 
       <p class="mt-6 text-base leading-7 text-zinc-400">
-        Everything below reflects the wire protocol, MCP contract, and runner lifecycle. Each
-        limit appears beside the behavior it limits.
+        Everything below reflects the wire protocol, MCP contract, and runner lifecycle, with
+        each limit beside the behavior it limits.
         <.link
           navigate={~p"/docs/security-model"}
           class="text-brand-300 hover:text-brand-200"
         >Security model</.link>
-        covers threats and guarantees. This page covers topology, state, and failure.
+        covers threats and guarantees; this page covers topology, state, and failure.
       </p>
 
       <.docs_h2 id="components">The four pieces</.docs_h2>
@@ -82,8 +82,8 @@
         </table>
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        One connection carries all of it. The runner dials out over TLS and keeps a websocket open.
-        There is no listener on the runner host and nothing to expose. The ports and hosts a
+        One connection carries all of it: the runner dials out over TLS and keeps a websocket
+        open, with no listener on the host and nothing to expose. The ports and hosts a
         runner needs are in <.link
           navigate={~p"/docs/network-requirements"}
           class="text-brand-300 hover:text-brand-200"
@@ -105,9 +105,8 @@
         </li>
         <li>
           <strong class="text-zinc-200">The control plane resolves the exact pack.</strong>
-          The model-facing contract comes from the trusted manifest for one exact hash, not from
-          what a runner claims. A runner whose advertisement disagrees is excluded from the
-          targets.
+          The model-facing contract comes from the trusted manifest for one exact hash. A
+          runner whose advertisement disagrees is excluded from the targets.
         </li>
         <li>
           <strong class="text-zinc-200">Policy decides.</strong>
@@ -121,9 +120,9 @@
         </li>
         <li>
           <strong class="text-zinc-200">The runner decides again.</strong>
-          It re-hashes the pack and checks local admission. If enforced, it verifies the signature.
-          It validates every argument against the schema. It clamps call options to the action
-          envelope and renders the pack-authored program.
+          It re-hashes the pack, checks local admission, verifies the signature where
+          enforced, re-validates every argument against the schema, clamps call options to the
+          action envelope, and renders the pack-authored program.
         </li>
         <li>
           <strong class="text-zinc-200">It executes, redacts, and reports.</strong>
@@ -133,9 +132,9 @@
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        These two decisions shape the whole system. The control plane decides whether a request is
-        allowed. The runner decides whether it will execute. Neither can make the other skip its
-        own check.
+        These two decisions shape the whole system: the control plane decides whether a
+        request is allowed, the runner decides whether it will execute, and neither can make
+        the other skip its own check.
       </p>
 
       <.docs_h2 id="ownership">Who owns which decision</.docs_h2>
@@ -190,8 +189,8 @@
             stores accounts, members, policies, approvals, trusted pack references, hashes,
             runbooks, exact action arguments, runner-returned output, and audit history. It stores
             every issued bearer credential as a hash. It stores OIDC client secrets reversibly
-            because it must present them to the identity provider. Exact arguments can also contain
-            operator-supplied secrets. Protect database copies accordingly.
+            because it must present them to the identity provider. Exact arguments can contain
+            operator-supplied secrets, so protect database copies accordingly.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -199,8 +198,8 @@
           <span>
             <strong class="text-zinc-200">A runner</strong>
             stores its token, durable dispatch state, installed packs, signed-dispatch nonce store,
-            and local journal. Dispatch and nonce state prevent repeated execution. Only one runner
-            process can own that state at a time.
+            and local journal; dispatch and nonce state prevent repeated execution, and only one
+            runner process can own that state at a time.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -208,7 +207,7 @@
           <span>
             <strong class="text-zinc-200">The bridge</strong>
             holds the operator's API key in their own config directory, plus the signing key and
-            certificate when signed dispatch is in use. It keeps no history and no policy.
+            certificate when signed dispatch is in use. It does not keep history or policy.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -216,7 +215,7 @@
           <span>
             <strong class="text-zinc-200">A registry</strong>
             holds immutable published pack artifacts. Distribution and trust stay separate on
-            purpose. Fetching bytes from a registry is not a decision to run them.
+            purpose — fetching bytes from a registry is not a decision to run them.
           </span>
         </li>
       </ul>
@@ -283,12 +282,12 @@
           navigate={~p"/docs/compatibility"}
           class="text-brand-300 hover:text-brand-200"
         >Compatibility and deprecation</.link>
-        defines the future v1 contract and current pre-1.0 limits.
+        defines the API contracts and current limits.
         <.link
           navigate={~p"/docs/runs"}
           class="text-brand-300 hover:text-brand-200"
         >Runs &amp; History</.link>
-        explains each status. Start with <.link
+        explains each status; when something is broken and you are not sure where, start at <.link
           navigate={~p"/docs/troubleshooting"}
           class="text-brand-300 hover:text-brand-200"
         >Troubleshooting</.link>.
@@ -297,23 +296,23 @@
       <.docs_h2 id="delivery">Delivery, and what it does not promise</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Messages between a runner and the control plane are delivered at least once. A result is
-        replayed until acknowledged, so a lost acknowledgement can produce a duplicate. The
-        control plane does not apply output or terminal state again. A retry returns recorded state
-        instead of starting another execution.
+        replayed until acknowledged, so a lost acknowledgement can produce a duplicate — the
+        control plane does not apply output or terminal state again, and a retry returns
+        recorded state instead of starting another execution.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        This is idempotent handling, not an exactly-once execution promise. A host can die after
-        starting a process but before recording its outcome. Neither side then knows whether the
-        effect happened. emisar reports
+        Messages are delivered idempotently, but exactly-once delivery is not guaranteed. A
+        runner host can die after starting a process but before recording its outcome; when
+        that happens, emisar reports
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execution_outcome_unknown</code>
         and refuses to guess by re-running it.
       </p>
 
       <.docs_h2 id="approvals">What a wait revalidates</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        An approval can wait for hours while the fleet changes. When the approver decides, the
-        system checks these facts before releasing the run. It checks delivery facts again when
-        sending the run:
+        An approval can wait for hours while the fleet changes. When the approver decides,
+        these facts are checked before the run is released, and the delivery facts are checked
+        again at send:
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -343,13 +342,11 @@
           <span>
             For a signed run, the original attestation is still inside its freshness window and its
             certificate's validity window. An approved run is re-dispatched with the signature it
-            was created with. A slow approval can outlive it. Set both comfortably above your
-            approval turnaround, as
-            <.link
+            was created with, and a slow approval can outlive it — the freshness and validity
+            windows are <.link
               navigate={~p"/docs/signed-dispatch"}
               class="text-brand-300 hover:text-brand-200"
-            >Signed dispatch</.link>
-            describes.
+            >Signed dispatch</.link>'s subject.
           </span>
         </li>
       </ul>
@@ -364,8 +361,7 @@
 
       <.docs_h2 id="boundary">The hosted boundary</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The control plane is ours to run, and there is nothing for you to upgrade there. Shipped
-        changes land in the <.link
+        We host and maintain the control plane. Shipped changes land in the <.link
           navigate={~p"/changelog"}
           class="text-brand-300 hover:text-brand-200"
         >changelog</.link>. You control runner, bridge, and pack upgrades, so those components move
@@ -374,11 +370,9 @@
         not generally available today.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        For a security review, this boundary means the hosts and their privileges remain yours. Raw
-        action output never leaves them. Only the dispatch and redacted result cross the boundary.
-        Catalog advertisements, heartbeats, and acknowledgements share
-        the same outbound connection. The threat model behind that boundary, including what it
-        deliberately does not defend against, is in <.link
+        The hosts and their privileges remain yours: raw action output never leaves them, and
+        only the dispatch and the redacted result cross the boundary. The threat model behind
+        it, including what it deliberately does not defend against, is in <.link
           navigate={~p"/docs/security-model"}
           class="text-brand-300 hover:text-brand-200"
         >Security model</.link>.

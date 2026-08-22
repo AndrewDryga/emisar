@@ -62,6 +62,7 @@ func runnerChecks() []runnerCheck {
 		{"latest release resolution", false, runnerLatestRelease},
 		{"fresh-install service rollback", false, runnerFreshServiceRollback},
 		{"config value validation", false, runnerConfigValueValidation},
+		{"runner id override in config skeleton", false, runnerIDOverride},
 	}
 }
 
@@ -717,6 +718,43 @@ rollback_service
 	}
 	if strings.TrimSpace(upgrade) != "" {
 		return fmt.Errorf("a failed UPGRADE removed the pre-existing unit:\n%s", upgrade)
+	}
+	return nil
+}
+
+// runnerIDOverride proves RUNNER_ID lands as runner.id in the generated
+// config — the runner's declared name and identity — and that an unset
+// variable emits no id line at all.
+func runnerIDOverride(h *harness) error {
+	script := "config_skeleton\n"
+	base := map[string]string{
+		"OS": "linux", "INIT": "systemd",
+		"ETC_DIR": "/etc/emisar", "DATA_DIR": "/var/lib/emisar", "LOG_DIR": "/var/log/emisar",
+		"EMISAR_URL": "", "EMISAR_ENROLLMENT_KEY": "",
+	}
+
+	withOverride := map[string]string{"RUNNER_ID": "web-01"}
+	for k, v := range base {
+		withOverride[k] = v
+	}
+	result := h.functions(h.repoPath("install.sh"), []string{"config_skeleton", "safe_config_value"},
+		script, withOverride)
+	output, err := requireOutput(result)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(output), "id: web-01") {
+		return fmt.Errorf("RUNNER_ID did not land in the config skeleton:\n%s", output)
+	}
+
+	result = h.functions(h.repoPath("install.sh"), []string{"config_skeleton", "safe_config_value"},
+		script, base)
+	output, err = requireOutput(result)
+	if err != nil {
+		return err
+	}
+	if strings.Contains(string(output), "\n  id:") {
+		return fmt.Errorf("unset RUNNER_ID still emitted an id line:\n%s", output)
 	}
 	return nil
 }

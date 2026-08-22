@@ -147,6 +147,25 @@ func TestValidate_MaxRisk(t *testing.T) {
 	}
 }
 
+func TestValidate_RunnerIDBound(t *testing.T) {
+	cfg := validConfig()
+	cfg.Runner.ID = "  web-01  "
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("a valid runner.id should validate, got %v", err)
+	}
+	if cfg.Runner.ID != "web-01" {
+		t.Fatalf("runner.id not trimmed: %q", cfg.Runner.ID)
+	}
+
+	// The control plane bounds an identity to 255 characters; refuse a value
+	// the registration would refuse anyway.
+	cfg = validConfig()
+	cfg.Runner.ID = strings.Repeat("a", 256)
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("a 256-character runner.id must be rejected")
+	}
+}
+
 func TestValidate_RejectsNegativeAuditRotationLimits(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

@@ -53,7 +53,9 @@
       <.docs_code phx-no-format label="shell">sudo emisar pack install redis=0.2.3 \
   --hash sha256:&lt;full-reviewed-hash&gt;</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The command validates the pack and reloads a running runner. A public catalog hash becomes
+        The command validates the pack, reloads a running runner, and ends by probing the
+        pack's declared verify action — a wrong or missing credential shows up now, at the
+        terminal, and the next step fixes it. A public catalog hash becomes
         trusted automatically. A custom hash stays pending on <a
           href={~p"/app/packs"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -82,7 +84,10 @@
           in <code>/etc/emisar/config.yaml</code>.
         </li>
         <li>Restart the service with <code>sudo systemctl restart emisar</code>.</li>
-        <li>Run the pack's verification command.</li>
+        <li>
+          Run <code>sudo emisar pack verify redis</code> — the probe that failed before the
+          credentials were in place passes now.
+        </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Keep credential values out of action arguments and pack YAML. See
@@ -95,7 +100,10 @@
 
       <.docs_h2 id="verify">5. Verify the pack</.docs_h2>
       <ol class="mt-5 list-decimal space-y-3 pl-6 text-base text-zinc-400">
-        <li>Run <code>sudo emisar doctor</code>. Fix every pack error.</li>
+        <li>
+          Run <code>sudo emisar doctor --probe</code>. It checks the host and runs every
+          pack's verify action. Fix every pack error.
+        </li>
         <li>
           Open <a
             href={~p"/app/runners"}
@@ -113,7 +121,7 @@
           Open <a
             href={~p"/app/audit"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-          >Audit</a>. Confirm that the event names the pack, action, runner, and operator.
+          >Audit</a>. Confirm that the event records the pack, action, runner, and operator.
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -125,7 +133,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A pack that never appears, or an action missing from a runner that should have it —
         <.link
-          navigate={~p"/docs/troubleshooting" <> "#packs"}
+          navigate={~p"/docs/pack-updates" <> "#troubleshooting"}
           class="text-brand-400 hover:text-brand-300"
         >Troubleshooting</.link>
         separates the causes.

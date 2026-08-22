@@ -38,9 +38,10 @@ Verify commands before running them:
   first (`sudo journalctl -u emisar -n 200`) and take the registration status
   from it rather than guessing. A `401` means the enrollment key was spent,
   expired, or revoked; a `409` means another runner already holds this name,
-  which a rebuilt host or a restored image produces — a runner is named after
-  the host it registered from and cannot be renamed, so the operator deletes
-  the existing runner or gives this host a different hostname; a `402` means
+  which a rebuilt host or a restored image produces — a runner's name defaults
+  to its hostname and cannot be renamed, so the operator deletes the existing
+  runner or sets `runner.id` (`RUNNER_ID` at install) to register under a
+  declared name; a `402` means
   the account is at its plan's runner limit. `https://emisar.dev/docs/troubleshooting`
   covers each symptom and its check.
 

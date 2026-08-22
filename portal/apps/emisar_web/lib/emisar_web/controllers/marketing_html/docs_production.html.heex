@@ -136,8 +136,7 @@
         <li>
           <strong class="text-zinc-200">Configure the policy.</strong>
           Decide what each risk tier can do across the fleet. Keep policy strict where an action
-          can take something down, and relax it only after an explicit decision. The editor will not
-          let a higher tier be more permissive than a lower one. See <.link
+          can take something down, and relax it only after an explicit decision. See <.link
             navigate={~p"/docs/policies-and-approvals"}
             class="text-brand-400 hover:text-brand-300"
           >policies &amp; approvals</.link>.
@@ -158,8 +157,7 @@
         </li>
         <li>
           <strong class="text-zinc-200">Lock the sensitive groups.</strong>
-          Add a targeted ruleset for your production tiers. A ruleset <em>replaces</em>
-          the default for its target. The most specific rule wins: runner, then group, then default.
+          Add a targeted ruleset for your production tiers.
           The <code class="font-mono">db-prod</code>
           group can deny <.docs_risk tier="critical" /> and require two approvals for
           <.docs_risk tier="high" />. The rest of the fleet
@@ -331,9 +329,12 @@
           </li>
           <li class="flex items-start gap-2.5">
             <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
-            <span>Signed dispatch is enforced wherever you must be able to prove which bridge sent
-            a request. A customer-authorized bridge signs each request with a key the control
-            plane never holds.</span>
+            <span>Signed dispatch is enforced wherever you must be able to prove which bridge
+            sent a request. A customer-authorized bridge signs each request with a key the
+            control plane never holds. See <.link
+              navigate={~p"/docs/signed-dispatch"}
+              class="text-brand-400 hover:text-brand-300"
+            >Signed dispatch</.link>.</span>
           </li>
         </ul>
         <p class="mt-5 text-base font-semibold text-zinc-100">On Team, add</p>

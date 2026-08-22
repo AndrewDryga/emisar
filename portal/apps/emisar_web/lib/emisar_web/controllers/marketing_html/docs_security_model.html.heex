@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="security-model"
-      updated="August 7, 2026"
+      updated="August 23, 2026"
       toc={[
         {"trust-boundary", "The trust boundary"},
         {"what-its-not", "What emisar is not"},
@@ -13,11 +13,13 @@
     >
       <.docs_header current="security-model">
         <:dek>
-          This page explains the precise mechanics behind every control. It states what each layer
-          checks and deliberately does not check. For the trust-boundary picture, start with the <.link
+          The precise mechanics behind every control — what each layer checks, and what it
+          deliberately does not. Start with the
+          <.link
             navigate={~p"/security"}
             class="text-brand-300 hover:text-brand-200"
-          >security overview</.link>. This page is the reference your security team reads next.
+          >security overview</.link>
+          for the picture; this is the reference your security team reads next.
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -32,7 +34,8 @@
           <strong>Pre-approved actions only.</strong>
           The runner loads action YAMLs at boot and refuses anything not in the catalog. A model
           cannot choose a binary or command program. Some reviewed actions use a fixed shell
-          program. Open-ended values reach it through environment or positional-argv data channels. Only finite choices and two-sided bounded numbers can render into its text.
+          program; open-ended values reach it as environment or positional-argv data, and only
+          finite choices and two-sided bounded numbers can render into its text.
           Arbitrary shell is isolated in the staging-only, critical-risk, default-denied
           <code>shell</code>
           pack.
@@ -42,53 +45,57 @@
           A valid catalog can authorize a matching pack already installed on a runner. The
           publisher also chooses the risk, kind, and retirement floor that the control plane reads.
           The catalog cannot install bytes or bypass descriptor checks, argument validation, or
-          local admission. HTTPS and publication access protect the publisher today. emisar does
-          not verify a separate catalog signature.
+          local admission. The catalog file itself is not signed — HTTPS and control of
+          publication access are its protection today.
         </li>
         <li>
           <strong>Outbound-only network.</strong> Runners dial the control plane
           over TLS. No inbound ports, no SSH bastion to compromise.
         </li>
         <li>
-          <strong>Bootstrap key + per-runner token.</strong> The enrollment key
+          <strong>Bootstrap key + per-runner token.</strong>
+          The enrollment key
           (<code>emkey-enroll-…</code>) is a bootstrap secret. It is single-use by default. A
           reusable key can have a use cap for fleet templates. The runner exchanges it
-          for a per-runner token (<code>rnrtok-…</code>) on first connect. This expires
-          after 90 days. On a connection at 60 days, the runner attempts a routine refresh without
-          the enrollment key. After token rejection, it tries to re-register with its retained
-          enrollment key. A spent single-use key can recover only its original runner identity
-          while that key remains unexpired and unrevoked.
-          Single-use keys are atomically consumed. Two concurrent registrations
-          can never both succeed.
+          for a per-runner token (<code>rnrtok-…</code>) on first connect; expiry and the
+          refresh schedule are in <.link
+            navigate={~p"/docs/runner-credentials"}
+            class="text-brand-400 hover:text-brand-300"
+          >Runner credentials</.link>.
+          A single-use key is consumed atomically, so two concurrent registrations can never
+          both succeed.
         </li>
         <li>
           <strong>Argument validation on the runner.</strong> The runner is the authority on
-          arguments. It validates every argument against the action schema. It rejects undeclared
-          arguments, coerces types, and enforces each minimum and maximum before execution. The
+          arguments: it validates each one against the action schema — rejecting undeclared
+          arguments, coercing types, and enforcing every minimum and maximum — before
+          execution. The
           control plane gates the dispatch through policy, scope, and pack trust. A
           misbehaving cloud cannot smuggle an undeclared argument past the runner.
         </li>
         <li>
           <strong>Policy.</strong>
-          Policy uses two layers per account. A default
-          decision per risk tier (<.docs_risk tier="low" /> / <.docs_risk tier="medium" /> /
-          <.docs_risk tier="high" /> / <.docs_risk tier="critical" />), plus ordered per-action
-          overrides that glob-match on action ID. First matching override
-          wins. Otherwise the tier default applies. Decisions: <code>allow</code>
+          Every dispatch gets one decision — <code>allow</code>
           / <code>require_approval</code>
-          / <code>deny</code>.
-          Higher-risk tiers are forced to be at least as restrictive as
-          lower-risk ones. You cannot allow <code>cassandra.nodetool_drain</code>
-          while requiring approval for <code>cassandra.nodetool_status</code>.
-          The shipped defaults allow low and medium risk, require approval for high risk, and deny
-          critical risk. The runner
-          sees the decision only. It does not reason about policy.
+          / <code>deny</code>
+          — evaluated in the control plane from per-action overrides and
+          risk-tier defaults (<.docs_risk tier="low" /> / <.docs_risk tier="medium" /> /
+          <.docs_risk tier="high" /> / <.docs_risk tier="critical" />). A dispatch the policy
+          cannot answer is denied, and a higher tier can never be more permissive than a lower
+          one. The runner sees only the decision — it does not reason about policy. Evaluation
+          order, the shipped defaults, and overrides are in <.link
+            navigate={~p"/docs/policies-and-approvals"}
+            class="text-brand-400 hover:text-brand-300"
+          >Policies &amp; approvals</.link>.
         </li>
         <li>
-          <strong>Approvals.</strong> When policy demands approval, the run is held
-          until someone who can approve decides. By default that can be the requester. Self-approval is on so a solo operator or a trial is not stuck. For destructive
-          actions, turn on four-eyes (two approvers, self-approval off) in the policy.
-          Approvers are emailed. Clicking the link lands them on the request page.
+          <strong>Approvals.</strong>
+          When policy demands approval, the run is held
+          until someone who can approve decides, and an undecided request expires. Approver
+          counts, self-approval, four-eyes, and standing grants are in <.link
+            navigate={~p"/docs/policies-and-approvals"}
+            class="text-brand-400 hover:text-brand-300"
+          >Policies &amp; approvals</.link>.
         </li>
         <li>
           <strong>Output redaction.</strong>
@@ -97,8 +104,8 @@
           and common <code>password=</code>
           / <code>secret=</code>
           / <code>token=</code>
-          assignments. Per-action rules layer on top.
-          Unknown shapes can pass through these patterns. Treat redaction as a backstop, not a
+          assignments. Per-action rules layer on top,
+          but an unknown shape can pass through — treat redaction as a backstop, not a
           guarantee.
         </li>
         <li>
@@ -111,14 +118,11 @@
           Cloud audit records terminal action outcomes, denials, approval gates and decisions, and
           selected product changes. Product changes include runner state, policy, credential, team,
           and sign-in events. Pending, sent, and running action states remain in run history. A
-          read-only audit-export token provides access through <code>GET /api/audit</code>. Mint the
-          token from <a
-            href={~p"/app/audit/export"}
-            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-          >Audit export</a>. The pull API uses forward-only keyset pagination and RFC 5988
-          <code>Link</code>
-          headers. A SIEM with cursor-aware HTTP input can poll it directly. Other systems need a
-          collector. The token reads events but cannot execute an action. Runner-side, every action
+          read-only audit-export token reads events through <code>GET /api/audit</code>
+          and cannot execute an action; the export pipeline is in <.link
+            navigate={~p"/docs/audit-and-siem"}
+            class="text-brand-400 hover:text-brand-300"
+          >Audit &amp; SIEM</.link>. Runner-side, every action
           attempt writes a JSONL line to <code>/var/log/emisar/events.jsonl</code>
           with a previous-line hash. That is the host-side
           forensics copy. <code>emisar audit verify</code>
@@ -142,8 +146,8 @@
           read-only host, <code>admission.max_risk: medium</code>
           drops every high-risk and critical
           action, regardless of cloud policy. Blocked
-          actions are hidden from the catalog this runner advertises to cloud
-          AND refused at execution time. Even a compromised portal cannot
+          actions are hidden from the catalog this runner advertises and refused at execution
+          time, so even a compromised portal cannot
           push something the host operator did not sanction. Refusals land in
           the JSONL audit log as <code>action_blocked_by_admission</code>
           events for SIEM alerting.
@@ -158,10 +162,10 @@
         </li>
         <li>
           <strong>The control plane cannot forge signed work.</strong>
-          The leaf private key stays in the customer-authorized MCP bridge. The CA private key stays
-          offline. The control plane holds neither key. It can relay a signed action. It cannot
-          create or change one. It can still withhold a signed action. Signed dispatch protects
-          integrity, not availability.
+          The leaf private key stays in the customer-authorized MCP bridge, and the CA private
+          key stays offline. The control plane can relay a signed action, but it cannot create
+          or change one, since it does not hold a private key. It can still withhold a signed
+          action — signed dispatch protects integrity, not availability.
         </li>
         <li>
           <strong>The runner rejects stale or replayed work.</strong>
@@ -203,7 +207,7 @@
           drop only works because the OS already permits it.
         </li>
         <li>
-          <strong>Redaction is pattern-based. It is not a guarantee.</strong>
+          <strong>Redaction is pattern-based, not a guarantee.</strong>
           A secret in a shape none of the rules match reaches the control plane in the run output.
           Keep provider credentials in the runner environment rather than in arguments, and treat
           masking as the second line, not the first.
@@ -235,7 +239,7 @@
         runs on <strong class="text-zinc-200">Google Cloud in the United States</strong>. It includes
         the console, audit log, run history, and MCP API. Data is encrypted
         at rest with provider-managed keys and in transit with TLS. The runner opens an outbound
-        TLS WebSocket and exposes no inbound listener. Commands return through that established
+        TLS WebSocket, never an inbound listener, and commands return through that established
         connection.
         <.link
           navigate={~p"/docs/architecture"}
@@ -259,7 +263,7 @@
               {"Run history and runner-returned output", "Control plane, United States", "The same account window as audit. Configured host redaction is best effort. Unknown shapes can still contain secrets."},
               {"Exact action arguments", "Control plane, United States", "The same account window as run history. The portal stores them for authorization, approval, dispatch, and hashing. Sensitive descriptors mask views, not storage."},
               {"Account, members, policies, trusted pack hashes, runbooks", "Control plane, United States", "Until you change or delete them."},
-              {"Bearer credentials we issue", "Control plane, as a hash only", "Until revoked or deleted. A database copy yields nothing replayable."},
+              {"Bearer credentials we issue", "Control plane, as a hash only", "Until revoked or deleted. A stolen database copy cannot be replayed."},
               {"OIDC provider client secrets", "Control plane, reversible application data", "Until you change or delete the connection. The portal must present the secret to the identity provider. Infrastructure encryption protects it at rest."},
               {"Packs and the local event journal", "Your host", "You control rotation and retention. The --purge option deletes them with the runner."},
               {"Signing keys", "Leaf in the customer-authorized MCP bridge, CA offline", "We never hold either. There is no per-certificate revocation list."},

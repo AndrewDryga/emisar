@@ -85,12 +85,19 @@
         >Runners</a>
         — the host appears online, with the actions it advertises. On the host, run:
       </p>
+      <.docs_screenshot
+        src="/images/screenshots/runner-fleet.webp"
+        preview_h="max-h-[32rem]"
+        title="emisar console · Runners"
+        caption="A connected host shows a green connected badge with its last heartbeat; offline hosts stay listed with when they were last seen."
+        alt="The Runners page grouped by runner group: api-iad-02, pg-primary-iad, and edge-fra-01 show green connected badges with heartbeats seconds ago, while edge-sfo-03 shows an amber offline badge last seen three hours ago."
+      />
       <.docs_code phx-no-format label="shell" copy_text="sudo emisar doctor"><span class="text-zinc-500">$</span> sudo emisar doctor</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         It checks the config, credential, packs, binaries, and service in one pass. The install
         finished but the host never appears —
         <.link
-          navigate={~p"/docs/troubleshooting" <> "#runner"}
+          navigate={~p"/docs/runner-fleet" <> "#troubleshooting"}
           class="text-brand-400 hover:text-brand-300"
         >Troubleshooting</.link>
         starts from that symptom.
@@ -109,7 +116,7 @@
   <span class="text-sky-300">labels</span>:                    <span class="text-zinc-600"># free-form, for finer targeting</span>
     <span class="text-sky-300">role</span>: <span class="text-brand-300">"frontend"</span>
     <span class="text-sky-300">region</span>: <span class="text-brand-300">"us-east-1"</span>
-  <span class="text-zinc-600"># id: "web-01"           # optional — defaults to the current hostname</span>
+  <span class="text-zinc-600"># id: "web-01"           # optional — the runner's declared name + identity; defaults to the hostname</span>
 <span class="text-sky-300">cloud</span>:
   <span class="text-sky-300">url</span>: <span class="text-brand-300">"https://emisar.dev"</span>
   <span class="text-sky-300">enrollment_key_env</span>: <span class="text-brand-300">"EMISAR_ENROLLMENT_KEY"</span>
@@ -157,6 +164,7 @@
               {"EMISAR_URL", "The control plane to enroll against, baked into config.yaml. Defaults to https://emisar.dev; set it only for a test or evaluation portal."},
               {"EMISAR_ENROLLMENT_KEY", "The emkey-enroll-… key the runner exchanges for its own token on first connect."},
               {"RUNNER_GROUP", "How the console groups runners, written to runner.group. Defaults to the host's short hostname."},
+              {"RUNNER_ID", "Registers the runner under a declared name and identity, written to runner.id. Defaults to the hostname — declare one for containers and hosts with colliding hostnames."},
               {"RUNNER_LABEL_<KEY>", "Bake a free-form runner label into config.yaml. For example, use RUNNER_LABEL_ROLE=web or RUNNER_LABEL_ENVIRONMENT=prod. The console filters and searches these labels."},
               {"--packs LIST", "Install named packs during setup. For example, use --packs linux-core,docker."},
               {"-y / --yes", "Skip the confirmation prompts for unattended installs. Requires an explicit --packs LIST or EMISAR_PACKS (an empty value installs none)."},

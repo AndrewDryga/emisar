@@ -2382,7 +2382,7 @@ defmodule EmisarWeb.CoreComponents do
          admin-template artifact in every list; terminal-calm statuses read as
          text. The dot carries the semantics for color-blind scanning too. --%>
     <span class={[
-      "inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium",
+      "mx-0.5 inline-flex items-center gap-1.5 whitespace-nowrap align-middle text-xs font-medium",
       (@tone && tone_text_class(@tone)) || status_word_class(@status),
       @class
     ]}>
@@ -3452,9 +3452,13 @@ defmodule EmisarWeb.CoreComponents do
 
       <.list_group_header label={@group}>{@n} runners total</.list_group_header>
       <.list_group_header label={@owner} />
+
+  An optional `:action` slot right-aligns a group-level control on the header
+  row (the agents list's per-member bulk revoke).
   """
   attr :label, :string, required: true
   slot :inner_block
+  slot :action
 
   def list_group_header(assigns) do
     ~H"""
@@ -3462,6 +3466,9 @@ defmodule EmisarWeb.CoreComponents do
       <h2 class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">{@label}</h2>
       <span :if={@inner_block != []} class="text-[11px] text-zinc-400">
         {render_slot(@inner_block)}
+      </span>
+      <span :if={@action != []} class="ml-auto">
+        {render_slot(@action)}
       </span>
     </li>
     """
@@ -3693,7 +3700,7 @@ defmodule EmisarWeb.CoreComponents do
     <span
       class={[
         "whitespace-nowrap rounded px-1.5 py-0.5 text-[10px]",
-        @icon && "inline-flex items-center gap-1",
+        @icon && "inline-flex items-center gap-1 align-middle",
         if(@upcase, do: "font-semibold uppercase tracking-wider", else: "font-medium"),
         chip_class(@tone),
         @mono && "font-mono",
@@ -4137,7 +4144,9 @@ defmodule EmisarWeb.CoreComponents do
   `on_confirm` is the JS/event the enabled Confirm runs — build it at the call
   site so the destructive event carries its own value and closes the dialog:
 
-      <.button phx-click={show_confirm_dialog("remove-#{m.id}")}>Remove from team</.button>
+      <.button variant={:secondary} tone={:rose} phx-click={show_confirm_dialog("remove-#{m.id}")}>
+        Remove from team
+      </.button>
 
       <.confirm_dialog
         id={"remove-#{m.id}"}

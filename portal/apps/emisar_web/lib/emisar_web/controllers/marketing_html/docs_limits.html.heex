@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="limits"
-      updated="August 3, 2026"
+      updated="August 23, 2026"
     >
       <.docs_header current="limits">
         <:dek>
@@ -14,8 +14,8 @@
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Every cap says what you will actually observe when you reach it. The name links to the page
-        that owns the behavior — the procedure lives there, not here.
+        Each row shows what you will see at the cap; the name links to the page that owns the
+        behavior.
       </p>
 
       <div class="mt-8 overflow-x-auto rounded-xl border border-zinc-900">
@@ -51,7 +51,8 @@
               <td class="px-4 py-3 align-top leading-6">The most recent 500 progress lines</td>
               <td class="px-4 py-3 align-top leading-6">
                 Older lines are trimmed from the browser view with a note. Run history keeps
-                accepted chunks within its durable budget. The host journal keeps bounded previews,
+                accepted chunks within a durable budget — up to 50,000 chunks and 64 MiB per
+                run, one chunk capped at 256 KiB. The host journal keeps bounded previews,
                 byte counts, and hashes of the complete redacted streams.
               </td>
             </tr>
@@ -127,7 +128,7 @@
               <td class="px-4 py-3 align-top leading-6">
                 64 KiB definition. 32 inputs, 16 stages, 16 target refs per step, and 256 resolved
                 items. A wait polls every 5 seconds to 1 hour for 2 to 100 attempts. A parallel
-                stage runs 1 through 16 attempts at once, 5 unless the definition sets it. A title
+                stage runs 1 through 16 attempts at once, 5 by default. A title
                 is at most 80 characters and 320 bytes, a description 4,096 characters and 8 KiB.
               </td>
               <td class="px-4 py-3 align-top leading-6">
@@ -144,7 +145,7 @@
                 1 MiB frozen plan. 24 hours end to end, waits included
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Preflight rejects a plan that freezes larger. An execution still running at the
+                Preflight rejects a plan that resolves larger. An execution still running at the
                 deadline halts as timed out.
               </td>
             </tr>
@@ -159,9 +160,9 @@
               <td class="px-4 py-3 align-top leading-6">
                 A full page carries
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Link: rel="next"</code>
-                and there can be more right now. Keep paging from
+                and means more may be waiting — keep paging from
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">X-Next-Cursor</code>
-                while it does.
+                until it disappears.
               </td>
             </tr>
             <tr>
@@ -175,21 +176,6 @@
               <td class="px-4 py-3 align-top leading-6">
                 Further requests answer <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">429</code>. A poller must hold
                 its cursor and retry rather than treat the failure as an empty page.
-              </td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3 align-top font-medium text-zinc-200">
-                <.link
-                  navigate={~p"/docs/audit-and-siem" <> "#retention"}
-                  class="text-brand-300 hover:text-brand-200"
-                >Audit retention</.link>
-              </td>
-              <td class="px-4 py-3 align-top leading-6">
-                7 days on Free, 90 on Team, 365 on Enterprise
-              </td>
-              <td class="px-4 py-3 align-top leading-6">
-                The horizon is fixed per event when it is written, and terminal runs and their
-                progress events follow the same window. Ingest into your SIEM to keep it longer.
               </td>
             </tr>
           </tbody>

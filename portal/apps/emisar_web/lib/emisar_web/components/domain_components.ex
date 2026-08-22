@@ -290,12 +290,26 @@ defmodule EmisarWeb.DomainComponents do
   def plan_note(assigns) do
     ~H"""
     <span class={["text-zinc-400", @class]}>
-      Only available on <.link
-        href={~p"/pricing"}
-        title={plan_note_title(@tier)}
-        class="font-medium text-amber-400/80 underline decoration-amber-400/25 underline-offset-2 transition-colors hover:text-amber-300 hover:decoration-amber-400/60"
-      >{plan_note_label(@tier)}</.link>.
+      Only available on <.plan_link name={plan_note_label(@tier)} title={plan_note_title(@tier)} />.
     </span>
+    """
+  end
+
+  @doc """
+  A plan name in prose — the one amber face for naming a plan, linking to
+  pricing. `plan_note/1` composes it; use it directly when a sentence names
+  plans inline (retention windows, per-plan limits).
+  """
+  attr :name, :string, required: true
+  attr :title, :string, default: nil
+
+  def plan_link(assigns) do
+    ~H"""
+    <.link
+      href={~p"/pricing"}
+      title={@title}
+      class="font-medium text-amber-400/80 underline decoration-amber-400/25 underline-offset-2 transition-colors hover:text-amber-300 hover:decoration-amber-400/60"
+    >{@name}</.link>
     """
   end
 

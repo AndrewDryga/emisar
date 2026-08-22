@@ -156,9 +156,9 @@
         registers as a new runner, and the old record sits offline until <.link
           navigate={~p"/docs/autoscaling-fleets" <> "#cleanup"}
           class="text-brand-400 hover:text-brand-300"
-        >retention removes it</.link>. The unique hostname is required — registration refuses a
-        name another runner already holds — and dispatch state is not preserved: a replaced
-        container abandons whatever it was running.
+        >retention removes it</.link>. The unique hostname is required — two containers sharing
+        one hostname register as the SAME runner and fight over its connection — and dispatch
+        state is not preserved: a replaced container abandons whatever it was running.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Two environment variables relabel a fleet without a config file.
@@ -261,8 +261,9 @@ USER 65532</.docs_code>
         processes, and network state. The command above adds an operator-owned config and a
         persistent token volume. Name the container, the volume, and the config's
         <code class="font-mono">runner.id</code>
-        after the app — the sidecar shares the app container's hostname, so a second sidecar on
-        the same host would otherwise collide on all three. If the agent needs the app's CLI,
+        after the app — <code class="font-mono">runner.id</code>
+        is also the name the console shows, and the sidecar shares the app container's
+        hostname, so a second sidecar on the same host would otherwise collide on all three. If the agent needs the app's CLI,
         <a
           href="#extending"
           class="text-brand-400 hover:text-brand-300"

@@ -14,7 +14,7 @@
       <.docs_header current="integrations-keycloak">
         <:dek>
           Connect Keycloak to emisar: a confidential OIDC client with PKCE for sign-in. Keycloak has
-          no outbound SCIM, and the directory-sync section says what that leaves you to do.
+          no outbound SCIM, and the directory-sync section shows what that leaves you to do.
         </:dek>
       </.docs_header>
       <.docs_prerequisites>
@@ -192,11 +192,12 @@
             </p>
             <.docs_callout kind={:warn} title="Your Keycloak has to be reachable from emisar">
               <p>
-                Check network reachability before you start. emisar fetches the realm discovery
-                document, JWKS, and token endpoint from its own network. The realm URL must resolve
-                to a public address and use a certificate from a public CA. Private and internal
-                addresses are refused. emisar cannot distinguish them from its own infrastructure.
-                Publish an internal Keycloak through a gateway that emisar can reach.
+                emisar fetches the realm's discovery document, JWKS, and token endpoint from
+                its own network, so the realm URL must resolve to a public address with a
+                certificate from a public CA — private and internal addresses are refused.
+              </p>
+              <p class="mt-3">
+                Publish an internal Keycloak through a gateway emisar can reach.
               </p>
             </.docs_callout>
 
@@ -224,25 +225,24 @@
 
       <.docs_h2 id="scim">Directory sync</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Keycloak cannot drive directory sync. Its <strong class="text-zinc-200">SCIM Realm
-        API</strong>, added in 26.6, lets other systems provision users into Keycloak. It does not
-        send users to applications such as emisar. An outbound client remains on the roadmap, not
-        in a release. Keycloak supports single sign-on. Auto-provisioning creates members on first
-        sign-in. Manual provisioning sends each first sign-in for administrator approval. Keycloak
-        does not map roles or remove members from emisar. Offboarding needs two steps. Disabling
-        the Keycloak user blocks new sign-ins. It does not end existing sessions or revoke API
-        keys. Suspend or remove the member in
+        Keycloak cannot push users to emisar — it has no outbound SCIM (its own SCIM Realm API
+        only receives users into Keycloak). Sign-in still works: members are created on their
+        first sign-in, automatically or held for approval, but roles are not mapped and nobody
+        is removed automatically.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Offboarding is therefore two steps: disable the user in Keycloak to block new
+        sign-ins, then suspend or remove the member in
         <a
           href={~p"/app/team"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Team</a>
-        to end sessions and revoke keys.
+        to end their sessions and revoke their API keys.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A third-party Keycloak provisioning plugin can use the emisar SCIM 2.0 endpoint and bearer
-        token. If you use one, enable sync and provide the base URL and token. Directory sync
-        requires Enterprise, one tier above SSO. <.plan_note tier={:enterprise} /> emisar does not
-        ship or certify a plugin. You must choose, configure, and support it.
+        A third-party Keycloak provisioning plugin can drive emisar's SCIM endpoint with the
+        base URL and bearer token. emisar does not ship or certify one — you choose,
+        configure, and support it. <.plan_note tier={:enterprise} />
       </p>
     </.docs_layout>
   </section>

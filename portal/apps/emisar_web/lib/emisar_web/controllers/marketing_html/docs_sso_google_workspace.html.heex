@@ -166,7 +166,7 @@
             <p class="mt-4">
               Mind which list it goes in — <strong class="text-zinc-200">Authorized JavaScript
               origins</strong>
-              sits directly above it and takes no part in this flow. Google matches the URI
+              sits directly above it and is not part of this flow. Google matches the URI
               exactly, so a trailing slash or
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">http</code>
               instead of <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https</code>
@@ -243,16 +243,20 @@
 
       <.docs_h2 id="scim">Directory sync</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Google Workspace cannot send directory sync to emisar. Google provisions only applications
-        in its SaaS catalog. The custom OAuth client created above has no SCIM connector. Members
-        are created at first sign-in with the connection's default role. Manual provisioning
-        instead holds the first sign-in for administrator approval. No automatic process removes
-        members. Offboarding needs two steps. Suspending the Google account blocks new sign-ins but
-        leaves existing sessions and API keys active. Suspend or remove the member in <a
+        Google Workspace cannot push users to emisar — it provisions only applications in its
+        SaaS catalog, and the custom OAuth client created above has no SCIM connector, so
+        emisar hides the sync panel. Members are created at their first sign-in with the
+        connection's default role, or held for administrator approval with Manual
+        provisioning, and nobody is removed automatically.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Offboarding is therefore two steps: suspend the Google account to block new sign-ins,
+        then suspend or remove the member in
+        <a
           href={~p"/app/team"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Team</a>. That ends sessions and revokes keys. emisar hides the sync panel because this provider has
-        no compatible connector.
+        >Team</a>
+        to end their sessions and revoke their API keys.
       </p>
       <.docs_callout kind={:tip} title="Want automatic deprovisioning?">
         <p>
@@ -263,14 +267,18 @@
           signal and access is revoked without anyone touching emisar.
         </p>
         <p class="mt-3">
-          One condition, and it is easy to miss: federating sign-in through that IdP is not by
-          itself a lifecycle feed. The IdP must manage those people through provisioning or
+          Federating sign-in through that IdP is not by itself a lifecycle feed. The IdP must manage those people through provisioning or
           synchronization. Its directory then tells emisar when a person leaves. Most organizations
           that federate Google already sync their staff into the same
-          IdP, so there is usually nothing new to stand up. (Native Google directory sync is on
-          our roadmap — talk to us if you need it.)
+          IdP, so there is usually nothing new to set up.
         </p>
       </.docs_callout>
+      <p class="mt-6 text-base leading-7 text-zinc-400">
+        If the absence of Google directory sync is a deal-breaker for you, <a
+          href={EmisarWeb.MailTo.sales()}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >contact our sales team</a>.
+      </p>
     </.docs_layout>
   </section>
 

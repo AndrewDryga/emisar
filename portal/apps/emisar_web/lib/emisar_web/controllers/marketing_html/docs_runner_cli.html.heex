@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runner-cli"
-      updated="August 12, 2026"
+      updated="August 23, 2026"
       toc={[
         {"running", "Running the CLI"},
         {"connect", "The connect daemon"},
@@ -45,8 +45,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
       <p class="mt-5 text-base leading-7 text-zinc-400">
         On an installed host the binary lives at
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin/emisar</code>
-        and every subcommand auto-discovers its configuration. You rarely pass <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--config</code>. The config and the
-        cached token are root-owned, and the packs directory is root-owned too. Run commands with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>. Running
+        and every subcommand auto-discovers its configuration, so you rarely pass <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--config</code>. The config, cached
+        token, and packs directory are root-owned, so run commands with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>. Running
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
         with no arguments prints a Paths footer showing exactly where this host keeps its config,
         packs, token, and journal.
@@ -127,10 +127,10 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.service</code>
         under systemd, a LaunchDaemon on macOS) running as the
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
-        user. Manage it through the init system.
+        user. Manage it through the init system;
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reload</code>
-        sends SIGHUP. This re-reads packs and rebuilds the signing verifier and re-advertises the
-        catalog on the live connection. In-flight runs keep executing across it.
+        sends SIGHUP, which re-reads packs, rebuilds the signing verifier, and re-advertises
+        the catalog on the live connection — in-flight runs keep executing across it.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> sudo systemctl status emisar     <span class="text-zinc-500"># is the daemon up?</span>
 <span class="text-zinc-500">$</span> sudo journalctl -u emisar -f      <span class="text-zinc-500"># stream its logs</span>
@@ -233,10 +233,10 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-400">
             <%= for {cmd, what, mode} <- [
-              {"emisar pack suggest", "Recommend packs for what is running on this host (binaries, processes, ports).", "Reads only"},
+              {"emisar pack suggest", "Recommend packs for what is running on this host, from the public registry or a --catalog URL, file, or pack directory.", "Reads only"},
               {"emisar pack list", "Installed packs with version, action count, and content hash.", "Reads only"},
               {"emisar pack info <id>", "A pack's setup. Required binaries, the env vars its actions read, a verify command.", "Reads only"},
-              {"emisar pack verify [id...]", "Run each pack's declared verify action to prove it can reach and authenticate to its target.", "Reads its target"},
+              {"emisar pack verify [id...]", "Run each pack's declared verify action to check it can reach and authenticate to its target.", "Reads its target"},
               {"emisar pack validate <path>", "Validate a pack directory on disk without loading it into the runner.", "Reads only"},
               {"emisar pack diff <id>", "The changed lines between an installed pack and the registry's, with risk and redaction changes called out.", "Reads only"},
               {"emisar pack install <name|path|url>", "Fetch, validate, hash-verify, and install one pack into the packs dir.", "Changes the host"},
@@ -321,11 +321,12 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">update</code>, and
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">uninstall</code>
-        signal a running daemon to reload. They send the same SIGHUP as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemctl reload emisar</code>. The runner
-        advertises changed actions again without restarting or dropping a run. When no live daemon is
-        reachable the CLI prints the manual reload command instead. Installing bytes does not trust
-        them. A changed hash lands as <strong class="text-zinc-200">pending</strong>
-        in
+        signal a running daemon to reload — the same SIGHUP as
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemctl reload emisar</code>
+        — so the runner advertises changed actions without restarting or dropping a run;
+        when no live daemon is reachable, the CLI prints the manual reload command instead.
+        Installing a pack does not trust it: a changed hash lands as
+        <.status_badge status={:pending} /> in
         <a
           href={~p"/app/packs"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -413,16 +414,17 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>
         never opens a cloud session, and executes no action unless you pass <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--probe</code>, which adds the
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack verify</code>
-        run above and so costs one real call per pack. One failing check never aborts the rest, so
-        one run surfaces every problem.
+        run above and so costs one real call per pack. One failing check never aborts the
+        rest, so one run surfaces every problem.
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit verify</code>
-        exits 0 when the chain is intact. It exits 1 on the first break and names the line and event
-        ID. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--all</code>
+        exits 0 when the chain is intact and 1 on the first break, printing the line and event
+        ID; <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--all</code>
         walks the active file plus every rotated
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">.N</code>
-        sibling. It verifies each chain independently. The installer also runs
+        sibling, verifying each chain independently. Before an upgrade, the installer also
+        runs
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar state check-dispatch-log</code>
-        before an upgrade. This confirms that the durable dispatch log still loads.
+        to confirm the durable dispatch log still loads.
       </p>
       <.docs_callout kind={:note} title="Tamper-evident, not tamper-proof.">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit verify</code>
@@ -440,7 +442,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing</code>
         sets up bridge-attested dispatch. An enforcing runner then requires a CA-signed certificate
         on every action. A compromised control plane can relay a dispatch but never mint one.
-        Everything here is offline. Keys are printed to your terminal and sent nowhere.
+        Everything here is offline: keys are printed to your terminal and are not sent
+        anywhere.
       </p>
       <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
         <table class="w-full min-w-[660px] text-left text-sm">
@@ -489,7 +492,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
             (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">init</code>
             and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-cert</code>)
             — the cert's validity window, which accepts Go durations plus long-form <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">30d</code>/<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">1y</code>
-            and defaults to 24h, and the runners it binds to. Short is better: a long TTL trades away revocation granularity. An empty scope means any runner that trusts the CA.
+            and defaults to 24h, and the runners it binds to. Short is better — the only revocation is expiry, so a long TTL keeps a leaked cert usable longer. An empty scope means any runner that trusts the CA.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

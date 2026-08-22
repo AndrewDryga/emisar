@@ -257,20 +257,23 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       assert %{"token" => "rnrtok-" <> _} = json_response(again, 201)
 
-      # Bring the holder online — only an ACTIVE holder defends its name.
-      runner =
-        Runner.Query.all()
-        |> Runner.Query.by_account_id(account.id)
-        |> Runner.Query.by_external_id("squat-a")
-        |> Repo.one!()
-
-      Runners.connect_runner(runner)
-      assert Runners.online?(account.id, runner.id)
+      # A live holder whose name differs from its external_id (the fixture
+      # connects it) defends that name against a hostname-default registration.
+      # A fresh registration always names itself after its own external_id, so
+      # this is the one shape that can still collide.
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "taken-name",
+        external_id: "holder-ext"
+      )
 
       conflict =
-        register(build_conn(), raw_key, %{"external_id" => "squat-b", "hostname" => "shared-name"})
+        register(build_conn(), raw_key, %{
+          "external_id" => "taken-name",
+          "hostname" => "taken-name"
+        })
 
-      assert %{"error" => "runner_name_taken", "name" => "shared-name"} =
+      assert %{"error" => "runner_name_taken", "name" => "taken-name"} =
                json_response(conflict, 409)
     end
   end
