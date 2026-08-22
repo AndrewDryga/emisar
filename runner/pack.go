@@ -64,6 +64,7 @@ https://emisar.dev/docs/pack-registry`,
 	add("install", emitsJSON(packDiffCmd()))
 	add("installed", emitsJSON(packListCmd()))
 	add("installed", emitsJSON(packInfoCmd()))
+	add("installed", emitsJSON(packVerifyCmd()))
 	add("installed", packUninstallCmd())
 	add("author", emitsJSON(packValidateCmd()))
 	return cmd
@@ -169,6 +170,7 @@ any required env var missing from the runner's inherit_env allowlist.`,
 			}
 			env, haveCfg := configInheritEnv()
 			writePackInfo(os.Stdout, reg, pack, env, haveCfg)
+			writeVerifyHint(os.Stdout, pack)
 			return nil
 		},
 	}
@@ -220,6 +222,7 @@ func packInstallCmd() *cobra.Command {
 		dest     string
 		registry string
 		force    bool
+		noVerify bool
 	)
 	cmd := &cobra.Command{
 		Use:   "install <name|path|url>",
@@ -244,6 +247,11 @@ rejected before it reaches the runner.
 The pack is copied to <dest>/<pack-id>. A running daemon is reloaded
 automatically (SIGHUP) so it re-reads the catalog and re-advertises;
 without one, reload manually: systemctl reload emisar.
+
+After a successful install the pack's declared verify action runs once
+(--no-verify skips it), so a wrong credential surfaces here instead of at
+the first dispatch. A failed probe does not fail the install — the pack is
+on disk either way; fix the host's environment and re-run 'pack verify'.
 
   emisar pack install redis
   emisar pack install redis=0.2.3 --hash sha256:...
@@ -305,6 +313,11 @@ without one, reload manually: systemctl reload emisar.
 			fmt.Printf("installed %s → %s\n", pack.ID, target)
 			env, haveCfg := configInheritEnv()
 			writePackInfo(os.Stdout, reg, pack, env, haveCfg)
+			if noVerify {
+				writeVerifyHint(os.Stdout, pack)
+			} else {
+				verifyAfterInstall(cmd.Context(), os.Stdout, pack.ID)
+			}
 			fmt.Println()
 			announceReload(os.Stdout, nil, "Reload the runner to load it: sudo systemctl reload emisar")
 			return nil
@@ -314,6 +327,7 @@ without one, reload manually: systemctl reload emisar.
 	cmd.Flags().StringVar(&dest, "dest", "", "destination packs dir (default: config paths.packs[0])")
 	cmd.Flags().StringVar(&registry, "registry", "", "pack registry base URL for named packs (default $EMISAR_PACKS_REGISTRY or "+defaultRegistry+")")
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite an already-installed pack with the same id")
+	cmd.Flags().BoolVar(&noVerify, "no-verify", false, "skip the post-install verify probe (no action is executed)")
 	return cmd
 }
 

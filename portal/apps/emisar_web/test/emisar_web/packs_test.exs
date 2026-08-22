@@ -126,7 +126,8 @@ defmodule EmisarWeb.PacksTest do
       assert html =~ "SENTRY_URL"
       assert html =~ "required"
       assert html =~ "default https://sentry.io"
-      assert html =~ "sudo emisar action run sentry.list_organizations"
+      assert html =~ "sudo emisar pack verify sentry"
+      assert html =~ "sentry.list_organizations"
     end
 
     test "a pack that needs no credentials says so instead of showing an empty section",

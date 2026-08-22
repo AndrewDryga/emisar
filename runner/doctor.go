@@ -112,7 +112,8 @@ func newDoctorReport(results []checkResult) doctorReport {
 }
 
 func doctorCmd() *cobra.Command {
-	return &cobra.Command{
+	var probe bool
+	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Run offline preflight checks for a runner that won't connect or run",
 		Long: `doctor diagnoses the common reasons a runner can't connect or run
@@ -124,10 +125,16 @@ is reachable over TLS.
 No control-plane session is opened and a failing check never aborts the
 rest, so a single run surfaces every problem at once. Exit status is
 non-zero if any check fails. --json reports the same checks as a
-machine-readable object.`,
+machine-readable object.
+
+doctor executes no action by default: every check reads local state or opens
+one HTTP request. --probe adds the online check — it runs each installed
+pack's declared verify action, the same probe as 'pack verify', which
+authenticates to that pack's target. Ask for it when diagnosing why a pack's
+actions fail; it costs one real call per pack.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			results := runDoctor(cmd.Context())
+			results := runDoctor(cmd.Context(), probe)
 			fails := 0
 			if flagJSONOut {
 				report := newDoctorReport(results)
@@ -144,12 +151,16 @@ machine-readable object.`,
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&probe, "probe", false,
+		"also run each pack's verify action against its real target (executes actions)")
+	return cmd
 }
 
 // runDoctor runs every preflight check and returns one result per check.
 // Config is the prerequisite — if it can't load, the checks that depend on it
-// are skipped rather than run against a zero config.
-func runDoctor(ctx context.Context) []checkResult {
+// are skipped rather than run against a zero config. probe adds the one check
+// that executes actions; without it doctor stays entirely offline.
+func runDoctor(ctx context.Context, probe bool) []checkResult {
 	cfg, cfgResult := checkConfig()
 	results := []checkResult{cfgResult}
 	if cfg == nil {
@@ -169,6 +180,9 @@ func runDoctor(ctx context.Context) []checkResult {
 	results = append(results, packsResult)
 	if registry != nil {
 		results = append(results, checkActionBinaries(registry))
+	}
+	if probe {
+		results = append(results, checkPackVerify(ctx))
 	}
 
 	if service := checkService(ctx); service != nil {
@@ -354,6 +368,45 @@ func checkActionBinaries(registry *packs.Registry) checkResult {
 	sort.Strings(missing)
 	return checkResult{"action tools", checkWarn,
 		fmt.Sprintf("%d not found, those actions will fail: %s", len(missing), strings.Join(missing, ", "))}
+}
+
+// checkPackVerify runs every installed pack's declared verify action and
+// aggregates the outcome into one line — the online counterpart to the
+// offline "action tools" check above, and the only check that executes
+// anything. It is reached only under --probe.
+//
+// Skips (no verify declared, an argument this host can't infer, an
+// admission-blocked action) are reported but never fail the check: none of
+// them means the runner is broken, and failing on them would make --probe
+// permanently red on a normal fleet.
+func checkPackVerify(ctx context.Context) checkResult {
+	rt, err := boot()
+	if err != nil {
+		return checkResult{"pack verify", checkWarn, fmt.Sprintf("probe unavailable: %v", err)}
+	}
+	defer rt.journal.Close()
+
+	report := newPackVerifyReport(verifyPacks(ctx, rt, rt.registry().Packs(), nil))
+	if len(report.Packs) == 0 {
+		return checkResult{"pack verify", checkOK, "no packs installed"}
+	}
+
+	summary := fmt.Sprintf("%d of %d packs verified", report.OK, len(report.Packs))
+	if report.Skipped > 0 {
+		summary += fmt.Sprintf(", %d skipped", report.Skipped)
+	}
+	if report.Failed == 0 {
+		return checkResult{"pack verify", checkOK, summary}
+	}
+	var failures []string
+	for _, r := range report.Packs {
+		if r.Status == verifyFailed {
+			failures = append(failures, fmt.Sprintf("%s (%s): %s", r.PackID, r.ActionID, r.Detail))
+		}
+	}
+	sort.Strings(failures)
+	return checkResult{"pack verify", checkFail,
+		fmt.Sprintf("%s; %d failed: %s", summary, report.Failed, strings.Join(failures, "; "))}
 }
 
 // checkCloud confirms the control plane is reachable over the expected

@@ -236,6 +236,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
               {"emisar pack suggest", "Recommend packs for what is running on this host (binaries, processes, ports).", "Reads only"},
               {"emisar pack list", "Installed packs with version, action count, and content hash.", "Reads only"},
               {"emisar pack info <id>", "A pack's setup. Required binaries, the env vars its actions read, a verify command.", "Reads only"},
+              {"emisar pack verify [id...]", "Run each pack's declared verify action to prove it can reach and authenticate to its target.", "Reads its target"},
               {"emisar pack validate <path>", "Validate a pack directory on disk without loading it into the runner.", "Reads only"},
               {"emisar pack diff <id>", "The changed lines between an installed pack and the registry's, with risk and redaction changes called out.", "Reads only"},
               {"emisar pack install <name|path|url>", "Fetch, validate, hash-verify, and install one pack into the packs dir.", "Changes the host"},
@@ -339,6 +340,35 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         for what goes in a pack.
       </p>
 
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A pack that installs cleanly can still be missing a credential.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack verify</code>
+        runs the low-risk read each pack declares for the purpose, so a wrong environment variable
+        surfaces on the host instead of at the first dispatch.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack install</code>
+        runs it for the pack it just installed.
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># probe every installed pack; name packs to probe only those</span>
+<span class="text-zinc-500">$</span> sudo emisar pack verify
+
+<span class="text-zinc-500">ok       docker    docker.ps        26ms</span>
+<span class="text-zinc-500">ok       redis     redis.info       18ms</span>
+<span class="text-zinc-500">skipped  gcp-dns   gcp.dns_zones    needs project — probe it with: emisar pack verify gcp-dns --arg project=&lt;value&gt;</span>
+<span class="text-zinc-500">failed   postgres  postgres.uptime  failed (exit 2): psql: error: connection to server at "db.internal", port 5432 failed: FATAL:  password authentication failed for user "emisar"</span>
+
+<span class="text-zinc-500">2 ok · 1 failed · 1 skipped</span>
+
+<span class="text-zinc-500"># supply what the host cannot infer</span>
+<span class="text-zinc-500">$</span> sudo emisar pack verify gcp-dns --arg project=acme-prod</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A skip is not a failure. A pack whose verify action needs a value this host cannot infer — a
+        project id, a hostname, a pid — is skipped with the command that completes it, as is a pack
+        your <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">admission</code>
+        config refuses. Only a real failure exits non-zero. Read the detail before concluding the
+        pack is misconfigured: a target that is simply down fails the same way a bad credential
+        does.
+      </p>
+
       <.docs_h2 id="diagnose">Diagnose and audit</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         When a runner will not connect or an action fails, these read-only verbs answer why without
@@ -358,7 +388,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-400">
             <%= for {cmd, what, mode} <- [
-              {"emisar doctor", "Offline preflight: config, credential, dispatch log, pack dirs, packs, action binaries, service, and control-plane reachability. Exits nonzero if any check fails.", "Reads only"},
+              {"emisar doctor", "Offline preflight: config, credential, dispatch log, pack dirs, packs, action binaries, service, and control-plane reachability. Exits nonzero if any check fails. --probe adds the pack verify run.", "Reads only"},
               {"emisar state", "Print the runner_state JSON this host advertises to the control plane.", "Reads only"},
               {"emisar events tail", "Print recent journal events. -f follows new events. --lines sets the count and defaults to 50.", "Reads only"},
               {"emisar events cat / grep", "Dump the whole journal, or filter it by --action, --caller, or --event.", "Reads only"},
@@ -381,8 +411,11 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
 <span class="text-zinc-500">$</span> sudo emisar audit verify --all  <span class="text-zinc-500"># re-derive the journal hash chain</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>
-        never opens a cloud session. One failing check never aborts the rest, so one run surfaces
-        every problem. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit verify</code>
+        never opens a cloud session, and executes no action unless you pass <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--probe</code>, which adds the
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack verify</code>
+        run above and so costs one real call per pack. One failing check never aborts the rest, so
+        one run surfaces every problem.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit verify</code>
         exits 0 when the chain is intact. It exits 1 on the first break and names the line and event
         ID. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--all</code>
         walks the active file plus every rotated

@@ -15,8 +15,12 @@ import (
 
 // writePackInfo renders the operator-facing "how to make this pack work"
 // summary: what it does, its action/risk profile, host prerequisites, and
-// the setup block (auth env vars + notes + a verify command). It is shared
-// by `pack install` (printed after a successful install) and `pack info`.
+// the setup block (auth env vars + notes). It is shared by `pack install`
+// (printed after a successful install) and `pack info`.
+//
+// The verify step is deliberately NOT part of it: `pack install` runs the
+// probe and prints its result, while `pack info` prints the command. Each
+// caller appends whichever of the two it owns.
 //
 // inheritEnv is the runner's configured inherit_env allowlist; haveConfig
 // says whether a config was actually resolved. Together they drive the
@@ -93,9 +97,19 @@ func writeSetup(w io.Writer, style styler, p *packspec.Pack, inheritEnv []string
 		}
 	}
 
-	if s.Verify != "" {
-		fmt.Fprintf(w, "\n    %s\n      emisar action run %s --reason \"verify install\"\n", style.bold("Verify it works:"), s.Verify)
+}
+
+// writeVerifyHint names the command that proves the pack is configured. It
+// points at `pack verify`, not the raw `action run` behind it: that command
+// supplies the reason, reports a required argument the host cannot infer as a
+// completable command rather than a validation error, and reads the same on
+// every pack.
+func writeVerifyHint(w io.Writer, p *packspec.Pack) {
+	if p.Setup.Verify == "" {
+		return
 	}
+	style := newStyler(w)
+	fmt.Fprintf(w, "\n  %s\n    emisar pack verify %s\n", style.bold("Verify it works:"), p.ID)
 }
 
 // envDetail builds the right-hand description column for one env var,
