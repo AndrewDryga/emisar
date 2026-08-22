@@ -228,21 +228,37 @@ func TestCatalogActionRequiresBoundedSummaryAndDescriptor(t *testing.T) {
 	}
 }
 
-func TestSuggest_OmitsDetectlessPacks(t *testing.T) {
+// The index lists EVERY pack and carries only the evidence its author
+// declared. A pack with no detect block stays in with an empty signal: the
+// matcher refuses to suggest a pack nothing identifies, while the runner's
+// baseline recommends the read-only core packs — which declare no signal by
+// nature, so filtering them out here made the baseline unrecommendable.
+func TestSuggest_ListsEveryPackWithOnlyAuthoredEvidence(t *testing.T) {
 	reg := loadReg(t, threePackRoot(t))
 	cat, err := Build(reg, BuildOptions{BaseURL: testBaseURL})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := map[string]bool{}
+	got := map[string]Detect{}
 	for _, p := range cat.Suggest().Packs {
-		got[p.ID] = true
+		got[p.ID] = p.Detect
 	}
-	if got["alpha"] || !got["beta"] {
-		t.Errorf("suggest should include only explicitly detected beta, got %v", got)
+	for _, id := range []string{"alpha", "beta", "remote"} {
+		if _, listed := got[id]; !listed {
+			t.Errorf("suggest index should list %q; got %v", id, got)
+		}
 	}
-	if got["remote"] {
-		t.Error("suggest must omit remote (no detect signal)")
+	// alpha requires git/timeout/base64/alpha-tool and remote requires
+	// curl/ipmitool; neither declares a detect block, so neither gets a signal.
+	for _, id := range []string{"alpha", "remote"} {
+		if d := got[id]; len(d.Binaries) > 0 || len(d.Processes) > 0 || len(d.Ports) > 0 {
+			t.Errorf("%q declared no detect block, so its signal must stay empty: %+v", id, d)
+		}
+	}
+	if d := got["beta"]; !reflect.DeepEqual(d.Binaries, []string{"beta-bin"}) ||
+		!reflect.DeepEqual(d.Processes, []string{"betad"}) ||
+		!reflect.DeepEqual(d.Ports, []int{1234}) {
+		t.Errorf("beta should carry exactly its authored signal: %+v", d)
 	}
 }
 

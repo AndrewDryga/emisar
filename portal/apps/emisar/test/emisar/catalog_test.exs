@@ -6124,12 +6124,15 @@ defmodule Emisar.CatalogTest do
   end
 
   describe "published_pack_suggestion_index/0" do
-    test "carries authored detect evidence and omits packs that declare none" do
+    test "carries authored detect evidence for every pack" do
       by_id = Map.new(Catalog.published_pack_suggestion_index(), &{&1.id, &1})
 
       assert "grafana-server" in by_id["grafana"].detect.processes
-      # A remote-API pack has no host evidence, so it is nothing to suggest on.
-      refute Map.has_key?(by_id, "cloudflare")
+      # A remote-API pack has no host evidence: listed, but identifying nothing.
+      assert by_id["cloudflare"].detect == %{binaries: [], processes: [], ports: []}
+      # The read-only core carries no signal and is recommended by the runner's
+      # baseline, so the index has to list it.
+      assert Map.has_key?(by_id, "linux-core")
     end
   end
 

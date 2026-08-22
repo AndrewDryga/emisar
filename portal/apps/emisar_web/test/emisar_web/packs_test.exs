@@ -415,7 +415,13 @@ defmodule EmisarWeb.PacksTest do
       ids = Enum.map(body["packs"], & &1["id"])
 
       assert "grafana" in ids
-      refute "cloudflare" in ids
+
+      # The read-only core declares no detect signal — `emisar pack suggest`
+      # recommends it from its baseline, not from evidence — so an index that
+      # dropped signal-less packs left the baseline unrecommendable.
+      for id <- ~w(linux-core debugging systemd-deep) do
+        assert id in ids
+      end
 
       grafana = Enum.find(body["packs"], &(&1["id"] == "grafana"))
       assert grafana["detect"]["ports"] == []
@@ -431,14 +437,17 @@ defmodule EmisarWeb.PacksTest do
       body = conn |> get(~p"/packs/suggest.json") |> json_response(200)
       by_id = Map.new(body["packs"], &{&1["id"], &1})
 
-      # Runtime requirements never become detection evidence. Packs without an
-      # explicit detect block are omitted; declared processes and ports remain.
+      # Runtime requirements never become detection evidence. A pack with no
+      # detect block is listed with an empty signal, which identifies nothing,
+      # so the runner suggests it only when its baseline names it.
       assert by_id["grafana"]["detect"]["binaries"] == []
       assert by_id["postgres"]["detect"]["binaries"] == []
       assert by_id["docker"]["detect"]["binaries"] == []
-      refute Map.has_key?(by_id, "cloudflare")
-      refute Map.has_key?(by_id, "git-local")
-      refute Map.has_key?(by_id, "oidc-jwks")
+
+      for id <- ~w(cloudflare git-local oidc-jwks) do
+        assert by_id[id]["detect"] == %{"binaries" => [], "processes" => [], "ports" => []}
+      end
+
       assert "nomad" in by_id["nomad"]["detect"]["processes"]
       assert 4646 in by_id["nomad"]["detect"]["ports"]
 

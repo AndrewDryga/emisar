@@ -44,20 +44,16 @@ defmodule Emisar.Catalog.PublishedRegistry do
   Lean index for `emisar pack suggest` — per pack, only what host-matching
   needs: id, name, OS allowlist, and the detect signal (binaries/processes/
   ports) exactly as the pack authored it; a runtime requirement is never
-  promoted into a signal. Packs whose detect is all-empty are omitted: with
-  no authored evidence there's nothing to suggest them on (e.g. remote-API
-  packs like cloudflare), and leaving them out keeps the payload small and
-  the runner honest.
+  promoted into a signal. Every pack is listed, including one whose detect is
+  all-empty (a remote-API pack like cloudflare): the runner decides what this
+  host can be suggested and refuses a pack no evidence identifies. Filtering
+  here instead hid the read-only core packs, which carry no signal by nature
+  and are exactly what the runner's baseline recommends.
   """
   @spec suggest_index() :: [map()]
   def suggest_index do
-    list()
-    |> Enum.map(fn p -> %{id: p.id, name: p.name, os: p.requires_os, detect: p.detect} end)
-    |> Enum.reject(&detect_empty?(&1.detect))
+    Enum.map(list(), fn p -> %{id: p.id, name: p.name, os: p.requires_os, detect: p.detect} end)
   end
-
-  defp detect_empty?(%{binaries: b, processes: pr, ports: po}),
-    do: b == [] and pr == [] and po == []
 
   @doc """
   The immutable, content-addressed tarball URL for a single pack id, or

@@ -105,10 +105,6 @@ type Detect struct {
 	Ports     []int    `json:"ports"`
 }
 
-func (d Detect) empty() bool {
-	return len(d.Binaries) == 0 && len(d.Processes) == 0 && len(d.Ports) == 0
-}
-
 // Action is the complete reviewed model-facing contract for one action. The
 // executable command remains only for the approval UI; MCP trust and runner
 // descriptor matching deliberately ignore it.
@@ -372,9 +368,12 @@ func parseVersion(v string) ([]int, error) {
 }
 
 // SuggestIndex is the lean per-pack index `emisar pack suggest` matches
-// against: id, name, OS, and the derived detect signal. Packs whose detect
-// is all-empty are omitted — with no signal there is nothing to suggest them
-// on. Mirrors EmisarWeb.PacksRegistry.suggest_index.
+// against: id, name, OS, and the derived detect signal. EVERY pack is listed,
+// including one whose detect is all-empty: deciding what a host can be
+// suggested is the matcher's job, and it already refuses a pack no evidence
+// identifies. Filtering here instead hid the read-only core packs, which carry
+// no signal by nature and are exactly what the runner's baseline recommends.
+// Mirrors Emisar.Catalog.PublishedRegistry.suggest_index.
 type SuggestIndex struct {
 	Packs []SuggestPack `json:"packs"`
 }
@@ -391,9 +390,6 @@ type SuggestPack struct {
 func (c *Catalog) Suggest() SuggestIndex {
 	out := SuggestIndex{Packs: []SuggestPack{}}
 	for _, p := range c.Packs {
-		if p.Detect.empty() {
-			continue
-		}
 		out.Packs = append(out.Packs, SuggestPack{
 			ID:     p.ID,
 			Name:   p.Name,

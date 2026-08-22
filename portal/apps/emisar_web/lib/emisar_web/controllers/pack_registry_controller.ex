@@ -53,9 +53,8 @@ defmodule EmisarWeb.PackRegistryController do
   @doc """
   Lean suggest index consumed by `emisar pack suggest` — only the per-pack
   detect signal (binaries/processes/ports, generic helpers stripped) plus
-  id/name/os, and only for packs that are host-detectable. Smaller than the
-  full index, and the curl/nc filtering lives server-side so the list can
-  evolve without a runner release.
+  id/name/os. Smaller than the full index, and the curl/nc filtering lives
+  server-side so the list can evolve without a runner release.
   """
   def suggest(conn, _params) do
     json(conn, %{packs: Catalog.published_pack_suggestion_index()})

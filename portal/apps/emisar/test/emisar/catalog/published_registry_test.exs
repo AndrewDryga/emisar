@@ -62,7 +62,7 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
   end
 
   describe "suggest_index/0" do
-    test "carries pack-authored detect evidence and omits packs that declare none" do
+    test "carries pack-authored detect evidence and lists every pack" do
       by_id = Map.new(PublishedRegistry.suggest_index(), &{&1.id, &1})
 
       # Authored process/port evidence reaches the runner unchanged.
@@ -86,19 +86,27 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
                "#{id} must not turn a required client into a binary signal"
       end
 
-      # No authored evidence → nothing to suggest on, so the pack is omitted
-      # rather than guessed at from its dependencies, whether that dependency
-      # looks generic (curl, jq), local (git), or remote (a BMC, GitHub, a
-      # cluster, remote infra, SNMP agents). dell-ipmi suggested on a GCP box
-      # that happened to ship ipmitool was the bug this guards.
+      # No authored evidence → an EMPTY signal, never one guessed from a
+      # dependency, whether that dependency looks generic (curl, jq), local
+      # (git), or remote (a BMC, GitHub, a cluster, remote infra, SNMP agents).
+      # dell-ipmi suggested on a GCP box that happened to ship ipmitool was the
+      # bug this guards; an empty signal identifies nothing, so the runner's
+      # matcher passes the pack over.
       undetectable =
         ~w(cloudflare dell-ipmi git-local github-cli kubernetes oidc-jwks snmp terraform-readonly)
 
       for id <- undetectable do
         assert PublishedRegistry.get(id), "expected #{id} to be a real catalog pack"
 
-        refute Map.has_key?(by_id, id),
-               "#{id} declares no detect evidence; must not be suggested"
+        assert by_id[id].detect == %{binaries: [], processes: [], ports: []},
+               "#{id} declares no detect evidence; nothing may be guessed for it"
+      end
+
+      # The read-only core declares no signal either, and `emisar pack suggest`
+      # recommends it from its baseline rather than from evidence — so an index
+      # that dropped signal-less packs left the baseline unrecommendable.
+      for id <- ~w(linux-core debugging systemd-deep) do
+        assert Map.has_key?(by_id, id), "the baseline core must stay in the index"
       end
 
       # Lean shape: only id/name/os/detect — no hash/tarball/description.
