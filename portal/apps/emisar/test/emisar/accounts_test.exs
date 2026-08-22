@@ -1672,6 +1672,40 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "team_member_filters/0" do
+    test "carries the Team roster's filters in panel order" do
+      assert Enum.map(Accounts.team_member_filters(), & &1.name) == [
+               :name_or_email,
+               :role,
+               :status
+             ]
+    end
+
+    test "the role filter offers every role, labelled as the roster renders it" do
+      # The web never reaches into a Query module, so this vocabulary IS the
+      # roster's role picker — a role missing here is a member nobody can filter
+      # for, and a raw `billing_manager` here would render unlabelled.
+      role = Enum.find(Accounts.team_member_filters(), &(&1.name == :role))
+
+      assert Enum.map(role.values, &elem(&1, 0)) == Enum.map(Emisar.Auth.roles(), &to_string/1)
+
+      for {value, label} <- role.values do
+        assert label == Emisar.Auth.role_label(value)
+      end
+    end
+
+    test "the status filter names the four security states the roster shows" do
+      status = Enum.find(Accounts.team_member_filters(), &(&1.name == :status))
+
+      assert status.values == [
+               {"active", "Active"},
+               {"pending_invitation", "Pending invitation"},
+               {"suspended", "Suspended"},
+               {"email_unconfirmed", "Email unconfirmed"}
+             ]
+    end
+  end
+
   describe "list_team_member_facts/3" do
     setup do
       account = Fixtures.Accounts.create_account()

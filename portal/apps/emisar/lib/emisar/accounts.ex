@@ -896,6 +896,13 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Filter definitions for the Team roster. The membership query owns the SQL;
+  the context exposes its UI-safe vocabulary so the web never reaches into a
+  query module.
+  """
+  def team_member_filters, do: Membership.Query.filters()
+
+  @doc """
   One page of the team roster as presentation facts: each visible membership plus
   the security state the roster renders and the member actions it may offer. Owns
   the membership page, its user preload, and ONE batched runner-scope read, so the
