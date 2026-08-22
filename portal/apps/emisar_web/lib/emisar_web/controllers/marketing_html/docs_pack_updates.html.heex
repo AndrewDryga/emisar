@@ -6,22 +6,24 @@
       current="pack-updates"
       updated="August 4, 2026"
       toc={[
-        {"rules", "Five rules that decide everything"},
-        {"record", "Record what you run today"},
-        {"review", "Read what actually changed"},
-        {"preview", "Preview the update"},
-        {"canary", "Update one runner"},
-        {"trust", "Trust the exact hash"},
-        {"fleet", "Roll through the fleet"},
-        {"rollback", "Go back to the prior version"},
+        {"record", "1. See where you are"},
+        {"review", "2. Read what changed"},
+        {"canary", "3. Update one runner"},
+        {"trust", "4. Trust it and prove it"},
+        {"fleet", "5. Roll through the fleet"},
+        {"rollback", "6. Going back"},
         {"retirement", "Retired versions"}
       ]}
     >
       <.docs_header current="pack-updates">
         <:dek>
-          A pack update changes the bytes a host may execute, so it takes two decisions: putting
-          the new version on a runner, and letting the account dispatch it. Here is how to do both
-          through a canary, and how to get back to the exact version you were on.
+          A pack update changes what your runners can execute, so it lands in two steps:
+          install the new version on the runner, then trust it for dispatch. This page rolls out
+          with a canary and includes the way back. A pack update never touches the runner binary
+          — that is <.link
+            navigate={~p"/docs/runner-upgrades"}
+            class="text-brand-300 hover:text-brand-200"
+          >Upgrade runners</.link>.
         </:dek>
       </.docs_header>
 
@@ -33,140 +35,74 @@
           and the tree is owned by root.
         </:item>
         <:item>One non-critical runner to update first.</:item>
-        <:item>
-          The pack id, version, and content hash you run today. The rollback below needs the exact
-          version.
-        </:item>
       </.docs_prerequisites>
 
-      <.docs_h2 id="rules">Five rules that decide everything</.docs_h2>
-      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">Installing is not trusting.</strong>
-            The runner command puts bytes on a host. Whether those bytes may be dispatched is a
-            separate account-level decision — settled by the published catalog when it carries
-            that exact hash, and yours to make in
-            <a
-              href={~p"/app/packs"}
-              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-            >Packs</a>
-            otherwise.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">Trust binds one exact content hash.</strong>
-            A hash the published catalog carries is trusted for the account on sight. Any other
-            hash — a pack you maintain, a hand-edited tree, a version the catalog no longer
-            carries — lands as pending, and dispatch for that pack version is refused until
-            someone trusts or rejects it.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">A published version is immutable.</strong>
-            Its tarball is content-addressed and the registry is append-only. The same id and
-            version with different bytes is drift, not an update — the fix is to publish a new
-            version, never to republish the old one.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">Binary upgrades do not move packs.</strong>
-            Re-running the runner installer leaves the installed packs where they are. See
-            <.link
-              navigate={~p"/docs/runner-upgrades"}
-              class="text-brand-300 hover:text-brand-200"
-            >Upgrade runners</.link>
-            for that lifecycle.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">Retirement blocks dispatch, not installation.</strong>
-            Nothing here deletes an immutable artifact or erases the history of a run that used it.
-          </span>
-        </li>
-      </ul>
-
-      <.docs_h2 id="record">Record what you run today</.docs_h2>
+      <.docs_h2 id="record">1. See where you are</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Start from the host, because that is where the bytes are. Write down the id, version, and
-        hash for the pack you are about to move, and note which runners or groups carry it.
+        Start from the host — that is where the packs are. List what is installed, see what
+        the registry would change, and write down the id, version, and hash of the pack you are
+        about to update: that line is your way back. Note which runners or groups carry it.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># id, version, action count, and content hash per installed pack</span>
 <span class="text-zinc-500">$</span> sudo emisar pack list
 
-<span class="text-zinc-500"># one pack's setup requirements and action profile</span>
-<span class="text-zinc-500">$</span> sudo emisar pack info redis</.docs_code>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        The console's Packs page is the account-side view of the same facts: each version, the hash
-        the account trusts, and the hash each runner is advertising.
-      </p>
-
-      <.docs_h2 id="review">Read what actually changed</.docs_h2>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        Before you move any bytes, look at what the new version changes in the action contract —
-        that is what an LLM and your runbooks are written against. Open the pack on
-        <.link
-          navigate={~p"/packs"}
-          class="text-brand-300 hover:text-brand-200"
-        >the registry</.link>
-        and compare against the version you run now. Four kinds of change deserve a pause:
-      </p>
-      <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>An action that was added, removed, or renamed — a removed id breaks any runbook step that names it.</span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>An argument whose name, type, default, or validation moved, which changes what callers may send.</span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>A risk tier that went up, which can newly route the action through approval under your policy.</span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>A new required binary or environment variable, which is a host-readiness change rather than a code one.</span>
-        </li>
-      </ul>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        The full action schema and what each field means is in <.link
-          navigate={~p"/docs/action-packs"}
-          class="text-brand-300 hover:text-brand-200"
-        >Pack reference</.link>.
-      </p>
-
-      <.docs_h2 id="preview">Preview the update</.docs_h2>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack update</code>
-        compares each installed pack's content hash against the registry's index and reports what
-        it would do. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--dry-run</code>
-        stops there and changes nothing.
-      </p>
-      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># every installed pack, no changes made</span>
+<span class="text-zinc-500"># what an update would change — no changes made</span>
 <span class="text-zinc-500">$</span> sudo emisar pack update --dry-run
 
 <span class="text-zinc-500">  redis                  v0.2.3 → v0.2.4 (update available)</span>
 <span class="text-zinc-500">  linux-core             up to date (v0.4.1)</span>
 <span class="text-zinc-500">  billing-tools          not in registry — left as-is</span>
 
-<span class="text-zinc-500"># or validate a tree you are about to install, without loading it</span>
-<span class="text-zinc-500">$</span> sudo emisar pack validate ./redis</.docs_code>
+<span class="text-zinc-500">  1 to update, 1 up to date, 1 not in registry, 0 failed.</span>
+<span class="text-zinc-500">  Review a change before applying: emisar pack diff &lt;id&gt;</span>
+<span class="text-zinc-500">  Run without --dry-run to apply.</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A pack the registry does not carry — one you authored yourself — is reported and left
-        alone.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--dry-run</code>
+        reports the plan and changes nothing. A pack the registry does not carry — one you
+        authored yourself — is reported and left alone.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The console's Packs page shows the account view: each version, its trusted hash, and
+        the hash each runner advertises.
       </p>
 
-      <.docs_h2 id="canary">Update one runner</.docs_h2>
+      <.docs_h2 id="review">2. Read what changed</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Before you update, read what changed in the action contracts — LLM clients and
+        runbooks depend on them. The runner shows the exact changes without touching
+        anything:
+      </p>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># the changed lines between the installed pack and the registry's version</span>
+<span class="text-zinc-500">$</span> sudo emisar pack diff redis
+
+<span class="text-zinc-500"># against a specific published version, or the summary alone</span>
+<span class="text-zinc-500">$</span> sudo emisar pack diff redis --to 0.2.4
+<span class="text-zinc-500">$</span> sudo emisar pack diff redis --stat</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The candidate is fetched and hash-verified the same way an update fetches it, and
+        the diff covers the files behind the pack's content hash — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack.yaml</code>, its action
+        declarations, and its scripts. Read it for the changes that break callers: an
+        action removed or renamed fails any runbook step that names it, and an argument's
+        name, type, default, or validation changes what callers can send. Changes that
+        alter what the host may do are called out above the diff — an escalated risk tier
+        your policy may now route through approval, a dropped redaction rule, a changed
+        execution user, a widened path allowlist, or a newly required setup variable.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The
+        <.link
+          navigate={~p"/docs/action-packs"}
+          class="text-brand-300 hover:text-brand-200"
+        >Pack reference</.link>
+        explains the full action schema and each field, and the pack's page on
+        <.link
+          navigate={~p"/packs"}
+          class="text-brand-300 hover:text-brand-200"
+        >the registry</.link>
+        lists its declared actions and versions.
+      </p>
+
+      <.docs_h2 id="canary">3. Update one runner</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Name the packs you mean rather than updating everything at once, and do it on one
         non-critical runner first.
@@ -180,12 +116,11 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">The new tree is verified before it is activated.</strong>
+            <strong class="text-zinc-200">The new version is verified before it goes live.</strong>
             The tarball is fetched, validated, and hash-checked against the registry index, staged
             beside the live pack, and only then swapped in. An activation failure restores the
-            previous tree immediately. This is a staged replacement with a deterministic backup, not
-            a crash-atomic one — a host that loses power mid-swap can be left with the backup
-            beside the pack, which the next install or update recovers.
+            previous version immediately, and the staged swap keeps a backup beside the pack — after
+            a power loss mid-swap, the next install or update recovers it.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -200,83 +135,84 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Several packs update independently.</strong>
-            Each one succeeds or fails on its own; the command prints per-pack lines and a count,
+            Each one succeeds or fails on its own. The command prints per-pack lines and a count,
             and exits non-zero if any failed. A partial success is a normal outcome — read the
             lines, not just the exit code.
           </span>
         </li>
       </ul>
 
-      <.docs_h2 id="trust">Trust the exact hash</.docs_h2>
+      <.docs_h2 id="trust">4. Trust it and prove it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The canary now advertises new bytes. When that hash is one the published catalog carries,
+        Installing is not trusting: the files are on the host, and account trust decides what
+        may run. The canary now advertises the new version. When its hash is one the published
+        catalog carries,
         <a
           href={~p"/app/packs"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Packs</a>
-        already shows the version as trusted and there is nothing to click — skip
-        to the proof below. Anything else shows as <strong class="text-zinc-200">pending</strong>
-        with the exact hash it is advertising, and dispatch for it is refused. Check that hash
-        against the one
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack list</code>
-        printed on the host, then review and trust that version. Trusting snapshots the complete
-        action set for those exact bytes, so a later advertisement that disagrees is caught rather
-        than absorbed.
+        already shows the version as trusted. Skip to the check below.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Then prove it: run one low-risk read-only action from the pack against the canary and
-        confirm it succeeds and appears in the audit trail. If a published runbook uses actions
-        from this pack, run its preflight before you go any wider — that is where a changed
-        argument or a removed action surfaces as a broken step rather than as a failed run at
-        three in the morning.
+        Anything else — a pack
+        you <.link
+          navigate={~p"/docs/publishing-packs"}
+          class="text-brand-300 hover:text-brand-200"
+        >authored</.link>, one you edited, or a retired version — shows as
+        <strong class="text-zinc-200">pending</strong>
+        with the exact hash it is advertising, and dispatch for it is refused.
+        Trust binds one exact content hash: check the pending hash against the one
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack list</code>
+        printed on the host, then review and trust that version. Trusting records the complete
+        action set for that exact version, so any later change is caught.
       </p>
-      <.docs_callout kind={:note} title="Reject is the other answer.">
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Run one low-risk read-only action against the canary. Confirm that it succeeds and appears
+        in Audit. If a published runbook uses this pack, run its preflight before widening the
+        rollout. Contract changes then appear as broken steps before production work starts.
+      </p>
+      <.docs_callout kind={:note} title="Reject is the other answer">
         <p>
-          Rejecting the pending hash keeps the version's existing trusted bytes in force and
-          remembers the refused ones, so a runner re-advertising the same rejected bytes stays
-          quiet instead of re-opening the review. Only genuinely new bytes ask again.
+          Rejecting a pending version keeps the trusted one active. emisar remembers the
+          rejected hash, so the same version never asks again — only a new one does.
         </p>
       </.docs_callout>
 
-      <.docs_h2 id="fleet">Roll through the fleet</.docs_h2>
+      <.docs_h2 id="fleet">5. Roll through the fleet</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Repeat the update on bounded runner groups. Because trust is account-wide and bound to the
-        hash, a second runner arriving at the same version and hash you already trusted needs no
-        second decision — a runner that lands on a <em>different</em>
-        hash for that version is drift, and it will stop and ask. After each group, confirm the
+        Repeat the update on bounded runner groups. Account trust is bound to the hash. Another
+        runner with the trusted hash needs no second decision. A <em>different</em>
+        hash for that version is drift. It stops and asks for review. After each group, confirm the
         advertised versions and hashes match what you trusted and run one representative action.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Group and label mechanics are in <.link
           navigate={~p"/docs/runner-fleet"}
           class="text-brand-300 hover:text-brand-200"
-        >Manage the runner fleet</.link>; batch sizing for a production fleet is in <.link
+        >Manage the runner fleet</.link>. Batch sizing for a production fleet is in <.link
           navigate={~p"/docs/production"}
           class="text-brand-300 hover:text-brand-200"
         >Go to production</.link>.
       </p>
 
-      <.docs_h2 id="rollback">Go back to the prior version</.docs_h2>
+      <.docs_h2 id="rollback">6. Going back</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        There is no rollback command. Recovery is installing the exact earlier version again, which
-        works precisely because published versions are immutable — the bytes you had are still
-        there, at the same address, with the same hash.
+        There is no rollback command — install the exact earlier version again.
+        A published version is immutable and the registry is append-only, so the earlier
+        version is still there, at the same address with the same hash.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># the version and hash you recorded before the update</span>
 <span class="text-zinc-500">$</span> sudo emisar pack install redis=0.2.3 --hash sha256:… --force</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--hash</code>
-        pin is what makes this a recovery rather than a hope: the install aborts unless the
-        computed hash matches exactly. Each version carries its own trust decision. Going back to
-        bytes the account already trusted resumes dispatch without a new review, and so does an
-        exact hash the published catalog still carries — that one never needed a click here in the
-        first place. On first sight, a version the catalog has dropped or any other hash the
-        account has never trusted lands as pending.
+        pin makes this exact: the install aborts unless the computed hash matches. Each
+        version carries its own trust decision, so a previously trusted version resumes dispatch
+        without another review, and a catalog hash needs none either. A version the catalog has
+        dropped, or any hash the account has never trusted, lands as pending.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Do this per runner, in the same bounded groups you rolled forward in, and verify the same
-        way. A pack you no longer want on a host at all comes off with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack uninstall</code>, which
-        reloads the runner so its actions leave the advertised catalog.
+        way. Remove an unwanted pack with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack uninstall</code>. The command reloads the runner and removes those actions from its catalog.
       </p>
 
       <.docs_h2 id="retirement">Retired versions</.docs_h2>
@@ -287,7 +223,7 @@
         pack. An admin can deliberately re-trust a retired version in <a
           href={~p"/app/packs"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Packs</a>; that override
+        >Packs</a>. That override
         is audited, and revoking trust clears it so a later re-trust has to decide again.
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
@@ -302,19 +238,17 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Retirement arrives with the catalog, not with a deploy. The control plane tries to
-            refresh its configured pack catalog every ten minutes and keeps the last accepted
-            snapshot on a fetch or validation failure, so a new floor starts blocking after the
-            next successful refresh.
+            Retirement arrives with the catalog refresh. The control plane refreshes its pack
+            catalog every ten minutes and keeps the last accepted snapshot after a failure; a new
+            floor applies after a successful refresh.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            A retired version stays installable. The defense is at the trust gate, so rolling back
-            <em>into</em>
-            a retired version leaves you with a pack that cannot dispatch — check the floor before
-            you plan a rollback that far back.
+            Retirement blocks dispatch, not installation — a retired version stays installable,
+            and nothing here deletes a published version or erases the history of a run that
+            used it. Check the retirement floor before rolling back that far.
           </span>
         </li>
       </ul>

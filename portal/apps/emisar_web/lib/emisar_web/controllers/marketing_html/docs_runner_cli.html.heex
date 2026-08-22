@@ -18,15 +18,22 @@
       <.docs_header current="runner-cli">
         <:dek>
           The <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
-          binary on each host is two things: the daemon that executes gated actions, and the
-          operator's local toolbox for inspecting packs, reading the journal, verifying the audit
-          chain, and setting up signed dispatch. This page is the reference for its operator verbs —
-          grouped the way the binary groups them — with the key flags and whether each command only
-          reads or changes the host.
+          binary runs the daemon that executes gated actions. It is also the local toolbox for
+          packs, journals, audit verification, and signed dispatch. This page lists each operator
+          command, its key flags, and whether it changes the host.
         </:dek>
       </.docs_header>
 
-      <.docs_code phx-no-format label="web-01" copy_text="sudo emisar pack list"><span class="text-zinc-500">$</span> sudo emisar doctor          <span class="text-zinc-500"># preflight: config · credential · packs · binaries · service</span>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Commands, flags, config keys, and environment variables are v1 compatibility surfaces. See <.link
+          navigate={~p"/docs/compatibility"}
+          class="text-brand-400 hover:text-brand-300"
+        >
+          Compatibility and deprecation
+        </.link>.
+      </p>
+
+      <.docs_code phx-no-format label="web-01" copy_text="sudo emisar pack list"><span class="text-zinc-500">$</span> sudo emisar doctor          <span class="text-zinc-500"># offline preflight — run this first</span>
 <span class="text-zinc-500">$</span> sudo emisar events tail -f  <span class="text-zinc-500"># the host-side security log, live</span>
 <span class="text-zinc-500">$</span> sudo emisar pack list
 ID            VERSION  ACTIONS  HASH                 DESCRIPTION
@@ -38,8 +45,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
       <p class="mt-5 text-base leading-7 text-zinc-400">
         On an installed host the binary lives at
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin/emisar</code>
-        and every subcommand auto-discovers its configuration, so you rarely pass <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--config</code>. The config and the
-        cached token are root-owned, and the packs directory is root-owned too, so run commands with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>. Running
+        and every subcommand auto-discovers its configuration. You rarely pass <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--config</code>. The config and the
+        cached token are root-owned, and the packs directory is root-owned too. Run commands with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>. Running
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
         with no arguments prints a Paths footer showing exactly where this host keeps its config,
         packs, token, and journal.
@@ -67,13 +74,16 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--json</code>
-            — machine-readable JSON where a command supports it: <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">action list</code>/<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">describe</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack list</code>/<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">info</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">state</code>, and the signing verbs.
+            — machine-readable JSON, on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">action list</code>, every
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack</code>
+            verb except <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install</code>
+            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">uninstall</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit verify</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">version</code>, and the signing verbs. A command that emits no JSON rejects the flag rather than sending human text into your pipeline.
           </span>
         </li>
       </ul>
       <p class="mt-6 text-base leading-7 text-zinc-400">
-        Where an installed host keeps things — the installer's defaults; config keys or the install
-        flags below move them:
+        The following table shows the installer's default paths. Configuration keys and the install
+        flags below can change them:
       </p>
       <div class="mt-4 overflow-x-auto rounded-xl border border-zinc-900">
         <table class="w-full min-w-[520px] text-left text-sm">
@@ -103,24 +113,24 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
       <.docs_h2 id="connect">The connect daemon</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar connect</code>
-        is the long-running daemon: it dials out over a TLS websocket, advertises this host's
+        is the long-running daemon. It dials out over a TLS websocket, advertises this host's
         actions, executes incoming dispatches, streams redacted output back, and journals every
         attempt locally. There is no inbound listener on the host. On the first connect it trades the
         enrollment key (from the env var named by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cloud.enrollment_key_env</code>, by
         default <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>)
-        for a cached per-runner token, so the key can be unset afterward.
+        for a cached per-runner token. The key can be unset afterward.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        You normally don't run
+        You normally do not run
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">connect</code>
-        by hand — the installer registers it as a supervised service
+        by hand. The installer registers it as a supervised service
         (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.service</code>
         under systemd, a LaunchDaemon on macOS) running as the
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
         user. Manage it through the init system.
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reload</code>
-        sends SIGHUP, which re-reads packs and rebuilds the signing verifier and re-advertises the
-        catalog on the live connection — in-flight runs keep executing across it.
+        sends SIGHUP. This re-reads packs and rebuilds the signing verifier and re-advertises the
+        catalog on the live connection. In-flight runs keep executing across it.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> sudo systemctl status emisar     <span class="text-zinc-500"># is the daemon up?</span>
 <span class="text-zinc-500">$</span> sudo journalctl -u emisar -f      <span class="text-zinc-500"># stream its logs</span>
@@ -128,20 +138,26 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
 <span class="text-zinc-500">$</span> sudo systemctl restart emisar     <span class="text-zinc-500"># full restart</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         On a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
-        host (a container, CI box, or cloud shell) there is no unit; run the daemon yourself with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar connect --config /etc/emisar/config.yaml</code>. The full fleet lifecycle — groups, enrollment keys, pack credentials — is in the
+        host, such as a container, CI box, or cloud shell, there is no unit. Run the daemon with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar connect --config /etc/emisar/config.yaml</code>.
+        The
         <.link
           navigate={~p"/docs/runner-fleet"}
           class="text-brand-400 hover:text-brand-300"
         >runner fleet</.link>
-        guide.
+        guide covers groups, enrollment keys, and pack credentials.
       </p>
 
       <.docs_h2 id="actions">Actions</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Inspect the catalog this host advertises, and run one action locally while you're debugging a
+        Inspect the catalog that this host advertises. Run one action locally while debugging a
         pack. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar actions</code>
         is an accepted alias for the group.
       </p>
+      <.docs_callout kind={:warn} title="Local actions bypass the cloud gate">
+        Use <code>emisar action run</code>
+        only to debug a pack on a host you control. It bypasses cloud policy, approvals, signed
+        dispatch, and cloud audit. It still writes the runner's local event.
+      </.docs_callout>
       <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
         <table class="w-full min-w-[640px] text-left text-sm">
           <thead class="border-b border-zinc-900 text-xs uppercase tracking-wider text-zinc-400">
@@ -176,8 +192,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--arg key=value</code>
-            — one argument, repeatable. Numbers, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">true</code>/<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">false</code>, and JSON arrays/objects are decoded;
-            everything else stays a string.
+            — one argument, repeatable. Numbers, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">true</code>/<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">false</code>, and JSON arrays/objects are decoded. Everything else stays a string.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -202,20 +217,10 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           </span>
         </li>
       </ul>
-      <.docs_callout kind={:warn} title="action run bypasses the gate.">
-        It executes on the host immediately, without cloud policy, approvals, or signature checks —
-        it's for debugging a pack you're authoring, not the dispatch path. The governed path is a run
-        dispatched from the control plane or an <.link
-          navigate={~p"/docs/mcp-reference"}
-          class="text-brand-400 hover:text-brand-300"
-        >MCP client</.link>, where admission, policy, and audit all apply.
-      </.docs_callout>
-
       <.docs_h2 id="packs">Packs</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack</code>
-        (alias <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">packs</code>) manages this host's
-        action catalog — the versioned bundles of action schemas it may execute.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack</code>, also available as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">packs</code>, manages this host's action
+        catalog. The catalog contains the versioned action schemas that the host can execute.
       </p>
       <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
         <table class="w-full min-w-[660px] text-left text-sm">
@@ -228,13 +233,14 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-400">
             <%= for {cmd, what, mode} <- [
-              {"emisar pack suggest", "Recommend packs for what's running on this host (binaries, processes, ports).", "Reads only"},
+              {"emisar pack suggest", "Recommend packs for what is running on this host (binaries, processes, ports).", "Reads only"},
               {"emisar pack list", "Installed packs with version, action count, and content hash.", "Reads only"},
-              {"emisar pack info <id>", "A pack's setup: required binaries, the env vars its actions read, a verify command.", "Reads only"},
+              {"emisar pack info <id>", "A pack's setup. Required binaries, the env vars its actions read, a verify command.", "Reads only"},
               {"emisar pack validate <path>", "Validate a pack directory on disk without loading it into the runner.", "Reads only"},
+              {"emisar pack diff <id>", "The changed lines between an installed pack and the registry's, with risk and redaction changes called out.", "Reads only"},
               {"emisar pack install <name|path|url>", "Fetch, validate, hash-verify, and install one pack into the packs dir.", "Changes the host"},
               {"emisar pack update [id...]", "Update installed packs to the registry's current versions.", "Changes the host"},
-              {"emisar pack uninstall <id>", "Remove an installed pack (aliases: rm, remove, delete).", "Changes the host"}
+              {"emisar pack uninstall <id>", "Remove an installed pack. Aliases are rm, remove, and delete.", "Changes the host"}
             ] do %>
               <tr>
                 <td class="px-4 py-3 align-top whitespace-nowrap font-mono text-xs text-brand-300">
@@ -255,8 +261,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--hash sha256:…</code>
-            — pin the exact content hash the portal advertises; the install aborts on any mismatch,
-            so a tampered or mismatched copy never reaches the runner.
+            — pin the exact content hash the portal advertises. The install aborts on any mismatch. A tampered or mismatched copy never reaches the runner.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -270,22 +275,43 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--registry &lt;url&gt;</code>
-            — install from your own registry (or set <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_PACKS_REGISTRY</code>);
-            defaults to the public registry at <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.dev</code>.
+            — install from your own registry (or set <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_PACKS_REGISTRY</code>). Defaults to the public registry at <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.dev</code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--dest &lt;dir&gt;</code>
-            — the packs directory to install into; defaults to the config's first
+            — the packs directory to install into. Defaults to the config's first
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">paths.packs</code>
             entry.
           </span>
         </li>
       </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Flags on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack diff</code>
+        (which also takes <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--registry</code>):
+      </p>
+      <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--to &lt;version&gt;</code>
+            — compare against a specific published version instead of the registry's current one. That URL carries no index entry, so the computed hash is printed for you to pin the install with.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--stat</code>
+            — the summary and the callouts without the changed lines.
+          </span>
+        </li>
+      </ul>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># install one pack, pinned to the hash the portal advertises</span>
 <span class="text-zinc-500">$</span> sudo emisar pack install redis --hash sha256:9f2c…
+<span class="text-zinc-500"># see what an upgrade would change, line by line, before applying it</span>
+<span class="text-zinc-500">$</span> sudo emisar pack diff redis
 <span class="text-zinc-500"># update every installed pack (or name a few); preview with --dry-run</span>
 <span class="text-zinc-500">$</span> sudo emisar pack update
 <span class="text-zinc-500">$</span> sudo emisar pack update redis postgres --dry-run
@@ -294,12 +320,10 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">update</code>, and
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">uninstall</code>
-        signal a running daemon to reload — the same SIGHUP as
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemctl reload emisar</code>
-        — so
-        changed actions re-advertise without a restart or a dropped run; when no live daemon is
-        reachable the CLI prints the manual reload command instead. Installing bytes doesn't trust
-        them: a changed hash lands as <strong class="text-zinc-200">pending</strong>
+        signal a running daemon to reload. They send the same SIGHUP as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemctl reload emisar</code>. The runner
+        advertises changed actions again without restarting or dropping a run. When no live daemon is
+        reachable the CLI prints the manual reload command instead. Installing bytes does not trust
+        them. A changed hash lands as <strong class="text-zinc-200">pending</strong>
         in
         <a
           href={~p"/app/packs"}
@@ -317,7 +341,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
 
       <.docs_h2 id="diagnose">Diagnose and audit</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        When a runner won't connect or an action fails, these read-only verbs answer why without
+        When a runner will not connect or an action fails, these read-only verbs answer why without
         opening a cloud session. What each answer means, and which page owns the fix, is in <.link
           navigate={~p"/docs/troubleshooting"}
           class="text-brand-400 hover:text-brand-300"
@@ -334,11 +358,12 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-400">
             <%= for {cmd, what, mode} <- [
-              {"emisar doctor", "Offline preflight: config, credential, packs, action binaries, service, and control-plane reachability. Exits nonzero if any check fails.", "Reads only"},
-              {"emisar state", "Print the runner_state JSON this host would advertise to the control plane.", "Reads only"},
-              {"emisar events tail", "Print recent journal events; -f follows new ones (--lines sets the count, default 50).", "Reads only"},
+              {"emisar doctor", "Offline preflight: config, credential, dispatch log, pack dirs, packs, action binaries, service, and control-plane reachability. Exits nonzero if any check fails.", "Reads only"},
+              {"emisar state", "Print the runner_state JSON this host advertises to the control plane.", "Reads only"},
+              {"emisar events tail", "Print recent journal events. -f follows new events. --lines sets the count and defaults to 50.", "Reads only"},
               {"emisar events cat / grep", "Dump the whole journal, or filter it by --action, --caller, or --event.", "Reads only"},
-              {"emisar audit verify [path]", "Re-derive a journal file's SHA-256 hash chain and report breaks; --all walks rotated siblings.", "Reads only"}
+              {"emisar audit verify [path]", "Re-derive a journal file's SHA-256 hash chain and report breaks. --all checks rotated siblings.", "Reads only"},
+              {"emisar version", "The runner version and build info.", "Reads only"}
             ] do %>
               <tr>
                 <td class="px-4 py-3 align-top whitespace-nowrap font-mono text-xs text-brand-300">
@@ -356,21 +381,21 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
 <span class="text-zinc-500">$</span> sudo emisar audit verify --all  <span class="text-zinc-500"># re-derive the journal hash chain</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>
-        never opens a cloud session and one failing check never aborts the rest, so a single run
-        surfaces every problem at once.
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit verify</code>
-        exits 0 when the chain is intact and 1 on the first break, naming the line and event id;
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--all</code>
+        never opens a cloud session. One failing check never aborts the rest, so one run surfaces
+        every problem. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit verify</code>
+        exits 0 when the chain is intact. It exits 1 on the first break and names the line and event
+        ID. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--all</code>
         walks the active file plus every rotated
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">.N</code>
-        sibling, each chain verified independently. There's also <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar state check-dispatch-log</code>,
-        which the installer runs before an upgrade to confirm the durable dispatch log still loads.
+        sibling. It verifies each chain independently. The installer also runs
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar state check-dispatch-log</code>
+        before an upgrade. This confirms that the durable dispatch log still loads.
       </p>
       <.docs_callout kind={:note} title="Tamper-evident, not tamper-proof.">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit verify</code>
-        verifies continuity only within the retained journal or retained suffix; it cannot prove
+        verifies continuity only within the retained journal or retained suffix. It cannot prove
         that a privileged host operator did not replace or truncate the entire local journal. The
-        record that cannot be changed from the host is the off-host cloud audit — carry both into
+        record that cannot be changed from the host is the off-host cloud audit. Carry both into
         your SIEM and cross-reference them. See <.link
           navigate={~p"/docs/audit-and-siem"}
           class="text-brand-400 hover:text-brand-300"
@@ -380,9 +405,9 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
       <.docs_h2 id="signing">Signed-dispatch keys</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing</code>
-        sets up bridge-attested dispatch: an enforcing runner then requires a CA-signed certificate
-        on every action, so a compromised control plane can relay a dispatch but never mint one.
-        Everything here is offline — keys are printed to your terminal and sent nowhere.
+        sets up bridge-attested dispatch. An enforcing runner then requires a CA-signed certificate
+        on every action. A compromised control plane can relay a dispatch but never mint one.
+        Everything here is offline. Keys are printed to your terminal and sent nowhere.
       </p>
       <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
         <table class="w-full min-w-[660px] text-left text-sm">
@@ -395,7 +420,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-400">
             <%= for {cmd, what, mode} <- [
-              {"emisar signing init", "One-shot on-ramp: mint a CA, a leaf key, and a cert; print the runner config, the offline CA private key, and the two MCP env vars.", "Prints key material"},
+              {"emisar signing init", "Mint a CA, leaf key, and certificate. Print the runner config, offline CA private key, and two MCP environment variables.", "Prints key material"},
               {"emisar signing new-ca", "Mint just the offline CA keypair — the root of trust (rarely).", "Prints key material"},
               {"emisar signing new-cert", "Sign a short-lived operator cert against the offline CA (routinely, as certs expire).", "Prints key material"}
             ] do %>
@@ -414,26 +439,32 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--ttl 24h</code>
-            — the cert's validity window; accepts Go durations plus long-form <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">30d</code>/<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">1y</code>
-            (default 24h). Short is better — a long TTL trades away revocation granularity.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--scope group=prod,env=edge</code>
-            — bind the cert to matching runners; empty means any runner that trusts the CA.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--ca-id</code>
-            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--ca-key</code>
-            (both required on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-cert</code>)
-            — the CA id, which must match the runner's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_cas</code>, and the offline
-            CA private hex seed from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-ca</code>. The key is read locally and never transmitted.
+            (all three) — labels the CA, and on
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-cert</code>
+            it is required and must match the runner's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_cas</code>. Defaults to a random
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">ca-…</code>
+            when minting.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--ttl 24h</code>
+            and
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--scope group=prod,env=edge</code>
+            (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">init</code>
+            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-cert</code>)
+            — the cert's validity window, which accepts Go durations plus long-form <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">30d</code>/<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">1y</code>
+            and defaults to 24h, and the runners it binds to. Short is better: a long TTL trades away revocation granularity. An empty scope means any runner that trusts the CA.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--ca-key</code>
+            (required on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-cert</code>)
+            — the offline CA private hex seed from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-ca</code>. It is read locally and never transmitted.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -441,6 +472,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--key-id</code>
             and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--pubkey</code>
+            (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-cert</code>)
             — label the leaf key, or supply your own leaf public key instead of minting one.
           </span>
         </li>
@@ -453,11 +485,13 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         The generated
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
         and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
-        are the env vars your MCP client carries; the CA private key stays offline, never on a runner
-        or the control plane. The full model — enforcement, scoping, rotation, and revocation — is in <.link
+        are environment variables for the MCP client. The CA private key stays offline. Never put it
+        on a runner or the control plane.
+        <.link
           navigate={~p"/docs/signed-dispatch"}
           class="text-brand-400 hover:text-brand-300"
-        >Signed dispatch</.link>.
+        >Signed dispatch</.link>
+        explains enforcement, scope, rotation, and revocation.
       </p>
 
       <.docs_h2 id="lifecycle">Install, update, and removal</.docs_h2>
@@ -467,16 +501,17 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         for manual host-local updates. Both paths use the same staged replacement transaction and
         preserve config and packs. The installer requires systemd on Linux
         (use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
-        for hosts without a real init). This section is the flag reference; running an upgrade
-        across a fleet — canary, verification, batches, rollback — is <.link
+        for hosts without a real init). This section is the flag reference.
+        <.link
           navigate={~p"/docs/runner-upgrades"}
           class="text-brand-400 hover:text-brand-300"
-        >upgrade runners and MCP bridges</.link>.
+        >Upgrade runners</.link>
+        explains fleet canaries, verification, batches, and rollback.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar update</code>
         requires the root-owned receipt written by the official installer. It refuses copied,
-        containerized, development, and infrastructure-managed binaries; update those from the
+        containerized, development, and infrastructure-managed binaries. Update those from the
         system that deployed them.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># update an official installer-managed runner</span>
@@ -485,7 +520,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
 <span class="text-zinc-500"># install or provision a host</span>
 <span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh | sudo bash
 <span class="text-zinc-500"># provision unattended with a fixed pack set</span>
-<span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh | sudo bash -s -- --version runner-v0.3.0
+<span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh | sudo bash -s -- --version runner-vX.Y.Z
 <span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh | sudo bash -s -- --yes --packs linux-core,postgres</.docs_code>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -501,14 +536,14 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--version TAG</code>
             — install a specific runner release
-            (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner-vX.Y.Z</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">vX.Y.Z</code>, or bare <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">X.Y.Z</code>); default is the latest.
+            (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner-vX.Y.Z</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">vX.Y.Z</code>, or bare <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">X.Y.Z</code>). Default is the latest.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--yes</code>
-            — skip prompts; requires an explicit
+            — skip prompts. Requires an explicit
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--packs</code>
             (or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_PACKS</code>) so an
             unattended run never guesses.
@@ -526,7 +561,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-start</code>
-            — install and enable the service but leave it stopped;
+            — install and enable the service but leave it stopped.
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
             — binary only, with no service user, unit, or activation.
           </span>
@@ -535,8 +570,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--uninstall</code>
-            — stop the service and remove the binary, unit, and cached token, keeping config, data,
-            and logs; <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
+            stops the service and removes the binary, unit, and cached token. It keeps config, data,
+            and logs. <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
             with it also deletes config, data, logs, and the service user.
           </span>
         </li>
@@ -553,9 +588,9 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         </li>
       </ul>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># remove the binary, service, and cached token — keep config + journal</span>
-<span class="text-zinc-500">$</span> sudo bash install.sh --uninstall
+<span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh | sudo bash -s -- --uninstall
 <span class="text-zinc-500"># …or delete everything, including config, data, and logs</span>
-<span class="text-zinc-500">$</span> sudo bash install.sh --uninstall --purge</.docs_code>
+<span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh | sudo bash -s -- --uninstall --purge</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         After uninstalling, delete the runner from
         <a
