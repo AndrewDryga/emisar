@@ -35,6 +35,9 @@ writer first.
 - Vary rhythm with the idea, not through arbitrary fragments or decoration.
 - Use humor only when it sharpens the point and preserves trust.
 - State a verified fact directly and qualify the exact uncertainty.
+- Send a reader to another page by naming what they want to do — `To upgrade
+  runners instead, see Upgrade runners` — not by stating a fact about how the
+  system is arranged.
 
 ## Bad
 
@@ -44,9 +47,15 @@ writer first.
   paragraph shapes until the structure becomes visible.
 - Turn ordinary behavior into a punchy metaphor just to make the sentence sound
   quotable. If the image adds no precision, state what the system does.
+- Dress a plain action in an ownership idiom — `is yours to edit`, `yours to
+  kill` — when the literal statement (`you can edit it`, `you can still revoke
+  it`) is shorter and says exactly what to do.
 - Add typos, slang, fake anecdotes, or random sentence variation to "sound
   human."
 - Make docs sell, make UI errors joke, or make marketing copy read like a manual.
+- Justify a cross-link with our own topology (`Runner releases move separately`,
+  `The workstation bridge moves separately`). The reader did not ask how release
+  lines are organized; they asked which page upgrades their runner.
 
 ## Enforcement
 

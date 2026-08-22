@@ -791,6 +791,42 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     both pairs fit in two. Labels remain aligned across sibling facts, and a long value still wraps
     beneath its own first value rather than beneath the label. Sweep: mobile `grid-cols-1` switches
     around dense facts whose label plus ordinary value visibly fit together.
+64. **A named-thing picker orders by how many operators pick each one, not by the alphabet and
+    not by when we added it.** When every option is a proper noun the operator already knows —
+    MCP clients, SSO providers, cloud vendors, packs — they are hunting for THEIR name, and the
+    first row of tabs is the only part most of them read. Put the common choices there and let
+    the long tail fall off the end. Alphabetical order is a coin flip dressed as a system;
+    append order silently ranks by our shipping history, so the client added last week outranks
+    the one most of the fleet actually runs. Keep the ids in an ordered list — a map's iteration
+    order is not the render order — and say in a comment that the order is popularity, or the
+    next person will "tidy" it back into alphabetical. This does NOT govern a reference table
+    the reader scans for a known row, or a sortable data column: there the alphabet IS the
+    affordance. Sweep: option lists rendered straight from a literal whose order matches the
+    alphabet or `git log`.
+65. **A section header's trailing action links ride the meta line, not the title line.** When a
+    header stacks a title over a subtitle ("Install the bridge" / "one-time, per machine") and
+    carries trailing links or actions, the trailing cluster bottom-aligns with the SUBTITLE
+    (`items-end` on the header row, both sides at the same small type tier), leaving the title
+    its full row. Top- or baseline-aligning the links against the title makes two unrelated
+    text sizes fight on one line and pushes secondary links into the title's visual rank. A
+    header with no subtitle degrades to its single line's bottom edge, which is the same
+    place. Sweep: `flex … justify-between` header rows whose left side is a title+subtitle
+    stack and whose alignment is `items-start`/`items-baseline` while the right side holds
+    links or buttons.
+66. **A flat picker past about a dozen options partitions by the kind the operator already
+    knows.** Fifteen mixed client tabs render as a wall; an operator who knows "I use an
+    editor" still had to scan every terminal agent to find Cursor. Split the cluster into
+    labeled subgroups by the kind the reader can self-select into (terminal agent vs
+    editor/desktop app) — never by vendor or by when we shipped support. The subgroup label
+    is the QUIETER member of the group-label family (the docs rail's subgroup grammar: same
+    uppercase treatment one tier down — 10px, `text-zinc-500` — never a new heading level or
+    a box). A fact shared by every subgroup (the transport, "uses the stdio bridge") stays
+    ONCE on the parent group's annotation; subgroups never repeat it. Order within each
+    subgroup is still popularity (§7.64), derived by filtering the ONE master id list — the
+    partition is a membership SET, not a second ordered list, so the two can never disagree
+    on order. Subgroup separation is tighter than group separation (mt-4 vs mt-6), so the
+    hierarchy reads from distance (§7.58 family). Sweep: a `:for` chip/tab comprehension
+    rendering more than ~12 options into one flat cluster.
 
 
 ## 8. The kit is the contract
