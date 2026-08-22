@@ -2,13 +2,13 @@ schema_version: 1
 
 id: oidc-jwks
 name: OIDC and JWKS diagnostics
-version: 0.1.3
+version: 0.1.5
 description: >
   Generic read-only OpenID Connect discovery and JWKS diagnostics, plus local
   key-ID comparison and protected JWT-header inspection. Network actions use
   explicit HTTPS URLs, never follow redirects, and never submit bearer tokens.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/oidc-jwks
 
 requires:
   os: [linux]
@@ -23,7 +23,7 @@ setup:
       description: Optional PEM CA bundle for a private issuer.
       example: /etc/emisar/oidc-ca.pem
   notes:
-    - "OIDC_CA_CERT must be allowlisted in execution.inherit_env when set."
+    - "`OIDC_CA_CERT` must be allowlisted in `execution.inherit_env` when set."
     - "Explicit HTTPS URLs can still name private or loopback services; restrict destinations with runner policy and network egress controls when agents must not reach them."
     - "Network actions do not follow redirects or automatically fetch a secondary URL. Validate discovery first, then call oidc.jwks with the returned jwks_uri explicitly."
     - "oidc.jwt_header decodes metadata only. It does not verify the signature, issuer, audience, expiry, or any other claim."

@@ -2,14 +2,14 @@ schema_version: 1
 
 id: memcached
 name: Memcached cache server
-version: 0.1.5
+version: 0.1.7
 description: >
   Read-only memcached introspection via the `stats` ASCII protocol —
   general stats, slab usage, item counts, sizes. Plus FLUSH_ALL as a
   critical mutator. Target host/port via MEMCACHED_HOST + MEMCACHED_PORT
   env vars on the runner host (default 127.0.0.1:11211).
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/memcached
 
 requires:
   os:
@@ -26,8 +26,8 @@ detect:
 
 setup:
   summary: >
-    Actions speak the memcached ASCII protocol over nc to MEMCACHED_HOST:
-    MEMCACHED_PORT on the runner host, defaulting to the local instance at
+    Actions speak the memcached ASCII protocol over nc to `MEMCACHED_HOST`:
+    `MEMCACHED_PORT` on the runner host, defaulting to the local instance at
     127.0.0.1:11211. The ASCII protocol has no authentication, so no
     credentials are involved.
   env:
@@ -38,7 +38,7 @@ setup:
       description: Target port.
       default: "11211"
   notes:
-    - "Any of MEMCACHED_HOST you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "Any of `MEMCACHED_HOST` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - No authentication exists for this transport; reach a remote daemon only over a trusted network or tunnel.
     - flush_all is destructive — it invalidates every key and can stampede the origin on the next miss.
   verify: mc.stats

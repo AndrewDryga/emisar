@@ -2,7 +2,7 @@ schema_version: 1
 
 id: systemd-deep
 name: Systemd deep introspection pack
-version: 0.1.15
+version: 0.1.16
 retired_below: 0.1.14
 description: >
   Deeper systemd state than linux-core: failed units, list-units,
@@ -11,7 +11,7 @@ description: >
   restart/reload, kill -s signal, mask/unmask, reset-failed) for
   remediating runtime issues.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/systemd-deep
 
 requires:
   os:

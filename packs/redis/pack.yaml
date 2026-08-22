@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis
 name: Redis operations pack
-version: 0.3.10
+version: 0.3.12
 retired_below: 0.3.9
 description: >
   Deep Redis ops — INFO + memory accounting, slowlog + per-event
@@ -20,7 +20,7 @@ description: >
   Authenticates via REDISCLI_AUTH / REDIS_* env vars on the runner host
   — never via per-call credentials.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/redis
 
 requires:
   os:
@@ -37,7 +37,7 @@ detect:
 
 setup:
   summary: >
-    redis-cli authenticates with the password in REDISCLI_AUTH on the runner
+    redis-cli authenticates with the password in `REDISCLI_AUTH` on the runner
     host. It does not read host or port from the environment — the actions
     pass no -h/-p flags, so connections default to the local instance at
     127.0.0.1:6379.
@@ -45,9 +45,9 @@ setup:
     - name: REDISCLI_AUTH
       description: Password sent via AUTH. Omit for an instance with no requirepass/ACL. The matching user must hold the commands the actions you enable will run.
   notes:
-    - "REDISCLI_AUTH must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "`REDISCLI_AUTH` must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - Host and port are not configurable through this pack's env — redis-cli takes them as -h/-p flags, which the actions do not set, so it always targets 127.0.0.1:6379.
-    - "REDISCLI_AUTH supplies only the password; for an ACL-enabled server with a non-default username, set requirepass-style access or run the runner as a user whose default ACL covers these commands."
+    - "`REDISCLI_AUTH` supplies only the password; for an ACL-enabled server with a non-default username, set requirepass-style access or run the runner as a user whose default ACL covers these commands."
     - Critical mutators (flush_db, flushall, swapdb, shutdown_nosave) and config writes need an ACL/user permitted to run them.
   verify: redis.info
 

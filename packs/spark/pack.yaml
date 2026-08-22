@@ -2,7 +2,7 @@ schema_version: 1
 
 id: spark
 name: Apache Spark
-version: 0.1.0
+version: 0.1.2
 description: >
   Governed Apache Spark operations over the HTTP surfaces a cluster already
   exposes: the monitoring REST API (/api/v1) on a live driver UI and on the
@@ -16,7 +16,7 @@ description: >
   only a live driver knows a running application and only the history server
   keeps a finished one.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/spark
 
 requires:
   os:
@@ -43,7 +43,7 @@ setup:
   summary: >
     Every action is one HTTP call to a Spark web endpoint over curl on the
     runner host. Point each URL at the surface this host can reach; an action
-    only needs the ones it uses. SPARK_API_TOKEN, when a reverse proxy in front
+    only needs the ones it uses. `SPARK_API_TOKEN`, when a reverse proxy in front
     of the UI requires one, is sent as an Authorization header over curl stdin
     and never reaches the process arguments.
   env:
@@ -81,11 +81,11 @@ setup:
         Sent as the Authorization header over curl stdin. Leave unset for a
         cluster reached directly.
   notes:
-    - "Any SPARK_* variable you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not allowlisted is silently dropped and the action falls back to its local default."
+    - "Any SPARK_* variable you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not allowlisted is silently dropped and the action falls back to its local default."
     - "A driver UI serves exactly one application and stops existing when that application ends, so its port is reused by whatever runs next. Confirm the application id from spark.applications with source driver before acting on a job or stage."
     - "The job and stage kill endpoints need spark.ui.killEnabled (true by default) and, where ACLs are on, a modify-permitted user. The master's kill endpoints need spark.ui.killEnabled on the master; worker decommissioning additionally needs spark.decommission.enabled."
     - "spark.environment returns the Spark configuration and runtime, with JVM system properties and the classpath dropped on the host. Spark's own spark.redaction.regex masks the property values it recognizes — a credential stored under a key that pattern does not match is still returned, which is why the action is high risk."
-    - "Spark on YARN or Kubernetes: point SPARK_UI_URL at the driver's UI (through the YARN proxy or a port-forward) and SPARK_HISTORY_URL at the history server. The master and submission actions are standalone-only."
+    - "Spark on YARN or Kubernetes: point `SPARK_UI_URL` at the driver's UI (through the YARN proxy or a port-forward) and `SPARK_HISTORY_URL` at the history server. The master and submission actions are standalone-only."
   verify: spark.master_state
 
 actions:

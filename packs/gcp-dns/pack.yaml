@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-dns
 name: Google Cloud DNS diagnostics and record control
-version: 0.2.0
+version: 0.2.1
 description: >
   Cloud DNS diagnostics plus governed exact-record control: managed-zone,
   DNSSEC, server-policy, response-policy, and exact-record reads, and
@@ -10,7 +10,7 @@ description: >
   TTL, and value semantics. Zone-wide record dumps and arbitrary change
   batches are intentionally excluded.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/gcp-dns
 
 requires:
   os: [linux]

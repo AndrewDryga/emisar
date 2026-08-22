@@ -240,6 +240,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
          {:ok, retired_below} <- fetch_retired_below(raw, id),
          {:ok, requires_os, requires_binaries} <- fetch_requires(raw, id),
          {:ok, detect} <- fetch_detect(raw, id),
+         {:ok, setup} <- fetch_setup(raw, id),
          {:ok, actions} <- fetch_actions(raw, id) do
       {:ok,
        %Pack{
@@ -257,6 +258,7 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
          previous_versions: previous_versions,
          retired_below: retired_below,
          detect: detect,
+         setup: setup,
          actions: actions
        }}
     end
@@ -392,6 +394,64 @@ defmodule Emisar.Catalog.PublishedRegistry.Catalog do
 
       _ ->
         {:error, "pack #{inspect(pack_id)} has a malformed detect block"}
+    end
+  end
+
+  # setup is the pack's own authored install guidance. It is OPTIONAL: a
+  # catalog published before the field existed carries none, and that catalog
+  # is still valid --previous input for the next build, so an absent block
+  # decodes to the empty setup rather than failing the whole catalog. A
+  # present-but-malformed block still fails closed, like every other field.
+  defp fetch_setup(raw, pack_id) do
+    case Map.get(raw, "setup") do
+      nil ->
+        {:ok, empty_setup()}
+
+      %{} = setup ->
+        env = Map.get(setup, "env", [])
+        notes = Map.get(setup, "notes", [])
+
+        cond do
+          not (is_list(env) and Enum.all?(env, &valid_setup_env?/1)) ->
+            {:error, "pack #{inspect(pack_id)} setup env entries must each name a string"}
+
+          not (is_list(notes) and Enum.all?(notes, &is_binary/1)) ->
+            {:error, "pack #{inspect(pack_id)} setup notes must be strings"}
+
+          true ->
+            {:ok,
+             %{
+               summary: optional_string(setup, "summary"),
+               env: Enum.map(env, &parse_setup_env/1),
+               notes: notes,
+               verify: optional_string(setup, "verify")
+             }}
+        end
+
+      _ ->
+        {:error, "pack #{inspect(pack_id)} has a malformed setup block"}
+    end
+  end
+
+  defp empty_setup, do: %{summary: nil, env: [], notes: [], verify: nil}
+
+  defp valid_setup_env?(%{"name" => name}) when is_binary(name), do: true
+  defp valid_setup_env?(_), do: false
+
+  defp parse_setup_env(%{"name" => name} = env) do
+    %{
+      name: name,
+      required: Map.get(env, "required") == true,
+      description: optional_string(env, "description"),
+      default: optional_string(env, "default"),
+      example: optional_string(env, "example")
+    }
+  end
+
+  defp optional_string(map, key) do
+    case Map.get(map, key) do
+      value when is_binary(value) and value != "" -> value
+      _ -> nil
     end
   end
 

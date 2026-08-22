@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-monitoring
 name: Google Cloud Logging and Monitoring operations
-version: 0.3.0
+version: 0.3.2
 description: >
   Google Cloud Logging and Monitoring diagnostics plus governed alert
   control: bounded log discovery and queries, metric queries, metric
@@ -12,7 +12,7 @@ description: >
   the mutations patch only the policy's enabled field; the alert-policy list
   uses the GA gcloud command.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/gcp-monitoring
 
 requires:
   os: [linux]
@@ -32,9 +32,9 @@ setup:
       description: Optional path to a credential file that overrides the active gcloud account.
       example: /etc/emisar/gcp-reader.json
   notes:
-    - "Any credential/config env you set must be allowlisted in the runner's execution.inherit_env; attached service accounts and workload identity need no credential env."
+    - "Any credential/config env you set must be allowlisted in the runner's `execution.inherit_env`; attached service accounts and workload identity need no credential env."
     - "Grant least privilege for the actions you enable: ordinary Logging reads need roles/logging.viewer; private and Data Access logs additionally need roles/logging.privateLogViewer. Monitoring reads need roles/monitoring.viewer, and alert-policy enable or disable needs roles/monitoring.alertPolicyEditor-equivalent permissions. User or quota-project credentials may also need serviceusage.services.use on the named project for the X-Goog-User-Project quota header."
-    - "For a credential file, populate a dedicated CLOUDSDK_CONFIG with `gcloud auth login --cred-file=...` or set CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE; ordinary gcloud commands do not authenticate from GOOGLE_APPLICATION_CREDENTIALS."
+    - "For a credential file, populate a dedicated `CLOUDSDK_CONFIG` with `gcloud auth login --cred-file=...` or set `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE`; ordinary gcloud commands do not authenticate from GOOGLE_APPLICATION_CREDENTIALS."
     - "This remote-target pack declares no host detection signal and is never auto-suggested merely because gcloud is installed."
     - "Metric query pageSize with view=FULL caps returned points rather than the number of time-series objects; follow nextPageToken for another page."
   verify: gcp.alert_policies

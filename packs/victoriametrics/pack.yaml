@@ -2,7 +2,7 @@ schema_version: 1
 
 id: victoriametrics
 name: VictoriaMetrics queries
-version: 0.1.7
+version: 0.1.9
 description: >
   Read-only PromQL / MetricsQL access to VictoriaMetrics over its HTTP API:
   instant and range queries, series and label discovery, and the
@@ -10,7 +10,7 @@ description: >
   queries). One base URL serves single-node, cluster (vmselect), and
   vmauth-fronted deployments.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/victoriametrics
 
 requires:
   os:
@@ -33,10 +33,10 @@ detect:
 
 setup:
   summary: >
-    Every action calls the VictoriaMetrics HTTP API at $VM_URL via curl on
-    the runner host. Point VM_URL at the query base URL including any
+    Every action calls the VictoriaMetrics HTTP API at `$VM_URL` via curl on
+    the runner host. Point `VM_URL` at the query base URL including any
     /prometheus (single-node) or /select/<accountID>/prometheus (cluster)
-    prefix; each action appends /api/v1/.... Set VM_BEARER_TOKEN if the
+    prefix; each action appends /api/v1/.... Set `VM_BEARER_TOKEN` if the
     endpoint sits behind vmauth or another bearer-token proxy.
   env:
     - name: VM_URL
@@ -53,10 +53,10 @@ setup:
         "Authorization: Bearer <token>" over curl stdin, so it never appears
         in the process arguments or the audit log.
   notes:
-    - "Any of VM_URL / VM_BEARER_TOKEN you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "Any of `VM_URL` / `VM_BEARER_TOKEN` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "Single-node URL: http://<host>:8428/prometheus. Cluster (vmselect) reads: http://<vmselect>:8481/select/<accountID>/prometheus. Behind vmauth: use its base URL plus whatever route prefix maps to the backend."
     - "Every action is a read-only GET — none write, delete, or mutate series. Range queries use VictoriaMetrics relative timestamps (start=-<window>, end defaults to now)."
-    - "No token is sent unless VM_BEARER_TOKEN is set. For basic-auth fronts, embed credentials in VM_URL (http://user:pass@host) or terminate auth at a trusted side door."
+    - "No token is sent unless `VM_BEARER_TOKEN` is set. For basic-auth fronts, embed credentials in `VM_URL` (http://user:pass@host) or terminate auth at a trusted side door."
   verify: vm.labels
 
 actions:

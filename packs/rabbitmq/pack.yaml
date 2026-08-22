@@ -2,7 +2,7 @@ schema_version: 1
 
 id: rabbitmq
 name: RabbitMQ operations
-version: 0.1.12
+version: 0.1.14
 retired_below: 0.1.9
 description: >
   Cluster, queue, exchange, binding, connection, channel, and consumer
@@ -10,7 +10,7 @@ description: >
   force_close_connection). Uses rabbitmqctl + rabbitmqadmin on the
   runner host.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/rabbitmq
 
 requires:
   os:
@@ -32,7 +32,7 @@ setup:
     host and authenticate with the Erlang cookie, not a username or URL. No
     connection env vars — provisioning is about running as the right user.
   notes:
-    - "Run the runner as a user that can read the node's Erlang cookie (~/.erlang.cookie, mode 0400) — typically the rabbitmq service user or root. A mismatched or unreadable cookie fails with a node-down/auth error even when RabbitMQ is healthy."
+    - "Run the runner as a user that can read the node's Erlang cookie (`~/.erlang.cookie`, mode 0400) — typically the rabbitmq service user or root. A mismatched or unreadable cookie fails with a node-down/auth error even when RabbitMQ is healthy."
     - "These tools target the local node only. To manage a remote node you would need -n <node>, which these actions do not set."
   verify: rmq.node_health_check
 

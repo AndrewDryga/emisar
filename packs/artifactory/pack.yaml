@@ -2,14 +2,14 @@ schema_version: 1
 
 id: artifactory
 name: JFrog Artifactory
-version: 0.1.0
+version: 0.1.2
 description: >
   JFrog Artifactory ops reads — health, version, license, storage usage,
   repository listings, artifact info and download stats, background
   tasks. Read-only. Auth via an access token or Basic credentials on the
   runner host.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/artifactory
 
 requires:
   os:
@@ -29,9 +29,9 @@ detect:
 
 setup:
   summary: >
-    Every action calls the Artifactory REST API under $ARTIFACTORY_URL via
-    curl. Set $ARTIFACTORY_TOKEN for bearer authentication with an access
-    token, or $ARTIFACTORY_USER and $ARTIFACTORY_PASSWORD for Basic
+    Every action calls the Artifactory REST API under `$ARTIFACTORY_URL` via
+    curl. Set `$ARTIFACTORY_TOKEN` for bearer authentication with an access
+    token, or `$ARTIFACTORY_USER` and `$ARTIFACTORY_PASSWORD` for Basic
     authentication.
   env:
     - name: ARTIFACTORY_URL
@@ -44,12 +44,12 @@ setup:
     - name: ARTIFACTORY_TOKEN
       description: Access token sent as the Bearer credential.
     - name: ARTIFACTORY_USER
-      description: User for Basic authentication. Takes precedence over ARTIFACTORY_TOKEN.
+      description: User for Basic authentication. Takes precedence over `ARTIFACTORY_TOKEN`.
       example: admin
     - name: ARTIFACTORY_PASSWORD
-      description: Password paired with ARTIFACTORY_USER.
+      description: Password paired with `ARTIFACTORY_USER`.
   notes:
-    - "Any Artifactory env var you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "Any Artifactory env var you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "System, storage, and task reads need an admin-scoped identity; repository and artifact reads work with read permission on the target repository."
     - "Every action here works on every edition, OSS included. Repository administration and user listing are Artifactory Pro APIs, so this pack does not ship them."
   verify: artifactory.ping

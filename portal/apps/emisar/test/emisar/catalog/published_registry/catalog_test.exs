@@ -305,6 +305,67 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
       assert message =~ "ports"
     end
 
+    test "decodes a pack's setup block, defaulting the optional per-variable fields" do
+      catalog =
+        put_in_pack(valid_catalog(), 0, "setup", %{
+          "summary" => "Authenticates with REDIS_URL.",
+          "env" => [
+            %{"name" => "REDIS_URL", "required" => true, "description" => "Connection URL."},
+            %{"name" => "REDIS_TLS", "default" => "off"}
+          ],
+          "notes" => ["Reads need no privilege."],
+          "verify" => "redis.info"
+        })
+
+      assert {:ok, %{packs: packs}} = Catalog.parse(catalog)
+      redis = Enum.find(packs, &(&1.id == "redis"))
+
+      assert redis.setup.summary == "Authenticates with REDIS_URL."
+      assert redis.setup.notes == ["Reads need no privilege."]
+      assert redis.setup.verify == "redis.info"
+
+      assert redis.setup.env == [
+               %{
+                 name: "REDIS_URL",
+                 required: true,
+                 description: "Connection URL.",
+                 default: nil,
+                 example: nil
+               },
+               %{
+                 name: "REDIS_TLS",
+                 required: false,
+                 description: nil,
+                 default: "off",
+                 example: nil
+               }
+             ]
+    end
+
+    test "accepts a catalog published before setup existed" do
+      # The live catalog is fed back as `--previous` on the next build, and it
+      # carries no setup at all — rejecting it would break every future publish.
+      catalog = drop_from_pack(valid_catalog(), 0, "setup")
+
+      assert {:ok, %{packs: packs}} = Catalog.parse(catalog)
+      redis = Enum.find(packs, &(&1.id == "redis"))
+      assert redis.setup == %{summary: nil, env: [], notes: [], verify: nil}
+    end
+
+    test "rejects a setup env entry with no name" do
+      catalog = put_in_pack(valid_catalog(), 0, "setup", %{"env" => [%{"description" => "x"}]})
+
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "setup env"
+    end
+
+    test "rejects a setup block that is not an object" do
+      catalog = put_in_pack(valid_catalog(), 0, "setup", "SENTRY_AUTH_TOKEN")
+
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "malformed setup"
+    end
+
     test "rejects an invalid action risk tier" do
       bad = action("redis.x", %{"risk" => "spicy"})
       catalog = put_in_pack(valid_catalog(), 0, "actions", [bad])

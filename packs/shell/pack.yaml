@@ -2,7 +2,7 @@ schema_version: 1
 
 id: shell
 name: Arbitrary shell (staging break-glass)
-version: 0.2.0
+version: 0.2.1
 description: >
   STAGING-ONLY BREAK-GLASS. Runs an arbitrary operator-supplied shell
   script on the runner host via `/bin/sh -c`. This is the one capability
@@ -14,7 +14,7 @@ description: >
   action is critical-risk, so the default policy denies it until an operator
   deliberately opts in; every run is fully audited.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/shell
 
 requires:
   os:

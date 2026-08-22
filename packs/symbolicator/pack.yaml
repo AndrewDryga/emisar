@@ -2,7 +2,7 @@ schema_version: 1
 
 id: symbolicator
 name: Symbolicator native symbolication
-version: 0.2.0
+version: 0.2.2
 description: >
   Debug native crashes with Symbolicator and keep the host it runs on healthy.
   Symbolicate a stack trace, a minidump, or an Apple crash report against the
@@ -12,7 +12,7 @@ description: >
   Nothing here can publish or alter a symbol; Symbolicator has no ingest path.
   For the Sentry API itself, see the sentry pack.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/symbolicator
 
 requires:
   os:
@@ -52,7 +52,7 @@ setup:
         Cache root, when it should not be read from the configuration's
         cache_dir. Falls back to /data, the image and self-hosted default.
   notes:
-    - "Any of these you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not allowlisted is silently dropped and the action falls back to its default."
+    - "Any of these you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not allowlisted is silently dropped and the action falls back to its default."
     - The CLI actions read and write the caches as the runner's own identity, so that identity needs read access to the cache root — and write access for symbolicator.cleanup.
     - Symbolicator's API is unauthenticated by design; it expects to be reachable only from Sentry's own network. These actions do not add authentication, they inherit whatever the host allows.
   verify: symbolicator.health

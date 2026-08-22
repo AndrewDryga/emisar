@@ -2,14 +2,14 @@ schema_version: 1
 
 id: time-sync
 name: Chrony time sync diagnostics
-version: 0.1.9
+version: 0.1.10
 description: >
   Clock-sync state for Chrony hosts: tracking, sources, current time, drift
   estimate, timezone, plus fix actions (chronyc makestep, enable/disable NTP).
   Use when a host's clock is drifting (a common cause of TLS / auth /
   log-correlation bugs).
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/time-sync
 
 requires:
   os:

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nic
 name: NIC / ethtool diagnostics
-version: 0.1.1
+version: 0.1.3
 description: >
   Inspect physical network interface cards via ethtool: driver and
   firmware versions across every NIC (the "what firmware is my i40e fleet
@@ -10,7 +10,7 @@ description: >
   offload features, and ring-buffer sizes. Read-only — no ethtool SET
   operations.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/nic
 
 requires:
   os:
@@ -33,7 +33,7 @@ setup:
     CAP_NET_ADMIN).
   notes:
     - "Read-only by construction: the pack uses only ethtool GET flags (-i, -S, -k, -g, and bare link), never the config-changing counterparts (-K, -G, -A, -C, -s). Interface arguments are validated to start with a letter, so a value can't be slipped in as an ethtool option flag."
-    - "Interface arguments are physical device names (e.g. eth0, eno1, enp24s0f0). nic.firmware scans every NIC that has a /sys/class/net/*/device link and skips virtual interfaces (lo, veth, bonds, bridges)."
+    - "Interface arguments are physical device names (e.g. eth0, eno1, enp24s0f0). nic.firmware scans every NIC that has a `/sys/class/net/*/device` link and skips virtual interfaces (lo, veth, bonds, bridges)."
   verify: nic.firmware
 
 actions:

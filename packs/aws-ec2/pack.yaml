@@ -1,13 +1,13 @@
 schema_version: 1
 id: aws-ec2
 name: AWS EC2 operations
-version: 0.1.4
+version: 0.1.9
 description: >
   EC2 instance inventory + state introspection plus narrow mutators
   (stop, start, reboot, terminate). Auth via AWS_PROFILE + AWS_REGION
   on the runner host.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/aws-ec2
 
 requires:
   os: [linux]
@@ -16,24 +16,25 @@ requires:
 setup:
   summary: >
     Drives the aws CLI on the runner host. It resolves credentials and
-    region from its own environment or ~/.aws config — the runner only
-    forwards the variables you allowlist in inherit_env.
+    region from its own environment or `~/.aws` config — the runner only
+    forwards the variables you allowlist in `inherit_env`.
   env:
     - name: AWS_PROFILE
-      description: Named profile in ~/.aws/config and ~/.aws/credentials. Omit to use the default profile or static-key/instance-role auth.
+      description: Named profile in `~/.aws/config` and `~/.aws/credentials`. Omit to use the default profile or static-key/instance-role auth.
       example: prod
     - name: AWS_REGION
       required: true
       description: Region to operate in; EC2 is regional, so calls fail without it.
       example: us-east-1
     - name: AWS_ACCESS_KEY_ID
-      description: Static access key. Use instead of a profile; pair with AWS_SECRET_ACCESS_KEY.
+      description: Static access key. Use instead of a profile; pair with `AWS_SECRET_ACCESS_KEY`.
     - name: AWS_SECRET_ACCESS_KEY
-      description: Secret for AWS_ACCESS_KEY_ID.
+      description: Secret for `AWS_ACCESS_KEY_ID`.
     - name: AWS_SESSION_TOKEN
       description: Session token for temporary (STS) credentials.
   notes:
-    - "Alternative to env keys: an ~/.aws/credentials profile (read from disk, no inherit_env entry) or, on EC2/ECS, the instance/task role from instance metadata (no credentials needed at all)."
+    - "An EC2 instance role or ECS task role needs no key at all and is the shape to prefer; a static pair is minted from [the IAM users console](https://console.aws.amazon.com/iam/home#/users) → the user → Security credentials → Create access key."
+    - "Alternative to env keys: an `~/.aws/credentials` profile (read from disk, no `inherit_env` entry) or, on EC2/ECS, the instance/task role from instance metadata (no credentials needed at all)."
     - "Inventory needs ec2:Describe* (read-only). The mutators stop_instance / start_instance / reboot_instance / terminate_instance additionally need ec2:StopInstances / StartInstances / RebootInstances / TerminateInstances."
   verify: ec2.describe_instances
 

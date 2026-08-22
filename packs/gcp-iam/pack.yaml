@@ -2,13 +2,13 @@ schema_version: 1
 
 id: gcp-iam
 name: Google Cloud IAM diagnostics
-version: 0.1.0
+version: 0.1.2
 description: >
   Read-only Google Cloud IAM diagnostics for workload identity providers,
   workload identity pools, and service-account policies. Every action names
   the target project and global location explicitly.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/gcp-iam
 
 requires:
   os: [linux]
@@ -27,8 +27,8 @@ setup:
       description: Optional path to a credential file that overrides the active gcloud account.
       example: /etc/emisar/gcp-reader.json
   notes:
-    - "Any credential/config env you set must be allowlisted in the runner's execution.inherit_env; attached service accounts and workload identity need no credential env."
-    - "For a credential file, populate a dedicated CLOUDSDK_CONFIG with `gcloud auth login --cred-file=...` or set CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE; ordinary gcloud commands do not authenticate from GOOGLE_APPLICATION_CREDENTIALS."
+    - "Any credential/config env you set must be allowlisted in the runner's `execution.inherit_env`; attached service accounts and workload identity need no credential env."
+    - "For a credential file, populate a dedicated `CLOUDSDK_CONFIG` with `gcloud auth login --cred-file=...` or set `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE`; ordinary gcloud commands do not authenticate from GOOGLE_APPLICATION_CREDENTIALS."
     - "Use a read-only principal. Workload identity reads need roles/iam.workloadIdentityPoolViewer; service-account policy reads need roles/iam.serviceAccountViewer or equivalent permissions."
     - "This is a remote-target client pack and is never host-auto-suggested merely because gcloud is installed."
     - "All actions pass --quiet and an explicit --project, so ambient project configuration cannot redirect a request."

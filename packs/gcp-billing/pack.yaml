@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-billing
 name: Google Cloud billing and cost analytics
-version: 0.2.0
+version: 0.2.2
 description: >
   Read-only Google Cloud spend analytics — cost by service, project, and SKU,
   a daily trend, and export freshness — read from the Cloud Billing export in
@@ -10,7 +10,7 @@ description: >
   the Cloud Billing API. Google Cloud publishes no cost-report API, so the cost
   actions read the billing export rather than a reporting endpoint.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/gcp-billing
 
 requires:
   os: [linux]
@@ -29,7 +29,7 @@ setup:
       description: Optional path to a credential file that overrides the active gcloud account.
       example: /etc/emisar/gcp-billing-reader.json
   notes:
-    - "Any credential/config env you set must be allowlisted in the runner's execution.inherit_env; attached service accounts and workload identity need no credential env."
+    - "Any credential/config env you set must be allowlisted in the runner's `execution.inherit_env`; attached service accounts and workload identity need no credential env."
     - "The cost actions read whichever billing export the account turned on — the standard gcp_billing_export_v1_<BILLING_ACCOUNT_ID> table, or the detailed gcp_billing_export_resource_v1_<BILLING_ACCOUNT_ID> one — and name the table they read. Turn on Billing export to BigQuery first: it is not retroactive and takes up to a day to populate, so a fresh export answers recent windows only."
     - "A detailed export splits the same charges into resource-level rows, so the same window scans more of it and a wide one may need a higher max_scan_gb."
     - "The account, project, and budget reads need roles/billing.viewer bound on the billing account itself; a project-level binding does not reach it, and gcloud then reports that the caller does not have permission to access the billing account."

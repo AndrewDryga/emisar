@@ -2,13 +2,13 @@ schema_version: 1
 
 id: gcp-networking
 name: Google Cloud networking diagnostics
-version: 0.1.0
+version: 0.1.2
 description: >
   Read-only Google Cloud VPC, subnet, firewall, route, address, Cloud Router,
   Cloud NAT, VPN, and Interconnect diagnostics. Outputs are fixed projections
   that omit arbitrary descriptions, labels, and credential-shaped fields.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/gcp-networking
 
 requires:
   os: [linux]
@@ -27,7 +27,7 @@ setup:
       example: /etc/emisar/gcp-reader.json
   notes:
     - "The principal needs roles/compute.networkViewer or equivalent get/list permissions."
-    - "Any credential/config env must be allowlisted in the runner's execution.inherit_env; attached service accounts and workload identity need no credential env."
+    - "Any credential/config env must be allowlisted in the runner's `execution.inherit_env`; attached service accounts and workload identity need no credential env."
     - "This remote-target pack declares no host detection signal and is never auto-suggested merely because gcloud is installed."
     - "Every action passes --quiet and an explicit --project so ambient project configuration cannot redirect a request."
   verify: gcp.networks

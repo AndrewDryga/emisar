@@ -10,6 +10,7 @@ import (
 
 	"github.com/andrewdryga/emisar/runner/internal/packs"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
+	"github.com/andrewdryga/emisar/runner/pkg/packspec"
 )
 
 // --- fixtures ---------------------------------------------------------
@@ -574,5 +575,43 @@ func TestCompareVersion(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("compareVersion(%q,%q) = %d, want %d", tc.a, tc.b, got, tc.want)
 		}
+	}
+}
+
+// normalizeSetup is what makes the pack page and `emisar pack info` agree: the
+// same authored block reaches both, with folded-YAML prose flattened so a
+// consumer never re-wraps an authored line break, and lists non-nil so an
+// absent list and an empty one render identically.
+func TestNormalizeSetup_FlattensProseAndFillsLists(t *testing.T) {
+	got := normalizeSetup(packspec.Setup{
+		Summary: "Calls the API\nwith curl.\n",
+		Env: []packspec.EnvVar{{
+			Name:        "SENTRY_AUTH_TOKEN",
+			Required:    true,
+			Description: "Org auth token,\nscoped to the projects\nyou enable.",
+		}},
+		Notes:  []string{"Scopes by family:\nevent:read for issues."},
+		Verify: "sentry.list_organizations",
+	})
+
+	if want := "Calls the API with curl."; got.Summary != want {
+		t.Errorf("Summary = %q, want %q", got.Summary, want)
+	}
+	if want := "Org auth token, scoped to the projects you enable."; got.Env[0].Description != want {
+		t.Errorf("Env[0].Description = %q, want %q", got.Env[0].Description, want)
+	}
+	if want := "Scopes by family: event:read for issues."; got.Notes[0] != want {
+		t.Errorf("Notes[0] = %q, want %q", got.Notes[0], want)
+	}
+	if !got.Env[0].Required {
+		t.Error("Required must survive normalization — it drives the pack page's required badge")
+	}
+	if got.Verify != "sentry.list_organizations" {
+		t.Errorf("Verify = %q, want it carried verbatim", got.Verify)
+	}
+
+	empty := normalizeSetup(packspec.Setup{})
+	if empty.Env == nil || empty.Notes == nil {
+		t.Errorf("empty setup must carry [] not null, got Env=%v Notes=%v", empty.Env, empty.Notes)
 	}
 }

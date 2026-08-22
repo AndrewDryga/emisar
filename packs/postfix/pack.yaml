@@ -2,7 +2,7 @@ schema_version: 1
 
 id: postfix
 name: Postfix mail server
-version: 0.1.13
+version: 0.1.15
 retired_below: 0.1.11
 description: >
   Queue inspection, config dump, log tailing, plus narrow operator
@@ -11,7 +11,7 @@ description: >
   audited. Postfix uid must own the runner OR runner must be in the
   postdrop group.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/postfix
 
 requires:
   os:
@@ -28,10 +28,10 @@ setup:
   summary: >
     Operates on the local Postfix instance on the runner host — no
     credentials needed. Uses the standard binaries (postqueue, postconf,
-    mailq, postsuper) and reads the queue under /var/spool/postfix.
+    mailq, postsuper) and reads the queue under `/var/spool/postfix`.
   notes:
     - "The runner user must own the Postfix queue or be in the postdrop group to read it; the postsuper_* hold/release/requeue actions and `reload` need root."
-    - "maillog actions read /var/log/mail.log, falling back to /var/log/maillog (RHEL-family)."
+    - "maillog actions read `/var/log/mail.log`, falling back to `/var/log/maillog` (RHEL-family)."
   verify: postfix.mailq
 
 actions:

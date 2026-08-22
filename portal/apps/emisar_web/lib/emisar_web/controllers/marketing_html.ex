@@ -8,6 +8,36 @@ defmodule EmisarWeb.MarketingHTML do
 
   embed_templates "marketing_html/*"
 
+  attr :text, :string,
+    default: nil,
+    doc: "one authored setup string — a summary, an env description, or a note"
+
+  @doc """
+  Renders one pack-authored setup string with its inline code and links.
+
+  The whole run is emitted on a single source line on purpose: whitespace
+  between the segment tags would render as a space inside the reconstructed
+  sentence. Every value stays escaped by HEEx, and only `https://` links ever
+  reach `setup_segments/1`'s output, so a pack cannot inject markup or a
+  hostile scheme onto this public page.
+  """
+  def setup_text(assigns) do
+    assigns = assign(assigns, :segments, EmisarWeb.PacksRegistry.setup_segments(assigns.text))
+
+    ~H"""
+    <%= for segment <- @segments do %>
+      <%= case segment do %>
+        <% {:code, value} -> %>
+          <code class="rounded bg-zinc-900 px-1 py-0.5 font-mono text-xs text-zinc-300">{value}</code>
+        <% {:link, label, url} -> %>
+          <.external_link href={url} class="text-brand-400 hover:text-brand-300">{label}</.external_link>
+        <% {:text, value} -> %>
+          {value}
+      <% end %>
+    <% end %>
+    """
+  end
+
   # Hero icon for an action row in the pack-detail action list. `exec`
   # = lightning (runs a binary), `script` = code-bracket (packaged shell
   # script). Defaults to cube for any future kinds.

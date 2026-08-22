@@ -2,14 +2,14 @@ schema_version: 1
 
 id: firewall
 name: Firewall and netfilter
-version: 0.1.12
+version: 0.1.13
 description: >
   iptables, nftables, conntrack, and traffic-control inspection plus
   narrow operator actions for incident response (block IP, unblock IP,
   flush chain). Rule edits are not persisted across iptables service
   reload — use IaC for permanent rules.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/firewall
 
 requires:
   os:

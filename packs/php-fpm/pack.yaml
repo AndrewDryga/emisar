@@ -2,14 +2,14 @@ schema_version: 1
 
 id: php-fpm
 name: PHP-FPM
-version: 0.1.7
+version: 0.1.9
 description: >
   PHP runtime + FPM pool introspection — version, modules, ini, pool
   status (via fpm_status endpoint), error + slow logs, OPcache state,
   Composer manifest. Read-only. Set PHP_FPM_STATUS_URL env to point
   to the FPM status endpoint.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/php-fpm
 
 requires:
   os:
@@ -26,7 +26,7 @@ setup:
     (php -v / --ini, logs, OPcache, Composer) — no credentials needed.
   env:
     - name: PHP_FPM_STATUS_URL
-      description: URL of the FPM pool status page, used by the fpm_status/fpm_status_full/fpm_ping actions. Optional; defaults to http://127.0.0.1/fpm-status. Add it to the runner's inherit_env if you override it.
+      description: URL of the FPM pool status page, used by the fpm_status/fpm_status_full/fpm_ping actions. Optional; defaults to http://127.0.0.1/fpm-status. Add it to the runner's `inherit_env` if you override it.
       default: "http://127.0.0.1/fpm-status"
   notes:
     - "The status page must be enabled in the pool config (pm.status_path) and reachable from the runner host for the fpm_status actions to return data."

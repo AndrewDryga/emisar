@@ -2,7 +2,7 @@ schema_version: 1
 
 id: terraform-readonly
 name: Terraform / OpenTofu read-only ops
-version: 0.7.4
+version: 0.7.6
 description: >
   Read-only Terraform or OpenTofu CLI actions for inspecting a workspace.
   NO apply, NO destroy, NO state mutation — those should happen in CI, not
@@ -10,7 +10,7 @@ description: >
   whichever CLI TF_BIN names — `terraform` by default, `tofu` on an
   OpenTofu host, so one of those two must be on PATH.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/terraform-readonly
 
 requires:
   os:
@@ -21,8 +21,8 @@ requires:
 
 setup:
   summary: >
-    Every action runs `cd "$TF_DIR" && terraform …`, so TF_DIR must point
-    at an initialized working directory on the runner host. Set TF_BIN=tofu
+    Every action runs `cd "$TF_DIR" && terraform …`, so `TF_DIR` must point
+    at an initialized working directory on the runner host. Set `TF_BIN`=tofu
     to drive OpenTofu instead. Provider and backend credentials come from
     that config, not from this pack.
   env:
@@ -55,7 +55,7 @@ setup:
     - "For review, prefer plan_summary over plan_no_save and show_json: it returns addresses, actions, counts, drift, and diagnostics as JSON while emitting no attribute or output values. plan_file_summary returns the same shape for a plan CI already saved, without contacting a provider."
     - "plan_summary needs a workspace that plans ON THIS HOST. What decides that is the HCP Terraform / Terraform Enterprise workspace's execution mode, not the backend: a `cloud` block with execution mode `local` works fine, while `remote` and `agent` stream the run's human output instead of machine-readable messages. The action fails closed there rather than reporting an empty plan; use the hcp-terraform pack for those workspaces. plan_no_save still works everywhere, and the state-reading actions are unaffected."
     - "`state pull` may upgrade state to the local CLI's readable format; terraform_version in projected metadata can therefore reflect the runner's CLI rather than the writer of the remote snapshot."
-    - "TF_BIN only reaches the action when the runner's inherit_env allowlists it, exactly like TF_DIR — an unset TF_BIN runs `terraform`."
+    - "`TF_BIN` only reaches the action when the runner's `inherit_env` allowlists it, exactly like `TF_DIR` — an unset `TF_BIN` runs `terraform`."
   verify: tf.version
 
 actions:

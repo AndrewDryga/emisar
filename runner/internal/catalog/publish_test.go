@@ -311,7 +311,7 @@ func TestPublish_ExistingImmutableIsSkipped(t *testing.T) {
 	f := newFakeGCS()
 	// A schema object already exists with the expected bytes: the publisher
 	// verifies it before treating the precondition failure as idempotent.
-	const name = "v1/schemas/catalog.v4.schema.json"
+	const name = "v1/schemas/catalog.v5.schema.json"
 	f.status[name] = http.StatusPreconditionFailed
 	existing, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
 	if err != nil {
@@ -345,7 +345,7 @@ func TestPublish_ExistingImmutableIsSkipped(t *testing.T) {
 func TestPublish_ExistingImmutableWithDifferentBytesFails(t *testing.T) {
 	dir := buildTree(t)
 	f := newFakeGCS()
-	const name = "v1/schemas/catalog.v4.schema.json"
+	const name = "v1/schemas/catalog.v5.schema.json"
 	f.status[name] = http.StatusPreconditionFailed
 	f.objects[name] = []byte("different")
 	srv := f.server(t)
@@ -364,7 +364,7 @@ func TestPublish_ExistingImmutableWithDifferentBytesFails(t *testing.T) {
 func TestPublish_ExistingImmutableThatCannotBeReadFails(t *testing.T) {
 	dir := buildTree(t)
 	f := newFakeGCS()
-	const name = "v1/schemas/catalog.v4.schema.json"
+	const name = "v1/schemas/catalog.v5.schema.json"
 	f.status[name] = http.StatusPreconditionFailed
 	srv := f.server(t)
 
@@ -382,7 +382,7 @@ func TestPublish_ExistingImmutableThatCannotBeReadFails(t *testing.T) {
 func TestPublish_OversizedExistingImmutableFails(t *testing.T) {
 	dir := buildTree(t)
 	f := newFakeGCS()
-	const name = "v1/schemas/catalog.v4.schema.json"
+	const name = "v1/schemas/catalog.v5.schema.json"
 	f.status[name] = http.StatusPreconditionFailed
 	expected, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
 	if err != nil {

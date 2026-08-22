@@ -2,13 +2,13 @@ schema_version: 1
 
 id: haproxy
 name: HAProxy operations
-version: 0.1.10
+version: 0.1.12
 description: >
   Stats, server state, frontends/backends, session inventory, plus narrow
   mutators to enable/disable backend servers. Talks to the HAProxy admin
   socket. Set HAPROXY_SOCK env var on the runner host.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/haproxy
 
 requires:
   os:
@@ -24,7 +24,7 @@ detect:
 setup:
   summary: >
     Talks to the local HAProxy admin/stats UNIX socket via socat on the
-    runner host. There is no default — you must point HAPROXY_SOCK at the
+    runner host. There is no default — you must point `HAPROXY_SOCK` at the
     socket.
   env:
     - name: HAPROXY_SOCK
@@ -32,7 +32,7 @@ setup:
       description: Path to the HAProxy admin/stats UNIX socket (the `stats socket` from haproxy.cfg).
       example: /run/haproxy/admin.sock
   notes:
-    - "HAPROXY_SOCK only reaches an action when the runner allowlists it in execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default. Unset, the actions fall back to the conventional socket path, so a non-default runtime socket reads the wrong one or is simply absent."
+    - "`HAPROXY_SOCK` only reaches an action when the runner allowlists it in `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default. Unset, the actions fall back to the conventional socket path, so a non-default runtime socket reads the wrong one or is simply absent."
     - "The socket must be declared with `level admin` in haproxy.cfg for the enable/disable/set mutators to work."
     - "The runner user needs read/write access to the socket (it is often owned by root with mode 0600) — run the runner as root or grant access via the socket's group/mode."
   verify: haproxy.show_info

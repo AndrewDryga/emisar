@@ -1,14 +1,14 @@
 schema_version: 1
 id: minio
 name: MinIO operations
-version: 0.1.15
+version: 0.1.18
 retired_below: 0.1.10
 description: >
   Cluster + bucket + user introspection plus operator surface (user
   enable/disable, bucket heal, cluster service restart). Talks to mc
   CLI configured via MC_HOST_<alias> env var on the runner host.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/minio
 
 requires:
   os: [linux]
@@ -31,8 +31,9 @@ setup:
       description: 'Connection for the "minio" alias, as https://ACCESS_KEY:SECRET_KEY@endpoint. Rename the suffix to match the alias you pass.'
       example: https://minioadmin:minioadmin@minio.internal:9000
   notes:
-    - "The MC_HOST_<alias> you set (e.g. MC_HOST_minio) must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
-    - "The env var suffix must exactly match the alias argument: actions whose examples pass alias \"minio\" need MC_HOST_minio; a different alias needs MC_HOST_<that-alias>."
+    - "Create the access/secret pair with mc admin user add <alias> <access-key> <secret-key>, or in the MinIO Console under Identity → Users; attach the readonly policy for the read actions and consoleAdmin for the admin-* ones."
+    - "The MC_HOST_<alias> you set (e.g. `MC_HOST_minio`) must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "The env var suffix must exactly match the alias argument: actions whose examples pass alias \"minio\" need `MC_HOST_minio`; a different alias needs MC_HOST_<that-alias>."
     - "The access/secret pair needs admin permissions for the admin-* actions (info, user list/enable/disable, heal, service restart); a plain user key can only list buckets and stat."
   verify: minio.admin_info
 

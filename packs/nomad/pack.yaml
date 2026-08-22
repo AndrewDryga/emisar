@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nomad
 name: HashiCorp Nomad
-version: 0.4.0
+version: 0.4.2
 retired_below: 0.2.8
 description: >
   Deep Nomad operations — full job lifecycle (inspect, history, scale
@@ -23,7 +23,7 @@ description: >
   (never values), ACL policies + tokens, namespaces + quotas. Authenticates
   via NOMAD_ADDR + NOMAD_TOKEN (and the standard TLS env) on the runner host.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/nomad
 
 requires:
   os:
@@ -65,13 +65,13 @@ setup:
     - name: NOMAD_CLIENT_CERT
       description: >
         Path to a client certificate for mTLS-enabled servers (pair with
-        NOMAD_CLIENT_KEY).
+        `NOMAD_CLIENT_KEY`).
     - name: NOMAD_CLIENT_KEY
       description: >
         Path to the client certificate's private key for mTLS-enabled
         servers.
   notes:
-    - "Any NOMAD_* env you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth/TLS)."
+    - "Any NOMAD_* env you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth/TLS)."
     - With ACLs enabled the token needs the matching capabilities — submit-job for the job mutators, alloc-exec for job_action_run, node:write for drain/eligibility/purge, and operator:write for the raft remove-peer action.
     - "API aggregation and projection actions use jq on the runner host; it is a declared pack requirement."
     - "The API-read actions use `nomad operator api` (Nomad CLI 1.4+). Newer verbs degrade with a plain CLI error on older clusters: node pools need Nomad 1.6+, job-declared actions 1.7+, job_start 1.9+."

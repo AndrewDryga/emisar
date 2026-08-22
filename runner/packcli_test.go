@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/andrewdryga/emisar/runner/pkg/packspec"
 )
 
 // withPacksDir points the read-only pack commands at dir via the global
@@ -374,5 +376,139 @@ func TestPackValidateCmd_ExactArgs(t *testing.T) {
 		if err := cmd.Execute(); err == nil {
 			t.Fatalf("validate with %d args must be an arg-count error", len(args))
 		}
+	}
+}
+
+// Pack setup text carries light markdown so the public pack page can format
+// it. In a terminal that markup is noise, and a link left inline is worse than
+// noise: wrapText breaks it mid-URL, so it is neither clickable nor copyable —
+// the only reason to print it at all.
+func TestSetupProse_StripsCodeTicksAndLiftsLinksOut(t *testing.T) {
+	tests := []struct {
+		name      string
+		in        string
+		wantProse string
+		wantLinks []string
+	}{
+		{
+			name:      "plain text is untouched",
+			in:        "Set it on the runner host.",
+			wantProse: "Set it on the runner host.",
+		},
+		{
+			name:      "code ticks are dropped, not styled",
+			in:        "add `GH_TOKEN` to `execution.inherit_env`",
+			wantProse: "add GH_TOKEN to execution.inherit_env",
+		},
+		{
+			name:      "a link leaves its label behind and its URL comes back separately",
+			in:        "[Create a token](https://github.com/settings/tokens/new?scopes=repo) first.",
+			wantProse: "Create a token first.",
+			wantLinks: []string{"https://github.com/settings/tokens/new?scopes=repo"},
+		},
+		{
+			name:      "only https is treated as a link",
+			in:        "see [x](javascript:alert(1)) and [y](http://plain.example)",
+			wantProse: "see [x](javascript:alert(1)) and [y](http://plain.example)",
+		},
+		{
+			name:      "an example URL in prose is not a link and survives intact",
+			in:        "as `https://ACCESS:SECRET@endpoint`",
+			wantProse: "as https://ACCESS:SECRET@endpoint",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			prose, links := setupProse(test.in)
+			if prose != test.wantProse {
+				t.Errorf("prose = %q, want %q", prose, test.wantProse)
+			}
+			if len(links) != len(test.wantLinks) {
+				t.Fatalf("links = %v, want %v", links, test.wantLinks)
+			}
+			for i, want := range test.wantLinks {
+				if links[i] != want {
+					t.Errorf("links[%d] = %q, want %q", i, links[i], want)
+				}
+			}
+		})
+	}
+}
+
+// The whole point of lifting the URL out: it must reach the operator unbroken.
+func TestWriteSetup_PrintsAnAuthoredURLOnOneUnwrappedLine(t *testing.T) {
+	url := "https://github.com/settings/tokens/new?scopes=repo&description=emisar%20runner"
+	var out strings.Builder
+	writeSetup(&out, newStyler(&out), &packspec.Pack{
+		Setup: packspec.Setup{
+			Notes: []string{"[Create a classic token with the repo scope preselected](" + url +
+				"). Classic tokens have no read-only repo scope, so repo is the floor here."},
+		},
+	}, nil, false)
+
+	if !strings.Contains(out.String(), url) {
+		t.Fatalf("the URL must survive whole; got:\n%s", out.String())
+	}
+	for _, line := range strings.Split(out.String(), "\n") {
+		if strings.Contains(line, "github.com") && strings.TrimSpace(line) != url {
+			t.Errorf("URL line carries more than the URL (so it was wrapped or inlined): %q", line)
+		}
+	}
+	if strings.Contains(out.String(), "](") {
+		t.Error("markdown link syntax leaked into terminal output")
+	}
+}
+
+// The runner never DERIVES a pack page URL — a self-hosted registry's packs do
+// not live on our site — so the link comes from the pack's own homepage field,
+// and a pack that declares none gets no Docs line at all.
+func TestWritePackInfo_DocsLineComesFromThePackOrIsAbsent(t *testing.T) {
+	root := t.TempDir()
+	write := func(id, extra string) {
+		dir := filepath.Join(root, id)
+		if err := os.MkdirAll(filepath.Join(dir, "actions"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "pack.yaml"), []byte(
+			"schema_version: 1\nid: "+id+"\nname: t\nversion: 0.0.1\ndescription: t\n"+extra+
+				"actions:\n  - actions/a.yaml\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "actions", "a.yaml"), []byte(
+			"schema_version: 1\nid: "+id+".a\ntitle: t\nkind: exec\nrisk: low\ndescription: d\nside_effects: [none]\nargs: []\n"+
+				"execution:\n  command:\n    binary: echo\n    argv: [\"hi\"]\n  timeout: 5s\n"+
+				"output:\n  parser: text\n  max_stdout_bytes: 1024\n  max_stderr_bytes: 1024\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("withdocs", "homepage: https://emisar.dev/packs/withdocs\n")
+	write("nodocs", "")
+
+	withPacksDir(t, root)
+	t.Setenv("HOME", t.TempDir())
+	withJSONOut(t, false)
+
+	info := func(id string) string {
+		var execErr error
+		out := captureStdout(t, func() {
+			cmd := packInfoCmd()
+			cmd.SilenceUsage, cmd.SilenceErrors = true, true
+			cmd.SetArgs([]string{id})
+			execErr = cmd.Execute()
+		})
+		if execErr != nil {
+			t.Fatalf("pack info %s: %v", id, execErr)
+		}
+		return out
+	}
+
+	shown := info("withdocs")
+	if !strings.Contains(shown, "Docs:") || !strings.Contains(shown, "https://emisar.dev/packs/withdocs") {
+		t.Errorf("expected the pack's own docs link; got:\n%s", shown)
+	}
+
+	hidden := info("nodocs")
+	if strings.Contains(hidden, "Docs:") {
+		t.Errorf("a pack with no homepage must print no Docs line; got:\n%s", hidden)
 	}
 }

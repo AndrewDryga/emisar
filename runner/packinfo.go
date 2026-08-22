@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"regexp"
 	"strings"
 	"text/tabwriter"
 
@@ -34,6 +35,12 @@ func writePackInfo(w io.Writer, reg *packs.Registry, p *packspec.Pack, inheritEn
 	if hash, ok := reg.PackHash(p.ID); ok {
 		fmt.Fprintf(w, "  %s      %s\n", style.bold("Hash:"), style.dim(hash))
 	}
+	// The pack names its own page — the runner never derives one, because a
+	// self-hosted registry's packs do not live on our site. A pack that
+	// declares no homepage simply gets no line.
+	if p.Homepage != "" {
+		fmt.Fprintf(w, "  %s      %s\n", style.bold("Docs:"), p.Homepage)
+	}
 
 	writeSetup(w, style, p, inheritEnv, haveConfig)
 }
@@ -50,9 +57,11 @@ func writeSetup(w io.Writer, style styler, p *packspec.Pack, inheritEnv []string
 		return
 	}
 
-	for _, line := range wrapText(collapseSpace(s.Summary), 70) {
+	summary, summaryLinks := setupProse(collapseSpace(s.Summary))
+	for _, line := range wrapText(summary, 70) {
 		fmt.Fprintf(w, "    %s\n", line)
 	}
+	writeLinks(w, "    ", summaryLinks)
 
 	if len(s.Env) > 0 {
 		fmt.Fprintf(w, "\n    Environment — set on the runner host, then add each to inherit_env:\n")
@@ -78,7 +87,9 @@ func writeSetup(w io.Writer, style styler, p *packspec.Pack, inheritEnv []string
 	if len(s.Notes) > 0 {
 		fmt.Fprintf(w, "\n    %s\n", style.bold("Notes:"))
 		for _, n := range s.Notes {
-			writeBullet(w, "      ", collapseSpace(n))
+			note, noteLinks := setupProse(collapseSpace(n))
+			writeBullet(w, "      ", note)
+			writeLinks(w, "        ", noteLinks)
 		}
 	}
 
@@ -90,7 +101,8 @@ func writeSetup(w io.Writer, style styler, p *packspec.Pack, inheritEnv []string
 // envDetail builds the right-hand description column for one env var,
 // folding in its default and example when present.
 func envDetail(e packspec.EnvVar) string {
-	d := strings.TrimSpace(e.Description)
+	description, _ := setupProse(e.Description)
+	d := strings.TrimSpace(description)
 	if e.Default != "" {
 		d = strings.TrimSpace(d + fmt.Sprintf(" (default: %s)", e.Default))
 	}
@@ -186,6 +198,38 @@ func collapseSpace(s string) string {
 
 // wrapText word-wraps s to at most width columns, returning one string per
 // line. Empty input yields no lines.
+// setupLink matches the same opt-in link syntax the pack page renders. Only
+// https, so an authored `javascript:` or `file:` target is never presented as
+// somewhere to go.
+var setupLink = regexp.MustCompile(`\[([^\]\n]+)\]\((https://[^\s)]+)\)`)
+
+// setupProse renders one authored setup string for a terminal. Pack setup text
+// carries light markdown so the public pack page can format it; here that
+// markup would be noise or, worse, damage:
+//
+//   - Inline-code ticks are dropped. A terminal has no code chip, and an ANSI
+//     style is not an option — wrapText measures with len(), so escape bytes
+//     would count toward the width and wrap the line early.
+//   - A [label](url) link becomes its label, with the URL returned separately
+//     to print UNWRAPPED on its own line. Left inline it wraps mid-URL, which
+//     is neither clickable nor copyable — the whole reason to print it.
+func setupProse(text string) (prose string, links []string) {
+	prose = setupLink.ReplaceAllStringFunc(text, func(match string) string {
+		parts := setupLink.FindStringSubmatch(match)
+		links = append(links, parts[2])
+		return parts[1]
+	})
+	return strings.ReplaceAll(prose, "`", ""), links
+}
+
+// writeLinks prints each URL alone on its own line, never wrapped, so a
+// terminal can linkify it and an operator can select it whole.
+func writeLinks(w io.Writer, indent string, links []string) {
+	for _, link := range links {
+		fmt.Fprintf(w, "%s%s\n", indent, link)
+	}
+}
+
 func wrapText(s string, width int) []string {
 	words := strings.Fields(s)
 	if len(words) == 0 {

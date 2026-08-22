@@ -2,7 +2,7 @@ schema_version: 1
 
 id: docker
 name: Docker operations pack
-version: 0.2.17
+version: 0.2.19
 retired_below: 0.2.14
 description: >
   Operator pack for Docker hosts: read-only inventory and per-container
@@ -10,7 +10,7 @@ description: >
   Includes docker-compose support. The runner uid must be in the
   docker group; this pack does NOT escalate.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/docker
 
 requires:
   os:
@@ -29,7 +29,7 @@ setup:
     Talks to the local Docker daemon on the runner host via its Unix
     socket — no credentials needed.
   notes:
-    - "The runner uid must be in the docker group (or be root) to reach /var/run/docker.sock; this pack does not escalate."
+    - "The runner uid must be in the docker group (or be root) to reach `/var/run/docker.sock`; this pack does not escalate."
     - "Membership in the docker group is effectively root-equivalent on the host, since a container can mount and write the host filesystem."
   verify: docker.ps
 

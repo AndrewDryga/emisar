@@ -2,7 +2,7 @@ schema_version: 1
 
 id: elixir-beam
 name: Elixir / BEAM runtime
-version: 0.1.4
+version: 0.1.7
 description: >
   Diagnostics for Elixir and Erlang/BEAM applications on the runner host or
   inside Docker containers: toolchain versions, EPMD registrations, BEAM OS
@@ -12,7 +12,7 @@ description: >
   discovered from running BEAM processes; target one by release name, or by
   container for a release inside Docker.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/elixir-beam
 
 requires:
   os:
@@ -37,11 +37,11 @@ setup:
     discovered from the running BEAM process (start with beam.release_targets).
   env:
     - name: ELIXIR_RELEASE_CTL
-      description: Optional override pinning the release control script path, for example /opt/my_app/bin/my_app (with a container argument, the path inside the container). Only needed when discovery cannot see the release; add it to the runner's inherit_env. The release/container action arguments take precedence.
+      description: Optional override pinning the release control script path, for example `/opt/my_app/bin/my_app` (with a container argument, the path inside the container). Only needed when discovery cannot see the release; add it to the runner's `inherit_env`. The release/container action arguments take precedence.
   notes:
     - "Release actions discover running releases from BEAM process command lines and only ever execute <release_root>/bin/<release_name> of a release that is already running — callers select among live releases but cannot point actions at arbitrary binaries."
     - "When several releases run on one target, pass the release argument (names come from beam.release_targets). For a release inside Docker, pass the container argument; the runner uid then needs the docker CLI and Docker socket access."
-    - "The runner uid must be able to read /proc entries for the target BEAM process; otherwise Linux may hide another user's process details."
+    - "The runner uid must be able to read `/proc` entries for the target BEAM process; otherwise Linux may hide another user's process details."
     - "Release RPC actions execute fixed, pack-authored expressions only; callers cannot supply arbitrary Elixir code."
     - "If the release control script evaluates runtime config during rpc, the runner service must inherit the same runtime env the release script needs, or those actions will fail before connecting. With the container argument this usually just works: docker exec runs with the container's configured environment."
     - "beam.release_pid reports the PID inside the container's namespace when container is set, not the host PID (find the host PID with beam.processes)."

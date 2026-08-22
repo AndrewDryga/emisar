@@ -23,6 +23,7 @@ import (
 
 	"github.com/andrewdryga/emisar/runner/internal/packs"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
+	"github.com/andrewdryga/emisar/runner/pkg/packspec"
 )
 
 // SchemaVersion is the catalog.json document schema version. It is
@@ -63,7 +64,12 @@ type Pack struct {
 	TarballURL  string   `json:"tarball_url"`
 	Requires    Requires `json:"requires"`
 	Detect      Detect   `json:"detect"`
-	Actions     []Action `json:"actions"`
+	// Setup is the pack's own authored setup block — the credentials it
+	// reads, the host caveats, and the read action that proves it works.
+	// Carried verbatim from the manifest so the pack page an operator reads
+	// BEFORE installing and `emisar pack info` AFTER cannot disagree.
+	Setup   packspec.Setup `json:"setup"`
+	Actions []Action       `json:"actions"`
 	// PreviousVersions carries the last few prior versions of this pack
 	// (newest first, excluding the current version, capped at
 	// DefaultPreviousKept). Absent on a pack with no shipped history; the
@@ -189,6 +195,7 @@ func Build(reg *packs.Registry, opts BuildOptions) (*Catalog, error) {
 			TarballURL:   base + "/" + TarballObject(p.ID, p.Version, hash),
 			Requires:     Requires{OS: nonNil(p.Requires.OS), Binaries: nonNil(p.Requires.Binaries)},
 			Detect:       deriveDetect(p.Detect.Binaries, p.Detect.Processes, p.Detect.Ports),
+			Setup:        normalizeSetup(p.Setup),
 			Actions:      actions,
 			RetiredBelow: p.RetiredBelow,
 		})
@@ -483,6 +490,27 @@ func deriveDetect(binaries, processes []string, ports []int) Detect {
 // normalizeDescription trims and collapses internal whitespace, matching the
 // portal's `String.trim |> String.replace(~r/\s+/, " ")`.
 func normalizeDescription(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// normalizeSetup carries the pack's setup block into the catalog with its
+// folded-YAML prose flattened to single lines and its lists non-nil, so a
+// consumer rendering it never has to re-wrap authored line breaks or
+// distinguish an absent list from an empty one.
+func normalizeSetup(s packspec.Setup) packspec.Setup {
+	out := packspec.Setup{
+		Summary: normalizeDescription(s.Summary),
+		Env:     make([]packspec.EnvVar, 0, len(s.Env)),
+		Notes:   make([]string, 0, len(s.Notes)),
+		Verify:  s.Verify,
+	}
+	for _, e := range s.Env {
+		e.Description = normalizeDescription(e.Description)
+		out.Env = append(out.Env, e)
+	}
+	for _, n := range s.Notes {
+		out.Notes = append(out.Notes, normalizeDescription(n))
+	}
+	return out
+}
 
 func vendorOr(v string) string {
 	if v == "" {

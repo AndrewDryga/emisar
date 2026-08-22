@@ -2,7 +2,7 @@ schema_version: 1
 
 id: grafana
 name: Grafana
-version: 0.1.14
+version: 0.1.16
 # 0.1.13 and below shipped settings as low risk, so the admin-settings dump —
 # which carries whatever credentials Grafana did not mask — auto-ran with no
 # approval. A mislabelled tier that skipped the gate is a security fix.
@@ -12,7 +12,7 @@ description: >
   state, user list, version, settings. Read-only. Auth via a bearer token
   or Basic credentials on the runner host.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/grafana
 
 requires:
   os:
@@ -30,9 +30,9 @@ detect:
 
 setup:
   summary: >
-    Every action calls the Grafana HTTP API at $GRAFANA_URL via curl. Set
-    $GRAFANA_TOKEN for bearer authentication, or $GRAFANA_USER and
-    $GRAFANA_PASSWORD for Basic authentication. Basic credentials are required
+    Every action calls the Grafana HTTP API at `$GRAFANA_URL` via curl. Set
+    `$GRAFANA_TOKEN` for bearer authentication, or `$GRAFANA_USER` and
+    `$GRAFANA_PASSWORD` for Basic authentication. Basic credentials are required
     for server-admin endpoints such as orgs and settings.
   env:
     - name: GRAFANA_URL
@@ -42,12 +42,12 @@ setup:
     - name: GRAFANA_TOKEN
       description: Service-account token or API key sent as the Bearer credential.
     - name: GRAFANA_USER
-      description: Grafana user for Basic authentication. Takes precedence over GRAFANA_TOKEN.
+      description: Grafana user for Basic authentication. Takes precedence over `GRAFANA_TOKEN`.
       example: admin
     - name: GRAFANA_PASSWORD
-      description: Password paired with GRAFANA_USER.
+      description: Password paired with `GRAFANA_USER`.
   notes:
-    - "Any Grafana env var you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "Any Grafana env var you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "Create the token as a service account (Administration -> Service accounts) or a legacy API key; this pack is read-only, so a Viewer/Admin-read role is enough."
     - "Server-admin endpoints do not accept service-account tokens; use a Grafana server-admin user's Basic credentials for orgs and settings."
   verify: grafana.health

@@ -114,6 +114,42 @@ defmodule EmisarWeb.PacksTest do
       refute hidden =~ "Required binaries"
     end
 
+    test "the setup section names the pack's own credentials and marks the required ones",
+         %{conn: conn} do
+      # The point of carrying setup through catalog.json: an operator deciding
+      # whether to install can see the credential BEFORE installing, instead of
+      # only from `emisar pack info` on a host that already has the pack.
+      html = conn |> get(~p"/packs/sentry") |> html_response(200)
+
+      assert html =~ "Setup"
+      assert html =~ "SENTRY_AUTH_TOKEN"
+      assert html =~ "SENTRY_URL"
+      assert html =~ "required"
+      assert html =~ "default https://sentry.io"
+      assert html =~ "sudo emisar action run sentry.list_organizations"
+    end
+
+    test "a pack that needs no credentials says so instead of showing an empty section",
+         %{conn: conn} do
+      local = Enum.find(PublishedRegistry.list(), &(&1.setup.env == [] and &1.setup.notes != []))
+      assert local, "expected at least one local-host pack with no env and some notes"
+
+      html = conn |> get(~p"/packs/#{local.id}") |> html_response(200)
+
+      assert html =~ "Setup"
+      refute html =~ "Environment"
+    end
+
+    test "an authored backtick in a setup note renders as code, not a literal tick",
+         %{conn: conn} do
+      # 31 notes across 22 packs write inline code with markdown backticks;
+      # printing the ticks verbatim is what this page used to do.
+      html = conn |> get(~p"/packs/frr") |> html_response(200)
+
+      assert html =~ ~r{<code[^>]*>usermod -aG frrvty emisar</code>}
+      refute html =~ "`usermod"
+    end
+
     test "the pack reference footer link carries the brand CTA affordance", %{conn: conn} do
       html = conn |> get(~p"/packs/redis") |> html_response(200)
 
@@ -243,6 +279,69 @@ defmodule EmisarWeb.PacksTest do
       # daemon itself, so neither belongs in the copy-paste snippet.
       refute snippet =~ "--dest"
       refute snippet =~ "systemctl reload"
+    end
+  end
+
+  describe "setup_segments/1" do
+    test "splits an authored string into text and code runs on its backticks" do
+      assert EmisarWeb.PacksRegistry.setup_segments("prefer the `frrvty` group") == [
+               text: "prefer the ",
+               code: "frrvty",
+               text: " group"
+             ]
+
+      assert EmisarWeb.PacksRegistry.setup_segments("no code here") == [text: "no code here"]
+      assert EmisarWeb.PacksRegistry.setup_segments("") == []
+      assert EmisarWeb.PacksRegistry.setup_segments(nil) == []
+    end
+
+    test "an unbalanced backtick stays literal instead of swallowing the rest of the string" do
+      # A pack author is not obliged to balance ticks, and the run after an
+      # unmatched one is ordinary prose — rendering it as code would be wrong.
+      assert EmisarWeb.PacksRegistry.setup_segments("run `usermod on the host") == [
+               text: "run ",
+               text: "`usermod on the host"
+             ]
+    end
+
+    test "an https markdown link becomes a link segment" do
+      assert EmisarWeb.PacksRegistry.setup_segments("mint it [here](https://github.com/x?a=b).") ==
+               [
+                 {:text, "mint it "},
+                 {:link, "here", "https://github.com/x?a=b"},
+                 {:text, "."}
+               ]
+    end
+
+    test "only https is linkable, so a pack cannot put a hostile scheme on a public page" do
+      # Packs are administrator-installed and the catalog is hashed, but third
+      # parties publish packs too and this page is public and unauthenticated.
+      for scheme <- ["javascript:alert(1)", "data:text/html,x", "http://plain.example"] do
+        segments = EmisarWeb.PacksRegistry.setup_segments("see [x](#{scheme})")
+        refute Enum.any?(segments, &match?({:link, _, _}, &1)), "#{scheme} must not link"
+      end
+    end
+
+    test "a backtick inside a link's URL never opens a code span" do
+      # The link is parsed first, so its URL is opaque to the backtick splitter —
+      # otherwise one tick in a query string would swallow the rest of the note.
+      assert EmisarWeb.PacksRegistry.setup_segments("[a](https://x.test/?q=`b`) then `c`") == [
+               {:link, "a", "https://x.test/?q=`b`"},
+               {:text, " then "},
+               {:code, "c"}
+             ]
+    end
+
+    test "every authored setup string in the live catalog renders without a stray backtick" do
+      for pack <- PublishedRegistry.list(),
+          text <-
+            [pack.setup.summary | pack.setup.notes] ++
+              Enum.map(pack.setup.env, & &1.description),
+          text != nil,
+          {kind, value} <- EmisarWeb.PacksRegistry.setup_segments(text),
+          kind == :code do
+        refute value =~ "`", "unbalanced backtick in #{pack.id}: #{text}"
+      end
     end
   end
 

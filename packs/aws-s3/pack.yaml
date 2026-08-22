@@ -1,7 +1,7 @@
 schema_version: 1
 id: aws-s3
 name: AWS S3 operations
-version: 0.1.4
+version: 0.1.7
 retired_below: 0.1.4
 description: >
   Read-only S3 diagnostics for bounded bucket and object inventory, access,
@@ -9,7 +9,7 @@ description: >
   and fixed object metadata. Object bodies and custom metadata values are
   excluded. Auth via AWS_PROFILE.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/aws-s3
 
 requires:
   os: [linux]
@@ -18,24 +18,24 @@ requires:
 setup:
   summary: >
     Drives the aws CLI on the runner host. It resolves credentials from
-    its own environment or ~/.aws config — the runner only forwards the
-    variables you allowlist in inherit_env.
+    its own environment or `~/.aws` config — the runner only forwards the
+    variables you allowlist in `inherit_env`.
   env:
     - name: AWS_PROFILE
-      description: Named profile in ~/.aws/config and ~/.aws/credentials. Omit to use the default profile or static-key/instance-role auth.
+      description: Named profile in `~/.aws/config` and `~/.aws/credentials`. Omit to use the default profile or static-key/instance-role auth.
       example: prod
     - name: AWS_REGION
       description: Default region for the CLI. S3 redirects per-bucket calls to the bucket's own region, so this is rarely required; set it to avoid an unset-region error on some setups.
       example: us-east-1
     - name: AWS_ACCESS_KEY_ID
-      description: Static access key. Use instead of a profile; pair with AWS_SECRET_ACCESS_KEY.
+      description: Static access key. Use instead of a profile; pair with `AWS_SECRET_ACCESS_KEY`.
     - name: AWS_SECRET_ACCESS_KEY
-      description: Secret for AWS_ACCESS_KEY_ID.
+      description: Secret for `AWS_ACCESS_KEY_ID`.
     - name: AWS_SESSION_TOKEN
       description: Session token for temporary (STS) credentials.
   notes:
     - "Read-only: the principal needs s3:ListAllMyBuckets, s3:ListBucket, s3:GetBucketLocation and the exact s3:GetBucket* / s3:GetObject permissions for the buckets you inspect."
-    - "Alternative to env keys: an ~/.aws/credentials profile (read from disk, no inherit_env entry) or, on EC2/ECS, the instance/task role from instance metadata (no credentials needed at all)."
+    - "Alternative to env keys: an `~/.aws/credentials` profile (read from disk, no `inherit_env` entry) or, on EC2/ECS, the instance/task role from instance metadata (no credentials needed at all)."
     - "Object metadata is projected locally: custom metadata key names are returned, but their values and object bodies never leave the runner."
     - "This remote-target pack declares no host detection signal and is never auto-suggested merely because aws is installed."
   verify: s3.list_buckets

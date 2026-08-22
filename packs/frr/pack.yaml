@@ -2,14 +2,14 @@ schema_version: 1
 
 id: frr
 name: FRRouting (FRR)
-version: 0.1.4
+version: 0.1.5
 description: >
   Query the local FRRouting daemons via vtysh — BGP summary + neighbors,
   BFD peers, IP route summary, and interface state — plus one gated mutation:
   shut a BGP neighbor to drain a node from an anycast VIP. Reads are `show`
   commands; the drain is policy-gated (risk: high).
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/frr
 
 requires:
   os:

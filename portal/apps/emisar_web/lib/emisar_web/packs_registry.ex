@@ -99,4 +99,73 @@ defmodule EmisarWeb.PacksRegistry do
   def install_snippet(%Catalog.PublishedRegistry.Pack{id: id, content_hash: hash}) do
     "sudo emisar pack install #{id} --hash #{hash}"
   end
+
+  # Only https, and no whitespace or closing paren inside the URL — the label
+  # may not span lines either, so a stray bracket in prose cannot start a link
+  # that swallows the rest of the note.
+  @link ~r/\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/
+
+  @doc """
+  Split one authored setup string — a summary, an env description, or a note —
+  into `{:text, str} | {:code, str} | {:link, label, url}` segments, so the pack
+  page renders `usermod -aG frrvty` as code and
+  `[create a token](https://…)` as a link instead of printing the punctuation.
+
+  Pack authors already write inline code with markdown backticks (31 notes
+  across 22 packs), and third parties publish packs too, so the page reads the
+  convention rather than the manifests being rewritten. Link syntax is opt-in
+  for the same reason auto-linking bare URLs would be wrong: several packs put
+  example connection strings like `https://ACCESS:SECRET@endpoint` in their
+  prose, and those are values to copy, not places to visit.
+
+  Returning segments rather than markup keeps every character escaped by
+  HEEx — nothing here reaches `raw/1`. **Only `https://` links are accepted**;
+  any other scheme stays literal text, so a pack cannot smuggle a `javascript:`
+  href onto a public page. An unbalanced backtick keeps its run literal too.
+  """
+  @spec setup_segments(String.t()) :: [
+          {:text | :code, String.t()} | {:link, String.t(), String.t()}
+        ]
+  def setup_segments(text) when is_binary(text) do
+    @link
+    |> Regex.split(text, include_captures: true)
+    |> Enum.flat_map(&segment_part/1)
+    |> Enum.reject(&match?({:text, ""}, &1))
+  end
+
+  def setup_segments(nil), do: []
+
+  defp segment_part(part) do
+    case Regex.run(@link, part) do
+      [^part, label, url] -> [{:link, label, url}]
+      _ -> code_segments(part)
+    end
+  end
+
+  defp code_segments(part) do
+    part
+    |> String.split("`")
+    |> segment_alternating()
+    |> Enum.reject(fn {_kind, value} -> value == "" end)
+  end
+
+  # An odd number of backticks leaves a trailing unmatched run: `String.split`
+  # yields an even number of parts, and the final one is text either way.
+  defp segment_alternating(parts) do
+    last = length(parts) - 1
+    unmatched? = rem(length(parts), 2) == 0
+
+    parts
+    |> Enum.with_index()
+    |> Enum.map(fn
+      {part, index} when rem(index, 2) == 0 ->
+        {:text, part}
+
+      {part, ^last} when unmatched? ->
+        {:text, "`" <> part}
+
+      {part, _index} ->
+        {:code, part}
+    end)
+  end
 end

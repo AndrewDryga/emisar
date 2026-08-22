@@ -2,13 +2,13 @@ schema_version: 1
 
 id: cloudflare
 name: Cloudflare edge operations
-version: 0.2.1
+version: 0.2.5
 description: >
   Governed Cloudflare zone, DNS record, cache-purge, security-posture, TLS,
   analytics, tunnel, load-balancer, Workers, Pages, and audit-log operations.
   Auth via CF_API_TOKEN on the runner host.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/cloudflare
 
 requires:
   os:
@@ -23,15 +23,16 @@ requires:
 
 setup:
   summary: >
-    Calls the Cloudflare REST and GraphQL APIs over HTTPS. CF_API_TOKEN is
+    Calls the Cloudflare REST and GraphQL APIs over HTTPS. `CF_API_TOKEN` is
     sent in an Authorization Bearer header over curl stdin and is never
     placed in argv or action output. Allowlist the variable in the runner's
-    execution.inherit_env configuration.
+    `execution.inherit_env` configuration.
   env:
     - name: CF_API_TOKEN
       required: true
       description: Cloudflare API token. Scope it to the zones, accounts, and permissions the actions you enable need, and gate mutation actions with policy.
   notes:
+    - "Create the token at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) → Create Token. Start from a read-only template and add only the permissions listed below; account-scoped tokens live under Manage Account → API Tokens."
     - "Zone and account IDs are per-call action arguments — cf.list_zones and cf.list_accounts return them for use in the other actions."
     - "Token scopes by family: Zone Read + DNS Read for the zone/DNS reads; DNS Edit for the DNS record mutations; Cache Purge for the purge actions; Zone Settings Edit for development mode, security level, SSL mode, minimum TLS, Always Use HTTPS, and pause; Firewall Services Edit for IP access rules; Analytics Read for zone and DNS analytics; Cloudflare Tunnel Read for tunnels; Load Balancing Read/Edit for pools; Workers Scripts Read for Worker reads and Workers Routes Edit for route changes; Pages Read for Pages reads and Pages Edit for rollback, retry, and build-cache purge; Audit Logs Read for audit logs."
     - "Purge by hostname, prefix, or cache-tag requires a Cloudflare Enterprise zone; the other actions work on every plan."

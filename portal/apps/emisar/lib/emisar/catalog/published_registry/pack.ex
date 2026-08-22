@@ -55,6 +55,13 @@ defmodule Emisar.Catalog.PublishedRegistry.Pack do
     # It contains only the pack's declared `detect` block; runtime requirements
     # are never promoted into evidence. An all-empty pack is not suggested.
     detect: %{binaries: [], processes: [], ports: []},
+    # setup is the pack's own authored install guidance, carried verbatim from
+    # its manifest: the credentials it reads, host caveats, and the low-risk
+    # read action that proves it works. It is what the public pack page renders
+    # and what `emisar pack info` prints on the host, so the two cannot drift.
+    # Empty on a pack that needs no credentials and on a catalog published
+    # before the field existed.
+    setup: %{summary: nil, env: [], notes: [], verify: nil},
     actions: []
   ]
 
@@ -78,6 +85,20 @@ defmodule Emisar.Catalog.PublishedRegistry.Pack do
             binaries: [String.t()],
             processes: [String.t()],
             ports: [integer()]
+          },
+          setup: %{
+            summary: String.t() | nil,
+            env: [
+              %{
+                name: String.t(),
+                required: boolean(),
+                description: String.t() | nil,
+                default: String.t() | nil,
+                example: String.t() | nil
+              }
+            ],
+            notes: [String.t()],
+            verify: String.t() | nil
           },
           actions: [Emisar.Catalog.PublishedRegistry.Action.t()]
         }

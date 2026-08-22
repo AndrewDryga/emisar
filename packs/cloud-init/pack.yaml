@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cloud-init
 name: cloud-init operations
-version: 0.1.12
+version: 0.1.13
 retired_below: 0.1.11
 description: >
   cloud-init introspection + boot diagnostics + stage re-runs. Use when
@@ -12,7 +12,7 @@ description: >
   them, tail the cloud-init logs, and (with operator approval) re-run
   individual modules or the full init pipeline.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/cloud-init
 
 requires:
   os:

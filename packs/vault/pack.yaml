@@ -2,7 +2,7 @@ schema_version: 1
 
 id: vault
 name: HashiCorp Vault operations
-version: 0.1.9
+version: 0.1.12
 retired_below: 0.1.7
 description: >
   Vault status, seal state, auth/audit/secret backends, mount listing,
@@ -12,7 +12,7 @@ description: >
   Does NOT include unseal — that requires quorum and shouldn't be
   automated through a runner.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/vault
 
 requires:
   os:
@@ -29,8 +29,8 @@ detect:
 
 setup:
   summary: >
-    The vault CLI reads the server address and auth token from VAULT_ADDR
-    and VAULT_TOKEN on the runner host.
+    The vault CLI reads the server address and auth token from `VAULT_ADDR`
+    and `VAULT_TOKEN` on the runner host.
   env:
     - name: VAULT_ADDR
       required: true
@@ -38,12 +38,12 @@ setup:
       example: https://vault.internal:8200
     - name: VAULT_TOKEN
       description: >
-        Token to authenticate with. Required unless a ~/.vault-token file
+        Token to authenticate with. Required unless a `~/.vault-token` file
         is present on the runner host.
   notes:
-    - "Alternative to VAULT_TOKEN: a ~/.vault-token file (written by `vault login`) on the runner host — read from disk, so it needs no inherit_env entry."
+    - "Alternative to `VAULT_TOKEN`: a `~/.vault-token` file (written by `vault login`) on the runner host — read from disk, so it needs no `inherit_env` entry."
     - The token's policies gate every action; the incident-response mutators (revoke_lease, lease_revoke_prefix, operator_step_down, operator_seal) need sys/* capabilities, so a read-only token will see those denied.
-    - "TLS to an https:// VAULT_ADDR uses the system CA bundle; set VAULT_CACERT for a private CA, or VAULT_SKIP_VERIFY=1 only in non-production."
+    - "TLS to an https:// `VAULT_ADDR` uses the system CA bundle; set VAULT_CACERT for a private CA, or VAULT_SKIP_VERIFY=1 only in non-production."
   verify: vault.status
 
 actions:

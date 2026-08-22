@@ -2,7 +2,7 @@ schema_version: 1
 
 id: traefik
 name: Traefik ingress / reverse proxy
-version: 0.1.16
+version: 0.1.19
 description: >
   Read-only visibility into a Traefik (v2/v3) edge router over its HTTP API:
   the overview, entrypoints, and the full HTTP/TCP/UDP router + service +
@@ -16,7 +16,7 @@ description: >
   tails mirror the nginx pack. Default API at http://127.0.0.1:8080
   (api.insecure mode); override via TRAEFIK_URL.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/traefik
 
 requires:
   os:
@@ -37,7 +37,7 @@ detect:
 
 setup:
   summary: >
-    The API actions call the Traefik HTTP API at $TRAEFIK_URL via curl on the
+    The API actions call the Traefik HTTP API at `$TRAEFIK_URL` via curl on the
     runner host. The OSS API is read-only (GET-only) by design. ACME cert
     state and access logs are read from local files, not the API.
   env:
@@ -51,7 +51,7 @@ setup:
     - name: TRAEFIK_PING_URL
       required: false
       description: >
-        Base URL of the entrypoint that serves /ping. Defaults to TRAEFIK_URL;
+        Base URL of the entrypoint that serves /ping. Defaults to `TRAEFIK_URL`;
         set it when liveness is deliberately separated from the API.
       example: http://127.0.0.1:8082
     - name: TRAEFIK_BASICAUTH
@@ -68,19 +68,19 @@ setup:
       default: /var/log/traefik/access.log
       description: >
         Where this host's Traefik access log lives, for the log_grep_* actions.
-        Set it when the log is outside /var/log/traefik — the actions' own
+        Set it when the log is outside `/var/log/traefik` — the actions' own
         log_path argument is deliberately contained to that directory, so this
         is how the host administrator, rather than a caller, declares a
         non-standard location.
       example: /data/logs/traefik/access.log
   notes:
-    - "Any of TRAEFIK_URL / TRAEFIK_PING_URL / TRAEFIK_BASICAUTH / TRAEFIK_INSECURE you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "Any of `TRAEFIK_URL` / `TRAEFIK_PING_URL` / `TRAEFIK_BASICAUTH` / `TRAEFIK_INSECURE` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "Enable the API to use this pack: --api=true (production, behind a router + auth) or --api.insecure=true (exposes it unauthenticated on the :8080 traefik entrypoint — dev only)."
     - "Every API action is a read-only GET. The OSS Traefik API has no write endpoints; config changes only happen through providers (file/docker/k8s), never the API."
     - "Per-router health: each router/service object carries status (enabled | warning | disabled) and an error[] list. Filter for status != enabled to find broken routing. Services also expose serverStatus (per-backend UP/DOWN)."
     - "ACME certificate material lives only in the acme.json storage file (mode 0600), never the API. The acme_* actions read it locally; the runner user must be able to read that file."
-    - "/ping defaults to TRAEFIK_URL but is often moved to a dedicated entrypoint; set TRAEFIK_PING_URL without disturbing the API actions."
-    - "Logs outside /var/log/traefik: set TRAEFIK_ACCESS_LOG (and allowlist it in the runner's execution.inherit_env). The log_path argument stays contained to /var/log/traefik because a caller — including an LLM — supplies it; the environment is host-administrator state, and anyone who can set it can already read the file. If Traefik logs to stdout instead (no accessLog.filePath), no file exists to read at any path: query whichever store collects it, e.g. the victorialogs pack. For unrestricted /var/log access, install linux-core, whose name says so."
+    - "/ping defaults to `TRAEFIK_URL` but is often moved to a dedicated entrypoint; set `TRAEFIK_PING_URL` without disturbing the API actions."
+    - "Logs outside `/var/log/traefik`: set `TRAEFIK_ACCESS_LOG` (and allowlist it in the runner's `execution.inherit_env`). The log_path argument stays contained to `/var/log/traefik` because a caller — including an LLM — supplies it; the environment is host-administrator state, and anyone who can set it can already read the file. If Traefik logs to stdout instead (no accessLog.filePath), no file exists to read at any path: query whichever store collects it, e.g. the victorialogs pack. For unrestricted `/var/log` access, install linux-core, whose name says so."
   verify: traefik.version
 
 actions:

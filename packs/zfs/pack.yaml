@@ -1,7 +1,7 @@
 schema_version: 1
 id: zfs
 name: ZFS pool + dataset operations
-version: 0.1.11
+version: 0.1.12
 retired_below: 0.1.9
 description: >
   Pool status, dataset inventory, snapshot listing, scrub status, ARC
@@ -9,7 +9,7 @@ description: >
   start/stop, clear pool errors, take/destroy snapshots, dataset
   rollback.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/zfs
 
 requires:
   os: [linux]

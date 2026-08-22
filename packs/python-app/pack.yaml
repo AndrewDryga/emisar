@@ -2,14 +2,14 @@ schema_version: 1
 
 id: python-app
 name: Python application runtime
-version: 0.1.7
+version: 0.1.10
 description: >
   Inspect a Python deployment — interpreter + venv state, pip
   inventory + freeze, dependency conflicts, outdated packages, sys.path.
   Read-only. Most actions act on the venv at PY_VENV env var
   (default /opt/app/venv).
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/python-app
 
 requires:
   os:
@@ -21,10 +21,10 @@ setup:
     venv, and pip state — no credentials needed.
   env:
     - name: PY_VENV
-      description: Path to the application's virtualenv; the venv-scoped actions run its bin/python and bin/pip. Optional; defaults to /opt/app/venv. Add it to the runner's inherit_env if you override it.
+      description: Path to the application's virtualenv; the venv-scoped actions run its bin/python and bin/pip. Optional; defaults to `/opt/app/venv`. Add it to the runner's `inherit_env` if you override it.
       default: "/opt/app/venv"
   notes:
-    - "The runner uid must be able to read the venv and the interpreter it points at; system actions use /usr/bin/python3."
+    - "The runner uid must be able to read the venv and the interpreter it points at; system actions use `/usr/bin/python3`."
   verify: py.python_version_system
 
 actions:

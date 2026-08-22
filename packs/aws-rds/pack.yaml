@@ -1,7 +1,7 @@
 schema_version: 1
 id: aws-rds
 name: AWS RDS operations
-version: 0.1.3
+version: 0.1.8
 retired_below: 0.1.3
 description: >
   Read-only RDS diagnostics for bounded instance, cluster, snapshot,
@@ -9,7 +9,7 @@ description: >
   are projected to operational fields and omit tags and arbitrary descriptions.
   Auth via AWS_PROFILE.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/aws-rds
 
 requires:
   os: [linux]
@@ -18,25 +18,26 @@ requires:
 setup:
   summary: >
     Drives the aws CLI on the runner host. It resolves credentials and
-    region from its own environment or ~/.aws config — the runner only
-    forwards the variables you allowlist in inherit_env.
+    region from its own environment or `~/.aws` config — the runner only
+    forwards the variables you allowlist in `inherit_env`.
   env:
     - name: AWS_PROFILE
-      description: Named profile in ~/.aws/config and ~/.aws/credentials. Omit to use the default profile or static-key/instance-role auth.
+      description: Named profile in `~/.aws/config` and `~/.aws/credentials`. Omit to use the default profile or static-key/instance-role auth.
       example: prod
     - name: AWS_REGION
       required: true
       description: Region to operate in; RDS is regional, so calls fail without it.
       example: us-east-1
     - name: AWS_ACCESS_KEY_ID
-      description: Static access key. Use instead of a profile; pair with AWS_SECRET_ACCESS_KEY.
+      description: Static access key. Use instead of a profile; pair with `AWS_SECRET_ACCESS_KEY`.
     - name: AWS_SECRET_ACCESS_KEY
-      description: Secret for AWS_ACCESS_KEY_ID.
+      description: Secret for `AWS_ACCESS_KEY_ID`.
     - name: AWS_SESSION_TOKEN
       description: Session token for temporary (STS) credentials.
   notes:
+    - "An EC2 instance role or ECS task role needs no key at all and is the shape to prefer; a static pair is minted from [the IAM users console](https://console.aws.amazon.com/iam/home#/users) → the user → Security credentials → Create access key."
     - "Actions need only the corresponding rds:Describe* permissions and never mutate RDS resources."
-    - "Alternative to env keys: an ~/.aws/credentials profile (read from disk, no inherit_env entry) or, on EC2/ECS, the instance/task role from instance metadata (no credentials needed at all)."
+    - "Alternative to env keys: an `~/.aws/credentials` profile (read from disk, no `inherit_env` entry) or, on EC2/ECS, the instance/task role from instance metadata (no credentials needed at all)."
     - "List actions return an AWS CLI NextToken for explicit bounded pagination."
     - "This remote-target pack declares no host detection signal and is never auto-suggested merely because aws is installed."
   verify: rds.list_instances

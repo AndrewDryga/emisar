@@ -2,7 +2,7 @@ schema_version: 1
 
 id: pure-flasharray
 name: Pure Storage FlashArray (Purity//FA REST)
-version: 0.1.10
+version: 0.1.12
 description: >
   Read-only access to a Pure Storage FlashArray over its Purity//FA REST API
   2.x: array identity / capacity / performance, per-volume, per-host and
@@ -13,7 +13,7 @@ description: >
   replication / array-connection status. Drives a remote array via curl;
   every call is a GET.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/pure-flasharray
 
 requires:
   os:
@@ -27,11 +27,11 @@ requires:
 
 setup:
   summary: >
-    Every action calls the FlashArray REST API 2.x at $PURE_URL via curl on
+    Every action calls the FlashArray REST API 2.x at `$PURE_URL` via curl on
     the runner host. The array uses a two-step auth: the API token in
-    $PURE_API_TOKEN is exchanged at /login for a short-lived session token,
-    which is then sent on the read. Point PURE_URL at the array management
-    endpoint and issue PURE_API_TOKEN for a readonly-role array user.
+    `$PURE_API_TOKEN` is exchanged at /login for a short-lived session token,
+    which is then sent on the read. Point `PURE_URL` at the array management
+    endpoint and issue `PURE_API_TOKEN` for a readonly-role array user.
   env:
     - name: PURE_URL
       default: https://192.168.1.1
@@ -48,7 +48,7 @@ setup:
       description: >
         true to skip TLS verification of the array's self-signed certificate.
   notes:
-    - "Any of PURE_URL / PURE_API_TOKEN / PURE_INSECURE you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "Any of `PURE_URL` / `PURE_API_TOKEN` / `PURE_INSECURE` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "Every action is a read-only GET — none write, delete, or mutate array state."
     - "Issue the token from a readonly-role array user (Settings -> Users) as defense-in-depth, so the credential itself cannot change anything even though the pack only ever issues GETs."
     - "The session token auto-expires after ~30 min of inactivity; the script re-logins on every call, so there is no session to manage."

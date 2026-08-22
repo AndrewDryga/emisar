@@ -117,6 +117,105 @@
         </div>
       </section>
 
+      <%!-- Setup — the pack's OWN authored block, carried through catalog.json,
+           so this page and `emisar pack info` on the host cannot disagree.
+           35 packs act only on the local host and honestly say so. --%>
+      <section class="mt-12">
+        <h2 class="text-xl font-semibold text-zinc-50">Setup</h2>
+
+        <p
+          :if={@pack.setup.summary}
+          class="mt-2 max-w-prose text-sm leading-relaxed text-zinc-400"
+        >
+          <.setup_text text={@pack.setup.summary} />
+        </p>
+        <p
+          :if={is_nil(@pack.setup.summary) and @pack.setup.env == []}
+          class="mt-2 max-w-prose text-sm leading-relaxed text-zinc-400"
+        >
+          No credentials needed — this pack acts on the runner host itself.
+        </p>
+
+        <%!-- Credentials. A required variable is an action the operator must take
+             before the pack works, so it carries the amber marker; an optional one
+             with a default is informative and stays neutral. --%>
+        <div :if={@pack.setup.env != []} class="mt-5">
+          <h3 class="text-sm font-semibold text-zinc-200">Environment</h3>
+          <p class="mt-1 text-sm leading-relaxed text-zinc-400">
+            Set these on the runner host, then add each name to
+            <code class="rounded bg-zinc-900 px-1 py-0.5 font-mono text-xs text-zinc-300">execution.inherit_env</code>
+            so the value reaches the action.
+          </p>
+          <ul class="mt-3 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
+            <li
+              :for={env <- @pack.setup.env}
+              class="border-b border-zinc-900 px-5 py-4 last:border-b-0"
+            >
+              <div class="flex flex-wrap items-center gap-2">
+                <code class="font-mono text-sm text-zinc-100">{env.name}</code>
+                <span
+                  :if={env.required}
+                  class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200"
+                >
+                  required
+                </span>
+                <span
+                  :if={env.default}
+                  class="rounded bg-zinc-800/80 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300"
+                >
+                  default {env.default}
+                </span>
+              </div>
+              <p
+                :if={env.description}
+                class="mt-1 max-w-prose text-xs leading-relaxed text-zinc-400"
+              >
+                <.setup_text text={env.description} />
+              </p>
+            </li>
+          </ul>
+        </div>
+
+        <div :if={@pack.setup.notes != []} class="mt-5">
+          <h3 class="text-sm font-semibold text-zinc-200">Notes</h3>
+          <ul class="mt-2 max-w-prose list-disc space-y-2 pl-5 text-sm leading-relaxed text-zinc-400">
+            <li :for={note <- @pack.setup.notes}><.setup_text text={note} /></li>
+          </ul>
+        </div>
+
+        <%!-- The pack author's own proof that auth and reachability work. --%>
+        <div :if={@pack.setup.verify} class="mt-5">
+          <h3 class="text-sm font-semibold text-zinc-200">Verify it works</h3>
+          <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-400">
+            A low-risk read that confirms the pack can reach its target. Run it on the host
+            once the pack is installed.
+          </p>
+          <div class="mt-3 overflow-hidden rounded-lg border border-zinc-800 bg-black/60">
+            <div class="flex items-center justify-between gap-2 border-b border-zinc-800 px-4 py-2">
+              <span class="font-mono text-[11px] text-zinc-400">on the runner host</span>
+              <EmisarWeb.CoreComponents.copy_button
+                id={"copy-verify-#{@pack.id}"}
+                target={"#verify-snippet-#{@pack.id}"}
+              >
+                Copy
+              </EmisarWeb.CoreComponents.copy_button>
+            </div>
+            <pre
+              id={"verify-snippet-#{@pack.id}"}
+              class="overflow-x-auto p-4 font-mono text-xs leading-relaxed text-zinc-200"
+            >sudo emisar action run <%= @pack.setup.verify %> --reason "verify install"</pre>
+          </div>
+        </div>
+
+        <p class="mt-5 text-sm leading-relaxed text-zinc-400">
+          <.link
+            navigate={~p"/docs/use-a-published-pack"}
+            class="text-brand-400 hover:text-brand-300"
+          >Install and configure a pack</.link>
+          walks through the whole sequence on a host.
+        </p>
+      </section>
+
       <%!-- Actions list — one row per action with link to source --%>
       <section class="mt-12">
         <div class="flex items-baseline justify-between gap-3">

@@ -2,14 +2,14 @@ schema_version: 1
 
 id: mongodb
 name: MongoDB operations
-version: 0.3.5
+version: 0.3.8
 description: >
   Replica-set + shard-cluster introspection, slow-query identification,
   collection stats, plus remediation surface (killOp, replSet stepDown,
   collection compact, dropIndex). Authenticates via MONGO_URI env var
   on the runner host.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/mongodb
 
 requires:
   os:
@@ -26,8 +26,8 @@ detect:
 
 setup:
   summary: >
-    Every action reads MONGO_URI from its environment and connects inside the
-    mongosh eval (new Mongo(process.env.MONGO_URI)), so the host, port, replica
+    Every action reads `MONGO_URI` from its environment and connects inside the
+    mongosh eval (new Mongo(process.env.`MONGO_URI`)), so the host, port, replica
     set, auth database, and credentials all live in that single URI — and the
     credential never lands on mongosh's argv (/proc/<pid>/cmdline).
   env:
@@ -36,8 +36,9 @@ setup:
       description: Full MongoDB connection string, including credentials and any auth/TLS options.
       example: "mongodb://opsuser:secret@db.internal:27017/?authSource=admin&replicaSet=rs0"
   notes:
-    - mongosh does not read MONGO_URI on its own; each action connects with new Mongo(process.env.MONGO_URI) inside its --eval, so the user it encodes needs the privileges (clusterMonitor for reads, plus killOp/replSetStateChange/compact/dropIndex for the mutators) for the actions you enable.
-    - Because the URI carries the credentials, it must be allowlisted in inherit_env for any action to reach the database.
+    - "Create the user with db.createUser({user: 'emisar', pwd: '...', roles: [{role: 'clusterMonitor', db: 'admin'}]}) on a self-managed deployment, or under Database Access → Add New Database User on Atlas."
+    - mongosh does not read `MONGO_URI` on its own; each action connects with new Mongo(process.env.`MONGO_URI`) inside its --eval, so the user it encodes needs the privileges (clusterMonitor for reads, plus killOp/replSetStateChange/compact/dropIndex for the mutators) for the actions you enable.
+    - Because the URI carries the credentials, it must be allowlisted in `inherit_env` for any action to reach the database.
   verify: mongo.server_status
 
 actions:

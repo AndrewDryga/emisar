@@ -2,7 +2,7 @@ schema_version: 1
 
 id: process-forensics
 name: Process forensics
-version: 0.1.6
+version: 0.1.7
 description: >
   Deep per-process diagnostics for "why is this process stuck / slow /
   leaking?" — strace (HIGH RISK; slows the target), pid memory maps,
@@ -10,7 +10,7 @@ description: >
   summary. Read-only — but strace and gdb attach via ptrace and WILL
   slow the target.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/process-forensics
 
 requires:
   os:

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: databricks
 name: Databricks
-version: 0.1.0
+version: 0.1.3
 description: >
   Look up data and run day-2 operations in a Databricks workspace over its REST
   API: run a bounded read-only SQL statement on a SQL warehouse, browse Unity
@@ -11,7 +11,7 @@ description: >
   start, stop, or restart the compute — warehouses, jobs, and clusters —
   through emisar's policy and approval path instead of the workspace UI.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/databricks
 
 requires:
   os:
@@ -24,9 +24,9 @@ requires:
 setup:
   summary: >
     Calls the Databricks workspace REST API over HTTPS with curl, sending the
-    token in an Authorization: Bearer header read from DATABRICKS_TOKEN and the
-    workspace URL from DATABRICKS_HOST, so allowlist both variables in
-    inherit_env.
+    token in an Authorization: Bearer header read from `DATABRICKS_TOKEN` and the
+    workspace URL from `DATABRICKS_HOST`, so allowlist both variables in
+    `inherit_env`.
   env:
     - name: DATABRICKS_HOST
       required: true
@@ -42,7 +42,8 @@ setup:
         SCHEMA, and SELECT on the data; the compute and job actions need the
         matching CAN MANAGE RUN / CAN RESTART permission on each resource.
   notes:
-    - "Any Databricks env var you set must also be allowlisted in the runner's execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not allowlisted is silently dropped and every action fails auth."
+    - "Generate a personal access token in the workspace under Settings → Developer → Access tokens. A service principal is created in the account console under User management → Service principals, and its OAuth secret is issued there."
+    - "Any Databricks env var you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not allowlisted is silently dropped and every action fails auth."
     - "databricks.sql_query only accepts a single statement whose first keyword is SELECT, VALUES, SHOW, DESCRIBE, or EXPLAIN. That guard is a guardrail against accidental writes, not a security boundary — the warehouse enforces exactly what the token's grants allow, so scope the token read-only if reads are all you mean to allow."
     - "The token can do everything these actions expose, so let emisar policy decide who may reach the mutating actions: job_run_now and cluster_restart are high risk and need approval under the default policy."
     - "Needs curl 7.76 or newer: the actions use --fail-with-body so a rejected request reports the API's error document instead of failing with empty output."

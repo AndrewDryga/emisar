@@ -2,7 +2,7 @@ schema_version: 1
 
 id: bind
 name: BIND DNS server
-version: 0.1.12
+version: 0.1.14
 # Unchanged: rndc_stats moving low -> medium corrects the tier for a file
 # rewrite, but the shipped default auto-runs both, so no approval was skipped
 # and no earlier version is unsafe to keep running.
@@ -12,7 +12,7 @@ description: >
   cache inspection, local resolution probes, plus narrow operator actions
   (rndc reload, zone freeze/thaw). Requires rndc key on the runner host.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/bind
 
 requires:
   os:
@@ -31,7 +31,7 @@ setup:
     credentials needed. rndc controls named via its key file; dig queries
     127.0.0.1.
   notes:
-    - "rndc needs its key readable by the runner user (/etc/rndc.key or the key in /etc/rndc.conf) and the named controls channel reachable on 127.0.0.1."
+    - "rndc needs its key readable by the runner user (`/etc/rndc.key` or the key in `/etc/rndc.conf`) and the named controls channel reachable on 127.0.0.1."
     - "rndc_reload, rndc_freeze, rndc_thaw, and rndc_flush change server state and need root (or a key with the matching rndc permissions)."
     - "zone_dump (AXFR) requires named's allow-transfer to include 127.0.0.1."
   verify: bind.rndc_status

@@ -2,14 +2,14 @@ schema_version: 1
 
 id: java-jvm
 name: JVM introspection
-version: 0.1.15
+version: 0.1.16
 retired_below: 0.1.14
 description: >
   JVM diagnostics via jcmd/jstack/jmap/jstat/JFR. Requires runner uid
   to match the JVM process owner (or CAP_SYS_PTRACE) — actions return
   a permission error cleanly when uid doesn't match.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/java-jvm
 
 requires:
   os:

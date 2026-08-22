@@ -2,14 +2,14 @@ schema_version: 1
 
 id: nfs
 name: NFS server + client
-version: 0.1.7
+version: 0.1.8
 description: >
   Inspect a host's NFS exports, mounted shares, RPC state, active client
   connections. Plus two narrow operator actions: exportfs -r (re-export) and
   exportfs -u (unexport one client:path — evicts that client). Read-only
   otherwise.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/nfs
 
 requires:
   os:

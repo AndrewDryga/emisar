@@ -2,7 +2,7 @@ schema_version: 1
 
 id: postgres
 name: Postgres operations
-version: 0.2.12
+version: 0.2.16
 description: >
   Deep Postgres operations — activity introspection, session/lock
   diagnostics, table + index analytics (bloat, dead tuples, unused
@@ -11,7 +11,7 @@ description: >
   ANALYZE, VACUUM, REINDEX CONCURRENTLY). Authenticates via PG* env
   vars on the runner host.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/postgres
 
 requires:
   os:
@@ -30,7 +30,7 @@ setup:
   summary: >
     Authenticates via libpq PG* environment variables on the runner host.
     psql reads them directly — the runner only forwards the ones you
-    allowlist in inherit_env.
+    allowlist in `inherit_env`.
   env:
     - name: PGHOST
       required: true
@@ -43,12 +43,13 @@ setup:
       required: true
       description: Role to connect as; needs privileges for the actions you enable.
     - name: PGPASSWORD
-      description: Password for PGUSER. Omit if using ~/.pgpass or trust/peer auth.
+      description: Password for `PGUSER`. Omit if using `~/.pgpass` or trust/peer auth.
     - name: PGDATABASE
       description: Default database.
-      default: same as PGUSER
+      default: same as `PGUSER`
   notes:
-    - "Alternative to PGPASSWORD: put credentials in ~/.pgpass (mode 0600) on the runner host — read from disk, so it needs no inherit_env entry."
+    - "Create the role with CREATE ROLE emisar LOGIN PASSWORD '...'; GRANT pg_monitor TO emisar; — pg_monitor covers the read actions without handing out superuser."
+    - "Alternative to `PGPASSWORD`: put credentials in `~/.pgpass` (mode 0600) on the runner host — read from disk, so it needs no `inherit_env` entry."
     - High-risk mutators (terminate_backend, vacuum_table, reindex_concurrent) need a role with the matching privileges.
   verify: postgres.uptime
 

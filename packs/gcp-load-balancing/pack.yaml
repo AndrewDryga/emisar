@@ -2,14 +2,14 @@ schema_version: 1
 
 id: gcp-load-balancing
 name: Google Cloud load-balancing diagnostics
-version: 0.1.0
+version: 0.1.2
 description: >
   Read-only Google Cloud load-balancer topology and health diagnostics for
   backend services, health checks, URL maps, target proxies, forwarding rules,
   and network endpoint groups. Fixed projections exclude IAP secrets,
   AWS-auth keys, and custom header values.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/gcp-load-balancing
 
 requires:
   os: [linux]
@@ -29,7 +29,7 @@ setup:
   notes:
     - "The principal needs roles/compute.networkViewer or equivalent get/list permissions."
     - "Complex resource projections use mode-0600 temporary files so gcloud failures remain distinguishable from jq failures; files are removed before exit."
-    - "Any credential/config env must be allowlisted in the runner's execution.inherit_env; attached service accounts and workload identity need no credential env."
+    - "Any credential/config env must be allowlisted in the runner's `execution.inherit_env`; attached service accounts and workload identity need no credential env."
     - "This remote-target pack declares no host detection signal and is never auto-suggested merely because gcloud is installed."
   verify: gcp.backend_services
 

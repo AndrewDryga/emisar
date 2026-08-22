@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nginx
 name: Nginx operations pack
-version: 0.2.17
+version: 0.2.20
 retired_below: 0.2.15
 description: >
   Operator pack for nginx — read-only status + access-log analysis,
@@ -10,7 +10,7 @@ description: >
   graceful quit, stop). Full restart is intentionally not included;
   use systemd for that.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/nginx
 
 requires:
   os:
@@ -35,7 +35,7 @@ setup:
       default: /var/log/nginx/access.log
       description: >
         Where this host's nginx access log lives, for the access-log actions.
-        Set it when the log is outside /var/log/nginx — the actions' own
+        Set it when the log is outside `/var/log/nginx` — the actions' own
         log_path argument is deliberately contained to that directory, so this
         is how the host administrator, rather than a caller, declares a
         non-standard location.
@@ -43,12 +43,12 @@ setup:
     - name: NGINX_ERROR_LOG
       required: false
       default: /var/log/nginx/error.log
-      description: Where this host's nginx error log lives, for error_tail. Same reasoning as NGINX_ACCESS_LOG.
+      description: Where this host's nginx error log lives, for error_tail. Same reasoning as `NGINX_ACCESS_LOG`.
       example: /data/logs/nginx/error.log
   notes:
     - "reload, quit_graceful, and stop_immediate signal the master process and need root (run the runner as root or via sudo)."
     - "Status actions require `stub_status on;` in a location reachable from 127.0.0.1; the `url` arg is loopback-only (127.0.0.1/localhost/[::1]) — pass a non-default port/path, not an off-host target."
-    - "Logs outside /var/log/nginx: set NGINX_ACCESS_LOG / NGINX_ERROR_LOG (and allowlist them in the runner's execution.inherit_env). The log_path argument stays contained to /var/log/nginx because a caller — including an LLM — supplies it; the environment is host-administrator state, and anyone who can set it can already read the file. The official container image symlinks access.log to stdout, in which case no file exists to read at any path and the host's log collector owns it. For unrestricted /var/log access, install linux-core, whose name says so."
+    - "Logs outside `/var/log/nginx`: set `NGINX_ACCESS_LOG` / `NGINX_ERROR_LOG` (and allowlist them in the runner's `execution.inherit_env`). The log_path argument stays contained to `/var/log/nginx` because a caller — including an LLM — supplies it; the environment is host-administrator state, and anyone who can set it can already read the file. The official container image symlinks access.log to stdout, in which case no file exists to read at any path and the host's log collector owns it. For unrestricted `/var/log` access, install linux-core, whose name says so."
   verify: nginx.active_version
 
 actions:

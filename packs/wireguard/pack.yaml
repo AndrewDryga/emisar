@@ -2,7 +2,7 @@ schema_version: 1
 
 id: wireguard
 name: WireGuard VPN
-version: 0.1.7
+version: 0.1.8
 retired_below: 0.1.7
 description: >
   WireGuard state — interfaces, peers, transfer counts, last
@@ -10,7 +10,7 @@ description: >
   remove a peer from a live iface. Use to debug connectivity or evict
   a compromised peer.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/wireguard
 
 requires:
   os:

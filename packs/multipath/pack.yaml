@@ -2,13 +2,13 @@ schema_version: 1
 
 id: multipath
 name: Device-mapper multipath
-version: 0.1.2
+version: 0.1.3
 description: >
   Inspect device-mapper multipath: the multipath topology (multipath -ll),
   the effective config (multipath -t), and live path + map state queried
   from the running multipathd. Read-only.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/multipath
 
 requires:
   os:

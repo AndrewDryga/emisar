@@ -2,7 +2,7 @@ schema_version: 1
 
 id: hcp-terraform
 name: HCP Terraform run review and gating
-version: 0.8.0
+version: 0.8.4
 description: >
   Review HCP Terraform (formerly Terraform Cloud) and Terraform Enterprise runs
   and gate what happens next: list workspaces and runs, project a run's plan
@@ -13,7 +13,7 @@ description: >
   and confirm, discard, or cancel a run through emisar's policy and approval
   path instead of the HCP UI.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/hcp-terraform
 
 requires:
   os:
@@ -26,8 +26,8 @@ requires:
 setup:
   summary: >
     Calls the HCP Terraform JSON:API over HTTPS with curl, sending the token in
-    an Authorization: Bearer header read from TFE_TOKEN, so allowlist that
-    variable in inherit_env. Point TFE_ADDRESS at your Terraform Enterprise host
+    an Authorization: Bearer header read from `TFE_TOKEN`, so allowlist that
+    variable in `inherit_env`. Point `TFE_ADDRESS` at your Terraform Enterprise host
     to use this against a self-managed install.
   env:
     - name: TFE_TOKEN
@@ -40,6 +40,7 @@ setup:
       default: https://app.terraform.io
       example: https://tfe.example.com
   notes:
+    - "Create a user token at [app.terraform.io/app/settings/tokens](https://app.terraform.io/app/settings/tokens), or a team token under Organization Settings → Teams → the team → Team API token. The organization token (Organization Settings → API tokens) is the one several actions here reject."
     - "plan_summary calls the plan's json-output endpoint, which HashiCorp does NOT allow organization tokens to reach: it needs a user or team token with admin access to the workspace. run_details works with any token that can read runs and still reports the plan's add/change/destroy counts, so prefer it when you do not want to hand out workspace admin."
     - "apply_run, discard_run, and cancel_run also reject organization tokens — HCP requires a user or team token with permission to apply runs for the workspace."
     - "The token can do everything these actions expose, so scope it to the workspaces you actually want reachable and let emisar policy decide who may reach the mutating actions."

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://emisar.dev/v1/schemas/catalog.v4.schema.json",
+  "$id": "https://emisar.dev/v1/schemas/catalog.v5.schema.json",
   "title": "emisar pack registry catalog",
   "description": "The published catalog.json contract: installable packs, immutable content identity, and complete reviewed action descriptors. Emitted by `emisar pack catalog build`. Trust rests on the authenticated artifact plus content_hash and the runner's re-hash.",
   "type": "object",
@@ -101,6 +101,9 @@
         "detect": {
           "$ref": "#/$defs/detect"
         },
+        "setup": {
+          "$ref": "#/$defs/setup"
+        },
         "actions": {
           "type": "array",
           "items": {
@@ -179,6 +182,54 @@
           }
         }
       }
+    },
+    "setup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "env": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "description": {
+                "type": "string"
+              },
+              "default": {
+                "type": "string"
+              },
+              "example": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verify": {
+          "type": "string",
+          "description": "Id of a low-risk read action in this pack."
+        }
+      },
+      "description": "The pack's authored setup block, carried verbatim from its manifest: the credentials it reads, host caveats, and a low-risk read action that proves the pack can reach and authenticate to its target. Absent on a catalog published before this field existed, which is still valid --previous input."
     },
     "action": {
       "type": "object",

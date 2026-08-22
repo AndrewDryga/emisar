@@ -2,13 +2,13 @@ schema_version: 1
 
 id: fail2ban
 name: fail2ban
-version: 0.1.7
+version: 0.1.8
 description: >
   fail2ban inventory + per-jail banned-IP listings plus operator mutators
   for incident response: ban an IP into a jail, unban a false positive,
   reload jail filters from disk.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/fail2ban
 
 requires:
   os:

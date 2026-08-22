@@ -2,7 +2,7 @@ schema_version: 1
 
 id: tailscale
 name: Tailscale
-version: 0.1.5
+version: 0.1.6
 retired_below: 0.1.4
 description: >
   Inspect the host's Tailscale node via the tailscale CLI: tailnet
@@ -12,7 +12,7 @@ description: >
   the current prefs (advertised routes, configured exit node).
   Read-only.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/tailscale
 
 requires:
   os:

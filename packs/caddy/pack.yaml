@@ -2,14 +2,14 @@ schema_version: 1
 
 id: caddy
 name: Caddy web server
-version: 0.1.19
+version: 0.1.21
 retired_below: 0.1.16
 description: >
   Caddy v2 ops via its admin API (default http://127.0.0.1:2019) and CLI.
   Config dump, upstream health, PKI inventory, config validation, plus
   reload (live config swap). Set CADDY_ADMIN env var if not on default.
 vendor: emisar
-homepage: https://github.com/andrewdryga/emisar
+homepage: https://emisar.dev/packs/caddy
 
 requires:
   os:
@@ -38,7 +38,7 @@ setup:
       description: Path to the Caddy access log for access_log_tail.
       default: /var/log/caddy/access.log
   notes:
-    - "CADDY_ADMIN and CADDY_ACCESS_LOG only reach an action when the runner allowlists them in execution.inherit_env — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default. Unset, both fall back to their defaults above, so a non-default admin endpoint or log path silently reads the local one instead of yours."
+    - "`CADDY_ADMIN` and `CADDY_ACCESS_LOG` only reach an action when the runner allowlists them in `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default. Unset, both fall back to their defaults above, so a non-default admin endpoint or log path silently reads the local one instead of yours."
     - "reload_config and stop change runtime state and need permission to talk to the admin socket and signal the process — run the runner as root or as the caddy service user."
   verify: caddy.version
 
