@@ -27,9 +27,9 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/action-packs
     /docs/security-model
     /docs/signed-dispatch
-    /docs/connect-cli-agent
     /docs/connect-claude-ai
     /docs/connect-chatgpt
+    /docs/connect-cli-agent
     /docs/publishing-packs
     /docs/pack-registry
     /docs/run-an-action
@@ -45,7 +45,6 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/integrations/google-workspace
     /docs/scim
     /docs/runner-fleet
-    /docs/runner-credentials
     /docs/production
     /docs/audit-and-siem
     /docs/host-install
@@ -55,12 +54,13 @@ defmodule EmisarWeb.MarketingStructuralTest do
     /docs/autoscaling-fleets
     /docs/runs
     /docs/agents-and-keys
-    /docs/bridge-upgrades
     /docs/runner-cli
     /docs/billing
     /docs/limits
     /docs/runner-upgrades
+    /docs/bridge-upgrades
     /docs/credentials
+    /docs/runner-credentials
     /docs/pack-updates
     /docs/network-requirements
     /docs/troubleshooting
@@ -311,6 +311,74 @@ defmodule EmisarWeb.MarketingStructuralTest do
     end
   end
 
+  describe "install commands open on the visitor's platform" do
+    # Every docs page that publishes an install/upgrade command carries one
+    # tab per OS — Linux, Windows, macOS. Every spelling ships in the HTML;
+    # the server marks the tab matching the request User-Agent and hides the
+    # rest, so the switch is a convenience and never a gate.
+    @os_switch_routes ~w(/docs/quickstart /docs/connect-cli-agent /docs/bridge-upgrades)
+
+    @platform_uas [
+      windows:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " <>
+          "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      macos:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
+      linux:
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " <>
+          "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ]
+
+    test "each desktop OS lands on its own command", %{conn: conn} do
+      for route <- @os_switch_routes, {platform, user_agent} <- @platform_uas do
+        html =
+          conn
+          |> put_req_header("user-agent", user_agent)
+          |> get(route)
+          |> html_response(200)
+
+        assert visible_os_variants(html) == [platform],
+               "wrong default on #{route} for #{platform}"
+      end
+    end
+
+    test "an unreadable User-Agent falls back to the Linux command", %{conn: conn} do
+      html =
+        conn
+        |> put_req_header("user-agent", "curl/8.5.0")
+        |> get("/docs/quickstart")
+        |> html_response(200)
+
+      assert visible_os_variants(html) == [:linux]
+    end
+
+    test "the hidden variants stay in the page for a crawler and a reader with no JS", %{
+      conn: conn
+    } do
+      html =
+        conn
+        |> put_req_header("user-agent", @platform_uas[:windows])
+        |> get("/docs/quickstart")
+        |> html_response(200)
+
+      assert html =~ "install-mcp.sh | sudo bash"
+      assert html =~ "install-mcp.ps1"
+    end
+
+    # The variant a visitor actually sees: ALL ship, and the tabs the switch
+    # did not pick wear `hidden`.
+    defp visible_os_variants(html) do
+      html
+      |> LazyHTML.from_document()
+      |> LazyHTML.query("pre[data-os]")
+      |> Enum.reject(&String.contains?(one_attribute(&1, "class"), "hidden"))
+      |> Enum.map(&String.to_existing_atom(one_attribute(&1, "data-os")))
+      |> Enum.uniq()
+    end
+
+    defp one_attribute(node, name), do: node |> LazyHTML.attribute(name) |> List.first()
+  end
+
   describe "docs page shell" do
     test "actionable console destinations are direct links", %{conn: conn} do
       links_by_page = [
@@ -320,6 +388,20 @@ defmodule EmisarWeb.MarketingStructuralTest do
            {"/app/runners", "Runners"},
            {"/app/packs", "Packs"},
            {"/app/agents", "AI agents"}
+         ]},
+        {"/docs/connect-cli-agent",
+         [{"/app/agents/connect", "Connect an agent"}, {"/app/audit", "Audit"}]},
+        {"/docs/use-a-published-pack",
+         [
+           {"/app/packs", "Packs"},
+           {"/app/runners", "Runners"},
+           {"/app/audit", "Audit"}
+         ]},
+        {"/docs/run-an-action",
+         [
+           {"/app/runners", "Runners"},
+           {"/app/approvals", "Approvals"},
+           {"/app/audit", "Audit"}
          ]},
         {"/docs/host-install",
          [
@@ -332,23 +414,17 @@ defmodule EmisarWeb.MarketingStructuralTest do
            {"/app/runners/keys", "Runners → Enrollment keys"},
            {"/app/runners", "Runners"}
          ]},
-        {"/docs/runner-credentials",
-         [
-           {"/app/runners/keys", "Runners → Enrollment keys"},
-           {"/app/runners", "Runners"}
-         ]},
         {"/docs/runner-cli", [{"/app/runners", "Runners"}, {"/app/packs", "Packs"}]},
         {"/docs/autoscaling-fleets",
          [
            {"/app/runners/keys/new", "Runners → Enrollment keys → New key"},
            {"/app/runners", "Runners"}
          ]},
-        {"/docs/credentials",
+        {"/docs/credentials", [{"/app/agents", "Agents"}, {"/app/audit/export", "Audit export"}]},
+        {"/docs/runner-credentials",
          [
            {"/app/runners/keys", "Runners → Enrollment keys"},
-           {"/app/runners", "Runners"},
-           {"/app/agents", "Agents"},
-           {"/app/audit/export", "Audit export"}
+           {"/app/runners", "Runners"}
          ]},
         {"/docs/containers",
          [
@@ -366,7 +442,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
          [
            {"/app/team/invite", "Team → Invite"},
            {"/app/team", "Team"},
-           {"/app/agents", "LLM agents"}
+           {"/app/agents", "AI agents"}
          ]},
         {"/docs/policies-and-approvals",
          [{"/app/policies", "Policies"}, {"/app/approvals", "Approvals"}]},
@@ -379,7 +455,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
            {"/app/runbooks/import", "Import runbook"}
          ]},
         {"/docs/troubleshooting",
-         [{"/app/runners", "Runners"}, {"/app/packs", "Packs"}, {"/app/agents", "LLM agents"}]},
+         [{"/app/runners", "Runners"}, {"/app/packs", "Packs"}, {"/app/agents", "AI agents"}]},
         {"/docs/runs", [{"/app/runs", "Runs"}]},
         {"/docs/production",
          [{"/app/audit", "Audit"}, {"/app/audit/export", "audit-export token"}]},
@@ -399,7 +475,7 @@ defmodule EmisarWeb.MarketingStructuralTest do
         {"/docs/security-model", [{"/app/audit/export", "Audit export"}]},
         {"/docs/security-incidents",
          [
-           {"/app/agents", "LLM agents"},
+           {"/app/agents", "AI agents"},
            {"/app/audit", "Audit"},
            {"/app/audit/export", "Audit export"},
            {"/app/runners/keys", "Runners → Enrollment keys"},

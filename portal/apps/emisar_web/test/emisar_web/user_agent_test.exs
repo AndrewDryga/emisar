@@ -46,6 +46,34 @@ defmodule EmisarWeb.UserAgentTest do
     assert %{browser: nil, os: nil} = UserAgent.parse("curl/8.5.0")
   end
 
+  describe "platform/1" do
+    test "each desktop OS lands on its own tab" do
+      windows =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " <>
+          "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+      mac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0"
+
+      linux =
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " <>
+          "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+      assert UserAgent.platform(windows) == :windows
+      assert UserAgent.platform(mac) == :macos
+      assert UserAgent.platform(linux) == :linux
+    end
+
+    test "a phone, a crawler, and a missing header fall back to Linux" do
+      iphone =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 " <>
+          "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+
+      assert UserAgent.platform(iphone) == :linux
+      assert UserAgent.platform("curl/8.5.0") == :linux
+      assert UserAgent.platform(nil) == :linux
+    end
+  end
+
   describe "label/1" do
     test "browser + OS combine with the short everyday names" do
       chrome_mac =

@@ -29,6 +29,95 @@ defmodule EmisarWeb.TeamLiveTest do
       refute html =~ "Only owners and admins can invite"
     end
 
+    test "the roster has one name-or-email search plus role and status filters", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      kept_user = Fixtures.Users.create_user(full_name: "Filter Finch")
+      gone_user = Fixtures.Users.create_user(full_name: "Hidden Harper")
+
+      kept =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: kept_user.id
+        )
+
+      gone =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: gone_user.id
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(lv, "#members-filter input[name='name_or_email']")
+      assert has_element?(lv, "#members-filter select[name='role']")
+      assert has_element?(lv, "#members-filter select[name='status']")
+
+      assert has_element?(
+               lv,
+               "#members-filter option[value='billing_manager']",
+               "Billing manager"
+             )
+
+      assert has_element?(
+               lv,
+               "#members-filter option[value='pending_invitation']",
+               "Pending invitation"
+             )
+
+      lv
+      |> form("#members-filter", %{"name_or_email" => "FILTER fin"})
+      |> render_change()
+
+      assert_patched(lv, ~p"/app/#{account}/settings/team?name_or_email=FILTER+fin")
+      assert has_element?(lv, "#member-name-#{kept.id}")
+      refute has_element?(lv, "#member-name-#{gone.id}")
+    end
+
+    test "role and status filters combine", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      suspended_viewer =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+        |> Fixtures.Memberships.suspend_membership()
+
+      active_viewer =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+
+      suspended_admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.suspend_membership()
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      lv
+      |> form("#members-filter", %{"role" => "viewer", "status" => "suspended"})
+      |> render_change()
+
+      assert has_element?(lv, "#member-name-#{suspended_viewer.id}")
+      refute has_element?(lv, "#member-name-#{active_viewer.id}")
+      refute has_element?(lv, "#member-name-#{suspended_admin.id}")
+    end
+
+    test "a filter miss keeps the controls and clear action", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+
+      {:ok, lv, html} =
+        live(conn, ~p"/app/#{account}/settings/team?name_or_email=missing-member")
+
+      assert html =~ "No members match these filters"
+      assert html =~ "Try another name, role, or status."
+
+      assert has_element?(
+               lv,
+               "#members-filter input[name='name_or_email'][value='missing-member']"
+             )
+
+      assert has_element?(lv, "#members-filter select[name='role']")
+      assert has_element?(lv, "#members-filter select[name='status']")
+      assert has_element?(lv, "a", "Clear filters")
+      refute html =~ "No team members yet."
+    end
+
     test "pack grant fields explain when the admin's own pack access is limited", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
       admin = Fixtures.Users.create_user()
@@ -752,6 +841,28 @@ defmodule EmisarWeb.TeamLiveTest do
       assert length(Regex.scan(~r/Only owners and admins can invite or manage members\./, html)) ==
                1
     end
+
+    test "the permission note keeps the viewer's role when filters hide their row", %{
+      account: account
+    } do
+      viewer = Fixtures.Users.create_user(full_name: "Reader Rae")
+
+      viewer_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: viewer.id,
+          role: "viewer"
+        )
+
+      {:ok, lv, html} =
+        build_conn()
+        |> log_in_user(viewer)
+        |> live(~p"/app/#{account}/settings/team?role=owner")
+
+      assert html =~ "Your role: Viewer"
+      refute has_element?(lv, "#member-name-#{viewer_membership.id}")
+      assert has_element?(lv, "#members-filter option[value='owner'][selected]")
+    end
   end
 
   describe "a non-manager's crafted management events are denied (IL-15)" do
@@ -1108,6 +1219,12 @@ defmodule EmisarWeb.TeamLiveTest do
       assert has_element?(lv, "dt", "runners:")
       assert has_element?(lv, "dt", "packs:")
       assert has_element?(lv, "span", "postgres")
+
+      assert has_element?(
+               lv,
+               ~s|#member-access-#{m.id}[class~="grid-cols-[auto_minmax(0,1fr)]"]|
+             )
+
       refute render(lv) =~ "selected packs"
     end
 
@@ -1373,7 +1490,10 @@ defmodule EmisarWeb.TeamLiveTest do
       %{owner: owner, account: account, member: member, membership: membership, lv: lv}
     end
 
-    test "a pending invitation row can resend the invite", %{owner: owner, account: account} do
+    test "a pending invitation row shows its lifecycle and can resend the invite", %{
+      owner: owner,
+      account: account
+    } do
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
       email = "resend-web-#{System.unique_integer([:positive])}@example.com"
 
@@ -1391,6 +1511,28 @@ defmodule EmisarWeb.TeamLiveTest do
         build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/settings/team")
 
       assert html =~ "Resend invite"
+
+      assert has_element?(
+               lv,
+               "#member-metadata-#{membership.id} #member-invited-#{membership.id}"
+             )
+
+      assert has_element?(
+               lv,
+               "#member-metadata-#{membership.id} " <>
+                 "#member-invitation-state-#{membership.id}.text-amber-300",
+               "pending"
+             )
+
+      refute has_element?(lv, "#member-status-invitation-pending-#{membership.id}")
+      refute has_element?(lv, "#member-statuses-#{membership.id}")
+      refute has_element?(lv, "#member-status-unconfirmed-#{membership.id}")
+      refute has_element?(lv, "#member-joined-#{membership.id}")
+      refute html =~ "Invitation pending"
+      refute html =~ "awaiting acceptance"
+
+      invitation_metadata = lv |> element("#member-metadata-#{membership.id}") |> render()
+      refute invitation_metadata =~ "never active"
 
       assert has_element?(
                lv,
@@ -1611,7 +1753,11 @@ defmodule EmisarWeb.TeamLiveTest do
       # role picker — its confirm dialogs still render — and the change actually
       # applies (you set the role they'll have on reinstate).
       subscribe_team(account)
-      assert render_click(lv, "suspend", %{"membership_id" => membership.id}) =~ "Suspended"
+
+      render_click(lv, "suspend", %{"membership_id" => membership.id})
+
+      assert has_element?(lv, "#member-suspended-#{membership.id}", "access suspended")
+
       assert_team_broadcast(lv, "membership.suspended", membership.user_id)
 
       assert has_element?(lv, "##{"change-role-#{membership.id}-operator"}")
@@ -1645,32 +1791,63 @@ defmodule EmisarWeb.TeamLiveTest do
       assert_team_broadcast(lv, "membership.reinstated", membership.user_id)
     end
 
-    test "the Suspended chip names the manager who placed the hold and clears on reinstate", %{
+    test "account cautions use separate status lines and clear independently", %{
       account: account,
       lv: lv,
+      member: member,
       owner: owner,
       membership: membership
     } do
-      # The roster reflects the state change live — the "Suspended" chip is the
-      # visible signal the row is disabled.
-      refute render(lv) =~ "Suspended"
+      {:ok, _unconfirmed} =
+        member
+        |> Ecto.Changeset.change(confirmed_at: nil)
+        |> Emisar.Repo.update()
+
+      refute has_element?(lv, "#member-status-suspended-#{membership.id}")
 
       subscribe_team(account)
-      suspended = render_click(lv, "suspend", %{"membership_id" => membership.id})
-      assert suspended =~ "Suspended"
-      assert has_element?(lv, "#member-suspended-#{membership.id}", "Suspended")
+      render_click(lv, "suspend", %{"membership_id" => membership.id})
 
       assert has_element?(
                lv,
-               "#member-suspended-by-#{membership.id}",
+               "#member-status-suspended-#{membership.id} #member-suspended-#{membership.id}",
+               "access suspended"
+             )
+
+      refute has_element?(
+               lv,
+               "#member-status-suspended-#{membership.id} > .bg-amber-400"
+             )
+
+      assert has_element?(
+               lv,
+               "#member-status-suspended-#{membership.id} #member-suspended-by-#{membership.id}",
                "by #{Emisar.Accounts.user_display_name(owner)}"
+             )
+
+      assert has_element?(
+               lv,
+               "#member-status-unconfirmed-#{membership.id} #member-unconfirmed-#{membership.id}",
+               "Email unconfirmed"
+             )
+
+      assert has_element?(
+               lv,
+               "#member-status-unconfirmed-#{membership.id} > .bg-amber-400"
              )
 
       assert_team_broadcast(lv, "membership.suspended", membership.user_id)
 
-      restored = render_click(lv, "reinstate", %{"membership_id" => membership.id})
-      refute restored =~ "Suspended"
+      render_click(lv, "reinstate", %{"membership_id" => membership.id})
+      refute has_element?(lv, "#member-status-suspended-#{membership.id}")
       refute has_element?(lv, "#member-suspended-by-#{membership.id}")
+      assert has_element?(lv, "#member-unconfirmed-#{membership.id}", "Email unconfirmed")
+
+      assert has_element?(
+               lv,
+               "#member-status-unconfirmed-#{membership.id} > .bg-amber-400"
+             )
+
       assert_team_broadcast(lv, "membership.reinstated", membership.user_id)
     end
 
@@ -1693,7 +1870,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, lv, _html} =
         build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/settings/team")
 
-      assert has_element?(lv, "#member-suspended-#{membership.id}", "Suspended")
+      assert has_element?(lv, "#member-suspended-#{membership.id}", "access suspended")
       refute has_element?(lv, "#member-suspended-by-#{membership.id}")
     end
 

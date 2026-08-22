@@ -44,8 +44,8 @@ defmodule EmisarWeb.TeamLive do
      |> assign(:runners, [])
      |> assign(:runners_by_id, %{})
      |> assign(:runner_load_error?, false)
-     # The intro's role note renders before the roster load resolves it.
-     |> assign(:current_role, nil)
+     |> assign(:current_role, socket.assigns.current_subject.role)
+     |> assign(:filters, Accounts.team_member_filters())
      |> assign(:pack_advertisements, %{})
      |> assign(:pack_load_error?, false)
      |> assign(:approval_access_modes, %{})
@@ -93,6 +93,16 @@ defmodule EmisarWeb.TeamLive do
   def handle_info(_, socket), do: {:noreply, socket}
 
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
+
+  def handle_event("filter", params, socket) do
+    {:noreply,
+     LiveTable.apply_filter(
+       socket,
+       ~p"/app/#{socket.assigns.current_account}/settings/team",
+       params,
+       socket.assigns.filters
+     )}
+  end
 
   def handle_event("start_edit", %{"membership_id" => id}, socket) do
     case find_member_membership(socket, id) do
@@ -734,7 +744,7 @@ defmodule EmisarWeb.TeamLive do
   defp resend_invitation_error_message(reason), do: error_message(reason)
 
   defp load(socket, params) do
-    opts = LiveTable.params_to_opts(params)
+    opts = LiveTable.params_to_opts(params, socket.assigns.filters)
 
     case Accounts.list_team_member_facts(
            socket.assigns.current_account,
@@ -785,7 +795,6 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:runner_load_error?, runner_load_error?)
         |> assign(:pack_advertisements, advertisements)
         |> assign(:pack_load_error?, pack_load_error?)
-        |> assign(:current_role, current_role(member_facts, socket.assigns.current_user.id))
         |> assign(
           :suppressed_emails,
           suppressed_emails(socket.assigns.current_account, socket.assigns.current_subject)
@@ -808,7 +817,6 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:runner_load_error?, true)
         |> assign(:pack_advertisements, %{})
         |> assign(:pack_load_error?, true)
-        |> assign(:current_role, nil)
         |> assign(:suppressed_emails, MapSet.new())
         |> assign(:provider_facts, [])
         |> assign(:require_sso_available?, false)
@@ -1097,13 +1105,6 @@ defmodule EmisarWeb.TeamLive do
   # is why this needs no `mode: :none` clause.
   defp pack_reach_phrase(%Accounts.RunnerAccess{pack_mode: :all}), do: "All"
   defp pack_reach_phrase(%Accounts.RunnerAccess{}), do: nil
-
-  defp current_role(member_facts, user_id) do
-    case Enum.find(member_facts, &(&1.membership.user_id == user_id)) do
-      nil -> nil
-      %{membership: %Accounts.Membership{role: role}} -> role
-    end
-  end
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
     assign(socket, :form, to_form(changeset, as: "invite"))
@@ -1503,6 +1504,7 @@ defmodule EmisarWeb.TeamLive do
               rows={@member_facts}
               metadata={@metadata}
               filter_params={@filter_params}
+              filters={@filters}
               wrapper_class="divide-y divide-zinc-800/70"
             >
               <%!-- CONTENT ON CANVAS: hairline member rows on the page rail. The
@@ -1516,22 +1518,14 @@ defmodule EmisarWeb.TeamLive do
                    name+email instead of cramming the row (which truncated
                    "Sam Patel" to "Sa…"); they sit on the right at sm+. --%>
                   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                    <div class={[
-                      "flex min-w-0 flex-1 items-start gap-4",
-                      member.disabled? && "opacity-75"
-                    ]}>
+                    <div class="flex min-w-0 flex-1 items-start gap-4">
                       <.avatar name={Accounts.member_display_name(membership, membership.user) || "?"} />
 
-                      <%!-- `@container`: the roster sits in `lg:col-span-2` beside
-                       the Security rail, so this column is at its NARROWEST just
-                       past 1024px — narrower than on a phone, where the role and
-                       Actions controls stack away instead of taking the row. The
-                       access rows below key their label track to that width, not
-                       the viewport's (§7.57). --%>
-                      <div class="@container min-w-0 flex-1">
-                        <%!-- flex-wrap: the member's name is their identity — on a
-                         phone the status chips wrap to the next line instead of
-                         crushing the name to "Theo A…". --%>
+                      <div class="min-w-0 flex-1">
+                        <%!-- Keep the identity line about identity. Persistent
+                         identity markers (2FA, directory source, self) may sit
+                         beside the name; caution states stack below instead of
+                         piling amber boxes around it (§7.62). --%>
                         <div class="flex flex-wrap items-center gap-2">
                           <span
                             id={"member-name-#{membership.id}"}
@@ -1539,30 +1533,6 @@ defmodule EmisarWeb.TeamLive do
                           >
                             {Accounts.member_display_name(membership, membership.user) || "(unknown)"}
                           </span>
-                          <.chip
-                            :if={member.disabled?}
-                            id={"member-suspended-#{membership.id}"}
-                            tone={:amber}
-                          >
-                            Suspended
-                          </.chip>
-                          <span
-                            :if={member.disabled? and suspended_by_label}
-                            id={"member-suspended-by-#{membership.id}"}
-                            class="min-w-0 max-w-full break-words text-xs text-zinc-400"
-                          >
-                            by {suspended_by_label}
-                          </span>
-                          <%!-- Unconfirmed = signed up but never clicked the
-                         email confirmation link. Useful signal when an
-                         admin is wondering why a member can't sign in. --%>
-                          <.chip
-                            :if={member.confirmation_pending?}
-                            tone={:amber}
-                            title="This user signed up but hasn't confirmed their email."
-                          >
-                            Unconfirmed
-                          </.chip>
                           <%!-- Email on the deliverability suppression list (a hard
                          bounce or spam complaint) — invites and notifications
                          to this address are silently dropped, so it's the real
@@ -1611,6 +1581,51 @@ defmodule EmisarWeb.TeamLive do
                          after the email. --%>
                         <% show_activity? =
                           @can_manage_team? or membership.user_id == @current_user.id %>
+                        <%!-- Exceptional account-access states get their own compact
+                       amber lines beneath identity. A pending invitation is ordinary
+                       lifecycle metadata below, not a warning (§7.62). --%>
+                        <div
+                          :if={
+                            member.disabled? or
+                              (member.confirmation_pending? and not member.pending_invitation?)
+                          }
+                          id={"member-statuses-#{membership.id}"}
+                          class="text-xs leading-5"
+                        >
+                          <div
+                            :if={member.disabled?}
+                            id={"member-status-suspended-#{membership.id}"}
+                            class="min-w-0"
+                          >
+                            <p class="min-w-0 text-amber-300">
+                              <span
+                                id={"member-suspended-#{membership.id}"}
+                                class="whitespace-nowrap font-medium"
+                              >
+                                access suspended
+                              </span><span
+                                :if={suspended_by_label}
+                                id={"member-suspended-by-#{membership.id}"}
+                                class="text-zinc-400"
+                              >
+                                {" "}by {suspended_by_label}
+                              </span>
+                            </p>
+                          </div>
+                          <div
+                            :if={member.confirmation_pending? and not member.pending_invitation?}
+                            id={"member-status-unconfirmed-#{membership.id}"}
+                            class="flex min-w-0 items-start gap-1.5"
+                          >
+                            <.status_dot tone={:amber} class="mt-[0.4375rem]" />
+                            <p
+                              id={"member-unconfirmed-#{membership.id}"}
+                              class="font-medium text-amber-300"
+                            >
+                              Email unconfirmed
+                            </p>
+                          </div>
+                        </div>
                         <.meta_line
                           id={"member-metadata-#{membership.id}"}
                           class="text-xs text-zinc-400"
@@ -1618,14 +1633,29 @@ defmodule EmisarWeb.TeamLive do
                           <:seg :if={email = Accounts.secondary_user_email(membership.user)}>
                             {email}
                           </:seg>
-                          <:seg :if={show_activity?}>
+                          <:seg :if={member.pending_invitation?}>
+                            invited{" "}<.local_time
+                              id={"member-invited-#{membership.id}"}
+                              value={membership.inserted_at}
+                              mode={:relative}
+                            />
+                          </:seg>
+                          <:seg :if={member.pending_invitation?}>
+                            <span
+                              id={"member-invitation-state-#{membership.id}"}
+                              class="font-medium text-amber-300"
+                            >
+                              pending
+                            </span>
+                          </:seg>
+                          <:seg :if={show_activity? and not member.pending_invitation?}>
                             joined{" "}<.local_time
                               id={"member-joined-#{membership.id}"}
                               value={membership.inserted_at}
                               mode={:relative}
                             />
                           </:seg>
-                          <:seg :if={show_activity?}>
+                          <:seg :if={show_activity? and not member.pending_invitation?}>
                             <.activity_status membership={membership} />
                           </:seg>
                         </.meta_line>
@@ -1636,15 +1666,17 @@ defmodule EmisarWeb.TeamLive do
                          which dimension it belongs to. The label does, and it
                          also lets each tag drop the half the row already
                          states — a pack row saying "pack" on every pill is the
-                         same word twice. Below `@[17rem]` the label track would
-                         cost the tags more room than they have left, so it
-                         steps above them — still naming the dimension, just on
-                         its own line, instead of squeezing a tag to "da…". --%>
-                        <dl class="mt-1 grid grid-cols-1 items-baseline gap-x-2 gap-y-1 @[17rem]:grid-cols-[auto_minmax(0,1fr)]">
+                         same word twice. Keep label and value on the same row at
+                         every width; only the value column wraps when its tags
+                         genuinely run out of room (§7.63). --%>
+                        <dl
+                          id={"member-access-#{membership.id}"}
+                          class="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1"
+                        >
                           <dt class="text-[10px] uppercase tracking-wider text-zinc-400">
                             runners:
                           </dt>
-                          <dd class="flex flex-wrap items-center gap-1">
+                          <dd class="flex min-w-0 flex-wrap items-center gap-1">
                             <span :if={runner_reach_phrase(access)} class="text-xs text-zinc-400">
                               {runner_reach_phrase(access)}
                             </span>
@@ -1674,7 +1706,10 @@ defmodule EmisarWeb.TeamLive do
                           >
                             packs:
                           </dt>
-                          <dd :if={access.mode != :none} class="flex flex-wrap items-center gap-1">
+                          <dd
+                            :if={access.mode != :none}
+                            class="flex min-w-0 flex-wrap items-center gap-1"
+                          >
                             <span :if={pack_reach_phrase(access)} class="text-xs text-zinc-400">
                               {pack_reach_phrase(access)}
                             </span>
@@ -1899,12 +1934,26 @@ defmodule EmisarWeb.TeamLive do
                   This is a load error, not an empty team — you're always a member of your own.
                   Refresh the page; if it persists, your access to this account may have changed.
                 </.empty_state>
-                <%!-- The non-error empty is defensive — the current user is always a
-                 member of the account they're viewing, so an entirely empty list
+                <.empty_state
+                  :if={
+                    not @load_error? and
+                      LiveTable.has_active_filters?(@filter_params, @filters)
+                  }
+                  variant={:hint}
+                  icon="hero-magnifying-glass"
+                  title="No members match these filters"
+                >
+                  Try another name, role, or status.
+                </.empty_state>
+                <%!-- The non-error, unfiltered empty is defensive — the current
+                 user is always a member of the account they're viewing, so it
                  shouldn't happen. Keep meaningful copy anyway so it can never
                  accidentally land as a mystery blank panel. --%>
                 <.empty_state
-                  :if={not @load_error?}
+                  :if={
+                    not @load_error? and
+                      not LiveTable.has_active_filters?(@filter_params, @filters)
+                  }
                   icon="hero-users"
                   title="No team members yet."
                 >

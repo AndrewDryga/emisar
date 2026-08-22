@@ -20,12 +20,12 @@ in the control plane.
 | Direct HTTP with a scoped API key | `POST /api/mcp/rpc` | None |
 
 Claude.ai, ChatGPT, and other remote OAuth clients should connect directly.
-Claude Desktop, Claude Code, Cursor local mode, Codex CLI, Gemini CLI, Grok CLI,
-Zed, Windsurf, and similar stdio clients can use the bridge.
+Claude Desktop, Claude Code, Cursor local mode, VS Code, Codex CLI, Gemini CLI,
+Grok CLI, Zed, Windsurf, and similar stdio clients can use the bridge.
 
 The current per-client instructions are at
-[emisar.dev/docs/connect-claude-ai](https://emisar.dev/docs/connect-claude-ai). The
-dashboard's **LLM agents** page generates the exact configuration for the
+[emisar.dev/docs/connect-cli-agent](https://emisar.dev/docs/connect-cli-agent). The
+dashboard's **AI agents** page generates the exact configuration for the
 signed-in operator and their runner scope.
 
 ## Install the stdio bridge
@@ -53,7 +53,8 @@ the direct CLI its own key and, when supported MCP clients are present, offers
 to configure each one with a separate key. The CLI key goes into owner-only
 bridge state; client keys go into their client configs. No key passes through
 the clipboard, and existing client settings and other MCP servers are
-preserved.
+preserved. VS Code is the exception: its key goes into an owner-only environment
+file referenced by the user-level `mcp.json`, because editor settings may sync.
 
 You can authenticate the direct CLI without rerunning the installer. This opens
 the approval page in your browser and stores a dedicated CLI key locally:
@@ -110,7 +111,8 @@ curl -fsSL https://emisar.dev/install-mcp.sh \
 ## Manual MCP-client configuration
 
 Stdio MCP clients are configured through the environment in their server
-entry. They never inherit the direct CLI's stored credential:
+entry, directly or through a referenced environment file. They never inherit
+the direct CLI's stored credential:
 
 | Variable | Required | Purpose |
 | --- | --- | --- |

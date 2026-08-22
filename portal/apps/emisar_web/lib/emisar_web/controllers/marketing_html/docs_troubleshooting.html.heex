@@ -19,16 +19,16 @@
     >
       <.docs_header current="troubleshooting">
         <:dek>
-          Start from what you can actually see, run the smallest check that separates the causes,
-          and land on the page that owns the fix — or on a report that already carries the evidence
-          we need.
+          Start with what you can see. Run the smallest check that separates the possible causes.
+          Then open the page that owns the fix. If you need help, collect a report that already
+          contains the required evidence.
         </:dek>
       </.docs_header>
 
       <.docs_prerequisites>
         <:item>
-          The console, for the run, runner, and pack state. Reading runs needs any role; changing
-          trust, keys, or policy needs admin or owner.
+          The console shows run, runner, and pack state. Any role can read runs. An admin or owner
+          is required to change trust, keys, or policy.
         </:item>
         <:item>
           A shell on the affected host for the runner-side checks, with
@@ -41,10 +41,9 @@
       </.docs_prerequisites>
 
       <p class="mt-6 text-base leading-7 text-zinc-400">
-        This page routes; it does not restate the reference. You are done when the owner page named
-        beside your symptom explains what you are seeing and the check it prescribes passes. When
-        that does not happen, each symptom says what "still broken" looks like — and the last two
-        sections say exactly what to send.
+        This page routes to the reference. It does not repeat it. You are done when the owner page
+        explains the symptom and its check passes. If the check still fails, each symptom tells you
+        when to escalate. The last two sections list exactly what to send.
       </p>
 
       <.docs_h2 id="runner">The runner will not connect</.docs_h2>
@@ -137,9 +136,9 @@
 
       <.docs_h3 id="offline">It is offline or keeps reconnecting</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The runner registered once and is now shown offline. A reconnect on its own is normal: the
-        runner dials out again with bounded backoff and re-advertises its packs and actions, and an
-        action already executing keeps running across that gap.
+        The runner registered once and is now offline. Reconnecting on its own is normal. The
+        runner connects again with bounded backoff and advertises its packs and actions. An action
+        already running continues through that gap.
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -147,23 +146,22 @@
           <span>
             <strong class="text-zinc-200">First, look at the host.</strong>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemctl status emisar</code>
-            says whether the process is even running, and
+            shows whether the process is running.
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar doctor</code>
-            checks config, credential, packs, action binaries, the service, and reachability in one
-            pass without opening a cloud session.
+            checks config, credentials, packs, and action binaries. It also checks service state
+            and reachability without opening a cloud session.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Then check the identity, not the host.</strong>
-            A disabled runner is refused with
+            A disabled runner gets a
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">403</code>
-            and keeps retrying with its existing token, so enabling it brings the host back with no
-            shell access at all; a disabled account behaves the same way for every runner in it. A
-            deleted runner is terminal: it gets <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>, discards its cached
-            token, and stops rather than retrying a revoked identity — that host has to enroll
-            again.
+            and retries with its existing token. Enabling it restores the host without shell
+            access. A disabled account behaves the same way for every runner in it. A deleted
+            runner gets a terminal <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>.
+            It discards its cached token and stops retrying. That host must enroll again.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -181,8 +179,8 @@
       <.docs_h3 id="crash-loop">The service failed or is crash-looping</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         systemd reports <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">failed</code>. After five starts in
-        five minutes it stops retrying on purpose — a revoked credential should not hammer the
-        control plane.
+        five minutes, it stops retrying on purpose. This prevents a revoked credential from
+        hammering the control plane.
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -198,7 +196,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Then check for a second process.</strong>
-            A runner locks its data directory at boot, and only one process may own that dispatch
+            A runner locks its data directory at boot. Only one process can own that dispatch
             and replay state at a time. A stray manual
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar connect</code>
             beside the service is the usual cause.
@@ -228,28 +226,26 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The pack did not load.</strong>
-            The runner reports it as degraded with the loader's reason rather than dropping it
-            silently, so the console can say which pack failed on which host. Reproduce it locally
-            with
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
+            The runner reports the pack as degraded and includes the loader's reason. It does not
+            drop the pack silently. The console can then name the failed pack and host. Reproduce
+            the problem locally with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
               sudo emisar pack validate ./pack
-            </code>
-            — duplicate action ids, a script escaping the pack root, and unexpected symlinks all
-            fail closed and name the file and rule.
+            </code>. Duplicate action IDs, a script escaping the pack root, and unexpected symlinks all
+            fail closed — set
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">allow_symlinks</code>
+            when a pack needs them. The output names the file and rule.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The pack is installed but pending.</strong>
-            Installing bytes is not trusting them. Review the exact version and content hash in
-            <a
+            Installing bytes does not trust them. Review the exact version and content hash in <a
               href={~p"/app/packs"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-            >Packs</a>
-            and trust it deliberately;
+            >Packs</a>. Then trust it deliberately.
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar pack list</code>
-            shows what the host will advertise.
+            shows what the host advertises.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -265,26 +261,28 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">One action is missing from an otherwise healthy pack.</strong>
-            A runner advertises whether the program each action would start resolves on its <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">PATH</code>. When it does not,
-            that action stays in the advertisement but drops out of the executable targets. Install
-            the missing binary, or fix the service's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">PATH</code>, and the runner
-            refreshes on its own. Local admission rules can also hide actions by id or risk
-            ceiling; a rule in the host's config always wins.
+            A runner advertises whether each action's program resolves on its <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">PATH</code>.
+            If it does not, the action remains advertised but disappears from the executable
+            targets. Install the missing binary or fix the service's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">PATH</code>.
+            The runner refreshes on its own. Local admission rules can also hide actions by ID or
+            risk ceiling. A rule in the host's config always wins.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Escalate</strong>
-            when the hash on the host matches the hash you trusted and dispatch still refuses. Pack
-            rollout, trust, and rollback are owned by <.link
+            when the host hash matches the trusted hash and dispatch still refuses.
+            <.link
               navigate={~p"/docs/pack-updates"}
               class="text-brand-300 hover:text-brand-200"
-            >Roll out and roll back packs</.link>; the
-            YAML contract is in <.link
+            >Roll out and roll back packs</.link>
+            covers rollout, trust, and rollback.
+            <.link
               navigate={~p"/docs/action-packs"}
               class="text-brand-300 hover:text-brand-200"
-            >Pack reference</.link>.
+            >Pack reference</.link>
+            contains the YAML contract.
           </span>
         </li>
       </ul>
@@ -311,7 +309,7 @@
           <tbody class="divide-y divide-zinc-900 text-zinc-300">
             <%= for {seen, cause, {owner_path, owner}} <- [
               {"The runner or the action is not offered at all",
-               "Runner scope. A member or key only sees the hosts it was granted; an out-of-scope runner is invisible rather than refused.",
+               "Runner scope. A member or key sees only the hosts it was granted. An out-of-scope runner is hidden instead of refused.",
                {~p"/docs/teams-and-access", "Teams & access"}},
               {"Dispatch is refused before a run appears",
                "Pack trust. A pending or drifted content hash is not dispatchable, by design.",
@@ -320,7 +318,7 @@
                "Policy. The matched rule and its reason are recorded on the run.",
                {~p"/docs/policies-and-approvals", "Policies & approvals"}},
               {"The run sits at Pending approval",
-               "Policy asked for a human. It waits for an approver; a denial cancels it.",
+               "Policy asked for a person. It waits for an approver. A denial cancels it.",
                {~p"/docs/policies-and-approvals", "Policies & approvals"}},
               {"The run lands Refused",
                "The runner rejected it on a pre-execution check — a pack-hash mismatch, a signature problem, or local admission. Nothing executed.",
@@ -343,31 +341,33 @@
         </table>
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Over MCP the same conditions collapse deliberately: every stale or hidden target condition
-        comes back as
+        Over MCP, these conditions deliberately share one response. Every stale or hidden target
+        condition returns
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">target_contract_changed</code>
-        with the exact call to refresh, so a stale caller cannot learn which hidden fact moved.
+        with the exact refresh call. This prevents a stale caller from learning which hidden fact
+        changed.
         Follow that refresh once, then retry once.
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">signature_required</code>
-        names the runners that enforce client signing, and
+        names the runners that enforce client signing.
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">not_allowed</code>
-        means the current scope does not permit the request — it is not an invitation to probe.
+        means the current scope does not permit the request. Do not use it as an invitation to
+        probe.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Escalate</strong>
-        when policy allows the action, its trusted hash is current, the runner is online and in
-        scope, and dispatch still refuses with no matched rule on the run.
+        when all these conditions hold. Policy allows the action. Its trusted hash is current. The
+        runner is online and in scope. Dispatch still refuses, and the run shows no matched rule.
       </p>
 
       <.docs_h2 id="runs">A run failed, timed out, or looks stuck</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Read the status first — the
+        Read the status first. The
         <.link navigate={~p"/docs/runs"} class="text-brand-300 hover:text-brand-200">Runs</.link>
-        page carries the full table, and three of them get confused with each other.
+        page lists every status. Three are easy to confuse.
         <strong class="text-zinc-200">Failed</strong>
-        means the action ran and exited non-zero: that is a real result to read, not a gate.
-        <strong class="text-zinc-200">Error</strong>
-        means it could not complete — the runner went offline, was disabled or removed, or never
+        means the action ran and exited with a nonzero status. This is a real result to read, not a
+        gate. <strong class="text-zinc-200">Error</strong>
+        means the action did not complete. The runner went offline, was disabled or removed, or never
         acknowledged the send. <strong class="text-zinc-200">Timed out</strong>
         means the action ran past its declared limit and the runner stopped it.
       </p>
@@ -387,11 +387,11 @@
           <span>
             <strong class="text-zinc-200">A run that ends with
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execution_outcome_unknown</code>
-            may have done its work.</strong>
-            That is what a runner reports when its process or host died after execution started and
-            before a terminal result was durable. emisar never re-runs that dispatch automatically,
-            and neither should you until you have checked the target system — the side effect is
-            outside emisar's control.
+            can have completed its work.</strong>
+            The runner reports this when its process or host dies after execution starts. The
+            terminal result was not yet durable. emisar never runs that dispatch again
+            automatically. Do not retry until you check the target system. emisar does not control
+            the side effect.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -421,32 +421,37 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Every call returns 401.</strong>
-            The key was revoked, or a rotation successor retired it. Mint or rotate one in
+            The key expired, was revoked, or a rotation successor retired it. An expired key may
+            already have a live successor the bridge minted — look before you mint another. A
+            revoked one is terminal. If the client never worked at all, check which token was
+            copied: audit-export tokens share the
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
+            prefix and the MCP endpoint refuses them as the wrong kind. Mint or rotate a key in
             <a
               href={~p"/app/agents"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-            >LLM agents</a>
-            and put the new secret in the client config —
+            >AI agents</a>
+            and put the new secret in the client config.
             <.link
               navigate={~p"/docs/agents-and-keys"}
               class="text-brand-300 hover:text-brand-200"
-            >API keys</.link>
-            owns scope and expiry,
+            >Manage agents & keys</.link>
+            covers scope and expiry.
             <.link navigate={~p"/docs/credentials"} class="text-brand-300 hover:text-brand-200">Rotate and revoke credentials</.link>
-            owns the cutover.
+            covers the cutover.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The bridge is outdated or unsupported.</strong>
-            The Agents page carries the version each key last reported;
+            The Agents page shows the version last reported by each key.
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp --version</code>
-            confirms what is on disk. A running client keeps the binary it already loaded, so
-            restart the client after installing — see <.link
-              navigate={~p"/docs/runner-upgrades"}
+            confirms the installed version. A running client keeps the binary it already loaded.
+            Restart the client after installation. See <.link
+              navigate={~p"/docs/bridge-upgrades"}
               class="text-brand-300 hover:text-brand-200"
-            >Upgrade runners</.link>.
+            >Upgrade the MCP bridge</.link>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -458,26 +463,26 @@
             The complete code list, with the one action each implies, is in <.link
               navigate={~p"/docs/mcp-reference"}
               class="text-brand-300 hover:text-brand-200"
-            >MCP reference</.link>.
+            >MCP CLI &amp; reference</.link>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The response was lost after a mutation.</strong>
-            Recover by operation id with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_operation</code>, using the
-            same credential lineage that made the call — never by repeating the mutation. A
-            cancelled call, a closed client, or a dropped bridge does not roll back work the
-            control plane already admitted: cancellation stops the bridge's wait, and closing the
-            client's input lets requests already in flight finish.
+            Recover by operation ID with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_operation</code>.
+            Use the same credential lineage that made the call. Never repeat the mutation. A
+            cancelled call, closed client, or dropped bridge does not undo work the control plane
+            already admitted. Cancellation stops the bridge's wait. Closing the client's input
+            lets requests already in flight finish.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Escalate</strong>
-            when the same tool returns a transport error on every attempt, or an operation id you
-            recorded cannot be found under the credential that created it.
+            when the same tool returns a transport error on every attempt. Also escalate when a
+            recorded operation ID is missing under the credential that created it.
           </span>
         </li>
       </ul>
@@ -492,14 +497,15 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">SSO sign-in fails, or members loop back to the provider.</strong>
-            A discovery failure means the issuer URL is wrong; a rejected callback means the
-            redirect URI or client secret is; an accepted login that emisar still refuses means the
-            ID token is missing the configured identifier or a verified email. If Require SSO is
-            on and no one can complete a real sign-in, use an owner session you already have open
-            to turn it off. The full table is in <.link
+            A discovery failure means the issuer URL is wrong. A rejected callback means the
+            redirect URI or client secret is wrong. An accepted login that emisar refuses means
+            the ID token lacks the configured identifier or a verified email. If Require SSO is
+            on, use an open owner session to turn it off when all real sign-ins fail.
+            <.link
               navigate={~p"/docs/sso#troubleshooting"}
               class="text-brand-300 hover:text-brand-200"
-            >Single sign-on</.link>.
+            >Single sign-on</.link>
+            contains the full table.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -520,7 +526,8 @@
           <span>
             <strong class="text-zinc-200">Escalate</strong>
             when the provider reports success, the identifier claims match, and emisar still
-            refuses the identity — or when Require SSO is on and no owner session remains.
+            refuses the identity. Also escalate when Require SSO is on and no owner session
+            remains.
           </span>
         </li>
       </ul>
@@ -533,35 +540,35 @@
             <strong class="text-zinc-200">It stopped advancing.</strong>
             An empty page sets neither
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">X-Next-Cursor</code>
-            nor <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Link</code>, and the collector
-            holds its last cursor: that is caught up, not stuck. Only a full page carries <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Link: rel="next"</code>, meaning
-            more may be available right now.
+            nor <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Link</code>. The collector keeps
+            its last cursor. This means it is caught up, not stuck. Only a full page includes <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Link: rel="next"</code>.
+            That header means more data can be available now.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Events repeat, or look missing.</strong>
-            The export is a forward keyset read: persist the returned cursor and resume strictly
-            after it. A collector that restarts from a timestamp instead of its saved cursor
-            re-reads. Process or hand off the page idempotently, then persist its returned cursor;
-            a crash between those steps may repeat the page, but it cannot skip unprocessed events.
-            Expect to see an event more than once rather than assume exactly-once delivery.
+            The export uses a forward keyset read. Save the returned cursor and resume strictly
+            after it. A collector that restarts from a timestamp rereads events. Process or hand
+            off the page in an idempotent way. Then save its returned cursor. A crash between those
+            steps can repeat the page. It cannot skip unprocessed events. Expect duplicate events
+            instead of assuming exactly-once delivery.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">It gets 429, 401, or 403.</strong>
-            The endpoint allows 60 requests a minute per token, so poll on an interval rather than
-            in a loop; past that it answers <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">429</code>. A
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>
+            The endpoint allows 60 requests per minute for each token. Poll on an interval, not in
+            a loop. It returns <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">429</code>
+            above that rate. A <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>
             means the bearer is unknown or revoked. A
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">403</code>
-            means it authenticated but may not read here — an MCP key used where an audit-export
-            token belongs, a plan without export, or a role without audit access. The two credential
-            kinds never substitute for each other. Whichever it is, the poller must keep its cursor
-            and retry; a failed request is not an empty page.
+            means authentication succeeded, but this token lacks access. Causes include using an
+            agent key instead of an audit-export token. Other causes are a plan without export or a
+            role without audit access. The two credential types never substitute for each other.
+            The poller must keep its cursor and retry. A failed request is not an empty page.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -579,8 +586,8 @@
 
       <.docs_h2 id="evidence">Collect this before you report it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A report with these attached is usually answered in one round trip; one without them costs
-        a day of questions.
+        Reports with this evidence usually need one response. Reports without it can cost a day of
+        questions.
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -650,11 +657,11 @@
       </ul>
       <.docs_callout kind={:warn} title="Redact before you send.">
         <p>
-          Never paste a raw token, key, or certificate into a support request, a ticket, a chat
-          message, or a run's reason field. The runner redacts action output before it leaves the
-          host, but provider output you copy by hand has had no such pass — read it before you
-          attach it, and mask anything that looks like a credential. If a secret has already been
-          exposed, that is an incident, not a support request: go to <.link
+          Never paste a raw token, key, or certificate into a support request, ticket, chat message,
+          or run reason. The runner redacts action output before it leaves the host. Provider output
+          copied by hand has not passed through that redaction. Read it before attaching it. Mask
+          anything that looks like a credential. If a secret is already exposed, treat it as an
+          incident, not a support request. Go to <.link
             navigate={~p"/docs/security-incidents"}
             class="text-brand-300 hover:text-brand-200"
           >Security incidents</.link>.
@@ -667,23 +674,26 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">A product problem</strong>
-            — something broken, unclear, or slower than it should be — goes to
+            goes to
             <.link navigate={~p"/support"} class="text-brand-300 hover:text-brand-200">Support</.link>
-            with the evidence above.
+            with the evidence above. This includes anything broken, unclear, or slower than
+            expected.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">A suspected compromise or a vulnerability</strong>
-            — a leaked credential, an action you cannot account for, an unexpected content hash —
             goes to <a
               href={EmisarWeb.MailTo.security()}
               class="text-brand-300 hover:text-brand-200"
-            >security@emisar.dev</a>, and the containment steps are on <.link
+            >security@emisar.dev</a>. Examples include a leaked credential, an unexplained action,
+            or an unexpected content hash.
+            <.link
               navigate={~p"/docs/security-incidents"}
               class="text-brand-300 hover:text-brand-200"
-            >Security incidents</.link>. Contain first; the report can follow within the hour.
+            >Security incidents</.link>
+            lists the containment steps. Contain first. Send the report within the hour.
           </span>
         </li>
       </ul>

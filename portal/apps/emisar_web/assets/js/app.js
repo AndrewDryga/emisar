@@ -15,6 +15,7 @@ import topbar from "../vendor/topbar"
 import {setupCopyToClipboardDelegation} from "./copy.js"
 import {initDropdowns} from "./dropdown.js"
 import {FlashAutoClose} from "./flash.js"
+import {initOsTabs} from "./os_tabs.js"
 import {positionOverlay} from "./overlay.js"
 import {Tooltip} from "./tooltip.js"
 
@@ -314,6 +315,11 @@ function formatForensic(dt) {
 // marketing bundle; see copy.js for why it's a delegated listener.
 setupCopyToClipboardDelegation()
 
+// The install-instruction OS switch (macOS/Linux vs Windows PowerShell). The
+// server renders the detected default; this only handles the click, and the
+// marketing bundle calls the identical function.
+initOsTabs()
+
 // Keeps an open <.dropdown> panel on screen — above its trigger when there's no
 // room below, inside the canvas when it would run off an edge. Delegated at the
 // document, so a panel a LiveView patch adds later needs no re-wiring; the
@@ -564,6 +570,27 @@ const DialogFocus = {
   }
 }
 
+// "Close this tab" on the device-grant approval page. That tab was opened by
+// the terminal (`open` / `xdg-open`), not by a script, so window.close() is
+// honored only where the tab has no history of its own — and refused SILENTLY
+// everywhere else, Firefox always. Still alive a beat later means it was
+// refused, so reveal the sibling note (data-note-id) telling the operator to
+// close it themselves; re-reveal after a patch, which would restore the
+// server's hidden class.
+const CloseTab = {
+  mounted() {
+    this.el.addEventListener("click", () => {
+      window.close()
+      setTimeout(() => this.reveal(), 200)
+    })
+  },
+  updated() { if (this.blocked) this.reveal() },
+  reveal() {
+    this.blocked = true
+    document.getElementById(this.el.dataset.noteId)?.classList.remove("hidden")
+  }
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
@@ -571,7 +598,7 @@ let liveSocket = new LiveSocket("/live", Socket, {
   // neutral recovery notice should still acknowledge the interruption.
   disconnectedTimeout: 100,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, Combobox, FilterableList, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, DialogFocus }
+  hooks: { LocalTime, Combobox, FilterableList, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, DialogFocus, CloseTab }
 })
 
 // Show progress bar on live navigation and form submits

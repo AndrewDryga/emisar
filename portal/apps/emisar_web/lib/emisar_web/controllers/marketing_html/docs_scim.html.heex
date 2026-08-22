@@ -17,19 +17,19 @@
     >
       <.docs_header current="scim">
         <:dek>
-          Directory sync (SCIM 2.0) lets your identity provider push the user lifecycle to emisar:
-          provision people from the directory, and when someone is offboarded there, their emisar
-          access is revoked automatically — sessions ended, API keys revoked.
+          Directory sync uses SCIM 2.0 to let your identity provider manage members in emisar. It
+          provisions people and revokes access when they leave. Revocation ends sessions and API
+          keys.
         </:dek>
       </.docs_header>
 
       <.docs_callout kind={:note} title="Set up SSO login first">
         <p>
-          Directory sync builds on a configured SSO connection. If you haven't connected your IdP
-          yet, start with <.link
+          Directory sync builds on a configured SSO connection. If you have not connected your
+          IdP, start with <.link
             navigate={~p"/docs/sso"}
             class="text-brand-400 hover:text-brand-300"
-          >Single sign-on</.link>, then enable directory sync on that connection.
+          >Single sign-on</.link>. Then enable directory sync on that connection.
         </p>
       </.docs_callout>
 
@@ -38,11 +38,10 @@
         Open the configured connection from <a
           href={~p"/app/sso"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Team → Single sign-on</a>, then enable
-        <strong class="text-zinc-200">directory sync</strong>
-        to let your IdP push the user lifecycle to emisar over SCIM 2.0 — the standard Okta, Entra,
-        and JumpCloud all speak as a provisioning client. The directory-sync panel lives on each
-        connection's page, right under its settings. <.plan_note tier={:enterprise} />
+        >Team → Single sign-on</a>. Enable <strong class="text-zinc-200">directory sync</strong>.
+        Your IdP can then manage users through SCIM 2.0. Okta, Entra, and JumpCloud support this
+        provisioning standard. The directory-sync panel lives on each connection's page, under its
+        settings. <.plan_note tier={:enterprise} />
       </p>
 
       <.docs_screenshot
@@ -80,12 +79,10 @@
               <li class="flex items-start gap-2.5">
                 <span class="flex-none text-zinc-500">—</span>
                 <span>
-                  a <strong class="text-zinc-200">bearer token</strong>, shown
-                  <strong class="text-zinc-200">once</strong>
-                  when you enable or rotate it. Like every emisar secret it's write-only after that
-                  — copy it then. Didn't catch it? Use
-                  <strong class="text-zinc-200">Rotate token</strong>
-                  to mint a fresh one (the old one stops working).
+                  The <strong class="text-zinc-200">bearer token</strong> appears once when you
+                  enable or rotate it. It is write-only after that, so copy it immediately. If you
+                  missed it, select <strong class="text-zinc-200">Rotate token</strong>. The old
+                  token then stops working.
                 </span>
               </li>
             </ul>
@@ -100,15 +97,16 @@
               Point your IdP's SCIM connector at that base URL and bearer.
             </p>
             <p class="mt-1.5">
-              In your provider, set the SCIM endpoint to the base URL and paste the token as the API
-              token — emisar accepts it in the
+              Set the SCIM endpoint to the base URL. Paste the token as the API token. emisar
+              accepts it in the
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Authorization</code>
-              header. Enable Create / Update / Deactivate. The connection's
-              <strong class="text-zinc-200">"Point your IdP at this connection"</strong>
-              guide names the per-provider specifics. Expect provisioning to live in its
-              <em>own</em>
-              app: Okta's OIDC login app can't do SCIM at all, and an Entra app registration can't
-              provision either. JumpCloud is the exception — one custom application can carry both.
+              header.
+              Enable Create, Update, and Deactivate. The
+              <strong class="text-zinc-200">“Point your IdP at this connection”</strong>
+              guide lists
+              provider-specific settings. Use a separate provisioning application for Okta or
+              Entra. Their OIDC login applications cannot provision through SCIM. JumpCloud can
+              carry sign-in and provisioning in one application.
             </p>
           </div>
         </li>
@@ -121,39 +119,36 @@
               Match the SCIM externalId to the OIDC subject.
             </p>
             <p class="mt-1.5">
-              Configure your IdP so the SCIM
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-              carries the same stable identifier as the connection's identifier claim. Then a
-              member's SSO login and their synced directory record resolve to one emisar identity —
-              no email-matching anywhere. If the two sides can't be made to share an identifier,
-              that connection can't be reconciled this way.
+              Configure <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code> to
+              carry the same stable value as the connection's identifier claim. Then the SSO login
+              and synced directory record resolve to one emisar identity. This flow never matches
+              email addresses. If the identifiers differ, the connection cannot reconcile them.
             </p>
             <ul class="mt-2 space-y-2">
               <li class="flex items-start gap-2.5">
                 <span class="flex-none text-zinc-500">—</span>
                 <span>
                   <strong class="text-zinc-200">Okta</strong>
-                  usually lines up untouched: it populates
-                  <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-                  with the Okta user id, and ID tokens from its <em>org</em>
-                  authorization server carry that same value as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>. Okta documents
-                  that in examples rather than as a guarantee, and a custom authorization server
-                  lets an admin rewrite the subject claim.
+                  usually needs no changes. It puts the
+                  Okta user ID in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>. Its
+                  organization authorization server uses the same value as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>. Okta documents
+                  that in examples, not as a guarantee. A custom authorization server lets an
+                  administrator rewrite the subject claim.
                 </span>
               </li>
               <li class="flex items-start gap-2.5">
                 <span class="flex-none text-zinc-500">—</span>
                 <span>
                   <strong class="text-zinc-200">Entra</strong>
-                  needs both sides changed: remap
+                  needs changes on both sides. Map
                   <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-                  from its default
-                  <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>
-                  to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">objectId</code>, and set
-                  this connection's identifier claim to
-                  <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
-                  — Entra's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-                  is per-application, so the login app and the provisioning app would disagree.
+                  from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>
+                  to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">objectId</code>. Set the
+                  connection's identifier claim to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>. Entra uses a
+                  different <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+                  for each
+                  application. Without these changes, the login and provisioning applications
+                  identify different people.
                 </span>
               </li>
             </ul>
@@ -165,31 +160,28 @@
       </ol>
 
       <p class="mt-6 text-base leading-7 text-zinc-400">
-        Once it's wired, here's what the sync does:
+        After setup, directory sync does the following:
       </p>
       <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Provisioning</strong>
-            creates the user and their membership at the connection's default role — so account
-            access is in place before their first login. Runner access follows the connection's
-            Default runner access setting, which starts at <em>no runners</em>: a provisioned member
-            sees the fleet only once you grant it, per member or by group mapping.
+            creates the user and membership at the connection's default role. Account access exists
+            before the first login. Runner access combines the connection's Default runner access
+            with mapped directory groups. The default can grant no runners, all runners, or selected
+            runners. Only a no-runners default with no mapped grants starts empty.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Deprovisioning</strong>
-            — when the IdP marks a user inactive or removes them — <strong class="text-zinc-200">suspends
-            the member</strong>: their sessions are killed and their API keys revoked immediately,
-            so an offboard in your directory revokes emisar access automatically. It does
-            <strong class="text-zinc-200">not</strong>
-            delete the user — the audit trail is preserved. Reactivation in the directory restores
-            access. One member is exempt: emisar refuses to deprovision your last active owner and
-            returns an error to your directory, because it would leave the account with nobody who
-            can administer it. Promote another owner first.
+            When the IdP deactivates or removes a user, <strong class="text-zinc-200">deprovisioning suspends the member</strong>. emisar ends
+            the member's sessions and revokes their API keys immediately. This makes directory
+            offboarding revoke emisar access automatically. The user and audit history remain.
+            Directory reactivation restores access. emisar refuses to deprovision the last active
+            owner and returns an error to the directory. This keeps an administrator on the
+            account. Promote another owner first.
           </span>
         </li>
       </ul>
@@ -197,7 +189,7 @@
       <.docs_h3 id="disable-sync">Rotate or disable directory sync</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Rotate token</strong>
-        replaces the bearer immediately; the old token stops authenticating, so update the IdP
+        replaces the bearer immediately. The old token stops authenticating. Update the IdP
         connector with the newly shown value. <strong class="text-zinc-200">Disable</strong>
         also invalidates the bearer, but it does not suspend or delete existing members. It stops
         directory ownership of their role and runner access, discards the last group snapshot, and
@@ -227,7 +219,7 @@
       <.docs_h2 id="protocol">SCIM protocol reference</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Every endpoint is under the connection's <code>/scim/v2</code> base URL and requires its
-        bearer token. The token selects the account and provider; resources cannot be read or
+        bearer token. The token selects the account and provider. Resources cannot be read or
         changed across connections.
       </p>
 
@@ -252,8 +244,8 @@
             <tr>
               <td class="px-4 py-3 font-mono text-xs text-zinc-100">/Users</td>
               <td class="px-4 py-3">
-                Collection <code>GET</code>
-                and <code>POST</code>; resource <code>GET</code>, <code>PUT</code>, <code>PATCH</code>, and <code>DELETE</code>.
+                Collections support <code>GET</code>
+                and <code>POST</code>. Resources support <code>GET</code>, <code>PUT</code>, <code>PATCH</code>, and <code>DELETE</code>.
                 Resource paths use the immutable <code>id</code>
                 returned by emisar.
               </td>
@@ -261,8 +253,8 @@
             <tr>
               <td class="px-4 py-3 font-mono text-xs text-zinc-100">/Groups</td>
               <td class="px-4 py-3">
-                Collection <code>GET</code>
-                and <code>POST</code>; resource <code>GET</code>, <code>PUT</code>, <code>PATCH</code>, and <code>DELETE</code>.
+                Collections support <code>GET</code>
+                and <code>POST</code>. Resources support <code>GET</code>, <code>PUT</code>, <code>PATCH</code>, and <code>DELETE</code>.
                 Resource paths use the returned <code>id</code>. Group writes reconcile the pushed
                 membership before mappings are applied.
               </td>
@@ -303,8 +295,8 @@
             for <code>active</code>, <code>displayName</code>, <code>name.givenName</code>, and <code>name.familyName</code>, including the pathless attribute map Entra sends.
             <code>PUT</code>
             requires <code>active</code>
-            in one of those boolean forms and can update the name;
-            email and <code>externalId</code>
+            in one of those boolean forms and can update the name.
+            Email and <code>externalId</code>
             stay fixed after provisioning.
           </span>
         </li>
@@ -313,8 +305,9 @@
           <span>
             <code>PATCH active:false</code>
             and <code>DELETE</code>
-            both suspend the membership; <code>active:true</code>
-            restores a directory suspension. A manual administrator
+            both suspend the membership. <code>active:true</code>
+            restores a directory suspension.
+            A manual administrator
             suspension is not reversed by the directory.
           </span>
         </li>
@@ -340,8 +333,9 @@
           <span>
             A Group <code>POST</code>
             with <code>externalId</code>
-            reconciles that directory resource. A probe that omits <code>externalId</code>
-            gets a new server <code>id</code>; use that id for later reads and writes.
+            reconciles that directory resource. A probe without <code>externalId</code>
+            gets a new
+            server <code>id</code>. Use that id for later reads and writes.
             <code>displayName</code>
             is a label and filter, never the group's identity.
           </span>
@@ -359,8 +353,8 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            One request may carry at most 100 PATCH operations, and a group write may carry at
-            most 5,000 member ids. Bulk, sorting, ETags, and password changes are not supported.
+            One request accepts at most 100 PATCH operations. A group write accepts at most 5,000
+            member IDs. Bulk, sorting, ETags, and password changes are not supported.
           </span>
         </li>
       </ul>
@@ -410,7 +404,7 @@
               navigate={~p"/docs/integrations/keycloak#scim"}
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >Keycloak</.link>
-            — no outbound SCIM; the guide covers what that leaves you to do.
+            has no outbound SCIM. The guide explains the remaining manual work.
           </span>
         </li>
         <li id="google-workspace" class="flex gap-3">
@@ -420,7 +414,8 @@
               navigate={~p"/docs/integrations/google-workspace#scim"}
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >Google Workspace</.link>
-            — no outbound SCIM; route it through an IdP to close the offboarding gap.
+            has no outbound SCIM. Route it through an IdP to close the
+            offboarding gap.
           </span>
         </li>
       </ul>
@@ -446,17 +441,17 @@
 
       <.docs_h2 id="runner-access-mapping">Mapping directory groups to runner access</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A role controls what a member may do; runner access controls where they may do it. Map a
-        synced IdP group to either <strong class="text-zinc-200">All runners</strong>
-        or selected runner groups and individual runners. The mapping is applied to current group
-        members immediately and follows later SCIM membership changes.
+        A role controls a member's actions. Runner access controls where those actions run. Map a
+        synced IdP group to <strong class="text-zinc-200">All runners</strong>, selected runner
+        groups, or individual runners. The mapping is applied to current group members immediately
+        and follows later SCIM membership changes.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Group runner access is <strong class="text-zinc-200">additive</strong>. emisar takes the
-        union of the connection's Default runner access and every mapped group the member belongs
-        to; a mapping cannot subtract or deny access granted elsewhere, and any
-        <strong class="text-zinc-200">All runners</strong>
-        grant wins. For example, a connection default of no runners plus
+        Group runner access is <strong class="text-zinc-200">additive</strong>. emisar combines
+        Default runner access with every mapped group the member belongs to. Mappings cannot remove
+        access granted elsewhere. Any <strong class="text-zinc-200">All runners</strong>
+        grant
+        wins. For example, a connection default of no runners plus
         <code>database-team → group:database-prod</code>
         gives members of that directory group only
         the database runner group. If another mapped group grants all runners, members in both get
@@ -473,11 +468,11 @@
 
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Directory-side symptoms and their checks. If you're not yet sure the problem is
+        Use these checks for directory-side symptoms. If you are not sure the problem is
         provisioning, start from <.link
           navigate={~p"/docs/troubleshooting" <> "#identity"}
           class="text-brand-300 hover:text-brand-200"
-        >troubleshooting</.link>, which routes each visible symptom to the page that owns it.
+        >Troubleshooting</.link>. It routes each symptom to the page that owns it.
       </p>
       <div class="mt-5 overflow-hidden rounded-xl border border-zinc-800">
         <table class="w-full text-left text-sm">
@@ -550,28 +545,25 @@
           <span>
             The
             <strong class="text-zinc-200">SCIM bearer token is an admin-grade credential</strong>
-            — it can provision and deprovision across the account. Treat it like a password, and
-            rotate it from the connection under
+            — it can provision and deprovision across the account. Treat the bearer as a password.
+            Rotate it from
             <a
               href={~p"/app/sso"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
             >Team → Single sign-on</a>
-            if it's ever exposed (your IdP loses access until
-            you paste the new one).
+            whenever it is exposed. Your IdP loses access until you paste the new token.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Every directory-sync action lands in the
-            <.link
+            Each directory-sync action records its authentication method in the <.link
               navigate={~p"/docs/audit-and-siem"}
               class="text-brand-300 hover:text-brand-200"
             >
               audit log
-            </.link>
-            with its authentication method, so you can see that the directory, not a person,
-            suspended an offboarded member.
+            </.link>. This shows whether the directory, rather than a person, suspended an offboarded
+            member.
           </span>
         </li>
       </ul>

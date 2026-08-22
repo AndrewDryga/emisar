@@ -71,7 +71,7 @@ defmodule EmisarWeb.AuditExportLive do
 
   def handle_event("create_export_key", _params, socket) do
     # Audit-export keys are admin-only AND a distinct credential KIND from MCP
-    # keys: `kind: :audit_export` is what authorizes `/api/audit` (an MCP key
+    # keys: `kind: :audit_export` is what authorizes `/api/audit` (an agent key
     # gets a 403 there, and vice-versa), and they live here rather than the
     # agents page so SIEM export isn't mixed in with the LLM-bridge use case.
     Permissions.gated(

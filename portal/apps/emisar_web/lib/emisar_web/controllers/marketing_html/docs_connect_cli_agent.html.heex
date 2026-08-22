@@ -64,27 +64,38 @@
 
         <.docs_h3 id="install-bridge">Install</.docs_h3>
         <p class="mt-2 text-base text-zinc-300">
-          On macOS or Linux, this command resolves the latest
+          The installer resolves the latest
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mcp-v*</code>
           release, verifies its checksum, and installs
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
-          into <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin</code>:
+          into <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin</code>
+          on macOS and Linux, and
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">%LOCALAPPDATA%\Programs\Emisar\bin</code>
+          on 64-bit Windows:
         </p>
-        <.docs_code
-          phx-no-format
-          label="shell"
-          copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
-        ><span class="text-zinc-500">$</span> curl -fsSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</.docs_code>
-        <p class="mt-5 text-base text-zinc-300">
-          On 64-bit Windows, open PowerShell and run:
-        </p>
-        <.docs_code
-          phx-no-format
-          label="PowerShell"
-          copy_text="irm https://emisar.dev/install-mcp.ps1 | iex"
-        ><span class="text-zinc-500">PS&gt;</span> irm <span class="text-brand-300">https://emisar.dev/install-mcp.ps1</span> | iex</.docs_code>
+        <.os_docs_code phx-no-format detected={@detected_os}>
+          <:tab
+            os={:linux}
+            label="Linux"
+            copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
+          ><span class="text-zinc-500">$</span> curl -fsSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</:tab>
+          <:tab
+            os={:windows}
+            label="Windows"
+            copy_text="irm https://emisar.dev/install-mcp.ps1 | iex"
+          ><span class="text-zinc-500">PS&gt;</span> irm <span class="text-brand-300">https://emisar.dev/install-mcp.ps1</span> | iex</:tab>
+          <:tab
+            os={:macos}
+            label="macOS"
+            copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
+          ><span class="text-zinc-500">$</span> curl -fsSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</:tab>
+        </.os_docs_code>
+        <.docs_verify_download
+          tarball="emisar-mcp-<version>-linux-amd64.tar.gz"
+          checksums="SHA256SUMS-MCP"
+        />
         <p class="mt-3 text-sm leading-6 text-zinc-400">
-          Both installers find supported clients. You choose which clients to connect. Browser
+          The installer finds supported clients. You choose which clients to connect. Browser
           approval creates one key for direct <code>emisar-mcp</code>
           commands and a separate key for each selected client. Direct commands then work without
           shell-profile exports. The installer preserves comments and other MCP servers in each
@@ -115,231 +126,16 @@
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
           over OAuth with no binary to install, which is why a cloud agent shows no bridge version.
         </p>
-        <.docs_verify_download
-          tarball="emisar-mcp-<version>-linux-amd64.tar.gz"
-          checksums="SHA256SUMS-MCP"
-        />
-
-        <details class="group mt-8 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
-          <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
-            <span class="flex items-center gap-2">
-              <.icon name="hero-wrench-screwdriver" class="h-4 w-4 text-zinc-500" />
-              Set up a client by hand
-            </span>
-            <.icon
-              name="hero-chevron-down"
-              class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
-            />
-          </summary>
-          <div class="border-t border-zinc-900 px-5 pb-5 pt-4 space-y-8">
-            <p class="text-base leading-7 text-zinc-400">
-              Every snippet here needs an agent key. Open <a
-                href={~p"/app/agents/connect"}
-                class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-              >Connect an agent</a>, pick your client, and create its key. The console prefills the whole
-              snippet for you, and the key is shown once.
-            </p>
-            <%!-- Claude Desktop --%>
-            <section id="claude-desktop">
-              <h3 class="text-sm font-semibold text-zinc-100">Claude Desktop</h3>
-              <p class="mt-2 text-base text-zinc-400">
-                Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/Library/Application Support/Claude/claude_desktop_config.json</code>:
-              </p>
-              <.docs_code phx-no-format label="json" copy_id="mcp-config-claude-desktop">&#123;
-  "mcpServers": &#123;
-    "emisar": &#123;
-      "command": "/usr/local/bin/emisar-mcp",
-      "env": &#123;
-        "EMISAR_URL": "https://emisar.dev",
-        "EMISAR_API_KEY": "emk-...",
-        "EMISAR_CLIENT": "claude-desktop"
-      &#125;
-    &#125;
-  &#125;
-&#125;</.docs_code>
-              <p class="mt-3 text-base text-zinc-400">
-                Restart Claude Desktop. Tools appear under the tool icon
-                as "emisar".
-              </p>
-            </section>
-
-            <%!-- Cursor --%>
-            <section id="cursor">
-              <h3 class="text-sm font-semibold text-zinc-100">Cursor</h3>
-              <p class="mt-2 text-base text-zinc-400">
-                Same bridge. Cursor reads <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.cursor/mcp.json</code>:
-              </p>
-              <.docs_code phx-no-format label="json" copy_id="mcp-config-cursor">&#123;
-  "mcpServers": &#123;
-    "emisar": &#123;
-      "command": "/usr/local/bin/emisar-mcp",
-      "env": &#123;
-        "EMISAR_URL": "https://emisar.dev",
-        "EMISAR_API_KEY": "emk-...",
-        "EMISAR_CLIENT": "cursor"
-      &#125;
-    &#125;
-  &#125;
-&#125;</.docs_code>
-              <p class="mt-3 text-base text-zinc-400">
-                Recent Cursor builds also speak remote MCP. Point them at
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
-                directly (see <.link
-                  navigate={~p"/docs/connect-claude-ai"}
-                  class="text-brand-400 hover:text-brand-300"
-                >Connect a cloud LLM</.link>) to skip the bridge.
-              </p>
-            </section>
-
-            <%!-- VS Code --%>
-            <section id="vscode">
-              <h3 class="text-sm font-semibold text-zinc-100">VS Code</h3>
-              <p class="mt-2 text-base leading-7 text-zinc-400">
-                Run
-                <strong class="font-medium text-zinc-200">MCP: Open User Configuration</strong>
-                from the Command Palette and add this server. VS Code asks for the key when it
-                first starts the bridge, so the secret does not live in a settings file that may
-                sync to another machine.
-              </p>
-              <.docs_code phx-no-format label="jsonc" copy_id="mcp-config-vscode">&#123;
-  "inputs": [
-    &#123;
-      "type": "promptString",
-      "id": "emisar-api-key",
-      "description": "Emisar API key",
-      "password": true
-    &#125;
-  ],
-  "servers": &#123;
-    "emisar": &#123;
-      "type": "stdio",
-      "command": "emisar-mcp",
-      "args": [],
-      "env": &#123;
-        "EMISAR_URL": "https://emisar.dev",
-        "EMISAR_API_KEY": "$&#123;input:emisar-api-key&#125;",
-        "EMISAR_CLIENT": "vscode"
-      &#125;
-    &#125;
-  &#125;
-&#125;</.docs_code>
-              <p class="mt-3 text-sm leading-6 text-zinc-400">
-                The installer configures the stable default VS Code profile automatically and
-                stores its key in an owner-only environment file outside <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mcp.json</code>.
-              </p>
-            </section>
-
-            <%!-- Zed --%>
-            <section id="zed">
-              <h3 class="text-sm font-semibold text-zinc-100">Zed</h3>
-              <p class="mt-2 text-base text-zinc-400">
-                By hand, Zed reads
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
-                  ~/.config/zed/settings.json
-                </code>
-                and nests MCP servers under <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">context_servers</code>, not <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mcpServers</code>:
-              </p>
-              <.docs_code phx-no-format label="json" copy_id="mcp-config-zed">&#123;
-  "context_servers": &#123;
-    "emisar": &#123;
-      "source": "custom",
-      "command": "/usr/local/bin/emisar-mcp",
-      "args": [],
-      "env": &#123;
-        "EMISAR_URL": "https://emisar.dev",
-        "EMISAR_API_KEY": "emk-...",
-        "EMISAR_CLIENT": "zed"
-      &#125;
-    &#125;
-  &#125;
-&#125;</.docs_code>
-            </section>
-
-            <%!-- Claude Code (CLI) --%>
-            <section id="claude-code">
-              <h3 class="text-sm font-semibold text-zinc-100">Claude Code</h3>
-              <p class="mt-2 text-base text-zinc-400">
-                One-line register, user scope (every project):
-              </p>
-              <.docs_code
-                phx-no-format
-                label="terminal"
-                copy_text="claude mcp add emisar --scope user -e EMISAR_URL=https://emisar.dev -e EMISAR_API_KEY=emk-... -e EMISAR_CLIENT=claude-code -- /usr/local/bin/emisar-mcp"
-              ><span class="text-zinc-500">$</span> claude mcp add emisar --scope user \
-    -e EMISAR_URL=https://emisar.dev \
-    -e EMISAR_API_KEY=emk-... \
-    -e EMISAR_CLIENT=claude-code \
-    -- /usr/local/bin/emisar-mcp</.docs_code>
-              <p class="mt-3 text-base text-zinc-400">
-                Verify with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">claude mcp list</code>.
-              </p>
-            </section>
-
-            <%!-- Gemini CLI --%>
-            <section id="gemini-cli">
-              <h3 class="text-sm font-semibold text-zinc-100">Gemini CLI</h3>
-              <p class="mt-2 text-base text-zinc-400">
-                Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.gemini/settings.json</code>:
-              </p>
-              <.docs_code phx-no-format label="json" copy_id="mcp-config-gemini">&#123;
-  "mcpServers": &#123;
-    "emisar": &#123;
-      "command": "/usr/local/bin/emisar-mcp",
-      "env": &#123;
-        "EMISAR_URL": "https://emisar.dev",
-        "EMISAR_API_KEY": "emk-...",
-        "EMISAR_CLIENT": "gemini"
-      &#125;
-    &#125;
-  &#125;
-&#125;</.docs_code>
-            </section>
-
-            <%!-- ChatGPT Codex CLI --%>
-            <section id="codex-cli">
-              <h3 class="text-sm font-semibold text-zinc-100">ChatGPT Codex CLI</h3>
-              <p class="mt-2 text-base text-zinc-400">
-                Add to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>:
-              </p>
-              <.docs_code phx-no-format label="toml" copy_id="mcp-config-codex">[mcp_servers.emisar]
-command = "/usr/local/bin/emisar-mcp"
-env = &#123; EMISAR_URL = "https://emisar.dev", EMISAR_API_KEY = "emk-...", EMISAR_CLIENT = "codex" &#125;</.docs_code>
-              <p class="mt-3 text-base text-zinc-400">
-                To let emisar calls run without Codex prompts, add
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
-                  default_tools_approval_mode = "approve"
-                </code>
-                below
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[mcp_servers.emisar]</code>
-                in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.codex/config.toml</code>.
-                This trusts only the emisar MCP server. Emisar still applies its own policies and approvals.
-              </p>
-            </section>
-
-            <%!-- Grok CLI --%>
-            <section id="grok-cli">
-              <h3 class="text-sm font-semibold text-zinc-100">Grok CLI</h3>
-              <p class="mt-2 text-base text-zinc-400">
-                Register the bridge in your user config:
-              </p>
-              <.docs_code
-                phx-no-format
-                label="terminal"
-                copy_text="grok mcp add emisar -e EMISAR_URL=https://emisar.dev -e EMISAR_API_KEY=emk-... -e EMISAR_CLIENT=grok -- /usr/local/bin/emisar-mcp"
-              ><span class="text-zinc-500">$</span> grok mcp add emisar \
-    -e EMISAR_URL=https://emisar.dev \
-    -e EMISAR_API_KEY=emk-... \
-    -e EMISAR_CLIENT=grok \
-    -- /usr/local/bin/emisar-mcp</.docs_code>
-              <p class="mt-3 text-base text-zinc-400">
-                To stop Grok's per-tool prompts for emisar only, add
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">"MCPTool(emisar__*)"</code>
-                to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[permission].allow</code>
-                in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">~/.grok/config.toml</code>.
-              </p>
-            </section>
-          </div>
-        </details>
+        <p class="mt-8 text-base leading-7 text-zinc-400">
+          To set a client up by hand, open
+          <a
+            href={~p"/app/agents/connect"}
+            class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+          >Connect an agent</a>
+          in the console and pick your client. It shows the exact config file or command for that
+          client with your key and the endpoint already filled in — the key is shown once, so
+          copy the snippet from there rather than from a docs page that cannot know it.
+        </p>
 
         <.docs_callout kind={:note}>
           <p>

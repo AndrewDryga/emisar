@@ -574,7 +574,11 @@ defmodule EmisarWeb.RunnersLive do
             </div>
 
             <div class="hidden space-y-6 xl:block">
-              <.docs_rail title="What's a runner?" doc_href="/docs/runners" doc_label="Runner docs">
+              <.docs_rail
+                title="What's a runner?"
+                doc_href="/docs/runner-fleet"
+                doc_label="Runner docs"
+              >
                 <p>
                   A runner is the small <span class="text-zinc-200">emisar agent</span>
                   installed on one of your hosts — a server, VM, or container.

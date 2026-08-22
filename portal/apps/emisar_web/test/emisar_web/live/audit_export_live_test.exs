@@ -375,7 +375,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       refute html =~ "Account-A-only-export-token"
     end
 
-    test "audit-export tokens are bucketed out of the LLM agents page", %{
+    test "audit-export tokens are bucketed out of the AI agents page", %{
       conn: conn,
       user: user,
       account: account

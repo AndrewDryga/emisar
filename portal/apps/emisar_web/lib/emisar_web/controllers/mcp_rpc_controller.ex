@@ -67,7 +67,7 @@ defmodule EmisarWeb.MCPRpcController do
   @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
 
   # A leaked key is the abuse vector — cap per key (falls back to IP for
-  # unauthenticated hammering). 300/min is generous for a real LLM agent.
+  # unauthenticated hammering). 300/min is generous for a real AI agent.
   plug EmisarWeb.Plugs.RateLimit,
     bucket: "mcp",
     limit: 300,
@@ -710,7 +710,7 @@ defmodule EmisarWeb.MCPRpcController do
 
   # The MCP tool surface is for `:mcp` keys only — an audit-export token
   # authenticates but has no tool business. Downstream, account Policy +
-  # approval + the operator's runner scope decide what an MCP key may do; the
+  # approval + the operator's runner scope decide what an agent key may do; the
   # key carries no per-key grant.
   defp require_mcp_key(conn) do
     if conn.assigns.api_key.kind == :mcp do

@@ -160,9 +160,9 @@ defmodule EmisarWeb.Router do
     get "/terms", MarketingController, :terms
     get "/dpa", MarketingController, :dpa
     get "/refund-policy", MarketingController, :refund
-    get "/docs/connect-cli-agent", MarketingController, :docs_connect_cli_agent
     get "/docs/connect-claude-ai", MarketingController, :docs_connect_claude_ai
     get "/docs/connect-chatgpt", MarketingController, :docs_connect_chatgpt
+    get "/docs/connect-cli-agent", MarketingController, :docs_connect_cli_agent
     get "/docs/mcp-reference", MarketingController, :docs_mcp_reference
     get "/docs/quickstart", MarketingController, :docs_quickstart
     get "/docs/use-a-published-pack", MarketingController, :docs_use_published_pack
@@ -214,13 +214,13 @@ defmodule EmisarWeb.Router do
     get "/docs/autoscaling-fleets", MarketingController, :docs_autoscaling_fleets
     get "/docs/runs", MarketingController, :docs_runs
     get "/docs/agents-and-keys", MarketingController, :docs_agents_and_keys
-    get "/docs/bridge-upgrades", MarketingController, :docs_bridge_upgrades
     get "/docs/runner-cli", MarketingController, :docs_runner_cli
     get "/docs/billing", MarketingController, :docs_billing
     get "/docs/limits", MarketingController, :docs_limits
     get "/docs/runner-upgrades", MarketingController, :docs_runner_upgrades
-    get "/docs/runner-credentials", MarketingController, :docs_runner_credentials
+    get "/docs/bridge-upgrades", MarketingController, :docs_bridge_upgrades
     get "/docs/credentials", MarketingController, :docs_credentials
+    get "/docs/runner-credentials", MarketingController, :docs_runner_credentials
     get "/docs/pack-updates", MarketingController, :docs_pack_updates
     get "/docs/network-requirements", MarketingController, :docs_network_requirements
     get "/docs/troubleshooting", MarketingController, :docs_troubleshooting

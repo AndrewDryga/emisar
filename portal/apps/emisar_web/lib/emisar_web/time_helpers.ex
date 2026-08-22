@@ -251,9 +251,9 @@ defmodule EmisarWeb.TimeHelpers do
   def accountable_actor_label({nil, via}), do: via
   def accountable_actor_label({who, _via}), do: who
 
-  @doc "Humanized run source (`:mcp` → `LLM agent`, …) — the sidebar/filter noun."
+  @doc "Humanized run source (`:mcp` → `AI agent`, …) — the sidebar/filter noun."
   def format_source(:operator), do: "Operator"
-  def format_source(:mcp), do: "LLM agent"
+  def format_source(:mcp), do: "AI agent"
   def format_source(:runbook), do: "Runbook"
   def format_source(_), do: "—"
 end

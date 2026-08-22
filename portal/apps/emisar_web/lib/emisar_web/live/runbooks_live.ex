@@ -143,7 +143,7 @@ defmodule EmisarWeb.RunbooksLive do
            so neither is repeated here. --%>
       <.page_intro>
         A runbook is a multi-step procedure saved as one versioned unit — an operator or an
-        LLM agent dispatches it on demand, and only the published release ever runs.
+        AI agent dispatches it on demand, and only the published release ever runs.
       </.page_intro>
 
       <div class="grid min-w-0 gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_20rem]">

@@ -32,6 +32,7 @@ import {initEmisarDemo} from "./emisar_demo.js"
 import {initStaticFlashes} from "./flash.js"
 import {initLegalToc} from "./legal_toc.js"
 import {initMobileNav} from "./mobile_nav.js"
+import {initOsTabs} from "./os_tabs.js"
 import {initPackSearch} from "./pack_search.js"
 import {initPricingCycle} from "./pricing_cycle.js"
 import {initReveal} from "./reveal.js"
@@ -57,6 +58,7 @@ initDocsFilter()
 initDocsLightbox()
 initDropdowns()
 initMobileNav()
+initOsTabs()
 initPackSearch()
 initPricingCycle()
 initReveal()

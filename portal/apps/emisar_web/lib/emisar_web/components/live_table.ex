@@ -404,7 +404,7 @@ defmodule EmisarWeb.LiveTable do
         @class
       ]}
     >
-      <span aria-hidden="true" class="text-base leading-none">&times;</span> Clear filters
+      <CoreComponents.icon name="hero-x-mark-mini" class="h-4 w-4 shrink-0" /> Clear filters
     </.link>
     """
   end

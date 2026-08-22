@@ -8,95 +8,77 @@
       toc={[
         {"recorded", "What gets recorded"},
         {"reading", "Reading it in the console"},
-        {"exporting", "The export API"},
-        {"polling", "A poller that keeps its place"},
-        {"health", "Watch the poller itself"},
-        {"alerting", "What to alert on"},
+        {"token", "1. Mint an export token"},
+        {"exporting", "2. Pull events with a cursor"},
+        {"polling", "3. Run a poller that keeps its place"},
+        {"health", "4. Watch the poller itself"},
+        {"alerting", "5. Alert on what matters"},
         {"retention", "Retention"},
         {"journal", "The runner-side journal"}
       ]}
     >
       <.docs_header current="audit-and-siem">
         <:dek>
-          Everything that matters leaves a record: every dispatch and its outcome, every approval
-          decision, every policy edit, every credential minted or revoked, every sign-in — even
-          the failed ones.
+          Important changes and run outcomes leave records. Audit includes terminal run outcomes,
+          denials, approval gates and decisions, policy edits, credential changes, and sign-ins.
+          The numbered steps ship the trail to your SIEM.
         </:dek>
       </.docs_header>
 
       <.docs_screenshot
         src="/images/screenshots/audit-view.webp"
         title="emisar console · Audit log"
-        caption="Every dispatched action with its actor, target runner, outcome, source IP, and time — filterable, and exportable to your SIEM."
-        alt="The Audit log in the dashboard: a chronological feed of dispatched actions, each with its actor, target runner, outcome (succeeded, failed, errored), source IP, and timestamp — filterable, and exportable to a SIEM."
+        caption="Run outcomes and gates with the actor, target runner, source IP, and time — filterable and exportable to your SIEM."
+        alt="The Audit log in the console showing run outcomes and gates with the actor, target runner, source IP, and timestamp."
       />
-
-      <.docs_code
-        phx-no-format
-        label="siem"
-        copy_text={
-          ~s(curl -s -H "Authorization: Bearer $AUDIT_KEY" https://emisar.dev/api/audit?since=2026-07-23T00:00:00Z)
-        }
-      ><span class="text-zinc-500">$</span> curl -s -H "Authorization: Bearer $AUDIT_KEY" \
-    https://emisar.dev/api/audit?since=2026-07-23T00:00:00Z
-{~s({"id":"019f8a5f-7759-7a33-a47e-9a7c28e10bd1","request_id":"req_cF-s3B3Z-Iu38MDhBCdqlw","account_id":"019f8a5f-74c7-7b9a-980a-0e00422d2541","actor_kind":"user","actor_label":null,"actor_id":"019f8a5f-749b-72b9-b70f-04b56ebf9e83","ip_address":null,"event_type":"action_run.pending_approval","occurred_at":"2026-07-22T15:09:00.121466Z","target_id":"019f8a5f-75b2-7a64-a955-152da6a993f3","mcp_client_metadata":null,"user_agent":null,"payload":{"action":"postgres.reload_conf","executed_command_truncated":false,"run_id":"019f8a5f-7758-7cfc-8790-77c9aa9400fd"},"target_label":"pg-primary-iad","target_kind":"runner"})}</.docs_code>
-
-      <.docs_callout kind={:note} title="One event per line, forward-only">
-        Every line is a complete JSON object — the <code class="text-zinc-300">event_type</code>, the
-        <code class="text-zinc-300">actor_id</code>
-        / <code class="text-zinc-300">target_id</code>
-        to correlate on, the request metadata (<code class="text-zinc-300">ip_address</code>, <code class="text-zinc-300">request_id</code>), and the full <code class="text-zinc-300">payload</code>.
-      </.docs_callout>
 
       <.docs_h2 id="recorded">What gets recorded</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Events are named
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">domain.action</code>
-        — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">action_run.denied</code>
-        (a dispatch policy rejected, with the reason), <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">approval.approved</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">policy.updated</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">membership.role_changed</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">user.sessions_revoked</code>, …
-        over sixty types across runs, approvals, policies, packs, runners, credentials, team,
-        and account changes. Each carries the actor (operator, API key, or runner), the
-        affected entity, a structured payload (a policy edit records its exact diff), and an
-        account-scoped timestamp. Audit rows are written in the
-        <strong class="text-zinc-200">same database transaction</strong>
-        as the change they
-        describe — an action that committed has its audit row, always.
+        Event names use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">domain.action</code>
+        format. Examples include <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">action_run.denied</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">approval.approved</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">policy.updated</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">membership.role_changed</code>, and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">user.sessions_revoked</code>. More than
+        sixty event types cover runs, approvals, policies, packs, runners, credentials, team
+        changes, and account changes. Each event contains the actor, affected entity, structured
+        payload, and account-scoped timestamp. For example, a policy edit stores its exact diff.
+        Product mutations write their audit row with the change. Run lifecycle uses a narrower
+        contract. Audit records a terminal outcome, denial, or approval gate. Run history shows
+        pending, sent, and running states.
       </p>
 
-      <.docs_h2 id="reading">Reading it in the dashboard</.docs_h2>
+      <.docs_h2 id="reading">Reading it in the console</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <a
           href={~p"/app/audit"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Audit</a>
-        filters by event type or actor kind; every
-        row expands to the full payload, and references resolve to live labels (the runner's
-        name, the user's email) so you're not cross-referencing UUIDs. LLM-driven runs carry
-        their attribution — which client, which key, which session — plus the required <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>, so you can answer what the
+        filters by event type or actor kind, and the <strong>Export CSV</strong>
+        button downloads exactly the view you have filtered to. Every row expands to the full
+        payload. References
+        resolve to live labels, such as a runner name or user email. You do not need to
+        cross-reference UUIDs. LLM-driven runs identify the client, key, session, and required <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>. You can answer what the
         agent did last night, and why, with a single filter. For roles with full audit access, the
-        record is account-wide; runner and pack scope do not redact historical receipts. Billing
+        record is account-wide. Runner and pack scope do not redact historical receipts. Billing
         managers see only billing events.
       </p>
 
-      <.docs_h2 id="exporting">The export API</.docs_h2>
+      <.docs_h2 id="token">1. Mint an export token</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Two ways out: the <strong>Export CSV</strong>
-        button on the
-        Audit log downloads exactly the view you've filtered to, and
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">GET /api/audit</code>
-        serves NDJSON — one event per line, forward keyset order by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">occurred_at</code>, then id.
-        Mint a read-only <strong>audit-export</strong>
-        token from <a
+        Mint a read-only audit-export token from <a
           href={~p"/app/audit/export"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Audit export</a>; that token
-        can read events and nothing else — it's a separate credential kind from an MCP key, so
-        it can never list runners or execute an action. <.plan_note tier={:team} />
+        >Audit export</a>. That token can read events and nothing else. It is a separate
+        credential kind from an agent key. It can never list runners or execute an action.
+        <.plan_note tier={:team} />
+      </p>
+
+      <.docs_h2 id="exporting">2. Pull events with a cursor</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">GET /api/audit</code>
+        serves NDJSON: one event per line, in forward keyset order by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">occurred_at</code>, then ID.
       </p>
       <.docs_callout kind={:note} title="emisar does not push events.">
         There is no managed log sink, webhook, or streaming transport. A SIEM with a cursor-aware
-        HTTP input can poll this endpoint directly; otherwise a collector polls emisar and forwards
-        what it reads. Collector is a role, not another service you have to run — it can be your
+        HTTP input can poll this endpoint directly. Otherwise a collector polls emisar and forwards
+        what it reads. Collector is a role, not another service you have to run. It can be your
         SIEM's built-in HTTP input, a log agent you already run, or a small scheduled poller. Either
         way the delay between an action and its appearance in your SIEM is your poll interval and
         the rate limit below, not real time.
@@ -104,10 +86,15 @@
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># first pull — everything since a timestamp</span>
 <span class="text-zinc-500">$</span> curl -s <span class="text-brand-300">"https://emisar.dev/api/audit?since=2026-06-01T00:00:00Z&amp;limit=500"</span> \
     -H <span class="text-brand-300">"Authorization: Bearer $AUDIT_KEY"</span>
+{~s({"id":"019f8a5f-7759-7a33-a47e-9a7c28e10bd1","request_id":"req_cF-s3B3Z-Iu38MDhBCdqlw","account_id":"019f8a5f-74c7-7b9a-980a-0e00422d2541","actor_kind":"user","actor_label":null,"actor_id":"019f8a5f-749b-72b9-b70f-04b56ebf9e83","ip_address":null,"event_type":"action_run.pending_approval","occurred_at":"2026-07-22T15:09:00.121466Z","target_id":"019f8a5f-75b2-7a64-a955-152da6a993f3","mcp_client_metadata":null,"user_agent":null,"payload":{"action":"postgres.reload_conf","executed_command_truncated":false,"run_id":"019f8a5f-7758-7cfc-8790-77c9aa9400fd"},"target_label":"pg-primary-iad","target_kind":"runner"})}
 
 <span class="text-zinc-500"># follow-ups — same filters, plus the cursor the previous response returned</span>
 <span class="text-zinc-500">$</span> curl -s <span class="text-brand-300">"https://emisar.dev/api/audit?limit=500&amp;cursor=$NEXT"</span> \
     -H <span class="text-brand-300">"Authorization: Bearer $AUDIT_KEY"</span></.docs_code>
+      <.docs_callout kind={:note} title="What each event carries">
+        Each object contains <code class="text-zinc-300">event_type</code>, <code class="text-zinc-300">actor_id</code>, <code class="text-zinc-300">target_id</code>,
+        request metadata, and the full <code class="text-zinc-300">payload</code>.
+      </.docs_callout>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
@@ -116,11 +103,11 @@
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">since</code>
             is an inclusive lower bound on
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">occurred_at</code>
-            and belongs only to the first call; omitting it reads from the start of your retained
+            and belongs only to the first call. Omitting it reads from the start of your retained
             history. Once you hold a cursor, send
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cursor</code>
             — it wins over <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">since</code>
-            and resumes strictly after the event it names, so a poll can't rewind by accident.
+            and resumes strictly after the event it names. A poll cannot rewind by accident.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -128,21 +115,21 @@
           <span>
             <strong class="text-zinc-200">Two headers, two different jobs.</strong>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">X-Next-Cursor</code>
-            is your resume point — the last row on the page — and rides every page that returned
-            events, full or short. The RFC 5988
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
-              Link: &lt;…&gt;; rel="next"
-            </code>
-            rides only a <em>full</em>
-            page and means more may be available right now; it is not a promise that another event
-            exists. Follow it while pages come back full, then go back to your interval.
+            is the last row on the page. Use it as your resume point. Every page with events
+            includes it. The RFC 5988
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Link</code>
+            header has a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">rel</code>
+            parameter of <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">next</code>
+            only on a
+            full page. It means that more events can be available now. It does not promise another
+            event. Follow the link while pages are full. Then resume polling at your normal interval.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">An empty page is an answer.</strong>
-            It sets neither header. Keep the cursor you already had and poll again later — there is
+            It sets neither header. Keep the cursor you already had and poll again later. There is
             nothing to advance past.
           </span>
         </li>
@@ -150,10 +137,10 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Keep the filters identical for the life of a cursor.</strong>
-            A cursor is an opaque position in the ordering — it carries no account, no filter set,
+            A cursor is an opaque position in the ordering. It carries no account, no filter set,
             and no expiry, and the token you present is what scopes the read. Change
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">event_type</code>
-            mid-chain and you silently change what the same cursor returns; run a second chain with
+            mid-chain and you silently change what the same cursor returns. Run a second chain with
             its own cursor instead.
           </span>
         </li>
@@ -163,17 +150,17 @@
             <strong class="text-zinc-200">Sizes and rate.</strong>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">limit</code>
             defaults to 100 events and is capped at 1,000. The endpoint allows 60 requests a minute
-            per token; past that it answers <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">429</code>, so poll on an interval
+            per token. Past that it answers <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">429</code>. Poll on an interval
             rather than in a tight loop.
           </span>
         </li>
       </ul>
 
-      <.docs_h2 id="polling">A poller that keeps its place</.docs_h2>
+      <.docs_h2 id="polling">3. Run a poller that keeps its place</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Whatever runs the loop — your SIEM's HTTP input, a log agent, or the script below — it has
-        exactly one piece of durable state to get right: the cursor. This is the whole contract in
-        one file, with no vendor configuration in it.
+        The loop can run in your SIEM HTTP input, a log agent, or the script below. It has one
+        durable state value: the cursor. This file shows the complete contract without vendor
+        configuration.
       </p>
       <.docs_code phx-no-format label="poll-emisar-audit.sh" copy_id="audit-poller"><span class="text-zinc-500">#!/bin/sh</span>
 set -eu
@@ -220,46 +207,46 @@ while :; do
   grep -qi <span class="text-brand-300">'^link:.*rel="next"'</span> <span class="text-brand-300">"$work/headers"</span> || sleep <span class="text-brand-300">"$INTERVAL"</span>
 done</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The token lives in the environment and the cursor lives in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">$STATE</code>, which is what makes a
-        credential swap boring: mint the replacement, restart the poller with the new value, watch
+        The token lives in the environment and the cursor lives in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">$STATE</code>. This is what makes a
+        credential swap boring. Mint the replacement, restart the poller with the new value, watch
         one poll succeed, then revoke the old token. The position is the collector's state, not the
-        token's, so it never resets. Rotation mechanics are in <.link
+        token's. It never resets. Rotation mechanics are in <.link
           navigate={~p"/docs/credentials" <> "#audit-tokens"}
           class="text-brand-300 hover:text-brand-200"
         >rotate and revoke credentials</.link>.
       </p>
 
-      <.docs_h2 id="health">Watch the poller itself</.docs_h2>
+      <.docs_h2 id="health">4. Watch the poller itself</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        An ingest pipeline that quietly stops is worse than one that never existed, and the two
-        failures look identical from the SIEM: no new events. Alert on the poller, not only on what
-        it delivers — the age of the newest
+        A stopped ingest pipeline and an idle account both produce no new events. Alert on the
+        poller, not only on delivered events. Monitor the age of the newest
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">occurred_at</code>
-        you have ingested, the time since the cursor last changed, and any run of failed polls.
-        Cross-check against the console, which reads the same events without a cursor: rows visible
+        event, time since cursor movement, and consecutive failed polls.
+        Cross-check against the console. This reads the same events without a cursor. Rows visible
         there and absent downstream mean the collector, not emisar, is behind.
       </p>
       <.docs_callout kind={:warn} title="Your collector shows up in its own feed.">
         <p>
           Every non-empty export is itself recorded, as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit.exported</code>, after the
           page is read. An unfiltered collector will therefore see its own earlier exports on a
-          later poll. That is deliberate — the watchers are watched — but it has two consequences.
+          later poll. That is deliberate. The watchers are watched. This behavior has two
+          consequences.
         </p>
         <p class="mt-3">
           Never treat <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit.exported</code>
-          as operator activity: a busy exporter is a busy exporter, not a busy account. Exclude it
+          as operator activity. A busy exporter is a busy exporter, not a busy account. Exclude it
           from activity dashboards and keep it for credential monitoring, where an export from an
-          unexpected address or at an unexpected hour is the signal.
+          unexpected address or time is the signal.
         </p>
         <p class="mt-3">
-          And never poll until a page comes back empty. Each read can create the event the next read
+          Never poll until a page comes back empty. Each read can create the event the next read
           finds. Follow <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Link</code>
           while pages are full, then wait for your interval. Empty is a valid caught-up answer, not
           something the endpoint promises after every drain.
         </p>
       </.docs_callout>
 
-      <.docs_h2 id="alerting">What to alert on</.docs_h2>
+      <.docs_h2 id="alerting">5. Alert on what matters</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Most of the trail is evidence you read after the fact. These are the classes worth waking
         someone for, because each one either changes what is allowed or says a control was tested:
@@ -271,7 +258,7 @@ done</.docs_code>
             <strong class="text-zinc-200">The rules changed.</strong>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">policy.updated</code>
             carries its exact diff, and pack-trust transitions mean new executable bytes were
-            approved. Both widen what an agent may do, and both are rare enough to review every
+            approved. Both widen what an agent can do, and both are rare enough to review every
             time.
           </span>
         </li>
@@ -282,7 +269,7 @@ done</.docs_code>
             Credentials minted or revoked, role changes, runner enrollment and deletion, and
             identity events —
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">user.mfa_reset_by_admin</code>
-            on an account you weren't expecting is the classic one.
+            on an account you were not expecting is the classic one.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -293,16 +280,14 @@ done</.docs_code>
             with its reason, and on the runner side
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">validation_failed</code>
             / <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">action_blocked_by_admission</code>. One
-            is noise; a repeated pattern from one actor is an agent probing for what it can't have,
-            and it is the most interesting signal you'll get.
+            is noise. A repeated pattern from one actor is an agent probing for what it cannot have. It is the most interesting signal you will get.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">A decision waited too long.</strong>
-            Approval requests that sit unanswered are an operational signal, not a security one, but
-            they are the reason a run "did nothing" — see <.link
+            Approval requests that sit unanswered are an operational signal, not a security one. They are the reason a run "did nothing" — see <.link
               navigate={~p"/docs/policies-and-approvals"}
               class="text-brand-300 hover:text-brand-200"
             >policies &amp; approvals</.link>.
@@ -313,35 +298,46 @@ done</.docs_code>
       <.docs_h2 id="retention">Retention</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Retention follows your plan — 7 days on Free, 90 on Team, 365 on Enterprise. Each event's
-        horizon is fixed when it's written, so a plan downgrade only shortens the window for
+        horizon is fixed when it is written. A plan downgrade only shortens the window for
         <em>new</em>
-        events; it never retroactively deletes history. Both the plan change and every retention
-        prune are themselves recorded in the log. Ingest ahead of the window and how long the
-        evidence lives becomes your SIEM's policy rather than ours — which is the practical reason
-        to fix a stalled poller before the oldest un-ingested event ages out.
+        events. It never retroactively deletes history. Both the plan change and every retention
+        prune are recorded in the log. Export events before this window closes. Your SIEM then
+        controls how long the evidence remains available. Fix a stalled poller before the oldest
+        unexported event expires.
       </p>
 
       <.docs_h2 id="journal">The runner-side journal</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Independently of the cloud, every runner writes a JSONL line per action attempt to
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/log/emisar/events.jsonl</code>
-        — argv hashes, exit codes, redaction counts, output digests — each line chained to the
-        previous by SHA-256.
+        Independently of the cloud, every runner normally writes two JSONL lines per action attempt
+        to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/log/emisar/events.jsonl</code>.
+        The start event contains the run and argument hashes. The terminal event contains the exit
+        status, redaction counts, and output digests. Each line is chained to the previous line by
+        SHA-256.
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar audit verify --all</code>
         walks the chain (including rotated files) and flags a break. Verification covers the
-        retained journal or retained suffix; it cannot prove that a privileged host operator did
-        not replace or truncate the entire local journal. The record that cannot be changed from
-        the host is the <strong>cloud audit</strong>
-        — it's off-host and append-only.
+        retained journal or retained suffix. It cannot detect a privileged host operator who can
+        replace or truncate the entire local journal. The <strong>cloud audit</strong>
+        is stored away from the runner. The application does not edit retained events. It removes
+        events after their fixed retention deadline. This is not WORM storage.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        So carry both into your SIEM: ship the host journal through the log pipeline you already run
-        on that host, ingest the cloud audit through the export API, and correlate corresponding
-        execution attempts on run id and UTC time. A mismatch is an investigation signal, not a
-        verdict: first allow for the collector's poll interval and for a host crash before its local
-        write, then investigate unexplained gaps as possible loss or tampering. Hiding an action
+        Send both records to your SIEM. Send the host journal through the existing host log pipeline.
+        Ingest cloud audit through the export API. Correlate matching attempts by run ID and UTC
+        time. A mismatch is an investigation signal, not a verdict. First account for the collector
+        poll interval and a host crash before its local write. Then investigate unexplained gaps as
+        possible loss or tampering. Hiding an action
         from both records still requires changing two independent views, with the cloud copy out of
         reach from the host.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A poller that stalls, repeats events, or starts returning
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>
+        —
+        <.link
+          navigate={~p"/docs/troubleshooting" <> "#audit"}
+          class="text-brand-400 hover:text-brand-300"
+        >Troubleshooting</.link>
+        owns those symptoms.
       </p>
     </.docs_layout>
   </section>

@@ -16,22 +16,21 @@
         {"declare", "Declare each action"},
         {"install", "Validate & trust"},
         {"rollout", "Roll it out"},
-        {"registry", "Keep it yours"}
+        {"registry", "Keep it private, or propose it"}
       ]}
     >
       <.docs_header current="publishing-packs">
         <:dek>
-          A pack is a directory of YAML you write and maintain yourself — no SDK, no compiler, no
-          signing keys, nothing uploaded to anyone. Drop it on the runners you control, trust it
-          once, and your model can call it. Most packs stay private to your fleet, and that's by
-          design: the public
+          A pack is a directory of YAML you write and maintain yourself — no SDK, no compiler,
+          no upload. Put it on the runners you control, trust it once, and your model can call
+          it. Most packs stay private to your fleet; the public
           <.link navigate={~p"/packs"} class="text-brand-300 hover:text-brand-200">
             registry
           </.link>
-          is curated, not a free-for-all (more on that <a
+          is curated (<a
             href="#registry"
             class="text-brand-300 hover:text-brand-200"
-          >below</a>).
+          >more below</a>).
         </:dek>
       </.docs_header>
 
@@ -63,11 +62,11 @@ my-pack — My ops pack  (v0.1.0)
             <h2 class="text-xl font-semibold text-zinc-50">Lay out the pack directory</h2>
           </header>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            A pack is just a folder: a top-level <code>pack.yaml</code>
-            manifest and one YAML per action in <code>actions/</code>. Optional
+            A pack is a folder with a top-level <code>pack.yaml</code>
+            manifest and one YAML file per action in <code>actions/</code>. An optional
             <code>scripts/</code>
-            holds packaged shell scripts for <code>kind: script</code>
-            actions. Keep the whole thing in your own git repo.
+            directory holds packaged shell scripts for <code>kind: script</code>
+            actions. Keep the pack in your own Git repository.
           </p>
           <.docs_code phx-no-format>my-pack/
   pack.yaml                    # pack manifest (see step 2)
@@ -89,16 +88,15 @@ my-pack — My ops pack  (v0.1.0)
             <h2 class="text-xl font-semibold text-zinc-50">Write pack.yaml</h2>
           </header>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            The manifest declares pack-level metadata and which action YAMLs to load.
-            <code>id</code>
-            is the pack slug (used in the install path and, for self-maintained packs, however you
-            reference it internally).
+            The manifest declares pack metadata and the action YAML files to load. <code>id</code>
+            is the pack slug. It appears in the install path and your internal
+            references.
           </p>
           <.docs_code phx-no-format label="yaml">schema_version: 1
 id: my-pack
 name: My ops pack
 version: 0.1.0
-description: Short one-line summary shown on the runner + dashboard.
+description: Short one-line summary shown on the runner + console.
 vendor: acme
 homepage: https://github.acme.internal/sre/my-pack   # your repo; optional
 
@@ -122,15 +120,15 @@ actions:
             <h2 class="text-xl font-semibold text-zinc-50">Declare each action</h2>
           </header>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            One YAML per action — the runner refuses anything not in the catalog, so this file is
-            the contract between your ops team and the LLM. This is where the safety lives: tight
-            argument validation, an honest <code>side_effects</code>
-            list, and the right <code>risk</code>
+            Create one YAML file for each action. The runner refuses anything outside the catalog.
+            Each file defines the contract between your operations team and the LLM. Safety depends
+            on tight argument validation, an accurate <code>side_effects</code>
+            list, and the correct <code>risk</code>
             tier. See the
             <.link navigate={~p"/docs/action-packs"} class="text-brand-300 hover:text-brand-200">
-              YAML reference
+              Pack reference
             </.link>
-            for the action fields.
+            for all action fields.
           </p>
           <.docs_code phx-no-format label="yaml">schema_version: 1
 id: my.do_thing
@@ -183,34 +181,28 @@ examples:
             <h2 class="text-xl font-semibold text-zinc-50">Validate, install, and trust it</h2>
           </header>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            Validate locally first — the same checks the runner runs at load — then install it.
-            Install writes to the runner's configured packs dir and reloads the running daemon
-            itself, so there's no restart and no dropped runs:
+            Validate the pack locally first. This command runs the same checks as the runner. Then
+            install the pack. Installation writes to the configured pack directory and reloads the
+            daemon. It does not restart the runner or drop runs:
           </p>
           <.docs_code phx-no-format label="shell"># on the runner host
 emisar pack validate ./my-pack
 sudo emisar pack install ./my-pack</.docs_code>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            Because your pack isn't in the catalog your portal reads, there's no published hash for
-            it to match — so it lands in
-            the dashboard's
+            Your pack is not in the published catalog, so no hash auto-trusts it: it appears on
+            the console's
             <a
               href={~p"/app/packs"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
             >Packs</a>
             page as <strong class="text-zinc-200">pending</strong>, with dispatch held until you
-            approve it. Open <a
-              href={~p"/app/packs"}
-              class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-            >Packs</a>, review the content hash,
-            and click <strong class="text-zinc-200">Trust</strong>. Its actions are then callable,
-            gated by your policy. From then on, that exact
-            byte-for-byte version is the only one authorized: edit the pack and its hash changes,
-            which re-marks it pending until you re-trust. That's your drift guard — trust in bytes
-            you reviewed, not a publisher you hope is honest.
+            approve it. Review the content hash there and click <strong class="text-zinc-200">Trust</strong>. Its actions are then callable, gated by
+            your policy, and that exact version is the only one authorized. Edit the pack and its
+            hash changes, re-marking it pending until you re-trust — so what runs is always the
+            files you reviewed.
           </p>
           <p class="mt-4 text-base text-zinc-400">
-            Confirm it end-to-end: open the runner from <a
+            Confirm it end-to-end. Open the runner from <a
               href={~p"/app/runners"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
             >Runners</a>, check your actions under <strong class="text-zinc-200">Advertised actions</strong>, and
@@ -230,110 +222,107 @@ sudo emisar pack install ./my-pack</.docs_code>
             <h2 class="text-xl font-semibold text-zinc-50">Roll it out and maintain it</h2>
           </header>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            To put the pack on another runner, install it pinned to the hash you trusted, so every
-            host runs identical bytes — the install reloads the runner for you. (Config management
-            like Ansible, Chef, or a base image can drop the directory itself instead, then reload
-            the runner.)
+            To put the pack on another runner, install it pinned to the hash you trusted — every
+            host then runs the exact same files, and the install reloads the runner for you. Config
+            management — Ansible, Chef, a base image — can drop the directory itself instead,
+            then reload the runner.
           </p>
           <.docs_code phx-no-format label="shell">sudo emisar pack install ./my-pack --hash sha256:&lt;the hash you trusted&gt;</.docs_code>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            When you change the pack, bump its <code>version</code>, re-validate, re-install (add
-            <code>--force</code>
-            — an already-installed pack isn't replaced without it), and
-            re-trust the new hash once in
-            <a
+            When you change the pack, increase its <code>version</code>. Validate and install it
+            again. Add <code>--force</code>
+            to replace an installed pack. Trust the new hash once in <a
               href={~p"/app/packs"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-            >Packs</a>
-            — the same review you'd give any production
-            change. The pack is yours: its lifecycle, its hosts, its risk tiers, on your schedule.
+            >Packs</a>. Give it the same review as any production change. You control the pack lifecycle,
+            hosts, risk tiers, and schedule.
           </p>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            Distributing many packs to a large fleet? Skip the copying and <.link
+            Distributing many packs to a large fleet? Skip the copying — <.link
               navigate={~p"/docs/pack-registry"}
               class="text-brand-300 hover:text-brand-200"
-            >host your own pack registry</.link>.
+            >host your own registry</.link>.
           </p>
         </li>
       </ol>
 
       <%!-- The curated registry --%>
-      <.docs_h2 id="registry">Keep it yours — or propose it to the registry</.docs_h2>
+      <.docs_h2 id="registry">Keep it private, or propose it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The public registry behind the
-        <.link navigate={~p"/packs"} class="text-brand-300 hover:text-brand-200">
+        We deliberately curate the public registry behind the <.link
+          navigate={~p"/packs"}
+          class="text-brand-300 hover:text-brand-200"
+        >
           Packs page
-        </.link>
-        is curated by us, deliberately. We only take packs that are
-        <strong class="text-zinc-200">genuinely
-        generic and broadly useful</strong>
-        — Postgres, Cassandra, Docker, Linux core, the AWS suite — the kind of thing many teams run
-        unchanged. We don't accept every submission, because an open dumping ground of one-off,
-        environment-specific packs would be a mess: hard to trust, hard to maintain, and low signal
-        for everyone browsing it.
+        </.link>. We accept only generic packs that many teams can use unchanged, such as Postgres,
+        Cassandra, Docker, Linux core, and AWS packs. We reject one-off, environment-specific packs:
+        they are hard to trust and maintain, and they bury the packs everyone can use.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">Most packs should stay yours.</strong>
+        <strong class="text-zinc-200">Most packs must stay yours.</strong>
         A pack that hardcodes your service names, your hostnames, or your internal CLIs is more
-        useful private — and you keep control of its lifecycle. Self-maintained is the default
-        here, not a fallback.
+        useful as a private pack. You also keep control of its lifecycle. Self-maintained is the default.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        And keeping a pack private still scales to a whole fleet — no copying files host to host. <code class="rounded bg-zinc-900 px-1 py-0.5">packctl</code>, the same tool that builds
-        emisar's own registry, publishes yours from a
+        A private pack can still serve a whole fleet.
+        <code class="rounded bg-zinc-900 px-1 py-0.5">packctl</code>
+        builds a static registry from a
         <code class="rounded bg-zinc-900 px-1 py-0.5">packs/</code>
-        directory to any bucket or web server you control, and every runner installs from it with <code class="rounded bg-zinc-900 px-1 py-0.5">emisar pack install &lt;pack&gt; --registry &lt;your-url&gt;</code>.
-        Same hash-pinned review-and-trust flow as the public registry — your packs never touch ours.
+        directory. Publish that tree to a bucket or web server you control. Install each pack from
+        its immutable tarball URL and pin the reviewed hash. Your private packs never enter our
+        registry.
         <.link navigate={~p"/docs/pack-registry"} class="text-brand-300 hover:text-brand-200">
-          Host your own pack registry
+          Host your own registry
         </.link>
         walks it end to end.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        If your pack really is generic — useful to teams who've never heard of yours, with no
-        environment-specific assumptions — we'd love to ship it. Open a PR against the
+        If your pack is useful to many teams and has no environment-specific assumptions, open a
+        pull request against the
         <.external_link
           href="https://github.com/andrewdryga/emisar"
           class="text-brand-300 hover:text-brand-200"
         >
           repo
         </.external_link>
-        adding it under <code class="rounded bg-zinc-900 px-1 py-0.5">packs/</code>
-        — the catalog is built from the tree, so there's no registry-code entry to edit — or email
+        by adding it under <code class="rounded bg-zinc-900 px-1 py-0.5">packs/</code>. The catalog
+        is built from the tree. There is no registry-code entry to edit. You can also
+        email
         <a href={EmisarWeb.MailTo.support()} class="text-brand-300 hover:text-brand-200">
           support@emisar.dev
         </a>
-        first if you're not sure it clears the bar. We review for:
+        first if you are not sure it clears the bar. We review for:
       </p>
       <ul class="mt-3 space-y-3 pl-5 text-base text-zinc-400">
         <li class="list-disc">
-          <strong class="text-zinc-200">Genuinely generic</strong>
-          — no hardcoded hosts, service names, or org-specific paths. If it only makes sense inside
-          your company, it belongs in your repo, not ours.
+          <strong class="text-zinc-200">Genuinely generic.</strong>
+          Do not hardcode hosts, service names, or organization-specific paths.
         </li>
         <li class="list-disc">
-          <strong class="text-zinc-200">Tight argument validation</strong>
-          — no free-form shell strings; paths use <code>allowed_prefixes</code>, choice args use <code>validation.enum</code>, and numbers use min/max.
+          <strong class="text-zinc-200">Tight argument validation.</strong>
+          Reject free-form shell strings. Use <code>allowed_prefixes</code>
+          for paths, <code>validation.enum</code>
+          for choices, and min/max for numbers.
         </li>
         <li class="list-disc">
-          <strong class="text-zinc-200">Honest <code>side_effects</code></strong>
-          — every file, network, and process side effect listed. The LLM reads these.
+          <strong class="text-zinc-200">Honest <code>side_effects</code>.</strong>
+          List every file, network, and process side effect. The LLM reads this list.
         </li>
         <li class="list-disc">
-          <strong class="text-zinc-200">Correct <code>risk</code> level</strong>
-          — destructive actions (restart, delete, repair) are <code>high</code>
-          or <code>critical</code>; reads are <code>low</code>.
+          <strong class="text-zinc-200">Correct <code>risk</code> level.</strong>
+          Assign <.docs_risk tier="high" /> or <.docs_risk tier="critical" />
+          to destructive actions. Assign <.docs_risk tier="low" /> to reads.
         </li>
         <li class="list-disc">
-          <strong class="text-zinc-200">Resolvable binaries</strong>
-          — declare what the runner needs on the host under <code>requires.binaries</code>.
+          <strong class="text-zinc-200">Resolvable binaries.</strong>
+          Declare required host binaries under <code>requires.binaries</code>.
         </li>
       </ul>
 
       <%!-- Next steps --%>
       <div class="mt-16 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-8 text-sm">
         <.link navigate={~p"/docs/action-packs"} class="text-brand-300 hover:text-brand-200">
-          Full YAML reference
+          Pack reference
         </.link>
         <div class="flex items-center gap-4">
           <.link navigate={~p"/packs"} class="text-zinc-400 hover:text-zinc-200">

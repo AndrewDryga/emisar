@@ -131,7 +131,7 @@ defmodule EmisarWeb.RunDetailLive do
   def handle_info({:run_updated, run}, socket) when run.id == socket.assigns.run.id do
     # The broadcast carries a preload-less run; keep the associations loaded at
     # mount (:runner, :api_key, :requested_by) so "Dispatched by" and the runner
-    # label don't degrade to "—"/"LLM agent" on the first live status flip. The
+    # label don't degrade to "—"/"AI agent" on the first live status flip. The
     # run's own columns (status, policy, timing, progress counts) come from the
     # fresh struct — only the immutable dispatch-time associations are carried.
     old = socket.assigns.run

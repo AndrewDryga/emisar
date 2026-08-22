@@ -22,8 +22,7 @@
         <:item>An emisar <strong class="text-zinc-300">owner or admin</strong>.</:item>
       </.docs_prerequisites>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The screenshots are from Keycloak 26.7; earlier versions arrange the same settings
-        differently.
+        The screenshots use Keycloak 26.7. Earlier versions arrange the same settings differently.
       </p>
 
       <.docs_h2 id="sso">Single sign-on</.docs_h2>
@@ -111,7 +110,7 @@
             <p class="font-semibold text-zinc-100">Register the exact redirect URI.</p>
             <p class="mt-1.5">
               Copy the callback shown in emisar and paste it into <strong class="text-zinc-200">Valid redirect URIs</strong>. It ends in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>.
-              Do not add a wildcard. The other URL fields can stay empty; click <strong class="text-zinc-200">Save</strong>.
+              Do not add a wildcard. The other URL fields can stay empty. Select <strong class="text-zinc-200">Save</strong>.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/keycloak-client-redirect.webp"
@@ -132,7 +131,7 @@
               Open the saved client's <strong class="text-zinc-200">Credentials</strong>
               tab. Copy its client secret into emisar's
               <strong class="text-zinc-200">Client secret</strong>
-              field. Treat the value like a password; do not put it in tickets, chat, or
+              field. Treat the client secret like a password. Do not put it in tickets, chat, or
               screenshots.
             </p>
             <.docs_screenshot
@@ -154,9 +153,8 @@
               On the <strong class="text-zinc-200">Client scopes</strong>
               tab, confirm that <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">email</code>
               and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">profile</code>
-              are assigned as <span class="text-zinc-300">Default</span>.
-              emisar requests <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">openid</code>
-              in the authorization request, so it does not appear as an assigned client-scope row.
+              are assigned as <span class="text-zinc-300">Default</span>. The authorization request includes <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">openid</code>, so Keycloak does
+              not list it as an assigned client scope.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/keycloak-client-scopes.webp"
@@ -214,41 +212,37 @@
 
       <.docs_callout kind={:note} title="The rest of the connection form">
         <p>
-          This guide covers only what Keycloak needs. The other settings on the connection —
-          who gets provisioned and at what role, what runner access they start with, whether this
-          provider satisfies your 2FA requirement — are the same for every provider and are
-          explained in <.link navigate={~p"/docs/sso"} class="text-brand-400 hover:text-brand-300">Single sign-on</.link>.
+          This guide covers only the provider-specific fields.
+          <.link
+            navigate={~p"/docs/sso"}
+            class="text-brand-400 hover:text-brand-300"
+          >Single sign-on</.link>
+          explains provisioning, default roles, runner access, and provider
+          MFA settings.
         </p>
       </.docs_callout>
 
       <.docs_h2 id="scim">Directory sync</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Keycloak cannot drive directory sync. Its built-in SCIM support runs the other way — the
-        <strong class="text-zinc-200">SCIM Realm API</strong>
-        added in 26.6 lets something else provision users <em>into</em>
-        Keycloak — and an outbound client that pushes users to an application like emisar is on the
-        roadmap, not in a release. So Keycloak gives you
-        single sign-on (above)
-        with members created on first sign-in when the connection auto-provisions (with manual
-        provisioning an admin approves each first sign-in instead), and nothing else: no role
-        mapping, and nobody
-        removed from emisar when they leave Keycloak. Offboarding is therefore two steps, and the
-        second is the one that ends access: disabling the Keycloak user stops them starting a NEW
-        sign-in, but it does not touch the session they already hold or any API key they minted.
-        Suspend or remove them in
+        Keycloak cannot drive directory sync. Its <strong class="text-zinc-200">SCIM Realm
+        API</strong>, added in 26.6, lets other systems provision users into Keycloak. It does not
+        send users to applications such as emisar. An outbound client remains on the roadmap, not
+        in a release. Keycloak supports single sign-on. Auto-provisioning creates members on first
+        sign-in. Manual provisioning sends each first sign-in for administrator approval. Keycloak
+        does not map roles or remove members from emisar. Offboarding needs two steps. Disabling
+        the Keycloak user blocks new sign-ins. It does not end existing sessions or revoke API
+        keys. Suspend or remove the member in
         <a
           href={~p"/app/team"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Team</a>
-        — that is what ends live sessions and revokes their keys.
+        to end sessions and revoke keys.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The connection still offers directory sync, because emisar's endpoint is ordinary SCIM 2.0
-        with a bearer token and a third-party Keycloak provisioning plugin can drive it. If you run
-        one, enable sync here and point it at the base URL and token above — directory sync is an
-        Enterprise feature, a tier above the one single sign-on needs.
-        <.plan_note tier={:enterprise} />
-        That plugin is yours to choose, configure, and support — we don't ship or certify one.
+        A third-party Keycloak provisioning plugin can use the emisar SCIM 2.0 endpoint and bearer
+        token. If you use one, enable sync and provide the base URL and token. Directory sync
+        requires Enterprise, one tier above SSO. <.plan_note tier={:enterprise} /> emisar does not
+        ship or certify a plugin. You must choose, configure, and support it.
       </p>
     </.docs_layout>
   </section>

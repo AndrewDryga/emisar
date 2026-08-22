@@ -12,24 +12,25 @@
         {"rotating", "Rotating operators"},
         {"revoking", "Revoking"},
         {"best-practices", "Best practices"},
-        {"guarantees", "What it does and doesn't guarantee"},
+        {"guarantees", "What it does and does not guarantee"},
         {"troubleshooting", "Troubleshooting a refusal"}
       ]}
     >
       <.docs_header current="signed-dispatch">
         <:dek>
           By default a runner trusts the control plane to tell it what to run. Signed dispatch
-          removes that trust. A customer-authorized bridge signs each request with a key the cloud
-          never holds. With enforcement on, the runner validates that signature before execution. The control
-          plane relays it — it holds no private key, so it can't forge or alter a signed action,
-          replay it on a selected runner, or originate a run. The signature, not the cloud, is the
-          authority.
+          removes that trust. A customer-authorized bridge signs each request with a key the control
+          plane never holds. With enforcement on, the runner validates that signature before execution. The control
+          plane relays it. It holds no private key. It cannot forge or alter a signed action,
+          widen its targets, or originate a valid signed run. A preserved replay journal prevents
+          reuse of a nonce on that runner identity. A replacement that reuses the identity must
+          preserve this state or rotate its identity and trust material.
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        It's opt-in per runner and a deliberate trade: while it's on, the portal Run button,
-        runbooks, and API keys can't dispatch to that host — only a signed MCP call
-        runs. Turn it on where "this came from a customer-authorized MCP bridge" must be
+        It is opt-in per runner and a deliberate trade. While it is on, the portal Run button,
+        runbooks, and API keys cannot dispatch to that host. Only a signed MCP call can dispatch.
+        Turn it on where "this came from a customer-authorized MCP bridge" must be
         cryptographically true, not merely asserted by the control plane.
       </p>
 
@@ -41,27 +42,31 @@
         <li>
           <strong>The MCP bridge signs and presents its cert.</strong>
           For <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">run_action</code>,
-          the bridge builds a fixed v4 claim over the canonical portal origin, action id, immutable
-          pack ref, digest of the exact JSON argument bytes, digest of the complete sorted runner
-          refs, reason, bridge operation id, nonce, and timestamp. It signs with an Ed25519 leaf key
-          that never leaves your machine and attaches the CA-signed certificate that vouches for
-          that key. The bridge never decodes and re-encodes action arguments, so large integers,
-          exponent spellings, object order, and escapes remain exact.
+          the bridge builds an
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-attestation-v5</code>
+          claim. It signs the origin, action, immutable pack, exact arguments, exact runner set,
+          reason, operation, nonce, and time. It also signs digests of the evidence and expected
+          result shown to an approver. An empty field uses the SHA-256 digest of an empty string.
+          The control plane cannot add a justification after the bridge signs.
+        </li>
+        <li>
+          <strong>The leaf key stays on your machine.</strong>
+          The bridge signs with an Ed25519 leaf key. It attaches the CA-signed certificate for that
+          key. The bridge does not decode and rebuild action arguments. Large integers, object order,
+          and escapes stay exact.
         </li>
         <li>
           <strong>The control plane relays.</strong>
-          The portal bounds the envelope, checks the selected runner refs and preflight operation
-          facts against the signed claim, and forwards it with the exact argument bytes. It cannot
-          change the origin, action, pack, arguments, reason, operation, or targets without
-          invalidating the signature, and it holds neither private key.
+          The portal checks the envelope against preflight and the selected runner references. It
+          forwards the envelope with the exact argument bytes. It cannot change a signed fact. It
+          also cannot sign a new claim because it holds neither private key.
         </li>
         <li>
           <strong>The runner verifies, then runs.</strong>
-          It verifies the cert against a CA it trusts, requires exactly one ref with its locally
-          derived generation suffix in the signed target set, verifies the portal origin, action,
-          exact args, reason, operation, freshness, and signature, then consumes the nonce. The
-          signature binds the immutable pack ref, not the pack bytes — the on-disk pack hash is a
-          separate trust gate the runner applies next. Only then does it run.
+          The runner verifies the certificate, scope, signed fields, time, and nonce. It also needs
+          exactly one matching identity-bound runner reference. The signature binds the immutable
+          pack reference. The runner checks the on-disk pack hash as a separate trust gate. It runs
+          only after every check passes.
         </li>
       </ol>
       <.docs_callout kind={:note} title="The trust anchor is an offline certificate authority.">
@@ -69,19 +74,20 @@
         short-lived certificates that
         vouch for an operator's leaf key and, optionally, a <em>scope</em>
         (a group or labels). The
-        exact runner set is bound into every v4 signature with generation-bound refs shaped as
+        exact runner set is bound into every v5 signature with identity-bound refs shaped as
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">name~sha256-prefix</code>
         — the suffix is derived from the runner's own external identity (its hostname, or the
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
-        you pinned), so a replacement host is a new <em>generation</em>
-        even under a reused display name, and an old signature can't be replayed onto it.
+        you pinned). Reconnects and replacements that reuse that external ID keep the same ref. A
+        new external ID creates a new ref. Preserve signed-dispatch state during a host replacement,
+        or rotate the runner identity and trust material.
         Certificate scope is an independent, coarser group/label ceiling asserted by the CA and
         matched against the runner's local identity.
       </.docs_callout>
 
       <.docs_h2 id="turn-on">Turn it on</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        One command mints a CA, an operator key, and a certificate, and prints everything to wire up. Everything is generated offline; the private keys are
+        One command mints a CA, an operator key, and a certificate, and prints everything to wire up. Everything is generated offline. The private keys are
         printed locally and sent nowhere.
       </p>
 
@@ -103,7 +109,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">2. Install the CA public key</strong>
         in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>
-        on every runner. The CA public key is safe to commit; ship it the way you ship the rest of
+        on every runner. The CA public key is safe to commit. Ship it the way you ship the rest of
         your config.
       </p>
       <.docs_code phx-no-format label="config"><span class="text-zinc-500"># /etc/emisar/config.yaml</span>
@@ -116,21 +122,21 @@ signing:
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">3. Give the leaf key + cert to your MCP bridge</strong>
-        as environment variables — never on the portal, never in version control
+        as environment variables. Never on the portal, never in version control
         (see <.link
           navigate={~p"/docs/connect-cli-agent"}
           class="text-brand-400 hover:text-brand-300"
-        >connect a CLI agent</.link>). Store the CA private key offline; you re-sign certs with it as they expire.
+        >connect a CLI agent</.link>). Store the CA private key offline. You re-sign certs with it as they expire.
       </p>
       <.docs_code phx-no-format label="config"><span class="text-zinc-500"># on the machine running your MCP bridge — not the portal, not git</span>
 EMISAR_SIGNING_KEY=&lt;leaf seed from signing init&gt;
 EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">4. Turn it on — with a restart.</strong>
+        <strong class="text-zinc-200">4. Turn it on with a restart.</strong>
         The first time you enable enforcement, <strong class="text-zinc-200">restart</strong>
-        the runner: it opens the durable replay journal at startup and then advertises that it
-        verifies signatures. A reload can't make that first switch — a runner that booted un-enforcing
+        the runner. It opens the durable replay journal at startup and then advertises that it
+        verifies signatures. A reload cannot make that first switch. A runner that booted un-enforcing
         holds an in-memory replay store, so
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reload</code>
         leaves enforcement off and unsigned calls keep flowing. (Later CA rotations and trusted-key
@@ -145,19 +151,19 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runners</a>
         shows the <strong class="text-zinc-200">Signed dispatch only</strong>
-        badge — the runners list carries the same state as a
+        badge. The runners list carries the same state as a
         <strong class="text-zinc-200">signed-only</strong>
-        chip — and the Run button is disabled, an MCP
+        chip. The Run button is disabled. A signed MCP
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">tools/call</code>
-        runs, and an operator or runbook dispatch is refused with a clear message. No badge means the
-        runner is still accepting unsigned calls — recheck the config and the restart.
+        call succeeds. Operator and runbook dispatches are refused. No badge means the
+        runner is still accepting unsigned calls. Recheck the config and the restart.
       </p>
 
       <.docs_h2 id="distributing-ca">Distributing the CA across a fleet</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The hard part of any signing scheme isn't the math — it's getting the right trust anchor onto
-        every host and keeping it current. The CA model keeps that boring: it's one public key per
-        fleet, not one per operator, so onboarding someone never touches a runner.
+        The hard part of any signing scheme is not the math. It is getting the right trust anchor onto
+        every host and keeping it current. The CA model keeps that boring. It is one public key per
+        fleet, not one per operator. Onboarding someone never touches a runner.
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -166,10 +172,9 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
             <strong class="text-zinc-200">The CA public key is config, not a secret.</strong>
             Ship it the way you already ship the rest of
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">config.yaml</code>
-            — cloud-init, Packer, Ansible, a golden image, your
-            infra repo. This is exactly the SSH certificate-authority model: one public CA file,
-            pinned on the host, distributed through a channel you already trust — and operator certs
-            flow without ever editing a runner.
+            through cloud-init, Packer, Ansible, a golden image, or your infrastructure repository.
+            This model pins one public CA file on every host through a trusted channel. Operator
+            certificates then change without editing a runner.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -178,10 +183,10 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
             <strong class="text-zinc-200">
               The control plane is deliberately not the distributor.
             </strong>
-            emisar never holds or hands out your CA or signing keys — that's the whole point. Don't
-            route them through the portal; route the CA public key through whatever already provisions
-            the host. The one step you can't avoid is getting that CA public key onto the box through
-            a trusted channel, which is the same channel that writes its config.
+            emisar never holds or hands out your CA or signing keys. That is the whole point. Do not
+            route them through the portal. Route the CA public key through whatever already provisions
+            the host. The one step you cannot avoid is getting that CA public key onto the box through
+            a trusted channel. This is the same channel that writes its config.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -192,30 +197,30 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
             </strong>
             Scope is a per-cert decision, not a per-runner one. A cert scoped
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">group=prod</code>
-            can only run on prod runners; a label scope
+            can only run on prod runners. A label scope
             (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">env=prod,region=us</code>)
-            narrows it further; an empty scope is valid on any runner that trusts the CA (the simple,
-            weaker mode). The runner matches scope only against its own local group/labels, so a
+            narrows it further. An empty scope is valid on any runner that trusts the CA (the simple,
+            weaker mode). The runner matches scope only against its own local group/labels. A
             scoped cert remains unusable outside the group/labels the CA authorized. Every call also
-            signs the exact generation-bound runner-ref set selected for that dispatch.
+            signs the exact identity-bound runner-ref set selected for that dispatch.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The CA private key is the crown jewel.</strong>
-            The CA seed is what mints authority — whoever holds it can sign a cert for any leaf key on
+            The CA seed is what mints authority. Whoever holds it can sign a cert for any leaf key on
             every runner that trusts the CA. Keep it offline in a secrets store or password manager,
             and never let it reach a runner, the portal, or git. The leaf key in
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
-            is still secret, but its blast radius is bounded by its cert's scope and short TTL.
+            is still secret. Its blast radius is bounded by its cert's scope and short TTL.
           </span>
         </li>
       </ul>
 
       <.docs_h2 id="rotating">Rotating operators</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Rotating an operator's key never touches a single runner: certs are short-lived and the CA
+        Rotating an operator's key never touches a single runner. Certs are short-lived and the CA
         already lives in every runner's config.
       </p>
       <ol class="mt-4 space-y-3 text-base text-zinc-300 list-decimal pl-6">
@@ -227,13 +232,13 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
         </li>
         <li>
           Switch your MCP bridge to the new <code>EMISAR_SIGNING_KEY</code>
-          and <code>EMISAR_SIGNING_CERT</code>. No runner reload — the CA they already trust vouches
-          for the new cert.
+          and <code>EMISAR_SIGNING_CERT</code>. No runner reload is required because the trusted CA
+          vouches for the new certificate.
         </li>
         <li>
           Keep the cert TTL comfortably above your
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
-          + approval turnaround, so a parked run re-dispatched with its original signature is still
+          + approval turnaround. A parked run re-dispatched with its original signature is still
           inside both the cert window and the freshness window.
         </li>
       </ol>
@@ -247,7 +252,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Short TTLs are the revocation story.</strong>
-            There is no certificate revocation list yet — a leaked leaf key keeps working until its
+            There is no certificate revocation list yet. A leaked leaf key keeps working until its
             cert expires. Keep TTLs short (24h is a good default) so the blast radius of a leak is
             bounded by the clock, not by a fleet push.
           </span>
@@ -258,10 +263,10 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
             <strong class="text-zinc-200">The CA is the immediate lever.</strong>
             To revoke before a cert expires, rotate the CA:
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_cas</code>
-            is a list, so add the new CA alongside the old, re-issue operator certs under it, then
+            is a list. Add the new CA alongside the old, re-issue operator certs under it, then
             remove the old CA and reload every runner. A reload applies each step live without
-            dropping a run — but it is a fleet operation, so "every runner reloaded" is the
-            completion bar (the control plane can't do it for you, by design).
+            dropping a run. This is a fleet operation, so "every runner reloaded" is the
+            completion bar (the control plane cannot do it for you, by design).
           </span>
         </li>
       </ul>
@@ -283,9 +288,9 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Keep the CA public key in your infra repo.</strong>
-            Let config management own it next to the host's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">config.yaml</code>; never
-            hand-copy it to one box at a time. A diff and a deploy is your CA-rotation record. The CA
-            private key lives elsewhere — offline, in your secrets store.
+            Let config management own it next to the host's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">config.yaml</code>. Never
+            hand-copy it to one box at a time. A diff and a deploy is your CA-rotation record. Keep
+            the CA private key offline in your secrets store.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -294,42 +299,41 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
             <strong class="text-zinc-200">Set the window against your real SLAs.</strong>
             If you combine signing with approvals, a parked run is re-dispatched with its
             <em>original</em>
-            signature — so
+            signature. Set
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
-            must comfortably exceed your approval turnaround, or a slow approval is refused as stale.
-            A wider window means a longer replay exposure: choose deliberately
-            (see <.link
+            above your approval turnaround, or a slow approval is refused as stale.
+            A wider window means a longer replay exposure. Choose deliberately. See <.link
               navigate={~p"/docs/policies-and-approvals"}
               class="text-brand-400 hover:text-brand-300"
-            >policies &amp; approvals</.link>).
+            >policies and approvals</.link>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Scope, don't share blindly.</strong>
+            <strong class="text-zinc-200">Scope, do not share blindly.</strong>
             An empty-scope cert lets a signed call target any runner that trusts the CA. The exact
-            per-call ids are still signed, but a narrow group/label scope limits damage if discovery
+            per-call ids are still signed. A narrow group/label scope limits damage if discovery
             metadata is misleading. Scope unless you genuinely need fleet-wide reach.
           </span>
         </li>
       </ul>
 
-      <.docs_h2 id="guarantees">What it does and doesn't guarantee</.docs_h2>
+      <.docs_h2 id="guarantees">What it does and does not guarantee</.docs_h2>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Integrity, not availability.</strong>
             A compromised control plane can still withhold or refuse to relay your signed dispatch.
-            Signing stops it from forging one; it can't force it to deliver yours.
+            Signing stops it from forging one. It cannot force it to deliver yours.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Names are discovery metadata.</strong>
-            The signature binds suffixes derived from durable runner ids; it does not make the
+            The signature binds suffixes derived from durable runner ids. It does not make the
             display-name prefix truthful. A compromised portal can lie about that mapping before
             signing. Use narrow cert scopes and verify suffixes out of band for the highest-trust
             workflows.
@@ -342,7 +346,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
             Enforcement requires a data directory. Every accepted nonce is appended and synced
             before dispatch, and expired records are compacted atomically. The journal refuses new
             work rather than evicting a fresh nonce when its 100,000-entry or 16 MiB bound is reached.
-            Its header records the retention it was opened with, so raising
+            Its header records the retention it was opened with. Raising
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
             above that recorded value is refused rather than reopening replay after old records were
             compacted.
@@ -368,8 +372,8 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">signature_required</code>
-            — the dispatch carried no signed certificate (it came from the portal, a runbook, or an
-            API key, or the MCP bridge isn't configured to sign). Run it through a bridge with
+            — The dispatch carried no signed certificate. It came from the portal, a runbook, an
+            API key, or a bridge not configured to sign. Use a bridge with
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
             and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
             set.
@@ -379,7 +383,7 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">target_mismatch</code>
-            — this runner generation is absent or appears more than once in the signed target set.
+            — this runner identity is absent or appears more than once in the signed target set.
             Refresh discovery and submit a fresh call with the exact returned runner refs.
           </span>
         </li>
@@ -387,8 +391,8 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_untrusted</code>
-            — the cert's CA isn't in this runner's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_cas</code>, or its CA signature
-            doesn't verify. Add the CA public key and reload, or re-issue the cert from a CA the
+            — the cert's CA is not in this runner's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_cas</code>, or its CA signature
+            does not verify. Add the CA public key and reload, or re-issue the cert from a CA the
             runner trusts.
           </span>
         </li>
@@ -396,18 +400,18 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_expired</code>
-            — the certificate is outside its validity window. Mint a fresh one with
+            — the certificate is outside its validity window. Mint a fresh certificate with
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing new-cert</code>
-            (and check the signing host's clock against NTP — the cert window is absolute, no skew
-            tolerance).
+            and check the signing host clock against NTP. The certificate window has no skew
+            tolerance.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_scope</code>
-            — the cert is scoped to a group/labels this runner doesn't satisfy. The cert was issued
-            for a different target; use a cert scoped to this runner (or an empty scope).
+            — the cert is scoped to a group/labels this runner does not satisfy. The cert was issued
+            for a different target. Use a cert scoped to this runner (or an empty scope).
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -425,32 +429,33 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">bad_signature</code>
-            — the signature doesn't verify against the action, exact args, targets, nonce, and time.
-            Wrong key, or the client and runner disagree on it — re-mint and re-distribute.
+            — the signature does not verify against the action, exact args, targets, nonce, and time.
+            The key is wrong, or the client and runner disagree about the signed value. Re-mint and
+            re-distribute.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">replayed</code>
-            — this nonce was already used. The client double-sent; re-issue with a fresh dispatch.
+            — this nonce was already used. The client double-sent. Re-issue with a fresh dispatch.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">intent_mismatch</code>
-            — a delivered field doesn't match the signed one, or the call tried to override
-            execution limits. Timeouts and output caps are not part of the signed claim, so a signed
-            dispatch carrying them is refused outright — re-send it without the overrides.
+            — a delivered field does not match the signed one, or the call tried to override
+            execution limits. Timeouts and output caps are not part of the signed claim. A signed
+            dispatch carrying them is refused outright. Re-send it without the overrides.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">nonce_store_unavailable</code>
-            — the runner couldn't durably record the nonce, so it refused rather than risk a replay.
-            A write failure latches for the life of the process: every dispatch is refused until the
+            — the runner failed to record the nonce. It refused the dispatch to prevent a replay.
+            A write failure latches for the life of the process. Every dispatch is refused until the
             runner restarts. Check the data directory for disk space and permissions.
           </span>
         </li>

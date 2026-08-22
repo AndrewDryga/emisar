@@ -16,9 +16,9 @@
     >
       <.docs_header current="sso">
         <:dek>
-          On Team and Enterprise plans, your team signs in to emisar with your own identity
-          provider — Google Workspace, Okta, Microsoft Entra, JumpCloud, Keycloak, or any
-          compliant OIDC.
+          On Team and Enterprise plans, your team can use its own identity provider to sign in to
+          emisar. Supported options include Google Workspace, Okta, Microsoft Entra, JumpCloud,
+          Keycloak, and any compliant OIDC provider.
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -42,21 +42,20 @@
           href={~p"/app/sso/new"}
           class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
         >Team → Single sign-on → Add provider</a>
-        and choose your provider type; the form then names the exact admin-console path for it, and
-        the <a href="#providers" class="text-brand-300 hover:text-brand-200">provider guides</a>
-        below walk every screen with screenshots. <.plan_note tier={:team} />
+        and choose the provider type. The form names the exact admin-console path. The
+        <a href="#providers" class="text-brand-300 hover:text-brand-200">provider guides</a>
+        below show every screen with screenshots. <.plan_note tier={:team} />
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         At the provider, create a
         <strong class="text-zinc-200">confidential web application</strong>
         — one with a client secret. A public or single-page client will not work, because emisar
-        authenticates with that secret. Give the app emisar's redirect URI, which the form shows
-        with a copy button:
+        authenticates with that secret. Copy emisar's redirect URI from the form. It ends in
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>
-        on your emisar host. emisar always sends that exact URI and never takes it from the
-        request, so paste it verbatim. If the provider offers <strong class="text-zinc-200">DPoP</strong>, leave it off — emisar reads the ID token and
-        never calls an API with the access token, so sender-constrained tokens buy nothing here and
-        break the token request.
+        on your emisar host. emisar always sends that exact URI and never reads one from the
+        request. Paste it exactly. If the provider offers <strong class="text-zinc-200">DPoP</strong>,
+        leave it off. emisar reads the ID token and never calls an API with the access token.
+        Sender-constrained tokens add no value here and break the token request.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Then come back to emisar and fill in the connection. It has four sections, and the rest of
@@ -66,65 +65,63 @@
       <.docs_h3 id="connection-fields">Provider and OIDC connection</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The <strong class="text-zinc-200">provider type</strong>
-        selects the preset — it decides which claim emisar can bind identities to and which
-        provider-specific quirks it applies, so pick the real one rather than Generic OIDC. The
+        selects the preset. The preset chooses the identity claim and applies provider-specific
+        behavior. Choose the actual provider instead of Generic OIDC. The
         <strong class="text-zinc-200">display name</strong>
-        is what your members see on the sign-in page, so name it the way they would say it out
-        loud: "Acme Okta".
+        appears on the sign-in page. Use the
+        name your members say aloud, such as “Acme Okta”.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The <strong class="text-zinc-200">issuer URL</strong>
-        is the one endpoint you have to get right. emisar fetches the OIDC discovery document from
-        it and derives every other endpoint, which is why you never paste authorization, token, or
-        JWKS URLs by hand. It must be HTTPS and reachable from emisar. Each provider has its own
-        shape — your Okta org URL, your Keycloak realm URL, your Entra tenant — and the form shows
-        the right one once you pick a type.
+        is critical. emisar fetches its OIDC discovery document and derives every other endpoint.
+        Do not enter authorization, token, or JWKS URLs. The issuer must use HTTPS and be reachable
+        from emisar. Its required format depends on the provider. The form shows the correct format
+        after you choose a type, including an Okta organization, Keycloak realm, or Entra tenant
+        URL.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The <strong class="text-zinc-200">client ID</strong>
         and <strong class="text-zinc-200">client secret</strong>
-        come from the app you just created. The secret is write-only: it is stored server-side,
-        redacted in the interface, and never rendered back to you. It cannot be hashed the way a
-        password is, because emisar has to replay it to your provider on every sign-in; protecting
-        it at rest is an infrastructure concern. When you edit the connection later, leaving the
-        field blank keeps the secret you already have.
+        come from the application. The secret is write-only. The control plane stores it
+        server-side, hides it in the interface, and never shows it again. It must replay the secret
+        on every sign-in, so it cannot store only a hash. Protecting it at rest is an infrastructure concern. Leave
+        the field blank during a later edit to keep the current secret.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The <strong class="text-zinc-200">identifier claim</strong>
-        is what an identity is permanently bound to. emisar offers only the claim your provider
-        actually issues — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-        everywhere, and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
-        for Microsoft Entra — so there is nothing to decide here beyond leaving it alone. It
-        matters more than it looks: it is what
+        permanently binds an identity. emisar offers only claims each provider issues:
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+        for most providers and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+        for Microsoft Entra. Leave
+        this setting unchanged. This claim
         <a href="#subject-not-email" class="text-brand-300 hover:text-brand-200">
           identities are matched on
         </a>
-        instead of email, and it is the value your directory's
+        instead of email. Your directory must send the same value as
         <.link
           navigate={~p"/docs/scim"}
           class="text-brand-300 hover:text-brand-200"
         ><code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code></.link>
-        must carry for sign-in and directory sync to converge on one person.
+        Then sign-in and directory sync identify one person.
       </p>
 
       <.docs_h3 id="provisioning-fields">Who gets in, and what they get</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">New-user provisioning</strong>
-        decides what happens the first time someone signs in through this connection who has no
-        emisar member yet. <span class="text-zinc-300">Auto-provision</span>
-        creates them on the spot; <span class="text-zinc-300">Manual</span>
-        holds the sign-in as a pending request for an admin to approve. Auto-provision suits a
-        connection whose provider-side app is already assigned to exactly the right people, which
-        is the usual arrangement; manual suits a provider you do not control that tightly.
+        controls a first sign-in when no emisar member exists.
+        <span class="text-zinc-300">Auto-provision</span>
+        creates the member immediately. <span class="text-zinc-300">Manual</span>
+        creates a request for administrator approval. Use
+        Auto-provision when the provider application is assigned only to approved users. This is
+        the usual setup. Use Manual when you cannot control assignments that tightly.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Turning on
         <.link navigate={~p"/docs/scim"} class="text-brand-300 hover:text-brand-200">
           directory sync
         </.link>
-        overrides this. The directory then decides who exists, so a sign-in it never provisioned is
-        held for approval whichever setting you picked — an account the directory does not know
-        about cannot walk in through the login page.
+        overrides this setting. The directory decides who exists. A sign-in from an unprovisioned
+        account waits for approval, regardless of the selected setting.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Default role for new users</strong>
@@ -141,16 +138,15 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Default runner access</strong>
-        is the other half of that landing: which hosts the new member can even see and dispatch to.
+        controls which hosts a new member can see and use.
         <span class="text-zinc-300">No runners</span>
-        is the safe default and the one we would pick — they arrive able to read the console and
-        nothing else, and you widen it deliberately.
+        is the safe default. New members can read the
+        console but cannot use any runner. Grant access deliberately.
         <span class="text-zinc-300">All runners</span>
-        includes every runner you enroll in the future, not just today's fleet.
-        <span class="text-zinc-300">Selected runners</span>
-        pins them to named runner groups or hosts. Role and runner access are independent: an
-        operator with no runners can dispatch nothing, which is exactly what you want for someone
-        who has not been given a fleet yet.
+        includes current and future runners. <span class="text-zinc-300">Selected runners</span>
+        limits access to named runner groups or
+        hosts. Roles and runner access are independent. An operator with no runners cannot dispatch
+        actions. Use that state until you grant a fleet.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Allowed email domain</strong>
@@ -162,40 +158,44 @@
       <.docs_h3 id="activation-fields">Security and activation</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         One checkbox says <em>sign-in through this provider satisfies the account's 2FA
-        requirement</em>. Turn it on only if the provider enforces MFA itself — then emisar accepts
-        the provider's challenge instead of asking for a second factor of its own. Turn it on for a
-        provider that does not, and every member signing in through it walks past your 2FA
-        requirement. The
+        requirement</em>. Enable this setting only when the provider enforces MFA. emisar then
+        accepts the provider challenge instead of requesting another factor. If the provider does
+        not enforce MFA, members can bypass the account requirement. The
         <a href="#sso-mfa" class="text-brand-300 hover:text-brand-200">section below</a>
         covers how that interacts with the rest of the account.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Before saving, press <strong class="text-zinc-200">Test connection</strong>. emisar runs a
-        real OIDC discovery round-trip against the issuer and shows the authorization, token, and
-        JWKS endpoints it found, so a typo or an unreachable provider surfaces here rather than at
-        your team's first sign-in. Then tick <strong class="text-zinc-200">Enabled</strong>
-        and save — until you do, the connection exists but nobody can sign in through it, which is
-        also how you park one without deleting it.
+        Before saving, press <strong class="text-zinc-200">Test connection</strong>. emisar checks
+        OIDC discovery and shows the authorization, token, and JWKS endpoints. A typo or unreachable
+        provider fails before your team's first sign-in. Then select
+        <strong class="text-zinc-200">Enabled</strong>
+        and save. The connection cannot accept
+        sign-ins until it is enabled. Disable it to park the connection without deleting it.
       </p>
 
       <.docs_h3 id="signing-in">How members sign in</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        On the sign-in page, members click <strong class="text-zinc-200">"Continue with single sign-on"</strong>, which sends them to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso</code>; there they enter their team's address to reach that team's sign-in page, pick your provider, authenticate at the IdP, and come back signed in. An <strong class="text-zinc-200">allowed email domain</strong>, if set, is a guardrail on the return trip: a login whose IdP-verified domain doesn't match is refused.
+        On the sign-in page, members select
+        <strong class="text-zinc-200">“Continue with single sign-on.”</strong>
+        This opens <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso</code>. They enter the
+        team's address, choose the provider, authenticate at the IdP, and return signed in. An
+        <strong class="text-zinc-200">allowed email domain</strong>
+        checks the returned address. A
+        login is refused when its provider-verified domain does not match.
       </p>
 
       <.docs_h3 id="subject-not-email">
         Identities are matched by the IdP's subject, never by email
       </.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        emisar binds an SSO login to the provider plus the IdP's stable subject identifier (the
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-        claim, or whichever <strong class="text-zinc-200">identifier claim</strong>
-        your provider uses) — <strong class="text-zinc-200">never by email address</strong>.
-        Email-matching an SSO login onto an existing account is a known account-takeover vector, so
-        we don't do it. The practical consequence: a just-in-time provisioned SSO user is a
-        distinct principal, not a merge into a pre-existing account that happens to share
-        an email. If an SSO email collides with an existing user, sign-in is refused rather than
-        silently linked — an admin links the identity deliberately.
+        An SSO login binds to its provider and stable subject identifier. That identifier is the
+        configured <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+        claim or another
+        configured <strong class="text-zinc-200">identifier claim</strong>. Email addresses are
+        never used for this binding. Matching by email creates an account-takeover risk, so emisar
+        does not do it. A just-in-time SSO user is a separate principal, not a merge with an account
+        that shares an email. If an email collides, sign-in is refused. An administrator must link
+        the identity.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">First login provisions the user</strong>
@@ -204,15 +204,14 @@
 
       <.docs_h3 id="sso-mfa">SSO sessions and your MFA requirement</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Each connection has a per-provider toggle — <em>"sign-in through this provider satisfies
-        the account's 2FA requirement."</em>
-        When it's on, an SSO session satisfies an account that
+        Each connection has a toggle named <em>“Sign-in through this provider satisfies the
+        account's 2FA requirement.”</em>
+        When enabled, an SSO session satisfies the account
         <.link navigate={~p"/docs/teams-and-access"} class="text-brand-300 hover:text-brand-200">
           requires MFA
         </.link>
-        without a second emisar TOTP prompt — your IdP enforces the MFA. Turn it off if you'd
-        rather emisar still challenge. Magic-link sign-in is unaffected and is challenged for 2FA
-        as usual.
+        without another emisar TOTP prompt. The identity provider enforces MFA. Disable it when
+        emisar must still challenge. Magic-link sign-in still receives the usual 2FA challenge.
       </p>
 
       <.docs_h2 id="operations">Common provider operations</.docs_h2>
@@ -220,8 +219,9 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         First complete a real sign-in through the connection in another browser. The form's
         <strong class="text-zinc-200">Test connection</strong>
-        checks discovery and endpoint reachability, but it cannot prove the IdP assigned your user,
-        accepted the callback URI, or returned the required claims. Keep an owner session open
+        checks discovery and endpoint
+        reachability. It does not prove user assignment, callback acceptance, or required claims.
+        Keep an owner session open
         while you test. Then open
         <a
           href={~p"/app/team"}
@@ -238,9 +238,8 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         It gates account browser access and new OAuth consent for every member, including owners.
-        Bearer credentials are a separate lifecycle: an MCP key, an audit-export token, the SCIM
-        bearer, and an already issued OAuth access token keep working, and enabling the requirement
-        revokes none of them. See
+        Bearer credentials have separate lifecycles. Existing agent keys, audit-export tokens, SCIM
+        bearers, and OAuth access tokens keep working. Requiring SSO revokes none of them. See
         <.link
           navigate={~p"/docs/authentication" <> "#enforcement"}
           class="text-brand-300 hover:text-brand-200"
@@ -252,24 +251,25 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Create the replacement secret at your IdP, paste it into the connection, and save. The
         secret is write-only, so leaving the field blank keeps the existing value. Do not delete
-        the old IdP secret until a new sign-in succeeds through the saved connection. The same
-        sequence beside every other credential emisar issues is in <.link
+        the old IdP secret until a new sign-in succeeds through the saved connection. Use
+        <.link
           navigate={~p"/docs/credentials" <> "#idp"}
           class="text-brand-300 hover:text-brand-200"
-        >rotate and revoke credentials</.link>; if you believe the secret leaked rather than aged,
+        >Rotate and revoke credentials</.link>
+        for every emisar credential. If you suspect a leak,
         follow
         <.link
           navigate={~p"/docs/security-incidents" <> "#idp"}
           class="text-brand-300 hover:text-brand-200"
-        >security incidents</.link>
+        >Security incidents</.link>
         instead.
       </p>
 
       <.docs_h3 id="move-provider">Move to another issuer or client</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         After a connection has signed someone in, its issuer, client ID, and identifier claim are
-        fixed. Those fields define what a stored subject means; repointing them could make an
-        existing identity refer to someone else. To move tenants, issuers, or clients, add a new
+        fixed. Those fields define what a stored subject means. Changing them can bind an existing
+        identity to another person. To move tenants, issuers, or clients, add a new
         connection and migrate assignments to it. Client-secret rotation stays available on the
         original connection.
       </p>
@@ -278,13 +278,13 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Disabling stops new sign-ins but keeps the configuration so you can enable it again.
         Deleting retires the connection and dismisses any manual-approval requests still waiting on
-        it. Both actions revoke active sessions authenticated through identities on that connection;
-        they do not delete the users or their audit history.
+        it. Both actions revoke active sessions authenticated through identities on that
+        connection. They do not delete users or audit history.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         An account can have several provider types, but only one enabled connection of each type.
-        An allowed email domain can belong to only one enabled emisar connection, so a duplicate
-        domain must be removed or disabled before another connection can claim it.
+        Only one enabled emisar connection can use a given email domain. Remove or disable the
+        existing domain before assigning it elsewhere.
       </p>
 
       <.docs_h2 id="providers">Provider guides</.docs_h2>
@@ -335,7 +335,7 @@
               navigate={~p"/docs/integrations/keycloak"}
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >Keycloak</.link>
-            — a confidential client with PKCE; no outbound SCIM.
+            uses a confidential client with PKCE and has no outbound SCIM.
           </span>
         </li>
         <li id="google-workspace" class="flex gap-3">
@@ -345,7 +345,8 @@
               navigate={~p"/docs/integrations/google-workspace"}
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >Google Workspace</.link>
-            — an Internal OAuth client and a locked, prefilled issuer; no outbound SCIM.
+            uses an Internal OAuth client with a locked, prefilled issuer
+            and no outbound SCIM.
           </span>
         </li>
       </ul>
@@ -355,8 +356,8 @@
         The named providers above are presets over one standard flow, not separate integrations.
         A provider that meets the contract below works through
         <strong class="text-zinc-200">Generic OpenID Connect</strong>
-        — including Auth0, Ping, OneLogin, Authentik, or an in-house IdP. This connection is OIDC
-        authorization code only; it does not accept SAML.
+        — including Auth0, Ping, OneLogin, Authentik, or an in-house IdP. This connection uses only
+        the OIDC authorization code flow. It does not accept SAML.
       </p>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -367,27 +368,28 @@
         <li class="flex gap-3">
           <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
           <span>
-            <strong class="text-zinc-200">A confidential web client</strong>
-            with a client secret, holding emisar's callback as a redirect URI. Public or SPA
-            clients will not do — emisar authenticates with the secret.
+            Use a <strong class="text-zinc-200">confidential web client</strong> with a client
+            secret. Register emisar's callback as a redirect URI. Public or SPA clients do not work
+            because emisar authenticates with the secret.
           </span>
         </li>
         <li class="flex gap-3">
           <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
           <span>
-            <strong class="text-zinc-200">The issuer URL</strong>
-            — whatever serves <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/.well-known/openid-configuration</code>. emisar fetches discovery from there,
-            so you never paste individual endpoints, and it must be HTTPS and reachable from
-            emisar.
+            The <strong class="text-zinc-200">issuer URL</strong>
+            must serve <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/.well-known/openid-configuration</code>.
+            emisar fetches discovery from that address. Enter no other endpoint. The URL must use
+            HTTPS and be reachable from emisar.
           </span>
         </li>
         <li class="flex gap-3">
           <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
           <span>
-            <strong class="text-zinc-200">The client ID and secret.</strong>
-            emisar accepts either
+            Provide the <strong class="text-zinc-200">client ID and secret.</strong>
+            emisar accepts
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">client_secret_post</code>
-            or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">client_secret_basic</code>, whichever your provider advertises.
+            or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">client_secret_basic</code>, based
+            on what the provider advertises.
           </span>
         </li>
       </ul>
@@ -405,19 +407,17 @@
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">Discovery</td>
               <td class="px-4 py-3">
-                An HTTPS issuer with a valid OpenID Provider Configuration. Its authorization,
-                token, and JWKS endpoints must also be public HTTPS URLs; private, loopback, and
-                cloud-metadata targets are refused.
+                The issuer must use HTTPS and have a valid OpenID Provider Configuration. Its
+                authorization, token, and JWKS endpoints must also use public HTTPS. Private,
+                loopback, and cloud-metadata targets are refused.
               </td>
             </tr>
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">Authorization</td>
               <td class="px-4 py-3">
-                Authorization code flow with PKCE. emisar uses S256 when the provider advertises
-                it and accepts plain only when that is the provider's advertised PKCE method.
-                emisar requests <code>openid</code>, <code>email</code>, and <code>profile</code>, plus
-                <code>state</code>
-                and <code>nonce</code>.
+                The provider must support authorization code flow with PKCE. The system uses S256
+                when the provider advertises it. It accepts plain only when the provider advertises
+                plain as its PKCE method. The request includes <code>openid</code>, <code>email</code>, <code>profile</code>, <code>state</code>, and <code>nonce</code>.
               </td>
             </tr>
             <tr>
@@ -431,9 +431,10 @@
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">ID-token claims</td>
               <td class="px-4 py-3">
-                A stable <code>sub</code>, an <code>email</code>
-                marked by <code>email_verified: true</code>, and optionally <code>name</code>. emisar reads
-                these from the ID token; it does not call UserInfo. The Entra preset uses
+                The ID token must contain a stable <code>sub</code>
+                and an <code>email</code>
+                marked by <code>email_verified: true</code>. It can also contain <code>name</code>. emisar reads
+                these claims from the ID token and does not call UserInfo. The Entra preset uses
                 <code>oid</code>
                 instead of <code>sub</code>.
               </td>
@@ -450,30 +451,29 @@
       </div>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Two settings to leave alone unless your provider forces otherwise: keep
-        <strong class="text-zinc-200">DPoP</strong>
-        off — emisar reads the ID token only and never calls an API with the access token, so
-        sender-constrained tokens add nothing and break the token request — and keep the identifier
-        claim on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>. The one provider that needs
+        Keep <strong class="text-zinc-200">DPoP</strong>
+        off unless your provider requires it. emisar
+        reads only the ID token and never uses the access token to call an API. Sender-constrained
+        tokens add no protection here and break the token request. Keep the identifier claim on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>. Microsoft Entra needs
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
-        instead is <.link
+        instead, as its
+        <.link
           navigate={~p"/docs/integrations/entra"}
           class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
-        >Microsoft Entra</.link>, for the reason
-        that guide explains.
+        >guide</.link>
+        explains.
       </p>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">Test connection</strong>
-        on the form runs a real discovery round-trip and shows the authorization, token, and JWKS
-        endpoints it found, so a wrong issuer fails before you save rather than at someone's first
-        sign-in.
+        <strong class="text-zinc-200">Test connection</strong> runs a real discovery request. It
+        shows the authorization, token, and JWKS endpoints. A wrong issuer fails before you save or
+        anyone signs in.
       </p>
 
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Sign-in symptoms and their checks. If the symptom is somewhere else in the product, start
-        from <.link
+        Use these checks for common sign-in symptoms. If the symptom is somewhere else in the
+        product, start from <.link
           navigate={~p"/docs/troubleshooting" <> "#identity"}
           class="text-brand-300 hover:text-brand-200"
         >troubleshooting</.link>, which routes each one to its owner page.
@@ -513,10 +513,10 @@
                 Authentication succeeds but emisar refuses the identity
               </td>
               <td class="px-4 py-3">
-                Inspect the ID token: it must contain the configured stable identifier and a
+                Inspect the ID token. It must contain the configured stable identifier and a
                 verified email. UserInfo-only email or profile claims are not read. If an existing
-                emisar user has that email, an admin must link the provider identity deliberately;
-                emisar never merges by email.
+                emisar user has that email, an administrator must link the provider identity
+                deliberately. emisar never merges by email.
               </td>
             </tr>
             <tr>
@@ -553,8 +553,7 @@
           navigate={~p"/docs/audit-and-siem"}
           class="text-brand-300 hover:text-brand-200"
         >audit log</.link>
-        with the authentication method it used, so "who did this, and how did they get in" is one
-        query rather than a correlation exercise across two systems.
+        with its authentication method. One query shows who acted and how they signed in.
       </p>
     </.docs_layout>
   </section>

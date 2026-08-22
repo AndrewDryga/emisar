@@ -211,7 +211,7 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">The old key is still yours to kill.</strong>
+            <strong class="text-zinc-200">You can still revoke the old key.</strong>
             To skip the overlap, revoke the old key by hand. Rotation keeps this option available.
             A predecessor the successor retired is <em>spent</em>, not revoked — revoke it yourself
             when you need it provably dead rather than merely superseded.
@@ -244,9 +244,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong>Revoke</strong>
         is the kill switch, and it is terminal. The moment you confirm, the
-        key is dead and the connected client gets a
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>
-        on its very next call. Reach for it when a key leaks, an agent misbehaves, or a connection
+        key is dead and the connected client is refused on its very next call. Reach for it when a key leaks, an agent misbehaves, or a connection
         is finished. It asks you to type the agent's name first,
         because it cannot be undone.
       </p>

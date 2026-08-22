@@ -9,7 +9,8 @@ Remote MCP clients connect through OAuth at `https://emisar.dev/api/mcp/rpc`. Lo
 ## Start here
 
 - [Quickstart](https://emisar.dev/docs/quickstart): Connect one Linux host, run the first declared action, and verify the audit record.
-- [Connect an LLM](https://emisar.dev/docs/connect-claude-ai): Connect remote OAuth clients or local stdio MCP clients.
+- [Connect a CLI agent](https://emisar.dev/docs/connect-cli-agent): Connect local stdio MCP clients through the emisar-mcp bridge.
+- [Connect Claude.ai](https://emisar.dev/docs/connect-claude-ai): Add emisar to Claude.ai as a custom connector over OAuth.
 - [MCP reference](https://emisar.dev/docs/mcp-reference): Review the fixed tools, parameters, continuations, errors, and signed-dispatch fields.
 
 ## Build and operate
@@ -18,8 +19,8 @@ Remote MCP clients connect through OAuth at `https://emisar.dev/api/mcp/rpc`. Lo
 - [Action pack format](https://emisar.dev/docs/action-packs): Define executables, typed arguments, risk, limits, redaction, and side effects.
 - [Policies and approvals](https://emisar.dev/docs/policies-and-approvals): Decide which actions run, wait for a person, or are denied.
 - [Runbooks](https://emisar.dev/docs/runbooks): Create, validate, approve, and review staged procedures built from declared actions.
-- [Runner fleet](https://emisar.dev/docs/runner-fleet): Enroll, group, update, troubleshoot, and remove runners.
-- [Production deployment](https://emisar.dev/docs/production): Roll out a governed fleet in reversible phases.
+- [Manage the runner fleet](https://emisar.dev/docs/runner-fleet): Enroll, group, update, troubleshoot, and remove runners.
+- [Go to production](https://emisar.dev/docs/production): Shape the fleet, tighten policy, and walk the go-live checklist.
 - [Audit and SIEM](https://emisar.dev/docs/audit-and-siem): Review control-plane events, export NDJSON, and verify the runner journal.
 
 ## Security

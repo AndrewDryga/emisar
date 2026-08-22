@@ -159,7 +159,7 @@ defmodule EmisarWeb.RunsLive do
   }
 
   # "Dispatched by" reveals its WHO picker (the audit actor-kind grammar):
-  # LLM agent → Agent, Operator → team member, Runbook → runbook. A child also
+  # AI agent → Agent, Operator → team member, Runbook → runbook. A child also
   # stays visible while its OWN value is set (an `?api_key_id=…` deep link
   # applies and reads active even before the kind is picked); the two hidden
   # children drop out of the list entirely.
@@ -293,7 +293,7 @@ defmodule EmisarWeb.RunsLive do
                   navigate={~p"/app/#{@current_account}/agents"}
                   class="text-brand-400 hover:text-brand-300"
                 >
-                  LLM agent
+                  AI agent
                 </.link>
                 (over MCP) land here too.
               </.empty_state>

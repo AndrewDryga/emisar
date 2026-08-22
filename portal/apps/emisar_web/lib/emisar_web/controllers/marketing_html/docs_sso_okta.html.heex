@@ -63,9 +63,11 @@
             <p class="mt-1.5">
               In the Okta Admin Console go to <strong class="text-zinc-200">Applications → Applications → Create App Integration</strong>. Choose
               <strong class="text-zinc-200">OIDC - OpenID Connect</strong>
-              as the sign-in method, then <strong class="text-zinc-200">Web Application</strong>
-              as the application type — that's the confidential client emisar needs, because it
-              authenticates with a client secret.
+              as the sign-in method.
+              Then choose <strong class="text-zinc-200">Web Application</strong>
+              as the application
+              type. This creates the confidential client emisar needs. It authenticates with a
+              client secret.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/okta-oidc-create.webp"
@@ -85,14 +87,12 @@
               Register emisar's callback as the only redirect.
             </p>
             <p class="mt-1.5">
-              Name the app, then paste emisar's callback into
-              <strong class="text-zinc-200">Sign-in redirect URIs</strong>
-              — it's
+              Name the application. Paste emisar's callback into <strong class="text-zinc-200">Sign-in redirect URIs</strong>. It ends with
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>
-              on your emisar host, and emisar shows it with a copy button on the Add provider page.
-              Make it the only entry and leave
-              <strong class="text-zinc-200">Allow wildcard *</strong>
-              off; a wildcard redirect is an open-redirect risk. Leave
+              on your emisar host. The Add provider page has a copy button. Make this the only entry
+              and leave <strong class="text-zinc-200">Allow wildcard *</strong>
+              off. A wildcard
+              redirect creates an open-redirect risk. Leave
               <strong class="text-zinc-200">Authorization Code</strong>
               ticked. For assignment,
               <strong class="text-zinc-200">Skip group assignment for now</strong>
@@ -154,23 +154,28 @@
 
       <.docs_callout kind={:note} title="The rest of the connection form">
         <p>
-          This guide covers only what Okta needs. The other settings on the connection —
-          who gets provisioned and at what role, what runner access they start with, whether this
-          provider satisfies your 2FA requirement — are the same for every provider and are
-          explained in <.link navigate={~p"/docs/sso"} class="text-brand-400 hover:text-brand-300">Single sign-on</.link>.
+          This guide covers only the provider-specific fields.
+          <.link
+            navigate={~p"/docs/sso"}
+            class="text-brand-400 hover:text-brand-300"
+          >Single sign-on</.link>
+          explains provisioning, default roles, runner access, and provider
+          MFA settings.
         </p>
       </.docs_callout>
 
       <.docs_callout kind={:warn} title="Use the org authorization server, not a custom one.">
         <p>
-          A <strong class="text-zinc-200">custom</strong>
-          authorization server lets an Okta admin rewrite the subject claim, and its tokens can carry
-          an email as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-          instead of the Okta user id. The org server keeps
+          A <strong class="text-zinc-200">custom authorization server</strong>
+          lets an Okta
+          administrator rewrite the subject claim. Its tokens can use an email as
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-          equal to the Okta user id — which is exactly what
+          instead of the Okta user
+          ID. The organization server keeps
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+          equal to the Okta user ID.
           <.link navigate={~p"/docs/scim"} class="text-brand-400 hover:text-brand-300">directory sync</.link>
-          provisions on, so login and provisioning converge on one identity instead of creating two.
+          uses the same value, so login and provisioning identify one person.
         </p>
       </.docs_callout>
 
@@ -195,10 +200,10 @@
       </.docs_prerequisites>
       <.docs_callout kind={:note} title="SCIM lives in its own Okta app">
         <p>
-          Okta doesn't allow SCIM provisioning on an OIDC integration — so your sign-in app and your
-          provisioning app are two separate integrations. That's Okta's documented position, not an
-          emisar limitation. The provisioning app's own sign-on never has to work; it exists only to
-          carry the SCIM config.
+          Okta does not allow SCIM provisioning on an OIDC integration. Use separate integrations
+          for sign-in and provisioning. This is an Okta limit, not an emisar limit. The
+          provisioning application's sign-on does not need to work. It only carries the SCIM
+          configuration.
         </p>
       </.docs_callout>
 
@@ -236,15 +241,15 @@
               Point it at emisar and test the credentials.
             </p>
             <p class="mt-1.5">
-              On the app's <strong class="text-zinc-200">Provisioning</strong>
-              tab choose <strong class="text-zinc-200">Configure API Integration</strong>, tick <strong class="text-zinc-200">Enable API integration</strong>, and fill in the two
-              values emisar gave you: the SCIM base URL as <strong class="text-zinc-200">Base URL</strong>, and the bearer as <strong class="text-zinc-200">API Token</strong>. Paste the token exactly as emisar
-              showed it — Okta sends it as a bare
+              On the application's <strong class="text-zinc-200">Provisioning</strong>
+              tab, choose <strong class="text-zinc-200">Configure API Integration</strong>
+              and enable API
+              integration. Enter the SCIM base URL as <strong class="text-zinc-200">Base URL</strong>. Enter the bearer as <strong class="text-zinc-200">API Token</strong>. Paste the token exactly as emisar
+              showed it. Okta sends it in the
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Authorization</code>
-              header with no <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Bearer</code>
-              keyword, and emisar accepts that because the
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">ems-</code>
-              prefix makes it unambiguous. Then click
+              header without a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Bearer</code>
+              keyword. The <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">ems-</code>
+              prefix lets emisar accept it unambiguously. Select
               <strong class="text-zinc-200">Test API Credentials</strong>
               before saving.
             </p>
@@ -255,12 +260,13 @@
               alt="Okta's SCIM API integration form after a successful test: a green banner reading SCIM 2.0 Test App (Header Auth) was verified successfully, with Enable API integration ticked, the emisar SCIM base URL in the Base URL field, a masked API Token, and Import Groups enabled."
             />
             <p class="mt-4">
-              If it fails, it's the credential or the URL: a token that was truncated on the way
-              over, or a base URL missing its
+              A failed test means the token or URL is wrong. Check for a truncated token and a base
+              URL missing its
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/scim/v2</code>
-              suffix. emisar answers a bad bearer with a plain <em>"The SCIM bearer token is missing,
-              malformed, or not authorized"</em>, which Okta shows you verbatim — rotate the token in
-              emisar and paste the fresh one.
+              suffix. For a bad token, emisar returns <em>“The SCIM bearer token is missing,
+              malformed, or not authorized.”</em>
+              Okta shows this message. Rotate the token in
+              emisar and paste the new one.
             </p>
           </div>
         </li>
@@ -320,7 +326,7 @@
             <.docs_step_venue>Okta</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Push the groups you want to map roles from.</p>
             <p class="mt-1.5">
-              Only if you plan to drive roles from directory groups. Groups travel on their own
+              Complete this step only if directory groups control roles. Groups travel on their own
               tab — <strong class="text-zinc-200">Push Groups</strong>, beside Assignments, not
               part of the To App settings you just turned on. Push a group here and it shows up in
               emisar as a synced group you can map to a role, below.
@@ -337,11 +343,9 @@
 
       <.docs_callout kind={:note} title="Okta lines up on identity by default.">
         <p>
-          Okta sends the Okta user id as the SCIM <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>, and ID tokens from
-          its <em>org</em>
-          authorization server carry the same value as
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-          — so sign-in and directory sync converge on one emisar identity without extra mapping. Two
+          Okta sends the user ID as SCIM <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>. ID tokens from the
+          organization authorization server use the same value as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>. Sign-in and directory sync
+          therefore identify one emisar member. Two
           things break that: a <strong class="text-zinc-200">custom</strong>
           authorization server, whose subject claim an admin can rewrite, and access tokens, whose
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>

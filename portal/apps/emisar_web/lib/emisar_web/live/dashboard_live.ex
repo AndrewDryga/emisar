@@ -323,7 +323,7 @@ defmodule EmisarWeb.DashboardLive do
     """
   end
 
-  # The dashboard is the product's three pillars — Runners, LLM agents, Team
+  # The dashboard is the product's three pillars — Runners, AI agents, Team
   # (the three main jobs: connect hosts, connect agents, onboard people) — then
   # the escape hatch when it fires, then activity:
   #
@@ -705,7 +705,7 @@ defmodule EmisarWeb.DashboardLive do
           number={2}
           done={@agent_done?}
           current={@current_step == 2}
-          title="Connect an LLM agent"
+          title="Connect an AI agent"
           done_text={"#{@agents_connected} #{if @agents_connected == 1, do: "agent", else: "agents"} connected"}
           action_label="Connect an agent"
           navigate={~p"/app/#{@current_account}/agents/connect"}
@@ -999,7 +999,7 @@ defmodule EmisarWeb.DashboardLive do
   defp agents_pillar(%{agents: %{total: 0}} = assigns) do
     ~H"""
     <.pillar_cta
-      label="LLM agents"
+      label="AI agents"
       title="Connect any MCP client"
       cta="Mint a scoped key"
       navigate={~p"/app/#{@current_account}/agents"}
@@ -1010,15 +1010,16 @@ defmodule EmisarWeb.DashboardLive do
   defp agents_pillar(assigns) do
     ~H"""
     <.pillar
-      label="LLM agents"
+      label="AI agents"
       tone={if @agents.active_today > 0, do: :brand, else: :neutral}
       navigate={~p"/app/#{@current_account}/agents"}
     >
-      <%!-- The bare agent count is just entities; the operational fact is how
-           many acted today, so it leads the metric in the Runners "N / M"
-           grammar and the status line carries the non-redundant recency. --%>
+      <%!-- The bare agent count is just entities; recent activity is the
+           operational fact, so it leads the metric in the Runners "N / M"
+           grammar. Keep the display suffix to one word; the status line carries
+           the exact recency. --%>
       <:value>
-        {@agents.active_today}<span class="text-2xl text-zinc-500"> / {@agents.total} active today</span>
+        {@agents.active_today}<span class="text-2xl text-zinc-500"> / {@agents.total} active</span>
       </:value>
       <:status>
         <%= if @agents.last_call_at do %>
@@ -1249,9 +1250,9 @@ defmodule EmisarWeb.DashboardLive do
   # onto the naked stats. No box, no icon — emerald lives only on the action
   # line, the one bit of energy a to-do step earns.
   #
-  # Each line carries a DISTINCT payload — the fix for "LLM agents / Connect an
-  # LLM agent / Connect an agent" saying one thing three times:
-  #   label    = the noun (what is this?)          — "LLM agents"
+  # Each line carries a DISTINCT payload — the fix for "AI agents / Connect an
+  # AI agent / Connect an agent" saying one thing three times:
+  #   label    = the noun (what is this?)          — "AI agents"
   #   headline = the outcome (what do I get?)      — "Connect any MCP client"
   #   action   = verb + mechanism (what's the cost?) — "Mint a scoped key →"
   # The headline never repeats the label's noun; the action names the effort in

@@ -103,15 +103,16 @@
               Tick <strong class="text-zinc-200">Manage Single Sign-On (SSO)</strong>. That reveals a
               <strong class="text-zinc-200">Select One</strong>
               pair beneath it — choose <strong class="text-zinc-200">Configure SSO with OIDC</strong>.
-              It defaults to SAML, and emisar's connection is OIDC, so this is the one click on the
-              page that is easy to miss and hard to undo later.
+              The form defaults to SAML, but emisar uses OIDC. Select Configure SSO with OIDC now
+              because changing this choice later is difficult.
             </p>
             <p class="mt-4">
               If you also want directory sync, tick
               <strong class="text-zinc-200">Export users to this app (Provisioning)</strong>
               on this same step — JumpCloud carries both on one application. Leave
               <strong class="text-zinc-200">Import users from this app</strong>
-              off; that direction pulls into JumpCloud.
+              off. That direction
+              pulls users into JumpCloud.
             </p>
 
             <.docs_screenshot
@@ -152,11 +153,13 @@
             <.docs_step_venue>JumpCloud</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Check the summary, then configure.</p>
             <p class="mt-1.5">
-              The review step lists what you just chose under <strong class="text-zinc-200">Enabled Features</strong>. It should read
-              <strong class="text-zinc-200">SSO with OIDC</strong>
-              — and <strong class="text-zinc-200">User Export - Provisioning</strong>
-              if you ticked it. If it says SAML, go <strong class="text-zinc-200">Back</strong>
-              and change the radio; emisar cannot use a SAML connector. Then press <strong class="text-zinc-200">Configure Application</strong>.
+              <strong class="text-zinc-200">Enabled Features</strong>
+              must list <strong class="text-zinc-200">SSO with OIDC</strong>. It also lists
+              <strong class="text-zinc-200">User Export - Provisioning</strong>
+              when selected. If
+              the list says SAML, go <strong class="text-zinc-200">Back</strong>
+              and change the
+              radio. emisar cannot use a SAML connector. Then select <strong class="text-zinc-200">Configure Application</strong>.
             </p>
 
             <.docs_screenshot
@@ -205,10 +208,9 @@
             <p class="font-semibold text-zinc-100">Paste the two values it reveals.</p>
             <p class="mt-1.5">
               Activating shows the <strong class="text-zinc-200">Client ID</strong>
-              and <strong class="text-zinc-200">Client Secret</strong>. They are the only two
-              values you carry back. On the connection you opened in step 1, the issuer is already
-              filled in and locked — it is the same for every JumpCloud org — so those two fields
-              are all there is to fill. Tick <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
+              and <strong class="text-zinc-200">Client Secret</strong>. The issuer is already filled and
+              locked on the connection from step 1. Every JumpCloud organization uses the same
+              issuer. Enter only the client ID and secret. Select <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/jumpcloud-emisar-credentials.webp"
@@ -222,10 +224,13 @@
 
       <.docs_callout kind={:note} title="The rest of the connection form">
         <p>
-          This guide covers only what JumpCloud needs. The other settings on the connection —
-          who gets provisioned and at what role, what runner access they start with, whether this
-          provider satisfies your 2FA requirement — are the same for every provider and are
-          explained in <.link navigate={~p"/docs/sso"} class="text-brand-400 hover:text-brand-300">Single sign-on</.link>.
+          This guide covers only the provider-specific fields.
+          <.link
+            navigate={~p"/docs/sso"}
+            class="text-brand-400 hover:text-brand-300"
+          >Single sign-on</.link>
+          explains provisioning, default roles, runner access, and provider
+          MFA settings.
         </p>
       </.docs_callout>
 
@@ -255,16 +260,15 @@
             <.docs_step_venue>JumpCloud</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Point its Provisioning tab at emisar.</p>
             <p class="mt-1.5">
-              Open the saved app's <strong class="text-zinc-200">Provisioning</strong>
-              tab (JumpCloud's own docs also call it <em>Identity Management</em>). The SCIM
-              version is fixed at 2.0; set
-              <strong class="text-zinc-200">Authentication method</strong>
-              to <strong class="text-zinc-200">Bearer token</strong>, then fill
-              <strong class="text-zinc-200">Base URL</strong>
-              with emisar's SCIM base URL and <strong class="text-zinc-200">Token Key</strong>
-              with the bearer. <strong class="text-zinc-200">Test User Email</strong>
-              must be an address that doesn't exist in emisar yet — JumpCloud provisions and then
-              deletes it as a live check, so an existing member would fail activation.
+              Open the saved application's <strong class="text-zinc-200">Provisioning</strong>
+              tab.
+              JumpCloud also calls it <em>Identity Management</em>. The SCIM version is fixed at
+              2.0. Set <strong class="text-zinc-200">Authentication method</strong>
+              to <strong class="text-zinc-200">Bearer token</strong>. Enter the SCIM base URL as <strong class="text-zinc-200">Base URL</strong>. Enter the bearer as <strong class="text-zinc-200">Token Key</strong>.
+              <strong class="text-zinc-200">Test User Email</strong>
+              must not already exist in
+              emisar. JumpCloud creates and deletes this user during the live check. An existing
+              member causes activation to fail.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/jumpcloud-scim-connection.webp"
@@ -282,12 +286,11 @@
             <.docs_step_venue>JumpCloud</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Test Connection, then Activate.</p>
             <p class="mt-1.5">
-              Press <strong class="text-zinc-200">Test Connection</strong>, then <strong class="text-zinc-200">Activate</strong>. Activation is not a formality: it
-              creates, renames and deletes a probe group, and provisions and removes the test user,
-              against your live emisar. Do <strong class="text-zinc-200">not</strong>
-              press Save instead — JumpCloud discards the configuration and you start over.
-              The probe group may omit <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>;
-              emisar returns an id that JumpCloud uses for the rename and delete.
+              Press <strong class="text-zinc-200">Test Connection</strong>, then <strong class="text-zinc-200">Activate</strong>. Activation creates, renames, and
+              deletes a probe group. It also provisions and removes the test user from your live
+              emisar account. Do not press Save. JumpCloud discards the configuration and makes you
+              start over. The probe group can omit <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>. emisar returns
+              the id used for the rename and delete.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/jumpcloud-scim-activate.webp"
@@ -308,14 +311,13 @@
 
       <.docs_h3 id="one-person-one-member">When sign-in and the directory disagree</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        emisar binds a synced member on the
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-        the directory sends, falling back to
+        emisar binds a synced member to the directory <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>, or to
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">userName</code>
-        when it sends none — and it binds a sign-in on the
+        when externalId is
+        missing. A sign-in binds to the
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-        claim. When those two values differ, emisar cannot tell that the person signing in is the
-        one the directory synced, so it holds their sign-in for an admin instead of guessing.
+        claim. When those values differ, emisar cannot prove both records belong to one person. It
+        holds the sign-in for an administrator instead of guessing.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         You do not have to make them match. A sign-in the directory has not claimed lands in
@@ -323,21 +325,21 @@
         under <a
           href={~p"/app/team"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Team</a>, with the identifier it presented. Approving it once binds that sign-in to
-        the member the directory already synced — one person, one member, both identifiers on the
-        same record — and every later sign-in and directory push finds them. That is one approval
-        per person, the first time they sign in.
+        >Team</a>, with the identifier it presented. One approval binds the sign-in to the member
+        that the directory already synced. Both identifiers stay on one record. Later sign-ins and
+        directory updates find the same member. This approval happens once, at the person's first
+        sign-in.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Watch the first one to be sure it is the same person: the request shows the email JumpCloud
-        asserted, and <strong class="text-zinc-200">Synced users</strong>
-        on the connection under
+        Check the first request carefully. It shows the email JumpCloud asserted.
+        <strong class="text-zinc-200">Synced users</strong>
+        under
         <a
           href={~p"/app/sso"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Team → Single sign-on</a>
-        shows who the directory sent. If those disagree, do not approve — that is
-        a misconfigured connector, not a mismatched identifier.
+        shows the directory record. Confirm they name the same person. If they differ, do not
+        approve the request. The connector is misconfigured.
       </p>
 
       <p class="mt-8 text-base leading-7 text-zinc-400">

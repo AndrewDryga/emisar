@@ -123,6 +123,14 @@
         reason. Do not use the local <code>emisar action run</code>
         command as a cloud retry. That command bypasses cloud policy and approvals.
       </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A dispatch that is refused, or never reaches the runner at all —
+        <.link
+          navigate={~p"/docs/troubleshooting" <> "#dispatch"}
+          class="text-brand-400 hover:text-brand-300"
+        >Troubleshooting</.link>
+        walks the checks in order.
+      </p>
     </.docs_layout>
   </section>
 

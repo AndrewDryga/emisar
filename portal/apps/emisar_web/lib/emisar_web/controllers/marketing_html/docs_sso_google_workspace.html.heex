@@ -18,7 +18,7 @@
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The shortest setup of the five — there is no issuer to look up.
+        This is the shortest provider setup because the issuer is prefilled.
       </p>
       <.docs_prerequisites>
         <:item>
@@ -69,9 +69,8 @@
               Open <strong class="text-zinc-200">Google Auth Platform → Branding</strong>. The
               <strong class="text-zinc-200">App name</strong>
               and <strong class="text-zinc-200">User support email</strong>
-              are what your members read on Google's consent screen, so name it something they
-              will recognise as yours. On a project that has never been configured Google walks
-              these same fields through a numbered setup instead, as the next step shows; the
+              appear on Google's consent screen. Use a name your members recognize. On a new
+              project, Google presents the same fields in the numbered setup shown next. The
               fields are identical.
             </p>
             <.docs_screenshot
@@ -91,11 +90,10 @@
             <p class="font-semibold text-zinc-100">Keep the audience Internal.</p>
             <p class="mt-1.5">
               On <strong class="text-zinc-200">Audience</strong>, the user type must be <strong class="text-zinc-200">Internal</strong>. That restricts sign-in to your own
-              Workspace domain and skips Google's verification review entirely. External exposes the
-              app to any Google account, which is not what you want in front of emisar — and Google
-              enforces it: an outside account is refused with
+              Workspace domain and skips Google's verification review entirely. External allows any
+              Google account. Do not use it for emisar. Google rejects outside accounts with
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">org_internal</code>
-              before the request ever reaches us.
+              before the request reaches emisar.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/google-audience.webp"
@@ -113,12 +111,11 @@
             <.docs_step_venue>Google Cloud</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Give Google a contact address, then create.</p>
             <p class="mt-1.5">
-              On a project being configured for the first time,
-              <strong class="text-zinc-200">Contact Information</strong>
-              and <strong class="text-zinc-200">Finish</strong>
-              close out the setup: an address Google writes to about the project, then <strong class="text-zinc-200">Create</strong>. Both are required, and neither
-              affects who can sign in — the audience above already decided that. A project that
-              was configured before will not show these; go straight to Clients.
+              For a new project, complete <strong class="text-zinc-200">Contact
+              Information</strong> and <strong class="text-zinc-200">Finish</strong>. Enter an
+              address Google uses for project notices, then select <strong class="text-zinc-200">Create</strong>. Both fields are required but do not
+              control sign-in. The Audience setting already controls sign-in. An existing project
+              does not show these fields. Go straight to Clients.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/google-contact-information.webp"
@@ -136,7 +133,7 @@
             <.docs_step_venue>Google Cloud</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Start an OAuth client.</p>
             <p class="mt-1.5">
-              <strong class="text-zinc-200">Clients → Create client</strong>. Existing clients are
+              Open <strong class="text-zinc-200">Clients → Create client</strong>. Existing clients are
               listed here too, so this is where you come back to if you need the client ID again.
             </p>
             <.docs_screenshot
@@ -194,8 +191,8 @@
               Copy both values before you close the dialog.
             </p>
             <p class="mt-1.5">
-              Google shows the client ID and secret once. The secret cannot be read again
-              afterwards — you would have to create another client — so take them now.
+              Google shows the client ID and secret once. You cannot read the secret again. Copy
+              both now or create another client later.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/google-client-created.webp"
@@ -234,29 +231,28 @@
 
       <.docs_callout kind={:note} title="The rest of the connection form">
         <p>
-          This guide covers only what Google Workspace needs. The other settings on the connection —
-          who gets provisioned and at what role, what runner access they start with, whether this
-          provider satisfies your 2FA requirement — are the same for every provider and are
-          explained in <.link navigate={~p"/docs/sso"} class="text-brand-400 hover:text-brand-300">Single sign-on</.link>.
+          This guide covers only the provider-specific fields.
+          <.link
+            navigate={~p"/docs/sso"}
+            class="text-brand-400 hover:text-brand-300"
+          >Single sign-on</.link>
+          explains provisioning, default roles, runner access, and provider
+          MFA settings.
         </p>
       </.docs_callout>
 
       <.docs_h2 id="scim">Directory sync</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Google Workspace cannot drive directory sync into emisar. Google provisions to SaaS apps in
-        its own catalog, and a custom OAuth client — which is what
-        the setup above creates — is not one of them, so there is no SCIM connector to point here. Members are
-        created on first sign-in at the connection's default role — or held for an admin to
-        approve, if you chose manual provisioning — and nothing removes them
-        automatically. Offboarding is therefore two steps, and the second is the one that ends
-        access: suspending the Google account stops them starting a NEW sign-in, but it does not
-        touch the session they already hold or any API key they minted. Suspend or remove them in
-        <a
+        Google Workspace cannot send directory sync to emisar. Google provisions only applications
+        in its SaaS catalog. The custom OAuth client created above has no SCIM connector. Members
+        are created at first sign-in with the connection's default role. Manual provisioning
+        instead holds the first sign-in for administrator approval. No automatic process removes
+        members. Offboarding needs two steps. Suspending the Google account blocks new sign-ins but
+        leaves existing sessions and API keys active. Suspend or remove the member in <a
           href={~p"/app/team"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Team</a>
-        — that is what ends live sessions and revokes their keys. emisar's connection page hides the sync panel for this
-        provider rather than offer a feature that could never connect.
+        >Team</a>. That ends sessions and revokes keys. emisar hides the sync panel because this provider has
+        no compatible connector.
       </p>
       <.docs_callout kind={:tip} title="Want automatic deprovisioning?">
         <p>
@@ -268,9 +264,9 @@
         </p>
         <p class="mt-3">
           One condition, and it is easy to miss: federating sign-in through that IdP is not by
-          itself a lifecycle feed. The people must be MANAGED there — provisioned or synchronised
-          into it — because what deprovisions them in emisar is that IdP's own directory saying
-          they are gone. Most orgs that federate Google already sync their staff into the same
+          itself a lifecycle feed. The IdP must manage those people through provisioning or
+          synchronization. Its directory then tells emisar when a person leaves. Most organizations
+          that federate Google already sync their staff into the same
           IdP, so there is usually nothing new to stand up. (Native Google directory sync is on
           our roadmap — talk to us if you need it.)
         </p>

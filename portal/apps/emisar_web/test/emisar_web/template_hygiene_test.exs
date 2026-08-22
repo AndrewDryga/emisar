@@ -41,6 +41,12 @@ defmodule EmisarWeb.TemplateHygieneTest do
   # cannot wrap, which is why this pair of rules is scoped to marketing.)
   @detached_cta_arrow ~r{[ \t\r\n]<\.cta_arrow}
 
+  # An accent fill is a LIGHT surface, so its label is near-black — `<.button>`
+  # ships `bg-brand-500 text-zinc-950` and its amber twin `text-amber-950`.
+  # White on emerald-500 is ~1.9:1 and unreadable; the four that shipped it were
+  # all hand-rolled copies of the button face on the consent cards.
+  @white_on_accent_fill ~r{bg-(?:brand|amber|emerald)-[456]00(?![/\w])[^"]*text-white|text-white[^"]*bg-(?:brand|amber|emerald)-[456]00(?![/\w])}
+
   # `cta_link` glues the arrow to whatever its slot renders, so slot content
   # that starts or ends with template whitespace puts a breakable space back.
   @unglued_cta_link_slot ~r{<\.cta_link[^>]*>[ \t\r\n]|[ \t\r\n]</\.cta_link>}
@@ -183,6 +189,28 @@ defmodule EmisarWeb.TemplateHygieneTest do
 
            `clip` clamps the same axis and leaves the other `visible`. Both axes really
            needing containment is a different thing — plain `overflow-hidden` stays.
+
+           Offending lines (relative to apps/emisar_web/lib):
+           #{Enum.map_join(offenders, "\n", &"  #{&1}")}
+           """
+  end
+
+  test "a label on a solid accent fill is near-black, never white" do
+    offenders = offending_source_matches(@white_on_accent_fill)
+
+    assert offenders == [],
+           """
+           White text sits on a solid accent fill. Our accents are LIGHT — white on
+           `brand-500` is about 1.9:1, well under the 4.5:1 floor, and it reads as a
+           washed-out smear next to every other filled control in the console.
+
+               ✅  <.button>Approve connection</.button>
+               ✅  class="bg-brand-500 font-semibold text-zinc-950 ..."
+               ❌  class="bg-brand-500 font-semibold text-white ..."
+
+           A filled button is `<.button>` (brand) or `<.button tone={:amber}>`; both
+           already carry the right label color, so hand-rolling the face is what let
+           this drift. See .agent/kb/rules/design-ui-shared-components.md.
 
            Offending lines (relative to apps/emisar_web/lib):
            #{Enum.map_join(offenders, "\n", &"  #{&1}")}

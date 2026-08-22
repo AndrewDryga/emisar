@@ -6,7 +6,7 @@ defmodule EmisarWeb.AuditExportController do
 
   Authentication is the standard `Authorization: Bearer <api_key>`
   header. The key must be an `:audit_export` token (its own credential
-  kind, minted on the audit page); an MCP key gets a 403 — the two kinds
+  kind, minted on the audit page); an agent key gets a 403 — the two kinds
   are separate credentials, so a log-shipping token never carries MCP
   tool access.
 
@@ -276,7 +276,7 @@ defmodule EmisarWeb.AuditExportController do
     })
   end
 
-  # The audit stream is for `:audit_export` tokens only — an MCP key
+  # The audit stream is for `:audit_export` tokens only — an agent key
   # authenticates but is the wrong credential kind here. The subject's ROLE
   # permission is the second gate inside `list_for_export`.
   defp require_audit_export_key(conn, _opts) do

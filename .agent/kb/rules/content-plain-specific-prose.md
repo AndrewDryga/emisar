@@ -32,9 +32,15 @@ writer first.
 - Explain a fact once, in the order the reader needs it. Do not follow an
   abstract summary with a paraphrase of the same behavior.
 - Use active verbs and the ordinary word when it is equally precise.
+- Call a standard operation by its standard name — a key is *exchanged* for a
+  token (the industry's own term), never "traded". A coined verb reads cute
+  once and costs a search hit forever.
 - Vary rhythm with the idea, not through arbitrary fragments or decoration.
 - Use humor only when it sharpens the point and preserves trust.
 - State a verified fact directly and qualify the exact uncertainty.
+- Frame normal resilience as the capability — `The runner reconnects on its
+  own` — never as tolerance of a failure class (`Disconnects are expected`).
+  Any product handles its ordinary events; say what it does.
 - Send a reader to another page by naming what they want to do — `To upgrade
   runners instead, see Upgrade runners` — not by stating a fact about how the
   system is arranged.
@@ -42,11 +48,28 @@ writer first.
 ## Bad
 
 - Praise the product without naming what it does.
+- Let internal shorthand reach an operator — "pack bytes", "puts bytes on a
+  host", "the bytes are" come from the trust model's content-addressing; the
+  reader knows them as the pack, its version, or its files. "Bytes" survives
+  only in genuinely byte-level facts (byte-for-byte, a hash over the files).
 - Open with `In today's fast-paced landscape` or another empty scene-setter.
 - Repeat `not just X, but Y`, forced triads, rhetorical reveals, or identical
   paragraph shapes until the structure becomes visible.
 - Turn ordinary behavior into a punchy metaphor just to make the sentence sound
-  quotable. If the image adds no precision, state what the system does.
+  quotable. If the image adds no precision, state what the system does. This
+  bans even the GOOD line: "A request nobody answers is an outage with a polite
+  name" survived two editing passes because it read well — docs still replace
+  it with what happens and what to do about it.
+- Tail a statement with its mirrored negation — `refused, not followed`,
+  `expected; a blocked path is not`, `housekeeping, not a security control`.
+  Say what happens and stop. Keep a negation only when it corrects an
+  expectation the reader really brings (`the node, not the pod, is the
+  identity`), and prefer giving that correction its own plain sentence.
+- Prompt an action with a tool fact. `emisar doctor checks reachability.` states
+  trivia; the sentence exists to make the reader run the command, so address
+  them: `Use emisar doctor to check that the control plane is reachable.` The
+  fact form is right only when describing behavior the reader is not being
+  asked to invoke.
 - Dress a plain action in an ownership idiom — `is yours to edit`, `yours to
   kill` — when the literal statement (`you can edit it`, `you can still revoke
   it`) is shorter and says exactly what to do.

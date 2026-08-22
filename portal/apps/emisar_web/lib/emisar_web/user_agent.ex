@@ -91,6 +91,27 @@ defmodule EmisarWeb.UserAgent do
   end
 
   @doc """
+  Which install-instruction tab a visitor lands on — `:windows`, `:macos`,
+  or `:linux` (Linux itself, plus every UA we can't read — a crawler, curl,
+  a phone).
+
+  The install/upgrade commands we publish carry one tab per OS, so this is
+  the server-rendered default for the `<.os_switch>` toggle. It is a
+  CONVENIENCE, never a gate: every variant stays in the page, so a reader
+  on any platform is one click from the right command.
+  """
+  @spec platform(String.t() | nil) :: :linux | :macos | :windows
+  def platform(user_agent) when is_binary(user_agent) do
+    case os(user_agent) do
+      "Windows" -> :windows
+      "Mac OS X" -> :macos
+      _ -> :linux
+    end
+  end
+
+  def platform(_), do: :linux
+
+  @doc """
   Compact display label built on `parse/1` — "Chrome on Mac", one side
   when only one parses, the first UA token as a last resort, and
   "Unknown device" for a missing UA.

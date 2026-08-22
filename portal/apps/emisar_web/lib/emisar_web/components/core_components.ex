@@ -1985,9 +1985,9 @@ defmodule EmisarWeb.CoreComponents do
         active={@section == :agents}
         icon="hero-sparkles"
         alert={@no_agents?}
-        alert_label="No LLM agent connected yet"
+        alert_label="No AI agent connected yet"
       >
-        LLM agents
+        AI agents
       </.nav_link>
 
       <.nav_group
@@ -3119,6 +3119,117 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  The per-OS switch — Linux / Windows / macOS — for a command we publish in
+  OS-specific spellings. Every OS gets its own named tab even when two share
+  a spelling (Linux and macOS both run the shell one-liner): the reader finds
+  THEIR OS by name instead of parsing a merged "macOS / Linux" label.
+
+  It goes where a single-variant panel prints its LABEL — the header of
+  `os_code_panel/1` (console) or `os_docs_code/1` (docs) — because a tab row
+  above a panel whose header already names a platform states the same thing
+  twice.
+
+  The server marks the tab matching `detected`, which the caller reads from
+  the request's User-Agent (`EmisarWeb.UserAgent.platform/1`), so a Windows
+  visitor lands on the PowerShell command with no flash;
+  `assets/js/os_tabs.js` owns the click and applies the choice page-wide.
+  Every variant stays in the DOM — the inactive ones are `hidden` — so a
+  crawler, a reader with no JS, and a reader on another platform all still
+  reach the command.
+  """
+  attr :detected, :atom, required: true, values: [:linux, :windows, :macos]
+  attr :tabs, :list, required: true, doc: "maps carrying `:os` and `:label`"
+
+  def os_switch(assigns) do
+    ~H"""
+    <%!-- A button group with aria-pressed, the grammar the pricing cycle toggle
+         already uses — NOT role="tablist". A tab must own a labelled tabpanel
+         via aria-controls, and the docs variant's pre has no id to point at;
+         an incomplete tab pattern reads worse to a screen reader than two
+         honest toggle buttons. --%>
+    <div
+      role="group"
+      aria-label="Operating system"
+      class="inline-flex shrink-0 rounded-lg p-0.5 ring-1 ring-zinc-800"
+    >
+      <button
+        :for={tab <- @tabs}
+        type="button"
+        data-os-select={to_string(tab.os)}
+        aria-pressed={to_string(tab.os == @detected)}
+        class={[
+          "whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium",
+          "transition-colors hover:text-zinc-200",
+          if(tab.os == @detected, do: "bg-zinc-800 text-zinc-100", else: "text-zinc-400")
+        ]}
+      >
+        {tab.label}
+      </button>
+    </div>
+    """
+  end
+
+  @doc """
+  `code_panel/1` for a command with per-OS spellings — the OS switch takes
+  the header's label position, and Copy follows the selected variant.
+
+      <.os_code_panel id="install-mcp" detected={@os}>
+        <:tab os={:linux} label="Linux" code={shell_command} />
+        <:tab os={:windows} label="Windows" code={windows_command} />
+        <:tab os={:macos} label="macOS" code={shell_command} />
+      </.os_code_panel>
+  """
+  attr :id, :string, required: true, doc: "prefix — each variant's pre is `<id>-<os>`"
+  attr :detected, :atom, required: true, values: [:linux, :windows, :macos]
+  attr :class, :string, default: nil
+
+  slot :tab, required: true do
+    attr :os, :atom, required: true
+    attr :label, :string, required: true
+    attr :code, :string, required: true
+  end
+
+  def os_code_panel(assigns) do
+    ~H"""
+    <div class={[
+      "overflow-hidden rounded-xl bg-zinc-900/60",
+      "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-zinc-800",
+      @class
+    ]}>
+      <header class="flex items-center justify-between gap-3 border-b border-zinc-800/70 px-4 py-2">
+        <.os_switch detected={@detected} tabs={@tab} />
+        <%!-- One Copy per variant, hidden with its pre: a single button would
+             have to resolve which pre is showing, and the copy listener takes a
+             fixed selector. --%>
+        <.copy_button
+          :for={tab <- @tab}
+          data-os={to_string(tab.os)}
+          class={[
+            "shrink-0 bg-zinc-800 px-2 text-zinc-200 hover:bg-zinc-700",
+            tab.os != @detected && "hidden"
+          ]}
+          target={"##{@id}-#{tab.os}"}
+        >
+          Copy
+        </.copy_button>
+      </header>
+      <pre
+        :for={tab <- @tab}
+        id={"#{@id}-#{tab.os}"}
+        data-os={to_string(tab.os)}
+        tabindex="0"
+        aria-label={tab.label}
+        class={[
+          "overflow-auto bg-black/40 p-4 font-mono text-xs text-zinc-300",
+          "[font-variant-ligatures:none]",
+          tab.os != @detected && "hidden"
+        ]}
+      >{tab.code}</pre>
+    </div>
+    """
+  end
+
+  @doc """
   A card whose body collapses behind a clickable header. Built on `<details>`,
   so it's keyboard-accessible and toggles with no JS; the `CollapsibleSection`
   hook then persists the open/closed choice per `id` in `localStorage`, so it
@@ -3210,7 +3321,7 @@ defmodule EmisarWeb.CoreComponents do
   A subtle "read the docs" link from a console page intro to its docs page. Opens
   the public, server-rendered docs in a new tab with an external glyph.
 
-      <.doc_link href="/docs/runners">Runner docs</.doc_link>
+      <.doc_link href="/docs/runner-fleet">Runner docs</.doc_link>
   """
   attr :href, :string, required: true
   slot :inner_block, required: true
@@ -3233,7 +3344,7 @@ defmodule EmisarWeb.CoreComponents do
   docs. The caller gives it a fixed 22rem track that only splits off at xl, so
   its prose never squeezes; below xl it stacks full-width under the list.
 
-      <.docs_rail title="What's a runner?" doc_href="/docs/runners" doc_label="Runner docs">
+      <.docs_rail title="What's a runner?" doc_href="/docs/runner-fleet" doc_label="Runner docs">
         <p>A runner is the small emisar agent on one of your hosts…</p>
       </.docs_rail>
   """

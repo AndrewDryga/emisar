@@ -106,7 +106,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       # required connections + one optional invite — not three equal pillars.
       assert html =~ "Get to your first gated run"
       assert html =~ "Connect a runner"
-      assert html =~ "Connect an LLM agent"
+      assert html =~ "Connect an AI agent"
       # Step 3 teaches the payoff with a concrete, copy-pasteable prompt so a
       # fresh operator sees exactly what to ask — not just how to connect.
       assert html =~ "Ask your agent to run an action"
@@ -316,6 +316,8 @@ defmodule EmisarWeb.DashboardLiveTest do
       # The runners pillar carries live state (one registered runner,
       # not connected in a test) and the runs section returns.
       assert html =~ "/ 1 connected"
+      assert html =~ "/ 1 active"
+      refute html =~ "active today"
       assert html =~ "Recent runs"
 
       # A solo account (just the owner) reports its honest member count and

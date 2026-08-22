@@ -11,7 +11,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="pack-registry"
-      updated="August 4, 2026"
+      updated="August 18, 2026"
       toc={[
         {"author", "Author & validate"},
         {"get-packctl", "Get packctl"},
@@ -24,27 +24,34 @@
     >
       <.docs_header current="pack-registry">
         <:dek>
-          An emisar pack registry is not a service — it's a <strong class="text-zinc-200">static
-            file layout over HTTPS</strong>. Anything that serves files can be one: a GCS or S3
-          bucket, MinIO, plain nginx, an artifact store behind your VPN. Author packs for your own
-          tooling, publish them to infrastructure you control, and install them across your fleet
-          with the same hash-pinned flow the public registry uses. This isn't a side door — the
-          public registry is built and published by the exact tool documented here, from our CI, on
-          every packs change.
+          An emisar pack registry is a <strong class="text-zinc-200">static file tree over
+            HTTPS</strong>. You can host it in a bucket, nginx, MinIO, or an artifact store. Build
+          the tree with <code>packctl</code>. Install each pack from its immutable URL and pin its
+          reviewed hash.
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Distribution and trust are separate decisions, and one setting decides which one your
-        registry makes. Installs always pin a <code>sha256</code>
-        content hash and the runner re-hashes every pack at load time. Trust is per account: the
-        portal auto-trusts an exact <code>pack@version/hash</code>
-        that appears in
-        <strong class="text-zinc-200">the catalog it is configured to read</strong>
-        — <code>registry.emisar.dev</code>
-        on the hosted setup — and holds everything else pending until an admin trusts it on the
-        Packs page. A registry you host only to move bytes is not that catalog, so your packs
-        arrive pending and you review each hash once.
+        Registry paths become v1 compatibility surfaces. Read
+        <.link
+          navigate={~p"/docs/compatibility"}
+          class="text-brand-400 hover:text-brand-300"
+        >Compatibility and deprecation</.link>
+        before you publish a stable internal endpoint.
       </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Distribution and trust are separate. The runner checks the supplied <code>sha256</code>
+        hash during installation. It checks the pack hash again when it loads the pack. The portal
+        trusts only catalog entries from its configured catalog. Other packs remain pending until
+        an admin trusts their exact version and hash.
+      </p>
+      <.docs_callout kind={:warn} title="The configured catalog publisher is a trust authority">
+        A valid catalog can authorize a matching pack already installed on a runner. Its
+        publisher also chooses each pack's risk, kind, and retirement floor. It cannot install
+        packs or bypass
+        descriptor checks, argument validation, or local admission. emisar does not verify a
+        separate catalog signature. Protect publishing access and replace a suspected catalog
+        before another install.
+      </.docs_callout>
 
       <.agent_skill_cta
         class="mt-8"
@@ -65,16 +72,16 @@
             <h2 class="text-xl font-semibold text-zinc-50">Author and validate your packs</h2>
           </header>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            Packs are directories of YAML — the
+            Packs are directories of YAML. The
             <.link
               navigate={~p"/docs/publishing-packs"}
               class="text-brand-300 hover:text-brand-200"
             >
-              authoring guide
+              Author your own pack
             </.link>
             walks the format, and the
             <.link navigate={~p"/docs/action-packs"} class="text-brand-300 hover:text-brand-200">
-              YAML reference
+              Pack reference
             </.link>
             covers every field. Validation runs the same loader and hash path the runner enforces:
           </p>
@@ -93,12 +100,12 @@
           </header>
           <p class="mt-5 text-base leading-7 text-zinc-400">
             <code>packctl</code>
-            builds and publishes registries. It's deliberately a
+            builds and publishes registries. It is deliberately a
             <strong class="text-zinc-200">separate
             binary</strong>
-            from <code>emisar</code>: your fleet hosts never carry publish code or publisher
-            credentials — only the workstation or CI job that builds the registry does. It shares
-            the runner's pack loader, so published content hashes match
+            from <code>emisar</code>. Your fleet hosts never carry publish code or publisher
+            credentials. Only the workstation or CI job that builds the registry does. It shares
+            the runner's pack loader. Published content hashes match
             <code>emisar pack validate</code>
             byte-for-byte.
           </p>
@@ -118,12 +125,12 @@
           </header>
           <p class="mt-5 text-base leading-7 text-zinc-400">
             <code>--base-url</code>
-            is wherever you'll host it; tarball URLs in the catalog join onto it:
+            is wherever you will host it. Tarball URLs in the catalog join onto it:
           </p>
           <.docs_code phx-no-format label="shell">packctl catalog build --packs ./packs --out ./dist \
   --base-url https://packs.acme.internal</.docs_code>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            The output is the whole registry — immutable versioned or content-addressed artifacts,
+            The output is the whole registry. Immutable versioned or content-addressed artifacts,
             plus two mutable pointers:
           </p>
           <.docs_code phx-no-format>v1/catalog.json                                  latest catalog (mutable pointer)
@@ -141,14 +148,15 @@ v1/packs/&lt;id&gt;/&lt;version&gt;/&lt;sha256&gt;/pack.tar.gz     immutable pac
             <h2 class="text-xl font-semibold text-zinc-50">Host it anywhere static</h2>
           </header>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            GCS is native — immutable objects upload precondition-protected so existing bytes are
-            never overwritten, and the pointers flip last:
+            <code>packctl</code> can publish directly to GCS. It protects immutable object uploads
+            with preconditions, so existing objects are never overwritten. It updates the mutable
+            pointers last:
           </p>
           <.docs_code phx-no-format label="shell">GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token) \
   packctl catalog publish --dir ./dist --bucket acme-pack-registry</.docs_code>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            S3, MinIO, nginx, or anything else: the tree is plain files — sync it with any tool.
-            Upload the immutable objects first, then the two pointers:
+            For S3, MinIO, nginx, or another static host, sync the plain file tree with your
+            preferred tool. Upload immutable objects first, then the two mutable pointers:
           </p>
           <.docs_code phx-no-format label="shell">aws s3 sync ./dist s3://acme-pack-registry \
   --exclude "v1/catalog.json" --exclude "v1/suggest.json"
@@ -167,23 +175,21 @@ aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</.docs_
             <h2 class="text-xl font-semibold text-zinc-50">Install from it, fleet-wide</h2>
           </header>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            Install by the pack's immutable tarball URL from the tree you built, and pin the hash you
-            reviewed — <code>emisar pack validate</code>
-            printed it in step 1, and every version carries it in <code>catalog.json</code>. A tampered
-            or mismatched copy is rejected before it reaches the runner. Roll the same URL out across
-            the fleet with your config management; to update, install the new version's URL.
+            Install the pack from its immutable tarball URL. Pin the hash from <code>catalog.json</code>. The runner rejects a different hash. Use the same URL and hash
+            on every runner. To update the pack, install the new immutable URL.
           </p>
           <.docs_code phx-no-format label="shell">sudo emisar pack install \
   https://packs.acme.internal/v1/packs/billing-tools/0.4.0/&lt;sha256&gt;/pack.tar.gz \
   --hash sha256:&lt;reviewed&gt;</.docs_code>
           <p class="mt-5 text-base leading-7 text-zinc-400">
-            Then trust the pack once on the dashboard's
+            Trust the exact pack version and hash on the
             <a
               href={~p"/app/packs"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
             >Packs</a>
-            page — actions gate on that per-account trust, not on where the bytes came from. Edit
-            the pack and its hash changes, which re-marks it pending until you re-trust.
+            page. Actions use account trust, not the download host. If the portal reads this
+            catalog, an exact pack, version, and hash match is trusted automatically. Any other new
+            hash remains pending until an admin trusts it.
           </p>
         </li>
 
@@ -200,7 +206,7 @@ aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</.docs_
           <p class="mt-5 text-base leading-7 text-zinc-400">
             Always build against the currently-published catalog so history carries forward.
             <code>--previous</code>
-            enforces the registry's core guarantee: a pack that changed bytes for an
+            enforces the registry's core guarantee. A pack whose files changed for an
             already-published <code>id@version</code>
             <strong class="text-zinc-200">fails the build</strong>
             — bump the version instead. On a critical fix, republish and then
@@ -209,7 +215,8 @@ aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</.docs_
               href={~p"/app/packs"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
             >Packs</a>
-            page — that's what makes a runner refuse it at dispatch.
+            page. The control plane then refuses new dispatches for that version. The runner
+            separately checks the delivered expected hash against its installed files.
           </p>
           <.docs_code phx-no-format label="shell">curl -fsS https://packs.acme.internal/v1/catalog.json -o current.json
 packctl catalog build --packs ./packs --out ./dist \
@@ -217,49 +224,53 @@ packctl catalog build --packs ./packs --out ./dist \
         </li>
       </ol>
 
-      <%!-- What it does / doesn't change --%>
-      <.docs_h2 id="tradeoffs">What your registry does — and doesn't — change</.docs_h2>
+      <%!-- What it does / does not change --%>
+      <.docs_h2 id="tradeoffs">What your registry changes</.docs_h2>
       <ul class="mt-4 space-y-3 pl-5 text-base text-zinc-400">
         <li class="list-disc">
-          <strong class="text-zinc-200">The cloud works unchanged.</strong>
-          Runners advertise installed packs regardless of source; trust, policy, approvals, and
+          <strong class="text-zinc-200">emisar works unchanged.</strong>
+          Runners advertise installed packs regardless of source. Trust, policy, approvals, and
           audit apply identically to private packs.
         </li>
         <li class="list-disc">
           <strong class="text-zinc-200">Air-gap friendly.</strong>
-          Mirror the public registry's tree — or build your own from a vendored
-          <code>packs/</code>
-          checkout — onto an internal host. Nothing phones home.
+          Mirror the public registry tree or build one from a vendored <code>packs/</code>
+          checkout. Host pack downloads inside your network. Hosted runners still connect outbound
+          to the emisar control plane.
         </li>
         <li class="list-disc">
           <strong class="text-zinc-200">Discovery follows two explicit settings.</strong>
-          The dashboard's catalog browser follows the portal's <code>EMISAR_PACK_CATALOG_URL</code>;
-          <code>emisar pack suggest</code>
-          follows the runner CLI's <code>--registry</code>
-          or <code>EMISAR_PACKS_REGISTRY</code>. Both default to emisar's public index. A private pack
-          still appears in the portal when a runner advertises it, but it enters either browse
-          surface only when that surface points at your registry.
+          The control plane reads <code>EMISAR_PACK_CATALOG_URL</code>. For local suggestions, download
+          <code>v1/suggest.json</code>
+          and run <code>emisar pack suggest --catalog ./suggest.json</code>. A runner also advertises
+          every installed pack to the portal.
         </li>
         <li class="list-disc">
-          <strong class="text-zinc-200">No CRL-style revocation.</strong>
-          Retire a version by <strong class="text-zinc-200">revoking its trust</strong>
-          per account — dispatch then refuses it. <code>retired_below</code>
-          is enforced from whichever catalog the portal reads: on the hosted setup that's ours, so
-          floors in your own registry are authoring metadata rather than a fleet kill-switch; on a
-          deployment configured to read your catalog, publishing a floor retires those versions
-          fleet-wide after its next successful refresh. Hash pinning means an already-reviewed
-          install never changes underneath you.
+          <strong class="text-zinc-200">Use immutable URLs with this tree.</strong>
+          The current name-based install and update commands use a different registry layout.
+          <code>packctl</code>
+          does not build that layout. Do not use <code>--registry</code>
+          with this static tree.
+        </li>
+        <li class="list-disc">
+          <strong class="text-zinc-200">Revocation is trust revocation.</strong>
+          Retire a version by revoking its trust in each account; the control plane then refuses
+          dispatch for it. A <code>retired_below</code>
+          floor applies only when the control plane reads <em>your</em>
+          catalog — the hosted control plane reads the public catalog by default, so a private
+          floor is authoring metadata until then. Hash pinning keeps the installed files you
+          reviewed unchanged either way.
         </li>
       </ul>
 
       <%!-- Next steps --%>
       <div class="mt-16 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-8 text-sm">
         <.link navigate={~p"/docs/publishing-packs"} class="text-brand-300 hover:text-brand-200">
-          Authoring guide
+          Author your own pack
         </.link>
         <div class="flex items-center gap-4">
           <.link navigate={~p"/docs/action-packs"} class="text-zinc-400 hover:text-zinc-200">
-            Full YAML reference
+            Pack reference
           </.link>
           <.link navigate={~p"/packs"} class="text-zinc-400 hover:text-zinc-200">
             Browse the public registry

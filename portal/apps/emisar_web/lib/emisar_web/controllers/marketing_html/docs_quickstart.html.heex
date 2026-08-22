@@ -29,7 +29,7 @@
             navigate={~p"/docs/containers"}
             class="text-brand-400 hover:text-brand-300"
           >
-                Containers &amp; Kubernetes</.link>.
+                Install in a container</.link>.
         </:item>
         <:item><code class="text-zinc-300">sudo</code> on that host.</:item>
         <:item>
@@ -48,7 +48,8 @@
 
       <.docs_h2 id="install-runner">2. Install the runner</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        In the console, click <a
+        The runner is a small service that lives on your host and executes actions there —
+        nothing touches the host except through it. In the console, click <a
           href={~p"/app/runners/install"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runners → Connect a runner</a>. You'll get a one-line install command
@@ -64,6 +65,14 @@
     | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-… bash</.docs_code>
       <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
       <.docs_install_script_details />
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The installer also adds starter packs. A pack is a set of ready-made actions for one tool
+        — Linux basics, nginx, Postgres, etc. Packs are the tools your agent gets, so add more later
+        for whatever else the host runs: see <.link
+          navigate={~p"/docs/use-a-published-pack"}
+          class="text-brand-400 hover:text-brand-300"
+        >Use a published pack</.link>.
+      </p>
 
       <.docs_h2 id="watch-connect">3. Watch it connect</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -176,8 +185,8 @@
       <.docs_code phx-no-format label="output"> 14:32:07 up 18 days,  4:01,  load average: 0.42, 0.51, 0.48</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code class="font-mono">linux.uptime</code>
-        is <code class="text-brand-300">low</code>
-        risk, so the default policy runs it without approval. A <code class="text-amber-300">high</code>-risk action would stop for human approval instead. You set what each risk tier does
+        is <.docs_risk tier="low" /> risk, so the default policy runs it without approval. A
+        <.docs_risk tier="high" />-risk action would stop for human approval instead. You set what each risk tier does
         in your policy. The cloud
         audit and runner journal record the run and its reason. See
         <.link
@@ -189,7 +198,9 @@
 
       <.docs_h2 id="connect-llm">5. Point your LLM at it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        In the console, open
+        This is the step everything above was for: connect your AI agent, and the catalog becomes
+        tools it can call — reads run at once, risky work waits for your approval. In the
+        console, open
         <a
           href={~p"/app/agents"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -198,16 +209,23 @@
         <code>emisar-mcp</code>
         bridge. Install it on the machine where your client runs:
       </p>
-      <.docs_code
-        phx-no-format
-        label="macOS or Linux"
-        copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
-      ><span class="text-zinc-500">$</span> curl -fsSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</.docs_code>
-      <.docs_code
-        phx-no-format
-        label="PowerShell"
-        copy_text="irm https://emisar.dev/install-mcp.ps1 | iex"
-      ><span class="text-zinc-500">PS&gt;</span> irm <span class="text-brand-300">https://emisar.dev/install-mcp.ps1</span> | iex</.docs_code>
+      <.os_docs_code phx-no-format detected={@detected_os}>
+        <:tab
+          os={:linux}
+          label="Linux"
+          copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
+        ><span class="text-zinc-500">$</span> curl -fsSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</:tab>
+        <:tab
+          os={:windows}
+          label="Windows"
+          copy_text="irm https://emisar.dev/install-mcp.ps1 | iex"
+        ><span class="text-zinc-500">PS&gt;</span> irm <span class="text-brand-300">https://emisar.dev/install-mcp.ps1</span> | iex</:tab>
+        <:tab
+          os={:macos}
+          label="macOS"
+          copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
+        ><span class="text-zinc-500">$</span> curl -fsSL <span class="text-brand-300">https://emisar.dev/install-mcp.sh</span> | sudo bash</:tab>
+      </.os_docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The installer finds supported clients, opens a browser approval, and adds emisar to each
         client you select. For manual setup, see <.link
@@ -330,6 +348,13 @@
           the next converge.
         </li>
       </ol>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        And cover as much of your infrastructure as you can: install more runners, and give each
+        one every pack that matches what runs there. The more actions an agent can reach, the
+        more it can do for you — and breadth is safe, because policy decides what actually runs.
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar pack suggest</code>
+        lists the published packs that match a host.
+      </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         See it end to end on a real incident: <.link
           navigate={~p"/use-cases/csi-data-loss"}

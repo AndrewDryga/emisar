@@ -240,7 +240,7 @@ defmodule EmisarWeb.PacksTest do
       html = conn |> get(~p"/docs/publishing-packs") |> html_response(200)
       assert html =~ "Author your own pack"
       assert html =~ "pack.yaml"
-      assert html =~ "propose it to the registry"
+      assert html =~ "Keep it private, or propose it"
     end
   end
 

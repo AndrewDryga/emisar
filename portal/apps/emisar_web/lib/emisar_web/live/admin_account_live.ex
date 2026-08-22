@@ -300,7 +300,7 @@ defmodule EmisarWeb.AdminAccountLive do
         </div>
 
         <div>
-          <.section_header title="LLM agents">
+          <.section_header title="AI agents">
             <:subtitle>{api_keys_subtitle(@overview.mcp.active_api_keys)}</:subtitle>
           </.section_header>
 

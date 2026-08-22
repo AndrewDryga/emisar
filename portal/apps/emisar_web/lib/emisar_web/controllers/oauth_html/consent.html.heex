@@ -68,22 +68,12 @@
       />
 
       <div class="flex flex-col gap-3">
-        <button
-          type="submit"
-          name="decision"
-          value="approve"
-          class="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2 focus:ring-offset-zinc-900"
-        >
+        <.button type="submit" name="decision" value="approve" class="w-full">
           Authorize
-        </button>
-        <button
-          type="submit"
-          name="decision"
-          value="deny"
-          class="w-full rounded-lg border border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
-        >
+        </.button>
+        <.button variant={:secondary} type="submit" name="decision" value="deny" class="w-full">
           Deny
-        </button>
+        </.button>
       </div>
     </.form>
   </div>

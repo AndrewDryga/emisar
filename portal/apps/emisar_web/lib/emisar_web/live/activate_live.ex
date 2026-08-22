@@ -165,12 +165,13 @@ defmodule EmisarWeb.ActivateLive do
               operator, admin, or owner to approve it — the code from the terminal is
               all they need.
             </p>
-            <.link
+            <.button
+              variant={:secondary}
               navigate={~p"/app/#{@current_account}"}
-              class="mt-5 block w-full rounded-lg border border-zinc-700 px-4 py-2.5 text-center text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
+              class="mt-5 w-full"
             >
               Back to dashboard
-            </.link>
+            </.button>
           </div>
         <% @decision == :approved -> %>
           <div class="px-6 py-5">
@@ -185,12 +186,30 @@ defmodule EmisarWeb.ActivateLive do
               that machine. The new agents appear in Agents after their first call — revoke
               them there anytime.
             </p>
-            <.link
-              navigate={~p"/app/#{@current_account}/agents"}
-              class="mt-5 block w-full rounded-lg border border-zinc-700 px-4 py-2.5 text-center text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
-            >
-              Go to Agents
-            </.link>
+            <%!-- The headline's own instruction is the primary action: the tab
+                 came from a terminal the operator is going back to, so closing
+                 it leads and Agents stays the quiet alternative. --%>
+            <div class="mt-5 flex flex-col gap-3">
+              <.button
+                type="button"
+                id="activate-close"
+                phx-hook="CloseTab"
+                data-note-id="activate-close-note"
+                class="w-full"
+              >
+                Close this tab
+              </.button>
+              <.button
+                variant={:secondary}
+                navigate={~p"/app/#{@current_account}/agents"}
+                class="w-full"
+              >
+                Go to Agents
+              </.button>
+            </div>
+            <p id="activate-close-note" class="mt-3 hidden text-center text-xs text-zinc-500">
+              Your browser blocked that — close the tab yourself.
+            </p>
           </div>
         <% @decision == :denied -> %>
           <div class="px-6 py-5">
@@ -283,18 +302,8 @@ defmodule EmisarWeb.ActivateLive do
             </form>
 
             <div class="mt-6 flex flex-col gap-3">
-              <button
-                phx-click="approve"
-                class="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2 focus:ring-offset-zinc-900"
-              >
-                Approve connection
-              </button>
-              <button
-                phx-click="deny"
-                class="w-full rounded-lg border border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:bg-zinc-800"
-              >
-                Deny
-              </button>
+              <.button phx-click="approve" class="w-full">Approve connection</.button>
+              <.button variant={:secondary} phx-click="deny" class="w-full">Deny</.button>
             </div>
           </div>
         <% true -> %>
@@ -317,12 +326,7 @@ defmodule EmisarWeb.ActivateLive do
               <p :if={@lookup_error} class="mt-2 text-sm leading-relaxed text-rose-400">
                 {@lookup_error}
               </p>
-              <button
-                type="submit"
-                class="mt-5 w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2 focus:ring-offset-zinc-900"
-              >
-                Find request
-              </button>
+              <.button type="submit" class="mt-5 w-full">Find request</.button>
             </.form>
           </div>
       <% end %>

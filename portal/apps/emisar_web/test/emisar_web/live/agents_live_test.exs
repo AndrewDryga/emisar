@@ -13,7 +13,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
 
-      assert html =~ "LLM agents"
+      assert html =~ "AI agents"
       assert html =~ "Connect an agent"
 
       for id <-
@@ -24,7 +24,7 @@ defmodule EmisarWeb.AgentsLiveTest do
         assert has_element?(lv, selector)
       end
 
-      assert html =~ ~s(href="/docs/connect-claude-ai")
+      assert html =~ ~s(href="/docs/agents-and-keys")
 
       # No key minted until a client is picked.
       assert Repo.all(ApiKey) == []
@@ -51,6 +51,12 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents/connect")
       assert html =~ "Cloud clients use OAuth"
       assert html =~ "Connect an agent"
+
+      # The local picker partitions by kind — one transport group, two
+      # sub-labels — so fifteen tabs never render as one flat list.
+      assert html =~ "uses the stdio bridge"
+      assert html =~ "CLI agents"
+      assert html =~ "Editors &amp; desktop apps"
 
       # With a live key the index collapses to the list + a title-row CTA
       # into the flow (the Runners "Connect a runner" pattern).
@@ -331,7 +337,13 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~
                "&amp; ([scriptblock]::Create((irm &#39;http://localhost:4000/install-mcp.ps1&#39;))) -PortalOrigin &#39;http://localhost:4000&#39;"
 
-      assert html =~ "id=\"install-mcp-windows-cmd\""
+      # Every OS's spelling ships in the page — the switch marks the tab
+      # matching the visitor's platform and hides the rest, so a reader on
+      # any platform still reaches its command.
+      assert html =~ "id=\"install-mcp-cmd-linux\""
+      assert html =~ "id=\"install-mcp-cmd-windows\""
+      assert html =~ "id=\"install-mcp-cmd-macos\""
+      assert html =~ "data-os-select=\"windows\""
       assert html =~ "offers to add emisar to the LLM clients it finds"
       assert html =~ "approve the connection in your browser"
       refute html =~ "Copy your API key"
@@ -1375,7 +1387,7 @@ defmodule EmisarWeb.AgentsLiveTest do
         build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/agents")
 
       # The page renders for the operator (they hold view_api_keys)…
-      assert html =~ "LLM agents"
+      assert html =~ "AI agents"
       assert html =~ "view-me-bot"
       # …but the Revoke control isn't even rendered (manage-gated in the template).
       refute html =~ "phx-click=\"revoke\""
@@ -1488,7 +1500,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       # This page renders neither — it must absorb the message, not crash.
       send(lv.pid, {:approval_updated, Ecto.UUID.generate()})
 
-      assert render(lv) =~ "LLM agents"
+      assert render(lv) =~ "AI agents"
     end
   end
 

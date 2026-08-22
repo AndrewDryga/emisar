@@ -11,9 +11,9 @@ defmodule EmisarWeb.MarketingTest do
     /docs/action-packs
     /docs/security-model
     /docs/signed-dispatch
-    /docs/connect-cli-agent
     /docs/connect-claude-ai
     /docs/connect-chatgpt
+    /docs/connect-cli-agent
     /docs/publishing-packs
     /docs/pack-registry
     /docs/run-an-action
@@ -29,7 +29,6 @@ defmodule EmisarWeb.MarketingTest do
     /docs/integrations/google-workspace
     /docs/scim
     /docs/runner-fleet
-    /docs/runner-credentials
     /docs/production
     /docs/audit-and-siem
     /docs/host-install
@@ -39,12 +38,13 @@ defmodule EmisarWeb.MarketingTest do
     /docs/autoscaling-fleets
     /docs/runs
     /docs/agents-and-keys
-    /docs/bridge-upgrades
     /docs/runner-cli
     /docs/billing
     /docs/limits
     /docs/runner-upgrades
+    /docs/bridge-upgrades
     /docs/credentials
+    /docs/runner-credentials
     /docs/pack-updates
     /docs/network-requirements
     /docs/troubleshooting
@@ -148,7 +148,7 @@ defmodule EmisarWeb.MarketingTest do
           /compare/custom-mcp-server
           /compare/copy-paste-ai-ops
           /docs/connect-claude-ai
-          /docs/connect-chatgpt
+    /docs/connect-chatgpt
           /security
         ) do
       html = conn |> get(route) |> html_response(200)
@@ -269,6 +269,11 @@ defmodule EmisarWeb.MarketingTest do
 
     assert home =~ "emisar MCP connected · #{tool_count} tools"
     refute home =~ "84 tools"
+
+    # The MCP FAQ spells how many local clients the connect page offers. The tab
+    # strip owns that list, so a new client tab lands here until the copy moves.
+    assert length(EmisarWeb.AgentsLive.local_client_ids()) == 15
+    assert home =~ "Fifteen local clients"
 
     pricing = conn |> get(~p"/pricing") |> html_response(200)
 
@@ -624,7 +629,7 @@ defmodule EmisarWeb.MarketingTest do
   # not say less.
   describe "pricing reflects the plan contract" do
     test "every feature Billing grants a plan appears on that plan's card", %{conn: conn} do
-      html = conn |> get(~p"/pricing") |> html_response(200)
+      html = conn |> get(~p"/pricing") |> html_response(200) |> squish()
 
       missing =
         for {_id, plan} <- Emisar.Billing.plans(),
@@ -789,7 +794,7 @@ defmodule EmisarWeb.MarketingTest do
       for path <- ~w(
             /docs/quickstart
             /docs/connect-claude-ai
-          /docs/connect-chatgpt
+    /docs/connect-chatgpt
             /docs/connect-cli-agent
             /docs/policies-and-approvals
             /docs/runbooks
@@ -985,7 +990,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Signed dispatch"
 
       assert html =~
-               "A customer-authorized bridge signs each request with a key the cloud never holds."
+               "A customer-authorized bridge signs each request with a key the control plane never holds."
 
       assert html =~
                "The runner opens an outbound TLS WebSocket and exposes no inbound listener; commands return through that established connection."
@@ -1066,13 +1071,16 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "dedicated read-only credential"
 
       assert html =~
-               "A customer-authorized bridge signs each request with a key the cloud never holds."
+               "A customer-authorized bridge signs each request with a key the control plane never holds."
 
       assert html =~ "MCP bridge keys are short-lived and rotate themselves"
       assert html =~ "Runner credentials rotate automatically"
 
       assert html =~
-               "Runner output is redacted before leaving the host; Emisar retains the resulting redacted output in audit log."
+               "Runner output is redacted before leaving the host and retained in run history"
+
+      assert html =~ "Related state changes are recorded in the audit log"
+      refute html =~ "redacted output in audit log"
 
       assert html =~ "Verification covers the retained"
       assert html =~ "privileged host operator"
@@ -1213,32 +1221,16 @@ defmodule EmisarWeb.MarketingTest do
       assert chatgpt =~ "Before you start, you need:"
     end
 
-    test "the CLI-client page renders every stdio client config block", %{conn: conn} do
+    test "the CLI-client page routes by-hand setup to the console instead of duplicating it",
+         %{conn: conn} do
       html = conn |> get(~p"/docs/connect-cli-agent") |> html_response(200)
 
-      # The stdio-bridge config for each supported desktop/CLI client.
-      assert html =~ "claude_desktop_config.json"
-      assert html =~ ".cursor/mcp.json"
-      assert html =~ "claude mcp add emisar"
-      assert html =~ ".gemini/settings.json"
-      assert html =~ "mcp_servers.emisar"
-      assert html =~ "grok mcp add emisar"
-      assert html =~ "EMISAR_CLIENT=claude-code"
-      assert html =~ "EMISAR_CLIENT=grok"
-      assert html =~ "MCPTool(emisar__*)"
-      assert html =~ ~s(default_tools_approval_mode = "approve")
-      assert html =~ ~s("EMISAR_CLIENT": "claude-desktop")
-      assert html =~ ~s("EMISAR_CLIENT": "cursor")
-      assert html =~ ~s(EMISAR_CLIENT = "codex")
-      # VS Code prompts for the secret instead of writing a raw key to the
-      # user-level MCP file, which can be synchronized between machines.
-      assert html =~ "MCP: Open User Configuration"
-      assert html =~ ~s("password": true)
-      assert html =~ ~s($&#123;input:emisar-api-key&#125;)
-      # Zed nests under context_servers (not mcpServers) — its own shape.
-      assert html =~ ".config/zed/settings.json"
-      assert html =~ "context_servers"
-      assert html =~ ~s("EMISAR_CLIENT": "zed")
+      # Per-client snippets live in the console's connect flow, prefilled with
+      # the key — the docs page points there and carries no config to drift.
+      assert html =~ ~s(href="/app/agents/connect")
+      assert html =~ "already filled in"
+      refute html =~ "claude_desktop_config.json"
+      refute html =~ ".cursor/mcp.json"
     end
 
     test "the changelog renders its entries and the feed links", %{conn: conn} do
@@ -1425,6 +1417,7 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/quickstart") |> html_response(200)
 
       assert html =~ "curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
+      assert html =~ "irm https://emisar.dev/install-mcp.ps1 | iex"
       assert html =~ ~s(href="/docs/connect-claude-ai")
       assert html =~ ~s(href="/docs/connect-chatgpt")
       assert html =~ ~s(href="/docs/connect-cli-agent")
@@ -1491,7 +1484,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "max_attestation_age"
 
       assert html =~
-               "A customer-authorized bridge signs each request with a key the cloud never holds."
+               "A customer-authorized bridge signs each request with a key the control plane never holds."
 
       refute html =~ "The MCP client signs"
 
@@ -1526,11 +1519,9 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "--hash sha256:"
       assert html =~ "aws s3 sync"
 
-      # Trust follows the CONFIGURED catalog, and a registry that only moves bytes
-      # leaves its packs pending — the page must state both halves.
-      assert html =~ "the catalog it is configured to read"
-      assert html =~ "arrive pending"
-      assert html =~ "EMISAR_PACK_CATALOG_URL"
+      # The static tree moves bytes. Account trust remains a separate decision.
+      assert html =~ "Actions use account trust, not the download host"
+      assert html =~ "remains pending until an admin trusts it"
     end
 
     test "the policies-and-approvals page renders the approval TTL and standing grants",
@@ -1551,7 +1542,17 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "create_runbook_draft"
       assert html =~ "update_runbook_draft"
       assert html =~ "allow_draft: true"
+      # The optimistic-lock hash and the two refusals an agent must handle are
+      # the contract this page owes an LLM author; the complete tool surface
+      # lives on the connect page it links to.
+      assert html =~ "definition_sha256"
+      assert html =~ "not_live"
+      assert html =~ "wait_for_run"
       refute html =~ "test_runbook_draft"
+      # find_actions is an action-discovery tool, not a runbook tool — it was
+      # dropped from this page in the Simple English pass and belongs on the
+      # MCP reference.
+      refute html =~ "find_actions"
     end
 
     test "the runbooks walkthrough uses the seeded Caddy procedure and current screenshots", %{
@@ -1703,7 +1704,7 @@ defmodule EmisarWeb.MarketingTest do
       runbooks = conn |> get(~p"/docs/runbooks") |> html_response(200)
       assert runbooks =~ "A wait polls every 5 seconds"
       assert runbooks =~ "to 1 hour and makes 2 to 100 attempts"
-      assert runbooks =~ "5 unless the definition sets it"
+      assert runbooks =~ "It runs 5 unless the definition sets another value"
       assert runbooks =~ "frozen execution plan is at most 1 MiB"
       assert runbooks =~ "ends within 24 hours"
     end
@@ -1728,7 +1729,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Before emisar reveals an authenticator secret"
 
       assert html =~ "Regenerating recovery codes requires a current authenticator"
-      assert html =~ "recovery code; the old set stays valid unless that proof succeeds"
+      assert html =~ "recovery code. The old set stays valid unless that proof succeeds"
 
       assert html =~ "provider that supplies no email"
       assert html =~ "Require SSO"
@@ -1745,7 +1746,7 @@ defmodule EmisarWeb.MarketingTest do
 
       assert html =~ "OIDC contract"
       assert html =~ "PKCE"
-      assert html =~ "S256 when"
+      assert html =~ "uses S256"
       assert html =~ "openid"
       assert html =~ "email_verified: true"
       assert html =~ "Require SSO for the account"
@@ -1755,7 +1756,7 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     test "the SCIM page publishes the wire and directory authorization contracts", %{conn: conn} do
-      html = conn |> get(~p"/docs/scim") |> html_response(200)
+      html = conn |> get(~p"/docs/scim") |> html_response(200) |> squish()
 
       assert html =~ "SCIM protocol reference"
       assert html =~ "/ServiceProviderConfig"
@@ -1767,18 +1768,17 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "members[].value"
       assert html =~ "never the group's identity"
       assert html =~ "100 PATCH operations"
-      assert html =~ "5,000 member ids"
+      assert html =~ "5,000 member IDs"
       assert html =~ "Group runner access is"
       assert html =~ "additive"
       assert html =~ "Last sync"
     end
 
     test "the JumpCloud guide explains its externalId-less probe lifecycle", %{conn: conn} do
-      html = conn |> get(~p"/docs/integrations/jumpcloud") |> html_response(200)
+      html = conn |> get(~p"/docs/integrations/jumpcloud") |> html_response(200) |> squish()
 
-      assert html =~ "probe group may omit"
-      assert html =~ "emisar returns an id"
-      assert html =~ "uses for the rename and delete"
+      assert html =~ "The probe group can omit"
+      assert html =~ "emisar returns the id used for the rename and delete"
     end
 
     test "authentication docs expose review dates without a dead edit action", %{conn: conn} do
@@ -1894,8 +1894,8 @@ defmodule EmisarWeb.MarketingTest do
       assert cli =~ "sudo emisar update"
       assert cli =~ "requires the root-owned receipt"
 
-      billing = conn |> get(~p"/docs/billing") |> html_response(200)
-      assert billing =~ "7 days on Free, 90 on Team, 365 on Enterprise"
+      billing = conn |> get(~p"/docs/billing") |> html_response(200) |> squish()
+      assert billing =~ "7 days on Free, 90 on Team, and 365 on Enterprise"
       assert billing =~ "Paddle"
     end
 
@@ -2050,9 +2050,24 @@ defmodule EmisarWeb.MarketingTest do
 
       # The page interpolates the requirement strings, so the rendered form is
       # escaped (">= 0.10.0" arrives as "&gt;= 0.10.0").
-      for requirement <- [Emisar.Compat.runner_minimum(), Emisar.Compat.mcp_minimum()] do
+      for requirement <- [
+            Emisar.Compat.runner_minimum(),
+            Emisar.Compat.runner_target(),
+            Emisar.Compat.mcp_minimum(),
+            Emisar.Compat.mcp_target()
+          ] do
         assert html =~ Phoenix.HTML.safe_to_string(Phoenix.HTML.html_escape(requirement))
       end
+
+      assert html =~ "Recommended release"
+    end
+
+    test "public installer examples never pin an unsupported historical release", %{conn: conn} do
+      html = conn |> get(~p"/docs/runner-cli") |> html_response(200)
+
+      assert html =~ "--version runner-vX.Y.Z"
+      refute html =~ "--version runner-v0.3.0"
+      refute File.read!(Path.expand("../../../../../install.sh", __DIR__)) =~ "runner-v0.3.0"
     end
 
     test "upgrades states the verified version commands and the interruption they cause",
@@ -2060,13 +2075,13 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/runner-upgrades") |> html_response(200)
 
       assert html =~ "emisar --version"
+      assert html =~ "emisar doctor"
+      assert html =~ "sudo emisar update --version &lt;target-version&gt;"
+      assert html =~ "install.sh"
 
       bridge = conn |> get(~p"/docs/bridge-upgrades") |> html_response(200)
       assert bridge =~ "emisar-mcp --version"
       assert bridge =~ "install-mcp.sh"
-      assert html =~ "emisar doctor"
-      assert html =~ "sudo emisar update --version &lt;target-version&gt;"
-      assert html =~ "install.sh"
 
       # A binary upgrade stops the service, so the page must not read as
       # zero-downtime — and rollback restores the runner, not the filesystem.
@@ -2100,7 +2115,7 @@ defmodule EmisarWeb.MarketingTest do
 
     test "credentials opens with a matrix carrying every field the reader compares on",
          %{conn: conn} do
-      html = conn |> get(~p"/docs/credentials") |> html_response(200)
+      html = conn |> get(~p"/docs/credentials") |> html_response(200) |> squish()
 
       columns = [
         "Credential",
@@ -2127,62 +2142,68 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     test "credentials cuts the audit poller over on its own persisted cursor", %{conn: conn} do
-      html = conn |> get(~p"/docs/credentials") |> html_response(200)
+      html = conn |> get(~p"/docs/credentials") |> html_response(200) |> squish()
 
-      assert html =~ "own state, not the token"
-      assert html =~ "resumes from exactly the cursor"
+      assert html =~ "The cursor belongs to the collector, not the token"
+      assert html =~ "resumes from the cursor left by the old token"
 
       # One clean poll proves the credential and the write path, not that a
       # re-read or a gap has become impossible.
-      assert html =~ "guarantee of exactly-once delivery"
+      assert html =~ "does not guarantee exactly-once delivery"
     end
 
     test "credentials separates the two emk- kinds and their revocation reach", %{conn: conn} do
-      html = conn |> get(~p"/docs/credentials") |> html_response(200)
+      html = conn |> get(~p"/docs/credentials") |> html_response(200) |> squish()
 
       assert html =~ "emk-"
       assert html =~ "wrong kind"
-      assert html =~ "Revocation is terminal and it cascades"
-      assert html =~ "OAuth-backed keys do not rotate"
+      assert html =~ "it takes every downstream key in the rotation chain"
+      assert html =~ "replaced by reconnecting the client rather than rotated"
     end
 
     test "credentials keeps enrollment keys, runner tokens, and SCIM distinct", %{conn: conn} do
       html = conn |> get(~p"/docs/credentials") |> html_response(200)
 
-      assert html =~ "Revocation blocks registrations, not connections"
-      assert html =~ "Disable is reversible"
-      assert html =~ "Delete is terminal"
       assert html =~ "immediately with no overlap"
-      assert html =~ "does not sign anyone out"
+      assert html =~ "Replacing the secret signs no one out"
+
+      runner = conn |> get(~p"/docs/runner-credentials") |> html_response(200)
+      assert runner =~ "Revocation blocks registrations, not connections"
+      assert runner =~ "Disable is reversible"
+      assert runner =~ "Delete is terminal"
     end
 
-    test "credentials states the runner token's self-rotation and its one prerequisite",
+    test "credentials states the runner token's self-rotation",
          %{conn: conn} do
-      html = conn |> get(~p"/docs/credentials") |> html_response(200) |> squish()
+      html = conn |> get(~p"/docs/runner-credentials") |> html_response(200) |> squish()
+      matrix = conn |> get(~p"/docs/credentials") |> html_response(200) |> squish()
 
       # The schedule, sourced from @token_lifetime_seconds / @token_refresh_after_seconds /
       # @token_retirement_grace_seconds in Emisar.Runners — change those and this fails.
-      assert html =~ "A per-runner token rotates itself"
-      assert html =~ "90-day life, and at 60 days the runner exchanges it for a successor"
-      assert html =~ "keeps working for 24 hours after that swap"
+      assert html =~ "A runner token lasts 90 days"
 
-      # Never claim it unconditionally: a pre-rotation token has no expiry by
-      # design, and saying otherwise would promise expiry we do not enforce.
-      assert html =~ "needs a runner on 0.17.0 or newer"
-      assert html =~ "Nothing expires a runner that has no way to renew itself"
+      assert html =~
+               "On a connection at 60 days, the runner exchanges it for a successor"
+
+      assert html =~ "token remains valid for 24 hours after the swap"
+
+      # Refresh needs a connection. A long-offline runner can therefore reach
+      # expiry and needs an eligible enrollment key for recovery.
+      assert html =~ "A token that expires anyway"
+      assert html =~ "spent single-use key works only for the original identity"
 
       # The comparison table agreed the token never rotated and had no overlap.
       # Both were wrong once enforcement landed.
-      assert html =~ "Automatic — the runner swaps itself onto a successor at 60 days"
-      assert html =~ "the outgoing token works for 24 hours after the swap"
-      refute html =~ "None — the new token replaces the cached one"
+      assert matrix =~ "Automatic — the runner swaps itself onto a successor at 60 days"
+      assert matrix =~ "the outgoing token works for 24 hours after the swap"
+      refute matrix =~ "None — the new token replaces the cached one"
     end
 
     test "credentials keeps the no-leaf-revocation limit visible", %{conn: conn} do
       html = conn |> get(~p"/docs/credentials") |> html_response(200)
 
       assert html =~ "no per-certificate kill switch"
-      assert html =~ "Every runner reloaded"
+      assert html =~ "Every runner must reload"
     end
 
     test "pack updates states the install-versus-trust boundary and its invariants",
@@ -2192,7 +2213,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Installing is not trusting"
       assert html =~ "Trust binds one exact content hash"
       assert html =~ "A published version is immutable"
-      assert html =~ "Binary upgrades do not move packs"
+      assert html =~ "A pack update never touches the runner binary"
       assert html =~ "Retirement blocks dispatch, not installation"
     end
 
@@ -2201,9 +2222,11 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/pack-updates") |> html_response(200)
 
       assert html =~ "emisar pack update --dry-run"
+      assert html =~ "emisar pack diff redis"
+      assert html =~ "! risk escalated"
       assert html =~ "emisar pack install redis=0.2.3 --hash"
       assert html =~ "There is no rollback command"
-      assert html =~ "crash-atomic"
+      assert html =~ "a power loss mid-swap, the next install or update recovers it"
       assert html =~ "Several packs update independently"
     end
 
@@ -2224,6 +2247,28 @@ defmodule EmisarWeb.MarketingTest do
       refute html =~ "Google Storage"
       refute html =~ "needs no open port"
       refute html =~ "What never needs an inbound rule"
+    end
+
+    test "install guides use Emisar domains for primary release and pack traffic", %{conn: conn} do
+      for path <- [~p"/docs/quickstart", ~p"/docs/host-install"] do
+        html = conn |> get(path) |> html_response(200) |> squish()
+
+        assert html =~ "emisar.dev:443", "#{path} is missing the primary Emisar domain"
+        assert html =~ "registry.emisar.dev:443", "#{path} is missing the pack registry domain"
+        refute html =~ "api.github.com", "#{path} still presents GitHub as normal egress"
+        refute html =~ "GCS", "#{path} exposes the release backing store"
+        refute html =~ "inbound port", "#{path} adds an unsolicited non-requirement"
+      end
+
+      nomad = conn |> get(~p"/docs/nomad") |> html_response(200)
+
+      assert nomad =~
+               "https://emisar.dev/releases/runner/runner-v$&#123;var.runner_version&#125;/emisar-$&#123;var.runner_version&#125;-linux-amd64.tar.gz"
+
+      refute nomad =~ "github.com/andrewdryga/emisar/releases/download"
+
+      containers = conn |> get(~p"/docs/containers") |> html_response(200)
+      assert containers =~ "https://emisar.dev/releases/runner/latest.json"
     end
 
     test "network requirements claims only the transport behavior the clients implement",
@@ -2317,14 +2362,14 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/troubleshooting") |> html_response(200) |> squish()
 
       # Disable is recoverable without host access; delete is terminal.
-      assert html =~ "keeps retrying with its existing token"
-      assert html =~ "A deleted runner is terminal"
+      assert html =~ "retries with its existing token"
+      assert html =~ "A deleted runner gets a terminal"
 
       # A queued run is waiting, not lost; an interrupted one is never rerun
       # behind the operator's back.
       assert html =~ "delivered as soon as that runner reconnects"
       assert html =~ "execution_outcome_unknown"
-      assert html =~ "never re-runs that dispatch automatically"
+      assert html =~ "never runs that dispatch again automatically"
     end
 
     test "troubleshooting recovers a lost MCP response by operation, never by repeating it",
@@ -2333,7 +2378,7 @@ defmodule EmisarWeb.MarketingTest do
 
       assert html =~ "get_operation"
       assert html =~ "same credential lineage"
-      assert html =~ "does not roll back work the control plane already admitted"
+      assert html =~ "does not undo work the control plane already admitted"
       assert html =~ "target_contract_changed"
     end
 
@@ -2386,22 +2431,22 @@ defmodule EmisarWeb.MarketingTest do
     test "security incidents states how far each revocation actually reaches", %{conn: conn} do
       html = conn |> get(~p"/docs/security-incidents") |> html_response(200) |> squish()
 
-      # An MCP key is revoked, not rotated — and revocation takes the chain and
+      # An agent key is revoked, not rotated — and revocation takes the chain and
       # the OAuth credentials backed by it.
       assert html =~ "Revoke it — do not rotate it"
-      assert html =~ "every successor in that key's rotation chain"
-      assert html =~ "OAuth access and refresh token backed by it"
+      assert html =~ "every successor in the key rotation chain"
+      assert html =~ "OAuth access or refresh token backed by the key"
 
       # An enrollment key does not hold the fleet online.
       assert html =~ "It blocks new registrations"
       assert html =~ "connected on its own token"
 
       # A possibly-copied runner token is replaced, never paused and resumed.
-      assert html =~ "disabling an identity keeps its token"
+      assert html =~ "Disabling an identity keeps its token"
       assert html =~ "Delete the runner identity"
 
       # An audit-export token cannot execute anything.
-      assert html =~ "separate credential kind from an MCP key"
+      assert html =~ "different credential kind from an agent key"
     end
 
     test "security incidents preserves immutable evidence before it cleans up", %{conn: conn} do
@@ -2410,8 +2455,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "sudo emisar audit verify --all"
       assert html =~ "exact pack hashes"
       assert html =~ "deletes the journal"
-      assert html =~ "do not erase an immutable published artifact"
-      assert html =~ "never send its value"
+      assert html =~ "do not erase an immutable artifact"
+      assert html =~ "Never send its value"
     end
 
     test "security incidents keeps the signing and identity limits visible", %{conn: conn} do
@@ -2423,9 +2468,9 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "still accepts certificates signed by it"
 
       # Replacing an OIDC secret is not a session revocation; SCIM has no overlap.
-      assert html =~ "does not sign anybody out"
-      assert html =~ "leaves API keys and OAuth credentials untouched"
-      assert html =~ "Rotating replaces it immediately, with no overlap"
+      assert html =~ "Replacing the secret does not end existing sessions"
+      assert html =~ "leaves API keys and OAuth credentials active"
+      assert html =~ "Rotation replaces the bearer immediately with no overlap"
     end
 
     test "architecture states each failure case the way the system behaves", %{conn: conn} do
@@ -2434,12 +2479,12 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "there is no offline dispatch path"
       assert html =~ "An action already executing on a runner keeps running"
       assert html =~ "The runner process is still alive, so the child process keeps running"
-      assert html =~ "may still be winding down, or may have been terminated"
+      assert html =~ "complete, still stopping, or terminated"
       assert html =~ "execution_outcome_unknown after restart"
       assert html =~ "never executes that dispatch again automatically"
       assert html =~ "already admitted keeps going"
       assert html =~ "exact pack references frozen at preflight"
-      assert html =~ "warned about rather than refused"
+      assert html =~ "An unsupported peer gets a warning, not a refusal"
     end
 
     test "architecture claims at-least-once delivery, never exactly-once execution",
@@ -2447,8 +2492,8 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/architecture") |> html_response(200) |> squish()
 
       assert html =~ "delivered at least once"
-      assert html =~ "consumes them idempotently"
-      assert html =~ "not a promise that an action executes exactly once"
+      assert html =~ "does not apply output or terminal state again"
+      assert html =~ "not an exactly-once execution promise"
     end
 
     test "architecture lists only the approval rechecks the code performs", %{conn: conn} do
@@ -2456,7 +2501,7 @@ defmodule EmisarWeb.MarketingTest do
 
       assert html =~ "still parked and still approvable"
       assert html =~ "still matches the hash frozen"
-      assert html =~ "still has that runner in scope"
+      assert html =~ "has the runner in scope"
       assert html =~ "inside its freshness window"
 
       # The approver's decision is not re-litigated; only its preconditions.
@@ -2494,7 +2539,7 @@ defmodule EmisarWeb.MarketingTest do
 
       # The two headers mean different things, and neither rides an empty page.
       assert html =~ "An empty page is an answer."
-      assert html =~ "it is not a promise that another event"
+      assert html =~ "It does not promise another event"
 
       # A cursor is a position, not a scoped handle — so the filters are the
       # caller's responsibility for the life of the chain.
@@ -2504,19 +2549,19 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     test "audit & SIEM says plainly that emisar does not push", %{conn: conn} do
-      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
+      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200) |> squish()
 
       assert html =~ "emisar does not push events."
       assert html =~ "There is no managed log sink, webhook, or streaming transport."
 
       # Direct-polling SIEM vs. a collector in front of one — the distinction
       # that decides whether an operator has anything to run at all.
-      assert html =~ "otherwise a collector polls emisar and forwards"
+      assert html =~ "Otherwise a collector polls emisar and forwards"
       assert html =~ "Collector is a role, not another service you have to run"
     end
 
     test "audit & SIEM ships a poller that checkpoints after handoff", %{conn: conn} do
-      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
+      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200) |> squish()
 
       assert html =~ ~s(id="polling")
 
@@ -2553,7 +2598,7 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     test "audit & SIEM explains its own exports without calling them activity", %{conn: conn} do
-      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
+      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200) |> squish()
 
       assert html =~ ~s(id="health")
       assert html =~ "audit.exported"
@@ -2561,11 +2606,11 @@ defmodule EmisarWeb.MarketingTest do
 
       # Each read can create the event the next read finds, so "drain until
       # empty" is a loop that feeds itself.
-      assert html =~ "never poll until a page comes back empty"
+      assert html =~ "Never poll until a page comes back empty"
     end
 
     test "audit & SIEM owns alerting, retention, and journal correlation", %{conn: conn} do
-      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200)
+      html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200) |> squish()
 
       for anchor <- ~w(alerting retention journal) do
         assert html =~ ~s(id="#{anchor}"), "audit & SIEM lost its #{anchor} section"
@@ -2578,7 +2623,7 @@ defmodule EmisarWeb.MarketingTest do
       # The two records are evidence together; a mismatch starts an
       # investigation, while the poll interval alone is not a gap.
       assert html =~ "A mismatch is an investigation signal"
-      assert html =~ "first allow for the collector's poll interval"
+      assert html =~ "First account for the collector poll interval"
     end
 
     test "no public page claims emisar streams or pushes the audit anywhere", %{conn: conn} do
@@ -2630,7 +2675,7 @@ defmodule EmisarWeb.MarketingTest do
       {"/docs/scim", ~w(/docs/credentials /docs/security-incidents /docs/troubleshooting)},
       {"/docs/mcp-reference", ~w(/docs/troubleshooting)},
       {"/support", ~w(/docs/troubleshooting /docs/security-incidents)},
-      {"/docs/production", ~w(/docs/runner-upgrades /docs/pack-updates /docs/audit-and-siem)},
+      {"/docs/production", ~w(/docs/policies-and-approvals /docs/sso /docs/audit-and-siem)},
       {"/docs/security-model",
        ~w(/docs/architecture /docs/security-incidents /docs/audit-and-siem)},
       {"/docs/audit-and-siem", ~w(/docs/credentials /docs/policies-and-approvals)}
@@ -2675,11 +2720,11 @@ defmodule EmisarWeb.MarketingTest do
     # it revoked API credentials will not go and revoke them.
 
     test "authentication scopes Require SSO to browser sign-in, with no bypass", %{conn: conn} do
-      html = conn |> get(~p"/docs/authentication") |> html_response(200)
+      html = conn |> get(~p"/docs/authentication") |> html_response(200) |> squish()
 
       assert html =~ "with no bypass"
-      assert html =~ "It does not authenticate an MCP bearer"
-      assert html =~ "Turning it on revokes no existing API key"
+      assert html =~ "It does not authenticate MCP bearer tokens"
+      assert html =~ "Turning it on does not revoke existing API keys"
       assert html =~ "applies only while at least one"
 
       # Not a fail-open: an enabled-but-broken provider keeps the gate shut.
@@ -2744,16 +2789,16 @@ defmodule EmisarWeb.MarketingTest do
         ~w(/docs/policies-and-approvals /docs/connect-claude-ai /docs/action-packs),
       "/docs/authentication" => ~w(/docs/teams-and-access /docs/sso /docs/scim),
       "/docs/runner-upgrades" =>
-        ~w(/changelog /docs/pack-updates /docs/agents-and-keys /docs/production /docs/runner-fleet),
+        ~w(/changelog /docs/bridge-upgrades /docs/pack-updates /docs/production /docs/runner-fleet),
       "/docs/credentials" =>
-        ~w(/docs/agents-and-keys /docs/audit-and-siem /docs/runner-fleet /docs/sso /docs/scim /docs/signed-dispatch),
+        ~w(/docs/agents-and-keys /docs/audit-and-siem /docs/runner-credentials /docs/sso /docs/scim /docs/signed-dispatch),
       "/docs/pack-updates" =>
         ~w(/docs/runner-upgrades /docs/action-packs /docs/publishing-packs /docs/pack-registry /packs),
       "/docs/network-requirements" =>
         ~w(/docs/host-install /docs/runner-upgrades /docs/pack-registry /docs/containers /docs/kubernetes /docs/nomad /docs/runner-fleet),
       "/docs/troubleshooting" =>
         ~w(/docs/runner-fleet /docs/host-install /docs/pack-updates /docs/action-packs /docs/runs
-           /docs/mcp-reference /docs/agents-and-keys /docs/credentials /docs/runner-upgrades /docs/audit-and-siem
+           /docs/mcp-reference /docs/agents-and-keys /docs/credentials /docs/bridge-upgrades /docs/audit-and-siem
            /docs/network-requirements /docs/policies-and-approvals /docs/teams-and-access
            /docs/signed-dispatch /docs/security-incidents /support),
       "/docs/security-incidents" =>
@@ -2915,7 +2960,10 @@ defmodule EmisarWeb.MarketingTest do
       assert text =~ "You are responsible for enabling and configuring these controls"
 
       assert text =~
-               "Runner output is redacted before leaving the host; Emisar retains the resulting redacted output in audit log."
+               "Runner output is redacted before leaving the host and retained in run history"
+
+      assert text =~ "Related state changes are recorded in the audit log"
+      refute text =~ "redacted output in audit log"
 
       assert text =~ "privileged host operator"
       assert text =~ "replace or truncate the entire local journal"

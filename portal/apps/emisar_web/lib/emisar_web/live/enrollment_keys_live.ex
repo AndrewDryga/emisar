@@ -401,7 +401,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
               enrolled keep running on their own tokens.
             </p>
             <p class="pt-1">
-              <.doc_link href="/docs/runners">Runner setup docs</.doc_link>
+              <.doc_link href="/docs/runner-fleet">Runner setup docs</.doc_link>
             </p>
           </div>
         </aside>
@@ -410,7 +410,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
       <.page_intro :if={@live_action == :index}>
         Enrollment keys register new hosts as runners — a single-use key is spent on first
         registration; a reusable key keeps enrolling hosts until it expires or hits its max-uses cap.
-        <.doc_link href="/docs/runners">Runner setup docs</.doc_link>
+        <.doc_link href="/docs/runner-fleet">Runner setup docs</.doc_link>
       </.page_intro>
 
       <div :if={@live_action == :index} class="space-y-6">

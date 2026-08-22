@@ -88,7 +88,7 @@
             <.docs_step_venue>Entra</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Create a client secret.</p>
             <p class="mt-1.5">
-              <strong class="text-zinc-200">Certificates &amp; secrets → New client secret</strong>. Copy the
+              Open <strong class="text-zinc-200">Certificates &amp; secrets → New client secret</strong>. Copy the
               <strong class="text-zinc-200">Value</strong>
               column, not <strong class="text-zinc-200">Secret ID</strong>
               — the value is shown once and is unrecoverable afterwards.
@@ -110,11 +110,10 @@
             <.docs_step_venue>Entra</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Copy the client and tenant IDs.</p>
             <p class="mt-1.5">
-              The registration's <strong class="text-zinc-200">Overview</strong>
-              blade carries both values emisar needs to identify your tenant:
-              <strong class="text-zinc-200">Application (client) ID</strong>
-              is the client ID, and <strong class="text-zinc-200">Directory (tenant) ID</strong>
-              is what goes into the issuer URL.
+              The registration <strong class="text-zinc-200">Overview</strong> page contains two
+              values. Use <strong class="text-zinc-200">Application (client) ID</strong> as the
+              client ID. Use <strong class="text-zinc-200">Directory (tenant) ID</strong> in the
+              issuer URL.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/entra-app-overview.webp"
@@ -165,9 +164,9 @@
 
       <.docs_h2 id="scim">Directory sync</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Sign-in is above and stands on its own. This half is what makes Entra the authority on who
-        exists: it provisions people into emisar and, the part that matters on an offboard, removes
-        their access when the directory says they are gone. <.plan_note tier={:enterprise} />
+        Sign-in works without directory sync. Directory sync makes Entra responsible for the
+        member lifecycle. It provisions people and removes their access after offboarding.
+        <.plan_note tier={:enterprise} />
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         You need the connection's <strong class="text-zinc-200">SCIM base URL</strong>
@@ -188,8 +187,8 @@
             <.docs_step_venue>Entra</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Create the enterprise application.</p>
             <p class="mt-1.5">
-              Provisioning does not live on the app registration you made for sign-in — it needs a
-              separate object. Go to <strong class="text-zinc-200">Enterprise applications → New application → Create your own application</strong>, name it <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>, and choose <strong class="text-zinc-200">Integrate any other application you don't find in the gallery</strong>.
+              Provisioning needs a separate object from the sign-in app registration. Go to <strong class="text-zinc-200">Enterprise applications → New application → Create your own application</strong>.
+              Name it <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>. Choose <strong class="text-zinc-200">Integrate any other application you do not find in the gallery</strong>.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/entra-create-enterprise-app.webp"
@@ -222,10 +221,9 @@
               alt="The emisar SCIM enterprise application's Provisioning overview in the Entra portal, offering New configuration, Start provisioning and Pause provisioning in its command bar, with a Get started panel whose Create configuration step, outlined in green, holds a Connect your application button."
             />
             <p class="mt-4">
-              Press <strong class="text-zinc-200">Test Connection</strong>. Entra probes the endpoint for a user that
-              cannot exist, using a random GUID, and expects an empty result rather than an error —
-              emisar answers that correctly, so a failure here means the URL or the token is wrong,
-              not the schema. Save.
+              Press <strong class="text-zinc-200">Test Connection</strong>. Entra queries a random
+              GUID that cannot exist. It expects an empty result, not an error. emisar returns that
+              result. A failure means the URL or token is wrong, not the schema. Save.
             </p>
 
             <.docs_screenshot
@@ -266,17 +264,16 @@
               alt="Entra's Edit Attribute Mapping pane with the Source attribute row outlined in green and set to objectId, alongside Mapping type Direct, Target attribute externalId, and Apply this mapping set to Always."
             />
             <p class="mt-4">
-              Do not skip this. Entra's default is <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>, which is not guaranteed to exist, is not guaranteed to be
-              unique, and can change — and it is not the value your sign-in connection identifies
-              people by. With <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
-              on the SSO side and
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>
-              here, the same person arrives as two different identities: one provisioned by the
-              directory, one created when they sign in.
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">objectId</code>
-              is the same immutable id the
+              Entra defaults to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>.
+              This value can be missing, duplicated, or changed. It also differs from the identifier
+              used by the sign-in connection. If SSO uses
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
-              claim carries, so the two halves converge.
+              while SCIM uses <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>, one person
+              becomes two identities. The directory provisions one, and sign-in creates another.
+              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">objectId</code>
+              is the same
+              immutable value as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>, so
+              both flows identify one person.
             </p>
           </div>
         </li>
@@ -288,16 +285,17 @@
             <.docs_step_venue>Entra</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Assign the people to sync.</p>
             <p class="mt-1.5">
-              Under <strong class="text-zinc-200">Users and groups</strong>, assign whoever should exist in emisar. Then, on <strong class="text-zinc-200">Provisioning → Settings</strong>, set
+              Under <strong class="text-zinc-200">Users and groups</strong>, assign each person who
+              needs an emisar account. Then, on <strong class="text-zinc-200">Provisioning → Settings</strong>, set
               <strong class="text-zinc-200">Scope</strong>
               to <strong class="text-zinc-200">Sync only assigned users and groups</strong>
               and turn <strong class="text-zinc-200">Provisioning Status</strong>
-              on. Scope is a separate choice from the assignment, and it defaults to syncing
-              everyone — leave it there and Entra pushes your whole directory into emisar no matter
-              who you assigned. Entra syncs on its own schedule — roughly every 40 minutes — so the
-              first members appear under <strong class="text-zinc-200">Synced users</strong>
-              on the emisar connection after that cycle, not instantly. Their Entra groups become
-              mappable to roles below.
+              on. Scope is separate from assignment and defaults to everyone. Change it, or Entra
+              sends the entire directory regardless of assignment. Entra syncs roughly every 40
+              minutes. New members appear under
+              <strong class="text-zinc-200">Synced users</strong>
+              after the next cycle, not immediately. Their Entra groups then become available for
+              role mappings.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/entra-assign-users.webp"

@@ -9,12 +9,12 @@
       <.docs_header current="limits">
         <:dek>
           The caps emisar enforces so one noisy action, one busy agent, or one aggressive export
-          can't overwhelm a page or the API. Most are generous; these are the ones worth knowing
+          cannot overwhelm a page or the API. Most are generous. These are the ones worth knowing
           before you build against them.
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Every cap says what you'll actually observe when you reach it. The name links to the page
+        Every cap says what you will actually observe when you reach it. The name links to the page
         that owns the behavior — the procedure lives there, not here.
       </p>
 
@@ -46,12 +46,13 @@
             </tr>
             <tr>
               <td class="px-4 py-3 align-top font-medium text-zinc-200">
-                <.link navigate={~p"/docs/runs"} class="text-brand-300 hover:text-brand-200">Live output in the dashboard</.link>
+                <.link navigate={~p"/docs/runs"} class="text-brand-300 hover:text-brand-200">Live output in the console</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">The most recent 500 progress lines</td>
               <td class="px-4 py-3 align-top leading-6">
-                Older lines are trimmed from the browser view with a note; the run history and the
-                host journal keep the full record.
+                Older lines are trimmed from the browser view with a note. Run history keeps
+                accepted chunks within its durable budget. The host journal keeps bounded previews,
+                byte counts, and hashes of the complete redacted streams.
               </td>
             </tr>
             <tr>
@@ -62,14 +63,14 @@
                 >MCP list pages</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                15 per page by default (up to 50;
+                15 per page by default, with a maximum of 50.
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">recent_runs</code>
-                up to 100,
+                supports up to 100.
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">find_actions</code>
-                up to 15)
+                supports up to 15.
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Continue with the cursor the previous response returned; a catalog cursor is bound
+                Continue with the cursor the previous response returned. A catalog cursor is bound
                 to its exact query and expires after 15 minutes.
               </td>
             </tr>
@@ -84,7 +85,7 @@
               <td class="px-4 py-3 align-top leading-6">
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">run_action</code>
                 and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
-                return the current state at the deadline; one credential may hold 8 concurrent waits
+                return the current state at the deadline. One credential can hold 8 concurrent waits
                 per node. Every other tool answers immediately.
               </td>
             </tr>
@@ -124,8 +125,8 @@
                 <.link navigate={~p"/docs/runbooks"} class="text-brand-300 hover:text-brand-200">Runbooks</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                64 KiB definition; 32 inputs, 16 stages, 16 target refs per step, and 256 resolved
-                items. A wait polls every 5 seconds to 1 hour for 2 to 100 attempts; a parallel
+                64 KiB definition. 32 inputs, 16 stages, 16 target refs per step, and 256 resolved
+                items. A wait polls every 5 seconds to 1 hour for 2 to 100 attempts. A parallel
                 stage runs 1 through 16 attempts at once, 5 unless the definition sets it. A title
                 is at most 80 characters and 320 bytes, a description 4,096 characters and 8 KiB.
               </td>
@@ -140,10 +141,10 @@
                 <.link navigate={~p"/docs/runbooks"} class="text-brand-300 hover:text-brand-200">Runbook execution</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                1 MiB frozen plan; 24 hours end to end, waits included
+                1 MiB frozen plan. 24 hours end to end, waits included
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Preflight rejects a plan that freezes larger; an execution still running at the
+                Preflight rejects a plan that freezes larger. An execution still running at the
                 deadline halts as timed out.
               </td>
             </tr>
@@ -158,7 +159,7 @@
               <td class="px-4 py-3 align-top leading-6">
                 A full page carries
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Link: rel="next"</code>
-                and there may be more right now; keep paging from
+                and there can be more right now. Keep paging from
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">X-Next-Cursor</code>
                 while it does.
               </td>
@@ -187,7 +188,7 @@
                 7 days on Free, 90 on Team, 365 on Enterprise
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                The horizon is fixed per event when it's written, and terminal runs and their
+                The horizon is fixed per event when it is written, and terminal runs and their
                 progress events follow the same window. Ingest into your SIEM to keep it longer.
               </td>
             </tr>
@@ -199,7 +200,7 @@
         how a retried dispatch resolves to its original operation — are in the <.link
           navigate={~p"/docs/mcp-reference"}
           class="text-brand-400 hover:text-brand-300"
-        >MCP reference</.link>.
+        >MCP CLI &amp; reference</.link>.
       </.docs_callout>
     </.docs_layout>
   </section>

@@ -56,7 +56,7 @@ defmodule EmisarWeb.DocsComponents do
           aria-label="Docs"
           class="sticky top-8 hidden max-h-[calc(100vh-4rem)] overflow-y-auto px-2 pb-10 lg:block"
         >
-          <.docs_nav_groups current={@current} />
+          <.docs_nav_groups current={@current} collapsible />
         </nav>
 
         <%!-- max-w-2xl caps the reading measure at ~72ch: uncapped, body text
@@ -120,33 +120,71 @@ defmodule EmisarWeb.DocsComponents do
 
   attr :current, :string, required: true
 
+  attr :collapsible, :boolean,
+    default: false,
+    doc: """
+    Collapse every group but the current one. The sticky rail is its own
+    overflow-y-auto scroll container, so 43 links run about twice its height and
+    the page you are on can load below the fold with nothing saying which way to
+    scroll. Collapsed, the eight group labels stay visible as the map and the
+    open group is the one you are in. `<details>` because these pages are
+    server-rendered with no LiveView — the same reason the mobile nav above is
+    one. The mobile nav stays flat: it is already inside a `<details>`, and
+    nesting would cost two taps to reach a page.
+    """
+
   defp docs_nav_groups(assigns) do
     ~H"""
-    <div :for={{group, group_index} <- Enum.with_index(DocsNav.groups())}>
-      <p class={[
-        "font-mono text-[11px] font-semibold uppercase tracking-widest text-zinc-500",
-        if(group_index == 0, do: "mt-0", else: "mt-8")
-      ]}>
-        {group.label}
-      </p>
-      <%!-- A subgroup label is wayfinding only — a quieter member of the group
-           label's family, never a link and never a breadcrumb level. --%>
-      <div :for={{section, section_index} <- Enum.with_index(group.sections)}>
-        <p
-          :if={section.label}
-          class={[
-            "px-2.5 font-mono text-[10px] font-medium uppercase tracking-wide text-zinc-500",
-            if(section_index == 0, do: "mt-3", else: "mt-5")
-          ]}
-        >
-          {section.label}
+    <div
+      :for={{group, group_index} <- Enum.with_index(DocsNav.groups())}
+      class={if(group_index == 0, do: "mt-0", else: "mt-8")}
+    >
+      <details
+        :if={@collapsible}
+        open={group.label == DocsNav.group_label(@current)}
+        class="group/nav"
+      >
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-2 rounded px-2.5 py-1 font-mono text-[11px] font-semibold uppercase tracking-widest text-zinc-500 transition-colors hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
+          {group.label}
+          <.icon
+            name="hero-chevron-down"
+            class="h-3.5 w-3.5 shrink-0 transition-transform group-open/nav:rotate-180"
+          />
+        </summary>
+        <.docs_nav_group_pages group={group} current={@current} />
+      </details>
+      <div :if={!@collapsible}>
+        <p class="font-mono text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+          {group.label}
         </p>
-        <ul class={["space-y-0.5", if(section.label, do: "mt-1.5", else: "mt-3")]}>
-          <li :for={page <- section.pages}>
-            <.docs_nav_link page={page} current={@current} />
-          </li>
-        </ul>
+        <.docs_nav_group_pages group={group} current={@current} />
       </div>
+    </div>
+    """
+  end
+
+  attr :group, :map, required: true
+  attr :current, :string, required: true
+
+  defp docs_nav_group_pages(assigns) do
+    ~H"""
+    <%!-- A subgroup label is wayfinding only — a quieter member of the group
+         label's family, never a link and never a breadcrumb level. --%>
+    <div :for={{section, section_index} <- Enum.with_index(@group.sections)}>
+      <p
+        :if={section.label}
+        class={[
+          "px-2.5 font-mono text-[10px] font-medium uppercase tracking-wide text-zinc-500",
+          if(section_index == 0, do: "mt-3", else: "mt-5")
+        ]}
+      >
+        {section.label}
+      </p>
+      <ul class={["space-y-0.5", if(section.label, do: "mt-1.5", else: "mt-3")]}>
+        <li :for={page <- section.pages}>
+          <.docs_nav_link page={page} current={@current} />
+        </li>
+      </ul>
     </div>
     """
   end
@@ -276,6 +314,62 @@ defmodule EmisarWeb.DocsComponents do
         id={@copy_id}
         class="overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300"
       >{render_slot(@inner_block)}</pre>
+    </div>
+    """
+  end
+
+  @doc """
+  `docs_code/1` for a command with per-OS spellings — the OS switch takes the
+  label's position in the header, and Copy follows the selected variant.
+
+  The slot's content is the DISPLAYED transcript (prompt chrome and colour
+  spans), so every variant carries the paste-ready `copy_text` the same way
+  `docs_code/1` does. The lead-in prose says nothing about which platform:
+  the switch already does, and a "on macOS or Linux" sentence above a
+  PowerShell command reads as a contradiction.
+
+      <.os_docs_code detected={@os}>
+        <:tab os={:linux} label="Linux" copy_text="curl …">…</:tab>
+        <:tab os={:windows} label="Windows" copy_text="irm …">…</:tab>
+        <:tab os={:macos} label="macOS" copy_text="curl …">…</:tab>
+      </.os_docs_code>
+  """
+  attr :detected, :atom, required: true, values: [:linux, :windows, :macos]
+
+  slot :tab, required: true do
+    attr :os, :atom, required: true
+    attr :label, :string, required: true
+    attr :copy_text, :string, required: true
+  end
+
+  def os_docs_code(assigns) do
+    ~H"""
+    <div class="mt-5 overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
+      <div class="flex items-center justify-between gap-3 border-b border-zinc-900 bg-zinc-950/80 px-2 py-1.5">
+        <.os_switch detected={@detected} tabs={@tab} />
+        <button
+          :for={tab <- @tab}
+          type="button"
+          data-os={to_string(tab.os)}
+          data-copy-text={tab.copy_text}
+          class={[
+            "px-2 font-mono text-[11px] font-medium text-zinc-400 transition-colors",
+            "hover:text-zinc-200",
+            tab.os != @detected && "hidden"
+          ]}
+        >
+          Copy
+        </button>
+      </div>
+      <pre
+        :for={tab <- @tab}
+        data-os={to_string(tab.os)}
+        aria-label={tab.label}
+        class={[
+          "overflow-x-auto p-4 font-mono text-xs leading-6 text-zinc-300",
+          tab.os != @detected && "hidden"
+        ]}
+      >{render_slot(tab)}</pre>
     </div>
     """
   end
@@ -633,7 +727,7 @@ defmodule EmisarWeb.DocsComponents do
     >
       <ul class="mt-3 space-y-2">
         <li :for={item <- @item} class="flex items-start gap-2.5">
-          <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+          <.icon name="hero-check" class="mt-1.5 h-4 w-4 flex-none text-brand-400" />
           <span>{render_slot(item)}</span>
         </li>
       </ul>

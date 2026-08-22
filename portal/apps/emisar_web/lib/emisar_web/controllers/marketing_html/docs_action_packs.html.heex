@@ -23,6 +23,15 @@
         </:dek>
       </.docs_header>
 
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Pack and action schemas are v1 compatibility surfaces. Read
+        <.link
+          navigate={~p"/docs/compatibility"}
+          class="text-brand-400 hover:text-brand-300"
+        >Compatibility and deprecation</.link>
+        before you depend on a schema version.
+      </p>
+
       <.docs_h2 id="layout">Layout</.docs_h2>
       <.docs_code phx-no-format>my-pack/
   pack.yaml              # pack-level metadata
@@ -43,7 +52,7 @@ actions:
   - actions/nodetool_status.yaml
   - actions/nodetool_repair.yaml</.docs_code>
       <p class="mt-3 text-base text-zinc-400">
-        <code>allow_symlinks</code> defaults to <code>false</code>: the loader rejects
+        <code>allow_symlinks</code> defaults to <code>false</code>. The loader rejects
         symlinked action YAMLs and scripts unless you opt in.
       </p>
 
@@ -93,7 +102,7 @@ examples:
   - title: Tail nginx access for 5xx
     args:
       file: /var/log/nginx/access.log
-      pattern: " 5\\d\\d "</.docs_code>
+      pattern: ' 5\d\d '</.docs_code>
 
       <.docs_h2 id="field-reference">Field reference</.docs_h2>
       <ul class="mt-4 space-y-3 text-base text-zinc-300">
@@ -101,33 +110,32 @@ examples:
           <strong>kind</strong>
           — <code>exec</code>
           (run a binary with an explicit argv) or <code>script</code>
-          (run a script packaged in the pack, its bytes SHA-256-verified at
-          load). There is no shell kind: both run as argv arrays through <code>execve</code>.
-          An exec action may invoke <code>/bin/sh -c</code>
+          (run a script packaged in the pack, its contents SHA-256-verified at
+          load). There is no shell kind. Both run as argv arrays through <code>execve</code>.
+          An exec action can invoke <code>/bin/sh -c</code>
           for a fixed,
           pack-authored program. Open-ended strings and paths must reach that
-          program through environment variables or whole positional arguments;
-          only finite choices and two-sided bounded numbers may be substituted
-          into its text. The <code>critical</code>, default-denied <code>shell</code>
+          program through environment variables or whole positional arguments. Only finite choices and two-sided bounded numbers can be substituted
+          into its text. The <.docs_risk tier="critical" />, default-denied <code>shell</code>
           pack is the break-glass exception where the operator supplies the
           program itself.
         </li>
         <li>
           <strong>risk</strong> — <code>low | medium | high | critical</code>.
-          The policy engine assigns a default decision per tier; higher
+          The policy engine assigns a default decision per tier. Higher
           tiers must be at least as restrictive as lower tiers. The runner
-          declares risk in the pack; the caller can't override it.
+          declares risk in the pack. The caller cannot override it.
         </li>
         <li>
           <strong>args</strong>
-          — every argument is declared. Types: <code>string</code>, <code>integer</code>, <code>number</code>, <code>boolean</code>, <code>duration</code>, <code>path</code>, <code>string_array</code>, <code>integer_array</code>. Validation tightens the type: enum, regex
+          — every argument is declared. Types: <code>string</code>, <code>integer</code>, <code>number</code>, <code>boolean</code>, <code>duration</code>, <code>path</code>, <code>string_array</code>, <code>integer_array</code>. Validation tightens the type. Enum, regex
           pattern, allowed_prefixes / denied_prefixes for paths, max_items for
           arrays, min/max for numbers, max_duration for durations.
         </li>
         <li>
           <strong>execution.user</strong>
           — Linux-only. Drops the child process to that local user's uid and primary gid before
-          exec, so a runner under a privileged service account still runs the action as the
+          exec. A runner under a privileged service account still runs the action as the
           declared, lower-privilege user.
         </li>
         <li>
@@ -135,47 +143,47 @@ examples:
           — <code>text</code>
           (default), <code>json</code>, or <code>json (parser_required: true)</code>
           to force the run to fail if stdout
-          isn't valid JSON.
+          is not valid JSON.
         </li>
         <li>
           <strong>output.max_*_bytes</strong> — stdout/stderr ceilings. The cloud
-          can lower these per-call via opts; it can't raise them past the
+          can lower these per-call via opts. It cannot raise them past the
           declared maximum.
         </li>
         <li>
           <strong>redact</strong> — per-action rules layered on top of 20 built-in patterns
-          (AWS keys, GitHub/GitLab/Slack tokens, JWTs, bearer/basic auth, secret assignments). Redaction
-          runs on the runner before output leaves the host; the control plane receives only the
-          post-redaction stream, and per-rule hit counts are recorded.
+          (AWS keys, GitHub, GitLab, Slack tokens, JWTs, authentication, and secret assignments).
+          Redaction runs before output leaves the host. The control plane receives the resulting
+          stream. The local journal records each rule's hit count. The terminal result also sends
+          rule names, types, and counts to the control plane.
         </li>
         <li>
           <strong>examples</strong>
           — optional list of <code>&#123;title, args&#125;</code>
           entries. Each one renders as a clickable hint on the dispatch
-          form, so operators and LLMs see realistic invocations before
-          they type. Examples don't validate any tighter than the
-          declared argument schema — they're documentation, not policy.
+          form. Operators and LLMs see realistic invocations before
+          they type. Examples do not validate any tighter than the
+          declared argument schema. They are documentation, not policy.
         </li>
       </ul>
 
       <.docs_h2 id="pack-trust">Pack trust</.docs_h2>
       <p class="mt-3 text-base leading-6 text-zinc-300">
-        Every pack is content-addressed by a SHA-256 over all its files. The control plane pins
-        the exact hash the account trusts; the runner recomputes it and refuses to run a pack
-        whose on-disk bytes don't match. A hash the published catalog carries is trusted on sight.
-        Everything else — a pack you authored, a hand-edited tree, any hash the catalog doesn't
-        carry — blocks dispatch until an admin trusts it, so bytes that differ from the expected
-        hash are rejected rather than silently run. This is content integrity, not publisher
-        signing: the hash binds the bytes, and the catalog or an admin decides whether they may run.
+        Every pack is content-addressed by a SHA-256 hash over all its files. The control plane pins
+        the exact hash that the account trusts. The runner recomputes this hash and refuses to
+        load files that do not match. The control plane automatically trusts a hash carried by the
+        published catalog. An administrator must trust any other hash before dispatch. This
+        includes a pack you wrote, a hand-edited tree, or an unpublished hash. This protects
+        content integrity, not publisher identity.
       </p>
       <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Ship a host only the packs it needs.</strong>
+            <strong class="text-zinc-200">Match packs to what runs on the host.</strong>
             A web box has no use for the <code class="font-mono">postgres</code>
-            pack; a smaller catalog is a smaller surface and a shorter list for an agent to reason
-            over.
+            pack — but give a host every pack that matches its software. Policy decides what
+            runs, so coverage is capability, not exposure.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -183,9 +191,9 @@ examples:
           <span>
             <strong class="text-zinc-200">Keep the break-glass pack off production.</strong>
             The <code class="font-mono">shell</code>
-            pack is the one action where the operator supplies the whole command — <code class="font-mono">critical</code>-risk, default-denied — for verifying a fix on
-            staging before you encode it as a real action. Install it on staging; never on a prod
-            runner.
+            pack lets the operator supply the whole command. It is
+            <.docs_risk tier="critical" />-risk and denied by default. Use it on staging to verify a fix
+            before you encode a real action. Never install it on a production runner.
           </span>
         </li>
       </ul>
@@ -194,18 +202,18 @@ examples:
       <p class="mt-3 text-base text-zinc-300">
         Once a pack is installed on at least one runner, the in-app Packs page groups every
         observed <code>(pack_id, version, hash)</code> in your account. Two runners on the same
-        pack version with different hashes means somebody hand-edited a pack on a host — the page
+        pack version with different hashes means somebody hand-edited a pack on a host. The page
         flags it as drift. Re-deploy from the canonical source to clear it.
       </p>
 
       <p class="mt-8 text-base text-zinc-400">
-        Browse 50+ working packs in the
+        Browse the
         <.link navigate={~p"/packs"} class="text-brand-400 hover:text-brand-300">
           public registry
         </.link>
-        (linux-core, postgres, docker, kubernetes, nginx, redis, the AWS suite, vault, and more)
-        — each shows every action it declares and a hash-pinned install snippet you can paste on a
-        runner host. Want one of your own? <.link
+        — each pack's page lists its declared actions and a hash-pinned install command.
+        Examples include linux-core, postgres, docker, kubernetes, nginx, redis, AWS, and Vault.
+        To publish your own, read <.link
           navigate={~p"/docs/publishing-packs"}
           class="text-brand-400 hover:text-brand-300"
         >Author your own pack</.link>.

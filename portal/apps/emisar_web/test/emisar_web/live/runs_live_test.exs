@@ -189,7 +189,7 @@ defmodule EmisarWeb.RunsLiveTest do
     refute html =~ ~s(name="requested_by_id")
     refute html =~ ~s(name="runbook_id")
 
-    # LLM agent picked → the Agent picker appears (and only it).
+    # AI agent picked → the Agent picker appears (and only it).
     {:ok, _lv, mcp} = live(conn, ~p"/app/#{account}/runs?source=mcp")
     assert mcp =~ ~s(name="api_key_id")
     refute mcp =~ ~s(name="requested_by_id")
@@ -422,7 +422,7 @@ defmodule EmisarWeb.RunsLiveTest do
   # tests previously refuted "No LLM connected yet", a string that exists nowhere
   # in the app — so all three passed regardless of what rendered, including if
   # the banner they were written to bury came back word for word.
-  @agents_nudge "No LLM agent connected yet"
+  @agents_nudge "No AI agent connected yet"
 
   describe "no-LLM onboarding nudge" do
     test "the page-wide banner is GONE — the nav dot is the one nudge signal", %{conn: conn} do

@@ -21,8 +21,8 @@
     >
       <.docs_header current="runbooks">
         <:dek>
-          Build a procedure from declared actions, publish it only when every target resolves, then
-          run one frozen plan through policy and approval. Stages stop at the first failure; each
+          Build a procedure from declared actions. Publish it only when every target resolves. Then
+          run one frozen plan through policy and approval. Stages stop at the first failure. Each
           command, output, and decision remains reviewable.
         </:dek>
       </.docs_header>
@@ -31,7 +31,7 @@
         <:item>
           At least one
           <.link
-            href="/docs/deployment"
+            href="/docs/production"
             class="text-brand-400 hover:text-brand-300"
           >runner</.link>
           enrolled in the account and assigned to the groups the runbook will target.
@@ -90,7 +90,7 @@
           class="text-brand-400 hover:text-brand-300"
         >Import runbook</.link>.
         Drop or select a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">.json</code>
-        file, or paste the document. An import always becomes an editable draft; it never publishes
+        file, or paste the document. An import always becomes an editable draft. It never publishes
         or runs automatically.
       </p>
       <.docs_screenshot
@@ -105,9 +105,9 @@
       <.docs_h3 id="run-time-inputs">Run-time inputs</.docs_h3>
       <p class="mt-5 text-base text-zinc-400">
         Declare only the values that change between executions. An input can be a string, integer,
-        number, boolean, or enum; make it required, constrain its range or length, or give it a
-        same-type default. An integer is a whole number, while a number may contain a decimal.
-        Sensitive inputs have no stored default and appear as
+        number, boolean, or enum. Make it required, constrain its range or length, or give it a
+        same-type default. An integer is a whole number. A number can contain a decimal. Sensitive
+        inputs have no stored default. Plans, approvals, and results show them as
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[REDACTED]</code>
         in plans, approvals, and results.
       </p>
@@ -137,7 +137,7 @@
           <span>
             <strong class="text-zinc-200">Parallel</strong>
             makes all stage items eligible together. Maximum concurrency limits the number of
-            active attempts; use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">1</code>
+            active attempts. Use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">1</code>
             for one-host-at-a-time maintenance.
           </span>
         </li>
@@ -151,7 +151,7 @@
       </ul>
       <p class="mt-5 text-base text-zinc-400">
         Select targets before choosing the action. The action menu contains only work currently
-        available across the complete selection. The editor follows the action to its pack; you do
+        available across the complete selection. The editor follows the action to its pack. You do
         not pin a pack version in the definition.
       </p>
       <.docs_screenshot
@@ -188,9 +188,9 @@
         </li>
       </ul>
       <p class="mt-5 text-base text-zinc-400">
-        One-runner selection still validates the action, trusted pack, and compatible contract on
-        every online member of the group before choosing. The start page and the execution use the
-        same frozen runner. If that runner disconnects before dispatch, the execution stops; it
+        One-runner selection validates the action, trusted pack, and compatible contract on every
+        online group member. It validates before choosing. The start page and execution use the
+        same frozen runner. If that runner disconnects before dispatch, the execution stops. It
         does not move the work to another member.
       </p>
       <.docs_screenshot
@@ -220,10 +220,10 @@
       <.docs_h3 id="extracted-outputs">Extracted outputs</.docs_h3>
       <p class="mt-3 text-base text-zinc-400">
         Retain only the values that later work or a success condition needs. Read structured output,
-        stdout, or stderr, then extract with JSON Pointer, contains, literal grep, or a bounded
+        stdout, or stderr. Then extract with JSON Pointer, contains, literal grep, or a bounded
         regular expression. Give each value a stable output ID. Mark an output sensitive to mask it
-        in results and evidence while still allowing conditions and compatible sensitive arguments
-        in later stages to use the real value.
+        in results and evidence. Conditions and compatible sensitive arguments in later stages
+        still use the real value.
       </p>
       <.docs_screenshot
         src="/images/docs/runbooks/outputs.webp"
@@ -235,9 +235,9 @@
       <.docs_h3 id="success-conditions">Success conditions</.docs_h3>
       <p class="mt-3 text-base text-zinc-400">
         An action that exits successfully counts as a successful step unless you add conditions.
-        Conditions read named extracted outputs; every condition must pass. Compare with equality,
-        ordering, containment, membership, or a bounded regular expression. Add the output first so
-        the condition cannot refer to an undefined value.
+        Conditions read named extracted outputs. Every condition must pass. Compare with equality,
+        ordering, containment, membership, or a bounded regular expression. Add the output first. A
+        condition cannot refer to an undefined value.
       </p>
       <.docs_screenshot
         src="/images/docs/runbooks/conditions.webp"
@@ -248,10 +248,10 @@
 
       <.docs_h3 id="wait-policy">Wait policy</.docs_h3>
       <p class="mt-3 text-base text-zinc-400">
-        When a successful observation does not yet meet its conditions, a wait can run that same
+        When a successful observation does not yet meet its conditions, a wait can run the same
         observation again after a fixed interval. Bound it with both a timeout and a maximum number
         of observations. A wait never retries an action failure, denial, refusal, extraction error,
-        timeout, or cancellation; those halt the execution.
+        timeout, or cancellation. Those events halt the execution.
       </p>
       <.docs_screenshot
         src="/images/docs/runbooks/wait.webp"
@@ -268,19 +268,19 @@
       <.docs_h2 id="publish">3. Publish a resolvable release</.docs_h2>
       <p class="mt-5 text-base text-zinc-400">
         Save whenever you need to keep incomplete work. Unpublished changes are not runnable.
-        Publishing has a higher bar: the strict definition must be valid, every target must resolve
-        in your scope, each selected runner must expose one compatible action contract, and the
-        current trusted pack and policy plan must resolve. The editor lists every issue beside
+        Publishing has a higher bar. The strict definition must be valid. Every target must resolve
+        in your scope. Each selected runner must expose one compatible action contract. The current
+        trusted pack and policy plan must also resolve. The editor lists every issue beside
         <strong class="text-zinc-200">Publish check</strong>
         and disables Publish until the check
         passes.
       </p>
       <p class="mt-5 text-base text-zinc-400">
-        Publish shows exactly what changes from the live definition, then mints the next release — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">slug@1</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">slug@2</code>, and so on.
-        Only the live release runs. Editing afterwards changes nothing until you publish again:
-        the edit is held as the runbook's one unpublished change, and every execution keeps the
-        exact definition and plan it started with. If runners, actions, or packs later drift, a new
-        execution is blocked until you publish a working release.
+        Publish shows exactly what changes from the live definition, then mints the next release: <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">slug@1</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">slug@2</code>, and so on.
+        Only the live release runs. Editing later changes nothing until you publish again. The edit
+        remains the runbook's one unpublished change. Every execution keeps the exact definition
+        and plan it started with. If runners, actions, or packs later drift, a new execution is
+        blocked until you publish a working release.
       </p>
       <.docs_screenshot
         src="/images/docs/runbooks/publish.webp"
@@ -298,10 +298,10 @@
         >Runbooks</a>
         and choose <strong class="text-zinc-200">Run</strong>
         on a runbook with a live release. Supply its
-        run-time inputs and a reason that explains why the procedure should run now. Before
+        run-time inputs and a reason for running it now. Before
         <strong class="text-zinc-200">Start runbook</strong>
         becomes available, emisar resolves the
-        exact runner for every item, the current trusted pack and content hash, action arguments,
+        exact runner for every item. It also resolves the current trusted pack, content hash, action arguments,
         policy decisions, and stage concurrency.
       </p>
       <p class="mt-5 text-base text-zinc-400">
@@ -367,7 +367,7 @@
         JSON is the only interchange format. The structured editor, import flow, persistence layer,
         and MCP use the same strict
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">schema_version: 1</code>
-        object; unknown fields are rejected. This is a smaller version of the edge rollout used
+        object. Unknown fields are rejected. This is a smaller version of the edge rollout used
         throughout this guide:
       </p>
       <.docs_code phx-no-format label="Canonical runbook JSON">{~s({
@@ -451,7 +451,7 @@
       <p class="mt-5 text-base text-zinc-400">
         A denial, refusal, timeout, cancellation, action failure, extraction failure, unmet terminal
         condition, lost authorization, or unusable frozen pack halts the execution. Peers already
-        running may settle and report their real outcomes, but no new item and no later stage
+        running can settle and report their real outcomes. No new item or later stage
         starts.
       </p>
       <p class="mt-5 text-base text-zinc-400">
@@ -471,21 +471,21 @@
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">list_runbooks</code>
         and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>
         to inspect the live release.
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">create_runbook_draft</code>
-        starts a new runbook;
+        Use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">create_runbook_draft</code>
+        to start a new runbook. Use
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">update_runbook_draft</code>
-        replaces an existing runbook's one unpublished change, keeping its slug. The agent passes
+        to replace the existing unpublished change without changing its slug. The agent passes
         the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">definition_sha256</code>
-        it read, so an edit written meanwhile is refused rather than overwritten.
+        it read. This prevents a concurrent edit from being overwritten.
       </p>
       <p class="mt-5 text-base text-zinc-400">
         Reading the unpublished change requires <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">status: "draft"</code>.
-        An agent can run exactly that content with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">allow_draft: true</code>, and its hash. Without that
-        explicit consent, execution runs the live release only — naming an older one answers
+        An agent can run that exact content with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">allow_draft: true</code>, and its hash. Without that
+        explicit consent, execution runs only the live release. Naming an older one answers
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">not_live</code>
-        instead of quietly running current content. A draft test uses the normal policy and
-        approval path and publishes nothing; an operator still reviews and publishes in the
-        console. While work or approval remains, the response names the blocking reason and returns
+        instead of silently running current content. A draft test uses the normal policy and
+        approval path and publishes nothing. An operator still reviews and publishes in the
+        console. While work or approval remains, the response names the blocking reason. It also returns
         an exact <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
         continuation.
       </p>
@@ -493,25 +493,25 @@
         For client setup and the complete tool contract, continue to <.link
           href="/docs/connect-claude-ai"
           class="text-brand-400 hover:text-brand-300"
-        >Connect an LLM</.link>.
+        >Connect a cloud LLM</.link>.
       </p>
 
       <.docs_h2 id="limits">Limits</.docs_h2>
       <p class="mt-5 text-base text-zinc-400">
-        One definition is at most 64 KiB and contains up to 32 inputs, 16 stages, and 16 target refs
+        One definition is at most 64 KiB. It contains up to 32 inputs, 16 stages, and 16 target refs
         per step. A resolved execution contains at most 256 logical items. A parallel stage can run
-        1 through 16 attempts at once — 5 unless the definition sets it. Each step can retain 16
+        1 through 16 attempts at once. It runs 5 unless the definition sets another value. Each step can retain 16
         outputs and evaluate 16 success conditions. A wait polls every 5 seconds
         to 1 hour and makes 2 to 100 attempts. The frozen execution plan is at most 1 MiB. An
         execution, including waits, ends within 24 hours. A title is at most 80 characters and 320
-        bytes; a description at most 4,096 characters and 8 KiB.
+        bytes. A description is at most 4,096 characters and 8 KiB.
       </p>
       <p class="mt-5 text-base text-zinc-400">
-        These are the only limits you need to track. An agent reads a runbook through a single MCP
-        response, and that budget is derived from the limits above, so anything you can save and
-        publish is anything an agent can read and run. If a runbook ever does exceed it, the agent
-        is told the runbook is too large and to open it in the console — it is never told the
-        runbook does not exist.
+        These are the only limits you need to track. An agent reads a runbook through one MCP
+        response. That response budget comes from the limits above. Anything you can save and
+        publish is something an agent can read and run. If a runbook exceeds the budget, the agent
+        reports that it is too large. It directs the user to open the runbook in the console. It
+        never reports that the runbook does not exist.
       </p>
       <p class="mt-5 text-base text-zinc-400">
         See the

@@ -25,11 +25,11 @@ defmodule EmisarWeb.AgentsLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, ApiKeys, Compat}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, UrlHelpers}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, Permissions, UrlHelpers, UserAgent}
   alias Phoenix.LiveView.JS
 
   @refresh_ms 15_000
-  @remote_client_ids ~w(claude_web chatgpt)
+  @remote_client_ids ~w(chatgpt claude_web)
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -48,7 +48,7 @@ defmodule EmisarWeb.AgentsLive do
     # minted only after the user consents in the OAuth flow.
     {:ok,
      socket
-     |> assign(:page_title, "LLM agents")
+     |> assign(:page_title, "AI agents")
      |> assign(:quick_secret, nil)
      # The snippet/custom paths watch their just-minted key for its first
      # call; the installer path (key ids minted at grant approval, unknown
@@ -59,6 +59,11 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:snippet_open?, false)
      |> assign(:selected_client, nil)
      |> assign(:base_url, UrlHelpers.derive_base_url(socket))
+     # Which install command to open on. `get_connect_info/2` is nil on the
+     # dead render, which lands on the Linux default and corrects itself the
+     # moment the socket connects — the block it feeds only renders after the
+     # operator has picked a client, i.e. over that live socket.
+     |> assign(:detected_os, UserAgent.platform(get_connect_info(socket, :user_agent)))
      |> ConfirmDialog.init()
      |> assign(:rotated, nil)
      |> assign_form(ApiKeys.change_key(default_params()))}
@@ -478,35 +483,43 @@ defmodule EmisarWeb.AgentsLive do
   # describes one MCP client: label, where its config lives, and a
   # body templated with this operator's URL + key.
 
-  # `@client_ids` ordering drives the tab strip in `connect_panel/1` so
-  # claude-code stays first. Map iteration order isn't guaranteed —
+  # `@client_ids` ordering drives the tab strip in `connect_panel/1`. Within
+  # each group the order is POPULARITY, not the alphabet — an operator scans
+  # for their own client, and the common ones should be the first few tabs, not
+  # wherever their name happens to sort. Map iteration order isn't guaranteed —
   # keep ids as a list and pair labels separately.
   #
   # `"custom"` is the trailing pseudo-client: picking it doesn't mint a
   # quick key + snippet, it surfaces a key-builder form instead. Keeps
   # the "I need a tighter scope" affordance discoverable next to the
   # client tabs, not hidden in a collapsed details further down.
-  @client_ids ~w(claude_web chatgpt claude_code claude_desktop cursor vscode windsurf zed openclaw opencode pi copilot gemini codex goose hermes grok custom)
+  @client_ids ~w(chatgpt claude_web claude_code cursor vscode claude_desktop codex gemini copilot windsurf zed opencode goose grok openclaw pi hermes custom)
   @client_labels %{
-    "claude_web" => "Claude.ai",
     "chatgpt" => "ChatGPT",
+    "claude_web" => "Claude.ai",
     "claude_code" => "Claude Code",
-    "claude_desktop" => "Claude Desktop",
     "cursor" => "Cursor",
     "vscode" => "VS Code",
+    "claude_desktop" => "Claude Desktop",
+    "codex" => "Codex CLI",
+    "gemini" => "Gemini CLI",
+    "copilot" => "Copilot CLI",
     "windsurf" => "Windsurf",
     "zed" => "Zed",
-    "openclaw" => "OpenClaw",
     "opencode" => "OpenCode",
-    "pi" => "Pi",
-    "copilot" => "Copilot CLI",
-    "gemini" => "Gemini CLI",
-    "codex" => "Codex CLI",
     "goose" => "Goose",
-    "hermes" => "Hermes",
     "grok" => "Grok CLI",
+    "openclaw" => "OpenClaw",
+    "pi" => "Pi",
+    "hermes" => "Hermes",
     "custom" => "Custom"
   }
+
+  # Kind partition of the local picker — a scanning aid now that it holds 15
+  # tabs. Membership only: the render order still comes from `@client_ids`
+  # (popularity), and a client in neither set lands under CLI agents, which is
+  # where almost every new MCP client belongs.
+  @editor_client_ids ~w(cursor vscode claude_desktop windsurf zed)
 
   # Two transports under the hood — local stdio bridge (`emisar-mcp`)
   # and remote MCP over HTTP at `/api/mcp/rpc`. Remote-MCP clients
@@ -523,8 +536,14 @@ defmodule EmisarWeb.AgentsLive do
 
   defp remote_client_ids, do: Enum.filter(@client_ids, &remote_client?/1)
 
-  defp local_client_ids,
+  # Public: this list IS the "N local clients" claim in the home-page MCP FAQ,
+  # and `marketing_test.exs` asserts the sentence against it — so adding a client
+  # tab fails that test until the copy moves with it.
+  def local_client_ids,
     do: Enum.reject(@client_ids, &(remote_client?(&1) or &1 == "custom"))
+
+  defp cli_agent_ids, do: Enum.reject(local_client_ids(), &(&1 in @editor_client_ids))
+  defp editor_client_ids, do: Enum.filter(local_client_ids(), &(&1 in @editor_client_ids))
 
   # A local client either RUNS its snippet as a command (Claude Code) or pastes
   # it INTO a config file (Claude Desktop, Cursor, Gemini, Codex). The file
@@ -938,10 +957,10 @@ defmodule EmisarWeb.AgentsLive do
              the page (onboarding / a secret reveal), where a second CTA to the
              same flow would just duplicate it. --%>
         <%= if @live_action == :connect do %>
-          <.back_link navigate={~p"/app/#{@current_account}/agents"}>LLM agents</.back_link>
+          <.back_link navigate={~p"/app/#{@current_account}/agents"}>AI agents</.back_link>
           Connect an agent
         <% else %>
-          LLM agents
+          AI agents
         <% end %>
       </:title>
       <:actions :if={
@@ -965,7 +984,7 @@ defmodule EmisarWeb.AgentsLive do
       <.page_intro :if={@live_action == :connect}>
         Pick how your agent connects. Cloud clients use OAuth and mint their backing key only
         after consent; local clients get a one-time key with setup pre-filled.
-        <.doc_link href="/docs/connect-claude-ai">Connect an agent docs</.doc_link>
+        <.doc_link href="/docs/agents-and-keys">Connect an agent docs</.doc_link>
       </.page_intro>
 
       <.empty_state
@@ -986,6 +1005,7 @@ defmodule EmisarWeb.AgentsLive do
         configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
         selected_client={@selected_client}
         base_url={@base_url}
+        detected_os={@detected_os}
         quick_secret={@quick_secret}
         quick_key_id={@quick_key_id}
         quick_connected?={@quick_connected?}
@@ -1048,6 +1068,7 @@ defmodule EmisarWeb.AgentsLive do
             configs_for={&client_config(&1, @base_url, @quick_secret || "emk-…")}
             selected_client={@selected_client}
             base_url={@base_url}
+            detected_os={@detected_os}
             quick_secret={@quick_secret}
             quick_key_id={@quick_key_id}
             quick_connected?={@quick_connected?}
@@ -1078,7 +1099,7 @@ defmodule EmisarWeb.AgentsLive do
       >
         <%!-- :table leaves the agents list narrow-of-content and wide-of-page;
              pair it with a docs rail (main+aside) — the list leads, a plain-terms
-             "what's an LLM agent" teaches beside it. The rail is a FIXED 22rem
+             "what's an AI agent" teaches beside it. The rail is a FIXED 22rem
              track that only splits off at xl (its prose never squeezes); below
              xl it stacks full-width. --%>
         <div class="min-w-0">
@@ -1411,8 +1432,8 @@ defmodule EmisarWeb.AgentsLive do
   defp agent_docs_rail(assigns) do
     ~H"""
     <.docs_rail
-      title="What's an LLM agent?"
-      doc_href="/docs/connect-claude-ai"
+      title="What's an AI agent?"
+      doc_href="/docs/agents-and-keys"
       doc_label="Connect an agent docs"
     >
       <p>
@@ -1467,6 +1488,7 @@ defmodule EmisarWeb.AgentsLive do
   attr :configs_for, :any, required: true
   attr :selected_client, :any, required: true
   attr :base_url, :string, required: true
+  attr :detected_os, :atom, required: true
   attr :quick_secret, :string, default: nil
   attr :quick_key_id, :string, default: nil
   attr :quick_connected?, :boolean, default: false
@@ -1493,8 +1515,10 @@ defmodule EmisarWeb.AgentsLive do
       <div id="connect-panel">
         <%!-- Client picker on the canvas — grouped into two transport families.
            Cloud first (the no-install path most new users want); Local below
-           for IDE / desktop clients that go through the stdio bridge. Small
-           group labels organize the tabs; the pick step is framed by the page
+           for everything that goes through the stdio bridge, partitioned by
+           the KIND the operator recognizes — terminal agent vs editor/desktop
+           app — because fifteen mixed tabs outgrew one scan. Small group
+           labels organize the tabs; the pick step is framed by the page
            intro / section header above, so the picker carries no header. --%>
         <div>
           <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
@@ -1513,14 +1537,33 @@ defmodule EmisarWeb.AgentsLive do
           </div>
 
           <p class="mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-            Local / IDE clients
+            Local
             <span class="ml-1 normal-case tracking-normal text-zinc-400">
               — uses the stdio bridge
             </span>
           </p>
-          <div class="mt-2.5 flex flex-wrap gap-1.5">
+          <%!-- Kind sub-labels are the quieter member of the group-label
+             family (the docs rail's subgroup grammar): the transport fact
+             stays once on the parent, the sub-label only partitions the
+             scan. Tighter mt-4 between subgroups than the mt-6 between
+             transport groups, so the hierarchy reads from distance. --%>
+          <p class="mt-2.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+            CLI agents
+          </p>
+          <div class="mt-1.5 flex flex-wrap gap-1.5">
             <.client_tab
-              :for={id <- local_client_ids()}
+              :for={id <- cli_agent_ids()}
+              id={id}
+              label={client_label(id)}
+              selected={id == @selected_client}
+            />
+          </div>
+          <p class="mt-4 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+            Editors &amp; desktop apps
+          </p>
+          <div class="mt-1.5 flex flex-wrap gap-1.5">
+            <.client_tab
+              :for={id <- editor_client_ids()}
               id={id}
               label={client_label(id)}
               selected={id == @selected_client}
@@ -1574,7 +1617,7 @@ defmodule EmisarWeb.AgentsLive do
                     <:body>
                       Copy the bearer token below before you leave this page; we won't show it
                       again. If you lose it, create another key.
-                      <.doc_link href={~p"/docs/agents-and-keys"}>MCP key docs</.doc_link>
+                      <.doc_link href={~p"/docs/agents-and-keys"}>Manage agents & keys docs</.doc_link>
                     </:body>
                   </.event_block>
 
@@ -1610,7 +1653,7 @@ defmodule EmisarWeb.AgentsLive do
             </div>
           <% @config -> %>
             <div class="mt-10 space-y-8">
-              <.local_install_block base_url={@base_url} />
+              <.local_install_block base_url={@base_url} detected_os={@detected_os} />
 
               <%!-- Manual setup is the fallback — the installer writes the
                    config itself, so this stays collapsed and mints its key
@@ -1805,7 +1848,11 @@ defmodule EmisarWeb.AgentsLive do
   # richer sections, so they number the headers.)
   defp step_header(assigns) do
     ~H"""
-    <header class="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+    <%!-- items-end, not items-baseline: the trailing action links sit on the
+         SUBTITLE's line — the title keeps its row to itself — and both sides
+         are text-xs there, so their line boxes coincide. A header with no
+         subtitle degrades to its single line's bottom edge. --%>
+    <header class="mb-4 flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
       <div class="flex min-w-0 items-baseline gap-3">
         <%!-- A quiet typographic numeral, not a badge — same size as the title,
              muted and tabular so the three step numbers align down the column and
@@ -1834,6 +1881,7 @@ defmodule EmisarWeb.AgentsLive do
   # UrlHelpers.mcp_install_command/1, so a dev or self-hosted portal's
   # base URL rides along as EMISAR_URL.
   attr :base_url, :string, required: true
+  attr :detected_os, :atom, required: true
 
   defp local_install_block(assigns) do
     ~H"""
@@ -1856,14 +1904,11 @@ defmodule EmisarWeb.AgentsLive do
       </.step_header>
       <%= case {UrlHelpers.mcp_install_command(@base_url), UrlHelpers.mcp_windows_install_command(@base_url)} do %>
         <% {{:ok, command}, {:ok, windows_command}} -> %>
-          <.code_panel id="install-mcp-cmd" label="macOS / Linux" copy code={command} />
-          <.code_panel
-            id="install-mcp-windows-cmd"
-            class="mt-3"
-            label="Windows PowerShell"
-            copy
-            code={windows_command}
-          />
+          <.os_code_panel id="install-mcp-cmd" detected={@detected_os}>
+            <:tab os={:linux} label="Linux" code={command} />
+            <:tab os={:windows} label="Windows" code={windows_command} />
+            <:tab os={:macos} label="macOS" code={command} />
+          </.os_code_panel>
           <p class="mt-2 text-xs leading-5 text-zinc-400">
             The installer for your platform offers to add emisar to the LLM clients it finds —
             approve the connection in your browser when it asks. No key to copy.
@@ -2014,7 +2059,7 @@ defmodule EmisarWeb.AgentsLive do
       <p class="text-xs text-zinc-400">
         Cloud LLM connectors need {@client_label} to be on a plan that
         supports custom OAuth MCP servers. Connection refused or 401?
-        <.doc_link href={~p"/docs/connect-claude-ai"}>Troubleshooting</.doc_link>
+        <.doc_link href={~p"/docs/troubleshooting" <> "#mcp"}>Troubleshooting</.doc_link>
       </p>
     </div>
     """

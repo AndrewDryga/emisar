@@ -56,8 +56,8 @@
                 provider, then binds the returning identity to its stable provider subject.
               </td>
               <td class="px-4 py-3">
-                Your identity provider should own authentication and its MFA policy. Available on
-                Team and Enterprise.
+                Use OIDC SSO when your identity provider owns authentication and its MFA policy.
+                OIDC SSO is available on Team and Enterprise.
               </td>
             </tr>
           </tbody>
@@ -85,9 +85,9 @@
             Before emisar reveals an authenticator secret, the member must enter a code sent to
             their current email address. A provider that supplies no email leaves enrollment
             closed until an administrator corrects the IdP identity. An SSO connection can satisfy
-            the requirement only when you mark that provider as enforcing MFA; otherwise emisar
+            the requirement only when you mark that provider as enforcing MFA. Otherwise, emisar
             still asks for TOTP. Regenerating recovery codes requires a current authenticator or
-            recovery code; the old set stays valid unless that proof succeeds.
+            recovery code. The old set stays valid unless that proof succeeds.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -95,32 +95,30 @@
           <span>
             <strong class="text-zinc-200">Require SSO</strong>
             accepts only an SSO identity issued for this account. Members who arrived through a
-            magic link are sent back through the account's provider on their next navigation.
-            emisar requires an enabled connection before you turn it on and refuses to disable or
-            delete the last enabled connection while it remains required.
+            magic link return to the account provider on their next navigation. Before you enable
+            Require SSO, keep one provider enabled. The control blocks removal of the last provider
+            while SSO remains required.
           </span>
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Be precise about what Require SSO covers, because it is a control on <em>people signing in
-        with a browser</em>, not on credentials that already exist. It gates the account's console
-        pages, the audit CSV download, and the OAuth consent screen that mints a client key — every
-        member, including owners and admins, with no bypass. It does not authenticate an MCP bearer
-        token, the audit export API, SCIM, an OAuth token or refresh exchange, or an OAuth access
-        token that was already issued. Turning it on revokes no existing API key and no existing
-        OAuth grant: bounce the sessions you want gone and revoke the credentials you want gone,
-        through <.link
+        Be precise about what Require SSO covers. It controls browser sign-in, not credentials that
+        already exist. It gates the account console, audit CSV download, and the OAuth consent
+        screen that mints a client key.
+        The rule covers every member, including owners and admins, with no bypass. It does not
+        authenticate MCP bearer tokens, SCIM, or the audit export API. It also does not authenticate
+        OAuth token exchanges or existing access tokens. Turning it on does not revoke existing API
+        keys or OAuth grants. End unwanted sessions and revoke unwanted credentials through <.link
           navigate={~p"/docs/credentials"}
           class="text-brand-400 hover:text-brand-300"
-        >rotate and revoke credentials</.link>. The requirement applies only while at least one
-        provider is enabled — which is why emisar refuses to remove the last one — and a provider
-        that is enabled but broken or unreachable does not open the gate; sign-in simply fails until
-        it works.
+        >Rotate and revoke credentials</.link>. The requirement applies only while at least one
+        provider is enabled. That is why emisar blocks removal of the last provider. A broken or
+        unreachable enabled provider does not open the gate. Sign-in fails until the provider works.
       </p>
       <.docs_callout kind={:warn} title="Complete a real SSO sign-in before requiring it">
         <p>
-          Test connection proves discovery and endpoint reachability; it does not prove your client
-          assignment, redirect URI, claims, or login policy. Keep an owner session open, sign in
+          Test connection proves discovery and endpoint reachability. It does not prove client
+          assignment, the redirect URI, claims, or login policy. Keep an owner session open. Sign in
           through the provider in another browser, then turn on Require SSO from <a href={
             ~p"/app/team"
           }>Team → Security</a>.
@@ -129,8 +127,8 @@
 
       <.docs_h2 id="provisioning">Provision and remove members</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Pick one system to own the lifecycle. The sign-in protocol and the lifecycle protocol are
-        separate: OIDC authenticates a person; SCIM creates, updates, suspends, and groups them.
+        Pick one system to own the lifecycle. The sign-in and lifecycle protocols are separate.
+        OIDC authenticates a person. SCIM creates, updates, suspends, and groups that person.
       </p>
       <ul class="mt-5 space-y-4 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -278,15 +276,19 @@
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Offboarding a person ends what that membership issued. It does not touch account-level
-        credentials someone else still holds — enrollment keys, audit-export tokens, the SCIM
-        bearer, signing material. Rotating those is <.link
+        credentials held by another person. Examples include enrollment keys, audit-export tokens,
+        SCIM bearers, and signing material. Use
+        <.link
           navigate={~p"/docs/credentials"}
           class="text-brand-400 hover:text-brand-300"
-        >rotate and revoke credentials</.link>; doing it under pressure, in the order that preserves
-        evidence, is <.link
+        >Rotate and revoke credentials</.link>
+        for those account-level secrets. During an incident,
+        follow
+        <.link
           navigate={~p"/docs/security-incidents"}
           class="text-brand-400 hover:text-brand-300"
-        >security incidents</.link>.
+        >Security incidents</.link>
+        to preserve evidence.
       </p>
 
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
@@ -302,11 +304,11 @@
           SCIM troubleshooting
         </.link>
         and check the connection's <strong class="text-zinc-200">Last sync</strong>
-        signal first. Both are reachable from the identity section of <.link
+        signal first. Both pages are linked from the identity section of <.link
           navigate={~p"/docs/troubleshooting" <> "#identity"}
           class="text-brand-300 hover:text-brand-200"
-        >troubleshooting</.link>, which is where to start when you're not yet sure the problem is
-        identity at all.
+        >Troubleshooting</.link>. Start there when you are not sure whether identity caused the
+        problem.
         For an account lockout with no working owner session, email <a
           href={EmisarWeb.MailTo.support()}
           class="text-brand-300 hover:text-brand-200"

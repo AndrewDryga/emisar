@@ -4,12 +4,12 @@
 <.legal_page
   title="Refund Policy"
   updated="June 5, 2026"
-  summary="Free costs nothing, paid plans bill monthly and you can cancel any time, and we make any billing mistake right."
+  summary="Free costs nothing, paid plans bill monthly or annually, and you can cancel any time. We make any billing mistake right."
   toc={[
     {"short-version", "The short version"},
     {"free", "1. Free plan"},
-    {"team", "2. Team plan (monthly)"},
-    {"enterprise", "3. Enterprise and annual plans"},
+    {"team", "2. Team plan (monthly or annual)"},
+    {"enterprise", "3. Enterprise and invoiced plans"},
     {"mistakes", "4. Billing mistakes we refund"},
     {"request", "5. How to request a refund"},
     {"statutory", "6. Your statutory rights"},
@@ -27,11 +27,12 @@
       <strong>Free</strong> is free. There is nothing to charge and nothing to refund.
     </li>
     <li>
-      <strong>Team</strong> is billed monthly, per runner. Cancel any time and you keep
-      access until the end of the period you already paid for.
+      <strong>Team</strong>
+      is billed monthly or annually, per runner. Cancel any time to stop renewal.
+      Cancellation does not downgrade your emisar plan automatically today.
     </li>
     <li>
-      We <strong>don't pro-rate or refund partial months</strong> for a normal
+      We <strong>don't pro-rate or refund unused time in a billing period</strong> after a normal
       cancellation — but we <strong>do</strong> refund genuine billing mistakes in full.
     </li>
   </ul>
@@ -43,23 +44,23 @@
     audit retention — see <.link navigate={~p"/pricing"}>pricing</.link>).
   </p>
 
-  <h2 id="team">2. Team plan (monthly)</h2>
+  <h2 id="team">2. Team plan (monthly or annual)</h2>
   <p>
-    Team is billed <strong>monthly, per runner</strong>, through <strong>Paddle</strong>, our
-    Merchant of Record. Each charge pays for the month ahead.
+    Team is billed <strong>monthly or annually, per runner</strong>, through <strong>Paddle</strong>,
+    our Merchant of Record. Each charge pays for the billing period ahead.
   </p>
   <p>
-    You can cancel any time from your billing settings. Cancellation takes effect at the <strong>end of the current billing period</strong>: you keep full access until then,
-    and you are not charged again. Consistent with our Terms, we do not pro-rate or refund
-    the remainder of a month you have already paid for. If you'd rather stop being billed
-    immediately, cancel and the plan simply does not renew.
+    You can cancel any time from your billing settings. Cancellation stops the renewal in Paddle.
+    It does not downgrade your emisar plan automatically today. Billing keeps showing the current
+    plan until its mirrored plan changes. Consistent with our Terms, we do not pro-rate or refund
+    unused time in a monthly or annual billing period.
   </p>
 
-  <h2 id="enterprise">3. Enterprise and annual plans</h2>
+  <h2 id="enterprise">3. Enterprise and invoiced plans</h2>
   <p>
-    Enterprise and any annual or invoiced plans are governed by the order form or contract
-    you signed. Where those terms address refunds, cancellation, or credits, they take
-    precedence over this page. Questions: <a href={EmisarWeb.MailTo.sales()}>sales@emisar.dev</a>.
+    Enterprise and invoiced plans are governed by the order form or contract you signed. Where
+    those terms address refunds, cancellation, or credits, they take precedence over this page.
+    Questions: <a href={EmisarWeb.MailTo.sales()}>sales@emisar.dev</a>.
   </p>
 
   <h2 id="mistakes">4. Billing mistakes we refund</h2>
@@ -104,9 +105,8 @@
 
   <h2 id="chargeback">7. Before you file a chargeback</h2>
   <p>
-    If a charge looks wrong, please email us first. A bank chargeback can take weeks and
-    may suspend the account while the dispute is open; we can almost always resolve a
-    genuine billing error faster and without that disruption.
+    If a charge looks wrong, please email us first. A bank chargeback can take weeks. We can almost
+    always resolve a genuine billing error faster.
   </p>
 
   <h2 id="contact">8. Contact</h2>

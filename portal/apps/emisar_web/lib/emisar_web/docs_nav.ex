@@ -37,64 +37,6 @@ defmodule EmisarWeb.DocsNav do
       ]
     },
     %{
-      label: "AI agents",
-      sections: [
-        %{
-          label: "Connect",
-          pages: [
-            %{
-              slug: "connect-cli-agent",
-              title: "CLI agent",
-              path: "/docs/connect-cli-agent",
-              icon: "hero-command-line",
-              keywords: "claude code cursor claude desktop stdio bridge",
-              desc:
-                "Wire Claude Code, Cursor, Claude Desktop, and the CLIs in with the emisar-mcp bridge or a raw API key."
-            },
-            %{
-              slug: "connect-claude-ai",
-              title: "Claude.ai",
-              path: "/docs/connect-claude-ai",
-              icon: "hero-cloud",
-              keywords: "claude anthropic connector custom oauth remote mcp",
-              desc: "Add emisar to Claude.ai as a custom connector — no key to manage."
-            },
-            %{
-              slug: "connect-chatgpt",
-              title: "ChatGPT",
-              path: "/docs/connect-chatgpt",
-              icon: "hero-cloud",
-              keywords: "chatgpt openai developer mode connector oauth remote mcp",
-              desc: "Add emisar to ChatGPT through Developer mode — no key to manage."
-            }
-          ]
-        },
-        %{
-          label: "The fleet",
-          pages: [
-            %{
-              slug: "agents-and-keys",
-              title: "Manage agents & keys",
-              path: "/docs/agents-and-keys",
-              icon: "hero-sparkles",
-              keywords: "agent key token secret bearer mint rotate revoke scope activity",
-              desc:
-                "The agents connected to your account, what each row shows, and how to mint, rotate, and revoke the key behind one."
-            },
-            %{
-              slug: "bridge-upgrades",
-              title: "Upgrade the MCP bridge",
-              path: "/docs/bridge-upgrades",
-              icon: "hero-arrow-up-circle",
-              keywords: "update version emisar-mcp bridge rollback compatibility",
-              desc:
-                "Re-run the installer per workstation, prove the client relaunched the bridge, and pin a rollback."
-            }
-          ]
-        }
-      ]
-    },
-    %{
       label: "Runners",
       sections: [
         %{
@@ -193,6 +135,219 @@ defmodule EmisarWeb.DocsNav do
               keywords: "enrollment key runner token pack credential rotate revoke",
               desc:
                 "Rotate enrollment keys, understand per-runner tokens, and swap the provider credentials packs read."
+            }
+          ]
+        }
+      ]
+    },
+    %{
+      label: "AI agents",
+      sections: [
+        %{
+          label: "Connect",
+          pages: [
+            %{
+              slug: "connect-cli-agent",
+              title: "CLI agent",
+              path: "/docs/connect-cli-agent",
+              icon: "hero-command-line",
+              keywords: "claude code cursor claude desktop stdio bridge",
+              desc:
+                "Wire Claude Code, Cursor, Claude Desktop, and the CLIs in with the emisar-mcp bridge or a raw API key."
+            },
+            %{
+              slug: "connect-claude-ai",
+              title: "Claude.ai",
+              path: "/docs/connect-claude-ai",
+              icon: "hero-cloud",
+              keywords: "claude anthropic connector custom oauth remote mcp",
+              desc: "Add emisar to Claude.ai as a custom connector — no key to manage."
+            },
+            %{
+              slug: "connect-chatgpt",
+              title: "ChatGPT",
+              path: "/docs/connect-chatgpt",
+              icon: "hero-cloud",
+              keywords: "chatgpt openai developer mode connector oauth remote mcp",
+              desc: "Add emisar to ChatGPT through Developer mode — no key to manage."
+            }
+          ]
+        },
+        %{
+          label: "The fleet",
+          pages: [
+            %{
+              slug: "agents-and-keys",
+              title: "Manage agents & keys",
+              path: "/docs/agents-and-keys",
+              icon: "hero-sparkles",
+              keywords: "agent key token secret bearer mint rotate revoke scope activity",
+              desc:
+                "The agents connected to your account, what each row shows, and how to mint, rotate, and revoke the key behind one."
+            },
+            %{
+              slug: "bridge-upgrades",
+              title: "Upgrade the MCP bridge",
+              path: "/docs/bridge-upgrades",
+              icon: "hero-arrow-up-circle",
+              keywords: "update version emisar-mcp bridge rollback compatibility",
+              desc:
+                "Re-run the installer per workstation, prove the client relaunched the bridge, and pin a rollback."
+            }
+          ]
+        }
+      ]
+    },
+    %{
+      label: "Action packs",
+      sections: [
+        %{
+          label: nil,
+          pages: [
+            %{
+              slug: "use-a-published-pack",
+              title: "Use a published pack",
+              path: "/docs/use-a-published-pack",
+              icon: "hero-archive-box-arrow-down",
+              keywords: "pack suggest inspect install hash credentials trust",
+              desc: "Choose, inspect, install, configure, and verify a published action pack."
+            },
+            %{
+              slug: "pack-updates",
+              title: "Roll out and roll back packs",
+              path: "/docs/pack-updates",
+              icon: "hero-arrows-right-left",
+              keywords: "update canary rollback content hash trust drift version",
+              desc:
+                "Install the new pack version on a canary, trust the hash, and keep the prior version ready."
+            },
+            %{
+              slug: "publishing-packs",
+              title: "Author your own pack",
+              path: "/docs/publishing-packs",
+              icon: "hero-arrow-up-tray",
+              keywords: "write validate packctl publish sign",
+              desc: "Write, validate, install, and trust a pack you maintain."
+            },
+            %{
+              slug: "pack-registry",
+              title: "Host your own registry",
+              path: "/docs/pack-registry",
+              icon: "hero-archive-box",
+              keywords: "private gcs s3 static host packctl",
+              desc: "Run a private registry on GCS, S3, or any static host with packctl."
+            },
+            %{
+              slug: "action-packs",
+              title: "Pack reference",
+              path: "/docs/action-packs",
+              icon: "hero-cube-transparent",
+              keywords: "yaml arguments validation redaction schema",
+              desc: "Action YAML reference: declared args, validation, limits, and redaction."
+            }
+          ]
+        }
+      ]
+    },
+    %{
+      label: "Operate",
+      sections: [
+        %{
+          label: "Day to day",
+          pages: [
+            %{
+              slug: "run-an-action",
+              title: "Run an action",
+              path: "/docs/run-an-action",
+              icon: "hero-play",
+              keywords: "dispatch console reason arguments approval result",
+              desc:
+                "Select a runner and action, enter its arguments, dispatch it, and read the result."
+            },
+            %{
+              slug: "runs",
+              title: "Runs & history",
+              path: "/docs/runs",
+              icon: "hero-play-circle",
+              keywords: "status output cancel timeout history",
+              desc:
+                "The run list and filters, every lifecycle status, live output and byte caps, cancellation, and how one dispatch's runs group."
+            },
+            %{
+              slug: "runbooks",
+              title: "Runbooks",
+              path: "/docs/runbooks",
+              icon: "hero-queue-list",
+              keywords: "procedure stages draft publish preflight",
+              desc:
+                "Create, publish, approve, and review a staged procedure built from declared actions."
+            }
+          ]
+        },
+        %{
+          label: "When it breaks",
+          pages: [
+            %{
+              slug: "troubleshooting",
+              title: "Troubleshooting",
+              path: "/docs/troubleshooting",
+              icon: "hero-lifebuoy",
+              keywords: "error failing broken offline denied 401 doctor diagnose",
+              desc:
+                "Start from the symptom: the first check, the page that owns it, and what to send if you need us."
+            },
+            %{
+              slug: "security-incidents",
+              title: "Security incidents",
+              path: "/docs/security-incidents",
+              icon: "hero-shield-exclamation",
+              keywords: "compromise leak breach containment response evidence",
+              desc:
+                "Contain leaked emisar authority, preserve evidence, restore a known-good path, and verify the old authority no longer works."
+            },
+            %{
+              slug: "credentials",
+              title: "Rotate and revoke credentials",
+              path: "/docs/credentials",
+              icon: "hero-arrow-path-rounded-square",
+              keywords: "rotation revocation secret token key overlap",
+              desc:
+                "Compare credential authority, overlap, and revocation consequences before you rotate or contain one."
+            }
+          ]
+        }
+      ]
+    },
+    %{
+      label: "Govern actions",
+      sections: [
+        %{
+          label: nil,
+          pages: [
+            %{
+              slug: "policies-and-approvals",
+              title: "Policies & approvals",
+              path: "/docs/policies-and-approvals",
+              icon: "hero-scale",
+              keywords: "risk tier deny allow grant approve",
+              desc: "Risk-tier defaults, per-action overrides, approvals, and standing grants."
+            },
+            %{
+              slug: "signed-dispatch",
+              title: "Signed dispatch",
+              path: "/docs/signed-dispatch",
+              icon: "hero-finger-print",
+              keywords: "certificate ca leaf signing key",
+              desc:
+                "A customer-authorized bridge signs each request with a key the control plane never holds."
+            },
+            %{
+              slug: "audit-and-siem",
+              title: "Audit & SIEM",
+              path: "/docs/audit-and-siem",
+              icon: "hero-document-magnifying-glass",
+              keywords: "ndjson export cursor poller journal ingest",
+              desc: "What gets recorded, the console, NDJSON export, and the runner journal."
             }
           ]
         }
@@ -311,156 +466,6 @@ defmodule EmisarWeb.DocsNav do
       ]
     },
     %{
-      label: "Govern actions",
-      sections: [
-        %{
-          label: nil,
-          pages: [
-            %{
-              slug: "run-an-action",
-              title: "Run an action",
-              path: "/docs/run-an-action",
-              icon: "hero-play",
-              keywords: "dispatch console reason arguments approval result",
-              desc:
-                "Select a runner and action, enter its arguments, dispatch it, and read the result."
-            },
-            %{
-              slug: "policies-and-approvals",
-              title: "Policies & approvals",
-              path: "/docs/policies-and-approvals",
-              icon: "hero-scale",
-              keywords: "risk tier deny allow grant approve",
-              desc: "Risk-tier defaults, per-action overrides, approvals, and standing grants."
-            },
-            %{
-              slug: "signed-dispatch",
-              title: "Signed dispatch",
-              path: "/docs/signed-dispatch",
-              icon: "hero-finger-print",
-              keywords: "certificate ca leaf signing key",
-              desc:
-                "A customer-authorized bridge signs each request with a key the cloud never holds."
-            }
-          ]
-        }
-      ]
-    },
-    %{
-      label: "Operate",
-      sections: [
-        %{
-          label: nil,
-          pages: [
-            %{
-              slug: "runs",
-              title: "Runs & history",
-              path: "/docs/runs",
-              icon: "hero-play-circle",
-              keywords: "status output cancel timeout history",
-              desc:
-                "The run list and filters, every lifecycle status, live output and byte caps, cancellation, and how one dispatch's runs group."
-            },
-            %{
-              slug: "runbooks",
-              title: "Runbooks",
-              path: "/docs/runbooks",
-              icon: "hero-queue-list",
-              keywords: "procedure stages draft publish preflight",
-              desc:
-                "Create, publish, approve, and review a staged procedure built from declared actions."
-            },
-            %{
-              slug: "pack-updates",
-              title: "Roll out and roll back packs",
-              path: "/docs/pack-updates",
-              icon: "hero-arrows-right-left",
-              keywords: "update canary rollback content hash trust drift version",
-              desc:
-                "Install pack bytes on a canary, trust the hash, and keep the prior version ready."
-            },
-            %{
-              slug: "credentials",
-              title: "Rotate and revoke credentials",
-              path: "/docs/credentials",
-              icon: "hero-arrow-path-rounded-square",
-              keywords: "rotation revocation secret token key overlap",
-              desc:
-                "Compare credential authority, overlap, and revocation consequences before you rotate or contain one."
-            },
-            %{
-              slug: "troubleshooting",
-              title: "Troubleshooting",
-              path: "/docs/troubleshooting",
-              icon: "hero-lifebuoy",
-              keywords: "error failing broken offline denied 401 doctor diagnose",
-              desc:
-                "Start from the symptom: the first check, the page that owns it, and what to send if you need us."
-            },
-            %{
-              slug: "security-incidents",
-              title: "Security incidents",
-              path: "/docs/security-incidents",
-              icon: "hero-shield-exclamation",
-              keywords: "compromise leak breach containment response evidence",
-              desc:
-                "Contain leaked emisar authority, preserve evidence, restore a known-good path, and verify the old authority no longer works."
-            },
-            %{
-              slug: "audit-and-siem",
-              title: "Audit & SIEM",
-              path: "/docs/audit-and-siem",
-              icon: "hero-document-magnifying-glass",
-              keywords: "ndjson export cursor poller journal ingest",
-              desc: "What gets recorded, the console, NDJSON export, and the runner journal."
-            }
-          ]
-        }
-      ]
-    },
-    %{
-      label: "Action packs",
-      sections: [
-        %{
-          label: nil,
-          pages: [
-            %{
-              slug: "use-a-published-pack",
-              title: "Use a published pack",
-              path: "/docs/use-a-published-pack",
-              icon: "hero-archive-box-arrow-down",
-              keywords: "pack suggest inspect install hash credentials trust",
-              desc: "Choose, inspect, install, configure, and verify a published action pack."
-            },
-            %{
-              slug: "action-packs",
-              title: "Pack reference",
-              path: "/docs/action-packs",
-              icon: "hero-cube-transparent",
-              keywords: "yaml arguments validation redaction schema",
-              desc: "Action YAML reference: declared args, validation, limits, and redaction."
-            },
-            %{
-              slug: "publishing-packs",
-              title: "Author your own pack",
-              path: "/docs/publishing-packs",
-              icon: "hero-arrow-up-tray",
-              keywords: "write validate packctl publish sign",
-              desc: "Write, validate, install, and trust a pack you maintain."
-            },
-            %{
-              slug: "pack-registry",
-              title: "Host your own registry",
-              path: "/docs/pack-registry",
-              icon: "hero-archive-box",
-              keywords: "private gcs s3 static host packctl",
-              desc: "Run a private registry on GCS, S3, or any static host with packctl."
-            }
-          ]
-        }
-      ]
-    },
-    %{
       label: "Reference",
       sections: [
         %{
@@ -468,11 +473,13 @@ defmodule EmisarWeb.DocsNav do
           pages: [
             %{
               slug: "mcp-reference",
-              title: "MCP reference",
+              title: "MCP CLI & reference",
               path: "/docs/mcp-reference",
               icon: "hero-code-bracket",
-              keywords: "tools methods rpc idempotency errors",
-              desc: "Methods, parameters, idempotency, and errors — the MCP server contract."
+              keywords:
+                "tools methods rpc idempotency errors emisar-mcp cli shell scripting json",
+              desc:
+                "Use live MCP tools from the shell, and inspect the server methods, schemas, recovery rules, and errors."
             },
             %{
               slug: "runner-cli",

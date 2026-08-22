@@ -236,6 +236,31 @@ defmodule EmisarWeb.LiveTableTest do
   describe "live_table :cards render" do
     defp empty_meta, do: %Metadata{previous_page_cursor: nil, next_page_cursor: nil, count: 0}
 
+    test "clear filters uses a centered icon instead of a baseline-dependent text glyph" do
+      assigns = %{filters: [%{string_filter(:name) | title: "Name"}]}
+
+      html =
+        rendered_to_string(~H"""
+        <LiveTable.live_table
+          layout={:cards}
+          id="things"
+          path="/things"
+          rows={[%{id: 1}]}
+          metadata={%Metadata{count: 1, previous_page_cursor: nil, next_page_cursor: nil}}
+          filter_params={%{"name" => "filtered"}}
+          filters={@filters}
+        >
+          <:item :let={_t}>
+            <li>row</li>
+          </:item>
+        </LiveTable.live_table>
+        """)
+
+      assert html =~ "hero-x-mark-mini h-4 w-4 shrink-0"
+      assert html =~ "Clear filters"
+      refute html =~ "&times;"
+    end
+
     test "renders the empty-state block when rows is []" do
       assigns = %{}
 

@@ -97,6 +97,8 @@ defmodule EmisarWeb.ActivateLiveTest do
       assert approved =~ "Approved — return to your terminal"
       assert approved =~ "stores each credential"
       assert approved =~ "that machine"
+      assert approved =~ "Close this tab"
+      assert approved =~ ~p"/app/#{account}/agents"
 
       assert {:ok, %{client_keys: client_keys}} = ApiKeys.claim_device_grant(device_code)
       assert Map.keys(client_keys) == ["codex"]

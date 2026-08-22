@@ -32,7 +32,7 @@
 
   <.docs_code phx-no-format label="linux-core/actions/systemctl_restart.yaml (trimmed)"><span class="text-sky-300">id</span>: <span class="text-brand-300">linux.systemctl_restart</span>
 <span class="text-sky-300">kind</span>: <span class="text-brand-300">exec</span>
-<span class="text-sky-300">risk</span>: <span class="text-amber-300">high</span>
+<span class="text-sky-300">risk</span>: <span class="text-rose-300">high</span>
 
 <span class="text-sky-300">args</span>:
   - <span class="text-sky-300">name</span>: <span class="text-brand-300">unit</span>
@@ -260,12 +260,12 @@
   </p>
   <p>
     Signed dispatch is optional. A customer-authorized bridge signs each request with a key the
-    cloud never holds. The bridge binds the exact action, pack, arguments, targets,
-    reason, operation, nonce, and time with a key the cloud does not hold. An enforcing
-    runner verifies that signature before execution.
+    control plane never holds. The bridge binds the exact action, pack, arguments, targets,
+    reason, operation, nonce, and time. An enforcing runner verifies that signature before
+    execution.
   </p>
   <p>
-    The cloud can still delay or drop a dispatch. It cannot forge a new request, change its
+    The control plane can still delay or drop a dispatch. It cannot forge a new request, change its
     arguments, widen its targets, or successfully replay it. The terminal result is not a CA-signed
     receipt.
   </p>

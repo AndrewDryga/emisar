@@ -15,12 +15,9 @@
     >
       <.docs_header current="teams-and-access">
         <:dek>
-          Who can see what, who can run what, who can approve what — and how to narrow any of it
-          down to specific runners. emisar's access model has two dials: the member's
-          <strong class="text-zinc-200">role</strong>
-          and optional <strong class="text-zinc-200">per-member runner scopes</strong>. An API key
-          an LLM connects with carries no scope of its own — it inherits its owner's, so scoping
-          the person scopes their agent.
+          Roles control what members can do, including approvals. Runner scopes control which hosts
+          they can reach. Pack scopes control which actions they can run there. API keys inherit
+          their owner's access. Limiting a person also limits their agent.
         </:dek>
       </.docs_header>
 
@@ -33,8 +30,7 @@
 
       <.docs_h2 id="roles">Roles</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Four ordered roles plus one specialist seat. Authorization is permission-based under
-        the hood, so this table is the contract:
+        emisar has four ordered roles and one specialist role. This table defines their access.
       </p>
       <div class="mt-4 overflow-hidden rounded-xl border border-zinc-800">
         <table class="w-full text-left text-sm">
@@ -48,45 +44,43 @@
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">Owner</td>
               <td class="px-4 py-3">
-                Everything an admin can, plus billing and the account itself. Only owners manage
-                other owners, and the last owner can't be removed or demoted — accounts can't be
-                orphaned.
+                Owners can do everything an admin can do, plus manage billing and the account.
+                Only owners manage other owners. The last owner cannot be removed or demoted, so an
+                account always has an owner.
               </td>
             </tr>
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">Admin</td>
               <td class="px-4 py-3">
-                Manage the team (invite, change roles, suspend), policies, runbooks, runner
-                fleet, pack trust, API keys, and runner scopes — plus billing: the plan, the
-                card, and the invoices. Everything an owner can, except adding or removing
-                owners. Plus everything below.
+                Admins manage the team, policies, runbooks, runners, pack trust, API keys, runner
+                scopes, and billing. Billing includes the plan, card, and invoices. Admins can do
+                everything below and everything an owner can do except manage owners.
               </td>
             </tr>
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">Billing manager</td>
               <td class="px-4 py-3">
-                The finance seat: manage the subscription, payment method, and invoices. Reads
-                the member list and the billing events in the audit trail, and nothing more —
-                no runner, policy, runbook, approval, or action access. It grants nothing an
-                admin lacks; the point is the reverse, so procurement can own the invoice
+                Billing managers manage the subscription, payment method, and invoices. They can
+                read the member list and billing audit events. They cannot access runners,
+                policies, runbooks, approvals, or actions. This role lets procurement own billing
                 without touching infrastructure.
               </td>
             </tr>
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">Operator</td>
               <td class="px-4 py-3">
-                Day-to-day driving: dispatch actions, <strong class="text-zinc-200">decide
-                approvals</strong>, mint their own Manage agents & keys, and write runbooks — create, edit,
-                publish, discard — as long as every step stays inside their own runner and pack
-                access. Plus viewing runners, runs, policies, and audit. No team, policy, or trust
-                management, and deleting a runbook stays with admins.
+                Operators dispatch actions, <strong class="text-zinc-200">decide
+                approvals</strong>, and mint their own agent keys. They can create, edit, publish, and
+                discard runbooks within their runner and pack access. They can view runners, runs,
+                policies, and audit records. They cannot manage teams, policies, or trust. Only
+                admins can delete runbooks.
               </td>
             </tr>
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">Viewer</td>
               <td class="px-4 py-3">
-                Read-only: see runners, runs, approvals, runbooks, policies, and audit. Can't
-                dispatch or decide anything.
+                Viewers can read runners, runs, approvals, runbooks, policies, and audit records.
+                They cannot dispatch or decide anything.
               </td>
             </tr>
           </tbody>
@@ -98,62 +92,63 @@
         Open <a
           href={~p"/app/team/invite"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Team → Invite</a>: enter an email, pick the role, send. The invite link is a
-        one-time token (hashed at rest like every credential here); accepting it creates the
-        membership at the role you chose. Granting the
-        <strong class="text-zinc-200">owner</strong>
-        role requires an owner — admins invite up
-        to their own level. Members can be suspended (sessions killed immediately, sign-in
-        blocked) and unsuspended without losing their history.
+        >Team → Invite</a>. Enter an email, choose a role, runner access, and pack access, then send
+        the invitation. The one-time link is hashed at rest. Accepting it creates the membership
+        with those grants. Only an owner can grant the owner role. Admins can invite members up to
+        the admin level. You can suspend and restore members without losing their history.
+        Suspension ends sessions immediately and blocks sign-in.
       </p>
 
       <.docs_h2 id="runner-scopes">Per-member scope: runners and packs</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Roles answer <em>what</em>
-        someone can do; runner scopes answer <em>where</em>. The owner who
-        created the account sees every runner; everyone you invite — and everyone provisioned through
-        SSO — starts with <strong class="text-zinc-200">no runner access</strong>
-        and is granted up. Open the member from
+        someone can do. Runner scopes answer <em>where</em>. The account creator starts with every
+        runner. An invite uses the grants selected in the Invite form. SSO and SCIM use the
+        provider default plus mapped directory groups. A member starts with no runner access only
+        when those settings grant none. Open the member from
         <a
           href={~p"/app/team"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Team</a>
-        and add scopes; they see the union of what you list:
+        and add scopes. The member sees the union of those scopes.
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Group scope</strong>
-            — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">group: cassandra-prod</code>.
-            Follows the group: new runners joining it are automatically in scope.
+            A <strong class="text-zinc-200">group scope</strong>
+            follows a runner group, such as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">group: cassandra-prod</code>. New
+            runners in that group enter scope automatically.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Runner scope</strong> — one specific host, for the
-            contractor who should touch exactly one box.
+            A <strong class="text-zinc-200">runner scope</strong> grants access to one specific
+            host. Use it for a contractor who needs exactly one machine.
           </span>
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Then narrow what they can run there. A grant is
+        Next, limit which packs the member can run. Each grant includes
         <strong class="text-zinc-200">all packs</strong>
-        by default, or an explicit list — so the DBA who legitimately manages the database fleet
-        can run <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">postgres.*</code>
-        on those hosts without also getting <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">shell</code>. Runner groups can't
-        express that on their own: the packs you most want to withhold are the ones installed
-        everywhere. The two dimensions intersect — the member reaches a runner only if it is in
-        their runner scope, and can run an action there only if its pack is in their pack scope.
+        by default or an explicit list. A DBA can
+        run <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">postgres.*</code>
+        on database hosts
+        without gaining <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">shell</code>
+        access.
+        Runner groups alone cannot express that limit because restricted packs often exist
+        everywhere. Both dimensions apply. A member reaches only runners in their runner scope. On
+        those runners, they can use only packs in their pack scope.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Scope controls current discovery, targeting, and new work. Out-of-scope runners stay out
         of fleet and dispatch surfaces, and out-of-scope packs stay out of catalog and dispatch
-        surfaces. Run history and audit receipts remain account-wide, so they may name runners or
-        packs outside a member's current scope. An API key inherits its owner's scope, so "the
-        DBA's agent only reaches <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra-*</code>" falls out of scoping the DBA — not a
-        per-key setting to keep in sync. Scope changes are audited.
+        surfaces. Run history and audit receipts remain account-wide. They can name runners or
+        packs outside a member's current scope. An API key inherits its owner's scope. Scope the
+        DBA to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra-*</code>
+        and the DBA's
+        agent inherits that limit. No per-key setting needs updates. Scope changes are audited.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Scope binds owners and admins too. An admin scoped to one group really does lose the rest
@@ -165,10 +160,9 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         TOTP (any standard authenticator app) with one-time recovery codes — codes are shown
         once, stored hashed, and each works exactly once. Replayed TOTP codes are rejected.
-        Beyond self-service, an owner or admin can flip
         <strong class="text-zinc-200">Require MFA</strong>
-        on the account: members without MFA
-        are routed to enrollment before they can touch anything else. On Team or Enterprise, a
+        routes unenrolled members to setup before
+        they can use the account. On Team or Enterprise, a
         <.link
           navigate={~p"/docs/sso"}
           class="text-brand-300 hover:text-brand-200"
@@ -183,35 +177,36 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Profile shows every active session with device info; sign out any of them — or
-            everywhere except the current one — in a click. Suspension and admin-forced sign-out
-            disconnect live dashboards immediately, not at next page load.
+            Profile lists each active session with device information. Sign out one session or
+            every session except the current one with one click. Suspension and forced sign-out
+            disconnect live console sessions immediately.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Magic-link sign-in uses single-use, expiring, hashed email tokens — a browser-held
-            nonce plus an emailed 6-character code, so an intercepted email can't sign in on its own.
-            Sign-in is rate-limited per IP and per email, and failed attempts land in the audit
-            log on your account, so probing is visible to admins.
+            Magic-link sign-in uses single-use, expiring, hashed email tokens. It combines a
+            browser nonce with an emailed six-character code. An intercepted email cannot sign in
+            alone. Sign-in is rate-limited by IP address and email address. Failed attempts appear
+            in the account audit log.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            An API key is identity + attribution — what it may run is your account <strong>policy</strong>. Keys are revocable from <a
+            An API key identifies its owner and records attribution. Account
+            <strong>policy</strong>
+            decides what the key can run. Revoke keys from <a
               href={~p"/app/agents"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-            >LLM agents</a>; raw secrets
-            are shown once, only hashes are stored.
+            >AI agents</a>. Raw secrets appear once, and emisar stores only hashes.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Keys self-rotate near expiry — the client installs a successor and swaps to it with no
-            interruption — and revoking or suspending the member who minted a key revokes it.
+            Keys rotate near expiry without interruption. The client installs a successor before
+            switching to it. Revoking or suspending the member also revokes their keys.
           </span>
         </li>
       </ul>

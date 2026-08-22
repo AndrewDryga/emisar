@@ -18,16 +18,15 @@
     >
       <.docs_header current="architecture">
         <:dek>
-          Which component decides what, what crosses each boundary, and exactly what happens when
-          one of them disappears while work is in flight.
+          This page explains which component decides what and what crosses each boundary. It also
+          explains what happens when a component disappears during work.
         </:dek>
       </.docs_header>
 
       <.docs_prerequisites>
         <:item>
-          Nothing installed. This page is reference reading — for a security review, a design
-          discussion, or the moment something failed and you need to know what should have
-          happened.
+          Nothing installed. Read this page during a security review, design discussion, or failure
+          investigation.
         </:item>
         <:item>
           A rough picture of the product from <.link
@@ -39,12 +38,13 @@
       </.docs_prerequisites>
 
       <p class="mt-6 text-base leading-7 text-zinc-400">
-        Everything below is behavior the wire protocol, the MCP contract, and the runner's own
-        lifecycle actually implement. Where a boundary is honest about what it cannot promise, that
-        is stated in the same paragraph rather than a footnote. Threats, guarantees, and
-        limitations are a different page —
-        <.link navigate={~p"/docs/security-model"} class="text-brand-300 hover:text-brand-200">Security model</.link>
-        owns those; this page owns topology, state, and failure.
+        Everything below reflects the wire protocol, MCP contract, and runner lifecycle. Each
+        limit appears beside the behavior it limits.
+        <.link
+          navigate={~p"/docs/security-model"}
+          class="text-brand-300 hover:text-brand-200"
+        >Security model</.link>
+        covers threats and guarantees. This page covers topology, state, and failure.
       </p>
 
       <.docs_h2 id="components">The four pieces</.docs_h2>
@@ -61,7 +61,7 @@
             <%= for {component, where, responsibility} <- [
               {"Control plane",
                "Hosted by us",
-               "Authenticates every caller, applies account and runner scope, pins the trusted pack version and hash, evaluates policy, runs approvals, composes runbooks, and keeps the searchable audit history."},
+               "The control plane authenticates every caller and applies account and runner scope. It pins the trusted pack version and hash. It evaluates policy, runs approvals, composes runbooks, and keeps searchable audit history."},
               {"Runner",
                "Your host, one per host, outbound only",
                "Loads and hashes local packs, decides what this host advertises, re-validates every argument, executes, redacts output before it leaves, and writes a hash-chained local journal."},
@@ -82,8 +82,8 @@
         </table>
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        One connection carries all of it: the runner dials out over TLS and keeps a websocket open.
-        There is no listener on the runner host and nothing to expose — the ports and hosts a
+        One connection carries all of it. The runner dials out over TLS and keeps a websocket open.
+        There is no listener on the runner host and nothing to expose. The ports and hosts a
         runner needs are in <.link
           navigate={~p"/docs/network-requirements"}
           class="text-brand-300 hover:text-brand-200"
@@ -95,13 +95,13 @@
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
         <li>
           <strong class="text-zinc-200">The runner decides what it offers.</strong>
-          At boot and on every reload it validates its installed packs, computes their content
-          hashes, applies its local admission rules, and advertises the resulting catalog upward.
+          At boot and on reload, it validates installed packs and computes their content hashes. It
+          applies local admission rules and advertises the resulting catalog.
         </li>
         <li>
           <strong class="text-zinc-200">A caller asks for one declared action.</strong>
-          The control plane authenticates them — an operator session, an API key, or an OAuth
-          client — then applies their runner and pack scope to discovery and targeting.
+          The control plane authenticates an operator session, API key, or OAuth client. It then
+          applies runner and pack scope to discovery and targeting.
         </li>
         <li>
           <strong class="text-zinc-200">The control plane resolves the exact pack.</strong>
@@ -111,32 +111,31 @@
         </li>
         <li>
           <strong class="text-zinc-200">Policy decides.</strong>
-          Allow, deny, or require a human. A denial ends the run before any host is contacted; a
+          Allow, deny, or require a human. A denial ends the run before any host is contacted. A
           require-approval decision parks it until an approver acts.
         </li>
         <li>
           <strong class="text-zinc-200">One dispatch goes down the connection.</strong>
-          It carries the action id, the exact argument bytes, the reason, the operation id, the
-          expected pack hash, and — where the customer-authorized bridge signs — its attestation.
+          It carries the action ID, exact argument bytes, reason, operation ID, and expected pack
+          hash. A signed bridge also adds its attestation.
         </li>
         <li>
           <strong class="text-zinc-200">The runner decides again.</strong>
-          It re-hashes the pack, checks its own admission rules, verifies the signature where it
-          enforces one, re-validates every argument against the declared schema, clamps the call's
-          options to the action's envelope, and renders the pack-authored program.
+          It re-hashes the pack and checks local admission. If enforced, it verifies the signature.
+          It validates every argument against the schema. It clamps call options to the action
+          envelope and renders the pack-authored program.
         </li>
         <li>
           <strong class="text-zinc-200">It executes, redacts, and reports.</strong>
           Output is bounded and redacted on the host before any chunk is sent. The runner writes
-          its local journal line, streams progress, and sends one terminal result, which the
-          control plane stores as the searchable record.
+          its local journal line, streams progress, and sends one terminal result. The control
+          plane stores the terminal result as the searchable record.
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The two decision points are the shape of the whole system: the control plane decides
-        whether something <em>should</em>
-        run, and the runner decides whether it <em>will</em>. Neither can talk the other into
-        skipping its own check.
+        These two decisions shape the whole system. The control plane decides whether a request is
+        allowed. The runner decides whether it will execute. Neither can make the other skip its
+        own check.
       </p>
 
       <.docs_h2 id="ownership">Who owns which decision</.docs_h2>
@@ -153,16 +152,16 @@
             <%= for {subject, owner, meaning} <- [
               {"Who the caller is", "Control plane",
                "Sessions, API keys, OAuth clients, and runner tokens all authenticate here. Every bearer credential is stored hashed."},
-              {"Which hosts a person or key may touch", "Control plane",
+              {"Which hosts a person or key can touch", "Control plane",
                "Runner scope narrows the catalog itself, so an out-of-scope host is invisible rather than refused."},
               {"Which pack version and hash is trusted", "Control plane",
                "Trust binds one exact content hash — auto-pinned when the published catalog it reads carries that hash, decided by an admin otherwise. Installing bytes on a host does not trust them."},
               {"Allow, deny, or ask a human", "Control plane",
-               "Policy is default-deny: no matching rule means the dispatch is refused."},
+               "The first matching action override wins. Without one, the action risk tier selects its default decision. A missing policy denies the dispatch."},
               {"What this host will advertise or run at all", "Runner",
                "Local admission filters by action id and a risk ceiling. A rule in the host's config overrides anything the control plane asks for."},
               {"Whether the arguments are valid", "Both, in that order",
-               "The control plane validates before it dispatches; the runner re-validates against the declared schema immediately before execution."},
+               "The control plane validates before dispatch. The runner validates again against the declared schema immediately before execution."},
               {"What OS privileges an action gets", "You, on the host",
                "Through the runner's service user and whatever sudo, capabilities, or per-action user you configured. emisar does not sandbox an action from the host."},
               {"The raw output bytes", "Runner, and they stay there",
@@ -188,20 +187,20 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The control plane</strong>
-            holds your account and members, policies and approvals, the trusted pack references and
-            their hashes, runbooks, every run with its redacted output, and the audit trail. Every
-            bearer credential it issues is stored as a hash, so a database copy yields nothing
-            replayable.
+            stores accounts, members, policies, approvals, trusted pack references, hashes,
+            runbooks, exact action arguments, runner-returned output, and audit history. It stores
+            every issued bearer credential as a hash. It stores OIDC client secrets reversibly
+            because it must present them to the identity provider. Exact arguments can also contain
+            operator-supplied secrets. Protect database copies accordingly.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">A runner</strong>
-            holds its own token, its durable dispatch state, the packs installed on that
-            host, the nonce store it needs when it enforces signed dispatch, and the local journal.
-            The dispatch and nonce state is what makes a replayed dispatch fail rather than execute
-            twice — and only one runner process may own it at a time.
+            stores its token, durable dispatch state, installed packs, signed-dispatch nonce store,
+            and local journal. Dispatch and nonce state prevent repeated execution. Only one runner
+            process can own that state at a time.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -217,7 +216,7 @@
           <span>
             <strong class="text-zinc-200">A registry</strong>
             holds immutable published pack artifacts. Distribution and trust stay separate on
-            purpose: fetching bytes from a registry is not a decision to run them.
+            purpose. Fetching bytes from a registry is not a decision to run them.
           </span>
         </li>
       </ul>
@@ -250,20 +249,20 @@
                "The runner process is still alive, so the child process keeps running. The runner reconnects with backoff, re-advertises, and replays its progress and terminal result until the control plane acknowledges them.",
                "Nothing. The run settles on its real outcome once the connection is back."},
               {"The runner process or its host dies mid-execution",
-               "The child may have completed, may still be winding down, or may have been terminated with the runner or host. If the terminal result was not durable, the runner reports execution_outcome_unknown after restart and never executes that dispatch again automatically.",
+               "The child can be complete, still stopping, or terminated with the runner or host. If no terminal result is durable, the runner reports execution_outcome_unknown after restart. It never executes that dispatch again automatically.",
                "Check the target system before you re-run. The side effect happened outside emisar's control, and only you can tell whether it landed."},
               {"The LLM client cancels, or the bridge disconnects",
-               "An operation the control plane already admitted keeps going. Cancellation stops the bridge's wait and suppresses its reply; closing the client's input lets already-admitted requests finish.",
+               "An operation the control plane already admitted keeps going. Cancellation stops the bridge wait and suppresses its reply. Closing the client input lets admitted requests finish.",
                "Recover by operation id, with the same credential lineage that made the call. Never repeat the mutation because the response was lost."},
               {"An approval waits while the fleet changes",
                "The decision is rechecked against current facts, and the send rechecks them again. A fact that moved makes the approval fail rather than dispatch something else.",
                "Read the checks below, fix what moved, and dispatch again."},
               {"A pack changes after a runbook execution started",
-               "The execution runs the steps and exact pack references frozen at preflight. Later pack changes do not rewrite a frozen plan; a frozen fact that is no longer valid halts the execution instead of quietly substituting another.",
+               "The execution uses the steps and exact pack references frozen at preflight. Later pack changes do not rewrite the plan. An invalid frozen fact stops execution instead of substituting another.",
                "Re-run the runbook once the fleet is where you want it."},
               {"A runner or bridge is older than the supported minimum",
-               "It is classified and surfaced as unsupported. Enforcement is a deployment-level switch and is off today, so an unsupported peer is warned about rather than refused; a version that cannot be parsed is never blocked.",
-               "Upgrade it. Before 1.0 the components are released together and are not cross-version tested."}
+               "The system marks it unsupported. Version enforcement is a deployment switch and is off today. An unsupported peer gets a warning, not a refusal. A version that cannot be parsed is never blocked.",
+               "Upgrade it to a supported version. The product is pre-1.0 today, so 0.x peers are not cross-version tested. Version 1.0 freezes the public compatibility contracts."}
             ] do %>
               <tr>
                 <td class="px-4 py-3 align-top font-semibold text-zinc-100">{event}</td>
@@ -275,16 +274,21 @@
         </table>
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Upgrading a fleet and its bridges — including what a binary upgrade interrupts and how to
-        get back to a known-good release — is <.link
+        <.link
           navigate={~p"/docs/runner-upgrades"}
           class="text-brand-300 hover:text-brand-200"
-        >Upgrade runners</.link>. What
-        each run status means, and how to tell a real failure from a gate, is <.link
+        >Upgrade runners</.link>
+        explains upgrade interruptions and recovery.
+        <.link
+          navigate={~p"/docs/compatibility"}
+          class="text-brand-300 hover:text-brand-200"
+        >Compatibility and deprecation</.link>
+        defines the future v1 contract and current pre-1.0 limits.
+        <.link
           navigate={~p"/docs/runs"}
           class="text-brand-300 hover:text-brand-200"
-        >Runs &amp; history</.link>; starting from a
-        symptom instead is <.link
+        >Runs &amp; History</.link>
+        explains each status. Start with <.link
           navigate={~p"/docs/troubleshooting"}
           class="text-brand-300 hover:text-brand-200"
         >Troubleshooting</.link>.
@@ -293,49 +297,45 @@
       <.docs_h2 id="delivery">Delivery, and what it does not promise</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Messages between a runner and the control plane are delivered at least once. A result is
-        replayed across reconnects until it is acknowledged, and a lost acknowledgement can produce
-        a duplicate — so the control plane consumes them idempotently: it applies neither the
-        output nor the terminal state a second time, and a delivery retry of the same dispatch
-        returns the recorded state rather than starting a second execution.
+        replayed until acknowledged, so a lost acknowledgement can produce a duplicate. The
+        control plane does not apply output or terminal state again. A retry returns recorded state
+        instead of starting another execution.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        That is idempotent handling of duplicates, not a promise that an action executes exactly
-        once. The honest boundary is the one in the table above: when a host dies between starting
-        a process and durably recording its outcome, nobody — not the runner, not the control plane
-        — can tell you whether the side effect landed. emisar says so with
+        This is idempotent handling, not an exactly-once execution promise. A host can die after
+        starting a process but before recording its outcome. Neither side then knows whether the
+        effect happened. emisar reports
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execution_outcome_unknown</code>
         and refuses to guess by re-running it.
       </p>
 
       <.docs_h2 id="approvals">What a wait revalidates</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        An approval can sit for hours, and the fleet moves underneath it. When the approver decides,
-        these facts are checked again before the run is released, and the ones that guard delivery
-        are checked once more when it is actually sent:
+        An approval can wait for hours while the fleet changes. When the approver decides, the
+        system checks these facts before releasing the run. It checks delivery facts again when
+        sending the run:
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            The run is still parked and still approvable — a cancellation or an expiry in the
+            The run is still parked and still approvable. A cancellation or an expiry in the
             meantime makes the approval fail rather than resurrect it.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            The pack hash currently trusted for that runner and action still matches the hash frozen
-            on the run, and the action's program is still available on that host. A trust decision
-            that moved underneath the wait stops the dispatch instead of shipping different bytes
-            than the approver saw.
+            The trusted pack hash still matches the hash frozen on the run. The action program
+            still exists on the host. A changed trust decision stops dispatch instead of sending
+            different bytes.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            The account is still active, the target runner still exists and is active, the
-            membership that initiated the run is still active and still has that runner in scope,
-            and the API key behind it — if there was one — is still usable.
+            The account and target runner remain active. The initiating membership remains active
+            and has the runner in scope. Any API key behind the request remains usable.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -343,7 +343,7 @@
           <span>
             For a signed run, the original attestation is still inside its freshness window and its
             certificate's validity window. An approved run is re-dispatched with the signature it
-            was created with, so a slow approval can outlive it — set both comfortably above your
+            was created with. A slow approval can outlive it. Set both comfortably above your
             approval turnaround, as
             <.link
               navigate={~p"/docs/signed-dispatch"}
@@ -354,29 +354,29 @@
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        These are stop conditions, not a second policy evaluation: the decision the approver made
+        These are stop conditions, not a second policy evaluation. The decision the approver made
         is the decision that stands, and what is rechecked is whether it can still be carried out
         as approved. Approval rules, expiry, and standing grants are owned by <.link
           navigate={~p"/docs/policies-and-approvals"}
           class="text-brand-300 hover:text-brand-200"
-        >Policies &amp; approvals</.link>.
+        >Policies &amp; Approvals</.link>.
       </p>
 
       <.docs_h2 id="boundary">The hosted boundary</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The control plane is ours to run, and there is nothing for you to upgrade there — shipped
+        The control plane is ours to run, and there is nothing for you to upgrade there. Shipped
         changes land in the <.link
           navigate={~p"/changelog"}
           class="text-brand-300 hover:text-brand-200"
-        >changelog</.link>. The components you do own —
-        runners, bridges, and packs — move on your schedule. The repository contains deployable
-        control-plane code for evaluation, but supported self-hosted and air-gapped deployments are
+        >changelog</.link>. You control runner, bridge, and pack upgrades, so those components move
+        on your schedule. The repository contains deployable
+        control-plane code for evaluation. Supported self-hosted and air-gapped deployments are
         not generally available today.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        What that means for a review: the hosts and their privileges stay yours, raw action output
-        never leaves them, and action data crosses the boundary as a dispatch going down and a
-        redacted result coming back. Catalog advertisements, heartbeats, and acknowledgements share
+        For a security review, this boundary means the hosts and their privileges remain yours. Raw
+        action output never leaves them. Only the dispatch and redacted result cross the boundary.
+        Catalog advertisements, heartbeats, and acknowledgements share
         the same outbound connection. The threat model behind that boundary, including what it
         deliberately does not defend against, is in <.link
           navigate={~p"/docs/security-model"}

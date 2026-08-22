@@ -170,7 +170,7 @@ defmodule EmisarWeb.DomainComponents do
   @doc """
   The dispatch ORIGIN of a run — a small leading icon + the actor label on one
   truncating line. The ICON (not color) distinguishes an LLM/MCP-dispatched run
-  (sparkles — the same glyph as the LLM agents menu item) from an operator (a
+  (sparkles — the same glyph as the AI agents menu item) from an operator (a
   person), a runbook, or a schedule, so agent-origin is pre-attentive without
   spending the emerald-means-allowed semantic on it (who dispatched is metadata,
   not an outcome). The canonical origin shape — reuse it instead of re-pairing an

@@ -84,15 +84,12 @@
             activity. It still connects today, but that is not a promise. Upgrade it.
           </span>
         </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">The version is self-reported.</strong>
-            Treat it as housekeeping, not a security control. What a bridge may actually do is
-            decided by your policies and its key, never by the version it claims.
-          </span>
-        </li>
       </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The version is self-reported, so treat it as housekeeping, never a security control —
+        what a bridge may do is decided by your policies and its key, not by the version it
+        claims.
+      </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Upgrade your runners and bridges in the same pass. For which versions work together, see <.link
           navigate={~p"/docs/compatibility"}
@@ -106,29 +103,34 @@
         one, checks the checksum and the version it reports, keeps a copy of the old binary, and
         only then swaps them. If any step fails, it puts everything back.
       </p>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        On macOS or Linux:
-      </p>
-      <.docs_code
-        phx-no-format
-        label="shell"
-        copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
-      ><span class="text-zinc-500"># replaces the emisar-mcp binary in place</span>
+      <.os_docs_code phx-no-format detected={@detected_os}>
+        <:tab
+          os={:linux}
+          label="Linux"
+          copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
+        ><span class="text-zinc-500"># replaces the emisar-mcp binary in place</span>
 <span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash
 
 <span class="text-zinc-500"># confirm the new version</span>
-<span class="text-zinc-500">$</span> emisar-mcp --version</.docs_code>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        On 64-bit Windows, open PowerShell and run:
-      </p>
-      <.docs_code
-        phx-no-format
-        label="PowerShell"
-        copy_text="irm https://emisar.dev/install-mcp.ps1 | iex"
-      ><span class="text-zinc-500">PS&gt;</span> irm https://emisar.dev/install-mcp.ps1 | iex
+<span class="text-zinc-500">$</span> emisar-mcp --version</:tab>
+        <:tab
+          os={:windows}
+          label="Windows"
+          copy_text="irm https://emisar.dev/install-mcp.ps1 | iex"
+        ><span class="text-zinc-500">PS&gt;</span> irm https://emisar.dev/install-mcp.ps1 | iex
 
 <span class="text-zinc-500"># confirm the new version</span>
-<span class="text-zinc-500">PS&gt;</span> emisar-mcp --version</.docs_code>
+<span class="text-zinc-500">PS&gt;</span> emisar-mcp --version</:tab>
+        <:tab
+          os={:macos}
+          label="macOS"
+          copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash"
+        ><span class="text-zinc-500"># replaces the emisar-mcp binary in place</span>
+<span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash
+
+<span class="text-zinc-500"># confirm the new version</span>
+<span class="text-zinc-500">$</span> emisar-mcp --version</:tab>
+      </.os_docs_code>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
@@ -161,8 +163,8 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Then check it from the client.</strong>
-            Ask the agent to list your runners. If it answers, the new bridge is live. The version
-            string alone does not prove the client picked it up.
+            Ask the agent to list your runners. An answer means the client is running the new
+            bridge — the version command only checks the binary on disk.
           </span>
         </li>
       </ul>
@@ -178,23 +180,28 @@
         Going back is the same installer with the version you were on. Restart the client and
         check it the same way.
       </p>
-      <.docs_code
-        phx-no-format
-        label="shell"
-        copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --version <known-good-version>"
-      ><span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install-mcp.sh \
-    | sudo bash -s -- --version &lt;known-good-version&gt;</.docs_code>
-      <p class="mt-5 text-base leading-7 text-zinc-400">
-        On Windows, pass the version to the same script:
-      </p>
-      <.docs_code
-        phx-no-format
-        label="PowerShell"
-        copy_text={
-          ~s|& ([scriptblock]::Create((irm https://emisar.dev/install-mcp.ps1))) -Version <known-good-version>|
-        }
-      ><span class="text-zinc-500">PS&gt;</span> &amp; ([scriptblock]::Create((irm https://emisar.dev/install-mcp.ps1))) `
-    -Version &lt;known-good-version&gt;</.docs_code>
+      <.os_docs_code phx-no-format detected={@detected_os}>
+        <:tab
+          os={:linux}
+          label="Linux"
+          copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --version <known-good-version>"
+        ><span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install-mcp.sh \
+    | sudo bash -s -- --version &lt;known-good-version&gt;</:tab>
+        <:tab
+          os={:windows}
+          label="Windows"
+          copy_text={
+            ~s|& ([scriptblock]::Create((irm https://emisar.dev/install-mcp.ps1))) -Version <known-good-version>|
+          }
+        ><span class="text-zinc-500">PS&gt;</span> &amp; ([scriptblock]::Create((irm https://emisar.dev/install-mcp.ps1))) `
+    -Version &lt;known-good-version&gt;</:tab>
+        <:tab
+          os={:macos}
+          label="macOS"
+          copy_text="curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash -s -- --version <known-good-version>"
+        ><span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install-mcp.sh \
+    | sudo bash -s -- --version &lt;known-good-version&gt;</:tab>
+      </.os_docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Only published releases install; a draft or still-changing release is refused. You can
         only go back as far as the minimum version above.

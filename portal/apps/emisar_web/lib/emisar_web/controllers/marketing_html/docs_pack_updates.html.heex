@@ -39,12 +39,17 @@
 
       <.docs_h2 id="record">1. See where you are</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Start from the host — that is where the packs are. List what is installed, see what
-        the registry would change, and write down the id, version, and hash of the pack you are
-        about to update: that line is your way back. Note which runners or groups carry it.
+        Start from the host — that is where the packs are. List what is installed and see
+        what an update would change. Write down the id, version, and hash of the pack you are
+        updating: that line is your way back. Note which runners or groups carry it.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># id, version, action count, and content hash per installed pack</span>
 <span class="text-zinc-500">$</span> sudo emisar pack list
+
+<span class="text-zinc-500">ID             VERSION  ACTIONS  HASH                 DESCRIPTION</span>
+<span class="text-zinc-500">billing-tools  0.1.0    3        sha256:77b0d3f6c1a9  In-house billing runbooks</span>
+<span class="text-zinc-500">linux-core     0.4.1    34       sha256:9c2e51a0b4d7  Read-only Linux diagnostics plus …</span>
+<span class="text-zinc-500">redis          0.2.3    59       sha256:1f0c4a7b9d2e  Deep Redis ops — INFO + memory …</span>
 
 <span class="text-zinc-500"># what an update would change — no changes made</span>
 <span class="text-zinc-500">$</span> sudo emisar pack update --dry-run
@@ -75,18 +80,38 @@
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># the changed lines between the installed pack and the registry's version</span>
 <span class="text-zinc-500">$</span> sudo emisar pack diff redis
 
+<span class="text-zinc-500">redis  0.2.3 → 0.2.4   sha256:1f0c4a7b9d2e → sha256:8a41c6d0e5f2</span>
+<span class="text-zinc-500">1 files changed · 1 insertions(+), 1 deletions(-)</span>
+
+<span class="text-amber-300">  ! risk escalated  redis.config_set  medium → high</span>
+
+<span class="text-zinc-500">--- a/actions/config_set.yaml</span>
+<span class="text-zinc-500">+++ b/actions/config_set.yaml</span>
+<span class="text-zinc-500">@@ -2,4 +2,4 @@</span>
+<span class="text-zinc-500"> id: redis.config_set</span>
+<span class="text-zinc-500"> title: CONFIG SET</span>
+<span class="text-zinc-500"> kind: exec</span>
+<span class="text-rose-400">-risk: medium</span>
+<span class="text-brand-300">+risk: high</span>
+
 <span class="text-zinc-500"># against a specific published version, or the summary alone</span>
 <span class="text-zinc-500">$</span> sudo emisar pack diff redis --to 0.2.4
 <span class="text-zinc-500">$</span> sudo emisar pack diff redis --stat</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The candidate is fetched and hash-verified the same way an update fetches it, and
-        the diff covers the files behind the pack's content hash — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack.yaml</code>, its action
-        declarations, and its scripts. Read it for the changes that break callers: an
-        action removed or renamed fails any runbook step that names it, and an argument's
-        name, type, default, or validation changes what callers can send. Changes that
-        alter what the host may do are called out above the diff — an escalated risk tier
-        your policy may now route through approval, a dropped redaction rule, a changed
-        execution user, a widened path allowlist, or a newly required setup variable.
+        The diff covers the files behind the pack's content hash: <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack.yaml</code>, the action
+        declarations, and the scripts. The new version is fetched and verified the same way
+        an update fetches it, and nothing is written.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Read it for what breaks callers. A removed or renamed action fails any runbook step
+        that names it, and a changed argument — name, type, default, validation — changes
+        what callers can send.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">!</code>
+        callouts above the diff flag changes that widen what the host may do: an escalated
+        risk tier, a dropped redaction rule, a different execution user, a widened path
+        allowlist, a new required setup variable.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The
@@ -110,6 +135,10 @@
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># move one pack to the registry's current version</span>
 <span class="text-zinc-500">$</span> sudo emisar pack update redis
 
+<span class="text-zinc-500">  redis                  v0.2.3 → v0.2.4 updated</span>
+<span class="text-zinc-500">1 updated, 0 up to date, 0 not in registry, 0 failed.</span>
+<span class="text-zinc-500">Reloaded the runner — it re-reads packs and re-advertises to the control plane.</span>
+
 <span class="text-zinc-500"># or pin an exact published version and its hash</span>
 <span class="text-zinc-500">$</span> sudo emisar pack install redis=0.2.4 --hash sha256:… --force</.docs_code>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
@@ -117,10 +146,10 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The new version is verified before it goes live.</strong>
-            The tarball is fetched, validated, and hash-checked against the registry index, staged
-            beside the live pack, and only then swapped in. An activation failure restores the
-            previous version immediately, and the staged swap keeps a backup beside the pack — after
-            a power loss mid-swap, the next install or update recovers it.
+            The tarball is fetched, validated, and hash-checked against the registry index.
+            It is staged beside the live pack and only then swapped in. If activation fails,
+            the previous version is restored immediately. The staged swap keeps a backup, so
+            after a power loss mid-swap, the next install or update recovers it.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -145,8 +174,8 @@
       <.docs_h2 id="trust">4. Trust it and prove it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Installing is not trusting: the files are on the host, and account trust decides what
-        may run. The canary now advertises the new version. When its hash is one the published
-        catalog carries,
+        may run. The canary now advertises the new version. When its hash matches the
+        published catalog,
         <a
           href={~p"/app/packs"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -160,11 +189,11 @@
           class="text-brand-300 hover:text-brand-200"
         >authored</.link>, one you edited, or a retired version — shows as
         <strong class="text-zinc-200">pending</strong>
-        with the exact hash it is advertising, and dispatch for it is refused.
+        with the hash it advertises, and dispatch for it is refused.
         Trust binds one exact content hash: check the pending hash against the one
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack list</code>
-        printed on the host, then review and trust that version. Trusting records the complete
-        action set for that exact version, so any later change is caught.
+        printed on the host, then review and trust that version. Trusting records the
+        complete action set for that version, so any later change is caught.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Run one low-risk read-only action against the canary. Confirm that it succeeds and appears
@@ -180,10 +209,11 @@
 
       <.docs_h2 id="fleet">5. Roll through the fleet</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Repeat the update on bounded runner groups. Account trust is bound to the hash. Another
-        runner with the trusted hash needs no second decision. A <em>different</em>
-        hash for that version is drift. It stops and asks for review. After each group, confirm the
-        advertised versions and hashes match what you trusted and run one representative action.
+        Repeat the update on bounded runner groups. Trust is bound to the hash: another
+        runner with the trusted hash needs no second decision, and a <em>different</em>
+        hash for the same version is drift — it stops and asks for review. After each group,
+        confirm the versions and hashes match what you trusted, and run one representative
+        action.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Group and label mechanics are in <.link
@@ -202,13 +232,17 @@
         version is still there, at the same address with the same hash.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># the version and hash you recorded before the update</span>
-<span class="text-zinc-500">$</span> sudo emisar pack install redis=0.2.3 --hash sha256:… --force</.docs_code>
+<span class="text-zinc-500">$</span> sudo emisar pack install redis=0.2.3 --hash sha256:… --force
+
+<span class="text-zinc-500">installed redis → /etc/emisar/packs/redis</span>
+<span class="text-zinc-500">…</span>
+<span class="text-zinc-500">Reloaded the runner — it re-reads packs and re-advertises to the control plane.</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--hash</code>
         pin makes this exact: the install aborts unless the computed hash matches. Each
-        version carries its own trust decision, so a previously trusted version resumes dispatch
-        without another review, and a catalog hash needs none either. A version the catalog has
-        dropped, or any hash the account has never trusted, lands as pending.
+        version carries its own trust decision. A version you trusted before resumes
+        dispatch without another review, and a catalog hash needs none either. A version the
+        catalog has dropped, or a hash the account never trusted, lands as pending.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Do this per runner, in the same bounded groups you rolled forward in, and verify the same
@@ -218,8 +252,8 @@
       <.docs_h2 id="retirement">Retired versions</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         When a published pack ships a security or critical-correctness fix, it declares a
-        retirement floor and every version below it is retired. A runner still advertising a
-        retired version fails closed at dispatch with a message telling the operator to update the
+        retirement floor and every version below it is retired. A runner still on a retired
+        version is refused at dispatch, with a message telling the operator to update the
         pack. An admin can deliberately re-trust a retired version in <a
           href={~p"/app/packs"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"

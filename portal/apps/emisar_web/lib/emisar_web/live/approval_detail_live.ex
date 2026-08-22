@@ -621,9 +621,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   # Hover context for the source qualifier. `:operator` (a human from the
   # console) carries no qualifier at all — the requester name says it; `:mcp`
-  # is the one that matters, an autonomous LLM agent reaching the gate.
+  # is the one that matters, an autonomous AI agent reaching the gate.
   # Only reached for a non-:operator source — the qualifier renders nowhere else.
-  defp dispatch_source_meaning(:mcp), do: "Dispatched by an LLM agent over the MCP API"
+  defp dispatch_source_meaning(:mcp), do: "Dispatched by an AI agent over the MCP API"
   defp dispatch_source_meaning(:runbook), do: "Dispatched as a step in a runbook run"
 
   # The dispatch channel qualifier comes from Runs' attribution projection, so
@@ -769,7 +769,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               <span class="text-zinc-200">{execution_work_label(@execution_plan)}</span>
             </.meta_field>
             <%!-- Who (the accountable human) AND what asked: a request from an
-             autonomous LLM agent (MCP) is the reason the gate exists and
+             autonomous AI agent (MCP) is the reason the gate exists and
              warrants more scrutiny than an operator's own dispatch. --%>
             <%!-- wrap: the source qualifier explains itself through a <.tooltip>,
              whose bubble scalar truncation would clip away. --%>
