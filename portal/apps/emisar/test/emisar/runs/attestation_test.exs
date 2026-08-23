@@ -22,6 +22,25 @@ defmodule Emisar.Runs.AttestationTest do
       assert Attestation.validate([], facts()) == {:ok, nil}
     end
 
+    test "accepts the envelope an enterprise certificate authority really issues" do
+      # An AD CS default template — RSA-4096 issuing CA, LDAP and HTTP CDP/AIA,
+      # a policy OID — signs a leaf and an intermediate of about two kilobytes
+      # each, which measured 8,491 bytes on the wire end to end. The oversize
+      # case below probes far past the cap, so it stays green no matter where
+      # the cap sits; only asserting the accepting side catches it drifting
+      # down onto a customer whose PKI is merely ordinary.
+      chain = [
+        Base.encode64(:crypto.strong_rand_bytes(1_980)),
+        Base.encode64(:crypto.strong_rand_bytes(2_107))
+      ]
+
+      header = encode(Map.put(envelope(), "cert_chain", chain))
+
+      assert byte_size(header) > 8_192
+      assert {:ok, attestation} = Attestation.validate([header], facts())
+      assert Attestation.envelope(attestation)["cert_chain"] == chain
+    end
+
     test "rejects every relayed fact that disagrees with the call" do
       for {field, changed} <- [
             {"portal_origin", "https://other.example"},

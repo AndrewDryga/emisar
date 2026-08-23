@@ -9,19 +9,26 @@ defmodule Emisar.Runs.Attestation do
   portal would relay.
 
   The portal is deliberately not a signature authority: the runner verifies the
-  customer CA, the certificate, the Ed25519 signature, freshness, its own local
+  customer CA, the certificate, the claim signature, freshness, its own local
   target identity, and the replay nonce.
   """
   alias Emisar.Crypto
 
   @version "emisar-attestation-v5"
   @tool "run_action"
-  @max_header_bytes 8_192
+  # The envelope carries a certificate chain, so the budget is set by the
+  # largest chain a real enterprise PKI issues, not by the JSON around it. An
+  # AD CS default template — RSA-4096 issuing CA, LDAP and HTTP CDP/AIA, a
+  # policy OID — measures 8,491 bytes on the wire for a leaf plus one
+  # intermediate. A cap under that refuses those customers outright, and the
+  # refusal reads as `invalid_attestation`, which names nothing they could act
+  # on. Bandit's `max_header_length` is sized above this in `config.exs`.
+  @max_header_bytes 16_384
   @max_runner_refs 16
   @max_runner_ref_bytes 113
   # Matches `$defs.reason` in the MCP schema. A narrower bound here rejects an
   # attestation the bridge legitimately signed over a schema-valid reason; the
-  # 8 KiB header cap above is the real budget.
+  # header cap above is the real budget.
   @max_reason_chars 2_000
   @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
   @lower_hex_32 ~r/\A[0-9a-f]{32}\z/

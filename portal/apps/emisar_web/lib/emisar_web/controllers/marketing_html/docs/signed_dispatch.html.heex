@@ -47,7 +47,7 @@
         </li>
         <li>
           <strong>The signing key stays on your machine.</strong>
-          The bridge signs with an Ed25519 key and attaches its CA-signed certificate. It signs
+          The bridge signs with your private key and attaches its CA-signed certificate. It signs
           the argument bytes exactly as sent — it does not decode and rebuild them, so large
           integers, object order, and escapes stay exact.
         </li>
@@ -253,6 +253,9 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
               <td class="px-4 py-3 align-top leading-6">An Ed25519 or ECDSA P-256 key</td>
               <td class="px-4 py-3 align-top leading-6">
                 P-256 is there because several KMS and HSM products still do not offer Ed25519.
+                RSA is not accepted. A Windows CA issues RSA unless you tell it otherwise, so
+                this certificate needs a template set to ECDSA P-256 — the CA above it can stay
+                on RSA.
               </td>
             </tr>
             <tr>
