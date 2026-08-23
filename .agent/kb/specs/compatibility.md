@@ -528,42 +528,61 @@ and preserves existing ones. A caller without a controlling terminal is refused
 without `--yes`. Interactive installs may leave pack selection unset to review
 host-matched recommendations.
 
-`install-mcp.sh` accepts `--version`, `--install-dir`, `--uninstall` (remove
-the installed binaries, the `emisar` entry and `.emisar-bak` backups in
-detected client configs, every stored direct-CLI account, and bridge rotation
-state), and `--yes`.
-It accepts
+`install-mcp.sh` accepts `--version`, `--install-dir`, `--uninstall`, and
+`--yes`. It accepts
 `VERSION`, `INSTALL_DIR`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`, `ASSUME_YES`,
-and `EMISAR_URL` (the portal its interactive CLI/client setup talks to and
-writes into configs; default `https://emisar.dev`). The interactive setup
-requests a dedicated `emisar-mcp-cli` key, imports it into the invoking user's
-owner-only bridge state over stdin, and may request separate keys for selected
-LLM clients. Its automatic client contract is Claude Code, Claude Desktop,
-Cursor, VS Code, Gemini CLI, Codex CLI, OpenClaw, OpenCode, Windsurf, Pi,
-Copilot CLI, Zed, Hermes, Goose, and Grok CLI. Each advertised adapter's
-install, hands-off rerun, unrelated-setting preservation, backup, and uninstall
-path is covered by the native installer harness. VS Code means the stable
-default user profile: the installer preserves JSONC in its user-level
-`mcp.json` and references an owner-only `vscode.env` beside the bridge's
-credential state instead of storing its API key in the potentially synchronized
-editor file. Other profiles and VS Code Insiders use the console's manual
-snippet. The bridge's own `auth` command consumes the same device contract
-for a dedicated CLI key without configuring MCP clients. A CLI credential that
-authenticates against the same endpoint
-makes a rerun hands-off; a rejected credential starts a fresh approval. This
-drives the portal's device-authorization pair, whose frozen contract lives in
-the OAuth authorization server section above; the installers and bridge are
-the deployed consumers its skew note describes. The current release tags are
-`runner-v0.20.1` and `mcp-v0.9.0`. The
-bridge installer also requires the selected GitHub release to be marked
-immutable.
+and `EMISAR_URL` (the portal the connection phase talks to and writes into
+configs; default `https://emisar.dev`). The bridge installer also requires the
+selected GitHub release to be marked immutable. The current release tags are
+`runner-v0.20.1` and `mcp-v0.9.0`.
+
+**The installers place the binary; the bridge owns the connection phase.** An
+interactive install runs `emisar-mcp connect` as the invoking user, and
+`--uninstall` runs `emisar-mcp disconnect --all --forget --yes` before removing
+the binary. Both are also operator commands in their own right, so a client
+installed later is connected without reinstalling the bridge. Because the
+script is fetched fresh while the installed binary is whatever the operator
+has, `--uninstall` probes for the verb first and reports that client entries
+were left in place when the bridge predates it, rather than reporting a
+removal that did not happen.
 
 `install-mcp.ps1` accepts `-Version`, `-InstallDir`,
 `-PortalOrigin`, `-Uninstall`, `-Yes`, and `-ConnectAll`. It installs the native
 `windows-amd64` or `windows-arm64` zip per user, verifies `SHA256SUMS-MCP`, and
 checks Sigstore provenance when an authenticated GitHub CLI is available. It
-uses protected Windows DACLs for the binary directory, direct-CLI credentials,
-and generated client configuration files.
+uses protected Windows DACLs for the binary directory and direct-CLI
+credentials, and delegates the connection phase to the same `connect` and
+`disconnect` commands.
+
+**`emisar-mcp connect` / `disconnect`.** `connect` accepts `--url <origin>`,
+`--all`, `--client <id>` (repeatable), `--yes`, and `--auto-permit`;
+`disconnect` accepts `--all`, `--client <id>`, `--yes`, and `--forget` (also
+delete every stored direct-CLI account and the bridge's rotation state). Both
+ignore `EMISAR_URL` and `EMISAR_API_KEY` for credential decisions, because they
+operate on per-account stored state rather than an ambient key. `connect`
+requests a dedicated `emisar-mcp-cli` key plus one key per selected client from
+a single device-authorization grant, and writes nothing until every requested
+key validates. A stored CLI credential that still authenticates against the
+same endpoint makes a rerun hands-off; a credential the control plane rejects
+starts a fresh approval, while a transport failure does not. This drives the
+portal's device-authorization pair, whose frozen contract lives in the OAuth
+authorization server section above; the installers and bridge are the deployed
+consumers its skew note describes.
+
+The client contract is Claude Code, Claude Desktop, Cursor, VS Code, Gemini
+CLI, Codex CLI, OpenClaw, OpenCode, Windsurf, Pi, Copilot CLI, Zed, Hermes,
+Goose, and Grok CLI. Each writes that client's own schema, backs an existing
+file up to `<config>.emisar-bak`, and edits the document textually so comments,
+key order, and every unrelated setting survive byte for byte. VS Code means the
+stable default user profile: its user-level `mcp.json` references an owner-only
+`vscode.env` beside the bridge's credential state instead of carrying the API
+key in a file the editor may synchronize. Other profiles and VS Code Insiders
+use the console's manual snippet. `--auto-permit` additionally silences a
+client's own per-tool prompt for the emisar server alone, and only for the four
+clients that scope that setting to one server: Claude Code, Gemini CLI, Codex
+CLI, and Grok CLI. Every adapter's install, unrelated-setting preservation,
+backup, and removal path is table-tested in `mcp/clientconfig_test.go`; the
+native installer harness covers the installed binary end to end.
 
 **What happens on skew.** A renamed installer flag or environment variable
 fails the one-liner with an unknown-option or missing-configuration error. A

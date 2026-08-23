@@ -135,8 +135,11 @@ defmodule EmisarWeb.ActivateLive do
   end
 
   defp gone_message do
+    # Both installers and `emisar-mcp connect` land here, so name the step
+    # rather than the installer: a bridge already on the host reconnects
+    # without one.
     "No pending request matches this code — it may have expired (codes last " <>
-      "15 minutes) or already been decided. Re-run the installer for a fresh one."
+      "15 minutes) or already been decided. Start the connection again for a fresh code."
   end
 
   defp list_switchable_accounts(subject) do

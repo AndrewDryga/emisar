@@ -397,14 +397,6 @@ func matchedVersion(pattern *regexp.Regexp, output []byte) (string, error) {
 	return string(match[1]), nil
 }
 
-func countLines(value string) int {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return 0
-	}
-	return strings.Count(value, "\n") + 1
-}
-
 // githubTokenHygiene proves both installers' github_api sends the optional
 // EMISAR_GITHUB_TOKEN as an Authorization header without exposing it on any
 // argv: the TLS handler runs while curl is still blocked on the response,
@@ -539,9 +531,9 @@ func (d *deviceServer) handle(response http.ResponseWriter, request *http.Reques
 		d.requested = append([]string(nil), body.Requested...)
 		d.requestedMu.Unlock()
 		_, _ = io.WriteString(response,
-			fmt.Sprintf(`{"device_code":"emdg-smoke","user_code":"FKZQ-2418",`+
+			fmt.Sprintf(`{"device_code":"emdg-0123456789abcdef0123","user_code":"FKZQ-2418",`+
 				`"verification_uri":"%s/activate","verification_uri_complete":"%s/activate?code=FKZQ-2418",`+
-				`"expires_in":60,"interval":0}`, d.server.URL, d.server.URL))
+				`"expires_in":60,"interval":1}`, d.server.URL, d.server.URL))
 	case "/api/mcp/device_token":
 		poll := d.polls.Add(1)
 		if d.errorCode != "" {
@@ -590,6 +582,22 @@ func (d *deviceServer) handle(response http.ResponseWriter, request *http.Reques
 	default:
 		http.NotFound(response, request)
 	}
+}
+
+// requirePrivateMode asserts a credential file is owner-only. Windows carries
+// its own DACL instead, which the native lane checks separately.
+func requirePrivateMode(path string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.Mode().Perm() != 0o600 {
+		return fmt.Errorf("%s mode = %v, want 0600", path, info.Mode().Perm())
+	}
+	return nil
 }
 
 func fixtureAPIKey(client string) string {

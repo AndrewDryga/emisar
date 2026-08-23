@@ -48,16 +48,43 @@ Unix installer puts `emisar-mcp` in `/usr/local/bin`; set
 installer puts `emisar-mcp.exe` in the current user's Programs directory and
 adds that directory to the user's `PATH`.
 
-In an interactive terminal it opens one browser approval. That approval gives
-the direct CLI its own key and, when supported MCP clients are present, offers
-to configure each one with a separate key. The CLI key goes into owner-only
-bridge state; client keys go into their client configs. No key passes through
-the clipboard, and existing client settings and other MCP servers are
-preserved. VS Code is the exception: its key goes into an owner-only environment
-file referenced by the user-level `mcp.json`, because editor settings may sync.
+In an interactive terminal it hands over to `emisar-mcp connect`, which opens
+one browser approval. That approval gives the direct CLI its own key and, when
+supported MCP clients are present, offers to configure each one with a separate
+key. The CLI key goes into owner-only bridge state; client keys go into their
+client configs. No key passes through the clipboard, and existing client
+settings and other MCP servers are preserved — each config is edited in place,
+so comments and key order survive too. VS Code is the exception: its key goes
+into an owner-only environment file referenced by the user-level `mcp.json`,
+because editor settings may sync.
 
-You can authenticate the direct CLI without rerunning the installer. This opens
-the approval page in your browser and stores a dedicated CLI key locally:
+## Connect a client
+
+`connect` is an ordinary command, so a client you install later does not need a
+reinstall. Run it with no arguments to be asked about each detected client, or
+name what you want:
+
+```sh
+emisar-mcp connect                     # ask about every detected client
+emisar-mcp connect --client cursor     # just this one
+emisar-mcp connect --all --yes         # every client, no questions
+```
+
+`disconnect` is the reverse, and touches nothing else in those files:
+
+```sh
+emisar-mcp disconnect --client cursor
+emisar-mcp disconnect --all
+```
+
+Add `--auto-permit` to `connect` to also silence a client's own "allow this
+tool?" prompt for the emisar server alone. It is opt-in and never implied by
+`--all` or `--yes`: Emisar decides every action server-side, so the client's
+prompt adds nothing for Emisar's tools, but it is your setting in your file.
+Only Claude Code, Gemini CLI, Codex CLI, and Grok CLI scope that setting to one
+server; the rest are left alone.
+
+To authenticate only the direct CLI, without touching any client config:
 
 ```sh
 emisar-mcp auth
@@ -87,10 +114,10 @@ Credentials follow the operating system's user config directory:
 directory on Windows. The directory and files are owner-only. This is why macOS
 does not put them under `~/.config`.
 
-A later interactive installer run verifies the stored CLI credential against
-the same endpoint and keeps it instead of minting another one. Run
-`emisar-mcp auth` to replace a revoked or expired direct-CLI credential through
-the same browser approval without reinstalling anything.
+A later `connect` run verifies the stored CLI credential against the same
+endpoint and keeps it instead of minting another one; a credential the control
+plane rejects starts a fresh approval. Run `emisar-mcp auth` to replace a
+revoked or expired direct-CLI credential without touching client configs.
 
 After installation, restart the client and confirm that the `emisar` server is
 connected. Ask the agent to list available infrastructure or inspect a known

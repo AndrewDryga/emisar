@@ -57,6 +57,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 )
@@ -198,6 +199,14 @@ COMMANDS
     emisar-mcp accounts use <slug-or-id>
       Make one stored account current for later commands.
 
+    emisar-mcp connect [--all | --client <id>]
+      Detect the LLM clients installed for you, authenticate this CLI, and
+      write each client's own configuration from one browser approval.
+
+    emisar-mcp disconnect [--all | --client <id>]
+      Remove the emisar entry from connected clients. Add --forget to also
+      delete every stored account and this bridge's rotation state.
+
   MCP CLIENT AND DISCOVERY
     emisar-mcp
       Speak MCP over stdin and stdout for an MCP-aware client.
@@ -288,8 +297,12 @@ CLIENT SETUP
   Install the bridge:
     curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash
 
-  An interactive install authenticates direct CLI commands and can configure
-  supported local clients with separate keys from one browser approval.
+  An interactive install runs 'emisar-mcp connect' for you: it authenticates
+  direct CLI commands and configures the supported local clients you pick, each
+  with its own key, from one browser approval.
+
+  Connect a client you install later, without reinstalling the bridge:
+    emisar-mcp connect
 
   Manual client setup:
     https://emisar.dev/docs/connect-a-cli-client
@@ -366,6 +379,15 @@ func runProgramMode(args []string, stdin io.Reader, stdout, stderr io.Writer, in
 			return cliUsageError(stderr, "--account cannot be used with the accounts command")
 		}
 		return runAccountsCommand(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && (args[0] == "connect" || args[0] == "disconnect") {
+		if account != "" {
+			return cliUsageError(stderr, "--account cannot be used with the "+args[0]+" command")
+		}
+		if args[0] == "connect" {
+			return runConnectCommand(args[1:], stdin, stdout, stderr)
+		}
+		return runDisconnectCommand(args[1:], stdin, stdout, stderr)
 	}
 	if len(args) > 0 && strings.HasPrefix(args[0], "-") && args[0] != "--" {
 		return cliInputError(
@@ -598,6 +620,11 @@ type bridge struct {
 	// condition is permanent for the life of the process, so repeating it per
 	// request would bury the client's log.
 	authFailureOnce sync.Once
+	// authRejected records that the control plane refused this credential, as
+	// opposed to a transport failure. `connect` reads it to decide whether a
+	// stored account still authenticates: a blip must not force the operator
+	// through a fresh browser approval, but a revoked key must.
+	authRejected atomic.Bool
 }
 
 // diagnose writes one operator-facing line to stderr. It never carries a
@@ -1352,6 +1379,7 @@ func (b *bridge) forwardRequestContext(
 	// is the problem, and the client frame stays opaque on purpose. Say so once
 	// on stderr, where an operator can act on it. The wire answer is unchanged.
 	if result.status == http.StatusUnauthorized {
+		b.authRejected.Store(true)
 		b.authFailureOnce.Do(func() {
 			if b.storedCLIAccount {
 				if b.directCLI {

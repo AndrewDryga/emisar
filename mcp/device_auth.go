@@ -86,7 +86,17 @@ func loginCLIAuth(
 			"Run `emisar-mcp accounts list` to see stored accounts.",
 		)
 	}
-	credential, err := authenticator.authorize(context.Background(), origin, stdout)
+	response, err := authenticator.authorize(
+		context.Background(),
+		origin,
+		[]string{deviceAuthClientID},
+		"Emisar CLI",
+		stdout,
+	)
+	var credential deviceCredential
+	if err == nil {
+		credential, err = response.cliCredential()
+	}
 	if err != nil {
 		switch {
 		case errors.Is(err, errBrowserAuthUnsupported):
@@ -131,17 +141,23 @@ func loginCLIAuth(
 	return storeCLIAccountCredential(origin, credential, stdout, stderr)
 }
 
+// authorize runs the device-authorization exchange for one or more client ids
+// and returns the portal's approval response. The caller validates the keys it
+// asked for: a connect covering several clients must not leave some of them
+// configured from a grant that only partly delivered.
 func (auth deviceAuthenticator) authorize(
 	ctx context.Context,
 	origin string,
+	clientIDs []string,
+	subject string,
 	stdout io.Writer,
-) (deviceCredential, error) {
-	grant, err := auth.requestGrant(ctx, origin)
+) (deviceTokenResponse, error) {
+	grant, err := auth.requestGrant(ctx, origin, clientIDs)
 	if err != nil {
-		return deviceCredential{}, err
+		return deviceTokenResponse{}, err
 	}
 
-	fmt.Fprintln(stdout, "Approve Emisar CLI in your browser")
+	fmt.Fprintln(stdout, "Approve "+subject+" in your browser")
 	fmt.Fprintln(stdout)
 	fmt.Fprintf(
 		stdout,
@@ -170,26 +186,30 @@ func (auth deviceAuthenticator) authorize(
 			pollAfter = remaining
 		}
 		if err := auth.wait(ctx, pollAfter); err != nil {
-			return deviceCredential{}, err
+			return deviceTokenResponse{}, err
 		}
 		if !auth.now().Before(deadline) {
 			break
 		}
-		credential, pending, err := auth.poll(ctx, origin, grant.DeviceCode)
+		response, pending, err := auth.poll(ctx, origin, grant.DeviceCode)
 		if err != nil {
-			return deviceCredential{}, err
+			return deviceTokenResponse{}, err
 		}
 		if pending {
 			continue
 		}
 		fmt.Fprintln(stdout)
-		return credential, nil
+		return response, nil
 	}
-	return deviceCredential{}, errors.New("approval code expired; run auth again")
+	return deviceTokenResponse{}, errors.New("approval code expired; run auth again")
 }
 
-func (auth deviceAuthenticator) requestGrant(ctx context.Context, origin string) (deviceAuthorization, error) {
-	body, err := json.Marshal(map[string][]string{"requested_clients": {deviceAuthClientID}})
+func (auth deviceAuthenticator) requestGrant(
+	ctx context.Context,
+	origin string,
+	clientIDs []string,
+) (deviceAuthorization, error) {
+	body, err := json.Marshal(map[string][]string{"requested_clients": clientIDs})
 	if err != nil {
 		return deviceAuthorization{}, fmt.Errorf("encode device request: %w", err)
 	}
@@ -226,10 +246,10 @@ func (auth deviceAuthenticator) requestGrant(ctx context.Context, origin string)
 func (auth deviceAuthenticator) poll(
 	ctx context.Context,
 	origin, deviceCode string,
-) (deviceCredential, bool, error) {
+) (deviceTokenResponse, bool, error) {
 	body, err := json.Marshal(map[string]string{"device_code": deviceCode})
 	if err != nil {
-		return deviceCredential{}, false, fmt.Errorf("encode approval poll: %w", err)
+		return deviceTokenResponse{}, false, fmt.Errorf("encode approval poll: %w", err)
 	}
 	status, response, contentType, err := auth.postJSON(
 		ctx,
@@ -237,38 +257,45 @@ func (auth deviceAuthenticator) poll(
 		body,
 	)
 	if err != nil {
-		return deviceCredential{}, true, nil
+		return deviceTokenResponse{}, true, nil
 	}
 	var result deviceTokenResponse
 	switch status {
 	case http.StatusOK:
-		if decodeDeviceJSON(response, contentType, &result) != nil {
-			return deviceCredential{}, true, nil
+		// Only a body carrying delivered keys is the portal's approval; a proxy's
+		// own 200 page keeps polling like any other transport noise.
+		if decodeDeviceJSON(response, contentType, &result) != nil || len(result.ClientKeys) == 0 {
+			return deviceTokenResponse{}, true, nil
 		}
-		credential, err := result.cliCredential()
-		if err != nil {
-			return deviceCredential{}, false, errors.New("server returned an invalid approval response; run auth again")
-		}
-		return credential, false, nil
+		return result, false, nil
 	case http.StatusBadRequest:
 		if decodeDeviceJSON(response, contentType, &result) != nil || !validDeviceError(result.Error) {
-			return deviceCredential{}, true, nil
+			return deviceTokenResponse{}, true, nil
 		}
 		switch result.Error {
 		case "", "authorization_pending":
-			return deviceCredential{}, true, nil
+			return deviceTokenResponse{}, true, nil
 		case "access_denied":
-			return deviceCredential{}, false, errors.New("approval was denied; no credential was stored")
+			return deviceTokenResponse{}, false, errors.New("approval was denied; no credential was stored")
 		case "expired_token":
-			return deviceCredential{}, false, errors.New("approval code expired; run auth again")
+			return deviceTokenResponse{}, false, errors.New("approval code expired; run auth again")
 		case "invalid_grant":
-			return deviceCredential{}, false, errors.New("approval code is no longer valid; run auth again")
+			return deviceTokenResponse{}, false, errors.New("approval code is no longer valid; run auth again")
 		default:
-			return deviceCredential{}, false, fmt.Errorf("server returned terminal error %q", result.Error)
+			return deviceTokenResponse{}, false, fmt.Errorf("server returned terminal error %q", result.Error)
 		}
 	default:
-		return deviceCredential{}, true, nil
+		return deviceTokenResponse{}, true, nil
 	}
+}
+
+// clientKey returns one delivered key after checking it is a portal API key.
+func (response deviceTokenResponse) clientKey(clientID string) (string, error) {
+	key := response.ClientKeys[clientID]
+	if !validAPIKey(key) {
+		return "", fmt.Errorf("the portal did not deliver a valid API key for %s", clientID)
+	}
+	return key, nil
 }
 
 func (response deviceTokenResponse) cliCredential() (deviceCredential, error) {

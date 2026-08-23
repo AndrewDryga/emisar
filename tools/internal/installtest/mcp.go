@@ -5,8 +5,6 @@ package installtest
 import (
 	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,12 +33,10 @@ func MCP(root string, out io.Writer) error {
 		{"installation and rollback", mcpInstallRollback},
 		{"staging integrity", mcpStagingIntegrity},
 		{"atomic multi-target activation", mcpActivationTransaction},
-		{"device grant response validation", mcpDeviceGrantValidation},
-		{"client config value validation", mcpConfigValueValidation},
-		{"verification URI confinement", mcpVerificationURIConfinement},
-		{"CLI sudo credential boundary", mcpCLISudoCredentialBoundary},
-		{"LLM client configuration", mcpClientConfiguration},
+		{"bridge runs as the invoking user", mcpCLISudoCredentialBoundary},
+		{"connect and disconnect", mcpConnectCommand},
 		{"uninstall", mcpUninstall},
+		{"uninstall with an older bridge", mcpUninstallWithAnOlderBridge},
 	}
 	for _, check := range checks {
 		if err := check.run(h); err != nil {
@@ -505,105 +501,6 @@ printf 'INSTALLED=%s\n' "$installed_paths"
 	return nil
 }
 
-var clientFunctions = []string{
-	"tty_available", "ask_tty", "json_config_has_emisar",
-	"toml_config_has_emisar", "yaml_config_has_emisar", "file_has_content",
-	"write_fresh_json_config", "vscode_env_file", "write_vscode_env_file",
-	"write_fresh_vscode_config", "merge_json_config", "append_toml_config",
-	"append_yaml_config", "own_config_file", "install_client_config",
-	"run_cli_as_invoking_user", "run_cli_with_stored_auth", "cli_auth_matches",
-	"install_cli_auth", "valid_emisar_api_key",
-	"auto_permit_supported", "apply_auto_permit", "json_allow_emisar_tools",
-	"json_set_emisar_trust", "toml_insert_in_table", "toml_append_permission_allow",
-	"json_string_field", "json_client_key", "json_has_client_keys",
-	"safe_config_value", "safe_user_code", "safe_verification_uri",
-	"bounded_decimal_field", "request_device_grant",
-	"await_device_approval", "scan_client", "scan_llm_clients", "out", "hdr",
-	"ok", "dim", "client_row", "open_browser", "configure_clients",
-}
-
-func clientOverrides(extra string) string {
-	return `
-log() { :; }
-warn() { printf '%s\n' "$*" >&2; }
-tty_available() { return 0; }
-ask_tty() { return 0; }
-sleep() { :; }
-out() { :; }
-ok() { :; }
-dim() { :; }
-client_row() { :; }
-hdr() { :; }
-open_browser() { return 1; }
-run_cli_as_invoking_user() {
-  case "${1:-}:${2:-}" in
-    auth:status)
-      [ -f "${CLI_AUTH_FILE}" ] || return 1
-      [ "$(sed -n '1p' "${CLI_AUTH_FILE}")" = "${3:-}" ]
-      ;;
-    auth:import)
-      case "$*" in *emk-*) printf 'API key reached CLI argv\n' >&2; return 9;; esac
-      imported=$(cat)
-      [ "${imported}" = "$(cat "${TOKEN_RESP}")" ] || { printf 'wrong approval response\n' >&2; return 9; }
-      imported_key=$(json_client_key "${TOKEN_RESP}" emisar-mcp-cli)
-      printf '%s\n%s\n' "${3:-}" "${imported_key}" >"${CLI_AUTH_FILE}"
-      ;;
-    list_tools:--json)
-      [ -f "${CLI_AUTH_FILE}" ] || return 1
-      [ "$(sed -n '3p' "${CLI_AUTH_FILE}")" != revoked ]
-      ;;
-    *) printf 'unexpected local CLI call: %s\n' "$*" >&2; return 9;;
-  esac
-}
-run_cli_with_stored_auth() { run_cli_as_invoking_user "$@"; }
-` + extra
-}
-
-func clientEnvironment(home, portal string, assumeYes bool) map[string]string {
-	yes := "0"
-	if assumeYes {
-		yes = "1"
-	}
-	return map[string]string{
-		"CLIENT_HOME": home, "EMISAR_URL": portal, "ASSUME_YES": yes,
-		"XDG_CONFIG_HOME": filepath.Join(home, ".config"),
-		"OS":              "linux", "first_bin": "/usr/local/bin/emisar-mcp",
-		"tmp": home, "DEVICE_RESP": filepath.Join(home, "device-authorization.json"),
-		"TOKEN_RESP":    filepath.Join(home, "device-token.json"),
-		"CLI_AUTH_FILE": filepath.Join(home, "cli-auth"),
-	}
-}
-
-func runClientFlow(h *harness, home, portal string, assumeYes bool, overrides string) commandResult {
-	body := clientOverrides(overrides) + `
-CONFIGURED_CLIENTS=""
-CLI_AUTHENTICATED=0
-connection_phase_ran=0
-CLIENTS_FOUND=0
-SCANNED=""
-CONSENTED=""
-DEVICE_CODE=""
-DEVICE_USER_CODE=""
-DEVICE_VERIFY_URI=""
-DEVICE_INTERVAL=5
-DEVICE_EXPIRES_IN=900
-configure_clients "$CLIENT_HOME"
-printf '\nCONFIGURED_BEGIN\n%s\nCONFIGURED_END\n' "$CONFIGURED_CLIENTS"
-`
-	env := clientEnvironment(home, portal, assumeYes)
-	return h.functions(h.repoPath("install-mcp.sh"), clientFunctions, body,
-		env)
-}
-
-func configuredClients(output string) string {
-	start := strings.Index(output, "CONFIGURED_BEGIN\n")
-	end := strings.Index(output, "\nCONFIGURED_END")
-	if start < 0 || end < start {
-		return ""
-	}
-	return strings.TrimSpace(output[start+len("CONFIGURED_BEGIN\n") : end])
-}
-
 func mcpCLISudoCredentialBoundary(h *harness) error {
 	bin := h.path("sudo-boundary-emisar-mcp")
 	trace := h.path("sudo-boundary-trace")
@@ -654,403 +551,195 @@ printf '%s\n' "$secret" | run_cli_as_invoking_user auth import https://control.e
 	return exactFile(trace, "HOME="+invokingHome+"\nARGS=auth import https://control.example\nKEY=emk-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq\n")
 }
 
-// mcpDeviceGrantValidation proves the device-grant response's interval and
-// expires_in cannot reach bash arithmetic or sleep unvalidated: an
-// expression-shaped value from the portal response falls back to the 5/900
-// defaults without executing its payload, and every out-of-shape or
-// out-of-bounds value falls back the same way.
-func mcpDeviceGrantValidation(h *harness) error {
-	home := h.path("grant-home")
-	if err := h.mkdir(home); err != nil {
+// buildBridge compiles the bridge from THIS checkout into dir. The connect and
+// uninstall paths run the binary that ships beside the script under test, not
+// whatever the release mirror currently serves.
+func buildBridge(h *harness, dir string) (string, error) {
+	bridge := filepath.Join(dir, "emisar-mcp")
+	build := exec.Command("go", "build", "-trimpath", "-o", bridge, ".")
+	build.Dir = filepath.Join(h.root, "mcp")
+	build.Env = environment(map[string]string{"GOTOOLCHAIN": "local", "CGO_ENABLED": "0"})
+	if output, err := build.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("build the bridge under test: %w\n%s", err, output)
+	}
+	return bridge, nil
+}
+
+// mcpConnectCommand drives the shipped binary end to end against a fake
+// device-authorization portal: one approval covering the direct CLI and every
+// detected client, each client's own configuration shape written on a real
+// filesystem, then a clean removal. The per-client shapes themselves are
+// table-tested in mcp/clientconfig_test.go; what only this harness can prove is
+// that the INSTALLED binary does it, under a real HOME, with real file modes.
+func mcpConnectCommand(h *harness) error {
+	bin := h.path("connect-bin")
+	if err := h.mkdir(bin); err != nil {
 		return err
 	}
-	marker := h.path("grant-arith-marker")
-	payload := fmt.Sprintf("x[$(touch %s)]", marker)
-	var server *httptest.Server
-	server = httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/api/mcp/device_authorization" {
-			http.NotFound(response, request)
-			return
-		}
-		response.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(response, fmt.Sprintf(
-			`{"device_code":"emdg-hostile","user_code":"HHHH-0000",`+
-				`"verification_uri":"%s/activate","verification_uri_complete":"%s/activate?code=HHHH-0000",`+
-				`"expires_in":%q,"interval":%q}`, server.URL, server.URL, payload, payload))
-	}))
-	defer server.Close()
-
-	result := h.functions(h.repoPath("install-mcp.sh"),
-		[]string{"json_string_field", "bounded_decimal_field", "safe_user_code",
-			"safe_verification_uri", "request_device_grant"}, `
-DEVICE_RESP="$CLIENT_HOME/device-authorization.json"
-DEVICE_CODE=""
-DEVICE_USER_CODE=""
-DEVICE_VERIFY_URI=""
-DEVICE_INTERVAL=5
-DEVICE_EXPIRES_IN=900
-request_device_grant "claude-code"
-printf 'INTERVAL=%s EXPIRES=%s\n' "$DEVICE_INTERVAL" "$DEVICE_EXPIRES_IN"
-deadline=$(($(date +%s) + DEVICE_EXPIRES_IN))
-test "$deadline" -gt "$(date +%s)"
-
-test "$(bounded_decimal_field 7 1 120 5)" = 7
-test "$(bounded_decimal_field 007 1 120 5)" = 7
-test "$(bounded_decimal_field 0 1 120 5)" = 5
-test "$(bounded_decimal_field 121 1 120 5)" = 5
-test "$(bounded_decimal_field 3600 60 3600 900)" = 3600
-test "$(bounded_decimal_field 59 60 3600 900)" = 900
-test "$(bounded_decimal_field 18446744073709551616 60 3600 900)" = 900
-test "$(bounded_decimal_field '' 60 3600 900)" = 900
-test "$(bounded_decimal_field '5.5' 1 120 5)" = 5
-test "$(bounded_decimal_field '-5' 1 120 5)" = 5
-test "$(bounded_decimal_field '1 -a -x /bin/sh' 1 120 5)" = 5
-`, map[string]string{"CLIENT_HOME": home, "EMISAR_URL": server.URL})
-	output, err := requireOutput(result)
+	bridge, err := buildBridge(h, bin)
 	if err != nil {
 		return err
 	}
-	if !strings.Contains(string(output), "INTERVAL=5 EXPIRES=900") {
-		return fmt.Errorf("hostile grant fields were not replaced by defaults:\n%s", output)
+	home := h.path("connect-home")
+	appConfig := filepath.Join(home, ".config")
+	if runtime.GOOS == "darwin" {
+		appConfig = filepath.Join(home, "Library", "Application Support")
 	}
-	if err := requireAbsent(marker); err != nil {
-		return fmt.Errorf("arithmetic payload executed: %w", err)
+	// One marker directory per client, which is how the bridge decides a client
+	// is installed. Every advertised client is present, so a client dropped from
+	// the table stops being connected here.
+	markers := []string{
+		filepath.Join(home, ".claude"),
+		filepath.Join(appConfig, "Claude"),
+		filepath.Join(home, ".cursor"),
+		filepath.Join(appConfig, "Code"),
+		filepath.Join(home, ".gemini"),
+		filepath.Join(home, ".codex"),
+		filepath.Join(home, ".openclaw"),
+		filepath.Join(home, ".config", "opencode"),
+		filepath.Join(home, ".codeium", "windsurf"),
+		filepath.Join(home, ".pi"),
+		filepath.Join(home, ".copilot"),
+		filepath.Join(home, ".config", "zed"),
+		filepath.Join(home, ".hermes"),
+		filepath.Join(home, ".config", "goose"),
+		filepath.Join(home, ".grok"),
 	}
-	return nil
-}
-
-func mcpClientConfiguration(h *harness) error {
-	home := h.path("clients-home")
-	directories := []string{
-		".cursor", ".codex", ".claude", ".gemini", ".openclaw", ".config/opencode",
-		".codeium/windsurf", ".pi", ".copilot", ".config/zed", ".config/Code/User", ".hermes",
-		".config/goose", ".grok",
+	if err := h.mkdir(markers...); err != nil {
+		return err
 	}
-	for _, directory := range directories {
-		if err := h.mkdir(filepath.Join(home, filepath.FromSlash(directory))); err != nil {
-			return err
-		}
-	}
-	files := map[string]string{
-		".cursor/mcp.json": `{
-  "mcpServers": {
-    "other": { "command": "other-mcp" }
-  }
-}
-`,
-		".codex/config.toml": "[model]\nname = \"gpt\"\n",
-		".gemini/settings.json": `{
-  "mcpServers": {
-    "other": { "command": "other-mcp" }
-  }
-}
-`,
-		".grok/config.toml": "[permission]\nallow = [\"MCPTool(other__*)\"]\n",
-		".config/opencode/opencode.json": `{
-  "mcp": {
-    "other": { "type": "local", "command": ["other-mcp"] }
-  }
-}
-`,
-		".config/zed/settings.json": `{
-  // my editor
-  "theme": "One Dark",
-  "context_servers": {
-    "other": { "source": "custom", "command": "other-mcp" },
-  },
-}
-`,
-		".config/Code/User/mcp.json": `{
-  // synced editor config
-  "inputs": [],
-  "servers": {
-    "other": { "type": "stdio", "command": "other-mcp" },
-  },
-}
-`,
-		".hermes/config.yaml":       "model: hermes-4\n",
-		".config/goose/config.yaml": "extensions:\n  developer:\n    enabled: true\n",
-	}
-	for relative, contents := range files {
-		if err := writeFile(filepath.Join(home, filepath.FromSlash(relative)), contents, 0o600); err != nil {
-			return err
-		}
-	}
-	goose := filepath.Join(home, ".config", "goose", "config.yaml")
-	gooseBefore, err := fileSHA(goose)
-	if err != nil {
+	// One client already carries an unrelated server: connecting must not
+	// disturb it, and the file must stay valid JSON.
+	cursorConfig := filepath.Join(home, ".cursor", "mcp.json")
+	if err := writeFile(cursorConfig, "{\n  \"mcpServers\": {\n    \"other\": {\"command\": \"other-mcp\"}\n  }\n}\n", 0o600); err != nil {
 		return err
 	}
 
 	server := newDeviceServer("")
 	defer server.close()
-	result := runClientFlow(h, home, server.server.URL, false, "")
-	output, err := requireOutput(result)
+	environment := map[string]string{"HOME": home, "USERPROFILE": home, "APPDATA": appConfig}
+	if _, err := h.successful(h.root, environment, bridge,
+		"connect", "--all", "--yes", "--url", server.server.URL); err != nil {
+		return err
+	}
+
+	requested := server.requestedClients()
+	if !slices.Contains(requested, "emisar-mcp-cli") {
+		return fmt.Errorf("the direct CLI was not part of the approval: %v", requested)
+	}
+	for _, client := range []string{"claude-code", "cursor", "vscode", "codex", "zed", "goose", "grok"} {
+		if !slices.Contains(requested, client) {
+			return fmt.Errorf("%s was not part of the approval: %v", client, requested)
+		}
+	}
+
+	cursor, err := jsonFile(cursorConfig)
 	if err != nil {
 		return err
 	}
-	if countLines(configuredClients(string(output))) != 13 {
-		return fmt.Errorf("configured clients = %q, expected 13", configuredClients(string(output)))
+	if err := requireNestedString(cursor, "other-mcp", "mcpServers", "other", "command"); err != nil {
+		return fmt.Errorf("connect disturbed an unrelated server: %w", err)
 	}
-	if !strings.Contains(string(output), "Goose") {
-		return fmt.Errorf("the Goose merge refusal was not reported:\n%s", output)
+	if err := requireNestedString(cursor, fixtureAPIKey("cursor"), "mcpServers", "emisar", "env", "EMISAR_API_KEY"); err != nil {
+		return err
 	}
-	gooseAfter, err := fileSHA(goose)
+	if err := requireNestedString(cursor, bridge, "mcpServers", "emisar", "command"); err != nil {
+		return fmt.Errorf("the config does not point at the installed binary: %w", err)
+	}
+
+	// VS Code can sync its user config, so its key belongs beside the bridge's
+	// own credential state instead.
+	vscodeConfig := filepath.Join(appConfig, "Code", "User", "mcp.json")
+	raw, err := os.ReadFile(vscodeConfig)
 	if err != nil {
 		return err
 	}
-	if gooseBefore != gooseAfter {
-		return fmt.Errorf("the Goose configuration changed despite an existing extensions key")
+	if strings.Contains(string(raw), fixtureAPIKey("vscode")) {
+		return fmt.Errorf("the VS Code key reached a config it may sync:\n%s", raw)
 	}
-	if err := inspectClientConfigs(home, server.server.URL); err != nil {
+	envFile := filepath.Join(appConfig, "emisar", "credentials", "vscode.env")
+	envContents, err := os.ReadFile(envFile)
+	if err != nil {
 		return err
 	}
-	wantRequested := []string{
-		"emisar-mcp-cli", "claude-code", "cursor", "vscode", "gemini", "codex",
-		"openclaw", "opencode", "windsurf", "pi", "copilot-cli", "zed", "hermes",
-		"goose", "grok",
+	if !strings.Contains(string(envContents), "EMISAR_API_KEY="+fixtureAPIKey("vscode")) {
+		return fmt.Errorf("the VS Code env file has no key:\n%s", envContents)
 	}
-	if got := server.requestedClients(); !slices.Equal(got, wantRequested) {
-		return fmt.Errorf("device grant requested %v, expected %v", got, wantRequested)
-	}
-	if err := inspectAutoPermit(home, string(output)); err != nil {
+	if err := requirePrivateMode(envFile); err != nil {
 		return err
 	}
-	if err := declinedAutoPermitLeavesClientsAlone(h, server); err != nil {
+
+	// The direct CLI credential landed in the bridge's own owner-only state.
+	credentials := filepath.Join(appConfig, "emisar", "credentials")
+	entries, err := os.ReadDir(credentials)
+	if err != nil {
 		return err
 	}
-	cliKey := fixtureAPIKey("emisar-mcp-cli")
-	if err := exactFile(filepath.Join(home, "cli-auth"), server.server.URL+"\n"+cliKey+"\n"); err != nil {
-		return fmt.Errorf("direct CLI credential: %w", err)
+	if len(entries) < 2 {
+		return fmt.Errorf("expected a stored CLI credential beside the env file, found %d entries", len(entries))
 	}
+
+	if _, err := h.successful(h.root, environment, bridge, "disconnect", "--all", "--forget", "--yes"); err != nil {
+		return err
+	}
+	after, err := jsonFile(cursorConfig)
+	if err != nil {
+		return err
+	}
+	if _, err := nested(after, "mcpServers", "emisar"); err == nil {
+		return fmt.Errorf("the emisar entry survived disconnect")
+	}
+	if err := requireNestedString(after, "other-mcp", "mcpServers", "other", "command"); err != nil {
+		return fmt.Errorf("disconnect disturbed an unrelated server: %w", err)
+	}
+	if err := requireAbsent(credentials); err != nil {
+		return fmt.Errorf("--forget left stored credentials behind: %w", err)
+	}
+	return requireAbsent(cursorConfig + ".emisar-bak")
+}
+
+// mcpUninstallWithAnOlderBridge covers real version skew: the script is always
+// fetched fresh, while the installed binary is whatever the operator has. A
+// bridge with no `disconnect` verb cannot clean the client configs, so the
+// uninstall must SAY the entries were left behind rather than report success.
+func mcpUninstallWithAnOlderBridge(h *harness) error {
+	home := h.path("skew-home")
+	bin := h.path("skew-bin")
 	cursor := filepath.Join(home, ".cursor", "mcp.json")
-	codex := filepath.Join(home, ".codex", "config.toml")
-	cursorBefore, err := fileSHA(cursor)
+	if err := h.mkdir(bin, filepath.Dir(cursor)); err != nil {
+		return err
+	}
+	entry := "{\n  \"mcpServers\": {\n    \"emisar\": {\"command\": \"/usr/local/bin/emisar-mcp\"}\n  }\n}\n"
+	if err := writeFile(cursor, entry, 0o600); err != nil {
+		return err
+	}
+	// A bridge from before the verb existed: every unknown command is a usage error.
+	if err := writeFile(filepath.Join(bin, "emisar-mcp"), "#!/bin/sh\nexit 2\n", 0o755); err != nil {
+		return err
+	}
+
+	result := h.command(h.root, map[string]string{
+		"HOME":            home,
+		"XDG_CONFIG_HOME": filepath.Join(home, ".config"),
+	}, "bash", h.repoPath("install-mcp.sh"), "--uninstall", "--yes", "--install-dir", bin)
+	if result.err != nil {
+		return fmt.Errorf("uninstall failed outright: %w\n%s", result.err, result.output)
+	}
+	if !strings.Contains(string(result.output), "older than this script") {
+		return fmt.Errorf("the skew was not reported:\n%s", result.output)
+	}
+	if err := requireAbsent(filepath.Join(bin, "emisar-mcp")); err != nil {
+		return fmt.Errorf("the binary was not removed: %w", err)
+	}
+	// The entry is still there — which is exactly what the warning said.
+	config, err := jsonFile(cursor)
 	if err != nil {
 		return err
 	}
-	codexBefore, err := fileSHA(codex)
-	if err != nil {
-		return err
+	if _, err := nested(config, "mcpServers", "emisar"); err != nil {
+		return fmt.Errorf("the entry was removed by something that cannot do it: %w", err)
 	}
-	if err := os.RemoveAll(filepath.Join(home, ".config", "goose")); err != nil {
-		return err
-	}
-	result = runClientFlow(h, home, server.server.URL, false, `
-ask_tty() { printf 'unexpected client prompt on rerun\n' >&2; exit 9; }
-curl() { printf 'unexpected network call on rerun\n' >&2; exit 9; }
-`)
-	output, err = requireOutput(result)
-	if err != nil {
-		return err
-	}
-	if configuredClients(string(output)) != "" {
-		return fmt.Errorf("rerun reconfigured clients: %q", configuredClients(string(output)))
-	}
-	cursorAfter, _ := fileSHA(cursor)
-	codexAfter, _ := fileSHA(codex)
-	if cursorBefore != cursorAfter || codexBefore != codexAfter {
-		return fmt.Errorf("hands-off rerun changed existing client configuration")
-	}
-
-	if err := os.WriteFile(filepath.Join(home, "cli-auth"), []byte(server.server.URL+"\n"+cliKey+"\nrevoked\n"), 0o600); err != nil {
-		return err
-	}
-	result = runClientFlow(h, home, server.server.URL, false, `
-ask_tty() { printf 'unexpected client prompt during CLI repair\n' >&2; exit 9; }
-`)
-	if _, err := requireOutput(result); err != nil {
-		return fmt.Errorf("revoked CLI repair: %w", err)
-	}
-	if err := exactFile(filepath.Join(home, "cli-auth"), server.server.URL+"\n"+cliKey+"\n"); err != nil {
-		return fmt.Errorf("revoked CLI credential was not replaced: %w", err)
-	}
-
-	otherServer := newDeviceServer("")
-	defer otherServer.close()
-	result = runClientFlow(h, home, otherServer.server.URL, false, `
-ask_tty() { printf 'unexpected client prompt during endpoint change\n' >&2; exit 9; }
-`)
-	output, err = requireOutput(result)
-	if err != nil {
-		return fmt.Errorf("endpoint change: %w", err)
-	}
-	if !strings.Contains(string(output), "Existing LLM client entries stay untouched") {
-		return fmt.Errorf("endpoint change did not explain preserved client configs:\n%s", output)
-	}
-	cursorAfterEndpointChange, _ := fileSHA(cursor)
-	if cursorAfterEndpointChange != cursorAfter {
-		return fmt.Errorf("endpoint change silently rewrote an existing client config")
-	}
-	if err := exactFile(filepath.Join(home, "cli-auth"), otherServer.server.URL+"\n"+cliKey+"\n"); err != nil {
-		return fmt.Errorf("endpoint change did not replace direct CLI credential: %w", err)
-	}
-
-	cliOnlyHome := h.path("cli-only-home")
-	if err := h.mkdir(cliOnlyHome); err != nil {
-		return err
-	}
-	cliOnlyServer := newDeviceServer("")
-	defer cliOnlyServer.close()
-	result = runClientFlow(h, cliOnlyHome, cliOnlyServer.server.URL, false, "")
-	output, err = requireOutput(result)
-	if err != nil {
-		return err
-	}
-	if configuredClients(string(output)) != "" {
-		return fmt.Errorf("CLI-only flow configured LLM clients: %q", configuredClients(string(output)))
-	}
-	if got := cliOnlyServer.requestedClients(); !slices.Equal(got, []string{"emisar-mcp-cli"}) {
-		return fmt.Errorf("CLI-only device grant requested %v", got)
-	}
-	if err := exactFile(filepath.Join(cliOnlyHome, "cli-auth"), cliOnlyServer.server.URL+"\n"+cliKey+"\n"); err != nil {
-		return fmt.Errorf("CLI-only credential: %w", err)
-	}
-
-	for _, malformed := range []struct {
-		name string
-		keys map[string]string
-	}{
-		{"missing client key", map[string]string{"emisar-mcp-cli": cliKey}},
-		{"invalid client key", map[string]string{"emisar-mcp-cli": cliKey, "cursor": "emk-short"}},
-	} {
-		badHome := h.path("bad-delivery-" + strings.ReplaceAll(malformed.name, " ", "-"))
-		if err := h.mkdir(filepath.Join(badHome, ".cursor")); err != nil {
-			return err
-		}
-		badServer := newDeviceServer("")
-		badServer.delivered = malformed.keys
-		result = runClientFlow(h, badHome, badServer.server.URL, false, "")
-		badServer.close()
-		if _, err := requireOutput(result); err != nil {
-			return fmt.Errorf("%s: %w", malformed.name, err)
-		}
-		if err := requireAbsent(filepath.Join(badHome, "cli-auth")); err != nil {
-			return fmt.Errorf("%s wrote CLI state: %w", malformed.name, err)
-		}
-		if err := requireAbsent(filepath.Join(badHome, ".cursor", "mcp.json")); err != nil {
-			return fmt.Errorf("%s wrote client config: %w", malformed.name, err)
-		}
-	}
-
-	deniedHome := h.path("denied-home")
-	if err := h.mkdir(filepath.Join(deniedHome, ".cursor")); err != nil {
-		return err
-	}
-	denied := newDeviceServer("access_denied")
-	defer denied.close()
-	result = runClientFlow(h, deniedHome, denied.server.URL, false, "")
-	output, err = requireOutput(result)
-	if err != nil {
-		return err
-	}
-	if configuredClients(string(output)) != "" {
-		return fmt.Errorf("denied flow configured clients")
-	}
-	if err := requireAbsent(filepath.Join(deniedHome, ".cursor", "mcp.json")); err != nil {
-		return err
-	}
-	if err := requireAbsent(filepath.Join(deniedHome, "cli-auth")); err != nil {
-		return err
-	}
-
-	// An unknown 400 error code exercises the terminal catchall: any poll
-	// error other than authorization_pending must stop after a single poll,
-	// not retry until the grant expires.
-	strandedHome := h.path("stranded-home")
-	if err := h.mkdir(filepath.Join(strandedHome, ".cursor")); err != nil {
-		return err
-	}
-	stranded := newDeviceServer("quota_exhausted")
-	defer stranded.close()
-	result = runClientFlow(h, strandedHome, stranded.server.URL, false, "")
-	output, err = requireOutput(result)
-	if err != nil {
-		return err
-	}
-	if configuredClients(string(output)) != "" {
-		return fmt.Errorf("terminal poll error configured clients")
-	}
-	if !strings.Contains(string(output), "quota_exhausted") {
-		return fmt.Errorf("terminal poll error was not reported to the operator:\n%s", output)
-	}
-	if got := stranded.polls.Load(); got != 1 {
-		return fmt.Errorf("terminal poll error polled %d times, expected exactly one", got)
-	}
-	if err := requireAbsent(filepath.Join(strandedHome, ".cursor", "mcp.json")); err != nil {
-		return err
-	}
-
-	escaped := h.path("escaped-claude.json")
-	real := h.path("real-claude.json")
-	if err := writeFile(escaped, `{"history":["say \"emisar\" now"],"projects":{"/u/os/emisar":{}}}`+"\n", 0o600); err != nil {
-		return err
-	}
-	if err := writeFile(real, `{"mcpServers":{"emisar":{"command":"emisar-mcp"}}}`+"\n", 0o600); err != nil {
-		return err
-	}
-	result = h.functions(h.repoPath("install-mcp.sh"), clientFunctions, `
-if json_config_has_emisar "$ESCAPED"; then
-  printf 'escaped JSON text misread as configured\n' >&2
-  exit 1
-fi
-json_config_has_emisar "$REAL"
-`, map[string]string{"ESCAPED": escaped, "REAL": real})
-	if _, err := requireOutput(result); err != nil {
-		return err
-	}
-
-	if jq, lookupErr := exec.LookPath("jq"); lookupErr == nil {
-		probe := h.path("jq-probe.json")
-		jqBin := h.path("jq-only-bin")
-		if err := h.mkdir(jqBin); err != nil {
-			return err
-		}
-		if err := os.Symlink(jq, filepath.Join(jqBin, "jq")); err != nil {
-			return err
-		}
-		if err := writeFile(probe,
-			`{"device_code":"emdg-x","interval":7,"client_keys":{"claude-code":"emk-jq"}}`, 0o600); err != nil {
-			return err
-		}
-		noKeys := h.path("jq-no-keys.json")
-		if err := writeFile(noKeys, `{"status":"ok"}`, 0o600); err != nil {
-			return err
-		}
-		htmlPage := h.path("jq-proxy-page.html")
-		if err := writeFile(htmlPage, "<html><body>Signed in</body></html>", 0o600); err != nil {
-			return err
-		}
-		result = h.functions(h.repoPath("install-mcp.sh"),
-			[]string{"json_string_field", "json_client_key", "json_has_client_keys"}, `
-test "$(json_string_field "$PROBE" device_code)" = emdg-x
-test "$(json_string_field "$PROBE" interval)" = 7
-test "$(json_client_key "$PROBE" claude-code)" = emk-jq
-if json_string_field "$PROBE" missing_key; then exit 1; fi
-json_has_client_keys "$PROBE"
-if json_has_client_keys "$NO_KEYS"; then exit 1; fi
-if json_has_client_keys "$HTML_PAGE"; then exit 1; fi
-`, map[string]string{"PATH": jqBin, "PROBE": probe, "NO_KEYS": noKeys, "HTML_PAGE": htmlPage})
-		if _, err := requireOutput(result); err != nil {
-			return fmt.Errorf("jq response readers: %w", err)
-		}
-	}
-
-	quietHome := h.path("quiet-home")
-	if err := h.mkdir(filepath.Join(quietHome, ".cursor")); err != nil {
-		return err
-	}
-	result = runClientFlow(h, quietHome, server.server.URL, true, `
-ask_tty() { printf 'unexpected prompt under ASSUME_YES\n' >&2; exit 9; }
-curl() { printf 'unexpected network call under ASSUME_YES\n' >&2; exit 9; }
-`)
-	if _, err := requireOutput(result); err != nil {
-		return err
-	}
-	if err := requireAbsent(filepath.Join(quietHome, ".cursor", "mcp.json")); err != nil {
-		return err
-	}
-	return requireAbsent(filepath.Join(quietHome, "cli-auth"))
+	return nil
 }
 
 func mcpUninstall(h *harness) error {
@@ -1135,7 +824,7 @@ func mcpUninstall(h *harness) error {
 	if err := writeFile(filepath.Join(credentials, "state.json"), "{}\n", 0o600); err != nil {
 		return err
 	}
-	if err := writeFile(filepath.Join(bin, "emisar-mcp"), "#!/bin/sh\n", 0o755); err != nil {
+	if _, err := buildBridge(h, bin); err != nil {
 		return err
 	}
 	if err := writeFile(filepath.Join(bin, ".emisar-mcp.old.123"), "stale\n", 0o644); err != nil {
@@ -1236,353 +925,6 @@ func mcpUninstall(h *harness) error {
 	if _, err := h.successful(h.root, environment,
 		"bash", h.repoPath("install-mcp.sh"), "--uninstall", "--yes", "--install-dir", bin); err != nil {
 		return err
-	}
-	return nil
-}
-
-// Declining the offer must connect the client and change nothing else: the
-// prompt is the operator's setting in the operator's file, so silence is never
-// the default. Only the auto-permit question is answered no here, so a client
-// that fails to connect would show up as a missing config rather than a pass.
-func declinedAutoPermitLeavesClientsAlone(h *harness, server *deviceServer) error {
-	home := h.path("declined-home")
-	for _, directory := range []string{".claude", ".gemini", ".codex"} {
-		if err := h.mkdir(filepath.Join(home, filepath.FromSlash(directory))); err != nil {
-			return err
-		}
-	}
-	if err := writeFile(filepath.Join(home, ".gemini", "settings.json"), "{}\n", 0o600); err != nil {
-		return err
-	}
-	result := runClientFlow(h, home, server.server.URL, false, `
-ask_tty() { case "$1" in Silence*) return 1 ;; *) return 0 ;; esac; }
-`)
-	if _, err := requireOutput(result); err != nil {
-		return err
-	}
-	gemini, err := os.ReadFile(filepath.Join(home, ".gemini", "settings.json"))
-	if err != nil {
-		return err
-	}
-	if !strings.Contains(string(gemini), "emisar") {
-		return fmt.Errorf("declining auto-permit also skipped the client connection:\n%s", gemini)
-	}
-	if strings.Contains(string(gemini), "trust") {
-		return fmt.Errorf("the Gemini server was trusted despite a declined offer:\n%s", gemini)
-	}
-	codex, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
-	if err != nil {
-		return err
-	}
-	if strings.Contains(string(codex), "default_tools_approval_mode") {
-		return fmt.Errorf("the Codex approval mode was set despite a declined offer:\n%s", codex)
-	}
-	if _, err := os.Stat(filepath.Join(home, ".claude", "settings.json")); !os.IsNotExist(err) {
-		return fmt.Errorf("the Claude Code settings were written despite a declined offer")
-	}
-	return nil
-}
-
-// The offer is per-server by construction: every client that took it names
-// emisar (or emisar's tool prefix) and nothing wider, Cursor is never touched
-// because its only control is a global agent toggle, and Grok's pre-existing
-// [permission] table is reported rather than rewritten.
-func inspectAutoPermit(home, output string) error {
-	claudeSettings, err := jsonFile(filepath.Join(home, ".claude", "settings.json"))
-	if err != nil {
-		return fmt.Errorf("reading the Claude Code settings: %w", err)
-	}
-	permissions, ok := claudeSettings["permissions"].(map[string]any)
-	if !ok {
-		return fmt.Errorf("the Claude Code settings carry no permissions object")
-	}
-	allow, ok := permissions["allow"].([]any)
-	if !ok || len(allow) != 1 || allow[0] != "mcp__emisar__*" {
-		return fmt.Errorf("the Claude Code permissions.allow = %v, expected [mcp__emisar__*]", permissions["allow"])
-	}
-
-	gemini, err := jsonFile(filepath.Join(home, ".gemini", "settings.json"))
-	if err != nil {
-		return err
-	}
-	servers, ok := gemini["mcpServers"].(map[string]any)
-	if !ok {
-		return fmt.Errorf("the Gemini config lost its mcpServers object")
-	}
-	emisar, ok := servers["emisar"].(map[string]any)
-	if !ok {
-		return fmt.Errorf("the Gemini config lost its emisar server")
-	}
-	if emisar["trust"] != true {
-		return fmt.Errorf("the Gemini emisar server has trust = %v, expected true", emisar["trust"])
-	}
-	if other, ok := servers["other"].(map[string]any); !ok {
-		return fmt.Errorf("the Gemini config lost its unrelated server")
-	} else if _, trusted := other["trust"]; trusted {
-		return fmt.Errorf("trust reached a Gemini server that is not emisar")
-	}
-
-	codex, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
-	if err != nil {
-		return err
-	}
-	if !strings.Contains(string(codex), "[mcp_servers.emisar]\ndefault_tools_approval_mode = \"approve\"\n") {
-		return fmt.Errorf("the Codex approval mode is not inside the emisar table:\n%s", codex)
-	}
-
-	// Grok's fixture already carries a [permission] table, so the entry must be
-	// reported instead of merged — hand-editing an array we did not author is
-	// how a config we do not own gets corrupted.
-	grok, err := os.ReadFile(filepath.Join(home, ".grok", "config.toml"))
-	if err != nil {
-		return err
-	}
-	if strings.Contains(string(grok), "emisar__") {
-		return fmt.Errorf("the existing Grok permission table was rewritten:\n%s", grok)
-	}
-	if !strings.Contains(output, "Grok CLI") {
-		return fmt.Errorf("the Grok auto-permit refusal was not reported:\n%s", output)
-	}
-
-	cursor, err := os.ReadFile(filepath.Join(home, ".cursor", "mcp.json"))
-	if err != nil {
-		return err
-	}
-	for _, forbidden := range []string{"trust", "approval", "allow"} {
-		if strings.Contains(string(cursor), forbidden) {
-			return fmt.Errorf("the Cursor config gained an approval setting (%q) it can only apply globally:\n%s", forbidden, cursor)
-		}
-	}
-	return nil
-}
-
-func inspectClientConfigs(home, portal string) error {
-	cursor, err := jsonFile(filepath.Join(home, ".cursor", "mcp.json"))
-	if err != nil {
-		return err
-	}
-	if err := requireNestedString(cursor, "other-mcp", "mcpServers", "other", "command"); err != nil {
-		return err
-	}
-	for expected, keys := range map[string][]string{
-		fixtureAPIKey("cursor"): {"mcpServers", "emisar", "env", "EMISAR_API_KEY"},
-		portal:                  {"mcpServers", "emisar", "env", "EMISAR_URL"},
-	} {
-		if err := requireNestedString(cursor, expected, keys...); err != nil {
-			return err
-		}
-	}
-
-	claude, err := jsonFile(filepath.Join(home, ".claude.json"))
-	if err != nil {
-		return err
-	}
-	if err := requireNestedString(claude, fixtureAPIKey("claude-code"), "mcpServers", "emisar", "env", "EMISAR_API_KEY"); err != nil {
-		return err
-	}
-	if err := requireNestedString(claude, "claude-code", "mcpServers", "emisar", "env", "EMISAR_CLIENT"); err != nil {
-		return err
-	}
-
-	openClaw, err := jsonFile(filepath.Join(home, ".openclaw", "openclaw.json"))
-	if err != nil {
-		return err
-	}
-	if err := requireNestedString(openClaw, "/usr/local/bin/emisar-mcp", "mcp", "servers", "emisar", "command"); err != nil {
-		return err
-	}
-	if err := requireNestedString(openClaw, fixtureAPIKey("openclaw"), "mcp", "servers", "emisar", "env", "EMISAR_API_KEY"); err != nil {
-		return err
-	}
-
-	openCode, err := jsonFile(filepath.Join(home, ".config", "opencode", "opencode.json"))
-	if err != nil {
-		return err
-	}
-	if err := requireNestedString(openCode, "opencode", "mcp", "emisar", "environment", "EMISAR_CLIENT"); err != nil {
-		return err
-	}
-	if err := requireNestedString(openCode, "other-mcp", "mcp", "other", "command", "0"); err == nil {
-		return fmt.Errorf("array traversal unexpectedly used object keys")
-	}
-	command, err := nested(openCode, "mcp", "emisar", "command")
-	if err != nil {
-		return err
-	}
-	commandList, ok := command.([]any)
-	if !ok || len(commandList) != 1 || commandList[0] != "/usr/local/bin/emisar-mcp" {
-		return fmt.Errorf("OpenCode command = %#v", command)
-	}
-
-	for path, client := range map[string]string{
-		".codeium/windsurf/mcp_config.json": "windsurf",
-		".pi/agent/mcp.json":                "pi",
-		".copilot/mcp-config.json":          "copilot-cli",
-	} {
-		config, err := jsonFile(filepath.Join(home, filepath.FromSlash(path)))
-		if err != nil {
-			return err
-		}
-		if err := requireNestedString(config, client, "mcpServers", "emisar", "env", "EMISAR_CLIENT"); err != nil {
-			return err
-		}
-	}
-
-	vscode := filepath.Join(home, ".config", "Code", "User", "mcp.json")
-	for _, text := range []string{
-		"// synced editor config", `"inputs": []`, `"other"`,
-		`"type": "stdio"`, `"command": "/usr/local/bin/emisar-mcp"`,
-		`"envFile": "` + filepath.ToSlash(filepath.Join(home, ".config", "emisar", "credentials", "vscode.env")) + `"`,
-	} {
-		if err := containsFile(vscode, text); err != nil {
-			return err
-		}
-	}
-	if err := lacksFile(vscode, fixtureAPIKey("vscode")); err != nil {
-		return fmt.Errorf("VS Code config disclosed its API key: %w", err)
-	}
-	vscodeEnvironment := filepath.Join(home, ".config", "emisar", "credentials", "vscode.env")
-	if err := exactFile(vscodeEnvironment,
-		"EMISAR_URL="+portal+"\n"+
-			"EMISAR_API_KEY="+fixtureAPIKey("vscode")+"\n"+
-			"EMISAR_CLIENT=vscode\n"); err != nil {
-		return fmt.Errorf("VS Code private environment: %w", err)
-	}
-	if info, err := os.Stat(vscodeEnvironment); err != nil {
-		return err
-	} else if info.Mode().Perm() != 0o600 {
-		return fmt.Errorf("VS Code private environment mode = %o, expected 600", info.Mode().Perm())
-	}
-	if err := exactFile(vscode+".emisar-bak", `{
-  // synced editor config
-  "inputs": [],
-  "servers": {
-    "other": { "type": "stdio", "command": "other-mcp" },
-  },
-}
-`); err != nil {
-		return fmt.Errorf("VS Code config backup: %w", err)
-	}
-
-	zed := filepath.Join(home, ".config", "zed", "settings.json")
-	for _, text := range []string{
-		"// my editor", `"theme": "One Dark"`, `"other"`,
-		`"source": "custom"`, `"EMISAR_CLIENT": "zed"`,
-	} {
-		if err := containsFile(zed, text); err != nil {
-			return err
-		}
-	}
-	hermes := filepath.Join(home, ".hermes", "config.yaml")
-	for _, text := range []string{
-		"model: hermes-4", "mcp_servers:",
-		"command: /usr/local/bin/emisar-mcp", `EMISAR_API_KEY: "` + fixtureAPIKey("hermes") + `"`,
-	} {
-		if err := containsFile(hermes, text); err != nil {
-			return err
-		}
-	}
-	codex := filepath.Join(home, ".codex", "config.toml")
-	for _, text := range []string{
-		`[mcp_servers.emisar]`, `EMISAR_API_KEY = "` + fixtureAPIKey("codex") + `"`,
-		`EMISAR_CLIENT = "codex"`, `name = "gpt"`,
-	} {
-		if err := containsFile(codex, text); err != nil {
-			return err
-		}
-	}
-	grok := filepath.Join(home, ".grok", "config.toml")
-	for _, text := range []string{
-		`[mcp_servers.emisar]`, `EMISAR_API_KEY = "` + fixtureAPIKey("grok") + `"`,
-		`EMISAR_CLIENT = "grok"`, `[permission]`, `allow = ["MCPTool(other__*)"]`,
-	} {
-		if err := containsFile(grok, text); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// mcpConfigValueValidation proves nothing that could break out of a config file
-// gets written into one.
-//
-// EMISAR_URL and the keys the portal delivers both land inside JSON, TOML and
-// YAML string literals. A value carrying a quote or a newline does not corrupt
-// those files — it ADDS to them, and each format can express a second MCP
-// server with its own `command`, which the client executes on next start. So a
-// hostile EMISAR_URL or a compromised portal response would reach arbitrary
-// code on the operator's workstation through a config file.
-func mcpConfigValueValidation(h *harness) error {
-	accepted := []string{
-		"https://emisar.dev",
-		"https://portal.internal.example:4010/base",
-		"emk-AbC123_no", // key shape: alphanumerics and dashes
-	}
-	rejected := []string{
-		`https://x.dev", "command": "sh`,
-		"https://x.dev\n  command: sh",
-		"https://x.dev' }, 'evil': {",
-		"https://x.dev$(id)",
-		"https://x.dev`id`",
-		"",
-	}
-
-	for _, value := range accepted {
-		result := h.functions(h.repoPath("install-mcp.sh"), []string{"safe_config_value"},
-			"safe_config_value \"$CANDIDATE\"\n", map[string]string{"CANDIDATE": value})
-		if result.err != nil {
-			return fmt.Errorf("legitimate value %q was rejected:\n%s", value, result.output)
-		}
-	}
-	for _, value := range rejected {
-		result := h.functions(h.repoPath("install-mcp.sh"), []string{"safe_config_value"},
-			"safe_config_value \"$CANDIDATE\"\n", map[string]string{"CANDIDATE": value})
-		if result.err == nil {
-			return fmt.Errorf("value %q would have been written to a client config", value)
-		}
-	}
-	return nil
-}
-
-// mcpVerificationURIConfinement proves the portal cannot choose what the
-// installer opens.
-//
-// The verification URI is PRINTED to the operator and handed to
-// `open`/`xdg-open`, which on macOS launches whatever application registered
-// the scheme — so a compromised portal answering with file:/// or a custom
-// scheme would run something on their machine off the back of an install. A raw
-// ESC would separately rewrite what their terminal shows.
-func mcpVerificationURIConfinement(h *harness) error {
-	const portal = "https://portal.example"
-	accepted := []string{
-		portal + "/activate",
-		portal + "/activate?code=HHHH-0000",
-	}
-	rejected := []string{
-		"file:///etc/passwd",
-		"x-evil-app://run?cmd=id",
-		"https://evil.example/activate",
-		portal + ".evil.example/activate",
-		portal + "/activate\x1b[2J",
-		portal + "/activate\" || id\"",
-		"",
-	}
-
-	check := func(value string) error {
-		result := h.functions(h.repoPath("install-mcp.sh"), []string{"safe_verification_uri"},
-			"safe_verification_uri \"$CANDIDATE\"\n",
-			map[string]string{"CANDIDATE": value, "EMISAR_URL": portal})
-		return result.err
-	}
-	for _, value := range accepted {
-		if err := check(value); err != nil {
-			return fmt.Errorf("the portal's own verification URI %q was rejected", value)
-		}
-	}
-	for _, value := range rejected {
-		if err := check(value); err == nil {
-			return fmt.Errorf("URI %q would have been opened", value)
-		}
 	}
 	return nil
 }

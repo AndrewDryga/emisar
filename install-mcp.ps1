@@ -42,9 +42,6 @@ $script:AttestationWorkflow = if ($env:EMISAR_ATTESTATION_WORKFLOW) {
     ""
 }
 $script:Utf8NoBom = New-Object Text.UTF8Encoding($false)
-$script:ConfiguredClients = New-Object Collections.Generic.List[string]
-$script:ConnectionPhaseRan = $false
-$script:CLIAuthenticated = $false
 
 function Write-Info([string]$Message) {
     Write-Host "[install-mcp] $Message" -ForegroundColor Blue
@@ -83,10 +80,6 @@ function Test-SafePortalOrigin([string]$Value) {
     if ($uri.AbsolutePath -ne "/") { return $false }
     if ($uri.Scheme -eq "https") { return $true }
     return $uri.Scheme -eq "http" -and $env:EMISAR_ALLOW_INSECURE -eq "1" -and $uri.IsLoopback
-}
-
-function Test-SafeConfigValue([string]$Value) {
-    return $Value.Length -gt 0 -and $Value.IndexOfAny([char[]]@([char]0, "`r", "`n")) -lt 0
 }
 
 function Normalize-Version([string]$Value) {
@@ -394,682 +387,34 @@ function Install-Bridge([string]$Destination, [string]$Source, [string]$Expected
     }
 }
 
-function New-Client([string]$Label, [string]$Id, [string]$Kind, [string]$Path, [string]$Marker = "", [string]$EnvPath = "") {
-    if (-not $Marker) { $Marker = Split-Path -Parent $Path }
-    return [pscustomobject]@{ Label = $Label; Id = $Id; Kind = $Kind; Path = $Path; Marker = $Marker; EnvPath = $EnvPath }
-}
-
-function Find-Clients([string]$HomeDirectory, [string]$AppDataDirectory) {
-    $clients = New-Object Collections.Generic.List[object]
-    $candidates = @(
-        (New-Client "Claude Code" "claude-code" "json" (Join-Path $HomeDirectory ".claude.json") (Join-Path $HomeDirectory ".claude")),
-        (New-Client "Claude Desktop" "claude-desktop" "json" (Join-Path $AppDataDirectory "Claude\claude_desktop_config.json")),
-        (New-Client "Cursor" "cursor" "json" (Join-Path $HomeDirectory ".cursor\mcp.json")),
-        (New-Client "VS Code" "vscode" "vscode" (Join-Path $AppDataDirectory "Code\User\mcp.json") (Join-Path $AppDataDirectory "Code") (Join-Path $AppDataDirectory "emisar\credentials\vscode.env")),
-        (New-Client "Gemini CLI" "gemini" "json" (Join-Path $HomeDirectory ".gemini\settings.json")),
-        (New-Client "Codex CLI" "codex" "toml" (Join-Path $HomeDirectory ".codex\config.toml")),
-        (New-Client "OpenClaw" "openclaw" "openclaw" (Join-Path $HomeDirectory ".openclaw\openclaw.json")),
-        (New-Client "OpenCode" "opencode" "opencode" (Join-Path $HomeDirectory ".config\opencode\opencode.json")),
-        (New-Client "Windsurf" "windsurf" "json" (Join-Path $HomeDirectory ".codeium\windsurf\mcp_config.json")),
-        (New-Client "Pi" "pi" "json" (Join-Path $HomeDirectory ".pi\agent\mcp.json")),
-        (New-Client "Copilot CLI" "copilot-cli" "copilot" (Join-Path $HomeDirectory ".copilot\mcp-config.json")),
-        (New-Client "Zed" "zed" "zed" (Join-Path $AppDataDirectory "Zed\settings.json")),
-        (New-Client "Hermes" "hermes" "hermes" (Join-Path $HomeDirectory ".hermes\config.yaml")),
-        (New-Client "Goose" "goose" "goose" (Join-Path $HomeDirectory ".config\goose\config.yaml")),
-        (New-Client "Grok CLI" "grok" "toml" (Join-Path $HomeDirectory ".grok\config.toml"))
-    )
-    foreach ($client in $candidates) {
-        if ((Test-Path -LiteralPath $client.Path -PathType Leaf) -or (Test-Path -LiteralPath $client.Marker)) {
-            $clients.Add($client)
-        }
-    }
-    return $clients.ToArray()
-}
-
-function Test-ClientConnected($Client) {
-    if (-not (Test-Path -LiteralPath $Client.Path -PathType Leaf)) { return $false }
-    $text = [IO.File]::ReadAllText($Client.Path)
-    switch ($Client.Kind) {
-        "toml" { return $text -match '(?m)^\[mcp_servers\.emisar\]\s*$' }
-        "hermes" { return $text -match '(?m)^\s{2}emisar:\s*$' }
-        "goose" { return $text -match '(?m)^\s{2}emisar:\s*$' }
-        default { return $text -match '"emisar"\s*:' }
-    }
-}
-
-function Set-PropertyValue($Object, [string]$Name, $Value) {
-    $Object | Add-Member -MemberType NoteProperty -Name $Name -Value $Value -Force
-}
-
-function Get-OrAddObject($Object, [string]$Name) {
-    $property = $Object.PSObject.Properties[$Name]
-    if ($null -eq $property) {
-        $value = [pscustomobject]@{}
-        Set-PropertyValue $Object $Name $value
-        return $value
-    }
-    if ($null -eq $property.Value -or $property.Value -is [string] -or $property.Value -is [ValueType] -or $property.Value -is [array]) {
-        throw "existing config key is not an object: $Name"
-    }
-    return $property.Value
-}
-
-function Write-AtomicText([string]$Path, [string]$Text) {
-    $directory = Split-Path -Parent $Path
-    if (-not (Test-Path -LiteralPath $directory)) {
-        [void](New-Item -ItemType Directory -Path $directory -Force)
-    }
-    Assert-NoReparsePoint $Path "client config"
-    $temporary = Join-Path $directory (".emisar-mcp." + [Guid]::NewGuid().ToString("N") + ".tmp")
-    try {
-        [IO.File]::WriteAllText($temporary, $Text, $script:Utf8NoBom)
-        if (Test-Path -LiteralPath $Path) {
-            $backup = "$Path.emisar-bak"
-            Assert-NoReparsePoint $backup "client config backup"
-            [IO.File]::Replace($temporary, $Path, $backup, $true)
-            Set-PrivateFileACL $backup
-        } else {
-            [IO.File]::Move($temporary, $Path)
-        }
-        Set-PrivateFileACL $Path
-    } finally {
-        if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
-    }
-}
-
-function Write-PrivateText([string]$Path, [string]$Text) {
-    $directory = Split-Path -Parent $Path
-    $parent = Split-Path -Parent $directory
-    Assert-NoReparsePoint $parent "private parent directory"
-    if (-not (Test-Path -LiteralPath $directory)) {
-        [void](New-Item -ItemType Directory -Path $directory -Force)
-    }
-    Set-PrivateDirectoryACL $directory
-    Assert-NoReparsePoint $Path "private file"
-    $temporary = Join-Path $directory (".emisar-mcp." + [Guid]::NewGuid().ToString("N") + ".tmp")
-    try {
-        [IO.File]::WriteAllText($temporary, $Text, $script:Utf8NoBom)
-        Set-PrivateFileACL $temporary
-        if (Test-Path -LiteralPath $Path) {
-            [IO.File]::Replace($temporary, $Path, $null, $true)
-        } else {
-            [IO.File]::Move($temporary, $Path)
-        }
-        Set-PrivateFileACL $Path
-    } finally {
-        if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
-    }
-}
-
-function Skip-JsoncWhitespace([string]$Text, [int]$Index) {
-    while ($Index -lt $Text.Length) {
-        if ([char]::IsWhiteSpace($Text[$Index])) {
-            $Index++
-            continue
-        }
-        if ($Text[$Index] -eq '/' -and $Index + 1 -lt $Text.Length -and $Text[$Index + 1] -eq '/') {
-            $Index += 2
-            while ($Index -lt $Text.Length -and $Text[$Index] -ne "`n") { $Index++ }
-            continue
-        }
-        if ($Text[$Index] -eq '/' -and $Index + 1 -lt $Text.Length -and $Text[$Index + 1] -eq '*') {
-            $Index += 2
-            while ($Index + 1 -lt $Text.Length -and -not ($Text[$Index] -eq '*' -and $Text[$Index + 1] -eq '/')) { $Index++ }
-            if ($Index + 1 -ge $Text.Length) { throw "unterminated JSONC comment" }
-            $Index += 2
-            continue
-        }
-        break
-    }
-    return $Index
-}
-
-function Find-JsoncStringEnd([string]$Text, [int]$Index) {
-    $Index++
-    while ($Index -lt $Text.Length) {
-        if ($Text[$Index] -eq '\') {
-            $Index += 2
-            continue
-        }
-        if ($Text[$Index] -eq '"') { return $Index + 1 }
-        $Index++
-    }
-    throw "unterminated JSON string"
-}
-
-function Find-JsoncClose([string]$Text, [int]$Index, [char]$Open, [char]$Close) {
-    $depth = 0
-    while ($Index -lt $Text.Length) {
-        $character = $Text[$Index]
-        if ($character -eq '"') {
-            $Index = Find-JsoncStringEnd $Text $Index
-            continue
-        }
-        if ($character -eq '/' -and $Index + 1 -lt $Text.Length -and $Text[$Index + 1] -in @('/', '*')) {
-            $Index = Skip-JsoncWhitespace $Text $Index
-            continue
-        }
-        if ($character -eq $Open) { $depth++ }
-        if ($character -eq $Close) {
-            $depth--
-            if ($depth -eq 0) { return $Index }
-        }
-        $Index++
-    }
-    throw "unterminated JSON container"
-}
-
-function Skip-JsoncValue([string]$Text, [int]$Index) {
-    $Index = Skip-JsoncWhitespace $Text $Index
-    if ($Index -ge $Text.Length) { throw "missing JSON value" }
-    switch ($Text[$Index]) {
-        '"' { return Find-JsoncStringEnd $Text $Index }
-        '{' { return (Find-JsoncClose $Text $Index '{' '}') + 1 }
-        '[' { return (Find-JsoncClose $Text $Index '[' ']') + 1 }
-    }
-    while ($Index -lt $Text.Length -and $Text[$Index] -notin @(',', '}', ']')) { $Index++ }
-    return $Index
-}
-
-function Find-JsoncMember([string]$Text, [int]$ObjectBrace, [string]$Name) {
-    $objectEnd = Find-JsoncClose $Text $ObjectBrace '{' '}'
-    $target = '"' + $Name + '"'
-    $index = $ObjectBrace + 1
-    while ($index -lt $objectEnd) {
-        $index = Skip-JsoncWhitespace $Text $index
-        if ($index -ge $objectEnd) { break }
-        if ($Text[$index] -eq ',') {
-            $index++
-            continue
-        }
-        if ($Text[$index] -ne '"') { throw "invalid JSON object member" }
-        $keyEnd = Find-JsoncStringEnd $Text $index
-        $member = $Text.Substring($index, $keyEnd - $index)
-        $valueStart = Skip-JsoncWhitespace $Text $keyEnd
-        if ($valueStart -ge $objectEnd -or $Text[$valueStart] -ne ':') { throw "invalid JSON object member" }
-        $valueStart = Skip-JsoncWhitespace $Text ($valueStart + 1)
-        if ($member -eq $target) {
-            return [pscustomobject]@{ Found = $true; Start = $index; Value = $valueStart }
-        }
-        $index = Skip-JsoncValue $Text $valueStart
-    }
-    return [pscustomobject]@{ Found = $false; Start = -1; Value = -1 }
-}
-
-function Get-JsoncMemberIndent([string]$Text, [int]$Brace) {
-    $lineStart = $Text.LastIndexOf("`n", [Math]::Max(0, $Brace - 1)) + 1
-    $prefix = $Text.Substring($lineStart, $Brace - $lineStart)
-    return ([regex]::Match($prefix, '^[ \t]*').Value + '  ')
-}
-
-function Format-JsoncMember([string]$Name, $Value, [string]$Indent, [string]$Newline) {
-    $json = $Value | ConvertTo-Json -Depth 20
-    $lines = [regex]::Split($json, '\r?\n')
-    $builder = New-Object Text.StringBuilder
-    [void]$builder.Append('"' + $Name + '": ' + $lines[0])
-    for ($index = 1; $index -lt $lines.Length; $index++) {
-        [void]$builder.Append($Newline + $Indent + $lines[$index])
-    }
-    return $builder.ToString()
-}
-
-function Remove-JsoncSyntax([string]$Text) {
-    $builder = New-Object Text.StringBuilder
-    $index = 0
-    while ($index -lt $Text.Length) {
-        if ($Text[$index] -eq '"') {
-            $end = Find-JsoncStringEnd $Text $index
-            [void]$builder.Append($Text.Substring($index, $end - $index))
-            $index = $end
-            continue
-        }
-        if ($Text[$index] -eq '/' -and $index + 1 -lt $Text.Length -and $Text[$index + 1] -in @('/', '*')) {
-            $end = Skip-JsoncWhitespace $Text $index
-            $index = $end
-            continue
-        }
-        [void]$builder.Append($Text[$index])
-        $index++
-    }
-    return [regex]::Replace($builder.ToString(), ',(?=\s*[}\]])', '')
-}
-
-function Add-VSCodeJsoncConfig([string]$Raw, [string]$Executable, [string]$EnvPath) {
-    $root = Skip-JsoncWhitespace $Raw 0
-    if ($root -ge $Raw.Length -or $Raw[$root] -ne '{') { throw "top-level JSON is not an object" }
-    $newline = if ($Raw.Contains("`r`n")) { "`r`n" } else { "`n" }
-    $entry = [ordered]@{ type = "stdio"; command = $Executable; args = @(); envFile = $EnvPath }
-    $servers = Find-JsoncMember $Raw $root "servers"
-    if ($servers.Found) {
-        if ($Raw[$servers.Value] -ne '{') { throw "existing config key is not an object: servers" }
-        $existing = Find-JsoncMember $Raw $servers.Value "emisar"
-        if ($existing.Found) { return $Raw }
-        $indent = Get-JsoncMemberIndent $Raw $servers.Value
-        $member = Format-JsoncMember "emisar" $entry $indent $newline
-        $next = Skip-JsoncWhitespace $Raw ($servers.Value + 1)
-        $suffix = if ($next -lt $Raw.Length -and $Raw[$next] -eq '}') { '' } else { ',' }
-        $updated = $Raw.Insert($servers.Value + 1, $newline + $indent + $member + $suffix)
-    } else {
-        $indent = Get-JsoncMemberIndent $Raw $root
-        $entryIndent = $indent + '  '
-        $member = Format-JsoncMember "emisar" $entry $entryIndent $newline
-        $next = Skip-JsoncWhitespace $Raw ($root + 1)
-        $suffix = if ($next -lt $Raw.Length -and $Raw[$next] -eq '}') { '' } else { ',' }
-        $block = $newline + $indent + '"servers": {' + $newline + $entryIndent + $member + $newline + $indent + '}' + $suffix
-        $updated = $Raw.Insert($root + 1, $block)
-    }
-    $check = (Remove-JsoncSyntax $updated) | ConvertFrom-Json
-    $configured = $check.servers.emisar
-    if ($configured.type -ne "stdio" -or $configured.command -ne $Executable -or $configured.envFile -ne $EnvPath) {
-        throw "VS Code config validation failed after insert"
-    }
-    return $updated
-}
-
-function Find-JsoncMemberSpan([string]$Text, [int]$ObjectBrace, [string]$Name) {
-    $objectEnd = Find-JsoncClose $Text $ObjectBrace '{' '}'
-    $target = '"' + $Name + '"'
-    $previousComma = -1
-    $index = $ObjectBrace + 1
-    while ($index -lt $objectEnd) {
-        $index = Skip-JsoncWhitespace $Text $index
-        if ($index -ge $objectEnd) { break }
-        if ($Text[$index] -eq ',') {
-            $previousComma = $index
-            $index++
-            continue
-        }
-        if ($Text[$index] -ne '"') { throw "invalid JSON object member" }
-        $keyStart = $index
-        $keyEnd = Find-JsoncStringEnd $Text $index
-        $member = $Text.Substring($keyStart, $keyEnd - $keyStart)
-        $valueStart = Skip-JsoncWhitespace $Text $keyEnd
-        if ($valueStart -ge $objectEnd -or $Text[$valueStart] -ne ':') { throw "invalid JSON object member" }
-        $valueStart = Skip-JsoncWhitespace $Text ($valueStart + 1)
-        $valueEnd = Skip-JsoncValue $Text $valueStart
-        if ($member -eq $target) {
-            $after = Skip-JsoncWhitespace $Text $valueEnd
-            if ($after -lt $objectEnd -and $Text[$after] -eq ',') {
-                return [pscustomobject]@{ Start = $keyStart; End = $after + 1 }
-            }
-            if ($previousComma -ge 0) {
-                return [pscustomobject]@{ Start = $previousComma; End = $valueEnd }
-            }
-            return [pscustomobject]@{ Start = $keyStart; End = $valueEnd }
-        }
-        $index = $valueEnd
-    }
-    throw "no emisar member to remove"
-}
-
-function Remove-VSCodeJsoncConfig([string]$Raw) {
-    $root = Skip-JsoncWhitespace $Raw 0
-    if ($root -ge $Raw.Length -or $Raw[$root] -ne '{') { throw "top-level JSON is not an object" }
-    $servers = Find-JsoncMember $Raw $root "servers"
-    if (-not $servers.Found -or $Raw[$servers.Value] -ne '{') { throw "no servers object" }
-    $span = Find-JsoncMemberSpan $Raw $servers.Value "emisar"
-    $lineStart = $Raw.LastIndexOf("`n", [Math]::Max(0, $span.Start - 1)) + 1
-    if ($Raw.Substring($lineStart, $span.Start - $lineStart).Trim() -eq '') {
-        if ($span.End + 1 -lt $Raw.Length -and $Raw.Substring($span.End, 2) -eq "`r`n") {
-            $span.Start = $lineStart
-            $span.End += 2
-        } elseif ($span.End -lt $Raw.Length -and $Raw[$span.End] -eq "`n") {
-            $span.Start = $lineStart
-            $span.End++
-        }
-    }
-    $updated = $Raw.Remove($span.Start, $span.End - $span.Start)
-    $check = (Remove-JsoncSyntax $updated) | ConvertFrom-Json
-    if ($null -ne $check.servers.PSObject.Properties["emisar"]) { throw "VS Code config validation failed after removal" }
-    return $updated
-}
-
-function New-ClientEnvironment([string]$Key, [string]$ClientId) {
-    return [ordered]@{
-        EMISAR_URL = $script:PortalOrigin
-        EMISAR_API_KEY = $Key
-        EMISAR_CLIENT = $ClientId
-    }
-}
-
-function Set-JsonClientConfig($Client, [string]$Executable, [string]$Key) {
-    if (Test-Path -LiteralPath $Client.Path) {
-        $raw = [IO.File]::ReadAllText($Client.Path)
-        if ($raw -match '(?m)(^|[^:])//|/\*') {
-            if ($Client.Kind -eq "vscode") {
-                Write-AtomicText $Client.Path (Add-VSCodeJsoncConfig $raw $Executable $Client.EnvPath)
-                return
-            }
-            throw "commented JSON must be updated from the portal snippet"
-        }
-        $config = if ($raw.Trim()) { $raw | ConvertFrom-Json } else { [pscustomobject]@{} }
-    } else {
-        $config = [pscustomobject]@{}
-    }
-    if ($null -eq $config -or $config -is [array]) { throw "top-level JSON is not an object" }
-    $environment = New-ClientEnvironment $Key $Client.Id
-    switch ($Client.Kind) {
-        "openclaw" {
-            $mcp = Get-OrAddObject $config "mcp"
-            $container = Get-OrAddObject $mcp "servers"
-            $entry = [ordered]@{ command = $Executable; env = $environment }
-        }
-        "opencode" {
-            $container = Get-OrAddObject $config "mcp"
-            $entry = [ordered]@{ type = "local"; command = @($Executable); enabled = $true; environment = $environment }
-        }
-        "copilot" {
-            $container = Get-OrAddObject $config "mcpServers"
-            $entry = [ordered]@{ type = "local"; command = $Executable; args = @(); env = $environment; tools = @("*") }
-        }
-        "zed" {
-            $container = Get-OrAddObject $config "context_servers"
-            $entry = [ordered]@{ source = "custom"; command = $Executable; args = @(); env = $environment }
-        }
-        "vscode" {
-            $container = Get-OrAddObject $config "servers"
-            $entry = [ordered]@{ type = "stdio"; command = $Executable; args = @(); envFile = $Client.EnvPath }
-        }
-        default {
-            $container = Get-OrAddObject $config "mcpServers"
-            $entry = [ordered]@{ command = $Executable; env = $environment }
-        }
-    }
-    Set-PropertyValue $container "emisar" $entry
-    Write-AtomicText $Client.Path (($config | ConvertTo-Json -Depth 20) + "`r`n")
-}
-
-function Quote-ConfigString([string]$Value) {
-    return ($Value | ConvertTo-Json -Compress)
-}
-
-function Set-TextClientConfig($Client, [string]$Executable, [string]$Key) {
-    $existing = if (Test-Path -LiteralPath $Client.Path) { [IO.File]::ReadAllText($Client.Path) } else { "" }
-    if ($Client.Kind -eq "toml") {
-        if ($existing -match '(?m)^\[mcp_servers\.emisar\]\s*$') { return }
-        $block = "[mcp_servers.emisar]`r`ncommand = $(Quote-ConfigString $Executable)`r`nenv = { EMISAR_URL = $(Quote-ConfigString $script:PortalOrigin), EMISAR_API_KEY = $(Quote-ConfigString $Key), EMISAR_CLIENT = $(Quote-ConfigString $Client.Id) }`r`n"
-    } elseif ($Client.Kind -eq "hermes") {
-        if ($existing -match '(?m)^mcp_servers:\s*$') { throw "existing mcp_servers YAML must be updated from the portal snippet" }
-        $block = "mcp_servers:`r`n  emisar:`r`n    command: $(Quote-ConfigString $Executable)`r`n    env:`r`n      EMISAR_URL: $(Quote-ConfigString $script:PortalOrigin)`r`n      EMISAR_API_KEY: $(Quote-ConfigString $Key)`r`n      EMISAR_CLIENT: hermes`r`n"
-    } else {
-        if ($existing -match '(?m)^extensions:\s*$') { throw "existing extensions YAML must be updated from the portal snippet" }
-        $block = "extensions:`r`n  emisar:`r`n    name: emisar`r`n    cmd: $(Quote-ConfigString $Executable)`r`n    args: []`r`n    enabled: true`r`n    envs:`r`n      EMISAR_URL: $(Quote-ConfigString $script:PortalOrigin)`r`n      EMISAR_API_KEY: $(Quote-ConfigString $Key)`r`n      EMISAR_CLIENT: goose`r`n    type: stdio`r`n    timeout: 300`r`n"
-    }
-    if ($existing.Trim()) { $existing = $existing.TrimEnd() + "`r`n`r`n" }
-    Write-AtomicText $Client.Path ($existing + $block)
-}
-
-function Install-ClientConfig($Client, [string]$Executable, [string]$Key) {
-    if (-not (Test-SafeConfigValue $script:PortalOrigin) -or -not (Test-SafeConfigValue $Executable) -or -not (Test-SafeConfigValue $Key)) {
-        throw "a config value contains unsupported characters"
-    }
-    if ($Client.Kind -eq "vscode") {
-        $environment = "EMISAR_URL=$($script:PortalOrigin)`r`nEMISAR_API_KEY=$Key`r`nEMISAR_CLIENT=vscode`r`n"
-        Write-PrivateText $Client.EnvPath $environment
-        Set-JsonClientConfig $Client $Executable $Key
-    } elseif ($Client.Kind -in @("toml", "hermes", "goose")) {
-        Set-TextClientConfig $Client $Executable $Key
-    } else {
-        Set-JsonClientConfig $Client $Executable $Key
-    }
-}
-
-function Invoke-JsonPost([string]$Url, $Body) {
-    $uri = [Uri]$Url
-    Test-TrustedWebUri $uri
-    $client = New-WebClient @{ Accept = "application/json" }
-    try {
-        $json = $Body | ConvertTo-Json -Compress -Depth 8
-        $content = New-Object Net.Http.StringContent($json, [Text.Encoding]::UTF8, "application/json")
-        $response = $client.PostAsync($uri, $content).GetAwaiter().GetResult()
-        Test-TrustedWebUri $response.RequestMessage.RequestUri
-        $text = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-        $parsed = $null
-        try { if ($text) { $parsed = $text | ConvertFrom-Json } } catch { }
-        return [pscustomobject]@{ Status = [int]$response.StatusCode; Body = $parsed }
-    } finally {
-        $client.Dispose()
-    }
-}
-
-function Test-APIKey([string]$Key) {
-    return $Key.Length -eq 47 -and $Key -match '^emk-[A-Za-z0-9_-]{43}$'
-}
-
-function Request-DeviceGrant([string[]]$ClientIds) {
-    $response = Invoke-JsonPost "$($script:PortalOrigin)/api/mcp/device_authorization" @{ requested_clients = $ClientIds }
-    if ($response.Status -ne 200 -or $null -eq $response.Body) { throw "could not start connection approval" }
-    $grant = $response.Body
-    if ([string]$grant.device_code -notmatch '^emdg-[A-Za-z0-9_-]{16,128}$' -or
-        [string]$grant.user_code -notmatch '^[A-Z0-9-]{4,32}$') {
-        throw "the portal returned an invalid device grant"
-    }
-    $verification = [Uri]([string]$grant.verification_uri_complete)
-    $origin = [Uri]$script:PortalOrigin
-    if ($verification.Scheme -ne $origin.Scheme -or $verification.Host -ne $origin.Host -or $verification.Port -ne $origin.Port) {
-        throw "the portal returned an invalid verification URL"
-    }
-    $parsedInterval = 0
-    $interval = 5
-    if ([int]::TryParse([string]$grant.interval, [ref]$parsedInterval)) { $interval = [Math]::Min(120, [Math]::Max(1, $parsedInterval)) }
-    $parsedExpires = 0
-    $expires = 900
-    if ([int]::TryParse([string]$grant.expires_in, [ref]$parsedExpires)) { $expires = [Math]::Min(3600, [Math]::Max(60, $parsedExpires)) }
-    return [pscustomobject]@{
-        DeviceCode = [string]$grant.device_code
-        UserCode = [string]$grant.user_code
-        Verification = $verification.AbsoluteUri
-        Interval = $interval
-        Expires = $expires
-    }
-}
-
-function Wait-DeviceGrant($Grant) {
-    Write-Host ""
-    Write-Host "Approve this machine in your browser" -ForegroundColor White
-    Write-Host "  $($Grant.Verification)"
-    if ($env:EMISAR_MCP_TEST_NO_BROWSER -ne "1") {
-        try { Start-Process $Grant.Verification | Out-Null } catch { }
-    }
-    Write-Host "Waiting for approval (Ctrl-C skips CLI/client setup)..."
-    $deadline = [DateTime]::UtcNow.AddSeconds($Grant.Expires)
-    while ([DateTime]::UtcNow -lt $deadline) {
-        Start-Sleep -Seconds $Grant.Interval
-        $response = Invoke-JsonPost "$($script:PortalOrigin)/api/mcp/device_token" @{ device_code = $Grant.DeviceCode }
-        if ($response.Status -eq 200 -and $null -ne $response.Body -and $null -ne $response.Body.client_keys) {
-            Write-Host "Approved." -ForegroundColor Green
-            return $response.Body
-        }
-        if ($response.Status -eq 400 -and $null -ne $response.Body) {
-            $code = [string]$response.Body.error
-            if ($code -eq "authorization_pending" -or -not $code) { continue }
-            if ($code -eq "access_denied") { throw "the request was denied in the portal" }
-            if ($code -in @("expired_token", "invalid_grant")) { throw "the approval code expired" }
-            if ($code -match '^[A-Za-z0-9._-]{1,40}$') { throw "the portal reported $code" }
-        }
-    }
-    throw "the approval code expired"
-}
-
-function Get-ClientKey($TokenResponse, [string]$ClientId) {
-    $property = $TokenResponse.client_keys.PSObject.Properties[$ClientId]
-    if ($null -eq $property) { return "" }
-    return [string]$property.Value
-}
-
-function Import-CLIAuth([string]$Executable, [string]$Origin, [string]$Payload) {
-    $startInfo = New-Object Diagnostics.ProcessStartInfo
-    $startInfo.FileName = $Executable
-    $startInfo.Arguments = "auth import `"$Origin`""
-    $startInfo.UseShellExecute = $false
-    $startInfo.CreateNoWindow = $true
-    $startInfo.RedirectStandardInput = $true
-    $process = New-Object Diagnostics.Process
-    $process.StartInfo = $startInfo
-    $started = $false
-    $payloadBytes = $script:Utf8NoBom.GetBytes($Payload)
-    try {
-        $consoleInputEncoding = [Console]::InputEncoding
-        try {
-            [Console]::InputEncoding = $script:Utf8NoBom
-            $started = $process.Start()
-        } finally {
-            [Console]::InputEncoding = $consoleInputEncoding
-        }
-        if (-not $started) { throw "could not start emisar-mcp auth import" }
-        $process.StandardInput.BaseStream.Write($payloadBytes, 0, $payloadBytes.Length)
-        $process.StandardInput.BaseStream.Flush()
-        $process.StandardInput.Close()
-        $process.WaitForExit()
-        return $process.ExitCode
-    } finally {
-        [Array]::Clear($payloadBytes, 0, $payloadBytes.Length)
-        if ($started -and -not $process.HasExited) {
-            $process.Kill()
-            $process.WaitForExit()
-        }
-        $process.Dispose()
-    }
-}
-
-function Configure-Clients([string]$Executable, [string]$HomeDirectory, [string]$AppDataDirectory) {
-    if ($Yes -and -not $ConnectAll) { return }
-    $script:ConnectionPhaseRan = $true
-    $clients = @(Find-Clients $HomeDirectory $AppDataDirectory)
-    $selected = New-Object Collections.Generic.List[object]
-    foreach ($client in $clients) {
-        if (Test-ClientConnected $client) {
-            Write-Host ("  {0,-16} already connected" -f $client.Label)
-            continue
-        }
-        $connect = $ConnectAll
-        if (-not $ConnectAll) {
-            $answer = Read-Host "Add emisar to $($client.Label)? [y/N]"
-            $connect = $answer -match '^(?i:y|yes)$'
-        }
-        if ($connect) { $selected.Add($client) }
-    }
-
-    $urlWasSet = Test-Path Env:EMISAR_URL
-    $keyWasSet = Test-Path Env:EMISAR_API_KEY
-    $savedUrl = $env:EMISAR_URL
-    $savedKey = $env:EMISAR_API_KEY
-    $storedAccountWorks = $false
-    try {
-        Remove-Item Env:EMISAR_URL -ErrorAction SilentlyContinue
-        Remove-Item Env:EMISAR_API_KEY -ErrorAction SilentlyContinue
-        $storedAccountWorks = & {
-            $ErrorActionPreference = "Continue"
-            & $Executable auth status $script:PortalOrigin *> $null
-            if ($LASTEXITCODE -ne 0) { return $false }
-            & $Executable list_tools --json *> $null
-            return $LASTEXITCODE -eq 0
-        }
-    } finally {
-        if ($urlWasSet) { $env:EMISAR_URL = $savedUrl } else { Remove-Item Env:EMISAR_URL -ErrorAction SilentlyContinue }
-        if ($keyWasSet) { $env:EMISAR_API_KEY = $savedKey } else { Remove-Item Env:EMISAR_API_KEY -ErrorAction SilentlyContinue }
-    }
-    $cliNeedsAuth = -not $storedAccountWorks
-    $ids = New-Object Collections.Generic.List[string]
-    if ($cliNeedsAuth) { $ids.Add("emisar-mcp-cli") }
-    foreach ($client in $selected) { $ids.Add($client.Id) }
-    if ($ids.Count -eq 0) {
-        $script:CLIAuthenticated = $true
-        return
-    }
-
-    $grant = Request-DeviceGrant ($ids.ToArray())
-    $token = Wait-DeviceGrant $grant
-    $keys = @{}
-    foreach ($id in $ids) {
-        $key = Get-ClientKey $token $id
-        if (-not (Test-APIKey $key)) { throw "the portal did not deliver every requested key" }
-        $keys[$id] = $key
-    }
-
-    if ($cliNeedsAuth) {
-        $approval = $token | ConvertTo-Json -Depth 6 -Compress
-        try {
-            $importExitCode = Import-CLIAuth $Executable $script:PortalOrigin $approval
-        } finally {
-            $approval = $null
-        }
-        if ($importExitCode -ne 0) { throw "could not store the direct CLI credential" }
-        $script:CLIAuthenticated = $true
-    } else {
-        $script:CLIAuthenticated = $true
-    }
-    foreach ($client in $selected) {
-        try {
-            Install-ClientConfig $client $Executable ([string]$keys[$client.Id])
-            $script:ConfiguredClients.Add("$($client.Label): $($client.Path)")
-            Write-Host ("  {0,-16} connected -> {1}" -f $client.Label, $client.Path) -ForegroundColor Green
-        } catch {
-            Write-WarningLine "$($client.Label): could not update $($client.Path); use Custom at $($script:PortalOrigin)/app/agents/connect"
-        }
-    }
-    $keys.Clear()
-    $token = $null
-}
-
-function Remove-JsonClientConfig($Client) {
-    if (-not (Test-Path -LiteralPath $Client.Path)) { return }
-    try {
-        $raw = [IO.File]::ReadAllText($Client.Path)
-        if ($raw -match '(?m)(^|[^:])//|/\*') {
-            if ($Client.Kind -eq "vscode") {
-                Write-AtomicText $Client.Path (Remove-VSCodeJsoncConfig $raw)
-                return
-            }
-            throw "commented JSON"
-        }
-        $config = $raw | ConvertFrom-Json
-        $containers = switch ($Client.Kind) {
-            "openclaw" { @("mcp", "servers") }
-            "opencode" { @("mcp") }
-            "zed" { @("context_servers") }
-            "vscode" { @("servers") }
-            default { @("mcpServers") }
-        }
-        $node = $config
-        foreach ($name in $containers) {
-            $property = $node.PSObject.Properties[$name]
-            if ($null -eq $property) { return }
-            $node = $property.Value
-        }
-        [void]$node.PSObject.Properties.Remove("emisar")
-        Write-AtomicText $Client.Path (($config | ConvertTo-Json -Depth 20) + "`r`n")
-    } catch {
-        Write-WarningLine "$($Client.Label): could not remove emisar from $($Client.Path); remove it manually"
-    }
-}
-
-function Remove-TextClientConfig($Client) {
-    if (-not (Test-Path -LiteralPath $Client.Path)) { return }
-    $text = [IO.File]::ReadAllText($Client.Path)
-    if ($Client.Kind -eq "toml") {
-        $text = [regex]::Replace($text, '(?ms)^\[mcp_servers\.emisar\]\s*\r?\n.*?(?=^\[|\z)', '')
-    } elseif ($Client.Kind -eq "hermes") {
-        $text = [regex]::Replace($text, '(?ms)^mcp_servers:\s*\r?\n  emisar:\s*\r?\n(?:    .*\r?\n?)*', '')
-    } else {
-        $text = [regex]::Replace($text, '(?ms)^extensions:\s*\r?\n  emisar:\s*\r?\n(?:    .*\r?\n?)*', '')
-    }
-    Write-AtomicText $Client.Path $text
-}
-
-function Uninstall-Bridge([string]$Executable, [string]$HomeDirectory, [string]$AppDataDirectory) {
+# The reverse of the install path. The bridge removes its own entry, and the
+# backup it wrote, from every detected LLM client config and drops the stored
+# direct-CLI accounts and rotation state; then the executable goes. That order
+# is load-bearing: once the executable is gone nothing can clean a client
+# config, so a missing or older bridge is reported, never skipped.
+function Uninstall-Bridge([string]$Executable, [string]$AppDataDirectory) {
     $credentials = Join-Path $AppDataDirectory "emisar\credentials"
     if (Test-Path -LiteralPath $credentials) {
         Assert-NoReparsePoint $credentials "credential directory"
     }
     if (Test-Path -LiteralPath $Executable) {
         Assert-NoReparsePoint $Executable "emisar-mcp executable"
-    }
-    foreach ($client in @(Find-Clients $HomeDirectory $AppDataDirectory)) {
-        if ($client.Kind -in @("toml", "hermes", "goose")) { Remove-TextClientConfig $client } else { Remove-JsonClientConfig $client }
-        if (Test-Path -LiteralPath "$($client.Path).emisar-bak") {
-            Assert-NoReparsePoint "$($client.Path).emisar-bak" "client config backup"
-            Remove-Item -LiteralPath "$($client.Path).emisar-bak" -Force
+        $supportsDisconnect = & {
+            $ErrorActionPreference = "Continue"
+            & $Executable disconnect --help *> $null
+            return $LASTEXITCODE -eq 0
+        }
+        if (-not $supportsDisconnect) {
+            Write-WarningLine "the installed bridge is older than this script and cannot remove its own client entries"
+            Write-WarningLine "  reinstall it first, then re-run with -Uninstall"
+        } else {
+            & {
+                $ErrorActionPreference = "Continue"
+                & $Executable disconnect --all --forget --yes
+                if ($LASTEXITCODE -ne 0) {
+                    Write-WarningLine "some LLM client entries could not be removed; remove them by hand"
+                }
+            }
         }
     }
     if (Test-Path -LiteralPath $credentials) { Remove-Item -LiteralPath $credentials -Recurse -Force }
@@ -1086,7 +431,6 @@ if ($env:OS -ne "Windows_NT") { Stop-Install "this installer requires Windows" }
 $releaseArchitecture = Get-WindowsReleaseArchitecture
 if (-not (Test-SafePortalOrigin $script:PortalOrigin)) { Stop-Install "EMISAR_URL must be an HTTPS origin without credentials, path, query, or fragment" }
 
-$homeDirectory = if ($env:EMISAR_MCP_TEST_HOME) { $env:EMISAR_MCP_TEST_HOME } else { $HOME }
 $appDataDirectory = if ($env:EMISAR_MCP_TEST_APPDATA) { $env:EMISAR_MCP_TEST_APPDATA } else { $env:APPDATA }
 $localAppDataDirectory = if ($env:EMISAR_MCP_TEST_LOCALAPPDATA) { $env:EMISAR_MCP_TEST_LOCALAPPDATA } else { $env:LOCALAPPDATA }
 if (-not $InstallDir) { $InstallDir = Join-Path $localAppDataDirectory "Programs\Emisar\bin" }
@@ -1095,7 +439,7 @@ $executable = Join-Path $InstallDir "emisar-mcp.exe"
 
 if ($Uninstall) {
     if (-not (Confirm-Install "uninstall emisar-mcp, remove its local client entries, and delete all stored CLI accounts and rotation state?")) { Stop-Install "aborted by user" }
-    Uninstall-Bridge $executable $homeDirectory $appDataDirectory
+    Uninstall-Bridge $executable $appDataDirectory
     return
 }
 
@@ -1144,20 +488,22 @@ Add-UserPath $InstallDir
 Write-Host ""
 Write-Host "emisar-mcp $versionNumber installed" -ForegroundColor Green
 Write-Host "  $executable"
-try {
-    Configure-Clients $executable $homeDirectory $appDataDirectory
-} catch {
-    Write-WarningLine "$($_.Exception.Message); run emisar-mcp auth for the CLI, or connect an LLM client at $($script:PortalOrigin)/app/agents/connect"
-}
-if ($script:ConfiguredClients.Count -gt 0) {
+# The bridge owns the connection phase: it detects the LLM clients installed for
+# this user, runs ONE browser approval covering the direct CLI and every client
+# the operator picks, and writes each client's own configuration shape.
+if ($Yes -and -not $ConnectAll) {
     Write-Host ""
-    Write-Host "Restart each connected client to pick up emisar."
-} elseif (-not $script:ConnectionPhaseRan) {
-    Write-Host ""
-    Write-Host "Authenticate the CLI in a terminal: emisar-mcp auth"
-    Write-Host "Connect an LLM client: $($script:PortalOrigin)/app/agents/connect"
-}
-if ($script:CLIAuthenticated) {
-    Write-Host "Try it: emisar-mcp list_tools"
+    Write-Host "Connect this machine and your LLM clients: emisar-mcp connect"
+    Write-Host "Manual client snippets: $($script:PortalOrigin)/app/agents/connect"
+} else {
+    $connectArguments = @("connect", "--url", $script:PortalOrigin)
+    if ($ConnectAll) { $connectArguments += @("--all", "--yes") }
+    & {
+        $ErrorActionPreference = "Continue"
+        & $executable @connectArguments
+        if ($LASTEXITCODE -ne 0) {
+            Write-WarningLine "connection setup did not finish; run 'emisar-mcp connect', or use the manual snippets at $($script:PortalOrigin)/app/agents/connect"
+        }
+    }
 }
 Write-Host "Open a new terminal before using emisar-mcp from PATH."
