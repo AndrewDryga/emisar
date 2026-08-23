@@ -385,9 +385,9 @@ services:
   # signing-init — mints the signed-dispatch e2e material at stack-up
   # (GENERATE-AT-STARTUP: no CA or leaf private key is committed). One-shot,
   # idempotent; writes to the shared `signing_material` volume:
-  #   /signing/config.yaml   runner-signed's config (template + the fresh CA key)
+  #   /signing/config.yaml   runner-signed's config (template + the fresh CA cert)
   #   /signing/leaf_key       EMISAR_SIGNING_KEY for the bridge
-  #   /signing/cert.json      EMISAR_SIGNING_CERT for the bridge
+  #   /signing/cert_chain     EMISAR_SIGNING_CERT for the bridge
   # `docker compose down -v` rotates the keys. Reuses the runner image (emisar
   # binary + a shell); runs as root to write the fresh named volume. Profile-gated
   # so the default `docker compose up` is unchanged. See `./run e2e signing`.
@@ -409,8 +409,8 @@ services:
   # ----------------------------------------------------------------
   # runner-signed — a 4th runner that ENFORCES signed dispatch. It points
   # --config at the config signing-init wrote (with the freshly-minted CA's
-  # public key), so it runs a dispatch ONLY if it carries a valid, in-scope,
-  # CA-vouched Ed25519 attestation — the portal Run button / runbooks can't
+  # certificate), so it runs a dispatch ONLY if it carries a valid, in-scope,
+  # CA-vouched attestation — the portal Run button / runbooks can't
   # reach it, only a signed MCP call. Profile-gated so the default stack is
   # unchanged; brought up by `./run e2e signing`.
   # ----------------------------------------------------------------

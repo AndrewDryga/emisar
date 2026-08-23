@@ -144,10 +144,10 @@ func readMaterial() (leaf, cert string) {
 	if code != 0 || leaf == "" {
 		fail("could not read /signing/leaf_key (rc=%d): %s", code, strings.TrimSpace(errOut))
 	}
-	cert, errOut, code = compose("", "run", "--rm", "--no-deps", "-T", "--entrypoint", "cat", "signing-init", "/signing/cert.json")
+	cert, errOut, code = compose("", "run", "--rm", "--no-deps", "-T", "--entrypoint", "cat", "signing-init", "/signing/cert_chain")
 	cert = strings.TrimSpace(cert)
 	if code != 0 || cert == "" {
-		fail("could not read /signing/cert.json (rc=%d): %s", code, strings.TrimSpace(errOut))
+		fail("could not read /signing/cert_chain (rc=%d): %s", code, strings.TrimSpace(errOut))
 	}
 	return leaf, cert
 }

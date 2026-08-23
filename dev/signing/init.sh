@@ -6,49 +6,76 @@
 #
 # It writes four files the rest of the stack reads:
 #   /signing/config.yaml   runner-signed's config (the mounted template with the
-#                          freshly-minted CA public key substituted in)
+#                          freshly-minted CA certificate substituted in)
 #   /signing/leaf_key      EMISAR_SIGNING_KEY for the MCP bridge (the e2e reads it)
-#   /signing/cert.json     EMISAR_SIGNING_CERT for the MCP bridge
-#   /signing/format        certificate encoding revision for stale-volume checks
+#   /signing/cert_chain    EMISAR_SIGNING_CERT for the MCP bridge
+#   /signing/format        certificate profile revision for stale-volume checks
 #
-# Parsing note: we read `emisar signing init`'s human output, whose CA public key,
-# leaf seed, and cert each sit on a single labelled line — robust with grep/sed,
-# so the minimal runner image needs no jq/python.
+# Parsing note: we read `emisar signing init --json`, whose output is pretty-
+# printed one field per line, with the CA certificate carried as a single line of
+# \n-escaped PEM. That is far steadier than scraping the human block, and it
+# needs no jq or python in the minimal runner image.
 set -eu
 
 OUT=/signing
 TEMPLATE=/templates/signed-iad.yaml
-FORMAT=emisar-cert-v2
+FORMAT=emisar-x509-profile-v1
 
-if [ -s "$OUT/config.yaml" ] && [ -s "$OUT/leaf_key" ] && [ -s "$OUT/cert.json" ] &&
+if [ -s "$OUT/config.yaml" ] && [ -s "$OUT/leaf_key" ] && [ -s "$OUT/cert_chain" ] &&
   [ "$(cat "$OUT/format" 2>/dev/null || true)" = "$FORMAT" ]; then
   echo "signing-init: $FORMAT material already present in $OUT — reusing"
   exit 0
 fi
 
-echo "signing-init: minting CA + leaf + cert (emisar signing init, scope group=signed-iad)..."
-material="$(emisar signing init --ca-id e2e-ca --scope group=signed-iad --ttl 1y)"
+echo "signing-init: minting CA + leaf + certificate (scope group=signed-iad)..."
+material="$(emisar --json signing init --ca-name e2e-ca --scope group=signed-iad --ttl 1y)"
 
-ca_pub="$(printf '%s\n' "$material" | grep 'public_key:' | head -n1 | sed 's/.*public_key:[[:space:]]*//')"
-leaf="$(printf '%s\n' "$material" | grep 'EMISAR_SIGNING_KEY=' | sed 's/.*EMISAR_SIGNING_KEY=//')"
-cert="$(printf '%s\n' "$material" | grep 'EMISAR_SIGNING_CERT=' | sed 's/.*EMISAR_SIGNING_CERT=//')"
+# One pretty-printed field per line: "key": "value",
+json_field() {
+  printf '%s\n' "$material" | grep "\"$1\":" | head -n1 |
+    sed -e "s/^.*\"$1\": \"//" -e 's/",*$//'
+}
 
-# Fail closed if parsing drifted: a 64-char hex CA key, a non-empty leaf + cert.
-case "$ca_pub" in
-  "" | *[!0-9a-f]*)
-    echo "signing-init: parsed CA public key looks wrong: '$ca_pub'" >&2
+ca_cert="$(json_field ca_certificate)"
+leaf="$(json_field private_key)"
+cert="$(json_field certificate_chain)"
+
+# Fail closed if parsing drifted rather than writing material the runner would
+# reject later with a refusal that points at the wrong thing.
+case "$ca_cert" in
+  *"BEGIN CERTIFICATE"*) ;;
+  *)
+    echo "signing-init: parsed CA certificate is not PEM: '$ca_cert'" >&2
     exit 1
     ;;
 esac
 [ -n "$leaf" ] || { echo "signing-init: parsed an empty leaf key" >&2; exit 1; }
-[ -n "$cert" ] || { echo "signing-init: parsed an empty cert" >&2; exit 1; }
+[ -n "$cert" ] || { echo "signing-init: parsed an empty certificate chain" >&2; exit 1; }
 
 printf '%s' "$leaf" >"$OUT/leaf_key"
-printf '%s' "$cert" >"$OUT/cert.json"
-sed "s|__CA_PUBLIC_KEY__|$ca_pub|" "$TEMPLATE" >"$OUT/config.yaml"
+printf '%s' "$cert" >"$OUT/cert_chain"
+
+# The template carries __CA_PEM__ alone on a line, indented to where the PEM
+# block belongs; replace that line with the certificate at the same indent.
+# Match the placeholder LINE, never the prose that names it in the comment above.
+placeholder='^[[:space:]]*__CA_PEM__[[:space:]]*$'
+indent="$(grep -m1 "$placeholder" "$TEMPLATE" | sed 's/[^ ].*//')"
+[ -n "$indent" ] || { echo "signing-init: no __CA_PEM__ placeholder line in $TEMPLATE" >&2; exit 1; }
+ca_pem_block="$(printf '%b' "$ca_cert" | grep -v '^[[:space:]]*$' | sed "s/^/$indent/")"
+
+{
+  while IFS= read -r line; do
+    if printf '%s' "$line" | grep -q "$placeholder"; then
+      printf '%s\n' "$ca_pem_block"
+    else
+      printf '%s\n' "$line"
+    fi
+  done <"$TEMPLATE"
+} >"$OUT/config.yaml"
+
 printf '%s' "$FORMAT" >"$OUT/format"
 
 # World-readable so the non-root runner-signed (and the host e2e) can read them.
 # DEV ONLY — these are throwaway keys in an ephemeral volume.
-chmod 0644 "$OUT/config.yaml" "$OUT/leaf_key" "$OUT/cert.json" "$OUT/format"
-echo "signing-init: wrote config.yaml, leaf_key, cert.json to $OUT (ca_id=e2e-ca, scope group=signed-iad)"
+chmod 0644 "$OUT/config.yaml" "$OUT/leaf_key" "$OUT/cert_chain" "$OUT/format"
+echo "signing-init: wrote config.yaml, leaf_key, cert_chain to $OUT (ca=e2e-ca, scope group=signed-iad)"
