@@ -7,6 +7,11 @@ defmodule EmisarWeb.MarketingHTML do
   use EmisarWeb, :html
 
   embed_templates "marketing_html/*"
+  embed_templates "marketing_html/compare/*"
+  embed_templates "marketing_html/docs/*"
+  embed_templates "marketing_html/guides/*"
+  embed_templates "marketing_html/docs/integrations/*"
+  embed_templates "marketing_html/use_cases/*"
 
   attr :text, :string,
     default: nil,

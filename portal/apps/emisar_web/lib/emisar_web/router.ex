@@ -159,24 +159,24 @@ defmodule EmisarWeb.Router do
     get "/privacy", MarketingController, :privacy
     get "/terms", MarketingController, :terms
     get "/dpa", MarketingController, :dpa
-    get "/refund-policy", MarketingController, :refund
-    get "/docs/connect-claude-ai", MarketingController, :docs_connect_claude_ai
-    get "/docs/connect-chatgpt", MarketingController, :docs_connect_chatgpt
-    get "/docs/connect-cli-agent", MarketingController, :docs_connect_cli_agent
-    get "/docs/connect-multiple-accounts", MarketingController, :docs_connect_multiple_accounts
-    get "/docs/mcp-reference", MarketingController, :docs_mcp_reference
-    get "/docs/quickstart", MarketingController, :docs_quickstart
-    get "/docs/use-a-published-pack", MarketingController, :docs_use_published_pack
-    get "/docs/action-packs", MarketingController, :docs_action_packs
-    get "/docs/security-model", MarketingController, :docs_security_model
-    get "/docs/signed-dispatch", MarketingController, :docs_signed_dispatch
+    get "/refund-policy", MarketingController, :refund_policy
+    get "/docs/connect-claude-ai", MarketingController, :connect_claude_ai
+    get "/docs/connect-chatgpt", MarketingController, :connect_chatgpt
+    get "/docs/connect-cli-agent", MarketingController, :connect_cli_agent
+    get "/docs/connect-multiple-accounts", MarketingController, :connect_multiple_accounts
+    get "/docs/mcp-reference", MarketingController, :mcp_reference
+    get "/docs/quickstart", MarketingController, :quickstart
+    get "/docs/use-a-published-pack", MarketingController, :use_a_published_pack
+    get "/docs/action-packs", MarketingController, :action_packs
+    get "/docs/security-model", MarketingController, :security_model
+    get "/docs/signed-dispatch", MarketingController, :signed_dispatch
     get "/use-cases", MarketingController, :use_cases
-    get "/use-cases/cassandra-migration", MarketingController, :usecase_cassandra_migration
-    get "/use-cases/csi-data-loss", MarketingController, :usecase_csi_data_loss
-    get "/use-cases/ingress-502", MarketingController, :usecase_ingress_502
-    get "/compare/raw-ssh-for-ai", MarketingController, :compare_raw_ssh
-    get "/compare/custom-mcp-server", MarketingController, :compare_custom_mcp
-    get "/compare/copy-paste-ai-ops", MarketingController, :compare_copy_paste
+    get "/use-cases/cassandra-migration", MarketingController, :cassandra_migration
+    get "/use-cases/csi-data-loss", MarketingController, :csi_data_loss
+    get "/use-cases/ingress-502", MarketingController, :ingress_502
+    get "/compare/raw-ssh-for-ai", MarketingController, :raw_ssh_for_ai
+    get "/compare/custom-mcp-server", MarketingController, :custom_mcp_server
+    get "/compare/copy-paste-ai-ops", MarketingController, :copy_paste_ai_ops
     get "/zero-trust", MarketingController, :zero_trust
     get "/trust", MarketingController, :trust
     get "/how-it-works", MarketingController, :how_it_works
@@ -191,43 +191,43 @@ defmodule EmisarWeb.Router do
     get "/packs/:id/pack.tar.gz", PackRegistryController, :tarball
     get "/packs/:id/versions/:version/pack.tar.gz", PackRegistryController, :tarball_version
     get "/packs/:id", MarketingController, :pack_detail
-    get "/docs/publishing-packs", MarketingController, :docs_publishing_packs
-    get "/docs/pack-registry", MarketingController, :docs_pack_registry
-    get "/docs/run-an-action", MarketingController, :docs_run_action
-    get "/docs/policies-and-approvals", MarketingController, :docs_policies
-    get "/docs/runbooks", MarketingController, :docs_runbooks
-    get "/docs/authentication", MarketingController, :docs_authentication
-    get "/docs/teams-and-access", MarketingController, :docs_teams
-    get "/docs/sso", MarketingController, :docs_sso
-    get "/docs/integrations/okta", MarketingController, :docs_sso_okta
-    get "/docs/integrations/entra", MarketingController, :docs_sso_entra
-    get "/docs/integrations/jumpcloud", MarketingController, :docs_sso_jumpcloud
-    get "/docs/integrations/keycloak", MarketingController, :docs_sso_keycloak
-    get "/docs/integrations/google-workspace", MarketingController, :docs_sso_google_workspace
-    get "/docs/scim", MarketingController, :docs_scim
-    get "/docs/runner-fleet", MarketingController, :docs_runner_fleet
-    get "/docs/production", MarketingController, :docs_production
-    get "/docs/audit-and-siem", MarketingController, :docs_audit
-    get "/docs/host-install", MarketingController, :docs_host_install
-    get "/docs/containers", MarketingController, :docs_containers
-    get "/docs/kubernetes", MarketingController, :docs_kubernetes
-    get "/docs/nomad", MarketingController, :docs_nomad
-    get "/docs/autoscaling-fleets", MarketingController, :docs_autoscaling_fleets
-    get "/docs/runs", MarketingController, :docs_runs
-    get "/docs/agents-and-keys", MarketingController, :docs_agents_and_keys
-    get "/docs/runner-cli", MarketingController, :docs_runner_cli
-    get "/docs/billing", MarketingController, :docs_billing
-    get "/docs/limits", MarketingController, :docs_limits
-    get "/docs/runner-upgrades", MarketingController, :docs_runner_upgrades
-    get "/docs/bridge-upgrades", MarketingController, :docs_bridge_upgrades
-    get "/docs/credentials", MarketingController, :docs_credentials
-    get "/docs/runner-credentials", MarketingController, :docs_runner_credentials
-    get "/docs/pack-updates", MarketingController, :docs_pack_updates
-    get "/docs/network-requirements", MarketingController, :docs_network_requirements
-    get "/docs/troubleshooting", MarketingController, :docs_troubleshooting
-    get "/docs/security-incidents", MarketingController, :docs_security_incidents
-    get "/docs/architecture", MarketingController, :docs_architecture
-    get "/docs/compatibility", MarketingController, :docs_compatibility
+    get "/docs/publishing-packs", MarketingController, :publishing_packs
+    get "/docs/pack-registry", MarketingController, :pack_registry
+    get "/docs/run-an-action", MarketingController, :run_an_action
+    get "/docs/policies-and-approvals", MarketingController, :policies_and_approvals
+    get "/docs/runbooks", MarketingController, :runbooks
+    get "/docs/authentication", MarketingController, :authentication
+    get "/docs/teams-and-access", MarketingController, :teams_and_access
+    get "/docs/sso", MarketingController, :sso
+    get "/docs/integrations/okta", MarketingController, :okta
+    get "/docs/integrations/entra", MarketingController, :entra
+    get "/docs/integrations/jumpcloud", MarketingController, :jumpcloud
+    get "/docs/integrations/keycloak", MarketingController, :keycloak
+    get "/docs/integrations/google-workspace", MarketingController, :google_workspace
+    get "/docs/scim", MarketingController, :scim
+    get "/docs/runner-fleet", MarketingController, :runner_fleet
+    get "/docs/production", MarketingController, :production
+    get "/docs/audit-and-siem", MarketingController, :audit_and_siem
+    get "/docs/host-install", MarketingController, :host_install
+    get "/docs/containers", MarketingController, :containers
+    get "/docs/kubernetes", MarketingController, :kubernetes
+    get "/docs/nomad", MarketingController, :nomad
+    get "/docs/autoscaling-fleets", MarketingController, :autoscaling_fleets
+    get "/docs/runs", MarketingController, :runs
+    get "/docs/agents-and-keys", MarketingController, :agents_and_keys
+    get "/docs/runner-cli", MarketingController, :runner_cli
+    get "/docs/billing", MarketingController, :billing
+    get "/docs/limits", MarketingController, :limits
+    get "/docs/runner-upgrades", MarketingController, :runner_upgrades
+    get "/docs/bridge-upgrades", MarketingController, :bridge_upgrades
+    get "/docs/credentials", MarketingController, :credentials
+    get "/docs/runner-credentials", MarketingController, :runner_credentials
+    get "/docs/pack-updates", MarketingController, :pack_updates
+    get "/docs/network-requirements", MarketingController, :network_requirements
+    get "/docs/troubleshooting", MarketingController, :troubleshooting
+    get "/docs/security-incidents", MarketingController, :security_incidents
+    get "/docs/architecture", MarketingController, :architecture
+    get "/docs/compatibility", MarketingController, :compatibility
     get "/sitemap.xml", SitemapController, :show
     get "/changelog.xml", MarketingController, :changelog_feed
     get "/install.sh", InstallController, :show

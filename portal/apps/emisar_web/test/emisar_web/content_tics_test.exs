@@ -60,9 +60,10 @@ defmodule EmisarWeb.ContentTicsTest do
   test "no corrected writing tic reappears on a marketing or docs page" do
     violations =
       @marketing_dir
-      |> File.ls!()
-      |> Enum.filter(&String.ends_with?(&1, ".heex"))
-      |> Enum.reject(&(&1 in @legal_pages))
+      |> Path.join("**/*.heex")
+      |> Path.wildcard()
+      |> Enum.map(&Path.relative_to(&1, @marketing_dir))
+      |> Enum.reject(&(Path.basename(&1) in @legal_pages))
       |> Enum.flat_map(fn file ->
         prose =
           @marketing_dir
