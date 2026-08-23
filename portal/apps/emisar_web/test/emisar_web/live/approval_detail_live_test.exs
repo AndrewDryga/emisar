@@ -569,6 +569,33 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert changed =~ ~s(name="scope")
   end
 
+  test "the reuse disclosure stays open while the decision form is edited", %{conn: conn} do
+    # Every keystroke posts `grant_form_changed`, and a re-render strips the
+    # browser-set `<details open>` — the section slammed shut on the operator
+    # the moment they typed a note or picked a window. The open state is
+    # server-owned now, so each re-render puts `open` back.
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    refute html =~ ~r/<details[^>]*\bid="grant-reuse"[^>]*\bopen\b/
+
+    opened = lv |> element("#grant-reuse > summary") |> render_click()
+    assert opened =~ ~r/<details[^>]*\bid="grant-reuse"[^>]*\bopen\b/
+
+    changed =
+      lv
+      |> element("form[phx-change='grant_form_changed']")
+      |> render_change(%{"reason" => "Ack from the on-call DBA.", "duration" => "one_day"})
+
+    assert changed =~ ~r/<details[^>]*\bid="grant-reuse"[^>]*\bopen\b/
+
+    # The same click closes it again — the server flip mirrors the native
+    # toggle rather than fighting it.
+    closed = lv |> element("#grant-reuse > summary") |> render_click()
+    refute closed =~ ~r/<details[^>]*\bid="grant-reuse"[^>]*\bopen\b/
+  end
+
   test "adjusting the reuse window keeps the note, match, and cap already entered", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)

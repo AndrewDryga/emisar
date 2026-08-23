@@ -42,6 +42,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
      |> assign(:self_blocked?, false)
      |> assign(:unavailable_action_id, nil)
      |> assign_decision_fields(%{})
+     |> assign(:grant_reuse_open?, false)
      |> assign(:grant_duration_options, [])}
   end
 
@@ -104,6 +105,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
          # top-level params (not a namespaced form) because the submit buttons
          # post `decision=approve|deny` alongside them.
          |> assign_decision_fields(%{})
+         # The reuse disclosure's expanded state is tracked for the same reason
+         # — a re-render would otherwise strip the browser-set `<details open>`
+         # and collapse the section mid-edit.
+         |> assign(:grant_reuse_open?, false)
          # Only offer durations the account's lifetime cap allows, so an
          # approver can't pick one the server would reject (the cap is account
          # config, fixed for this session — compute it once at mount).
@@ -339,6 +344,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   def handle_event("grant_form_changed", params, socket) do
     {:noreply, assign_decision_fields(socket, params)}
+  end
+
+  # The reuse disclosure's open state is server-owned: every keystroke in the
+  # note posts `grant_form_changed`, and a re-render strips a browser-set
+  # `<details open>` (design-console-ux §7.6), which snapped the section shut
+  # under the operator mid-edit. The summary click round-trips here and mirrors
+  # the native toggle that fired on the same click, so the two stay in sync.
+  def handle_event("toggle_grant_reuse", _params, socket) do
+    {:noreply, update(socket, :grant_reuse_open?, &(not &1))}
   end
 
   # The live countdown reached zero client-side. Re-fetch so the terminal "Expired"
@@ -1073,6 +1087,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               grant_input_error={@grant_input_error}
               decision_reason_error={@decision_reason_error}
               grant_duration_options={@grant_duration_options}
+              grant_reuse_open?={@grant_reuse_open?}
               runner_state={@runner_connection}
               unavailable_action_id={@unavailable_action_id}
               execution_request?={@execution_request?}
@@ -1112,6 +1127,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # caller. Defaulted to the full menu so a caller that forgets to thread it
   # through degrades to the server-backstopped behavior, not a crash.
   attr :grant_duration_options, :list, default: @grant_duration_options
+  # Whether the reuse disclosure is expanded, owned server-side so a form
+  # re-render re-emits `open` instead of collapsing what the operator opened.
+  attr :grant_reuse_open?, :boolean, default: false
   # Connection state of the target runner (:online | :offline | :unknown)
   # so the operator knows whether an approval will actually dispatch.
   attr :runner_state, :atom, default: :unknown
@@ -1268,10 +1286,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
             >
               Standing grants are disabled for this account — every approval is single-use.
             </p>
-            <.disclosure :if={
-              not @execution_request? and not @self_blocked? and
-                is_nil(@unavailable_action_id) and length(@grant_duration_options) > 1
-            }>
+            <.disclosure
+              :if={
+                not @execution_request? and not @self_blocked? and
+                  is_nil(@unavailable_action_id) and length(@grant_duration_options) > 1
+              }
+              id="grant-reuse"
+              open={@grant_reuse_open?}
+              summary_click="toggle_grant_reuse"
+            >
               <:summary>
                 <.icon name="hero-clock" class="h-3.5 w-3.5 text-zinc-400" />
                 Allow the LLM to reuse this approval
