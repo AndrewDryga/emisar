@@ -126,6 +126,15 @@ concept.
   which resets every semantic part to `currentColor`, so it covers whatever
   icon that surface ever hosts. Sweep: a solid `bg-{brand,amber,rose}-[456]00`
   face that can host an icon.
+- **Chrome that LABELS renders icons monochrome; only content that REPORTS
+  keeps its semantic accent.** A nav item, a menu row, a tab, a breadcrumb — the
+  icon names a destination or a verb, and the row's own resting/hover/active
+  colour already says everything about its state. Leaving the accents on lit
+  half the console rail emerald at rest and left the active row with no signal
+  of its own. The chrome element carries `emisar-icon-mono`. Sweep: a component
+  that renders a caller-supplied `icon` inside navigation, a menu panel, or a
+  tab strip. Pinned by `EmisarWeb.Components.NavBadgeTest` and
+  `EmisarWeb.Components.DropdownTest`.
 - **A third-party mark inside first-party chrome inherits the surface's color
   system.** Keep the official silhouette; drop the trademark ink and the tile.
   A blue Kubernetes badge and a teal Nomad hexagon were the only two colored

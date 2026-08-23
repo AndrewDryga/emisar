@@ -32,6 +32,16 @@ defmodule EmisarWeb.Components.NavBadgeTest do
     end
   end
 
+  describe "nav_link icons" do
+    test "the row is monochrome, so a semantic accent cannot light the rail at rest" do
+      # A nav icon LABELS a destination; it never reports a state. Its colour is
+      # the row's own resting/active colour, so the active row stays the rail's
+      # only brand signal. Without this the registry's accents lit half the
+      # icons emerald whatever the row was doing.
+      assert render_link(nil) =~ "emisar-icon-mono"
+    end
+  end
+
   describe "nav_link badge" do
     test "zero is hidden (no badge)" do
       refute render_link(0) =~ "bg-amber-500/20"

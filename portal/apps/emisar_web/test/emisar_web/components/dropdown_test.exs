@@ -115,6 +115,13 @@ defmodule EmisarWeb.Components.DropdownTest do
       assert html =~ "action.add"
     end
 
+    test "a menu row is monochrome, so the icon takes the row's tone" do
+      # A menu icon labels the row's verb; the row's tone already says whether
+      # that verb is neutral, cautionary, or destructive. A semantic accent
+      # inside the drawing would report a second, unrelated thing.
+      assert render_menu_item(%{icon: "product.audit"}, "View activity") =~ "emisar-icon-mono"
+    end
+
     test "phx-click / phx-value-* / data-confirm ride the global rest" do
       html =
         render_menu_item(

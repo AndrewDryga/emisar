@@ -732,7 +732,7 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   defp menu_item_base,
-    do: "flex w-full items-center gap-2 rounded px-3 py-2 text-left"
+    do: "emisar-icon-mono flex w-full items-center gap-2 rounded px-3 py-2 text-left"
 
   # Toned rows tint like their ghost-button siblings. Neutral steps to
   # zinc-800: menu rows sit on the dropdown's zinc-900 panel, so the ghost
@@ -2139,7 +2139,7 @@ defmodule EmisarWeb.CoreComponents do
       href={@href}
       target="_blank"
       rel="noopener noreferrer"
-      class="flex items-center gap-3 rounded-lg px-3 py-1.5 text-zinc-400 transition hover:bg-white/[0.04] hover:text-zinc-100"
+      class="emisar-icon-mono flex items-center gap-3 rounded-lg px-3 py-1.5 text-zinc-400 transition hover:bg-white/[0.04] hover:text-zinc-100"
     >
       <.icon name={@icon} class="h-4 w-4 text-zinc-500" />
       <span class="flex-1">{render_slot(@inner_block)}</span>
@@ -2230,12 +2230,17 @@ defmodule EmisarWeb.CoreComponents do
     <%!-- Active = the house light wash + bright text, with the ICON carrying
          the one quiet brand signal — the old filled green pill (fill + ring)
          was the last admin-template artifact in the shell, and green-as-
-         selection diluted "emerald = passed the gate". --%>
+         selection diluted "emerald = passed the gate".
+
+         `emisar-icon-mono`: a nav icon LABELS a destination, it never reports a
+         state, so its colour is the row's own resting/active colour and the
+         registry's semantic accents are switched off. Left on, the rail lit
+         half its icons emerald at rest and the active row lost its signal. --%>
     <.link
       navigate={@to}
       phx-click={JS.hide(to: "#mobile-nav") |> JS.remove_class("overflow-hidden", to: "body")}
       class={[
-        "flex items-center gap-3 rounded-lg px-3 py-1.5 transition",
+        "emisar-icon-mono flex items-center gap-3 rounded-lg px-3 py-1.5 transition",
         @active && "bg-white/[0.06] font-medium text-zinc-50",
         !@active && "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100"
       ]}
