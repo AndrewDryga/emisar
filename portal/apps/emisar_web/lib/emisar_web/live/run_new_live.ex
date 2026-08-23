@@ -393,7 +393,7 @@ defmodule EmisarWeb.RunNewLive do
              replaces the Dispatch button below. --%>
         <.event_block
           :if={signature_blocked?(@readiness)}
-          icon="hero-shield-check"
+          icon="security.posture"
           tone={:brand}
           title="Signed dispatch only"
         >

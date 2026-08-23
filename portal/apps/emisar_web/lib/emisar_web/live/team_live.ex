@@ -1167,7 +1167,7 @@ defmodule EmisarWeb.TeamLive do
           :if={not @can_manage_team?}
           variant={:bare}
           tone={:danger}
-          icon="hero-lock-closed"
+          icon="state.locked"
           title="You can't invite members"
         >
           Only owners and admins can invite members. Ask an owner or admin to add someone.
@@ -1185,7 +1185,7 @@ defmodule EmisarWeb.TeamLive do
           delivery={@invite_delivery}
         >
           <div class="mt-6 flex flex-wrap items-center gap-3">
-            <.button phx-click="invite_another" icon="hero-plus">Invite another</.button>
+            <.button phx-click="invite_another" icon="action.add">Invite another</.button>
             <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:secondary}>
               View members
             </.button>
@@ -1246,8 +1246,8 @@ defmodule EmisarWeb.TeamLive do
                 {Emisar.Auth.role_label(@form[:role].value)} manages billing only.
               </p>
               <div class="mt-3 flex flex-wrap items-center gap-2">
-                <.chip icon="hero-lock-closed-mini">No runners</.chip>
-                <.chip icon="hero-lock-closed-mini">No packs</.chip>
+                <.chip icon="role.restricted">No runners</.chip>
+                <.chip icon="role.restricted">No packs</.chip>
               </div>
             </fieldset>
 
@@ -1342,7 +1342,7 @@ defmodule EmisarWeb.TeamLive do
         <.empty_state
           variant={:hint}
           tone={:danger}
-          icon="hero-exclamation-triangle"
+          icon="state.warning"
           title="Couldn't load access requests"
         >
           This is a load error, not an empty queue — someone may be locked out waiting on you.
@@ -1490,7 +1490,7 @@ defmodule EmisarWeb.TeamLive do
                 <.button
                   navigate={~p"/app/#{@current_account}/settings/team/invite"}
                   size={:sm}
-                  icon="hero-plus"
+                  icon="action.add"
                 >
                   Invite member
                 </.button>
@@ -1746,7 +1746,7 @@ defmodule EmisarWeb.TeamLive do
                             id={"role-lock-#{membership.id}"}
                             text={"Role is managed by #{directory_label(directory)} — change it in your identity provider"}
                           >
-                            <.chip icon="hero-lock-closed-mini">
+                            <.chip icon="role.restricted">
                               {Emisar.Auth.role_label(membership.role)}
                             </.chip>
                           </.tooltip>
@@ -1928,7 +1928,7 @@ defmodule EmisarWeb.TeamLive do
                 <.empty_state
                   :if={@load_error?}
                   tone={:danger}
-                  icon="hero-exclamation-triangle"
+                  icon="state.warning"
                   title="Couldn't load your team"
                 >
                   This is a load error, not an empty team — you're always a member of your own.
@@ -1940,7 +1940,7 @@ defmodule EmisarWeb.TeamLive do
                       LiveTable.has_active_filters?(@filter_params, @filters)
                   }
                   variant={:hint}
-                  icon="hero-magnifying-glass"
+                  icon="action.search"
                   title="No members match these filters"
                 >
                   Try another name, role, or status.
@@ -1954,7 +1954,7 @@ defmodule EmisarWeb.TeamLive do
                     not @load_error? and
                       not LiveTable.has_active_filters?(@filter_params, @filters)
                   }
-                  icon="hero-users"
+                  icon="product.team"
                   title="No team members yet."
                 >
                   Invite a teammate to dispatch runs, approve actions, or watch the audit trail.
@@ -2090,7 +2090,7 @@ defmodule EmisarWeb.TeamLive do
                     </span>
                   </div>
                   <.icon
-                    name="hero-chevron-right"
+                    name="breadcrumb.separator"
                     class="h-3.5 w-3.5 shrink-0 text-zinc-500 group-hover:text-zinc-400"
                   />
                 </.link>
@@ -2102,7 +2102,7 @@ defmodule EmisarWeb.TeamLive do
               :if={@sso_load_error?}
               variant={:hint}
               tone={:danger}
-              icon="hero-exclamation-triangle"
+              icon="state.warning"
               title="Couldn't load single sign-on"
               class="mt-3"
             >
@@ -2134,7 +2134,7 @@ defmodule EmisarWeb.TeamLive do
                     navigate={~p"/app/#{@current_account}/settings/sso/new"}
                     variant={:secondary}
                     size={:sm}
-                    icon="hero-plus"
+                    icon="action.add"
                   >
                     Add provider
                   </.button>
@@ -2270,7 +2270,7 @@ defmodule EmisarWeb.TeamLive do
     ~H"""
     <div data-shot="invite-complete">
       <.status_note
-        icon="hero-paper-airplane"
+        icon="action.send"
         tone={:brand}
         title="Invitation sent"
         primary
@@ -2302,7 +2302,7 @@ defmodule EmisarWeb.TeamLive do
   defp invite_result(%{delivery: {:ok, :suppressed}} = assigns) do
     ~H"""
     <.event_block
-      icon="hero-exclamation-triangle"
+      icon="state.warning"
       tone={:amber}
       title="Invitation saved, but we couldn't email it"
     >
@@ -2319,7 +2319,7 @@ defmodule EmisarWeb.TeamLive do
   defp invite_result(%{delivery: {:error, _reason}} = assigns) do
     ~H"""
     <.event_block
-      icon="hero-exclamation-triangle"
+      icon="state.warning"
       tone={:amber}
       title="Invitation saved, but the email didn't go out"
     >
@@ -2365,7 +2365,7 @@ defmodule EmisarWeb.TeamLive do
     ~H"""
     <.chip
       tone={:brand}
-      icon="hero-shield-check"
+      icon="identity.authentication"
       title="Two-factor authentication is enrolled."
     >
       2FA
@@ -2377,7 +2377,7 @@ defmodule EmisarWeb.TeamLive do
     ~H"""
     <.chip
       tone={:rose}
-      icon="hero-shield-exclamation"
+      icon="security.posture_warning"
       title="Account requires 2FA but this user hasn't enrolled. They can't sign in until they do."
     >
       2FA required
@@ -2411,7 +2411,7 @@ defmodule EmisarWeb.TeamLive do
       <%!-- A directory SOURCE is identity metadata, not a pass state — the sync
            glyph stays neutral zinc (brand green is reserved for healthy/pass),
            so a roster of synced members doesn't paint itself green. --%>
-      <.icon name="hero-arrow-path" class="h-3 w-3 text-zinc-400" />
+      <.icon name="identity.directory_sync" class="h-3 w-3 text-zinc-400" />
       {provisioned_via_label(@identity.provisioned_via)} · {@identity.provider_name}
     </.link>
     """
@@ -2637,7 +2637,7 @@ defmodule EmisarWeb.TeamLive do
       variant={:secondary}
       tone={:neutral}
       size={:sm}
-      icon="hero-lock-closed-mini"
+      icon="state.locked"
       disabled={@disabled}
       title={
         if @require_mfa,

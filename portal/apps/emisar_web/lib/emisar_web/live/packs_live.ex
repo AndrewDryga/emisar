@@ -718,7 +718,7 @@ defmodule EmisarWeb.PacksLive do
     ~H"""
     <.event_block
       :if={@fact.retirement_blocked?}
-      icon="hero-shield-exclamation"
+      icon="trust.untrusted"
       tone={:rose}
       title="Retired by a newer release"
       class="mt-3 pl-8"
@@ -813,7 +813,7 @@ defmodule EmisarWeb.PacksLive do
       :if={@fact.retired? and @fact.override}
       class="mt-2 flex flex-wrap items-center gap-1.5 pl-8 text-[11px] text-zinc-500"
     >
-      <.icon name="hero-shield-check" class="h-3.5 w-3.5 text-zinc-500" />
+      <.icon name="trust.declared" class="h-3.5 w-3.5 text-zinc-500" />
       Retired by a newer release — overridden by {@fact.override.actor_label || "an admin"}
       <.local_time
         id={"pack-version-override-#{@version.id}"}
@@ -876,7 +876,7 @@ defmodule EmisarWeb.PacksLive do
   defp pending_notice(assigns) do
     ~H"""
     <.event_block
-      icon="hero-shield-exclamation"
+      icon="trust.untrusted"
       tone={(@fact.retirement_blocked? && :rose) || :amber}
       title={(@fact.retirement_blocked? && "Retired by a newer release") || "Pending trust review"}
       class="mt-3 pl-8"
@@ -979,8 +979,7 @@ defmodule EmisarWeb.PacksLive do
            headline danger an operator must see before re-trusting. --%>
       <div :if={diff_has_changes?(@fact.action_changes)} class="mt-3">
         <div class="flex items-center gap-1.5 text-[11px] font-semibold text-rose-300">
-          <.icon name="hero-arrows-right-left" class="h-3.5 w-3.5" />
-          Changes since you last trusted this pack:
+          <.icon name="action.sync" class="h-3.5 w-3.5" /> Changes since you last trusted this pack:
         </div>
         <ul class="mt-2 space-y-1">
           <li :for={a <- @fact.action_changes.added} class="flex items-center gap-2 text-[11px]">
@@ -1010,7 +1009,7 @@ defmodule EmisarWeb.PacksLive do
                 variant={:track}
                 class="opacity-60"
               />
-              <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-500" />
+              <.icon name="diagram.flow_right" class="h-3 w-3 text-zinc-500" />
               <.risk_pill
                 id={"pack-version-#{@version.id}-changed-#{c.action_id}-new-risk"}
                 risk={c.new_risk}
@@ -1142,7 +1141,7 @@ defmodule EmisarWeb.PacksLive do
          (§7.49); an up-arrow pointed the way the operator does not go. --%>
     <.event_block
       :if={@update}
-      icon="hero-cloud-arrow-down"
+      icon="state.update_available"
       tone={:neutral}
       title="Update available"
       class="mt-4"
@@ -1220,7 +1219,7 @@ defmodule EmisarWeb.PacksLive do
           <.callout
             :if={@pending_count > 0}
             tone={:amber}
-            icon="hero-shield-exclamation"
+            icon="trust.untrusted"
             title={pending_review_title(@pending_count)}
             class="mt-2"
           >
@@ -1232,7 +1231,7 @@ defmodule EmisarWeb.PacksLive do
           <.empty_state
             :if={@load_error? and not @loading?}
             tone={:danger}
-            icon="hero-exclamation-triangle"
+            icon="state.warning"
             title="Couldn't load packs"
             class="mt-8"
           >
@@ -1250,7 +1249,7 @@ defmodule EmisarWeb.PacksLive do
               @pack_count == 0 and @out_of_scope_pack_ids == [] and @name_filter == "" and
                 @risk_filter == "" and not @load_error? and not @loading?
             }
-            icon="hero-cube"
+            icon="product.pack"
             title="No packs reported yet."
             class="mt-8"
           >
@@ -1398,8 +1397,8 @@ defmodule EmisarWeb.PacksLive do
                       class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-500 hover:text-zinc-200"
                     >
                       <.icon
-                        name="hero-chevron-right"
-                        class={"h-3.5 w-3.5 transition-transform #{if MapSet.member?(@open_versions, v.id), do: "rotate-90"}"}
+                        name="action.disclose"
+                        class={"h-3.5 w-3.5 transition-transform #{if MapSet.member?(@open_versions, v.id), do: "rotate-0", else: "-rotate-90"}"}
                       />
                     </button>
                     <span
@@ -1447,7 +1446,7 @@ defmodule EmisarWeb.PacksLive do
                             navigate={
                               ~p"/app/#{@current_account}/audit?#{[target_kind: "pack_version", target_id: v.id]}"
                             }
-                            icon="hero-shield-check"
+                            icon="product.audit"
                           >
                             View activity
                           </.menu_item>
@@ -1781,7 +1780,7 @@ defmodule EmisarWeb.PacksLive do
       class="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
       title="Published in emisar's public pack registry — opens in a new tab"
     >
-      Registry <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3" />
+      Registry <.icon name="action.external_link" class="h-3 w-3" />
     </.link>
     """
   end

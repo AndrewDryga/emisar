@@ -12,7 +12,7 @@ defmodule EmisarWeb.CoreComponents do
   See the [Tailwind CSS documentation](https://tailwindcss.com) to learn
   how to customize them or feel free to swap in another framework altogether.
 
-  Icons are provided by [heroicons](https://heroicons.com). See `icon/1` for usage.
+  Icons come from the semantic registry (`EmisarWeb.Icons`). See `icon/1` for usage.
   """
   use Phoenix.Component
   use Gettext, backend: EmisarWeb.Gettext
@@ -23,6 +23,7 @@ defmodule EmisarWeb.CoreComponents do
     statics: EmisarWeb.static_paths()
 
   alias Emisar.Accounts
+  alias EmisarWeb.Icons
   alias EmisarWeb.MailTo
   alias Phoenix.LiveView.JS
 
@@ -76,9 +77,9 @@ defmodule EmisarWeb.CoreComponents do
       {@rest}
     >
       <p :if={@title} class="flex items-center gap-2 text-sm font-semibold">
-        <.icon :if={@kind == :info} name="hero-information-circle-mini" class="h-4 w-4" />
-        <.icon :if={@kind == :error} name="hero-exclamation-circle-mini" class="h-4 w-4" />
-        <.icon :if={@kind == :neutral} name="hero-wifi-mini" class="h-4 w-4" />
+        <.icon :if={@kind == :info} name="state.info" class="h-4 w-4" />
+        <.icon :if={@kind == :error} name="state.error" class="h-4 w-4" />
+        <.icon :if={@kind == :neutral} name="state.info" class="h-4 w-4" />
         {@title}
       </p>
       <p class="mt-1 text-sm leading-relaxed">{msg}</p>
@@ -87,7 +88,7 @@ defmodule EmisarWeb.CoreComponents do
         class="absolute top-2 right-2 p-2 opacity-50 hover:opacity-100"
         aria-label={gettext("close")}
       >
-        <.icon name="hero-x-mark-solid" class="h-4 w-4" />
+        <.icon name="action.close" class="h-4 w-4" />
       </button>
       <div
         :if={@auto_close}
@@ -128,7 +129,7 @@ defmodule EmisarWeb.CoreComponents do
         hidden
       >
         {gettext("Restoring connection…")}
-        <.icon name="hero-arrow-path" class="ml-1 h-3 w-3 animate-spin" />
+        <.icon name="state.loading" class="ml-1 h-3 w-3 animate-spin" />
       </.flash>
 
       <.flash
@@ -141,7 +142,7 @@ defmodule EmisarWeb.CoreComponents do
         hidden
       >
         {gettext("Restoring connection…")}
-        <.icon name="hero-arrow-path" class="ml-1 h-3 w-3 animate-spin" />
+        <.icon name="state.loading" class="ml-1 h-3 w-3 animate-spin" />
       </.flash>
     </div>
     """
@@ -201,7 +202,7 @@ defmodule EmisarWeb.CoreComponents do
   contents), `:rose` (destructive) — defaulting per variant (primary→brand,
   secondary/ghost→neutral) so the common cases stay terse. A destructive
   action is `variant={:secondary} tone={:rose}`. Sizes: `:lg` (default),
-  `:md`, `:sm`. An optional leading `icon` (heroicon name) renders before
+  `:md`, `:sm`. An optional leading `icon` (semantic name) renders before
   the label. `disabled` is honored by every variant. Pass
   `navigate`/`patch`/`href` and it renders a styled `<.link>` instead of a
   `<button>` — so a primary action that navigates reads identically to one
@@ -211,10 +212,10 @@ defmodule EmisarWeb.CoreComponents do
 
       <.button>Send!</.button>
       <.button variant={:secondary} tone={:rose} size={:sm} phx-click="revoke">Revoke</.button>
-      <.button icon="hero-check">Approve</.button>
+      <.button icon="action.approve">Approve</.button>
       <.button tone={:amber} phx-click="trust">Trust new contents</.button>
       <.button variant={:ghost} type="button" phx-click="cancel_edit">Cancel</.button>
-      <.button navigate={~p"/app/\#{@current_account}/runbooks/new"} icon="hero-plus">New runbook</.button>
+      <.button navigate={~p"/app/\#{@current_account}/runbooks/new"} icon="action.add">New runbook</.button>
   """
   attr :type, :string, default: nil
   attr :variant, :atom, default: :primary, values: [:primary, :secondary, :ghost]
@@ -225,7 +226,7 @@ defmodule EmisarWeb.CoreComponents do
     doc: "hue atom; nil resolves to the variant's natural tone"
 
   attr :size, :atom, default: :lg, values: [:sm, :md, :lg]
-  attr :icon, :string, default: nil, doc: ~s(leading heroicon name, e.g. "hero-plus")
+  attr :icon, :string, default: nil, doc: ~s(leading icon meaning, e.g. "action.add")
   attr :class, :string, default: nil
   attr :rest, :global, include: ~w(disabled form name value href navigate patch method download)
 
@@ -266,14 +267,16 @@ defmodule EmisarWeb.CoreComponents do
   # silently-invented style. nil tone resolves to the variant's natural one.
   defp button_face(variant, nil), do: button_face(variant, default_button_tone(variant))
 
+  # `emisar-icon-mono`: the fill IS the accent here, so the icon drops its
+  # semantic emphasis and paints in the label's near-black.
   defp button_face(:primary, :brand) do
-    "bg-brand-500 font-semibold text-zinc-950 shadow-sm hover:bg-brand-400 active:bg-brand-600 focus-visible:outline-brand-400"
+    "emisar-icon-mono bg-brand-500 font-semibold text-zinc-950 shadow-sm hover:bg-brand-400 active:bg-brand-600 focus-visible:outline-brand-400"
   end
 
   # Filled amber for attention-worthy actions where brand-green would wrongly
   # read as "safe" — e.g. trusting a pack's new contents.
   defp button_face(:primary, :amber) do
-    "bg-amber-500 font-semibold text-amber-950 shadow-sm hover:bg-amber-400 active:bg-amber-600 focus-visible:outline-amber-400"
+    "emisar-icon-mono bg-amber-500 font-semibold text-amber-950 shadow-sm hover:bg-amber-400 active:bg-amber-600 focus-visible:outline-amber-400"
   end
 
   defp button_face(:secondary, :neutral) do
@@ -559,7 +562,7 @@ defmodule EmisarWeb.CoreComponents do
         ]}
       >
         <span class="truncate">{@selected_label}</span>
-        <.icon name="hero-chevron-down" class="h-4 w-4 shrink-0 text-zinc-500" />
+        <.icon name="action.disclose" class="h-4 w-4 shrink-0 text-zinc-500" />
       </button>
 
       <%!-- The field and its panel fuse into one continuous element, so the seam
@@ -704,7 +707,7 @@ defmodule EmisarWeb.CoreComponents do
       <.menu_item phx-click="start_edit" phx-value-membership_id={id}>Edit name</.menu_item>
       <.menu_item tone={:rose} phx-click="remove" data-confirm="Sure?">Remove</.menu_item>
   """
-  attr :icon, :string, default: nil, doc: "leading heroicon name"
+  attr :icon, :string, default: nil, doc: "leading icon meaning"
   attr :tone, :atom, default: :neutral, values: [:neutral, :brand, :amber, :rose]
   attr :class, :string, default: nil
   attr :rest, :global, include: ~w(disabled href navigate patch method download)
@@ -1203,7 +1206,7 @@ defmodule EmisarWeb.CoreComponents do
       ]}
       {@rest}
     >
-      <.icon name="hero-plus" class="h-4 w-4" />{@label}
+      <.icon name="action.add" class="h-4 w-4" />{@label}
     </button>
     """
   end
@@ -1251,7 +1254,7 @@ defmodule EmisarWeb.CoreComponents do
       if(@compact, do: "text-xs", else: "mt-2 text-sm")
     ]}>
       <.icon
-        name="hero-exclamation-circle-mini"
+        name="state.error"
         class={"flex-none " <> if(@compact, do: "h-3.5 w-3.5", else: "h-4 w-4")}
       />
       {render_slot(@inner_block)}
@@ -1277,7 +1280,7 @@ defmodule EmisarWeb.CoreComponents do
 
       <.callout tone={:amber}>Copy the token now — we won't show it again.</.callout>
 
-      <.callout tone={:rose} icon="hero-no-symbol" title="Cancelled">
+      <.callout tone={:rose} icon="state.cancelled" title="Cancelled">
         {@run.reason_text}
         <:action><.button variant={:secondary} tone={:rose} size={:md} navigate={...}>Review</.button></:action>
       </.callout>
@@ -1290,7 +1293,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :tone, :atom, default: :neutral, values: [:neutral, :brand, :amber, :rose]
   attr :variant, :atom, default: :spine, values: [:spine, :strip]
   attr :title, :string, default: nil
-  attr :icon, :string, default: nil, doc: "heroicon override"
+  attr :icon, :string, default: nil, doc: "icon meaning override"
   attr :navigate, :any, default: nil, doc: "makes the whole callout a link"
   attr :class, :any, default: nil
   attr :rest, :global
@@ -1407,13 +1410,13 @@ defmodule EmisarWeb.CoreComponents do
   defp callout_hover(:amber), do: "transition hover:bg-amber-500/[0.16]"
   defp callout_hover(:rose), do: "transition hover:bg-rose-500/[0.16]"
 
-  defp callout_icon(:neutral), do: "hero-information-circle-mini"
-  defp callout_icon(:brand), do: "hero-information-circle-mini"
-  defp callout_icon(:amber), do: "hero-exclamation-triangle-mini"
-  defp callout_icon(:rose), do: "hero-exclamation-triangle-mini"
+  defp callout_icon(:neutral), do: "state.info"
+  defp callout_icon(:brand), do: "state.info"
+  defp callout_icon(:amber), do: "state.warning"
+  defp callout_icon(:rose), do: "state.warning"
 
   defp callout_icon_name(nil, tone), do: callout_icon(tone)
-  defp callout_icon_name("hero-" <> _ = icon, _tone), do: icon
+  defp callout_icon_name(icon, _tone) when is_binary(icon), do: icon
 
   @doc """
   Naked status note — the canvas grammar for a passive fact ABOUT the surface
@@ -1425,7 +1428,7 @@ defmodule EmisarWeb.CoreComponents do
   status voice (semibold/zinc-100); the default is the supporting-note tier
   (medium/zinc-200) that reads one level below it.
 
-      <.status_note icon="hero-shield-check" tone={:brand} title="Signed dispatch only">
+      <.status_note icon="trust.signed_dispatch" tone={:brand} title="Signed dispatch only">
         This runner verifies a client signature on every run.
       </.status_note>
   """
@@ -1469,7 +1472,7 @@ defmodule EmisarWeb.CoreComponents do
   carries real content — decider, time, note — never an empty "all good". The payload (a `code_panel`, an action button) renders in
   the default slot beneath the body; give payload children their own `mt-*`.
 
-      <.event_block icon="hero-key" title="Key rotated — copy the new key now">
+      <.event_block icon="identity.credential" title="Key rotated — copy the new key now">
         <:body>Update the client config, then revoke the old key below.</:body>
         <.code_panel id="new-key" label="API key" copy code={@secret} class="mt-4" />
       </.event_block>
@@ -1482,7 +1485,7 @@ defmodule EmisarWeb.CoreComponents do
   slot :body, required: true
   slot :inner_block
 
-  def event_block(%{icon: "hero-" <> _} = assigns) do
+  def event_block(assigns) do
     ~H"""
     <div class={["flex gap-4", @class]} {@rest}>
       <div class="flex w-4 flex-col items-center" aria-hidden="true">
@@ -1506,31 +1509,75 @@ defmodule EmisarWeb.CoreComponents do
   defp event_block_spine_class(:neutral), do: "bg-zinc-700"
 
   @doc """
-  Renders a [Heroicon](https://heroicons.com).
+  Renders one meaning from the semantic icon registry (`EmisarWeb.Icons`).
 
-  Heroicons come in three styles – outline, solid, and mini.
-  By default, the outline style is used, but solid and mini may
-  be applied by using the `-solid` and `-mini` suffix.
+  `name` is a meaning — `"product.runner"`, `"action.retry"`, `"state.offline"`
+  — never a drawing. One meaning keeps one drawing everywhere, and an unknown
+  name raises rather than rendering nothing. `class` carries size, color, and
+  motion exactly as before; the anatomy paints in `currentColor` and the
+  registry's accent parts stay brand/amber/rose so no icon depends on color
+  alone.
 
-  You can customize the size and colors of the icons by setting
-  width, height, and background color classes.
-
-  Icons are extracted from the `deps/heroicons` directory and bundled within
-  your compiled app.css by the plugin in your `assets/tailwind.config.js`.
+  Size decides the master and the stroke weight, and every call site already
+  states it in Tailwind's `h-*` scale, so that is where the component reads it.
+  Pass `size` (in pixels) only where no `h-*` class does.
 
   ## Examples
 
-      <.icon name="hero-x-mark-solid" />
-      <.icon name="hero-arrow-path" class="ml-1 w-3 h-3 animate-spin" />
+      <.icon name="action.close" class="h-5 w-5" />
+      <.icon name="state.loading" class="ml-1 h-3 w-3 animate-spin" />
   """
   attr :name, :string, required: true
   attr :class, :string, default: nil
+  attr :size, :integer, default: nil, doc: "pixel size, when no `h-*` class states one"
 
-  def icon(%{name: "hero-" <> _} = assigns) do
+  def icon(assigns) do
+    size = assigns.size || icon_size_from_class(assigns.class)
+
+    assigns =
+      assign(assigns, master: Icons.master(assigns.name, size), grid: Icons.grid(size))
+
     ~H"""
-    <span class={[@name, @class]} />
+    <svg
+      class={["emisar-icon", @class]}
+      data-icon={@name}
+      data-icon-grid={@grid}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >{@master}</svg>
     """
   end
+
+  @doc """
+  The masks the icon registry's drawings reference, defined once for the page.
+
+  A few meanings clear a gap where two parts cross — the retry marker, the
+  suppression slash, the selected check. That gap is a real mask so it stays
+  transparent on every surface, and a mask is reached by id, so the page owns
+  ONE copy: the root layout renders this, and every icon references it. Without
+  it a masked icon is a dangling reference, which browsers render as nothing.
+  """
+  def icon_masks(assigns) do
+    ~H"""
+    <svg class="absolute h-0 w-0 overflow-hidden" aria-hidden="true" focusable="false"><defs>
+      {Icons.mask_defs()}
+    </defs></svg>
+    """
+  end
+
+  # Tailwind's spacing scale is 0.25rem per unit, so `h-4` is a 16px icon and
+  # `h-3.5` a 14px one. A responsive or arbitrary height leaves no single size
+  # to read, and those fall back to the 24-unit master at its default weight.
+  @icon_height ~r/(?:^|\s)h-(\d+(?:\.\d+)?)(?:\s|$)/
+
+  defp icon_size_from_class(class) when is_binary(class) do
+    case Regex.run(@icon_height, class, capture: :all_but_first) do
+      [height] -> height |> Float.parse() |> elem(0) |> Kernel.*(4) |> round()
+      nil -> 24
+    end
+  end
+
+  defp icon_size_from_class(_class), do: 24
 
   ## JS Commands
 
@@ -1677,7 +1724,7 @@ defmodule EmisarWeb.CoreComponents do
               class="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
               phx-click={close_mobile_nav()}
             >
-              <.icon name="hero-x-mark" class="h-5 w-5" />
+              <.icon name="action.close" class="h-5 w-5" />
             </button>
           </div>
           <.shell_nav
@@ -1711,7 +1758,7 @@ defmodule EmisarWeb.CoreComponents do
           :if={@current_user && is_nil(@current_user.confirmed_at)}
           tone={:amber}
           variant={:strip}
-          icon="hero-envelope"
+          icon="communication.email"
         >
           Verify your email — we sent a confirmation link to <span class="font-medium text-amber-100">{@current_user.email}</span>.
           <:action>
@@ -1755,7 +1802,7 @@ defmodule EmisarWeb.CoreComponents do
               class="-ml-1.5 rounded-md p-2 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 lg:hidden"
               phx-click={open_mobile_nav()}
             >
-              <.icon name="hero-bars-3" class="h-5 w-5" />
+              <.icon name="action.menu" class="h-5 w-5" />
             </button>
             <%!-- basis-0 + a generous min width: while the title has room it
                  shares the row with the actions; on a phone the actions WRAP
@@ -1856,7 +1903,7 @@ defmodule EmisarWeb.CoreComponents do
           </div>
         </div>
         <.icon
-          name="hero-chevron-up-down"
+          name="action.select"
           class="h-4 w-4 shrink-0 text-zinc-500 transition group-open:text-zinc-300"
         />
       </:trigger>
@@ -1870,7 +1917,7 @@ defmodule EmisarWeb.CoreComponents do
       <ul class="scrollbar-subtle max-h-[60vh] overflow-y-auto py-1">
         <li>
           <div class="flex items-center gap-2 px-3 py-2 text-sm">
-            <.icon name="hero-check" class="h-4 w-4 shrink-0 text-brand-400" />
+            <.icon name="state.selected" class="h-4 w-4 shrink-0 text-brand-400" />
             <span class="truncate font-medium">{@current_account.name}</span>
           </div>
         </li>
@@ -1896,7 +1943,7 @@ defmodule EmisarWeb.CoreComponents do
           navigate={~p"/onboarding"}
           class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-100"
         >
-          <.icon name="hero-plus" class="h-4 w-4 shrink-0" />
+          <.icon name="action.add" class="h-4 w-4 shrink-0" />
           <span>Create new workspace</span>
         </.link>
       </div>
@@ -1959,7 +2006,7 @@ defmodule EmisarWeb.CoreComponents do
         :if={@can_view_dashboard?}
         to={~p"/app/#{@current_account}"}
         active={@section == :dashboard}
-        icon="hero-home"
+        icon="product.dashboard"
         alert={@onboarding_incomplete?}
         alert_label="Finish setup — add a runner or an agent"
       >
@@ -1973,7 +2020,7 @@ defmodule EmisarWeb.CoreComponents do
         :if={@can_view_runners?}
         to={~p"/app/#{@current_account}/runners"}
         active={@section == :runners}
-        icon="hero-cpu-chip"
+        icon="product.runner"
         alert={@fleet_all_offline?}
         alert_label="All runners offline"
       >
@@ -1983,7 +2030,7 @@ defmodule EmisarWeb.CoreComponents do
         :if={@can_view_agents?}
         to={~p"/app/#{@current_account}/agents"}
         active={@section == :agents}
-        icon="hero-sparkles"
+        icon="product.agent"
         alert={@no_agents?}
         alert_label="No AI agent connected yet"
       >
@@ -1998,7 +2045,7 @@ defmodule EmisarWeb.CoreComponents do
         :if={@can_view_runs?}
         to={~p"/app/#{@current_account}/runs"}
         active={@section == :runs}
-        icon="hero-bolt"
+        icon="product.run"
       >
         Runs
       </.nav_link>
@@ -2006,7 +2053,7 @@ defmodule EmisarWeb.CoreComponents do
         :if={@can_view_approvals?}
         to={~p"/app/#{@current_account}/approvals"}
         active={@section == :approvals}
-        icon="hero-shield-check"
+        icon="product.approval"
         badge={@pending_approvals_count}
       >
         Approvals
@@ -2015,7 +2062,7 @@ defmodule EmisarWeb.CoreComponents do
         :if={@can_view_audit?}
         to={~p"/app/#{@current_account}/audit"}
         active={@section == :audit}
-        icon="hero-list-bullet"
+        icon="product.audit"
       >
         Audit
       </.nav_link>
@@ -2028,7 +2075,7 @@ defmodule EmisarWeb.CoreComponents do
         :if={@can_view_packs?}
         to={~p"/app/#{@current_account}/packs"}
         active={@section == :packs}
-        icon="hero-cube"
+        icon="product.pack"
         badge={@pending_packs_count}
       >
         Packs
@@ -2037,7 +2084,7 @@ defmodule EmisarWeb.CoreComponents do
         :if={@can_view_policies?}
         to={~p"/app/#{@current_account}/policies"}
         active={@section == :policies}
-        icon="hero-document-text"
+        icon="product.policy"
       >
         Policy
       </.nav_link>
@@ -2045,7 +2092,7 @@ defmodule EmisarWeb.CoreComponents do
         :if={@can_view_runbooks?}
         to={~p"/app/#{@current_account}/runbooks"}
         active={@section == :runbooks}
-        icon="hero-book-open"
+        icon="product.runbook"
       >
         Runbooks
       </.nav_link>
@@ -2054,28 +2101,28 @@ defmodule EmisarWeb.CoreComponents do
       <.nav_link
         to={~p"/app/#{@current_account}/settings/team"}
         active={@section == :team}
-        icon="hero-user-group"
+        icon="product.team"
       >
         Team
       </.nav_link>
       <.nav_link
         to={~p"/app/#{@current_account}/settings/billing"}
         active={@section == :billing}
-        icon="hero-credit-card"
+        icon="product.billing"
       >
         Billing
       </.nav_link>
 
       <.nav_group label="Resources" />
-      <.nav_link_external href={~p"/docs"} icon="hero-book-open">Docs</.nav_link_external>
-      <.nav_link_external href={~p"/changelog"} icon="hero-megaphone">Changelog</.nav_link_external>
+      <.nav_link_external href={~p"/docs"} icon="product.docs">Docs</.nav_link_external>
+      <.nav_link_external href={~p"/changelog"} icon="product.changelog">Changelog</.nav_link_external>
       <.nav_link_external
         href={Application.get_env(:emisar_web, :status_page_url, "https://status.emisar.dev")}
-        icon="hero-signal"
+        icon="product.service_status"
       >
         Status
       </.nav_link_external>
-      <.nav_link_external href={@support_mailto} icon="hero-lifebuoy">
+      <.nav_link_external href={@support_mailto} icon="product.support">
         Support
       </.nav_link_external>
     </nav>
@@ -2096,7 +2143,7 @@ defmodule EmisarWeb.CoreComponents do
     >
       <.icon name={@icon} class="h-4 w-4 text-zinc-500" />
       <span class="flex-1">{render_slot(@inner_block)}</span>
-      <.icon name="hero-arrow-top-right-on-square" class="h-3.5 w-3.5 text-zinc-500" />
+      <.icon name="action.external_link" class="h-3.5 w-3.5 text-zinc-500" />
     </.link>
     """
   end
@@ -2150,7 +2197,7 @@ defmodule EmisarWeb.CoreComponents do
           title="Sign out"
           aria-label="Sign out"
         >
-          <.icon name="hero-arrow-right-on-rectangle" class="h-4 w-4" />
+          <.icon name="action.sign_out" class="h-4 w-4" />
         </.link>
       </div>
     </div>
@@ -2224,7 +2271,7 @@ defmodule EmisarWeb.CoreComponents do
   def loading_state(assigns) do
     ~H"""
     <div class="flex items-center justify-center gap-2 py-20 text-sm text-zinc-400">
-      <.icon name="hero-arrow-path" class="h-5 w-5 animate-spin" />
+      <.icon name="state.loading" class="h-5 w-5 animate-spin" />
       <span>Loading…</span>
     </div>
     """
@@ -2537,7 +2584,7 @@ defmodule EmisarWeb.CoreComponents do
       >
         <span class="flex min-w-0 flex-wrap items-center gap-2">{render_slot(@summary)}</span>
         <.icon
-          name="hero-chevron-down"
+          name="action.disclose"
           class="h-4 w-4 shrink-0 text-zinc-500 transition-transform group-open/disc:rotate-180"
         />
       </summary>
@@ -2618,7 +2665,7 @@ defmodule EmisarWeb.CoreComponents do
                  mark the current pick. The surface and check stay neutral. --%>
             <.icon
               :if={to_string(@value) == card.value}
-              name="hero-check-circle-solid"
+              name="state.selected"
               class="ml-auto h-4 w-4 shrink-0 text-zinc-300"
             />
             <span
@@ -2744,7 +2791,7 @@ defmodule EmisarWeb.CoreComponents do
           class={steps_marker_class(@variant)}
           data-steps-marker={@marker}
         >
-          <.icon :if={@marker == :parallel} name="hero-arrows-right-left" class="h-3.5 w-3.5" />
+          <.icon :if={@marker == :parallel} name="workflow.parallel" class="h-3.5 w-3.5" />
           <span :if={@marker == :number}>{steps_marker(@variant, idx)}</span>
         </span>
         <div class={steps_content_class(@variant)}>
@@ -3018,7 +3065,7 @@ defmodule EmisarWeb.CoreComponents do
         title="Copy"
         class="shrink-0 rounded p-0.5 leading-none text-zinc-500 transition hover:text-zinc-200 focus-visible:text-zinc-200"
       >
-        <.icon name="hero-clipboard-document" class="h-3.5 w-3.5" />
+        <.icon name="action.copy" class="h-3.5 w-3.5" />
       </button>
     </span>
     """
@@ -3265,8 +3312,8 @@ defmodule EmisarWeb.CoreComponents do
            the chevron. --%>
       <summary class="flex cursor-pointer list-none items-center gap-3 py-3.5 transition-colors [&::-webkit-details-marker]:hidden">
         <.icon
-          name="hero-chevron-right"
-          class="h-3 w-3 shrink-0 text-zinc-500 transition duration-200 group-hover/sect:text-zinc-300 group-open/sect:rotate-90"
+          name="action.disclose"
+          class="h-3 w-3 shrink-0 -rotate-90 text-zinc-500 transition duration-200 group-hover/sect:text-zinc-300 group-open/sect:rotate-0"
         />
         <h2 class="min-w-0 flex-1 truncate text-sm font-medium text-zinc-300 transition group-hover/sect:text-zinc-100">
           {@title}
@@ -3333,7 +3380,7 @@ defmodule EmisarWeb.CoreComponents do
       target="_blank"
       class="inline-flex items-center gap-0.5 whitespace-nowrap font-medium text-brand-400 hover:text-brand-300"
     >
-      {render_slot(@inner_block)}<.icon name="hero-arrow-up-right" class="h-3 w-3" />
+      {render_slot(@inner_block)}<.icon name="action.external_link" class="h-3 w-3" />
     </.link>
     """
   end
@@ -3583,7 +3630,7 @@ defmodule EmisarWeb.CoreComponents do
   One `<li>` row for a list section, with the icon-disc + content
   + actions layout used by EnrollmentKeys, Agents, Grants, Runbooks, etc.
 
-      <.list_row icon="hero-key">
+      <.list_row icon="identity.credential">
         <:title>{key.name}</:title>
         <:meta>{key.key_prefix}… · last used {last_used}</:meta>
         <:actions>
@@ -3690,7 +3737,7 @@ defmodule EmisarWeb.CoreComponents do
     default: false,
     doc: "uppercase + semibold weight, for status/label tags"
 
-  attr :icon, :string, default: nil, doc: "optional leading heroicon — renders inline-flex"
+  attr :icon, :string, default: nil, doc: "optional leading icon — renders inline-flex"
   attr :class, :string, default: nil
   attr :rest, :global, doc: "extra attributes (e.g. title for a tooltip)"
   slot :inner_block, required: true
@@ -3756,11 +3803,11 @@ defmodule EmisarWeb.CoreComponents do
   delegated at the document, so it reaches a control that only exists on hover.
 
       <.tooltip text="Role is managed by directory sync — change it in your IdP">
-        <.chip icon="hero-lock-closed-mini">Operator</.chip>
+        <.chip icon="role.restricted">Operator</.chip>
       </.tooltip>
       <.tooltip text="Audit export is on the Team plan" placement={:bottom}>…</.tooltip>
       <.tooltip id="runner-version-7" text="Runner v0.19.0 is available…" command="sudo emisar update">
-        <.icon name="hero-cloud-arrow-down" class="h-3.5 w-3.5" />
+        <.icon name="state.update_available" class="h-3.5 w-3.5" />
       </.tooltip>
   """
   attr :id, :string, default: nil, doc: "bubble id — override when the same tip repeats on a page"
@@ -3878,7 +3925,7 @@ defmodule EmisarWeb.CoreComponents do
         <.tooltip id={"#{@id}-lock"} text={@who_can_change}>
           <%!-- Content-sized, never stretched to the control's box: a value
                filling that track reads as the control disabled. --%>
-          <.chip icon="hero-lock-closed-mini">{@value}</.chip>
+          <.chip icon="state.locked">{@value}</.chip>
         </.tooltip>
       <% end %>
     </div>
@@ -4229,7 +4276,7 @@ defmodule EmisarWeb.CoreComponents do
                rose icon lead, a zinc title, zinc body — one voice with every
                other note in the console. The dialog takes its accessible name
                from `aria-label={@title}` above. --%>
-          <.status_note icon="hero-exclamation-triangle" tone={@tone} title={@title} primary>
+          <.status_note icon="state.warning" tone={@tone} title={@title} primary>
             {render_slot(@body)}
           </.status_note>
 
@@ -4341,7 +4388,7 @@ defmodule EmisarWeb.CoreComponents do
         id={"disable-runner"}
         title="Disable this runner?"
         confirm_label="Disable runner"
-        icon="hero-no-symbol"
+        icon="state.disabled"
         on_confirm={JS.push("disable")}
       >
         <:body>Stops new dispatches; in-flight runs finish. Re-enable any time.</:body>
@@ -4423,7 +4470,7 @@ defmodule EmisarWeb.CoreComponents do
   runner-detail column) where a box would be competing chrome. `:hint` is the
   compact dashed body-first placeholder ("No overrides. …").
 
-      <.empty_state icon="hero-cpu-chip" title="No runners yet">
+      <.empty_state icon="product.runner" title="No runners yet">
         Mint an enrollment key and run the installer on a host.
         <:cta navigate={~p"/app/\#{@current_account}/runners/keys"}>New enrollment key</:cta>
       </.empty_state>
@@ -4578,7 +4625,7 @@ defmodule EmisarWeb.CoreComponents do
       <div class="flex items-start justify-between gap-4">
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
-            <.icon name="hero-key" class="h-4 w-4 shrink-0 text-amber-300" />
+            <.icon name="identity.credential" class="h-4 w-4 shrink-0 text-amber-300" />
             <h2 :if={@variant == :banner} class="text-sm font-semibold text-amber-100">{@title}</h2>
             <h3 :if={@variant == :card} class="text-sm font-semibold text-amber-100">{@title}</h3>
           </div>
@@ -4672,7 +4719,7 @@ defmodule EmisarWeb.CoreComponents do
           class="rounded-lg p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
           aria-label="Dismiss"
         >
-          <.icon name="hero-x-mark" class="h-5 w-5" />
+          <.icon name="action.close" class="h-5 w-5" />
         </button>
       </div>
     </div>
@@ -4717,7 +4764,7 @@ defmodule EmisarWeb.CoreComponents do
       {@rest}
     >
       {render_slot(@inner_block)}
-      <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
+      <.icon name="action.external_link" class="h-3 w-3 opacity-60" />
     </a>
     """
   end
@@ -4737,7 +4784,7 @@ defmodule EmisarWeb.CoreComponents do
       <ol class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-zinc-400">
         <%= for {{label, path}, index} <- Enum.with_index(@items) do %>
           <li class="flex items-center gap-x-1.5">
-            <.icon :if={index > 0} name="hero-chevron-right" class="h-3 w-3 text-zinc-700" />
+            <.icon :if={index > 0} name="breadcrumb.separator" class="h-3 w-3 text-zinc-700" />
             <.link :if={path} navigate={path} class="transition hover:text-zinc-300">{label}</.link>
             <span :if={is_nil(path)} class="text-zinc-300" aria-current="page">{label}</span>
           </li>
@@ -4822,9 +4869,9 @@ defmodule EmisarWeb.CoreComponents do
   defp state_tone(:pending), do: :amber
   defp state_tone(:deny), do: :rose
 
-  defp state_icon(:pass), do: "hero-check-circle"
-  defp state_icon(:pending), do: "hero-clock"
-  defp state_icon(:deny), do: "hero-x-circle"
+  defp state_icon(:pass), do: "state.success"
+  defp state_icon(:pending), do: "state.pending"
+  defp state_icon(:deny), do: "state.denied"
 
   defp state_label(:pass), do: "Allowed"
   defp state_label(:pending), do: "Approval"

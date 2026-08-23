@@ -166,6 +166,6 @@ defmodule EmisarWeb.DocsNavTest do
   end
 
   test "compatibility uses a visible icon on the docs index" do
-    assert DocsNav.fetch!("compatibility").icon == "hero-arrows-right-left"
+    assert DocsNav.fetch!("compatibility").icon == "docs.compatibility"
   end
 end

@@ -311,7 +311,10 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Okta prod"
       assert html =~ ~p"/app/#{account}/settings/sso/#{provider.id}"
       assert html =~ "Team sign-in link"
-      refute has_element?(lv, "#sso-provider-#{provider.id} > [aria-hidden=true]")
+      # No leading unlabeled dot: the row already says "Disabled" in words, and a
+      # dot beside sync metadata would report a different dimension (§7.32). The
+      # trailing navigation chevron is the row's affordance and stays.
+      refute has_element?(lv, "#sso-provider-#{provider.id} > [aria-hidden=true]:first-child")
     end
 
     test "SSO enforcement is a subsection above the team sign-in link", %{conn: conn} do
@@ -1541,7 +1544,7 @@ defmodule EmisarWeb.TeamLiveTest do
              )
 
       assert has_element?(lv, "summary", "Actions")
-      refute has_element?(lv, "button[phx-click='resend_invitation'] span[class*='hero-']")
+      refute has_element?(lv, "button[phx-click='resend_invitation'] svg.emisar-icon")
 
       subscribe_team(account)
       html = render_click(lv, "resend_invitation", %{"membership_id" => membership.id})
@@ -1584,7 +1587,7 @@ defmodule EmisarWeb.TeamLiveTest do
     } do
       assert has_element?(lv, "summary", "Actions")
       assert has_element?(lv, "details a[href*='actor_id=#{member.id}']", "View activity")
-      refute has_element?(lv, "details a[href*='actor_id=#{member.id}'] span[class*='hero-']")
+      refute has_element?(lv, "details a[href*='actor_id=#{member.id}'] svg.emisar-icon")
     end
 
     test "an admin manager gets the same labeled Actions menu", %{
@@ -2139,7 +2142,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert has_element?(lv, "button[disabled]", "Enforce 2FA")
-      assert html =~ "hero-lock-closed-mini"
+      assert html =~ "state.locked"
       assert html =~ "lock yourself out"
 
       html = render_click(lv, "toggle_require_mfa", %{})

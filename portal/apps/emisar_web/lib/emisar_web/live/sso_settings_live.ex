@@ -1371,7 +1371,7 @@ defmodule EmisarWeb.SSOSettingsLive do
              Enterprise account read as a billing bug. --%>
         <.empty_state
           :if={not @has_sso_permission?}
-          icon="hero-lock-closed"
+          icon="state.locked"
           title="Single sign-on needs an owner or admin role."
         >
           Providers, enforcement, and directory sync are configured by account
@@ -1891,7 +1891,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp locked(assigns) do
     ~H"""
-    <.empty_state icon="hero-lock-closed" title="Single sign-on is a paid feature">
+    <.empty_state icon="state.locked" title="Single sign-on is a paid feature">
       Connect Okta, Google Workspace, Keycloak, or any OIDC provider so your team signs in
       through it — with just-in-time provisioning and per-provider MFA. Available on the
       Team and Enterprise plans (SCIM directory sync is Enterprise).
@@ -1908,7 +1908,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     assigns = assign(assigns, :summary, summary)
 
     ~H"""
-    <.event_block icon="hero-check-circle" tone={:brand} title="Discovery succeeded">
+    <.event_block icon="state.success" tone={:brand} title="Discovery succeeded">
       <:body>This issuer serves a valid OIDC configuration.</:body>
       <%!-- An IdP's three endpoints share a long prefix and differ only in the
            trailing path segment, which is exactly where the truncation lands —
@@ -1942,7 +1942,7 @@ defmodule EmisarWeb.SSOSettingsLive do
 
     ~H"""
     <.event_block
-      icon="hero-exclamation-triangle"
+      icon="state.warning"
       tone={:rose}
       title="Connection test failed"
     >
@@ -2006,7 +2006,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             <.label>Provider type</.label>
             <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a control: the locked read-only field wears the input recipe --%>
             <div class="mt-2 flex items-center gap-2 rounded-lg bg-zinc-950/50 px-3 py-2.5 text-sm text-zinc-400 ring-1 ring-inset ring-zinc-800">
-              <.icon name="hero-lock-closed" class="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+              <.icon name="state.locked" class="h-3.5 w-3.5 shrink-0 text-zinc-500" />
               {selected_kind_label(@form, @kind_options)}
             </div>
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
@@ -2047,7 +2047,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               <input type="hidden" name={@form[:issuer].name} value={fixed} />
               <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a control: the locked read-only field wears the input recipe --%>
               <div class="mt-2 flex items-center gap-2 rounded-lg bg-zinc-950/50 px-3 py-2.5 font-mono text-sm text-zinc-400 ring-1 ring-inset ring-zinc-800">
-                <.icon name="hero-lock-closed" class="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+                <.icon name="state.locked" class="h-3.5 w-3.5 shrink-0 text-zinc-500" />
                 {fixed}
               </div>
               <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
@@ -2654,8 +2654,8 @@ defmodule EmisarWeb.SSOSettingsLive do
         >
           <summary class="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-zinc-300 hover:text-zinc-100">
             <.icon
-              name="hero-chevron-right"
-              class="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-90"
+              name="action.disclose"
+              class="h-4 w-4 -rotate-90 text-zinc-500 transition-transform group-open:rotate-0"
             /> Point your IdP at this connection
           </summary>
           <.steps class="mt-3 pl-5">
@@ -2720,7 +2720,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             variant={:secondary}
             size={:sm}
             phx-click="add_mapping_form"
-            icon="hero-plus"
+            icon="action.add"
           >
             Add mapping
           </.button>
@@ -2730,7 +2730,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         <li :for={mapping <- @mappings} class="py-3 first:pt-0 last:pb-0">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex min-w-0 items-center gap-2.5">
-              <.icon name="hero-user-group" class="h-4 w-4 shrink-0 text-zinc-500" />
+              <.icon name="identity.group" class="h-4 w-4 shrink-0 text-zinc-500" />
               <div class="min-w-0">
                 <p class="truncate text-sm text-zinc-200">
                   {mapping.external_group_display || mapping.external_group_id}
@@ -2824,7 +2824,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         :if={@load_error?}
         variant={:hint}
         tone={:danger}
-        icon="hero-exclamation-triangle"
+        icon="state.warning"
         title="Couldn't load role mappings"
         class="mt-4"
       >
@@ -2939,7 +2939,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             variant={:secondary}
             size={:sm}
             phx-click="add_runner_access_mapping_form"
-            icon="hero-plus"
+            icon="action.add"
           >
             Add runner access
           </.button>
@@ -3057,7 +3057,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         :if={@load_error?}
         variant={:hint}
         tone={:danger}
-        icon="hero-exclamation-triangle"
+        icon="state.warning"
         title="Couldn't load runner access mappings"
         class="mt-4"
       >
@@ -3214,7 +3214,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           class="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0"
         >
           <div class="flex min-w-0 items-center gap-2.5">
-            <.icon name="hero-user-group" class="h-4 w-4 shrink-0 text-zinc-500" />
+            <.icon name="identity.group" class="h-4 w-4 shrink-0 text-zinc-500" />
             <div class="min-w-0">
               <p class="truncate text-sm text-zinc-200">
                 {(group.mapping && group.mapping.external_group_display) || group.external_group_id}
@@ -3241,7 +3241,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         :if={@load_error?}
         variant={:hint}
         tone={:danger}
-        icon="hero-exclamation-triangle"
+        icon="state.warning"
         title="Couldn't load synced groups"
         class="mt-4"
       >
@@ -3331,7 +3331,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 id={"role-lock-#{member.membership.id}"}
                 text={role_lock_tip(@can_configure_directory_sync?)}
               >
-                <.chip icon="hero-lock-closed-mini">
+                <.chip icon="role.restricted">
                   {Emisar.Auth.role_label(member.membership.role)}
                 </.chip>
               </.tooltip>
@@ -3398,7 +3398,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         :if={@load_error?}
         variant={:hint}
         tone={:danger}
-        icon="hero-exclamation-triangle"
+        icon="state.warning"
         title="Synced members couldn't be loaded"
         class="mt-4"
       >

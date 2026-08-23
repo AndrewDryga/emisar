@@ -286,7 +286,7 @@ defmodule EmisarWeb.MarketingTest do
              )
 
     assert siem_row =~ ">—</td>"
-    assert length(Regex.scan(~r/hero-check/, siem_row)) == 2
+    assert length(Regex.scan(~r/data-icon="state\.included"/, siem_row)) == 2
     assert home =~ "Audit trail; SIEM export on Team+"
 
     trust = conn |> get(~p"/trust") |> html_response(200)

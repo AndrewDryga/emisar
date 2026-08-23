@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round">
+  <defs><mask id="emisar-icon-9bbf0a3557" maskUnits="userSpaceOnUse" x="-4" y="-4" width="32" height="32"><rect x="-4" y="-4" width="32" height="32" fill="#fff" stroke="none"/><path d="m15 20 6-6m0 0h-4m4 0v4" stroke="#000" stroke-width="3.5"/></mask></defs>
+  <g mask="url(#emisar-icon-9bbf0a3557)"><path d="M3.5 6h12.5v12H3.5zM3.5 7l6.25 4.6L16 7"/></g><path class="accent" d="m15 20 6-6m0 0h-4m4 0v4" stroke-width="1.55"/>
+</svg>

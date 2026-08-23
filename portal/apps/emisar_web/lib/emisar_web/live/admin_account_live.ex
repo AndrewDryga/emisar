@@ -368,7 +368,7 @@ defmodule EmisarWeb.AdminAccountLive do
         <%!-- The top bar's chip already says read-only and the billing section
              already names its two action ids; what this adds is where a
              mutation SURFACES — in the customer's trail, like any other run. --%>
-        <.status_note icon="hero-command-line" title="Where support changes happen">
+        <.status_note icon="interface.cli" title="Where support changes happen">
           Every mutation enters through the private emisar-admin pack, so it arrives in this
           account's own audit trail as an ordinary run.
         </.status_note>

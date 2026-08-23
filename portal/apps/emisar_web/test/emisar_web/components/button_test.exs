@@ -49,10 +49,10 @@ defmodule EmisarWeb.Components.ButtonTest do
     end
 
     test "variant + tone + size + icon are reflected in the markup" do
-      html = render_button(%{variant: :secondary, tone: :rose, size: :sm, icon: "hero-trash"})
+      html = render_button(%{variant: :secondary, tone: :rose, size: :sm, icon: "action.delete"})
       assert html =~ "text-rose-200"
       assert html =~ "px-2.5 py-1 text-xs"
-      assert html =~ "hero-trash"
+      assert html =~ "action.delete"
     end
 
     test "nil tone resolves to the variant's natural tone" do

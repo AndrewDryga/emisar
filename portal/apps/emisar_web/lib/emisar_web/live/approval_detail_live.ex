@@ -1016,7 +1016,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 :if={@decisions_error?}
                 variant={:hint}
                 tone={:danger}
-                icon="hero-exclamation-triangle"
+                icon="state.warning"
                 title={
                   if(displayed_decisions == [],
                     do: "Couldn't load the decisions",
@@ -1177,7 +1177,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
         data-lapsed-event="expiry_lapsed"
         class="mb-4 flex items-center gap-1.5 text-xs font-medium tabular-nums text-zinc-400"
       >
-        <.icon name="hero-clock" class="h-3.5 w-3.5" />
+        <.icon name="state.pending" class="h-3.5 w-3.5" />
         <span data-countdown-text>{countdown_fallback(@expires_in_seconds)}</span>
       </div>
 
@@ -1193,7 +1193,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
           not @execution_request? and @runner_state == :offline and
             is_nil(@unavailable_action_id)
         }
-        icon="hero-bolt-slash"
+        icon="state.not_dispatched"
         tone={:amber}
         title="Runner offline"
         class="mt-4"
@@ -1219,7 +1219,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                move left — Deny, then re-issue. --%>
           <.event_block
             :if={@unavailable_action_id}
-            icon="hero-exclamation-triangle"
+            icon="state.warning"
             tone={:rose}
             title="Action no longer available"
             class="mt-4"
@@ -1296,7 +1296,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               summary_click="toggle_grant_reuse"
             >
               <:summary>
-                <.icon name="hero-clock" class="h-3.5 w-3.5 text-zinc-400" />
+                <.icon name="state.pending" class="h-3.5 w-3.5 text-zinc-400" />
                 Allow the LLM to reuse this approval
               </:summary>
               <div class="space-y-3">
@@ -1369,7 +1369,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               name="decision"
               value="approve"
               class="w-full"
-              icon="hero-check"
+              icon="action.approve"
               phx-disable-with="Approving…"
             >
               {if(@execution_request?,
@@ -1383,7 +1383,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               variant={:secondary}
               tone={:rose}
               class="w-full"
-              icon="hero-x-mark"
+              icon="state.denied"
               phx-disable-with="Denying…"
             >
               Deny
@@ -1422,8 +1422,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp reuse_clause(_options), do: ". Your"
 
   # Decision-list rendering helpers (the enum loads as an atom).
-  defp decision_icon(:approve), do: "hero-check-circle"
-  defp decision_icon(:deny), do: "hero-x-circle"
+  defp decision_icon(:approve), do: "state.approved"
+  defp decision_icon(:deny), do: "state.denied"
 
   defp decision_icon_class(:approve), do: "text-brand-400"
   defp decision_icon_class(:deny), do: "text-rose-400"

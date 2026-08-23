@@ -73,7 +73,7 @@ defmodule EmisarWeb.MarketingComponents do
   def cta_arrow(assigns) do
     ~H"""
     <.icon
-      name="hero-arrow-right"
+      name="action.next"
       class={"shrink-0 transition-transform duration-150 group-hover:translate-x-0.5 #{@class}"}
     />
     """
@@ -166,7 +166,7 @@ defmodule EmisarWeb.MarketingComponents do
              Dashboard link; everyone else gets Sign in / Start free. --%>
         <div class="hidden items-center gap-4 md:flex">
           <%= if @current_user do %>
-            <.marketing_button size={:sm} href={~p"/app"} icon="hero-arrow-right">
+            <.marketing_button size={:sm} href={~p"/app"} icon="action.next">
               Dashboard
             </.marketing_button>
           <% else %>
@@ -191,7 +191,7 @@ defmodule EmisarWeb.MarketingComponents do
           data-mobile-nav-open
           class="-mr-1.5 rounded-md p-2.5 text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100 md:hidden"
         >
-          <.icon name="hero-bars-3" class="h-5 w-5" />
+          <.icon name="action.menu" class="h-5 w-5" />
         </button>
       </div>
     </header>
@@ -224,7 +224,7 @@ defmodule EmisarWeb.MarketingComponents do
             data-mobile-nav-close
             class="-mr-1.5 rounded-md p-2.5 text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-100"
           >
-            <.icon name="hero-x-mark" class="h-5 w-5" />
+            <.icon name="action.close" class="h-5 w-5" />
           </button>
         </div>
 
@@ -282,7 +282,7 @@ defmodule EmisarWeb.MarketingComponents do
                 <.scan_line class="mb-7 opacity-50" />
                 <div class="space-y-3">
                   <%= if @current_user do %>
-                    <.marketing_button block href={~p"/app"} icon="hero-arrow-right">
+                    <.marketing_button block href={~p"/app"} icon="action.next">
                       Dashboard
                     </.marketing_button>
                   <% else %>
@@ -336,10 +336,10 @@ defmodule EmisarWeb.MarketingComponents do
       @class
     ]}>
       <summary class="flex cursor-pointer items-center gap-3 px-5 py-4 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
-        <.icon name="hero-sparkles" class="h-5 w-5 flex-none text-brand-300" />
+        <.icon name="product.agent" class="h-5 w-5 flex-none text-brand-300" />
         <strong class="min-w-0 flex-1 text-zinc-100">Use your coding agent</strong>
         <.icon
-          name="hero-chevron-down"
+          name="action.disclose"
           class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
         />
       </summary>
@@ -439,9 +439,9 @@ defmodule EmisarWeb.MarketingComponents do
   Renders an `<.link>` when given `href`/`navigate` in `:rest`, otherwise a
   `<button>` (so it works for the sign-up form's submit). Pass `external` for
   an outbound link (adds `target="_blank"` + the `noopener noreferrer` rel),
-  and `icon` for a trailing heroicon (the conventional right-arrow affordance).
+  and `icon` for a trailing icon meaning (the conventional right-arrow affordance).
 
-      <.marketing_button navigate={~p"/sign_up"} icon="hero-arrow-right">Start free</.marketing_button>
+      <.marketing_button navigate={~p"/sign_up"} icon="action.next">Start free</.marketing_button>
       <.marketing_button variant={:secondary} navigate={~p"/docs"}>Read the docs</.marketing_button>
       <.marketing_button external href="https://github.com/...">Read the source</.marketing_button>
   """
@@ -449,7 +449,7 @@ defmodule EmisarWeb.MarketingComponents do
   attr :size, :atom, default: :md, values: [:sm, :md, :lg]
   attr :block, :boolean, default: false, doc: "full-width (pricing-card buttons)"
   attr :external, :boolean, default: false, doc: "outbound link — opens a new, isolated tab"
-  attr :icon, :string, default: nil, doc: ~s(trailing heroicon, e.g. "hero-arrow-right")
+  attr :icon, :string, default: nil, doc: ~s(trailing icon meaning, e.g. "action.next")
   attr :type, :string, default: nil, doc: ~s(button type when rendering a <button>, e.g. "submit")
   attr :class, :string, default: nil
   attr :rest, :global, include: ~w(href navigate patch form name value)
@@ -515,7 +515,8 @@ defmodule EmisarWeb.MarketingComponents do
 
   defp marketing_button_size(:lg), do: "px-6 py-3"
 
-  defp marketing_button_variant(:primary), do: "bg-brand-500 text-zinc-950 hover:bg-brand-400"
+  defp marketing_button_variant(:primary),
+    do: "emisar-icon-mono bg-brand-500 text-zinc-950 hover:bg-brand-400"
 
   defp marketing_button_variant(:secondary),
     do: "bg-transparent text-zinc-100 ring-1 ring-zinc-800 hover:ring-zinc-700"
@@ -589,7 +590,7 @@ defmodule EmisarWeb.MarketingComponents do
             <div class="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <.marketing_button
                 href={~p"/sign_up"}
-                icon="hero-arrow-right"
+                icon="action.next"
                 class="w-full sm:w-auto"
               >
                 Start free
@@ -866,7 +867,7 @@ defmodule EmisarWeb.MarketingComponents do
                     rel="noopener noreferrer"
                     class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
                   >
-                    GitHub <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
+                    GitHub <.icon name="action.external_link" class="h-3 w-3 opacity-60" />
                   </a>
                 </li>
                 <li>
@@ -878,7 +879,7 @@ defmodule EmisarWeb.MarketingComponents do
                     rel="noopener noreferrer"
                     class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
                   >
-                    Status <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
+                    Status <.icon name="action.external_link" class="h-3 w-3 opacity-60" />
                   </a>
                 </li>
                 <li>
@@ -916,8 +917,7 @@ defmodule EmisarWeb.MarketingComponents do
                     rel="noopener noreferrer"
                     class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
                   >
-                    Security policy
-                    <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
+                    Security policy <.icon name="action.external_link" class="h-3 w-3 opacity-60" />
                   </a>
                 </li>
                 <li>
@@ -927,7 +927,7 @@ defmodule EmisarWeb.MarketingComponents do
                     rel="noopener noreferrer"
                     class="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-100"
                   >
-                    License <.icon name="hero-arrow-top-right-on-square" class="h-3 w-3 opacity-60" />
+                    License <.icon name="action.external_link" class="h-3 w-3 opacity-60" />
                   </a>
                 </li>
               </ul>

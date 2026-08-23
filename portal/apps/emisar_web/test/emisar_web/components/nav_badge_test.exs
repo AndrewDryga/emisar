@@ -17,7 +17,7 @@ defmodule EmisarWeb.Components.NavBadgeTest do
     <CoreComponents.nav_link
       to="/app/approvals"
       active={false}
-      icon="hero-shield-check"
+      icon="security.posture"
       badge={@badge}
     >
       Approvals

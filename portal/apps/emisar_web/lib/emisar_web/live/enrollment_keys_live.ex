@@ -234,7 +234,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
           <.button
             navigate={~p"/app/#{@current_account}/runners/keys/new"}
             size={:md}
-            icon="hero-plus"
+            icon="action.add"
           >
             New key
           </.button>
@@ -243,7 +243,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                revokes on this page, so a vanished New key reads as a bug where
                a locked one reads as a rule. The tooltip carries the reason. --%>
           <.tooltip id="new-key-lock" text={issue_key_lock_text()}>
-            <.button size={:md} icon="hero-lock-closed" disabled={true}>New key</.button>
+            <.button size={:md} icon="state.locked" disabled={true}>New key</.button>
           </.tooltip>
         <% end %>
       </:actions>
@@ -267,7 +267,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                explanation, both copy artifacts, and the next actions. --%>
           <div :if={@new_secret}>
             <.event_block
-              icon="hero-key"
+              icon="identity.credential"
               tone={:amber}
               title="Copy this enrollment key now — it won't be shown again."
             >
@@ -297,7 +297,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
 
               <.status_note
                 :if={@install_command == :insecure_transport}
-                icon="hero-shield-exclamation"
+                icon="security.posture_warning"
                 tone={:rose}
                 title="Install command unavailable over HTTP"
                 class="mt-6"
@@ -318,7 +318,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
               />
 
               <div class="mt-6 flex flex-wrap items-center gap-3">
-                <.button phx-click="dismiss_secret" icon="hero-plus">Issue another</.button>
+                <.button phx-click="dismiss_secret" icon="action.add">Issue another</.button>
                 <.button navigate={~p"/app/#{@current_account}/runners/keys"} variant={:secondary}>
                   Back to enrollment keys
                 </.button>
@@ -522,21 +522,21 @@ defmodule EmisarWeb.EnrollmentKeysLive do
           <:empty>
             <.empty_state
               :if={@load_error?}
-              icon="hero-exclamation-triangle"
+              icon="state.warning"
               title="Could not load enrollment keys."
             >
               Your permissions may have changed. Reload, or ask an owner to check your role.
             </.empty_state>
             <.empty_state
               :if={not @load_error? and LiveTable.has_active_filters?(@filter_params, @filters)}
-              icon="hero-funnel"
+              icon="action.filter"
               title="No enrollment keys match this filter."
             >
               Clear the filter to see the rest.
             </.empty_state>
             <.empty_state
               :if={not @load_error? and not LiveTable.has_active_filters?(@filter_params, @filters)}
-              icon="hero-key"
+              icon="identity.credential"
               title="No enrollment keys yet."
             >
               An enrollment key is the bearer secret a fresh host enrolls with — mint a
@@ -547,7 +547,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                 navigate={~p"/app/#{@current_account}/runners/keys/new"}
                 variant={:secondary}
                 size={:sm}
-                icon="hero-plus"
+                icon="action.add"
                 class="mt-4"
               >
                 New enrollment key
@@ -577,7 +577,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     <.callout
       :if={@billing && Emisar.Billing.headroom(@billing, :runners) in [:warning, :at_limit]}
       tone={runner_cap_tone(@billing)}
-      icon="hero-exclamation-triangle"
+      icon="state.warning"
       title={runner_cap_title(@billing)}
     >
       {@billing.runner_count} of {@billing.runner_limit} runners in use.

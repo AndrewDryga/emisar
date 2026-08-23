@@ -73,7 +73,7 @@ defmodule EmisarWeb.SSOPendingLive do
       </div>
 
       <div :if={@status == :dismissed} class="space-y-6">
-        <.callout tone={:rose} icon="hero-x-circle">
+        <.callout tone={:rose} icon="state.denied">
           Your access request was declined.
         </.callout>
 

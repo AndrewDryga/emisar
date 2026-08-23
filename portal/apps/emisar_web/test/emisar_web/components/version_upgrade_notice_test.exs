@@ -23,7 +23,7 @@ defmodule EmisarWeb.Components.VersionUpgradeNoticeTest do
         """)
 
       assert html =~ "2 runners need an update"
-      assert html =~ "hero-cloud-arrow-down"
+      assert html =~ "state.update_available"
       assert html =~ "bg-amber-300/40"
       refute html =~ "bg-amber-500/10"
       refute html =~ "bg-rose-500/10"

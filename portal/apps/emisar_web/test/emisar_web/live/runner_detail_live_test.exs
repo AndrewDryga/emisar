@@ -243,7 +243,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert has_element?(lv, "#action-offline-#{action.id}-tt button[disabled]", "Run")
     assert has_element?(lv, "#action-offline-#{action.id}[role=tooltip]", "can't be dispatched")
     # The signal-slash icon is the non-color cue (not the dimmed text alone).
-    assert html =~ "hero-signal-slash"
+    assert html =~ "state.offline"
   end
 
   test "an enforcing runner shows the signed-only notice and disables Run", %{
@@ -274,7 +274,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert html =~ "emisar signing init"
     # The Run affordance is the disabled lock variant (not color alone), and is
     # NOT a dispatch link — the portal can't run on this host.
-    assert html =~ "hero-lock-closed"
+    assert html =~ "state.locked"
     refute html =~ "/runs/new/#{runner.id}/linux.uptime"
   end
 
@@ -378,7 +378,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
              "Primary executable epmd is missing"
            )
 
-    assert html =~ "hero-wrench-screwdriver"
+    assert html =~ "runner.maintenance"
     refute html =~ "/runs/new/#{runner.id}/beam.epmd_names"
   end
 

@@ -1072,7 +1072,7 @@ defmodule EmisarWeb.ProfileLive do
             <.empty_state
               :if={@sessions_error?}
               tone={:danger}
-              icon="hero-exclamation-triangle"
+              icon="state.warning"
               title="Couldn't load your sessions"
             >
               This is a load error, not an empty list — you are signed in on at least this device.
@@ -1150,5 +1150,5 @@ defmodule EmisarWeb.ProfileLive do
   # Picks an icon for the session row that hints at the device class —
   # makes the row visually scannable instead of "wall of identical text".
   defp session_device_icon(user_agent) when is_binary(user_agent), do: UserAgent.icon(user_agent)
-  defp session_device_icon(_user_agent), do: "hero-globe-alt"
+  defp session_device_icon(_user_agent), do: "infrastructure.network"
 end

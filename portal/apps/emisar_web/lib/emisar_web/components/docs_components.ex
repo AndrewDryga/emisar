@@ -37,7 +37,7 @@ defmodule EmisarWeb.DocsComponents do
         <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-zinc-100 [&::-webkit-details-marker]:hidden">
           Docs navigation
           <.icon
-            name="hero-chevron-down"
+            name="action.disclose"
             class="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-180"
           />
         </summary>
@@ -147,7 +147,7 @@ defmodule EmisarWeb.DocsComponents do
         <summary class="flex cursor-pointer list-none items-center justify-between gap-2 rounded px-2.5 py-1 font-mono text-xs font-semibold uppercase tracking-widest text-zinc-500 transition-colors hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
           {group.label}
           <.icon
-            name="hero-chevron-down"
+            name="action.disclose"
             class="h-3.5 w-3.5 shrink-0 transition-transform group-open/nav:rotate-180"
           />
         </summary>
@@ -426,11 +426,11 @@ defmodule EmisarWeb.DocsComponents do
     <details class="group mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
       <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
         <span class="flex items-center gap-2">
-          <.icon name="hero-command-line" class="h-4 w-4 text-zinc-500" />
+          <.icon name="interface.cli" class="h-4 w-4 text-zinc-500" />
           What does the install script do?
         </span>
         <.icon
-          name="hero-chevron-down"
+          name="action.disclose"
           class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
         />
       </summary>
@@ -525,10 +525,10 @@ defmodule EmisarWeb.DocsComponents do
     <details class="group mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
       <summary class="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-900/30 [&::-webkit-details-marker]:hidden">
         <span class="flex items-center gap-2">
-          <.icon name="hero-shield-check" class="h-4 w-4 text-zinc-500" /> Verify this download first
+          <.icon name="security.posture" class="h-4 w-4 text-zinc-500" /> Verify this download first
         </span>
         <.icon
-          name="hero-chevron-down"
+          name="action.disclose"
           class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
         />
       </summary>
@@ -604,7 +604,7 @@ defmodule EmisarWeb.DocsComponents do
     <figure class="mt-8">
       <div class="overflow-hidden rounded-xl border border-zinc-800 shadow-lg shadow-black/30">
         <div class="flex items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-4 py-2.5 font-mono text-[11px] text-zinc-400">
-          <.icon name="hero-window" class="h-3.5 w-3.5" /> {@title}
+          <.icon name="interface.window" class="h-3.5 w-3.5" /> {@title}
         </div>
         <button
           type="button"
@@ -633,7 +633,7 @@ defmodule EmisarWeb.DocsComponents do
           ></span>
           <%!-- The Expand affordance also reveals on keyboard focus, not hover only. --%>
           <span class="pointer-events-none absolute right-3 top-3 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-brand-300 ring-1 ring-brand-500/30 opacity-0 backdrop-blur transition group-hover:opacity-100 group-focus-visible:opacity-100">
-            <.icon name="hero-arrows-pointing-out" class="h-3.5 w-3.5" /> Expand
+            <.icon name="action.expand" class="h-3.5 w-3.5" /> Expand
           </span>
         </button>
         <div
@@ -650,7 +650,7 @@ defmodule EmisarWeb.DocsComponents do
             aria-label="Close screenshot"
             class="absolute right-4 top-4 rounded-md bg-black/60 p-2 text-zinc-200 ring-1 ring-white/20 backdrop-blur hover:bg-black/80 hover:text-white"
           >
-            <.icon name="hero-x-mark" class="h-5 w-5" />
+            <.icon name="action.close" class="h-5 w-5" />
           </button>
           <%!-- loading="lazy" is load-bearing here, not a nicety. This dialog is
                `hidden` (display:none) from first render, and display:none does NOT
@@ -712,7 +712,7 @@ defmodule EmisarWeb.DocsComponents do
   The prerequisites a page opens with — a checklist note whose items are
   tick-marked.
 
-  Two pages hand-rolled the same callout + `<ul>` + per-item `hero-check` before
+  Two pages hand-rolled the same callout + `<ul>` + per-item `state.included` before
   this existed, and the provider guides were about to make it seven. What a
   reader must already have is a recurring shape, so it gets one.
   """
@@ -722,12 +722,12 @@ defmodule EmisarWeb.DocsComponents do
     ~H"""
     <.docs_callout
       kind={:note}
-      icon="hero-clipboard-document-check"
+      icon="docs.deployment"
       title="Before you start, you need:"
     >
       <ul class="mt-3 space-y-2">
         <li :for={item <- @item} class="flex items-start gap-2.5">
-          <.icon name="hero-check" class="mt-1.5 h-4 w-4 flex-none text-brand-400" />
+          <.icon name="state.included" class="mt-1.5 h-4 w-4 flex-none text-brand-400" />
           <span>{render_slot(item)}</span>
         </li>
       </ul>
@@ -739,9 +739,9 @@ defmodule EmisarWeb.DocsComponents do
   defp docs_callout_box(:tip), do: "border-brand-900/40 bg-brand-950/20"
   defp docs_callout_box(:warn), do: "border-amber-900/40 bg-amber-950/15"
 
-  defp docs_callout_icon(:note), do: "hero-information-circle"
-  defp docs_callout_icon(:tip), do: "hero-light-bulb"
-  defp docs_callout_icon(:warn), do: "hero-exclamation-triangle"
+  defp docs_callout_icon(:note), do: "state.info"
+  defp docs_callout_icon(:tip), do: "state.tip"
+  defp docs_callout_icon(:warn), do: "state.warning"
 
   defp docs_callout_tint(:note), do: "text-zinc-400"
   defp docs_callout_tint(:tip), do: "text-brand-400"
@@ -821,7 +821,7 @@ defmodule EmisarWeb.DocsComponents do
           data-cast-replay
           class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-brand-300 transition hover:text-brand-200"
         >
-          <.icon name="hero-arrow-path" class="h-3.5 w-3.5" /> Replay
+          <.icon name="action.replay" class="h-3.5 w-3.5" /> Replay
         </button>
       </figcaption>
     </figure>
@@ -1046,7 +1046,7 @@ defmodule EmisarWeb.DocsComponents do
           hidden
           class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-brand-300 transition hover:text-brand-200"
         >
-          <.icon name="hero-arrow-path" class="h-3.5 w-3.5" /> Replay
+          <.icon name="action.replay" class="h-3.5 w-3.5" /> Replay
         </button>
       </figcaption>
     </figure>

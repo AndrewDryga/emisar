@@ -169,7 +169,7 @@ defmodule EmisarWeb.AuditDetailLive do
               mcp_client_os={if posture.bridge?, do: posture.os}
             />
             <div class="hidden flex-none items-center pt-7 lg:flex">
-              <.icon name="hero-arrow-right" class="h-5 w-5 text-zinc-700" />
+              <.icon name="action.next" class="h-5 w-5 text-zinc-700" />
             </div>
             <%!-- A self-action (a sign-in, a runner connect) acts on itself. Restating
              the actor byte-for-byte beside itself is noise — say "same as actor". --%>

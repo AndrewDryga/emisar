@@ -16,12 +16,12 @@ defmodule EmisarWeb.Components.StatusNoteTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.status_note icon="hero-key" title="Live credential">
+        <CoreComponents.status_note icon="identity.credential" title="Live credential">
           Treat it like a password.
         </CoreComponents.status_note>
         """)
 
-      assert html =~ "hero-key"
+      assert html =~ "identity.credential"
       assert html =~ "text-zinc-400"
       assert html =~ "Live credential"
       assert html =~ "Treat it like a password."
@@ -36,7 +36,7 @@ defmodule EmisarWeb.Components.StatusNoteTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.status_note icon="hero-key" tone={:amber} title="New key">
+        <CoreComponents.status_note icon="identity.credential" tone={:amber} title="New key">
           Copy it now.
         </CoreComponents.status_note>
         """)
@@ -50,7 +50,7 @@ defmodule EmisarWeb.Components.StatusNoteTest do
       html =
         rendered_to_string(~H"""
         <CoreComponents.status_note
-          icon="hero-shield-check"
+          icon="security.posture"
           tone={:brand}
           title="Signed dispatch only"
           primary
@@ -68,7 +68,7 @@ defmodule EmisarWeb.Components.StatusNoteTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.status_note icon="hero-key" title="Note">
+        <CoreComponents.status_note icon="identity.credential" title="Note">
           {@payload}
         </CoreComponents.status_note>
         """)

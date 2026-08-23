@@ -76,14 +76,14 @@ defmodule EmisarWeb.AdminSearchLive do
              when there is nothing to find sends them hunting for a typo. --%>
         <.empty_state
           :if={@accounts == [] and blank_query?(@query)}
-          icon="hero-building-office-2"
+          icon="identity.organization"
           title="No accounts yet."
         >
           Nobody has signed up on this deployment.
         </.empty_state>
         <.empty_state
           :if={@accounts == [] and not blank_query?(@query)}
-          icon="hero-magnifying-glass"
+          icon="action.search"
           title="No accounts match this search."
         >
           Try the account slug, or the email address of someone on the team.

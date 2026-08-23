@@ -10,7 +10,7 @@ defmodule EmisarWeb.Components.EmptyStateTest do
   alias EmisarWeb.CoreComponents
 
   defp render_empty_state(attrs) do
-    assigns = %{attrs: Map.merge(%{icon: "hero-check-badge", title: "Nothing here"}, attrs)}
+    assigns = %{attrs: Map.merge(%{icon: "state.approved", title: "Nothing here"}, attrs)}
 
     rendered_to_string(~H"""
     <CoreComponents.empty_state {@attrs}>Body</CoreComponents.empty_state>
@@ -53,7 +53,7 @@ defmodule EmisarWeb.Components.EmptyStateTest do
       assert html =~ "text-xs leading-relaxed text-zinc-400"
       assert html =~ "No overrides."
       refute html =~ "<h2"
-      refute html =~ "hero-"
+      refute html =~ "emisar-icon"
     end
 
     test ":hint renders an optional small title above the body" do

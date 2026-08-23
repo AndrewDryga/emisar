@@ -27,7 +27,7 @@ defmodule EmisarWeb.Components.VersionChipTest do
       refute html =~ "Run sudo emisar update on this host"
       assert html =~ ~s(id="runner-version-7-command")
       assert html =~ ~s(data-copy-text="sudo emisar update")
-      assert html =~ "hero-cloud-arrow-down"
+      assert html =~ "state.update_available"
     end
 
     test "an unsupported runner gets the same command as the merely stale one" do

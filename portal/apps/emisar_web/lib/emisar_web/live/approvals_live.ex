@@ -561,7 +561,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 <.empty_state
                   :if={@pending_error?}
                   tone={:danger}
-                  icon="hero-exclamation-triangle"
+                  icon="state.warning"
                   title="Couldn't load pending approvals."
                 >
                   This is a load error, not an empty queue — a held action may be waiting.
@@ -569,7 +569,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 </.empty_state>
                 <.empty_state
                   :if={not @pending_error?}
-                  icon="hero-check-badge"
+                  icon="state.approved"
                   title="Nothing waiting."
                 >
                   Approvals show up here when
@@ -755,7 +755,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 <.empty_state
                   :if={@grants_error?}
                   tone={:danger}
-                  icon="hero-exclamation-triangle"
+                  icon="state.warning"
                   title="Couldn't load standing grants"
                 >
                   This is a load error, not an empty list — grants may well be active and letting
@@ -764,7 +764,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 </.empty_state>
                 <.empty_state
                   :if={not @grants_error? and grants_disabled?(@current_account)}
-                  icon="hero-no-symbol"
+                  icon="state.disabled"
                   title="Standing grants are disabled."
                 >
                   Every approval is single-use — agents re-ask each time. An owner or
@@ -772,7 +772,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 </.empty_state>
                 <.empty_state
                   :if={not @grants_error? and not grants_disabled?(@current_account)}
-                  icon="hero-key"
+                  icon="identity.credential"
                   title="No active grants."
                 >
                   Grants appear when you approve a run with a duration other than
@@ -887,7 +887,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 <.empty_state
                   :if={@decided_error?}
                   tone={:danger}
-                  icon="hero-exclamation-triangle"
+                  icon="state.warning"
                   title="Couldn't load the decision log"
                 >
                   This is a load error, not an empty log — decisions may well be recorded.
@@ -895,7 +895,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 </.empty_state>
                 <.empty_state
                   :if={not @decided_error?}
-                  icon="hero-clipboard-document-check"
+                  icon="product.approval"
                   title="No decided approvals yet."
                 >
                   When you approve or deny a pending request, the decision lands here.

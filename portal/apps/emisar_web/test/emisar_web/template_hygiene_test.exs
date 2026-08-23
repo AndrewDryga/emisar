@@ -47,6 +47,12 @@ defmodule EmisarWeb.TemplateHygieneTest do
   # all hand-rolled copies of the button face on the consent cards.
   @white_on_accent_fill ~r{bg-(?:brand|amber|emerald)-[456]00(?![/\w])[^"]*text-white|text-white[^"]*bg-(?:brand|amber|emerald)-[456]00(?![/\w])}
 
+  # An icon names a MEANING from `EmisarWeb.Icons`. A literal that names nothing
+  # raises at render — on the one page that renders it, in whatever environment
+  # first reaches it — so the names are reconciled against the registry here
+  # instead, where every template is read at once.
+  @icon_name ~r/(?:<\.icon\s[^>]*?\bname|\bicon)="([a-z_]+\.[a-z_]+)"/
+
   # `cta_link` glues the arrow to whatever its slot renders, so slot content
   # that starts or ends with template whitespace puts a breakable space back.
   @unglued_cta_link_slot ~r{<\.cta_link[^>]*>[ \t\r\n]|[ \t\r\n]</\.cta_link>}
@@ -260,7 +266,7 @@ defmodule EmisarWeb.TemplateHygieneTest do
                ❌  Read it <.cta_arrow />
                ❌  <.link class="inline-flex items-center gap-1">
                      Read it
-                     <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+                     <.icon name="action.next" class="h-3.5 w-3.5" />
                    </.link>
 
            Offending lines (relative to apps/emisar_web/lib):
@@ -284,6 +290,49 @@ defmodule EmisarWeb.TemplateHygieneTest do
 
            Offending lines (relative to apps/emisar_web/lib):
            #{Enum.map_join(offenders, "\n", &"  #{&1}")}
+           """
+  end
+
+  test "the root layout defines the shared icon masks every page's icons reach for" do
+    root = File.read!(Path.join(@web_lib, "emisar_web/components/layouts/root.html.heex"))
+
+    assert root =~ "<.icon_masks />",
+           """
+           A masked icon references its mask by id, and a dangling reference renders
+           as nothing. `<.icon_masks />` defines them once inside `<body>`; every
+           browser-pipeline page reaches this one root layout, so the definition
+           belongs here and nowhere else.
+           """
+  end
+
+  test "every icon literal names a meaning the registry owns" do
+    unknown =
+      for {file, source} <- template_sources(),
+          [{_index, _length}, {name_index, name_length}] <-
+            Regex.scan(@icon_name, source, return: :index),
+          name = binary_part(source, name_index, name_length),
+          not EmisarWeb.Icons.token?(name),
+          line_no =
+            source
+            |> binary_part(0, name_index)
+            |> :binary.matches("\n")
+            |> length()
+            |> Kernel.+(1),
+          do: "#{file}:#{line_no}  #{name}"
+
+    assert unknown == [],
+           """
+           An icon names one meaning from the semantic registry, never a drawing and
+           never a near-miss. Reuse the existing meaning, or add a master under
+           `apps/emisar_web/priv/icons/<namespace>/<name>.svg` after the review loop
+           in `.agent/kb/rules/design-semantic-icon-system.md`.
+
+               ✅  <.icon name="state.offline" class="h-4 w-4" />
+               ❌  <.icon name="state.offine" class="h-4 w-4" />
+               ❌  <.icon name="hero-signal-slash" class="h-4 w-4" />
+
+           Unregistered names (relative to apps/emisar_web/lib):
+           #{Enum.map_join(unknown, "\n", &"  #{&1}")}
            """
   end
 end

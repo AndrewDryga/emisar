@@ -385,7 +385,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert html =~ "token"
       assert html =~ "[REDACTED]"
       refute html =~ @hash
-      assert has_element?(lv, ~s([data-steps-marker="parallel"] .hero-arrows-right-left))
+      assert has_element?(lv, ~s([data-steps-marker="parallel"] [data-icon="workflow.parallel"]))
       assert has_element?(lv, ~s([data-steps-marker="number"]), "1")
 
       # The plan names the resolved runner with no glyph in front of it, the same
@@ -714,7 +714,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       assert has_element?(
                lv,
-               "#runbook-execution-result [data-steps-marker='parallel'] .hero-arrows-right-left"
+               "#runbook-execution-result [data-steps-marker='parallel'] [data-icon='workflow.parallel']"
              )
 
       assert has_element?(lv, "[id^=execution-item-] a", "View")

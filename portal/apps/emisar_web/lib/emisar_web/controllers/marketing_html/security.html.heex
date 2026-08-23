@@ -25,11 +25,11 @@
           class="group inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/40 py-1 pl-1 pr-3.5 text-sm font-medium text-zinc-100 transition hover:border-brand-500/30 hover:bg-zinc-900"
         >
           <span class="flex h-6 w-6 items-center justify-center rounded-full bg-brand-500/10 text-brand-400">
-            <.icon name="hero-shield-check" class="h-3.5 w-3.5" />
+            <.icon name="security.posture" class="h-3.5 w-3.5" />
           </span>
           Zero-Trust for AI Agents
           <.icon
-            name="hero-arrow-up-right"
+            name="action.external_link"
             class="h-3.5 w-3.5 text-zinc-600 transition group-hover:text-brand-400"
           />
         </.link>
@@ -38,11 +38,11 @@
           class="group inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/40 py-1 pl-1 pr-3.5 text-sm font-medium text-zinc-100 transition hover:border-brand-500/30 hover:bg-zinc-900"
         >
           <span class="flex h-6 w-6 items-center justify-center rounded-full bg-brand-500/10 text-brand-400">
-            <.icon name="hero-signal" class="h-3.5 w-3.5" />
+            <.icon name="story.observability" class="h-3.5 w-3.5" />
           </span>
           Cloud audit log your SIEM can poll
           <.icon
-            name="hero-arrow-up-right"
+            name="action.external_link"
             class="h-3.5 w-3.5 text-zinc-600 transition group-hover:text-brand-400"
           />
         </.link>
@@ -50,7 +50,7 @@
       <div class="mt-3 flex flex-wrap gap-2">
         <%= for chip <- ["No inbound port on hosts", "Pattern redaction before egress", "No raw shell, ever"] do %>
           <span class="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-xs font-medium text-zinc-300">
-            <.icon name="hero-check" class="h-3.5 w-3.5 text-brand-400" />{chip}
+            <.icon name="state.included" class="h-3.5 w-3.5 text-brand-400" />{chip}
           </span>
         <% end %>
       </div>
@@ -80,7 +80,7 @@
         <div class="rounded-2xl border border-sky-500/20 bg-sky-950/10 p-5">
           <div class="flex items-center gap-3">
             <span class="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-sky-500/10 text-sky-300 ring-1 ring-inset ring-sky-500/25">
-              <.icon name="hero-cpu-chip" class="h-5 w-5" />
+              <.icon name="product.agent" class="h-5 w-5" />
             </span>
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-mono text-sm font-semibold text-sky-300">LLM client</span>
@@ -99,7 +99,7 @@
         <div class="flex items-center gap-3 px-1 py-4">
           <span class="h-px flex-1 bg-gradient-to-r from-transparent via-brand-500/40 to-brand-500/60"></span>
           <span class="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-400">
-            <.icon name="hero-lock-closed" class="h-3 w-3" /> trust boundary
+            <.icon name="trust.permission_boundary" class="h-3 w-3" /> trust boundary
           </span>
           <span class="h-px flex-1 bg-gradient-to-l from-transparent via-brand-500/40 to-brand-500/60"></span>
         </div>
@@ -120,7 +120,7 @@
               </span>
               <span class="ml-auto flex flex-none items-center gap-1.5">
                 <.state_chip state={:pending} label="require approval" />
-                <.icon name="hero-arrow-right" class="h-3 w-3 text-zinc-500" />
+                <.icon name="diagram.flow_right" class="h-3 w-3 text-zinc-500" />
                 <.state_chip state={:pass} label="approved" />
               </span>
             </div>
@@ -137,7 +137,7 @@
           <div class="flex items-center gap-3 px-1 py-2">
             <span class="h-px flex-1 border-t border-dashed border-brand-500/30"></span>
             <span class="flex items-center gap-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.15em] text-brand-400/80">
-              <.icon name="hero-key" class="h-3 w-3" /> with signed dispatch
+              <.icon name="identity.credential" class="h-3 w-3" /> with signed dispatch
             </span>
             <span class="h-px flex-1 border-t border-dashed border-brand-500/30"></span>
           </div>
@@ -145,7 +145,7 @@
           <div class="relative rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">
             <div class="flex items-center gap-3">
               <span class="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-zinc-900 text-brand-400 ring-1 ring-inset ring-zinc-700">
-                <.icon name="hero-server-stack" class="h-5 w-5" />
+                <.icon name="product.runner" class="h-5 w-5" />
               </span>
               <span class="font-mono text-sm font-semibold text-zinc-100">
                 Runner · on your host
@@ -165,7 +165,7 @@
           <div class="relative rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">
             <div class="flex items-center gap-3">
               <span class="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-zinc-900 text-brand-400 ring-1 ring-inset ring-zinc-700">
-                <.icon name="hero-document-check" class="h-5 w-5" />
+                <.icon name="evidence.verified_document" class="h-5 w-5" />
               </span>
               <span class="font-mono text-sm font-semibold text-zinc-100">
                 Hash-chained journal + cloud audit
@@ -288,7 +288,7 @@
       <div class="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-2">
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
-            <.icon name="hero-lock-closed" class="h-6 w-6" />
+            <.icon name="state.locked" class="h-6 w-6" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">TLS-only transport</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
@@ -299,7 +299,7 @@
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
-            <.icon name="hero-arrow-up-on-square" class="h-6 w-6" />
+            <.icon name="action.publish" class="h-6 w-6" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">
             No inbound connections to runners
@@ -311,7 +311,7 @@
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
-            <.icon name="hero-document-text" class="h-6 w-6" />
+            <.icon name="product.audit" class="h-6 w-6" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">Hash-chained audit journal</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
@@ -323,7 +323,7 @@
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
-            <.icon name="hero-finger-print" class="h-6 w-6" />
+            <.icon name="trust.signed_dispatch" class="h-6 w-6" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">Hash-pinned packs</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
@@ -335,7 +335,7 @@
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
-            <.icon name="hero-eye-slash" class="h-6 w-6" />
+            <.icon name="security.redacted" class="h-6 w-6" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">Pattern redaction before egress</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
@@ -349,7 +349,7 @@
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
-            <.icon name="hero-arrow-down-tray" class="h-6 w-6" />
+            <.icon name="action.download" class="h-6 w-6" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">
             SIEM export
@@ -375,7 +375,7 @@
 
       <div class="mx-auto mt-16 grid max-w-6xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <.icon name="hero-user-group" class="h-7 w-7 text-brand-400" />
+          <.icon name="product.team" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">RBAC</h3>
           <p class="mt-2 text-sm text-zinc-400">
             Roles for owner, admin, billing manager, operator, and viewer, plus per-user runner, runner-group, and pack
@@ -383,7 +383,7 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <.icon name="hero-key" class="h-7 w-7 text-brand-400" />
+          <.icon name="identity.credential" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">Governed LLM access</h3>
           <p class="mt-2 text-sm text-zinc-400">
             MCP bridge keys are short-lived and rotate themselves. Runner credentials rotate
@@ -391,7 +391,7 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <.icon name="hero-shield-check" class="h-7 w-7 text-brand-400" />
+          <.icon name="identity.authentication" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">MFA</h3>
           <p class="mt-2 text-sm text-zinc-400">
             TOTP MFA is available on every plan, with one-time recovery codes and replay
@@ -399,7 +399,7 @@
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <.icon name="hero-identification" class="h-7 w-7 text-brand-400" />
+          <.icon name="identity.authentication" class="h-7 w-7 text-brand-400" />
           <h3 class="mt-4 text-lg font-semibold text-zinc-50">SSO &amp; SCIM</h3>
           <p class="mt-2 text-sm text-zinc-400">
             OIDC sign-in with Okta, Entra ID, JumpCloud, Google Workspace, or Keycloak, plus SCIM
@@ -491,7 +491,7 @@
             external
             href="https://github.com/andrewdryga/emisar/blob/main/.github/SECURITY.md"
             size={:lg}
-            icon="hero-arrow-top-right-on-square"
+            icon="action.external_link"
           >
             Read SECURITY.md
           </.marketing_button>

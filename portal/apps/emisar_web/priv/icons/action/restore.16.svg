@@ -1,0 +1,3 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M18.5 8.25A7.5 7.5 0 1 0 16.82 17.75"/><rect x="18" y="12" width="1.5" height="1.5" fill="currentColor" stroke="none" shape-rendering="crispEdges"/><rect x="18" y="13.5" width="1.5" height="1.5" fill="currentColor" stroke="none" shape-rendering="crispEdges"/><rect x="16.5" y="13.5" width="1.5" height="1.5" fill="currentColor" stroke="none" shape-rendering="crispEdges"/><rect x="16.5" y="15" width="1.5" height="1.5" fill="currentColor" stroke="none" shape-rendering="crispEdges"/><path class="accent" d="M12 8.3V12l2.7 1.65" stroke-width="1.4"/><circle class="accent-fill" cx="12" cy="12" r=".8"/>
+</svg>

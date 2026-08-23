@@ -26,10 +26,32 @@ This is the load-bearing contract:
    context, and usage locations before drawing. Never introduce a near-
    duplicate to make one screen feel special.
 
-During the registry migration, existing direct `hero-*` references are frozen
-migration debt, not precedent. Do not add a new raw source-glyph choice. A
-licensed or Heroicons-derived drawing can still be the approved master, but it
-is reached through its semantic token and its provenance remains recorded.
+A licensed or Heroicons-derived drawing can still be an approved master, but
+it is reached through its semantic token and its provenance stays recorded.
+
+## Where the system lives
+
+- `apps/emisar_web/priv/icons/<namespace>/<name>.svg` is the ONE master for
+  `namespace.name`. Each file is a standalone, editable `<svg>` on the shared
+  24-unit grid, so a geometry correction is an ordinary file edit and a normal
+  diff. A sibling `<name>.16.svg` is that meaning's compact optical master; it
+  earns its file only by rendering DIFFERENTLY from the regular one.
+- `EmisarWeb.Icons` compiles those files in and is the only lookup surface.
+  `master/2` picks the compact master at 16 px and below, and raises on a name
+  it does not own — an unknown icon must fail loudly, never render nothing.
+- `EmisarWeb.CoreComponents.icon/1` renders the master inline. Stroke weight
+  belongs to the OUTPUT SIZE, not the file, so the component reads the size
+  from the call site's `h-*` class and `assets/css/app.css` sets the weight per
+  grid bucket.
+- Semantic colour is CSS on the fragment's classes: `accent` (brand), `warn`
+  (amber), `danger` (rose) recolour emphasis, while `selection` fills a whole
+  silhouette and therefore follows `currentColor` — brand where the pick is a
+  verdict, neutral where an authoring choice must not impersonate one.
+- A gap between two crossing parts is a real `<mask>`, never a stroke painted
+  in the surface colour. The product has many surfaces; a painted knockout is
+  correct on exactly one of them. Mask ids are content-addressed, so two
+  different masks can never collide and two identical ones are provably
+  interchangeable when an icon repeats on a page.
 
 ## Drawing contract
 
@@ -91,6 +113,25 @@ concept.
 - Accent classes recolor optional emphasis; they never control whether
   essential anatomy exists. A missing accent must not delete a keyhole, slider
   knob, exclamation dot, browser control, or any other structural part.
+- **A semantic class marks emphasis inside a drawing. When it would cover the
+  WHOLE drawing it is not emphasis — it is the anatomy, and anatomy paints in
+  `currentColor` so the call site decides.** A fully-accented master cannot
+  take its surface's color at all: the pricing page's deliberately muted free-
+  plan checks came out brand emerald beside the paid plan's, and every loading
+  spinner turned green in rows of zinc text. Sweep: a master whose every
+  element carries `accent`/`warn`/`danger`.
+- **A solid accent fill IS the accent, so an icon on one goes monochrome.** The
+  emerald check inside `action.approve` was emerald on the emerald Approve
+  button and all but vanished. The filled SURFACE carries `emisar-icon-mono`,
+  which resets every semantic part to `currentColor`, so it covers whatever
+  icon that surface ever hosts. Sweep: a solid `bg-{brand,amber,rose}-[456]00`
+  face that can host an icon.
+- **A third-party mark inside first-party chrome inherits the surface's color
+  system.** Keep the official silhouette; drop the trademark ink and the tile.
+  A blue Kubernetes badge and a teal Nomad hexagon were the only two colored
+  things in a docs list of emerald outline siblings. Full-color artwork belongs
+  to the locked `vendor.*` marks on their own surface, never to a semantic icon
+  (`design-console-ux.md` §7.38).
 - An icon beside text that already states its meaning is decorative and hidden
   from assistive technology. An icon carrying unrepeated meaning gets an
   accessible name and the shared hover/focus tooltip. The visible glyph may be
@@ -147,9 +188,13 @@ result to a semantic token or an explicit brand/vendor/structural exclusion.
 Then inspect the registry for duplicate meanings, overloaded tokens, orphaned
 masters, undocumented compact variants, and color-dependent anatomy.
 
-**Enforced.** The semantic registry is the only production lookup surface.
-Validation checks token coverage, unique ownership, XML-valid fragments,
-regular/compact availability, and locked brand/vendor assets. Review enforces
-metaphor, minimalism, optical alignment, family coherence, accessibility, and
-the rendered-evidence loop; those judgments cannot be reduced safely to a
-source grep.
+**Enforced.** `EmisarWeb.IconsTest` checks unique ownership, namespacing,
+XML-valid masters on the shared grid, compact masters that actually differ,
+content-addressed mask ids, every mask defined exactly once for the page,
+emphasis that never covers a whole drawing, masters that state no color of
+their own, and the brand/vendor exclusion. `EmisarWeb.TemplateHygieneTest` reconciles every
+literal icon name in every template against the registry, so a typo fails the
+gate rather than the one page that renders it. Review enforces metaphor,
+minimalism, optical alignment, family coherence, accessibility, and the
+rendered-evidence loop; those judgments cannot be reduced safely to a source
+grep.

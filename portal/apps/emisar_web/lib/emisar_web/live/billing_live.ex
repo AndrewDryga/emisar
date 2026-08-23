@@ -343,7 +343,7 @@ defmodule EmisarWeb.BillingLive do
       <.empty_state
         :if={not @loading? and is_nil(@summary)}
         tone={:danger}
-        icon="hero-exclamation-triangle"
+        icon="state.warning"
         title="Couldn't load billing"
       >
         Something went wrong loading your plan and usage — this is on our side,
@@ -432,7 +432,7 @@ defmodule EmisarWeb.BillingLive do
                   variant={:secondary}
                   phx-click="manage_billing"
                   phx-disable-with="Opening portal…"
-                  icon="hero-credit-card"
+                  icon="product.billing"
                 >
                   Manage subscription
                 </.button>
@@ -464,14 +464,14 @@ defmodule EmisarWeb.BillingLive do
                     Recent invoices
                   </h3>
                   <p class="mt-3 flex items-center gap-2 text-sm text-zinc-400">
-                    <.icon name="hero-arrow-path" class="h-4 w-4 animate-spin" />
+                    <.icon name="state.loading" class="h-4 w-4 animate-spin" />
                     Loading payment history…
                   </p>
                 </section>
               </:loading>
               <:failed>
                 <.event_block
-                  icon="hero-exclamation-triangle"
+                  icon="state.warning"
                   tone={:rose}
                   title="Couldn't load recent invoices"
                   class="max-w-prose"
@@ -534,7 +534,7 @@ defmodule EmisarWeb.BillingLive do
                         class="inline-flex items-center gap-1 font-medium text-brand-400 hover:text-brand-300"
                         title={"Download invoice #{invoice.invoice_number} (PDF)"}
                       >
-                        <.icon name="hero-arrow-down-tray" class="h-3.5 w-3.5" /> PDF
+                        <.icon name="action.download" class="h-3.5 w-3.5" /> PDF
                       </button>
                     </div>
                   </li>
@@ -549,7 +549,7 @@ defmodule EmisarWeb.BillingLive do
                "Contact support". --%>
             <.event_block
               :if={sales_led_plan?(@summary.plan)}
-              icon="hero-lifebuoy"
+              icon="product.support"
               tone={:neutral}
               title="Custom Enterprise plan"
               class="max-w-prose"
@@ -631,7 +631,7 @@ defmodule EmisarWeb.BillingLive do
 
                   <ul class="mt-4 flex-1 space-y-2 text-xs text-zinc-300">
                     <li :for={f <- plan.features} class="flex items-start gap-2">
-                      <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
+                      <.icon name="state.included" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
                       <span class="leading-relaxed">{f}</span>
                     </li>
                   </ul>
@@ -759,7 +759,7 @@ defmodule EmisarWeb.BillingLive do
                 href={billing_support_mailto(@current_account, @current_user)}
                 class="mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand-400 hover:text-brand-300"
               >
-                Contact support <.icon name="hero-arrow-right" class="h-3.5 w-3.5" />
+                Contact support <.icon name="action.next" class="h-3.5 w-3.5" />
               </a>
             </div>
           </aside>
@@ -774,14 +774,14 @@ defmodule EmisarWeb.BillingLive do
 
   # One plan-feature line in the billing rail: a check when the plan turns it
   # on, a muted dash when it doesn't. The included-feature glyph is the house
-  # bare `hero-check` in brand — the same one the plan cards, docs
+  # bare `state.included` in brand — the same one the plan cards, docs
   # prerequisites, and auth components render; a filled circle here made one
   # page speak two dialects for one fact.
   defp feature_line(assigns) do
     ~H"""
     <li class="flex items-center gap-2">
       <.icon
-        name={if @enabled, do: "hero-check", else: "hero-minus"}
+        name={if @enabled, do: "state.included", else: "state.not_included"}
         class={"h-4 w-4 flex-none " <> if(@enabled, do: "text-brand-400", else: "text-zinc-500")}
       />
       <span class={(@enabled && "text-zinc-300") || "text-zinc-400"}>{@label}</span>

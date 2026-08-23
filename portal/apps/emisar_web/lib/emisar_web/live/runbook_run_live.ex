@@ -721,7 +721,7 @@ defmodule EmisarWeb.RunbookRunLive do
       <div class="mt-4">
         <.empty_state
           :if={not @loaded?}
-          icon="hero-arrow-path"
+          icon="state.loading"
           title="Loading runbook…"
         >
           Reading the current plan and latest execution.
@@ -923,7 +923,7 @@ defmodule EmisarWeb.RunbookRunLive do
         :if={@preflight.state == :loading}
         class="flex items-center gap-2 text-sm text-zinc-400"
       >
-        <.icon name="hero-arrow-path" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
+        <.icon name="state.loading" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
         Checking current state…
       </div>
 
@@ -979,7 +979,7 @@ defmodule EmisarWeb.RunbookRunLive do
         :if={@preflight.state == :loading}
         class="flex items-center gap-2 text-sm text-zinc-400"
       >
-        <.icon name="hero-arrow-path" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
+        <.icon name="state.loading" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
         Resolving actions and runners…
       </div>
 
@@ -989,7 +989,7 @@ defmodule EmisarWeb.RunbookRunLive do
 
       <.event_block
         :if={@preflight.state == :error}
-        icon="hero-exclamation-triangle"
+        icon="state.warning"
         tone={:rose}
         title="Plan blocked"
       >
@@ -1159,7 +1159,7 @@ defmodule EmisarWeb.RunbookRunLive do
         >
           <.event_block
             :if={@result.execution.status == :pending_approval}
-            icon="hero-hand-raised"
+            icon="state.awaiting_human"
             title="Waiting on approval"
           >
             <:body>
@@ -1179,7 +1179,7 @@ defmodule EmisarWeb.RunbookRunLive do
 
           <.event_block
             :if={@result.execution.status == :halted}
-            icon="hero-exclamation-triangle"
+            icon="state.warning"
             tone={:rose}
             title="Execution halted"
           >
@@ -1190,7 +1190,7 @@ defmodule EmisarWeb.RunbookRunLive do
 
           <.event_block
             :if={@result.execution.status == :cancelled}
-            icon="hero-no-symbol"
+            icon="state.cancelled"
             tone={:neutral}
             title="Execution cancelled"
           >
@@ -1227,7 +1227,7 @@ defmodule EmisarWeb.RunbookRunLive do
             stage.terminal_message &&
               stage.terminal_message != @result.execution.terminal_message
           }
-          icon="hero-exclamation-triangle"
+          icon="state.warning"
           tone={:rose}
           title="Stage halted"
           class="mb-5"
@@ -1396,7 +1396,7 @@ defmodule EmisarWeb.RunbookRunLive do
       <% terminal_message = item_terminal_message(@item, @execution) %>
       <.event_block
         :if={terminal_message}
-        icon="hero-exclamation-triangle"
+        icon="state.warning"
         tone={:rose}
         title={humanize_terminal_code(@item.terminal_code) || "Action failed"}
       >

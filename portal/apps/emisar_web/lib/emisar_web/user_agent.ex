@@ -128,19 +128,19 @@ defmodule EmisarWeb.UserAgent do
   def label(_), do: "Unknown device"
 
   @doc """
-  Hero icon name hinting at the device class — phone / desktop browser /
-  bare Go client (the runner's signature) / globe fallback.
+  The device-class meaning to render — phone / desktop browser / bare Go
+  client (the runner's signature) / unknown fallback.
   """
   def icon(user_agent) when is_binary(user_agent) do
     cond do
-      user_agent =~ ~r/iPhone|iPad|Android/i -> "hero-device-phone-mobile"
-      user_agent =~ ~r/Mozilla|WebKit/i -> "hero-computer-desktop"
-      user_agent =~ ~r/^Go-http-client/i -> "hero-server"
-      true -> "hero-globe-alt"
+      user_agent =~ ~r/iPhone|iPad|Android/i -> "device.mobile"
+      user_agent =~ ~r/Mozilla|WebKit/i -> "device.desktop"
+      user_agent =~ ~r/^Go-http-client/i -> "device.machine_client"
+      true -> "device.web"
     end
   end
 
-  def icon(_), do: "hero-globe-alt"
+  def icon(_), do: "device.unknown"
 
   @doc """
   A bare Go HTTP client that didn't set a custom UA — the runner's

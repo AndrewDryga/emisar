@@ -293,7 +293,7 @@ defmodule EmisarWeb.RunbookImportLive do
               phx-drop-target={@uploads.runbook_json.ref}
               class="runbook-import-dropzone mt-2 flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-zinc-700 px-6 py-8 text-center transition hover:border-zinc-500 hover:bg-zinc-900/30"
             >
-              <.icon name="hero-arrow-up-tray" class="h-6 w-6 text-zinc-400" />
+              <.icon name="action.upload" class="h-6 w-6 text-zinc-400" />
               <span class="mt-3 text-sm font-medium text-zinc-200">
                 Drop a JSON file here or choose one
               </span>

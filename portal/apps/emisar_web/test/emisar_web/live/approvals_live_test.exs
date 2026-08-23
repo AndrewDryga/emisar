@@ -209,7 +209,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
     assert html =~ "expired"
-    assert html =~ "hero-no-symbol"
+    assert html =~ "state.expired"
     refute html =~ "text-amber-400"
   end
 

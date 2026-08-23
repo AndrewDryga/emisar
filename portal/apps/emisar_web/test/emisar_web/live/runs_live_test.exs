@@ -51,7 +51,7 @@ defmodule EmisarWeb.RunsLiveTest do
     # The source icon already says how the run arrived; the cell only names the
     # accountable person and does not spend width repeating the API key.
     assert html =~ ~s(title="Jordan Vale")
-    assert html =~ "hero-bolt"
+    assert html =~ "product.run"
     assert html =~ ~s(aria-label="Dispatched via MCP")
     refute html =~ owner.email
     refute html =~ "via Claude Code"

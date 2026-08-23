@@ -39,7 +39,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       :if={@load_error?}
       variant={:hint}
       tone={:danger}
-      icon="hero-exclamation-triangle"
+      icon="state.warning"
       title="Couldn't load recent runs"
     >
       This is a load error, not an empty history. Refresh the page to try again.
@@ -342,7 +342,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         </div>
         <div class="flex items-center gap-1">
           <.icon_button
-            icon="hero-arrow-up"
+            icon="action.move_up"
             label="Move stage up"
             phx-click="move_stage"
             phx-value-index={@stage_index}
@@ -350,7 +350,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             disabled={@read_only? or @stage_index == 0}
           />
           <.icon_button
-            icon="hero-arrow-down"
+            icon="action.move_down"
             label="Move stage down"
             phx-click="move_stage"
             phx-value-index={@stage_index}
@@ -358,7 +358,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             disabled={@read_only? or @stage_index == @total_stages - 1}
           />
           <.icon_button
-            icon="hero-trash"
+            icon="action.delete"
             label="Remove stage"
             phx-click="remove_stage"
             phx-value-index={@stage_index}
@@ -528,7 +528,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             {step_toggle_label(@collapsed?, @read_only?)}
           </.button>
           <.icon_button
-            icon="hero-arrow-up"
+            icon="action.move_up"
             label="Move step up"
             phx-click="move_step"
             phx-value-stage={@stage_index}
@@ -537,7 +537,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             disabled={@read_only? or @step_index == 0}
           />
           <.icon_button
-            icon="hero-arrow-down"
+            icon="action.move_down"
             label="Move step down"
             phx-click="move_step"
             phx-value-stage={@stage_index}
@@ -546,7 +546,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             disabled={@read_only? or @step_index == @total_steps - 1}
           />
           <.icon_button
-            icon="hero-trash"
+            icon="action.delete"
             label="Remove step"
             phx-click="remove_step"
             phx-value-stage={@stage_index}
@@ -609,7 +609,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
                 align={:right}
                 class="shrink-0"
               >
-                <.icon name="hero-exclamation-circle-mini" class="h-4 w-4 text-rose-300" />
+                <.icon name="state.error" class="h-4 w-4 text-rose-300" />
               </.tooltip>
             </div>
             <.searchable_select
@@ -695,7 +695,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           :if={@issue_count > 0}
           class="inline-flex items-center gap-1 text-[11px] font-medium text-rose-300"
         >
-          <.icon name="hero-exclamation-circle-mini" class="h-3.5 w-3.5" />
+          <.icon name="state.error" class="h-3.5 w-3.5" />
           {@issue_count} {if @issue_count == 1, do: "issue", else: "issues"}
         </span>
       </div>
@@ -1114,7 +1114,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         ]}
       >
         <span class="min-w-0 truncate">{@label}</span>
-        <.icon name="hero-chevron-down-micro" class="h-5 w-5 shrink-0 text-zinc-500" />
+        <.icon name="action.select" class="h-5 w-5 shrink-0 text-zinc-500" />
       </div>
 
       <.dropdown
@@ -1134,7 +1134,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           >
             <span class="min-w-0 truncate">{@label}</span>
             <.icon
-              name="hero-chevron-down-micro"
+              name="action.select"
               class="h-5 w-5 shrink-0 text-zinc-500 transition-transform group-open:rotate-180"
             />
           </span>
@@ -1146,7 +1146,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         >
           <div :if={@searchable?} class="relative border-b border-zinc-800 bg-zinc-950">
             <.icon
-              name="hero-magnifying-glass-micro"
+              name="action.search"
               class="pointer-events-none absolute left-3 top-3 h-4 w-4 text-zinc-500"
             />
             <input
@@ -1273,7 +1273,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         Unavailable
       </span>
       <span :if={@selected?} class="flex h-5 w-5 shrink-0 items-center justify-center">
-        <.icon name="hero-check-micro" class="h-4 w-4 text-zinc-300" />
+        <.icon name="state.selected" class="h-4 w-4 text-zinc-300" />
       </span>
     </button>
     """
@@ -1582,7 +1582,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               Output {index + 1}
             </span>
             <.icon_button
-              icon="hero-trash"
+              icon="action.delete"
               label="Remove output"
               phx-click="remove_output"
               phx-value-stage={@stage_index}
@@ -1725,7 +1725,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               Condition {index + 1}
             </span>
             <.icon_button
-              icon="hero-trash"
+              icon="action.delete"
               label="Remove condition"
               phx-click="remove_success"
               phx-value-stage={@stage_index}
@@ -1892,10 +1892,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
       class="inline-flex w-full items-center gap-1.5 text-left text-xs font-medium text-zinc-400 hover:text-zinc-200"
     >
       <.icon
-        name="hero-chevron-right"
+        name="action.disclose"
         class={
           "h-3.5 w-3.5 shrink-0 transition-transform motion-reduce:transition-none" <>
-            if(@open?, do: " rotate-90", else: "")
+            if(@open?, do: " rotate-0", else: " -rotate-90")
         }
       />
       <span>{@label}</span>

@@ -30,7 +30,7 @@ defmodule EmisarWeb.Components.GatedSettingTest do
         """)
 
       assert html =~ ~s(id="runner-retention-form")
-      refute html =~ "hero-lock-closed-mini"
+      refute html =~ "state.locked"
       refute html =~ ~s(role="tooltip")
       # The control carries the value itself, so the chip's copy must not also
       # print — that would state the setting twice to the same reader.
@@ -54,7 +54,7 @@ defmodule EmisarWeb.Components.GatedSettingTest do
         """)
 
       assert html =~ "After 1 hour inactive"
-      assert html =~ "hero-lock-closed-mini"
+      assert html =~ "state.locked"
       refute html =~ ~s(id="runner-retention-form")
     end
 

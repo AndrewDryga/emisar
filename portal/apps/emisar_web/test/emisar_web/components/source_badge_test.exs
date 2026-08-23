@@ -13,9 +13,9 @@ defmodule EmisarWeb.Components.SourceBadgeTest do
   describe "source_badge/1" do
     test "explains every source icon" do
       sources = [
-        {:mcp, "hero-sparkles", "Dispatched via MCP"},
-        {:runbook, "hero-book-open", "Dispatched by a runbook"},
-        {:operator, "hero-user", "Dispatched by an operator"}
+        {:mcp, "product.agent", "Dispatched via MCP"},
+        {:runbook, "product.runbook", "Dispatched by a runbook"},
+        {:operator, "identity.person", "Dispatched by an operator"}
       ]
 
       for {source, icon, tooltip} <- sources do

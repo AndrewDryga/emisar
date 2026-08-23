@@ -158,7 +158,7 @@ defmodule EmisarWeb.PacksTest do
         Regex.run(~r{<a[^>]*href="/docs/action-packs"[^>]*>.*?</a>}s, html)
 
       assert pack_reference =~ "Pack reference"
-      assert pack_reference =~ "hero-arrow-right"
+      assert pack_reference =~ "action.next"
       assert pack_reference =~ "text-brand-400"
       assert pack_reference =~ "min-h-10"
     end

@@ -24,7 +24,7 @@ defmodule EmisarWeb.Components.DisclosureTest do
       assert html =~ "<details"
       assert html =~ "Can't scan? Use a setup URI"
       assert html =~ "the uri"
-      assert html =~ "hero-chevron-down"
+      assert html =~ "action.disclose"
       assert html =~ "group-open/disc:rotate-180"
       # The body divider is line-as-light inside the lit island surface.
       assert html =~ "border-t border-zinc-800"

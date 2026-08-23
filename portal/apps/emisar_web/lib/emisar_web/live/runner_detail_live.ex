@@ -389,7 +389,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             :if={disconnect_message}
             class="mt-4 flex items-center gap-1.5 text-rose-300/90"
           >
-            <.icon name="hero-bolt-slash" class="h-3.5 w-3.5" />
+            <.icon name="state.offline" class="h-3.5 w-3.5" />
             <span class="text-xs">{disconnect_message}</span>
           </div>
 
@@ -421,7 +421,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             :if={@readiness.degradation.state == :degraded}
             id="degraded-packs"
             tone={:amber}
-            icon="hero-exclamation-triangle"
+            icon="state.warning"
             title={degraded_packs_title(@readiness.degradation.packs)}
             class="mt-8"
           >
@@ -450,7 +450,7 @@ defmodule EmisarWeb.RunnerDetailLive do
            badge above already says so. --%>
         <.status_note
           :if={@readiness.portal_dispatch.reason == :signature_required}
-          icon="hero-shield-check"
+          icon="trust.signed_dispatch"
           tone={:brand}
           title="Signed dispatch only"
           primary
@@ -540,7 +540,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                             variant={:secondary}
                             disabled
                             aria-disabled="true"
-                            icon="hero-lock-closed"
+                            icon="state.locked"
                             class="cursor-not-allowed opacity-60"
                           >
                             Run
@@ -557,7 +557,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                             variant={:secondary}
                             disabled
                             aria-disabled="true"
-                            icon="hero-wrench-screwdriver"
+                            icon="runner.maintenance"
                             class="cursor-not-allowed opacity-60"
                           >
                             Run
@@ -577,7 +577,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                             variant={:secondary}
                             disabled
                             aria-disabled="true"
-                            icon="hero-lock-closed"
+                            icon="state.locked"
                             class="cursor-not-allowed opacity-60"
                           >
                             Run
@@ -612,7 +612,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                             variant={:secondary}
                             disabled
                             aria-disabled="true"
-                            icon="hero-signal-slash"
+                            icon="state.offline"
                             class="cursor-not-allowed opacity-60"
                           >
                             Run
@@ -631,7 +631,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                             variant={:secondary}
                             disabled
                             aria-disabled="true"
-                            icon="hero-no-symbol"
+                            icon="state.disabled"
                             class="cursor-not-allowed opacity-60"
                           >
                             Run
@@ -649,7 +649,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                   <% @actions_error? -> %>
                     <.empty_state
                       tone={:danger}
-                      icon="hero-exclamation-triangle"
+                      icon="state.warning"
                       title="Couldn't load this runner's actions"
                       class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
                     >
@@ -660,7 +660,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                     <span class="text-zinc-400">No actions match these filters.</span>
                   <% true -> %>
                     <.empty_state
-                      icon="hero-cpu-chip"
+                      icon="product.runner"
                       title="No actions yet."
                       class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
                     >
@@ -687,7 +687,7 @@ defmodule EmisarWeb.RunnerDetailLive do
               <% @recent_runs_error? -> %>
                 <.empty_state
                   tone={:danger}
-                  icon="hero-exclamation-triangle"
+                  icon="state.warning"
                   title="Couldn't load recent runs"
                   class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
                 >
@@ -702,7 +702,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                      the neighbor the way items-stretch would in the mixed (one
                      column full) state. --%>
                 <.empty_state
-                  icon="hero-bolt"
+                  icon="product.run"
                   title="No runs yet."
                   class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
                 >

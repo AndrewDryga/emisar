@@ -53,7 +53,7 @@ defmodule EmisarWeb.DomainComponents do
     <.callout
       :if={@alert}
       tone={@alert.tone}
-      icon="hero-exclamation-triangle"
+      icon="state.warning"
       title={@alert.title}
       class={@class}
     >
@@ -213,11 +213,11 @@ defmodule EmisarWeb.DomainComponents do
     """
   end
 
-  defp source_icon(:mcp), do: "hero-sparkles"
+  defp source_icon(:mcp), do: "product.agent"
 
-  defp source_icon(:runbook), do: "hero-book-open"
+  defp source_icon(:runbook), do: "product.runbook"
 
-  defp source_icon(_operator), do: "hero-user"
+  defp source_icon(_operator), do: "identity.person"
 
   defp source_tooltip(:mcp), do: "Dispatched via MCP"
 
@@ -460,12 +460,12 @@ defmodule EmisarWeb.DomainComponents do
            the DOWNLOAD metaphor, the same glyph the page notice above uses for
            the same act (§7.49) — an up-arrow read as upload/publish, the
            opposite direction from what the operator actually does. --%>
-      <.chip :if={@status == :unsupported} tone={:rose} icon="hero-exclamation-triangle">
+      <.chip :if={@status == :unsupported} tone={:rose} icon="state.warning">
         unsupported
       </.chip>
       <.icon
         :if={@status == :outdated}
-        name="hero-cloud-arrow-down"
+        name="state.update_available"
         class="h-3.5 w-3.5 text-zinc-500"
       />
     </.tooltip>
@@ -575,7 +575,7 @@ defmodule EmisarWeb.DomainComponents do
       :if={@status in [:outdated, :unsupported]}
       id={@id}
       tone={(@status == :unsupported && :amber) || :neutral}
-      icon="hero-cloud-arrow-down"
+      icon="state.update_available"
       title={version_upgrade_title(@kind, @status, @affected_count)}
       class={@class}
     >
@@ -587,7 +587,7 @@ defmodule EmisarWeb.DomainComponents do
           <% {:error, :insecure_base_url} -> %>
             <p>{version_upgrade_fact(@kind, @unsupported_count, @outdated_count)}</p>
             <.status_note
-              icon="hero-shield-exclamation"
+              icon="security.posture_warning"
               tone={:rose}
               title="Install command unavailable over HTTP"
             >
@@ -710,7 +710,7 @@ defmodule EmisarWeb.DomainComponents do
   def install_transport_refusal(assigns) do
     ~H"""
     <.event_block
-      icon="hero-shield-exclamation"
+      icon="security.posture_warning"
       tone={:rose}
       title="Install command unavailable over HTTP"
       class={@class}
@@ -729,7 +729,7 @@ defmodule EmisarWeb.DomainComponents do
   def install_command_unavailable(%{variant: :note} = assigns) do
     ~H"""
     <.status_note
-      icon="hero-exclamation-triangle"
+      icon="state.warning"
       tone={:rose}
       title="Could not create the install command"
       class={@class}
@@ -742,7 +742,7 @@ defmodule EmisarWeb.DomainComponents do
   def install_command_unavailable(assigns) do
     ~H"""
     <.event_block
-      icon="hero-exclamation-triangle"
+      icon="state.warning"
       tone={:rose}
       title="Could not create the install command"
       class={@class}
@@ -816,7 +816,7 @@ defmodule EmisarWeb.DomainComponents do
                        `primary` beside the command's own code panel, never a
                        spine or a box. --%>
                   <.status_note
-                    icon="hero-key"
+                    icon="identity.credential"
                     tone={:amber}
                     title="Live credential — won't be shown again"
                     primary
@@ -857,7 +857,7 @@ defmodule EmisarWeb.DomainComponents do
                        and only THIS overdue state wears amber. --%>
                   <.event_block
                     :if={@show_troubleshooting}
-                    icon="hero-signal"
+                    icon="product.service_status"
                     tone={:amber}
                     title="Not seeing it yet?"
                     class="mt-5"
@@ -889,14 +889,14 @@ defmodule EmisarWeb.DomainComponents do
                          text line (mt-0.5 sat visibly high). --%>
                     <li class="flex items-start gap-2.5">
                       <.icon
-                        name="hero-check"
+                        name="state.included"
                         class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400"
                       />
                       <span>Verifies the download's SHA-256 before running anything</span>
                     </li>
                     <li class="flex items-start gap-2.5">
                       <.icon
-                        name="hero-check"
+                        name="state.included"
                         class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400"
                       />
                       <span>
@@ -907,7 +907,7 @@ defmodule EmisarWeb.DomainComponents do
                     </li>
                     <li class="flex items-start gap-2.5">
                       <.icon
-                        name="hero-check"
+                        name="state.included"
                         class="mt-[3px] h-3.5 w-3.5 flex-none text-brand-400"
                       />
                       <span>Only dials out — nothing listens on the host</span>
@@ -935,7 +935,7 @@ defmodule EmisarWeb.DomainComponents do
               </div>
             <% @install_command == :mint_failed -> %>
               <.event_block
-                icon="hero-exclamation-triangle"
+                icon="state.warning"
                 tone={:rose}
                 title="Could not create the install command"
               >
@@ -953,7 +953,7 @@ defmodule EmisarWeb.DomainComponents do
               <.install_command_unavailable />
             <% true -> %>
               <div class="flex items-center gap-3 text-sm text-zinc-400">
-                <span class="hero-arrow-path h-4 w-4 animate-spin"></span>
+                <.icon name="state.loading" class="h-4 w-4 animate-spin" />
                 Generating your install command…
               </div>
           <% end %>
@@ -1002,7 +1002,7 @@ defmodule EmisarWeb.DomainComponents do
                     <div class="text-sm font-medium text-zinc-100">Full host install</div>
                   </div>
                   <.icon
-                    name="hero-arrow-top-right-on-square"
+                    name="action.external_link"
                     class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
                   />
                 </.link>
@@ -1018,7 +1018,7 @@ defmodule EmisarWeb.DomainComponents do
                     <div class="text-sm font-medium text-zinc-100">Containers</div>
                   </div>
                   <.icon
-                    name="hero-arrow-top-right-on-square"
+                    name="action.external_link"
                     class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
                   />
                 </.link>
@@ -1034,7 +1034,7 @@ defmodule EmisarWeb.DomainComponents do
                     <div class="text-sm font-medium text-zinc-100">Kubernetes</div>
                   </div>
                   <.icon
-                    name="hero-arrow-top-right-on-square"
+                    name="action.external_link"
                     class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
                   />
                 </.link>
@@ -1050,7 +1050,7 @@ defmodule EmisarWeb.DomainComponents do
                     <div class="text-sm font-medium text-zinc-100">Nomad</div>
                   </div>
                   <.icon
-                    name="hero-arrow-top-right-on-square"
+                    name="action.external_link"
                     class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
                   />
                 </.link>
@@ -1066,7 +1066,7 @@ defmodule EmisarWeb.DomainComponents do
                     <div class="text-sm font-medium text-zinc-100">Autoscaling fleets</div>
                   </div>
                   <.icon
-                    name="hero-arrow-top-right-on-square"
+                    name="action.external_link"
                     class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
                   />
                 </.link>
@@ -1087,7 +1087,7 @@ defmodule EmisarWeb.DomainComponents do
                     </div>
                   </div>
                   <.icon
-                    name="hero-arrow-right"
+                    name="action.next"
                     class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
                   />
                 </.link>
@@ -1104,7 +1104,7 @@ defmodule EmisarWeb.DomainComponents do
                     </div>
                   </div>
                   <.icon
-                    name="hero-arrow-right"
+                    name="action.next"
                     class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
                   />
                 </.link>
@@ -1123,7 +1123,7 @@ defmodule EmisarWeb.DomainComponents do
                     </div>
                   </div>
                   <.icon
-                    name="hero-arrow-top-right-on-square"
+                    name="action.external_link"
                     class="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-brand-400"
                   />
                 </.link>
@@ -1137,7 +1137,7 @@ defmodule EmisarWeb.DomainComponents do
   end
 
   @doc """
-  "A runner is offline" notice — a `hero-signal-slash` block whose colour
+  "A runner is offline" notice — a `state.offline` block whose colour
   encodes SEVERITY, the one place that convention lives so it can't drift:
 
     * `:info` (zinc) — informational, nothing's wrong (e.g. "you can still
@@ -1161,7 +1161,7 @@ defmodule EmisarWeb.DomainComponents do
   # earn the box.
   def offline_notice(%{severity: :info} = assigns) do
     ~H"""
-    <.status_note icon="hero-signal-slash" tone={:neutral} title={@title} class={@class}>
+    <.status_note icon="state.offline" tone={:neutral} title={@title} class={@class}>
       {render_slot(@inner_block)}
     </.status_note>
     """
@@ -1171,7 +1171,7 @@ defmodule EmisarWeb.DomainComponents do
     assigns = assign(assigns, :tone, offline_tone(assigns.severity))
 
     ~H"""
-    <.callout tone={@tone} icon="hero-signal-slash" title={@title} class={@class}>
+    <.callout tone={@tone} icon="state.offline" title={@title} class={@class}>
       {render_slot(@inner_block)}
       <:action :if={@action != []}>{render_slot(@action)}</:action>
     </.callout>
@@ -1335,7 +1335,7 @@ defmodule EmisarWeb.DomainComponents do
            approval isn't an ambiguous static "expires just now"; {" "} is a
            literal space HEEx won't trim. The LocalTime hook carries the absolute
            time on hover. --%>
-      <.icon name={if @expired?, do: "hero-no-symbol", else: "hero-clock"} class="h-3 w-3" />
+      <.icon name={if @expired?, do: "state.expired", else: "state.pending"} class="h-3 w-3" />
       {if @expired?, do: "expired", else: "expires"}{" "}<TimeHelpers.local_time
         id={@id}
         value={@expires_at}

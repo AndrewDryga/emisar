@@ -179,7 +179,7 @@ defmodule EmisarWeb.ActivateLive do
         <% @decision == :approved -> %>
           <div class="px-6 py-5">
             <div class="flex items-center gap-2.5">
-              <.icon name="hero-check-circle" class="h-6 w-6 flex-none text-brand-400" />
+              <.icon name="state.success" class="h-6 w-6 flex-none text-brand-400" />
               <h1 class="text-lg font-semibold text-zinc-50">
                 Approved — return to your terminal
               </h1>
@@ -217,7 +217,7 @@ defmodule EmisarWeb.ActivateLive do
         <% @decision == :denied -> %>
           <div class="px-6 py-5">
             <div class="flex items-center gap-2.5">
-              <.icon name="hero-hand-raised" class="h-6 w-6 flex-none text-zinc-400" />
+              <.icon name="product.approval" class="h-6 w-6 flex-none text-zinc-400" />
               <h1 class="text-lg font-semibold text-zinc-50">
                 Denied — the installer stops
               </h1>
@@ -255,7 +255,7 @@ defmodule EmisarWeb.ActivateLive do
             <ul class="mt-3 space-y-3">
               <li class="flex items-start gap-3">
                 <.icon
-                  name="hero-check-circle"
+                  name="state.success"
                   class="mt-0.5 h-5 w-5 flex-none text-brand-400"
                 />
                 <span class="text-sm leading-snug text-zinc-300">
@@ -265,7 +265,7 @@ defmodule EmisarWeb.ActivateLive do
               </li>
               <li class="flex items-start gap-3">
                 <.icon
-                  name="hero-check-circle"
+                  name="state.success"
                   class="mt-0.5 h-5 w-5 flex-none text-brand-400"
                 />
                 <span class="text-sm leading-snug text-zinc-300">

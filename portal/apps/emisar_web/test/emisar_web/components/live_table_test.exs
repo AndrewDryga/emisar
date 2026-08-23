@@ -256,7 +256,8 @@ defmodule EmisarWeb.LiveTableTest do
         </LiveTable.live_table>
         """)
 
-      assert html =~ "hero-x-mark-mini h-4 w-4 shrink-0"
+      assert html =~ ~s(data-icon="action.clear_filters")
+      assert html =~ "emisar-icon h-4 w-4 shrink-0"
       assert html =~ "Clear filters"
       refute html =~ "&times;"
     end

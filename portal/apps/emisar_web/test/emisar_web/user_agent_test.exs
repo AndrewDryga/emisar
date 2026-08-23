@@ -109,14 +109,14 @@ defmodule EmisarWeb.UserAgentTest do
   describe "icon/1" do
     test "phone beats desktop for mobile UAs; Go clients read as servers" do
       assert UserAgent.icon("Mozilla/5.0 (iPhone; ...) AppleWebKit/605.1.15") ==
-               "hero-device-phone-mobile"
+               "device.mobile"
 
       assert UserAgent.icon("Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36") ==
-               "hero-computer-desktop"
+               "device.desktop"
 
-      assert UserAgent.icon("Go-http-client/1.1") == "hero-server"
-      assert UserAgent.icon("curl/8.5.0") == "hero-globe-alt"
-      assert UserAgent.icon(nil) == "hero-globe-alt"
+      assert UserAgent.icon("Go-http-client/1.1") == "device.machine_client"
+      assert UserAgent.icon("curl/8.5.0") == "device.web"
+      assert UserAgent.icon(nil) == "device.unknown"
     end
   end
 

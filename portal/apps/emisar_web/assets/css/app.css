@@ -2,6 +2,80 @@
 @import "tailwindcss/components";
 @import "tailwindcss/utilities";
 
+/* ---------------------------------------------------------------------------
+   The semantic icon system — `EmisarWeb.Icons` and `<.icon>`. Anatomy paints
+   in `currentColor`, so an icon takes the surrounding text colour the way the
+   masked heroicon spans did. Stroke weight belongs to the OUTPUT SIZE rather
+   than to the file, so the registry states the 24-unit grid bucket here and
+   these rules state the weight. `overflow: visible` keeps a modifier that
+   reaches the edge of the box from clipping.
+   --------------------------------------------------------------------------- */
+.emisar-icon {
+  display: inline-block;
+  overflow: visible;
+  vertical-align: middle;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.55;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  shape-rendering: geometricPrecision;
+}
+.emisar-icon[data-icon-grid="16"] {
+  stroke-width: 1.74;
+}
+.emisar-icon[data-icon-grid="20"] {
+  stroke-width: 1.64;
+}
+
+/* Semantic emphasis inside a drawing: pass/added, caution, deny/failure. Every
+   icon stays whole and distinct without these, so colour never carries the
+   meaning alone. */
+.emisar-icon .accent {
+  stroke: theme(colors.brand.400);
+}
+.emisar-icon .accent-fill {
+  fill: theme(colors.brand.400);
+  stroke: none;
+}
+.emisar-icon .warn {
+  stroke: theme(colors.amber.300);
+}
+.emisar-icon .warn-fill {
+  fill: theme(colors.amber.300);
+  stroke: none;
+}
+.emisar-icon .danger {
+  stroke: theme(colors.rose.400);
+}
+.emisar-icon .danger-fill {
+  fill: theme(colors.rose.400);
+  stroke: none;
+}
+/* `selection` fills a whole silhouette rather than emphasising one part, so it
+   takes the call site's colour: brand where the pick is the account in force,
+   neutral zinc where an authoring choice must not impersonate a verdict. */
+.emisar-icon .selection {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* A solid accent fill already IS the accent, so an icon on one paints entirely
+   in the label's colour: the emerald check inside `action.approve` was emerald
+   on the emerald Approve button and all but vanished. The class rides the
+   filled SURFACE, so every icon it ever hosts is covered. */
+.emisar-icon-mono .emisar-icon .accent,
+.emisar-icon-mono .emisar-icon .warn,
+.emisar-icon-mono .emisar-icon .danger {
+  stroke: currentColor;
+}
+.emisar-icon-mono .emisar-icon .accent-fill,
+.emisar-icon-mono .emisar-icon .warn-fill,
+.emisar-icon-mono .emisar-icon .danger-fill,
+.emisar-icon-mono .emisar-icon .selection {
+  fill: currentColor;
+}
+
 .runbook-import-dropzone.phx-drop-target-active {
   border-color: rgb(54 230 165 / 0.65);
   background-color: rgb(20 207 141 / 0.06);

@@ -43,12 +43,12 @@ defmodule EmisarWeb.MarketingHTML do
     """
   end
 
-  # Hero icon for an action row in the pack-detail action list. `exec`
-  # = lightning (runs a binary), `script` = code-bracket (packaged shell
-  # script). Defaults to cube for any future kinds.
-  def action_icon("exec"), do: "hero-bolt"
-  def action_icon("script"), do: "hero-code-bracket"
-  def action_icon(_), do: "hero-cube"
+  # Icon meaning for an action row in the pack-detail action list. `exec` runs
+  # a binary, `script` is a packaged shell script. Any future kind falls back
+  # to the pack itself.
+  def action_icon("exec"), do: "action.execute"
+  def action_icon("script"), do: "interface.api"
+  def action_icon(_), do: "product.pack"
 
   # One lowercased blob per docs-index row for the client-side filter —
   # the page's title, description, its top-level group, its display
@@ -62,20 +62,20 @@ defmodule EmisarWeb.MarketingHTML do
     |> String.downcase()
   end
 
-  # Heroicon per pack-registry category (slug from
+  # Icon meaning per pack-registry category (slug from
   # `EmisarWeb.PacksRegistry.@pack_categories`).
   # The icon varies for scannability; the accent stays brand — one accent, by design.
-  def category_icon("databases"), do: "hero-circle-stack"
-  def category_icon("containers"), do: "hero-cube"
-  def category_icon("observability"), do: "hero-chart-bar"
-  def category_icon("web"), do: "hero-globe-alt"
-  def category_icon("cloud"), do: "hero-cloud"
-  def category_icon("networking"), do: "hero-signal"
-  def category_icon("storage"), do: "hero-server-stack"
-  def category_icon("linux"), do: "hero-command-line"
-  def category_icon("runtimes"), do: "hero-code-bracket"
-  def category_icon("security"), do: "hero-lock-closed"
-  def category_icon(_), do: "hero-cube-transparent"
+  def category_icon("databases"), do: "infrastructure.database"
+  def category_icon("containers"), do: "infrastructure.container"
+  def category_icon("observability"), do: "story.observability"
+  def category_icon("web"), do: "device.web"
+  def category_icon("cloud"), do: "infrastructure.cloud"
+  def category_icon("networking"), do: "infrastructure.network"
+  def category_icon("storage"), do: "infrastructure.host_cluster"
+  def category_icon("linux"), do: "interface.cli"
+  def category_icon("runtimes"), do: "interface.api"
+  def category_icon("security"), do: "security.posture"
+  def category_icon(_), do: "pack.reference"
 
   # The home page "watch emisar work" terminal. One incident — a CSI driver
   # reformats a live LUN and wipes 33h of metrics — told as an ordered
@@ -222,7 +222,7 @@ defmodule EmisarWeb.MarketingHTML do
             aria-selected="true"
             class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs text-zinc-500 transition hover:text-zinc-300 aria-selected:bg-zinc-800/80 aria-selected:text-zinc-100"
           >
-            <.icon name="hero-server-stack" class="h-3.5 w-3.5" /> nomad-hvn03
+            <.icon name="infrastructure.host" class="h-3.5 w-3.5" /> nomad-hvn03
           </button>
           <button
             type="button"
@@ -231,7 +231,7 @@ defmodule EmisarWeb.MarketingHTML do
             aria-selected="false"
             class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs text-zinc-500 transition hover:text-zinc-300 aria-selected:bg-zinc-800/80 aria-selected:text-zinc-100"
           >
-            <.icon name="hero-sparkles" class="h-3.5 w-3.5 text-[#d97757]" /> claude
+            <.icon name="product.agent" class="h-3.5 w-3.5 text-[#d97757]" /> claude
           </button>
         </div>
       </div>
@@ -269,7 +269,7 @@ defmodule EmisarWeb.MarketingHTML do
           data-demo-replay
           class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-brand-300 transition hover:text-brand-200"
         >
-          <.icon name="hero-arrow-path" class="h-3.5 w-3.5" /> Replay
+          <.icon name="action.replay" class="h-3.5 w-3.5" /> Replay
         </button>
       </div>
     </div>

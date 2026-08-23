@@ -343,7 +343,7 @@ defmodule EmisarWeb.RunnersLive do
           :if={Runners.subject_can_install_runners?(@current_subject)}
           navigate={~p"/app/#{@current_account}/runners/install"}
           size={:md}
-          icon="hero-plus"
+          icon="action.add"
         >
           Connect a runner
         </.button>
@@ -358,7 +358,7 @@ defmodule EmisarWeb.RunnersLive do
         <% @load_error? -> %>
           <.empty_state
             tone={:danger}
-            icon="hero-exclamation-triangle"
+            icon="state.warning"
             title="Couldn't load your fleet"
           >
             This is a load error, not an empty fleet — a host may well be connected. Refresh the
@@ -367,7 +367,7 @@ defmodule EmisarWeb.RunnersLive do
         <% @show_wizard? and not Runners.subject_can_install_runners?(@current_subject) -> %>
           <%!-- Zero fleet, no install permission: the pitch without a wizard
                whose mint can only fail. --%>
-          <.empty_state icon="hero-cpu-chip" title="No runners yet.">
+          <.empty_state icon="product.runner" title="No runners yet.">
             A runner is the emisar binary on one of your hosts. Connecting one needs
             an operator role or above, with access to all runners — ask a teammate
             who has both, and the new host's live state will appear here.
@@ -388,12 +388,12 @@ defmodule EmisarWeb.RunnersLive do
                live socket confirms there really are no runners. --%>
           <.loading_state />
         <% not @has_runner_access? -> %>
-          <.empty_state icon="hero-cpu-chip" title="No runner access">
+          <.empty_state icon="product.runner" title="No runner access">
             You don't have access to any runners. An owner or admin can grant it from Team.
           </.empty_state>
         <% not @has_full_runner_access? and @metadata.count == 0 and
              not LiveTable.has_active_filters?(@filter_params, @filters) -> %>
-          <.empty_state icon="hero-cpu-chip" title="No runners in your access">
+          <.empty_state icon="product.runner" title="No runners in your access">
             No runners match your assigned scope. An owner or admin can update it from Team.
           </.empty_state>
         <% true -> %>
@@ -428,7 +428,7 @@ defmodule EmisarWeb.RunnersLive do
                 <.callout
                   :if={@fleet.signature_mode == :signed_only}
                   tone={:brand}
-                  icon="hero-shield-check"
+                  icon="trust.signed_dispatch"
                   title="Fleet is signed-only"
                 >
                   Every runner in this account verifies a client signature and refuses unsigned runs, so
@@ -537,7 +537,7 @@ defmodule EmisarWeb.RunnersLive do
                           <.chip
                             :if={readiness.signatures.mode == :signed_only}
                             tone={:neutral}
-                            icon="hero-shield-check"
+                            icon="trust.signed_dispatch"
                             title="Runs only signed dispatches — the portal can't dispatch to this runner"
                           >
                             signed-only

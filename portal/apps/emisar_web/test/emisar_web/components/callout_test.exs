@@ -20,7 +20,7 @@ defmodule EmisarWeb.Components.CalloutTest do
 
       assert html =~ "Heads up."
       assert html =~ "bg-zinc-700"
-      assert html =~ "hero-information-circle-mini"
+      assert html =~ "state.info"
       refute html =~ "rounded-lg border"
     end
 
@@ -34,7 +34,7 @@ defmodule EmisarWeb.Components.CalloutTest do
 
       assert html =~ "bg-amber-300/40"
       assert html =~ "text-amber-300"
-      assert html =~ "hero-exclamation-triangle-mini"
+      assert html =~ "state.warning"
     end
 
     test "brand is the informational emerald" do
@@ -46,7 +46,7 @@ defmodule EmisarWeb.Components.CalloutTest do
         )
 
       assert html =~ "bg-brand-400/40"
-      assert html =~ "hero-information-circle-mini"
+      assert html =~ "state.info"
     end
 
     test "rose is the danger ramp" do
@@ -79,17 +79,17 @@ defmodule EmisarWeb.Components.CalloutTest do
 
       overridden =
         rendered_to_string(
-          ~H|<CoreComponents.callout tone={:amber} icon="hero-hand-raised">held</CoreComponents.callout>|
+          ~H|<CoreComponents.callout tone={:amber} icon="product.approval">held</CoreComponents.callout>|
         )
 
-      assert overridden =~ "hero-hand-raised"
-      refute overridden =~ "hero-exclamation-triangle-mini"
+      assert overridden =~ "product.approval"
+      refute overridden =~ "state.warning"
     end
 
-    test "rejects an empty icon instead of rendering an invisible glyph" do
+    test "rejects an unregistered icon instead of rendering an invisible glyph" do
       assigns = %{}
 
-      assert_raise FunctionClauseError, fn ->
+      assert_raise ArgumentError, ~r/unknown icon/, fn ->
         rendered_to_string(~H|<CoreComponents.callout icon="">missing</CoreComponents.callout>|)
       end
     end
@@ -170,7 +170,7 @@ defmodule EmisarWeb.Components.CalloutTest do
         </DomainComponents.offline_notice>
         """)
 
-      assert info =~ "hero-signal-slash"
+      assert info =~ "state.offline"
       refute info =~ "bg-zinc-900/40"
       refute info =~ "ring-1"
 

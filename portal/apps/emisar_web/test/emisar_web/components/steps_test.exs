@@ -81,7 +81,7 @@ defmodule EmisarWeb.Components.StepsTest do
         """)
 
       assert html =~ ~s(data-steps-marker="parallel")
-      assert html =~ "hero-arrows-right-left"
+      assert html =~ "workflow.parallel"
       refute html =~ ~r{>\s*1\s*</span>}
     end
   end

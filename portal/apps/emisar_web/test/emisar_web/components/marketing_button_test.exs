@@ -54,7 +54,7 @@ defmodule EmisarWeb.Components.MarketingButtonTest do
 
     test "block is full-width; a trailing icon renders" do
       assert render_button(%{block: true}) =~ "w-full"
-      assert render_button(%{icon: "hero-arrow-right"}) =~ "hero-arrow-right"
+      assert render_button(%{icon: "action.next"}) =~ "action.next"
     end
   end
 end

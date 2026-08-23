@@ -297,38 +297,38 @@
         walk it before you point production at emisar. A security reviewer will ask for the
         same things:
       </p>
-      <.docs_callout kind={:note} icon="hero-shield-check">
+      <.docs_callout kind={:note} icon="security.posture">
         <p class="text-base font-semibold text-zinc-100">Every account</p>
         <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-300">
           <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <.icon name="state.included" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>Group runners by tier. Give every production group its own locked ruleset.</span>
           </li>
           <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <.icon name="state.included" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>Four-eyes is on for any group that can lose data or drop a service.</span>
           </li>
           <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <.icon name="state.included" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>Members are scoped to the hosts they own — agent keys inherit that scope, so
             nothing is account-wide by accident.</span>
           </li>
           <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <.icon name="state.included" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>Require MFA account-wide.</span>
           </li>
           <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <.icon name="state.included" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>Pack secrets live in <code class="font-mono">runner.env</code>
             + <code class="font-mono">inherit_env</code>, never in call arguments.</span>
           </li>
           <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <.icon name="state.included" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>The <code class="font-mono">shell</code>
             break-glass pack is on no production runner.</span>
           </li>
           <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <.icon name="state.included" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>Signed dispatch is enforced wherever you must be able to prove which bridge
             sent a request. A customer-authorized bridge signs each request with a key the
             control plane never holds. See <.link
@@ -340,11 +340,11 @@
         <p class="mt-5 text-base font-semibold text-zinc-100">On Team, add</p>
         <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-300">
           <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <.icon name="state.included" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>Configure SSO so people sign in through your identity provider.</span>
           </li>
           <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <.icon name="state.included" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>Poll the audit export API with an <code class="font-mono">audit-export</code>
             token. Confirm that its cursor advances. Alert on policy changes and admission
             blocks.</span>
@@ -355,7 +355,7 @@
         </p>
         <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-300">
           <li class="flex items-start gap-2.5">
-            <.icon name="hero-check" class="mt-1 h-4 w-4 flex-none text-brand-400" />
+            <.icon name="state.included" class="mt-1 h-4 w-4 flex-none text-brand-400" />
             <span>Configure SCIM so a suspension in your directory ends sessions and revokes keys in
             emisar.</span>
           </li>

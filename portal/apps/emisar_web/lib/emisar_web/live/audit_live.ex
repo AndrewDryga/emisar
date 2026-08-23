@@ -497,7 +497,7 @@ defmodule EmisarWeb.AuditLive do
         <%!-- w-3 + gap-2 = 20px to the label — the SAME x as the row labels
              (8px dot + gap-3), so the fold sits on the table's rail. --%>
         <.icon
-          name="hero-chevron-right"
+          name="breadcrumb.separator"
           class={"h-3 w-3 shrink-0 transition-transform duration-150 #{if @filters_open?, do: "rotate-90 text-zinc-400", else: "text-zinc-500 group-hover:text-zinc-400"}"}
         />
         <span class={[
@@ -623,7 +623,7 @@ defmodule EmisarWeb.AuditLive do
             <% @load_error? -> %>
               <.empty_state
                 tone={:danger}
-                icon="hero-exclamation-triangle"
+                icon="state.warning"
                 title="Couldn't load the audit log"
               >
                 This is a load error, not an empty log. Refresh the page; if it persists, your
@@ -632,7 +632,7 @@ defmodule EmisarWeb.AuditLive do
             <% any_filter_active?(@filter_params, @filters) -> %>
               <span class="text-zinc-400">No events match these filters.</span>
             <% true -> %>
-              <.empty_state icon="hero-document-text" title="No audit events yet.">
+              <.empty_state icon="evidence.document" title="No audit events yet.">
                 They appear as soon as something happens — a
                 <.link
                   navigate={~p"/app/#{@current_account}/runners"}
@@ -666,7 +666,7 @@ defmodule EmisarWeb.AuditLive do
   defp upgrade_button(assigns) do
     ~H"""
     <.tooltip text={@tip} placement={:bottom} class="shrink-0">
-      <.button variant={:secondary} size={:md} icon="hero-lock-closed" disabled>
+      <.button variant={:secondary} size={:md} icon="state.locked" disabled>
         {render_slot(@inner_block)}
       </.button>
     </.tooltip>

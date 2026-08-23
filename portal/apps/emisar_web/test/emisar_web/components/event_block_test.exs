@@ -16,13 +16,13 @@ defmodule EmisarWeb.Components.EventBlockTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.event_block icon="hero-key" title="Key rotated">
+        <CoreComponents.event_block icon="identity.credential" title="Key rotated">
           <:body>Swap first, then revoke.</:body>
           <div id="payload">the artifact</div>
         </CoreComponents.event_block>
         """)
 
-      assert html =~ "hero-key"
+      assert html =~ "identity.credential"
       assert html =~ "text-amber-300"
       # the spine: the icon's hue faded back, starting below the icon
       assert html =~ "bg-amber-300/40"
@@ -39,7 +39,7 @@ defmodule EmisarWeb.Components.EventBlockTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.event_block icon="hero-no-symbol" tone={:rose} title="Cancelled">
+        <CoreComponents.event_block icon="state.cancelled" tone={:rose} title="Cancelled">
           <:body>approval denied: out of window.</:body>
         </CoreComponents.event_block>
         """)
@@ -54,7 +54,7 @@ defmodule EmisarWeb.Components.EventBlockTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.event_block id="runner-alert" icon="hero-signal" title="Offline">
+        <CoreComponents.event_block id="runner-alert" icon="state.online" title="Offline">
           <:body>No runner is connected.</:body>
         </CoreComponents.event_block>
         """)
@@ -62,10 +62,10 @@ defmodule EmisarWeb.Components.EventBlockTest do
       assert html =~ ~s(id="runner-alert")
     end
 
-    test "rejects an empty icon instead of rendering a spine without a glyph" do
+    test "rejects an unregistered icon instead of rendering a spine without a glyph" do
       assigns = %{}
 
-      assert_raise FunctionClauseError, fn ->
+      assert_raise ArgumentError, ~r/unknown icon/, fn ->
         rendered_to_string(~H"""
         <CoreComponents.event_block icon="" title="Offline">
           <:body>No runner is connected.</:body>

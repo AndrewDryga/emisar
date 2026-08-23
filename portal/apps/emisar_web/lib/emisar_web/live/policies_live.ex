@@ -800,7 +800,7 @@ defmodule EmisarWeb.PoliciesLive do
           <.empty_state
             :if={@load_error? and @rulesets == []}
             tone={:danger}
-            icon="hero-exclamation-triangle"
+            icon="state.warning"
             title="Couldn't load targeted rulesets"
           >
             This is a load error, not an empty configuration — rulesets may well be set.
@@ -935,7 +935,7 @@ defmodule EmisarWeb.PoliciesLive do
             target="_blank"
             class="inline-flex items-center gap-0.5 text-[10px] font-medium text-zinc-400 hover:text-zinc-300"
           >
-            View all <.icon name="hero-arrow-top-right-on-square" class="h-2.5 w-2.5" />
+            View all <.icon name="action.external_link" class="h-2.5 w-2.5" />
           </.link>
         </div>
         <dl class="mt-3 space-y-2">
@@ -1037,7 +1037,7 @@ defmodule EmisarWeb.PoliciesLive do
                 variant={:secondary}
                 tone={:rose}
                 size={:lg}
-                icon="hero-trash"
+                icon="action.delete"
                 class="h-10"
                 on_confirm={JS.push("remove_ruleset", value: %{uid: @ruleset.uid})}
               >
@@ -1080,7 +1080,7 @@ defmodule EmisarWeb.PoliciesLive do
               type="button"
               phx-click="remove_ruleset"
               phx-value-uid={@ruleset.uid}
-              icon="hero-trash"
+              icon="action.delete"
               class="h-10"
             >
               Remove
@@ -1260,10 +1260,10 @@ defmodule EmisarWeb.PoliciesLive do
           columns={2}
           class="mt-3"
         >
-          <:card value="false" icon="hero-user-group" title="A different operator">
+          <:card value="false" icon="identity.group" title="A different operator">
             No signing off on your own request.
           </:card>
-          <:card value="true" icon="hero-user" title="Anyone, incl. requester">
+          <:card value="true" icon="identity.person" title="Anyone, incl. requester">
             The requester's own approval can count.
           </:card>
         </.choice_cards>
@@ -1303,7 +1303,7 @@ defmodule EmisarWeb.PoliciesLive do
         <.event_block
           :if={@single_reviewer?}
           tone={:amber}
-          icon="hero-shield-exclamation"
+          icon="security.posture_warning"
           title="In effect — a single approval is enough, and the requester may approve their own request"
           class="mt-6"
         >
@@ -1316,7 +1316,7 @@ defmodule EmisarWeb.PoliciesLive do
         <.event_block
           :if={@approval_weakenings != []}
           tone={:amber}
-          icon="hero-shield-exclamation"
+          icon="security.posture_warning"
           title="Weaker approval gate than the default policy"
           class="mt-4"
         >
@@ -1503,7 +1503,7 @@ defmodule EmisarWeb.PoliciesLive do
       <div class="@md:flex @md:items-start @md:justify-start @md:pt-4">
         <.icon_button
           :if={@can_manage}
-          icon="hero-trash"
+          icon="action.delete"
           label="Remove override"
           tone={:rose}
           size={:compact}
@@ -1522,7 +1522,7 @@ defmodule EmisarWeb.PoliciesLive do
       :if={@shadowed_by != nil}
       class="mt-2 flex items-start gap-1.5 text-xs text-amber-300"
     >
-      <.icon name="hero-exclamation-triangle-mini" class="mt-0.5 h-3.5 w-3.5 flex-none" />
+      <.icon name="state.warning" class="mt-0.5 h-3.5 w-3.5 flex-none" />
       <span :if={@override["decision"] == "deny"}>
         Shadowed by rule {@shadowed_by + 1} above — this <strong>deny</strong>
         never applies (first match wins).
@@ -1540,7 +1540,7 @@ defmodule EmisarWeb.PoliciesLive do
       :if={@unmatched and @shadowed_by == nil}
       class="mt-2 flex items-start gap-1.5 text-xs text-amber-300"
     >
-      <.icon name="hero-exclamation-triangle-mini" class="mt-0.5 h-3.5 w-3.5 flex-none" />
+      <.icon name="state.warning" class="mt-0.5 h-3.5 w-3.5 flex-none" />
       <span :if={@override["decision"] == "deny"}>
         Matches no action on this target — this <strong>deny</strong>
         blocks nothing today. Check the glob, or ignore this if the pack isn't installed yet.

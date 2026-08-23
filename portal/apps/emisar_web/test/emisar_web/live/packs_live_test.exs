@@ -65,9 +65,12 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "Outside your pack access"
       assert has_element?(lv, "section.mt-12", "Outside your pack access")
       assert html =~ "hidden-tools"
-      refute html =~ "7.7"
-      refute html =~ "hidden.wipe"
-      refute html =~ Fixtures.Catalog.pack_hash("hidden")
+      # Read the page's TEXT, not its markup: a version like "7.7" also occurs in
+      # the coordinates of an inline icon's path data.
+      text = html |> LazyHTML.from_fragment() |> LazyHTML.text()
+      refute text =~ "7.7"
+      refute text =~ "hidden.wipe"
+      refute text =~ Fixtures.Catalog.pack_hash("hidden")
     end
 
     test "uses content-start spacing when only out-of-scope packs are visible", %{conn: conn} do

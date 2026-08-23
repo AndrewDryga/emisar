@@ -441,7 +441,7 @@ defmodule EmisarWeb.DashboardLive do
       <.empty_state
         variant={:hint}
         tone={:danger}
-        icon="hero-exclamation-triangle"
+        icon="state.warning"
         title="Couldn't load pending approvals"
         class="mt-3"
       >
@@ -549,7 +549,7 @@ defmodule EmisarWeb.DashboardLive do
         :if={@recent_runs_error?}
         variant={:hint}
         tone={:danger}
-        icon="hero-exclamation-triangle"
+        icon="state.warning"
         title="Couldn't load recent runs"
         class="mt-3"
       >
@@ -826,7 +826,7 @@ defmodule EmisarWeb.DashboardLive do
         :if={@done}
         class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-500/15 text-brand-300 ring-1 ring-brand-500/30"
       >
-        <.icon name="hero-check" class="h-4 w-4" />
+        <.icon name="state.included" class="h-4 w-4" />
       </span>
       <span
         :if={not @done}
@@ -1039,7 +1039,7 @@ defmodule EmisarWeb.DashboardLive do
     ~H"""
     <.callout
       tone={:amber}
-      icon="hero-shield-exclamation"
+      icon="trust.untrusted"
       title={"#{@count} pack version#{if @count == 1, do: "", else: "s"} need#{if @count == 1, do: "s", else: ""} a decision"}
       navigate={~p"/app/#{@current_account}/packs"}
       class="mb-10"
@@ -1292,7 +1292,7 @@ defmodule EmisarWeb.DashboardLive do
     <%= if @headroom == :at_limit do %>
       <.callout
         tone={:rose}
-        icon="hero-exclamation-triangle"
+        icon="state.warning"
         title={"You're at your runner limit (#{@billing.runner_count} of #{@billing.runner_limit})."}
         class="mb-10"
       >
@@ -1312,7 +1312,7 @@ defmodule EmisarWeb.DashboardLive do
     <% else %>
       <.callout
         tone={:amber}
-        icon="hero-exclamation-triangle"
+        icon="state.warning"
         title={"One runner slot left on the #{String.capitalize(@billing.plan)} plan (#{@billing.runner_count} of #{@billing.runner_limit})."}
         class="mb-10"
       >

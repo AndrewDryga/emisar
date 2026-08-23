@@ -20,7 +20,7 @@ defmodule EmisarWeb.Components.IconButtonTest do
 
   describe "icon_button/1" do
     test "label becomes both aria-label and title — never a nameless icon" do
-      html = render_icon_button(%{icon: "hero-x-mark", label: "Close"})
+      html = render_icon_button(%{icon: "action.close", label: "Close"})
 
       assert html =~ "<button"
       assert html =~ ~s(aria-label="Close")
@@ -28,15 +28,16 @@ defmodule EmisarWeb.Components.IconButtonTest do
     end
 
     test "neutral is the default tone; danger maps to the rose hover" do
-      assert render_icon_button(%{icon: "hero-trash", label: "Remove"}) =~ "hover:text-zinc-200"
+      assert render_icon_button(%{icon: "action.delete", label: "Remove"}) =~
+               "hover:text-zinc-200"
 
-      assert render_icon_button(%{icon: "hero-trash", label: "Remove", tone: :rose}) =~
+      assert render_icon_button(%{icon: "action.delete", label: "Remove", tone: :rose}) =~
                "hover:text-rose-300"
     end
 
     test "compact keeps the 40px target and draws a 32px hover face" do
       html =
-        render_icon_button(%{icon: "hero-trash", label: "Remove", size: :compact})
+        render_icon_button(%{icon: "action.delete", label: "Remove", size: :compact})
 
       assert html =~ "min-h-10 min-w-10"
       assert html =~ "before:inset-1"
@@ -47,7 +48,7 @@ defmodule EmisarWeb.Components.IconButtonTest do
     test "disabled + event bindings ride the global rest" do
       html =
         render_icon_button(%{
-          :icon => "hero-arrow-up",
+          :icon => "action.move_up",
           :label => "Move up",
           :disabled => true,
           "phx-click" => "move_step",

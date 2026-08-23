@@ -302,7 +302,7 @@ defmodule EmisarWeb.RunDetailLive do
           data-copy-text={@run.id}
           data-copy-label-copied="Copied id"
         >
-          <.icon name="hero-clipboard-document" class="-ml-0.5 h-3.5 w-3.5" /> Copy id
+          <.icon name="action.copy" class="-ml-0.5 h-3.5 w-3.5" /> Copy id
         </.button>
         <%!-- Close the loop: the dispatch's slice of the audit trail. request_id
              groups the run's transitions, its grant use, and its cancel request
@@ -428,7 +428,7 @@ defmodule EmisarWeb.RunDetailLive do
             <%!-- Approval hold — the run is waiting on a human decision. --%>
             <.event_block
               :if={@run.status == :pending_approval and @approval_request}
-              icon="hero-hand-raised"
+              icon="state.awaiting_human"
               title="Waiting on approval"
             >
               <:body>This run is held until an approver decides.</:body>
@@ -450,7 +450,7 @@ defmodule EmisarWeb.RunDetailLive do
                which a prune may have removed). --%>
             <.event_block
               :if={@run.status == :cancelled and @run.reason_text not in [nil, ""]}
-              icon="hero-no-symbol"
+              icon="state.cancelled"
               tone={:rose}
               title="Cancelled"
             >
@@ -470,7 +470,7 @@ defmodule EmisarWeb.RunDetailLive do
 
             <.event_block
               :if={@run.status == :cancelling}
-              icon="hero-stop-circle"
+              icon="action.cancel"
               tone={:amber}
               title="Cancellation requested"
             >
@@ -484,7 +484,7 @@ defmodule EmisarWeb.RunDetailLive do
                "Error". --%>
             <.event_block
               :if={@run.error_message}
-              icon="hero-exclamation-triangle"
+              icon="state.warning"
               tone={error_block_tone(@run.status)}
               title={RunStatuses.label(@run.status)}
             >
@@ -493,7 +493,7 @@ defmodule EmisarWeb.RunDetailLive do
 
             <.event_block
               :if={@run.local_audit_failed}
-              icon="hero-document-minus"
+              icon="state.not_dispatched"
               tone={:rose}
               title="Runner audit record incomplete"
             >
@@ -509,7 +509,7 @@ defmodule EmisarWeb.RunDetailLive do
                incomplete until it reconnects (or the timeout sweep errors it). --%>
             <.event_block
               :if={@run.status in [:sent, :running, :cancelling] and @runner_connection == :offline}
-              icon="hero-bolt-slash"
+              icon="state.not_dispatched"
               title="Runner disconnected"
             >
               <:body>
@@ -522,7 +522,7 @@ defmodule EmisarWeb.RunDetailLive do
                so say what's actually blocking it. --%>
             <.event_block
               :if={@run.status == :pending and @runner_connection == :offline}
-              icon="hero-bolt-slash"
+              icon="state.not_dispatched"
               title="Queued — runner offline"
             >
               <:body>
@@ -782,7 +782,7 @@ defmodule EmisarWeb.RunDetailLive do
             <.callout
               :if={@output_state == :error}
               tone={:rose}
-              icon="hero-exclamation-triangle"
+              icon="state.warning"
               title="Couldn't load this run's output"
               class="m-4"
             >

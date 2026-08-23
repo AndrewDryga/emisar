@@ -27,7 +27,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "quickstart",
               title: "Quickstart",
               path: "/docs/quickstart",
-              icon: "hero-rocket-launch",
+              icon: "docs.quickstart",
               keywords: "getting started setup first action install",
               desc:
                 "Sign up, install a runner, and run your first audited action in under five minutes."
@@ -46,7 +46,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "host-install",
               title: "Linux host",
               path: "/docs/host-install",
-              icon: "hero-server",
+              icon: "infrastructure.host",
               keywords: "install.sh systemd service linux user",
               desc:
                 "The full runner install: every flag, the service it creates, the config file, and the user it runs as."
@@ -55,7 +55,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "containers",
               title: "Container",
               path: "/docs/containers",
-              icon: "hero-cube",
+              icon: "infrastructure.container",
               keywords: "docker podman image sidecar",
               desc:
                 "Run the runner in a container — what it can see, the two shared mechanics, and a sidecar."
@@ -64,7 +64,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "kubernetes",
               title: "Kubernetes DaemonSet",
               path: "/docs/kubernetes",
-              icon: "hero-squares-2x2",
+              icon: "infrastructure.kubernetes",
               keywords: "k8s daemonset pod manifest",
               desc:
                 "One runner per node as a DaemonSet, with the pod spec as your blast-radius dial."
@@ -73,7 +73,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "nomad",
               title: "Nomad system job",
               path: "/docs/nomad",
-              icon: "hero-rectangle-stack",
+              icon: "infrastructure.nomad",
               keywords: "hashicorp hcl system job",
               desc:
                 "A Nomad system job placing one runner on every client node, with a worked HCL spec."
@@ -82,7 +82,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "autoscaling-fleets",
               title: "Autoscaling fleets",
               path: "/docs/autoscaling-fleets",
-              icon: "hero-cpu-chip",
+              icon: "product.runner_fleet",
               keywords: "ephemeral reusable enrollment key mig asg vmss",
               desc:
                 "Enroll ephemeral runners from one reusable key as autoscaling groups — GCP MIG, AWS ASG, Azure VMSS — boot and terminate hosts."
@@ -96,7 +96,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "network-requirements",
               title: "Network requirements",
               path: "/docs/network-requirements",
-              icon: "hero-globe-alt",
+              icon: "infrastructure.network",
               keywords: "firewall egress ports proxy dns tls websocket allowlist",
               desc:
                 "What a runner host must reach on the way out — and why nothing has to reach in."
@@ -105,7 +105,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "runner-fleet",
               title: "Manage the runner fleet",
               path: "/docs/runner-fleet",
-              icon: "hero-server-stack",
+              icon: "product.runner_fleet",
               keywords: "groups labels enrollment key offline remove",
               desc: "Groups and labels, enrollment keys, pack credentials, updates, and removal."
             },
@@ -113,7 +113,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "production",
               title: "Go to production",
               path: "/docs/production",
-              icon: "hero-clipboard-document-check",
+              icon: "docs.deployment",
               keywords: "go-live checklist monitoring phased production",
               desc:
                 "Go from one runner to a governed fleet, with a phased rollout and a checklist."
@@ -122,7 +122,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "runner-upgrades",
               title: "Upgrade runners",
               path: "/docs/runner-upgrades",
-              icon: "hero-arrow-up-circle",
+              icon: "docs.upgrade",
               keywords: "update version canary rollback compatibility",
               desc:
                 "Canary a runner release, verify each batch, and keep the last known-good version ready."
@@ -131,7 +131,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "runner-credentials",
               title: "Runner credentials",
               path: "/docs/runner-credentials",
-              icon: "hero-arrow-path-rounded-square",
+              icon: "docs.credential_rotation",
               keywords: "enrollment key runner token pack credential rotate revoke",
               desc:
                 "Rotate enrollment keys, understand per-runner tokens, and swap the provider credentials packs read."
@@ -150,7 +150,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "connect-cli-agent",
               title: "CLI agent",
               path: "/docs/connect-cli-agent",
-              icon: "hero-command-line",
+              icon: "interface.cli",
               keywords: "claude code cursor claude desktop stdio bridge",
               desc:
                 "Wire Claude Code, Cursor, Claude Desktop, and the CLIs in with the emisar-mcp bridge or a raw API key."
@@ -159,7 +159,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "connect-claude-ai",
               title: "Claude.ai",
               path: "/docs/connect-claude-ai",
-              icon: "hero-cloud",
+              icon: "infrastructure.cloud",
               keywords: "claude anthropic connector custom oauth remote mcp",
               desc: "Add emisar to Claude.ai as a custom connector — no key to manage."
             },
@@ -167,7 +167,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "connect-chatgpt",
               title: "ChatGPT",
               path: "/docs/connect-chatgpt",
-              icon: "hero-cloud",
+              icon: "infrastructure.cloud",
               keywords: "chatgpt openai developer mode connector oauth remote mcp",
               desc: "Add emisar to ChatGPT through Developer mode — no key to manage."
             },
@@ -175,7 +175,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "connect-multiple-accounts",
               title: "Multiple accounts",
               path: "/docs/connect-multiple-accounts",
-              icon: "hero-rectangle-stack",
+              icon: "infrastructure.nomad",
               keywords:
                 "multiple accounts staging production alias accounts use --account switch",
               desc:
@@ -190,7 +190,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "agents-and-keys",
               title: "Manage agents & keys",
               path: "/docs/agents-and-keys",
-              icon: "hero-sparkles",
+              icon: "product.agent",
               keywords: "agent key token secret bearer mint rotate revoke scope activity",
               desc:
                 "The agents connected to your account, what each row shows, and how to mint, rotate, and revoke the key behind one."
@@ -199,7 +199,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "bridge-upgrades",
               title: "Upgrade the MCP bridge",
               path: "/docs/bridge-upgrades",
-              icon: "hero-arrow-up-circle",
+              icon: "docs.upgrade",
               keywords: "update version emisar-mcp bridge rollback compatibility",
               desc:
                 "Re-run the installer per workstation, prove the client relaunched the bridge, and pin a rollback."
@@ -218,7 +218,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "use-a-published-pack",
               title: "Use a published pack",
               path: "/docs/use-a-published-pack",
-              icon: "hero-archive-box-arrow-down",
+              icon: "pack.use_published",
               keywords: "pack suggest inspect install hash credentials trust",
               desc: "Choose, inspect, install, configure, and verify a published action pack."
             },
@@ -226,7 +226,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "pack-updates",
               title: "Roll out and roll back packs",
               path: "/docs/pack-updates",
-              icon: "hero-arrows-right-left",
+              icon: "action.sync",
               keywords: "update canary rollback content hash trust drift version",
               desc:
                 "Install the new pack version on a canary, trust the hash, and keep the prior version ready."
@@ -235,7 +235,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "publishing-packs",
               title: "Author your own pack",
               path: "/docs/publishing-packs",
-              icon: "hero-arrow-up-tray",
+              icon: "pack.publish",
               keywords: "write validate packctl publish sign",
               desc: "Write, validate, install, and trust a pack you maintain."
             },
@@ -243,7 +243,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "pack-registry",
               title: "Host your own registry",
               path: "/docs/pack-registry",
-              icon: "hero-archive-box",
+              icon: "catalog.registry",
               keywords: "private gcs s3 static host packctl",
               desc: "Run a private registry on GCS, S3, or any static host with packctl."
             },
@@ -251,7 +251,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "action-packs",
               title: "Pack reference",
               path: "/docs/action-packs",
-              icon: "hero-cube-transparent",
+              icon: "pack.reference",
               keywords: "yaml arguments validation redaction schema",
               desc: "Action YAML reference: declared args, validation, limits, and redaction."
             }
@@ -269,7 +269,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "run-an-action",
               title: "Run an action",
               path: "/docs/run-an-action",
-              icon: "hero-play",
+              icon: "action.execute",
               keywords: "dispatch console reason arguments approval result",
               desc:
                 "Select a runner and action, enter its arguments, dispatch it, and read the result."
@@ -278,7 +278,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "runs",
               title: "Runs & history",
               path: "/docs/runs",
-              icon: "hero-play-circle",
+              icon: "product.run",
               keywords: "status output cancel timeout history",
               desc:
                 "The run list and filters, every lifecycle status, live output and byte caps, cancellation, and how one dispatch's runs group."
@@ -287,7 +287,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "runbooks",
               title: "Runbooks",
               path: "/docs/runbooks",
-              icon: "hero-queue-list",
+              icon: "product.runbook",
               keywords: "procedure stages draft publish preflight",
               desc:
                 "Create, publish, approve, and review a staged procedure built from declared actions."
@@ -301,7 +301,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "troubleshooting",
               title: "Troubleshooting",
               path: "/docs/troubleshooting",
-              icon: "hero-lifebuoy",
+              icon: "product.support",
               keywords: "error failing broken offline denied 401 doctor diagnose",
               desc:
                 "Start from the symptom: the first check, the page that owns it, and what to send if you need us."
@@ -310,7 +310,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "security-incidents",
               title: "Security incidents",
               path: "/docs/security-incidents",
-              icon: "hero-shield-exclamation",
+              icon: "security.incident",
               keywords: "compromise leak breach containment response evidence",
               desc:
                 "Contain leaked emisar authority, preserve evidence, restore a known-good path, and verify the old authority no longer works."
@@ -319,7 +319,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "credentials",
               title: "Rotate and revoke credentials",
               path: "/docs/credentials",
-              icon: "hero-arrow-path-rounded-square",
+              icon: "docs.credential_rotation",
               keywords: "rotation revocation secret token key overlap",
               desc:
                 "Compare credential authority, overlap, and revocation consequences before you rotate or contain one."
@@ -338,7 +338,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "policies-and-approvals",
               title: "Policies & approvals",
               path: "/docs/policies-and-approvals",
-              icon: "hero-scale",
+              icon: "trust.policy_enforced",
               keywords: "risk tier deny allow grant approve",
               desc: "Risk-tier defaults, per-action overrides, approvals, and standing grants."
             },
@@ -346,7 +346,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "signed-dispatch",
               title: "Signed dispatch",
               path: "/docs/signed-dispatch",
-              icon: "hero-finger-print",
+              icon: "trust.signed_dispatch",
               keywords: "certificate ca leaf signing key",
               desc:
                 "A customer-authorized bridge signs each request with a key the control plane never holds."
@@ -355,7 +355,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "audit-and-siem",
               title: "Audit & SIEM",
               path: "/docs/audit-and-siem",
-              icon: "hero-document-magnifying-glass",
+              icon: "product.audit",
               keywords: "ndjson export cursor poller journal ingest",
               desc: "What gets recorded, the console, NDJSON export, and the runner journal."
             }
@@ -373,7 +373,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "authentication",
               title: "Authentication",
               path: "/docs/authentication",
-              icon: "hero-lock-closed",
+              icon: "identity.authentication",
               keywords: "sign-in password mfa require sso offboarding",
               desc: "Choose sign-in, enforcement, provisioning, and offboarding for your team."
             },
@@ -381,7 +381,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "teams-and-access",
               title: "Teams & access",
               path: "/docs/teams-and-access",
-              icon: "hero-user-group",
+              icon: "product.team",
               keywords: "members roles invitations permissions sessions",
               desc: "Roles, invitations, per-member runner scopes, MFA, sessions, and API keys."
             }
@@ -394,7 +394,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "sso",
               title: "Single sign-on (SSO)",
               path: "/docs/sso",
-              icon: "hero-identification",
+              icon: "identity.authentication",
               keywords: "oidc identity provider login issuer",
               desc:
                 "OIDC sign-in, provider operations, the generic contract, and troubleshooting."
@@ -403,7 +403,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "scim",
               title: "Directory sync (SCIM)",
               path: "/docs/scim",
-              icon: "hero-arrow-path",
+              icon: "identity.directory_sync",
               keywords: "provisioning deprovisioning groups directory bearer",
               desc:
                 "SCIM 2.0 provisioning, lifecycle, protocol support, and group-driven authorization."
@@ -466,7 +466,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "billing",
               title: "Plans & billing",
               path: "/docs/billing",
-              icon: "hero-credit-card",
+              icon: "product.billing",
               keywords: "plans invoices subscription payment upgrade downgrade",
               desc:
                 "Plan limits, feature entitlements, upgrades and downgrades, invoices, and payment failures."
@@ -485,7 +485,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "mcp-reference",
               title: "MCP CLI & reference",
               path: "/docs/mcp-reference",
-              icon: "hero-code-bracket",
+              icon: "interface.api",
               keywords:
                 "tools methods rpc idempotency errors emisar-mcp cli shell scripting json",
               desc:
@@ -495,7 +495,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "runner-cli",
               title: "Runner CLI",
               path: "/docs/runner-cli",
-              icon: "hero-command-line",
+              icon: "interface.cli",
               keywords: "emisar doctor flags journal commands",
               desc:
                 "The on-host emisar binary's operator verbs — connect, packs, events, audit, and signing — with their key flags."
@@ -504,7 +504,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "architecture",
               title: "Architecture and failure behavior",
               path: "/docs/architecture",
-              icon: "hero-rectangle-group",
+              icon: "architecture.system",
               keywords: "components topology boundaries state disconnect failure",
               desc:
                 "Which component owns each decision, what crosses each boundary, and what happens when one drops out."
@@ -513,7 +513,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "compatibility",
               title: "Compatibility and deprecation",
               path: "/docs/compatibility",
-              icon: "hero-arrows-right-left",
+              icon: "docs.compatibility",
               keywords: "version semver support freeze breaking deprecation migration",
               desc:
                 "The v1 compatibility promise, frozen public contracts, and deprecation window."
@@ -522,7 +522,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "security-model",
               title: "Security model",
               path: "/docs/security-model",
-              icon: "hero-shield-check",
+              icon: "security.posture",
               keywords: "threat trust boundary redaction retention",
               desc: "Trust boundary, searchable audit, hash-chained journal, redaction on egress."
             },
@@ -530,7 +530,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "limits",
               title: "Operational limits",
               path: "/docs/limits",
-              icon: "hero-adjustments-horizontal",
+              icon: "docs.limits",
               keywords: "caps quotas timeouts size retention",
               desc:
                 "The output, MCP, audit-export, and retention caps emisar enforces — and what happens at each."

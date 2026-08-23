@@ -94,15 +94,15 @@ defmodule EmisarWeb.AuthComponents do
             </p>
             <ul class="mt-6 space-y-3 text-sm text-zinc-400">
               <li class="flex items-start gap-2.5">
-                <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
+                <.icon name="state.included" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
                 <span>Declared actions and runbooks instead of arbitrary shell</span>
               </li>
               <li class="flex items-start gap-2.5">
-                <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
+                <.icon name="state.included" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
                 <span>Policy decides per action: allowed, denied, or held for approval</span>
               </li>
               <li class="flex items-start gap-2.5">
-                <.icon name="hero-check" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
+                <.icon name="state.included" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
                 <span>
                   Searchable audit of every action and decision, plus a hash-chained host journal
                 </span>

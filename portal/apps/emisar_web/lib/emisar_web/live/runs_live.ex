@@ -242,7 +242,7 @@ defmodule EmisarWeb.RunsLive do
             <% @load_error? -> %>
               <.empty_state
                 tone={:danger}
-                icon="hero-exclamation-triangle"
+                icon="state.warning"
                 title="Couldn't load your runs"
               >
                 This is a load error, not an empty feed — runs may well exist. Refresh the page;
@@ -259,7 +259,7 @@ defmodule EmisarWeb.RunsLive do
               <%!-- Runner-less account: naming dispatch paths that don't exist
                  yet contradicts the product's own guidance — the first job is
                  a runner (the dashboard says the same). --%>
-              <.empty_state icon="hero-bolt" title="No runs yet.">
+              <.empty_state icon="product.run" title="No runs yet.">
                 Install a
                 <.link
                   navigate={~p"/app/#{@current_account}/runners"}
@@ -271,12 +271,12 @@ defmodule EmisarWeb.RunsLive do
                 here, gated and audited.
               </.empty_state>
             <% not @any_runners? -> %>
-              <.empty_state icon="hero-bolt" title="No runs yet.">
+              <.empty_state icon="product.run" title="No runs yet.">
                 This account has no run history yet. Runs will appear here after someone with
                 runner access dispatches an action.
               </.empty_state>
             <% true -> %>
-              <.empty_state icon="hero-bolt" title="No runs yet.">
+              <.empty_state icon="product.run" title="No runs yet.">
                 Dispatch one from a
                 <.link
                   navigate={~p"/app/#{@current_account}/runners"}

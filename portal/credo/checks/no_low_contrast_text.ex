@@ -20,7 +20,7 @@ defmodule Emisar.Checks.NoLowContrastText do
 
           # ✅ — a genuinely decorative glyph / icon clears the 3:1 non-text bar at zinc-500
           <span class="select-none text-zinc-500">$</span>
-          <.icon name="hero-arrow-top-right-on-square" class="h-3.5 w-3.5 text-zinc-500" />
+          <.icon name="action.external_link" class="h-3.5 w-3.5 text-zinc-500" />
 
       Only the RESTING text color is flagged. Variant-prefixed uses stay — a
       `placeholder:text-zinc-600` hint in a labeled field, a `[&_li]:marker:` bullet,

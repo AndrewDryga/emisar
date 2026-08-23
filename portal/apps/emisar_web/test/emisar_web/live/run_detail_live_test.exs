@@ -246,7 +246,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ "Waiting on approval"
     assert html =~ "View approval"
     # <.cta_arrow/> — a decorative icon span, not a "→" screen readers announce.
-    assert html =~ "hero-arrow-right"
+    assert html =~ "action.next"
     refute html =~ "View approval →"
   end
 
@@ -388,7 +388,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    assert html =~ "hero-document-minus"
+    assert html =~ "state.not_dispatched"
     assert html =~ "Runner audit record incomplete"
     assert html =~ "audit storage before relying on its local journal"
   end

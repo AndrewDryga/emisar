@@ -110,9 +110,9 @@ defmodule EmisarWeb.Components.DropdownTest do
     end
 
     test "a leading icon renders before the label" do
-      html = render_menu_item(%{icon: "hero-plus"}, "Add")
+      html = render_menu_item(%{icon: "action.add"}, "Add")
 
-      assert html =~ "hero-plus"
+      assert html =~ "action.add"
     end
 
     test "phx-click / phx-value-* / data-confirm ride the global rest" do

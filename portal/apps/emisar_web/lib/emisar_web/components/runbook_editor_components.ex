@@ -175,7 +175,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
 
       <div :if={not @loaded?} class="mt-8">
         <div role="status" class="flex items-center gap-2 text-sm text-zinc-400">
-          <.icon name="hero-arrow-path" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
+          <.icon name="state.loading" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
           Loading runbook…
         </div>
       </div>
@@ -183,7 +183,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
       <div :if={@loaded?} class="mt-4 space-y-8">
         <.event_block
           :if={@read_only?}
-          icon="hero-lock-closed"
+          icon="state.locked"
           tone={:neutral}
           title="Read-only runbook"
         >
@@ -195,7 +195,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
 
         <.event_block
           :if={@catalog_load_error?}
-          icon="hero-exclamation-triangle"
+          icon="state.warning"
           tone={:rose}
           title="Current catalog could not be loaded"
         >
@@ -295,7 +295,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               id="discard-runbook-draft"
               title="Discard the unpublished changes?"
               confirm_label="Discard changes"
-              icon="hero-arrow-uturn-left"
+              icon="action.undo"
               variant={:secondary}
               tone={:neutral}
               class="w-full justify-center"
@@ -319,7 +319,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               id="delete-runbook"
               title="Delete this runbook?"
               confirm_label="Delete runbook"
-              icon="hero-trash"
+              icon="action.delete"
               variant={:secondary}
               tone={:rose}
               class="w-full justify-center"
@@ -583,7 +583,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
             </div>
             <.icon_button
               :if={not @read_only?}
-              icon="hero-trash"
+              icon="action.delete"
               label="Remove input"
               phx-click="remove_input"
               phx-value-index={index}
@@ -700,7 +700,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
                   </button>
                   <.icon_button
                     :if={not @read_only?}
-                    icon="hero-trash"
+                    icon="action.delete"
                     label="Remove allowed value"
                     phx-click="remove_enum_value"
                     phx-value-input={index}
@@ -893,7 +893,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
 
       <.event_block
         :if={@pristine? and @definition_issues != []}
-        icon="hero-list-bullet"
+        icon="product.runbook"
         tone={:neutral}
         title="Build the first stage"
       >
@@ -905,7 +905,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
 
       <.event_block
         :if={not @pristine? and @definition_issues != []}
-        icon="hero-exclamation-triangle"
+        icon="state.warning"
         tone={:rose}
         title={"#{length(@definition_issues)} definition #{if length(@definition_issues) == 1, do: "issue", else: "issues"}"}
       >
@@ -928,13 +928,13 @@ defmodule EmisarWeb.RunbookEditorComponents do
         :if={@definition_issues == [] and @preview.state == :loading}
         class="flex items-center gap-2 text-xs text-zinc-400"
       >
-        <.icon name="hero-arrow-path" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
+        <.icon name="state.loading" class="h-4 w-4 animate-spin motion-reduce:animate-none" />
         Checking runners, packs, trust, and policy…
       </div>
 
       <.event_block
         :if={@definition_issues == [] and @preview.state == :blocked}
-        icon="hero-no-symbol"
+        icon="state.disabled"
         tone={:rose}
         title={@blocked_title}
       >
@@ -958,7 +958,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
       </p>
 
       <div :if={@preview.state == :ready} class="space-y-4">
-        <.event_block icon="hero-check-circle" tone={:brand} title={@ready_title}>
+        <.event_block icon="state.success" tone={:brand} title={@ready_title}>
           <:body>
             {@ready_body}
           </:body>

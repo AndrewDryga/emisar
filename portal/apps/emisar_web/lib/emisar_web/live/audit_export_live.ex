@@ -176,7 +176,7 @@ defmodule EmisarWeb.AuditExportLive do
               size={:md}
               class="shrink-0"
               type="button"
-              icon="hero-key"
+              icon="identity.credential"
               phx-click="create_export_key"
             >
               Mint export token

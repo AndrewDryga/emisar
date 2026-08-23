@@ -991,7 +991,7 @@ defmodule EmisarWeb.AgentsLive do
         <.button
           navigate={~p"/app/#{@current_account}/agents/connect"}
           size={:md}
-          icon="hero-plus"
+          icon="action.add"
         >
           Connect an agent
         </.button>
@@ -1014,7 +1014,7 @@ defmodule EmisarWeb.AgentsLive do
             not ApiKeys.subject_can_issue_quick_key?(@current_subject)
         }
         variant={:bare}
-        icon="hero-cpu-chip"
+        icon="product.runner"
         title="Connecting an agent needs an operator role or above."
       >
         Ask an operator, admin, or owner to mint the key — you'll see the
@@ -1046,7 +1046,7 @@ defmodule EmisarWeb.AgentsLive do
            the page around them. --%>
       <.event_block
         :if={@live_action == :index and @rotated}
-        icon="hero-key"
+        icon="identity.credential"
         tone={:amber}
         title="Key rotated — copy the new key now; it won't be shown again"
       >
@@ -1339,7 +1339,7 @@ defmodule EmisarWeb.AgentsLive do
                         navigate={
                           ~p"/app/#{@current_account}/runs?#{[source: "mcp", api_key_id: key.id]}"
                         }
-                        icon="hero-clipboard-document-list"
+                        icon="agent.permissions"
                       >
                         View activity
                       </.menu_item>
@@ -1347,7 +1347,7 @@ defmodule EmisarWeb.AgentsLive do
                         navigate={
                           ~p"/app/#{@current_account}/audit?#{[target_kind: "api_key", target_id: key.id]}"
                         }
-                        icon="hero-shield-check"
+                        icon="product.audit"
                       >
                         View audit trail
                       </.menu_item>
@@ -1357,7 +1357,7 @@ defmodule EmisarWeb.AgentsLive do
                            [data-copy-text] listener; the click stops at the
                            button, so the menu stays open to show "Copied". --%>
                       <.menu_item
-                        icon="hero-clipboard-document"
+                        icon="action.copy"
                         data-copy-text={key.id}
                         data-copy-label-copied="Copied"
                       >
@@ -1467,7 +1467,7 @@ defmodule EmisarWeb.AgentsLive do
                 <% @load_error? -> %>
                   <.empty_state
                     tone={:danger}
-                    icon="hero-exclamation-triangle"
+                    icon="state.warning"
                     title="Couldn't load your agents"
                   >
                     This is a load error, not an empty list — your connected agents may well be
@@ -1477,7 +1477,7 @@ defmodule EmisarWeb.AgentsLive do
                 <% LiveTable.has_active_filters?(@filter_params, @filters) -> %>
                   <span class="text-zinc-400">No agents match these filters.</span>
                 <% true -> %>
-                  <.empty_state icon="hero-cpu-chip" title="No agents connected yet.">
+                  <.empty_state icon="product.agent" title="No agents connected yet.">
                     Pick a client above. Cloud clients use OAuth; local clients get a key +
                     pre-filled snippet. The agent shows up here on its first MCP call.
                   </.empty_state>
@@ -1677,7 +1677,7 @@ defmodule EmisarWeb.AgentsLive do
                        install wizard and the rotation reveal; one event, one
                        color, everywhere. --%>
                   <.event_block
-                    icon="hero-key"
+                    icon="identity.credential"
                     tone={:amber}
                     title="New key minted — it's live now"
                   >
@@ -1819,7 +1819,7 @@ defmodule EmisarWeb.AgentsLive do
           </.step_header>
           <%= if @quick_connected? do %>
             <.event_block
-              icon="hero-check-circle"
+              icon="state.success"
               tone={:brand}
               title="Connected — your agent is live"
             >
@@ -1896,7 +1896,7 @@ defmodule EmisarWeb.AgentsLive do
         end
       ]}
     >
-      <.icon :if={@disabled} name="hero-lock-closed" class="h-3.5 w-3.5" />
+      <.icon :if={@disabled} name="state.locked" class="h-3.5 w-3.5" />
       {@label}
     </button>
     """
@@ -2044,7 +2044,7 @@ defmodule EmisarWeb.AgentsLive do
           rel="noopener noreferrer"
           class="group text-brand-400 hover:text-brand-300"
         >
-          {@client_label} MCP docs <.icon name="hero-arrow-up-right" class="ml-0.5 h-3 w-3" />
+          {@client_label} MCP docs <.icon name="action.external_link" class="ml-0.5 h-3 w-3" />
         </.link>
       </p>
     </.disclosure>

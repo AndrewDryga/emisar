@@ -24,7 +24,7 @@
           recorded.
         </p>
         <div class="rise-3 mt-8 flex flex-wrap items-center gap-4">
-          <.marketing_button href={~p"/sign_up"} icon="hero-arrow-right">
+          <.marketing_button href={~p"/sign_up"} icon="action.next">
             Start free
           </.marketing_button>
           <.marketing_button variant={:secondary} href={~p"/docs/quickstart"}>
@@ -51,7 +51,7 @@
       <div class="rise-5 surface-glass mt-10 overflow-hidden rounded-xl border border-zinc-800">
         <div class="flex items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-2.5 font-mono text-[11px] text-zinc-400">
           <span class="flex items-center gap-2">
-            <.icon name="hero-sparkles" class="h-3.5 w-3.5 text-brand-400" /> claude · emisar MCP
+            <.icon name="product.agent" class="h-3.5 w-3.5 text-brand-400" /> claude · emisar MCP
           </span>
           <span class="hidden sm:inline">scoped to prod-nomad-cluster</span>
         </div>
@@ -77,7 +77,7 @@
                            mobile show just the pending "waiting on a human" signal. The
                            hand, not an arrow, makes the human the thing that resolves it. --%>
                     <span class="hidden items-center gap-1.5 sm:flex">
-                      <.icon name="hero-hand-raised" class="h-3 w-3 text-brand-400" />
+                      <.icon name="state.awaiting_human" class="h-3 w-3 text-brand-400" />
                       <.state_chip
                         state={:pass}
                         label="approved"
@@ -176,13 +176,13 @@
 
         <div class="space-y-3">
           <%= for {icon, title, desc} <- [
-            {"hero-magnifying-glass", "Starts from real state",
+            {"action.search", "Starts from real state",
              "Before it writes a line, the agent reads live logs, metrics, configs, and process state. Its plan is based on what's actually running — not a stale guess from training data."},
-            {"hero-bug-ant", "Debugs what it shipped",
+            {"story.debug", "Debugs what it shipped",
              "Deployed something that misbehaves? The agent inspects the running result, finds its own mistake, and proposes the fix. You don't have to gather the context for it."},
-            {"hero-bell-alert", "Works the incident",
+            {"story.alerting", "Works the incident",
              "When the page fires, it triages across the fleet, lines up logs against metrics, and narrows the cause. Then it hands you a fix it can run the moment you approve."},
-            {"hero-bolt", "The change waits for you",
+            {"product.run", "The change waits for you",
              "When the fix actually changes something, that's the one moment you step in — one approval, scoped and logged. Everything safe runs without you."}
           ] do %>
             <div class="flex gap-4 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
@@ -220,7 +220,7 @@
         <%!-- Pillar 1: Catalog --%>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
-            <.icon name="hero-cube-transparent" class="h-5 w-5" />
+            <.icon name="pack.reference" class="h-5 w-5" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Versioned action catalog</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
@@ -254,7 +254,7 @@
         <%!-- Pillar 2: Policy --%>
         <div class="rounded-2xl border border-brand-500/30 bg-zinc-950/60 p-8 ring-1 ring-brand-500/10">
           <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
-            <.icon name="hero-shield-check" class="h-5 w-5" />
+            <.icon name="trust.policy_enforced" class="h-5 w-5" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Policy &amp; approval</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
@@ -301,7 +301,7 @@
         <%!-- Pillar 3: Audit --%>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
           <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
-            <.icon name="hero-document-check" class="h-5 w-5" />
+            <.icon name="evidence.verified_document" class="h-5 w-5" />
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Audit + runner journal</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
@@ -436,7 +436,7 @@
                                feature stays muted so emisar's column wins by
                                contrast — a table full of rose reads as fear. --%>
                           <span class="inline-flex items-center gap-1.5 text-zinc-400">
-                            <.icon name="hero-x-mark" class="h-4 w-4" />No
+                            <.icon name="state.not_included" class="h-4 w-4" />No
                           </span>
                         <% true -> %>
                           <span class="text-zinc-400">{v}</span>
@@ -481,10 +481,10 @@
         <%= for {tag, title, scenario, icon, href} <- [
           {"storage", "A CSI driver wiped 33 hours of metrics",
            "The incident from the demo, in full — including the twist. The obvious one-line fix was a no-op, so the durable fix the agent shipped is a guard that refuses to trust the driver.",
-           "hero-circle-stack", ~p"/use-cases/csi-data-loss"},
+           "infrastructure.database", ~p"/use-cases/csi-data-loss"},
           {"ingress", "A fleet-wide 502 no backend was causing",
            "Every app behind one edge threw intermittent 502s — yet every backend was green. The agent traced it across five layers to an OOM loop and a wedged node still advertising a dead ingress, then stopped the bleed behind gated approvals.",
-           "hero-globe-alt", ~p"/use-cases/ingress-502"}
+           "infrastructure.network", ~p"/use-cases/ingress-502"}
         ] do %>
           <div class="group flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-brand-500/40">
             <div class="flex items-center justify-between">
@@ -572,17 +572,17 @@
           </.marketing_button>
           <ul class="mt-8 space-y-2 text-sm text-zinc-300">
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" /> 3 runners
+              <.icon name="state.included" class="h-4 w-4 flex-none text-brand-400" /> 3 runners
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" /> 1 user
+              <.icon name="state.included" class="h-4 w-4 flex-none text-brand-400" /> 1 user
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
+              <.icon name="state.included" class="h-4 w-4 flex-none text-brand-400" />
               7-day audit retention
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
+              <.icon name="state.included" class="h-4 w-4 flex-none text-brand-400" />
               Community support
             </li>
           </ul>
@@ -602,18 +602,19 @@
           </.marketing_button>
           <ul class="mt-8 space-y-2 text-sm text-zinc-300">
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
+              <.icon name="state.included" class="h-4 w-4 flex-none text-brand-400" />
               Up to 100 runners
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" /> Unlimited users
+              <.icon name="state.included" class="h-4 w-4 flex-none text-brand-400" />
+              Unlimited users
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
+              <.icon name="state.included" class="h-4 w-4 flex-none text-brand-400" />
               90-day audit retention
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
+              <.icon name="state.included" class="h-4 w-4 flex-none text-brand-400" />
               Automated invoices, email support
             </li>
           </ul>
@@ -634,19 +635,19 @@
           </.marketing_button>
           <ul class="mt-8 space-y-2 text-sm text-zinc-300">
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
+              <.icon name="state.included" class="h-4 w-4 flex-none text-brand-400" />
               Unlimited runners &amp; users
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
+              <.icon name="state.included" class="h-4 w-4 flex-none text-brand-400" />
               365-day audit retention
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
+              <.icon name="state.included" class="h-4 w-4 flex-none text-brand-400" />
               Security and procurement review
             </li>
             <li class="flex gap-2">
-              <.icon name="hero-check" class="h-4 w-4 flex-none text-brand-400" />
+              <.icon name="state.included" class="h-4 w-4 flex-none text-brand-400" />
               Design-partner deployment planning
             </li>
           </ul>
@@ -671,7 +672,7 @@
             <summary class="flex cursor-pointer items-center justify-between transition-colors hover:bg-zinc-900/30 px-8 py-6 text-base font-semibold text-zinc-50">
               {q}
               <.icon
-                name="hero-chevron-down"
+                name="action.disclose"
                 class="h-5 w-5 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-300 group-open:rotate-180 group-open:text-brand-400"
               />
             </summary>
@@ -709,7 +710,7 @@
               placeholder="you@company.com"
               class="w-full rounded-lg border-0 bg-zinc-900/80 px-4 py-2.5 text-sm text-white ring-1 ring-zinc-800 placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500"
             />
-            <.marketing_button type="submit" icon="hero-arrow-right" class="w-full sm:w-auto">
+            <.marketing_button type="submit" icon="action.next" class="w-full sm:w-auto">
               Start free
             </.marketing_button>
           </form>

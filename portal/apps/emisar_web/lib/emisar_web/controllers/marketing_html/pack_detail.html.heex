@@ -33,19 +33,19 @@
           :if={allowed > 0}
           class="inline-flex items-center gap-1.5 rounded-full border border-brand-500/30 bg-brand-500/5 px-3 py-1 text-brand-300"
         >
-          <.icon name="hero-bolt" class="h-3.5 w-3.5" /> {allowed} allowed by default
+          <.icon name="product.run" class="h-3.5 w-3.5" /> {allowed} allowed by default
         </span>
         <span
           :if={gated > 0}
           class="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/5 px-3 py-1 text-amber-300"
         >
-          <.icon name="hero-hand-raised" class="h-3.5 w-3.5" /> {gated} need approval by default
+          <.icon name="product.approval" class="h-3.5 w-3.5" /> {gated} need approval by default
         </span>
         <span
           :if={denied > 0}
           class="inline-flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/5 px-3 py-1 text-rose-300"
         >
-          <.icon name="hero-no-symbol" class="h-3.5 w-3.5" /> {denied} denied by default
+          <.icon name="state.cancelled" class="h-3.5 w-3.5" /> {denied} denied by default
         </span>
       </div>
 
@@ -73,7 +73,7 @@
         :if={@pack.requires_binaries != []}
         class="mt-4 flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-4"
       >
-        <.icon name="hero-information-circle" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
+        <.icon name="state.info" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
         <div class="text-sm text-amber-100/90">
           <strong class="text-amber-100">Required binaries.</strong>
           Install these on the host before relying on the pack — an action that calls a missing
@@ -259,7 +259,7 @@
                 </div>
 
                 <.icon
-                  name="hero-chevron-down"
+                  name="action.disclose"
                   class="h-4 w-4 shrink-0 text-zinc-500 transition duration-200 group-hover:text-zinc-400 group-open:rotate-180"
                 />
               </summary>

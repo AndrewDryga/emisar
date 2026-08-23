@@ -46,9 +46,9 @@
 
       <div class="mx-auto mt-12 grid max-w-3xl grid-cols-1 items-stretch gap-3 sm:grid-cols-[1fr_auto_1fr_auto_1fr]">
         <%= for {icon, label, sub} <- [
-          {"hero-cpu-chip", "Your AI agent", "Claude, Cursor, ChatGPT — anything that speaks MCP"},
-          {"hero-cloud", "Emisar cloud", "Your catalog, your rules, approvals, and the audit trail"},
-          {"hero-server", "The runner", "A small program on your server that does the work"}
+          {"product.runner", "Your AI agent", "Claude, Cursor, ChatGPT — anything that speaks MCP"},
+          {"infrastructure.cloud", "Emisar cloud", "Your catalog, your rules, approvals, and the audit trail"},
+          {"infrastructure.host", "The runner", "A small program on your server that does the work"}
         ] do %>
           <div class="flex flex-col items-center rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 text-center">
             <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
@@ -58,8 +58,8 @@
             <p class="mt-1 text-xs leading-5 text-zinc-400">{sub}</p>
           </div>
           <div :if={label != "The runner"} class="flex items-center justify-center text-zinc-700">
-            <.icon name="hero-arrow-right" class="hidden h-5 w-5 sm:block" />
-            <.icon name="hero-arrow-down" class="h-5 w-5 sm:hidden" />
+            <.icon name="action.next" class="hidden h-5 w-5 sm:block" />
+            <.icon name="action.move_down" class="h-5 w-5 sm:hidden" />
           </div>
         <% end %>
       </div>

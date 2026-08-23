@@ -19,10 +19,10 @@ defmodule EmisarWeb.Components.ChoiceCardsTest do
       disabled={@disabled}
       columns={2}
     >
-      <:card value="false" icon="hero-user-group" title="A different operator">
+      <:card value="false" icon="identity.group" title="A different operator">
         No signing off on your own request.
       </:card>
-      <:card value="true" icon="hero-user" title="Anyone, incl. requester">
+      <:card value="true" icon="identity.person" title="Anyone, incl. requester">
         The requester's own approval can count.
       </:card>
     </CoreComponents.choice_cards>
@@ -50,14 +50,14 @@ defmodule EmisarWeb.Components.ChoiceCardsTest do
       assert html =~
                ~r/<label[^>]*bg-black\/20[^>]*ring-zinc-800[^>]*>\s*<input[^>]*value="false"/
 
-      assert html =~ "hero-check-circle-solid"
+      assert html =~ "state.selected"
       # Brand marks the active input; it never becomes a semantic fill.
       refute html =~ "bg-brand-500"
     end
 
     test "icon disc renders only when a card declares an icon" do
       html = render_pair(%{value: false, disabled: false})
-      assert html =~ "hero-user-group"
+      assert html =~ "identity.group"
 
       assigns = %{}
 

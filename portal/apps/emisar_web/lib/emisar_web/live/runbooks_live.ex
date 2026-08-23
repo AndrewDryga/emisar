@@ -129,11 +129,11 @@ defmodule EmisarWeb.RunbooksLive do
           navigate={~p"/app/#{@current_account}/runbooks/import"}
           variant={:secondary}
           size={:md}
-          icon="hero-arrow-up-tray"
+          icon="action.upload"
         >
           Import runbook
         </.button>
-        <.button navigate={~p"/app/#{@current_account}/runbooks/new"} size={:md} icon="hero-plus">
+        <.button navigate={~p"/app/#{@current_account}/runbooks/new"} size={:md} icon="action.add">
           New runbook
         </.button>
       </:actions>
@@ -158,7 +158,7 @@ defmodule EmisarWeb.RunbooksLive do
             <% @load_error? -> %>
               <.empty_state
                 tone={:danger}
-                icon="hero-exclamation-triangle"
+                icon="state.warning"
                 title="Couldn't load your runbooks"
               >
                 This is a load error, not an empty list — your runbooks may well exist. Refresh the
@@ -169,7 +169,7 @@ defmodule EmisarWeb.RunbooksLive do
               <%!-- The intro above defines what a runbook is, so this says the one
                    thing it can add: the two ways to get a first one, matching the
                    header's two buttons. --%>
-              <.empty_state icon="hero-book-open" title="No runbooks yet.">
+              <.empty_state icon="product.runbook" title="No runbooks yet.">
                 Compose one from your fleet's actions, or import a definition you already have.
               </.empty_state>
             <% true -> %>
