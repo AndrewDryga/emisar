@@ -490,11 +490,20 @@ func validateWindowsClientConfigs(fixtures []windowsClientFixture, installed, po
 			if bytes.Contains(data, []byte(key)) {
 				return errors.New("VS Code mcp.json disclosed its API key")
 			}
-			expected := "EMISAR_URL=" + portal + "\r\n" +
-				"EMISAR_API_KEY=" + key + "\r\n" +
-				"EMISAR_CLIENT=vscode\r\n"
-			if environment, err := os.ReadFile(envPath); err != nil || string(environment) != expected {
-				return fmt.Errorf("VS Code private environment is wrong: %w, %q", err, environment)
+			// The bridge writes this file with LF on every platform — one
+			// format, no branch — and VS Code's envFile parser reads it the
+			// same way on Windows. The seeded fixtures above use CRLF because
+			// they stand in for files Windows editors really wrote; what we
+			// produce ourselves is not one of those.
+			expected := "EMISAR_URL=" + portal + "\n" +
+				"EMISAR_API_KEY=" + key + "\n" +
+				"EMISAR_CLIENT=vscode\n"
+			environment, err := os.ReadFile(envPath)
+			if err != nil {
+				return fmt.Errorf("reading the VS Code private environment: %w", err)
+			}
+			if string(environment) != expected {
+				return fmt.Errorf("VS Code private environment = %q, want %q", environment, expected)
 			}
 			continue
 		}
