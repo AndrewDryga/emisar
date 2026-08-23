@@ -95,15 +95,62 @@
           checksums="SHA256SUMS-MCP"
         />
         <p class="mt-3 text-sm leading-6 text-zinc-400">
-          The installer finds supported clients. You choose which clients to connect. Browser
-          approval creates one key for direct <code>emisar-mcp</code>
-          commands and a separate key for each selected client. Direct commands then work without
-          shell-profile exports. The installer preserves comments and other MCP servers in each
-          client config. See <.link
+          The installer then runs <code>emisar-mcp connect</code>, which finds the supported
+          clients on this machine and asks about each one. Browser approval creates one key for
+          direct <code>emisar-mcp</code>
+          commands and a separate key for each client you pick. Direct commands then work without
+          shell-profile exports. Each client config is edited in place, so its comments, settings,
+          and other MCP servers are untouched. See <.link
             navigate={~p"/docs/mcp-reference#command-line"}
             class="text-brand-400 hover:text-brand-300"
           >Use MCP tools from the shell</.link>.
         </p>
+        <.docs_h3 id="connect-later">Connect a client you install later</.docs_h3>
+        <p class="mt-2 text-base text-zinc-300">
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp connect</code>
+          is an ordinary command, so a client you install next month does not need a reinstall.
+          Run it with no arguments to be asked about each client it finds, or name one directly.
+          A client that already carries an emisar entry is left alone:
+        </p>
+        <.docs_code phx-no-format label="shell" copy_text="emisar-mcp connect --client zed"><span class="text-zinc-500">$</span> emisar-mcp connect --client zed
+
+Connect emisar
+
+  Emisar CLI      credential verified
+  Claude Code     already connected
+  Cursor          already connected
+  Codex CLI       already connected
+  Zed             not connected
+
+Approve this machine in your browser
+
+  https://emisar.dev/activate?code=FKZQ-2418
+
+If prompted, enter this code: FKZQ-2418
+
+Sent the link to your default browser. If it did not open, use the link above.
+
+Waiting for approval (Ctrl-C to cancel)…
+
+  Zed             connected → /home/operator/.config/zed/settings.json
+
+Restart any client you just connected so it picks up the new server.</.docs_code>
+        <p class="mt-3 text-sm leading-6 text-zinc-400">
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--all</code>
+          takes every client it finds without asking.
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp disconnect</code>
+          is the reverse and touches nothing else in those files. Add
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--auto-permit</code>
+          to also silence a client's own "allow this tool?" prompt for the emisar server alone —
+          emisar decides every action server-side, so that prompt adds nothing for its tools. It
+          is opt-in, and only Claude Code, Gemini CLI, Codex CLI, and Grok CLI scope that setting
+          to one server.
+        </p>
+        <p class="mt-3 text-sm leading-6 text-zinc-400">
+          A rerun checks the stored credential against the same account and keeps it. You only see
+          the browser again when the control plane has rejected it.
+        </p>
+
         <p class="mt-3 text-sm leading-6 text-zinc-400">
           The bridge is deliberately thin. It owns transport correctness only, and every tool, its
           input schema, and its result come from the control plane — so an installed bridge keeps
@@ -223,7 +270,7 @@
           Open <a
             href={~p"/app/audit"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-          >Audit</a>. Confirm that the event names the client, runner, action, and reason.
+          >Audit</a>. Confirm that the event records the client, runner, action, and reason.
         </li>
       </ol>
 
