@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -222,6 +223,38 @@ func TestClientInstallAndRemove(t *testing.T) {
 	}
 }
 
+// A Windows command path carries backslashes, and the expectation templates
+// place it inside a JSON string. Splicing it raw produced \U from
+// C:\Users\..., so every JSON-config client failed on Windows while the
+// config the installer wrote was perfectly fine. Running the substitution over
+// a Windows-shaped path here keeps that reachable from any platform.
+func TestJSONEntryExpectationSurvivesAWindowsPath(t *testing.T) {
+	const windowsCommand = `C:\Users\runneradmin\AppData\Local\emisar\emisar-mcp.exe`
+
+	expected := strings.ReplaceAll(
+		`{"command":"BIN","args":[]}`, "BIN", jsonStringBody(t, windowsCommand))
+
+	var want map[string]any
+	if err := decodeJSON([]byte(expected), &want); err != nil {
+		t.Fatalf("a Windows path must not break the expectation: %v", err)
+	}
+	if want["command"] != windowsCommand {
+		t.Fatalf("command = %v, want %s", want["command"], windowsCommand)
+	}
+}
+
+// jsonStringBody renders s as it would appear BETWEEN the quotes of a JSON
+// string, so a value can be substituted into a quoted placeholder in a literal
+// expectation without breaking it.
+func jsonStringBody(t *testing.T, s string) string {
+	t.Helper()
+	encoded, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("encoding %q for a JSON string: %v", s, err)
+	}
+	return string(encoded[1 : len(encoded)-1])
+}
+
 func assertJSONEntry(t *testing.T, client detectedClient, raw, expected, command string) {
 	t.Helper()
 	document, err := parseJSONConfig(raw)
@@ -232,8 +265,12 @@ func assertJSONEntry(t *testing.T, client detectedClient, raw, expected, command
 	if !ok {
 		t.Fatalf("no emisar entry at %v:\n%s", client.container, raw)
 	}
-	expected = strings.ReplaceAll(expected, "BIN", command)
-	expected = strings.ReplaceAll(expected, "ENVFILE", client.EnvFilePath)
+	// BIN and ENVFILE stand inside JSON string literals, so the paths replacing
+	// them have to be escaped for that context. A Windows path splices in as
+	// C:\Users\..., and \U is not a valid JSON escape — the expectation, not the
+	// config under test, is what fails to parse.
+	expected = strings.ReplaceAll(expected, "BIN", jsonStringBody(t, command))
+	expected = strings.ReplaceAll(expected, "ENVFILE", jsonStringBody(t, client.EnvFilePath))
 	var want any
 	if err := decodeJSON([]byte(expected), &want); err != nil {
 		t.Fatalf("bad expectation: %v", err)

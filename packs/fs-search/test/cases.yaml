@@ -31,10 +31,18 @@ cases:
             dd if=/dev/zero of=/tmp/packtest-du/visible/blob bs=1M count=2 2>/dev/null
             dd if=/dev/zero of=/tmp/packtest-du/toplevel.bin bs=1M count=4 2>/dev/null
     expect:
-      # One contiguous substring, so this asserts the ranking order and not just
-      # that three paths were mentioned somewhere.
+      # Contiguous, so this asserts the ranking order and not just that three
+      # paths were mentioned somewhere.
+      #
+      # A DIRECTORY's total includes the directory's own block, and `du -h`
+      # rounds up, so .cache reads 8.0M or 8.1M depending on the filesystem
+      # under the runner — it read 8.0M on Docker Desktop and 8.1M on CI. Only
+      # the file entry's size is pinned: the window opens at the tab after
+      # .cache's size, and closes on the magnitude of visible's, which the
+      # directory block cannot move.
       stdout_contains:
-        - "8.0M\t/tmp/packtest-du/.cache\n4.0M\t/tmp/packtest-du/toplevel.bin\n2.0M\t/tmp/packtest-du/visible\n"
+        - "\t/tmp/packtest-du/.cache\n4.0M\t/tmp/packtest-du/toplevel.bin\n2."
+        - "M\t/tmp/packtest-du/visible\n"
       stdout_not_contains:
         - /tmp/packtest-du/.ssh
         - "/tmp/packtest-du\n"
