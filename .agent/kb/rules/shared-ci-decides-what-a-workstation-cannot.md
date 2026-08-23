@@ -67,6 +67,25 @@ re-run of the same commit, then failed again on a third fix. Three readiness
 fixes each moved its failure to a different case before the honest answer turned
 out to be that the pack keeps its slower readiness.
 
+**The test itself can be what reads the machine.** The surfaces above fail
+locally because the environment differs. A test can also fail only in CI because
+the test reads something the host supplies and pins it. Three of those landed in
+one change, each invisible to a green `./run gate all`:
+
+| What the test read | How it failed |
+|---|---|
+| An inherited environment variable | The fixture overrode `HOME` but not `XDG_CONFIG_HOME`, which a developer's shell leaves unset and GitHub's Ubuntu images export. The bridge resolved VS Code's and Claude Desktop's config directory outside the sandbox, so both read as not installed and left `connect --all` |
+| A platform's path syntax inside a data format | A Windows command path was substituted into a JSON string expectation unescaped, so `C:\Users` became the invalid escape `\U`. The expectation failed to parse, not the config the installer had written |
+| A tool's output that depends on the filesystem | A case pinned `du -h` sizes for directory entries. A directory's total carries its own block and `du -h` rounds up, so one tree read `8.0M` on Docker Desktop and `8.1M` on CI |
+
+**Reproduce it off the platform that shows it.** Each becomes deterministic once
+you name the input the host supplies: export `XDG_CONFIG_HOME` and the installer
+harness fails on a Mac, run the substitution over a Windows-shaped path and the
+JSON breaks anywhere, and both real `du` outputs can be checked against the
+assertion with no Linux runner at all. Pinning that input is the fix and the
+regression test in one pass. Pushing a guess and waiting for the matrix is the
+thing to avoid, since a red CI run tells you the same thing a day later.
+
 **How it's enforced.** `./run test packs` ends a passing run by naming what this
 host could not decide — file ownership, AppArmor, startup races — and pointing
 at the Linux matrix. It reports the limits rather than failing, because
@@ -74,4 +93,5 @@ iterating locally is the point; what it refuses to do is let the pass count
 stand as a verdict. `packTestHostBlindSpots` is unit-tested against a
 workstation, Docker Desktop on Linux, a roomy Linux host, and a runner-shaped
 host. Sweep signal: a claim that one of the surfaces above is verified, backed
-only by a workstation run.
+only by a workstation run, and an assertion that pins a size, a path, or a
+directory the host supplies rather than the test.
