@@ -137,12 +137,18 @@ defmodule EmisarWeb.IconsTest do
       end
     end
 
+    # Founder call (2026-08-23): these technology marks ARE the subject where
+    # they render, so they keep their official trademark ink, matching the
+    # Review 14 artwork. Every other master stays colourless.
+    @official_ink ~w(infrastructure/kubernetes.svg infrastructure/nomad.svg)
+
     test "a master states no colour of its own outside a mask" do
       # Anatomy paints in `currentColor` and emphasis goes through the semantic
-      # classes, so an icon takes the colour of the surface it lands on — a
-      # third-party mark inside first-party chrome included. Only a mask names
-      # literal black and white, and those are its luminance, not ink.
-      for path <- @masters do
+      # classes, so an icon takes the colour of the surface it lands on. Only a
+      # mask names literal black and white, and those are its luminance, not
+      # ink. The sole exceptions are the founder-locked official marks above.
+      for path <- @masters,
+          Path.join(path |> Path.dirname() |> Path.basename(), Path.basename(path)) not in @official_ink do
         without_masks = String.replace(File.read!(path), ~r/<mask[\s\S]*?<\/mask>/, "")
 
         refute without_masks =~ ~r/(?:fill|stroke)="#/, "#{path} hardcodes a colour"

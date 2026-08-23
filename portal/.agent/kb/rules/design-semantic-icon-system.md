@@ -62,9 +62,19 @@ it is reached through its semantic token and its provenance stays recorded.
   stay conventional enough to recognize without learning Emisar first.
 - **One coordinate system.** First-party regular and compact masters use the
   same centered 24-unit grid, round caps and joins, and geometric-precision
-  rendering. Default visible outline weights are `1.74` at 16 px, `1.64` at
-  20 px, and `1.55` at 24 px and above. A local weight override is reserved for
-  genuinely finer internal anatomy and needs native-size evidence.
+  rendering. A local weight override is reserved for genuinely finer internal
+  anatomy and needs native-size evidence.
+- **Optical weight is an ON-SCREEN target, never a grid-unit constant.** A
+  stroke value scales with the viewBox, so one unit number that looks right at
+  24 px collapses into a ~1.1 px hairline by 16 px — the migration shipped that
+  way and small icons read faint, blurry, and smaller than their text (founder
+  correction, 2026-08-23). The renderer holds the drawn stroke at ≈1.55–1.65
+  CSS px at every size: the 16/20 buckets project through a slightly zoomed
+  viewBox (`icon_viewbox/1`) and carry heavier units (`2.2`/`1.85` in
+  `app.css`), converging to `1.55` at 24 px and above — the same optical-size
+  compensation type designers cut into small faces. Judge any weight change at
+  1× device scale too, where fractional strokes blur worst. Pinned by
+  `EmisarWeb.Components.IconTest`.
 - **Compact is an optical master, not another icon.** The regular master is the
   default. Add a dedicated 16 px master only when scaling loses a gap, center,
   silhouette, or modifier. It must preserve the regular master's metaphor and
@@ -135,12 +145,13 @@ concept.
   that renders a caller-supplied `icon` inside navigation, a menu panel, or a
   tab strip. Pinned by `EmisarWeb.Components.NavBadgeTest` and
   `EmisarWeb.Components.DropdownTest`.
-- **A third-party mark inside first-party chrome inherits the surface's color
-  system.** Keep the official silhouette; drop the trademark ink and the tile.
-  A blue Kubernetes badge and a teal Nomad hexagon were the only two colored
-  things in a docs list of emerald outline siblings. Full-color artwork belongs
-  to the locked `vendor.*` marks on their own surface, never to a semantic icon
-  (`design-console-ux.md` §7.38).
+- **A technology mark that IS the subject keeps its official ink; a vendor
+  mark used as mere chrome inherits the surface.** Founder call (2026-08-23):
+  `infrastructure.kubernetes` and `infrastructure.nomad` ship the Review 14
+  official artwork — where the reader is choosing "Kubernetes", the trademark
+  color is the recognition. The §7.38 rule still governs vendor marks in
+  console chrome (the SSO tiles); the registry's ink allowlist lives in
+  `EmisarWeb.IconsTest`.
 - An icon beside text that already states its meaning is decorative and hidden
   from assistive technology. An icon carrying unrepeated meaning gets an
   accessible name and the shared hover/focus tooltip. The visible glyph may be

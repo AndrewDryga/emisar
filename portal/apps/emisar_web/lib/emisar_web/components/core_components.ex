@@ -1533,20 +1533,32 @@ defmodule EmisarWeb.CoreComponents do
 
   def icon(assigns) do
     size = assigns.size || icon_size_from_class(assigns.class)
+    grid = Icons.grid(size)
 
     assigns =
-      assign(assigns, master: Icons.master(assigns.name, size), grid: Icons.grid(size))
+      assign(assigns, master: Icons.master(assigns.name, size), grid: grid)
 
     ~H"""
     <svg
       class={["emisar-icon", @class]}
       data-icon={@name}
       data-icon-grid={@grid}
-      viewBox="0 0 24 24"
+      viewBox={icon_viewbox(@grid)}
       aria-hidden="true"
     >{@master}</svg>
     """
   end
+
+  # Optical size compensation. A drawing projected 1:1 loses presence as the
+  # box shrinks — at 16px the masters read visibly smaller and thinner than the
+  # text beside them (the founder: icons "look smaller… blurry"). The small
+  # buckets therefore render the SAME masters through a slightly zoomed
+  # viewBox — geometry untouched, projection changed — and `overflow: visible`
+  # means nothing clips. Stroke weight is the other half of the correction and
+  # lives with these numbers' rationale in `assets/css/app.css`.
+  defp icon_viewbox(16), do: "1.2 1.2 21.6 21.6"
+  defp icon_viewbox(20), do: "0.6 0.6 22.8 22.8"
+  defp icon_viewbox(_grid), do: "0 0 24 24"
 
   @doc """
   The masks the icon registry's drawings reference, defined once for the page.

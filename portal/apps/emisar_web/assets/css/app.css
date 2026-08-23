@@ -6,9 +6,18 @@
    The semantic icon system — `EmisarWeb.Icons` and `<.icon>`. Anatomy paints
    in `currentColor`, so an icon takes the surrounding text colour the way the
    masked heroicon spans did. Stroke weight belongs to the OUTPUT SIZE rather
-   than to the file, so the registry states the 24-unit grid bucket here and
-   these rules state the weight. `overflow: visible` keeps a modifier that
-   reaches the edge of the box from clipping.
+   than to the file, so the component states the 24-unit grid bucket and these
+   rules state the weight. `overflow: visible` keeps a modifier that reaches
+   the edge of the box from clipping.
+
+   The weights are ON-SCREEN targets, not grid units: stroke-width scales with
+   the viewBox, so a unit value that looks right at 24px collapses into a
+   ~1.1px hairline by 16px — small icons rendered thinner exactly where they
+   needed to be bolder, and read faint and blurry beside their text (the
+   founder's correction). With the small buckets' zoomed viewBox (see
+   `icon_viewbox/1`) these units land at ≈1.63px @16, ≈1.62px @20, 1.55px @24
+   — slightly heavier as the box shrinks, the same optical-size compensation
+   text faces use.
    --------------------------------------------------------------------------- */
 .emisar-icon {
   display: inline-block;
@@ -22,10 +31,10 @@
   shape-rendering: geometricPrecision;
 }
 .emisar-icon[data-icon-grid="16"] {
-  stroke-width: 1.74;
+  stroke-width: 2.2;
 }
 .emisar-icon[data-icon-grid="20"] {
-  stroke-width: 1.64;
+  stroke-width: 1.85;
 }
 
 /* Semantic emphasis inside a drawing: pass/added, caution, deny/failure. Every

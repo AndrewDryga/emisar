@@ -11,12 +11,13 @@ defmodule EmisarWeb.Icons do
   variant of the same drawing, not another icon: it exists only where the 16 px
   raster loses a gap, a center, or a modifier.
 
-  Every master is drawn on a centered 24-unit grid. Stroke weight belongs to the
-  output size rather than the file, so `grid/1` reports the bucket and
-  `assets/css/app.css` sets the weight — 1.74 at 16 px, 1.64 at 20 px, 1.55
-  above. Anatomy paints in `currentColor`; the `accent`, `warn`, `danger`, and
-  `selection` classes recolor emphasis without ever being the only carrier of
-  meaning.
+  Every master is drawn on a centered 24-unit grid. Stroke weight and optical
+  projection belong to the output size rather than the file: `grid/1` reports
+  the bucket, `CoreComponents.icon_viewbox/1` zooms the small buckets slightly,
+  and `assets/css/app.css` sets the weight so the on-screen stroke stays
+  ≈1.55–1.65 px at every size instead of thinning as the box shrinks. Anatomy
+  paints in `currentColor`; the `accent`, `warn`, `danger`, and `selection`
+  classes recolor emphasis without ever being the only carrier of meaning.
 
   Where the review artwork cleared a gap by painting over it in the review
   page's own surface color, the master carries a real mask instead: the gap is
