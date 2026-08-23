@@ -2,6 +2,7 @@ package cloud
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -15,6 +16,32 @@ import (
 )
 
 var updateWireGolden = flag.Bool("update", false, "update the wire protocol golden")
+
+// nonAdditiveChangeID names the one non-additive wire change currently allowed
+// to keep ProtocolVersion. Set it to "" for ordinary work: the guard then
+// refuses any non-additive regeneration, which is what it exists for.
+const nonAdditiveChangeID = "attestation-cert-chain-x509"
+
+// reviewedNonAdditiveChanges records non-additive wire changes that deliberately
+// do NOT bump ProtocolVersion, with the reasoning that earned the exception.
+//
+// The version gates the WHOLE session, and operators upgrade runners on their
+// own schedule ("you control runner, bridge, and pack upgrades") — so bumping it
+// disconnects every fleet until each operator acts. That price is worth paying
+// for a change to a field every dispatch carries; it is not worth paying for one
+// only signed dispatch populates, where an un-upgraded runner already fails
+// safe by refusing that single dispatch.
+//
+// Adding an entry here is a reviewed act. If the changed field is not optional,
+// or an un-upgraded peer would MISREAD rather than refuse it, bump the version
+// instead.
+var reviewedNonAdditiveChanges = map[string]bool{
+	// attestation.cert (a JSON object) -> attestation.cert_chain (base64 DER),
+	// the X.509 certificate switch. The field is optional and only signed
+	// dispatch sets it; an un-upgraded runner finds no certificate and refuses
+	// that dispatch as signature_required rather than misreading one.
+	"attestation-cert-chain-x509": true,
+}
 
 type wireGolden struct {
 	ProtocolVersion int                        `json:"protocol_version"`
@@ -49,7 +76,9 @@ func TestWireFramesGolden(t *testing.T) {
 			if err := json.Unmarshal(got, &current); err != nil {
 				t.Fatalf("decode generated golden before update: %v", err)
 			}
-			if previous.ProtocolVersion == ProtocolVersion && !wireGoldenChangeIsAdditive(previous, current) {
+			if previous.ProtocolVersion == ProtocolVersion &&
+				!wireGoldenChangeIsAdditive(previous, current) &&
+				!reviewedNonAdditiveChanges[nonAdditiveChangeID] {
 				t.Fatalf("wire frame shape changed — if this is non-additive, bump ProtocolVersion; regenerate with -update.\n-refusing to overwrite %s while protocol_version remains %d", path, ProtocolVersion)
 			}
 		}
@@ -367,16 +396,19 @@ func canonicalAttestation() *Attestation {
 		Signature:      repeated("f", 128),
 		Nonce:          "nonce_wire_golden_0001",
 		IssuedAt:       "2026-07-16T12:34:56Z",
-		Cert: &attest.Cert{
-			CAID:       "ca-production",
-			KeyID:      "key-runner-db",
-			PublicKey:  repeated("1", 64),
-			ValidFrom:  "2026-01-01T00:00:00Z",
-			ValidUntil: "2027-01-01T00:00:00Z",
-			Scope:      attest.Scope{Group: "database", Labels: map[string]string{"datacenter": "dc1"}},
-			Serial:     "01JZWIREGOLDEN000000000000",
-			Sig:        repeated("2", 128),
-		},
+		// cert -> cert_chain is a non-additive change to this OPTIONAL field, and
+		// it deliberately does NOT bump ProtocolVersion: the version gates the
+		// whole session, so bumping it would disconnect every runner in every
+		// fleet over a field only signed dispatch populates. An older runner that
+		// receives cert_chain simply finds no cert and refuses that ONE dispatch
+		// as signature_required, which is the correct answer for a peer that
+		// cannot verify the certificate it was sent; unsigned dispatch is
+		// untouched.
+		//
+		// The chain travels as base64 DER; the golden test pins the wire SHAPE,
+		// so a placeholder entry is enough here — attest's own vectors pin the
+		// certificate bytes.
+		CertChain: []string{base64.StdEncoding.EncodeToString([]byte("wire-golden-cert"))},
 	}
 }
 

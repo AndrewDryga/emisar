@@ -1277,6 +1277,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "One runbook, one unpublished change, and a diff before you publish"
       assert html =~ "Large runbooks finish, and every result stays readable"
       assert html =~ "Pack CI runs only what changed"
+      assert html =~ "Signed dispatch uses your own PKI"
 
       # Product release tags — the commit history, the tags, and the changelog
       # all line up (newest and oldest both rendered).
@@ -1306,6 +1307,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "v0.40.0"
       assert html =~ "v0.41.0"
       assert html =~ "v0.41.1"
+      assert html =~ "v0.42.0"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.

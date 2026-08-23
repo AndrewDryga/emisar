@@ -164,17 +164,11 @@ defmodule Emisar.Fixtures.Runs do
       "sig" => String.duplicate("1", 128),
       "nonce" => String.duplicate("2", 32),
       "issued_at" => attrs[:issued_at] || DateTime.to_iso8601(now),
-      "cert" => %{
-        "ca_id" => attrs[:ca_id] || "acme-2026",
-        "key_id" => attrs[:key_id] || "op-dba-01",
-        "public_key" => String.duplicate("3", 64),
-        "valid_from" => DateTime.to_iso8601(DateTime.add(now, -3_600, :second)),
-        "valid_until" =>
-          attrs[:valid_until] || DateTime.to_iso8601(DateTime.add(now, 86_400, :second)),
-        "scope" => %{},
-        "serial" => "01J0CERT0000000000000000A",
-        "sig" => String.duplicate("4", 128)
-      }
+      "cert_chain" => [
+        Emisar.Fixtures.Certificates.leaf_chain_entry(
+          attrs[:valid_until] || DateTime.add(now, 86_400, :second)
+        )
+      ]
     }
 
     header = envelope |> Jason.encode!() |> Base.url_encode64(padding: false)

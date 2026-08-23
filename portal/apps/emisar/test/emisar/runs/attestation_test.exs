@@ -22,6 +22,25 @@ defmodule Emisar.Runs.AttestationTest do
       assert Attestation.validate([], facts()) == {:ok, nil}
     end
 
+    test "accepts the envelope an enterprise certificate authority really issues" do
+      # An AD CS default template — RSA-4096 issuing CA, LDAP and HTTP CDP/AIA,
+      # a policy OID — signs a leaf and an intermediate of about two kilobytes
+      # each, which measured 8,491 bytes on the wire end to end. The oversize
+      # case below probes far past the cap, so it stays green no matter where
+      # the cap sits; only asserting the accepting side catches it drifting
+      # down onto a customer whose PKI is merely ordinary.
+      chain = [
+        Base.encode64(:crypto.strong_rand_bytes(1_980)),
+        Base.encode64(:crypto.strong_rand_bytes(2_107))
+      ]
+
+      header = encode(Map.put(envelope(), "cert_chain", chain))
+
+      assert byte_size(header) > 8_192
+      assert {:ok, attestation} = Attestation.validate([header], facts())
+      assert Attestation.envelope(attestation)["cert_chain"] == chain
+    end
+
     test "rejects every relayed fact that disagrees with the call" do
       for {field, changed} <- [
             {"portal_origin", "https://other.example"},
@@ -78,7 +97,7 @@ defmodule Emisar.Runs.AttestationTest do
       assert Attestation.validate([header], facts()) == {:error, :invalid_attestation}
     end
 
-    test "rejects a duplicate key at the top level and nested in the certificate" do
+    test "rejects a duplicate key at the top level and nested in the arguments" do
       top_level =
         String.replace(
           Jason.encode!(envelope()),
@@ -89,8 +108,8 @@ defmodule Emisar.Runs.AttestationTest do
       nested =
         String.replace(
           Jason.encode!(envelope()),
-          ~s("ca_id":"customer-ca"),
-          ~s("ca_id":"customer-ca","ca_id":"attacker-ca")
+          ~s("nonce":"#{String.duplicate("2", 32)}"),
+          ~s("nonce":"#{String.duplicate("2", 32)}","nonce":"#{String.duplicate("9", 32)}")
         )
 
       for raw <- [top_level, nested] do
@@ -107,14 +126,24 @@ defmodule Emisar.Runs.AttestationTest do
         Map.put(envelope(), "runner_refs", @runner_refs ++ @runner_refs),
         Map.put(envelope(), "runner_refs", []),
         Map.put(envelope(), "sig", String.duplicate("F", 128)),
+        # Odd-length and out-of-range signatures: the bound spans Ed25519's
+        # exact 64 bytes and ECDSA P-256's variable ASN.1 length, and nothing
+        # outside it.
+        Map.put(envelope(), "sig", String.duplicate("1", 127)),
+        Map.put(envelope(), "sig", String.duplicate("1", 126)),
+        Map.put(envelope(), "sig", String.duplicate("1", 162)),
         Map.put(envelope(), "nonce", String.duplicate("2", 31)),
         Map.put(envelope(), "issued_at", "yesterday"),
         Map.put(envelope(), "reason", String.duplicate("x", 256)),
-        Map.put(envelope(), "cert", "customer-ca"),
-        put_in(envelope(), ["cert", "valid_until"], "soon"),
-        put_in(envelope(), ["cert", "public_key"], String.duplicate("3", 63)),
-        put_in(envelope(), ["cert", "scope"], %{"group" => "db", "team" => "dba"}),
-        put_in(envelope(), ["cert", "scope", "labels"], %{"env" => 1})
+        Map.put(envelope(), "cert_chain", "not-a-list"),
+        Map.put(envelope(), "cert_chain", []),
+        Map.put(envelope(), "cert_chain", ["not base64!"]),
+        Map.put(envelope(), "cert_chain", [
+          Base.encode64("a"),
+          Base.encode64("b"),
+          Base.encode64("c")
+        ]),
+        Map.put(envelope(), "cert_chain", [String.duplicate("A", 8_193)])
       ]
 
       for envelope <- malformed do
@@ -127,7 +156,7 @@ defmodule Emisar.Runs.AttestationTest do
       assert Attestation.validate(["a", "b"], facts()) == {:error, :invalid_attestation}
       assert Attestation.validate([""], facts()) == {:error, :invalid_attestation}
 
-      assert Attestation.validate([String.duplicate("a", 8_193)], facts()) ==
+      assert Attestation.validate([String.duplicate("a", 16_385)], facts()) ==
                {:error, :invalid_attestation}
 
       assert Attestation.validate([Base.url_encode64("[]", padding: false)], facts()) ==
@@ -176,16 +205,10 @@ defmodule Emisar.Runs.AttestationTest do
       "sig" => String.duplicate("1", 128),
       "nonce" => String.duplicate("2", 32),
       "issued_at" => "2026-07-14T12:00:00Z",
-      "cert" => %{
-        "ca_id" => "customer-ca",
-        "key_id" => "operator-key",
-        "public_key" => String.duplicate("3", 64),
-        "valid_from" => "2026-01-01T00:00:00Z",
-        "valid_until" => "2027-01-01T00:00:00Z",
-        "scope" => %{"group" => "db", "labels" => %{"env" => "prod"}},
-        "serial" => "01J0CERT0000000000000000A",
-        "sig" => String.duplicate("4", 128)
-      }
+      # The chain is opaque here by design: the portal bounds and base64-checks
+      # it, and the RUNNER is the only cryptographic authority for its trust,
+      # profile, and scope.
+      "cert_chain" => [Base.encode64("leaf-der-bytes")]
     }
   end
 

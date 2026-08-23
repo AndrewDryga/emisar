@@ -9,6 +9,7 @@
         {"how-it-works", "How it works"},
         {"turn-on", "Turn it on"},
         {"distributing-ca", "Distributing the CA across a fleet"},
+        {"profile", "Issue from your own PKI"},
         {"rotating", "Rotating operators"},
         {"revoking", "Revoking"},
         {"best-practices", "Best practices"},
@@ -46,7 +47,7 @@
         </li>
         <li>
           <strong>The signing key stays on your machine.</strong>
-          The bridge signs with an Ed25519 key and attaches its CA-signed certificate. It signs
+          The bridge signs with your private key and attaches its CA-signed certificate. It signs
           the argument bytes exactly as sent — it does not decode and rebuild them, so large
           integers, object order, and escapes stay exact.
         </li>
@@ -108,22 +109,25 @@
       <.docs_code
         phx-no-format
         label="shell"
-        copy_text="emisar signing init --ca-id acme-2026 --scope group=prod --ttl 24h"
-      ><span class="text-zinc-500">$</span> emisar signing init --ca-id acme-2026 --scope group=prod --ttl 24h</.docs_code>
+        copy_text="emisar signing init --ca-name acme-2026 --scope group=prod --ttl 24h"
+      ><span class="text-zinc-500">$</span> emisar signing init --ca-name acme-2026 --scope group=prod --ttl 24h</.docs_code>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong class="text-zinc-200">3. Install the CA public key</strong>
+        <strong class="text-zinc-200">3. Install the CA certificate</strong>
         in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>
-        on every runner. The CA public key is safe to commit. Ship it the way you ship the rest of
-        your config.
+        on every runner. It is safe to commit — ship it the way you ship the rest of your
+        config.
       </p>
       <.docs_code phx-no-format label="config"><span class="text-zinc-500"># /etc/emisar/config.yaml</span>
 signing:
   enforce_signatures: true
   max_attestation_age: 24h
   trusted_cas:
-    - ca_id: acme-2026
-      public_key: &lt;CA public key from signing init&gt;</.docs_code>
+    - name: acme-2026
+      pem: |
+        -----BEGIN CERTIFICATE-----
+        &lt;the CA certificate signing init printed&gt;
+        -----END CERTIFICATE-----</.docs_code>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">4. Give the leaf key + cert to your MCP bridge</strong>
@@ -134,8 +138,8 @@ signing:
         >connect a CLI agent</.link>). Store the CA private key offline. You re-sign certs with it as they expire.
       </p>
       <.docs_code phx-no-format label="config"><span class="text-zinc-500"># on the machine running your MCP bridge — not the portal, not git</span>
-EMISAR_SIGNING_KEY=&lt;leaf seed from signing init&gt;
-EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
+EMISAR_SIGNING_KEY=&lt;private key from signing init&gt;
+EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">5. Turn it on with a restart.</strong>
@@ -215,11 +219,103 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        If you already run your own PKI: these certificates are a compact Ed25519 format, not
-        X.509, so an existing certificate authority cannot issue them. You can still hold the
-        CA key in your own HSM and ship keys and certificates with your existing config and
-        secret distribution, and minting from your own tooling is possible against the
-        published format once it freezes at 1.0.
+        If you already run your own PKI, it can issue these certificates: they are X.509, so
+        Vault PKI, AD CS, step-ca, or an HSM-backed CA works, and the anchor is an ordinary CA
+        certificate. Issue against the profile below.
+      </p>
+
+      <.docs_h2 id="profile">Issue from your own PKI</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A runner accepts a certificate when it chains to one of its trusted CAs and matches
+        this profile. Anything else is refused as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_profile</code>.
+      </p>
+      <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
+        <table class="w-full min-w-[720px] text-left text-sm">
+          <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-400">
+            <tr>
+              <th class="px-4 py-3 min-w-[16rem]">What the certificate needs</th>
+              <th class="px-4 py-3 min-w-[16rem]">Why</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-900 text-zinc-300">
+            <tr>
+              <td class="px-4 py-3 align-top leading-6">
+                Exactly one URI in the subject alternative name, starting
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar://dispatch/v1</code>
+              </td>
+              <td class="px-4 py-3 align-top leading-6">
+                This is what marks a certificate as issued for emisar. A TLS server certificate
+                from the same CA does not carry it, so sharing a corporate root does not turn
+                your server certificates into signing authority.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top leading-6">An Ed25519 or ECDSA P-256 key</td>
+              <td class="px-4 py-3 align-top leading-6">
+                P-256 is there because several KMS and HSM products still do not offer Ed25519.
+                RSA is not accepted. A Windows CA issues RSA unless you tell it otherwise, so
+                this certificate needs a template set to ECDSA P-256 — the CA above it can stay
+                on RSA.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top leading-6">Not a CA certificate</td>
+              <td class="px-4 py-3 align-top leading-6">
+                A certificate that can issue others should not also sign dispatches.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top leading-6">
+                Key usage, if set, allows digital signature
+              </td>
+              <td class="px-4 py-3 align-top leading-6">
+                An issuer that states the usage has to state one that permits signing.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top leading-6">
+                A chain of the leaf plus at most one intermediate
+              </td>
+              <td class="px-4 py-3 align-top leading-6">
+                Deeper chains are refused even when they verify. Trust the deeper issuer
+                directly instead.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        No extended key usage is required: we do not own an OID for it, and reusing
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">serverAuth</code>
+        would accept the TLS certificates the scope URI exists to keep out. If you want a
+        second belt, name-constrain the issuing CA to
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar://</code>
+        URIs — then even a shared root cannot issue anything else that a runner would accept.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        The scope rides in that URI's query, and there is one spelling per scope: parameters
+        sorted, and anything outside letters, digits, and
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">-._~</code>
+        percent-encoded with uppercase hex. A certificate spelled another way is refused
+        rather than corrected, so your issuer and the runner can never disagree about what was
+        authorized.
+      </p>
+      <.docs_code phx-no-format label="scope URIs"><span class="text-zinc-500"># any runner that trusts the CA</span>
+emisar://dispatch/v1
+
+<span class="text-zinc-500"># one group</span>
+emisar://dispatch/v1?group=prod
+
+<span class="text-zinc-500"># a group and two labels, sorted</span>
+emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        In Vault PKI that is a role with
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">allowed_uri_sans</code>
+        set to the scopes you issue; in step-ca it is a certificate template with the same URI.
+        Give the bridge the key and certificate through
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
+        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
+        — a base64 PKCS#8 private key and a base64 PEM chain, each on one line.
       </p>
 
       <.docs_h2 id="rotating">Rotating operators</.docs_h2>
@@ -406,13 +502,26 @@ EMISAR_SIGNING_CERT=&lt;cert JSON from signing init&gt;</.docs_code>
             </tr>
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_profile</code>
+              </td>
+              <td class="px-4 py-3 align-top leading-6">
+                The certificate does not match the profile below — most often it carries no
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar://</code>
+                scope, so it was not issued for signing dispatches.
+              </td>
+              <td class="px-4 py-3 align-top leading-6">
+                Re-issue it against the profile below.
+              </td>
+            </tr>
+            <tr>
+              <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
                 <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_untrusted</code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                The cert's CA is not in this runner's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_cas</code>, or its CA signature does not verify.
+                The certificate does not chain to any CA in this runner's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_cas</code>.
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Add the CA public key and reload, or re-issue the cert from a CA the runner trusts.
+                Add the CA certificate and reload, or re-issue from a CA the runner trusts.
               </td>
             </tr>
             <tr>

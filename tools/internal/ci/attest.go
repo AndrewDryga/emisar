@@ -11,8 +11,11 @@ import (
 
 var (
 	emptyArgsPattern = regexp.MustCompile(`name:\s*"empty args"`)
-	certBytesPattern = regexp.MustCompile(`certBytes\s*=`)
-	envelopePattern  = regexp.MustCompile(`envelopeBase64URL\s*=`)
+	// The certificate vector is the frozen DER digest: X.509 minting from a
+	// fixed template with an Ed25519 issuer is deterministic, so both
+	// implementations must build byte-identical certificates.
+	certDigestPattern = regexp.MustCompile(`vectorLeafDERSHA256\s*=`)
+	claimSigPattern   = regexp.MustCompile(`sig:\s*` + "`")
 )
 
 func CheckAttestParity(root string) error {
@@ -59,7 +62,7 @@ func readAttestVectors(path string) (string, error) {
 	var result strings.Builder
 	inSection := false
 	for _, line := range lines {
-		if strings.HasPrefix(line, "const (") || strings.HasPrefix(line, "func vectorClaims()") || strings.HasPrefix(line, "func vectorCert()") || strings.HasPrefix(line, "func vectorEnvelope(") {
+		if strings.HasPrefix(line, "const (") || strings.HasPrefix(line, "func vectorClaims()") || strings.HasPrefix(line, "func vectorChain(") || strings.HasPrefix(line, "func vectorEnvelope(") {
 			inSection = true
 		}
 		if inSection {
@@ -72,7 +75,7 @@ func readAttestVectors(path string) (string, error) {
 		}
 	}
 	vectors := result.String()
-	if !emptyArgsPattern.MatchString(vectors) || !certBytesPattern.MatchString(vectors) || !envelopePattern.MatchString(vectors) {
+	if !emptyArgsPattern.MatchString(vectors) || !certDigestPattern.MatchString(vectors) || !claimSigPattern.MatchString(vectors) {
 		return "", fmt.Errorf("failed to extract complete attestation vectors from %s", path)
 	}
 	return vectors, nil

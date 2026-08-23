@@ -16,8 +16,8 @@ same product contract.
 
 Before 1.0, a normal product feature is a minor bump and a release hotfix is a
 patch bump. Pre-1.0 releases do not promise long-lived compatibility between
-components. The current release snapshot is product `v0.41.1`, runner
-`0.20.1`, and `emisar-mcp` `0.8.0`. Those component versions are release tips;
+components. The current release snapshot is product `v0.42.0`, runner
+`0.22.0`, and `emisar-mcp` `0.10.0`. Those component versions are release tips;
 unstamped local builds report `dev`.
 
 At 1.0:
@@ -452,8 +452,8 @@ stdio mode both authentication variables are required. Direct commands use the
 current owner-only stored account credential only when both variables are
 absent; an explicit pair overrides it, while a partial pair fails rather than
 mixing sources. In both modes it sends the user agent `emisar-mcp/<version>`.
-The attestation identifiers `emisar-attestation-v5` and `emisar-cert-v2` are
-also frozen security formats.
+The attestation identifier `emisar-attestation-v5` and the dispatch certificate
+profile `emisar-x509-profile-v1` are also frozen security formats.
 `packctl` is a maintainer-only build tool, not a customer CLI compatibility
 surface.
 
@@ -534,7 +534,7 @@ host-matched recommendations.
 and `EMISAR_URL` (the portal the connection phase talks to and writes into
 configs; default `https://emisar.dev`). The bridge installer also requires the
 selected GitHub release to be marked immutable. The current release tags are
-`runner-v0.20.1` and `mcp-v0.9.0`.
+`runner-v0.22.0` and `mcp-v0.10.0`.
 
 **The installers place the binary; the bridge owns the connection phase.** An
 interactive install runs `emisar-mcp connect` as the invoking user, and

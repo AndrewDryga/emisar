@@ -2,12 +2,23 @@ package attest
 
 import (
 	"bytes"
+	"crypto"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"math/big"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 const (
@@ -223,34 +234,137 @@ func TestVerifyRejectsMalformedSignature(t *testing.T) {
 }
 
 const (
-	vectorCASeedHex   = "2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40"
-	vectorCAPubHex    = "e7f162a10bec559afea195e4dce84b69568d5d2cb0963eb446c0685e2b17f2f0"
-	certBytes         = `{"version":"emisar-cert-v2","ca_id":"ca-acme","key_id":"op-alice","public_key":"79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664","valid_from":"2026-06-25T00:00:00Z","valid_until":"2026-06-26T00:00:00Z","scope_sha256":"75d22a7b0f024c454095764648cb9e08de2df93cfed413b76fa0aa74d93fddd4","serial":"01J0CERT0000000000000000C"}`
-	certSig           = "604cb20b49086c0018f70137a2a623ae9ea6aec82d3fd877b4719cb2e5e61ac16da7fb243902a22a6bb84d4bb3e16a1b861222ec749fee87f23281d418f2ba0a"
-	envelopeBase64URL = "eyJ2ZXJzaW9uIjoiZW1pc2FyLWF0dGVzdGF0aW9uLXY1IiwidG9vbCI6InJ1bl9hY3Rpb24iLCJwb3J0YWxfb3JpZ2luIjoiaHR0cHM6Ly9vcHMuZXhhbXBsZTo4NDQzIiwiYWN0aW9uX2lkIjoiY29ja3JvYWNoLnBhdXNlX2pvYiIsInBhY2tfcmVmIjoiY29ja3JvYWNoQDEuNC4wL3NoYTI1NjpiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiIiwiYXJnc19zaGEyNTYiOiJiZmIzMTUyNzhjNDYzYjVlNDJkNmVkMzJiMDcxYmYwMzg5ZDg4N2UyYmQyODc3ZDA4ZTU3YTRhMzZiMDI0MDNmIiwicnVubmVyX3JlZnMiOlsiZGItYX4yMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiIsImRiLWJ-MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMiXSwicmVhc29uIjoiUGF1c2UgdGhlIHNlbGVjdGVkIGpvYiBiZWZvcmUgbWFpbnRlbmFuY2UuIiwiZXZpZGVuY2Vfc2hhMjU2IjoiODRmNDIwMjQyNjljYzY5ZWY3MjVhMjg0MWM1NTk2ZWRlZjdhZDk0MGQ0NDVmNjhjMmU2YWY1NzZiODg3N2Y0MyIsImV4cGVjdGVkX3NoYTI1NiI6IjE1NzViNDc4MzgxMWRiMzk1NjA5N2M5OGQ4NWVkOGM1ZWE1ZmUyODM2NjBlODZlYWU0NmIzMjJjMDJhMzRiNTQiLCJvcGVyYXRpb25faWQiOiJvcF8wMiIsInNpZyI6IjE4MDhmZDI1ZWE0NjJlZDFlMDUyNzQ5N2JhZjdjOGU4YjFmNTQwYzIyMDU0OTRjOWJkYzg1MjJiMzkwYjM5MDliOTJkNzViODRjMzhlZDBjZDA0OTEzNzk1ZWY1ZGQ3OGU4NGY4ZmM5MDM3YjNkNTBiZTMwMmE2ZWY1Y2Q4MzBkIiwibm9uY2UiOiIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMiIsImlzc3VlZF9hdCI6IjIwMjYtMDYtMTdUMTI6MDU6MDBaIiwiY2VydCI6eyJjYV9pZCI6ImNhLWFjbWUiLCJrZXlfaWQiOiJvcC1hbGljZSIsInB1YmxpY19rZXkiOiI3OWI1NTYyZThmZTY1NGY5NDA3OGIxMTJlOGE5OGJhNzkwMWY4NTNhZTY5NWJlZDdlMGUzOTEwYmFkMDQ5NjY0IiwidmFsaWRfZnJvbSI6IjIwMjYtMDYtMjVUMDA6MDA6MDBaIiwidmFsaWRfdW50aWwiOiIyMDI2LTA2LTI2VDAwOjAwOjAwWiIsInNjb3BlIjp7Imdyb3VwIjoiZWRnZSIsImxhYmVscyI6eyJlbnYiOiJwcm9kIiwicmVnaW9uIjoidXMifX0sInNlcmlhbCI6IjAxSjBDRVJUMDAwMDAwMDAwMDAwMDAwMEMiLCJzaWciOiI2MDRjYjIwYjQ5MDg2YzAwMThmNzAxMzdhMmE2MjNhZTllYTZhZWM4MmQzZmQ4NzdiNDcxOWNiMmU1ZTYxYWMxNmRhN2ZiMjQzOTAyYTIyYTZiYjg0ZDRiYjNlMTZhMWI4NjEyMjJlYzc0OWZlZTg3ZjIzMjgxZDQxOGYyYmEwYSJ9fQ"
+	vectorCASeedHex = "2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40"
+	vectorCAPubHex  = "e7f162a10bec559afea195e4dce84b69568d5d2cb0963eb446c0685e2b17f2f0"
+	// The frozen DER digest of the vector leaf certificate. X.509 minting from a
+	// FIXED template with an Ed25519 issuer is deterministic (RFC 8032), so this
+	// is a real cross-implementation vector in the same sense the claim vectors
+	// are: the runner and the bridge must build byte-identical certificates from
+	// identical inputs, or one side is encoding the profile differently.
+	vectorLeafDERSHA256 = "e299818e97704d560f062f67595d99c8a211d59cff1c4f81b8777dc633bcdd93"
 )
 
-func vectorCAKey(t *testing.T) (ed25519.PrivateKey, ed25519.PublicKey) {
+// vectorNotBefore fixes the certificate validity window so the DER digest above
+// is stable. Tests that need a live window pass their own `now`.
+var vectorNotBefore = time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)
+
+func vectorCAKey(t *testing.T) ed25519.PrivateKey {
 	t.Helper()
 	seed, err := hex.DecodeString(vectorCASeedHex)
 	if err != nil {
 		t.Fatalf("decode CA seed: %v", err)
 	}
 	priv := ed25519.NewKeyFromSeed(seed)
-	pub := priv.Public().(ed25519.PublicKey)
-	if got := hex.EncodeToString(pub); got != vectorCAPubHex {
+	if got := hex.EncodeToString(priv.Public().(ed25519.PublicKey)); got != vectorCAPubHex {
 		t.Fatalf("CA public key drifted: got %s want %s", got, vectorCAPubHex)
 	}
-	return priv, pub
+	return priv
 }
 
-func vectorCert() Cert {
-	return Cert{
-		CAID: "ca-acme", KeyID: "op-alice", PublicKey: vectorPubHex,
-		ValidFrom: "2026-06-25T00:00:00Z", ValidUntil: "2026-06-26T00:00:00Z",
-		Scope:  Scope{Group: "edge", Labels: map[string]string{"region": "us", "env": "prod"}},
-		Serial: "01J0CERT0000000000000000C", Sig: certSig,
+// mintTestCA self-signs a CA certificate for a test fixture. It mirrors what
+// `emisar signing new-ca` issues, kept here so the attest package's tests do
+// not depend on the CLI.
+func mintTestCA(t *testing.T, key crypto.Signer, notBefore time.Time) (*x509.Certificate, []byte) {
+	t.Helper()
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "vector-ca"},
+		NotBefore:             notBefore,
+		NotAfter:              notBefore.Add(365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
 	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, key.Public(), key)
+	if err != nil {
+		t.Fatalf("mint CA: %v", err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parse CA: %v", err)
+	}
+	return cert, der
+}
+
+// leafOptions are the knobs the negative suite turns to build a certificate
+// that violates exactly one profile rule.
+type leafOptions struct {
+	scopeURIs []string // nil = the canonical vector scope
+	isCA      bool
+	keyUsage  x509.KeyUsage
+	notBefore time.Time
+	ttl       time.Duration
+	issuer    *x509.Certificate
+	issuerKey crypto.Signer
+	leafPub   crypto.PublicKey
+}
+
+func mintTestLeaf(t *testing.T, opts leafOptions) []byte {
+	t.Helper()
+	uris := opts.scopeURIs
+	if uris == nil {
+		uris = []string{"emisar://dispatch/v1?group=edge&label.env=prod&label.region=us"}
+	}
+	parsed := make([]*url.URL, 0, len(uris))
+	for _, raw := range uris {
+		uri, err := url.Parse(raw)
+		if err != nil {
+			t.Fatalf("parse scope URI %q: %v", raw, err)
+		}
+		parsed = append(parsed, uri)
+	}
+	keyUsage := opts.keyUsage
+	if keyUsage == 0 {
+		keyUsage = x509.KeyUsageDigitalSignature
+	}
+	ttl := opts.ttl
+	if ttl == 0 {
+		ttl = 24 * time.Hour
+	}
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(2),
+		Subject:               pkix.Name{CommonName: "vector-operator"},
+		NotBefore:             opts.notBefore,
+		NotAfter:              opts.notBefore.Add(ttl),
+		KeyUsage:              keyUsage,
+		BasicConstraintsValid: true,
+		IsCA:                  opts.isCA,
+		URIs:                  parsed,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, opts.issuer, opts.leafPub, opts.issuerKey)
+	if err != nil {
+		t.Fatalf("mint leaf: %v", err)
+	}
+	return der
+}
+
+// untrustedLeaf issues a well-formed certificate from a CA the runner does not
+// trust — the distribution failure, distinct from a malformed one.
+func untrustedLeaf(t *testing.T, leafPub crypto.PublicKey) []byte {
+	t.Helper()
+	_, otherKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate untrusted CA: %v", err)
+	}
+	otherCA, _ := mintTestCA(t, otherKey, vectorNotBefore)
+	return mintTestLeaf(t, leafOptions{
+		notBefore: vectorNotBefore, issuer: otherCA, issuerKey: otherKey, leafPub: leafPub,
+	})
+}
+
+// vectorChain builds the fixture chain: the vector CA and a leaf for the
+// vector signing key, both inside the frozen validity window.
+func vectorChain(t *testing.T) (*x509.CertPool, []byte) {
+	t.Helper()
+	caKey := vectorCAKey(t)
+	caCert, _ := mintTestCA(t, caKey, vectorNotBefore)
+	_, leafPub := vectorKey(t)
+	leafDER := mintTestLeaf(t, leafOptions{
+		notBefore: vectorNotBefore, issuer: caCert, issuerKey: caKey, leafPub: leafPub,
+	})
+	roots := x509.NewCertPool()
+	roots.AddCert(caCert)
+	return roots, leafDER
 }
 
 func vectorEnvelope(t *testing.T) Envelope {
@@ -260,7 +374,7 @@ func vectorEnvelope(t *testing.T) Envelope {
 	if err != nil {
 		t.Fatalf("ArgsSHA256: %v", err)
 	}
-	cert := vectorCert()
+	_, leafDER := vectorChain(t)
 	runnerRefs, err := CanonicalRunnerRefs(vector.claim.RunnerRefs)
 	if err != nil {
 		t.Fatalf("CanonicalRunnerRefs: %v", err)
@@ -274,7 +388,7 @@ func vectorEnvelope(t *testing.T) Envelope {
 		ExpectedSHA256: TextSHA256(vector.claim.Expected),
 		OperationID:    vector.claim.OperationID,
 		Signature:      vector.sig, Nonce: vector.claim.Nonce, IssuedAt: vector.claim.IssuedAt,
-		Cert: &cert,
+		CertChain: []string{base64.StdEncoding.EncodeToString(leafDER)},
 	}
 }
 
@@ -283,20 +397,23 @@ func TestEnvelopeWireVector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal envelope: %v", err)
 	}
-	if got := base64.RawURLEncoding.EncodeToString(raw); got != envelopeBase64URL {
-		t.Fatalf("envelope wire vector drifted:\n got %s\nwant %s", got, envelopeBase64URL)
-	}
-
-	decodedRaw, err := base64.RawURLEncoding.DecodeString(envelopeBase64URL)
-	if err != nil {
-		t.Fatalf("decode envelope vector: %v", err)
-	}
 	var decoded Envelope
-	if err := json.Unmarshal(decodedRaw, &decoded); err != nil {
-		t.Fatalf("unmarshal envelope vector: %v", err)
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal envelope: %v", err)
 	}
-	if decoded.Cert == nil || decoded.Cert.Sig != certSig || len(decoded.RunnerRefs) != 2 {
+	if len(decoded.CertChain) != 1 || len(decoded.RunnerRefs) != 2 {
 		t.Fatalf("decoded envelope lost signed fields: %+v", decoded)
+	}
+	// The chain travels as base64 DER, and its digest is frozen: both
+	// implementations must build the same certificate bytes from the same
+	// inputs, exactly as they must for the claim vectors above.
+	leafDER, err := base64.StdEncoding.DecodeString(decoded.CertChain[0])
+	if err != nil {
+		t.Fatalf("decode cert chain: %v", err)
+	}
+	digest := sha256.Sum256(leafDER)
+	if got := hex.EncodeToString(digest[:]); got != vectorLeafDERSHA256 {
+		t.Fatalf("vector certificate DER drifted:\n got %s\nwant %s", got, vectorLeafDERSHA256)
 	}
 	// The narrative digests are the v5 addition, and an EMPTY one is not the
 	// same as the digest of an empty string: the portal requires 64 lower-hex,
@@ -315,33 +432,216 @@ func TestEnvelopeWireVector(t *testing.T) {
 }
 
 func TestCertVectors(t *testing.T) {
-	priv, pub := vectorCAKey(t)
-	cert := vectorCert()
-	got, err := CertSigningBytes(cert)
+	roots, leafDER := vectorChain(t)
+	now := vectorNotBefore.Add(time.Hour)
+
+	leaf, scope, err := VerifyChain(roots, [][]byte{leafDER}, now)
 	if err != nil {
-		t.Fatalf("CertSigningBytes: %v", err)
+		t.Fatalf("VerifyChain: %v", err)
 	}
-	if string(got) != certBytes {
-		t.Fatalf("cert bytes drifted:\n got %q\nwant %q", got, certBytes)
+	want := Scope{Group: "edge", Labels: map[string]string{"env": "prod", "region": "us"}}
+	if scope.Group != want.Group || len(scope.Labels) != len(want.Labels) {
+		t.Fatalf("scope = %+v, want %+v", scope, want)
 	}
-	sig, err := SignCert(priv, cert)
-	if err != nil {
-		t.Fatalf("SignCert: %v", err)
-	}
-	if sig != certSig {
-		t.Fatalf("cert signature drifted: got %s want %s", sig, certSig)
-	}
-	ok, err := VerifyCert(pub, cert)
-	if err != nil || !ok {
-		t.Fatalf("VerifyCert = %v, %v; want true", ok, err)
+	for key, value := range want.Labels {
+		if scope.Labels[key] != value {
+			t.Fatalf("scope label %q = %q, want %q", key, scope.Labels[key], value)
+		}
 	}
 
-	cert.Scope.Labels["env"] = "staging"
-	ok, err = VerifyCert(pub, cert)
+	// The claim signature verifies under the certified leaf key, and a tampered
+	// claim does not.
+	priv, _ := vectorKey(t)
+	vector := vectorClaims()[1]
+	sig, err := SignClaim(priv, vector.claim)
 	if err != nil {
-		t.Fatalf("VerifyCert(tampered): %v", err)
+		t.Fatalf("SignClaim: %v", err)
+	}
+	if sig != vector.sig {
+		t.Fatalf("SignClaim drifted from the frozen vector:\n got %s\nwant %s", sig, vector.sig)
+	}
+	ok, err := VerifyClaim(leaf, vector.claim, sig)
+	if err != nil || !ok {
+		t.Fatalf("VerifyClaim = %v, %v; want true", ok, err)
+	}
+	tampered := vector.claim
+	tampered.Reason = "something else"
+	ok, err = VerifyClaim(leaf, tampered, sig)
+	if err != nil {
+		t.Fatalf("VerifyClaim(tampered): %v", err)
 	}
 	if ok {
-		t.Fatal("tampered certificate verified")
+		t.Fatal("a tampered claim verified")
+	}
+}
+
+// TestScopeURICanonicalRoundTrip proves one scope has exactly one spelling.
+func TestScopeURICanonicalRoundTrip(t *testing.T) {
+	for _, scope := range []Scope{
+		{},
+		{Group: "edge"},
+		{Labels: map[string]string{"env": "prod"}},
+		{Group: "edge", Labels: map[string]string{"env": "prod", "region": "us"}},
+		// Free-form operator input: runner label keys and values are validated
+		// nowhere in config, so the encoding must survive whatever they hold.
+		{Group: "a b&c=d", Labels: map[string]string{"key with space": "v/a?l&ue", "ünïcode": "ok"}},
+	} {
+		encoded, err := EncodeScopeURI(scope)
+		if err != nil {
+			t.Fatalf("EncodeScopeURI(%+v): %v", scope, err)
+		}
+		parsed, err := ParseScopeURI(encoded)
+		if err != nil {
+			t.Fatalf("ParseScopeURI(%q): %v", encoded, err)
+		}
+		if parsed.Group != scope.Group || len(parsed.Labels) != len(scope.Labels) {
+			t.Fatalf("round trip lost data: %+v -> %q -> %+v", scope, encoded, parsed)
+		}
+		for key, value := range scope.Labels {
+			if parsed.Labels[key] != value {
+				t.Fatalf("round trip lost label %q: %+v -> %q -> %+v", key, scope, encoded, parsed)
+			}
+		}
+	}
+}
+
+func TestParseScopeURIRejectsNonCanonical(t *testing.T) {
+	for name, raw := range map[string]string{
+		"unsorted params":      "emisar://dispatch/v1?label.region=us&group=edge",
+		"lowercase hex":        "emisar://dispatch/v1?group=a%2eb",
+		"over-encoded":         "emisar://dispatch/v1?group=%65dge",
+		"duplicate group":      "emisar://dispatch/v1?group=a&group=b",
+		"duplicate label":      "emisar://dispatch/v1?label.env=a&label.env=b",
+		"unknown parameter":    "emisar://dispatch/v1?tenant=acme",
+		"empty query":          "emisar://dispatch/v1?",
+		"wrong base":           "emisar://dispatch/v2?group=edge",
+		"parameter with no =":  "emisar://dispatch/v1?group",
+		"raw unencoded byte":   "emisar://dispatch/v1?group=a b",
+		"empty group value":    "emisar://dispatch/v1?group=",
+		"truncated encoding":   "emisar://dispatch/v1?group=a%2",
+		"invalid hex encoding": "emisar://dispatch/v1?group=a%zz",
+	} {
+		if _, err := ParseScopeURI(raw); err == nil {
+			t.Errorf("%s: ParseScopeURI(%q) accepted a non-canonical scope", name, raw)
+		}
+	}
+}
+
+// TestVerifyChainRejectsProfileViolations is the security core of the X.509
+// switch: a certificate reaches dispatch-signing authority only by satisfying
+// every profile rule, so a general-purpose CA in the same trust store cannot
+// vouch for infrastructure execution.
+func TestVerifyChainRejectsProfileViolations(t *testing.T) {
+	caKey := vectorCAKey(t)
+	caCert, _ := mintTestCA(t, caKey, vectorNotBefore)
+	_, leafPub := vectorKey(t)
+	roots := x509.NewCertPool()
+	roots.AddCert(caCert)
+	now := vectorNotBefore.Add(time.Hour)
+	base := leafOptions{notBefore: vectorNotBefore, issuer: caCert, issuerKey: caKey, leafPub: leafPub}
+
+	withOptions := func(mutate func(*leafOptions)) []byte {
+		opts := base
+		mutate(&opts)
+		return mintTestLeaf(t, opts)
+	}
+
+	// A TLS server certificate from the SAME trusted CA: no emisar SAN, so it
+	// carries no dispatch authority. This is the case the profile exists for.
+	tlsShaped := withOptions(func(o *leafOptions) { o.scopeURIs = []string{} })
+	twoScopes := withOptions(func(o *leafOptions) {
+		o.scopeURIs = []string{
+			"emisar://dispatch/v1?group=edge",
+			"emisar://dispatch/v1?group=prod",
+		}
+	})
+	caLeaf := withOptions(func(o *leafOptions) { o.isCA = true })
+	wrongUsage := withOptions(func(o *leafOptions) { o.keyUsage = x509.KeyUsageKeyEncipherment })
+	nonCanonical := withOptions(func(o *leafOptions) {
+		o.scopeURIs = []string{"emisar://dispatch/v1?label.env=prod&group=edge"}
+	})
+	expired := withOptions(func(o *leafOptions) { o.ttl = 30 * time.Minute })
+
+	for name, testCase := range map[string]struct {
+		chain [][]byte
+		code  string
+	}{
+		"no emisar SAN (a TLS-shaped certificate)": {[][]byte{tlsShaped}, CodeCertProfile},
+		"several emisar SANs":                      {[][]byte{twoScopes}, CodeCertProfile},
+		"CA certificate used as a leaf":            {[][]byte{caLeaf}, CodeCertProfile},
+		"key usage without digital signature":      {[][]byte{wrongUsage}, CodeCertProfile},
+		"non-canonical scope URI":                  {[][]byte{nonCanonical}, CodeCertProfile},
+		"chain deeper than one intermediate": {
+			[][]byte{withOptions(func(*leafOptions) {}), caCert.Raw, caCert.Raw}, CodeCertProfile,
+		},
+		"empty chain":         {[][]byte{}, CodeCertProfile},
+		"malformed DER":       {[][]byte{[]byte("not a certificate")}, CodeCertProfile},
+		"expired certificate": {[][]byte{expired}, CodeCertExpired},
+		"untrusted issuer":    {[][]byte{untrustedLeaf(t, leafPub)}, CodeCertUntrusted},
+	} {
+		_, _, err := VerifyChain(roots, testCase.chain, now)
+		if err == nil {
+			t.Errorf("%s: VerifyChain accepted the certificate", name)
+			continue
+		}
+		var certErr *CertError
+		if !errors.As(err, &certErr) {
+			t.Errorf("%s: error %v is not a *CertError", name, err)
+			continue
+		}
+		if certErr.Code != testCase.code {
+			t.Errorf("%s: code = %s, want %s (%s)", name, certErr.Code, testCase.code, certErr.Reason)
+		}
+	}
+}
+
+// TestVerifyChainAcceptsP256Leaf proves the KMS-friendly algorithm works end to
+// end: a P-256 leaf issues, verifies, and signs a claim.
+func TestVerifyChainAcceptsP256Leaf(t *testing.T) {
+	caKey := vectorCAKey(t)
+	caCert, _ := mintTestCA(t, caKey, vectorNotBefore)
+	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate P-256 key: %v", err)
+	}
+	leafDER := mintTestLeaf(t, leafOptions{
+		notBefore: vectorNotBefore, issuer: caCert, issuerKey: caKey, leafPub: leafKey.Public(),
+	})
+	roots := x509.NewCertPool()
+	roots.AddCert(caCert)
+
+	leaf, _, err := VerifyChain(roots, [][]byte{leafDER}, vectorNotBefore.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("VerifyChain(P-256): %v", err)
+	}
+	claim := vectorClaims()[0].claim
+	sig, err := SignClaim(leafKey, claim)
+	if err != nil {
+		t.Fatalf("SignClaim(P-256): %v", err)
+	}
+	ok, err := VerifyClaim(leaf, claim, sig)
+	if err != nil || !ok {
+		t.Fatalf("VerifyClaim(P-256) = %v, %v; want true", ok, err)
+	}
+}
+
+// TestScopeMatches covers the runner-side ceiling: an empty scope matches any
+// runner, a group must match exactly, and labels are a subset test.
+func TestScopeMatches(t *testing.T) {
+	labels := map[string]string{"env": "prod", "region": "us"}
+	for name, testCase := range map[string]struct {
+		scope Scope
+		want  bool
+	}{
+		"empty scope matches":        {Scope{}, true},
+		"exact group matches":        {Scope{Group: "edge"}, true},
+		"other group does not":       {Scope{Group: "core"}, false},
+		"label subset matches":       {Scope{Labels: map[string]string{"env": "prod"}}, true},
+		"wrong label value does not": {Scope{Labels: map[string]string{"env": "staging"}}, false},
+		"absent label does not":      {Scope{Labels: map[string]string{"tier": "1"}}, false},
+	} {
+		if got := testCase.scope.Matches("edge", labels); got != testCase.want {
+			t.Errorf("%s: Matches = %v, want %v", name, got, testCase.want)
+		}
 	}
 }

@@ -3,7 +3,6 @@ package cloud
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -146,11 +145,12 @@ func enforcingVerifier(t *testing.T, caIDs ...string) *signing.Verifier {
 	t.Helper()
 	cas := make([]signing.CAConfig, len(caIDs))
 	for i, id := range caIDs {
-		pub, _, err := ed25519.GenerateKey(rand.Reader)
+		_, key, err := ed25519.GenerateKey(rand.Reader)
 		if err != nil {
 			t.Fatalf("GenerateKey: %v", err)
 		}
-		cas[i] = signing.CAConfig{CAID: id, PublicKeyHex: hex.EncodeToString(pub)}
+		_, caPEM := sigCA(t, key, id)
+		cas[i] = signing.CAConfig{Name: id, PEM: caPEM}
 	}
 	v, err := signing.NewVerifier(true, cas, 24*time.Hour, "runner-state-test", "https://emisar.test", "", nil, signing.NewMemoryNonceStore())
 	if err != nil {

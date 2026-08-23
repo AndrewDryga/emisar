@@ -133,6 +133,7 @@ func requireRegular(path string) error {
 
 func environment(overrides map[string]string) []string {
 	env := os.Environ()
+	overrides = sandboxConfigHome(overrides)
 	for key, value := range overrides {
 		prefix := key + "="
 		for index := len(env) - 1; index >= 0; index-- {
@@ -143,6 +144,34 @@ func environment(overrides map[string]string) []string {
 		env = append(env, prefix+value)
 	}
 	return env
+}
+
+// sandboxConfigHome keeps XDG_CONFIG_HOME inside a sandboxed HOME.
+//
+// Overriding HOME alone does not isolate a run: on Linux the bridge prefers
+// XDG_CONFIG_HOME when resolving the directory holding VS Code's and Claude
+// Desktop's configuration, so an inherited value sends it at the real user's
+// directories while the fixture builds its markers under the sandbox. Those two
+// clients then read as not installed and drop out of connect --all.
+//
+// A developer's shell usually leaves XDG_CONFIG_HOME unset, and GitHub's Ubuntu
+// images export it — which is why this could only fail in CI. A caller that
+// names XDG_CONFIG_HOME itself is left alone.
+func sandboxConfigHome(overrides map[string]string) map[string]string {
+	home, sandboxed := overrides["HOME"]
+	if !sandboxed || home == "" {
+		return overrides
+	}
+	if _, named := overrides["XDG_CONFIG_HOME"]; named {
+		return overrides
+	}
+
+	sandboxedOverrides := make(map[string]string, len(overrides)+1)
+	for key, value := range overrides {
+		sandboxedOverrides[key] = value
+	}
+	sandboxedOverrides["XDG_CONFIG_HOME"] = filepath.Join(home, ".config")
+	return sandboxedOverrides
 }
 
 // requireAttestationOutcome holds the installers to one of two stated outcomes

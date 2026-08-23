@@ -77,15 +77,18 @@ type Signing struct {
 }
 
 // TrustedCA is one Ed25519 certificate-authority public key the runner trusts.
-// The offline CA signs short-lived certs that vouch for leaf signing keys; the
-// runner verifies the cert under ca_id's public_key, then verifies the
-// attestation under the leaf key the cert carries. public_key is hex-encoded
-// (64 chars / 32 bytes); ca_id is a stable label the cert echoes so the runner
-// knows which CA to check. The CA PRIVATE key stays offline/customer-held and
-// never touches the runner or the portal.
+// The offline CA issues short-lived X.509 certificates that vouch for leaf
+// signing keys; the runner verifies the presented chain against these anchors,
+// applies the emisar certificate profile, then verifies the attestation under
+// the leaf key the certificate carries. An anchor is the CA certificate in PEM
+// — safe to commit and ship with the rest of the config. The CA PRIVATE key
+// stays offline/customer-held and never touches the runner or the portal.
 type TrustedCA struct {
-	CAID      string `yaml:"ca_id"`
-	PublicKey string `yaml:"public_key"`
+	// Name is a display label only — the runner advertises it so an operator
+	// can confirm which anchors a host accepts. Trust comes from PEM alone;
+	// an omitted name falls back to the certificate's Subject common name.
+	Name string `yaml:"name,omitempty"`
+	PEM  string `yaml:"pem"`
 }
 
 // Runner describes this runner's identity.
@@ -307,17 +310,9 @@ func (c *Config) validateSigning() error {
 			"config: signing.enforce_signatures is on but signing.trusted_cas is empty — " +
 				"the runner would refuse every dispatch")
 	}
-	seen := make(map[string]bool, len(c.Signing.TrustedCAs))
 	for i, ca := range c.Signing.TrustedCAs {
-		if strings.TrimSpace(ca.CAID) == "" {
-			return fmt.Errorf("config: signing.trusted_cas[%d].ca_id required", i)
-		}
-		if seen[ca.CAID] {
-			return fmt.Errorf("config: signing.trusted_cas has duplicate ca_id %q", ca.CAID)
-		}
-		seen[ca.CAID] = true
-		if strings.TrimSpace(ca.PublicKey) == "" {
-			return fmt.Errorf("config: signing.trusted_cas[%d].public_key required", i)
+		if strings.TrimSpace(ca.PEM) == "" {
+			return fmt.Errorf("config: signing.trusted_cas[%d].pem required", i)
 		}
 	}
 	if c.Signing.MaxAttestationAge <= 0 {

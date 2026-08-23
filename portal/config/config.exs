@@ -80,6 +80,12 @@ config :emisar, :public_url, public_url
 config :emisar_web, EmisarWeb.Endpoint,
   url: public_url,
   adapter: Bandit.PhoenixAdapter,
+  # A signed dispatch carries its X.509 certificate chain in the
+  # `Emisar-Attestation` header, which `Emisar.Runs.Attestation` bounds at
+  # 16 KiB. Bandit's 10_000-byte default would refuse a legal attestation at the
+  # transport, before that validation could report why; the margin covers the
+  # header name and the sibling headers on the same request.
+  http_1_options: [max_header_length: 24_000],
   render_errors: [
     formats: [html: EmisarWeb.ErrorHTML, json: EmisarWeb.ErrorJSON],
     layout: false

@@ -2,15 +2,23 @@ package main
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -30,43 +38,101 @@ const (
 	testRunnerRefB   = "roach-b~fedcba9876543210fedcba9876543210"
 )
 
-func certJSONFor(t *testing.T, leafSeedHex string) string {
+// signingPairFor builds the two env-var values the bridge reads: a base64
+// PKCS#8 leaf key and a base64 PEM chain, issued by the fixed test CA.
+func signingPairFor(t *testing.T, leafSeedHex string) (keyEncoded, certEncoded string) {
 	t.Helper()
 	seed, err := hex.DecodeString(leafSeedHex)
 	if err != nil {
 		t.Fatalf("decode leaf seed: %v", err)
 	}
-	leafPub := hex.EncodeToString(ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey))
+	leafKey := ed25519.NewKeyFromSeed(seed)
+	return encodeTestKey(t, leafKey), encodeTestChain(t, testCAChain(t, leafKey.Public(), nil))
+}
+
+func encodeTestKey(t *testing.T, key crypto.Signer) string {
+	t.Helper()
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	return base64.StdEncoding.EncodeToString(der)
+}
+
+func encodeTestChain(t *testing.T, chain [][]byte) string {
+	t.Helper()
+	var pemText strings.Builder
+	for _, der := range chain {
+		pemText.Write(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	}
+	return base64.StdEncoding.EncodeToString([]byte(pemText.String()))
+}
+
+// testCAChain issues a leaf from the fixed test CA. scopeURIs nil means the
+// canonical any-runner scope; pass a slice to build a profile violation.
+func testCAChain(t *testing.T, leafPub crypto.PublicKey, scopeURIs []string) [][]byte {
+	t.Helper()
 	caSeed, err := hex.DecodeString(testCASeedHex)
 	if err != nil {
 		t.Fatalf("decode CA seed: %v", err)
 	}
-	cert := attest.Cert{
-		CAID:       "ca-test",
-		KeyID:      "operator",
-		PublicKey:  leafPub,
-		ValidFrom:  "2026-01-01T00:00:00Z",
-		ValidUntil: "2030-01-01T00:00:00Z",
-		Serial:     "01MCPSIGNTEST00000000000000",
+	caKey := ed25519.NewKeyFromSeed(caSeed)
+	caTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "ca-test"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
 	}
-	cert.Sig, err = attest.SignCert(ed25519.NewKeyFromSeed(caSeed), cert)
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, caKey.Public(), caKey)
 	if err != nil {
-		t.Fatalf("sign cert: %v", err)
+		t.Fatalf("mint CA: %v", err)
 	}
-	encoded, err := json.Marshal(cert)
+	caCert, err := x509.ParseCertificate(caDER)
 	if err != nil {
-		t.Fatalf("marshal cert: %v", err)
+		t.Fatalf("parse CA: %v", err)
 	}
-	return string(encoded)
+	if scopeURIs == nil {
+		scopeURI, err := attest.EncodeScopeURI(attest.Scope{})
+		if err != nil {
+			t.Fatalf("EncodeScopeURI: %v", err)
+		}
+		scopeURIs = []string{scopeURI}
+	}
+	parsed := make([]*url.URL, 0, len(scopeURIs))
+	for _, raw := range scopeURIs {
+		uri, err := url.Parse(raw)
+		if err != nil {
+			t.Fatalf("parse scope URI: %v", err)
+		}
+		parsed = append(parsed, uri)
+	}
+	leafTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(2),
+		Subject:               pkix.Name{CommonName: "operator"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		URIs:                  parsed,
+	}
+	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, caCert, leafPub, caKey)
+	if err != nil {
+		t.Fatalf("mint leaf: %v", err)
+	}
+	return [][]byte{leafDER}
 }
 
 func testSigner(t *testing.T) (*signer, ed25519.PublicKey) {
 	t.Helper()
-	signer, err := newSigner(testSeedHex, certJSONFor(t, testSeedHex))
+	key, cert := signingPairFor(t, testSeedHex)
+	signer, err := newSigner(key, cert)
 	if err != nil {
 		t.Fatalf("newSigner: %v", err)
 	}
-	return signer, signer.priv.Public().(ed25519.PublicKey)
+	return signer, signer.key.Public().(ed25519.PublicKey)
 }
 
 func decodeAttestationHeader(raw string) (attest.Envelope, error) {
@@ -116,31 +182,42 @@ func mustSignFrame(t *testing.T, signer *signer, frame []byte, operationID, port
 }
 
 func TestNewSignerRequiresOneStrictMatchingPair(t *testing.T) {
-	cert := certJSONFor(t, testSeedHex)
-	var oversizedCert attest.Cert
-	if err := json.Unmarshal([]byte(cert), &oversizedCert); err != nil {
-		t.Fatal(err)
-	}
-	oversizedCert.Scope.Labels = map[string]string{"oversized": strings.Repeat("a", maxSigningCertBytes)}
-	oversizedCertJSON, err := json.Marshal(oversizedCert)
+	key, cert := signingPairFor(t, testSeedHex)
+	otherKey, _ := signingPairFor(t, "1102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+
+	// A certificate with no emisar scope SAN is a TLS-shaped certificate: it
+	// would be refused by every enforcing runner, so the bridge refuses it at
+	// startup where the operator can still act on it.
+	seed, err := hex.DecodeString(testSeedHex)
 	if err != nil {
 		t.Fatal(err)
 	}
+	leafKey := ed25519.NewKeyFromSeed(seed)
+	noScopeCert := encodeTestChain(t, testCAChain(t, leafKey.Public(), []string{}))
+
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rsaDER, err := x509.MarshalPKCS8PrivateKey(rsaKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	tests := []struct {
 		name string
 		key  string
 		cert string
 	}{
-		{name: "key only", key: testSeedHex},
+		{name: "key only", key: key},
 		{name: "cert only", cert: cert},
-		{name: "invalid hex", key: "zz", cert: cert},
-		{name: "short seed", key: "00", cert: cert},
-		{name: "invalid cert JSON", key: testSeedHex, cert: "{"},
-		{name: "duplicate cert field", key: testSeedHex, cert: strings.Replace(cert, `"ca_id":"ca-test"`, `"ca_id":"ca-test","ca_id":"other"`, 1)},
-		{name: "case alias cert field", key: testSeedHex, cert: strings.Replace(cert, `"ca_id":"ca-test"`, `"ca_id":"ca-test","CA_ID":"other"`, 1)},
-		{name: "unknown cert field", key: testSeedHex, cert: strings.TrimSuffix(cert, "}") + `,"unknown":true}`},
-		{name: "oversized cert", key: testSeedHex, cert: string(oversizedCertJSON)},
-		{name: "mismatched key", key: "1102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20", cert: cert},
+		{name: "key not base64", key: "!!", cert: cert},
+		{name: "key not PKCS#8", key: base64.StdEncoding.EncodeToString([]byte("nope")), cert: cert},
+		{name: "RSA key", key: base64.StdEncoding.EncodeToString(rsaDER), cert: cert},
+		{name: "cert not base64", key: key, cert: "!!"},
+		{name: "cert not PEM", key: key, cert: base64.StdEncoding.EncodeToString([]byte("nope"))},
+		{name: "certificate without an emisar scope", key: key, cert: noScopeCert},
+		{name: "mismatched key", key: otherKey, cert: cert},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -153,7 +230,7 @@ func TestNewSignerRequiresOneStrictMatchingPair(t *testing.T) {
 	if signer, err := newSigner("", ""); err != nil || signer != nil {
 		t.Fatalf("empty pair should disable signing: signer=%v err=%v", signer, err)
 	}
-	if signer, err := newSigner(testSeedHex, cert); err != nil || signer == nil {
+	if signer, err := newSigner(key, cert); err != nil || signer == nil {
 		t.Fatalf("valid pair rejected: signer=%v err=%v", signer, err)
 	}
 }
@@ -189,8 +266,21 @@ func TestSignFrameProducesExactRunnerVerifiableClaim(t *testing.T) {
 	if want := []string{testRunnerRefA, testRunnerRefB}; !slices.Equal(envelope.RunnerRefs, want) {
 		t.Fatalf("runner refs = %v, want %v", envelope.RunnerRefs, want)
 	}
-	if envelope.Cert == nil || envelope.Cert.PublicKey != hex.EncodeToString(publicKey) {
-		t.Fatalf("attestation cert = %#v, want leaf public key", envelope.Cert)
+	// The chain must carry the leaf whose key signed — that pairing is what a
+	// runner resolves the verification key from.
+	if len(envelope.CertChain) != 1 {
+		t.Fatalf("attestation chain = %v, want one certificate", envelope.CertChain)
+	}
+	leafDER, err := base64.StdEncoding.DecodeString(envelope.CertChain[0])
+	if err != nil {
+		t.Fatalf("decode attestation chain: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(leafDER)
+	if err != nil {
+		t.Fatalf("parse attestation leaf: %v", err)
+	}
+	if !leaf.PublicKey.(ed25519.PublicKey).Equal(publicKey) {
+		t.Fatal("the attestation certificate does not carry the signing key")
 	}
 	claim := attest.Claim{
 		ActionID:     envelope.ActionID,
@@ -203,7 +293,7 @@ func TestSignFrameProducesExactRunnerVerifiableClaim(t *testing.T) {
 		Nonce:        envelope.Nonce,
 		IssuedAt:     envelope.IssuedAt,
 	}
-	valid, err := attest.Verify(publicKey, claim, envelope.Signature)
+	valid, err := attest.VerifyClaim(leaf, claim, envelope.Signature)
 	if err != nil || !valid {
 		t.Fatalf("runner reconstruction did not verify: valid=%v err=%v", valid, err)
 	}
@@ -342,9 +432,9 @@ func TestSignFrameTargetAndReasonBoundaries(t *testing.T) {
 func TestSignFrameOverBudgetEnvelopeFailsClosed(t *testing.T) {
 	signer, _ := testSigner(t)
 	largeSigner := *signer
-	largeCert := *signer.cert
-	largeCert.Scope.Labels = map[string]string{"scope": strings.Repeat("s", maxSigningCertBytes-700)}
-	largeSigner.cert = &largeCert
+	// A chain past the header budget: the envelope built around it cannot fit,
+	// so signing must error rather than emit a header the portal rejects.
+	largeSigner.certChain = []string{strings.Repeat("A", maxAttestationHeaderBytes)}
 
 	refs := make([]string, attest.MaxRunnerRefs)
 	for i := range refs {
@@ -368,16 +458,22 @@ func TestSignFrameOverBudgetEnvelopeFailsClosed(t *testing.T) {
 func TestSignFrameMaximumSupportedEnvelopeFitsPortalHeader(t *testing.T) {
 	signer, _ := testSigner(t)
 	largeSigner := *signer
-	largeCert := *signer.cert
-	largeCert.Scope.Labels = map[string]string{"scope": strings.Repeat("s", maxSigningCertBytes-700)}
-	encodedCert, err := json.Marshal(largeCert)
+	// A realistic worst-case certificate: a scope near the URI bound. The
+	// envelope built around it plus a full 16-runner target set must still fit
+	// the portal's header budget.
+	seed, err := hex.DecodeString(testSeedHex)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(encodedCert) > maxSigningCertBytes {
-		t.Fatalf("test certificate = %d bytes, budget %d", len(encodedCert), maxSigningCertBytes)
+	leafKey := ed25519.NewKeyFromSeed(seed)
+	scopeURI, err := attest.EncodeScopeURI(attest.Scope{
+		Labels: map[string]string{"scope": strings.Repeat("s", 300)},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	largeSigner.cert = &largeCert
+	largeChain := testCAChain(t, leafKey.Public(), []string{scopeURI})
+	largeSigner.certChain = []string{base64.StdEncoding.EncodeToString(largeChain[0])}
 
 	refs := make([]string, attest.MaxRunnerRefs)
 	for i := range refs {
@@ -411,9 +507,9 @@ func TestSignFrameRejectsOversizedArgsAndHeader(t *testing.T) {
 	}
 
 	largeSigner := *signer
-	largeCert := *signer.cert
-	largeCert.Scope.Labels = map[string]string{"oversized": strings.Repeat("a", maxAttestationHeaderBytes)}
-	largeSigner.cert = &largeCert
+	// A chain far past the header budget: the signer must fail closed rather
+	// than emit a header the portal will reject.
+	largeSigner.certChain = []string{strings.Repeat("A", maxAttestationHeaderBytes)}
 	if header, err := largeSigner.signFrame(runActionFrame(`{}`, []string{testRunnerRefA}), testOperationID, testPortalOrigin); err == nil || header != "" {
 		t.Fatalf("oversized attestation result = header %d bytes, error %v", len(header), err)
 	}

@@ -284,14 +284,17 @@ ENVIRONMENT
     Loopback HTTP works without it. Production should use HTTPS.
 
   EMISAR_SIGNING_KEY (optional)
-    Ed25519 private key as a 64-hex seed. Set it with EMISAR_SIGNING_CERT to
-    sign run_action intent for signature-enforcing runners. Create a pair
-    with 'emisar signing new-cert' or 'emisar signing init'. Keep it secret
+    Ed25519 or ECDSA P-256 private key, as base64 of its PKCS#8 DER on one
+    line. Set it with EMISAR_SIGNING_CERT to sign run_action intent for
+    signature-enforcing runners. Create a pair with 'emisar signing new-cert'
+    or 'emisar signing init', or issue one from your own PKI. Keep it secret
     and never put it on the control plane.
 
   EMISAR_SIGNING_CERT (optional)
-    CA-signed certificate JSON for EMISAR_SIGNING_KEY. The bridge carries it
-    with each signature; the runner verifies its trust, scope, and validity.
+    The X.509 certificate chain for EMISAR_SIGNING_KEY, as base64 of its PEM
+    text on one line (leaf first, optional intermediate after). The bridge
+    carries it with each signature; the runner verifies its trust, profile,
+    scope, and validity.
 
 CLIENT SETUP
   Install the bridge:

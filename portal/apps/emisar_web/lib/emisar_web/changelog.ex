@@ -17,6 +17,40 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-08-23],
+      slug: "signed-dispatch-uses-your-own-pki",
+      title: "Signed dispatch uses your own PKI",
+      tag: "v0.42.0",
+      summary:
+        "Signed dispatch now uses ordinary X.509 certificates, so the certificate that authorizes a run can come from the PKI you already have instead of a format only emisar reads. The certificate names the runners it may target, and each runner checks the chain against the anchors you configured. The MCP bridge also exposes every tool as a shell command, so a script or an LLM without MCP support can drive emisar directly. Windows support is complete across the bridge, its clients, and ARM64.",
+      details: [
+        {"Signed dispatch",
+         [
+           "A dispatch certificate is a standard X.509 certificate you issue from Vault, AD CS, step-ca, or any CA you already run. It carries the runners it may target in a subject alternative name, and the runner verifies the chain against the anchors in its own config. Adding an anchor takes effect on reload, without restarting the runner.",
+           "Ed25519 and ECDSA P-256 keys sign; RSA does not. Only the leaf needs an elliptic-curve key, so the CA above it can stay on RSA. The audit record keeps the fingerprint of the exact certificate that authorized each run."
+         ]},
+        {"Security",
+         [
+           "A policy edit is limited to the scope the editor holds, standing grants can be revoked in bulk, an expired agent key is revoked in one step, and a membership suspension records who did it.",
+           "Private identity-provider exemptions are confined to development builds, the privileged installer transport is constrained, and current Bandit advisories are patched."
+         ]},
+        {"Bridge and CLI",
+         [
+           "Every MCP tool is now also a bridge command, so a shell script or an LLM without MCP support can call emisar directly. Validation errors say what to send instead, runbook output drains on its own, and typed JSON output is formatted.",
+           "The bridge owns client connect and disconnect, so a client installed later is connected without reinstalling. Windows support covers the installer, its clients, and ARM64."
+         ]},
+        {"Packs",
+         [
+           "emisar pack diff shows what an upgrade changes, and emisar pack verify proves a pack is configured before you rely on it. Each pack's setup requirements appear on its page and in the CLI, pack suggest can read a registry catalog URL, and Nomad namespaces are supported."
+         ]},
+        {"Console and docs",
+         [
+           "Approval decision history is consolidated, every signer appears in the verdict, and a loaded choice stays visible while the form is edited.",
+           "The docs shell switches examples by operating system, the AI agent pages are split per client, and the quickstart, runner, and client-connection pages were rewritten in plain language."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-08-17],
       slug: "pack-ci-runs-only-what-changed",
       title: "Pack CI runs only what changed",

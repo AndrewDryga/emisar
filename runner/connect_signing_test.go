@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,19 +14,21 @@ import (
 )
 
 func TestBuildVerifierRejectsMemoryOnlyEnforcement(t *testing.T) {
-	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	_, caKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
+	caDER, err := mintCA(caKey, "ca-prod", 365*24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caPEM := encodeCertPEM(caDER)
 	cfg := &config.Config{
 		Runner: config.Runner{Group: "prod"},
 		Signing: config.Signing{
 			EnforceSignatures: true,
 			MaxAttestationAge: actionspec.Duration(time.Hour),
-			TrustedCAs: []config.TrustedCA{{
-				CAID:      "ca-prod",
-				PublicKey: hex.EncodeToString(publicKey),
-			}},
+			TrustedCAs:        []config.TrustedCA{{Name: "ca-prod", PEM: caPEM}},
 		},
 	}
 	if _, err := buildVerifier(cfg, "runner-1", signing.NewMemoryNonceStore()); err == nil {

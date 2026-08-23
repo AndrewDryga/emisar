@@ -7,12 +7,13 @@ package main
 // deliberately never signed.
 
 import (
-	"crypto/ed25519"
+	"crypto"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
+	"encoding/pem"
 	"fmt"
 	"regexp"
 	"strings"
@@ -23,9 +24,13 @@ import (
 )
 
 const (
-	attestationHeader         = "Emisar-Attestation"
-	maxAttestationHeaderBytes = 8 << 10
-	maxSigningCertBytes       = 2 << 10
+	attestationHeader = "Emisar-Attestation"
+	// The header budget grew with the X.509 switch: a DER chain is larger than
+	// the JSON certificate it replaced, and an RSA-issued leaf plus one
+	// intermediate is the worst realistic case. The portal enforces the same
+	// bound, and its HTTP stack is configured above it.
+	maxAttestationHeaderBytes = 16 << 10
+	maxSigningCertBytes       = 8 << 10
 
 	// Mirror the run_action tool schema. A bound narrower than the schema turns
 	// a valid call into "invalid input" and forwards it UNSIGNED.
@@ -41,90 +46,149 @@ const (
 
 var operationPattern = regexp.MustCompile(`^op_[0-7][0-9A-HJKMNP-TV-Z]{25}$`)
 
-// signer holds the leaf key and CA-signed certificate. The runner validates
-// certificate trust and scope; the bridge only checks that local key and cert
-// match before carrying the certificate in an action attestation.
+// signer holds the leaf key and its certificate chain. The runner validates
+// certificate trust, profile, and scope; the bridge only checks that the local
+// key and certificate match before carrying the chain in an attestation.
 type signer struct {
-	priv     ed25519.PrivateKey
-	cert     *attest.Cert
-	newNonce func() (string, error)
+	key       crypto.Signer
+	certChain []string // base64 DER, leaf first
+	newNonce  func() (string, error)
 }
 
 // newSigner builds a signer from EMISAR_SIGNING_KEY and EMISAR_SIGNING_CERT.
-// Both must be configured together. The certificate JSON is decoded strictly
-// so duplicate or unknown fields cannot disguise the credential being carried.
-func newSigner(keyHex, certJSON string) (*signer, error) {
-	if keyHex == "" && certJSON == "" {
+// Both must be configured together. The key is base64 PKCS#8 and the chain is
+// base64 of the PEM certificate text — both one line, so they paste into an env
+// var or a secret manager without a heredoc.
+//
+// Everything checkable locally is checked here: an unusable key algorithm, a
+// certificate that is not for emisar, or a key/certificate mismatch fails at
+// startup rather than as an opaque refusal at an enforcing runner.
+func newSigner(keyEncoded, certEncoded string) (*signer, error) {
+	if keyEncoded == "" && certEncoded == "" {
 		return nil, nil
 	}
-	if keyHex == "" || certJSON == "" {
+	if keyEncoded == "" || certEncoded == "" {
 		return nil, fmt.Errorf(
 			"both EMISAR_SIGNING_KEY and EMISAR_SIGNING_CERT must be set to sign dispatches")
 	}
-	seed, err := hex.DecodeString(keyHex)
+	key, err := parseSigningKey(keyEncoded)
 	if err != nil {
-		return nil, fmt.Errorf("EMISAR_SIGNING_KEY is not valid hex: %w", err)
+		return nil, err
 	}
-	if len(seed) != ed25519.SeedSize {
-		return nil, fmt.Errorf(
-			"EMISAR_SIGNING_KEY must be %d hex-encoded bytes (an Ed25519 seed), got %d",
-			ed25519.SeedSize, len(seed))
-	}
-	priv := ed25519.NewKeyFromSeed(seed)
-
-	if err := validateStrictJSON([]byte(certJSON)); err != nil {
-		return nil, fmt.Errorf("EMISAR_SIGNING_CERT is not valid JSON: %w", err)
-	}
-	if err := validateCertFieldNames([]byte(certJSON)); err != nil {
-		return nil, fmt.Errorf("EMISAR_SIGNING_CERT is not valid JSON: %w", err)
-	}
-	decoder := json.NewDecoder(strings.NewReader(certJSON))
-	decoder.DisallowUnknownFields()
-	var cert attest.Cert
-	if err := decoder.Decode(&cert); err != nil {
-		return nil, fmt.Errorf("EMISAR_SIGNING_CERT is not valid JSON: %w", err)
-	}
-	if err := ensureJSONEOF(decoder); err != nil {
-		return nil, fmt.Errorf("EMISAR_SIGNING_CERT must contain one JSON object: %w", err)
-	}
-	wireCert, err := json.Marshal(cert)
+	chain, leaf, err := parseSigningCertChain(certEncoded)
 	if err != nil {
-		return nil, fmt.Errorf("encode EMISAR_SIGNING_CERT: %w", err)
+		return nil, err
 	}
-	if len(wireCert) > maxSigningCertBytes {
-		return nil, fmt.Errorf("EMISAR_SIGNING_CERT is %d bytes, limit is %d", len(wireCert), maxSigningCertBytes)
-	}
-	if leafPub := hex.EncodeToString(priv.Public().(ed25519.PublicKey)); cert.PublicKey != leafPub {
+	signerPublic, ok := key.Public().(interface{ Equal(crypto.PublicKey) bool })
+	if !ok || !signerPublic.Equal(leaf.PublicKey) {
 		return nil, fmt.Errorf(
 			"EMISAR_SIGNING_CERT vouches for a different key than EMISAR_SIGNING_KEY - " +
 				"use the matching key+cert pair printed by `emisar signing new-cert`")
 	}
-	return &signer{priv: priv, cert: &cert, newNonce: newNonce}, nil
+	return &signer{key: key, certChain: chain, newNonce: newNonce}, nil
 }
 
-func validateCertFieldNames(raw []byte) error {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
-		return errors.New("certificate must be a JSON object")
+// parseSigningKey accepts only the algorithms the certificate profile signs
+// with, so an unusable key is refused where the operator can act on it.
+func parseSigningKey(encoded string) (crypto.Signer, error) {
+	der, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+	if err != nil {
+		return nil, fmt.Errorf("EMISAR_SIGNING_KEY is not valid base64: %w", err)
 	}
-	for key := range fields {
-		switch key {
-		case "ca_id", "key_id", "public_key", "valid_from", "valid_until", "serial", "sig":
-		case "scope":
-			var scope map[string]json.RawMessage
-			if err := json.Unmarshal(fields[key], &scope); err != nil || scope == nil {
-				return errors.New("certificate scope must be a JSON object")
-			}
-			for scopeKey := range scope {
-				if scopeKey != "group" && scopeKey != "labels" {
-					return fmt.Errorf("unknown certificate scope field %q", scopeKey)
-				}
-			}
-		default:
-			return fmt.Errorf("unknown certificate field %q", key)
+	parsed, err := x509.ParsePKCS8PrivateKey(der)
+	if err != nil {
+		return nil, fmt.Errorf("EMISAR_SIGNING_KEY is not a PKCS#8 private key: %w", err)
+	}
+	key, ok := parsed.(crypto.Signer)
+	if !ok {
+		return nil, fmt.Errorf("EMISAR_SIGNING_KEY cannot sign")
+	}
+	if _, err := attest.SignClaim(key, probeClaim()); err != nil {
+		return nil, fmt.Errorf("EMISAR_SIGNING_KEY: %w", err)
+	}
+	return key, nil
+}
+
+// probeClaim is a throwaway claim used only to prove the configured key can
+// sign under this build's accepted algorithms.
+func probeClaim() attest.Claim {
+	return attest.Claim{
+		ActionID: "probe", PackRef: "probe", ArgsRaw: json.RawMessage(`{}`),
+		RunnerRefs: []string{"probe"}, Reason: "probe", OperationID: "probe",
+		PortalOrigin: "probe", Nonce: "probe", IssuedAt: "2026-01-01T00:00:00Z",
+	}
+}
+
+// parseSigningCertChain decodes the one-line chain into wire entries and the
+// parsed leaf. The leaf must satisfy the parts of the profile a bridge can
+// check without trust anchors — the runner still applies the whole profile.
+func parseSigningCertChain(encoded string) ([]string, *x509.Certificate, error) {
+	pemText, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+	if err != nil {
+		return nil, nil, fmt.Errorf("EMISAR_SIGNING_CERT is not valid base64: %w", err)
+	}
+	if len(pemText) > maxSigningCertBytes {
+		return nil, nil, fmt.Errorf(
+			"EMISAR_SIGNING_CERT is %d bytes, limit is %d", len(pemText), maxSigningCertBytes)
+	}
+	var chain []string
+	var leaf *x509.Certificate
+	rest := pemText
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
 		}
+		if block.Type != "CERTIFICATE" {
+			return nil, nil, fmt.Errorf("EMISAR_SIGNING_CERT holds a %q block, want CERTIFICATE", block.Type)
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, nil, fmt.Errorf("EMISAR_SIGNING_CERT does not parse: %w", err)
+		}
+		if leaf == nil {
+			leaf = cert
+		}
+		chain = append(chain, base64.StdEncoding.EncodeToString(block.Bytes))
 	}
-	return nil
+	if leaf == nil {
+		return nil, nil, fmt.Errorf("EMISAR_SIGNING_CERT holds no PEM CERTIFICATE block")
+	}
+	if len(chain) > attest.MaxChainCerts {
+		return nil, nil, fmt.Errorf(
+			"EMISAR_SIGNING_CERT holds %d certificates, at most %d are accepted", len(chain), attest.MaxChainCerts)
+	}
+	if _, err := leafScopeURI(leaf); err != nil {
+		return nil, nil, err
+	}
+	return chain, leaf, nil
+}
+
+// leafScopeURI checks the leaf carries exactly one canonical emisar scope SAN.
+// A certificate without it is not for emisar, and an enforcing runner would
+// refuse every dispatch it signed.
+func leafScopeURI(leaf *x509.Certificate) (attest.Scope, error) {
+	var found string
+	for _, uri := range leaf.URIs {
+		if uri.Scheme != "emisar" {
+			continue
+		}
+		if found != "" {
+			return attest.Scope{}, fmt.Errorf("EMISAR_SIGNING_CERT carries several emisar scope URIs")
+		}
+		found = uri.String()
+	}
+	if found == "" {
+		return attest.Scope{}, fmt.Errorf(
+			"EMISAR_SIGNING_CERT carries no %s scope URI - it was not issued for emisar dispatch signing",
+			attest.ScopeURI)
+	}
+	scope, err := attest.ParseScopeURI(found)
+	if err != nil {
+		return attest.Scope{}, fmt.Errorf("EMISAR_SIGNING_CERT scope: %w", err)
+	}
+	return scope, nil
 }
 
 // couldBeRunActionCall cheaply rules a frame out before signFrame pays
@@ -213,7 +277,7 @@ func (s *signer) signFrame(frame []byte, operationID, portalOrigin string) (stri
 		Nonce:        nonce,
 		IssuedAt:     issuedAt,
 	}
-	sig, err := attest.Sign(s.priv, claim)
+	sig, err := attest.SignClaim(s.key, claim)
 	if err != nil {
 		return "", fmt.Errorf("sign action attestation: %w", err)
 	}
@@ -237,7 +301,7 @@ func (s *signer) signFrame(frame []byte, operationID, portalOrigin string) (stri
 		Nonce:          nonce,
 		IssuedAt:       issuedAt,
 		Signature:      sig,
-		Cert:           s.cert,
+		CertChain:      s.certChain,
 	})
 	if err != nil {
 		return "", fmt.Errorf("encode action attestation: %w", err)

@@ -36,11 +36,12 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   # DB backstops as text and the changeset fails first.
   @max_evidence_length 4_000
   @max_expected_length 2_000
-  # A normal v2 attestation is comfortably below 2 KB (cert, signature, nonce,
-  # timestamp, and up to 16 runner ids); 8 KB is generous headroom while bounding
-  # the jsonb row + relayed wire envelope. The MCP boundary already caps every
-  # known field; this backstops any other writer.
-  @max_attestation_bytes 8_192
+  # A normal attestation runs a few KB (the base64 DER certificate chain, the
+  # signature, nonce, timestamp, and up to 16 runner ids); 16 KB is generous
+  # headroom while bounding the jsonb row + relayed wire envelope, and matches
+  # the header bound the MCP boundary enforces. The MCP boundary already caps
+  # every known field; this backstops any other writer.
+  @max_attestation_bytes 16_384
   # Self-reported MCP client metadata is bounded at the MCP boundary (≤10 keys,
   # keys ≤128 / values ≤512 chars ≈ 6 KB); 8 KB backstops any other writer.
   @max_client_metadata_bytes 8_192

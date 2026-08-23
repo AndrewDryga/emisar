@@ -1268,16 +1268,11 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
       "sig" => String.duplicate("1", 128),
       "nonce" => String.duplicate("2", 32),
       "issued_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
-      "cert" => %{
-        "ca_id" => "customer-ca",
-        "key_id" => "operator-key",
-        "public_key" => String.duplicate("3", 64),
-        "valid_from" => "2026-01-01T00:00:00Z",
-        "valid_until" => "2027-01-01T00:00:00Z",
-        "scope" => %{},
-        "serial" => "01J0CERT0000000000000000A",
-        "sig" => String.duplicate("4", 128)
-      }
+      "cert_chain" => [
+        Emisar.Fixtures.Certificates.leaf_chain_entry(
+          DateTime.add(DateTime.utc_now(), 86_400, :second)
+        )
+      ]
     }
     |> Jason.encode!()
     |> Base.url_encode64(padding: false)

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The runner's main() builds the full cobra tree and calls os.Exit(1) on any
@@ -232,7 +233,7 @@ func TestCLI_EachSubcommandDispatches(t *testing.T) {
 		{name: "state", args: []string{"--config", cfg, "state"}, wantOut: `"runner_state"`},
 		{name: "events cat", args: []string{"--config", cfg, "events", "cat"}, wantOut: "linux.ping"},
 		{name: "audit verify", args: []string{"--config", cfg, "audit", "verify"}, wantOut: "chain intact"},
-		{name: "signing new-ca", args: []string{"signing", "new-ca"}, wantOut: "public_key"},
+		{name: "signing new-ca", args: []string{"signing", "new-ca"}, wantOut: "BEGIN CERTIFICATE"},
 		// `doctor` and `connect` are intentionally omitted: doctor exits non-zero
 		// here (no cloud/token to satisfy its preflight checks — its dispatch is
 		// covered by TestDoctorCmd_* in-process), and connect needs a live socket.
@@ -609,18 +610,18 @@ func TestCLI_ConnectConfigFatals(t *testing.T) {
 		}
 	})
 
-	t.Run("malformed signing key is fatal", func(t *testing.T) {
-		// enforce + a non-hex public key makes buildVerifier
+	t.Run("malformed signing anchor is fatal", func(t *testing.T) {
+		// enforce + an anchor that is not a PEM certificate makes buildVerifier
 		// fail; connect surfaces it as `signing: …` and exits 1.
 		cfg := base(t, "cloud:\n  url: ws://127.0.0.1:4000\n  enrollment_key_env: EMISAR_ENROLLMENT_KEY\n"+
-			"signing:\n  enforce_signatures: true\n  trusted_cas:\n    - ca_id: k1\n      public_key: zzzznothex\n")
+			"signing:\n  enforce_signatures: true\n  trusted_cas:\n    - name: k1\n      pem: not-a-certificate\n")
 		// Provide the enrollment key so we get PAST the credential check to buildVerifier.
 		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "connect"}, map[string]string{"EMISAR_ENROLLMENT_KEY": "ek-test"})
 		if code != 1 {
 			t.Errorf("exit = %d, want 1; stderr=%q", code, stderr)
 		}
-		if !strings.Contains(stderr, "signing:") || !strings.Contains(stderr, "not valid hex") {
-			t.Errorf("stderr should explain the bad signing key, got %q", stderr)
+		if !strings.Contains(stderr, "signing:") || !strings.Contains(stderr, "PEM CERTIFICATE") {
+			t.Errorf("stderr should explain the bad signing anchor, got %q", stderr)
 		}
 		if stdout != "" {
 			t.Errorf("a fatal connect produces no stdout, got %q", stdout)
@@ -724,13 +725,24 @@ func TestCLI_ActionRunResultStatusesAndArgError(t *testing.T) {
 func TestCLI_ActionRunLocalBypassSkipsSignatureButJournals(t *testing.T) {
 	dir := t.TempDir()
 	cfg := writeRunnableConfig(t, dir, false)
-	// Turn on enforcing signing with a real (well-formed) trusted key. A cloud
-	// dispatch would now be refused unless signed; the local path must ignore it.
-	// The key below is a valid 32-byte Ed25519 public key in hex (all-zero seed's
-	// public half is not constrained — any 64 hex chars that decode to 32 bytes
-	// pass NewVerifier's parse), so config load + connect's buildVerifier accept it.
-	validKeyHex := strings.Repeat("ab", 32)
-	extra := "signing:\n  enforce_signatures: true\n  trusted_cas:\n    - ca_id: k1\n      public_key: " + validKeyHex + "\n"
+	// Turn on enforcing signing with a real trust anchor. A cloud dispatch would
+	// now be refused unless signed; the local path must ignore it. The anchor is
+	// minted here rather than pasted so it is a genuinely valid CA certificate,
+	// which is what config load + connect's buildVerifier require.
+	caKey, err := generateSigningKey(algEd25519)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caDER, err := mintCA(caKey, "k1", 365*24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var anchor strings.Builder
+	anchor.WriteString("signing:\n  enforce_signatures: true\n  trusted_cas:\n    - name: k1\n      pem: |\n")
+	for _, line := range strings.Split(strings.TrimRight(encodeCertPEM(caDER), "\n"), "\n") {
+		anchor.WriteString("        " + line + "\n")
+	}
+	extra := anchor.String()
 	if err := appendToFile(t, cfg, extra); err != nil {
 		t.Fatalf("append signing config: %v", err)
 	}

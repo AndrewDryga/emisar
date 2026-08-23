@@ -148,8 +148,8 @@ the direct CLI's stored credential:
 | `EMISAR_CLIENT` | no | Client label recorded with audit attribution |
 | `EMISAR_CLIENT_METADATA` | no | Self-reported JSON metadata for audit/SIEM correlation; at most 10 string keys with string or number values |
 | `EMISAR_ALLOW_INSECURE` | no | Set to `1` only for an intentional non-loopback HTTP development endpoint; loopback HTTP already works |
-| `EMISAR_SIGNING_KEY` | no | Ed25519 leaf private-key seed used for bridge-attested dispatch |
-| `EMISAR_SIGNING_CERT` | no | CA-signed certificate for `EMISAR_SIGNING_KEY`; required with it |
+| `EMISAR_SIGNING_KEY` | no | Ed25519 or ECDSA P-256 leaf private key (base64 PKCS#8) for bridge-attested dispatch |
+| `EMISAR_SIGNING_CERT` | no | X.509 certificate chain for `EMISAR_SIGNING_KEY` (base64 PEM); required with it |
 
 Client metadata is untrusted enrichment. It is never used for authorization,
 posture, policy, or approval. Keys are limited to 128 characters, values to 512
@@ -469,8 +469,10 @@ audit-export tokens bypass local rotation state.
 `EMISAR_SIGNING_KEY` and `EMISAR_SIGNING_CERT` let the bridge sign the exact
 `run_action` intent: control-plane origin, action, immutable pack, arguments,
 complete runner set, reason, operation identity, nonce, and time. A
-signature-enforcing runner verifies that intent against a trusted offline CA
-and refuses altered, replayed, stale, or out-of-scope calls.
+signature-enforcing runner verifies that intent against its trusted certificate
+authorities, applies the emisar certificate profile, and refuses altered,
+replayed, stale, or out-of-scope calls. Certificates are X.509, so a customer
+PKI can issue them instead of `emisar signing`.
 
 Signing is the only stdio transport path that inspects tool semantics. The
 direct CLI also understands fixed result contracts for presentation and safe

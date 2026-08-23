@@ -12,8 +12,7 @@ func TestCheckAttestParity(t *testing.T) {
 
 const (
 	vectorSeedHex = "1f20"
-	certBytes = "cert"
-	envelopeBase64URL = "envelope"
+	vectorLeafDERSHA256 = "cert"
 )
 
 func vectorClaims() int {
@@ -23,12 +22,12 @@ func vectorClaims() int {
 	return 0
 }
 
-func vectorCert() int {
+func vectorChain(t *testing.T) int {
 	return 2
 }
 
 func vectorEnvelope() []struct{name string} {
-	return []struct{name string}{{name: "empty args"}}
+	return []struct{name string}{{name: "empty args", sig: ` + "`" + `deadbeef` + "`" + `}}
 }
 `
 	for _, module := range []string{"mcp", "runner"} {
@@ -62,7 +61,7 @@ func vectorEnvelope() []struct{name string} {
 		{"implementation", "attest.go", "package attest\n// drift\n"},
 		{"vector", "attest_test.go", stringReplace(testFile, "1f20", "1f21")},
 		{"nested vector tail", "attest_test.go", stringReplace(testFile, "return 0", "return 2")},
-		{"envelope name", "attest_test.go", stringReplace(testFile, "envelopeBase64URL", "envelopeBase64URLDrifted")},
+		{"certificate vector name", "attest_test.go", stringReplace(testFile, "vectorLeafDERSHA256", "vectorLeafDERSHA256Drifted")},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {

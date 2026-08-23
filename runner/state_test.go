@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // `emisar state` builds the runner_state advertisement from config + the
@@ -96,9 +97,21 @@ func TestStateCmd_DoesNotPersistRuntimeStateAndAdvertisesSigningPolicy(t *testin
 	dir := t.TempDir()
 	packs := writePack(t, dir+"/packs", "linux")
 	flagConfig = writeMinimalConfig(t, dir, packs)
-	extra := "cloud:\n  url: wss://portal.example/socket\n  enrollment_key_env: EMISAR_ENROLLMENT_KEY\n" +
-		"signing:\n  enforce_signatures: true\n  trusted_cas:\n" +
-		"    - ca_id: k1\n      public_key: " + strings.Repeat("ab", 32) + "\n"
+	caKey, err := generateSigningKey(algEd25519)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caDER, err := mintCA(caKey, "k1", 365*24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var anchor strings.Builder
+	anchor.WriteString("cloud:\n  url: wss://portal.example/socket\n  enrollment_key_env: EMISAR_ENROLLMENT_KEY\n")
+	anchor.WriteString("signing:\n  enforce_signatures: true\n  trusted_cas:\n    - name: k1\n      pem: |\n")
+	for _, line := range strings.Split(strings.TrimRight(encodeCertPEM(caDER), "\n"), "\n") {
+		anchor.WriteString("        " + line + "\n")
+	}
+	extra := anchor.String()
 	if err := appendToFile(t, flagConfig, extra); err != nil {
 		t.Fatal(err)
 	}
