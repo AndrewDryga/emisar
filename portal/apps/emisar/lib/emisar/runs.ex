@@ -1908,8 +1908,8 @@ defmodule Emisar.Runs do
   defp attestation_window(attestation, max_age) do
     with issued when is_binary(issued) <- attestation["issued_at"],
          {:ok, issued_at, _offset} <- DateTime.from_iso8601(issued),
-         valid_until when is_binary(valid_until) <- get_in(attestation, ["cert", "valid_until"]),
-         {:ok, cert_deadline, _offset} <- DateTime.from_iso8601(valid_until) do
+         [leaf | _rest] when is_binary(leaf) <- attestation["cert_chain"],
+         {:ok, cert_deadline} <- certificate_not_after(leaf) do
       freshness_deadline = DateTime.add(issued_at, max_age, :second)
 
       {:ok, issued_at,
@@ -1918,6 +1918,54 @@ defmodule Emisar.Runs do
       _ -> {:error, :attestation_stale}
     end
   end
+
+  # The portal reads ONE fact out of the leaf — when it stops being valid — so an
+  # approval is never held past the point where its dispatch could still be
+  # accepted. It is not verifying anything: the runner owns trust, the profile,
+  # and the scope.
+  defp certificate_not_after(encoded_leaf) do
+    with {:ok, der} <- Base.decode64(encoded_leaf),
+         {:Certificate, tbs, _algorithm, _signature} <- :public_key.pkix_decode_cert(der, :plain),
+         # TBSCertificate positions: version, serialNumber, signature, issuer,
+         # validity — so the validity is element 5 of the record tuple.
+         {:Validity, _not_before, not_after} <- elem(tbs, 5) do
+      pkix_time_to_datetime(not_after)
+    else
+      _ -> :error
+    end
+  rescue
+    # pkix_decode_cert raises on malformed DER. The envelope validator already
+    # bounded and base64-checked this value, so a raise here means a structurally
+    # invalid certificate, which is the runner's refusal to report, not a crash.
+    _ -> :error
+  end
+
+  defp pkix_time_to_datetime({:utcTime, time}) do
+    # X.509 UTCTime is two-digit years: RFC 5280 reads 50..99 as 19xx and
+    # 00..49 as 20xx.
+    with <<year::binary-2, rest::binary>> <- to_string(time),
+         {value, ""} <- Integer.parse(year) do
+      century = if value >= 50, do: "19", else: "20"
+      parse_pkix_timestamp(century <> year <> rest)
+    else
+      _ -> :error
+    end
+  end
+
+  defp pkix_time_to_datetime({:generalTime, time}), do: parse_pkix_timestamp(to_string(time))
+  defp pkix_time_to_datetime(_time), do: :error
+
+  defp parse_pkix_timestamp(
+         <<year::binary-4, month::binary-2, day::binary-2, hour::binary-2, minute::binary-2,
+           second::binary-2, "Z">>
+       ) do
+    case DateTime.from_iso8601("#{year}-#{month}-#{day}T#{hour}:#{minute}:#{second}Z") do
+      {:ok, datetime, _offset} -> {:ok, datetime}
+      _ -> :error
+    end
+  end
+
+  defp parse_pkix_timestamp(_time), do: :error
 
   # Per-user runner ACLs (v1). When the caller supplies a
   # `requested_by_membership_id`, the membership's runner scopes must

@@ -1,11 +1,19 @@
 package signing
 
 import (
+	"crypto"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"math/big"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,49 +47,114 @@ func mustParse(t *testing.T, s string) time.Time {
 	return ts
 }
 
-// testCA returns the CA config (for NewVerifier) and the CA private key certs
-// are signed with.
-func testCA(t *testing.T) ([]CAConfig, ed25519.PrivateKey) {
+// testCA returns the CA config (for NewVerifier), the CA private key
+// certificates are issued with, and the parsed CA certificate.
+func testCA(t *testing.T) ([]CAConfig, ed25519.PrivateKey, *x509.Certificate) {
 	t.Helper()
 	seed, _ := hex.DecodeString(testCASeedHex)
 	caPriv := ed25519.NewKeyFromSeed(seed)
-	caPub := caPriv.Public().(ed25519.PublicKey)
-	return []CAConfig{{CAID: testCAID, PublicKeyHex: hex.EncodeToString(caPub)}}, caPriv
+	caCert, caPEM := mintCA(t, caPriv, testCAID)
+	return []CAConfig{{Name: testCAID, PEM: caPEM}}, caPriv, caCert
 }
 
-// testLeaf returns the leaf private key and its hex public key the certs vouch for.
-func testLeaf(t *testing.T) (ed25519.PrivateKey, string) {
+// mintCA self-signs a CA certificate for the test fixtures.
+func mintCA(t *testing.T, key crypto.Signer, name string) (*x509.Certificate, string) {
+	t.Helper()
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: name},
+		NotBefore:             time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		NotAfter:              time.Date(2040, 1, 1, 0, 0, 0, 0, time.UTC),
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, key.Public(), key)
+	if err != nil {
+		t.Fatalf("mint CA: %v", err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parse CA: %v", err)
+	}
+	pemText := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	return cert, pemText
+}
+
+// testLeaf returns the leaf private key the certificates vouch for.
+func testLeaf(t *testing.T) ed25519.PrivateKey {
 	t.Helper()
 	seed, _ := hex.DecodeString(testLeafSeed)
-	priv := ed25519.NewKeyFromSeed(seed)
-	pub := priv.Public().(ed25519.PublicKey)
-	return priv, hex.EncodeToString(pub)
+	return ed25519.NewKeyFromSeed(seed)
 }
 
-// certWith mints a CA-signed cert for the test leaf over the given scope and
-// RFC3339 validity window.
-func certWith(t *testing.T, caPriv ed25519.PrivateKey, scope attest.Scope, validFrom, validUntil string) attest.Cert {
+// certChainOptions builds one leaf certificate for the fixtures. Its zero value
+// is the wide-window, any-scope, correctly-issued certificate; a test sets only
+// the field whose gate it is exercising.
+type certChainOptions struct {
+	scope     attest.Scope
+	notBefore time.Time
+	notAfter  time.Time
+	issuer    *x509.Certificate
+	issuerKey crypto.Signer
+	leafPub   crypto.PublicKey
+	scopeURIs []string
+}
+
+// certWith issues a certificate chain (leaf only) for the test leaf.
+func certWith(t *testing.T, opts certChainOptions) []string {
 	t.Helper()
-	_, leafPub := testLeaf(t)
-	cert := attest.Cert{
-		CAID: testCAID, KeyID: "op-test", PublicKey: leafPub,
-		ValidFrom: validFrom, ValidUntil: validUntil, Scope: scope, Serial: "01TESTCERT0000000000000000",
+	if opts.issuer == nil {
+		_, caPriv, caCert := testCA(t)
+		opts.issuer, opts.issuerKey = caCert, caPriv
 	}
-	sig, err := attest.SignCert(caPriv, cert)
+	if opts.leafPub == nil {
+		opts.leafPub = testLeaf(t).Public()
+	}
+	if opts.notBefore.IsZero() {
+		opts.notBefore = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+	if opts.notAfter.IsZero() {
+		opts.notAfter = time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+	uris := opts.scopeURIs
+	if uris == nil {
+		scopeURI, err := attest.EncodeScopeURI(opts.scope)
+		if err != nil {
+			t.Fatalf("EncodeScopeURI: %v", err)
+		}
+		uris = []string{scopeURI}
+	}
+	parsed := make([]*url.URL, 0, len(uris))
+	for _, raw := range uris {
+		uri, err := url.Parse(raw)
+		if err != nil {
+			t.Fatalf("parse scope URI: %v", err)
+		}
+		parsed = append(parsed, uri)
+	}
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(2),
+		Subject:               pkix.Name{CommonName: "op-test"},
+		NotBefore:             opts.notBefore,
+		NotAfter:              opts.notAfter,
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		URIs:                  parsed,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, opts.issuer, opts.leafPub, opts.issuerKey)
 	if err != nil {
-		t.Fatalf("SignCert: %v", err)
+		t.Fatalf("mint leaf: %v", err)
 	}
-	cert.Sig = sig
-	return cert
+	return []string{base64.StdEncoding.EncodeToString(der)}
 }
 
-// validCert is a wide-window, any-scope cert for the happy paths — valid at both
-// fixedNow and the real clock the persistence tests use, so only the freshness
-// and replay gates (not the cert window) drive those tests.
-func validCert(t *testing.T) attest.Cert {
+// validCert is a wide-window, any-scope chain for the happy paths — valid at
+// both fixedNow and the real clock the persistence tests use, so only the
+// freshness and replay gates drive those tests.
+func validCert(t *testing.T) []string {
 	t.Helper()
-	_, caPriv := testCA(t)
-	return certWith(t, caPriv, attest.Scope{}, "2026-01-01T00:00:00Z", "2030-01-01T00:00:00Z")
+	return certWith(t, certChainOptions{})
 }
 
 // newTestVerifier returns an enforcing verifier (clock pinned to fixedNow) that
@@ -89,14 +162,13 @@ func validCert(t *testing.T) attest.Cert {
 // the leaf private key callers sign attestations with.
 func newTestVerifier(t *testing.T) (*Verifier, ed25519.PrivateKey) {
 	t.Helper()
-	cas, _ := testCA(t)
+	cas, _, _ := testCA(t)
 	v, err := NewVerifier(true, cas, time.Hour, testRunnerID, testOrigin, testGroup, testLabels(), NewMemoryNonceStore())
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
 	v.now = func() time.Time { return mustParse(t, fixedNow) }
-	leafPriv, _ := testLeaf(t)
-	return v, leafPriv
+	return v, testLeaf(t)
 }
 
 // sign produces a valid attestation — the leaf signature plus the wide-window,
@@ -141,7 +213,7 @@ func signWithNarrative(t *testing.T, priv ed25519.PrivateKey, actionID string, a
 	return att
 }
 
-func signedAttestation(t testing.TB, priv ed25519.PrivateKey, dispatch Dispatch, runnerRefs []string, nonce, issuedAt string, cert attest.Cert) *Attestation {
+func signedAttestation(t testing.TB, priv ed25519.PrivateKey, dispatch Dispatch, runnerRefs []string, nonce, issuedAt string, certChain []string) *Attestation {
 	t.Helper()
 	runnerRefs, err := attest.CanonicalRunnerRefs(runnerRefs)
 	if err != nil {
@@ -164,7 +236,7 @@ func signedAttestation(t testing.TB, priv ed25519.PrivateKey, dispatch Dispatch,
 		Version: attest.Version, Tool: attest.Tool, PortalOrigin: testOrigin,
 		ActionID: dispatch.ActionID, PackRef: dispatch.PackRef, ArgsSHA256: argsDigest,
 		RunnerRefs: runnerRefs, Reason: dispatch.Reason, OperationID: dispatch.OperationID,
-		Signature: sig, Nonce: nonce, IssuedAt: issuedAt, Cert: &cert,
+		Signature: sig, Nonce: nonce, IssuedAt: issuedAt, CertChain: certChain,
 	}
 }
 
@@ -206,11 +278,14 @@ func testNonce(label string) string {
 
 func TestNewVerifierRejectsBadKeys(t *testing.T) {
 	nonces := NewMemoryNonceStore()
-	if _, err := NewVerifier(true, []CAConfig{{CAID: "c", PublicKeyHex: "zz"}}, time.Hour, testRunnerID, testOrigin, "", nil, nonces); err == nil {
-		t.Fatal("expected error for non-hex public key")
+	if _, err := NewVerifier(true, []CAConfig{{Name: "c", PEM: "not a pem block"}}, time.Hour, testRunnerID, testOrigin, "", nil, nonces); err == nil {
+		t.Fatal("expected error for a non-PEM anchor")
 	}
-	if _, err := NewVerifier(true, []CAConfig{{CAID: "c", PublicKeyHex: "00"}}, time.Hour, testRunnerID, testOrigin, "", nil, nonces); err == nil {
-		t.Fatal("expected error for wrong-length public key")
+	notACA := certWith(t, certChainOptions{})
+	leafDER, _ := base64.StdEncoding.DecodeString(notACA[0])
+	leafPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER}))
+	if _, err := NewVerifier(true, []CAConfig{{Name: "c", PEM: leafPEM}}, time.Hour, testRunnerID, testOrigin, "", nil, nonces); err == nil {
+		t.Fatal("expected error for a leaf certificate used as a trust anchor")
 	}
 	if _, err := NewVerifier(true, nil, time.Hour, testRunnerID, testOrigin, "", nil, nonces); err == nil {
 		t.Fatal("expected error for enforcement with no CAs")
@@ -218,7 +293,7 @@ func TestNewVerifierRejectsBadKeys(t *testing.T) {
 	if _, err := NewVerifier(false, nil, time.Hour, "", "", "", nil, nonces); err != nil {
 		t.Fatalf("non-enforcing verifier with no CAs should be fine: %v", err)
 	}
-	cas, _ := testCA(t)
+	cas, _, _ := testCA(t)
 	if _, err := NewVerifier(true, cas, time.Hour, "", testOrigin, "", nil, nonces); err == nil {
 		t.Fatal("expected error for enforcement with no durable runner id")
 	}
@@ -233,13 +308,13 @@ func TestNewVerifierRejectsBadKeys(t *testing.T) {
 func TestVerifierCAIDsSortedAndMaxAge(t *testing.T) {
 	seed1, _ := hex.DecodeString("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
 	seed2, _ := hex.DecodeString("2102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
-	pub1 := ed25519.NewKeyFromSeed(seed1).Public().(ed25519.PublicKey)
-	pub2 := ed25519.NewKeyFromSeed(seed2).Public().(ed25519.PublicKey)
+	_, pem1 := mintCA(t, ed25519.NewKeyFromSeed(seed1), "c1")
+	_, pem2 := mintCA(t, ed25519.NewKeyFromSeed(seed2), "c2")
 
 	// Config order is c2, c1; CAIDs() must come back sorted for a stable advertisement.
 	v, err := NewVerifier(true, []CAConfig{
-		{CAID: "c2", PublicKeyHex: hex.EncodeToString(pub2)},
-		{CAID: "c1", PublicKeyHex: hex.EncodeToString(pub1)},
+		{Name: "c2", PEM: pem2},
+		{Name: "c1", PEM: pem1},
 	}, 2*time.Hour, testRunnerID, testOrigin, "", nil, NewMemoryNonceStore())
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
@@ -463,45 +538,55 @@ func TestCheckRefusals(t *testing.T) {
 func TestCheckCertRefusals(t *testing.T) {
 	args := map[string]any{"x": float64(1)}
 	const action = "a.b"
-	leafPriv, leafPub := testLeaf(t)
-	_, caPriv := testCA(t)
-	otherCAPriv := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize)) // a CA the runner does NOT trust
+	leafPriv := testLeaf(t)
 
-	// signedAtt carries a VALID leaf signature + the given cert, so any refusal is
-	// from the cert gates (which run before the leaf check).
-	signedAtt := func(cert attest.Cert) *Attestation {
+	// signedAtt carries a VALID leaf signature + the given chain, so any refusal
+	// is from the certificate gates (which run before the leaf check).
+	signedAtt := func(chain []string) *Attestation {
 		nonce := testNonce("cert-refusal")
-		return signedAttestation(t, leafPriv, testDispatch(t, action, args), []string{testRunnerRef(t)}, nonce, fixedNow, cert)
+		return signedAttestation(t, leafPriv, testDispatch(t, action, args), []string{testRunnerRef(t)}, nonce, fixedNow, chain)
 	}
-	mkCert := func(caP ed25519.PrivateKey, caID string, scope attest.Scope, from, until string) attest.Cert {
-		cert := attest.Cert{CAID: caID, KeyID: "op", PublicKey: leafPub, ValidFrom: from, ValidUntil: until, Scope: scope, Serial: "01CERTREFUSE000000000000000"}
-		sig, err := attest.SignCert(caP, cert)
-		if err != nil {
-			t.Fatalf("SignCert: %v", err)
-		}
-		cert.Sig = sig
-		return cert
-	}
-	const wf, wu = "2026-01-01T00:00:00Z", "2030-01-01T00:00:00Z"
+	untrustedCAKey := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+	untrustedCA, _ := mintCA(t, untrustedCAKey, "ca-untrusted")
 
 	tests := []struct {
 		name string
 		att  *Attestation
 		code string
 	}{
-		{"missing cert", &Attestation{Signature: "00", Nonce: "n", IssuedAt: fixedNow, Cert: nil}, "signature_required"},
-		{"unknown ca_id", signedAtt(mkCert(caPriv, "ca-nope", attest.Scope{}, wf, wu)), "cert_untrusted"},
-		{"forged CA signature", signedAtt(mkCert(otherCAPriv, testCAID, attest.Scope{}, wf, wu)), "cert_untrusted"},
-		{"cert expired (past)", signedAtt(mkCert(caPriv, testCAID, attest.Scope{}, "2020-01-01T00:00:00Z", "2020-06-01T00:00:00Z")), "cert_expired"},
-		{"cert not yet valid (future)", signedAtt(mkCert(caPriv, testCAID, attest.Scope{}, "2030-01-01T00:00:00Z", "2031-01-01T00:00:00Z")), "cert_expired"},
-		{"cert valid_from not RFC3339", signedAtt(mkCert(caPriv, testCAID, attest.Scope{}, "nope", wu)), "cert_expired"},
-		{"scope group mismatch", signedAtt(mkCert(caPriv, testCAID, attest.Scope{Group: "other-grp"}, wf, wu)), "cert_scope"},
-		{"scope label mismatch", signedAtt(mkCert(caPriv, testCAID, attest.Scope{Labels: map[string]string{"env": "prod"}}, wf, wu)), "cert_scope"},
-		{"scope label missing on runner", signedAtt(mkCert(caPriv, testCAID, attest.Scope{Labels: map[string]string{"region": "us"}}, wf, wu)), "cert_scope"},
+		{"missing certificate", &Attestation{Signature: "00", Nonce: "n", IssuedAt: fixedNow}, "signature_required"},
+		{"issued by an untrusted CA", signedAtt(certWith(t, certChainOptions{
+			issuer: untrustedCA, issuerKey: untrustedCAKey,
+		})), attest.CodeCertUntrusted},
+		{"certificate expired", signedAtt(certWith(t, certChainOptions{
+			notBefore: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+			notAfter:  time.Date(2020, 6, 1, 0, 0, 0, 0, time.UTC),
+		})), attest.CodeCertExpired},
+		{"certificate not yet valid", signedAtt(certWith(t, certChainOptions{
+			notBefore: time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC),
+			notAfter:  time.Date(2031, 1, 1, 0, 0, 0, 0, time.UTC),
+		})), attest.CodeCertExpired},
+		// A TLS server certificate from the SAME trusted CA carries no emisar
+		// scope SAN, so it is not dispatch-signing authority. This is the case
+		// the whole certificate profile exists to refuse.
+		{"TLS-shaped certificate from the trusted CA", signedAtt(certWith(t, certChainOptions{
+			scopeURIs: []string{},
+		})), attest.CodeCertProfile},
+		{"scope group mismatch", signedAtt(certWith(t, certChainOptions{
+			scope: attest.Scope{Group: "other-grp"},
+		})), attest.CodeCertScope},
+		{"scope label mismatch", signedAtt(certWith(t, certChainOptions{
+			scope: attest.Scope{Labels: map[string]string{"env": "prod"}},
+		})), attest.CodeCertScope},
+		{"scope label missing on runner", signedAtt(certWith(t, certChainOptions{
+			scope: attest.Scope{Labels: map[string]string{"region": "us"}},
+		})), attest.CodeCertScope},
 		// An empty scope value is a real constraint: the runner must carry the key.
 		// A bare map read returns "" for an absent key, which made this scope match
 		// every runner in the fleet.
-		{"empty scope value still requires the label", signedAtt(mkCert(caPriv, testCAID, attest.Scope{Labels: map[string]string{"region": ""}}, wf, wu)), "cert_scope"},
+		{"empty scope value still requires the label", signedAtt(certWith(t, certChainOptions{
+			scope: attest.Scope{Labels: map[string]string{"region": ""}},
+		})), attest.CodeCertScope},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -521,9 +606,10 @@ func TestCheckCertRefusals(t *testing.T) {
 // the positive side of the scope matcher.
 func TestCheckCertScopeMatchAllowed(t *testing.T) {
 	v, leafPriv := newTestVerifier(t)
-	_, caPriv := testCA(t)
 	args := map[string]any{"x": float64(1)}
-	cert := certWith(t, caPriv, attest.Scope{Group: testGroup, Labels: map[string]string{"env": "test"}}, "2026-01-01T00:00:00Z", "2030-01-01T00:00:00Z")
+	cert := certWith(t, certChainOptions{
+		scope: attest.Scope{Group: testGroup, Labels: map[string]string{"env": "test"}},
+	})
 	nonce := testNonce("scoped")
 	att := signedAttestation(t, leafPriv, testDispatch(t, "a.b", args), []string{testRunnerRef(t)}, nonce, fixedNow, cert)
 	if d := v.Check(testDispatch(t, "a.b", args), att); !d.Allowed {
@@ -536,20 +622,14 @@ func TestCheckCertScopeMatchAllowed(t *testing.T) {
 // can't be paired with an attacker's own leaf key.
 func TestCheckLeafKeyMustMatchCert(t *testing.T) {
 	v, _ := newTestVerifier(t)
-	_, caPriv := testCA(t)
 	args := map[string]any{"x": float64(1)}
 
-	// The cert vouches for a DIFFERENT leaf than the one that signs the attestation.
+	// The certificate vouches for a DIFFERENT leaf than the one that signs the
+	// attestation.
 	otherLeaf := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
-	otherPub := hex.EncodeToString(otherLeaf.Public().(ed25519.PublicKey))
-	cert := attest.Cert{CAID: testCAID, KeyID: "op", PublicKey: otherPub, ValidFrom: "2026-01-01T00:00:00Z", ValidUntil: "2030-01-01T00:00:00Z", Serial: "01MISMATCH00000000000000000"}
-	csig, err := attest.SignCert(caPriv, cert)
-	if err != nil {
-		t.Fatalf("SignCert: %v", err)
-	}
-	cert.Sig = csig
+	cert := certWith(t, certChainOptions{leafPub: otherLeaf.Public()})
 
-	testLeafPriv, _ := testLeaf(t)
+	testLeafPriv := testLeaf(t)
 	nonce := testNonce("mismatch")
 	att := signedAttestation(t, testLeafPriv, testDispatch(t, "a.b", args), []string{testRunnerRef(t)}, nonce, fixedNow, cert)
 	if d := v.Check(testDispatch(t, "a.b", args), att); d.Allowed || d.Code != "bad_signature" {
@@ -623,7 +703,7 @@ func TestNoncePruning(t *testing.T) {
 // the constructor refuses it rather than booting a verifier that accepts
 // nothing (age > 0 always fails) or everything.
 func TestNewVerifierRejectsNonPositiveMaxAge(t *testing.T) {
-	cas, _ := testCA(t)
+	cas, _, _ := testCA(t)
 
 	for _, maxAge := range []time.Duration{0, -time.Second, -time.Hour} {
 		t.Run(maxAge.String(), func(t *testing.T) {
@@ -860,9 +940,8 @@ func TestNonceCacheKeyIsRawString(t *testing.T) {
 // persistence tests sign with — the same fixtures as newTestVerifier.
 func persistCAs(t *testing.T) ([]CAConfig, ed25519.PrivateKey) {
 	t.Helper()
-	cas, _ := testCA(t)
-	leafPriv, _ := testLeaf(t)
-	return cas, leafPriv
+	cas, _, _ := testCA(t)
+	return cas, testLeaf(t)
 }
 
 // TestSharedNonceStoreClosesVerifierReloadWindow constructs the replacement

@@ -1,10 +1,11 @@
 // Package signing verifies bridge-attested dispatches on the runner. With
 // enforcement on (config signing.enforce_signatures), the runner runs a dispatch
-// only if it carries a valid Ed25519 attestation whose leaf key is vouched for by
-// a still-valid, in-scope certificate from a trusted CA, is inside the freshness
-// window, and uses a nonce not seen before. This is the runner's strongest
-// defense: a compromised control plane can relay a customer-authorized bridge's
-// signed action but can neither forge, redirect, nor replay one.
+// only if it carries a valid attestation whose leaf key is vouched for by a
+// still-valid, in-scope X.509 certificate chaining to a trusted anchor, is
+// inside the freshness window, and uses a nonce not seen before. This is the
+// runner's strongest defense: a compromised control plane can relay a
+// customer-authorized bridge's signed action but can neither forge, redirect,
+// nor replay one.
 //
 // The v5 claim binds the exact public runner-reference set the operator selected,
 // plus digests of the evidence/expectation narrative a human approver reads.
@@ -14,9 +15,11 @@
 package signing
 
 import (
-	"crypto/ed25519"
-	"encoding/hex"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -29,15 +32,18 @@ import (
 // sha256HexLen is the length of a lower-hex SHA-256 digest.
 const sha256HexLen = 64
 
-// CAConfig is one trusted certificate-authority public key as it comes from config.
+// CAConfig is one trusted certificate authority as it comes from config: a
+// PEM certificate, plus an optional display name. The name is advertised so an
+// operator can confirm which anchors a host accepts; it carries no trust of
+// its own, and defaults to the certificate's Subject common name.
 type CAConfig struct {
-	CAID         string
-	PublicKeyHex string
+	Name string
+	PEM  string
 }
 
 // Attestation is the shared signed wire envelope. A nil *Attestation means the
-// dispatch arrived unsigned; a nil Cert means it arrived without the certificate
-// the CA model requires.
+// dispatch arrived unsigned; an empty CertChain means it arrived without the
+// certificate the CA model requires.
 type Attestation = attest.Envelope
 
 // Dispatch is the runner-observed action intent. ArgsRaw is the exact JSON
@@ -75,11 +81,12 @@ type Verifier struct {
 	now     func() time.Time
 	nonces  *NonceStore
 
-	cas      map[string]ed25519.PublicKey // ca_id -> CA public key
-	runnerID string                       // durable local external id, for public-ref suffix binding
-	origin   string                       // canonical local portal origin
-	group    string                       // this runner's group, for cert scope matching
-	labels   map[string]string            // this runner's labels, for cert scope matching
+	roots    *x509.CertPool    // trusted anchors; never contains a control-plane key
+	caNames  []string          // advertised anchor labels, sorted
+	runnerID string            // durable local external id, for public-ref suffix binding
+	origin   string            // canonical local portal origin
+	group    string            // this runner's group, for cert scope matching
+	labels   map[string]string // this runner's labels, for cert scope matching
 }
 
 // NewVerifier parses the trusted CA keys and builds a verifier. enforce mirrors
@@ -99,20 +106,29 @@ func NewVerifier(enforce bool, cas []CAConfig, maxAge time.Duration, runnerID, p
 	if nonces == nil {
 		return nil, fmt.Errorf("signing: nonce store is required")
 	}
-	ring := make(map[string]ed25519.PublicKey, len(cas))
-	for _, ca := range cas {
-		raw, err := hex.DecodeString(ca.PublicKeyHex)
+	roots := x509.NewCertPool()
+	names := make([]string, 0, len(cas))
+	for i, ca := range cas {
+		block, _ := pem.Decode([]byte(ca.PEM))
+		if block == nil || block.Type != "CERTIFICATE" {
+			return nil, fmt.Errorf("signing: trusted_cas[%d] is not a PEM CERTIFICATE block", i)
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
-			return nil, fmt.Errorf("signing: CA %q public_key is not valid hex: %w", ca.CAID, err)
+			return nil, fmt.Errorf("signing: trusted_cas[%d] does not parse: %w", i, err)
 		}
-		if len(raw) != ed25519.PublicKeySize {
-			return nil, fmt.Errorf(
-				"signing: CA %q public_key is %d bytes, want %d (an Ed25519 public key)",
-				ca.CAID, len(raw), ed25519.PublicKeySize)
+		if !cert.BasicConstraintsValid || !cert.IsCA {
+			return nil, fmt.Errorf("signing: trusted_cas[%d] (%s) is not a CA certificate", i, cert.Subject.CommonName)
 		}
-		ring[ca.CAID] = ed25519.PublicKey(raw)
+		roots.AddCert(cert)
+		name := ca.Name
+		if name == "" {
+			name = cert.Subject.CommonName
+		}
+		names = append(names, name)
 	}
-	if enforce && len(ring) == 0 {
+	sort.Strings(names)
+	if enforce && len(names) == 0 {
 		return nil, fmt.Errorf("signing: enforcement is on with no trusted CAs")
 	}
 	if enforce && runnerID == "" {
@@ -132,7 +148,8 @@ func NewVerifier(enforce bool, cas []CAConfig, maxAge time.Duration, runnerID, p
 		maxAge:   maxAge,
 		now:      time.Now,
 		nonces:   nonces,
-		cas:      ring,
+		roots:    roots,
+		caNames:  names,
 		runnerID: runnerID,
 		origin:   portalOrigin,
 		group:    group,
@@ -145,15 +162,10 @@ func NewVerifier(enforce bool, cas []CAConfig, maxAge time.Duration, runnerID, p
 func (v *Verifier) Enforces() bool { return v.enforce }
 
 // CAIDs returns the configured trusted-CA labels in sorted order. The runner
-// advertises only these labels so an operator can confirm which CA entries it
-// accepts; configured CA public keys remain local.
+// advertises only these labels so an operator can confirm which anchors it
+// accepts; the anchor certificates themselves remain local.
 func (v *Verifier) CAIDs() []string {
-	ids := make([]string, 0, len(v.cas))
-	for id := range v.cas {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
+	return slices.Clone(v.caNames)
 }
 
 // MaxAge is the attestation freshness window — advertised so the cloud can warn
@@ -174,11 +186,10 @@ func (v *Verifier) Check(dispatch Dispatch, att *Attestation) Decision {
 		return allow
 	}
 	// 1. A signed dispatch must carry both the attestation and its certificate.
-	if att == nil || att.Cert == nil {
+	if att == nil || len(att.CertChain) == 0 {
 		return refuse("signature_required",
 			"this runner runs only signed dispatches and this call carried no signed certificate")
 	}
-	cert := att.Cert
 	// 2. The claim format and exact per-call target set are explicit. Certificate
 	//    scope remains an additional CA-authored ceiling, not a replacement for
 	//    binding the operator's selected runner identities.
@@ -221,40 +232,29 @@ func (v *Verifier) Check(dispatch Dispatch, att *Attestation) Decision {
 	if !validNonce(att.Nonce) {
 		return refuse("bad_nonce", "the attestation nonce is not 32 lowercase hex characters")
 	}
-	// 4. The cert's CA must be one this runner trusts.
-	caPub, ok := v.cas[cert.CAID]
-	if !ok {
-		return refuse("cert_untrusted", fmt.Sprintf("no trusted CA with id %q", cert.CAID))
-	}
-	// 5. The CA's signature over the cert must verify.
-	validCert, err := attest.VerifyCert(caPub, *cert)
-	if err != nil {
-		return refuse("cert_untrusted", "certificate signature is malformed")
-	}
-	if !validCert {
-		return refuse("cert_untrusted", "certificate signature does not verify under the trusted CA")
-	}
-	// 6. The cert must be inside its own absolute validity window.
-	from, err := time.Parse(time.RFC3339, cert.ValidFrom)
-	if err != nil {
-		return refuse("cert_expired", fmt.Sprintf("certificate valid_from %q is not RFC3339", cert.ValidFrom))
-	}
-	until, err := time.Parse(time.RFC3339, cert.ValidUntil)
-	if err != nil {
-		return refuse("cert_expired", fmt.Sprintf("certificate valid_until %q is not RFC3339", cert.ValidUntil))
+	// 4. The chain must verify to a configured anchor and satisfy the emisar
+	//    profile — the profile is what stops a general-purpose CA in the same
+	//    trust store from vouching for dispatch signing.
+	chain, decodeErr := decodeCertChain(att.CertChain)
+	if decodeErr != nil {
+		return refuse(attest.CodeCertProfile, decodeErr.Error())
 	}
 	now := v.now()
-	if now.Before(from) || now.After(until) {
-		return refuse("cert_expired",
-			fmt.Sprintf("certificate is valid %s..%s, outside that window now", cert.ValidFrom, cert.ValidUntil))
+	leaf, scope, err := attest.VerifyChain(v.roots, chain, now)
+	if err != nil {
+		var certErr *attest.CertError
+		if errors.As(err, &certErr) {
+			return refuse(certErr.Code, certErr.Reason)
+		}
+		return refuse(attest.CodeCertUntrusted, err.Error())
 	}
-	// 7. The cert's scope must be satisfied by THIS runner's local group/labels
+	// 5. The cert's scope must be satisfied by THIS runner's local group/labels
 	//    (never any value the control plane supplies — that is the redirect guard).
-	if !scopeSatisfied(cert.Scope, v.group, v.labels) {
-		return refuse("cert_scope",
+	if !scope.Matches(v.group, v.labels) {
+		return refuse(attest.CodeCertScope,
 			"this runner's group/labels do not satisfy the certificate's scope")
 	}
-	// 8. The attestation must be fresh — an INDEPENDENT gate from the cert window.
+	// 6. The attestation must be fresh — an INDEPENDENT gate from the cert window.
 	issued, err := time.Parse(time.RFC3339, att.IssuedAt)
 	if err != nil {
 		return refuse("bad_issued_at", fmt.Sprintf("issued_at %q is not RFC3339", att.IssuedAt))
@@ -263,12 +263,8 @@ func (v *Verifier) Check(dispatch Dispatch, att *Attestation) Decision {
 		return refuse("stale",
 			fmt.Sprintf("issued_at %s is outside the +/-%s freshness window", att.IssuedAt, v.maxAge))
 	}
-	// 9. The attestation signature must verify under the leaf key the CERT
-	//    vouches for (validated hex/length before use), not anything from config.
-	leaf, err := hex.DecodeString(cert.PublicKey)
-	if err != nil || len(leaf) != ed25519.PublicKeySize {
-		return refuse("bad_signature", "certificate public_key is not a valid Ed25519 key")
-	}
+	// 7. The attestation signature must verify under the leaf key the CERT
+	//    vouches for, never anything from config.
 	// The approver-facing narrative is bound by digest and never relayed to us,
 	// so the envelope's digests ARE our copy of it. Taking them unchecked would
 	// let a control plane pick the bytes we verify against; requiring the
@@ -295,7 +291,7 @@ func (v *Verifier) Check(dispatch Dispatch, att *Attestation) Decision {
 		Nonce:          att.Nonce,
 		IssuedAt:       att.IssuedAt,
 	}
-	valid, err := attest.Verify(ed25519.PublicKey(leaf), claim, att.Signature)
+	valid, err := attest.VerifyClaim(leaf, claim, att.Signature)
 	if err != nil {
 		return refuse("bad_signature", "signature is malformed")
 	}
@@ -303,8 +299,8 @@ func (v *Verifier) Check(dispatch Dispatch, att *Attestation) Decision {
 		return refuse("bad_signature",
 			"signature does not match the dispatched action intent")
 	}
-	// 10. The nonce must not have been seen — consuming it on success.
-	ok, err = v.nonces.consume(att.Nonce, issued, v.now())
+	// 8. The nonce must not have been seen — consuming it on success.
+	ok, err := v.nonces.consume(att.Nonce, issued, v.now())
 	if err != nil {
 		return refuse("nonce_store_unavailable",
 			"could not durably record the attestation nonce; refusing rather than risk a replay")
@@ -358,15 +354,21 @@ func narrativeDigestWellFormed(s string) bool {
 // runner does not have, so a scope of {"region": ""} was satisfied by every
 // runner in the fleet — a constraint that read as a restriction and was not
 // one. Absent label, no match.
-func scopeSatisfied(s attest.Scope, group string, labels map[string]string) bool {
-	if s.Group != "" && s.Group != group {
-		return false
+// decodeCertChain turns the wire's standard-base64 DER entries into raw DER.
+// The count bound is applied here as well as in VerifyChain so an oversized
+// chain is refused before any parsing work.
+func decodeCertChain(encoded []string) ([][]byte, error) {
+	if len(encoded) > attest.MaxChainCerts {
+		return nil, fmt.Errorf("certificate chain has %d certificates, at most %d are accepted",
+			len(encoded), attest.MaxChainCerts)
 	}
-	for k, v := range s.Labels {
-		got, ok := labels[k]
-		if !ok || got != v {
-			return false
+	chain := make([][]byte, 0, len(encoded))
+	for i, entry := range encoded {
+		der, err := base64.StdEncoding.DecodeString(entry)
+		if err != nil {
+			return nil, fmt.Errorf("certificate %d is not valid base64", i)
 		}
+		chain = append(chain, der)
 	}
-	return true
+	return chain, nil
 }

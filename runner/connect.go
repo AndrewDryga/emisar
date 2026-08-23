@@ -255,7 +255,7 @@ func newVerifier(cfg *config.Config, externalID string, nonceStore *signing.Nonc
 	}
 	cas := make([]signing.CAConfig, len(cfg.Signing.TrustedCAs))
 	for i, ca := range cfg.Signing.TrustedCAs {
-		cas[i] = signing.CAConfig{CAID: ca.CAID, PublicKeyHex: ca.PublicKey}
+		cas[i] = signing.CAConfig{Name: ca.Name, PEM: ca.PEM}
 	}
 	return signing.NewVerifier(
 		cfg.Signing.EnforceSignatures, cas, cfg.Signing.MaxAttestationAge.Std(),

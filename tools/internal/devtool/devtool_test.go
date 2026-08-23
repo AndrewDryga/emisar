@@ -1428,7 +1428,7 @@ func writeClientModuleLayout(t *testing.T, root string) {
 	// The gate also decides attestation parity, which reads both copies of the
 	// verifier — identical bytes and identical fixed vectors.
 	implementation := "package attest\n"
-	vectors := "package attest\n\nconst (\n\tname: \"empty args\"\n\tcertBytes = \"\"\n\tenvelopeBase64URL = \"\"\n)\n"
+	vectors := "package attest\n\nconst (\n\tname: \"empty args\"\n\tsig: `x`\n\tvectorLeafDERSHA256 = \"\"\n)\n"
 	for _, module := range []string{"runner", "mcp"} {
 		dir := filepath.Join(root, module, "internal", "attest")
 		if err := os.MkdirAll(dir, 0o755); err != nil {

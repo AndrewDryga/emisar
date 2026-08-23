@@ -1,9 +1,13 @@
 package main
 
 import (
-	"crypto/ed25519"
-	"encoding/hex"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,37 +16,56 @@ import (
 
 	"github.com/andrewdryga/emisar/runner/internal/attest"
 	"github.com/andrewdryga/emisar/runner/internal/config"
+	"github.com/andrewdryga/emisar/runner/internal/signing"
 )
 
-func TestGenerateEd25519(t *testing.T) {
-	id, pubHex, seedHex, err := generateEd25519("ca-prod", "ca-")
-	if err != nil {
-		t.Fatalf("generateEd25519: %v", err)
+func TestGenerateSigningKey(t *testing.T) {
+	for _, alg := range []signingKeyAlg{algEd25519, algP256} {
+		key, err := generateSigningKey(alg)
+		if err != nil {
+			t.Fatalf("generateSigningKey(%s): %v", alg, err)
+		}
+		encoded, err := encodePrivateKey(key)
+		if err != nil {
+			t.Fatalf("encodePrivateKey(%s): %v", alg, err)
+		}
+		// One line, and it round-trips — that is what makes it pasteable into an
+		// env var or a secret manager.
+		if strings.ContainsAny(encoded, "\n\r") {
+			t.Errorf("%s private key is not one line", alg)
+		}
+		parsed, err := parsePrivateKey(encoded)
+		if err != nil {
+			t.Fatalf("parsePrivateKey(%s): %v", alg, err)
+		}
+		if !parsed.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(key.Public()) {
+			t.Errorf("%s key did not round-trip", alg)
+		}
 	}
-	if id != "ca-prod" {
-		t.Fatalf("id = %q", id)
-	}
-	seed, err := hex.DecodeString(seedHex)
-	if err != nil || len(seed) != ed25519.SeedSize {
-		t.Fatalf("bad seed hex: %v len=%d", err, len(seed))
-	}
-	pub, err := hex.DecodeString(pubHex)
-	if err != nil || len(pub) != ed25519.PublicKeySize {
-		t.Fatalf("bad public hex: %v len=%d", err, len(pub))
-	}
-	if hex.EncodeToString(ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)) != pubHex {
-		t.Fatal("public key does not match the seed")
+	if _, err := generateSigningKey("rsa"); err == nil {
+		t.Error("an unaccepted key algorithm must be refused")
 	}
 }
 
-func TestGenerateEd25519DefaultIDAndRandomness(t *testing.T) {
-	id, _, seed1, _ := generateEd25519("", "op-")
-	if !strings.HasPrefix(id, "op-") || id != "op-"+seed1[:8] {
-		t.Fatalf("default id %q should be op-<first 8 of seed>", id)
+func TestParsePrivateKeyRejectsUnusableKeys(t *testing.T) {
+	if _, err := parsePrivateKey("not base64!"); err == nil {
+		t.Error("non-base64 must be refused")
 	}
-	_, _, seed2, _ := generateEd25519("", "op-")
-	if seed1 == seed2 {
-		t.Fatal("two key generations must produce different seeds")
+	if _, err := parsePrivateKey(base64.StdEncoding.EncodeToString([]byte("not a key"))); err == nil {
+		t.Error("non-PKCS#8 must be refused")
+	}
+	// An RSA key is well-formed PKCS#8 but is not a dispatch-signing algorithm,
+	// so it must fail HERE rather than as an opaque refusal at a runner.
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate RSA key: %v", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(rsaKey)
+	if err != nil {
+		t.Fatalf("marshal RSA key: %v", err)
+	}
+	if _, err := parsePrivateKey(base64.StdEncoding.EncodeToString(der)); err == nil {
+		t.Error("an RSA leaf key must be refused")
 	}
 }
 
@@ -130,34 +153,52 @@ func TestParseTTL(t *testing.T) {
 	}
 }
 
-func TestMintCertVerifiesUnderCA(t *testing.T) {
-	_, _, caSeed, _ := generateEd25519("ca", "ca-")
-	caPriv, err := parseCASeed(caSeed)
+// A minted certificate verifies through the same VerifyChain a runner uses,
+// with its scope intact — the CLI and the verifier agree on the profile.
+func TestMintedCertificateVerifiesThroughTheRunnerPath(t *testing.T) {
+	caKey, err := generateSigningKey(algEd25519)
 	if err != nil {
-		t.Fatalf("parseCASeed: %v", err)
+		t.Fatal(err)
 	}
-	caPub := caPriv.Public().(ed25519.PublicKey)
-	_, leafPub, _, _ := generateEd25519("op", "op-")
+	caDER, err := mintCA(caKey, "ca-test", 365*24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caCert, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafKey, err := generateSigningKey(algEd25519)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := attest.Scope{Group: "edge", Labels: map[string]string{"env": "prod"}}
+	leafDER, err := mintLeaf(caKey, caCert, leafKey.Public(), "op", scope, 12*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	cert, err := mintCert(caPriv, "ca-x", "op-y", leafPub, attest.Scope{Group: "edge"}, time.Hour)
+	roots := x509.NewCertPool()
+	roots.AddCert(caCert)
+	leaf, gotScope, err := attest.VerifyChain(roots, [][]byte{leafDER}, time.Now())
 	if err != nil {
-		t.Fatalf("mintCert: %v", err)
+		t.Fatalf("a minted certificate must verify through VerifyChain: %v", err)
 	}
-	if cert.CAID != "ca-x" || cert.KeyID != "op-y" || cert.PublicKey != leafPub {
-		t.Fatalf("cert fields wrong: %+v", cert)
+	if gotScope.Group != "edge" || gotScope.Labels["env"] != "prod" {
+		t.Fatalf("scope not carried through the certificate: %+v", gotScope)
 	}
-	if cert.Serial == "" || cert.Sig == "" {
-		t.Fatal("cert must carry a serial and signature")
+	// And the certified key signs a claim the same certificate verifies.
+	claim := attest.Claim{
+		ActionID: "a.b", PackRef: "p@1/sha256:x", ArgsRaw: []byte(`{}`),
+		RunnerRefs: []string{"r~1"}, Reason: "test", OperationID: "op_1",
+		PortalOrigin: "https://emisar.test", Nonce: "n", IssuedAt: "2026-06-17T12:00:00Z",
 	}
-	// valid_until is ttl after valid_from.
-	from, _ := time.Parse(time.RFC3339, cert.ValidFrom)
-	until, _ := time.Parse(time.RFC3339, cert.ValidUntil)
-	if until.Sub(from) != time.Hour {
-		t.Fatalf("validity window = %v, want 1h", until.Sub(from))
+	sig, err := attest.SignClaim(leafKey, claim)
+	if err != nil {
+		t.Fatalf("SignClaim: %v", err)
 	}
-	ok, err := attest.VerifyCert(caPub, cert)
-	if err != nil || !ok {
-		t.Fatalf("minted cert must verify under the CA: ok=%v err=%v", ok, err)
+	if ok, err := attest.VerifyClaim(leaf, claim, sig); err != nil || !ok {
+		t.Fatalf("VerifyClaim = %v, %v; want true", ok, err)
 	}
 }
 
@@ -165,7 +206,7 @@ func TestSigningNewCACmd_JSONShape(t *testing.T) {
 	withJSONOut(t, true)
 	cmd := signingNewCACmd()
 	cmd.SilenceUsage, cmd.SilenceErrors = true, true
-	cmd.SetArgs([]string{"--ca-id", "ca-ci"})
+	cmd.SetArgs([]string{"--ca-name", "ca-ci"})
 
 	var runErr error
 	out := captureStdout(t, func() { runErr = cmd.Execute() })
@@ -176,14 +217,18 @@ func TestSigningNewCACmd_JSONShape(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("signing new-ca --json must emit a JSON object, got %q: %v", out, err)
 	}
-	if got["ca_id"] != "ca-ci" {
-		t.Errorf("ca_id = %q, want ca-ci", got["ca_id"])
+	if got["ca_name"] != "ca-ci" {
+		t.Errorf("ca_name = %q, want ca-ci", got["ca_name"])
 	}
-	if pub, err := hex.DecodeString(got["public_key"]); err != nil || len(pub) != ed25519.PublicKeySize {
-		t.Errorf("public_key not a %d-byte hex key", ed25519.PublicKeySize)
+	caCert, err := parseCACertificate(got["ca_certificate"])
+	if err != nil {
+		t.Fatalf("ca_certificate must be a CA PEM: %v", err)
 	}
-	if seed, err := hex.DecodeString(got["private_key"]); err != nil || len(seed) != ed25519.SeedSize {
-		t.Errorf("private_key not a %d-byte hex seed", ed25519.SeedSize)
+	if caCert.Subject.CommonName != "ca-ci" {
+		t.Errorf("CA common name = %q, want ca-ci", caCert.Subject.CommonName)
+	}
+	if _, err := parsePrivateKey(got["ca_private_key"]); err != nil {
+		t.Errorf("ca_private_key must round-trip: %v", err)
 	}
 }
 
@@ -191,30 +236,35 @@ func TestSigningNewCACmd_HumanOutput(t *testing.T) {
 	withJSONOut(t, false)
 	cmd := signingNewCACmd()
 	cmd.SilenceUsage, cmd.SilenceErrors = true, true
-	cmd.SetArgs([]string{"--ca-id", "ca-prod"})
+	cmd.SetArgs([]string{"--ca-name", "ca-prod"})
 
 	var runErr error
 	out := captureStdout(t, func() { runErr = cmd.Execute() })
 	if runErr != nil {
 		t.Fatalf("signing new-ca: %v", runErr)
 	}
-	for _, want := range []string{"enforce_signatures: true", "trusted_cas:", "ca_id: ca-prod", "OFFLINE", "emisar signing new-cert"} {
+	for _, want := range []string{
+		"enforce_signatures: true", "trusted_cas:", "name: ca-prod", "pem: |",
+		"BEGIN CERTIFICATE", "OFFLINE", "emisar signing new-cert",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("signing new-ca guide missing %q\n--- output ---\n%s", want, out)
 		}
 	}
 }
 
-// signing new-cert mints a leaf + a cert; the printed EMISAR_SIGNING_CERT must
-// parse and verify under the CA, vouching for the printed EMISAR_SIGNING_KEY's
-// public key.
+// signing new-cert issues a leaf; the printed EMISAR_SIGNING_CERT must decode,
+// verify under the CA, and vouch for the printed EMISAR_SIGNING_KEY's key.
 func TestSigningNewCertCmd_MintsVerifiableCert(t *testing.T) {
 	withJSONOut(t, true)
-	_, caPubHex, caSeed, _ := generateEd25519("ca-x", "ca-")
+	caName, caPEM, caKeyEncoded := runNewCA(t)
 
 	cmd := signingNewCertCmd()
 	cmd.SilenceUsage, cmd.SilenceErrors = true, true
-	cmd.SetArgs([]string{"--ca-id", "ca-x", "--ca-key", caSeed, "--key-id", "op-z", "--scope", "group=edge,env=prod", "--ttl", "12h"})
+	cmd.SetArgs([]string{
+		"--ca-key", caKeyEncoded, "--ca-cert", caPEM,
+		"--key-name", "op-z", "--scope", "group=edge,env=prod", "--ttl", "12h",
+	})
 
 	var runErr error
 	out := captureStdout(t, func() { runErr = cmd.Execute() })
@@ -226,42 +276,49 @@ func TestSigningNewCertCmd_MintsVerifiableCert(t *testing.T) {
 		t.Fatalf("signing new-cert --json must emit a JSON object, got %q: %v", out, err)
 	}
 
-	var cert attest.Cert
-	if err := json.Unmarshal([]byte(got["cert"]), &cert); err != nil {
-		t.Fatalf("the cert value must be valid JSON: %v", err)
-	}
-	if cert.CAID != "ca-x" || cert.KeyID != "op-z" {
-		t.Fatalf("cert fields: %+v", cert)
-	}
-	if cert.Scope.Group != "edge" || cert.Scope.Labels["env"] != "prod" {
-		t.Fatalf("scope not carried: %+v", cert.Scope)
-	}
-	// The leaf private key printed must correspond to the cert's public key.
-	leafSeed, err := hex.DecodeString(got["private_key"])
+	leafDER := decodeChain(t, got["certificate_chain"])
+	caCert, err := parseCACertificate(caPEM)
 	if err != nil {
-		t.Fatalf("private_key hex: %v", err)
+		t.Fatal(err)
 	}
-	leafPub := hex.EncodeToString(ed25519.NewKeyFromSeed(leafSeed).Public().(ed25519.PublicKey))
-	if cert.PublicKey != leafPub {
-		t.Fatal("the printed leaf key does not match the cert's public_key")
+	roots := x509.NewCertPool()
+	roots.AddCert(caCert)
+	leaf, scope, err := attest.VerifyChain(roots, [][]byte{leafDER}, time.Now())
+	if err != nil {
+		t.Fatalf("the issued certificate must verify under its CA (%s): %v", caName, err)
 	}
-	// And the cert verifies under the CA we minted it with.
-	caPub, _ := hex.DecodeString(caPubHex)
-	if ok, err := attest.VerifyCert(ed25519.PublicKey(caPub), cert); err != nil || !ok {
-		t.Fatalf("cert must verify under its CA: ok=%v err=%v", ok, err)
+	if scope.Group != "edge" || scope.Labels["env"] != "prod" {
+		t.Fatalf("scope not carried: %+v", scope)
+	}
+	if leaf.Subject.CommonName != "op-z" {
+		t.Errorf("leaf common name = %q, want op-z", leaf.Subject.CommonName)
+	}
+	// The printed private key must be the one the certificate vouches for.
+	leafKey, err := parsePrivateKey(got["private_key"])
+	if err != nil {
+		t.Fatalf("private_key: %v", err)
+	}
+	if !leafKey.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(leaf.PublicKey) {
+		t.Fatal("the printed leaf key does not match the certificate's public key")
 	}
 }
 
-// signing new-cert with --ca-key set but missing --ca-id errors (the cert's
-// ca_id must match the runner's trusted_cas).
-func TestSigningNewCertCmd_RequiresCAID(t *testing.T) {
+// new-cert needs both halves of the issuer: an X.509 leaf names its issuer
+// exactly, so the certificate cannot be reconstructed from a label.
+func TestSigningNewCertCmd_RequiresIssuer(t *testing.T) {
 	withJSONOut(t, true)
-	_, _, caSeed, _ := generateEd25519("ca-x", "ca-")
-	cmd := signingNewCertCmd()
-	cmd.SilenceUsage, cmd.SilenceErrors = true, true
-	cmd.SetArgs([]string{"--ca-key", caSeed})
-	if err := cmd.Execute(); err == nil {
-		t.Fatal("signing new-cert without --ca-id must error")
+	_, caPEM, caKeyEncoded := runNewCA(t)
+
+	for name, args := range map[string][]string{
+		"no --ca-key":  {"--ca-cert", caPEM},
+		"no --ca-cert": {"--ca-key", caKeyEncoded},
+	} {
+		cmd := signingNewCertCmd()
+		cmd.SilenceUsage, cmd.SilenceErrors = true, true
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err == nil {
+			t.Errorf("%s: signing new-cert must error", name)
+		}
 	}
 }
 
@@ -273,7 +330,7 @@ func TestSigningInitCmd_OutputIsValidEnforcingConfig(t *testing.T) {
 	withJSONOut(t, true)
 	cmd := signingInitCmd()
 	cmd.SilenceUsage, cmd.SilenceErrors = true, true
-	cmd.SetArgs([]string{"--ca-id", "ca-quick", "--scope", "group=edge"})
+	cmd.SetArgs([]string{"--ca-name", "ca-quick", "--scope", "group=edge"})
 
 	var runErr error
 	out := captureStdout(t, func() { runErr = cmd.Execute() })
@@ -287,6 +344,10 @@ func TestSigningInitCmd_OutputIsValidEnforcingConfig(t *testing.T) {
 
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
+	var pemBlock strings.Builder
+	for _, line := range strings.Split(strings.TrimRight(got["ca_certificate"], "\n"), "\n") {
+		pemBlock.WriteString("        " + line + "\n")
+	}
 	yaml := "schema_version: 1\n" +
 		"runner:\n  group: edge\n" +
 		"paths:\n  data_dir: " + filepath.Join(dir, "data") + "\n  packs:\n    - " + filepath.Join(dir, "packs") + "\n" +
@@ -294,8 +355,8 @@ func TestSigningInitCmd_OutputIsValidEnforcingConfig(t *testing.T) {
 		"signing:\n" +
 		"  enforce_signatures: true\n" +
 		"  trusted_cas:\n" +
-		"    - ca_id: " + got["ca_id"] + "\n" +
-		"      public_key: " + got["ca_public_key"] + "\n"
+		"    - name: " + got["ca_name"] + "\n" +
+		"      pem: |\n" + pemBlock.String()
 	if err := os.WriteFile(cfgPath, []byte(yaml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -307,17 +368,51 @@ func TestSigningInitCmd_OutputIsValidEnforcingConfig(t *testing.T) {
 	if !cfg.Signing.EnforceSignatures {
 		t.Fatal("enforce_signatures should be on")
 	}
-	if len(cfg.Signing.TrustedCAs) != 1 || cfg.Signing.TrustedCAs[0].PublicKey != got["ca_public_key"] {
+	if len(cfg.Signing.TrustedCAs) != 1 {
 		t.Fatalf("trusted CA not loaded from the emitted block: %+v", cfg.Signing.TrustedCAs)
 	}
 
-	// The minted cert in the same output verifies under that CA.
-	var cert attest.Cert
-	if err := json.Unmarshal([]byte(got["cert"]), &cert); err != nil {
-		t.Fatalf("cert JSON: %v", err)
+	// The emitted anchor and certificate are one working pair: the verifier the
+	// runner would build accepts the certificate from the same output.
+	verifier, err := signing.NewVerifier(true, []signing.CAConfig{
+		{Name: cfg.Signing.TrustedCAs[0].Name, PEM: cfg.Signing.TrustedCAs[0].PEM},
+	}, time.Hour, "runner-1", "https://emisar.test", "edge", nil, signing.NewMemoryNonceStore())
+	if err != nil {
+		t.Fatalf("the emitted anchor must build a verifier: %v", err)
 	}
-	caPub, _ := hex.DecodeString(got["ca_public_key"])
-	if ok, err := attest.VerifyCert(ed25519.PublicKey(caPub), cert); err != nil || !ok {
-		t.Fatalf("the quickstart cert must verify under the quickstart CA: ok=%v err=%v", ok, err)
+	if ids := verifier.CAIDs(); len(ids) != 1 || ids[0] != "ca-quick" {
+		t.Fatalf("advertised CA labels = %v, want [ca-quick]", ids)
 	}
+}
+
+// runNewCA runs `signing new-ca --json` and returns its name, PEM, and key.
+func runNewCA(t *testing.T) (name, caPEM, caKey string) {
+	t.Helper()
+	cmd := signingNewCACmd()
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs([]string{"--ca-name", "ca-x"})
+	var runErr error
+	out := captureStdout(t, func() { runErr = cmd.Execute() })
+	if runErr != nil {
+		t.Fatalf("signing new-ca: %v", runErr)
+	}
+	var got map[string]string
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("signing new-ca --json: %v", err)
+	}
+	return got["ca_name"], got["ca_certificate"], got["ca_private_key"]
+}
+
+// decodeChain unwraps the one-line EMISAR_SIGNING_CERT value into leaf DER.
+func decodeChain(t *testing.T, encoded string) []byte {
+	t.Helper()
+	pemText, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatalf("certificate chain is not base64: %v", err)
+	}
+	block, _ := pem.Decode(pemText)
+	if block == nil || block.Type != "CERTIFICATE" {
+		t.Fatal("certificate chain does not carry a PEM CERTIFICATE block")
+	}
+	return block.Bytes
 }

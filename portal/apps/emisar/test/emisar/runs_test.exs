@@ -2632,7 +2632,7 @@ defmodule Emisar.RunsTest do
       signed =
         signed_mcp_attestation(facts, [runner],
           issued_at: now |> DateTime.add(-7_200, :second) |> DateTime.to_iso8601(),
-          valid_until: now |> DateTime.add(3_600, :second) |> DateTime.to_iso8601()
+          valid_until: DateTime.add(now, 3_600, :second)
         )
 
       assert Runs.dispatch_mcp_action(signed_mcp_facts(facts, signed.header), subject) ==
@@ -2674,7 +2674,7 @@ defmodule Emisar.RunsTest do
       signed =
         signed_mcp_attestation(facts, [runner],
           issued_at: DateTime.to_iso8601(now),
-          valid_until: DateTime.to_iso8601(cert_deadline)
+          valid_until: cert_deadline
         )
 
       assert {:ok, :created, [%ActionRun{status: :pending_approval} = run]} =
@@ -3295,7 +3295,7 @@ defmodule Emisar.RunsTest do
     end
 
     defp signed_run(account, runner, issued_at) do
-      valid_until = DateTime.utc_now() |> DateTime.add(3_600, :second) |> DateTime.to_iso8601()
+      valid_until = DateTime.add(DateTime.utc_now(), 3_600, :second)
 
       %{attestation: attestation} =
         Fixtures.Runs.signed_attestation(issued_at: issued_at, valid_until: valid_until)

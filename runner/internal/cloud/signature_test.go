@@ -2,10 +2,18 @@ package cloud
 
 import (
 	"context"
+	"crypto"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
+	"math/big"
+	"net/url"
 	"testing"
 	"time"
 
@@ -32,31 +40,66 @@ func keyFromSeed(t *testing.T, seedHex string) (ed25519.PrivateKey, string) {
 	return priv, hex.EncodeToString(priv.Public().(ed25519.PublicKey))
 }
 
-// sigCert mints a wide-window, any-scope cert signed by caPriv vouching for
-// leafPubHex — the verifier trusts the CA, so the leaf signature is what binds
-// each dispatch.
-func sigCert(t *testing.T, caPriv ed25519.PrivateKey, caID, leafPubHex string) attest.Cert {
+// sigCA self-signs a CA certificate the enforcing client trusts, returning the
+// parsed certificate and its PEM for signing.CAConfig.
+func sigCA(t *testing.T, key ed25519.PrivateKey, name string) (*x509.Certificate, string) {
 	t.Helper()
-	cert := attest.Cert{
-		CAID: caID, KeyID: "op", PublicKey: leafPubHex,
-		ValidFrom: "2026-01-01T00:00:00Z", ValidUntil: "2030-01-01T00:00:00Z",
-		Serial: "01SIGTESTCERT00000000000000",
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: name},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
 	}
-	sig, err := attest.SignCert(caPriv, cert)
+	der, err := x509.CreateCertificate(rand.Reader, template, template, key.Public(), key)
 	if err != nil {
-		t.Fatalf("SignCert: %v", err)
+		t.Fatalf("mint CA: %v", err)
 	}
-	cert.Sig = sig
-	return cert
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parse CA: %v", err)
+	}
+	return cert, string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
+
+// sigCertChain issues a wide-window, any-scope certificate for leafPub — the
+// verifier trusts the CA, so the leaf signature is what binds each dispatch.
+func sigCertChain(t *testing.T, caCert *x509.Certificate, caKey ed25519.PrivateKey, leafPub crypto.PublicKey) []string {
+	t.Helper()
+	scopeURI, err := attest.EncodeScopeURI(attest.Scope{})
+	if err != nil {
+		t.Fatalf("EncodeScopeURI: %v", err)
+	}
+	uri, err := url.Parse(scopeURI)
+	if err != nil {
+		t.Fatalf("parse scope URI: %v", err)
+	}
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(2),
+		Subject:               pkix.Name{CommonName: "op"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		URIs:                  []*url.URL{uri},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, caCert, leafPub, caKey)
+	if err != nil {
+		t.Fatalf("mint leaf: %v", err)
+	}
+	return []string{base64.StdEncoding.EncodeToString(der)}
 }
 
 // enforcingClient builds a runner client that requires a valid signed cert from a
 // single fixed test CA, and returns the matching leaf private key for signing.
 func enforcingClient(t *testing.T, dialer Dialer) (*Client, ed25519.PrivateKey, *signing.NonceStore) {
 	t.Helper()
-	_, caPubHex := keyFromSeed(t, sigTestCASeed)
+	caPriv, _ := keyFromSeed(t, sigTestCASeed)
+	_, caPEM := sigCA(t, caPriv, sigTestCAID)
 	nonces := signing.NewMemoryNonceStore()
-	v, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: sigTestCAID, PublicKeyHex: caPubHex}}, time.Hour, sigTestRunnerID, sigTestOrigin, "", nil, nonces)
+	v, err := signing.NewVerifier(true, []signing.CAConfig{{Name: sigTestCAID, PEM: caPEM}}, time.Hour, sigTestRunnerID, sigTestOrigin, "", nil, nonces)
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -73,14 +116,13 @@ func enforcingClient(t *testing.T, dialer Dialer) (*Client, ed25519.PrivateKey, 
 func attestationFor(t *testing.T, cli *Client, priv ed25519.PrivateKey, actionID string, args map[string]any) *Attestation {
 	t.Helper()
 	caPriv, _ := keyFromSeed(t, sigTestCASeed)
-	_, leafPubHex := keyFromSeed(t, sigTestLeafSeed)
-	return attestationCertifiedBy(t, cli, priv, caPriv, sigTestCAID, leafPubHex, "nonce-"+actionID, actionID, args)
+	return attestationCertifiedBy(t, cli, priv, caPriv, sigTestCAID, "nonce-"+actionID, actionID, args)
 }
 
 // attestationCertifiedBy signs the dispatch with priv and attaches a cert that
 // caPriv vouches for leafPubHex under — so a test can mint a dispatch certified
 // by a specific CA (e.g. one the runner was just rotated to trust).
-func attestationCertifiedBy(t *testing.T, cli *Client, priv, caPriv ed25519.PrivateKey, caID, leafPubHex, nonce, actionID string, args map[string]any) *Attestation {
+func attestationCertifiedBy(t *testing.T, cli *Client, priv, caPriv ed25519.PrivateKey, caID, nonce, actionID string, args map[string]any) *Attestation {
 	t.Helper()
 	nonceDigest := sha256.Sum256([]byte(nonce))
 	nonce = hex.EncodeToString(nonceDigest[:16])
@@ -111,12 +153,13 @@ func attestationCertifiedBy(t *testing.T, cli *Client, priv, caPriv ed25519.Priv
 	if err != nil {
 		t.Fatalf("ArgsSHA256: %v", err)
 	}
-	cert := sigCert(t, caPriv, caID, leafPubHex)
+	caCert, _ := sigCA(t, caPriv, caID)
+	chain := sigCertChain(t, caCert, caPriv, priv.Public())
 	return &Attestation{
 		Version: attest.Version, Tool: attest.Tool, PortalOrigin: sigTestOrigin,
 		ActionID: actionID, PackRef: packRef, ArgsSHA256: argsDigest,
 		RunnerRefs: runnerRefs, Reason: reason, OperationID: operationID,
-		Signature: sig, Nonce: nonce, IssuedAt: issuedAt, Cert: &cert,
+		Signature: sig, Nonce: nonce, IssuedAt: issuedAt, CertChain: chain,
 	}
 }
 
@@ -259,8 +302,8 @@ func TestClient_SetVerifier_RevokesCALive(t *testing.T) {
 	// Operator rotates config to a different CA and SIGHUPs; the rebuilt verifier
 	// no longer trusts ca1.
 	seed2, _ := hex.DecodeString("3132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f50")
-	pub2 := ed25519.NewKeyFromSeed(seed2).Public().(ed25519.PublicKey)
-	v2, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: "ca2", PublicKeyHex: hex.EncodeToString(pub2)}}, time.Hour, sigTestRunnerID, sigTestOrigin, "", nil, nonces)
+	_, ca2PEM := sigCA(t, ed25519.NewKeyFromSeed(seed2), "ca2")
+	v2, err := signing.NewVerifier(true, []signing.CAConfig{{Name: "ca2", PEM: ca2PEM}}, time.Hour, sigTestRunnerID, sigTestOrigin, "", nil, nonces)
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -290,8 +333,9 @@ func TestClient_SetVerifier_NewCAAcceptedAndGetterReflectsSwap(t *testing.T) {
 	t.Cleanup(func() { cancel(); <-done })
 
 	// Build the rotated-in verifier: trusts ONLY ca2 (a different CA keypair).
-	ca2Priv, ca2PubHex := keyFromSeed(t, "3132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f50")
-	v2, err := signing.NewVerifier(true, []signing.CAConfig{{CAID: "ca2", PublicKeyHex: ca2PubHex}}, time.Hour, sigTestRunnerID, sigTestOrigin, "", nil, nonces)
+	ca2Priv, _ := keyFromSeed(t, "3132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f50")
+	_, ca2PEM := sigCA(t, ca2Priv, "ca2")
+	v2, err := signing.NewVerifier(true, []signing.CAConfig{{Name: "ca2", PEM: ca2PEM}}, time.Hour, sigTestRunnerID, sigTestOrigin, "", nil, nonces)
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
@@ -316,8 +360,7 @@ func TestClient_SetVerifier_NewCAAcceptedAndGetterReflectsSwap(t *testing.T) {
 	// verifier — rotation brought the new CA online live. The same leaf key signs;
 	// only the certifying CA changed.
 	args := map[string]any{"msg": "ok"}
-	_, leafPubHex := keyFromSeed(t, sigTestLeafSeed)
-	newAtt := attestationCertifiedBy(t, cli, priv, ca2Priv, "ca2", leafPubHex, "nonce-ca2", "t.echo", args)
+	newAtt := attestationCertifiedBy(t, cli, priv, ca2Priv, "ca2", "nonce-ca2", "t.echo", args)
 	sendRunActionWithAttestation(t, conn, cli, "req_newca", "t.echo", args, newAtt)
 	if res := waitForResult(t, conn, "req_newca", 3*time.Second); res["status"] != "success" {
 		t.Fatalf("a dispatch certified by the rotated-in CA must pass; status=%v reason=%v error=%v",

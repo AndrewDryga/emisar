@@ -300,8 +300,15 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      %{attestation: attestation} =
-        Fixtures.Runs.signed_attestation(ca_id: "acme-2026", key_id: "op-dba-01")
+      %{attestation: attestation} = Fixtures.Runs.signed_attestation()
+
+      expected_fingerprint =
+        attestation
+        |> Emisar.Runs.Attestation.envelope()
+        |> Map.fetch!("cert_chain")
+        |> hd()
+        |> Base.decode64!()
+        |> Emisar.Crypto.hash_hex()
 
       run =
         Fixtures.Runs.create_signed_run(%{
@@ -320,8 +327,7 @@ defmodule Emisar.AuditTest do
         |> Ecto.Changeset.get_field(:payload)
 
       assert payload[:signed] == true
-      assert payload[:signing_ca_id] == "acme-2026"
-      assert payload[:signing_key_id] == "op-dba-01"
+      assert payload[:signing_cert_sha256] == expected_fingerprint
       assert payload[:operation_id] == "op_724NN9NMDZ1T76NARWCKM5A0D6"
     end
 

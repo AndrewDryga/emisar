@@ -14,12 +14,21 @@ package attest
 
 import (
 	"bytes"
+	"crypto"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/url"
 	"sort"
+	"strings"
+	"time"
 )
 
 // Version is the canonical-encoding revision, bound into every signature so a
@@ -92,7 +101,10 @@ type Envelope struct {
 	Signature      string `json:"sig"`
 	Nonce          string `json:"nonce"`
 	IssuedAt       string `json:"issued_at"`
-	Cert           *Cert  `json:"cert,omitempty"`
+	// CertChain is the leaf certificate, optionally followed by one
+	// intermediate, each as standard-base64 DER. The trust anchor is never on
+	// the wire: a runner trusts what its own config carries.
+	CertChain []string `json:"cert_chain,omitempty"`
 }
 
 // TextSHA256 is the lower-hex SHA-256 of a UTF-8 string. Used for the
@@ -241,100 +253,385 @@ func Verify(pub ed25519.PublicKey, c Claim, sigHex string) (bool, error) {
 	return ed25519.Verify(pub, msg, sig), nil
 }
 
-// CertVersion is the canonical-encoding revision of the certificate body — a
-// SECOND canonical struct that composes with the v4 attestation above without
-// changing it. The offline CA signs this; the runner verifies it to learn which
-// leaf public key the attestation must verify under (and over which scope).
-const CertVersion = "emisar-cert-v2"
+// CertProfile names the X.509 profile a dispatch certificate must satisfy. It
+// is documentation, not a wire field: the profile is enforced structurally by
+// VerifyChain, so there is no version string an issuer could get wrong.
+const CertProfile = "emisar-x509-profile-v1"
 
-// Scope is the optional targeting a CA binds into a cert. It is matched ONLY
-// against the runner's own locally-configured identity (runner.group /
+// ScopeURI is the URI SAN every dispatch certificate must carry exactly once.
+// It does two jobs. It carries the scope (in its query), and — more
+// importantly — it is what marks the certificate as issued FOR emisar. A TLS
+// server certificate from the same corporate CA has no such SAN, so a shared
+// root cannot turn ordinary server certificates into signing authority for
+// infrastructure actions.
+const ScopeURI = "emisar://dispatch/v1"
+
+// MaxScopeURIBytes bounds the SAN a runner will parse. Scope is a group plus a
+// label subset, never a policy document.
+const MaxScopeURIBytes = 512
+
+// MaxChainCerts is the presented chain a runner accepts: the leaf, plus at
+// most one intermediate. Deeper chains are refused even when they verify — a
+// customer PKI that needs more depth pins the deeper issuer as the trust
+// anchor instead.
+const MaxChainCerts = 2
+
+// Cert refusal codes. They travel to the operator as the run's refusal reason,
+// so each one names a distinct remedy: a profile violation is an issuance bug,
+// an untrusted chain is a distribution problem, expiry is a rotation problem,
+// and scope is a targeting problem.
+const (
+	CodeCertProfile   = "cert_profile"
+	CodeCertUntrusted = "cert_untrusted"
+	CodeCertExpired   = "cert_expired"
+	CodeCertScope     = "cert_scope"
+)
+
+// CertError carries the refusal code a certificate failure maps to, so the
+// caller reports the operator's actual remedy rather than one generic
+// "bad certificate".
+type CertError struct {
+	Code   string
+	Reason string
+}
+
+func (e *CertError) Error() string { return e.Code + ": " + e.Reason }
+
+func certErr(code, format string, args ...any) *CertError {
+	return &CertError{Code: code, Reason: fmt.Sprintf(format, args...)}
+}
+
+// Scope is the optional targeting a CA binds into a certificate. It is matched
+// ONLY against the runner's own locally-configured identity (runner.group /
 // runner.labels), never against any value the control plane supplies — so a
 // compromised portal cannot redirect a certified dispatch to a runner the CA
 // did not scope it to. The matcher is deliberately tiny: exact group + a label
 // subset, no glob or policy DSL.
 type Scope struct {
-	Group  string            `json:"group,omitempty"`  // exact match vs runner.group; "" = any group
-	Labels map[string]string `json:"labels,omitempty"` // each k must equal runner.labels[k]; empty = no constraint
+	Group  string            // exact match vs runner.group; "" = any group
+	Labels map[string]string // each k must equal runner.labels[k]; empty = no constraint
 }
 
-// Cert is a CA-signed credential that vouches for a leaf signing key: the
-// offline CA asserts "this public key, valid in this window, may sign dispatches
-// within this scope". The operator carries it; the MCP client sends it inside
-// the attestation. The runner trusts the CA (one key) instead of every leaf key,
-// so onboarding is one signature and zero runner-config edits. The CA private
-// key NEVER touches the portal — a compromised control plane can relay a cert
-// but never mint one.
-type Cert struct {
-	CAID       string `json:"ca_id"`
-	KeyID      string `json:"key_id"`
-	PublicKey  string `json:"public_key"`  // hex, 32 bytes — the leaf pubkey the attestation must verify under
-	ValidFrom  string `json:"valid_from"`  // RFC3339 UTC
-	ValidUntil string `json:"valid_until"` // RFC3339 UTC
-	Scope      Scope  `json:"scope"`
-	Serial     string `json:"serial"` // ULID — audit + future revocation
-	Sig        string `json:"sig"`    // hex Ed25519, CA over the body below
+// EncodeScopeURI renders a scope as the canonical URI SAN an issuer must set.
+// Canonical means one spelling per scope: parameters sorted bytewise, and
+// every key and value percent-encoded minimally with uppercase hex. Keys are
+// encoded on the same terms as values because a runner label key is free-form
+// operator input — `runner.labels` is a bare YAML map and RUNNER_LABEL_<KEY>
+// env, with no charset the config layer enforces.
+func EncodeScopeURI(s Scope) (string, error) {
+	params := make([]string, 0, len(s.Labels)+1)
+	if s.Group != "" {
+		params = append(params, "group="+encodeScopeComponent(s.Group))
+	}
+	for key, value := range s.Labels {
+		if key == "" {
+			return "", fmt.Errorf("attest: scope label key is empty")
+		}
+		params = append(params, "label."+encodeScopeComponent(key)+"="+encodeScopeComponent(value))
+	}
+	sort.Strings(params)
+
+	uri := ScopeURI
+	if len(params) > 0 {
+		uri += "?" + strings.Join(params, "&")
+	}
+	if len(uri) > MaxScopeURIBytes {
+		return "", fmt.Errorf("attest: scope URI exceeds %d bytes", MaxScopeURIBytes)
+	}
+	return uri, nil
 }
 
-// CertSigningBytes is the exact byte string the CA signs and the runner
-// verifies. Like SigningBytes it uses a fixed JSON struct and reduces the one
-// variable-shaped field (Scope) to a SHA-256 hex digest of its canonical JSON.
-// Sig is NOT part of the body it signs over. Determinism rests on Go's stable
-// struct-field order and JSON map-key sorting for the scope digest.
-func CertSigningBytes(c Cert) ([]byte, error) {
-	scopeJSON, err := json.Marshal(c.Scope)
+// ParseScopeURI parses the canonical scope URI. A URI that parses but is not
+// the canonical spelling of what it means is REFUSED rather than accepted
+// leniently: two spellings of one scope would let an issuer and a verifier
+// disagree about what was authorized.
+func ParseScopeURI(raw string) (Scope, error) {
+	if len(raw) > MaxScopeURIBytes {
+		return Scope{}, certErr(CodeCertProfile, "scope URI exceeds %d bytes", MaxScopeURIBytes)
+	}
+	base, query, hasQuery := strings.Cut(raw, "?")
+	if base != ScopeURI {
+		return Scope{}, certErr(CodeCertProfile, "scope URI is not %s", ScopeURI)
+	}
+
+	scope := Scope{}
+	if hasQuery {
+		if query == "" {
+			return Scope{}, certErr(CodeCertProfile, "scope URI has an empty query")
+		}
+		for _, param := range strings.Split(query, "&") {
+			name, value, ok := strings.Cut(param, "=")
+			if !ok {
+				return Scope{}, certErr(CodeCertProfile, "scope parameter %q has no value", param)
+			}
+			decodedValue, err := decodeScopeComponent(value)
+			if err != nil {
+				return Scope{}, certErr(CodeCertProfile, "scope parameter %q: %s", name, err)
+			}
+			switch {
+			case name == "group":
+				if scope.Group != "" {
+					return Scope{}, certErr(CodeCertProfile, "scope repeats group")
+				}
+				if decodedValue == "" {
+					return Scope{}, certErr(CodeCertProfile, "scope group is empty")
+				}
+				scope.Group = decodedValue
+			case strings.HasPrefix(name, "label."):
+				key, err := decodeScopeComponent(strings.TrimPrefix(name, "label."))
+				if err != nil {
+					return Scope{}, certErr(CodeCertProfile, "scope label key: %s", err)
+				}
+				if key == "" {
+					return Scope{}, certErr(CodeCertProfile, "scope label key is empty")
+				}
+				if _, exists := scope.Labels[key]; exists {
+					return Scope{}, certErr(CodeCertProfile, "scope repeats label %q", key)
+				}
+				if scope.Labels == nil {
+					scope.Labels = map[string]string{}
+				}
+				scope.Labels[key] = decodedValue
+			default:
+				return Scope{}, certErr(CodeCertProfile, "scope parameter %q is not recognised", name)
+			}
+		}
+	}
+
+	// Re-encoding is the canonical check: anything that round-trips to a
+	// different string was spelled some other way — unsorted, over-encoded,
+	// lowercase hex — and is refused rather than silently normalized.
+	canonical, err := EncodeScopeURI(scope)
 	if err != nil {
-		return nil, fmt.Errorf("attest: marshal scope: %w", err)
+		return Scope{}, certErr(CodeCertProfile, "scope URI: %s", err)
 	}
-	digest := sha256.Sum256(scopeJSON)
-	body := struct {
-		Version     string `json:"version"`
-		CAID        string `json:"ca_id"`
-		KeyID       string `json:"key_id"`
-		PublicKey   string `json:"public_key"`
-		ValidFrom   string `json:"valid_from"`
-		ValidUntil  string `json:"valid_until"`
-		ScopeSHA256 string `json:"scope_sha256"`
-		Serial      string `json:"serial"`
-	}{
-		Version:     CertVersion,
-		CAID:        c.CAID,
-		KeyID:       c.KeyID,
-		PublicKey:   c.PublicKey,
-		ValidFrom:   c.ValidFrom,
-		ValidUntil:  c.ValidUntil,
-		ScopeSHA256: hex.EncodeToString(digest[:]),
-		Serial:      c.Serial,
+	if canonical != raw {
+		return Scope{}, certErr(CodeCertProfile, "scope URI is not canonical (expected %q)", canonical)
 	}
-	encoded, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("attest: marshal certificate body: %w", err)
-	}
-	return encoded, nil
+	return scope, nil
 }
 
-// SignCert returns the hex-encoded Ed25519 signature of the CA over the cert
-// body. Deterministic (RFC 8032), which is what makes the cross-impl cert
-// vectors stable.
-func SignCert(caPriv ed25519.PrivateKey, c Cert) (string, error) {
-	msg, err := CertSigningBytes(c)
+// Matches reports whether a runner with this group and labels is inside the
+// scope. An empty scope matches any runner that trusts the CA.
+func (s Scope) Matches(group string, labels map[string]string) bool {
+	if s.Group != "" && s.Group != group {
+		return false
+	}
+	for key, want := range s.Labels {
+		// The presence check is load-bearing: a bare map read returns "" for an
+		// ABSENT key, so a scope pinning a label to the empty string would
+		// otherwise match every runner in the fleet rather than the ones that
+		// actually carry it.
+		got, ok := labels[key]
+		if !ok || got != want {
+			return false
+		}
+	}
+	return true
+}
+
+func encodeScopeComponent(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if isUnreserved(c) {
+			b.WriteByte(c)
+			continue
+		}
+		b.WriteString(fmt.Sprintf("%%%02X", c))
+	}
+	return b.String()
+}
+
+func decodeScopeComponent(s string) (string, error) {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c != '%' {
+			if !isUnreserved(c) {
+				return "", fmt.Errorf("byte %q must be percent-encoded", c)
+			}
+			b.WriteByte(c)
+			continue
+		}
+		if i+2 >= len(s) {
+			return "", fmt.Errorf("truncated percent-encoding")
+		}
+		decoded, err := hex.DecodeString(s[i+1 : i+3])
+		if err != nil {
+			return "", fmt.Errorf("invalid percent-encoding %q", s[i:i+3])
+		}
+		b.WriteByte(decoded[0])
+		i += 2
+	}
+	return b.String(), nil
+}
+
+func isUnreserved(c byte) bool {
+	switch {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		return true
+	case c == '-', c == '.', c == '_', c == '~':
+		return true
+	default:
+		return false
+	}
+}
+
+// VerifyChain verifies a presented DER chain against the configured trust
+// anchors and applies the emisar profile, returning the leaf and its scope.
+//
+// The profile is what keeps a general-purpose CA from becoming dispatch
+// authority: a certificate reaches this far only by carrying exactly one
+// emisar scope SAN, being a non-CA leaf, and holding a key algorithm the
+// claim layer signs with.
+func VerifyChain(roots *x509.CertPool, chain [][]byte, now time.Time) (*x509.Certificate, Scope, error) {
+	if len(chain) == 0 {
+		return nil, Scope{}, certErr(CodeCertProfile, "certificate chain is empty")
+	}
+	if len(chain) > MaxChainCerts {
+		return nil, Scope{}, certErr(CodeCertProfile, "certificate chain has %d certificates, at most %d are accepted", len(chain), MaxChainCerts)
+	}
+
+	parsed := make([]*x509.Certificate, 0, len(chain))
+	for i, der := range chain {
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			return nil, Scope{}, certErr(CodeCertProfile, "certificate %d does not parse: %s", i, err)
+		}
+		parsed = append(parsed, cert)
+	}
+
+	leaf := parsed[0]
+	intermediates := x509.NewCertPool()
+	for _, cert := range parsed[1:] {
+		intermediates.AddCert(cert)
+	}
+
+	// KeyUsageAny because the emisar SAN — not an EKU — is what marks a
+	// certificate as ours. We own no OID arc to require here, and requiring a
+	// borrowed EKU (serverAuth) would accept exactly the TLS certificates the
+	// SAN exists to exclude.
+	if _, err := leaf.Verify(x509.VerifyOptions{
+		Roots:         roots,
+		Intermediates: intermediates,
+		CurrentTime:   now,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+	}); err != nil {
+		var invalid x509.CertificateInvalidError
+		if errors.As(err, &invalid) && invalid.Reason == x509.Expired {
+			return nil, Scope{}, certErr(CodeCertExpired, "%s", err)
+		}
+		return nil, Scope{}, certErr(CodeCertUntrusted, "%s", err)
+	}
+
+	scope, err := leafScope(leaf)
+	if err != nil {
+		return nil, Scope{}, err
+	}
+	if err := checkLeafProfile(leaf); err != nil {
+		return nil, Scope{}, err
+	}
+	return leaf, scope, nil
+}
+
+// leafScope returns the scope from the leaf's single emisar URI SAN. Exactly
+// one is required: zero means the certificate was not issued for emisar, and
+// several would leave the effective scope ambiguous.
+func leafScope(leaf *x509.Certificate) (Scope, error) {
+	var found *url.URL
+	for _, uri := range leaf.URIs {
+		if uri.Scheme != "emisar" {
+			continue
+		}
+		if found != nil {
+			return Scope{}, certErr(CodeCertProfile, "certificate carries several emisar scope URIs")
+		}
+		found = uri
+	}
+	if found == nil {
+		return Scope{}, certErr(CodeCertProfile, "certificate carries no %s scope URI", ScopeURI)
+	}
+	return ParseScopeURI(found.String())
+}
+
+func checkLeafProfile(leaf *x509.Certificate) error {
+	if leaf.BasicConstraintsValid && leaf.IsCA {
+		return certErr(CodeCertProfile, "certificate is a CA certificate, not a signing leaf")
+	}
+	if leaf.KeyUsage != 0 && leaf.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
+		return certErr(CodeCertProfile, "certificate key usage does not permit digital signature")
+	}
+	if _, err := claimVerifier(leaf.PublicKey); err != nil {
+		return err
+	}
+	return nil
+}
+
+// claimVerifier resolves a leaf's public key to the claim-signature algorithm
+// it verifies under. Ed25519 is the default; ECDSA P-256 exists because HSM
+// and cloud-KMS custody is a first-class case for a customer CA and several
+// major KMS products still do not offer Ed25519.
+func claimVerifier(pub crypto.PublicKey) (func(msg, sig []byte) bool, error) {
+	switch key := pub.(type) {
+	case ed25519.PublicKey:
+		return func(msg, sig []byte) bool { return ed25519.Verify(key, msg, sig) }, nil
+	case *ecdsa.PublicKey:
+		if key.Curve != elliptic.P256() {
+			return nil, certErr(CodeCertProfile, "ECDSA key is not on P-256")
+		}
+		return func(msg, sig []byte) bool {
+			digest := sha256.Sum256(msg)
+			return ecdsa.VerifyASN1(key, digest[:], sig)
+		}, nil
+	default:
+		return nil, certErr(CodeCertProfile, "key algorithm %T is not accepted for dispatch signing", pub)
+	}
+}
+
+// SignClaim signs a claim with a certified leaf key. An Ed25519 key signs the
+// claim bytes directly (RFC 8032, deterministic — which is what keeps the
+// cross-implementation vectors stable); a P-256 key signs their SHA-256 and
+// emits an ASN.1 signature.
+func SignClaim(signer crypto.Signer, c Claim) (string, error) {
+	msg, err := SigningBytes(c)
 	if err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(ed25519.Sign(caPriv, msg)), nil
+	switch signer.Public().(type) {
+	case ed25519.PublicKey:
+		sig, err := signer.Sign(rand.Reader, msg, crypto.Hash(0))
+		if err != nil {
+			return "", fmt.Errorf("attest: sign claim: %w", err)
+		}
+		return hex.EncodeToString(sig), nil
+	case *ecdsa.PublicKey:
+		digest := sha256.Sum256(msg)
+		sig, err := signer.Sign(rand.Reader, digest[:], crypto.SHA256)
+		if err != nil {
+			return "", fmt.Errorf("attest: sign claim: %w", err)
+		}
+		return hex.EncodeToString(sig), nil
+	default:
+		return "", fmt.Errorf("attest: key algorithm %T is not accepted for dispatch signing", signer.Public())
+	}
 }
 
-// VerifyCert reports whether c.Sig is a valid Ed25519 signature by caPub over
-// the cert body. A malformed signature or scope is a (false, error); a
-// cryptographically invalid one is (false, nil).
-func VerifyCert(caPub ed25519.PublicKey, c Cert) (bool, error) {
-	msg, err := CertSigningBytes(c)
+// VerifyClaim reports whether sigHex is a valid signature over the claim under
+// the leaf certificate's key. A malformed signature or claim is a
+// (false, error); a cryptographically invalid one is (false, nil).
+func VerifyClaim(leaf *x509.Certificate, c Claim, sigHex string) (bool, error) {
+	verify, err := claimVerifier(leaf.PublicKey)
 	if err != nil {
 		return false, err
 	}
-	sig, err := hex.DecodeString(c.Sig)
+	msg, err := SigningBytes(c)
 	if err != nil {
-		return false, fmt.Errorf("attest: decode cert signature: %w", err)
+		return false, err
 	}
-	return ed25519.Verify(caPub, msg, sig), nil
+	sig, err := hex.DecodeString(sigHex)
+	if err != nil {
+		return false, fmt.Errorf("attest: decode signature: %w", err)
+	}
+	return verify(msg, sig), nil
 }

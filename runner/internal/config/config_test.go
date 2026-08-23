@@ -196,8 +196,11 @@ func TestValidate_RejectsNegativeAuditRotationLimits(t *testing.T) {
 // block, so a failure pins the rejection to the signing rule under test.
 func TestValidate_Signing(t *testing.T) {
 	const (
-		keyA = "1111111111111111111111111111111111111111111111111111111111111111"
-		keyB = "2222222222222222222222222222222222222222222222222222222222222222"
+		// Config validation only checks that an anchor carries PEM text; parsing
+		// and CA-shape checks belong to the verifier, which reports them with a
+		// trusted_cas[i] index the operator can act on.
+		keyA = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"
+		keyB = "-----BEGIN CERTIFICATE-----\nBBBB\n-----END CERTIFICATE-----\n"
 	)
 	cases := []struct {
 		name    string
@@ -213,7 +216,7 @@ func TestValidate_Signing(t *testing.T) {
 			name: "enforce with a trusted CA ok",
 			signing: Signing{
 				EnforceSignatures: true,
-				TrustedCAs:        []TrustedCA{{CAID: "acme", PublicKey: keyA}},
+				TrustedCAs:        []TrustedCA{{Name: "acme", PEM: keyA}},
 			},
 		},
 		{
@@ -222,31 +225,26 @@ func TestValidate_Signing(t *testing.T) {
 			signing: Signing{},
 		},
 		{
-			name: "duplicate ca_id rejected",
+			// Two anchors are ordinary during a CA rotation — both stay trusted
+			// until every runner carries the new one.
+			name: "several anchors ok",
 			signing: Signing{
-				TrustedCAs: []TrustedCA{
-					{CAID: "dup", PublicKey: keyA},
-					{CAID: "dup", PublicKey: keyB},
-				},
+				TrustedCAs: []TrustedCA{{Name: "old", PEM: keyA}, {Name: "new", PEM: keyB}},
 			},
+		},
+		{
+			// The name is display-only, so an anchor without one is fine.
+			name:    "anchor without a name ok",
+			signing: Signing{TrustedCAs: []TrustedCA{{PEM: keyA}}},
+		},
+		{
+			name:    "missing pem rejected",
+			signing: Signing{TrustedCAs: []TrustedCA{{Name: "acme"}}},
 			wantErr: true,
 		},
 		{
-			// ca_id missing.
-			name:    "missing ca_id rejected",
-			signing: Signing{TrustedCAs: []TrustedCA{{PublicKey: keyA}}},
-			wantErr: true,
-		},
-		{
-			// ca_id present but whitespace-only.
-			name:    "blank ca_id rejected",
-			signing: Signing{TrustedCAs: []TrustedCA{{CAID: "  ", PublicKey: keyA}}},
-			wantErr: true,
-		},
-		{
-			// public_key missing.
-			name:    "missing public_key rejected",
-			signing: Signing{TrustedCAs: []TrustedCA{{CAID: "acme"}}},
+			name:    "blank pem rejected",
+			signing: Signing{TrustedCAs: []TrustedCA{{Name: "acme", PEM: "  "}}},
 			wantErr: true,
 		},
 	}
@@ -270,10 +268,7 @@ func TestValidate_SigningEnforcementRequiresDataDir(t *testing.T) {
 	cfg.Paths.DataDir = ""
 	cfg.Signing = Signing{
 		EnforceSignatures: true,
-		TrustedCAs: []TrustedCA{{
-			CAID:      "acme",
-			PublicKey: "1111111111111111111111111111111111111111111111111111111111111111",
-		}},
+		TrustedCAs:        []TrustedCA{{Name: "acme", PEM: "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"}},
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("signature enforcement without paths.data_dir must be rejected")

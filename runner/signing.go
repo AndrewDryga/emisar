@@ -1,16 +1,23 @@
 package main
 
 import (
+	"crypto"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
-	"encoding/hex"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"math/big"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/oklog/ulid/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/andrewdryga/emisar/runner/internal/attest"
@@ -21,34 +28,90 @@ import (
 // customer-held — the whole threat model is that a compromised control plane can
 // RELAY a certified dispatch but never MINT one, so nothing here writes a CA key
 // anywhere the portal can reach.
+//
+// Certificates are X.509 under the emisar profile, so a customer PKI (Vault,
+// AD CS, step-ca, an HSM-backed CA) can issue them instead of this CLI. This
+// CLI is the self-serve path: it does not mint intermediates and cannot sign
+// with an HSM-held key — a customer who needs either issues from their own PKI.
 
-// generateEd25519 mints a keypair and returns hex encodings: the 32-byte seed is
-// the PRIVATE key, the 32-byte public key is safe to publish. id defaults to a
-// short prefixed random label when empty.
-func generateEd25519(id, prefix string) (outID, pubHex, seedHex string, err error) {
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return "", "", "", fmt.Errorf("generate keypair: %w", err)
+// signingKeyAlg is the leaf/CA key algorithm. Ed25519 is the default; ECDSA
+// P-256 exists because several major KMS and HSM products still do not offer
+// Ed25519, and CA custody in an HSM is a first-class case for a customer PKI.
+type signingKeyAlg string
+
+const (
+	algEd25519 signingKeyAlg = "ed25519"
+	algP256    signingKeyAlg = "p256"
+)
+
+func generateSigningKey(alg signingKeyAlg) (crypto.Signer, error) {
+	switch alg {
+	case algEd25519:
+		_, priv, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			return nil, fmt.Errorf("generate keypair: %w", err)
+		}
+		return priv, nil
+	case algP256:
+		priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			return nil, fmt.Errorf("generate keypair: %w", err)
+		}
+		return priv, nil
+	default:
+		return nil, fmt.Errorf("--key must be %s or %s, got %q", algEd25519, algP256, alg)
 	}
-	seedHex = hex.EncodeToString(priv.Seed())
-	pubHex = hex.EncodeToString(pub)
-	if id == "" {
-		id = prefix + seedHex[:8]
-	}
-	return id, pubHex, seedHex, nil
 }
 
-// parseCASeed decodes the offline CA private key (a hex Ed25519 seed) supplied
-// to `signing new-cert`. It never leaves the operator's machine.
-func parseCASeed(seedHex string) (ed25519.PrivateKey, error) {
-	seed, err := hex.DecodeString(strings.TrimSpace(seedHex))
+// encodePrivateKey renders a private key as one line: base64 of its PKCS#8 DER.
+// One line is what makes it pasteable into an env var, a secret manager, or a
+// client's config block without a heredoc.
+func encodePrivateKey(key crypto.Signer) (string, error) {
+	der, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
-		return nil, fmt.Errorf("--ca-key is not valid hex: %w", err)
+		return "", fmt.Errorf("encode private key: %w", err)
 	}
-	if len(seed) != ed25519.SeedSize {
-		return nil, fmt.Errorf("--ca-key is %d bytes, want %d (an Ed25519 seed)", len(seed), ed25519.SeedSize)
+	return base64.StdEncoding.EncodeToString(der), nil
+}
+
+// parsePrivateKey reads the one-line form back. It accepts only the key
+// algorithms the profile signs with, so an unusable key fails here rather than
+// as an opaque signature refusal at an enforcing runner.
+func parsePrivateKey(encoded string) (crypto.Signer, error) {
+	der, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+	if err != nil {
+		return nil, fmt.Errorf("--ca-key is not valid base64: %w", err)
 	}
-	return ed25519.NewKeyFromSeed(seed), nil
+	parsed, err := x509.ParsePKCS8PrivateKey(der)
+	if err != nil {
+		return nil, fmt.Errorf("--ca-key is not a PKCS#8 private key: %w", err)
+	}
+	switch key := parsed.(type) {
+	case ed25519.PrivateKey:
+		return key, nil
+	case *ecdsa.PrivateKey:
+		if key.Curve != elliptic.P256() {
+			return nil, fmt.Errorf("--ca-key is an ECDSA key on %s, only P-256 is accepted", key.Curve.Params().Name)
+		}
+		return key, nil
+	default:
+		return nil, fmt.Errorf("--ca-key algorithm %T is not accepted for dispatch signing", parsed)
+	}
+}
+
+func encodeCertPEM(der []byte) string {
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
+
+// encodeCertChain renders leaf-first DER as the one-line EMISAR_SIGNING_CERT
+// value: base64 of the PEM chain text. The bridge decodes it, splits the PEM
+// blocks, and sends DER on the wire.
+func encodeCertChain(chain [][]byte) string {
+	var pemText strings.Builder
+	for _, der := range chain {
+		pemText.WriteString(encodeCertPEM(der))
+	}
+	return base64.StdEncoding.EncodeToString([]byte(pemText.String()))
 }
 
 // parseScope turns "group=edge,env=prod" into a Scope: the special key "group"
@@ -119,95 +182,179 @@ func parseTTL(s string) (time.Duration, error) {
 	return d, nil
 }
 
-// mintCert builds and CA-signs a cert vouching for leafPubHex over scope for ttl
-// starting now (UTC). The serial is a ULID for audit + future revocation.
-func mintCert(caPriv ed25519.PrivateKey, caID, keyID, leafPubHex string, scope attest.Scope, ttl time.Duration) (attest.Cert, error) {
-	now := time.Now().UTC()
-	cert := attest.Cert{
-		CAID:       caID,
-		KeyID:      keyID,
-		PublicKey:  leafPubHex,
-		ValidFrom:  now.Format(time.RFC3339),
-		ValidUntil: now.Add(ttl).Format(time.RFC3339),
-		Scope:      scope,
-		Serial:     ulid.Make().String(),
-	}
-	sig, err := attest.SignCert(caPriv, cert)
+// randomSerial mints a 128-bit positive serial. A certificate serial must be
+// unpredictable rather than sequential so an issuer's output cannot be guessed
+// or correlated.
+func randomSerial() (*big.Int, error) {
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	if err != nil {
-		return attest.Cert{}, fmt.Errorf("sign cert: %w", err)
+		return nil, fmt.Errorf("generate serial: %w", err)
 	}
-	cert.Sig = sig
-	return cert, nil
+	return serial.Add(serial, big.NewInt(1)), nil
 }
 
-// signingNewCACmd mints a CA keypair. The PUBLIC key goes in every runner's
-// signing.trusted_cas (safe to commit); the PRIVATE key is stored OFFLINE and
-// used only by `emisar signing new-cert` to mint operator certs.
+// mintCA self-signs a CA certificate. pathLen 0 means it may issue leaves but
+// no further CAs — this CLI's CA is a single-tier root, and a customer who
+// needs an intermediate tier issues from their own PKI.
+func mintCA(key crypto.Signer, name string, ttl time.Duration) ([]byte, error) {
+	serial, err := randomSerial()
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	template := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: name},
+		NotBefore:             now.Add(-time.Minute),
+		NotAfter:              now.Add(ttl),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLen:            0,
+		MaxPathLenZero:        true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, key.Public(), key)
+	if err != nil {
+		return nil, fmt.Errorf("sign CA certificate: %w", err)
+	}
+	return der, nil
+}
+
+// mintLeaf issues a dispatch-signing certificate carrying the scope as its one
+// emisar URI SAN. That SAN is what makes the certificate recognisable as ours;
+// without it an enforcing runner refuses the dispatch as cert_profile.
+func mintLeaf(caKey crypto.Signer, caCert *x509.Certificate, leafPub crypto.PublicKey, name string, scope attest.Scope, ttl time.Duration) ([]byte, error) {
+	scopeURI, err := attest.EncodeScopeURI(scope)
+	if err != nil {
+		return nil, err
+	}
+	parsedURI, err := url.Parse(scopeURI)
+	if err != nil {
+		return nil, fmt.Errorf("scope URI: %w", err)
+	}
+	serial, err := randomSerial()
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	template := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: name},
+		NotBefore:             now.Add(-time.Minute),
+		NotAfter:              now.Add(ttl),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  false,
+		URIs:                  []*url.URL{parsedURI},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, caCert, leafPub, caKey)
+	if err != nil {
+		return nil, fmt.Errorf("sign certificate: %w", err)
+	}
+	return der, nil
+}
+
+// printTrustBlock prints the runner config an operator pastes on every host.
+// The anchor is a PEM certificate — public, safe to commit, and shipped the
+// same way as the rest of config.yaml.
+func printTrustBlock(name, caPEM string) {
+	fmt.Print("   signing:\n")
+	fmt.Print("     enforce_signatures: true\n")
+	fmt.Print("     trusted_cas:\n")
+	fmt.Printf("       - name: %s\n", name)
+	fmt.Print("         pem: |\n")
+	for _, line := range strings.Split(strings.TrimRight(caPEM, "\n"), "\n") {
+		fmt.Printf("           %s\n", line)
+	}
+	fmt.Println()
+}
+
+// signingNewCACmd mints a CA keypair and its self-signed certificate. The
+// CERTIFICATE goes in every runner's signing.trusted_cas (safe to commit); the
+// PRIVATE key is stored OFFLINE and used only by `emisar signing new-cert`.
 func signingNewCACmd() *cobra.Command {
-	var caID string
+	var caName, ttlStr string
+	var keyAlg string
 	cmd := &cobra.Command{
 		Use:   "new-ca",
 		Short: "Mint just the offline CA keypair (the root of trust; rarely)",
-		Long: `signing new-ca mints an Ed25519 certificate-authority keypair.
+		Long: `signing new-ca mints a certificate-authority keypair and its self-signed
+certificate.
 
-The PUBLIC key goes in every runner's config under signing.trusted_cas (safe to
+The CERTIFICATE goes in every runner's config under signing.trusted_cas (safe to
 commit). The PRIVATE key stays OFFLINE — keep it on an operator's machine or a
-vault, never on a runner and never on the control plane. You sign short-lived
-operator certs with it via "emisar signing new-cert --ca-key <private-key>".`,
+vault, never on a runner and never on the control plane. You issue short-lived
+operator certificates with it via "emisar signing new-cert --ca-key <private-key>".
+
+To issue from your own PKI instead, see the certificate profile in
+https://emisar.dev/docs/signed-dispatch.`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			id, pubHex, seedHex, err := generateEd25519(caID, "ca-")
+			ttl, err := parseTTL(ttlStr)
 			if err != nil {
 				return err
 			}
+			key, err := generateSigningKey(signingKeyAlg(keyAlg))
+			if err != nil {
+				return err
+			}
+			if caName == "" {
+				caName = "emisar-dispatch-ca"
+			}
+			caDER, err := mintCA(key, caName, ttl)
+			if err != nil {
+				return err
+			}
+			caKeyEncoded, err := encodePrivateKey(key)
+			if err != nil {
+				return err
+			}
+			caPEM := encodeCertPEM(caDER)
+
 			if flagJSONOut {
 				out, _ := json.MarshalIndent(map[string]string{
-					"ca_id": id, "public_key": pubHex, "private_key": seedHex,
+					"ca_name": caName, "ca_certificate": caPEM, "ca_private_key": caKeyEncoded,
 				}, "", "  ")
 				fmt.Println(string(out))
 				return nil
 			}
-			fmt.Printf("Minted an offline signing CA (ca_id: %s).\n\n", id)
-			fmt.Print("1. Runner config — add under signing on every runner (the PUBLIC key is safe to commit):\n\n")
-			fmt.Print("   signing:\n")
-			fmt.Print("     enforce_signatures: true\n")
-			fmt.Print("     trusted_cas:\n")
-			fmt.Printf("       - ca_id: %s\n", id)
-			fmt.Printf("         public_key: %s\n\n", pubHex)
+			fmt.Printf("Minted an offline signing CA (%s).\n\n", caName)
+			fmt.Print("1. Runner config — add under signing on every runner (the CERTIFICATE is safe to commit):\n\n")
+			printTrustBlock(caName, caPEM)
 			fmt.Print("2. CA PRIVATE key — store this OFFLINE (never on a runner or the control plane):\n\n")
-			fmt.Printf("   %s\n\n", seedHex)
-			fmt.Print("Mint operator certs with:\n")
-			fmt.Printf("   emisar signing new-cert --ca-id %s --ca-key <the-private-key-above> --key-id <operator> --scope group=<g> --ttl 24h\n", id)
+			fmt.Printf("   %s\n\n", caKeyEncoded)
+			fmt.Print("Issue operator certificates with:\n")
+			fmt.Print("   emisar signing new-cert --ca-key <the-private-key-above> --scope group=<g> --ttl 24h\n")
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&caID, "ca-id", "", "CA id to label the keypair (default: ca-<random>)")
+	cmd.Flags().StringVar(&caName, "ca-name", "", "CA common name (default: emisar-dispatch-ca)")
+	cmd.Flags().StringVar(&ttlStr, "ttl", "5y", "CA validity duration: 1y, 5y")
+	cmd.Flags().StringVar(&keyAlg, "key", string(algEd25519), "key algorithm: ed25519 or p256")
 	return cmd
 }
 
-// signingNewCertCmd signs a cert for a leaf key. If --pubkey is omitted it also
-// mints the leaf keypair and prints the seed for EMISAR_SIGNING_KEY. The cert
-// JSON is the EMISAR_SIGNING_CERT value the MCP client carries.
+// signingNewCertCmd issues a certificate for a leaf key. It mints the leaf
+// keypair too, printing both MCP env vars.
 func signingNewCertCmd() *cobra.Command {
-	var caID, caKey, keyID, scopeStr, ttlStr, pubkey string
+	var caKey, caCertPEM, keyName, scopeStr, ttlStr, keyAlg string
 	cmd := &cobra.Command{
 		Use:   "new-cert",
 		Short: "Mint a short-lived operator certificate (routinely, as certs expire)",
-		Long: `signing new-cert signs an Ed25519 leaf key with the offline CA private key,
-producing a short-lived (optionally scoped) certificate the MCP client carries
-as EMISAR_SIGNING_CERT. If --pubkey is omitted, a leaf keypair is also minted
-and its private seed printed for EMISAR_SIGNING_KEY.
+		Long: `signing new-cert issues a short-lived (optionally scoped) certificate against
+the offline CA, producing the two env vars the MCP bridge carries:
+EMISAR_SIGNING_KEY and EMISAR_SIGNING_CERT.
 
 The CA private key is read locally from --ca-key and used only to sign; it is
-never transmitted. Prefer short --ttl values (24h) — a long TTL (e.g. 1y) is for
-solo / break-glass and trades away revocation granularity (there is no CRL yet;
-rotate the CA to revoke).`,
+never transmitted. Prefer short --ttl values (24h): expiry is the only
+revocation, so a long TTL keeps a leaked certificate usable longer.`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if caID == "" {
-				return fmt.Errorf("--ca-id is required (it must match the runner's trusted_cas ca_id)")
+			signer, err := parsePrivateKey(caKey)
+			if err != nil {
+				return err
 			}
-			caPriv, err := parseCASeed(caKey)
+			caCert, err := parseCACertificate(caCertPEM)
 			if err != nil {
 				return err
 			}
@@ -219,73 +366,70 @@ rotate the CA to revoke).`,
 			if err != nil {
 				return err
 			}
-
-			var leafSeed string
-			leafPub := strings.TrimSpace(pubkey)
-			if leafPub == "" {
-				keyID, leafPub, leafSeed, err = generateEd25519(keyID, "op-")
-				if err != nil {
-					return err
-				}
-			} else {
-				decoded, err := hex.DecodeString(leafPub)
-				if err != nil {
-					return fmt.Errorf("--pubkey is not valid hex: %w", err)
-				}
-				// Without the length check the CA happily signed a certificate
-				// over something that is not an Ed25519 key, and the operator
-				// only found out later as an opaque signature refusal at an
-				// enforcing runner. The keyID slice below also panicked on
-				// anything shorter than 8 hex characters.
-				if len(decoded) != ed25519.PublicKeySize {
-					return fmt.Errorf(
-						"--pubkey must be %d hex-encoded bytes (an Ed25519 public key), got %d",
-						ed25519.PublicKeySize, len(decoded))
-				}
-				if keyID == "" {
-					keyID = "op-" + leafPub[:8]
-				}
-			}
-
-			cert, err := mintCert(caPriv, caID, keyID, leafPub, scope, ttl)
+			leafKey, err := generateSigningKey(signingKeyAlg(keyAlg))
 			if err != nil {
 				return err
 			}
-			certJSON, err := json.Marshal(cert)
-			if err != nil {
-				return fmt.Errorf("marshal cert: %w", err)
+			if keyName == "" {
+				keyName = "emisar-operator"
 			}
+			leafDER, err := mintLeaf(signer, caCert, leafKey.Public(), keyName, scope, ttl)
+			if err != nil {
+				return err
+			}
+			leafKeyEncoded, err := encodePrivateKey(leafKey)
+			if err != nil {
+				return err
+			}
+			leaf, err := x509.ParseCertificate(leafDER)
+			if err != nil {
+				return fmt.Errorf("parse issued certificate: %w", err)
+			}
+			chain := encodeCertChain([][]byte{leafDER})
 
 			if flagJSONOut {
-				out := map[string]string{"cert": string(certJSON)}
-				if leafSeed != "" {
-					out["private_key"] = leafSeed
-				}
-				blob, _ := json.MarshalIndent(out, "", "  ")
-				fmt.Println(string(blob))
+				out, _ := json.MarshalIndent(map[string]string{
+					"key_name": keyName, "private_key": leafKeyEncoded, "certificate_chain": chain,
+					"not_after": leaf.NotAfter.UTC().Format(time.RFC3339),
+				}, "", "  ")
+				fmt.Println(string(out))
 				return nil
 			}
-
-			fmt.Printf("Signed a certificate (key_id: %s, serial: %s, valid until %s).\n\n", cert.KeyID, cert.Serial, cert.ValidUntil)
+			fmt.Printf("Issued a certificate (%s, valid until %s).\n\n",
+				keyName, leaf.NotAfter.UTC().Format(time.RFC3339))
 			fmt.Print("MCP client — set these env vars (keep the private key SECRET):\n\n")
-			if leafSeed != "" {
-				fmt.Printf("   EMISAR_SIGNING_KEY=%s\n", leafSeed)
-			}
-			fmt.Printf("   EMISAR_SIGNING_CERT=%s\n\n", string(certJSON))
-			if leafSeed == "" {
-				fmt.Print("(You supplied --pubkey, so set EMISAR_SIGNING_KEY to that key's private seed.)\n")
-			}
+			fmt.Printf("   EMISAR_SIGNING_KEY=%s\n", leafKeyEncoded)
+			fmt.Printf("   EMISAR_SIGNING_CERT=%s\n", chain)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&caID, "ca-id", "", "CA id (must match the runner's trusted_cas ca_id) [required]")
-	cmd.Flags().StringVar(&caKey, "ca-key", "", "CA PRIVATE key (hex seed) from `signing new-ca` [required]")
-	cmd.Flags().StringVar(&keyID, "key-id", "", "leaf key id (default: op-<random>)")
+	cmd.Flags().StringVar(&caKey, "ca-key", "", "CA PRIVATE key from `signing new-ca` [required]")
+	cmd.Flags().StringVar(&caCertPEM, "ca-cert", "", "CA certificate PEM from `signing new-ca` [required]")
+	cmd.Flags().StringVar(&keyName, "key-name", "", "leaf common name (default: emisar-operator)")
 	cmd.Flags().StringVar(&scopeStr, "scope", "", "cert scope, e.g. group=edge,env=prod (empty = any runner)")
 	cmd.Flags().StringVar(&ttlStr, "ttl", "24h", "validity duration: 24h, 30d, 1y")
-	cmd.Flags().StringVar(&pubkey, "pubkey", "", "leaf PUBLIC key (hex); if omitted, a leaf keypair is minted")
+	cmd.Flags().StringVar(&keyAlg, "key", string(algEd25519), "key algorithm: ed25519 or p256")
 	_ = cmd.MarkFlagRequired("ca-key")
+	_ = cmd.MarkFlagRequired("ca-cert")
 	return cmd
+}
+
+// parseCACertificate reads the issuing CA certificate. It is required on
+// new-cert because an X.509 leaf must name its issuer exactly: the runner
+// matches the chain by issuer name and key, not by a label an operator retyped.
+func parseCACertificate(pemText string) (*x509.Certificate, error) {
+	block, _ := pem.Decode([]byte(strings.TrimSpace(pemText)))
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, fmt.Errorf("--ca-cert is not a PEM CERTIFICATE block")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("--ca-cert does not parse: %w", err)
+	}
+	if !cert.BasicConstraintsValid || !cert.IsCA {
+		return nil, fmt.Errorf("--ca-cert is not a CA certificate")
+	}
+	return cert, nil
 }
 
 // signingCmd is the signed-dispatch command group (`emisar signing …`): the
@@ -298,7 +442,10 @@ func signingCmd() *cobra.Command {
 		Long: `Signed dispatch lets an enforcing runner require a CA-signed certificate on
 every action, so a compromised control plane can relay but never mint a
 dispatch. "signing init" is the one-shot on-ramp; "new-ca" and "new-cert" are
-the granular operations for CA rotation and routine cert renewal.`,
+the granular operations for CA rotation and routine cert renewal.
+
+Certificates are X.509, so your own PKI can issue them instead — the profile is
+documented at https://emisar.dev/docs/signed-dispatch.`,
 		Args: cobra.NoArgs,
 		RunE: showHelp,
 	}
@@ -308,17 +455,17 @@ the granular operations for CA rotation and routine cert renewal.`,
 	return cmd
 }
 
-// signingInitCmd is the one-command on-ramp: mint a CA + a leaf + a cert and
-// print the runner block, the offline CA private key, and both MCP env vars.
+// signingInitCmd is the one-command on-ramp: mint a CA + a leaf + a certificate
+// and print the runner block, the offline CA private key, and both MCP env vars.
 func signingInitCmd() *cobra.Command {
-	var caID, scopeStr, ttlStr string
+	var caName, scopeStr, ttlStr, keyAlg string
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Set up signed dispatch in one shot (CA + cert + config)",
 		Long: `signing init mints a CA, a leaf keypair, and a certificate in one step and
 prints the full runner config block, the offline CA private key to store, and
 the two MCP env vars. The simplest on-ramp to bridge-attested dispatch — after
-this, mint fresh certs as they expire with "emisar signing new-cert".`,
+this, issue fresh certificates as they expire with "emisar signing new-cert".`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			scope, err := parseScope(scopeStr)
@@ -329,56 +476,73 @@ this, mint fresh certs as they expire with "emisar signing new-cert".`,
 			if err != nil {
 				return err
 			}
-			caID, caPubHex, caSeedHex, err := generateEd25519(caID, "ca-")
+			alg := signingKeyAlg(keyAlg)
+			caKey, err := generateSigningKey(alg)
 			if err != nil {
 				return err
 			}
-			caPriv, err := parseCASeed(caSeedHex)
+			if caName == "" {
+				caName = "emisar-dispatch-ca"
+			}
+			caDER, err := mintCA(caKey, caName, 5*365*24*time.Hour)
 			if err != nil {
 				return err
 			}
-			keyID, leafPub, leafSeed, err := generateEd25519("", "op-")
+			caCert, err := x509.ParseCertificate(caDER)
+			if err != nil {
+				return fmt.Errorf("parse CA certificate: %w", err)
+			}
+			leafKey, err := generateSigningKey(alg)
 			if err != nil {
 				return err
 			}
-			cert, err := mintCert(caPriv, caID, keyID, leafPub, scope, ttl)
+			leafDER, err := mintLeaf(caKey, caCert, leafKey.Public(), "emisar-operator", scope, ttl)
 			if err != nil {
 				return err
 			}
-			certJSON, err := json.Marshal(cert)
+			leaf, err := x509.ParseCertificate(leafDER)
 			if err != nil {
-				return fmt.Errorf("marshal cert: %w", err)
+				return fmt.Errorf("parse issued certificate: %w", err)
 			}
+			caKeyEncoded, err := encodePrivateKey(caKey)
+			if err != nil {
+				return err
+			}
+			leafKeyEncoded, err := encodePrivateKey(leafKey)
+			if err != nil {
+				return err
+			}
+			caPEM := encodeCertPEM(caDER)
+			chain := encodeCertChain([][]byte{leafDER})
 
 			if flagJSONOut {
 				out, _ := json.MarshalIndent(map[string]string{
-					"ca_id": caID, "ca_public_key": caPubHex, "ca_private_key": caSeedHex,
-					"key_id": keyID, "private_key": leafSeed, "cert": string(certJSON),
+					"ca_name": caName, "ca_certificate": caPEM, "ca_private_key": caKeyEncoded,
+					"private_key": leafKeyEncoded, "certificate_chain": chain,
+					"not_after": leaf.NotAfter.UTC().Format(time.RFC3339),
 				}, "", "  ")
 				fmt.Println(string(out))
 				return nil
 			}
 
-			fmt.Printf("Initialized signed dispatch (ca_id: %s, key_id: %s, valid until %s).\n\n", caID, keyID, cert.ValidUntil)
+			fmt.Printf("Initialized signed dispatch (%s, valid until %s).\n\n",
+				caName, leaf.NotAfter.UTC().Format(time.RFC3339))
 			fmt.Print("1. Runner config — add under signing on every runner (PUBLIC, safe to commit):\n\n")
-			fmt.Print("   signing:\n")
-			fmt.Print("     enforce_signatures: true\n")
-			fmt.Print("     trusted_cas:\n")
-			fmt.Printf("       - ca_id: %s\n", caID)
-			fmt.Printf("         public_key: %s\n\n", caPubHex)
-			fmt.Print("2. CA PRIVATE key — store OFFLINE; you re-sign certs with it as they expire:\n\n")
-			fmt.Printf("   %s\n\n", caSeedHex)
+			printTrustBlock(caName, caPEM)
+			fmt.Print("2. CA PRIVATE key — store OFFLINE; you re-issue certificates with it as they expire:\n\n")
+			fmt.Printf("   %s\n\n", caKeyEncoded)
 			fmt.Print("3. MCP client — set these env vars (keep the private key SECRET):\n\n")
-			fmt.Printf("   EMISAR_SIGNING_KEY=%s\n", leafSeed)
-			fmt.Printf("   EMISAR_SIGNING_CERT=%s\n\n", string(certJSON))
+			fmt.Printf("   EMISAR_SIGNING_KEY=%s\n", leafKeyEncoded)
+			fmt.Printf("   EMISAR_SIGNING_CERT=%s\n\n", chain)
 			fmt.Print("Restart the runner after applying this config so it opens durable replay state\n")
 			fmt.Print("and advertises enforcement. Never put the CA or leaf private key on the\n")
 			fmt.Print("control plane or in version control.\n")
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&caID, "ca-id", "", "CA id to label the keypair (default: ca-<random>)")
+	cmd.Flags().StringVar(&caName, "ca-name", "", "CA common name (default: emisar-dispatch-ca)")
 	cmd.Flags().StringVar(&scopeStr, "scope", "", "cert scope, e.g. group=edge,env=prod (empty = any runner)")
 	cmd.Flags().StringVar(&ttlStr, "ttl", "24h", "cert validity duration: 24h, 30d, 1y")
+	cmd.Flags().StringVar(&keyAlg, "key", string(algEd25519), "key algorithm: ed25519 or p256")
 	return cmd
 }

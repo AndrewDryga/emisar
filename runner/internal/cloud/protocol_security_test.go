@@ -130,8 +130,7 @@ func TestRunActionMsgRejectsNoncanonicalKnownFieldAliases(t *testing.T) {
 		"{\"type\":\"run_action\",\"action_id\":\"a.b\",\"ACTION_ID\":\"a.c\",\"args\":{}}",
 		"{\"type\":\"run_action\",\"action_id\":\"a.b\",\"args\":{},\"opts\":{\"TIMEOUT\":\"1s\"}}",
 		"{\"type\":\"run_action\",\"action_id\":\"a.b\",\"args\":{},\"attestation\":{\"ACTION_ID\":\"a.b\"}}",
-		"{\"type\":\"run_action\",\"action_id\":\"a.b\",\"args\":{},\"attestation\":{\"cert\":{\"PUBLIC_KEY\":\"00\"}}}",
-		"{\"type\":\"run_action\",\"action_id\":\"a.b\",\"args\":{},\"attestation\":{\"cert\":{\"scope\":{\"GROUP\":\"db\"}}}}",
+		"{\"type\":\"run_action\",\"action_id\":\"a.b\",\"args\":{},\"attestation\":{\"CERT_CHAIN\":[]}}",
 	} {
 		var msg RunActionMsg
 		if err := json.Unmarshal([]byte(raw), &msg); err == nil || !strings.Contains(err.Error(), "canonical name") {

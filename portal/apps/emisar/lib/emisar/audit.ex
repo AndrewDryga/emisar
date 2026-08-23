@@ -30,7 +30,7 @@ defmodule Emisar.Audit do
   alias Emisar.Audit.{Authorizer, Event, Events}
   alias Emisar.Auth
   alias Emisar.Auth.Subject
-  alias Emisar.{Billing, Repo, RequestContext, Runs}
+  alias Emisar.{Billing, Crypto, Repo, RequestContext, Runs}
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -236,13 +236,17 @@ defmodule Emisar.Audit do
               # carries it. Empty → dropped by compact, so non-MCP rows stay lean.
               mcp_client_metadata: mcp_client_metadata(run),
               # Positive per-run signing evidence for a bridge-attested (signed
-              # dispatch) run: that it was signed, the CA + leaf key that vouched
-              # for it, and the bridge operation id — so a successful run's
-              # signature is provable in the audit and cross-referenceable to a
-              # SIEM. compact drops all of these on an unsigned run.
+              # dispatch) run: that it was signed, the exact certificate that
+              # vouched for it, and the bridge operation id — so a successful
+              # run's signature is provable in the audit and cross-referenceable
+              # to a SIEM. compact drops all of these on an unsigned run.
+              #
+              # The certificate is identified by its fingerprint rather than a
+              # label it carries: a digest names ONE certificate and cannot be
+              # restated by a second issuer, which is what makes it worth
+              # correlating on.
               signed: if(signed?(run), do: true),
-              signing_ca_id: signing_cert(run, "ca_id"),
-              signing_key_id: signing_cert(run, "key_id"),
+              signing_cert_sha256: signing_cert_fingerprint(run),
               operation_id: run.operation_id
             })
         ]
@@ -295,11 +299,20 @@ defmodule Emisar.Audit do
   # Positive signing evidence for a bridge-attested run's terminal audit event
   # (see `run_event_changeset/1`). `attestation` carries the relayed v4 envelope;
   # its `cert` names the CA and leaf key that authorized the dispatch.
-  defp signed?(%Runs.ActionRun{attestation: %{"cert" => %{}}}), do: true
+  defp signed?(%Runs.ActionRun{attestation: %{"cert_chain" => [_leaf | _rest]}}), do: true
   defp signed?(%Runs.ActionRun{}), do: false
 
-  defp signing_cert(%Runs.ActionRun{attestation: %{"cert" => %{} = cert}}, key), do: cert[key]
-  defp signing_cert(%Runs.ActionRun{}, _key), do: nil
+  # The SHA-256 of the leaf's DER — the standard way a certificate is named in
+  # a SIEM, and computable without parsing it.
+  defp signing_cert_fingerprint(%Runs.ActionRun{attestation: %{"cert_chain" => [leaf | _rest]}})
+       when is_binary(leaf) do
+    case Base.decode64(leaf) do
+      {:ok, der} -> Crypto.hash_hex(der)
+      :error -> nil
+    end
+  end
+
+  defp signing_cert_fingerprint(%Runs.ActionRun{}), do: nil
 
   defp actor_kind(%Runs.ActionRun{requested_by_id: id}) when not is_nil(id), do: "user"
   defp actor_kind(%Runs.ActionRun{api_key_id: id}) when not is_nil(id), do: "api_key"

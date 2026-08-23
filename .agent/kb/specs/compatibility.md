@@ -452,8 +452,8 @@ stdio mode both authentication variables are required. Direct commands use the
 current owner-only stored account credential only when both variables are
 absent; an explicit pair overrides it, while a partial pair fails rather than
 mixing sources. In both modes it sends the user agent `emisar-mcp/<version>`.
-The attestation identifiers `emisar-attestation-v5` and `emisar-cert-v2` are
-also frozen security formats.
+The attestation identifier `emisar-attestation-v5` and the dispatch certificate
+profile `emisar-x509-profile-v1` are also frozen security formats.
 `packctl` is a maintainer-only build tool, not a customer CLI compatibility
 surface.
 

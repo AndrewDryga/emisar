@@ -475,12 +475,10 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--ca-id</code>
-            (all three) — labels the CA, and on
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-cert</code>
-            it is required and must match the runner's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_cas</code>. Defaults to a random
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">ca-…</code>
-            when minting.
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--ca-name</code>
+            (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">init</code>
+            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-ca</code>)
+            — the CA's common name, defaulting to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-dispatch-ca</code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -499,24 +497,29 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--ca-key</code>
-            (required on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-cert</code>)
-            — the offline CA private hex seed from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-ca</code>. It is read locally and never transmitted.
+            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--ca-cert</code>
+            (both required on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-cert</code>)
+            — the offline CA private key and certificate from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-ca</code>. Both are read
+            locally and never transmitted; the certificate is required because an X.509 leaf
+            names its issuer exactly.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--key-id</code>
-            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--pubkey</code>
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--key-name</code>
             (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">new-cert</code>)
-            — label the leaf key, or supply your own leaf public key instead of minting one.
+            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--key ed25519|p256</code>
+            (all three) — the leaf's common name, and the key algorithm. Choose
+            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">p256</code>
+            when a KMS or HSM in your chain cannot do Ed25519.
           </span>
         </li>
       </ul>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># one-shot: prints the runner config block, the offline CA key, and the MCP env vars</span>
-<span class="text-zinc-500">$</span> emisar signing init --ca-id acme-2026 --scope group=prod --ttl 24h
+<span class="text-zinc-500">$</span> emisar signing init --ca-name acme-2026 --scope group=prod --ttl 24h
 <span class="text-zinc-500"># later, renew a cert against the offline CA (no runner reload needed)</span>
-<span class="text-zinc-500">$</span> emisar signing new-cert --ca-id acme-2026 --ca-key &lt;offline CA key&gt; --scope group=prod</.docs_code>
+<span class="text-zinc-500">$</span> emisar signing new-cert --ca-key &lt;offline CA key&gt; --ca-cert &lt;CA certificate&gt; --scope group=prod</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The generated
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>

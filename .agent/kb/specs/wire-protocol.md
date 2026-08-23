@@ -203,7 +203,7 @@ nanoseconds, matching Go's `time.Duration` wire representation.
     "nonce": "0123456789abcdef0123456789abcdef",
     "issued_at": "2026-07-14T12:00:00Z",
     "sig": "...",
-    "cert": {"ca_id": "ca-prod-2026", "key_id": "op-alice", "public_key": "...", "valid_from": "2026-07-14T00:00:00Z", "valid_until": "2026-07-15T00:00:00Z", "scope": {"group": "cassandra", "labels": {}}, "serial": "01J0CERT...", "sig": "..."}
+    "cert_chain": ["<standard-base64 DER leaf>", "<optional intermediate>"]
   }
 }
 ```
@@ -229,7 +229,7 @@ numbers with `UseNumber`; values above 2^53 are never converted through
 ### Signed action attestation v5
 
 The bridge sends `Emisar-Attestation` as unpadded base64url of the bounded JSON
-envelope. The portal accepts at most 8192 encoded header bytes, compares its
+envelope. The portal accepts at most 16384 encoded header bytes, compares its
 fields with the authenticated request, and relays the decoded envelope unchanged.
 The Ed25519 signature covers fixed JSON binding:
 
@@ -243,15 +243,16 @@ The Ed25519 signature covers fixed JSON binding:
 - operation ID, nonce, and RFC3339 issuance time.
 
 The narrative is bound by digest and never relayed: the two fields together run
-to 6,000 characters against the 8 KiB envelope budget. Both are optional and both
+to 6,000 characters against the 16 KiB envelope budget. Both are optional and both
 are always hashed, so an absent one signs as the digest of the empty string —
 that is what binds "the bridge sent no justification", denying a control plane
 the chance to invent one. A verifier therefore takes `evidence_sha256` and
 `expected_sha256` from the envelope rather than recomputing them from text it
 does not have.
 
-An enforcing runner verifies the leaf certificate against its configured
-customer CA, certificate validity and local group/label scope, origin,
+An enforcing runner verifies the presented certificate chain against its
+configured trust anchors, applies the emisar certificate profile
+(`emisar-x509-profile-v1`), then checks local group/label scope, origin,
 freshness, durable nonce replay, exact local pack bytes and action membership,
 argument digest, all delivery fields, and its own external-ID-derived target
 suffix immediately before execution. Pack verification and execution use the
@@ -376,7 +377,7 @@ logs.
 | Exact `args` object | 32 KiB |
 | JSON nesting | 64 levels |
 | Runner refs in one signed action | 16 |
-| `Emisar-Attestation` HTTP header | 8192 encoded bytes |
+| `Emisar-Attestation` HTTP header | 16384 encoded bytes |
 | Concurrent actions per runner | 8 by default |
 
 The code and fixed vectors in `mcp/internal/attest` and

@@ -120,21 +120,9 @@
         "sig": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "nonce": "nonce_wire_golden_0001",
         "issued_at": "2026-07-16T12:34:56Z",
-        "cert": {
-          "ca_id": "ca-production",
-          "key_id": "key-runner-db",
-          "public_key": "1111111111111111111111111111111111111111111111111111111111111111",
-          "valid_from": "2026-01-01T00:00:00Z",
-          "valid_until": "2027-01-01T00:00:00Z",
-          "scope": {
-            "group": "database",
-            "labels": {
-              "datacenter": "dc1"
-            }
-          },
-          "serial": "01JZWIREGOLDEN000000000000",
-          "sig": "22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222"
-        }
+        "cert_chain": [
+          "d2lyZS1nb2xkZW4tY2VydA=="
+        ]
       }
     },
     "runner_state": {

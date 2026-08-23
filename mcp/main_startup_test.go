@@ -427,18 +427,19 @@ func TestMain_CleartextPublicEndpointAllowedWithOverride(t *testing.T) {
 func TestMain_BadSigningKeyConfigIsFatal(t *testing.T) {
 	// (the signing-key branch of the startup glue)
 	base := map[string]string{"EMISAR_URL": "https://emisar.dev", "EMISAR_API_KEY": "emk-x"}
-	cert := certJSONFor(t, testSeedHex)
+	key, cert := signingPairFor(t, testSeedHex)
 	cases := []struct {
 		name string
 		key  string
 		cert string
 		want string
 	}{
-		{"key without cert", testSeedHex, "", "both EMISAR_SIGNING_KEY and EMISAR_SIGNING_CERT"},
+		{"key without cert", key, "", "both EMISAR_SIGNING_KEY and EMISAR_SIGNING_CERT"},
 		{"cert without key", "", cert, "both EMISAR_SIGNING_KEY and EMISAR_SIGNING_CERT"},
-		{"non-hex seed", "zz", cert, "not valid hex"},
-		{"wrong-length seed", "00", cert, "Ed25519 seed"},
-		{"unparseable cert", testSeedHex, "{nope", "not valid JSON"},
+		{"key not base64", "!!", cert, "not valid base64"},
+		{"key not PKCS#8", "bm90LWEta2V5", cert, "PKCS#8"},
+		{"cert not base64", key, "!!", "not valid base64"},
+		{"cert not PEM", key, "bm90LWEtY2VydA==", "PEM CERTIFICATE"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

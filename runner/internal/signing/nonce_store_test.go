@@ -200,7 +200,7 @@ func TestNonceJournalRejectsRetentionWidening(t *testing.T) {
 }
 
 func TestVerifierReloadRejectsRetentionWidening(t *testing.T) {
-	cas, _ := testCA(t)
+	cas, _, _ := testCA(t)
 	store := NewMemoryNonceStore()
 	if _, err := NewVerifier(true, cas, time.Hour, testRunnerID, testOrigin, testGroup, testLabels(), store); err != nil {
 		t.Fatalf("initial verifier: %v", err)

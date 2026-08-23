@@ -2533,7 +2533,7 @@ defmodule Emisar.ApprovalsTest do
       approver_subject: approver_subject
     } do
       fresh = DateTime.to_iso8601(DateTime.utc_now())
-      valid_until = DateTime.utc_now() |> DateTime.add(3_600, :second) |> DateTime.to_iso8601()
+      valid_until = DateTime.add(DateTime.utc_now(), 3_600, :second)
 
       %{attestation: attestation} =
         Fixtures.Runs.signed_attestation(issued_at: fresh, valid_until: valid_until)

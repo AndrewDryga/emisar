@@ -216,24 +216,6 @@ func validateRunActionFieldNames(data []byte) error {
 		if err := rejectKnownAliases(envelope, "run_action attestation", attestationFieldNames); err != nil {
 			return err
 		}
-		if raw, ok := envelope["cert"]; ok && string(raw) != "null" {
-			cert, err := rawJSONObject(raw, "run_action certificate")
-			if err != nil {
-				return err
-			}
-			if err := rejectKnownAliases(cert, "run_action certificate", certFieldNames); err != nil {
-				return err
-			}
-			if raw, ok := cert["scope"]; ok && string(raw) != "null" {
-				scope, err := rawJSONObject(raw, "run_action certificate scope")
-				if err != nil {
-					return err
-				}
-				if err := rejectKnownAliases(scope, "run_action certificate scope", scopeFieldNames); err != nil {
-					return err
-				}
-			}
-		}
 	}
 	return nil
 }
@@ -253,8 +235,6 @@ var (
 	runActionFieldNames   = canonicalJSONFieldNames(reflect.TypeOf(runActionMsgWire{}))
 	runOptsFieldNames     = canonicalJSONFieldNames(reflect.TypeOf(RunOpts{}))
 	attestationFieldNames = canonicalJSONFieldNames(reflect.TypeOf(attest.Envelope{}))
-	certFieldNames        = canonicalJSONFieldNames(reflect.TypeOf(attest.Cert{}))
-	scopeFieldNames       = canonicalJSONFieldNames(reflect.TypeOf(attest.Scope{}))
 )
 
 func canonicalJSONFieldNames(value reflect.Type) []string {

@@ -18,8 +18,9 @@ a signed MCP call runs.
 ## Why a certificate authority
 
 A runner trusts **one certificate authority**, not a list of individual operator
-keys. The CA — an Ed25519 keypair you generate and keep **offline** — signs
-short-lived certificates that vouch for each operator's signing key. So:
+keys. The CA — a keypair you generate and keep **offline**, or one your own PKI
+already holds — issues short-lived X.509 certificates that vouch for each
+operator's signing key. So:
 
 - **Onboarding an operator is one signature, zero runner edits.** You mint them a
   certificate with the CA; every runner that already trusts the CA accepts it.
@@ -27,8 +28,9 @@ short-lived certificates that vouch for each operator's signing key. So:
 - **The CA private key never touches a runner or the control plane.** A
   compromised portal can relay a certified dispatch but can never mint one —
   that's the whole point.
-- **Revocation is the certificate's lifetime.** Certificates are short-lived
-  (24h by default); a leaked key is useless once its certificate expires. You
+- **Revocation is the certificate's lifetime.** There is no CRL and no OCSP:
+  certificates are short-lived (24h by default), and a leaked key is useless
+  once its certificate expires. You
   revoke by not re-issuing.
 
 ## When to use it
@@ -47,7 +49,7 @@ short-lived certificates that vouch for each operator's signing key. So:
    operation ID, one-time nonce, and timestamp.
 
    The narrative is bound by DIGEST rather than carried: together those two
-   fields run to 6,000 characters against an 8 KiB envelope, and the argument
+   fields run to 6,000 characters against a 16 KiB envelope, and the argument
    bytes already establish that a large field is signed as a hash. Both are
    optional and both are always hashed — an absent one signs as the digest of
    the empty string. This binds the narrative the bridge supplied. The portal
@@ -89,6 +91,56 @@ means the signed target set may contain any runner that trusts the CA.
 The certificate's validity window and the attestation's freshness window are
 **independent gates** — a long-lived certificate never widens the replay window.
 
+## The certificate profile
+
+Certificates are X.509, so a customer PKI (Vault PKI, AD CS, step-ca, an
+HSM-backed CA) can issue them instead of the CLI. A runner accepts a chain only
+when every rule below holds; a violation refuses the dispatch as
+`cert_profile`.
+
+| Rule | Why |
+|---|---|
+| Exactly ONE URI SAN, `emisar://dispatch/v1` with the canonical query below | This is what marks a certificate as issued FOR emisar. A TLS server certificate from the same corporate CA has no such SAN, so a shared root cannot turn server certificates into dispatch-signing authority. |
+| Leaf key is Ed25519 or ECDSA P-256 | P-256 exists because several major KMS and HSM products still do not offer Ed25519, and HSM custody of the CA is a first-class case. |
+| Leaf is not a CA (`BasicConstraints` CA false) | A CA certificate signing dispatches would blur issuance and use. |
+| If `KeyUsage` is present it includes `digitalSignature` | An issuer that states the usage must state one that permits signing. |
+| Chain of at most leaf + one intermediate | Deeper chains are refused even when they verify; pin the deeper issuer as the anchor instead. |
+| Inside its validity window, no skew tolerance | Expiry is the whole revocation story, so it is judged exactly. |
+
+No EKU is required: emisar owns no OID arc, and requiring a borrowed EKU
+(`serverAuth`) would accept exactly the TLS certificates the SAN exists to
+exclude.
+
+A customer can go further and name-constrain an intermediate to `emisar://`
+URIs, which makes even a shared corporate root safe by construction.
+
+### Scope, as a URI SAN
+
+Scope rides in the SAN's query, in ONE canonical spelling — a URI that parses
+but is spelled differently is refused rather than normalized, so an issuer and a
+verifier can never disagree about what was authorized.
+
+```
+emisar://dispatch/v1[?<params>]
+
+params = param *( "&" param )        ; sorted bytewise, no duplicates
+param  = "group=" value / "label." key "=" value
+```
+
+Keys and values are percent-encoded on the same terms: anything outside RFC 3986
+`unreserved` is encoded, with uppercase hex and minimal encoding. Keys are
+encoded too because a runner label key is free-form operator input —
+`runner.labels` is a bare YAML map plus `RUNNER_LABEL_<KEY>` env, with no
+charset the config layer enforces. No query at all means the empty scope: valid
+on any runner that trusts the anchor.
+
+The whole URI is bounded at 512 bytes.
+
+Matching happens ONLY against the runner's local `runner.group` /
+`runner.labels`, never a value the control plane supplies — that is the
+redirect guard. A label pinned to the empty string still requires the runner to
+CARRY that label; it does not match a runner that lacks it.
+
 ## Turn it on — the quickstart
 
 Run this on the runner host, or on any offline machine (the keys are generated
@@ -99,7 +151,7 @@ emisar signing init
 ```
 
 It mints a CA, a leaf key, and a 24h certificate in one step, and prints: the
-`signing:` block for the runner config (the CA **public** key, safe to commit),
+`signing:` block for the runner config (the CA **certificate**, safe to commit),
 the CA **private** key to store offline, and the two MCP env vars.
 
 1. **Install the CA in the runner config** (`/etc/emisar/config.yaml`):
@@ -109,9 +161,15 @@ the CA **private** key to store offline, and the two MCP env vars.
      enforce_signatures: true
      max_attestation_age: 24h
      trusted_cas:
-       - ca_id: ca-1a2b3c4d
-         public_key: <hex from the command>
+       - name: emisar-dispatch-ca
+         pem: |
+           -----BEGIN CERTIFICATE-----
+           <the CA certificate the command printed>
+           -----END CERTIFICATE-----
    ```
+
+   `name` is a display label the runner advertises so an operator can confirm
+   which anchors a host accepts; trust comes from the certificate alone.
 
 2. **Store the CA private key offline** — a vault or an operator's machine, never
    a runner and never the control plane. You re-sign certificates with it as they
@@ -121,8 +179,8 @@ the CA **private** key to store offline, and the two MCP env vars.
    on the portal, never in version control:
 
    ```sh
-   EMISAR_SIGNING_KEY=<hex seed from the command>
-   EMISAR_SIGNING_CERT=<cert JSON from the command>
+   EMISAR_SIGNING_KEY=<base64 PKCS#8 private key from the command>
+   EMISAR_SIGNING_CERT=<base64 PEM certificate chain from the command>
    ```
 
 4. **Apply it.** Restart the runner. Initial enforcement opens the durable replay
@@ -252,8 +310,9 @@ cause. The runner's refusal codes:
 | `portal_mismatch` | The signed portal origin differs from the runner's configured control-plane origin. | Point the client and runner at the same canonical control-plane origin and submit a fresh call. |
 | `intent_mismatch` | The action, pack, exact args, reason, or operation differs from the signed intent. | Refresh the action and runner refs, then submit a fresh call; do not reuse the altered envelope. |
 | `target_mismatch` | This runner generation is absent or appears more than once in the signed runner-ref set. | Refresh discovery and submit a fresh call with the exact returned runner refs. |
-| `cert_untrusted` | The certificate's `ca_id` isn't in this runner's `trusted_cas`, or its CA signature doesn't verify. | Point the client at a certificate issued by a CA this runner trusts, or add the CA to `trusted_cas` (and `SIGHUP`). |
-| `cert_expired` | The certificate's `valid_from`..`valid_until` window doesn't include now (expired, not yet valid, or clock skew). | Re-issue the certificate (`emisar signing new-cert`); check host clocks (NTP). |
+| `cert_profile` | The certificate does not satisfy the emisar profile: no `emisar://dispatch/v1` SAN (a TLS-shaped certificate), several of them, a non-canonical scope query, a CA certificate used as a leaf, an unaccepted key algorithm, or a chain deeper than one intermediate. | Re-issue against the profile above; a certificate from a general-purpose CA does not carry dispatch-signing authority. |
+| `cert_untrusted` | The chain does not verify to any certificate in this runner's `trusted_cas`. | Point the client at a certificate issued by an anchor this runner trusts, or add the anchor to `trusted_cas` (and `SIGHUP`). |
+| `cert_expired` | The certificate's validity window doesn't include now (expired, not yet valid, or clock skew). | Re-issue the certificate (`emisar signing new-cert`); check host clocks (NTP). |
 | `cert_scope` | The certificate's scope (group/labels) isn't satisfied by this runner's local `group`/`labels`. | Issue the certificate with a scope matching this runner (or an empty scope), or dispatch to a runner in scope. |
 | `stale` | The attestation's timestamp is outside `±max_attestation_age` (clock skew, a long-queued run, or a slow approval). | Re-issue the run; check host clocks; if approvals routinely exceed the configured window, follow the CA-rotation procedure above before increasing it. |
 | `bad_signature` | The signature doesn't verify against the action, exact args, target set, nonce, and time under the certificate's leaf key. | Refresh tools and re-submit with the matching key/certificate pair; re-mint with `emisar signing new-cert` if the pair is wrong. |

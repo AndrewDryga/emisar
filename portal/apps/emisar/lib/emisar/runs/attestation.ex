@@ -26,15 +26,23 @@ defmodule Emisar.Runs.Attestation do
   @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
   @lower_hex_32 ~r/\A[0-9a-f]{32}\z/
   @lower_hex_64 ~r/\A[0-9a-f]{64}\z/
-  @lower_hex_128 ~r/\A[0-9a-f]{128}\z/
+  # The claim signature is lower-hex, and its LENGTH depends on the leaf key:
+  # an Ed25519 signature is exactly 64 bytes, while an ECDSA P-256 signature is
+  # ASN.1 DER and varies around 70. Pinning 128 characters here would refuse
+  # every P-256-signed dispatch at the portal, before the runner — the only
+  # cryptographic authority — ever saw it.
+  @lower_hex_signature ~r/\A(?:[0-9a-f]{2}){64,80}\z/
 
   @envelope_fields ~w(
     version tool portal_origin action_id pack_ref args_sha256 runner_refs reason
     evidence_sha256 expected_sha256
-    operation_id sig nonce issued_at cert
+    operation_id sig nonce issued_at cert_chain
   )
-  @cert_fields ~w(ca_id key_id public_key valid_from valid_until scope serial sig)
-  @scope_fields ~w(group labels)
+  # The leaf plus at most one intermediate, each standard-base64 DER. The bound
+  # is generous enough for an RSA-issued chain and small enough that a malformed
+  # envelope cannot make the portal parse megabytes.
+  @max_chain_certs 2
+  @max_chain_entry_bytes 8_192
 
   @enforce_keys [:envelope]
   defstruct [:envelope]
@@ -140,11 +148,11 @@ defmodule Emisar.Runs.Attestation do
          true <- runner_refs == envelope["runner_refs"],
          :ok <- bounded_chars(envelope["reason"], 1, @max_reason_chars),
          true <- matches?(envelope["operation_id"], @operation_id),
-         true <- matches?(envelope["sig"], @lower_hex_128),
+         true <- matches?(envelope["sig"], @lower_hex_signature),
          true <- matches?(envelope["nonce"], @lower_hex_32),
          :ok <- timestamp(envelope["issued_at"]),
-         {:ok, cert} <- normalize_cert(envelope["cert"]) do
-      {:ok, Map.put(envelope, "cert", cert)}
+         :ok <- cert_chain(envelope["cert_chain"]) do
+      {:ok, envelope}
     else
       _ -> {:error, :invalid_attestation}
     end
@@ -152,47 +160,23 @@ defmodule Emisar.Runs.Attestation do
 
   defp normalize(_envelope), do: {:error, :invalid_attestation}
 
-  defp normalize_cert(%{} = cert) do
-    with :ok <- exact_keys(cert, @cert_fields),
-         :ok <- bounded_string(cert["ca_id"], 1, 128),
-         :ok <- bounded_string(cert["key_id"], 1, 128),
-         true <- matches?(cert["public_key"], @lower_hex_64),
-         :ok <- timestamp(cert["valid_from"]),
-         :ok <- timestamp(cert["valid_until"]),
-         :ok <- bounded_string(cert["serial"], 1, 128),
-         true <- matches?(cert["sig"], @lower_hex_128),
-         {:ok, scope} <- normalize_scope(cert["scope"]) do
-      {:ok, Map.put(cert, "scope", scope)}
-    else
-      _ -> {:error, :invalid_attestation}
-    end
+  # The chain is opaque to the portal: it is bounded and confirmed to be
+  # decodable base64, then relayed verbatim. Judging its trust here would
+  # duplicate — and could disagree with — the runner, which is the only
+  # cryptographic authority for a certificate.
+  defp cert_chain(chain)
+       when is_list(chain) and length(chain) in 1..@max_chain_certs do
+    if Enum.all?(chain, &decodable_certificate?/1),
+      do: :ok,
+      else: {:error, :invalid_attestation}
   end
 
-  defp normalize_cert(_cert), do: {:error, :invalid_attestation}
+  defp cert_chain(_chain), do: {:error, :invalid_attestation}
 
-  defp normalize_scope(%{} = scope) do
-    with :ok <- allowed_keys(scope, @scope_fields),
-         :ok <- optional_bounded_string(scope, "group", 80),
-         :ok <- labels(scope["labels"]) do
-      {:ok, scope}
-    else
-      _ -> {:error, :invalid_attestation}
-    end
+  defp decodable_certificate?(entry) do
+    bounded_string?(entry, 1, @max_chain_entry_bytes) and
+      match?({:ok, _der}, Base.decode64(entry))
   end
-
-  defp normalize_scope(_scope), do: {:error, :invalid_attestation}
-
-  defp labels(nil), do: :ok
-
-  defp labels(%{} = labels) when map_size(labels) <= 32 do
-    if Enum.all?(labels, fn {key, value} ->
-         bounded_string?(key, 1, 80) and bounded_string?(value, 0, 256)
-       end),
-       do: :ok,
-       else: {:error, :invalid_attestation}
-  end
-
-  defp labels(_labels), do: {:error, :invalid_attestation}
 
   defp compare(envelope, facts) do
     expected_refs = Enum.sort(facts.runner_refs)
@@ -241,19 +225,6 @@ defmodule Emisar.Runs.Attestation do
     if Map.keys(map) |> Enum.sort() == Enum.sort(fields),
       do: :ok,
       else: {:error, :invalid_attestation}
-  end
-
-  defp allowed_keys(map, fields) do
-    if Enum.all?(Map.keys(map), &(&1 in fields)),
-      do: :ok,
-      else: {:error, :invalid_attestation}
-  end
-
-  defp optional_bounded_string(map, key, max) do
-    case Map.fetch(map, key) do
-      :error -> :ok
-      {:ok, value} -> bounded_string(value, 0, max)
-    end
   end
 
   defp bounded_string(value, min, max) do
