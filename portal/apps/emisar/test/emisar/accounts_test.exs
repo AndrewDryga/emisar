@@ -1,5 +1,6 @@
 defmodule Emisar.AccountsTest do
   use Emisar.DataCase, async: true
+  alias Ecto.Multi
   alias Emisar.Accounts
   alias Emisar.Accounts.{Account, Membership, RunnerAccess}
   alias Emisar.ApiKeys.ApiKey
@@ -4240,6 +4241,30 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "put_sync_membership_lifecycle/4" do
+    test "composes the lifecycle audit for the outer commit to broadcast" do
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account)
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      :ok = Audit.subscribe_account_audit(account.id)
+
+      assert {:ok,
+              %{
+                lifecycle_audit: %AuditEvent{
+                  event_type: "membership.deprovisioned_via_scim"
+                },
+                membership_transition: %{
+                  effect: {:suspended, %Membership{disabled_at: %DateTime{}}}
+                }
+              }} =
+               Multi.new()
+               |> Accounts.put_sync_membership_lifecycle(member, provider, :suspend)
+               |> Repo.commit_multi()
+
+      assert_receive {:audit_event, %AuditEvent{event_type: "membership.deprovisioned_via_scim"}}
+    end
+  end
+
   describe "membership_reinstated_effects/1" do
     test "broadcasts the reinstatement to the team page" do
       account = Fixtures.Accounts.create_account()
@@ -4250,6 +4275,81 @@ defmodule Emisar.AccountsTest do
 
       member_user_id = member.user_id
       assert_receive {:list_changed, :team, "membership.reinstated", ^member_user_id}
+    end
+  end
+
+  describe "sync_set_membership_authorization/4" do
+    test "persists a directory role and runner grant together" do
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account)
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+      {:ok, access} = RunnerAccess.restricted(["operations"], [])
+
+      assert {:ok, %Membership{role: :operator} = updated} =
+               Accounts.sync_set_membership_authorization(
+                 member,
+                 :operator,
+                 access,
+                 provider
+               )
+
+      assert updated.directory_provider_id == provider.id
+      assert Accounts.runner_access_for_membership(account.id, member.id) == access
+    end
+  end
+
+  describe "put_sync_membership_authorization/5" do
+    test "composes into an outer transaction whose later failure rolls every write back" do
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account)
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+      {:ok, access} = RunnerAccess.restricted(["operations"], [])
+      before_access = Accounts.runner_access_for_membership(account.id, member.id)
+
+      result =
+        Multi.new()
+        |> Accounts.put_sync_membership_authorization(member, :operator, access, provider)
+        |> Multi.error(:forced_failure, :forced_rollback)
+        |> Repo.commit_multi()
+
+      assert result == {:error, :forced_rollback}
+      assert Repo.reload!(member).role == :viewer
+      assert Accounts.runner_access_for_membership(account.id, member.id) == before_access
+
+      refute AuditEvent.Query.all()
+             |> AuditEvent.Query.by_account_id(account.id)
+             |> AuditEvent.Query.only_event_types([
+               "membership.role_synced_via_scim",
+               "membership.runner_access_synced_via_scim"
+             ])
+             |> Repo.exists?()
+    end
+  end
+
+  describe "after_sync_membership_authorization_committed/1" do
+    test "fires the composed transition's team notification only after the caller commits" do
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account)
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+      {:ok, access} = RunnerAccess.restricted(["operations"], [])
+      :ok = Accounts.subscribe_account_team(account.id)
+
+      assert {:ok, changes} =
+               Multi.new()
+               |> Accounts.put_sync_membership_authorization(
+                 member,
+                 :operator,
+                 access,
+                 provider
+               )
+               |> Repo.commit_multi()
+
+      refute_receive {:list_changed, :team, "membership.role_changed", _user_id}
+      assert Accounts.after_sync_membership_authorization_committed(changes) == :ok
+
+      member_user_id = member.user_id
+
+      assert_receive {:list_changed, :team, "membership.role_changed", ^member_user_id}
     end
   end
 

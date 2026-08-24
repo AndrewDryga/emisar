@@ -13,6 +13,7 @@ defmodule EmisarWeb.SCIMControllerTest do
   alias Emisar.{Accounts, ApiKeys, Repo, SSO, Users}
   alias Emisar.SSO.{IdentityProvider, SCIMUserUpdate}
   alias EmisarWeb.SCIM.Resource
+  alias EmisarWeb.SCIM.UserController
 
   @scim_content_type "application/scim+json"
 
@@ -213,6 +214,22 @@ defmodule EmisarWeb.SCIMControllerTest do
       {:ok, _provider} = SSO.disable_scim(provider, subject)
 
       assert conn |> auth(token) |> get(~p"/scim/v2/Users/x") |> json_response(401)
+    end
+
+    test "a provider revoked after bearer resolution still returns the SCIM 401 challenge", %{
+      conn: conn,
+      provider: stale_provider,
+      subject: subject
+    } do
+      {:ok, _disabled} = SSO.disable_scim(stale_provider, subject)
+
+      conn =
+        conn
+        |> assign(:scim_provider, stale_provider)
+        |> UserController.create(user_payload("okta|revoked-in-flight", []))
+
+      assert json_response(conn, 401)["status"] == "401"
+      assert get_resp_header(conn, "www-authenticate") == ["Bearer"]
     end
   end
 

@@ -3760,7 +3760,7 @@ defmodule Emisar.SSOTest do
       # lock is released when the identity transaction commits — so a disable could
       # commit, sweep no sessions, and the callback then insert one that survives.
       {_user, account, subject} = enterprise_owner()
-      provider = provider_fixture(account)
+      provider = account |> provider_fixture() |> Fixtures.SSO.enable_scim()
       %{identity: identity} = provision(provider, "okta|session-guard")
 
       assert SSO.ensure_identity_provider_enabled(Repo, identity.id) == :ok
@@ -5885,6 +5885,7 @@ defmodule Emisar.SSOTest do
            subject: subject,
            provider: provider
          } do
+      provider = Fixtures.SSO.enable_scim(provider)
       member = Fixtures.Users.create_user(%{email: "member@acme.test"})
 
       _ =

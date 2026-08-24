@@ -346,86 +346,134 @@ defmodule Emisar.SSO do
 
   @doc "Update a connection's config (locked re-read). `manage_sso` + Team or Enterprise. `{:ok, provider} | {:error, reason}`."
   def update_provider(%IdentityProvider{id: id}, attrs, %Subject{} = subject) do
-    with :ok <- ensure_can_configure_sso(subject) do
-      IdentityProvider.Query.not_deleted()
-      |> IdentityProvider.Query.by_id(id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(IdentityProvider.Query,
-        with: fn loaded_provider ->
-          # Judged from the PERSISTED kind, under the row lock — an edit never
-          # chooses the kind, so a submitted one is not evidence of anything.
-          attrs = edit_provider_attrs(loaded_provider, attrs)
-          supplied_secret? = client_secret_supplied?(attrs)
+    with :ok <- ensure_can_configure_sso(subject),
+         {:ok, scoped_provider} <- fetch_provider_by_id(id, subject) do
+      Multi.new()
+      # Disabling a connection consults the account's require_sso invariant.
+      # Take the shared account fence before the provider row, matching every
+      # OIDC/SCIM path that may need both locks.
+      |> put_active_account_lock(scoped_provider.account_id)
+      |> Multi.run(:update_target, fn repo, _changes ->
+        queryable =
+          IdentityProvider.Query.not_deleted()
+          |> IdentityProvider.Query.by_id(id)
+          |> Authorizer.for_subject(subject)
+          |> IdentityProvider.Query.lock_for_update()
 
-          # The locked row is what the selection is resolved against: its
-          # account owns the runners, so a cross-account id never gets here.
-          {attrs, allowlist} =
-            provider_selection(
-              drop_blank_secret(attrs),
-              loaded_provider.account_id,
-              loaded_provider
-            )
-
-          changeset = IdentityProvider.Changeset.update(loaded_provider, attrs, allowlist)
-
-          with {:ok, access} <- provider_access_from_changeset(changeset),
-               :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access) do
-            cond do
-              not grantable_role?(Ecto.Changeset.get_change(changeset, :default_role), subject) ->
-                :role_exceeds_your_permissions
-
-              disabling_last_required_provider?(loaded_provider, changeset) ->
-                :require_sso_last_provider
-
-              rebinding_identity_namespace?(loaded_provider, changeset) ->
-                :identity_namespace_locked
-
-              repointing_without_secret?(changeset, supplied_secret?) ->
-                :client_secret_required
-
-              true ->
-                discard_requests_captured_under_the_old_namespace(loaded_provider, changeset)
-                prepare_provider_authorization_change(loaded_provider, changeset)
-            end
-          else
-            {:error, %Ecto.Changeset{} = invalid} -> invalid
-            {:error, reason} -> reason
-          end
-        end,
-        audit: fn updated, changeset ->
-          Audit.Events.identity_provider_updated(subject, changeset.data, updated)
-        end,
-        after_commit: &on_provider_updated/2
+        with {:ok, loaded_provider} <- repo.fetch(queryable, IdentityProvider.Query),
+             %Ecto.Changeset{} = changeset <-
+               provider_update_changeset(loaded_provider, attrs, subject) do
+          {:ok, %{provider: loaded_provider, changeset: changeset}}
+        else
+          {:error, reason} -> {:error, reason}
+          reason -> {:error, reason}
+        end
+      end)
+      |> Multi.update(:provider, fn %{update_target: %{changeset: changeset}} -> changeset end)
+      |> Multi.insert(:audit, fn %{
+                                   update_target: %{provider: before},
+                                   provider: updated
+                                 } ->
+        Audit.Events.identity_provider_updated(subject, before, updated)
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{provider: provider, update_target: %{changeset: changeset}} ->
+          on_provider_updated(provider, changeset)
+        end
       )
       |> case do
+        {:ok, %{provider: provider}} -> {:ok, provider}
         {:error, %Ecto.Changeset{} = invalid} -> {:error, hide_secrets(invalid)}
-        result -> result
+        {:error, reason} -> {:error, reason}
       end
+    end
+  end
+
+  defp provider_update_changeset(loaded_provider, attrs, subject) do
+    # Judged from the PERSISTED kind, under the row lock — an edit never
+    # chooses the kind, so a submitted one is not evidence of anything.
+    attrs = edit_provider_attrs(loaded_provider, attrs)
+    supplied_secret? = client_secret_supplied?(attrs)
+
+    # The locked row is what the selection is resolved against: its account
+    # owns the runners, so a cross-account id never gets here.
+    {attrs, allowlist} =
+      provider_selection(
+        drop_blank_secret(attrs),
+        loaded_provider.account_id,
+        loaded_provider
+      )
+
+    changeset = IdentityProvider.Changeset.update(loaded_provider, attrs, allowlist)
+
+    with {:ok, access} <- provider_access_from_changeset(changeset),
+         :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access) do
+      cond do
+        not grantable_role?(Ecto.Changeset.get_change(changeset, :default_role), subject) ->
+          :role_exceeds_your_permissions
+
+        disabling_last_required_provider?(loaded_provider, changeset) ->
+          :require_sso_last_provider
+
+        rebinding_identity_namespace?(loaded_provider, changeset) ->
+          :identity_namespace_locked
+
+        repointing_without_secret?(changeset, supplied_secret?) ->
+          :client_secret_required
+
+        true ->
+          discard_requests_captured_under_the_old_namespace(loaded_provider, changeset)
+          prepare_provider_authorization_change(loaded_provider, changeset)
+      end
+    else
+      {:error, %Ecto.Changeset{} = invalid} -> invalid
+      {:error, reason} -> reason
     end
   end
 
   @doc "Soft-delete a connection. `manage_sso` + Team or Enterprise. `{:ok, provider} | {:error, reason}`."
   def delete_provider(%IdentityProvider{id: id}, %Subject{} = subject) do
-    with :ok <- ensure_can_manage_sso(subject) do
-      IdentityProvider.Query.not_deleted()
-      |> IdentityProvider.Query.by_id(id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(IdentityProvider.Query,
-        with: fn loaded_provider ->
-          if removing_last_required_provider?(loaded_provider),
-            do: :require_sso_last_provider,
-            else:
-              loaded_provider
-              |> IdentityProvider.Changeset.delete()
-              |> then(&prepare_provider_authorization_change(loaded_provider, &1, true))
-        end,
-        audit: &Audit.Events.identity_provider_deleted(subject, &1),
-        after_commit: fn provider ->
+    with :ok <- ensure_can_manage_sso(subject),
+         {:ok, scoped_provider} <- fetch_provider_by_id(id, subject) do
+      Multi.new()
+      # Provider removal can consult the account's require_sso invariant, while
+      # OIDC/link capture already uses account -> provider. Take that same order
+      # here so a collision fallback can never deadlock the revoker.
+      |> put_active_account_lock(scoped_provider.account_id)
+      |> Multi.run(:delete_target, fn repo, _changes ->
+        queryable =
+          IdentityProvider.Query.not_deleted()
+          |> IdentityProvider.Query.by_id(id)
+          |> Authorizer.for_subject(subject)
+          |> IdentityProvider.Query.lock_for_update()
+
+        with {:ok, loaded_provider} <- repo.fetch(queryable, IdentityProvider.Query),
+             false <- removing_last_required_provider?(loaded_provider) do
+          {:ok, loaded_provider}
+        else
+          true -> {:error, :require_sso_last_provider}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
+      |> Multi.update(:provider, fn %{delete_target: loaded_provider} ->
+        loaded_provider
+        |> IdentityProvider.Changeset.delete()
+        |> then(&prepare_provider_authorization_change(loaded_provider, &1, true))
+      end)
+      |> Multi.insert(:audit, fn %{provider: provider} ->
+        Audit.Events.identity_provider_deleted(subject, provider)
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{provider: provider} ->
           _ = return_role_control_to_operators(provider)
           _ = dismiss_pending_link_requests(provider)
           end_sessions_signed_in_through(provider)
         end
       )
+      |> case do
+        {:ok, %{provider: provider}} -> {:ok, provider}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -1215,6 +1263,13 @@ defmodule Emisar.SSO do
   end
 
   defp build_provision_multi(%IdentityProvider{} = provider, identifier, claims, opts \\ []) do
+    Multi.new()
+    |> put_active_account_lock(provider.account_id)
+    |> put_enabled_provider_lock(provider)
+    |> Multi.append(build_provision_writes(provider, identifier, claims, opts))
+  end
+
+  defp build_provision_writes(%IdentityProvider{} = provider, identifier, claims, opts) do
     created_by = Keyword.get(opts, :created_by, :provider)
     provisioned_via = Keyword.get(opts, :provisioned_via, :oidc_jit)
     audit = Keyword.get(opts, :audit, &Audit.Events.user_provisioned_via_sso(&1, provider))
@@ -1222,8 +1277,6 @@ defmodule Emisar.SSO do
     user_attrs = %{email: verified_email(claims), full_name: claims["name"]}
 
     Multi.new()
-    |> put_active_account_lock(provider.account_id)
-    |> put_enabled_provider_lock(provider)
     |> Multi.run(:user, fn _repo, _changes -> Users.provision_sso_user(user_attrs) end)
     |> Multi.run(:identity, fn _repo, %{user: user} ->
       create_identity(provider, user, identifier, claims, created_by, provisioned_via)
@@ -2139,11 +2192,13 @@ defmodule Emisar.SSO do
     # while the request sat open could still run all of it on a cached subject.
     # Nothing here reads the approver's row otherwise.
     Multi.new()
+    |> put_active_account_lock(provider.account_id)
+    |> put_enabled_provider_lock(provider)
     |> Multi.run(:approver, fn repo, _changes ->
       ensure_approver_still_holds_authority(provider, subject, repo)
     end)
     |> Multi.append(
-      build_provision_multi(provider, request.provider_identifier, request.claims,
+      build_provision_writes(provider, request.provider_identifier, request.claims,
         created_by: :admin,
         provisioned_via: :manual,
         runner_access: access,

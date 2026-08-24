@@ -2581,24 +2581,24 @@ defmodule Emisar.Accounts do
     Membership.Query.not_deleted()
     |> Membership.Query.by_id(membership.id)
     |> Repo.fetch_and_update(Membership.Query,
-      with: fn loaded_membership ->
-        # Guards judge the locked row: it must live in the provider's account
-        # (the directory-sync authz boundary), and a deprovision can never lock
-        # out the account's last owner. An ALREADY-suspended row is a no-op —
-        # crucially, the directory never takes ownership of a MANUAL break-glass
-        # suspend (that would let its later reactivate lift a hold an operator
-        # placed on purpose).
-        with :ok <- ensure_membership_in_provider_account(loaded_membership, provider),
-             :ok <- ensure_not_suspended(loaded_membership),
-             :ok <- ensure_not_last_active_owner(loaded_membership) do
-          Membership.Changeset.sync_suspend(loaded_membership, provider.id)
-        else
-          {:error, reason} -> reason
-        end
-      end,
+      with: &sync_suspend_change(&1, provider),
       audit: &Audit.Events.membership_deprovisioned_via_scim(&1, provider)
     )
     |> noop_as_unchanged()
+  end
+
+  defp sync_suspend_change(%Membership{} = membership, provider) do
+    # Guards judge the locked row: it must live in the provider's account
+    # (the directory-sync authz boundary), and a deprovision can never lock out
+    # the account's last owner. An ALREADY-suspended row is a no-op — crucially,
+    # the directory never takes ownership of a MANUAL break-glass suspend.
+    with :ok <- ensure_membership_in_provider_account(membership, provider),
+         :ok <- ensure_not_suspended(membership),
+         :ok <- ensure_not_last_active_owner(membership) do
+      Membership.Changeset.sync_suspend(membership, provider.id)
+    else
+      {:error, reason} -> reason
+    end
   end
 
   @doc """
@@ -2656,23 +2656,94 @@ defmodule Emisar.Accounts do
     Membership.Query.not_deleted()
     |> Membership.Query.by_id(membership.id)
     |> Repo.fetch_and_update(Membership.Query,
-      with: fn loaded_membership ->
-        # The locked row must live in the provider's account before we write —
-        # and the directory only lifts suspensions IT owns (`directory_suspended`).
-        # A MANUAL suspension is a break-glass hold: the IdP re-activating the
-        # user must not reinstate them (no-op; the operator lifts it locally).
-        with :ok <- ensure_membership_in_provider_account(loaded_membership, provider),
-             :ok <- ensure_directory_suspended(loaded_membership),
-             :ok <- ensure_directory_owner(loaded_membership, provider) do
-          Membership.Changeset.reinstate(loaded_membership)
-        else
-          {:error, reason} -> reason
-        end
-      end,
+      with: &sync_reinstate_change(&1, provider),
       audit: &Audit.Events.membership_reprovisioned_via_scim(&1, provider)
     )
     |> noop_as_unchanged()
   end
+
+  defp sync_reinstate_change(%Membership{} = membership, provider) do
+    # The locked row must live in the provider's account before we write, and
+    # the directory only lifts suspensions IT owns. A manual suspension stays a
+    # break-glass hold that only an operator can lift.
+    with :ok <- ensure_membership_in_provider_account(membership, provider),
+         :ok <- ensure_directory_suspended(membership),
+         :ok <- ensure_directory_owner(membership, provider) do
+      Membership.Changeset.reinstate(membership)
+    else
+      {:error, reason} -> reason
+    end
+  end
+
+  @doc """
+  Internal — compose one SCIM suspend or reinstate into a caller's transaction.
+  The membership update and its audit row become top-level Multi results, so the
+  outer `Repo.commit_multi/2` broadcasts only after its provider fence commits.
+  Returns the Multi with `:membership_transition` set to `%{membership, effect}`.
+  """
+  def put_sync_membership_lifecycle(
+        %Multi{} = multi,
+        %Membership{} = membership,
+        %SSO.IdentityProvider{} = provider,
+        action
+      )
+      when action in [:suspend, :reinstate] do
+    multi
+    |> Multi.run(:lifecycle_target, fn repo, _changes ->
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_id(membership.id)
+      |> Membership.Query.lock_for_update()
+      |> repo.fetch(Membership.Query)
+    end)
+    |> Multi.run(:lifecycle_plan, fn _repo, %{lifecycle_target: target} ->
+      case sync_lifecycle_change(target, provider, action) do
+        %Ecto.Changeset{} = changeset -> {:ok, {:changed, changeset}}
+        {:noop, %Membership{} = unchanged} -> {:ok, {:unchanged, unchanged}}
+        reason -> {:error, reason}
+      end
+    end)
+    |> Multi.merge(fn %{lifecycle_plan: plan} ->
+      put_sync_lifecycle_write(plan, provider, action)
+    end)
+    |> Multi.run(:membership_transition, fn _repo, changes ->
+      effect =
+        case changes.lifecycle_plan do
+          {:changed, _changeset} -> {lifecycle_effect(action), changes.lifecycle_membership}
+          {:unchanged, _membership} -> nil
+        end
+
+      {:ok, %{membership: changes.lifecycle_membership, effect: effect}}
+    end)
+  end
+
+  defp sync_lifecycle_change(membership, provider, :suspend),
+    do: sync_suspend_change(membership, provider)
+
+  defp sync_lifecycle_change(membership, provider, :reinstate),
+    do: sync_reinstate_change(membership, provider)
+
+  defp put_sync_lifecycle_write({:changed, changeset}, provider, action) do
+    Multi.new()
+    |> Multi.update(:lifecycle_membership, changeset)
+    |> Multi.insert(:lifecycle_audit, fn %{lifecycle_membership: updated} ->
+      lifecycle_audit(updated, provider, action)
+    end)
+  end
+
+  defp put_sync_lifecycle_write({:unchanged, membership}, _provider, _action) do
+    Multi.new()
+    |> Multi.run(:lifecycle_membership, fn _repo, _changes -> {:ok, membership} end)
+    |> Multi.run(:lifecycle_audit, fn _repo, _changes -> {:ok, nil} end)
+  end
+
+  defp lifecycle_audit(membership, provider, :suspend),
+    do: Audit.Events.membership_deprovisioned_via_scim(membership, provider)
+
+  defp lifecycle_audit(membership, provider, :reinstate),
+    do: Audit.Events.membership_reprovisioned_via_scim(membership, provider)
+
+  defp lifecycle_effect(:suspend), do: :suspended
+  defp lifecycle_effect(:reinstate), do: :reinstated
 
   @doc """
   Internal — directory sync: the post-commit side effect of a COMMITTED sync
@@ -2712,6 +2783,31 @@ defmodule Emisar.Accounts do
         %SSO.IdentityProvider{} = provider
       ) do
     Multi.new()
+    |> put_sync_membership_authorization(membership, role, granted, provider)
+    |> Repo.commit_multi(after_commit: &after_sync_membership_authorization_committed/1)
+    |> case do
+      {:ok, %{membership: updated}} -> {:ok, updated}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Internal — compose one directory-owned membership authorization transition
+  into a caller's transaction. The caller owns the outer commit and must invoke
+  `after_sync_membership_authorization_committed/1` afterwards — no PubSub,
+  session refresh, or API-key revocation runs while its earlier locks are held.
+
+  One invocation per Multi: its operation names are the stable shape the
+  standalone `sync_set_membership_authorization/4` returns to its callback.
+  """
+  def put_sync_membership_authorization(
+        %Multi{} = multi,
+        %Membership{} = membership,
+        role,
+        %RunnerAccess{} = granted,
+        %SSO.IdentityProvider{} = provider
+      ) do
+    multi
     |> Multi.run(:target, fn repo, _changes ->
       lock_runner_access_membership(repo, membership.id, provider.account_id)
     end)
@@ -2760,12 +2856,11 @@ defmodule Emisar.Accounts do
     |> Multi.run(:runner_access_audit, fn repo, changes ->
       insert_synced_runner_access_audit(repo, provider, changes.granted_access, changes)
     end)
-    |> Repo.commit_multi(after_commit: &on_membership_authorization_synced/1)
-    |> case do
-      {:ok, %{membership: updated}} -> {:ok, updated}
-      {:error, reason} -> {:error, reason}
-    end
   end
+
+  @doc "Fire a composed directory authorization's external effects after its outer commit."
+  def after_sync_membership_authorization_committed(%{} = changes),
+    do: on_membership_authorization_synced(changes)
 
   defp insert_synced_role_audit(
          repo,

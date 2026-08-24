@@ -119,7 +119,11 @@ defmodule Emisar.Fixtures.Approvals do
       })
       |> Repo.insert!()
 
-    policy = Fixtures.Policies.create_policy(account_id: account.id)
+    policy =
+      Fixtures.Policies.create_policy(
+        account_id: account.id,
+        created_by_id: requested_by.id
+      )
 
     targets =
       stage_plan["items"]

@@ -1166,6 +1166,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       provider = insert_provider(account, %{})
+      owner = Fixtures.Subjects.subject_for(user, account)
+      {:ok, provider, _raw} = SSO.enable_scim(provider, owner)
 
       {:ok, %{membership: membership}} =
         SSO.scim_provision_user(provider, %{
@@ -1235,13 +1237,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
     test "a downgraded account's role lock points at the member's IdP groups", %{
       conn: conn,
-      user: user,
       account: account,
       provider: provider
     } do
-      owner = Fixtures.Subjects.subject_for(user, account)
-      {:ok, provider, _raw} = SSO.enable_scim(provider, owner)
-
       {_deleted, _} =
         Emisar.Billing.Subscription.Query.all()
         |> Emisar.Billing.Subscription.Query.by_account_id(account.id)
@@ -1793,8 +1791,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
   describe "synced members — a provider without directory sync keeps an editable role" do
     setup %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       provider = insert_provider(account, %{})
+      owner = Fixtures.Subjects.subject_for(user, account)
+      {:ok, provider, _raw} = SSO.enable_scim(provider, owner)
 
       {:ok, %{identity: identity}} =
         SSO.scim_provision_user(provider, %{
@@ -1804,6 +1804,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         })
 
       membership = Accounts.peek_sync_membership(provider.account_id, identity.user_id)
+      {:ok, provider} = SSO.disable_scim(provider, owner)
 
       %{conn: conn, account: account, provider: provider, membership: membership}
     end

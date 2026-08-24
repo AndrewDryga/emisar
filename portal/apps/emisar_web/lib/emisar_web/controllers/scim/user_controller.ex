@@ -189,6 +189,18 @@ defmodule EmisarWeb.SCIM.UserController do
 
   defp render_error(conn, :not_found), do: not_found(conn, nil)
 
+  # Authentication can succeed, then an operator can disable or delete the
+  # connection before the mutation takes its provider-row fence. That is a
+  # revoked bearer at execution time, not a malformed payload.
+  defp render_error(conn, :directory_sync_disabled) do
+    conn
+    |> put_resp_header("www-authenticate", "Bearer")
+    |> put_status(:unauthorized)
+    |> json(
+      Resource.error(401, "The SCIM bearer token is missing, malformed, or not authorized.")
+    )
+  end
+
   defp render_error(conn, :last_owner) do
     conn
     |> put_status(:conflict)

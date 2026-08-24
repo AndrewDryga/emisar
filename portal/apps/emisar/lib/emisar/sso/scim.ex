@@ -12,7 +12,6 @@ defmodule Emisar.SSO.SCIM do
   import Emisar.SSO.Provisioning
   alias Ecto.Multi
   alias Emisar.{Accounts, Audit, Crypto, Repo, Users}
-  alias Emisar.SSO
   alias Emisar.SSO.{DirectoryGroup, DirectoryGroupMember, GroupRoleMapping}
   alias Emisar.SSO.IdentityProvider
   alias Emisar.SSO.{SCIMGroupPatch, SCIMUser, SCIMUserPatch, SCIMUserUpdate, UserIdentity}
@@ -80,6 +79,50 @@ defmodule Emisar.SSO.SCIM do
     provider
   end
 
+  # Authentication resolved this row before the request entered the domain. A
+  # disable or delete can commit in that gap, so every mutation takes this same
+  # provider-only fence before touching a user. No account join: the lock stays
+  # one row, and the locked row — never the bearer-time struct — supplies every
+  # default and audit attribution used below.
+  defp put_current_scim_provider(multi, provider, expected_authorization_version \\ :any) do
+    Multi.run(multi, :locked_provider, fn repo, _changes ->
+      with {:ok, locked} <- fetch_current_scim_provider(provider, repo, lock?: true),
+           :ok <-
+             ensure_authorization_version(locked, expected_authorization_version) do
+        {:ok, locked}
+      end
+    end)
+  end
+
+  defp fetch_current_scim_provider(%IdentityProvider{} = provider, repo \\ Repo, opts \\ []) do
+    queryable =
+      IdentityProvider.Query.not_deleted()
+      |> IdentityProvider.Query.scim_enabled()
+      |> IdentityProvider.Query.by_account_id(provider.account_id)
+      |> IdentityProvider.Query.by_id(provider.id)
+
+    queryable =
+      if Keyword.get(opts, :lock?, false),
+        do: IdentityProvider.Query.lock_for_update(queryable),
+        else: queryable
+
+    case repo.fetch(queryable, IdentityProvider.Query) do
+      {:ok, current} -> {:ok, current}
+      {:error, _reason} -> {:error, :directory_sync_disabled}
+    end
+  end
+
+  defp ensure_authorization_version(_provider, :any), do: :ok
+
+  defp ensure_authorization_version(
+         %IdentityProvider{authorization_version: version},
+         version
+       ),
+       do: :ok
+
+  defp ensure_authorization_version(%IdentityProvider{}, _expected),
+    do: {:error, :stale_authorization_version}
+
   # -- Directory sync (SCIM) — user lifecycle (internal, provider-scoped) --
 
   @doc """
@@ -105,8 +148,11 @@ defmodule Emisar.SSO.SCIM do
       |> UserIdentity.Query.by_provider_and_scim_identity(provider.id, external_id)
 
     case Repo.peek(queryable) do
-      %UserIdentity{} = identity -> load_provisioned(provider, identity, external_id, attrs)
-      nil -> provision_scim_user(provider, external_id, attrs, retry)
+      %UserIdentity{} = identity ->
+        load_provisioned(provider, identity, external_id, attrs, retry)
+
+      nil ->
+        provision_scim_user(provider, external_id, attrs, retry)
     end
   end
 
@@ -126,112 +172,203 @@ defmodule Emisar.SSO.SCIM do
          %IdentityProvider{} = provider,
          %UserIdentity{} = identity,
          external_id,
-         attrs
+         attrs,
+         retry
        ) do
-    with {:ok, user} <- Users.fetch_user_by_id(identity.user_id),
-         {:ok, identity} <- adopt_scim_identity(identity, external_id) do
-      reconcile_provisioned(provider, user, identity, scim_active_from(attrs))
+    active = scim_active_from(attrs)
+
+    with {:ok, authorization} <- load_repost_authorization(provider, identity, active) do
+      case reconcile_provisioned(provider, identity, external_id, active, authorization) do
+        {:error, :stale_authorization_version} when retry == :may_retry ->
+          provision_or_load(provider, attrs, :final)
+
+        result ->
+          result
+      end
     end
   end
 
-  defp adopt_scim_identity(%UserIdentity{scim_external_id: nil} = identity, external_id)
-       when is_binary(external_id) do
-    # Guarded on the column still being null AT THE WRITE, not just when we read
-    # it. Two pushes that both loaded the unstamped row would otherwise each
-    # claim it, and the later one would silently win.
-    queryable =
-      UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.by_id(identity.id)
-      |> UserIdentity.Query.without_scim_external_id()
+  # Mapping/group reads can grow with the provider, so take their one-identity
+  # snapshot before the row lock. Every writer that can change these facts also
+  # bumps authorization_version while holding the provider row; the transaction
+  # below accepts this bundle only when that version is still current, and the
+  # caller retries once on a crossing write.
+  defp load_repost_authorization(_provider, _identity, false), do: {:ok, nil}
 
-    {_stamped, _} = Repo.update_all(queryable, set: [scim_external_id: external_id])
+  defp load_repost_authorization(%IdentityProvider{} = provider, %UserIdentity{} = identity, true) do
+    with {:ok, current} <- fetch_current_scim_provider(provider) do
+      role_mappings = provider_role_mappings(current)
+      runner_access_mappings = provider_runner_access_mappings(current)
 
-    # Read back whoever won. If another push stamped it first, the write above
-    # matched nothing and theirs is what stands.
-    {:ok, Repo.reload!(identity)}
+      authoritative? =
+        match?(%DateTime{}, current.scim_groups_synced_at) or
+          (role_mappings == [] and runner_access_mappings == [])
+
+      group_ids = Map.get(group_ids_by_identity([identity]), identity.id, [])
+
+      mapped_access =
+        runner_access_mappings
+        |> Enum.filter(&(&1.external_group_id in group_ids))
+        |> Enum.map(&runner_access_mapping_access/1)
+        |> Accounts.RunnerAccess.union()
+
+      {:ok,
+       %{
+         authorization_version: current.authorization_version,
+         authoritative?: authoritative?,
+         mapped_role: highest_role_for_groups(group_ids, role_mappings),
+         mapped_access: mapped_access
+       }}
+    end
   end
 
-  defp adopt_scim_identity(%UserIdentity{} = identity, _external_id), do: {:ok, identity}
+  defp reconcile_provisioned(provider, identity, external_id, active, authorization) do
+    expected_version =
+      if authorization, do: authorization.authorization_version, else: :any
+
+    multi =
+      Multi.new()
+      |> put_current_scim_provider(provider, expected_version)
+      |> Multi.run(:scim_identity, fn repo, %{locked_provider: locked_provider} ->
+        lock_scim_identity(locked_provider, identity.id, repo)
+      end)
+      |> Multi.run(:adopted_identity, fn repo, %{scim_identity: locked_identity} ->
+        adopt_scim_identity(repo, locked_identity, external_id)
+      end)
+      |> Multi.run(:user, fn _repo, %{adopted_identity: locked_identity} ->
+        Users.fetch_user_by_id(locked_identity.user_id)
+      end)
+      |> Multi.merge(&reconcile_provisioned_membership_multi(&1, active))
+      |> Multi.run(:updated_identity, fn repo, %{adopted_identity: locked_identity} ->
+        set_identity_scim_active(repo, locked_identity, active)
+      end)
+      |> maybe_put_repost_authorization(authorization)
+      |> Multi.run(:result, fn _repo, changes ->
+        membership = Map.get(changes, :membership, changes.membership_transition.membership)
+
+        {:ok,
+         %{
+           user: changes.user,
+           identity: changes.updated_identity,
+           membership: membership
+         }}
+      end)
+
+    case Repo.commit_multi(multi, after_commit: &repost_effects/1) do
+      {:ok, %{result: result}} -> {:ok, result}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp adopt_scim_identity(repo, %UserIdentity{scim_external_id: nil} = identity, external_id)
+       when is_binary(external_id),
+       do: repo.update(UserIdentity.Changeset.adopt_scim_external_id(identity, external_id))
+
+  defp adopt_scim_identity(
+         _repo,
+         %UserIdentity{scim_external_id: external_id} = identity,
+         external_id
+       ),
+       do: {:ok, identity}
+
+  defp adopt_scim_identity(_repo, %UserIdentity{}, _external_id),
+    do: {:error, :identifier_taken}
 
   # active: true — reinstate a directory suspension (a MANUAL suspend still
-  # holds, per reprovision_membership) and recompute the mapped role.
-  defp reconcile_provisioned(%IdentityProvider{} = provider, user, identity, true) do
-    with {:ok, _membership} <- reprovision_membership(provider, user, identity),
-         {:ok, identity} <- ensure_scim_active(identity),
-         {:ok, membership} <- SSO.recompute_role_for_identity(provider, identity) do
-      {:ok, %{user: user, identity: identity, membership: membership}}
+  # holds, per reprovision_membership) and recompute mapped authorization.
+  defp reconcile_provisioned_membership_multi(
+         %{locked_provider: provider, user: user, adopted_identity: identity},
+         true
+       ) do
+    case Accounts.peek_sync_membership(provider.account_id, user.id) do
+      %Accounts.Membership{disabled_at: nil} = membership ->
+        unchanged_membership_transition(membership)
+
+      %Accounts.Membership{} = membership ->
+        if identity.scim_active do
+          unchanged_membership_transition(membership)
+        else
+          Accounts.put_sync_membership_lifecycle(
+            Multi.new(),
+            membership,
+            provider,
+            :reinstate
+          )
+        end
+
+      nil ->
+        Multi.run(Multi.new(), :membership_transition, fn _repo, _changes ->
+          with {:ok, membership} <-
+                 Accounts.provision_sso_membership(
+                   provider.account_id,
+                   user.id,
+                   provider.default_role,
+                   provider_runner_access(provider),
+                   directory_managed?: true,
+                   directory_provider: provider
+                 ) do
+            {:ok, %{membership: membership, effect: nil}}
+          end
+        end)
     end
   end
 
   # active: false — the same deprovision a PATCH/DELETE performs, so a create
   # that asserts "inactive" lands the member in exactly the offboarded state.
-  defp reconcile_provisioned(%IdentityProvider{} = provider, user, identity, false) do
-    with {:ok, membership} <- deactivate_sync_membership(provider, identity.user_id),
-         {:ok, identity} <- Repo.update(UserIdentity.Changeset.set_scim_active(identity, false)) do
-      {:ok, %{user: user, identity: identity, membership: membership}}
-    end
-  end
-
-  # The reconcile transitions run outside any transaction, so the post-commit
-  # side effects fire inline — and only when the row actually changed.
-  defp deactivate_sync_membership(%IdentityProvider{} = provider, user_id) do
-    case Accounts.peek_sync_membership(provider.account_id, user_id) do
-      %Accounts.Membership{} = membership ->
-        with {:ok, membership, changed?} <- Accounts.sync_suspend_membership(membership, provider) do
-          if changed?, do: :ok = Accounts.membership_suspended_effects(membership)
-          {:ok, membership}
-        end
-
-      nil ->
-        {:error, :not_found}
-    end
-  end
-
-  defp reinstate_sync_membership(
-         %IdentityProvider{} = provider,
-         %Accounts.Membership{} = membership
+  defp reconcile_provisioned_membership_multi(
+         %{locked_provider: provider, adopted_identity: identity},
+         false
        ) do
-    with {:ok, membership, changed?} <- Accounts.sync_reinstate_membership(membership, provider) do
-      if changed?, do: :ok = Accounts.membership_reinstated_effects(membership)
-      {:ok, membership}
-    end
-  end
-
-  # The membership half of a SCIM re-POST — unlike an admin link-approval, it must
-  # respect a break-glass MANUAL suspend.
-  defp reprovision_membership(%IdentityProvider{} = provider, user, %UserIdentity{} = identity) do
-    case Accounts.peek_sync_membership(provider.account_id, user.id) do
-      %Accounts.Membership{disabled_at: nil} = membership ->
-        {:ok, membership}
-
+    case Accounts.peek_sync_membership(provider.account_id, identity.user_id) do
       %Accounts.Membership{} = membership ->
-        # A disabled membership while the IdP still has them active (scim_active:
-        # true) is a MANUAL suspend — a break-glass security action that HOLDS; a
-        # routine re-POST never silently lifts it. scim_active: false means the IdP
-        # is re-activating a member it DEACTIVATED, so reinstate. Same scim_active
-        # boundary the manual-reinstate block uses.
-        if identity.scim_active do
-          {:ok, membership}
-        else
-          reinstate_sync_membership(provider, membership)
-        end
+        Accounts.put_sync_membership_lifecycle(Multi.new(), membership, provider, :suspend)
 
       nil ->
-        Accounts.provision_sso_membership(
-          provider.account_id,
-          user.id,
-          provider.default_role,
-          provider_runner_access(provider),
-          directory_managed?: true,
-          directory_provider: provider
-        )
+        Multi.error(Multi.new(), :membership_transition, :not_found)
     end
   end
 
-  defp ensure_scim_active(%UserIdentity{scim_active: true} = identity), do: {:ok, identity}
+  defp unchanged_membership_transition(membership) do
+    Multi.run(Multi.new(), :membership_transition, fn _repo, _changes ->
+      {:ok, %{membership: membership, effect: nil}}
+    end)
+  end
 
-  defp ensure_scim_active(%UserIdentity{} = identity),
-    do: identity |> UserIdentity.Changeset.set_scim_active(true) |> Repo.update()
+  defp maybe_put_repost_authorization(multi, %{authoritative?: true} = authorization) do
+    Multi.merge(multi, fn %{locked_provider: provider, membership_transition: transition} ->
+      role = authorization.mapped_role || provider.default_role
+
+      access =
+        Accounts.RunnerAccess.union([
+          provider_runner_access(provider),
+          authorization.mapped_access
+        ])
+
+      Accounts.put_sync_membership_authorization(
+        Multi.new(),
+        transition.membership,
+        role,
+        access,
+        provider
+      )
+    end)
+  end
+
+  defp maybe_put_repost_authorization(multi, _authorization), do: multi
+
+  defp repost_effects(changes) do
+    case changes.membership_transition.effect do
+      {:suspended, membership} -> :ok = Accounts.membership_suspended_effects(membership)
+      {:reinstated, membership} -> :ok = Accounts.membership_reinstated_effects(membership)
+      nil -> :ok
+    end
+
+    if Map.has_key?(changes, :membership) do
+      Accounts.after_sync_membership_authorization_committed(changes)
+    else
+      :ok
+    end
+  end
 
   defp provision_scim_user(%IdentityProvider{} = provider, external_id, attrs, retry) do
     multi = build_scim_provision_multi(provider, external_id, attrs)
@@ -265,15 +402,35 @@ defmodule Emisar.SSO.SCIM do
       {:error, :email_taken} ->
         # The SCIM email matches an existing user. If they're a member, park a
         # link request for an admin to approve (Okta retries and self-heals once
-        # linked); a non-member is a genuine collision. Always 409; never merge (C1).
+        # linked); a non-member is a genuine collision. Never merge (C1). A
+        # provider revoked before the fenced fallback gets the bearer-time 401.
         email = attrs[:email] || attrs["email"]
         full_name = attrs[:full_name] || attrs["full_name"]
-        _ = capture_member_link(provider, external_id, email, full_name, %{}, :scim)
-        {:error, :email_taken}
+
+        case capture_current_scim_member_link(provider, external_id, email, full_name) do
+          {:error, :directory_sync_disabled} = revoked -> revoked
+          _captured_or_unmatched -> {:error, :email_taken}
+        end
 
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # The create transaction rolled back before reaching this collision path. Use
+  # the established account -> provider lock order before the link write: OIDC
+  # collision capture takes the same account lock, so reversing these two rows
+  # here would deadlock a SCIM collision against an OIDC callback. Delete either
+  # sweeps the request afterwards or makes this fallback refuse — it can never
+  # refill the queue after the connection is gone.
+  defp capture_current_scim_member_link(provider, external_id, email, full_name) do
+    Multi.new()
+    |> put_active_account_lock(provider.account_id)
+    |> put_current_scim_provider(provider)
+    |> Multi.run(:link_request, fn _repo, %{locked_provider: locked_provider} ->
+      {:ok, capture_member_link(locked_provider, external_id, email, full_name, %{}, :scim)}
+    end)
+    |> Repo.commit_multi()
   end
 
   # Only an identifier collision is the race the re-call converges on, so only it
@@ -293,24 +450,24 @@ defmodule Emisar.SSO.SCIM do
     }
 
     Multi.new()
-    |> put_provider_lock(provider)
+    |> put_current_scim_provider(provider)
     |> Multi.run(:user, fn _repo, _changes -> Users.provision_sso_user(user_attrs) end)
-    |> Multi.run(:identity, fn _repo, %{user: user} ->
-      create_scim_identity(provider, user, external_id, attrs)
+    |> Multi.run(:identity, fn _repo, %{locked_provider: locked_provider, user: user} ->
+      create_scim_identity(locked_provider, user, external_id, attrs)
     end)
-    |> Multi.run(:membership, fn _repo, %{user: user} ->
+    |> Multi.run(:membership, fn _repo, %{locked_provider: locked_provider, user: user} ->
       Accounts.provision_sso_membership(
-        provider.account_id,
+        locked_provider.account_id,
         user.id,
-        provider.default_role,
-        provider_runner_access(provider),
+        locked_provider.default_role,
+        provider_runner_access(locked_provider),
         active?: scim_active_from(attrs),
         directory_managed?: true,
-        directory_provider: provider
+        directory_provider: locked_provider
       )
     end)
-    |> Multi.insert(:audit, fn %{user: user} ->
-      Audit.Events.user_provisioned_via_scim(user, provider)
+    |> Multi.insert(:audit, fn %{locked_provider: locked_provider, user: user} ->
+      Audit.Events.user_provisioned_via_scim(user, locked_provider)
     end)
   end
 
@@ -368,14 +525,16 @@ defmodule Emisar.SSO.SCIM do
   def scim_update_user(%IdentityProvider{} = provider, id, %SCIMUserUpdate{} = update) do
     multi =
       Multi.new()
-      |> Multi.run(:identity, fn repo, _changes ->
-        lock_scim_identity(provider, id, repo)
+      |> put_current_scim_provider(provider)
+      |> Multi.run(:identity, fn repo, %{locked_provider: locked_provider} ->
+        lock_scim_identity(locked_provider, id, repo)
       end)
-      |> Multi.run(:rename, fn _repo, %{identity: identity} ->
-        apply_scim_rename(provider, identity, update.name)
+      |> Multi.run(:rename, fn _repo, %{locked_provider: locked_provider, identity: identity} ->
+        apply_scim_rename(locked_provider, identity, update.name)
       end)
-      |> Multi.run(:lifecycle, fn _repo, %{identity: identity} ->
-        apply_scim_lifecycle(provider, identity, update.active)
+      |> Multi.run(:lifecycle, fn _repo,
+                                  %{locked_provider: locked_provider, identity: identity} ->
+        apply_scim_lifecycle(locked_provider, identity, update.active)
       end)
       |> Multi.run(:updated_identity, fn repo, %{identity: identity} ->
         set_identity_scim_active(repo, identity, update.active)
