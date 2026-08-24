@@ -184,11 +184,13 @@ mutation recovery or cancellation correlation.
 
 ### Scope and disclosure
 
-Every read uses the API key's account and the minting operator's current runner
-and pack scope. Data visible only through an inaccessible runner, or only in an
-out-of-scope pack on an accessible runner, must not affect a result, total,
-cursor, error distinction, or search rank. Exact lookup outside scope is
-indistinguishable from absence.
+Every discovery and runbook-definition read uses the API key's account and the
+minting operator's current runner and pack scope. Data visible only through an
+inaccessible runner, or only in an out-of-scope pack on an accessible runner,
+must not affect a result, total, cursor, error distinction, or search rank.
+Exact lookup outside scope is indistinguishable from absence. Action-run and
+runbook-execution history and audit receipts are account-wide; they may name
+runners or packs outside the caller's current scope.
 
 Composite immutable resources are authorized atomically before pagination. In
 particular, a runbook containing any exact out-of-scope runner ref is itself
@@ -1323,9 +1325,9 @@ Input supports `operation_id`, `runbook_execution_id`, `runner_ref`, `action_id`
 `runbook_execution_id`.
 It returns the same bounded run summaries as `run_action`, newest first.
 `operation_id` is mutually exclusive with other identity filters but paginates
-like every run query; it is not the mutation recovery contract. If scope changed
-since dispatch, the response includes only currently visible runs and neither
-counts nor signals hidden members.
+like every run query; it is not the mutation recovery contract. Run history is
+account-scoped, so a later runner-scope change does not hide runs or affect
+counts.
 
 Pagination measures the complete JSON-RPC result after the structured payload
 is mirrored into the compatibility text block and escaped. Escape-heavy output
@@ -1333,9 +1335,9 @@ can therefore make a page shorter than `limit`; `next_cursor` still resumes
 after the last complete run returned, without truncating or skipping an item.
 
 `own` means operations created by the current durable credential lineage,
-including rotated successor keys. `account` means all account runs currently
-visible to the caller; it requires the same run-read access as `own` and never
-bypasses the caller's current runner scope.
+including rotated successor keys. `account` means every fixed-contract MCP run
+in the account; it requires the same run-read access as `own` and returns runs
+targeting runners outside the caller's current scope.
 
 Every run summary carries `operation_id`, exact `action_id` and `pack_ref`,
 `runner_ref`, `status`, and `created_at`; terminal rows may add `finished_at`.
@@ -1900,10 +1902,12 @@ runbook ID it returns the same staged execution result, including newly
 dispatched attempts and another `next` while the execution is still pending
 approval or active. Complete attempt
 history stays behind the paginated `runs_next`; terminal extracted values
-omitted from the staged result stay behind `outputs_next`. If any frozen target
-is no longer in current scope, either read returns `not_allowed` without a
-partial graph or hidden counts. Cancellation stops observation, never the
-runbook.
+omitted from the staged result stay behind `outputs_next`. Execution and
+action-run reads remain account-scoped after the minting operator's runner scope
+changes. The scheduler still rechecks current authority before each later
+dispatch; if authority was lost, the execution halts with
+`authorization_lost` before creating that attempt. Cancellation stops
+observation, never the runbook.
 
 ### `create_runbook_draft`
 
