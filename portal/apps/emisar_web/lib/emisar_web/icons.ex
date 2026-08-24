@@ -32,12 +32,18 @@ defmodule EmisarWeb.Icons do
 
   @icons_root Path.expand("../../priv/icons", __DIR__)
 
+  # `@external_resource` below re-registers this module when a KNOWN master
+  # changes, but a brand-new file changes no watched content, so `mix compile`
+  # would keep the stale beam and the new meaning would raise as unknown until
+  # a full rebuild. Recompile whenever the LISTING changes.
+  @icons_listing @icons_root |> Path.join("*/*.svg") |> Path.wildcard() |> Enum.sort()
+
+  def __mix_recompile__? do
+    @icons_root |> Path.join("*/*.svg") |> Path.wildcard() |> Enum.sort() != @icons_listing
+  end
+
   masters =
-    @icons_root
-    |> Path.join("*/*.svg")
-    |> Path.wildcard()
-    |> Enum.sort()
-    |> Enum.map(fn path ->
+    Enum.map(@icons_listing, fn path ->
       namespace = path |> Path.dirname() |> Path.basename()
       [name | compact] = path |> Path.basename(".svg") |> String.split(".")
 

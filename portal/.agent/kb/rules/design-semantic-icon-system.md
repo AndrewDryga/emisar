@@ -50,6 +50,10 @@ it is reached through its semantic token and its provenance stays recorded.
 - `EmisarWeb.Icons` compiles those files in and is the only lookup surface.
   `master/2` picks the compact master at 16 px and below, and raises on a name
   it does not own — an unknown icon must fail loudly, never render nothing.
+  A NEW master file recompiles the registry automatically: `@external_resource`
+  only watches content that existed at compile time, so `__mix_recompile__?`
+  watches the file LISTING — without it a freshly added meaning raises as
+  unknown in dev until a full rebuild.
 - `EmisarWeb.CoreComponents.icon/1` renders the master inline. Stroke weight
   belongs to the OUTPUT SIZE, not the file, so the component reads the size
   from the call site's `h-*` class and `assets/css/app.css` sets the weight per

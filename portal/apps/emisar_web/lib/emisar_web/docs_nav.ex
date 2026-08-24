@@ -159,7 +159,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "connect-claude-ai",
               title: "Claude.ai",
               path: "/docs/connect-claude-ai",
-              icon: "infrastructure.cloud",
+              icon: "agent.claude",
               keywords: "claude anthropic connector custom oauth remote mcp",
               desc: "Add emisar to Claude.ai as a custom connector — no key to manage."
             },
@@ -167,7 +167,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "connect-chatgpt",
               title: "ChatGPT",
               path: "/docs/connect-chatgpt",
-              icon: "infrastructure.cloud",
+              icon: "agent.chatgpt",
               keywords: "chatgpt openai developer mode connector oauth remote mcp",
               desc: "Add emisar to ChatGPT through Developer mode — no key to manage."
             },
@@ -175,7 +175,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "connect-multiple-accounts",
               title: "Multiple accounts",
               path: "/docs/connect-multiple-accounts",
-              icon: "infrastructure.nomad",
+              icon: "identity.organization",
               keywords:
                 "multiple accounts staging production alias accounts use --account switch",
               desc:
