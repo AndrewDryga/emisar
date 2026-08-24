@@ -283,3 +283,17 @@ gate rather than the one page that renders it. Review enforces metaphor,
 minimalism, optical alignment, family coherence, accessibility, and the
 rendered-evidence loop; those judgments cannot be reduced safely to a source
 grep.
+
+- **A 16px cut tunes geometry; it never deletes the drawing's defining anatomy.**
+  The optical cut may resize, thicken, re-space, and drop *decoration* (a
+  duplicate detail line, a per-machine progress line whose story is illegible at
+  16px anyway) — but the element that makes the glyph recognizable as ITS
+  meaning must survive. The runner's inner track capsule was cut away "for
+  crispness" and the founder immediately read the result as a different, worse
+  icon ("not the same as in T1"): a frame with a dash is a generic rectangle,
+  not the approved machine. The tell: if the simplified cut could be mistaken
+  for a different generic icon (minimize, card, toggle), the cut amputated
+  identity, not noise. When density genuinely can't fit the anatomy, shrink or
+  empty the inner element (the fleet's tracks render as empty slots at 16px, no
+  progress line) rather than removing it. Judgment rule — reviewed by eye
+  against the approved master; not mechanically checkable.

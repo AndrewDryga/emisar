@@ -1,3 +1,3 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M6 4H18L20.5 7.5L18 10.5H6L4 7.5ZM6 13.5H18L20.5 17L18 20H6L4 17Z"/><path class="accent-fill" d="M8.5 5.5L12 7.5L8.5 9ZM8.5 15L12 17L8.5 18.5Z"/>
+  <rect x="3" y="2.5" width="18" height="9" rx="2"/><rect x="6" y="6" width="12" height="2" rx="1"/><path class="accent" d="M7 7H11"/><rect x="3" y="12.5" width="18" height="9" rx="2"/><rect x="6" y="16.5" width="12" height="2" rx="1"/><path class="accent" d="M7 17.5H13"/>
 </svg>
