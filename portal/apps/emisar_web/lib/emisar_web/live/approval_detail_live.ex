@@ -1683,8 +1683,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp overridden?(%{override: event_id}), do: is_binary(event_id)
   defp overridden?(_refs), do: false
 
-  # Decision-list rendering helpers (the enum loads as an atom).
-  defp decision_icon(:approve), do: "state.approved"
+  # Decision-list rendering helpers (the enum loads as an atom). Each row states
+  # a verb its decider performed, so it takes the plainest glyph and the same
+  # decision pair the Decide panel's buttons wear — container framing belongs to
+  # the states it distinguishes, not beside a verb. Override keeps the caution
+  # triangle: the triangle IS that meaning's drawing, not a box around one.
+  defp decision_icon(:approve), do: "action.approve"
   defp decision_icon(:deny), do: "state.denied"
   defp decision_icon(:override), do: "state.warning"
 

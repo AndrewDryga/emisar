@@ -36,6 +36,21 @@ This is the load-bearing contract:
    `diagram.flow_right` share the arrow); the containers stay where they
    distinguish STATES — circle = failed, box = approved, shield = verified,
    disc = selected.
+6. **A glyph pass is scoped by SURFACE, not by token.** When a redraw changes
+   what a token looks like, the thing that can now disagree is every surface
+   where it sits beside a SIBLING doing the opposite job — and the sibling is
+   usually a different token, so a sweep of "every call site of the tokens I
+   changed" walks straight past it. That is exactly how this rule's own §5 pass
+   left the approval decisions ledger half-migrated: it made `state.denied` a
+   bare X and checked the ledger as a call site of that token, while the
+   approve row beside it rendered `state.approved` — a third token, never in
+   scope — and kept its box for a day until the founder read the pair as one
+   icon being "so different". Before shipping a redraw, list the surfaces that
+   render the token in a set (a verdict ledger, an outcome chip row, a status
+   legend) and look at the whole set rendered, not the token in isolation.
+   Sweep: `defp <thing>_icon(...)` dispatch helpers and adjacent `icon=`
+   literals that map sibling outcomes, checking each set for a mix of plain and
+   container-framed drawings under one kind of label.
 
 A licensed or Heroicons-derived drawing can still be an approved master, but
 it is reached through its semantic token and its provenance stays recorded.
