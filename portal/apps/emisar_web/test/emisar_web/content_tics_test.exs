@@ -54,7 +54,15 @@ defmodule EmisarWeb.ContentTicsTest do
     {"holds neither",
      "cause compressed into an em-dash punchline — connect it with a plain " <>
        "since-clause: \"since it does not hold a private key\" (2026-08-22: " <>
-       "\"it holds neither private key\")"}
+       "\"it holds neither private key\")"},
+    {"Google Workspace proves its tenant",
+     "authentication overclaim — say emisar checks the Workspace tenant (2026-08-24)"},
+    {"never proves the email address",
+     "authentication overclaim — say the claim does not confirm the email address (2026-08-24)"},
+    {"proves only the tenant",
+     "authentication overclaim — say emisar uses hd to check the Workspace tenant (2026-08-24)"},
+    {"proves discovery and reachability",
+     "diagnostic overclaim — say Test connection checks discovery and reachability (2026-08-24)"}
   ]
 
   test "no corrected writing tic reappears on a marketing or docs page" do

@@ -145,12 +145,14 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Allowed email domain</strong>
-        is optional, and refuses a sign-in from outside one domain. Google Workspace proves its
-        tenant with the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">hd</code>
-        claim. Every other provider must explicitly mark the address with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">email_verified: true</code>, then emisar checks that address's domain. An
+        is optional. Set it to allow sign-ins from one domain only. For Google Workspace,
+        emisar checks the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">hd</code>
+        claim to confirm the Workspace tenant. For other providers, the ID token must include
+        an email address from that domain and mark it with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">email_verified: true</code>. The
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">hd</code>
-        claim never proves the email address used to recognise or link a member. Leave the field
-        blank to accept every identity the provider returns.
+        claim does not confirm the email address, so emisar cannot use it to store an address or
+        recognise a member. Leave this field blank to accept every identity returned by the
+        provider.
       </p>
 
       <.docs_screenshot
@@ -224,7 +226,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         First complete a real sign-in through the connection in another browser.
         <strong class="text-zinc-200">Test connection</strong>
-        proves discovery and reachability only — not user assignment, callback acceptance, or
+        checks discovery and reachability only — not user assignment, callback acceptance, or
         claims — so it can pass on a connection nobody can actually sign in through. Keep an
         owner session open while you test. Then open
         <a
@@ -406,13 +408,14 @@
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">ID-token claims</td>
               <td class="px-4 py-3">
-                The ID token must contain a stable <code>sub</code>. An email address and a
-                display name are optional. emisar trusts <code>email</code>
-                for address storage or member recognition only when the token explicitly marks it
-                with <code>email_verified: true</code>. Google Workspace's <code>hd</code>
-                proves only the tenant, never the address. emisar reads these claims from the ID
-                token and does not call UserInfo. The Entra preset uses <code>oid</code>
-                instead of <code>sub</code>.
+                The ID token must include a stable identity claim: <code>sub</code>
+                for most providers and <code>oid</code>
+                for Entra. Email and display name are
+                optional. emisar stores an email address or uses it to recognise a member only
+                when the token includes <code>email_verified: true</code>. For Google Workspace,
+                emisar uses <code>hd</code>
+                to check the Workspace tenant. emisar reads these claims
+                from the ID token and does not call UserInfo.
               </td>
             </tr>
             <tr>
