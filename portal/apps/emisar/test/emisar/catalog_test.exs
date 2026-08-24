@@ -184,17 +184,6 @@ defmodule Emisar.CatalogTest do
     |> List.first()
   end
 
-  defp shipped_pack_without_manifest do
-    Application.app_dir(:emisar, "priv/packs/catalog.json")
-    |> File.read!()
-    |> Jason.decode!()
-    |> Map.fetch!("packs")
-    |> Enum.find_value(fn pack ->
-      Enum.find(pack["previous_versions"] || [], &is_nil(&1["actions"]))
-      |> then(&if(&1, do: Map.put(&1, "id", pack["id"])))
-    end)
-  end
-
   defp shipped_pack_payload(pack, hash, opts \\ []) do
     packs = %{pack["id"] => %{"version" => pack["version"], "hash" => hash}}
     state_payload(Keyword.put(opts, :packs, packs))
@@ -1103,37 +1092,6 @@ defmodule Emisar.CatalogTest do
       assert pack_version.trust_state == :pending
       assert pack_version.hash == nil
       assert pack_version.pending_hash == Fixtures.Catalog.pack_hash("rebuilt-locally")
-    end
-
-    test "a baseline entry without a release manifest stays pending" do
-      pack = shipped_pack_without_manifest()
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      Fixtures.Catalog.create_observed_pack_version(
-        account_id: account.id,
-        pack_id: pack["id"],
-        version: pack["version"],
-        pending_hash: pack["content_hash"]
-      )
-
-      payload =
-        state_payload(
-          packs: %{
-            pack["id"] => %{
-              "version" => pack["version"],
-              "hash" => pack["content_hash"]
-            }
-          }
-        )
-
-      assert {:ok, _} = Catalog.observe_state(runner, payload)
-
-      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
-      assert pack_version.trust_state == :pending
-      assert pack_version.hash == nil
-      assert pack_version.pending_hash == pack["content_hash"]
-      assert pack_version.trusted_manifest == nil
     end
 
     test "another account's stale pending row is untouched" do

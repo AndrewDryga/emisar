@@ -257,6 +257,10 @@ defmodule EmisarWeb.AuditSummary do
     )
   end
 
+  defp summarize("approval.overridden", p) do
+    pairs(approvals: approval_tally(p))
+  end
+
   defp summarize("approval.denied", p),
     do: pairs(reason: get(p, :reason))
 
@@ -387,6 +391,16 @@ defmodule EmisarWeb.AuditSummary do
       {_k, ""} -> []
       {k, v} -> [{to_string(k), to_string(v)}]
     end)
+  end
+
+  defp approval_tally(p) do
+    case {get(p, :approved_count), get(p, :min_approvals)} do
+      {count, required} when is_integer(count) and is_integer(required) ->
+        "#{count} of #{required}"
+
+      _ ->
+        nil
+    end
   end
 
   # Surfaces a runner/group policy override; the account default (the

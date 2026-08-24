@@ -29,6 +29,7 @@ defmodule Emisar.Auth.RoleGrantsTest do
     {Emisar.ApiKeys.ApiKey, :view},
     {Emisar.Approvals.Grant, :manage},
     {Emisar.Approvals.Request, :decide},
+    {Emisar.Approvals.Request, :override},
     {Emisar.Approvals.Request, :view},
     {Emisar.Audit.Event, :view},
     {Emisar.Audit.Event, :view_billing},

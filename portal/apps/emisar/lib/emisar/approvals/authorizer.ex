@@ -4,6 +4,7 @@ defmodule Emisar.Approvals.Authorizer do
   alias Emisar.Approvals.{Decision, Grant, Request}
 
   def decide_approval_permission, do: build(Request, :decide)
+  def override_approval_permission, do: build(Request, :override)
   def view_approvals_permission, do: build(Request, :view)
   def manage_grants_permission, do: build(Grant, :manage)
 
@@ -11,6 +12,7 @@ defmodule Emisar.Approvals.Authorizer do
   def list_permissions_for_role(role) when role in [:owner, :admin],
     do: [
       decide_approval_permission(),
+      override_approval_permission(),
       view_approvals_permission(),
       manage_grants_permission()
     ]

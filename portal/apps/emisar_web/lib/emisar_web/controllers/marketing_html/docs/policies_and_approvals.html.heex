@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="policies-and-approvals"
-      updated="August 22, 2026"
+      updated="August 24, 2026"
       toc={[
         {"how-decisions", "How a decision is made"},
         {"first-policy", "A sensible first policy"},
@@ -171,6 +171,16 @@
             One approval releases a run by default. For destructive work, require
             <strong class="text-zinc-200">two approvers</strong>
             with self-approval off — the requester cannot approve their own request.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            If the required reviewers are unavailable, an owner or admin can use <strong class="text-zinc-200">Break-glass approval</strong>. They must give a
+            reason and type a confirmation. The exception waives the missing reviews and,
+            when necessary, the self-approval rule; it creates no standing grant and
+            gets its own audit record. Scope, expiry, cancellation, pack trust, dispatch
+            signatures, initiator access, and runner admission still apply.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

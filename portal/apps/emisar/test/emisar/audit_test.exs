@@ -1137,6 +1137,33 @@ defmodule Emisar.AuditTest do
       refute refs[request.id].decisions[actor.id] == old_vote.id
     end
 
+    test "marks an override receipt as the final approval event", %{
+      account: account,
+      request: request,
+      subject: subject
+    } do
+      {:ok, _older_event} =
+        Audit.log(account.id, "approval.overridden",
+          actor_kind: "user",
+          actor_id: subject.actor.id,
+          target_kind: "approval_request",
+          target_id: request.id
+        )
+
+      {:ok, event} =
+        Audit.log(account.id, "approval.overridden",
+          actor_kind: "user",
+          actor_id: subject.actor.id,
+          target_kind: "approval_request",
+          target_id: request.id
+        )
+
+      assert {:ok, refs} = Audit.approval_event_refs([request.id], subject)
+      assert refs[request.id].final == event.id
+      assert refs[request.id].override == event.id
+      assert refs[request.id].decisions == %{}
+    end
+
     test "omits another account's approval receipts", %{subject: subject} do
       other_account = Fixtures.Accounts.create_account()
       other_request = Fixtures.Approvals.create_request(account_id: other_account.id)
@@ -2003,6 +2030,7 @@ defmodule Emisar.AuditTest do
 
       assert {"audit.exported", "Audit log exported"} in values
       assert {"action_run.failed", "Run failed"} in values
+      assert {"approval.overridden", "Approval review requirement overridden"} in values
       assert Enum.all?(values, fn {type, label} -> is_binary(type) and is_binary(label) end)
     end
   end
@@ -2022,6 +2050,7 @@ defmodule Emisar.AuditTest do
             ~w[enrollment_key.revoked user.session_revoked
                   runner.disabled runner.deleted membership.removed
                   membership.suspended approval.expired action_run.cancelled approval.grant_revoked
+                  approval.overridden
                   user.mfa_rate_limited user.email_change_rate_limited
                   user.inbox_step_up_rate_limited] do
         assert Audit.event_outcome(t) == :warn, "expected #{t} to be :warn"

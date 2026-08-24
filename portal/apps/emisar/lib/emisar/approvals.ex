@@ -1020,6 +1020,97 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
+  Approve a pending request without waiting for its remaining reviews.
+
+  This break-glass operation is limited to current owners and admins. It
+  waives only the snapshotted approval count and self-approval requirement:
+  account and target scope, expiry/cancellation, pack trust, signed-dispatch
+  freshness, run initiator authorization, and runner admission remain in
+  force. A non-blank reason is required, no standing grant is minted, and the
+  release is recorded as `approval.overridden` with the original quorum and
+  votes present. An existing vote by the actor is left intact.
+
+  Returns the same final release shapes as `approve_request/4`, or
+  `{:error, :override_reason_required | :decision_reason_too_long |
+  :unauthorized | :not_found | :expired | :run_cancelled |
+  :already_decided | :quorum_already_met | ...}`.
+  """
+  def override_request(%Request{} = supplied_request, reason, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.override_approval_permission()
+           ),
+         {:ok, reason} <- normalize_override_reason(reason),
+         :ok <- ensure_current_override_membership(subject),
+         {:ok, request} <- fetch_approval_request_for_decision(supplied_request.id, subject),
+         :ok <- ensure_request_pending(request),
+         :ok <- recheck_override_trust(request, subject),
+         :ok <- check_attestation_fresh(:approve, request) do
+      by_user_id = Subject.actor_id(subject)
+
+      result =
+        Multi.new()
+        |> Multi.run(:active_account, fn repo, _changes ->
+          Accounts.fetch_and_lock_account(request.account_id, repo: repo)
+        end)
+        |> Multi.run(:active_membership, fn repo, _changes ->
+          fetch_locked_override_membership(repo, subject)
+        end)
+        |> Multi.run(:locked_runner_access, fn repo, %{active_membership: membership} ->
+          {:ok, Accounts.runner_access_for_locked_membership(repo, membership)}
+        end)
+        |> Multi.run(:approval_target, fn repo, _changes ->
+          lock_approval_target(repo, request)
+        end)
+        |> Multi.run(:target_runners, fn repo, %{approval_target: target} ->
+          lock_approval_target_runners(repo, request, target)
+        end)
+        |> Multi.run(:locked, fn repo, %{locked_runner_access: access} ->
+          query =
+            Request.Query.all()
+            |> Request.Query.by_id(request.id)
+            |> Request.Query.by_account_id(subject.account.id)
+            |> Request.Query.lock_for_update()
+            |> Authorizer.for_subject(subject)
+
+          with {:ok, locked} <- repo.fetch(query, Request.Query),
+               true <- request_visible_with_access?(repo, locked.id, subject, access) do
+            {:ok, locked}
+          else
+            _ -> {:error, :not_found}
+          end
+        end)
+        |> Multi.run(:override_preflight, fn _repo, %{locked: locked} ->
+          recheck_locked_override(locked)
+        end)
+        |> Multi.run(:outcome, fn repo, %{locked: locked} ->
+          finalize_override(repo, locked, by_user_id, reason)
+        end)
+        |> Multi.insert(:audit, fn %{locked: locked, outcome: outcome} ->
+          Audit.Events.approval_overridden(
+            subject,
+            locked,
+            reason,
+            outcome.approved_count
+          )
+        end)
+        |> Repo.commit_multi(after_commit: &after_decision/1)
+
+      case result do
+        {:ok, changes} ->
+          decision_result(changes)
+
+        {:error, {:override_preflight_failed, reason}} ->
+          resolve_override_preflight_failure(request, reason, subject)
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  @doc """
   Deny a pending request — one deny finalizes DENIED, cancels the run, and no
   later approve can out-vote it. Requires `decide`; scoped to the account.
   Returns `{:ok, {request, run}}` or `{:error, :already_decided | :expired |
@@ -1045,6 +1136,55 @@ defmodule Emisar.Approvals do
       do: :ok,
       else: {:error, :decision_reason_too_long}
   end
+
+  defp normalize_override_reason(reason) when is_binary(reason) do
+    case String.trim(reason) do
+      "" -> {:error, :override_reason_required}
+      trimmed -> with :ok <- ensure_decision_reason_within_limit(trimmed), do: {:ok, trimmed}
+    end
+  end
+
+  defp normalize_override_reason(_reason), do: {:error, :override_reason_required}
+
+  defp ensure_current_override_membership(
+         %Subject{actor: %Users.User{} = user, account: account} = subject
+       ) do
+    account.id
+    |> Accounts.peek_active_membership(subject.membership_id)
+    |> ensure_override_membership(user, account)
+  end
+
+  defp ensure_current_override_membership(_subject), do: {:error, :unauthorized}
+
+  defp fetch_locked_override_membership(
+         repo,
+         %Subject{actor: %Users.User{} = user, account: account} = subject
+       ) do
+    with {:ok, membership} <-
+           Accounts.fetch_and_lock_active_membership(
+             repo,
+             account.id,
+             subject.membership_id
+           ),
+         :ok <- ensure_override_membership(membership, user, account) do
+      {:ok, membership}
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  defp ensure_override_membership(
+         %Accounts.Membership{user_id: user_id} = membership,
+         %Users.User{id: user_id} = user,
+         account
+       ) do
+    user
+    |> Subject.for_user(account, membership)
+    |> Auth.Authorizer.ensure_has_permissions(Authorizer.override_approval_permission())
+  end
+
+  defp ensure_override_membership(_membership, _user, _account),
+    do: {:error, :unauthorized}
 
   # and hand it a validated input first. Fetch the request through the subject
   # scope before evaluating any request-derived guard: callers can hold a stale
@@ -1147,6 +1287,14 @@ defmodule Emisar.Approvals do
     |> repo.exists?()
   end
 
+  defp request_visible_with_access?(repo, request_id, %Subject{} = subject, access) do
+    Request.Query.all()
+    |> Request.Query.by_id(request_id)
+    |> Request.Query.by_target_access(access)
+    |> Authorizer.for_subject(subject)
+    |> repo.exists?()
+  end
+
   defp lock_approval_target(repo, %Request{run_id: run_id}) when is_binary(run_id),
     do: Runs.fetch_and_lock_pending_approval_run(repo, run_id)
 
@@ -1156,6 +1304,44 @@ defmodule Emisar.Approvals do
        )
        when is_binary(execution_id),
        do: Runbooks.lock_pending_approval(repo, execution_id)
+
+  defp lock_approval_target_runners(
+         repo,
+         %Request{account_id: account_id, run_id: run_id},
+         %Runs.ActionRun{id: run_id, runner_id: runner_id}
+       ) do
+    lock_target_runners(repo, account_id, [runner_id])
+  end
+
+  defp lock_approval_target_runners(
+         repo,
+         %Request{account_id: account_id, runbook_execution_id: execution_id},
+         %Runbooks.RunbookExecution{id: execution_id}
+       ) do
+    with {:ok, targets} <- Runbooks.approval_targets_for_execution(execution_id, account_id),
+         runner_ids = approval_target_runner_ids(targets),
+         true <- runner_ids != [] and Enum.all?(runner_ids, &Repo.valid_uuid?/1) do
+      lock_target_runners(repo, account_id, runner_ids)
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  defp approval_target_runner_ids(targets) do
+    targets
+    |> Enum.map(&Map.get(&1, :runner_id))
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
+  defp lock_target_runners(repo, account_id, runner_ids) do
+    Enum.reduce_while(runner_ids, {:ok, :locked}, fn runner_id, {:ok, :locked} ->
+      case Runners.fetch_and_lock_active_runner(runner_id, account_id, repo: repo) do
+        {:ok, _runner} -> {:cont, {:ok, :locked}}
+        {:error, _reason} -> {:halt, {:error, :not_found}}
+      end
+    end)
+  end
 
   # Self-approval gate (server-side, IL-15 — UI hiding is cosmetic only). Only an
   # APPROVE by the recorded requester is blocked, and only when the request's
@@ -1201,7 +1387,55 @@ defmodule Emisar.Approvals do
 
   defp recheck_trust(:deny, _request), do: :ok
 
-  defp halt_unapprovable_execution(request, initial_reason) do
+  defp recheck_override_trust(%Request{run_id: run_id}, _subject) when is_binary(run_id),
+    do: Runs.recheck_run_pack_trust(run_id)
+
+  defp recheck_override_trust(
+         %Request{runbook_execution_id: execution_id} = request,
+         %Subject{} = subject
+       )
+       when is_binary(execution_id) do
+    case Runbooks.recheck_execution_approval(execution_id) do
+      :ok -> :ok
+      {:error, reason} -> halt_unapprovable_execution(request, reason, subject)
+    end
+  end
+
+  # The first preflight gives an authorized caller the existing cleanup
+  # behavior. This second, side-effect-free pass runs after the account,
+  # membership, target, and request locks, closing the window in which trust or
+  # signature freshness could change while this override waited to commit.
+  defp recheck_locked_override(%Request{} = request) do
+    with :ok <- recheck_locked_override_trust(request),
+         :ok <- check_attestation_fresh(:approve, request) do
+      {:ok, :approvable}
+    else
+      {:error, reason} -> {:error, {:override_preflight_failed, reason}}
+    end
+  end
+
+  defp recheck_locked_override_trust(%Request{run_id: run_id}) when is_binary(run_id),
+    do: Runs.recheck_run_pack_trust(run_id)
+
+  defp recheck_locked_override_trust(%Request{runbook_execution_id: execution_id})
+       when is_binary(execution_id),
+       do: Runbooks.recheck_execution_approval(execution_id)
+
+  defp resolve_override_preflight_failure(
+         %Request{runbook_execution_id: execution_id} = request,
+         reason,
+         %Subject{} = subject
+       )
+       when is_binary(execution_id) do
+    case halt_unapprovable_execution(request, reason, subject) do
+      :ok -> {:error, :runbook_execution_not_approvable}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp resolve_override_preflight_failure(%Request{}, reason, %Subject{}), do: {:error, reason}
+
+  defp halt_unapprovable_execution(request, initial_reason, override_subject \\ nil) do
     {code, message} = execution_recheck_failure(initial_reason)
     now = DateTime.utc_now()
 
@@ -1210,6 +1444,7 @@ defmodule Emisar.Approvals do
       |> Multi.run(:active_account, fn repo, _changes ->
         Accounts.fetch_and_lock_account(request.account_id, repo: repo)
       end)
+      |> maybe_lock_override_membership(override_subject)
       |> Multi.run(:approval_target, fn repo, _changes ->
         lock_approval_target(repo, request)
       end)
@@ -1250,9 +1485,18 @@ defmodule Emisar.Approvals do
     case result do
       {:error, :became_approvable} -> :ok
       {:ok, _changes} -> {:error, :runbook_execution_not_approvable}
+      {:error, :unauthorized} -> {:error, :unauthorized}
       {:error, _reason} -> {:error, :runbook_execution_not_approvable}
     end
   end
+
+  defp maybe_lock_override_membership(%Multi{} = multi, %Subject{} = subject) do
+    Multi.run(multi, :active_membership, fn repo, _changes ->
+      fetch_locked_override_membership(repo, subject)
+    end)
+  end
+
+  defp maybe_lock_override_membership(%Multi{} = multi, nil), do: multi
 
   defp execution_recheck_failure(:authorization_lost),
     do: {"authorization_lost", "Initiating authority is no longer allowed to dispatch."}
@@ -1358,6 +1602,32 @@ defmodule Emisar.Approvals do
     do: {:error, :run_cancelled}
 
   defp finalize(_repo, %Request{}, _decision, _by_user_id, _reason, _attrs),
+    do: {:error, :already_decided}
+
+  defp finalize_override(repo, %Request{status: :pending} = locked, by_user_id, reason) do
+    count = repo.one(Decision.Query.approved_distinct_decider_count(locked.id))
+
+    if count < locked.min_approvals do
+      finalize_approved(
+        repo,
+        locked,
+        by_user_id,
+        reason,
+        %{duration: :once, scope: :exact_args, max_uses: nil},
+        count
+      )
+    else
+      {:error, :quorum_already_met}
+    end
+  end
+
+  defp finalize_override(_repo, %Request{status: :expired}, _by_user_id, _reason),
+    do: {:error, :expired}
+
+  defp finalize_override(_repo, %Request{status: :cancelled}, _by_user_id, _reason),
+    do: {:error, :run_cancelled}
+
+  defp finalize_override(_repo, %Request{}, _by_user_id, _reason),
     do: {:error, :already_decided}
 
   # Compose the run cancel into the decision transaction — only for a deny.
@@ -2171,6 +2441,10 @@ defmodule Emisar.Approvals do
   @doc "Whether `subject` may decide (approve/deny) approval requests (operator+)."
   def subject_can_decide_approval?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.decide_approval_permission())
+
+  @doc "Whether `subject` may override an approval quorum (owner/admin)."
+  def subject_can_override_approval?(%Subject{} = subject),
+    do: Auth.Authorizer.has_permission?(subject, Authorizer.override_approval_permission())
 
   @doc "Whether `subject` may manage (revoke) standing grants (owner/admin) — matches `revoke_grant/2`'s gate."
   def subject_can_manage_grants?(%Subject{} = subject),

@@ -381,7 +381,8 @@ defmodule Emisar.Audit do
   @doc """
   The retained audit receipts for approval decisions, keyed by request id.
   Requires audit-view permission and returns
-  `{:ok, %{request_id => %{final: event_id, decisions: %{actor_id => event_id}}}}`
+  `{:ok, %{request_id => %{final: event_id, override: event_id | nil,
+  decisions: %{actor_id => event_id}}}}`
   or `{:error, :unauthorized}`. Invalid or cross-account request ids contribute
   no entries.
   """
@@ -394,7 +395,8 @@ defmodule Emisar.Audit do
         |> Event.Query.by_target_kind("approval_request")
         |> Event.Query.by_target_ids(ids)
         |> Event.Query.by_event_types(~w[
-          approval.decision_recorded approval.approved approval.denied approval.expired
+          approval.decision_recorded approval.approved approval.overridden
+          approval.denied approval.expired
         ])
         |> Event.Query.ordered_by_recent()
         |> Event.Query.limit_to(2_000)
@@ -415,18 +417,37 @@ defmodule Emisar.Audit do
     )
   end
 
-  defp put_approval_event_ref(%Event{} = event, refs) do
+  defp put_approval_event_ref(%Event{event_type: "approval.overridden"} = event, refs) do
     update_in(
       refs,
       [Access.key(event.target_id, empty_approval_refs())],
-      fn
-        %{final: nil} = request_refs -> %{request_refs | final: event.id}
-        request_refs -> request_refs
+      fn request_refs ->
+        request_refs
+        |> put_final_event(event.id)
+        |> put_override_event(event.id)
       end
     )
   end
 
-  defp empty_approval_refs, do: %{final: nil, decisions: %{}}
+  defp put_approval_event_ref(%Event{} = event, refs) do
+    update_in(
+      refs,
+      [Access.key(event.target_id, empty_approval_refs())],
+      &put_final_event(&1, event.id)
+    )
+  end
+
+  defp put_final_event(%{final: nil} = request_refs, event_id),
+    do: %{request_refs | final: event_id}
+
+  defp put_final_event(request_refs, _event_id), do: request_refs
+
+  defp put_override_event(%{override: nil} = request_refs, event_id),
+    do: %{request_refs | override: event_id}
+
+  defp put_override_event(request_refs, _event_id), do: request_refs
+
+  defp empty_approval_refs, do: %{final: nil, override: nil, decisions: %{}}
 
   @doc """
   Distinct actors of `actor_kind` that appear in the account's audit log — the

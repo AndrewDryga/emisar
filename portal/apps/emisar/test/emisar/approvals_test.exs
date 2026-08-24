@@ -204,18 +204,7 @@ defmodule Emisar.ApprovalsTest do
   # -- Configurable approval gate (GitHub-style) -----------------------
 
   # A fresh operator (owner) in the account, distinct from any other.
-  defp distinct_operator(account) do
-    user = Fixtures.Users.create_user()
-
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-    Fixtures.Subjects.subject_for(user, account, role: :owner)
-  end
+  defp distinct_operator(account), do: distinct_member(account, :owner)
 
   # Count of distinct approve votes recorded on a request.
   defp approved_count(request_id) do
@@ -326,7 +315,18 @@ defmodule Emisar.ApprovalsTest do
         status: :pending_approval
       })
 
-    requester = Keyword.get(opts, :requested_by_id, Fixtures.Users.create_user().id)
+    requester_subject =
+      case Keyword.get(opts, :requester_role) do
+        nil -> nil
+        role -> distinct_member(account, role)
+      end
+
+    requester =
+      cond do
+        requested_by_id = Keyword.get(opts, :requested_by_id) -> requested_by_id
+        requester_subject -> requester_subject.actor.id
+        true -> Fixtures.Users.create_user().id
+      end
 
     {:ok, request} =
       Approvals.create_request(run, requester, "needs review",
@@ -334,7 +334,69 @@ defmodule Emisar.ApprovalsTest do
         allow_self_approval: Keyword.get(opts, :allow_self_approval, true)
       )
 
-    %{account: account, runner: runner, run: run, request: request, requester_id: requester}
+    %{
+      account: account,
+      runner: runner,
+      run: run,
+      request: request,
+      requester_id: requester,
+      requester_subject: requester_subject
+    }
+  end
+
+  defp distinct_member(account, role) do
+    user = Fixtures.Users.create_user()
+
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: Atom.to_string(role)
+      )
+
+    Fixtures.Subjects.membership_subject(membership)
+  end
+
+  defp stale_signed_gated_request do
+    account = Fixtures.Accounts.create_account()
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    Fixtures.Catalog.create_action(runner: runner)
+
+    {:ok, runner} =
+      Emisar.Runners.apply_state(runner, %{
+        "enforce_signatures" => true,
+        "max_attestation_age_seconds" => 3600
+      })
+
+    requester = Fixtures.Users.create_user()
+
+    requester_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: requester.id,
+        role: "operator"
+      )
+
+    stale = DateTime.utc_now() |> DateTime.add(-7200, :second) |> DateTime.to_iso8601()
+    %{attestation: attestation} = Fixtures.Runs.signed_attestation(issued_at: stale)
+
+    run =
+      Fixtures.Runs.create_signed_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "mcp",
+        requested_by_id: requester.id,
+        initiating_membership_id: requester_membership.id,
+        args: %{},
+        status: :pending_approval,
+        attestation: attestation
+      })
+
+    {:ok, request} =
+      Approvals.create_request(run, requester.id, "please", min_approvals: 2)
+
+    %{request: request, owner: distinct_member(account, :owner)}
   end
 
   describe "list_pending_approval_requests/2" do
@@ -2607,6 +2669,278 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  describe "override_request/3" do
+    test "an admin releases below quorum with one distinct audit receipt and no extra vote" do
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 3)
+      first = distinct_operator(account)
+
+      assert {:ok, {%Request{status: :pending}, :pending}} =
+               Approvals.approve_request(request, first, "reviewed")
+
+      admin = Fixtures.Users.create_user()
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: admin.id,
+          role: "admin"
+        )
+
+      admin_subject = Fixtures.Subjects.membership_subject(admin_membership)
+
+      assert {:ok, {%Request{status: :approved} = overridden, %ActionRun{status: :sent}}} =
+               Approvals.override_request(
+                 request,
+                 "Production recovery cannot wait",
+                 admin_subject
+               )
+
+      assert overridden.decided_by_id == admin.id
+      assert overridden.decision_reason == "Production recovery cannot wait"
+      assert approved_count(request.id) == 1
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      assert %ActionRun{status: :sent} = Repo.reload!(run)
+
+      {:ok, events, _metadata} = Audit.list_events(admin_subject, page: [limit: 50])
+      override_events = Enum.filter(events, &(&1.event_type == "approval.overridden"))
+
+      assert [event] = override_events
+      assert event.target_id == request.id
+      assert event.payload["reason"] == "Production recovery cannot wait"
+      assert event.payload["approved_count"] == 1
+      assert event.payload["min_approvals"] == 3
+      assert event.payload["remaining_approvals_waived"] == 2
+      refute event.payload["self_approval_waived"]
+      refute Enum.any?(events, &(&1.event_type == "approval.approved"))
+    end
+
+    test "an owner may override after voting, including a no-self-approval request" do
+      %{request: request, requester_subject: owner} =
+        gated_request(
+          min_approvals: 2,
+          allow_self_approval: false,
+          requester_role: :owner
+        )
+
+      assert Approvals.approve_request(request, owner, "ordinary vote") ==
+               {:error, :self_approval_forbidden}
+
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
+               Approvals.override_request(request, "I accept the break-glass risk", owner)
+
+      assert approved_count(request.id) == 0
+
+      {:ok, events, _metadata} = Audit.list_events(owner, page: [limit: 50])
+      event = Enum.find(events, &(&1.event_type == "approval.overridden"))
+      assert event.payload["self_approval_waived"]
+      assert event.payload["approved_count"] == 0
+    end
+
+    test "an owner who already cast an ordinary vote can still waive the remaining vote" do
+      %{account: account, request: request} = gated_request(min_approvals: 2)
+      owner = distinct_operator(account)
+
+      assert {:ok, {%Request{status: :pending}, :pending}} =
+               Approvals.approve_request(request, owner, "first review")
+
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
+               Approvals.override_request(request, "No second reviewer is available", owner)
+
+      assert approved_count(request.id) == 1
+    end
+
+    test "operators and viewers cannot override" do
+      %{account: account, request: request} = gated_request(min_approvals: 2)
+
+      for role <- [:operator, :viewer] do
+        user = Fixtures.Users.create_user()
+
+        membership =
+          Fixtures.Memberships.create_membership(
+            account_id: account.id,
+            user_id: user.id,
+            role: Atom.to_string(role)
+          )
+
+        subject = Fixtures.Subjects.membership_subject(membership)
+
+        assert Approvals.override_request(request, "crafted override", subject) ==
+                 {:error, :unauthorized}
+      end
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+      assert approved_count(request.id) == 0
+    end
+
+    test "a subject cannot borrow another user's privileged membership" do
+      account = Fixtures.Accounts.create_account()
+      owner = distinct_member(account, :owner)
+
+      request =
+        Fixtures.Approvals.create_execution_request(account, owner.actor,
+          executable?: false,
+          min_approvals: 2
+        )
+
+      attacker = Fixtures.Users.create_user()
+      forged = %{owner | actor: attacker}
+
+      assert Approvals.override_request(request, "forged owner", forged) ==
+               {:error, :unauthorized}
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+
+      assert %Runbooks.RunbookExecution{status: :pending_approval} =
+               Repo.get!(Runbooks.RunbookExecution, request.runbook_execution_id)
+    end
+
+    test "a stale demoted owner cannot trigger invalid-execution cleanup" do
+      account = Fixtures.Accounts.create_account()
+      owner = distinct_member(account, :owner)
+
+      request =
+        Fixtures.Approvals.create_execution_request(account, owner.actor,
+          executable?: false,
+          min_approvals: 2
+        )
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, owner.actor.id)
+
+      Fixtures.Memberships.force_role(membership, "operator")
+
+      assert Approvals.subject_can_override_approval?(owner)
+
+      assert Approvals.override_request(request, "stale session", owner) ==
+               {:error, :unauthorized}
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+
+      assert %Runbooks.RunbookExecution{status: :pending_approval} =
+               Repo.get!(Runbooks.RunbookExecution, request.runbook_execution_id)
+    end
+
+    test "current runner access is rechecked from the locked membership" do
+      %{account: account, request: request} = gated_request(min_approvals: 2)
+      owner = distinct_member(account, :owner)
+      membership = Fixtures.Memberships.fetch_membership(account.id, owner.actor.id)
+
+      Fixtures.Memberships.force_runner_access(membership, Accounts.RunnerAccess.none())
+
+      assert Approvals.override_request(request, "scope was revoked", owner) ==
+               {:error, :not_found}
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+      assert approved_count(request.id) == 0
+    end
+
+    test "an owner in another account cannot discover or override the request" do
+      %{request: request} = gated_request(min_approvals: 2)
+      other_account = Fixtures.Accounts.create_account()
+      other_owner = distinct_operator(other_account)
+
+      assert Approvals.override_request(request, "wrong account", other_owner) ==
+               {:error, :not_found}
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+    end
+
+    test "a required override reason is trimmed and bounded before any write" do
+      %{account: account, request: request} = gated_request(min_approvals: 2)
+      owner = distinct_operator(account)
+
+      assert Approvals.override_request(request, nil, owner) ==
+               {:error, :override_reason_required}
+
+      assert Approvals.override_request(request, "   ", owner) ==
+               {:error, :override_reason_required}
+
+      too_long = String.duplicate("x", Approvals.max_decision_reason_length() + 1)
+
+      assert Approvals.override_request(request, too_long, owner) ==
+               {:error, :decision_reason_too_long}
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+      assert approved_count(request.id) == 0
+    end
+
+    test "a cancelled request cannot be resurrected by an override" do
+      %{account: account, request: request} = gated_request(min_approvals: 2)
+      owner = distinct_member(account, :owner)
+
+      Fixtures.Approvals.cancel_request(request)
+
+      assert Approvals.override_request(request, "resurrect cancelled work", owner) ==
+               {:error, :run_cancelled}
+
+      assert %Request{status: :cancelled} = Repo.reload!(request)
+      assert approved_count(request.id) == 0
+    end
+
+    test "a stale signed dispatch cannot be released by an override" do
+      %{request: request, owner: owner} = stale_signed_gated_request()
+
+      assert Approvals.override_request(request, "signature is stale", owner) ==
+               {:error, :attestation_stale}
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+      assert approved_count(request.id) == 0
+    end
+
+    test "a suspended initiating membership still blocks release" do
+      %{account: account, run: run, request: request} = gated_request(min_approvals: 2)
+      owner = distinct_member(account, :owner)
+      initiator = Fixtures.Memberships.fetch_membership(account.id, run.requested_by_id)
+
+      Fixtures.Memberships.suspend_membership(initiator)
+
+      assert Approvals.override_request(request, "initiator lost access", owner) ==
+               {:error, :initiator_no_longer_authorized}
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+      assert approved_count(request.id) == 0
+    end
+
+    test "override preserves expiry and trusted-action checks" do
+      %{account: account, request: expired_request} = gated_request(min_approvals: 2)
+      owner = distinct_operator(account)
+      past = DateTime.add(DateTime.utc_now(), -60, :second)
+
+      Fixtures.Approvals.set_request_expiry(expired_request, past)
+
+      assert Approvals.override_request(expired_request, "too late", owner) ==
+               {:error, :expired}
+
+      %{account: trust_account, runner: runner, request: untrusted_request} =
+        gated_request(min_approvals: 2)
+
+      trust_owner = distinct_operator(trust_account)
+      Fixtures.Catalog.delete_actions_for_runner(runner.id)
+
+      assert Approvals.override_request(untrusted_request, "contract vanished", trust_owner) ==
+               {:error, :action_not_found}
+
+      assert %Request{status: :pending} = Repo.reload!(untrusted_request)
+    end
+
+    test "an execution override advances the same frozen runbook approval path" do
+      account = Fixtures.Accounts.create_account()
+      owner = distinct_member(account, :owner)
+
+      request =
+        Fixtures.Approvals.create_execution_request(account, owner.actor,
+          executable?: true,
+          min_approvals: 2
+        )
+
+      assert {:ok, {%Request{status: :approved}, :runbook_execution}} =
+               Approvals.override_request(request, "Restore the database now", owner)
+
+      execution = Repo.get!(Runbooks.RunbookExecution, request.runbook_execution_id)
+      assert execution.status == :active
+      assert [_run | _] = Runs.list_runs_for_runbook_execution(account.id, execution.id)
+    end
+  end
+
   describe "approve_request — self-approval gate" do
     # The requester is also an owner (so they CAN decide) on an operator-sourced
     # parked run. Each test files its own request with the self-approval posture
@@ -4653,6 +4987,31 @@ defmodule Emisar.ApprovalsTest do
 
       assert Approvals.subject_can_decide_approval?(operator)
       refute Approvals.subject_can_decide_approval?(viewer)
+    end
+  end
+
+  describe "subject_can_override_approval?/1" do
+    test "owner and admin may override; operator and viewer may not" do
+      account = Fixtures.Accounts.create_account()
+
+      subjects =
+        for role <- [:owner, :admin, :operator, :viewer], into: %{} do
+          user = Fixtures.Users.create_user()
+
+          membership =
+            Fixtures.Memberships.create_membership(
+              account_id: account.id,
+              user_id: user.id,
+              role: Atom.to_string(role)
+            )
+
+          {role, Fixtures.Subjects.membership_subject(membership)}
+        end
+
+      assert Approvals.subject_can_override_approval?(subjects.owner)
+      assert Approvals.subject_can_override_approval?(subjects.admin)
+      refute Approvals.subject_can_override_approval?(subjects.operator)
+      refute Approvals.subject_can_override_approval?(subjects.viewer)
     end
   end
 

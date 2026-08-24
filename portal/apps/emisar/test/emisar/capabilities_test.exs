@@ -33,7 +33,8 @@ defmodule Emisar.CapabilitiesTest do
       {&Catalog.subject_can_manage_packs?/1, [:owner, :admin]},
       {&Runs.subject_can_dispatch_run?/1, [:owner, :admin, :operator]},
       {&Runs.subject_can_cancel_run?/1, [:owner, :admin, :operator]},
-      {&Approvals.subject_can_decide_approval?/1, [:owner, :admin, :operator]}
+      {&Approvals.subject_can_decide_approval?/1, [:owner, :admin, :operator]},
+      {&Approvals.subject_can_override_approval?/1, [:owner, :admin]}
     ]
 
     for {predicate, allowed} <- matrix, role <- @roles do

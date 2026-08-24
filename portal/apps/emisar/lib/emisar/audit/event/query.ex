@@ -104,6 +104,7 @@ defmodule Emisar.Audit.Event.Query do
     {"runbook.item_failed", "Runbook item failed"},
     {"runbook.item_cancelled", "Runbook item cancelled"},
     {"approval.approved", "Approval granted"},
+    {"approval.overridden", "Approval review requirement overridden"},
     {"approval.denied", "Approval denied"},
     {"approval.expired", "Approval expired"},
     {"approval.decision_recorded", "Approval vote recorded"},
@@ -166,6 +167,7 @@ defmodule Emisar.Audit.Event.Query do
 
   def outcome(event_type) when is_binary(event_type) do
     cond do
+      event_type == "approval.overridden" -> :warn
       String.ends_with?(event_type, @danger_suffixes) -> :danger
       String.ends_with?(event_type, @warn_suffixes) -> :warn
       String.ends_with?(event_type, @pass_suffixes) -> :pass
@@ -300,6 +302,7 @@ defmodule Emisar.Audit.Event.Query do
     {"Approval",
      [
        {"approval.approved", "Granted"},
+       {"approval.overridden", "Review requirement overridden"},
        {"approval.denied", "Denied"},
        {"approval.expired", "Expired"},
        {"approval.decision_recorded", "Vote recorded"},
@@ -985,6 +988,9 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true, "An operator cancellation closed a logical runbook item."},
     "approval.approved" =>
       {true, true, true, "An approver granted a held action (optionally with a standing grant)."},
+    "approval.overridden" =>
+      {true, true, true,
+       "An owner or admin released held work without the remaining required reviews."},
     "approval.denied" => {true, true, true, "An approver denied a held action."},
     "approval.expired" =>
       {false, false, true, "A held approval request lapsed without a decision (system sweep)."},

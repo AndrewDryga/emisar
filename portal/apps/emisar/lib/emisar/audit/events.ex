@@ -1142,6 +1142,34 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  def approval_overridden(
+        %Subject{} = subject,
+        %Approvals.Request{} = request,
+        reason,
+        approved_count
+      ) do
+    Audit.changeset(
+      request.account_id,
+      "approval.overridden",
+      actor(subject) ++
+        [
+          target_kind: "approval_request",
+          target_id: request.id,
+          payload: %{
+            run_id: request.run_id,
+            runbook_execution_id: request.runbook_execution_id,
+            reason: reason,
+            approved_count: approved_count,
+            min_approvals: request.min_approvals,
+            remaining_approvals_waived: max(request.min_approvals - approved_count, 0),
+            self_approval_waived:
+              not request.allow_self_approval and
+                request.requested_by_id == Subject.actor_id(subject)
+          }
+        ]
+    )
+  end
+
   def approval_denied(%Subject{} = subject, %Approvals.Request{} = request, reason) do
     Audit.changeset(
       request.account_id,

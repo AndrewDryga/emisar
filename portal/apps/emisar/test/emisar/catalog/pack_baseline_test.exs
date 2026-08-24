@@ -1,7 +1,8 @@
 defmodule Emisar.Catalog.PackBaselineTest do
   # The published snapshot lives in a global `:persistent_term`, so the tests
   # that install a synthetic catalog swap it and restore it afterwards.
-  use ExUnit.Case, async: false
+  use Emisar.DataCase, async: false
+  alias Emisar.{Catalog, Fixtures}
   alias Emisar.Catalog.PackBaseline
   alias Emisar.Catalog.PublishedRegistry.Cache
 
@@ -122,6 +123,38 @@ defmodule Emisar.Catalog.PackBaselineTest do
 
     test "returns nil for non-binary arguments" do
       assert PackBaseline.manifest(nil, "0.3.0", @current_hash) == nil
+    end
+  end
+
+  describe "observe_state/2 trust reconciliation" do
+    test "a baseline entry without a release manifest stays pending" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      Fixtures.Catalog.create_observed_pack_version(
+        account_id: account.id,
+        pack_id: "redis",
+        version: "0.2.1",
+        pending_hash: @unretained_hash
+      )
+
+      payload = %{
+        "hostname" => "host-1",
+        "version" => "0.1.0",
+        "labels" => %{"env" => "test"},
+        "packs" => %{
+          "redis" => %{"version" => "0.2.1", "hash" => @unretained_hash}
+        },
+        "actions" => []
+      }
+
+      assert {:ok, _} = Catalog.observe_state(runner, payload)
+
+      assert {:ok, [pack_version], _} = Catalog.list_pack_versions(subject)
+      assert pack_version.trust_state == :pending
+      assert pack_version.hash == nil
+      assert pack_version.pending_hash == @unretained_hash
+      assert pack_version.trusted_manifest == nil
     end
   end
 

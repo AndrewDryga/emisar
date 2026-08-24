@@ -247,6 +247,17 @@ defmodule Emisar.Fixtures.Approvals do
     |> Repo.update!()
   end
 
+  @doc "Moves a held request to its run-cancelled terminal state for stale-decision tests."
+  def cancel_request(%Approvals.Request{} = request, reason \\ "The run was cancelled.") do
+    request
+    |> change(
+      status: :cancelled,
+      decided_at: DateTime.utc_now(),
+      decision_reason: reason
+    )
+    |> Repo.update!()
+  end
+
   @doc """
   Test-side inspector: the unrevoked grants minted against an API key,
   newest first. Verifies `approve_request/4` side effects without

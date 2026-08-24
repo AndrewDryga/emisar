@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Approvals, Audit, Catalog, Runners, Runs}
-  alias EmisarWeb.{Permissions, RunbookWorkflowComponents}
+  alias EmisarWeb.{ConfirmDialog, Permissions, RunbookWorkflowComponents}
 
   # The full grant-reuse duration menu (label + posted value), in display order.
   # `grant_duration_options/1` narrows it to what the account's lifetime cap
@@ -21,6 +21,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp mount_disconnected(socket) do
     {:ok,
      socket
+     |> ConfirmDialog.init()
      |> assign(:loaded?, false)
      |> assign(:page_title, "Approval")
      |> assign(:request, nil)
@@ -36,12 +37,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
      |> assign(:user_labels, %{})
      |> assign(:decisions, [])
      |> assign(:decisions_error?, false)
-     |> assign(:approval_event_refs, %{final: nil, decisions: %{}})
+     |> assign(:approval_event_refs, %{final: nil, override: nil, decisions: %{}})
      |> assign(:approved_count, 0)
      |> assign(:already_decided?, false)
      |> assign(:self_blocked?, false)
      |> assign(:unavailable_action_id, nil)
      |> assign_decision_fields(%{})
+     |> assign_override_fields(%{})
      |> assign(:grant_reuse_open?, false)
      |> assign(:grant_duration_options, [])}
   end
@@ -75,6 +77,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
         {:ok,
          socket
+         |> ConfirmDialog.init()
          |> assign(:loaded?, true)
          |> assign(:page_title, title)
          |> assign_request(request)
@@ -105,6 +108,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
          # top-level params (not a namespaced form) because the submit buttons
          # post `decision=approve|deny` alongside them.
          |> assign_decision_fields(%{})
+         |> assign_override_fields(%{})
          # The reuse disclosure's expanded state is tracked for the same reason
          # — a re-render would otherwise strip the browser-set `<details open>`
          # and collapse the section mid-edit.
@@ -245,10 +249,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp approval_event_refs(request, subject) do
     case Audit.approval_event_refs([request.id], subject) do
-      {:ok, refs} -> Map.get(refs, request.id, %{final: nil, decisions: %{}})
-      {:error, _reason} -> %{final: nil, decisions: %{}}
+      {:ok, refs} -> Map.get(refs, request.id, empty_approval_event_refs())
+      {:error, _reason} -> empty_approval_event_refs()
     end
   end
+
+  defp empty_approval_event_refs, do: %{final: nil, override: nil, decisions: %{}}
 
   defp user_labels_for(request, decisions, subject) do
     decision_ids = Enum.map(decisions, & &1.decider_id)
@@ -355,6 +361,16 @@ defmodule EmisarWeb.ApprovalDetailLive do
     {:noreply, update(socket, :grant_reuse_open?, &(not &1))}
   end
 
+  def handle_event("confirm_typed", params, socket),
+    do: {:noreply, ConfirmDialog.put_typed(socket, params)}
+
+  def handle_event("confirm_reset", _params, socket),
+    do: {:noreply, ConfirmDialog.reset(socket)}
+
+  def handle_event("override_form_changed", params, socket) do
+    {:noreply, assign_override_fields(socket, params)}
+  end
+
   # The live countdown reached zero client-side. Re-fetch so the terminal "Expired"
   # panel replaces the Approve form right away instead of waiting for the expiry
   # job's broadcast. Server-authoritative: the re-fetch and the facts Approvals
@@ -452,6 +468,31 @@ defmodule EmisarWeb.ApprovalDetailLive do
     )
   end
 
+  def handle_event("override", params, socket) do
+    Permissions.gated(
+      socket,
+      Approvals.subject_can_override_approval?(socket.assigns.current_subject),
+      fn socket ->
+        case Approvals.override_request(
+               socket.assigns.request,
+               params["reason"],
+               socket.assigns.current_subject
+             ) do
+          {:ok, {request, target}} ->
+            {:noreply,
+             socket
+             |> ConfirmDialog.reset()
+             |> assign_request(request)
+             |> assign_decisions(request)
+             |> put_flash(:info, override_success_message(target))}
+
+          {:error, reason} ->
+            override_failed(socket, reason, params)
+        end
+      end
+    )
+  end
+
   # Carries the decision form's operator-entered values back into the render, so
   # any re-render puts them where the operator left them — including the reuse
   # window, which drives whether the Match / Limit-to fields show at all. Any
@@ -464,6 +505,71 @@ defmodule EmisarWeb.ApprovalDetailLive do
     |> assign(:grant_max_uses, params["max_uses"] || "")
     |> assign(:grant_input_error, nil)
     |> assign(:decision_reason_error, nil)
+  end
+
+  defp assign_override_fields(socket, params) do
+    socket
+    |> assign(:override_reason, params["reason"] || "")
+    |> assign(:override_reason_error, nil)
+  end
+
+  defp override_success_message(:runbook_execution),
+    do: "Approval override recorded. Eligible actions are being dispatched."
+
+  defp override_success_message(%_{}),
+    do: "Approval override recorded. The action was released for dispatch."
+
+  defp override_failed(socket, :override_reason_required, params) do
+    {:noreply,
+     socket
+     |> ConfirmDialog.reset()
+     |> assign_override_fields(params)
+     |> assign(:override_reason_error, "Explain why the required reviews cannot be completed.")}
+  end
+
+  defp override_failed(socket, :decision_reason_too_long, params) do
+    {:noreply,
+     socket
+     |> ConfirmDialog.reset()
+     |> assign_override_fields(params)
+     |> assign(
+       :override_reason_error,
+       "Shorten the reason to #{Approvals.max_decision_reason_length()} characters or fewer."
+     )}
+  end
+
+  defp override_failed(socket, :unauthorized, _params) do
+    {:noreply,
+     socket
+     |> ConfirmDialog.reset()
+     |> put_flash(:error, "Only current owners and admins can override required reviews.")
+     |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/approvals")}
+  end
+
+  defp override_failed(socket, :not_found, _params) do
+    {:noreply,
+     socket
+     |> ConfirmDialog.reset()
+     |> put_flash(:error, "Approval is no longer available under your current access.")
+     |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/approvals")}
+  end
+
+  defp override_failed(socket, reason, params)
+       when reason in [:action_not_found, :pack_untrusted, :pack_retired, :action_unavailable] do
+    {:noreply,
+     socket
+     |> ConfirmDialog.reset()
+     |> assign_override_fields(params)
+     |> assign(:unavailable_action_id, socket.assigns.request.context["action_id"])
+     |> put_flash(:error, decision_error_message(reason))}
+  end
+
+  defp override_failed(socket, reason, _params) do
+    {:noreply,
+     socket
+     |> ConfirmDialog.reset()
+     |> refetch_request()
+     |> put_flash(:error, decision_error_message(reason))}
   end
 
   # The grant choices didn't validate, so nothing was decided and the request is
@@ -564,6 +670,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp decision_error_message(:expired), do: "This request expired before your decision landed."
   defp decision_error_message(:already_decided), do: "Someone else already decided this request."
+
+  defp decision_error_message(:quorum_already_met),
+    do: "The required reviews are already present. Refresh to see the final decision."
 
   defp decision_error_message(reason) when reason in [:run_cancelled, :run_not_pending_approval],
     do: "The run was cancelled before approval, so there's nothing left to approve."
@@ -820,12 +929,19 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </.meta_field>
             <%!-- Only surface the tally for a multi-approver gate; a 1-of-1
              request reads no differently than the single-approver flow. --%>
-            <.meta_field :if={@request.min_approvals > 1} label="Approvals">
+            <.meta_field
+              :if={@request.min_approvals > 1}
+              label="Approvals"
+              wrap={overridden?(@approval_event_refs)}
+            >
               <span :if={@decisions_error?} class="text-zinc-200">
                 {@request.min_approvals} required · tally unavailable
               </span>
               <span :if={not @decisions_error?} class="text-zinc-200">
                 {@approved_count} of {@request.min_approvals}
+                <span :if={overridden?(@approval_event_refs)} class="text-zinc-400">
+                  · review requirement overridden
+                </span>
               </span>
             </.meta_field>
             <%!-- Expiry isn't a meta field: for a held request the live countdown
@@ -996,7 +1112,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
                  requests have no decision to show; terminal single-approver
                  requests use the request's final decision as a fallback for
                  records created before per-vote rows existed. --%>
-            <% displayed_decisions = displayed_decisions(@request, @decisions, @decisions_error?) %>
+            <% displayed_decisions =
+              displayed_decisions(
+                @request,
+                @decisions,
+                @decisions_error?,
+                @approval_event_refs
+              ) %>
             <section
               :if={
                 (displayed_decisions != [] or @decisions_error?) and
@@ -1063,10 +1185,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
                       </.link>
                     </div>
                     <p
-                      :if={decision_reason(@request, decision)}
+                      :if={decision_reason(@request, decision, @approval_event_refs)}
                       class="mt-1.5 text-sm leading-relaxed text-zinc-300"
                     >
-                      “{decision_reason(@request, decision)}”
+                      “{decision_reason(@request, decision, @approval_event_refs)}”
                     </p>
                   </div>
                 </li>
@@ -1080,12 +1202,17 @@ defmodule EmisarWeb.ApprovalDetailLive do
           <aside :if={verdict == :pending} class="xl:sticky xl:top-6 xl:self-start">
             <.decision_panel
               can_decide?={Approvals.subject_can_decide_approval?(@current_subject)}
+              can_override?={Approvals.subject_can_override_approval?(@current_subject)}
               decision_reason={@decision_reason}
               grant_duration={@grant_duration}
               grant_scope={@grant_scope}
               grant_max_uses={@grant_max_uses}
               grant_input_error={@grant_input_error}
               decision_reason_error={@decision_reason_error}
+              override_reason={@override_reason}
+              override_reason_error={@override_reason_error}
+              typed={@typed}
+              request_title={request_title(@request)}
               grant_duration_options={@grant_duration_options}
               grant_reuse_open?={@grant_reuse_open?}
               runner_state={@runner_connection}
@@ -1110,6 +1237,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   attr :can_decide?, :boolean, required: true
+  attr :can_override?, :boolean, default: false
   # The operator's in-progress decision input, tracked server-side so a
   # re-render restores it rather than clearing it.
   attr :decision_reason, :string, default: ""
@@ -1119,6 +1247,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # the form stays live and carries the message for the control to fix.
   attr :grant_input_error, :string, default: nil
   attr :decision_reason_error, :string, default: nil
+  attr :override_reason, :string, default: ""
+  attr :override_reason_error, :string, default: nil
+  attr :typed, :string, default: ""
+  attr :request_title, :string, required: true
   # Drives the reuse-window UI: the Match / Limit-to fields only show
   # once a real grant is being minted (duration != "once"). Defaulted so
   # a caller that forgets to thread it through can't crash the panel.
@@ -1239,7 +1371,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
             :if={@self_blocked? and is_nil(@unavailable_action_id)}
             class="mt-4 text-xs leading-relaxed text-zinc-400"
           >
-            You can't approve your own request — a different operator must approve it.
+            You can't use the normal approval path on your own request.
+            <span :if={@can_override?}>
+              A different operator can approve it, or if waiting is unsafe, use Break-glass
+              approval below.
+            </span>
+            <span :if={not @can_override?}>A different operator must approve it.</span>
           </p>
           <p :if={is_nil(@unavailable_action_id)} class="mt-4 text-xs leading-relaxed text-zinc-400">
             {decision_intro(@execution_request?, @self_blocked?, @grant_duration_options)}
@@ -1390,6 +1527,105 @@ defmodule EmisarWeb.ApprovalDetailLive do
             </.button>
           </form>
       <% end %>
+
+      <section
+        :if={
+          override_available?(
+            @can_override?,
+            @min_approvals,
+            @approved_count,
+            @decisions_error?,
+            @self_blocked?,
+            @already_decided?,
+            @unavailable_action_id
+          )
+        }
+        class="mt-8"
+        data-shot="approval-override"
+      >
+        <.section_header title="Break-glass approval" />
+        <p class="text-xs leading-relaxed text-zinc-400">
+          Owners and admins can release this {target_noun(@execution_request?)} without the
+          remaining reviews. The exception requires a reason, creates no standing grant, and is
+          recorded in the audit trail.
+        </p>
+        <form id="approval-override-form" phx-change="override_form_changed" class="mt-4 space-y-4">
+          <.input
+            type="textarea"
+            id="override-reason"
+            name="reason"
+            value={@override_reason}
+            rows="3"
+            maxlength={Approvals.max_decision_reason_length()}
+            label="Override reason"
+            label_variant={:eyebrow}
+            placeholder="Why can’t the required reviews be completed?"
+            required
+            aria-invalid={@override_reason_error && "true"}
+            aria-describedby={@override_reason_error && "override-reason-error"}
+            class="min-h-0 resize-none"
+          />
+          <div
+            :if={@override_reason_error}
+            id="override-reason-error"
+            role="alert"
+            aria-live="polite"
+          >
+            <.error>{@override_reason_error}</.error>
+          </div>
+          <.button
+            type="button"
+            variant={:secondary}
+            tone={:amber}
+            icon="action.approve"
+            class="w-full"
+            disabled={not override_reason_present?(@override_reason)}
+            phx-click={show_confirm_dialog("override-approval-reviews")}
+          >
+            Override required reviews
+          </.button>
+        </form>
+
+        <.confirm_dialog
+          id="override-approval-reviews"
+          title="Approve without the remaining reviews"
+          confirm_label="Approve without remaining reviews"
+          confirm_token="OVERRIDE"
+          typed={@typed}
+          tone={:amber}
+          on_confirm={
+            JS.push("override", value: %{reason: @override_reason})
+            |> hide_confirm_dialog("override-approval-reviews")
+          }
+        >
+          <:body>
+            This releases <span class="font-medium break-words text-zinc-100">{@request_title}</span>
+            with
+            <span class="font-medium text-zinc-200">
+              {@approved_count} of {@min_approvals} required approvals
+            </span>
+            and waives {remaining_approval_count(@approved_count, @min_approvals)} remaining {plural(
+              remaining_approval_count(@approved_count, @min_approvals),
+              "review"
+            )}.
+            <span :if={@self_blocked?}>
+              It also waives the policy’s self-approval rule.
+            </span>
+            Scope, expiry, trust, signature, initiator authorization, and runner checks still
+            apply. The exception and reason are written to the audit trail.
+            <span class="mt-4 block">
+              <span class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                Override reason
+              </span>
+              <span
+                tabindex="0"
+                aria-label="Full override reason"
+                class="mt-2 block max-h-32 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-200"
+              >{@override_reason}</span>
+            </span>
+          </:body>
+        </.confirm_dialog>
+      </section>
     </section>
     """
   end
@@ -1421,17 +1657,63 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp reuse_clause(_options), do: ". Your"
 
+  defp override_available?(
+         can_override?,
+         min_approvals,
+         approved_count,
+         decisions_error?,
+         self_blocked?,
+         already_decided?,
+         unavailable_action_id
+       ) do
+    can_override? and not decisions_error? and is_nil(unavailable_action_id) and
+      approved_count < min_approvals and
+      (min_approvals > 1 or self_blocked? or already_decided?)
+  end
+
+  defp override_reason_present?(reason) when is_binary(reason), do: String.trim(reason) != ""
+  defp override_reason_present?(_reason), do: false
+
+  defp remaining_approval_count(approved_count, min_approvals),
+    do: max(min_approvals - approved_count, 0)
+
+  defp overridden?(%{override: event_id}), do: is_binary(event_id)
+  defp overridden?(_refs), do: false
+
   # Decision-list rendering helpers (the enum loads as an atom).
   defp decision_icon(:approve), do: "state.approved"
   defp decision_icon(:deny), do: "state.denied"
+  defp decision_icon(:override), do: "state.warning"
 
   defp decision_icon_class(:approve), do: "text-brand-400"
   defp decision_icon_class(:deny), do: "text-rose-400"
+  defp decision_icon_class(:override), do: "text-amber-400"
 
   defp decision_verb(:approve), do: "approved"
   defp decision_verb(:deny), do: "denied"
+  defp decision_verb(:override), do: "overrode the review requirement"
 
-  defp displayed_decisions(%Approvals.Request{} = request, [], _decisions_error?)
+  defp displayed_decisions(
+         %Approvals.Request{status: :approved} = request,
+         decisions,
+         decisions_error?,
+         %{override: event_id}
+       )
+       when is_binary(event_id) do
+    prior_decisions = if decisions_error?, do: [], else: decisions
+
+    prior_decisions ++
+      [
+        %{
+          id: event_id,
+          decider_id: request.decided_by_id,
+          decision: :override,
+          decided_at: request.decided_at
+        }
+      ]
+  end
+
+  defp displayed_decisions(%Approvals.Request{} = request, [], _decisions_error?, _refs)
        when request.status in [:approved, :denied] do
     [
       %{
@@ -1443,13 +1725,20 @@ defmodule EmisarWeb.ApprovalDetailLive do
     ]
   end
 
-  defp displayed_decisions(_request, decisions, false), do: decisions
+  defp displayed_decisions(_request, decisions, false, _refs), do: decisions
 
-  defp displayed_decisions(%Approvals.Request{} = request, _decisions, true)
+  defp displayed_decisions(%Approvals.Request{} = request, _decisions, true, refs)
        when request.status in [:approved, :denied],
-       do: displayed_decisions(request, [], true)
+       do: displayed_decisions(request, [], true, refs)
 
-  defp displayed_decisions(_request, _decisions, true), do: []
+  defp displayed_decisions(_request, _decisions, true, _refs), do: []
+
+  defp decision_event_id(%{override: event_id}, _request, %{decision: :override}),
+    do: event_id
+
+  defp decision_event_id(%{override: event_id} = refs, _request, decision)
+       when is_binary(event_id),
+       do: refs.decisions[decision.decider_id]
 
   defp decision_event_id(refs, request, decision)
        when request.status in [:approved, :denied] and
@@ -1458,11 +1747,19 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp decision_event_id(refs, _request, decision), do: refs.decisions[decision.decider_id]
 
-  defp decision_reason(request, decision)
+  defp decision_reason(request, %{decision: :override}, %{override: event_id})
+       when is_binary(event_id) and is_binary(request.decision_reason) and
+              request.decision_reason != "",
+       do: request.decision_reason
+
+  defp decision_reason(_request, _decision, %{override: event_id}) when is_binary(event_id),
+    do: nil
+
+  defp decision_reason(request, decision, _refs)
        when request.status in [:approved, :denied] and
               decision.decider_id == request.decided_by_id and
               is_binary(request.decision_reason) and request.decision_reason != "",
        do: request.decision_reason
 
-  defp decision_reason(_request, _decision), do: nil
+  defp decision_reason(_request, _decision, _refs), do: nil
 end

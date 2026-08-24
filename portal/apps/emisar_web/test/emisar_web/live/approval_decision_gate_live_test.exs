@@ -183,7 +183,8 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
       refute html =~ "Approve and send"
-      assert html =~ "You can&#39;t approve your own request"
+      assert html =~ "You can&#39;t use the normal approval path on your own request"
+      assert has_element?(lv, ~s([data-shot="approval-override"]))
 
       # …and a hand-rolled approve event (bypassing the hidden button) is
       # refused by the context, flashed, leaving the request pending (IL-15).
