@@ -194,7 +194,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
   def handle_event("accept", %{"user" => user_params}, socket) do
     attrs = %{"full_name" => user_params["full_name"] || ""}
 
-    case Accounts.accept_invitation(socket.assigns.membership, attrs) do
+    case Accounts.accept_invitation(socket.assigns.membership, socket.assigns.token, attrs) do
       {:ok, _} ->
         {:noreply, assign(socket, :trigger_submit, true)}
 
@@ -220,7 +220,11 @@ defmodule EmisarWeb.AcceptInvitationLive do
   def handle_event("accept_existing", _params, socket) do
     membership = socket.assigns.membership
 
-    case Accounts.mark_invitation_accepted(membership, socket.assigns.current_user) do
+    case Accounts.mark_invitation_accepted(
+           membership,
+           socket.assigns.token,
+           socket.assigns.current_user
+         ) do
       {:ok, _} ->
         {:noreply,
          socket

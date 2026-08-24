@@ -25,8 +25,14 @@ defmodule Emisar.Users.User.Changeset do
     |> cast(attrs, [:email])
     |> validate_email_field()
     |> case do
-      %{changes: %{email: _}} = changeset -> put_change(changeset, :confirmed_at, nil)
-      %{} = changeset -> add_error(changeset, :email, "did not change")
+      %{changes: %{email: _}} = changeset ->
+        change(changeset,
+          confirmed_at: nil,
+          email_changed_at: next_email_changed_at(user)
+        )
+
+      %{} = changeset ->
+        add_error(changeset, :email, "did not change")
     end
   end
 
@@ -59,6 +65,13 @@ defmodule Emisar.Users.User.Changeset do
       changeset
     end
   end
+
+  defp next_email_changed_at(%User{email_changed_at: %DateTime{} = previous}) do
+    now = DateTime.utc_now()
+    if DateTime.after?(now, previous), do: now, else: DateTime.add(previous, 1, :microsecond)
+  end
+
+  defp next_email_changed_at(%User{}), do: DateTime.utc_now()
 
   def confirm(%User{} = user),
     do: change(user, confirmed_at: DateTime.utc_now())

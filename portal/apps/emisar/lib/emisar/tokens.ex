@@ -19,13 +19,18 @@ defmodule Emisar.Tokens do
   | OAuth access / refresh token & auth code | `oauth_tokens`, `oauth_authorization_codes` | `emo-` / `emor-` / `emoc-` | `Emisar.OAuth` | `issue_code/3` → `exchange_code/1`, `refresh/1` | `resolve_access_token/2` | expiry sweeps (`delete_expired_authorization_codes/1`, `delete_unused_clients/1`) |
   | Runner enrollment key | `runner_enrollment_keys` | `emkey-enroll-` | `Emisar.Runners` | `create_enrollment_key/2` | `register_via_enrollment_key/3` claims a use inside its transaction (`peek_enrollment_key_by_secret/1` is a read-only inspector, not the gate) | `revoke_enrollment_key/2` |
   | Runner session token | `runner_tokens` | `rnrtok-` | `Emisar.Runners` | `mint_runner_token/3` | `verify_runner_token/1` | disable or delete the runner; a 90-day `expires_at` refused at verify, rotated by `refresh_runner_token/1` |
-  | User session, magic-link, email-confirm | `user_tokens` | binary (unprefixed) | `Emisar.Auth` | `complete_magic_link_sign_in/3`, `complete_sso_account_sign_in/4`, `request_magic_link/3`, `deliver_confirmation_instructions/1` | `fetch_user_and_token_by_session_token/1`, `verify_magic_link/4` | `complete_session_sign_out/2`, `delete_session_token/1`, `revoke_session/2`, `delete_all_session_tokens/1` |
+  | User session, magic-link, email-confirm | `user_tokens` | binary (unprefixed) | `Emisar.Auth` | `complete_magic_link_sign_in/4`, `complete_sso_account_sign_in/4`, `request_magic_link/3`, `deliver_confirmation_instructions/1` | `fetch_user_and_token_by_session_token/1`, `verify_magic_link/4` | `complete_session_sign_out/2`, `delete_session_token/1`, `revoke_session/2`, `delete_all_session_tokens/1` |
+  | Account invitation | `account_memberships.invitation_token_digest` | binary (unprefixed) | `Emisar.Accounts` | `invite_user_to_account/2`, `resend_account_invitation/2` | `fetch_invitation_by_token/2`; final acceptance rechecks the exact digest and invited address | acceptance, resend, membership removal, or seven-day expiry |
 
-  ## The one credential that is NOT a token table
+  ## Credentials that are NOT token tables
 
   The inbound **SCIM bearer** (`ems-`) lives as a hashed column on
   `Emisar.SSO.IdentityProvider`, not its own table — it's one secret per
   configured IdP, rotated as part of that provider's config, and verified at the
   SCIM boundary by `Emisar.SSO.authenticate_scim_token/1`.
+
+  Account invitation digests live on their pending membership row because the
+  membership owns the acceptance, rotation, address binding, and expiry as one
+  lifecycle.
   """
 end

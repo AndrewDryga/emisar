@@ -48,14 +48,36 @@ defmodule Emisar.Auth.UserToken.Changeset do
   neither half is stored, so a DB breach + an intercepted email still can't sign
   in. `attempts` is the online-guess budget for the 6-character secret.
   """
-  def magic_link(%Users.User{} = user, digest, sent_to, attempts)
+  def magic_link(%Users.User{} = user, digest, sent_to, attempts, owner_registration)
       when is_binary(digest) and is_integer(attempts) do
+    metadata =
+      case owner_registration do
+        %{account_name: account_name, full_name: full_name}
+        when is_binary(account_name) and (is_binary(full_name) or is_nil(full_name)) ->
+          %{
+            "registration_account_name" => account_name,
+            "registration_full_name" => full_name
+          }
+
+        nil ->
+          %{}
+      end
+
     change(%UserToken{},
       token: digest,
       context: "magic_link",
       sent_to: sent_to,
       user_id: user.id,
-      remaining_attempts: attempts
+      remaining_attempts: attempts,
+      metadata: metadata
+    )
+  end
+
+  @doc "Promotes this exact split token into the short-lived factor final session minting consumes."
+  def verified_magic_link(%UserToken{context: "magic_link"} = token, %DateTime{} = verified_at) do
+    change(token,
+      context: "magic_link_verified",
+      metadata: Map.put(token.metadata || %{}, "verified_at", DateTime.to_iso8601(verified_at))
     )
   end
 

@@ -309,18 +309,21 @@ defmodule EmisarWeb.AnalyticsTest do
         |> recycle()
         |> post(~p"/sign_in/magic/start", %{
           "user" => %{"email" => user.email},
-          "registration_handoff" => EmisarWeb.RegistrationHandoff.sign(user.id)
+          "registration_handoff" =>
+            EmisarWeb.RegistrationHandoff.sign(user.id, "Analytics Co", "Analytics Owner")
         })
+
+      refute_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
+
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+      conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
 
       assert_receive {:mixpanel_track, [%{"event" => "sign_up_started", "properties" => started}]}
       assert started["auth_method"] == "magic_link"
       assert started["utm_source"] == "x"
       assert started["utm_medium"] == "paid_social"
       assert started["utm_campaign"] == "launch"
-
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-      conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
 
       assert_receive {:mixpanel_engage, [set_update, %{"$set_once" => set_once}]}
       assert set_update["$set"]["$email"] == user.email
@@ -353,10 +356,11 @@ defmodule EmisarWeb.AnalyticsTest do
         |> recycle()
         |> post(~p"/sign_in/magic/start", %{
           "user" => %{"email" => user.email},
-          "registration_handoff" => EmisarWeb.RegistrationHandoff.sign(user.id)
+          "registration_handoff" =>
+            EmisarWeb.RegistrationHandoff.sign(user.id, "Analytics Co", "Analytics Owner")
         })
 
-      assert_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
+      refute_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
       assert_received {:email, sent}
       [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
 
@@ -365,6 +369,7 @@ defmodule EmisarWeb.AnalyticsTest do
       |> put_req_header("sec-gpc", "1")
       |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
 
+      assert_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
       assert_receive {:mixpanel_engage, _updates}
       assert_receive {:mixpanel_track, [%{"event" => "sign_up_completed"}]}
       refute_receive {:x_ads_signup, _conversion}
@@ -379,19 +384,29 @@ defmodule EmisarWeb.AnalyticsTest do
         |> recycle()
         |> post(~p"/sign_in/magic/start", %{
           "user" => %{"email" => user.email},
-          "registration_handoff" => EmisarWeb.RegistrationHandoff.sign(user.id)
+          "registration_handoff" =>
+            EmisarWeb.RegistrationHandoff.sign(user.id, "Analytics Co", "Analytics Owner")
         })
 
+      refute_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
+      assert_received {:email, _first_sent}
+
+      resent =
+        conn
+        |> recycle()
+        |> post(~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email}
+        })
+
+      refute_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
+      assert_received {:email, second_sent}
+
+      [_, token_id, secret] =
+        Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", second_sent.text_body)
+
+      resent |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+
       assert_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
-      assert_received {:email, _sent}
-
-      conn
-      |> recycle()
-      |> post(~p"/sign_in/magic/start", %{
-        "user" => %{"email" => user.email},
-        "registration_handoff" => EmisarWeb.RegistrationHandoff.sign(user.id)
-      })
-
       refute_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
     end
 

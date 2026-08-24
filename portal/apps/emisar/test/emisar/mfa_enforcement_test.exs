@@ -42,7 +42,7 @@ defmodule Emisar.MfaEnforcementTest do
 
       email = "operator-#{System.unique_integer([:positive])}@example.com"
 
-      {:ok, %{user: operator_user, membership: m}} =
+      {:ok, %{user: operator_user, membership: m, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
             email: email,
@@ -53,7 +53,7 @@ defmodule Emisar.MfaEnforcementTest do
         )
 
       Fixtures.Users.confirm_user(operator_user)
-      {:ok, _} = Accounts.mark_invitation_accepted(m, operator_user)
+      {:ok, _} = Accounts.mark_invitation_accepted(m, token, operator_user)
       operator_subject = Fixtures.Subjects.subject_for(operator_user, account, role: :operator)
 
       assert Accounts.update_account(

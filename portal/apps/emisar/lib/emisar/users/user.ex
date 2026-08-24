@@ -8,6 +8,9 @@ defmodule Emisar.Users.User do
 
   schema "users" do
     field :email, :string
+    # Exact generation of the current sign-in address. Address-bound bearers
+    # copy this value so A -> B -> A cannot resurrect a proof sent to old A.
+    field :email_changed_at, :utc_datetime_usec, read_after_writes: true
     field :full_name, :string
     field :confirmed_at, :utc_datetime_usec
 

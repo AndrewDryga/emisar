@@ -86,8 +86,8 @@ defmodule EmisarWeb.UserAuth do
   end
 
   # The first sign-in right after registering (magic-link round-trip or SSO JIT).
-  # The confirmation email already went out at sign-up; the verify-email banner
-  # (not this flash) nudges an unconfirmed account, so just welcome them.
+  # The inbox proof has already completed for the magic-link path, so this flash
+  # only welcomes the operator to the workspace that transaction just created.
   defp maybe_flash_just_registered(conn, _user, true) do
     put_flash(conn, :info, "Welcome to emisar! Your workspace is ready.")
   end

@@ -50,7 +50,7 @@ defmodule Emisar.MarketingTest do
       too_long_source = String.duplicate("s", 101)
 
       assert {:error, changeset} = Marketing.capture_signup(%{email: too_long_email})
-      assert errors_on(changeset) == %{email: ["should be at most 254 character(s)"]}
+      assert errors_on(changeset) == %{email: ["should be at most 254 byte(s)"]}
 
       assert {:error, changeset} =
                Marketing.capture_signup(%{email: "source@example.com", source: too_long_source})

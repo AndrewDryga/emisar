@@ -36,6 +36,8 @@ defmodule Emisar.Accounts.Membership do
     # from one workspace's IdP must not rewrite how they read in another's.
     field :directory_display_name, :string
     field :invitation_token_digest, :string, redact: true
+    field :invitation_sent_to, :string
+    field :invitation_email_changed_at, :utc_datetime_usec
     field :invitation_accepted_at, :utc_datetime_usec
     field :last_active_at, :utc_datetime_usec
     field :disabled_at, :utc_datetime_usec

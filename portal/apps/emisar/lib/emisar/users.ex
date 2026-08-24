@@ -69,9 +69,10 @@ defmodule Emisar.Users do
   @doc """
   Internal — registration: the auth boundary creates the user before any
   subject/tenant exists (pre-auth). Pass `repo: repo` from a caller's
-  `Multi.run` so the insert joins that open transaction — signup creates the
-  person and the workspace they own together (`Accounts.register_owner/2`);
-  it defaults to `Repo` for a standalone registration.
+  `Multi.run` so the insert joins that open transaction. Self-serve signup
+  creates the person first, then composes the workspace into the transaction
+  that consumes the proved inbox factor; it defaults to `Repo` for a standalone
+  registration.
   """
   def register_user(attrs, opts \\ []) do
     repo = Keyword.get(opts, :repo, Repo)
@@ -79,26 +80,6 @@ defmodule Emisar.Users do
     %User{}
     |> User.Changeset.registration(attrs)
     |> repo.insert()
-  end
-
-  @doc """
-  Stamp the user's last sign-in and audit `user.signed_in` (with the auth
-  `method` — `"magic_link"`) in one
-  transaction. The audit row is silently skipped for a user with no active
-  membership (no account to scope it to), matching `Audit.log_for_user/3`.
-  Sign-in is the one mutation the web layer triggers pre-Subject, so the
-  audit trail is this function's concern — controllers never write audit
-  rows themselves.
-  """
-  def record_sign_in(%User{} = user, method, context \\ %RequestContext{})
-      when is_binary(method) do
-    Multi.new()
-    |> put_sign_in(user, method, context)
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{sign_in: user}} -> {:ok, user}
-      {:error, reason} -> {:error, reason}
-    end
   end
 
   @doc """
@@ -114,6 +95,24 @@ defmodule Emisar.Users do
       extra: [payload: %{method: method}, context: context]
     )
   end
+
+  @doc """
+  Internal — carry the proved signup's submitted display name into the final
+  workspace/session transaction. A decoy or replay keeps the locked user
+  unchanged. The distinct `:registration_user` key lets Accounts compose its
+  account writes without colliding with Auth's canonical `:user` lock step.
+  """
+  def put_owner_registration_profile(
+        %Multi{} = multi,
+        %User{} = user,
+        %{full_name: full_name}
+      )
+      when is_binary(full_name) or is_nil(full_name) do
+    Multi.update(multi, :registration_user, User.Changeset.profile(user, %{full_name: full_name}))
+  end
+
+  def put_owner_registration_profile(%Multi{} = multi, %User{} = user, nil),
+    do: Multi.put(multi, :registration_user, user)
 
   @doc """
   Internal — compose a proof-gated MFA enrollment update and its audit rows
@@ -140,6 +139,59 @@ defmodule Emisar.Users do
     )
   end
 
+  @doc """
+  Internal — compose confirmation of a locked current email into Auth's token
+  transaction. Already-confirmed users are carried through without another
+  write or audit row; a first confirmation updates the row and records the
+  method that proved the inbox.
+  """
+  def put_email_confirmation(
+        %Multi{} = multi,
+        %User{confirmed_at: nil} = user,
+        method,
+        %RequestContext{} = context
+      )
+      when is_binary(method) do
+    multi
+    |> Multi.update(:confirmed_user, User.Changeset.confirm(user))
+    |> Audit.Multi.log_for_user(:confirmation_audit, nil, "user.email_confirmed",
+      user_fn: & &1.confirmed_user,
+      extra: [payload: %{method: method}, context: context]
+    )
+  end
+
+  def put_email_confirmation(
+        %Multi{} = multi,
+        %User{} = user,
+        method,
+        %RequestContext{}
+      )
+      when is_binary(method),
+      do: Multi.put(multi, :confirmed_user, user)
+
+  @doc """
+  Internal — compose a locked current user's self-service email change and
+  audit into Auth's credential transaction. Auth owns the factor proof and
+  address-token invalidation; Users owns the user changeset and audit shape.
+  """
+  def put_email_change(
+        %Multi{} = multi,
+        %User{} = user,
+        new_email,
+        %RequestContext{} = context
+      )
+      when is_binary(new_email) do
+    multi
+    |> Multi.update(:email_change, User.Changeset.email(user, %{email: new_email}))
+    |> Audit.Multi.log_for_user(:email_change_audit, nil, "user.email_changed",
+      user_fn: & &1.email_change,
+      payload_fn: fn %{email_change: updated} ->
+        %{from: user.email, to: updated.email}
+      end,
+      extra: [context: context]
+    )
+  end
+
   # -- Self-service mutations ---------------------------------------------
 
   @doc """
@@ -161,61 +213,6 @@ defmodule Emisar.Users do
     )
   end
 
-  @doc """
-  Apply a new sign-in email to the caller's own user row. Returns `{:ok, user} |
-  {:error, %Ecto.Changeset{}}`. Self-service (the user is the subject's own actor)
-  and the low-level write ONLY — the step-up that proves control (TOTP for an MFA
-  user, an emailed one-time code otherwise) is enforced by the sole caller,
-  `Auth.confirm_email_change/3`, so this is never reached without a verified
-  challenge. Audits `user.email_changed` with both addresses for traceability.
-  """
-  def update_user_email(new_email, %Subject{actor: %User{id: user_id}} = subject)
-      when is_binary(new_email) do
-    User.Query.not_deleted()
-    |> User.Query.by_id(user_id)
-    |> Repo.fetch_and_update(User.Query,
-      with: &User.Changeset.email(&1, %{email: new_email}),
-      # `changeset.data` is the locked pre-update row — the accurate "from",
-      # not `user.email` off the (possibly stale) socket-snapshot subject.
-      audit: fn updated, changeset ->
-        Audit.user_changesets(updated, "user.email_changed",
-          context: subject.context,
-          payload: %{from: changeset.data.email, to: updated.email}
-        )
-      end
-    )
-  end
-
-  @doc """
-  Internal — Auth signup recovery: update an unconfirmed registration's email
-  before the first magic-link proof. Returns `{:ok, user} | {:error,
-  :already_confirmed | :not_found | %Ecto.Changeset{}}`.
-  """
-  def correct_unconfirmed_user_email(user_id, new_email, opts \\ [])
-      when is_binary(new_email) do
-    if Repo.valid_uuid?(user_id) do
-      context = Keyword.get(opts, :context, %RequestContext{})
-
-      User.Query.not_deleted()
-      |> User.Query.by_id(user_id)
-      |> Repo.fetch_and_update(User.Query,
-        with: &unconfirmed_email(&1, new_email),
-        audit: fn updated, changeset ->
-          Audit.user_changesets(updated, "user.email_changed",
-            context: context,
-            payload: %{
-              from: changeset.data.email,
-              to: updated.email,
-              method: "signup_correction"
-            }
-          )
-        end
-      )
-    else
-      {:error, :not_found}
-    end
-  end
-
   # -- Form builders -------------------------------------------------------
 
   def change_user(%User{} = user, attrs \\ %{}) do
@@ -228,11 +225,6 @@ defmodule Emisar.Users do
   # into its token transactions via `Multi.run`, so each runs inside the
   # caller's transaction — the User changeset internals stay private to
   # Users. Never exposed to LiveView/controllers/MCP.
-
-  @doc "Internal — Auth: mark the user's email confirmed (token flow)."
-  def mark_user_confirmed(%User{} = user) do
-    user |> User.Changeset.confirm() |> Repo.update()
-  end
 
   @doc """
   Internal — SSO: provision a FRESH user for a just-in-time SSO login. Never
@@ -400,11 +392,6 @@ defmodule Emisar.Users do
     end
   end
 
-  defp unconfirmed_email(%User{confirmed_at: nil} = user, new_email),
-    do: User.Changeset.email(user, %{email: new_email})
-
-  defp unconfirmed_email(%User{}, _new_email), do: :already_confirmed
-
   # TOTP buckets are 30 seconds wide — NimbleTOTP's verification window.
   defp totp_bucket(nil), do: nil
   defp totp_bucket(%DateTime{} = at), do: div(DateTime.to_unix(at), 30)
@@ -435,14 +422,44 @@ defmodule Emisar.Users do
   end
 
   @doc """
+  Internal — Accounts invitation issuance: resolve or create the address owner,
+  then lock that exact current row before the caller binds and sends a bearer to
+  its email. If a concurrent address change frees the requested address, the
+  post-wait lookup creates/resolves its new owner rather than returning the
+  stale user snapshot.
+  """
+  def fetch_or_create_and_lock_user_by_email(email, repo)
+      when is_binary(email) and is_atom(repo) do
+    queryable =
+      User.Query.not_deleted()
+      |> User.Query.by_email(email)
+      |> User.Query.lock_for_update()
+
+    case repo.fetch(queryable, User.Query) do
+      {:ok, %User{} = user} ->
+        {:ok, user}
+
+      {:error, :not_found} ->
+        changeset = User.Changeset.registration(%User{}, %{email: email})
+
+        with {:ok, _} <- repo.insert(changeset, on_conflict: :nothing) do
+          repo.fetch(queryable, User.Query)
+        end
+    end
+  end
+
+  @doc """
   Internal — Accounts invitation accept: set the invited user's full_name
   and mark them confirmed (accepting the invite proves they own the email;
   they sign in via magic link). Two updates inside the caller's transaction.
   """
   def register_invited_user(%User{} = user, %{} = attrs) do
-    registration = User.Changeset.registration(user, attrs)
+    # The emailed invitation proves the address already stored on the locked
+    # user. Never let bearer-supplied attrs replace that address while using
+    # the old inbox proof to confirm the new one.
+    profile = User.Changeset.profile(user, attrs)
 
-    with {:ok, user} <- Repo.update(registration) do
+    with {:ok, user} <- Repo.update(profile) do
       user |> User.Changeset.confirm() |> Repo.update()
     end
   end

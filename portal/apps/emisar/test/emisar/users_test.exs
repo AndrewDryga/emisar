@@ -1,7 +1,6 @@
 defmodule Emisar.UsersTest do
   use Emisar.DataCase, async: true
   alias Emisar.Audit
-  alias Emisar.Auth.Subject
   alias Emisar.Crypto
   alias Emisar.Fixtures
   alias Emisar.Users
@@ -78,11 +77,9 @@ defmodule Emisar.UsersTest do
       assert "has already been taken" in errors_on(changeset).email
     end
 
-    # the email length cap (160) is inclusive: a 160-char
-    # otherwise-valid address registers.
-    test "accepts an email exactly 160 chars long" do
-      email = String.duplicate("a", 160 - String.length("@example.test")) <> "@example.test"
-      assert String.length(email) == 160
+    test "accepts an email exactly 254 bytes long" do
+      email = String.duplicate("a", 254 - byte_size("@example.test")) <> "@example.test"
+      assert byte_size(email) == 254
 
       assert {:ok, %User{}} = Users.register_user(%{email: email, full_name: "Edge"})
     end
@@ -94,8 +91,17 @@ defmodule Emisar.UsersTest do
 
       assert {:error, changeset} = Users.register_user(%{email: email, full_name: "TooLong"})
 
-      assert "should be at most 254 character(s)" in errors_on(changeset).email
+      assert "should be at most 254 byte(s)" in errors_on(changeset).email
       assert Users.fetch_user_by_email(email) == {:error, :not_found}
+    end
+
+    test "the RFC length bound counts bytes rather than Unicode graphemes" do
+      email = String.duplicate("界", 84) <> "@x.co"
+      assert String.length(email) < 254
+      assert byte_size(email) > 254
+
+      assert {:error, changeset} = Users.register_user(%{email: email})
+      assert "should be at most 254 byte(s)" in errors_on(changeset).email
     end
 
     # the email format rule (`^[^\s]+@[^\s]+$`) rejects an
@@ -107,21 +113,6 @@ defmodule Emisar.UsersTest do
 
         assert "must have the @ sign and no spaces" in errors_on(changeset).email
       end
-    end
-  end
-
-  describe "record_sign_in/3" do
-    test "stamps the sign-in and audits user.signed_in with the method" do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
-
-      assert {:ok, updated} = Users.record_sign_in(user, "magic_link")
-      assert %DateTime{} = updated.last_sign_in_at
-
-      {:ok, [event], _} =
-        Emisar.Audit.list_events(subject, filter: [event_type: ["user.signed_in"]])
-
-      assert event.payload["method"] == "magic_link"
-      _ = account
     end
   end
 
@@ -141,6 +132,41 @@ defmodule Emisar.UsersTest do
                Audit.list_events(subject, filter: [event_type: ["user.signed_in"]])
 
       assert event.payload["method"] == "magic_link"
+    end
+  end
+
+  describe "put_owner_registration_profile/3" do
+    test "applies only the display name carried by the proved registration" do
+      user = Fixtures.Users.create_user(full_name: "Unproved Name")
+
+      assert {:ok, %{registration_user: updated}} =
+               Ecto.Multi.new()
+               |> Users.put_owner_registration_profile(user, %{full_name: "Inbox Owner"})
+               |> Repo.transaction()
+
+      assert updated.full_name == "Inbox Owner"
+      assert Repo.reload!(user).full_name == "Inbox Owner"
+    end
+
+    test "a decoy carries the locked user through unchanged" do
+      user = Fixtures.Users.create_user(full_name: "Existing Name")
+
+      assert {:ok, %{registration_user: ^user}} =
+               Ecto.Multi.new()
+               |> Users.put_owner_registration_profile(user, nil)
+               |> Repo.transaction()
+    end
+
+    test "a later transaction failure rolls the proved profile update back" do
+      user = Fixtures.Users.create_user(full_name: "Before")
+
+      assert {:error, :forced_failure, :boom, _changes} =
+               Ecto.Multi.new()
+               |> Users.put_owner_registration_profile(user, %{full_name: "After"})
+               |> Ecto.Multi.run(:forced_failure, fn _repo, _changes -> {:error, :boom} end)
+               |> Repo.transaction()
+
+      assert Repo.reload!(user).full_name == "Before"
     end
   end
 
@@ -252,99 +278,75 @@ defmodule Emisar.UsersTest do
     end
   end
 
-  describe "update_user_email/2" do
-    setup do
-      user = Fixtures.Users.create_user()
-      subject = %Subject{actor: user}
-      %{user: user, subject: subject}
-    end
+  describe "put_email_change/4" do
+    test "composes the email update and audit into the caller's transaction" do
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      new_email = Fixtures.Random.unique_email()
 
-    test "updates the email — the authenticated session is the proof (no password)", %{
-      subject: subject
-    } do
-      new = "new-#{System.unique_integer([:positive])}@example.test"
-      assert {:ok, updated} = Users.update_user_email(new, subject)
-      assert updated.email == new
-    end
-
-    test "rejects a malformed email", %{subject: subject} do
-      assert {:error, changeset} = Users.update_user_email("not-an-email", subject)
-      assert "must have the @ sign and no spaces" in errors_on(changeset).email
-    end
-
-    test "accepts an email of exactly 160 characters", %{subject: subject} do
-      # local-part (147) + "@" + "example.test" (12) = 160 chars, the inclusive max.
-      local = String.duplicate("a", 147)
-      email = "#{local}@example.test"
-      assert String.length(email) == 160
-
-      assert {:ok, updated} = Users.update_user_email(email, subject)
-      assert updated.email == email
-    end
-
-    test "rejects an email past the RFC 5321 maximum", %{user: user, subject: subject} do
-      email = "#{String.duplicate("a", 242)}@example.test"
-      assert String.length(email) == 255
-
-      assert {:error, changeset} = Users.update_user_email(email, subject)
-      assert "should be at most 254 character(s)" in errors_on(changeset).email
-      # Nothing was written — the original email stands.
-      assert Repo.reload!(user).email == user.email
-    end
-
-    test "accepts an address at the maximum", %{subject: subject} do
-      email = "#{String.duplicate("a", 241)}@example.test"
-      assert String.length(email) == 254
-
-      assert {:ok, updated} = Users.update_user_email(email, subject)
-      assert updated.email == email
-    end
-  end
-
-  describe "correct_unconfirmed_user_email/3" do
-    test "updates an unconfirmed signup email and audits the correction" do
-      user = Fixtures.Users.create_user(confirmed?: false)
-      account = Fixtures.Accounts.create_account()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-      new_email = "corrected-#{System.unique_integer([:positive])}@example.test"
-
-      assert {:ok, %User{} = updated} =
-               Users.correct_unconfirmed_user_email(user.id, new_email)
+      assert {:ok, %{caller_step: :kept, email_change: %User{} = updated}} =
+               Ecto.Multi.new()
+               |> Ecto.Multi.run(:caller_step, fn _repo, _changes -> {:ok, :kept} end)
+               |> Users.put_email_change(user, new_email, %Emisar.RequestContext{})
+               |> Repo.commit_multi()
 
       assert updated.email == new_email
-      assert Repo.reload!(user).email == new_email
 
-      {:ok, [event], _} =
-        Emisar.Audit.list_events(subject, filter: [event_type: ["user.email_changed"]])
+      assert {:ok, [event], _} =
+               Audit.list_events(subject, filter: [event_type: ["user.email_changed"]])
 
       assert event.payload["from"] == user.email
       assert event.payload["to"] == new_email
-      assert event.payload["method"] == "signup_correction"
     end
 
-    test "refuses after the user is confirmed" do
-      user = Fixtures.Users.create_user() |> Fixtures.Users.confirm_user()
-      new_email = "too-late-#{System.unique_integer([:positive])}@example.test"
+    test "an invalid email rolls the composed transaction back" do
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
 
-      assert Users.correct_unconfirmed_user_email(user.id, new_email) ==
-               {:error, :already_confirmed}
+      assert {:error, changeset} =
+               Ecto.Multi.new()
+               |> Ecto.Multi.put(:caller_step, :must_rollback)
+               |> Users.put_email_change(user, "not-an-email", %Emisar.RequestContext{})
+               |> Repo.commit_multi()
 
-      assert Repo.reload!(user).email == user.email
-    end
-
-    test "rejects invalid replacement emails without writing" do
-      user = Fixtures.Users.create_user(confirmed?: false)
-
-      assert {:error, changeset} = Users.correct_unconfirmed_user_email(user.id, "not-an-email")
       assert "must have the @ sign and no spaces" in errors_on(changeset).email
       assert Repo.reload!(user).email == user.email
+
+      assert {:ok, [], _} =
+               Audit.list_events(subject, filter: [event_type: ["user.email_changed"]])
+    end
+  end
+
+  describe "put_email_confirmation/4" do
+    test "confirms an unconfirmed user and records the proof method" do
+      user = Fixtures.Users.create_user(confirmed?: false)
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+      subject = Fixtures.Subjects.subject_for(user, account)
+
+      assert {:ok, %{confirmed_user: %User{confirmed_at: %DateTime{}}}} =
+               Ecto.Multi.new()
+               |> Users.put_email_confirmation(
+                 user,
+                 "confirmation_link",
+                 %Emisar.RequestContext{}
+               )
+               |> Repo.commit_multi()
+
+      assert {:ok, [event], _} =
+               Audit.list_events(subject, filter: [event_type: ["user.email_confirmed"]])
+
+      assert event.payload["method"] == "confirmation_link"
+    end
+
+    test "carries an already-confirmed user without another audit" do
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, %{confirmed_user: ^user}} =
+               Ecto.Multi.new()
+               |> Users.put_email_confirmation(user, "magic_link", %Emisar.RequestContext{})
+               |> Repo.commit_multi()
+
+      assert {:ok, [], _} =
+               Audit.list_events(subject, filter: [event_type: ["user.email_confirmed"]])
     end
   end
 
@@ -375,19 +377,6 @@ defmodule Emisar.UsersTest do
 
       refute changeset.valid?
       assert "must have the @ sign and no spaces" in errors_on(changeset).email
-    end
-  end
-
-  describe "mark_user_confirmed/1" do
-    test "stamps confirmed_at on a freshly-registered (unconfirmed) user" do
-      user = Fixtures.Users.create_user(confirmed?: false)
-      assert is_nil(user.confirmed_at)
-
-      assert {:ok, %User{confirmed_at: %DateTime{}} = confirmed} =
-               Users.mark_user_confirmed(user)
-
-      assert confirmed.id == user.id
-      assert %DateTime{} = Repo.reload!(user).confirmed_at
     end
   end
 
@@ -660,6 +649,22 @@ defmodule Emisar.UsersTest do
       assert id == existing.id
 
       assert {:ok, %User{id: ^id}} = Users.fetch_or_create_user_by_email("already@example.test")
+    end
+  end
+
+  describe "fetch_or_create_and_lock_user_by_email/2" do
+    test "creates or resolves the exact current address owner" do
+      email = "locked-invite-#{System.unique_integer([:positive])}@example.test"
+
+      assert {:ok, %User{} = created} =
+               Users.fetch_or_create_and_lock_user_by_email(email, Repo)
+
+      assert created.email == email
+
+      assert {:ok, %User{id: id}} =
+               Users.fetch_or_create_and_lock_user_by_email(email, Repo)
+
+      assert id == created.id
     end
   end
 

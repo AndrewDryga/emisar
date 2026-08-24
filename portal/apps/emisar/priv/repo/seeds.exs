@@ -317,13 +317,15 @@ invite_member = fn email, full_name, role ->
       {:ok, %User{} = existing_user} ->
         case Accounts.peek_sync_membership(account.id, existing_user.id) do
           nil ->
-            {:ok, %{user: invited, membership: membership}} =
+            {:ok, %{user: invited, membership: membership, invitation_token: token}} =
               Accounts.invite_user_to_account(
                 %{"email" => email, "role" => role, "runner_access_mode" => "all"},
                 owner_subject
               )
 
-            {:ok, _membership} = Accounts.mark_invitation_accepted(membership, invited)
+            {:ok, _membership} =
+              Accounts.mark_invitation_accepted(membership, token, invited)
+
             invited
 
           membership ->
@@ -336,20 +338,24 @@ invite_member = fn email, full_name, role ->
               end
 
             if is_nil(membership.invitation_accepted_at) do
-              {:ok, _membership} = Accounts.mark_invitation_accepted(membership, existing_user)
+              {:ok, %{membership: membership, invitation_token: token}} =
+                Accounts.resend_account_invitation(membership, owner_subject)
+
+              {:ok, _membership} =
+                Accounts.mark_invitation_accepted(membership, token, existing_user)
             end
 
             existing_user
         end
 
       {:error, :not_found} ->
-        {:ok, %{user: invited, membership: membership}} =
+        {:ok, %{user: invited, membership: membership, invitation_token: token}} =
           Accounts.invite_user_to_account(
             %{"email" => email, "role" => role, "runner_access_mode" => "all"},
             owner_subject
           )
 
-        {:ok, _membership} = Accounts.mark_invitation_accepted(membership, invited)
+        {:ok, _membership} = Accounts.mark_invitation_accepted(membership, token, invited)
         invited
     end
 

@@ -106,6 +106,19 @@ defmodule Emisar.Accounts.Membership.Query do
     )
   end
 
+  @doc "Pending invitations still bound to the invited user's current address."
+  def invitation_matches_current_email(queryable) do
+    queryable
+    |> with_joined_user()
+    |> where(
+      [memberships: m, user: u],
+      not is_nil(m.invitation_sent_to) and
+        not is_nil(m.invitation_email_changed_at) and
+        m.invitation_sent_to == u.email and
+        m.invitation_email_changed_at == u.email_changed_at
+    )
+  end
+
   # Invitation links lapse after a week — long enough for a weekend
   # inbox, short enough that a leaked link isn't a standing seat. The
   # row's inserted_at IS the invite time (fresh invites insert rows;

@@ -5,7 +5,8 @@ defmodule Emisar.Accounts.Membership.Changeset do
   @create_fields ~w[account_id user_id role directory_managed runner_access_mode runner_access_directory_managed
                     pack_access_mode pack_scope_pack_ids
                     directory_provider_id directory_authorization_version directory_authorization_pending_version
-                    invited_by_id invitation_token_digest invitation_accepted_at]a
+                    invited_by_id invitation_token_digest invitation_sent_to
+                    invitation_email_changed_at invitation_accepted_at]a
   @update_fields ~w[role invitation_accepted_at]a
 
   def create(attrs) do
@@ -115,12 +116,25 @@ defmodule Emisar.Accounts.Membership.Changeset do
   end
 
   def accept_invitation(%Membership{} = membership) do
-    change(membership, invitation_token_digest: nil, invitation_accepted_at: DateTime.utc_now())
+    change(membership,
+      invitation_token_digest: nil,
+      invitation_sent_to: nil,
+      invitation_email_changed_at: nil,
+      invitation_accepted_at: DateTime.utc_now()
+    )
   end
 
-  def resend_invitation(%Membership{} = membership, token_digest) when is_binary(token_digest) do
+  def resend_invitation(
+        %Membership{} = membership,
+        token_digest,
+        sent_to,
+        %DateTime{} = email_changed_at
+      )
+      when is_binary(token_digest) and is_binary(sent_to) do
     change(membership,
       invitation_token_digest: token_digest,
+      invitation_sent_to: sent_to,
+      invitation_email_changed_at: email_changed_at,
       invitation_accepted_at: nil,
       inserted_at: DateTime.utc_now()
     )

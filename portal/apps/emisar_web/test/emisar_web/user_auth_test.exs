@@ -1,6 +1,5 @@
 defmodule EmisarWeb.UserAuthTest do
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Auth, RequestContext}
   alias EmisarWeb.UserAuth
 
   # Session provenance for an unauthenticated request — the miss/anonymous
@@ -174,11 +173,9 @@ defmodule EmisarWeb.UserAuthTest do
       conn: conn
     } do
       user = Fixtures.Users.create_user()
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert {:ok, signed_in, token, :no_target} =
-               Auth.complete_magic_link_sign_in(user.id, nil, %RequestContext{})
-
-      conn = UserAuth.log_in_magic_link_user(conn, signed_in, token, false)
+      conn = UserAuth.log_in_magic_link_user(conn, user, token, false)
 
       assert Plug.Conn.get_session(conn, :user_token)
       assert Plug.Conn.get_session(conn, :live_socket_id)

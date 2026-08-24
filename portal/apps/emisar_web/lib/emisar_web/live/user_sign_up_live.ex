@@ -1,7 +1,10 @@
 defmodule EmisarWeb.UserSignUpLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Users}
-  alias EmisarWeb.{LiveForm, RegistrationHandoff}
+  alias Emisar.{Accounts, Throttle, Users}
+  alias EmisarWeb.{LiveForm, RegistrationHandoff, RequestContext}
+
+  @signup_limit 20
+  @signup_window_ms 60 * 60_000
 
   # The landing page's CTA collects a work email and GETs here with it; carry it
   # into the form so the operator doesn't retype what they just typed.
@@ -15,6 +18,7 @@ defmodule EmisarWeb.UserSignUpLive do
      |> assign(:account_name, "")
      |> assign(:account_name_error, nil)
      |> assign(:registration_handoff, nil)
+     |> assign(:request_context, RequestContext.from_socket(socket))
      |> assign_form(changeset)}
   end
 
@@ -67,9 +71,9 @@ defmodule EmisarWeb.UserSignUpLive do
           No password to set — we'll email you a one-time sign-in link and a 6-character code.
         </p>
 
-        <%!-- Proves the controller request came from THIS completed signup, so
-             the first sign-in can fire sign_up_completed and same-browser typo
-             recovery can only update this just-created user. --%>
+        <%!-- Carries the workspace/profile intent to the inbox-proof factor.
+             Existing-email submissions carry an equal-shaped decoy, so this
+             client-visible value never reveals whether registration can resume. --%>
         <input
           :if={@registration_handoff}
           type="hidden"
@@ -115,6 +119,18 @@ defmodule EmisarWeb.UserSignUpLive do
   end
 
   def handle_event("save", %{"user" => user_params} = all, socket) do
+    case Throttle.check(
+           "sign_up",
+           socket.assigns.request_context.ip_address,
+           @signup_limit,
+           @signup_window_ms
+         ) do
+      :ok -> handle_save(socket, user_params, all)
+      {:error, :rate_limited} -> signup_rate_limited(socket)
+    end
+  end
+
+  defp handle_save(socket, user_params, all) do
     account_name = String.trim(all["account_name"] || "")
 
     socket =
@@ -132,21 +148,27 @@ defmodule EmisarWeb.UserSignUpLive do
   end
 
   defp do_save(socket, user_params, account_name) do
+    full_name = user_params["full_name"]
+
     account_attrs = %{
       name: account_name,
       slug: Accounts.suggest_unique_slug(account_name)
     }
 
-    case Accounts.register_owner(user_params, account_attrs) do
+    case Accounts.begin_owner_registration(user_params, account_attrs) do
       {:ok, user} ->
-        # Flip trigger_submit → the form POSTs the email to magic_link_start,
-        # which mails the sign-in link, confirms the address when completed,
-        # and lands them on "check your email".
-        {:noreply,
-         socket
-         |> assign(:trigger_submit, true)
-         |> assign(:registration_handoff, RegistrationHandoff.sign(user.id))
-         |> assign_form(Users.change_user(user))}
+        arm_magic_link_post(
+          socket,
+          user_params,
+          RegistrationHandoff.sign(user.id, account_name, full_name)
+        )
+
+      {:error, :email_taken} ->
+        arm_magic_link_post(
+          socket,
+          user_params,
+          RegistrationHandoff.decoy(account_name, full_name)
+        )
 
       {:error, {:user, changeset}} ->
         {:noreply, assign_form(socket, changeset)}
@@ -165,6 +187,24 @@ defmodule EmisarWeb.UserSignUpLive do
          |> put_flash(:error, "We couldn't finish setting up your workspace. Try again.")
          |> assign_form(Users.change_user(%Emisar.Users.User{}, user_params))}
     end
+  end
+
+  # Both a new registration and an existing email submit the same form with a
+  # same-shaped opaque handoff. Only the handoff whose signed id matches the
+  # resumable zero-membership user carries registration authority downstream.
+  defp arm_magic_link_post(socket, user_params, handoff) do
+    {:noreply,
+     socket
+     |> assign(:trigger_submit, true)
+     |> assign(:registration_handoff, handoff)
+     |> assign_form(Users.change_user(%Emisar.Users.User{}, user_params))}
+  end
+
+  defp signup_rate_limited(socket) do
+    {:noreply,
+     socket
+     |> put_flash(:error, "Too many signup attempts. Wait a while, then try again.")
+     |> assign(:trigger_submit, false)}
   end
 
   # The workspace name is a standalone param, not a form field, so its rejection

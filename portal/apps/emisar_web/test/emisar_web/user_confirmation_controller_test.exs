@@ -9,7 +9,7 @@ defmodule EmisarWeb.UserConfirmationControllerTest do
       # token, leaving the account unconfirmed and the banner stuck.
       user = unconfirmed_user()
       refute user.confirmed_at
-      token = Auth.issue_confirmation_token!(user)
+      token = Fixtures.Auth.create_confirmation_token!(user)
 
       conn =
         conn
@@ -23,7 +23,7 @@ defmodule EmisarWeb.UserConfirmationControllerTest do
 
     test "confirms a signed-out user and sends them to sign in", %{conn: conn} do
       user = unconfirmed_user()
-      token = Auth.issue_confirmation_token!(user)
+      token = Fixtures.Auth.create_confirmation_token!(user)
 
       conn = get(conn, ~p"/confirm/#{token}")
 
@@ -38,7 +38,7 @@ defmodule EmisarWeb.UserConfirmationControllerTest do
       # The session's own confirmed state (no token oracle) turns the false
       # alarm into an accurate info flash — UI-022.
       user = unconfirmed_user()
-      token = Auth.issue_confirmation_token!(user)
+      token = Fixtures.Auth.create_confirmation_token!(user)
       {:ok, _} = Auth.confirm_user_by_token(token)
 
       conn =
@@ -90,7 +90,7 @@ defmodule EmisarWeb.UserConfirmationControllerTest do
       # row is soft-deleted, so the link returns the same uniform invalid error
       # rather than flipping `confirmed_at` on a tombstoned account.
       user = unconfirmed_user()
-      token = Auth.issue_confirmation_token!(user)
+      token = Fixtures.Auth.create_confirmation_token!(user)
 
       {:ok, _} = user |> Users.User.Changeset.delete() |> Repo.update()
 

@@ -471,32 +471,141 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — pre-auth self-serve signup: the person AND the workspace they own,
-  created in ONE transaction. No `%Subject{}` can exist — owning this brand-new
-  account is what creates one. Returns `{:ok, user}`; the caller's next step is
-  the sign-in link, so the user row is what it needs back.
+  Internal — pre-auth self-serve signup. Validates the proposed workspace first,
+  then creates only the unconfirmed user. The workspace cannot exist publicly
+  until that address proves its magic link; `put_owner_registration/2` composes
+  it into the final session transaction. Existing and new emails can therefore
+  return the same public response without a slug or account-row side channel.
 
   A rejected form value comes back tagged with the step that owns it —
-  `{:error, {:user | :account | :membership, changeset}}` — because the sign-up
-  form has one input per step and must render the error beside the one the
-  operator typed. Everything else is `{:error, reason}`.
+  `{:error, {:user | :account, changeset}}`; an existing address is the neutral
+  `{:error, :email_taken}` branch the web maps to the same magic-link POST.
   """
-  def register_owner(user_attrs, account_attrs) do
-    Multi.new()
-    |> Multi.run(:user, fn repo, _changes ->
-      tag_signup_error(:user, Users.register_user(user_attrs, repo: repo))
+  def begin_owner_registration(user_attrs, account_attrs) do
+    case Ecto.Changeset.apply_action(Account.Changeset.create(account_attrs), :insert) do
+      {:ok, _account} ->
+        case Ecto.Changeset.apply_action(Users.change_user(%Users.User{}, user_attrs), :insert) do
+          {:ok, candidate} ->
+            # The inbox has not been proved yet, so persist only the address
+            # needed to deliver that proof. The submitted profile lands in the
+            # exact-factor completion transaction, never on a reusable user row
+            # an unauthenticated caller could pre-name for invitations.
+            case Users.register_user(%{email: candidate.email}) do
+              {:ok, _user} ->
+                resume_owner_registration(user_attrs)
+
+              {:error, %Ecto.Changeset{} = changeset} ->
+                if Repo.Changeset.unique_constraint_error?(changeset) do
+                  resume_owner_registration(user_attrs)
+                else
+                  {:error, {:user, changeset}}
+                end
+            end
+
+          {:error, changeset} ->
+            {:error, {:user, changeset}}
+        end
+
+      {:error, changeset} ->
+        {:error, {:account, changeset}}
+    end
+  end
+
+  @doc """
+  Internal compositional half of self-serve signup. The caller has already
+  locked and proved the `:user` in its Multi. A registration intent map creates
+  the account, owner membership, default policy, and signup audits in that same
+  transaction; `nil` records an ordinary sign-in. The `:registration` result is
+  the only source of the boundary's welcome/analytics decision.
+  """
+  def put_owner_registration(
+        %Multi{} = multi,
+        %{account_name: account_name, full_name: full_name}
+      )
+      when is_binary(account_name) and (is_binary(full_name) or is_nil(full_name)) do
+    account_attrs = %{name: account_name, slug: suggest_unique_slug(account_name)}
+
+    multi
+    |> put_account_with_owner(account_attrs, :registration_user)
+    |> Multi.put(:registration, true)
+  end
+
+  def put_owner_registration(%Multi{} = multi, nil),
+    do: Multi.put(multi, :registration, false)
+
+  @doc """
+  Internal compositional guard for a deferred owner registration. The caller
+  must already hold the `:user` row `FOR UPDATE`. A replay after the first
+  sign-in therefore becomes an ordinary magic-link request instead of creating
+  another account. Membership eligibility is decided once when signup creates
+  the encrypted handoff; an unrelated invitation arriving during inbox proof
+  must not cancel the workspace the operator asked to create.
+  """
+  def put_owner_registration_intent(
+        %Multi{} = multi,
+        %{account_name: account_name, full_name: full_name} = intent
+      )
+      when is_binary(account_name) and (is_binary(full_name) or is_nil(full_name)) do
+    put_owner_registration_intent(multi, fn _changes -> intent end)
+  end
+
+  def put_owner_registration_intent(%Multi{} = multi, account_name_fn)
+      when is_function(account_name_fn, 1) do
+    Multi.run(multi, :owner_registration, fn _repo, %{user: user} = changes ->
+      intent = account_name_fn.(changes)
+
+      if valid_owner_registration_intent?(intent) and is_nil(user.last_sign_in_at),
+        do: {:ok, intent},
+        else: {:ok, nil}
     end)
-    |> put_account_with_owner(account_attrs)
-    |> Repo.commit_multi(after_commit: &after_membership_activation_committed/1)
-    |> case do
-      {:ok, %{user: user}} -> {:ok, user}
-      {:error, reason} -> {:error, reason}
+  end
+
+  def put_owner_registration_intent(%Multi{} = multi, nil),
+    do: Multi.put(multi, :owner_registration, nil)
+
+  defp valid_owner_registration_intent?(%{account_name: account_name, full_name: full_name}),
+    do: is_binary(account_name) and (is_binary(full_name) or is_nil(full_name))
+
+  defp valid_owner_registration_intent?(_intent), do: false
+
+  # A browser can disappear after the unconfirmed user insert but before the
+  # magic request, or after inbox verification but before the final workspace
+  # transaction. Let that zero-membership, never-signed-in row resume without
+  # exposing the distinction publicly. Membership or a prior sign-in is the
+  # durable evidence that this is an established operator instead.
+  defp resume_owner_registration(user_attrs) do
+    email = user_attrs[:email] || user_attrs["email"]
+
+    result =
+      Repo.transaction(fn ->
+        with true <- is_binary(email),
+             {:ok, %Users.User{} = observed_user} <- Users.fetch_user_by_email(email),
+             {:ok, %Users.User{} = locked_user} <-
+               Users.fetch_and_lock_user_by_id(observed_user.id, Repo),
+             true <- locked_user.email == observed_user.email do
+          memberships =
+            Membership.Query.not_deleted()
+            |> Membership.Query.by_user_id(locked_user.id)
+
+          has_memberships? = Repo.exists?(memberships)
+
+          if is_nil(locked_user.last_sign_in_at) and not has_memberships?,
+            do: {:ok, locked_user},
+            else: {:error, :email_taken}
+        else
+          _ -> {:error, :email_taken}
+        end
+      end)
+
+    case result do
+      {:ok, outcome} -> outcome
+      {:error, _reason} -> {:error, :email_taken}
     end
   end
 
   @doc """
   Internal — onboarding: an existing user stands up another workspace, so unlike
-  `register_owner/2` there is a user row already but still no `%Subject{}` for
+  `begin_owner_registration/2` there is a user row already but still no `%Subject{}` for
   the new tenant. Creates an account with the given user as `:owner`, wrapped
   in a transaction so a half-created account is impossible. Audit-logs both
   `user.signed_up` (the new user) and `account.created` (the new tenant) —
@@ -546,18 +655,27 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # The workspace half of standing up a new tenant, shared by both entry points
-  # above; each seeds the owner into a `:user` step first. The form-owned inserts
-  # run through `Multi.run` so a rejected changeset carries the step that owns
-  # it — `Repo.commit_multi/1` reports the reason alone, and signup renders each
-  # step's error under a different input.
-  defp put_account_with_owner(%Multi{} = multi, account_attrs) do
+  # The workspace half of standing up a new tenant. Public signup validates the
+  # workspace before observing email uniqueness; this builder runs only after
+  # inbox proof and keeps the account, owner seat, policy, and audits atomic.
+  defp put_account_with_owner(%Multi{} = multi, account_attrs, user_key \\ :user) do
     multi
-    |> Multi.run(:account, fn repo, _changes ->
+    |> put_registration_account(account_attrs)
+    |> put_owner_membership(user_key)
+  end
+
+  defp put_registration_account(%Multi{} = multi, account_attrs) do
+    Multi.run(multi, :account, fn repo, _changes ->
       changeset = Account.Changeset.create(account_attrs)
       tag_signup_error(:account, repo.insert(changeset))
     end)
-    |> Multi.run(:membership, fn repo, %{account: account, user: user} ->
+  end
+
+  defp put_owner_membership(%Multi{} = multi, user_key) do
+    multi
+    |> Multi.run(:membership, fn repo, %{account: account} = changes ->
+      user = Map.fetch!(changes, user_key)
+
       changeset =
         Membership.Changeset.create(%{
           account_id: account.id,
@@ -576,13 +694,16 @@ defmodule Emisar.Accounts do
     # Workspace gets the v2 conservative default policy on creation.
     # Without this, `Policies.evaluate(nil, ...)` would default-deny
     # every dispatch — which is correct but unhelpful as a first run.
-    |> Multi.run(:policy, fn _repo, %{account: account, user: user} ->
+    |> Multi.run(:policy, fn _repo, %{account: account} = changes ->
+      user = Map.fetch!(changes, user_key)
       Emisar.Policies.seed_policy(account.id, user.id)
     end)
-    |> Multi.insert(:account_created, fn %{account: account, user: user} ->
+    |> Multi.insert(:account_created, fn %{account: account} = changes ->
+      user = Map.fetch!(changes, user_key)
       Audit.Events.account_created(account, user)
     end)
-    |> Multi.insert(:user_signed_up, fn %{account: account, user: user} ->
+    |> Multi.insert(:user_signed_up, fn %{account: account} = changes ->
+      user = Map.fetch!(changes, user_key)
       Audit.Events.user_signed_up(user, account)
     end)
   end
@@ -3778,8 +3899,8 @@ defmodule Emisar.Accounts do
       |> Multi.run(:invitation, fn repo, _changes ->
         validate_invitation(repo, attrs, subject)
       end)
-      |> Multi.run(:user, fn _repo, %{invitation: invitation} ->
-        Users.fetch_or_create_user_by_email(invitation.email)
+      |> Multi.run(:user, fn repo, %{invitation: invitation} ->
+        Users.fetch_or_create_and_lock_user_by_email(invitation.email, repo)
       end)
       |> Multi.insert(:membership, fn %{user: user, invitation: invitation} ->
         Membership.Changeset.create(%{
@@ -3794,7 +3915,9 @@ defmodule Emisar.Accounts do
           # — a platform-run invitation records no human inviter rather than
           # crashing on nil (or hanging an API key's id off a users FK).
           invited_by_id: Subject.user_id(subject),
-          invitation_token_digest: token_digest
+          invitation_token_digest: token_digest,
+          invitation_sent_to: user.email,
+          invitation_email_changed_at: user.email_changed_at
         })
       end)
       |> Multi.run(:runner_access, fn repo, %{membership: membership, invitation: invitation} ->
@@ -3960,8 +4083,16 @@ defmodule Emisar.Accounts do
       |> Repo.fetch_and_update(Membership.Query,
         with: fn loaded_membership ->
           case ensure_invite_permitted(loaded_membership.role, subject) do
-            :ok -> Membership.Changeset.resend_invitation(loaded_membership, token_digest)
-            {:error, reason} -> reason
+            :ok ->
+              Membership.Changeset.resend_invitation(
+                loaded_membership,
+                token_digest,
+                loaded_membership.user.email,
+                loaded_membership.user.email_changed_at
+              )
+
+            {:error, reason} ->
+              reason
           end
         end,
         audit: fn updated ->
@@ -4069,6 +4200,7 @@ defmodule Emisar.Accounts do
       |> Membership.Query.by_invitation_token_digest(digest)
       |> Membership.Query.pending_invitation()
       |> Membership.Query.invitation_not_expired()
+      |> Membership.Query.invitation_matches_current_email()
       |> Membership.Query.with_joined_account()
       |> apply_membership_preloads(preloads)
 
@@ -4086,6 +4218,7 @@ defmodule Emisar.Accounts do
     queryable =
       Membership.Query.not_deleted()
       |> Membership.Query.by_invitation_token_digest(digest)
+      |> Membership.Query.invitation_matches_current_email()
       |> Membership.Query.with_joined_account()
 
     case Repo.peek(queryable) do
@@ -4105,13 +4238,21 @@ defmodule Emisar.Accounts do
   user holding the token (e.g. a forwarded link) must not be able to burn the
   invitation. Returns `{:error, :unauthorized}` otherwise.
   """
-  def mark_invitation_accepted(%Membership{user_id: user_id} = membership, %Users.User{
-        id: user_id
-      }) do
+  def mark_invitation_accepted(
+        %Membership{user_id: user_id} = membership,
+        token,
+        %Users.User{id: user_id} = user
+      )
+      when is_binary(token) do
     Multi.new()
     |> put_active_account_lock(membership.account_id, :active_account)
     |> Multi.run(:membership, fn repo, _changes ->
-      lock_pending_invitation(repo, membership)
+      with {:ok, loaded_membership} <- lock_pending_invitation(repo, membership, token),
+           true <- loaded_membership.user_id == user.id do
+        {:ok, loaded_membership}
+      else
+        _ -> {:error, :not_found}
+      end
     end)
     |> Multi.update(:accepted, fn %{membership: membership} ->
       Membership.Changeset.accept_invitation(membership)
@@ -4126,7 +4267,8 @@ defmodule Emisar.Accounts do
     end
   end
 
-  def mark_invitation_accepted(%Membership{}, %Users.User{}), do: {:error, :unauthorized}
+  def mark_invitation_accepted(%Membership{}, _token, %Users.User{}),
+    do: {:error, :unauthorized}
 
   @doc """
   Internal — invitation-accept flow: the accept-invite page is a public route
@@ -4137,7 +4279,8 @@ defmodule Emisar.Accounts do
   user since acceptance proves they own the email. Wrapped in a transaction so
   a half-accepted state is impossible.
   """
-  def accept_invitation(%Membership{} = membership, %{} = user_attrs) do
+  def accept_invitation(%Membership{} = membership, token, %{} = user_attrs)
+      when is_binary(token) do
     Multi.new()
     |> put_active_account_lock(membership.account_id, :active_account)
     # Lock + re-judge the invitation FIRST: a token burnt between the
@@ -4145,15 +4288,12 @@ defmodule Emisar.Accounts do
     # acceptor) must fail :not_found here — before register_invited_user
     # could overwrite the winner's display name.
     |> Multi.run(:membership, fn repo, _changes ->
-      with {:ok, loaded_membership} <- lock_pending_invitation(repo, membership) do
+      with {:ok, loaded_membership} <- lock_pending_invitation(repo, membership, token) do
         repo.update(Membership.Changeset.accept_invitation(loaded_membership))
       end
     end)
-    |> Multi.run(:existing_user, fn _repo, _changes ->
-      Users.fetch_user_by_id(membership.user_id)
-    end)
-    |> Multi.run(:user, fn _repo, %{existing_user: existing_user} ->
-      Users.register_invited_user(existing_user, user_attrs)
+    |> Multi.run(:user, fn _repo, %{membership: loaded_membership} ->
+      Users.register_invited_user(loaded_membership.user, user_attrs)
     end)
     |> Multi.insert(:audit, fn %{user: user, membership: updated} ->
       Audit.Events.user_invitation_accepted(user, updated)
@@ -4167,18 +4307,31 @@ defmodule Emisar.Accounts do
 
   # `nil` means the invitation is no longer pending (accepted, expired,
   # revoked, or the membership vanished) — the accept races resolve here.
-  defp lock_pending_invitation(repo, %Membership{id: id}) do
-    loaded_membership =
+  defp lock_pending_invitation(repo, %Membership{id: id, account_id: account_id}, token) do
+    digest = Crypto.user_invite_token_digest(token)
+
+    membership =
       Membership.Query.not_deleted()
       |> Membership.Query.by_id(id)
+      |> Membership.Query.by_account_id(account_id)
+      |> Membership.Query.by_invitation_token_digest(digest)
       |> Membership.Query.pending_invitation()
       |> Membership.Query.invitation_not_expired()
       |> Membership.Query.lock_for_update()
       |> repo.one()
 
-    if loaded_membership,
-      do: {:ok, loaded_membership},
-      else: {:error, :not_found}
+    with %Membership{
+           user_id: user_id,
+           invitation_sent_to: sent_to,
+           invitation_email_changed_at: email_changed_at
+         } = membership
+         when is_binary(sent_to) and is_struct(email_changed_at, DateTime) <- membership,
+         {:ok, %Users.User{} = user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
+         true <- user.email == sent_to and user.email_changed_at == email_changed_at do
+      {:ok, %{membership | user: user}}
+    else
+      _ -> {:error, :not_found}
+    end
   end
 
   defp put_active_account_lock(multi, account_id, key) do

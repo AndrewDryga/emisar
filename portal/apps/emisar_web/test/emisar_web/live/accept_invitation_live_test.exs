@@ -109,7 +109,9 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       # A second holder of the same emailed link accepts while this tab sits
       # on the form, burning the token.
       {:ok, membership} = Accounts.fetch_invitation_by_token(token)
-      {:ok, _} = Accounts.accept_invitation(membership, %{"full_name" => "First Acceptor"})
+
+      {:ok, _} =
+        Accounts.accept_invitation(membership, token, %{"full_name" => "First Acceptor"})
 
       html =
         lv
@@ -122,6 +124,69 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       assert html =~ "no longer available"
       assert html =~ "Go to sign in"
       refute html =~ "accept_form"
+    end
+
+    test "a mounted old link cannot accept after an administrator resends", %{conn: conn} do
+      {_conn, owner, account} = register_and_log_in(conn)
+      subject = owner_subject(owner, account)
+
+      {:ok, %{membership: membership, invitation_token: old_token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(
+            email: "rotated-#{System.unique_integer([:positive])}@example.com",
+            role: "operator",
+            runner_access_mode: "all"
+          ),
+          subject
+        )
+
+      {:ok, old_live, _html} = live(build_conn(), ~p"/accept_invitation/#{old_token}")
+
+      assert {:ok, %{invitation_token: new_token}} =
+               Accounts.resend_account_invitation(membership, subject)
+
+      old_html =
+        old_live
+        |> form("#accept_form", %{"user" => %{"full_name" => "Old Link"}})
+        |> render_submit()
+
+      assert old_html =~ "Invitation unavailable"
+      refute old_html =~ "accept_form"
+
+      {:ok, new_live, _html} = live(build_conn(), ~p"/accept_invitation/#{new_token}")
+
+      new_live
+      |> form("#accept_form", %{"user" => %{"full_name" => "New Link"}})
+      |> render_submit()
+
+      accepted = membership |> Emisar.Repo.reload!() |> Emisar.Repo.preload(:user)
+      assert accepted.user.full_name == "New Link"
+    end
+
+    test "an old-address link neither resolves nor reveals the current address", %{conn: conn} do
+      {_conn, owner, account} = register_and_log_in(conn)
+      original_email = "old-link-#{System.unique_integer([:positive])}@example.com"
+      current_email = "current-#{System.unique_integer([:positive])}@example.com"
+
+      {:ok, %{user: user, invitation_token: token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(
+            email: original_email,
+            role: "operator",
+            runner_access_mode: "all"
+          ),
+          owner_subject(owner, account)
+        )
+
+      user
+      |> Emisar.Users.User.Changeset.email(%{email: current_email})
+      |> Emisar.Repo.update!()
+
+      {:ok, _live, html} = live(build_conn(), ~p"/accept_invitation/#{token}")
+
+      assert html =~ "Invitation unavailable"
+      refute html =~ current_email
+      refute html =~ account.name
     end
   end
 

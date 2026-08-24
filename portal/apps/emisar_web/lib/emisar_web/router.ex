@@ -99,10 +99,6 @@ defmodule EmisarWeb.Router do
   @auth_live_session_keys [
     :magic_link_email,
     :magic_link_expires_at,
-    :magic_link_token_id,
-    :magic_link_nonce,
-    :magic_link_registered,
-    :magic_link_registration_user_id,
     :mfa_pending_user_id,
     :mfa_pending_at,
     :sso_pending_request
@@ -122,18 +118,7 @@ defmodule EmisarWeb.Router do
       end)
       |> Map.new()
 
-    flash = conn.assigns[:flash] || %{}
-
     session
-    |> put_flash_session(flash, :magic_email_attempt)
-    |> put_flash_session(flash, :magic_email_error)
-  end
-
-  defp put_flash_session(session, flash, key) do
-    case Phoenix.Flash.get(flash, key) do
-      nil -> session
-      value -> Map.put(session, Atom.to_string(key), value)
-    end
   end
 
   # -- Health (no logging, no session) --------------------------------
@@ -290,7 +275,6 @@ defmodule EmisarWeb.Router do
     # :magic_link_complete with a short-lived, cookie-bound handoff that sets the
     # session (a LiveView can't set the auth cookie itself).
     post "/sign_in/magic/start", UserSessionController, :magic_link_start
-    post "/sign_up/email", UserSessionController, :registration_email_correction
     get "/sign_in/magic/complete", UserSessionController, :magic_link_complete
     get "/sign_in/magic/:token_id/:secret", UserSessionController, :magic_link_confirm
 

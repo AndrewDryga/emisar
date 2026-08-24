@@ -942,29 +942,48 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "register_owner/2" do
-    test "creates the user, the workspace and their owner membership" do
+  describe "begin_owner_registration/2" do
+    test "validates the workspace and creates only the resumable user" do
       user_attrs = %{email: Fixtures.Random.unique_email(), full_name: "New Owner"}
       account_attrs = Fixtures.Accounts.account_attrs()
 
-      assert {:ok, %User{} = user} = Accounts.register_owner(user_attrs, account_attrs)
+      assert {:ok, %User{} = user} =
+               Accounts.begin_owner_registration(user_attrs, account_attrs)
 
       assert user.email == user_attrs.email
-      assert account = Repo.one(Account)
-      assert account.name == account_attrs.name
-
-      assert membership = Repo.one(Membership)
-      assert membership.role == :owner
-      assert membership.user_id == user.id
-      assert membership.account_id == account.id
+      refute user.full_name
+      refute Repo.one(Account)
+      refute Repo.one(Membership)
     end
 
-    test "an invalid workspace tags the account changeset and rolls the user back" do
+    test "an invitation before inbox proof cannot inherit the submitted profile" do
+      submitted_email = Fixtures.Random.unique_email()
+
+      assert {:ok, %User{} = user} =
+               Accounts.begin_owner_registration(
+                 %{email: submitted_email, full_name: "Unproved Name"},
+                 Fixtures.Accounts.account_attrs()
+               )
+
+      {_inviter, _account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, %{user: invited_user}} =
+               Accounts.invite_user_to_account(
+                 Fixtures.Accounts.invitation_attrs(email: submitted_email),
+                 subject
+               )
+
+      assert invited_user.id == user.id
+      refute invited_user.full_name
+      refute Repo.reload!(user).full_name
+    end
+
+    test "an invalid workspace tags the account changeset and creates no user" do
       user_attrs = %{email: Fixtures.Random.unique_email(), full_name: "New Owner"}
       account_attrs = Fixtures.Accounts.account_attrs(slug: "x")
 
       assert {:error, {:account, changeset}} =
-               Accounts.register_owner(user_attrs, account_attrs)
+               Accounts.begin_owner_registration(user_attrs, account_attrs)
 
       assert "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars" in errors_on(
                changeset
@@ -975,14 +994,15 @@ defmodule Emisar.AccountsTest do
       refute Repo.one(Membership)
     end
 
-    test "a taken email tags the user changeset and writes no workspace" do
-      existing = Fixtures.Users.create_user()
+    test "an established email is neutral and writes no workspace" do
+      existing =
+        Fixtures.Users.create_user()
+        |> Fixtures.Users.set_last_sign_in_at(DateTime.utc_now())
+
       user_attrs = %{email: existing.email, full_name: "Copy Cat"}
 
-      assert {:error, {:user, changeset}} =
-               Accounts.register_owner(user_attrs, Fixtures.Accounts.account_attrs())
-
-      assert "has already been taken" in errors_on(changeset).email
+      assert Accounts.begin_owner_registration(user_attrs, Fixtures.Accounts.account_attrs()) ==
+               {:error, :email_taken}
 
       # `existing` is the only user; the signup's own row never committed.
       assert Repo.one(User).id == existing.id
@@ -990,19 +1010,99 @@ defmodule Emisar.AccountsTest do
       refute Repo.one(Membership)
     end
 
-    test "an account claiming the suggested slug before insert rolls the user back" do
-      account_name = "Slug Race #{System.unique_integer([:positive])}"
-      suggested_slug = Accounts.suggest_unique_slug(account_name)
-      existing = Fixtures.Accounts.create_account(name: "Existing", slug: suggested_slug)
-      user_attrs = %{email: Fixtures.Random.unique_email(), full_name: "New Owner"}
-      account_attrs = %{name: account_name, slug: suggested_slug}
+    test "a confirmed zero-membership user can resume after factor-one completion fails" do
+      existing = Fixtures.Users.create_user()
+      assert %DateTime{} = existing.confirmed_at
 
-      assert {:error, {:account, changeset}} =
-               Accounts.register_owner(user_attrs, account_attrs)
+      assert {:ok, resumed} =
+               Accounts.begin_owner_registration(
+                 %{email: existing.email, full_name: "Ignored"},
+                 Fixtures.Accounts.account_attrs()
+               )
 
-      assert "has already been taken" in errors_on(changeset).slug
-      refute Repo.one(User)
-      assert Repo.one(Account).id == existing.id
+      assert resumed.id == existing.id
+      refute Repo.one(Account)
+      refute Repo.one(Membership)
+    end
+
+    test "any live membership keeps a never-signed-in user on the neutral collision path" do
+      account = Fixtures.Accounts.create_account()
+      existing = Fixtures.Users.create_user(confirmed?: false)
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: existing.id)
+
+      assert Accounts.begin_owner_registration(
+               %{email: existing.email, full_name: "Ignored"},
+               Fixtures.Accounts.account_attrs()
+             ) == {:error, :email_taken}
+    end
+  end
+
+  describe "put_owner_registration_intent/2" do
+    test "retains the workspace name only while the locked user has never joined or signed in" do
+      user = Fixtures.Users.create_user(confirmed?: false)
+
+      assert {:ok,
+              %{
+                owner_registration: %{
+                  account_name: "First Workspace",
+                  full_name: "Final Name"
+                }
+              }} =
+               Multi.new()
+               |> Multi.run(:user, fn repo, _changes ->
+                 Users.fetch_and_lock_user_by_id(user.id, repo)
+               end)
+               |> Accounts.put_owner_registration_intent(%{
+                 account_name: "First Workspace",
+                 full_name: "Final Name"
+               })
+               |> Repo.transaction()
+    end
+
+    test "turns a replay into an ordinary sign-in once the user has signed in" do
+      user =
+        Fixtures.Users.create_user(confirmed?: false)
+        |> Fixtures.Users.set_last_sign_in_at(DateTime.utc_now())
+
+      assert {:ok, %{owner_registration: nil}} =
+               Multi.new()
+               |> Multi.run(:user, fn repo, _changes ->
+                 Users.fetch_and_lock_user_by_id(user.id, repo)
+               end)
+               |> Accounts.put_owner_registration_intent(%{
+                 account_name: "Second Workspace",
+                 full_name: "Final Name"
+               })
+               |> Repo.transaction()
+    end
+  end
+
+  describe "put_owner_registration/2" do
+    test "composes the workspace and owner membership into the caller's transaction" do
+      user = Fixtures.Users.create_user(confirmed?: false)
+
+      assert {:ok, %{account: account, membership: membership, registration: true}} =
+               Multi.new()
+               |> Multi.put(:registration_user, user)
+               |> Accounts.put_owner_registration(%{
+                 account_name: "Deferred Workspace",
+                 full_name: user.full_name
+               })
+               |> Repo.transaction()
+
+      assert account.name == "Deferred Workspace"
+      assert membership.role == :owner
+      assert membership.user_id == user.id
+      assert membership.account_id == account.id
+    end
+
+    test "records an ordinary sign-in without creating workspace rows" do
+      assert {:ok, %{registration: false}} =
+               Multi.new()
+               |> Accounts.put_owner_registration(nil)
+               |> Repo.transaction()
+
+      refute Repo.one(Account)
       refute Repo.one(Membership)
     end
   end
@@ -6061,7 +6161,7 @@ defmodule Emisar.AccountsTest do
     test "an accepted invitation is no longer resendable" do
       {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
-      {:ok, %{membership: membership, user: user}} =
+      {:ok, %{membership: membership, user: user, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
             email: "accepted-resend-#{System.unique_integer([:positive])}@example.test",
@@ -6071,7 +6171,7 @@ defmodule Emisar.AccountsTest do
           subject
         )
 
-      assert {:ok, _accepted} = Accounts.mark_invitation_accepted(membership, user)
+      assert {:ok, _accepted} = Accounts.mark_invitation_accepted(membership, token, user)
       assert Accounts.resend_account_invitation(membership, subject) == {:error, :not_found}
     end
 
@@ -6254,13 +6354,13 @@ defmodule Emisar.AccountsTest do
           subject
         )
 
-      {:ok, _} = Accounts.mark_invitation_accepted(membership, user)
+      {:ok, _} = Accounts.mark_invitation_accepted(membership, token, user)
 
       assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
     end
   end
 
-  describe "mark_invitation_accepted/2" do
+  describe "mark_invitation_accepted/3" do
     test "stamps invitation_accepted_at + clears the token without touching the user" do
       inviter = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
@@ -6275,7 +6375,7 @@ defmodule Emisar.AccountsTest do
 
       email = "joiner-#{System.unique_integer([:positive])}@example.test"
 
-      {:ok, %{membership: membership, user: user}} =
+      {:ok, %{membership: membership, user: user, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
             email: email,
@@ -6287,7 +6387,7 @@ defmodule Emisar.AccountsTest do
 
       # No full_name set — the signed-in-as-self path skips the registration
       # changeset entirely.
-      assert {:ok, accepted} = Accounts.mark_invitation_accepted(membership, user)
+      assert {:ok, accepted} = Accounts.mark_invitation_accepted(membership, token, user)
       assert accepted.invitation_accepted_at != nil
       refute accepted.invitation_token_digest
 
@@ -6323,7 +6423,8 @@ defmodule Emisar.AccountsTest do
 
       attacker = Fixtures.Users.create_user()
 
-      assert Accounts.mark_invitation_accepted(membership, attacker) == {:error, :unauthorized}
+      assert Accounts.mark_invitation_accepted(membership, token, attacker) ==
+               {:error, :unauthorized}
 
       # The token survives, so the real invitee can still accept.
       assert {:ok, found} = Accounts.fetch_invitation_by_token(token)
@@ -6333,7 +6434,7 @@ defmodule Emisar.AccountsTest do
     test "a stale invitation cannot be accepted after the account is disabled" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
-      {:ok, %{membership: membership, user: user}} =
+      {:ok, %{membership: membership, user: user, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
             email: "mark-disabled-#{System.unique_integer([:positive])}@example.test",
@@ -6351,18 +6452,20 @@ defmodule Emisar.AccountsTest do
                  subject
                )
 
-      assert Accounts.mark_invitation_accepted(membership, user) == {:error, :not_found}
+      assert Accounts.mark_invitation_accepted(membership, token, user) ==
+               {:error, :not_found}
+
       reloaded = Repo.reload!(membership)
       assert is_nil(reloaded.invitation_accepted_at)
       assert is_binary(reloaded.invitation_token_digest)
     end
   end
 
-  describe "accept_invitation/2" do
+  describe "accept_invitation/3" do
     test "sets the invitee's name + password, confirms them, and clears the token" do
       {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
-      {:ok, %{membership: membership, user: invitee}} =
+      {:ok, %{membership: membership, user: invitee, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
             email: "accept-#{System.unique_integer([:positive])}@example.test",
@@ -6376,7 +6479,7 @@ defmodule Emisar.AccountsTest do
       refute invitee.confirmed_at
 
       assert {:ok, %{user: %User{} = user, membership: %Membership{} = accepted}} =
-               Accounts.accept_invitation(membership, %{
+               Accounts.accept_invitation(membership, token, %{
                  "full_name" => "Accepted Member",
                  "password" => "a-very-strong-password"
                })
@@ -6392,7 +6495,7 @@ defmodule Emisar.AccountsTest do
     test "the first acceptor wins — a second accept on the burnt token is :not_found" do
       {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
-      {:ok, %{membership: membership}} =
+      {:ok, %{membership: membership, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
             email: "race-#{System.unique_integer([:positive])}@example.test",
@@ -6407,7 +6510,7 @@ defmodule Emisar.AccountsTest do
         "password" => "a-very-strong-password"
       }
 
-      assert {:ok, _} = Accounts.accept_invitation(membership, first_attrs)
+      assert {:ok, _} = Accounts.accept_invitation(membership, token, first_attrs)
 
       # The locked re-judge of the (now non-pending) invitation refuses the
       # second submit before it could overwrite the winner's password.
@@ -6416,13 +6519,14 @@ defmodule Emisar.AccountsTest do
         "password" => "another-strong-password"
       }
 
-      assert Accounts.accept_invitation(membership, second_attrs) == {:error, :not_found}
+      assert Accounts.accept_invitation(membership, token, second_attrs) ==
+               {:error, :not_found}
     end
 
     test "a stale invitation cannot provision a user after the account is disabled" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
-      {:ok, %{membership: membership, user: invitee}} =
+      {:ok, %{membership: membership, user: invitee, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
             email: "accept-disabled-#{System.unique_integer([:positive])}@example.test",
@@ -6445,7 +6549,8 @@ defmodule Emisar.AccountsTest do
         "password" => "a-very-strong-password"
       }
 
-      assert Accounts.accept_invitation(membership, late_attrs) == {:error, :not_found}
+      assert Accounts.accept_invitation(membership, token, late_attrs) ==
+               {:error, :not_found}
 
       {:ok, reloaded} = Users.fetch_user_by_id(invitee.id)
       assert is_nil(reloaded.confirmed_at)

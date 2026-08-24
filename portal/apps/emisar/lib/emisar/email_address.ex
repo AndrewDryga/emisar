@@ -24,7 +24,7 @@ defmodule Emisar.EmailAddress do
   def validate(%Ecto.Changeset{} = changeset, field) do
     changeset
     |> validate_format(field, @format, message: @message)
-    |> validate_length(field, max: @max_length)
+    |> validate_length(field, max: @max_length, count: :bytes)
   end
 
   @doc "The maximum accepted length, for callers that must size a field."

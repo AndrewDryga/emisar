@@ -8,9 +8,8 @@ defmodule EmisarWeb.MagicLinkLiveTest do
   completion live in `UserSessionController` and are tested there.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.Auth
-  alias Emisar.RequestContext
-  alias EmisarWeb.RegistrationHandoff
+  alias Emisar.{Auth, Repo, RequestContext, Throttle}
+  alias Emisar.Auth.UserToken
 
   test "renders the email form that POSTs to the start action", %{conn: conn} do
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic")
@@ -40,36 +39,6 @@ defmodule EmisarWeb.MagicLinkLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
 
     assert html =~ "Use a different email"
-  end
-
-  test "a sent signup can correct the pending email in place", %{conn: conn} do
-    conn =
-      Plug.Test.init_test_session(conn, %{
-        "magic_link_email" => "typo@example.test",
-        "magic_link_registered" => true
-      })
-
-    {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
-
-    assert html =~ ~s(action="/sign_up/email")
-    assert html =~ "Send code to this email"
-    refute html =~ "Use a different email"
-  end
-
-  test "a sent signup resend preserves the signed registration handoff", %{conn: conn} do
-    user_id = Emisar.Repo.generate_id()
-
-    conn =
-      Plug.Test.init_test_session(conn, %{
-        "magic_link_email" => "typo@example.test",
-        "magic_link_registered" => true,
-        "magic_link_registration_user_id" => user_id
-      })
-
-    {:ok, _lv, html} = live(conn, ~p"/sign_in/magic?sent=1")
-
-    assert [_, handoff] = Regex.run(~r/name="registration_handoff"[^>]*value="([^"]+)"/, html)
-    assert RegistrationHandoff.verify(handoff) == {:ok, user_id}
   end
 
   test "?sent=1 inlines the stashed address and offers Resend", %{conn: conn} do
@@ -136,7 +105,7 @@ defmodule EmisarWeb.MagicLinkLiveTest do
           "magic_link_email" => user.email
         })
 
-      %{conn: conn, user: user, secret: secret}
+      %{conn: conn, user: user, token_id: token_id, secret: secret}
     end
 
     test "a wrong code shows an inline error and stays on the page (no redirect)", %{conn: conn} do
@@ -165,6 +134,45 @@ defmodule EmisarWeb.MagicLinkLiveTest do
                render_hook(lv, "verify_code", %{"code" => secret})
 
       assert to =~ "/sign_in/magic/complete?handoff="
+    end
+
+    test "the signed LiveView session never carries the token id or nonce", %{
+      conn: conn,
+      token_id: token_id
+    } do
+      nonce = get_session(conn, :magic_link_nonce)
+      response = get(conn, ~p"/sign_in/magic?sent=1")
+      html = html_response(response, 200)
+      assert [_, signed] = Regex.run(~r/data-phx-session="([^"]+)"/, html)
+
+      salt = EmisarWeb.Endpoint.config(:live_view)[:signing_salt]
+
+      assert {:ok, {6, %{session: exported}}} =
+               Phoenix.Token.verify(EmisarWeb.Endpoint, salt, signed)
+
+      refute Map.has_key?(exported, "magic_link_token_id")
+      refute Map.has_key?(exported, "magic_link_nonce")
+      refute inspect(exported) =~ token_id
+      refute inspect(exported) =~ nonce
+    end
+
+    test "the socket IP cap rejects before touching even a correct factor", %{
+      conn: conn,
+      token_id: token_id,
+      secret: secret
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      ip_address = EmisarWeb.RequestContext.from_conn(conn).ip_address
+
+      for _ <- 1..30 do
+        assert Throttle.check("magic_link_verify", ip_address, 30, 60_000) == :ok
+      end
+
+      {:ok, live, _html} = live(conn, ~p"/sign_in/magic?sent=1")
+      assert render_hook(live, "verify_code", %{"code" => secret}) =~ "match or has expired"
+
+      assert %UserToken{context: "magic_link", remaining_attempts: 5} =
+               Repo.get!(UserToken, token_id)
     end
 
     test "a code with no token in the session (direct nav / unknown email) is refused inline", %{

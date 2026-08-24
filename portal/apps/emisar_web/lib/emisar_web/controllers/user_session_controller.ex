@@ -11,9 +11,8 @@ defmodule EmisarWeb.UserSessionController do
   """
 
   use EmisarWeb, :controller
-  alias Emisar.{Auth, Throttle, Users}
+  alias Emisar.{Auth, Config, Throttle, Users}
   alias EmisarWeb.Analytics
-  alias EmisarWeb.CoreComponents
   alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff}
   alias EmisarWeb.{RecentAccounts, RegistrationHandoff, RequestContext}
   alias EmisarWeb.{ReturnTo, UserAuth}
@@ -34,7 +33,6 @@ defmodule EmisarWeb.UserSessionController do
        [bucket: "sign_in", limit: 30, window_ms: 60_000]
        when action in [
               :magic_link_start,
-              :registration_email_correction,
               :magic_link_complete,
               :magic_link_confirm
             ]
@@ -49,116 +47,75 @@ defmodule EmisarWeb.UserSessionController do
   def magic_link_start(conn, %{"user" => %{"email" => email}} = params) when is_binary(email) do
     context = RequestContext.from_conn(conn)
     return_to = ReturnTo.app_path(params["return_to"])
-    registration_handoff = params["registration_handoff"]
+    handoff = params["registration_handoff"]
+    prior_token_id = get_session(conn, :magic_link_token_id)
     # Throttle by recipient so the form can't bomb an inbox — an ETS-bucket key,
     # not a DB lookup (citext owns DB comparison), so the no-app-downcase rule
     # doesn't apply.
     trimmed = String.trim(email)
     key = String.downcase(trimmed)
 
-    conn =
-      with :ok <- Throttle.check("magic_link", key, 5, 900_000),
-           {:ok, user} <- Users.fetch_user_by_email(email),
-           {:ok, %{token_id: token_id, nonce: nonce}} <-
-             Auth.request_magic_link(user, context,
-               account_ref: branded_account_ref(return_to),
-               return_to: return_to
-             ) do
-        registration_user_id = registration_user_id(registration_handoff, user)
-        registered? = is_binary(registration_user_id)
+    case Throttle.check("magic_link", key, 5, 900_000) do
+      :ok ->
+        conn = clear_magic_request(conn)
 
+        conn =
+          with {:ok, user} <- Users.fetch_user_by_email(email),
+               {:ok, %{token_id: token_id, nonce: nonce}} <-
+                 Auth.request_magic_link(user, context,
+                   account_ref: branded_account_ref(return_to),
+                   return_to: return_to,
+                   owner_registration: owner_registration(handoff, user),
+                   prior_magic_link_token_id: prior_token_id
+                 ) do
+            put_magic_request(conn, token_id, nonce)
+            # The LiveView verifies the typed code (the nonce isn't readable from JS),
+            # so it reads token_id + nonce from the encrypted session; the cookie stays
+            # for the email-link path and the sign-in-completion browser binding.
+          else
+            # An unknown email, or a branded request naming a team that isn't
+            # available, stays silent — same "sent" page either way, so the response
+            # never reveals whether the address is an account or the team exists.
+            _ -> put_decoy_magic_request(conn)
+          end
+
+        finish_magic_request(conn, trimmed, return_to)
+
+      {:error, :rate_limited} when is_binary(handoff) ->
+        # A first signup request has no server-side factor from which a later
+        # resend could recover its workspace intent. Keep the operator on signup
+        # so they can retry the same neutral submission after the recipient cap.
         conn
-        |> Analytics.track_sign_up_started(registered?)
-        |> put_magic_cookie(token_id, nonce, registration_user_id)
-        # The LiveView verifies the typed code (the nonce isn't readable from JS),
-        # so it reads token_id + nonce from the encrypted session; the cookie stays
-        # for the email-link path and the sign-in-completion browser binding.
-        |> put_session(:magic_link_token_id, token_id)
-        |> put_session(:magic_link_nonce, nonce)
-        |> put_session(:magic_link_registered, registered?)
-        |> put_magic_registration_user_id(registration_user_id)
-      else
-        # Surfacing the throttle is safe: it's checked BEFORE the user lookup and
-        # fires identically for real and unknown addresses, so it can't leak
-        # account existence — only that this address has asked too often.
-        {:error, :rate_limited} ->
-          put_flash(
-            conn,
-            :error,
-            "You've asked for several sign-in emails for that address. Wait a few minutes, then resend."
-          )
+        |> clear_magic_request()
+        |> put_flash(
+          :error,
+          "You've asked for several sign-in emails for that address. Wait a few minutes, then try signup again."
+        )
+        |> redirect(to: ~p"/sign_up")
 
-        # An unknown email, or a branded request naming a team that isn't
-        # available, stays silent — same "sent" page either way, so the response
-        # never reveals whether the address is an account or the team exists.
-        _ ->
-          conn
-      end
-
-    conn
-    # Stash the typed address + the code's expiry so the "sent" page can offer
-    # Resend without a retype and count the code down to expiry. Both are uniform
-    # for any address (their own input + a fixed window), so neither leaks whether
-    # the address is an account.
-    |> put_session(:magic_link_email, trimmed)
-    |> put_session(:magic_link_expires_at, magic_link_expiry())
-    |> put_magic_return_to(return_to)
-    |> redirect(to: ~p"/sign_in/magic?sent=1")
-  end
-
-  def magic_link_start(conn, _params), do: redirect(conn, to: ~p"/sign_in/magic?sent=1")
-
-  @doc """
-  Signup recovery for a typo in the just-submitted email. Only the same browser
-  that holds the pending registration magic cookie can change it.
-  """
-  def registration_email_correction(conn, %{"user" => %{"email" => email}})
-      when is_binary(email) do
-    context = RequestContext.from_conn(conn)
-    trimmed = String.trim(email)
-    key = String.downcase(trimmed)
-
-    with {:ok, token_id, _nonce, registration_user_id} when is_binary(registration_user_id) <-
-           read_magic_cookie(conn),
-         :ok <- Throttle.check("magic_link", key, 5, 900_000),
-         {:ok, %{token_id: new_token_id, nonce: nonce}} <-
-           Auth.correct_registration_email(token_id, registration_user_id, trimmed, context) do
-      conn
-      |> put_magic_cookie(new_token_id, nonce, registration_user_id)
-      |> put_session(:magic_link_token_id, new_token_id)
-      |> put_session(:magic_link_nonce, nonce)
-      |> put_session(:magic_link_registered, true)
-      |> put_session(:magic_link_registration_user_id, registration_user_id)
-      |> put_session(:magic_link_email, trimmed)
-      |> put_session(:magic_link_expires_at, magic_link_expiry())
-      |> put_flash(:info, "We updated your signup email and sent a new code.")
-      |> redirect(to: ~p"/sign_in/magic?sent=1")
-    else
       {:error, :rate_limited} ->
+        # A resend must not replace a still-live real factor (and its server-side
+        # registration intent) with a decoy. With no prior browser state, install
+        # the same-shaped decoy used for any other silent request.
+        conn =
+          if magic_request_present?(conn) do
+            conn
+          else
+            conn |> clear_magic_request() |> put_decoy_magic_request()
+          end
+
         conn
         |> put_flash(
           :error,
           "You've asked for several sign-in emails for that address. Wait a few minutes, then resend."
         )
         |> redirect(to: ~p"/sign_in/magic?sent=1")
-
-      {:error, %Ecto.Changeset{} = changeset} ->
-        conn
-        |> put_flash(:magic_email_attempt, trimmed)
-        |> put_flash(:magic_email_error, email_error(changeset))
-        |> redirect(to: ~p"/sign_in/magic?sent=1")
-
-      _ ->
-        conn
-        |> put_flash(:error, "That signup session expired. Create your account again.")
-        |> redirect(to: ~p"/sign_up")
     end
   end
 
-  def registration_email_correction(conn, _params) do
+  def magic_link_start(conn, _params) do
     conn
-    |> put_flash(:magic_email_attempt, "")
-    |> put_flash(:magic_email_error, "Check this email and try again.")
+    |> clear_magic_request()
     |> redirect(to: ~p"/sign_in/magic?sent=1")
   end
 
@@ -168,15 +125,21 @@ defmodule EmisarWeb.UserSessionController do
     |> DateTime.to_iso8601()
   end
 
-  defp email_error(%Ecto.Changeset{} = changeset) do
-    changeset
-    |> Ecto.Changeset.traverse_errors(&CoreComponents.translate_error/1)
-    |> Map.get(:email, [])
-    |> List.first()
-    |> case do
-      message when is_binary(message) -> message
-      _ -> "Check this email and try again."
-    end
+  defp finish_magic_request(conn, email, return_to) do
+    conn
+    # Stash the typed address + the code's expiry so the "sent" page can offer
+    # Resend without a retype and count the code down to expiry. Both are uniform
+    # for any address (their own input + a fixed window), so neither leaks whether
+    # the address is an account.
+    |> put_session(:magic_link_email, email)
+    |> put_session(:magic_link_expires_at, magic_link_expiry())
+    |> put_magic_return_to(return_to)
+    |> redirect(to: ~p"/sign_in/magic?sent=1")
+  end
+
+  defp magic_request_present?(conn) do
+    is_binary(get_session(conn, :magic_link_token_id)) and
+      is_binary(get_session(conn, :magic_link_nonce))
   end
 
   @doc """
@@ -186,10 +149,15 @@ defmodule EmisarWeb.UserSessionController do
   handoff URL is useless elsewhere and a replay fails once the cookie is cleared.
   """
   def magic_link_complete(conn, %{"handoff" => handoff}) do
-    with {:ok, {user_id, registered?, token_id}} <- MagicLinkHandoff.verify(handoff),
-         {:ok, cookie_token_id, _nonce, _flag} <- read_magic_cookie(conn),
+    with {:ok, {user_id, token_id}} <- MagicLinkHandoff.verify(handoff),
+         {:ok, cookie_token_id, _nonce} <- read_magic_cookie(conn),
          true <- cookie_token_id == token_id do
-      complete_magic_sign_in(conn, user_id, registered?, RequestContext.from_conn(conn))
+      complete_magic_sign_in(
+        conn,
+        user_id,
+        token_id,
+        RequestContext.from_conn(conn)
+      )
     else
       _ -> conn |> delete_resp_cookie(@magic_cookie) |> restart_magic_sign_in()
     end
@@ -211,16 +179,17 @@ defmodule EmisarWeb.UserSessionController do
     with {:ok, proof} <- MfaChallengeHandoff.verify(handoff),
          user_id when is_binary(user_id) <- Auth.mfa_proof_user_id(proof),
          ^user_id <- get_session(conn, :mfa_pending_user_id),
+         token_id when is_binary(token_id) <- get_session(conn, :mfa_pending_magic_link_token_id),
          true <- mfa_pending_fresh?(conn) do
-      registered? = get_session(conn, :mfa_pending_registered?) || false
       context = RequestContext.from_conn(conn)
-      conn = clear_mfa_pending(conn)
       account_ref = branded_account_ref(get_session(conn, :user_return_to))
 
-      case Auth.complete_magic_link_mfa_sign_in(proof, account_ref, context) do
-        {:ok, user, token, target} ->
+      case Auth.complete_magic_link_mfa_sign_in(proof, token_id, account_ref, context) do
+        {:ok, user, token, target, registered?} ->
           install_magic_link_session(
-            conn,
+            conn
+            |> clear_mfa_pending()
+            |> Analytics.track_sign_up_started(registered?),
             target,
             user,
             token,
@@ -229,10 +198,10 @@ defmodule EmisarWeb.UserSessionController do
           )
 
         {:error, {:account_disabled, account}} ->
-          redirect_to_disabled_account(conn, account)
+          conn |> clear_mfa_pending() |> redirect_to_disabled_account(account)
 
         {:error, _reason} ->
-          restart_mfa_sign_in(conn)
+          conn |> clear_mfa_pending() |> restart_mfa_sign_in()
       end
     else
       _ -> conn |> clear_mfa_pending() |> restart_mfa_sign_in()
@@ -251,7 +220,7 @@ defmodule EmisarWeb.UserSessionController do
     |> UserAuth.log_out_user()
   end
 
-  # The email-link path: read the cookie's nonce + registered flag, verify BOTH
+  # The email-link path: read the cookie's nonce, verify BOTH
   # halves (the URL's secret + the cookie's nonce) against the URL's token, sign
   # in. `prep` threads the link's `?return_to` into the session before login. (The
   # typed-code path verifies in `MagicLinkLive` and completes via
@@ -263,14 +232,12 @@ defmodule EmisarWeb.UserSessionController do
     # uppercase letters + digits (Emisar.Crypto).
     secret = secret |> to_string() |> String.trim() |> String.upcase()
 
-    with {:ok, cookie_token_id, nonce, registration_user_id} <- read_magic_cookie(conn),
+    with {:ok, cookie_token_id, nonce} <- read_magic_cookie(conn),
          true <- cookie_token_id == link_token_id,
          {:ok, user} <- Auth.verify_magic_link(link_token_id, secret, nonce, context) do
-      registered? = is_binary(registration_user_id)
-
       conn
       |> prep.()
-      |> complete_magic_sign_in(user.id, registered?, context)
+      |> complete_magic_sign_in(user.id, link_token_id, context)
     else
       _ ->
         conn
@@ -283,18 +250,35 @@ defmodule EmisarWeb.UserSessionController do
     end
   end
 
-  defp put_magic_cookie(conn, token_id, nonce, registration_user_id) do
-    registration_ref =
-      if is_binary(registration_user_id),
-        do: "user:#{registration_user_id}",
-        else: "-"
-
+  defp put_magic_cookie(conn, token_id, nonce) do
     put_resp_cookie(
       conn,
       @magic_cookie,
-      "#{token_id}:#{nonce}:#{registration_ref}",
-      @magic_cookie_opts
+      "#{token_id}:#{nonce}",
+      magic_cookie_opts()
     )
+  end
+
+  defp magic_cookie_opts do
+    Keyword.put(
+      @magic_cookie_opts,
+      :secure,
+      Config.get_env(:emisar_web, :force_secure_cookies, false)
+    )
+  end
+
+  defp put_magic_request(conn, token_id, nonce) do
+    conn
+    |> put_magic_cookie(token_id, nonce)
+    |> put_session(:magic_link_token_id, token_id)
+    |> put_session(:magic_link_nonce, nonce)
+  end
+
+  # An unknown/unavailable request carries indistinguishable browser state, but
+  # the random id resolves to no database row and therefore grants nothing.
+  defp put_decoy_magic_request(conn) do
+    %{token_id: token_id, nonce: nonce} = Auth.magic_link_decoy()
+    put_magic_request(conn, token_id, nonce)
   end
 
   defp put_magic_return_to(conn, nil), do: conn
@@ -305,15 +289,9 @@ defmodule EmisarWeb.UserSessionController do
 
     case conn.cookies[@magic_cookie] do
       value when is_binary(value) ->
-        case String.split(value, ":", parts: 3) do
-          [token_id, nonce, registration_ref] when token_id != "" and nonce != "" ->
-            registration_user_id =
-              case registration_ref do
-                "user:" <> user_id -> user_id
-                _ -> nil
-              end
-
-            {:ok, token_id, nonce, registration_user_id}
+        case String.split(value, ":", parts: 2) do
+          [token_id, nonce] when token_id != "" and nonce != "" ->
+            {:ok, token_id, nonce}
 
           _ ->
             :error
@@ -337,21 +315,28 @@ defmodule EmisarWeb.UserSessionController do
 
   defp put_return_to(conn, _params), do: conn
 
-  defp registration_user_id(handoff, %Users.User{id: user_id, confirmed_at: nil}) do
+  defp owner_registration(handoff, %Users.User{id: user_id})
+       when is_binary(handoff) do
     case RegistrationHandoff.verify(handoff) do
-      {:ok, ^user_id} -> user_id
-      _ -> nil
+      {:ok, {^user_id, account_name, full_name}}
+      when is_binary(account_name) and (is_binary(full_name) or is_nil(full_name)) ->
+        %{account_name: account_name, full_name: full_name}
+
+      _ ->
+        nil
     end
   end
 
-  defp registration_user_id(_handoff, %Users.User{}), do: nil
+  defp owner_registration(_handoff, %Users.User{}), do: nil
 
-  defp put_magic_registration_user_id(conn, registration_user_id)
-       when is_binary(registration_user_id),
-       do: put_session(conn, :magic_link_registration_user_id, registration_user_id)
-
-  defp put_magic_registration_user_id(conn, _),
-    do: delete_session(conn, :magic_link_registration_user_id)
+  defp clear_magic_request(conn) do
+    conn
+    |> delete_resp_cookie(@magic_cookie)
+    |> delete_session(:magic_link_token_id)
+    |> delete_session(:magic_link_nonce)
+    |> delete_session(:magic_link_email)
+    |> delete_session(:magic_link_expires_at)
+  end
 
   # A sign-in begun on a team's branded page carries a `/app/<slug>` return_to.
   # `Auth.resolve_post_auth_account/2` decides the landing account; when the
@@ -369,14 +354,16 @@ defmodule EmisarWeb.UserSessionController do
   # The verified id is only a name for the partial-auth marker, which grants no
   # access: it mints no `:user_token`, so `require_authenticated_user` blocks
   # every /app route.
-  defp complete_magic_sign_in(conn, user_id, registered?, context) when is_binary(user_id) do
-    conn = delete_resp_cookie(conn, @magic_cookie)
+  defp complete_magic_sign_in(conn, user_id, token_id, context)
+       when is_binary(user_id) and is_binary(token_id) do
     account_ref = branded_account_ref(get_session(conn, :user_return_to))
 
-    case Auth.complete_magic_link_sign_in(user_id, account_ref, context) do
-      {:ok, user, token, target} ->
+    case Auth.complete_magic_link_sign_in(user_id, token_id, account_ref, context) do
+      {:ok, user, token, target, registered?} ->
         install_magic_link_session(
-          conn,
+          conn
+          |> clear_magic_request()
+          |> Analytics.track_sign_up_started(registered?),
           target,
           user,
           token,
@@ -386,13 +373,14 @@ defmodule EmisarWeb.UserSessionController do
 
       {:error, :mfa_required} ->
         conn
+        |> clear_magic_request()
         |> put_session(:mfa_pending_user_id, user_id)
-        |> put_session(:mfa_pending_registered?, registered?)
+        |> put_session(:mfa_pending_magic_link_token_id, token_id)
         |> put_session(:mfa_pending_at, System.system_time(:second))
         |> redirect(to: ~p"/sign_in/mfa")
 
       {:error, {:account_disabled, account}} ->
-        redirect_to_disabled_account(conn, account)
+        conn |> clear_magic_request() |> redirect_to_disabled_account(account)
 
       {:error, _reason} ->
         restart_magic_sign_in(conn)
@@ -402,16 +390,15 @@ defmodule EmisarWeb.UserSessionController do
   defp clear_mfa_pending(conn) do
     conn
     |> delete_session(:mfa_pending_user_id)
-    |> delete_session(:mfa_pending_registered?)
+    |> delete_session(:mfa_pending_magic_link_token_id)
     |> delete_session(:mfa_pending_at)
   end
 
-  # Factor one is spent when this marker is written — the magic-link token is
-  # already consumed — so the marker IS the record that it was passed. Without a
-  # deadline it lived for the whole browser-session lifetime of the encrypted
-  # cookie: someone who walked away from a shared machine mid-challenge left a
-  # standing half-authentication that only needed the second factor, weeks
-  # later. Ten minutes is the window the emailed code itself gets.
+  # Factor one remains as the exact server-side factor the final session mint
+  # consumes, while this marker is the browser's right to add factor two. Without
+  # a deadline, someone who walked away from a shared machine mid-challenge would
+  # leave a standing half-authentication for the life of the browser session.
+  # Ten minutes matches the verified inbox factor's own completion window.
   @mfa_pending_ttl_seconds 600
 
   defp mfa_pending_fresh?(conn) do

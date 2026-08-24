@@ -8,6 +8,7 @@ defmodule Emisar.Auth.UserToken.Query do
   @session_validity_in_days 60
   @confirm_validity_in_days 7
   @magic_link_validity_in_minutes 15
+  @magic_link_verified_validity_in_minutes 10
   @email_change_validity_in_minutes 15
   @mfa_enrollment_validity_in_minutes 15
 
@@ -19,6 +20,9 @@ defmodule Emisar.Auth.UserToken.Query do
 
   def by_context(queryable \\ all(), context) when is_binary(context),
     do: where(queryable, [tokens: t], t.context == ^context)
+
+  def by_contexts(queryable \\ all(), contexts) when is_list(contexts),
+    do: where(queryable, [tokens: t], t.context in ^contexts)
 
   @doc "Sessions authenticated through one of `identity_ids` — an account's own SSO connections."
   def by_user_identity_ids(queryable \\ all(), identity_ids) when is_list(identity_ids),
@@ -53,6 +57,10 @@ defmodule Emisar.Auth.UserToken.Query do
 
   @doc "Validity window of a split-code magic-link code, in minutes — for the sent-page countdown."
   def magic_link_validity_in_minutes, do: @magic_link_validity_in_minutes
+
+  @doc "Validity window after a magic link is verified while an MFA challenge is completed."
+  def magic_link_verified_validity_in_minutes,
+    do: @magic_link_verified_validity_in_minutes
 
   defp validity_in_days("session"), do: @session_validity_in_days
   defp validity_in_days("confirm"), do: @confirm_validity_in_days

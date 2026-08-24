@@ -819,7 +819,7 @@ defmodule Emisar.Audit.Event.Query do
   # event is written.
   @event_type_meta %{
     "account.created" =>
-      {false, false, true, "A workspace was created (at sign-up, before any session exists)."},
+      {false, false, true, "An inbox-proved signup created a workspace and owner membership."},
     "account.updated" => {true, true, true, "An admin changed the workspace's name or slug."},
     "account.require_mfa_set" =>
       {true, true, true, "An admin toggled the workspace-wide two-factor requirement."},

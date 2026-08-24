@@ -9,6 +9,13 @@ defmodule Emisar.Fixtures.Auth do
   alias Emisar.Repo
   alias Emisar.Users.User
 
+  @doc "Persists a raw confirmation factor for a consumer/controller test."
+  def create_confirmation_token!(%User{} = user) do
+    {raw, digest} = Crypto.email_token()
+    Repo.insert!(UserToken.Changeset.hashed(user, digest, "confirm", user.email))
+    raw
+  end
+
   @doc "Backdates one session token's insertion time and returns `:ok`."
   def backdate_session_token!(token, inserted_at)
       when is_binary(token) and is_struct(inserted_at, DateTime) do
@@ -26,8 +33,8 @@ defmodule Emisar.Fixtures.Auth do
   against the user's `mfa_enabled_at`.
 
   Production never mints a session this way — every sign-in flow owns its own
-  provenance (`Auth.complete_magic_link_sign_in/3`,
-  `Auth.complete_magic_link_mfa_sign_in/3`, `Auth.complete_sso_account_sign_in/4`)
+  provenance (`Auth.complete_magic_link_sign_in/4`,
+  `Auth.complete_magic_link_mfa_sign_in/4`, `Auth.complete_sso_account_sign_in/4`)
   precisely so no caller can hand-pick `auth_method`/`mfa_verified_at`. This is
   the test arrange for everything that only needs *a* live session to exist.
   """

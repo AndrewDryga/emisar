@@ -285,8 +285,8 @@ defmodule Emisar.AuthAuditTest do
       {token_id, nonce, secret} = request_magic_link(user)
 
       assert {:ok, _u} = Auth.verify_magic_link(token_id, secret, nonce)
-      # Verifying a factor is not signing in — Users.record_sign_in (the
-      # session layer) is the single writer, so a login audits exactly once
+      # Verifying a factor is not signing in — Users.put_sign_in (composed by
+      # the session layer) is the single writer, so a login audits exactly once
       # and an MFA factor-one alone audits nothing.
       assert events_of(account, "user.signed_in") == []
     end
@@ -332,7 +332,7 @@ defmodule Emisar.AuthAuditTest do
           role: "operator"
         )
 
-      raw = Auth.issue_confirmation_token!(unconfirmed)
+      raw = Fixtures.Auth.create_confirmation_token!(unconfirmed)
       assert {:ok, _} = Auth.confirm_user_by_token(raw)
 
       assert [event] = events_of(account, "user.email_confirmed")
@@ -390,14 +390,17 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["full_name"] == "New Name"
     end
 
-    test "update_user_email success audits with from/to addresses", %{
+    test "confirm_email_change success audits with from/to addresses", %{
       user: user,
       account: account,
       subject: subject
     } do
       new = "renamed-#{System.unique_integer()}@example.test"
 
-      {:ok, _} = Users.update_user_email(new, subject)
+      assert Auth.issue_email_change_code(new, subject) == :ok
+      assert_received {:email, email}
+      assert [code] = Regex.run(~r/\d{6}/, email.text_body)
+      assert {:ok, _updated} = Auth.confirm_email_change(new, code, subject)
 
       assert [event] = events_of(account, "user.email_changed")
       assert event.payload["from"] == user.email
@@ -476,12 +479,18 @@ defmodule Emisar.AuthAuditTest do
       membership: membership
     } do
       # Stamp the membership as pending an invitation, then accept it.
+      {token, digest} = Crypto.user_invite_token()
+
       {:ok, with_token} =
         membership
-        |> Ecto.Changeset.change(invitation_token_digest: "tok-#{System.unique_integer()}")
+        |> Ecto.Changeset.change(
+          invitation_token_digest: digest,
+          invitation_sent_to: member.email,
+          invitation_email_changed_at: member.email_changed_at
+        )
         |> Emisar.Repo.update()
 
-      {:ok, _} = Accounts.mark_invitation_accepted(with_token, member)
+      {:ok, _} = Accounts.mark_invitation_accepted(with_token, token, member)
 
       assert [event] = events_of(account, "membership.invitation_accepted")
       assert event.payload["role"] == "operator"

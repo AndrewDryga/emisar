@@ -1,9 +1,8 @@
 defmodule EmisarWeb.UserSignUpLiveTest do
   @moduledoc """
-  Self-serve sign-up: one form creates the user AND their free-plan
-  workspace, then arms the hidden POST that mails the one-time sign-in
-  link. Passwordless — no credential is set at registration, and the magic-link
-  round-trip is the email-confirmation path.
+  Self-serve sign-up: one form validates the future workspace and creates the
+  resumable user, then arms the hidden POST that mails the one-time sign-in
+  link. The proved inbox factor creates the free workspace and session together.
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Users
@@ -20,6 +19,15 @@ defmodule EmisarWeb.UserSignUpLiveTest do
       },
       overrides
     )
+  end
+
+  defp neutral_response_shape(html) do
+    %{
+      posts_to_magic_start?: html =~ ~s|action="/sign_in/magic/start"|,
+      triggers_post?: html =~ "phx-trigger-action",
+      handoff_fields: length(Regex.scan(~r/name="registration_handoff"/, html)),
+      exposes_taken?: html =~ "has already been taken"
+    }
   end
 
   test "renders the registration form (no password to set)", %{conn: conn} do
@@ -70,7 +78,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     assert redirected_to(get(conn, ~p"/sign_up")) == ~p"/app"
   end
 
-  test "a valid sign-up creates user + workspace and arms the magic-link POST", %{conn: conn} do
+  test "a valid sign-up creates only the pending user and arms the magic-link POST", %{conn: conn} do
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
     params = sign_up_params()
 
@@ -81,23 +89,44 @@ defmodule EmisarWeb.UserSignUpLiveTest do
 
     {:ok, user} = Users.fetch_user_by_email(params["user"]["email"])
     assert [_, handoff] = Regex.run(~r/name="registration_handoff"[^>]*value="([^"]+)"/, html)
-    assert RegistrationHandoff.verify(handoff) == {:ok, user.id}
 
-    assert user.full_name == "Founder Person"
+    assert RegistrationHandoff.verify(handoff) ==
+             {:ok, {user.id, "Founder Co", "Founder Person"}}
+
+    refute user.full_name
     # Email confirmation is a separate step — never auto-confirmed.
     refute user.confirmed_at
 
-    memberships =
-      Emisar.Accounts.Membership.Query.not_deleted()
-      |> Emisar.Accounts.Membership.Query.by_user_id(user.id)
-      |> Emisar.Repo.all()
-      |> Emisar.Repo.preload(:account)
+    # No account or public slug exists until this inbox proves the exact magic
+    # factor; final session minting creates the workspace atomically.
+    refute Emisar.Accounts.Membership.Query.not_deleted()
+           |> Emisar.Accounts.Membership.Query.by_user_id(user.id)
+           |> Emisar.Repo.exists?()
 
-    assert [%{role: :owner, account: %{name: "Founder Co"}}] = memberships
+    refute Emisar.Repo.one(Emisar.Accounts.Account)
+
+    assert_error_sent 404, fn ->
+      get(build_conn(), ~p"/app/founder-co/sign_in")
+    end
 
     # Signup itself stays quiet: the browser's triggered POST to
     # /sign_in/magic/start is the sole email send for the successful path.
     refute_received {:email, _email}
+
+    requested =
+      post(recycle(conn), ~p"/sign_in/magic/start", %{
+        "user" => %{"email" => user.email},
+        "registration_handoff" => handoff
+      })
+
+    assert_received {:email, sent}
+    [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+    completed = get(recycle(requested), ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+    assert get_session(completed, :user_token)
+    assert %Emisar.Accounts.Account{name: "Founder Co"} = Emisar.Repo.one(Emisar.Accounts.Account)
+    assert Emisar.Repo.reload!(user).full_name == "Founder Person"
+    assert html_response(get(build_conn(), ~p"/app/founder-co/sign_in"), 200)
   end
 
   test "an over-long workspace name errors inline and leaves no user behind", %{conn: conn} do
@@ -135,8 +164,10 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     assert Users.fetch_user_by_email(params["user"]["email"]) == {:error, :not_found}
   end
 
-  test "a taken email renders the changeset error inline", %{conn: conn} do
-    existing = Fixtures.Users.create_user()
+  test "a taken email arms the same neutral magic-link POST without a workspace", %{conn: conn} do
+    existing =
+      Fixtures.Users.create_user()
+      |> Fixtures.Users.set_last_sign_in_at(DateTime.utc_now())
 
     {:ok, lv, _html} = live(conn, ~p"/sign_up")
 
@@ -147,7 +178,123 @@ defmodule EmisarWeb.UserSignUpLiveTest do
 
     html = lv |> form("#registration_form", params) |> render_submit()
 
-    assert html =~ "has already been taken"
+    assert html =~ ~s|action="/sign_in/magic/start"|
+    assert html =~ "phx-trigger-action"
+    refute html =~ "has already been taken"
+
+    assert [_, handoff] = Regex.run(~r/name="registration_handoff"[^>]*value="([^"]+)"/, html)
+
+    assert {:ok, {decoy_id, "Founder Co", "Copy Cat"}} =
+             RegistrationHandoff.verify(handoff)
+
+    refute decoy_id == existing.id
+
+    assert Users.fetch_user_by_email(existing.email) == {:ok, existing}
+    refute Emisar.Accounts.Membership.Query.not_deleted() |> Emisar.Repo.one()
+  end
+
+  test "new and existing emails return the same triggered response shape", %{conn: conn} do
+    existing =
+      Fixtures.Users.create_user()
+      |> Fixtures.Users.set_last_sign_in_at(DateTime.utc_now())
+
+    new_params = sign_up_params()
+
+    {:ok, new_live, _html} = live(conn, ~p"/sign_up")
+    new_html = new_live |> form("#registration_form", new_params) |> render_submit()
+
+    {:ok, existing_live, _html} = live(conn, ~p"/sign_up")
+
+    existing_html =
+      existing_live
+      |> form(
+        "#registration_form",
+        sign_up_params(%{
+          "user" => %{"full_name" => "Founder Person", "email" => existing.email}
+        })
+      )
+      |> render_submit()
+
+    assert neutral_response_shape(new_html) == neutral_response_shape(existing_html)
+
+    assert neutral_response_shape(new_html) == %{
+             posts_to_magic_start?: true,
+             triggers_post?: true,
+             handoff_fields: 1,
+             exposes_taken?: false
+           }
+
+    assert [_, new_handoff] =
+             Regex.run(~r/name="registration_handoff"[^>]*value="([^"]+)"/, new_html)
+
+    assert [_, existing_handoff] =
+             Regex.run(~r/name="registration_handoff"[^>]*value="([^"]+)"/, existing_html)
+
+    assert byte_size(new_handoff) == byte_size(existing_handoff)
+    refute new_handoff =~ new_params["user"]["email"]
+    refute existing_handoff =~ existing.id
+  end
+
+  test "invalid workspace data is identical before the email-existence decision", %{conn: conn} do
+    existing = Fixtures.Users.create_user()
+    invalid_name = String.duplicate("x", 81)
+
+    for email <- [Fixtures.Random.unique_email(), existing.email] do
+      {:ok, lv, _html} = live(conn, ~p"/sign_up")
+
+      html =
+        lv
+        |> form(
+          "#registration_form",
+          sign_up_params(%{
+            "account_name" => invalid_name,
+            "user" => %{"full_name" => "Founder", "email" => email}
+          })
+        )
+        |> render_submit()
+
+      assert html =~ "should be at most 80 character(s)"
+      refute html =~ "phx-trigger-action"
+      refute html =~ "has already been taken"
+    end
+  end
+
+  test "the socket submit has an independent per-IP hourly cap", %{conn: conn} do
+    Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+
+    existing =
+      Fixtures.Users.create_user()
+      |> Fixtures.Users.set_last_sign_in_at(DateTime.utc_now())
+
+    params =
+      sign_up_params(%{
+        "user" => %{"full_name" => "Existing Person", "email" => existing.email}
+      })
+
+    for _ <- 1..20 do
+      {:ok, lv, _html} = live(conn, ~p"/sign_up")
+      html = lv |> form("#registration_form", params) |> render_submit()
+      assert html =~ "phx-trigger-action"
+    end
+
+    fresh_email = Fixtures.Random.unique_email()
+
+    fresh_params =
+      sign_up_params(%{
+        "account_name" => "Rate Limited Workspace",
+        "user" => %{"full_name" => "Fresh Person", "email" => fresh_email}
+      })
+
+    {:ok, limited_live, _html} = live(conn, ~p"/sign_up")
+    limited_html = limited_live |> form("#registration_form", fresh_params) |> render_submit()
+
+    assert limited_html =~ "Too many signup attempts"
+    refute limited_html =~ "phx-trigger-action"
+    assert Users.fetch_user_by_email(existing.email) == {:ok, existing}
+    assert Users.fetch_user_by_email(fresh_email) == {:error, :not_found}
+    refute Emisar.Repo.get_by(Emisar.Accounts.Account, name: "Rate Limited Workspace")
+    refute_received {:email, _email}
+    refute Emisar.Accounts.Membership.Query.not_deleted() |> Emisar.Repo.one()
   end
 
   test "phx-change validation keeps the typed workspace name", %{conn: conn} do
@@ -189,7 +336,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
       |> form("#registration_form", sign_up_params(%{"user" => %{"email" => long_email}}))
       |> render_change()
 
-    assert html =~ "should be at most 254 character"
+    assert html =~ "should be at most 254 byte"
   end
 
   test "the validate (phx-change) path writes nothing to the DB", %{conn: conn} do
@@ -220,7 +367,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
 
     html = lv |> form("#registration_form", params) |> render_submit()
 
-    # It proceeds to the magic-link POST — the workspace was created, no crash.
+    # It proceeds to the magic-link POST; the workspace remains deferred until proof.
     assert html =~ ~s|action="/sign_in/magic/start"|
     {:ok, user} = Users.fetch_user_by_email(email)
     assert user.full_name in [nil, ""]

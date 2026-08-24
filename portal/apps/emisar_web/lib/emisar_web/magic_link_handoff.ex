@@ -16,12 +16,11 @@ defmodule EmisarWeb.MagicLinkHandoff do
   @salt "magic_link signin handoff"
   @max_age_seconds 30
 
-  @doc "Signs `{user_id, registered?, token_id}` into an opaque handoff string."
-  def sign(user_id, registered?, token_id)
-      when is_binary(user_id) and is_boolean(registered?) and is_binary(token_id),
-      do: Phoenix.Token.sign(EmisarWeb.Endpoint, @salt, {user_id, registered?, token_id})
+  @doc "Signs `{user_id, token_id}` into an opaque handoff string."
+  def sign(user_id, token_id) when is_binary(user_id) and is_binary(token_id),
+    do: Phoenix.Token.sign(EmisarWeb.Endpoint, @salt, {user_id, token_id})
 
-  @doc "Verifies a handoff → `{:ok, {user_id, registered?, token_id}} | {:error, reason}`."
+  @doc "Verifies a handoff → `{:ok, {user_id, token_id}} | {:error, reason}`."
   def verify(handoff) when is_binary(handoff),
     do: Phoenix.Token.verify(EmisarWeb.Endpoint, @salt, handoff, max_age: @max_age_seconds)
 

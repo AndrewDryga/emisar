@@ -613,39 +613,10 @@ defmodule Emisar.Auth do
 
   # -- Magic link -------------------------------------------------------
 
-  # Shared prefix of the single-use token flows (magic link / password
-  # reset / confirm): locks the still-valid token row, then resolves its
-  # user — both inside the transaction, so a double-submitted link
-  # serializes on the row lock and the loser sees the token already
-  # gone instead of raising a stale-delete.
-  defp verified_token_multi(digest, context) do
-    Multi.new()
-    |> Multi.run(:token, fn repo, _changes ->
-      loaded_token =
-        UserToken.Query.by_token_digest(digest)
-        |> UserToken.Query.by_context(context)
-        |> UserToken.Query.not_expired(context)
-        |> UserToken.Query.lock_for_update()
-        |> repo.one()
-
-      if loaded_token, do: {:ok, loaded_token}, else: {:error, :invalid_or_expired}
-    end)
-    |> Multi.run(:token_user, fn _repo, %{token: token} ->
-      case Users.fetch_user_by_id(token.user_id) do
-        {:ok, user} ->
-          {:ok, user}
-
-        # A soft-deleted user behind a still-live token is the same
-        # outcome for the caller: the link no longer works.
-        {:error, :not_found} ->
-          {:error, :invalid_or_expired}
-      end
-    end)
-  end
-
   # Online-guess budget for the alphanumeric magic-link secret. The nonce carries
   # the real entropy; this caps brute-force by anyone who somehow has it.
   @magic_link_attempts 5
+  @magic_link_contexts ["magic_link", "magic_link_verified"]
 
   @doc """
   Internal — pre-auth: the whole magic-link request. Issues a split-code token
@@ -657,6 +628,12 @@ defmodule Emisar.Auth do
   request came from, or `nil` for an unbranded sign-in; a disabled, deleted,
   unknown, or malformed ref is `{:error, :not_found}` and issues + sends nothing.
   `:return_to` — the already-validated local path carried into the emailed link.
+  `:owner_registration` — the validated workspace + display-name intent
+  recovered from the encrypted signup handoff, or `nil`; it stays on the
+  server-side factor until the final session transaction applies the proved
+  profile and creates the workspace atomically.
+  `:prior_magic_link_token_id` — the exact browser-bound factor being replaced
+  by a resend; its still-live server-side registration intent is inherited.
 
   Returns `{:ok, %{token_id: id, nonce: nonce, delivery: delivery}}` — the caller
   keeps `nonce` browser-side (a short-lived cookie) — where `delivery` is
@@ -665,8 +642,26 @@ defmodule Emisar.Auth do
   """
   def request_magic_link(%Users.User{} = user, %RequestContext{} = context, opts \\ []) do
     with :ok <- ensure_magic_link_account(Keyword.get(opts, :account_ref)) do
-      issue_and_deliver_magic_link(user, context, Keyword.get(opts, :return_to))
+      issue_and_deliver_magic_link(
+        user,
+        context,
+        Keyword.get(opts, :return_to),
+        Keyword.get(opts, :owner_registration),
+        Keyword.get(opts, :prior_magic_link_token_id)
+      )
     end
+  end
+
+  @doc """
+  Internal — pre-auth web boundary: generates browser state with the same
+  UUIDv7 id and nonce shape as a real
+  magic-link request, but no persisted factor. The pre-auth web boundary uses it
+  for unavailable/unknown neutral responses; completion necessarily fails
+  because no token row owns the id.
+  """
+  def magic_link_decoy do
+    {nonce, _secret, _digest} = Crypto.magic_link_token()
+    %{token_id: Repo.generate_id(), nonce: nonce}
   end
 
   defp ensure_magic_link_account(nil), do: :ok
@@ -681,67 +676,111 @@ defmodule Emisar.Auth do
   # post-commit side effect the caller reports on rather than a step that can
   # undo an issued factor — a mailer outage must not leave the audit log
   # claiming a link that no longer exists.
-  defp issue_and_deliver_magic_link(%Users.User{} = user, context, return_to) do
-    {token_id, nonce, secret} = issue_magic_link(user, context)
+  defp issue_and_deliver_magic_link(
+         %Users.User{} = user,
+         context,
+         return_to,
+         owner_registration,
+         prior_token_id
+       ) do
+    with {:ok, locked_user, token_id, nonce, secret} <-
+           issue_magic_link(
+             user.id,
+             user.email,
+             context,
+             owner_registration,
+             prior_token_id
+           ) do
+      delivery =
+        case Mailers.UserNotifier.deliver_magic_link(
+               locked_user,
+               token_id,
+               secret,
+               context,
+               return_to
+             ) do
+          {:ok, %{suppressed: true}} -> {:ok, :suppressed}
+          {:ok, _sent} -> {:ok, :sent}
+          {:error, reason} -> {:error, reason}
+        end
 
-    delivery =
-      case Mailers.UserNotifier.deliver_magic_link(user, token_id, secret, context, return_to) do
-        {:ok, %{suppressed: true}} -> {:ok, :suppressed}
-        {:ok, _sent} -> {:ok, :sent}
-        {:error, reason} -> {:error, reason}
-      end
-
-    {:ok, %{token_id: token_id, nonce: nonce, delivery: delivery}}
+      {:ok, %{token_id: token_id, nonce: nonce, delivery: delivery}}
+    end
   end
 
   # Mints the split-code token: the caller keeps `nonce` browser-side, the
   # `secret` (a short alphanumeric code) is emailed alongside a link carrying
   # `token_id` + `secret`. Deletes any prior outstanding magic-link token for the
   # user (single outstanding). Private — the raw secret stays inside Auth.
-  defp issue_magic_link(%Users.User{} = user, context) do
+  defp issue_magic_link(user_id, expected_email, context, owner_registration, prior_token_id) do
     {nonce, secret, digest} = Crypto.magic_link_token()
 
-    prior =
-      UserToken.Query.by_user_id(user.id)
-      |> UserToken.Query.by_context("magic_link")
-
-    {:ok, %{token: token}} =
+    result =
       Multi.new()
-      |> Multi.delete_all(:prior, prior)
-      |> Multi.insert(
-        :token,
-        UserToken.Changeset.magic_link(user, digest, user.email, @magic_link_attempts)
-      )
-      |> Audit.Multi.log_for_user(:audit, user, "user.magic_link_issued",
+      |> Multi.run(:user, fn repo, _changes ->
+        with {:ok, user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
+             true <- user.email == expected_email do
+          {:ok, user}
+        else
+          _ -> {:error, :not_found}
+        end
+      end)
+      |> Multi.run(:requested_owner_registration, fn repo, %{user: user} ->
+        requested_owner_registration(repo, user, owner_registration, prior_token_id)
+      end)
+      |> Accounts.put_owner_registration_intent(fn %{requested_owner_registration: registration} ->
+        registration
+      end)
+      |> Multi.delete_all(:prior, fn %{user: user} ->
+        UserToken.Query.by_user_id(user.id)
+        |> UserToken.Query.by_contexts(@magic_link_contexts)
+      end)
+      |> Multi.insert(:token, fn %{user: user, owner_registration: registration} ->
+        UserToken.Changeset.magic_link(
+          user,
+          digest,
+          user.email,
+          @magic_link_attempts,
+          registration
+        )
+      end)
+      |> Audit.Multi.log_for_user(:audit, nil, "user.magic_link_issued",
+        user_fn: & &1.user,
         extra: [context: context]
       )
       |> Repo.commit_multi()
 
-    {token.id, nonce, secret}
+    case result do
+      {:ok, %{user: user, token: token}} ->
+        {:ok, user, token.id, nonce, secret}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
-  @doc """
-  Internal — signup email correction from the same browser that requested a
-  registration magic link for this exact user. Applies the corrected address,
-  then issues and emails a fresh link to it; a correction carries no branded
-  return path. Returns the same narrowed `{:ok, %{token_id: id, nonce: nonce,
-  delivery: delivery}}` as `request_magic_link/3`, or `{:error,
-  :invalid_or_expired | :already_confirmed | %Ecto.Changeset{}}`.
-  """
-  def correct_registration_email(
-        token_id,
-        registration_user_id,
-        new_email,
-        context \\ %RequestContext{}
-      )
-      when is_binary(token_id) and is_binary(registration_user_id) and is_binary(new_email) do
-    with {:ok, %UserToken{user: %Users.User{} = user}} <-
-           fetch_live_magic_link_token(token_id),
-         :ok <- ensure_registration_token_user(user, registration_user_id),
-         {:ok, %Users.User{} = updated} <-
-           Users.correct_unconfirmed_user_email(user.id, new_email, context: context) do
-      issue_and_deliver_magic_link(updated, context, nil)
-    end
+  defp requested_owner_registration(_repo, %Users.User{}, %{} = registration, _token_id),
+    do: {:ok, registration}
+
+  defp requested_owner_registration(repo, %Users.User{} = user, nil, token_id)
+       when is_binary(token_id) do
+    factor =
+      if Repo.valid_uuid?(token_id) do
+        requested_magic_factor(repo, user, token_id)
+      end
+
+    {:ok, if(factor && factor.sent_to == user.email, do: magic_owner_registration(factor, user))}
+  end
+
+  defp requested_owner_registration(_repo, %Users.User{}, _registration, _token_id),
+    do: {:ok, nil}
+
+  defp requested_magic_factor(repo, %Users.User{} = user, token_id) do
+    UserToken.Query.by_user_id(user.id)
+    |> UserToken.Query.by_contexts(@magic_link_contexts)
+    |> UserToken.Query.not_expired("magic_link")
+    |> UserToken.Query.by_id(token_id)
+    |> repo.peek()
   end
 
   @doc "Validity window of a magic-link code, in minutes — for the sent-page countdown."
@@ -751,8 +790,11 @@ defmodule Emisar.Auth do
   Verifies a split-code magic link by reconstructing `hash(nonce <> secret)` and
   matching it against the locked token row. BOTH halves are required, so an
   intercepted email link/code can't sign in without the originating browser's
-  nonce. Single-use on success; a wrong half spends one of the #{@magic_link_attempts}
-  attempts, and a spent-out or expired token reads as `{:error, :invalid_or_expired}`.
+  nonce. Success promotes that exact row into the short-lived factor the final
+  session transaction consumes; retrying the correct halves is idempotent and
+  never extends that factor's age. A wrong pending half spends one of the
+  #{@magic_link_attempts} attempts, and a spent-out or expired token reads as
+  `{:error, :invalid_or_expired}`.
   """
   def verify_magic_link(token_id, secret, nonce, context \\ %RequestContext{})
       when is_binary(token_id) and is_binary(secret) and is_binary(nonce) do
@@ -764,71 +806,129 @@ defmodule Emisar.Auth do
   end
 
   defp verify_live_magic_link(token_id, secret, nonce, context) do
-    Multi.new()
-    |> Multi.run(:token, fn repo, _changes ->
-      loaded_token =
-        UserToken.Query.by_id(token_id)
-        |> UserToken.Query.by_context("magic_link")
-        |> UserToken.Query.not_expired("magic_link")
-        |> UserToken.Query.with_attempts_remaining()
-        |> UserToken.Query.lock_for_update()
-        |> repo.one()
+    case peek_magic_link_user_id(token_id) do
+      {:ok, user_id} ->
+        Multi.new()
+        |> Multi.run(:user, fn repo, _changes ->
+          Users.fetch_and_lock_user_by_id(user_id, repo)
+        end)
+        |> Multi.run(:token, fn repo, %{user: user} ->
+          loaded_token =
+            UserToken.Query.by_id(token_id)
+            |> UserToken.Query.by_user_id(user.id)
+            |> UserToken.Query.by_contexts(@magic_link_contexts)
+            |> UserToken.Query.lock_for_update()
+            |> repo.one()
 
-      if loaded_token, do: {:ok, loaded_token}, else: {:error, :invalid_or_expired}
-    end)
-    |> Multi.run(:outcome, fn repo, %{token: token} ->
-      if Crypto.secure_compare(Crypto.magic_link_digest(nonce, secret), token.token) do
-        # Both halves match → single-use: delete the token, resolve the user.
-        {:ok, _} = repo.delete(token)
+          if loaded_token, do: {:ok, loaded_token}, else: {:error, :invalid_or_expired}
+        end)
+        |> Multi.run(:outcome, &verify_magic_link_outcome(&1, &2, secret, nonce))
+        |> Multi.merge(fn
+          %{outcome: :promote, token: token, user: user} ->
+            Multi.new()
+            |> Multi.update(
+              :verified_factor,
+              UserToken.Changeset.verified_magic_link(token, DateTime.utc_now())
+            )
+            |> Users.put_email_confirmation(user, "magic_link", context)
 
-        case Users.fetch_user_by_id(token.user_id) do
-          # Completing the emailed code IS proof of inbox ownership — an
-          # unconfirmed user is confirmed here, so the "verify your email"
-          # banner can't nag someone who just authenticated via that inbox.
-          # Audited like the link path (user.email_confirmed, method noted).
-          {:ok, %Users.User{confirmed_at: nil} = user} ->
-            {:ok, confirmed} = Users.mark_user_confirmed(user)
+          %{outcome: :verified, token: token, user: user} ->
+            Multi.new()
+            |> Multi.put(:verified_factor, token)
+            |> Multi.put(:confirmed_user, user)
 
-            :ok =
-              Audit.log_for_user(confirmed, "user.email_confirmed",
-                payload: %{method: "magic_link"},
-                context: context
-              )
+          %{outcome: :invalid, user: user} ->
+            Multi.new()
+            |> Multi.put(:verified_factor, nil)
+            |> Multi.put(:confirmed_user, user)
+        end)
+        |> Repo.commit_multi()
+        |> case do
+          {:ok, %{outcome: outcome, confirmed_user: user}}
+          when outcome in [:promote, :verified] ->
+            {:ok, user}
 
-            {:ok, {:ok, confirmed}}
+          {:ok, %{outcome: :invalid}} ->
+            record_magic_link_failure(token_id, :invalid_or_expired, context)
 
-          {:ok, user} ->
-            {:ok, {:ok, user}}
-
-          # A soft-deleted user behind a live token reads as a dead link.
           {:error, :not_found} ->
-            {:ok, {:error, :invalid_or_expired}}
+            record_magic_link_failure(token_id, :invalid_or_expired, context)
+
+          {:error, reason} ->
+            record_magic_link_failure(token_id, reason, context)
         end
-      else
-        # Wrong nonce or secret → spend one attempt. Returns `{:ok, …}` so the
-        # decrement COMMITS (a Multi rollback would undo the spend).
-        {:ok, _} = repo.update(UserToken.Changeset.decrement_attempts(token))
-        {:ok, {:error, :invalid_or_expired}}
-      end
-    end)
-    # No success audit here — verifying a factor is NOT signing in. The session
-    # layer's `Users.record_sign_in/3` is the ONE writer of `user.signed_in`,
-    # fired when a session is actually established (after MFA, when required);
-    # auditing here too double-wrote every login and stamped "signed in" for
-    # MFA logins that never completed factor two. Failures still audit below.
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{outcome: {:ok, %Users.User{} = user}}} ->
-        {:ok, user}
 
-      # Digest mismatch / soft-deleted user (the Multi committed the attempt spend).
-      {:ok, %{outcome: {:error, reason}}} ->
-        record_magic_link_failure(token_id, reason, context)
-
-      # The token step rolled back — token missing / expired / spent-out.
       {:error, reason} ->
         record_magic_link_failure(token_id, reason, context)
     end
+  end
+
+  defp verify_magic_link_outcome(repo, %{user: user, token: token}, secret, nonce) do
+    valid_digest? = Crypto.secure_compare(Crypto.magic_link_digest(nonce, secret), token.token)
+
+    cond do
+      token.sent_to != user.email ->
+        {:ok, :invalid}
+
+      token.context == "magic_link" and not pending_magic_link_fresh?(token) ->
+        {:ok, :invalid}
+
+      token.context == "magic_link_verified" and
+          not verified_magic_link_reverification_allowed?(token) ->
+        {:ok, :invalid}
+
+      valid_digest? and token.context == "magic_link" ->
+        {:ok, :promote}
+
+      valid_digest? and token.context == "magic_link_verified" ->
+        {:ok, :verified}
+
+      token.context in @magic_link_contexts ->
+        {:ok, _token} = repo.update(UserToken.Changeset.decrement_attempts(token))
+        {:ok, :invalid}
+
+      true ->
+        {:ok, :invalid}
+    end
+  end
+
+  defp pending_magic_link_fresh?(%UserToken{
+         inserted_at: %DateTime{} = inserted_at,
+         remaining_attempts: attempts
+       }) do
+    is_integer(attempts) and attempts > 0 and
+      fresh_since?(inserted_at, UserToken.Query.magic_link_validity_in_minutes() * 60)
+  end
+
+  defp pending_magic_link_fresh?(%UserToken{}), do: false
+
+  defp verified_magic_link_fresh?(%UserToken{metadata: %{"verified_at" => encoded}})
+       when is_binary(encoded) do
+    case DateTime.from_iso8601(encoded) do
+      {:ok, verified_at, 0} ->
+        fresh_since?(
+          verified_at,
+          UserToken.Query.magic_link_verified_validity_in_minutes() * 60
+        )
+
+      _ ->
+        false
+    end
+  end
+
+  defp verified_magic_link_fresh?(%UserToken{}), do: false
+
+  # Retrying the public emailed halves retains the same online-guess budget after
+  # promotion. Final session completion already holds the server-issued handoff,
+  # so it checks only factor age and is not denied by somebody exhausting public
+  # retries against the same row.
+  defp verified_magic_link_reverification_allowed?(
+         %UserToken{remaining_attempts: attempts} = token
+       ),
+       do: is_integer(attempts) and attempts > 0 and verified_magic_link_fresh?(token)
+
+  defp fresh_since?(%DateTime{} = at, max_age_seconds) do
+    DateTime.diff(DateTime.utc_now(), at, :second) in 0..max_age_seconds
   end
 
   # A magic-link sign-in failed. `user.sign_in_failed` is account-scoped, so it
@@ -853,37 +953,18 @@ defmodule Emisar.Auth do
     {:error, reason}
   end
 
-  # Resolve the user behind a magic-link token id WITHOUT the expiry/attempts
-  # filters, so a failed (expired / spent) token still attributes to its owner.
-  defp peek_magic_link_user(token_id) do
-    if Repo.valid_uuid?(token_id) do
-      queryable =
-        UserToken.Query.by_id(token_id)
-        |> UserToken.Query.by_context("magic_link")
-
-      with %UserToken{} = token <- Repo.peek(queryable),
-           {:ok, user} <- Users.fetch_user_by_id(token.user_id) do
-        {:ok, user}
-      else
-        _ -> :error
-      end
-    else
-      :error
-    end
-  end
-
-  defp fetch_live_magic_link_token(token_id) do
+  # The unlocked lookup discovers only which user row to lock first. It grants
+  # no authority: the transaction re-fetches and locks the exact factor after
+  # locking that current user.
+  defp peek_magic_link_user_id(token_id) do
     if Repo.valid_uuid?(token_id) do
       token =
         UserToken.Query.by_id(token_id)
-        |> UserToken.Query.by_context("magic_link")
-        |> UserToken.Query.not_expired("magic_link")
-        |> UserToken.Query.with_attempts_remaining()
-        |> UserToken.Query.with_preloaded_user()
+        |> UserToken.Query.by_contexts(@magic_link_contexts)
         |> Repo.peek()
 
       case token do
-        %UserToken{user: %Users.User{}} = token -> {:ok, token}
+        %UserToken{user_id: user_id} -> {:ok, user_id}
         _ -> {:error, :invalid_or_expired}
       end
     else
@@ -891,10 +972,13 @@ defmodule Emisar.Auth do
     end
   end
 
-  defp ensure_registration_token_user(%Users.User{id: user_id}, registration_user_id) do
-    if Repo.valid_uuid?(registration_user_id) and user_id == registration_user_id,
-      do: :ok,
-      else: {:error, :invalid_or_expired}
+  defp peek_magic_link_user(token_id) do
+    with {:ok, user_id} <- peek_magic_link_user_id(token_id),
+         {:ok, user} <- Users.fetch_user_by_id(user_id) do
+      {:ok, user}
+    else
+      _ -> :error
+    end
   end
 
   # -- Magic-link sign-in completion ------------------------------------
@@ -916,7 +1000,7 @@ defmodule Emisar.Auth do
   session's provenance is fixed — `:magic_link` with no `mfa_verified_at` — so no
   caller can claim a factor it didn't verify.
 
-  Returns `{:ok, user, token, target}` — `user` is the row the minting
+  Returns `{:ok, user, token, target, registered?}` — `user` is the row the minting
   transaction locked and stamped, so the boundary installs the session for the
   state the domain actually signed in rather than its own earlier snapshot, and
   `target` is `{:member, account}`, `:not_member`, or `:no_target` (what the
@@ -924,12 +1008,19 @@ defmodule Emisar.Auth do
   owed, `{:error, {:account_disabled, account}}` when the branded account is on
   hold, or `{:error, :not_found}` when the user no longer resolves.
   """
-  def complete_magic_link_sign_in(user_id, account_ref, %RequestContext{} = context) do
-    with {:ok, user} <- Users.fetch_user_by_id(user_id),
-         :ok <- ensure_mfa_state_current(user, nil) do
+  def complete_magic_link_sign_in(
+        user_id,
+        verified_token_id,
+        account_ref,
+        %RequestContext{} = context
+      ) do
+    with {:ok, user} <- Users.fetch_user_by_id(user_id) do
       target = resolve_post_auth_account(user, account_ref)
 
-      complete_sign_in_for_target(target, &insert_magic_link_session(user, &1, nil, context))
+      complete_sign_in_for_target(
+        target,
+        &insert_magic_link_session(user, verified_token_id, &1, nil, context)
+      )
     end
   end
 
@@ -944,17 +1035,25 @@ defmodule Emisar.Auth do
   the challenge fails closed with no token. Provenance is fixed to `:magic_link`
   with `mfa_verified_at` stamped now.
 
-  Same `{:ok, user, token, target}` success shape as
-  `complete_magic_link_sign_in/3`; `{:error, :mfa_proof_stale}` when the proof no
-  longer matches the row — including a replay of a proof that already completed,
-  since minting stamps the sign-in and moves `updated_at` on — `{:error,
-  {:account_disabled, account}}`, or `{:error, :not_found}`.
+  Same `{:ok, user, token, target, registered?}` success shape as
+  `complete_magic_link_sign_in/4`; `{:error, :mfa_proof_stale}` when the proof no
+  longer matches the row, `{:error, :invalid_or_expired}` when the exact verified
+  inbox factor is stale or already consumed, `{:error, {:account_disabled,
+  account}}`, or `{:error, :not_found}`.
   """
-  def complete_magic_link_mfa_sign_in(proof, account_ref, %RequestContext{} = context) do
+  def complete_magic_link_mfa_sign_in(
+        proof,
+        verified_token_id,
+        account_ref,
+        %RequestContext{} = context
+      ) do
     with {:ok, user} <- Users.fetch_user_by_id(mfa_proof_user_id(proof)) do
       target = resolve_post_auth_account(user, account_ref)
 
-      complete_sign_in_for_target(target, &insert_magic_link_session(user, &1, proof, context))
+      complete_sign_in_for_target(
+        target,
+        &insert_magic_link_session(user, verified_token_id, &1, proof, context)
+      )
     end
   end
 
@@ -965,7 +1064,7 @@ defmodule Emisar.Auth do
 
   defp complete_sign_in_for_target({:member, %Accounts.Account{} = account} = target, mint) do
     case mint.(account) do
-      {:ok, user, token} -> {:ok, user, token, target}
+      {:ok, user, token, registered?} -> {:ok, user, token, target, registered?}
       {:error, :account_disabled} -> {:error, {:account_disabled, account}}
       {:error, reason} -> {:error, reason}
     end
@@ -973,7 +1072,7 @@ defmodule Emisar.Auth do
 
   defp complete_sign_in_for_target(target, mint) do
     case mint.(nil) do
-      {:ok, user, token} -> {:ok, user, token, target}
+      {:ok, user, token, registered?} -> {:ok, user, token, target, registered?}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -993,10 +1092,12 @@ defmodule Emisar.Auth do
   # actually signed in.
   defp insert_magic_link_session(
          %Users.User{} = user,
+         verified_token_id,
          account,
          proof,
          %RequestContext{} = context
-       ) do
+       )
+       when is_binary(verified_token_id) do
     {token, digest} = Crypto.session_token()
     metadata = %{ip_address: context.ip_address, user_agent: context.user_agent}
     # The proof IS factor two, so its presence decides whether this session
@@ -1006,30 +1107,67 @@ defmodule Emisar.Auth do
     Multi.new()
     |> lock_sign_in_account(account)
     |> Multi.run(:user, fn repo, _changes ->
-      lock_signing_in_user(user.id, proof, repo)
+      Users.fetch_and_lock_user_by_id(user.id, repo)
     end)
-    |> Multi.merge(fn %{user: loaded_user} ->
-      Users.put_sign_in(Multi.new(), loaded_user, "magic_link", context)
+    |> Multi.run(:verified_factor, fn repo, %{user: loaded_user} ->
+      lock_verified_magic_link(verified_token_id, loaded_user, repo)
+    end)
+    |> Multi.run(:mfa_state, fn _repo, %{user: loaded_user} ->
+      with :ok <- ensure_mfa_state_current(loaded_user, proof), do: {:ok, proof}
+    end)
+    |> Accounts.put_owner_registration_intent(fn %{
+                                                   user: loaded_user,
+                                                   verified_factor: factor
+                                                 } ->
+      magic_owner_registration(factor, loaded_user)
+    end)
+    |> Multi.merge(fn %{user: loaded_user, owner_registration: registration} ->
+      Multi.new()
+      |> Users.put_owner_registration_profile(loaded_user, registration)
+      |> Accounts.put_owner_registration(registration)
+    end)
+    |> Multi.merge(fn %{registration_user: registration_user} ->
+      Users.put_sign_in(Multi.new(), registration_user, "magic_link", context)
     end)
     |> Multi.insert(:token, fn %{sign_in: signed_in_user} ->
       UserToken.Changeset.session(signed_in_user, digest, metadata, :magic_link, mfa_verified_at)
     end)
-    |> Repo.commit_multi()
+    |> Multi.delete(:consumed_magic_factor, fn %{verified_factor: factor} -> factor end)
+    |> Repo.commit_multi(after_commit: &Accounts.after_membership_activation_committed/1)
     |> case do
-      {:ok, %{sign_in: signed_in_user}} -> {:ok, signed_in_user, token}
-      {:error, reason} -> {:error, reason}
+      {:ok, %{sign_in: signed_in_user, registration: registered?}} ->
+        {:ok, signed_in_user, token, registered?}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
-  defp lock_sign_in_account(multi, nil), do: multi
+  defp magic_owner_registration(
+         %UserToken{
+           metadata: %{
+             "registration_account_name" => account_name,
+             "registration_full_name" => full_name
+           }
+         },
+         %Users.User{}
+       )
+       when is_binary(account_name) and (is_binary(full_name) or is_nil(full_name)),
+       do: %{account_name: account_name, full_name: full_name}
 
-  defp lock_sign_in_account(multi, %Accounts.Account{id: account_id}) do
-    Multi.run(multi, :account, fn repo, _changes ->
-      case Accounts.fetch_and_lock_account(account_id, repo: repo) do
-        {:ok, account} -> {:ok, account}
-        {:error, :not_found} -> {:error, :account_disabled}
-      end
-    end)
+  defp magic_owner_registration(%UserToken{}, %Users.User{}), do: nil
+
+  defp lock_verified_magic_link(token_id, %Users.User{} = user, repo) do
+    factor =
+      UserToken.Query.by_id(token_id)
+      |> UserToken.Query.by_user_id(user.id)
+      |> UserToken.Query.by_context("magic_link_verified")
+      |> UserToken.Query.lock_for_update()
+      |> repo.one()
+
+    if factor && factor.sent_to == user.email && verified_magic_link_fresh?(factor),
+      do: {:ok, factor},
+      else: {:error, :invalid_or_expired}
   end
 
   defp lock_signing_in_user(user_id, proof, repo) do
@@ -1037,6 +1175,17 @@ defmodule Emisar.Auth do
          :ok <- ensure_mfa_state_current(loaded_user, proof) do
       {:ok, loaded_user}
     end
+  end
+
+  defp lock_sign_in_account(multi, nil), do: multi
+
+  defp lock_sign_in_account(multi, %Accounts.Account{id: account_id}) do
+    Multi.run(multi, :sign_in_account, fn repo, _changes ->
+      case Accounts.fetch_and_lock_account(account_id, repo: repo) do
+        {:ok, account} -> {:ok, account}
+        {:error, :not_found} -> {:error, :account_disabled}
+      end
+    end)
   end
 
   # Factor one against an enrolled user is unfinished business, not a session.
@@ -1058,6 +1207,14 @@ defmodule Emisar.Auth do
 
   # Online-guess budget for the 6-digit email-change step-up code.
   @email_change_attempts 5
+  @address_token_contexts [
+    "magic_link",
+    "magic_link_verified",
+    "confirm",
+    "email_change",
+    "mfa_enrollment_pending",
+    "mfa_enrollment"
+  ]
   @email_change_issue_limit 5
   @email_change_issue_window_ms 15 * 60_000
   @inbox_step_up_limit 5
@@ -1094,49 +1251,37 @@ defmodule Emisar.Auth do
            ) do
       {code, digest} = Crypto.credential_step_up_code()
 
-      prior =
-        UserToken.Query.by_user_id(user.id)
-        |> UserToken.Query.by_context("email_change")
-
-      {:ok, _} =
+      result =
         Multi.new()
-        |> Multi.delete_all(:prior, prior)
-        |> Multi.insert(
-          :token,
-          UserToken.Changeset.email_change(user, digest, new_email, @email_change_attempts)
-        )
-        |> Audit.Multi.log_for_user(:audit, user, "user.email_change_requested",
+        |> Multi.run(:user, fn repo, _changes ->
+          Users.fetch_and_lock_user_by_id(user.id, repo)
+        end)
+        |> Multi.delete_all(:prior, fn %{user: loaded_user} ->
+          UserToken.Query.by_user_id(loaded_user.id)
+          |> UserToken.Query.by_context("email_change")
+        end)
+        |> Multi.insert(:token, fn %{user: loaded_user} ->
+          UserToken.Changeset.email_change(
+            loaded_user,
+            digest,
+            new_email,
+            @email_change_attempts
+          )
+        end)
+        |> Audit.Multi.log_for_user(:audit, nil, "user.email_change_requested",
+          user_fn: & &1.user,
           extra: [context: subject.context]
         )
         |> Repo.commit_multi()
 
-      _ = Mailers.UserNotifier.deliver_email_change_code(user, code)
-      :ok
-    end
-  end
+      case result do
+        {:ok, %{user: loaded_user}} ->
+          _ = Mailers.UserNotifier.deliver_email_change_code(loaded_user, code)
+          :ok
 
-  @doc """
-  Verifies an email-change step-up code against the user's locked `email_change`
-  token. Returns `{:ok, new_email}` — the email the code was bound to, for the
-  caller to pass straight to `Users.update_user_email/2` — on a match
-  (single-use: the token is consumed), or `{:error, :invalid}` for a
-  wrong/expired/spent code (a wrong code spends one of the #{@email_change_attempts}
-  attempts). The durable five-per-five-minute inbox budget spans replacement
-  tokens; exhaustion returns `{:error, :rate_limited}` before a token is read or
-  mutated.
-  """
-  def verify_email_change_code(code, %Subject{actor: %Users.User{} = user} = subject)
-      when is_binary(code) do
-    with :ok <-
-           throttle_security_attempt(
-             user,
-             :inbox_step_up,
-             @inbox_step_up_limit,
-             @inbox_step_up_window_ms,
-             subject.context
-           ),
-         {:ok, token} <- consume_credential_step_up_code(code, user, "email_change") do
-      {:ok, token.sent_to}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
@@ -1168,9 +1313,9 @@ defmodule Emisar.Auth do
   @doc """
   Confirm a self-service email change: re-derive the required factor from the
   user's CURRENT row, verify `code` against it (TOTP for an MFA user, the emailed
-  one-time code otherwise), and only on success apply the new email. The commit is
-  gated on a domain-verified step-up HERE — `update_user_email` is never reached
-  without it, so the web decides nothing. `{:ok, user} | {:error, :invalid |
+  one-time code otherwise), and only on success apply the new email. The user
+  change, invalidation of every old address credential, new confirmation token,
+  and audit commit together. `{:ok, user} | {:error, :invalid |
   :replay | :rate_limited | %Ecto.Changeset{}}` — the TOTP branch spends an
   attempt from the shared per-user MFA window, so it is `:rate_limited` once that
   window is exhausted. The emailed-code branch has both its single-use token
@@ -1178,44 +1323,123 @@ defmodule Emisar.Auth do
   """
   def confirm_email_change(new_email, code, %Subject{actor: %Users.User{id: id}} = subject)
       when is_binary(new_email) and is_binary(code) do
-    with {:ok, user} <- Users.fetch_user_by_id(id),
-         {:ok, email} <- verify_email_change_step_up(user, new_email, code, subject),
-         {:ok, updated} <- Users.update_user_email(email, subject) do
-      # The new address lands unconfirmed by construction (User.Changeset.email/2),
-      # so send its confirmation link now rather than making the operator hunt for
-      # the banner's Resend button.
-      :ok = deliver_confirmation_instructions(updated)
-      {:ok, updated}
+    with {:ok, user} <- Users.fetch_user_by_id(id) do
+      case email_change_factor(user) do
+        :totp ->
+          with :ok <- throttle_mfa_challenge(user, subject.context) do
+            apply_email_change(id, new_email, {:mfa, code}, subject)
+          end
+
+        :code ->
+          with :ok <-
+                 throttle_security_attempt(
+                   user,
+                   :inbox_step_up,
+                   @inbox_step_up_limit,
+                   @inbox_step_up_window_ms,
+                   subject.context
+                 ) do
+            apply_email_change(id, new_email, {:email_code, code}, subject)
+          end
+      end
     end
   end
 
   defp email_change_factor(%Users.User{mfa_enabled_at: %DateTime{}}), do: :totp
   defp email_change_factor(%Users.User{}), do: :code
 
-  # MFA-on: the TOTP second factor stands in for re-auth; the requested email is
-  # applied. MFA-off: the emailed code proves current-inbox control AND binds the
-  # target email (the applied email is the token's, not the caller's).
-  defp verify_email_change_step_up(
-         %Users.User{mfa_enabled_at: %DateTime{}} = user,
-         new_email,
-         code,
-         subject
-       ) do
-    with {:ok, _verified} <- verify_mfa(user, code, subject.context), do: {:ok, new_email}
+  defp apply_email_change(user_id, requested_email, factor, %Subject{} = subject) do
+    {raw_confirmation, confirmation_digest} = Crypto.email_token()
+
+    result =
+      Multi.new()
+      |> Multi.run(:user, fn repo, _changes ->
+        Users.fetch_and_lock_user_by_id(user_id, repo)
+      end)
+      |> Multi.run(:factor_outcome, fn repo, %{user: user} ->
+        verify_email_change_factor(repo, user, requested_email, factor)
+      end)
+      |> Multi.merge(fn
+        %{factor_outcome: {:ok, email, factor_user}} ->
+          Multi.new()
+          |> Users.put_email_change(factor_user, email, subject.context)
+          |> Multi.delete_all(:invalidated_address_tokens, fn %{email_change: updated} ->
+            UserToken.Query.by_user_id(updated.id)
+            |> UserToken.Query.by_contexts(@address_token_contexts)
+          end)
+          |> Multi.insert(:confirmation_token, fn %{email_change: updated} ->
+            UserToken.Changeset.hashed(updated, confirmation_digest, "confirm", updated.email)
+          end)
+
+        %{factor_outcome: {:error, _reason}} ->
+          Multi.new()
+      end)
+      |> Repo.commit_multi()
+
+    case result do
+      {:ok, %{factor_outcome: {:ok, _email, _user}, email_change: updated}} ->
+        _ =
+          Mailers.UserNotifier.deliver_confirmation_instructions(updated, raw_confirmation)
+
+        {:ok, updated}
+
+      {:ok, %{factor_outcome: {:error, reason}, user: user}} ->
+        record_email_change_factor_failure(factor, user, reason, subject.context)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
-  defp verify_email_change_step_up(%Users.User{}, _new_email, code, subject) do
-    verify_email_change_code(code, subject)
+  defp verify_email_change_factor(_repo, %Users.User{} = user, requested_email, {:mfa, otp}) do
+    case Users.verify_and_consume_mfa(user.id, otp, []) do
+      {:ok, verified} -> {:ok, {:ok, requested_email, verified}}
+      {:error, :replay} -> {:ok, {:error, :replay}}
+      {:error, _reason} -> {:ok, {:error, :invalid}}
+    end
   end
+
+  defp verify_email_change_factor(repo, %Users.User{mfa_enabled_at: nil} = user, _email, {
+         :email_code,
+         code
+       }) do
+    token =
+      UserToken.Query.by_user_id(user.id)
+      |> UserToken.Query.by_context("email_change")
+      |> UserToken.Query.not_expired("email_change")
+      |> UserToken.Query.with_attempts_remaining()
+      |> UserToken.Query.lock_for_update()
+      |> repo.one()
+
+    cond do
+      is_nil(token) ->
+        {:ok, {:error, :invalid}}
+
+      Crypto.secure_compare(Crypto.hash(code), token.token) ->
+        {:ok, {:ok, token.sent_to, user}}
+
+      true ->
+        {:ok, _token} = repo.update(UserToken.Changeset.decrement_attempts(token))
+        {:ok, {:error, :invalid}}
+    end
+  end
+
+  defp verify_email_change_factor(_repo, %Users.User{}, _email, _factor),
+    do: {:ok, {:error, :invalid}}
+
+  defp record_email_change_factor_failure({:mfa, _otp}, user, reason, context) do
+    Audit.log_for_user(user, "user.mfa_failed",
+      context: context,
+      payload: %{reason: if(reason == :replay, do: "replay", else: "invalid_otp")}
+    )
+
+    {:error, reason}
+  end
+
+  defp record_email_change_factor_failure(_factor, _user, reason, _context),
+    do: {:error, reason}
 
   # -- Email confirmation ----------------------------------------------
-
-  @doc "Internal — the email-confirmation flow (registration / pre-auth) mints the confirm token; no Subject yet."
-  def issue_confirmation_token!(%Users.User{} = user) do
-    {raw, digest} = Crypto.email_token()
-    Repo.insert!(UserToken.Changeset.hashed(user, digest, "confirm", user.email))
-    raw
-  end
 
   @doc """
   Issues a fresh confirmation token and emails the confirm link. The one
@@ -1224,9 +1448,34 @@ defmodule Emisar.Auth do
   Best-effort: returns `:ok` regardless of the mailer result.
   """
   def deliver_confirmation_instructions(%Users.User{} = user) do
-    token = issue_confirmation_token!(user)
-    _ = Mailers.UserNotifier.deliver_confirmation_instructions(user, token)
+    with {:ok, locked_user, token} <- issue_confirmation_token(user.id) do
+      _ = Mailers.UserNotifier.deliver_confirmation_instructions(locked_user, token)
+    end
+
     :ok
+  end
+
+  defp issue_confirmation_token(user_id) do
+    {raw, digest} = Crypto.email_token()
+
+    result =
+      Multi.new()
+      |> Multi.run(:user, fn repo, _changes ->
+        Users.fetch_and_lock_user_by_id(user_id, repo)
+      end)
+      |> Multi.delete_all(:prior, fn %{user: user} ->
+        UserToken.Query.by_user_id(user.id)
+        |> UserToken.Query.by_context("confirm")
+      end)
+      |> Multi.insert(:token, fn %{user: user} ->
+        UserToken.Changeset.hashed(user, digest, "confirm", user.email)
+      end)
+      |> Repo.commit_multi()
+
+    case result do
+      {:ok, %{user: user}} -> {:ok, user, raw}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   def confirm_user_by_token(raw, context \\ %RequestContext{}) when is_binary(raw) do
@@ -1235,18 +1484,48 @@ defmodule Emisar.Auth do
         {:error, :invalid_or_expired}
 
       {:ok, digest} ->
-        verified_token_multi(digest, "confirm")
-        |> Multi.run(:user, fn _repo, %{token_user: user} -> Users.mark_user_confirmed(user) end)
+        confirm_user_by_digest(digest, context)
+    end
+  end
+
+  defp confirm_user_by_digest(digest, context) do
+    pending =
+      UserToken.Query.by_token_digest(digest)
+      |> UserToken.Query.by_context("confirm")
+      |> Repo.peek()
+
+    case pending do
+      %UserToken{user_id: user_id} ->
+        Multi.new()
+        |> Multi.run(:user, fn repo, _changes ->
+          Users.fetch_and_lock_user_by_id(user_id, repo)
+        end)
+        |> Multi.run(:token, fn repo, %{user: user} ->
+          token =
+            UserToken.Query.by_token_digest(digest)
+            |> UserToken.Query.by_user_id(user.id)
+            |> UserToken.Query.by_context("confirm")
+            |> UserToken.Query.not_expired("confirm")
+            |> UserToken.Query.lock_for_update()
+            |> repo.one()
+
+          if token && token.sent_to == user.email,
+            do: {:ok, token},
+            else: {:error, :invalid_or_expired}
+        end)
+        |> Multi.merge(fn %{user: user} ->
+          Users.put_email_confirmation(Multi.new(), user, "confirmation_link", context)
+        end)
         |> Multi.delete(:deleted_token, fn %{token: token} -> token end)
-        |> Audit.Multi.log_for_user(:audit, nil, "user.email_confirmed",
-          extra: [context: context],
-          user_fn: fn %{user: user} -> user end
-        )
         |> Repo.commit_multi()
         |> case do
-          {:ok, %{user: confirmed}} -> {:ok, confirmed}
+          {:ok, %{confirmed_user: confirmed}} -> {:ok, confirmed}
+          {:error, :not_found} -> {:error, :invalid_or_expired}
           {:error, reason} -> {:error, reason}
         end
+
+      _ ->
+        {:error, :invalid_or_expired}
     end
   end
 
@@ -1445,36 +1724,6 @@ defmodule Emisar.Auth do
        do: :ok
 
   defp ensure_mfa_enrollment_email(%Users.User{}), do: {:error, :email_unavailable}
-
-  defp consume_credential_step_up_code(code, %Users.User{} = user, context) do
-    Multi.new()
-    |> Multi.run(:token, fn repo, _changes ->
-      loaded_token =
-        UserToken.Query.by_user_id(user.id)
-        |> UserToken.Query.by_context(context)
-        |> UserToken.Query.not_expired(context)
-        |> UserToken.Query.with_attempts_remaining()
-        |> UserToken.Query.lock_for_update()
-        |> repo.one()
-
-      if loaded_token, do: {:ok, loaded_token}, else: {:error, :invalid}
-    end)
-    |> Multi.run(:outcome, fn repo, %{token: token} ->
-      if Crypto.secure_compare(Crypto.hash(code), token.token) do
-        {:ok, _} = repo.delete(token)
-        {:ok, {:ok, token}}
-      else
-        # Commit the decrement while still returning the domain rejection.
-        {:ok, _} = repo.update(UserToken.Changeset.decrement_attempts(token))
-        {:ok, {:error, :invalid}}
-      end
-    end)
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{outcome: outcome}} -> outcome
-      {:error, _reason} -> {:error, :invalid}
-    end
-  end
 
   defp consume_mfa_enrollment_code(code, user_id) do
     Multi.new()
@@ -1998,7 +2247,7 @@ defmodule Emisar.Auth do
   Pre-Subject — this is the sign-in second factor, so it takes the
   partially-authenticated `%Users.User{}` (no tenant resolved yet). Returns
   `{:ok, proof}` — an opaque term bound to the enrollment that was just
-  verified, which `complete_magic_link_mfa_sign_in/3` re-checks against the
+  verified, which `complete_magic_link_mfa_sign_in/4` re-checks against the
   locked row before minting anything — `{:error, :rate_limited}` once the window
   is exhausted, `{:error, :replay}` on a reused TOTP, or `{:error, :invalid}`
   otherwise; misses are audited as `user.mfa_failed`.
