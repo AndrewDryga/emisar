@@ -465,9 +465,9 @@ defmodule Emisar.SSO do
       end)
       |> Repo.commit_multi(
         after_commit: fn %{provider: provider} ->
+          end_sessions_signed_in_through(provider)
           _ = return_role_control_to_operators(provider)
           _ = dismiss_pending_link_requests(provider)
-          end_sessions_signed_in_through(provider)
         end
       )
       |> case do
@@ -890,14 +890,14 @@ defmodule Emisar.SSO do
   # Both concerns run on every update: clause-matching on `scim_enabled` used to
   # mean a SCIM-enabled connection never reached the disable branch below.
   defp on_provider_updated(%IdentityProvider{} = provider, changeset) do
+    # Revoke before optional reconciliation: a mapping-side failure must never
+    # leave credentials carrying trust the committed provider no longer grants.
+    if Ecto.Changeset.get_change(changeset, :enabled) == false or
+         Ecto.Changeset.get_change(changeset, :satisfies_mfa) == false,
+       do: end_sessions_signed_in_through(provider),
+       else: :ok
+
     _ = recompute_authorization_if_changed(provider, changeset)
-
-    # Nothing to invalidate on an issuer edit: discovery is loaded per sign-in, so
-    # the next one reads the new issuer and there is no cached document to strand.
-    if Ecto.Changeset.get_change(changeset, :enabled) == false,
-      do: end_sessions_signed_in_through(provider),
-      else: :ok
-
     :ok
   end
 
@@ -924,12 +924,8 @@ defmodule Emisar.SSO do
   # connection reasonably reads "disabled" as "nobody is coming in through this
   # any more", so the credentials it vouched for have to go with it.
   #
-  # Coarse on purpose: sessions carry no provider provenance, so this ends ALL of
-  # a linked member's sessions, not only the ones that came through this
-  # connection. For someone whose access exists BECAUSE of this connection that
-  # is the same set; for anyone else it costs a re-login, which is the right side
-  # to err on when the alternative is leaving a pulled connection's sessions
-  # alive. Tagging sessions with their provider would let this be exact.
+  # Session rows carry the identity that authenticated them, so removal is exact:
+  # unrelated magic-link and other-provider credentials and sockets survive.
   # A pending request is a person waiting on an admin. Once the connection they
   # arrived through is gone, approval is impossible — `approve_link_request` can
   # no longer fetch the provider — so leaving them queued showed admins a
@@ -952,7 +948,7 @@ defmodule Emisar.SSO do
     |> all_provider_identities()
     |> Enum.group_by(& &1.user_id, & &1.id)
     |> Enum.each(fn {user_id, identity_ids} ->
-      end_identity_sessions(user_id, identity_ids)
+      end_identity_sessions(user_id, identity_ids, &Auth.revoke_provider_sessions/2)
     end)
   end
 
@@ -970,13 +966,13 @@ defmodule Emisar.SSO do
       |> Repo.all()
       |> Enum.map(& &1.id)
 
-    end_identity_sessions(user_id, identity_ids)
+    end_identity_sessions(user_id, identity_ids, &Auth.revoke_identity_sessions/2)
   end
 
-  defp end_identity_sessions(user_id, identity_ids) do
+  defp end_identity_sessions(user_id, identity_ids, revoke) do
     case Users.fetch_user_by_id(user_id) do
       {:ok, user} ->
-        Auth.revoke_identity_sessions(user, identity_ids)
+        revoke.(user, identity_ids)
 
       {:error, reason} ->
         Logger.warning("sso_session_user_missing",
@@ -1122,22 +1118,101 @@ defmodule Emisar.SSO do
   """
   def complete_auth(%IdentityProvider{} = provider, params, stashed) do
     with {:ok, %{identifier: identifier, claims: claims}} <-
-           OIDC.verify_callback(provider, params, stashed),
-         :ok <- ensure_email_domain_allowed(provider, claims),
-         {:ok, result} <- resolve_or_provision_identity(provider, identifier, claims) do
-      {:ok, Map.put(result, :provider, provider)}
+           OIDC.verify_callback(provider, params, stashed) do
+      commit_verified_auth(
+        provider,
+        callback_namespace(provider),
+        identifier,
+        claims,
+        0
+      )
     end
   end
 
-  defp resolve_or_provision_identity(%IdentityProvider{} = provider, identifier, claims) do
-    queryable =
-      UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.by_provider_and_identifier(provider.id, identifier)
+  @verified_auth_retry_limit 1
 
-    case Repo.peek(queryable) do
-      %UserIdentity{} = identity -> resolve_existing_identity(provider, identity, claims)
-      nil -> provision_for(provider, identifier, claims)
+  defp commit_verified_auth(started_provider, namespace, identifier, claims, attempt) do
+    Multi.new()
+    |> put_active_account_lock(started_provider.account_id)
+    |> put_callback_provider_lock(started_provider, namespace, claims)
+    |> Multi.merge(fn %{locked_provider: provider} ->
+      verified_auth_writes(provider, identifier, claims)
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{auth_result: result}} ->
+        result
+
+      {:error, %Ecto.Changeset{data: %UserIdentity{}} = changeset}
+      when attempt < @verified_auth_retry_limit ->
+        if Repo.Changeset.unique_constraint_error?(changeset) do
+          commit_verified_auth(started_provider, namespace, identifier, claims, attempt + 1)
+        else
+          {:error, changeset}
+        end
+
+      {:error, %Ecto.Changeset{data: %LinkRequest{}}} ->
+        {:error, :identity_pending_approval}
+
+      {:error, :email_taken} ->
+        commit_verified_email_collision(started_provider, namespace, identifier, claims)
+
+      {:error, reason} ->
+        {:error, reason}
     end
+  end
+
+  defp put_callback_provider_lock(multi, started_provider, namespace, claims) do
+    Multi.run(multi, :locked_provider, fn repo, _changes ->
+      current =
+        IdentityProvider.Query.not_deleted()
+        |> IdentityProvider.Query.by_account_id(started_provider.account_id)
+        |> IdentityProvider.Query.by_id(started_provider.id)
+        |> IdentityProvider.Query.lock_for_update()
+        |> repo.peek()
+
+      case current do
+        %IdentityProvider{enabled: true} = provider ->
+          if callback_namespace(provider) != namespace do
+            {:error, :identity_namespace_changed}
+          else
+            case ensure_email_domain_allowed(provider, claims) do
+              :ok -> {:ok, provider}
+              {:error, reason} -> {:error, reason}
+            end
+          end
+
+        _missing_or_disabled ->
+          {:error, :provider_disabled}
+      end
+    end)
+  end
+
+  # Callback state is process-local and can retain typed boundaries. Persisted
+  # link requests keep their historical hash encoding for compatibility, but a
+  # live callback compares the three fields directly so embedded delimiters can
+  # never make two namespaces equal.
+  defp callback_namespace(%IdentityProvider{} = provider),
+    do: {provider.issuer, provider.client_id, provider.identifier_claim}
+
+  defp verified_auth_writes(provider, identifier, claims) do
+    Multi.new()
+    |> Multi.run(:resolved_identity, fn repo, _changes ->
+      identity =
+        UserIdentity.Query.not_deleted()
+        |> UserIdentity.Query.by_provider_and_identifier(provider.id, identifier)
+        |> UserIdentity.Query.lock_for_update()
+        |> repo.peek()
+
+      {:ok, identity}
+    end)
+    |> Multi.merge(fn
+      %{resolved_identity: %UserIdentity{} = identity} ->
+        existing_auth_writes(provider, identity, claims)
+
+      %{resolved_identity: nil} ->
+        unknown_identity_writes(provider, identifier, claims)
+    end)
   end
 
   # An identity the DIRECTORY created holds an OIDC identifier nobody ever
@@ -1151,12 +1226,19 @@ defmodule Emisar.SSO do
   # So the first login against a synthesized identifier has to agree on WHO, not
   # only on the identifier. When it does not, nothing is authenticated: it becomes
   # a link request for an admin, which is what an unrecognized person gets anyway.
-  defp resolve_existing_identity(%IdentityProvider{} = provider, identity, claims) do
+  defp existing_auth_writes(%IdentityProvider{} = provider, identity, claims) do
     if synthesized_oidc_identifier?(identity) and
          not claims_name_the_same_person?(identity, claims) do
-      park_link_request(provider, identity.provider_identifier, claims)
+      pending_auth_writes(provider, identity.provider_identifier, claims)
     else
-      touch_and_load(provider, identity)
+      Multi.new()
+      |> Multi.update(:identity, UserIdentity.Changeset.touch_last_seen(identity))
+      |> Multi.run(:user, fn _repo, %{identity: identity} ->
+        Users.fetch_user_by_id(identity.user_id)
+      end)
+      |> Multi.run(:auth_result, fn _repo, %{user: user, identity: identity} ->
+        {:ok, {:ok, %{user: user, identity: identity, provider: provider, created?: false}}}
+      end)
     end
   end
 
@@ -1175,24 +1257,6 @@ defmodule Emisar.SSO do
     end
   end
 
-  defp touch_and_load(provider, %UserIdentity{} = identity) do
-    Multi.new()
-    |> put_active_account_lock(provider.account_id)
-    |> put_enabled_provider_lock(provider)
-    |> Multi.update(:identity, UserIdentity.Changeset.touch_last_seen(identity))
-    |> Multi.run(:user, fn _repo, %{identity: identity} ->
-      Users.fetch_user_by_id(identity.user_id)
-    end)
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{user: user, identity: identity}} ->
-        {:ok, %{user: user, identity: identity, created?: false}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
   # Directory sync on: the directory decides who exists. An identifier it never
   # provisioned belongs to someone not yet synced, or someone who should not be
   # here — and JIT-creating them minted a SECOND member for a person the
@@ -1200,73 +1264,73 @@ defmodule Emisar.SSO do
   # row, so deactivating the directory's left this one signed in. Park it for an
   # admin, exactly as a `:manual` connection does. (Ordering: this clause must
   # precede the `:jit` one, which would otherwise match first.)
-  defp provision_for(%IdentityProvider{scim_enabled: true} = provider, identifier, claims),
-    do: park_link_request(provider, identifier, claims)
+  defp unknown_identity_writes(
+         %IdentityProvider{scim_enabled: true} = provider,
+         identifier,
+         claims
+       ),
+       do: pending_auth_writes(provider, identifier, claims)
 
-  defp provision_for(%IdentityProvider{provisioner: :jit} = provider, identifier, claims) do
-    multi = build_provision_multi(provider, identifier, claims)
+  defp unknown_identity_writes(
+         %IdentityProvider{provisioner: :manual} = provider,
+         identifier,
+         claims
+       ),
+       do: pending_auth_writes(provider, identifier, claims)
 
-    case Repo.commit_multi(multi) do
-      {:ok, %{user: user, identity: identity}} ->
-        {:ok, %{user: user, identity: identity, created?: true}}
-
-      {:error, %Ecto.Changeset{} = changeset} ->
-        # #9: a concurrent first login created this identity — converge on it
-        # (re-resolve peek-hits the winner) rather than failing the login.
-        if Repo.Changeset.unique_constraint_error?(changeset),
-          do: resolve_or_provision_identity(provider, identifier, claims),
-          else: {:error, changeset}
-
-      {:error, :email_taken} ->
-        # The email matches an existing user. If they're a member, park a link
-        # request for an admin to approve (never auto-merge, C1); otherwise it's
-        # a genuine collision (a non-member owns that email) — fail closed.
-        case capture_member_link(
-               provider,
-               identifier,
-               claims["email"],
-               claims["name"],
-               claims,
-               :oidc
-             ) do
-          {:captured, request} -> {:pending, request}
-          :no_match -> {:error, :email_taken}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+  defp unknown_identity_writes(
+         %IdentityProvider{provisioner: :jit} = provider,
+         identifier,
+         claims
+       ) do
+    build_provision_writes(provider, identifier, claims, [])
+    |> Multi.run(:auth_result, fn _repo, %{user: user, identity: identity} ->
+      {:ok, {:ok, %{user: user, identity: identity, provider: provider, created?: true}}}
+    end)
   end
-
-  # A `:manual`-provisioner connection never auto-creates.
-  defp provision_for(%IdentityProvider{provisioner: :manual} = provider, identifier, claims),
-    do: park_link_request(provider, identifier, claims)
 
   # The unknown identity is captured as a pending link request (the real `sub` +
   # claims, so an admin recognizes the person) and parked — re-attempts upsert,
   # never pile up. When the email matches an existing member the request records
   # them, so approving REBINDS that member's identity rather than adding a person.
-  defp park_link_request(%IdentityProvider{} = provider, identifier, claims) do
-    case capture_link_request(
-           provider,
-           identifier,
-           claims["email"],
-           claims["name"],
-           claims,
-           :oidc
-         ) do
-      {:ok, request} -> {:pending, request}
-      # An upsert failure (rare) has no request to park them on — fall back to the
-      # generic pending error so the callback still explains the wait.
-      {:error, _reason} -> {:error, :identity_pending_approval}
-    end
+  defp pending_auth_writes(%IdentityProvider{} = provider, identifier, claims) do
+    Multi.new()
+    |> put_link_request(
+      :link_request,
+      provider,
+      identifier,
+      claims["email"],
+      claims["name"],
+      claims,
+      :oidc
+    )
+    |> Multi.run(:auth_result, fn _repo, %{link_request: request} ->
+      {:ok, {:pending, request}}
+    end)
   end
 
-  defp build_provision_multi(%IdentityProvider{} = provider, identifier, claims, opts \\ []) do
+  defp commit_verified_email_collision(started_provider, namespace, identifier, claims) do
     Multi.new()
-    |> put_active_account_lock(provider.account_id)
-    |> put_enabled_provider_lock(provider)
-    |> Multi.append(build_provision_writes(provider, identifier, claims, opts))
+    |> put_active_account_lock(started_provider.account_id)
+    |> put_callback_provider_lock(started_provider, namespace, claims)
+    |> Multi.merge(fn %{locked_provider: provider} ->
+      cond do
+        provider.scim_enabled or provider.provisioner == :manual ->
+          pending_auth_writes(provider, identifier, claims)
+
+        matched_member_id(provider, claims["email"]) ->
+          pending_auth_writes(provider, identifier, claims)
+
+        true ->
+          Multi.error(Multi.new(), :auth_result, :email_taken)
+      end
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{auth_result: result}} -> result
+      {:error, %Ecto.Changeset{data: %LinkRequest{}}} -> {:error, :email_taken}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp build_provision_writes(%IdentityProvider{} = provider, identifier, claims, opts) do
@@ -1391,17 +1455,20 @@ defmodule Emisar.SSO do
   survives. Holding the lock here means either the insert precedes the disable, or
   it is refused after it.
 
-  `:ok` when there is no identity (a non-SSO sign-in has nothing to check).
+  Returns the current locked provider only when the identity is live and belongs
+  to the same user and account the session is being minted for.
   """
-  def ensure_identity_provider_enabled(_repo, nil), do: :ok
-
-  def ensure_identity_provider_enabled(repo, user_identity_id) do
-    queryable =
+  def ensure_identity_provider_enabled(repo, user_identity_id, user_id, account_id)
+      when is_binary(user_identity_id) and is_binary(user_id) and is_binary(account_id) do
+    identity =
       UserIdentity.Query.not_deleted()
       |> UserIdentity.Query.by_id(user_identity_id)
+      |> UserIdentity.Query.by_user_id(user_id)
+      |> UserIdentity.Query.by_account_id(account_id)
+      |> repo.peek()
 
-    case repo.peek(queryable) do
-      %UserIdentity{provider_id: provider_id, account_id: account_id} ->
+    case identity do
+      %UserIdentity{provider_id: provider_id} ->
         locked =
           IdentityProvider.Query.not_deleted()
           |> IdentityProvider.Query.by_account_id(account_id)
@@ -1410,14 +1477,29 @@ defmodule Emisar.SSO do
           |> repo.peek()
 
         case locked do
-          %IdentityProvider{enabled: true} -> :ok
-          _ -> {:error, :provider_disabled}
+          %IdentityProvider{enabled: true} = provider ->
+            live_identity =
+              UserIdentity.Query.not_deleted()
+              |> UserIdentity.Query.by_id(user_identity_id)
+              |> UserIdentity.Query.by_user_id(user_id)
+              |> UserIdentity.Query.by_account_id(account_id)
+              |> UserIdentity.Query.by_provider_id(provider.id)
+              |> UserIdentity.Query.lock_for_update()
+              |> repo.peek()
+
+            if live_identity, do: {:ok, provider}, else: {:error, :provider_disabled}
+
+          _ ->
+            {:error, :provider_disabled}
         end
 
       nil ->
         {:error, :provider_disabled}
     end
   end
+
+  def ensure_identity_provider_enabled(_repo, _identity_id, _user_id, _account_id),
+    do: {:error, :provider_disabled}
 
   # A sign-in write additionally re-reads whether the connection is still ENABLED.
   # The provider struct was resolved when the request arrived; disabling it is
@@ -2495,11 +2577,11 @@ defmodule Emisar.SSO do
   @doc """
   Internal — require_sso enforcement: is this session's SSO identity one of the
   account's own? (Pre-Subject.) Matches by the identity's `account_id` ALONE — it
-  deliberately does NOT re-check that the provider is still enabled/not-deleted, so
-  an already-signed-in SSO session survives a provider being disabled (until the
-  token expires) rather than ripping live sessions out on a config change (mirrors
-  `identity_satisfies_mfa?/1`). The last-enabled-provider removal guard
-  (`update_provider`/`delete_provider`) is what keeps the account from being stranded.
+  deliberately does NOT duplicate provider-state authorization here. Provider
+  disable/delete owns exact credential revocation after its transaction commits;
+  once its identities are soft-deleted this predicate also fails closed. The
+  last-enabled-provider removal guard (`update_provider`/`delete_provider`) keeps
+  the account from being stranded.
   """
   def identity_belongs_to_account?(user_identity_id, account_id)
       when is_binary(user_identity_id) and is_binary(account_id) do

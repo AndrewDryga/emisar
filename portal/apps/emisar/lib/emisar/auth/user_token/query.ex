@@ -24,6 +24,9 @@ defmodule Emisar.Auth.UserToken.Query do
   def by_user_identity_ids(queryable \\ all(), identity_ids) when is_list(identity_ids),
     do: where(queryable, [tokens: t], t.user_identity_id in ^identity_ids)
 
+  @doc "Stored session digests, for an atomic DELETE RETURNING exact disconnect topics."
+  def select_token_digests(queryable), do: select(queryable, [tokens: t], t.token)
+
   def by_id(queryable \\ all(), id),
     do: where(queryable, [tokens: t], t.id == ^id)
 

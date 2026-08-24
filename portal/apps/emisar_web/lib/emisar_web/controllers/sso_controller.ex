@@ -69,9 +69,9 @@ defmodule EmisarWeb.SSOController do
 
   def callback(conn, params) do
     with %{provider_id: provider_id} = stash <- get_session(conn, @stash_key),
-         {:ok, provider} <- SSO.fetch_provider_for_sign_in(provider_id),
-         {:ok, %{user: user, identity: identity, created?: created?}} <-
-           SSO.complete_auth(provider, params, stash),
+         {:ok, started_provider} <- SSO.fetch_provider_for_sign_in(provider_id),
+         {:ok, %{user: user, identity: identity, provider: provider, created?: created?}} <-
+           SSO.complete_auth(started_provider, params, stash),
          {:ok, account} <-
            Accounts.fetch_account_by_id_or_slug_including_disabled(provider.account_id) do
       # Keep a protected destination that sent the user to sign-in (including an
@@ -88,12 +88,17 @@ defmodule EmisarWeb.SSOController do
              conn,
              user,
              account.id,
-             SSO.provider_satisfies_mfa?(provider),
              user_identity_id: identity.id,
              registered?: created?
            ) do
-        {:ok, conn} -> conn
-        {:error, :account_disabled} -> redirect_to_disabled_account(conn, account)
+        {:ok, conn} ->
+          conn
+
+        {:error, :account_disabled} ->
+          redirect_to_disabled_account(conn, account)
+
+        {:error, :provider_disabled} ->
+          sso_error(conn, callback_error_message(:provider_disabled))
       end
     else
       nil ->

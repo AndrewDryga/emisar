@@ -50,6 +50,23 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  defmodule BarrierOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(_provider, _opts), do: {:error, :not_used}
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(_provider, %{"_barrier" => {owner, ref}, "_claims" => claims}, _stash) do
+      send(owner, {:oidc_claims_verified, ref})
+
+      receive do
+        {:release_oidc_callback, ^ref} ->
+          {:ok, %{identifier: claims["sub"], claims: claims}}
+      end
+    end
+  end
+
   setup do
     Emisar.Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
     :ok
@@ -67,6 +84,32 @@ defmodule Emisar.SSOTest do
   end
 
   defp callback(claims), do: %{"_claims" => claims}
+
+  defp callback_after_verified(provider, claims, while_verified) do
+    Emisar.Config.put_override(:emisar, :sso_oidc_impl, BarrierOIDC)
+    ref = make_ref()
+    owner = self()
+
+    task =
+      Task.async(fn ->
+        SSO.complete_auth(
+          provider,
+          %{"_barrier" => {owner, ref}, "_claims" => claims},
+          %{}
+        )
+      end)
+
+    assert_receive {:oidc_claims_verified, ^ref}, 5_000
+
+    try do
+      during = while_verified.()
+      send(task.pid, {:release_oidc_callback, ref})
+      {during, Task.await(task, 10_000)}
+    after
+      send(task.pid, {:release_oidc_callback, ref})
+      if Process.alive?(task.pid), do: Task.shutdown(task, :brutal_kill)
+    end
+  end
 
   defp link_requests(provider_id) do
     LinkRequest.Query.all()
@@ -1915,9 +1958,10 @@ defmodule Emisar.SSOTest do
         "name" => "New Operator"
       }
 
-      assert {:ok, %{user: user, identity: identity, provider: ^provider, created?: true}} =
+      assert {:ok, %{user: user, identity: identity, provider: current_provider, created?: true}} =
                SSO.complete_auth(provider, callback(claims), %{})
 
+      assert current_provider.id == provider.id
       assert user.email == "new@acme.test"
       assert user.full_name == "New Operator"
       assert user.confirmed_at
@@ -2097,6 +2141,205 @@ defmodule Emisar.SSOTest do
 
       assert Fixtures.Memberships.fetch_membership(account_a.id, user.id)
       refute Fixtures.Memberships.fetch_membership(account_b.id, user.id)
+    end
+  end
+
+  describe "complete_auth/3 — current provider policy after verification" do
+    test "rejects a changed namespace even when its legacy persisted hash collides" do
+      {_owner, account, subject} = enterprise_owner()
+
+      provider =
+        provider_fixture(account,
+          issuer: "https://idp.example/x",
+          client_id: "tenant\nclient"
+        )
+
+      claims = %{
+        "sub" => "okta|delimiter-collision",
+        "email" => "delimiter-collision@acme.test",
+        "email_verified" => true
+      }
+
+      {{:ok, updated}, callback_result} =
+        callback_after_verified(provider, claims, fn ->
+          SSO.update_provider(
+            provider,
+            %{
+              issuer: "https://idp.example/x\ntenant",
+              client_id: "client",
+              client_secret: "replacement-secret"
+            },
+            subject
+          )
+        end)
+
+      assert Emisar.SSO.Provisioning.namespace_fingerprint(provider) ==
+               Emisar.SSO.Provisioning.namespace_fingerprint(updated)
+
+      assert callback_result == {:error, :identity_namespace_changed}
+      assert link_requests(provider.id) == []
+
+      refute Repo.exists?(
+               Emisar.Users.User.Query.all()
+               |> Emisar.Users.User.Query.by_email(claims["email"])
+             )
+
+      refute Repo.exists?(
+               UserIdentity.Query.not_deleted()
+               |> UserIdentity.Query.by_provider_id(provider.id)
+             )
+
+      refute Repo.exists?(
+               Audit.Event.Query.all()
+               |> Audit.Event.Query.by_account_id(account.id)
+               |> Audit.Event.Query.by_event_type("user.provisioned_via_sso")
+             )
+    end
+
+    test "network verification holds no DB lock and a changed namespace is rejected without writes" do
+      {_owner, account, subject} = enterprise_owner()
+      provider = provider_fixture(account)
+
+      claims = %{
+        "sub" => "okta|namespace-race",
+        "email" => "namespace@acme.test",
+        "email_verified" => true
+      }
+
+      {{:ok, updated}, callback_result} =
+        callback_after_verified(provider, claims, fn ->
+          SSO.update_provider(
+            provider,
+            %{issuer: "https://replacement-idp.test", client_secret: "replacement-secret"},
+            subject
+          )
+        end)
+
+      assert updated.issuer == "https://replacement-idp.test"
+      assert callback_result == {:error, :identity_namespace_changed}
+      assert link_requests(provider.id) == []
+
+      refute Repo.exists?(
+               UserIdentity.Query.not_deleted()
+               |> UserIdentity.Query.by_provider_id(provider.id)
+             )
+
+      refute Repo.exists?(
+               Audit.Event.Query.all()
+               |> Audit.Event.Query.by_account_id(account.id)
+               |> Audit.Event.Query.by_event_type("user.provisioned_via_sso")
+             )
+    end
+
+    test "a current manual policy parks the verified identity instead of using stale JIT" do
+      {_owner, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, provisioner: :jit)
+      claims = %{"sub" => "okta|manual-race", "email" => "manual@acme.test"}
+
+      {{:ok, updated}, callback_result} =
+        callback_after_verified(provider, claims, fn ->
+          SSO.update_provider(provider, %{provisioner: :manual}, subject)
+        end)
+
+      assert updated.provisioner == :manual
+      assert {:pending, %LinkRequest{provider_identifier: "okta|manual-race"}} = callback_result
+
+      refute Repo.exists?(
+               UserIdentity.Query.not_deleted()
+               |> UserIdentity.Query.by_provider_id(provider.id)
+             )
+    end
+
+    test "directory sync enabled after verification also prevents stale JIT provisioning" do
+      {_owner, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, provisioner: :jit)
+      claims = %{"sub" => "okta|scim-race", "email" => "scim@acme.test"}
+
+      {{:ok, updated, _token}, callback_result} =
+        callback_after_verified(provider, claims, fn ->
+          SSO.enable_scim(provider, subject)
+        end)
+
+      assert updated.scim_enabled
+      assert {:pending, %LinkRequest{provider_identifier: "okta|scim-race"}} = callback_result
+
+      refute Repo.exists?(
+               UserIdentity.Query.not_deleted()
+               |> UserIdentity.Query.by_provider_id(provider.id)
+             )
+    end
+
+    test "current role and runner/pack defaults own every JIT write and its audit" do
+      {_owner, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, default_role: :viewer)
+      Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
+
+      claims = %{
+        "sub" => "okta|current-defaults",
+        "email" => "defaults@acme.test",
+        "email_verified" => true
+      }
+
+      attrs = %{
+        default_role: :operator,
+        default_runner_access_mode: :all,
+        default_runner_scope: [],
+        default_pack_access_mode: :restricted,
+        default_pack_scope: ["pack:postgres"]
+      }
+
+      {{:ok, updated}, callback_result} =
+        callback_after_verified(provider, claims, fn ->
+          SSO.update_provider(provider, attrs, subject)
+        end)
+
+      assert updated.default_role == :operator
+      assert {:ok, %{user: user, provider: current, created?: true}} = callback_result
+      assert current.id == updated.id
+      assert current.default_role == :operator
+
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      assert membership.role == :operator
+
+      assert Accounts.runner_access_for_membership(account.id, membership.id) ==
+               %RunnerAccess{
+                 mode: :all,
+                 groups: [],
+                 runner_ids: [],
+                 pack_mode: :restricted,
+                 pack_ids: ["postgres"]
+               }
+
+      assert {:ok, [event], _metadata} =
+               Audit.list_events(subject,
+                 filter: [event_type: ["user.provisioned_via_sso"]]
+               )
+
+      assert event.payload["role"] == "operator"
+      assert event.payload["runner_access"]["mode"] == "all"
+      assert event.payload["runner_access"]["pack_mode"] == "restricted"
+    end
+
+    test "a tightened current domain rejects a returning identity before last_seen changes" do
+      {_owner, account, subject} = enterprise_owner()
+      provider = provider_fixture(account)
+
+      claims = %{
+        "sub" => "okta|domain-race",
+        "email" => "returning@acme.test",
+        "email_verified" => true
+      }
+
+      assert {:ok, %{identity: identity}} = SSO.complete_auth(provider, callback(claims), %{})
+
+      {{:ok, updated}, callback_result} =
+        callback_after_verified(provider, claims, fn ->
+          SSO.update_provider(provider, %{allowed_email_domain: "other.test"}, subject)
+        end)
+
+      assert updated.allowed_email_domain == "other.test"
+      assert callback_result == {:error, :email_domain_not_allowed}
+      assert Repo.reload!(identity).last_seen_at == identity.last_seen_at
     end
   end
 
@@ -2284,6 +2527,68 @@ defmodule Emisar.SSOTest do
       assert Repo.all(
                Emisar.Auth.UserToken.Query.by_user_id(Emisar.Auth.UserToken.Query.all(), user.id)
              ) == []
+    end
+
+    test "an MFA-trust downgrade revokes only that provider's sessions", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      provider = provider |> Ecto.Changeset.change(satisfies_mfa: true) |> Repo.update!()
+      %{identity: identity} = provision(provider, "okta|mfa-downgrade")
+      {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
+
+      other_provider = provider_fixture(account, kind: :entra, name: "Entra")
+
+      other_identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: other_provider.id,
+          user_id: user.id,
+          provider_identifier: "entra|same-user"
+        })
+
+      provider_token =
+        Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now(), %{},
+          user_identity_id: identity.id
+        )
+
+      other_token =
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{},
+          user_identity_id: other_identity.id
+        )
+
+      magic_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+
+      assert {:ok, downgraded} =
+               SSO.update_provider(provider, %{satisfies_mfa: false}, subject)
+
+      refute downgraded.satisfies_mfa
+      assert Auth.fetch_user_and_token_by_session_token(provider_token) == {:error, :not_found}
+      assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(other_token)
+      assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(magic_token)
+    end
+
+    test "unchanged or increasing MFA trust does not revoke a provider session", %{
+      provider: provider,
+      subject: subject
+    } do
+      %{identity: identity} = provision(provider, "okta|mfa-noop")
+      {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
+
+      token =
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
+
+      assert {:ok, still_false} =
+               SSO.update_provider(provider, %{satisfies_mfa: false}, subject)
+
+      assert {:ok, now_true} =
+               SSO.update_provider(still_false, %{satisfies_mfa: true}, subject)
+
+      assert {:ok, _still_true} =
+               SSO.update_provider(now_true, %{satisfies_mfa: true}, subject)
+
+      assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(token)
     end
   end
 
@@ -3753,7 +4058,7 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "ensure_identity_provider_enabled/2" do
+  describe "ensure_identity_provider_enabled/4" do
     test "refuses a session for an identity whose connection has been disabled" do
       # Auth calls this INSIDE the session transaction, holding the provider lock
       # across the credential write. complete_auth checks the same thing, but its
@@ -3763,16 +4068,35 @@ defmodule Emisar.SSOTest do
       provider = account |> provider_fixture() |> Fixtures.SSO.enable_scim()
       %{identity: identity} = provision(provider, "okta|session-guard")
 
-      assert SSO.ensure_identity_provider_enabled(Repo, identity.id) == :ok
+      assert {:ok, %IdentityProvider{id: provider_id}} =
+               SSO.ensure_identity_provider_enabled(
+                 Repo,
+                 identity.id,
+                 identity.user_id,
+                 account.id
+               )
+
+      assert provider_id == provider.id
 
       {:ok, _disabled} = SSO.update_provider(provider, %{enabled: false}, subject)
 
-      assert SSO.ensure_identity_provider_enabled(Repo, identity.id) ==
+      assert SSO.ensure_identity_provider_enabled(
+               Repo,
+               identity.id,
+               identity.user_id,
+               account.id
+             ) ==
                {:error, :provider_disabled}
     end
 
-    test "a sign-in with no identity has no connection to check" do
-      assert SSO.ensure_identity_provider_enabled(Repo, nil) == :ok
+    test "a sign-in with no identity fails closed" do
+      assert SSO.ensure_identity_provider_enabled(
+               Repo,
+               nil,
+               Ecto.UUID.generate(),
+               Ecto.UUID.generate()
+             ) ==
+               {:error, :provider_disabled}
     end
   end
 

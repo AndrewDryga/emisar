@@ -47,21 +47,23 @@ defmodule EmisarWeb.UserAuth do
     do: finish_log_in(conn, user, token, :magic_link, true, registered?)
 
   @doc """
-  Completes an SSO sign-in under the account lifecycle lock. `mfa` says whether
-  the IdP satisfies the second factor; `opts` carry the `:user_identity_id` the
-  session is bound to plus the JIT-provisioning `:registered?` flag. Returns
-  `{:error, :account_disabled}` when support disabled the account before the
-  session credential could be inserted.
+  Completes an SSO sign-in under the account and current-provider locks. `opts`
+  carry the required `:user_identity_id` plus the JIT-provisioning
+  `:registered?` flag. The domain returns the committed MFA outcome used for
+  analytics; no web caller chooses it.
   """
-  def log_in_sso_user_for_account(conn, user, account_id, mfa, opts \\ []) do
+  def log_in_sso_user_for_account(conn, user, account_id, opts \\ []) do
     {registered?, opts} = Keyword.pop(opts, :registered?, false)
     context = RequestContext.from_conn(conn)
 
-    case Auth.complete_sso_account_sign_in(user, account_id, mfa, context, opts) do
-      {:ok, token} ->
+    case Auth.complete_sso_account_sign_in(user, account_id, context, opts) do
+      {:ok, token, mfa} ->
         {:ok, finish_log_in(conn, user, token, :sso, mfa, registered?)}
 
       {:error, :account_disabled} = error ->
+        error
+
+      {:error, :provider_disabled} = error ->
         error
 
       {:error, reason} ->

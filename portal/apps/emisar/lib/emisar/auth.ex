@@ -76,24 +76,21 @@ defmodule Emisar.Auth do
   @doc """
   Internal — SSO sign-in completion, the only remaining generic session minter
   and fixed to `:sso` provenance so no other flow can borrow it. Holds the
-  active account row lock while recording the sign-in and inserting the
-  user-global session credential, so a concurrent account disable either
-  revokes this session afterward or prevents it from being minted. `mfa` says
-  whether the IdP satisfies the second factor — the domain turns that into the
-  session's proof timestamp, so no caller supplies one; `opts` carry the
-  `:user_identity_id` the session is bound to. Returns `{:ok, token}` (the raw
-  cookie value) or `{:error, :account_disabled | reason}`.
+  active account and current identity-provider row locks while recording the
+  sign-in and inserting the user-global session credential, so account/provider
+  policy cannot change between the trust decision and the write. `opts` must
+  carry the same-user, same-account `:user_identity_id`; the locked provider is
+  the sole authority for the token's IdP MFA stamp. Returns `{:ok, token, mfa?}`
+  (the raw cookie value plus the committed MFA outcome) or an error tuple.
   """
   def complete_sso_account_sign_in(
         %Users.User{} = user,
         account_id,
-        mfa,
         %RequestContext{} = context,
         opts \\ []
       ) do
     {token, digest} = Crypto.session_token()
     metadata = %{ip_address: context.ip_address, user_agent: context.user_agent}
-    mfa_verified_at = if mfa, do: DateTime.utc_now()
 
     Multi.new()
     |> Multi.run(:account, fn repo, _changes ->
@@ -107,20 +104,24 @@ defmodule Emisar.Auth do
     # identity transaction commits — so a disable could commit, sweep no sessions,
     # and then this insert would add one that survives.
     |> Multi.run(:sso_provider, fn repo, _changes ->
-      case SSO.ensure_identity_provider_enabled(repo, Keyword.get(opts, :user_identity_id)) do
-        :ok -> {:ok, :enabled}
-        {:error, reason} -> {:error, reason}
-      end
+      SSO.ensure_identity_provider_enabled(
+        repo,
+        Keyword.get(opts, :user_identity_id),
+        user.id,
+        account_id
+      )
     end)
     |> Multi.merge(fn _changes ->
       Users.put_sign_in(Multi.new(), user, "sso", context)
     end)
-    |> Multi.insert(:token, fn %{sign_in: signed_in_user} ->
+    |> Multi.insert(:token, fn %{sign_in: signed_in_user, sso_provider: provider} ->
+      mfa_verified_at = if provider.satisfies_mfa, do: DateTime.utc_now()
+
       UserToken.Changeset.session(signed_in_user, digest, metadata, :sso, mfa_verified_at, opts)
     end)
     |> Repo.commit_multi()
     |> case do
-      {:ok, _changes} -> {:ok, token}
+      {:ok, %{sso_provider: provider}} -> {:ok, token, provider.satisfies_mfa}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -293,6 +294,23 @@ defmodule Emisar.Auth do
 
     Repo.delete_all(queryable)
     disconnect_live_sessions(topics)
+    :ok
+  end
+
+  @doc """
+  Internal — revoke and disconnect only the session credentials minted through
+  `identity_ids`. Provider disable/delete and MFA-trust downgrade use this exact
+  boundary; unrelated magic-link and other-provider sessions remain untouched.
+  """
+  def revoke_provider_sessions(%Users.User{} = user, identity_ids) when is_list(identity_ids) do
+    queryable =
+      UserToken.Query.by_user_id(user.id)
+      |> UserToken.Query.by_context("session")
+      |> UserToken.Query.by_user_identity_ids(identity_ids)
+      |> UserToken.Query.select_token_digests()
+
+    {_count, digests} = Repo.delete_all(queryable)
+    digests |> Enum.map(&live_socket_topic/1) |> disconnect_live_sessions()
     :ok
   end
 

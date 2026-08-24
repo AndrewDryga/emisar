@@ -51,6 +51,38 @@ defmodule Emisar.SSO.Provisioning do
         claims,
         source
       ) do
+    Multi.new()
+    |> put_active_account_lock(provider.account_id)
+    |> Multi.merge(fn _changes ->
+      put_link_request(
+        Multi.new(),
+        :request,
+        provider,
+        identifier,
+        email,
+        full_name,
+        claims,
+        source
+      )
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{request: request}} -> {:ok, request}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc "Internal — compose one current-provider pending-link upsert into SSO's transaction."
+  def put_link_request(
+        %Multi{} = multi,
+        key,
+        %IdentityProvider{} = provider,
+        identifier,
+        email,
+        full_name,
+        claims,
+        source
+      ) do
     attrs = %{
       provider_identifier: identifier,
       source: source,
@@ -63,13 +95,11 @@ defmodule Emisar.SSO.Provisioning do
 
     changeset = LinkRequest.Changeset.create(provider.account_id, provider.id, attrs)
 
-    Multi.new()
-    |> put_active_account_lock(provider.account_id)
     # `source` is replaced with the rest. A re-capture of the same identifier from
     # the OTHER namespace describes a different person — it replaces the email,
     # claims and matched user — so leaving the original source behind made the
     # approval stamp the column the request no longer belongs to.
-    |> Multi.insert(:request, changeset,
+    Multi.insert(multi, key, changeset,
       on_conflict:
         {:replace,
          [
@@ -83,11 +113,6 @@ defmodule Emisar.SSO.Provisioning do
          ]},
       conflict_target: [:provider_id, :provider_identifier]
     )
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{request: request}} -> {:ok, request}
-      {:error, reason} -> {:error, reason}
-    end
   end
 
   # Collision variant (for `:jit`/SCIM): park a link request ONLY when the email

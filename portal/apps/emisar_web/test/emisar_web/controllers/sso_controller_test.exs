@@ -319,7 +319,7 @@ defmodule EmisarWeb.SSOControllerTest do
     test "an SSO session is exempt from the account's require_mfa (decision 4)", %{conn: conn} do
       account = enterprise_account()
       account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
-      provider = provider_fixture(account)
+      provider = provider_fixture(account, satisfies_mfa: true)
       claims = %{"sub" => "okta|mfa-exempt", "email" => "exempt@acme.test", "hd" => "acme.test"}
 
       logged_in =
@@ -327,10 +327,17 @@ defmodule EmisarWeb.SSOControllerTest do
         |> stash_callback(provider)
         |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
 
-      # Follow the session into an authenticated LiveView: the SSO session
-      # satisfies MFA, so a require_mfa account does NOT funnel it to setup.
+      token = get_session(logged_in, :user_token)
+
+      assert {:ok, _user, %Emisar.Auth.UserToken{mfa_verified_at: %DateTime{}}} =
+               Emisar.Auth.fetch_user_and_token_by_session_token(token)
+
+      # Follow both redirects into the protected account dashboard. Merely
+      # reaching `/app` does not exercise the account compliance hook.
       authed = logged_in |> recycle() |> get(~p"/app")
-      refute authed.status == 302 and redirected_to(authed) =~ "/mfa_setup"
+      assert authed.status == 302
+      slugged = authed |> recycle() |> get(redirected_to(authed))
+      assert html_response(slugged, 200)
     end
 
     test "a satisfies_mfa:false provider's SSO session is NOT exempt from require_mfa", %{

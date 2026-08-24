@@ -179,19 +179,35 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "complete_sso_account_sign_in/5" do
+  describe "complete_sso_account_sign_in/4" do
     setup do
       {user, account, subject} = Fixtures.Subjects.owner_subject()
-      %{account: account, subject: subject, user: user}
+
+      provider = Fixtures.SSO.create_identity_provider(%{account_id: account.id})
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        })
+
+      %{account: account, identity: identity, provider: provider, subject: subject, user: user}
     end
 
     test "records the sign-in and mints an :sso session while the account is active", %{
       account: account,
+      identity: identity,
+      provider: provider,
       user: user
     } do
       context = RequestContext.new(%{ip_address: "203.0.113.9"})
+      provider |> Ecto.Changeset.change(satisfies_mfa: true) |> Repo.update!()
 
-      assert {:ok, token} = Auth.complete_sso_account_sign_in(user, account.id, true, context)
+      assert {:ok, token, true} =
+               Auth.complete_sso_account_sign_in(user, account.id, context,
+                 user_identity_id: identity.id
+               )
 
       assert {:ok, %User{id: id},
               %UserToken{auth_method: :sso, mfa_verified_at: %DateTime{}} = stored} =
@@ -204,20 +220,26 @@ defmodule Emisar.AuthTest do
 
     test "bounds session display metadata before persisting it", %{
       account: account,
+      identity: identity,
       user: user
     } do
       context = RequestContext.new(%{user_agent: String.duplicate("x", 500)})
 
-      assert {:ok, token} = Auth.complete_sso_account_sign_in(user, account.id, false, context)
+      assert {:ok, token, false} =
+               Auth.complete_sso_account_sign_in(user, account.id, context,
+                 user_identity_id: identity.id
+               )
 
       assert {:ok, _user, %UserToken{} = stored} =
                Auth.fetch_user_and_token_by_session_token(token)
 
+      refute stored.mfa_verified_at
       assert String.length(stored.metadata["user_agent"]) == 255
     end
 
     test "does not mint a session after the account is disabled", %{
       account: account,
+      identity: identity,
       subject: subject,
       user: user
     } do
@@ -229,8 +251,43 @@ defmodule Emisar.AuthTest do
                  subject
                )
 
-      assert Auth.complete_sso_account_sign_in(user, account.id, false, %RequestContext{}) ==
+      assert Auth.complete_sso_account_sign_in(user, account.id, %RequestContext{},
+               user_identity_id: identity.id
+             ) ==
                {:error, :account_disabled}
+
+      refute Repo.one(UserToken.Query.by_context("session"))
+    end
+
+    test "fails closed for a missing, foreign-user, foreign-account, or deleted identity", %{
+      account: account,
+      identity: identity,
+      user: user
+    } do
+      context = %RequestContext{}
+
+      assert Auth.complete_sso_account_sign_in(user, account.id, context) ==
+               {:error, :provider_disabled}
+
+      other_user = Fixtures.Users.create_user()
+
+      assert Auth.complete_sso_account_sign_in(other_user, account.id, context,
+               user_identity_id: identity.id
+             ) == {:error, :provider_disabled}
+
+      other_account = Fixtures.Accounts.create_account()
+
+      assert Auth.complete_sso_account_sign_in(user, other_account.id, context,
+               user_identity_id: identity.id
+             ) == {:error, :provider_disabled}
+
+      identity
+      |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
+      |> Repo.update!()
+
+      assert Auth.complete_sso_account_sign_in(user, account.id, context,
+               user_identity_id: identity.id
+             ) == {:error, :provider_disabled}
 
       refute Repo.one(UserToken.Query.by_context("session"))
     end
@@ -514,6 +571,47 @@ defmodule Emisar.AuthTest do
 
       assert Auth.revoke_identity_sessions(user, []) == :ok
       assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(token)
+    end
+  end
+
+  describe "revoke_provider_sessions/2" do
+    test "revokes only sessions minted through the selected provider identities" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      other_provider =
+        Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :entra)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        )
+
+      other_identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: other_provider.id,
+          user_id: user.id
+        )
+
+      revoked =
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
+
+      other_sso =
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{},
+          user_identity_id: other_identity.id
+        )
+
+      magic_link = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+
+      assert Auth.revoke_provider_sessions(user, [identity.id]) == :ok
+
+      assert Auth.fetch_user_and_token_by_session_token(revoked) == {:error, :not_found}
+      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(other_sso)
+      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(magic_link)
     end
   end
 
