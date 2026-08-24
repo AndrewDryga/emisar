@@ -1176,10 +1176,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
                         class="text-xs tabular-nums text-zinc-400"
                       />
                       <% event_id = decision_event_id(@approval_event_refs, @request, decision) %>
+                      <%!-- The 40px touch target hangs outside the flow: left in it, the
+                           link alone sets the row height and the status icon — offset for
+                           the name's line box — floats above the name. --%>
                       <.link
                         :if={event_id}
                         navigate={~p"/app/#{@current_account}/audit/#{event_id}"}
-                        class="inline-flex min-h-10 items-center text-xs font-medium text-brand-400 hover:text-brand-300"
+                        class="-my-2.5 inline-flex min-h-10 items-center text-xs font-medium text-brand-400 hover:text-brand-300"
                       >
                         View audit record
                       </.link>

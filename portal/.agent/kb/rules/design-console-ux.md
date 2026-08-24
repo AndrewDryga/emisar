@@ -828,6 +828,22 @@ The danger reads from the icon + the button + the consequence copy — the surfa
     hierarchy reads from distance (§7.58 family). Sweep: a `:for` chip/tab comprehension
     rendering more than ~12 options into one flat cluster.
 
+67. **A hit-area minimum is reserved OUTSIDE the flow — it never sets the line box its
+    row aligns to.** A 40px touch target on an inline control (§7 minimum hit area) is a
+    POINTER concern; the moment it also sizes the flex line, it becomes a layout concern
+    and silently breaks every offset computed against the text. The decisions ledger is
+    the case: `min-h-10` on the `View audit record` link made a 20px name row 40px tall,
+    so the leading verdict icon — correctly offset by `mt-0.5` for a 20px line box
+    (§7.17) — sat 10px above the decider's name, and the founder read it as the icon
+    being misaligned. The icon was right; the row had silently doubled. Hang the target
+    off the flow with a matching negative margin — `-my-2.5` beside `min-h-10` — so the
+    border box stays 40px for the pointer while the margin box collapses to the text
+    line; the target still fits inside the row's own `py-*`, so two rows' hit areas never
+    overlap. Measure it, don't eyeball it: the icon, the label, and the control must
+    report the same `getBoundingClientRect` center. Sweep: an interactive `min-h-10` /
+    `min-w-10` that is a flex ITEM on a text line (not the row element itself, and not a
+    control standing alone in its own block), especially where a leading status marker
+    carries a hand-computed `mt-*`.
 
 ## 8. The kit is the contract
 

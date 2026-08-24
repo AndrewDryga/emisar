@@ -190,6 +190,34 @@ The existing `MatchOnMapFieldValue` check stays intentionally narrower because
 bare-map field matches can silently survive a schema move; a struct pattern at
 least validates its named fields at compile time.
 
+## 8. An uncompensated `min-h-10` hit area on an inline control
+
+**The smell (`design-console-ux.md` §7.67).** A 40px touch target on an inline
+control that is a flex ITEM on a text line sizes the flex line too, so a leading
+status marker offset for the text (§7.17) floats above it. That is exactly what
+shipped in the approval decisions ledger.
+
+**Why rejected — measured 5-of-6 false-positive.** The only source-text-decidable
+form is `min-h-10` in the same class string as `inline-flex` with no sibling
+`-my-*`. It fires on **6 sites** in the tree, and five are correct:
+
+- `live_table.ex` `Back to first page` — the pager's other two links render only
+  with a cursor, and `Paginator.metadata([], …)` returns both cursors `nil`
+  whenever `stale_page?` is true, so this link is always alone in its row.
+- `core_components.ex` `icon_button` and `agents_live.ex`'s tab button — genuine
+  40×40 controls whose row is built at that height (§7.12).
+- `runbook_editor_components.ex`'s `w-full` block button and `run_detail_live.ex`'s
+  `View audit record` — each stands alone in its own block, aligned against nothing.
+
+Whether a control is a flex item on a text line, the flex row element itself, or a
+block standing alone is a STRUCTURAL question about its ancestors. Template hygiene
+scans source text line by line and cannot answer it; a check that could would need a
+real HEEx tree walk, and even then "is a leading marker aligned to this line" is a
+judgment about intent.
+
+**Verdict:** keep §7.67 as review judgment, and verify it the way the bug was found
+— measure `getBoundingClientRect` centers for the marker, the label, and the control
+on the rendered page. Pixels decide this one, not a grep.
 ---
 
 **If reopened:** re-measure first (the prototype for #1 was a path-scoped
