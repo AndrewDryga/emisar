@@ -32,6 +32,20 @@ defmodule Emisar.Users do
     |> repo.fetch(User.Query)
   end
 
+  @doc "Internal — lock an exact user set in stable id order for a composed credential transition."
+  def fetch_and_lock_users_by_ids(ids, repo) when is_list(ids) do
+    unique_ids = Enum.uniq(ids)
+
+    users =
+      User.Query.not_deleted()
+      |> User.Query.by_ids(unique_ids)
+      |> User.Query.ordered_by_id()
+      |> User.Query.lock_for_update()
+      |> repo.all()
+
+    if length(users) == length(unique_ids), do: {:ok, users}, else: {:error, :not_found}
+  end
+
   @doc "Internal — identity lookup composed by Auth/Accounts internals and the auth boundary; cross-account, no subject."
   def fetch_user_by_id(id) do
     if Repo.valid_uuid?(id) do
@@ -454,7 +468,7 @@ defmodule Emisar.Users do
   Internal — Accounts team admin: clear the member's MFA enrollment
   (secret + enrolled-at + recovery digests, replay stamp) under the row
   lock, so a member locked out of both their authenticator and recovery
-  codes re-enrolls a fresh factor on next sign-in. Same write as the
+  codes can enroll a fresh factor after signing in. Same write as the
   self-service `Auth.disable_mfa/1` (`User.Changeset.mfa/4` with nils),
   but driven by an admin — the caller supplies the `:audit` event
   (`user.mfa_reset_by_admin`, with the acting subject + membership).
@@ -463,10 +477,13 @@ defmodule Emisar.Users do
     User.Query.not_deleted()
     |> User.Query.by_id(user_id)
     |> Repo.fetch_and_update(User.Query,
-      with: &User.Changeset.mfa(&1, nil, nil, []),
+      with: &reset_mfa_changeset/1,
       audit: Keyword.fetch!(opts, :audit)
     )
   end
+
+  defp reset_mfa_changeset(%User{mfa_enabled_at: nil}), do: :mfa_not_enabled
+  defp reset_mfa_changeset(%User{} = user), do: User.Changeset.mfa(user, nil, nil, [])
 
   @doc """
   Internal — hard-delete the user row for the Accounts erasure flow. This is

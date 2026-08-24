@@ -13,6 +13,9 @@ defmodule Emisar.Users.User.Query do
   def by_ids(queryable, ids),
     do: where(queryable, [users: u], u.id in ^ids)
 
+  def ordered_by_id(queryable),
+    do: order_by(queryable, [users: u], asc: u.id)
+
   # `email` is citext — the column compares case-insensitively; no
   # app-side downcase (the index is the guarantee, not normalization).
   def by_email(queryable, email),

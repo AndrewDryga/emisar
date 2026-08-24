@@ -901,6 +901,8 @@ defmodule Emisar.Auth do
 
   @mfa_sign_in_proof_salt "mfa sign-in proof"
   @mfa_sign_in_proof_max_age_seconds 120
+  @member_mfa_reset_proof_salt "member mfa reset proof"
+  @member_mfa_reset_proof_max_age_seconds 120
 
   @doc """
   Internal — factor one is done (a magic link verified inbox possession) and the
@@ -2034,6 +2036,111 @@ defmodule Emisar.Auth do
   def verify_current_session_mfa_challenge(_, %Subject{}), do: {:error, :unauthorized}
 
   @doc """
+  Internal — wrap a just-verified local factor or dedicated SSO
+  reauthentication in the short-lived, purpose-bound handoff that Accounts
+  consumes for one member MFA reset. The target's exact enrollment epoch and
+  row version make a successful reset, disable, or re-enrollment stale the
+  proof instead of turning it into a reusable administrator capability.
+  """
+  def issue_member_mfa_reset_proof(
+        %Accounts.Membership{} = membership,
+        %Users.User{
+          id: target_user_id,
+          mfa_enabled_at: %DateTime{} = target_mfa_enabled_at,
+          updated_at: %DateTime{} = target_updated_at
+        },
+        source,
+        actor_session_token_digest,
+        %Subject{
+          actor: %Users.User{id: actor_id},
+          account: %Accounts.Account{id: account_id},
+          membership_id: actor_membership_id
+        }
+      )
+      when membership.account_id == account_id and membership.user_id == target_user_id and
+             is_binary(actor_membership_id) and is_binary(actor_session_token_digest) do
+    with {:ok, source} <- member_mfa_reset_source(source) do
+      payload = %{
+        actor_id: actor_id,
+        actor_membership_id: actor_membership_id,
+        account_id: account_id,
+        target_membership_id: membership.id,
+        target_user_id: target_user_id,
+        target_mfa_enabled_at: target_mfa_enabled_at,
+        target_updated_at: target_updated_at,
+        actor_session_token_digest: actor_session_token_digest,
+        source: source
+      }
+
+      {:ok,
+       Phoenix.Token.sign(
+         mfa_proof_secret(),
+         @member_mfa_reset_proof_salt,
+         {:member_mfa_reset, 1, payload}
+       )}
+    end
+  end
+
+  def issue_member_mfa_reset_proof(_, _, _, _, %Subject{}),
+    do: {:error, :mfa_reset_proof_stale}
+
+  @doc "Internal — verify and decode the reset-specific handoff; generic MFA proofs use another salt."
+  def verify_member_mfa_reset_proof(proof) when is_binary(proof) do
+    case Phoenix.Token.verify(mfa_proof_secret(), @member_mfa_reset_proof_salt, proof,
+           max_age: @member_mfa_reset_proof_max_age_seconds
+         ) do
+      {:ok, {:member_mfa_reset, 1, payload}} when is_map(payload) ->
+        validate_member_mfa_reset_payload(payload)
+
+      _other ->
+        {:error, :mfa_reset_proof_stale}
+    end
+  end
+
+  def verify_member_mfa_reset_proof(_proof), do: {:error, :mfa_reset_proof_stale}
+
+  @doc "Internal — recheck the embedded local proof against the actor row locked by Accounts."
+  def verify_local_member_mfa_reset_source({:local, proof}, %Users.User{} = user) do
+    case verify_mfa_proof(proof) do
+      {:ok, payload} ->
+        if payload == mfa_proof_payload(user),
+          do: :ok,
+          else: {:error, :mfa_reset_proof_stale}
+
+      _other ->
+        {:error, :mfa_reset_proof_stale}
+    end
+  end
+
+  def verify_local_member_mfa_reset_source(_, %Users.User{}),
+    do: {:error, :mfa_reset_proof_stale}
+
+  @doc "Internal — lock the exact live actor session bound into a member-MFA-reset proof."
+  def lock_member_mfa_reset_session(
+        repo,
+        token_digest,
+        actor_id,
+        source
+      )
+      when is_binary(token_digest) and is_binary(actor_id) do
+    result =
+      UserToken.Query.by_token_digest(token_digest)
+      |> UserToken.Query.by_user_id(actor_id)
+      |> UserToken.Query.by_context("session")
+      |> UserToken.Query.not_expired("session")
+      |> UserToken.Query.with_valid_auth_method()
+      |> UserToken.Query.lock_for_update()
+      |> repo.fetch(UserToken.Query)
+
+    with {:ok, %UserToken{} = session} <- result,
+         :ok <- ensure_member_mfa_reset_session_source(session, source) do
+      {:ok, session}
+    else
+      _other -> {:error, :mfa_reset_proof_stale}
+    end
+  end
+
+  @doc """
   Internal — finish an already-authenticated browser's local-MFA step-up. The
   signed `proof` came from `verify_mfa_challenge/3`; this transaction re-locks
   its user and rechecks the exact enrollment before touching the session. The
@@ -2074,6 +2181,72 @@ defmodule Emisar.Auth do
   end
 
   def complete_current_session_mfa(_, _, %Subject{}), do: {:error, :mfa_proof_stale}
+
+  defp member_mfa_reset_source({:local, proof}) when is_binary(proof),
+    do: {:ok, {:local, proof}}
+
+  defp member_mfa_reset_source(
+         {:sso,
+          %{
+            provider_id: provider_id,
+            identity_id: identity_id,
+            provider_identifier: provider_identifier,
+            namespace: {issuer, client_id, identifier_claim},
+            auth_time: auth_time
+          }}
+       )
+       when is_binary(provider_id) and is_binary(identity_id) and
+              is_binary(provider_identifier) and is_binary(issuer) and is_binary(client_id) and
+              identifier_claim in [:sub, :oid] and is_integer(auth_time) do
+    {:ok,
+     {:sso,
+      %{
+        provider_id: provider_id,
+        identity_id: identity_id,
+        provider_identifier: provider_identifier,
+        namespace: {issuer, client_id, identifier_claim},
+        auth_time: auth_time
+      }}}
+  end
+
+  defp member_mfa_reset_source(_source), do: {:error, :mfa_reset_proof_stale}
+
+  defp validate_member_mfa_reset_payload(
+         %{
+           actor_id: actor_id,
+           actor_membership_id: actor_membership_id,
+           account_id: account_id,
+           target_membership_id: target_membership_id,
+           target_user_id: target_user_id,
+           target_mfa_enabled_at: %DateTime{},
+           target_updated_at: %DateTime{},
+           actor_session_token_digest: actor_session_token_digest,
+           source: source
+         } = payload
+       )
+       when is_binary(actor_id) and is_binary(actor_membership_id) and is_binary(account_id) and
+              is_binary(target_membership_id) and is_binary(target_user_id) and
+              is_binary(actor_session_token_digest) do
+    case member_mfa_reset_source(source) do
+      {:ok, _source} -> {:ok, payload}
+      {:error, _reason} -> {:error, :mfa_reset_proof_stale}
+    end
+  end
+
+  defp validate_member_mfa_reset_payload(_payload),
+    do: {:error, :mfa_reset_proof_stale}
+
+  defp ensure_member_mfa_reset_session_source(%UserToken{}, {:local, _proof}), do: :ok
+
+  defp ensure_member_mfa_reset_session_source(
+         %UserToken{auth_method: :sso, user_identity_id: identity_id},
+         {:sso, %{identity_id: identity_id}}
+       )
+       when is_binary(identity_id),
+       do: :ok
+
+  defp ensure_member_mfa_reset_session_source(%UserToken{}, _source),
+    do: {:error, :mfa_reset_proof_stale}
 
   @doc """
   Internal — the user a verified MFA proof was minted for, so the sign-in

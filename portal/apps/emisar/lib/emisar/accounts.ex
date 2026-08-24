@@ -1035,7 +1035,7 @@ defmodule Emisar.Accounts do
       resend_invitation?: pending_invitation? and not disabled?,
       resend_confirmation?:
         confirmation_pending? and membership.user_id == Subject.actor_id(subject),
-      reset_mfa?: mfa_enrolled?
+      reset_mfa?: mfa_enrolled? and not pending_invitation?
     }
 
     if manager? do
@@ -3084,59 +3084,403 @@ defmodule Emisar.Accounts do
     do: {:error, :directory_authorization_provider_conflict}
 
   @doc """
-  Admin-triggered MFA reset: clears a member's enrolled second factor
-  (TOTP secret + recovery codes) so a member locked out of BOTH their
-  authenticator and their recovery codes can re-enroll on next sign-in —
-  the only path out of a full lockout short of support. Same
-  authorization shape as the rest of `ensure_can_modify_membership`: the
-  admin must be in the target's account and outrank them (an admin can't
-  reset an owner's MFA), and can't reset their own (self-service
-  `Auth.disable_mfa/1` is that path). Audit-logged as
-  `user.mfa_reset_by_admin`.
-
-  Clearing a factor is an MFA-bypass surface, so the operation stays
-  gated, hierarchy-checked, and audited. It also ends every session the member
-  holds — see the transaction below.
+  Verify the acting administrator's current local TOTP or recovery code and
+  return the short-lived, purpose-bound proof for resetting `membership`'s MFA.
+  Authorization and target state are checked before spending the factor; the
+  eventual reset repeats every check under fresh locks.
   """
-  def reset_member_mfa(%Membership{} = membership, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
-         :ok <- ensure_subject_in_account(subject, membership.account_id) do
-      # Users clears the MFA fields + inserts our audit atomically under
-      # the row lock; the member's old factor stops working the moment
-      # this commits. The membership guard runs on a locked re-read in the
-      # same transaction so the hierarchy is judged on the CURRENT role.
-      #
-      # The member's sessions die with the factor, in the same transaction. An
-      # admin reaches for this when a factor is compromised, so stripping the
-      # session's second-factor claim is not enough — `session_mfa_verified?/2`
-      # would do that on its own and still leave whoever holds the cookie signed
-      # in. Sessions are user-global while this reset is account-triggered, so
-      # the member is signed out of their other accounts too — accepted, because
-      # the MFA fields being wiped are user-global already. Topics are captured
-      # before the delete (an after-commit lookup finds no rows to derive them
-      # from).
+  def verify_member_mfa_reset(
+        %Membership{} = membership,
+        factor,
+        actor_session_token_digest,
+        %Subject{} = subject
+      ) do
+    with true <- is_binary(actor_session_token_digest),
+         {:ok, %{target: target, target_user: target_user}} <-
+           prepare_member_mfa_reset(membership, subject),
+         {:ok, local_proof} <- Auth.verify_current_session_mfa_challenge(factor, subject) do
+      Auth.issue_member_mfa_reset_proof(
+        target,
+        target_user,
+        {:local, local_proof},
+        actor_session_token_digest,
+        subject
+      )
+    else
+      false -> {:error, :mfa_reset_proof_stale}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Internal — after the dedicated SSO reauthentication callback proves the
+  acting session's exact current identity, issue the same target-bound reset
+  handoff used by local MFA. The final mutation rechecks the provider and
+  identity while holding their locks.
+  """
+  def issue_member_mfa_reset_sso_proof(
+        %Membership{} = membership,
+        %{} = reauthentication,
+        actor_session_token_digest,
+        %Subject{} = subject
+      ) do
+    with true <- is_binary(actor_session_token_digest),
+         {:ok, %{target: target, target_user: target_user}} <-
+           prepare_member_mfa_reset(membership, subject),
+         :ok <-
+           ensure_member_mfa_reset_started_target(
+             reauthentication,
+             target,
+             target_user
+           ) do
+      Auth.issue_member_mfa_reset_proof(
+        target,
+        target_user,
+        {:sso, reauthentication},
+        actor_session_token_digest,
+        subject
+      )
+    else
+      false -> {:error, :mfa_reset_proof_stale}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Reset another member's enrolled second factor after a fresh, reset-specific
+  proof. The proof is bound to the actor, account, target membership/user, and
+  the target's exact MFA enrollment epoch and row version. The final transaction
+  locks and rechecks the current actor membership, hierarchy, factor source, and
+  target state before clearing the factor, deleting every target session, and
+  auditing `user.mfa_reset_by_admin`.
+
+  Target socket disconnects run only after commit. A rollback leaves the factor,
+  sessions, and proof usable for an honest retry.
+  """
+  def reset_member_mfa(
+        %Membership{} = membership,
+        proof,
+        actor_session_token_digest,
+        %Subject{} = subject
+      ) do
+    with :ok <- ensure_member_mfa_reset_subject(membership, subject),
+         {:ok, payload} <- Auth.verify_member_mfa_reset_proof(proof),
+         :ok <-
+           ensure_member_mfa_reset_binding(
+             payload,
+             membership,
+             actor_session_token_digest,
+             subject
+           ) do
       Multi.new()
-      |> lock_target_membership(membership, &ensure_can_modify_membership(&1, subject))
-      |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
-        Users.reset_user_mfa(loaded_membership.user_id,
-          audit: &Audit.Events.user_mfa_reset_by_admin(subject, loaded_membership, &1)
+      |> Multi.run(:account, fn repo, _changes ->
+        fetch_and_lock_account(membership.account_id, repo: repo)
+      end)
+      |> Multi.run(:reauthentication, fn repo, _changes ->
+        ensure_member_mfa_reset_source_current(repo, payload.source, subject)
+      end)
+      |> Multi.run(:reset_memberships, fn repo, %{account: account} ->
+        lock_member_mfa_reset_memberships(repo, membership, subject, account)
+      end)
+      |> Multi.run(:reset_users, fn repo, %{reset_memberships: reset_memberships} ->
+        lock_member_mfa_reset_users(repo, reset_memberships, payload)
+      end)
+      |> Multi.run(:actor_session, fn repo, %{reset_users: %{actor: actor}} ->
+        Auth.lock_member_mfa_reset_session(
+          repo,
+          actor_session_token_digest,
+          actor.id,
+          payload.source
         )
       end)
-      |> Multi.run(:socket_topics, fn _repo, %{user: user} ->
-        {:ok, Auth.capture_live_socket_topics(user)}
+      |> Multi.run(:reset_proof, fn _repo,
+                                    %{
+                                      reset_memberships: reset_memberships,
+                                      reset_users: reset_users
+                                    } ->
+        validate_member_mfa_reset_proof(
+          payload,
+          reset_memberships,
+          reset_users
+        )
       end)
-      |> Multi.run(:tokens, fn _repo, %{user: user} -> Auth.delete_all_session_tokens(user) end)
-      |> Repo.commit_multi(
-        after_commit: fn %{socket_topics: socket_topics} ->
-          Auth.disconnect_live_socket_topics(socket_topics)
-          :ok
+      |> Multi.run(:target, fn _repo, %{reset_memberships: %{target: target}} ->
+        {:ok, target}
+      end)
+      |> put_member_mfa_reset_writes(subject)
+      |> commit_member_mfa_reset()
+    end
+  end
+
+  @doc """
+  Break-glass support reset for the private colocated administration pack. This
+  is deliberately a separate actorless capability, never a nil-proof branch in
+  the browser API. It retains the same locked hierarchy, accepted-member,
+  target-enrollment, audit, session deletion, and post-commit disconnect rules.
+  """
+  def reset_member_mfa_for_support(
+        %Membership{} = membership,
+        %Subject{actor: nil, membership_id: nil} = subject
+      ) do
+    with :ok <- ensure_member_mfa_reset_subject(membership, subject) do
+      Multi.new()
+      |> Multi.run(:account, fn repo, _changes ->
+        lock_support_account(repo, membership.account_id)
+      end)
+      |> lock_target_membership(membership, fn target ->
+        case ensure_can_modify_membership(target, subject) do
+          :ok -> ensure_member_mfa_reset_target(target)
+          {:error, reason} -> {:error, reason}
         end
-      )
+      end)
+      |> put_member_mfa_reset_writes(subject)
+      |> commit_member_mfa_reset()
+    end
+  end
+
+  def reset_member_mfa_for_support(%Membership{}, %Subject{}),
+    do: {:error, :unauthorized}
+
+  # Break-glass administration deliberately reaches disabled accounts. The
+  # browser path keeps using the active-account lock above; support still
+  # refuses a deleted account while serializing on the same row.
+  defp lock_support_account(repo, account_id) do
+    if Repo.valid_uuid?(account_id) do
+      Account.Query.not_deleted()
+      |> Account.Query.by_id(account_id)
+      |> Account.Query.lock_for_update()
+      |> repo.fetch(Account.Query)
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp prepare_member_mfa_reset(%Membership{} = membership, %Subject{} = subject) do
+    with :ok <- ensure_member_mfa_reset_subject(membership, subject) do
+      Multi.new()
+      |> Multi.run(:account, fn repo, _changes ->
+        fetch_and_lock_account(membership.account_id, repo: repo)
+      end)
+      |> Multi.run(:reset_memberships, fn repo, %{account: account} ->
+        lock_member_mfa_reset_memberships(repo, membership, subject, account)
+      end)
+      |> Multi.run(:reset_users, fn repo, %{reset_memberships: reset_memberships} ->
+        lock_member_mfa_reset_users(repo, reset_memberships, nil)
+      end)
+      |> Repo.commit_multi()
       |> case do
-        {:ok, %{user: user}} -> {:ok, user}
-        {:error, reason} -> {:error, reason}
+        {:ok,
+         %{
+           reset_memberships: %{target: target},
+           reset_users: %{target: target_user}
+         }} ->
+          {:ok, %{target: target, target_user: target_user}}
+
+        {:error, reason} ->
+          {:error, reason}
       end
+    end
+  end
+
+  defp ensure_member_mfa_reset_subject(%Membership{} = membership, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()) do
+      ensure_subject_in_account(subject, membership.account_id)
+    end
+  end
+
+  defp lock_member_mfa_reset_memberships(repo, membership, subject, account) do
+    ids = [membership.id, subject.membership_id] |> Enum.filter(&is_binary/1) |> Enum.uniq()
+
+    memberships =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_account_id(membership.account_id)
+      |> Membership.Query.by_ids(ids)
+      |> Membership.Query.ordered_by_id()
+      |> Membership.Query.lock_for_update()
+      |> repo.all()
+
+    actor = Enum.find(memberships, &(&1.id == subject.membership_id))
+    target = Enum.find(memberships, &(&1.id == membership.id))
+
+    with true <- length(memberships) == length(ids),
+         %Membership{} <- actor,
+         %Membership{} <- target,
+         :ok <- ensure_member_mfa_reset_actor(actor),
+         current_subject = current_member_mfa_reset_subject(subject, account, actor),
+         :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             current_subject,
+             Authorizer.manage_team_permission()
+           ),
+         :ok <- ensure_can_modify_membership(target, current_subject),
+         :ok <- ensure_member_mfa_reset_target(target) do
+      {:ok, %{actor: actor, current_subject: current_subject, target: target}}
+    else
+      false -> {:error, :not_found}
+      nil -> {:error, :unauthorized}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp ensure_member_mfa_reset_actor(%Membership{disabled_at: nil} = membership) do
+    if pending_invitation?(membership), do: {:error, :unauthorized}, else: :ok
+  end
+
+  defp ensure_member_mfa_reset_actor(%Membership{}), do: {:error, :unauthorized}
+
+  defp current_member_mfa_reset_subject(subject, account, actor_membership) do
+    Subject.for_user(
+      subject.actor,
+      account,
+      actor_membership,
+      subject.context,
+      auth_method: subject.auth_method,
+      mfa: subject.mfa,
+      mfa_enrollment_verified_at: subject.mfa_enrollment_verified_at,
+      user_identity_id: subject.user_identity_id
+    )
+  end
+
+  defp ensure_member_mfa_reset_target(%Membership{} = membership) do
+    if pending_invitation?(membership),
+      do: {:error, :invitation_pending},
+      else: :ok
+  end
+
+  defp lock_member_mfa_reset_users(repo, reset_memberships, payload) do
+    %{actor: actor_membership, target: target_membership} = reset_memberships
+
+    with {:ok, users} <-
+           Users.fetch_and_lock_users_by_ids(
+             [actor_membership.user_id, target_membership.user_id],
+             repo
+           ),
+         %Users.User{} = actor <- Enum.find(users, &(&1.id == actor_membership.user_id)),
+         %Users.User{} = target <- Enum.find(users, &(&1.id == target_membership.user_id)),
+         :ok <- ensure_member_mfa_reset_target_user(target, payload) do
+      {:ok, %{actor: actor, target: target}}
+    else
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp ensure_member_mfa_reset_target_user(%Users.User{mfa_enabled_at: nil}, nil),
+    do: {:error, :mfa_not_enabled}
+
+  defp ensure_member_mfa_reset_target_user(%Users.User{mfa_enabled_at: %DateTime{}}, nil),
+    do: :ok
+
+  defp ensure_member_mfa_reset_target_user(%Users.User{} = user, payload) when is_map(payload) do
+    if user.mfa_enabled_at == payload.target_mfa_enabled_at and
+         user.updated_at == payload.target_updated_at,
+       do: :ok,
+       else: {:error, :mfa_reset_proof_stale}
+  end
+
+  defp ensure_member_mfa_reset_binding(
+         payload,
+         membership,
+         actor_session_token_digest,
+         subject
+       ) do
+    if payload.actor_id == Subject.actor_id(subject) and
+         payload.actor_membership_id == subject.membership_id and
+         payload.actor_session_token_digest == actor_session_token_digest and
+         payload.account_id == membership.account_id and
+         payload.account_id == subject.account.id and
+         payload.target_membership_id == membership.id and
+         payload.target_user_id == membership.user_id,
+       do: :ok,
+       else: {:error, :mfa_reset_proof_stale}
+  end
+
+  defp ensure_member_mfa_reset_started_target(
+         %{
+           target_membership_id: target_membership_id,
+           target_user_id: target_user_id,
+           target_mfa_enabled_at: target_mfa_enabled_at,
+           target_updated_at: target_updated_at
+         },
+         %Membership{id: target_membership_id, user_id: target_user_id},
+         %Users.User{
+           id: target_user_id,
+           mfa_enabled_at: target_mfa_enabled_at,
+           updated_at: target_updated_at
+         }
+       )
+       when is_binary(target_membership_id) and is_binary(target_user_id) and
+              is_struct(target_mfa_enabled_at, DateTime) and
+              is_struct(target_updated_at, DateTime),
+       do: :ok
+
+  defp ensure_member_mfa_reset_started_target(_reauthentication, _membership, _user),
+    do: {:error, :mfa_reset_proof_stale}
+
+  defp ensure_member_mfa_reset_source_current(_repo, {:local, _proof}, %Subject{}),
+    do: {:ok, :local}
+
+  defp ensure_member_mfa_reset_source_current(repo, {:sso, reauthentication}, subject) do
+    SSO.ensure_member_mfa_reset_reauthentication_current(
+      repo,
+      reauthentication,
+      Subject.actor_id(subject),
+      subject.account.id
+    )
+  end
+
+  defp ensure_member_mfa_reset_source_current(_repo, _source, %Subject{}),
+    do: {:error, :mfa_reset_proof_stale}
+
+  defp validate_member_mfa_reset_proof(
+         payload,
+         %{actor: actor_membership, target: target_membership},
+         %{actor: actor, target: target}
+       ) do
+    with true <- payload.actor_id == actor.id,
+         true <- payload.actor_membership_id == actor_membership.id,
+         true <- payload.target_membership_id == target_membership.id,
+         true <- payload.target_user_id == target.id,
+         true <- payload.target_mfa_enabled_at == target.mfa_enabled_at,
+         true <- payload.target_updated_at == target.updated_at,
+         :ok <- validate_member_mfa_reset_local_source(payload.source, actor) do
+      {:ok, :valid}
+    else
+      false -> {:error, :mfa_reset_proof_stale}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp validate_member_mfa_reset_local_source({:local, _proof} = source, actor),
+    do: Auth.verify_local_member_mfa_reset_source(source, actor)
+
+  defp validate_member_mfa_reset_local_source({:sso, _reauthentication}, _actor), do: :ok
+
+  defp put_member_mfa_reset_writes(multi, subject) do
+    multi
+    |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
+      Users.reset_user_mfa(loaded_membership.user_id,
+        audit: &Audit.Events.user_mfa_reset_by_admin(subject, loaded_membership, &1)
+      )
+    end)
+    |> Multi.run(:socket_topics, fn _repo, %{user: user} ->
+      {:ok, Auth.capture_live_socket_topics(user)}
+    end)
+    |> Multi.run(:tokens, fn _repo, %{user: user} -> Auth.delete_all_session_tokens(user) end)
+  end
+
+  defp commit_member_mfa_reset(multi) do
+    multi
+    |> Repo.commit_multi(
+      after_commit: fn %{socket_topics: socket_topics} ->
+        Auth.disconnect_live_socket_topics(socket_topics)
+        :ok
+      end
+    )
+    |> case do
+      {:ok, %{user: user}} -> {:ok, user}
+      {:error, reason} -> {:error, reason}
     end
   end
 

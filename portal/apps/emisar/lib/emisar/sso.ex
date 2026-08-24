@@ -1097,6 +1097,273 @@ defmodule Emisar.SSO do
 
   # -- Login flow (pre-Subject — it IS the authentication) -------------
 
+  @member_mfa_reset_reauthentication_max_age_seconds 120
+  @member_mfa_reset_reauthentication_clock_skew_seconds 30
+
+  @doc """
+  Presentation facts for the acting browser's usable SSO reset step-up. Only
+  the exact active identity behind this session qualifies, and its current
+  provider must still be enabled and marked as satisfying MFA.
+  """
+  def fetch_member_mfa_reset_reauthentication_facts(%Subject{} = subject) do
+    with {:ok, {_identity, provider}} <- fetch_member_mfa_reset_identity(subject) do
+      {:ok, %{provider_name: provider.name}}
+    end
+  end
+
+  @doc """
+  Begin a dedicated, authenticated SSO reauthentication for an administrator
+  MFA reset. This never enters the JIT/link/sign-in flow. Fixed `prompt=login`
+  and `max_age=0` request a fresh IdP ceremony; completion separately requires a
+  recent integer `auth_time` because oidcc does not enforce that claim.
+  """
+  def begin_member_mfa_reset_reauthentication(
+        redirect_uri,
+        actor_session_token_digest,
+        %Subject{} = subject
+      )
+      when is_binary(redirect_uri) and is_binary(actor_session_token_digest) do
+    with {:ok, {identity, provider}} <- fetch_member_mfa_reset_identity(subject),
+         {:ok, begun} <-
+           OIDC.begin_authorization(provider,
+             redirect_uri: redirect_uri,
+             url_extension: [{"prompt", "login"}, {"max_age", "0"}]
+           ) do
+      {:ok,
+       Map.merge(begun, %{
+         actor_id: Subject.actor_id(subject),
+         account_id: subject.account.id,
+         actor_membership_id: subject.membership_id,
+         actor_session_token_digest: actor_session_token_digest,
+         identity_id: identity.id,
+         provider_identifier: identity.provider_identifier,
+         provider_id: provider.id,
+         namespace: callback_namespace(provider),
+         started_at: System.system_time(:second)
+       })}
+    end
+  end
+
+  @doc """
+  Complete the dedicated reset reauthentication. The callback may only prove
+  the exact active identity already carried by the authenticated session; it
+  never provisions, links, touches last-seen state, or mints a login session.
+  """
+  def complete_member_mfa_reset_reauthentication(
+        params,
+        stashed,
+        actor_session_token_digest,
+        %Subject{} = subject
+      )
+      when is_map(params) and is_map(stashed) and is_binary(actor_session_token_digest) do
+    with :ok <-
+           ensure_member_mfa_reset_stash(stashed, actor_session_token_digest, subject),
+         {:ok, {identity, provider}} <- fetch_member_mfa_reset_identity(subject),
+         :ok <- ensure_member_mfa_reset_started_identity(stashed, identity, provider),
+         {:ok, %{identifier: identifier, claims: claims}} <-
+           OIDC.verify_callback(provider, params, stashed),
+         true <- identifier == identity.provider_identifier,
+         {:ok, auth_time} <- member_mfa_reset_auth_time(claims, stashed),
+         reauthentication = %{
+           provider_id: provider.id,
+           identity_id: identity.id,
+           provider_identifier: identity.provider_identifier,
+           namespace: callback_namespace(provider),
+           auth_time: auth_time,
+           target_membership_id: Map.get(stashed, :target_membership_id),
+           target_user_id: Map.get(stashed, :target_user_id),
+           target_mfa_enabled_at: Map.get(stashed, :target_mfa_enabled_at),
+           target_updated_at: Map.get(stashed, :target_updated_at)
+         },
+         {:ok, current} <-
+           lock_member_mfa_reset_reauthentication(reauthentication, subject) do
+      {:ok, current}
+    else
+      _other -> {:error, :mfa_reset_reauthentication_invalid}
+    end
+  end
+
+  def complete_member_mfa_reset_reauthentication(_params, _stashed, _token_digest, %Subject{}),
+    do: {:error, :mfa_reset_reauthentication_invalid}
+
+  @doc """
+  Internal — Accounts calls this inside the final reset transaction. Lock and
+  recheck the exact provider and identity so a disable, MFA-trust downgrade,
+  namespace edit, rebind, or retirement that lands after the callback wins and
+  invalidates the handoff before the target credential changes.
+  """
+  def ensure_member_mfa_reset_reauthentication_current(
+        repo,
+        %{
+          provider_id: provider_id,
+          identity_id: identity_id,
+          provider_identifier: provider_identifier,
+          namespace: namespace,
+          auth_time: auth_time
+        } = reauthentication,
+        actor_id,
+        account_id
+      )
+      when is_binary(provider_id) and is_binary(identity_id) and
+             is_binary(provider_identifier) and is_tuple(namespace) and is_integer(auth_time) and
+             is_binary(actor_id) and is_binary(account_id) do
+    provider =
+      IdentityProvider.Query.not_deleted()
+      |> IdentityProvider.Query.by_account_id(account_id)
+      |> IdentityProvider.Query.by_id(provider_id)
+      |> IdentityProvider.Query.lock_for_update()
+      |> repo.peek()
+
+    with %IdentityProvider{enabled: true, satisfies_mfa: true} = provider <- provider,
+         :ok <- ensure_member_mfa_reset_auth_time_current(auth_time),
+         true <- callback_namespace(provider) == namespace,
+         %UserIdentity{} <-
+           lock_member_mfa_reset_identity(
+             repo,
+             identity_id,
+             actor_id,
+             account_id,
+             provider_id,
+             provider_identifier
+           ) do
+      {:ok, reauthentication}
+    else
+      _other -> {:error, :mfa_reset_proof_stale}
+    end
+  end
+
+  def ensure_member_mfa_reset_reauthentication_current(
+        _repo,
+        _reauthentication,
+        _actor_id,
+        _account_id
+      ),
+      do: {:error, :mfa_reset_proof_stale}
+
+  defp fetch_member_mfa_reset_identity(
+         %Subject{
+           actor: %Users.User{id: actor_id},
+           account: %Accounts.Account{id: account_id},
+           auth_method: :sso,
+           user_identity_id: identity_id
+         } = subject
+       )
+       when is_binary(identity_id) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_sso_posture_permission()
+           ),
+         %UserIdentity{provider: %IdentityProvider{} = provider} = identity <-
+           peek_member_mfa_reset_identity(identity_id, actor_id, account_id, subject),
+         true <- provider.enabled and provider.satisfies_mfa do
+      {:ok, {identity, provider}}
+    else
+      _other -> {:error, :mfa_reset_reauthentication_unavailable}
+    end
+  end
+
+  defp fetch_member_mfa_reset_identity(%Subject{}),
+    do: {:error, :mfa_reset_reauthentication_unavailable}
+
+  defp peek_member_mfa_reset_identity(identity_id, actor_id, account_id, subject) do
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.provider_identifier_active()
+    |> UserIdentity.Query.by_id(identity_id)
+    |> UserIdentity.Query.by_user_id(actor_id)
+    |> UserIdentity.Query.by_account_id(account_id)
+    |> UserIdentity.Query.with_preloaded_provider()
+    |> Authorizer.for_subject(subject)
+    |> Repo.peek()
+  end
+
+  defp lock_member_mfa_reset_identity(
+         repo,
+         identity_id,
+         actor_id,
+         account_id,
+         provider_id,
+         provider_identifier
+       ) do
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.provider_identifier_active()
+    |> UserIdentity.Query.by_id(identity_id)
+    |> UserIdentity.Query.by_user_id(actor_id)
+    |> UserIdentity.Query.by_account_id(account_id)
+    |> UserIdentity.Query.by_provider_id(provider_id)
+    |> UserIdentity.Query.by_provider_identifier(provider_identifier)
+    |> UserIdentity.Query.lock_for_update()
+    |> repo.peek()
+  end
+
+  defp ensure_member_mfa_reset_stash(stashed, actor_session_token_digest, subject) do
+    if Map.get(stashed, :actor_id) == Subject.actor_id(subject) and
+         Map.get(stashed, :account_id) == subject.account.id and
+         Map.get(stashed, :actor_membership_id) == subject.membership_id and
+         Map.get(stashed, :actor_session_token_digest) == actor_session_token_digest and
+         is_integer(Map.get(stashed, :started_at)) and
+         is_binary(Map.get(stashed, :target_membership_id)) and
+         is_binary(Map.get(stashed, :target_user_id)) and
+         is_struct(Map.get(stashed, :target_mfa_enabled_at), DateTime) and
+         is_struct(Map.get(stashed, :target_updated_at), DateTime),
+       do: :ok,
+       else: {:error, :mfa_reset_reauthentication_invalid}
+  end
+
+  defp ensure_member_mfa_reset_started_identity(stashed, identity, provider) do
+    if Map.get(stashed, :identity_id) == identity.id and
+         Map.get(stashed, :provider_id) == provider.id and
+         Map.get(stashed, :provider_identifier) == identity.provider_identifier and
+         Map.get(stashed, :namespace) == callback_namespace(provider),
+       do: :ok,
+       else: {:error, :mfa_reset_reauthentication_invalid}
+  end
+
+  defp member_mfa_reset_auth_time(%{"auth_time" => auth_time}, %{started_at: started_at})
+       when is_integer(auth_time) and is_integer(started_at) do
+    now = System.system_time(:second)
+    skew = @member_mfa_reset_reauthentication_clock_skew_seconds
+    max_age = @member_mfa_reset_reauthentication_max_age_seconds
+
+    if auth_time >= started_at - skew and auth_time >= now - max_age - skew and
+         auth_time <= now + skew,
+       do: {:ok, auth_time},
+       else: {:error, :mfa_reset_reauthentication_invalid}
+  end
+
+  defp member_mfa_reset_auth_time(_claims, _stashed),
+    do: {:error, :mfa_reset_reauthentication_invalid}
+
+  defp ensure_member_mfa_reset_auth_time_current(auth_time) when is_integer(auth_time) do
+    now = System.system_time(:second)
+    skew = @member_mfa_reset_reauthentication_clock_skew_seconds
+
+    if auth_time >= now - @member_mfa_reset_reauthentication_max_age_seconds - skew and
+         auth_time <= now + skew,
+       do: :ok,
+       else: {:error, :mfa_reset_proof_stale}
+  end
+
+  defp lock_member_mfa_reset_reauthentication(reauthentication, subject) do
+    Multi.new()
+    |> Multi.run(:account, fn repo, _changes ->
+      Accounts.fetch_and_lock_account(subject.account.id, repo: repo)
+    end)
+    |> Multi.run(:reauthentication, fn repo, _changes ->
+      ensure_member_mfa_reset_reauthentication_current(
+        repo,
+        reauthentication,
+        Subject.actor_id(subject),
+        subject.account.id
+      )
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{reauthentication: current}} -> {:ok, current}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc """
   Build the IdP authorization redirect for an enabled provider. The public
   boundary — the web layer never calls the internal `OIDC` wrapper directly.

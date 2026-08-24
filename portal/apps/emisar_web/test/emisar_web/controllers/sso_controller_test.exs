@@ -10,6 +10,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
   # The session key the controller stashes the OIDC transaction secrets under.
   @stash_key "sso_login"
+  @member_mfa_reset_stash_key "member_mfa_reset_sso"
 
   defmodule StubOIDC do
     @behaviour Emisar.SSO.OIDC
@@ -23,8 +24,22 @@ defmodule EmisarWeb.SSOControllerTest do
     @impl Emisar.SSO.OIDC
     def verify_callback(_provider, params, _stashed) do
       claims = params["_claims"] || %{}
+      claims = normalize_numeric_auth_time(claims)
       {:ok, %{identifier: claims["sub"], claims: claims}}
     end
+
+    # ConnTest query-encodes the canned claims, while a real decoded ID token
+    # preserves JSON numbers. Restore that one protocol type so the stub models
+    # oidcc's verified claim map instead of Plug's query-string representation.
+    defp normalize_numeric_auth_time(%{"auth_time" => auth_time} = claims)
+         when is_binary(auth_time) do
+      case Integer.parse(auth_time) do
+        {value, ""} -> Map.put(claims, "auth_time", value)
+        _other -> claims
+      end
+    end
+
+    defp normalize_numeric_auth_time(claims), do: claims
   end
 
   # A stub whose callback verification fails with an UNMAPPED reason — to exercise
@@ -199,7 +214,251 @@ defmodule EmisarWeb.SSOControllerTest do
     end
   end
 
+  describe "POST /app/:account/settings/team/:membership/reset_2fa/sso" do
+    test "an authenticated SSO owner begins a dedicated reset reauthentication", %{conn: conn} do
+      reset = member_mfa_reset_controller_fixture(conn)
+
+      conn =
+        post(
+          reset.conn,
+          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_2fa/sso"
+        )
+
+      assert redirected_to(conn) == "https://idp.test/auth"
+
+      stash = get_session(conn, @member_mfa_reset_stash_key)
+      assert stash.actor_id == reset.actor.id
+      assert stash.actor_membership_id == reset.actor_membership.id
+      assert stash.account_id == reset.account.id
+      assert stash.identity_id == reset.identity.id
+      assert stash.provider_identifier == reset.identity.provider_identifier
+      assert stash.target_membership_id == reset.target_membership.id
+      assert stash.target_user_id == reset.target.id
+      assert stash.target_mfa_enabled_at == reset.target.mfa_enabled_at
+      assert stash.target_updated_at == reset.target.updated_at
+      assert is_integer(stash.started_at)
+      refute get_session(conn, @stash_key)
+
+      assert {:ok, %Emisar.Users.User{id: actor_id}, _session} =
+               Emisar.Auth.fetch_user_and_token_by_session_token(reset.session_token)
+
+      assert actor_id == reset.actor.id
+    end
+
+    test "GET is not routed and POST requires the browser CSRF token", %{conn: conn} do
+      reset = member_mfa_reset_controller_fixture(conn)
+
+      path =
+        ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_2fa/sso"
+
+      assert get(reset.conn, path).status == 404
+
+      show_conn = get(reset.conn, ~p"/app/#{reset.account}/settings/team")
+      csrf_token = Plug.CSRFProtection.get_csrf_token()
+
+      assert_error_sent(403, fn ->
+        reset.conn
+        |> Plug.Conn.put_private(:plug_skip_csrf_protection, false)
+        |> post(path, %{})
+      end)
+
+      allowed =
+        show_conn
+        |> Plug.Conn.put_private(:plug_skip_csrf_protection, false)
+        |> post(path, %{"_csrf_token" => csrf_token})
+
+      assert redirected_to(allowed) == "https://idp.test/auth"
+    end
+
+    test "the callback resets the target without replacing or re-minting the actor session", %{
+      conn: conn
+    } do
+      reset = member_mfa_reset_controller_fixture(conn)
+
+      begun =
+        post(
+          reset.conn,
+          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_2fa/sso"
+        )
+
+      before_tokens =
+        Emisar.Auth.UserToken.Query.by_user_id(reset.actor.id) |> Repo.aggregate(:count)
+
+      completed =
+        begun
+        |> recycle()
+        |> get(~p"/sign_in/sso/callback", %{
+          "_claims" => %{
+            "sub" => reset.identity.provider_identifier,
+            "auth_time" => System.system_time(:second)
+          }
+        })
+
+      assert redirected_to(completed) == ~p"/app/#{reset.account}/settings/team"
+      refute get_session(completed, @member_mfa_reset_stash_key)
+      assert get_session(completed, :user_token) == reset.session_token
+      assert is_nil(Repo.reload!(reset.target).mfa_enabled_at)
+
+      assert {:ok, %Emisar.Users.User{id: actor_id}, actor_session} =
+               Emisar.Auth.fetch_user_and_token_by_session_token(reset.session_token)
+
+      assert actor_id == reset.actor.id
+      assert actor_session.auth_method == :sso
+      assert actor_session.user_identity_id == reset.identity.id
+
+      assert Emisar.Auth.UserToken.Query.by_user_id(reset.actor.id) |> Repo.aggregate(:count) ==
+               before_tokens
+
+      refute Emisar.Audit.Event.Query.all()
+             |> Emisar.Audit.Event.Query.by_event_type("user.signed_in")
+             |> Repo.exists?()
+    end
+
+    test "a wrong subject or revoked provider trust has no provisioning or reset side effects", %{
+      conn: conn
+    } do
+      for revoke_trust? <- [false, true] do
+        reset = member_mfa_reset_controller_fixture(conn)
+
+        begun =
+          post(
+            reset.conn,
+            ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_2fa/sso"
+          )
+
+        if revoke_trust? do
+          reset.provider
+          |> Ecto.Changeset.change(satisfies_mfa: false)
+          |> Repo.update!()
+        end
+
+        users_before = Repo.aggregate(Emisar.Users.User, :count)
+        identities_before = Repo.aggregate(Emisar.SSO.UserIdentity, :count)
+        links_before = Repo.aggregate(Emisar.SSO.LinkRequest, :count)
+
+        subject = if revoke_trust?, do: reset.identity.provider_identifier, else: "wrong-subject"
+
+        completed =
+          begun
+          |> recycle()
+          |> get(~p"/sign_in/sso/callback", %{
+            "_claims" => %{
+              "sub" => subject,
+              "auth_time" => System.system_time(:second)
+            }
+          })
+
+        assert redirected_to(completed) == ~p"/app/#{reset.account.id}/settings/team"
+        assert Phoenix.Flash.get(completed.assigns.flash, :error) =~ "reauthentication failed"
+        refute is_nil(Repo.reload!(reset.target).mfa_enabled_at)
+        assert Repo.aggregate(Emisar.Users.User, :count) == users_before
+        assert Repo.aggregate(Emisar.SSO.UserIdentity, :count) == identities_before
+        assert Repo.aggregate(Emisar.SSO.LinkRequest, :count) == links_before
+
+        assert {:ok, %Emisar.Users.User{}, _session} =
+                 Emisar.Auth.fetch_user_and_token_by_session_token(reset.session_token)
+      end
+    end
+
+    test "a target re-enrollment during the IdP round trip is not reset", %{conn: conn} do
+      reset = member_mfa_reset_controller_fixture(conn)
+
+      begun =
+        post(
+          reset.conn,
+          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_2fa/sso"
+        )
+
+      new_epoch = DateTime.add(reset.target.mfa_enabled_at, 1, :second)
+
+      re_enrolled =
+        Fixtures.Users.set_mfa_state(reset.target,
+          mfa_secret: Emisar.Auth.generate_mfa_secret(),
+          mfa_enabled_at: new_epoch,
+          mfa_recovery_codes: ["new-recovery-digest"]
+        )
+
+      target_session = Fixtures.Auth.create_session_token!(re_enrolled, :magic_link, nil)
+
+      completed =
+        begun
+        |> recycle()
+        |> get(~p"/sign_in/sso/callback", %{
+          "_claims" => %{
+            "sub" => reset.identity.provider_identifier,
+            "auth_time" => System.system_time(:second)
+          }
+        })
+
+      assert redirected_to(completed) == ~p"/app/#{reset.account.id}/settings/team"
+      assert Repo.reload!(reset.target).mfa_enabled_at == new_epoch
+
+      assert {:ok, _target, _session} =
+               Emisar.Auth.fetch_user_and_token_by_session_token(target_session)
+    end
+
+    test "a revoked actor session takes the controlled failure path", %{conn: conn} do
+      reset = member_mfa_reset_controller_fixture(conn)
+
+      begun =
+        post(
+          reset.conn,
+          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_2fa/sso"
+        )
+
+      :ok = Emisar.Auth.delete_session_token(reset.session_token)
+
+      completed =
+        begun
+        |> recycle()
+        |> get(~p"/sign_in/sso/callback", %{
+          "_claims" => %{
+            "sub" => reset.identity.provider_identifier,
+            "auth_time" => System.system_time(:second)
+          }
+        })
+
+      assert redirected_to(completed) == ~p"/app/#{reset.account.id}/settings/team"
+      refute get_session(completed, @member_mfa_reset_stash_key)
+      assert Phoenix.Flash.get(completed.assigns.flash, :error) =~ "reauthentication failed"
+      refute is_nil(Repo.reload!(reset.target).mfa_enabled_at)
+    end
+  end
+
   describe "GET /sign_in/sso/callback" do
+    test "a normal sign-in callback cannot replace an authenticated session", %{conn: conn} do
+      {conn, actor, _actor_account} = register_and_log_in(conn)
+      actor_token = get_session(conn, :user_token)
+      provider = provider_fixture(enterprise_account())
+
+      conn =
+        conn
+        |> put_session(@stash_key, %{
+          provider_id: provider.id,
+          state: "s",
+          nonce: "n",
+          pkce_verifier: "v",
+          redirect_uri: "https://emisar.test/sign_in/sso/callback"
+        })
+        |> get(~p"/sign_in/sso/callback", %{
+          "_claims" => %{
+            "sub" => "replacement-sub",
+            "email" => "replacement@example.test",
+            "email_verified" => "true"
+          }
+        })
+
+      assert redirected_to(conn) == ~p"/app"
+      assert get_session(conn, :user_token) == actor_token
+      refute get_session(conn, @stash_key)
+      assert Emisar.Users.fetch_user_by_email("replacement@example.test") == {:error, :not_found}
+
+      assert {:ok, %Emisar.Users.User{id: actor_id}, _auth} =
+               Emisar.Auth.fetch_user_and_token_by_session_token(actor_token)
+
+      assert actor_id == actor.id
+    end
+
     test "a valid stash + verified claims logs the user in with :sso provenance", %{conn: conn} do
       account = enterprise_account()
       provider = provider_fixture(account)
@@ -423,5 +682,53 @@ defmodule EmisarWeb.SSOControllerTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Single sign-on failed"
       refute get_session(conn, :user_token)
     end
+  end
+
+  defp member_mfa_reset_controller_fixture(conn) do
+    {actor, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+    actor_membership = Fixtures.Memberships.fetch_membership(account.id, actor.id)
+    provider = provider_fixture(account, satisfies_mfa: true)
+
+    identity =
+      Fixtures.SSO.create_user_identity(%{
+        account_id: account.id,
+        provider_id: provider.id,
+        user_id: actor.id,
+        provider_identifier: "reset-controller-sub"
+      })
+
+    session_token =
+      Fixtures.Auth.create_session_token!(actor, :sso, DateTime.utc_now(), %{},
+        user_identity_id: identity.id
+      )
+
+    conn = conn |> init_test_session(%{}) |> put_session(:user_token, session_token)
+
+    target =
+      Fixtures.Users.create_user()
+      |> Fixtures.Users.set_mfa_state(
+        mfa_secret: Emisar.Auth.generate_mfa_secret(),
+        mfa_enabled_at: DateTime.utc_now(),
+        mfa_recovery_codes: []
+      )
+
+    target_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: target.id,
+        role: "operator"
+      )
+
+    %{
+      account: account,
+      actor: actor,
+      actor_membership: actor_membership,
+      conn: conn,
+      identity: identity,
+      provider: provider,
+      session_token: session_token,
+      target: target,
+      target_membership: target_membership
+    }
   end
 end

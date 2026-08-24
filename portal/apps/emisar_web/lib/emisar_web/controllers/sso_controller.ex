@@ -3,16 +3,18 @@ defmodule EmisarWeb.SSOController do
   The OIDC relying-party login endpoints. `begin/2` redirects to the IdP
   (stashing the one-time-use, session-bound state/nonce/PKCE-verifier in the
   session — there is no user-agent binding; do not add one to this docstring
-  without adding it to `begin/2` and `callback/2`); `callback/2` validates the response, resolves/JIT-provisions the
-  identity via `Emisar.SSO`, and logs the user in with `:sso` provenance.
+  without adding it to `begin/2` and `callback/2`). `callback/2` validates the
+  response, then either completes an anonymous sign-in through `Emisar.SSO` or
+  completes an authenticated, purpose-bound member MFA-reset reauthentication.
+  The reset branch preserves the actor's existing session and never provisions
+  or signs in an identity.
 
   The `redirect_uri` is the fixed registered callback (never attacker-supplied),
   and the post-login redirect is `UserAuth`'s internal `user_return_to`/
   `signed_in_path` — so there is no open-redirect surface here (H2).
   """
   use EmisarWeb, :controller
-  alias Emisar.Accounts
-  alias Emisar.SSO
+  alias Emisar.{Accounts, Auth, SSO, Users}
   alias EmisarWeb.RecentAccounts
   alias EmisarWeb.UserAuth
   require Logger
@@ -20,6 +22,7 @@ defmodule EmisarWeb.SSOController do
   # The login transaction secrets the callback needs, kept server-side in the
   # session (signed, bound to this browser) for the duration of the round-trip.
   @stash_key :sso_login
+  @member_mfa_reset_stash_key :member_mfa_reset_sso
 
   def begin(conn, %{"provider_id" => provider_id}) do
     redirect_uri = url(~p"/sign_in/sso/callback")
@@ -27,6 +30,7 @@ defmodule EmisarWeb.SSOController do
     with {:ok, provider} <- SSO.fetch_provider_for_sign_in(provider_id),
          {:ok, begun} <- SSO.begin_auth(provider, redirect_uri: redirect_uri) do
       conn
+      |> delete_session(@member_mfa_reset_stash_key)
       |> put_session(@stash_key, %{
         provider_id: provider.id,
         state: begun.state,
@@ -43,6 +47,66 @@ defmodule EmisarWeb.SSOController do
         # sign-in page with nothing written down anywhere.
         Logger.warning("SSO begin failed for provider #{provider_id}: #{describe_failure(other)}")
         sso_error(conn, "That single sign-on link is no longer available.")
+    end
+  end
+
+  def begin_member_mfa_reset(
+        conn,
+        %{
+          "account_id_or_slug" => account_ref,
+          "membership_id" => membership_id
+        }
+      ) do
+    redirect_uri = url(~p"/sign_in/sso/callback")
+
+    with %Users.User{} <- conn.assigns[:current_user],
+         %Auth.UserToken{token: actor_session_token_digest} <- conn.assigns[:current_auth],
+         {:ok, subject} <- UserAuth.subject_for_account(conn, account_ref),
+         true <- Accounts.subject_can_manage_team?(subject),
+         {:ok, %{reset_mfa?: true, membership: target_membership}} <-
+           Accounts.fetch_team_member_facts(membership_id, subject),
+         {:ok, begun} <-
+           SSO.begin_member_mfa_reset_reauthentication(
+             redirect_uri,
+             actor_session_token_digest,
+             subject
+           ) do
+      target_user = target_membership.user
+
+      stash =
+        begun
+        |> Map.take([
+          :actor_id,
+          :actor_membership_id,
+          :actor_session_token_digest,
+          :account_id,
+          :identity_id,
+          :provider_identifier,
+          :provider_id,
+          :namespace,
+          :started_at,
+          :state,
+          :nonce,
+          :pkce_verifier
+        ])
+        |> Map.put(:redirect_uri, redirect_uri)
+        |> Map.put(:target_membership_id, membership_id)
+        |> Map.put(:target_user_id, target_user.id)
+        |> Map.put(:target_mfa_enabled_at, target_user.mfa_enabled_at)
+        |> Map.put(:target_updated_at, target_user.updated_at)
+
+      conn
+      |> delete_session(@stash_key)
+      |> put_session(@member_mfa_reset_stash_key, stash)
+      |> redirect(external: begun.authorize_url)
+    else
+      other ->
+        Logger.warning("member MFA reset SSO begin failed: #{describe_failure(other)}")
+
+        conn
+        |> delete_session(@member_mfa_reset_stash_key)
+        |> put_flash(:error, "SSO reauthentication is not available for this reset.")
+        |> redirect(to: ~p"/app/#{account_ref}/settings/team")
     end
   end
 
@@ -68,6 +132,21 @@ defmodule EmisarWeb.SSOController do
   defp describe_failure(other), do: inspect(other)
 
   def callback(conn, params) do
+    case {get_session(conn, @member_mfa_reset_stash_key), conn.assigns[:current_user]} do
+      {%{} = stash, _current_user} ->
+        complete_member_mfa_reset(conn, params, stash)
+
+      {nil, %Users.User{}} ->
+        conn
+        |> delete_session(@stash_key)
+        |> redirect(to: ~p"/app")
+
+      {nil, nil} ->
+        complete_sign_in(conn, params)
+    end
+  end
+
+  defp complete_sign_in(conn, params) do
     with %{provider_id: provider_id} = stash <- get_session(conn, @stash_key),
          {:ok, started_provider} <- SSO.fetch_provider_for_sign_in(provider_id),
          {:ok, %{user: user, identity: identity, provider: provider, created?: created?}} <-
@@ -121,6 +200,58 @@ defmodule EmisarWeb.SSOController do
         sso_error(conn, callback_error_message(reason))
     end
   end
+
+  defp complete_member_mfa_reset(conn, params, stash) do
+    account_ref = Map.get(stash, :account_id)
+    target_membership_id = Map.get(stash, :target_membership_id)
+
+    with %Users.User{} <- conn.assigns[:current_user],
+         %Auth.UserToken{token: actor_session_token_digest} <- conn.assigns[:current_auth],
+         account_id when is_binary(account_id) <- account_ref,
+         membership_id when is_binary(membership_id) <- target_membership_id,
+         {:ok, subject} <- UserAuth.subject_for_account(conn, account_id),
+         {:ok, %{reset_mfa?: true, membership: membership}} <-
+           Accounts.fetch_team_member_facts(membership_id, subject),
+         {:ok, reauthentication} <-
+           SSO.complete_member_mfa_reset_reauthentication(
+             params,
+             stash,
+             actor_session_token_digest,
+             subject
+           ),
+         {:ok, proof} <-
+           Accounts.issue_member_mfa_reset_sso_proof(
+             membership,
+             reauthentication,
+             actor_session_token_digest,
+             subject
+           ),
+         {:ok, _user} <-
+           Accounts.reset_member_mfa(
+             membership,
+             proof,
+             actor_session_token_digest,
+             subject
+           ) do
+      conn
+      |> delete_session(@member_mfa_reset_stash_key)
+      |> put_flash(:info, "2FA reset. They can set up a new authenticator after signing in.")
+      |> redirect(to: ~p"/app/#{subject.account}/settings/team")
+    else
+      reason ->
+        Logger.warning("member MFA reset SSO callback failed: #{describe_failure(reason)}")
+
+        conn
+        |> delete_session(@member_mfa_reset_stash_key)
+        |> put_flash(:error, "SSO reauthentication failed. Start the reset again.")
+        |> redirect(to: member_mfa_reset_failure_path(account_ref))
+    end
+  end
+
+  defp member_mfa_reset_failure_path(account_id) when is_binary(account_id),
+    do: ~p"/app/#{account_id}/settings/team"
+
+  defp member_mfa_reset_failure_path(_account_id), do: ~p"/app"
 
   defp put_default_return_to(conn, path) do
     case get_session(conn, :user_return_to) do

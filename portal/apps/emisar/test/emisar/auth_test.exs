@@ -2617,6 +2617,120 @@ defmodule Emisar.AuthTest do
     end
   end
 
+  describe "issue_member_mfa_reset_proof/5" do
+    test "binds a verified local source to the actor, account, target, and target epoch" do
+      reset = member_mfa_reset_auth_fixture()
+
+      assert {:ok, payload} = Auth.verify_member_mfa_reset_proof(reset.reset_proof)
+      assert payload.actor_id == reset.actor.id
+      assert payload.account_id == reset.account.id
+      assert payload.target_membership_id == reset.target_membership.id
+      assert payload.target_mfa_enabled_at == reset.target.mfa_enabled_at
+      assert payload.actor_session_token_digest == reset.actor_session_token_digest
+      assert payload.source == {:local, reset.local_proof}
+
+      assert Auth.issue_member_mfa_reset_proof(
+               reset.target_membership,
+               %{reset.target | mfa_enabled_at: nil},
+               {:local, reset.local_proof},
+               reset.actor_session_token_digest,
+               reset.subject
+             ) == {:error, :mfa_reset_proof_stale}
+    end
+  end
+
+  describe "verify_member_mfa_reset_proof/1" do
+    test "uses a separate salt and a 120-second lifetime" do
+      reset = member_mfa_reset_auth_fixture()
+      signing_secret = Application.fetch_env!(:emisar, :email_link_secret)
+
+      assert Auth.verify_member_mfa_reset_proof(reset.local_proof) ==
+               {:error, :mfa_reset_proof_stale}
+
+      assert {:ok, payload} =
+               Phoenix.Token.verify(
+                 signing_secret,
+                 "member mfa reset proof",
+                 reset.reset_proof,
+                 max_age: 120
+               )
+
+      expired =
+        Phoenix.Token.sign(signing_secret, "member mfa reset proof", payload,
+          signed_at: System.system_time(:second) - 121
+        )
+
+      assert Auth.verify_member_mfa_reset_proof(expired) ==
+               {:error, :mfa_reset_proof_stale}
+    end
+  end
+
+  describe "verify_local_member_mfa_reset_source/2" do
+    test "rechecks the embedded proof against the current locked actor row" do
+      reset = member_mfa_reset_auth_fixture()
+
+      assert Auth.verify_local_member_mfa_reset_source(
+               {:local, reset.local_proof},
+               reset.actor
+             ) == :ok
+
+      assert {:ok, changed} =
+               Users.update_user_profile(
+                 %{full_name: "Changed after verification"},
+                 reset.subject
+               )
+
+      assert Auth.verify_local_member_mfa_reset_source(
+               {:local, reset.local_proof},
+               changed
+             ) == {:error, :mfa_reset_proof_stale}
+    end
+
+    test "a fresh outer handoff cannot extend an expired local proof" do
+      reset = member_mfa_reset_auth_fixture()
+      signing_secret = Application.fetch_env!(:emisar, :email_link_secret)
+
+      assert {:ok, payload} =
+               Phoenix.Token.verify(
+                 signing_secret,
+                 "mfa sign-in proof",
+                 reset.local_proof,
+                 max_age: 120
+               )
+
+      expired =
+        Phoenix.Token.sign(signing_secret, "mfa sign-in proof", payload,
+          signed_at: System.system_time(:second) - 121
+        )
+
+      assert Auth.verify_local_member_mfa_reset_source({:local, expired}, reset.actor) ==
+               {:error, :mfa_reset_proof_stale}
+    end
+  end
+
+  describe "lock_member_mfa_reset_session/4" do
+    test "accepts only the bound live actor session and SSO identity source" do
+      reset = member_mfa_reset_auth_fixture()
+
+      assert {:ok, %UserToken{user_id: actor_id}} =
+               Auth.lock_member_mfa_reset_session(
+                 Repo,
+                 reset.actor_session_token_digest,
+                 reset.actor.id,
+                 {:local, reset.local_proof}
+               )
+
+      assert actor_id == reset.actor.id
+
+      assert Auth.lock_member_mfa_reset_session(
+               Repo,
+               reset.actor_session_token_digest,
+               reset.actor.id,
+               {:sso, %{identity_id: Repo.generate_id()}}
+             ) == {:error, :mfa_reset_proof_stale}
+    end
+  end
+
   describe "complete_current_session_mfa/3" do
     setup do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
@@ -2866,5 +2980,59 @@ defmodule Emisar.AuthTest do
       assert Auth.mfa_proof_user_id(incomplete_enrollment) == nil
       assert Auth.mfa_proof_user_id(incomplete_update) == nil
     end
+  end
+
+  defp member_mfa_reset_auth_fixture do
+    {_actor, account, subject} = Fixtures.Subjects.owner_subject()
+    secret = Auth.generate_mfa_secret()
+    {actor, _recovery_codes} = Fixtures.Users.enable_mfa!(secret, subject)
+    subject = %{subject | actor: actor}
+
+    target =
+      Fixtures.Users.create_user()
+      |> Fixtures.Users.set_mfa_state(
+        mfa_secret: Auth.generate_mfa_secret(),
+        mfa_enabled_at: DateTime.utc_now(),
+        mfa_recovery_codes: []
+      )
+
+    target_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: target.id,
+        role: "operator"
+      )
+
+    {:ok, local_proof} =
+      Auth.verify_current_session_mfa_challenge(
+        {:totp, NimbleTOTP.verification_code(secret)},
+        subject
+      )
+
+    actor = Repo.reload!(actor)
+    subject = %{subject | actor: actor}
+    actor_session_token = Fixtures.Auth.create_session_token!(actor, :magic_link, nil)
+    actor_session_token_digest = Crypto.hash(actor_session_token)
+
+    {:ok, reset_proof} =
+      Auth.issue_member_mfa_reset_proof(
+        target_membership,
+        target,
+        {:local, local_proof},
+        actor_session_token_digest,
+        subject
+      )
+
+    %{
+      account: account,
+      actor: actor,
+      actor_session_token: actor_session_token,
+      actor_session_token_digest: actor_session_token_digest,
+      local_proof: local_proof,
+      reset_proof: reset_proof,
+      subject: subject,
+      target: target,
+      target_membership: target_membership
+    }
   end
 end

@@ -315,7 +315,7 @@ defmodule Emisar.Admin do
     do: mutate_member(args, &Accounts.end_all_sessions_for/2)
 
   defp dispatch("emisar.admin.mfa.reset", args),
-    do: mutate_member(args, &Accounts.reset_member_mfa/2)
+    do: mutate_member(args, &Accounts.reset_member_mfa_for_support/2)
 
   defp dispatch(
          "emisar.admin.owner.transfer",

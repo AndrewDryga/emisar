@@ -246,6 +246,16 @@ defmodule EmisarWeb.Router do
     post "/monthly-report/:token", UnsubscribeController, :create
   end
 
+  # Registered OIDC callback shared by signed-out login and the authenticated
+  # administrator-reset reauthentication. It must precede the dynamic
+  # `/sign_in/sso/:provider_id` route below or `callback` is parsed as a
+  # provider id before either one-time session stash can be consumed.
+  scope "/", EmisarWeb do
+    pipe_through [:browser, :noindex]
+
+    get "/sign_in/sso/callback", SSOController, :callback
+  end
+
   # -- Auth surface (only when signed-out) ----------------------------
 
   scope "/", EmisarWeb do
@@ -293,7 +303,6 @@ defmodule EmisarWeb.Router do
     # SSO landing: pick a team (recent-accounts cookie + manual entry) → its branded sign-in page.
     get "/sign_in/sso", SSOSignInController, :new
     post "/sign_in/sso", SSOSignInController, :create
-    get "/sign_in/sso/callback", SSOController, :callback
     get "/sign_in/sso/:provider_id", SSOController, :begin
   end
 
@@ -305,7 +314,6 @@ defmodule EmisarWeb.Router do
     pipe_through [:browser, :noindex]
 
     get "/confirm/:token", UserConfirmationController, :confirm
-
     # The Paddle default payment link: Paddle.js auto-opens the checkout
     # overlay for the ?_ptxn= transaction. Utility page — noindex, no auth
     # (the transaction id is the capability; Paddle's overlay does the rest).
@@ -435,6 +443,12 @@ defmodule EmisarWeb.Router do
         live "/activate", ActivateLive, :show
         live "/settings/team", TeamLive, :index
         live "/settings/team/invite", TeamLive, :new
+        live "/settings/team/:membership_id/reset_2fa", TeamLive, :reset_mfa
+
+        post "/settings/team/:membership_id/reset_2fa/sso",
+             SSOController,
+             :begin_member_mfa_reset
+
         live "/settings/sso", SSOSettingsLive, :index
         live "/settings/sso/new", SSOSettingsLive, :new
         live "/settings/sso/:id", SSOSettingsLive, :show

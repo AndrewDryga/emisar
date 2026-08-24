@@ -292,7 +292,13 @@ defmodule Emisar.AdminTest do
       account = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      user = Fixtures.Users.create_user()
+      user =
+        Fixtures.Users.create_user()
+        |> Fixtures.Users.set_mfa_state(
+          mfa_secret: "JBSWY3DPEHPK3PXP",
+          mfa_enabled_at: DateTime.utc_now(),
+          mfa_recovery_codes: []
+        )
 
       membership =
         Fixtures.Memberships.create_membership(
@@ -313,6 +319,13 @@ defmodule Emisar.AdminTest do
 
       assert {:ok, _} = Admin.execute("emisar.admin.member.reinstate", args)
       assert {:ok, _} = Admin.execute("emisar.admin.sessions.revoke", args)
+
+      assert {:ok, _} =
+               Admin.execute("emisar.admin.account.disable", [
+                 "account=#{account.slug}",
+                 "reason=break-glass MFA reset"
+               ])
+
       assert {:ok, _} = Admin.execute("emisar.admin.mfa.reset", args)
     end
 

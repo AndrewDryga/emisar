@@ -54,6 +54,11 @@ defmodule EmisarWeb.TeamLive do
      |> assign(:approval_pack_modes, %{})
      |> assign(:approval_pack_drafts, %{})
      |> assign(:approval_pack_errors, %{})
+     |> assign(:mfa_reset_target, nil)
+     |> assign(:mfa_reset_mode, :totp)
+     |> assign(:mfa_reset_error, nil)
+     |> assign(:mfa_reset_recovery_form, to_form(%{"code" => ""}, as: :recovery))
+     |> assign(:mfa_reset_sso_facts, nil)
      # The branded sign-in link is a per-account constant to hand to members.
      |> assign(
        :sign_in_url,
@@ -74,6 +79,16 @@ defmodule EmisarWeb.TeamLive do
           {:noreply, load_invite_runners(socket)}
         else
           {:noreply, assign(socket, :loading?, true)}
+        end
+
+      :reset_mfa ->
+        if connected?(socket) do
+          {:noreply, load_mfa_reset(socket, params)}
+        else
+          {:noreply,
+           socket
+           |> assign(:page_title, "Reset member 2FA")
+           |> assign(:loading?, true)}
         end
 
       # Gate load/2's reads behind connected? — they run once on the live mount,
@@ -555,22 +570,26 @@ defmodule EmisarWeb.TeamLive do
     end)
   end
 
-  def handle_event("reset_mfa", %{"membership_id" => id}, socket) do
-    Permissions.gated(
-      socket,
-      Accounts.subject_can_manage_team?(socket.assigns.current_subject),
-      fn socket ->
-        with_membership(socket, id, fn membership ->
-          case Accounts.reset_member_mfa(membership, socket.assigns.current_subject) do
-            {:ok, _user} ->
-              {:ok, "2FA reset — they'll set up a new authenticator on next sign-in."}
+  def handle_event("verify_reset_totp", %{"otp" => otp}, socket) do
+    verify_and_reset_member_mfa(socket, {:totp, otp})
+  end
 
-            {:error, reason} ->
-              {:error, error_message(reason)}
-          end
-        end)
-      end
-    )
+  def handle_event("verify_reset_recovery", %{"recovery" => %{"code" => code}}, socket) do
+    verify_and_reset_member_mfa(socket, {:recovery_code, code})
+  end
+
+  def handle_event("use_reset_recovery", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:mfa_reset_mode, :recovery)
+     |> assign(:mfa_reset_error, nil)}
+  end
+
+  def handle_event("use_reset_totp", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:mfa_reset_mode, :totp)
+     |> assign(:mfa_reset_error, nil)}
   end
 
   # The per-row "Resend confirmation" button (current user, unconfirmed)
@@ -742,6 +761,117 @@ defmodule EmisarWeb.TeamLive do
     do: "Only owners and admins can invite members."
 
   defp resend_invitation_error_message(reason), do: error_message(reason)
+
+  defp load_mfa_reset(socket, %{"membership_id" => membership_id}) do
+    subject = socket.assigns.current_subject
+
+    with true <- Accounts.subject_can_manage_team?(subject),
+         result <- Accounts.fetch_team_member_facts(membership_id, subject) do
+      case result do
+        {:ok, %{reset_mfa?: true} = facts} ->
+          sso_facts =
+            case SSO.fetch_member_mfa_reset_reauthentication_facts(subject) do
+              {:ok, facts} -> facts
+              {:error, _reason} -> nil
+            end
+
+          socket
+          |> assign(:page_title, "Reset member 2FA")
+          |> assign(:loading?, false)
+          |> assign(:mfa_reset_target, facts.membership)
+          |> assign(:mfa_reset_sso_facts, sso_facts)
+          |> assign(:mfa_reset_error, nil)
+
+        {:ok, _facts} ->
+          socket
+          |> put_flash(:error, "That member no longer has 2FA to reset.")
+          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")
+
+        {:error, _reason} ->
+          raise EmisarWeb.NotFoundError
+      end
+    else
+      false ->
+        socket
+        |> put_flash(:error, "Only owners and admins can reset a member's 2FA.")
+        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")
+    end
+  end
+
+  defp load_mfa_reset(_socket, _params), do: raise(EmisarWeb.NotFoundError)
+
+  defp verify_and_reset_member_mfa(%{assigns: %{mfa_reset_target: nil}} = socket, _factor),
+    do: {:noreply, socket}
+
+  defp verify_and_reset_member_mfa(socket, factor) do
+    membership = socket.assigns.mfa_reset_target
+    subject = socket.assigns.current_subject
+    actor_session_token_digest = current_session_token_digest(socket)
+
+    with {:ok, proof} <-
+           Accounts.verify_member_mfa_reset(
+             membership,
+             factor,
+             actor_session_token_digest,
+             subject
+           ),
+         {:ok, _user} <-
+           Accounts.reset_member_mfa(
+             membership,
+             proof,
+             actor_session_token_digest,
+             subject
+           ) do
+      {:noreply,
+       socket
+       |> put_flash(:info, "2FA reset. They can set up a new authenticator after signing in.")
+       |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")}
+    else
+      {:error, :rate_limited} ->
+        {:noreply,
+         assign(
+           socket,
+           :mfa_reset_error,
+           "Too many attempts. Wait a few minutes, then try again."
+         )}
+
+      {:error, reason} when reason in [:invalid, :replay] ->
+        {:noreply,
+         assign(
+           socket,
+           :mfa_reset_error,
+           if(socket.assigns.mfa_reset_mode == :totp,
+             do: "That authenticator code didn't match. Check it and try again.",
+             else: "That recovery code didn't match or has already been used."
+           )
+         )}
+
+      {:error, reason}
+      when reason in [
+             :mfa_reset_proof_stale,
+             :mfa_not_enabled,
+             :invitation_pending,
+             :not_found
+           ] ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :error,
+           "The member or 2FA settings changed. Review the current team state."
+         )
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, :mfa_reset_error, error_message(reason))}
+    end
+  end
+
+  defp current_session_token_digest(%{
+         assigns: %{current_auth: %Emisar.Auth.UserToken{token: token}}
+       }),
+       do: token
+
+  defp current_session_token_digest(_socket), do: nil
 
   defp load(socket, params) do
     opts = LiveTable.params_to_opts(params, socket.assigns.filters)
@@ -1148,11 +1278,15 @@ defmodule EmisarWeb.TeamLive do
       width={:table}
     >
       <:title>
-        <%= if @live_action == :new do %>
-          <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
-          Invite a member
-        <% else %>
-          Team
+        <%= case @live_action do %>
+          <% :new -> %>
+            <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
+            Invite a member
+          <% :reset_mfa -> %>
+            <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
+            Reset member 2FA
+          <% _ -> %>
+            Team
         <% end %>
       </:title>
 
@@ -1316,6 +1450,148 @@ defmodule EmisarWeb.TeamLive do
               </.button>
             </:actions>
           </.simple_form>
+        </div>
+      </div>
+
+      <div :if={@live_action == :reset_mfa} class="mt-4 max-w-xl">
+        <.loading_state :if={@loading?} />
+
+        <div :if={not @loading? and @mfa_reset_target}>
+          <% target = @mfa_reset_target.user %>
+          <.status_note
+            icon="state.warning"
+            tone={:amber}
+            title="This removes their current factor"
+            primary
+          >
+            The authenticator and recovery codes for
+            <span class="font-medium text-zinc-200">
+              {Accounts.user_display_name(target) || target.email || "this member"}
+            </span>
+            are wiped. Every session they hold is signed out. They can set up a new factor
+            after signing in. Confirm the member asked for this reset before you continue.
+          </.status_note>
+
+          <div class="mt-7">
+            <%= if @current_user.mfa_enabled_at do %>
+              <%= if @mfa_reset_mode == :totp do %>
+                <.simple_form for={%{}} id="member-mfa-reset-totp" phx-submit="verify_reset_totp">
+                  <.code_input
+                    id="member-mfa-reset-otp"
+                    name="otp"
+                    numeric
+                    label="Your authenticator code"
+                    error={@mfa_reset_error}
+                  />
+                  <:actions>
+                    <.button variant={:secondary} tone={:rose} phx-disable-with="Verifying…">
+                      Verify and reset 2FA
+                    </.button>
+                    <.button
+                      :if={@mfa_reset_sso_facts}
+                      href={
+                        ~p"/app/#{@current_account}/settings/team/#{@mfa_reset_target.id}/reset_2fa/sso"
+                      }
+                      method="post"
+                      variant={:secondary}
+                      tone={:rose}
+                    >
+                      Verify with {@mfa_reset_sso_facts.provider_name} and reset 2FA
+                    </.button>
+                    <.button
+                      navigate={~p"/app/#{@current_account}/settings/team"}
+                      variant={:ghost}
+                    >
+                      Cancel
+                    </.button>
+                  </:actions>
+                </.simple_form>
+
+                <button
+                  type="button"
+                  phx-click="use_reset_recovery"
+                  class="mt-5 text-sm font-medium text-brand-400 hover:text-brand-300"
+                >
+                  Use a recovery code instead
+                </button>
+              <% else %>
+                <.simple_form
+                  for={@mfa_reset_recovery_form}
+                  id="member-mfa-reset-recovery"
+                  phx-submit="verify_reset_recovery"
+                >
+                  <.input
+                    field={@mfa_reset_recovery_form[:code]}
+                    type="text"
+                    label="Your recovery code"
+                    autocomplete="one-time-code"
+                    required
+                  />
+                  <.error :if={@mfa_reset_error}>{@mfa_reset_error}</.error>
+                  <:actions>
+                    <.button variant={:secondary} tone={:rose} phx-disable-with="Verifying…">
+                      Verify and reset 2FA
+                    </.button>
+                    <.button
+                      navigate={~p"/app/#{@current_account}/settings/team"}
+                      variant={:ghost}
+                    >
+                      Cancel
+                    </.button>
+                  </:actions>
+                </.simple_form>
+
+                <button
+                  type="button"
+                  phx-click="use_reset_totp"
+                  class="mt-5 text-sm font-medium text-brand-400 hover:text-brand-300"
+                >
+                  Use an authenticator code instead
+                </button>
+              <% end %>
+            <% else %>
+              <%= if @mfa_reset_sso_facts do %>
+                <p class="text-sm leading-relaxed text-zinc-400">
+                  Reauthenticate with your identity provider before this reset can continue.
+                </p>
+                <div class="mt-5 flex flex-wrap gap-3">
+                  <.button
+                    href={
+                      ~p"/app/#{@current_account}/settings/team/#{@mfa_reset_target.id}/reset_2fa/sso"
+                    }
+                    method="post"
+                    variant={:secondary}
+                    tone={:rose}
+                  >
+                    Verify with {@mfa_reset_sso_facts.provider_name} and reset 2FA
+                  </.button>
+                  <.button
+                    navigate={~p"/app/#{@current_account}/settings/team"}
+                    variant={:ghost}
+                  >
+                    Cancel
+                  </.button>
+                </div>
+              <% else %>
+                <.empty_state
+                  variant={:bare}
+                  tone={:danger}
+                  icon="state.locked"
+                  title="A second factor is required"
+                >
+                  Set up 2FA in your profile, then return here to reset this member's factor.
+                  <div class="mt-4">
+                    <.button
+                      navigate={~p"/app/#{@current_account}/settings/profile"}
+                      variant={:secondary}
+                    >
+                      Open profile
+                    </.button>
+                  </div>
+                </.empty_state>
+              <% end %>
+            <% end %>
+          </div>
         </div>
       </div>
 
@@ -2534,12 +2810,12 @@ defmodule EmisarWeb.TeamLive do
                the recovery path for someone locked out of both their
                authenticator and their recovery codes. It's an
                MFA-BYPASS action (it lets them enroll a NEW factor), so
-               the confirm spells out the account-takeover risk if the
+               the screen spells out the account-takeover risk if the
                admin is wrong about who's really asking. --%>
           <.menu_item
             :if={@member.reset_mfa?}
             tone={:amber}
-            phx-click={open_confirm("reset-2fa-#{@membership.id}")}
+            navigate={~p"/app/#{@current_account}/settings/team/#{@membership.id}/reset_2fa"}
           >
             Reset 2FA
           </.menu_item>
@@ -2572,24 +2848,6 @@ defmodule EmisarWeb.TeamLive do
           }
         >
           <:body>They're signed out and can't sign back in until you restore them.</:body>
-        </.confirm_dialog>
-
-        <.confirm_dialog
-          :if={@member.reset_mfa?}
-          id={"reset-2fa-#{@membership.id}"}
-          title="Reset this member's 2FA?"
-          confirm_label="Reset 2FA"
-          on_confirm={
-            JS.push("reset_mfa", value: %{membership_id: @membership.id})
-            |> close_confirm("reset-2fa-#{@membership.id}")
-          }
-        >
-          <:body>
-            Their authenticator and recovery codes are wiped and they'll enroll a NEW
-            factor on next sign-in. Only do this for someone you've confirmed is locked
-            out — a new factor is an account-takeover vector if you're wrong about
-            who's asking.
-          </:body>
         </.confirm_dialog>
 
         <.confirm_dialog

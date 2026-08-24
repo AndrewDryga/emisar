@@ -13,7 +13,7 @@ defmodule Emisar.SSOTest do
   resolution/JIT/gate logic with canned claims and no live IdP.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Audit, Auth, Repo, SSO}
+  alias Emisar.{Accounts, Audit, Auth, Crypto, Repo, SSO}
   alias Emisar.Accounts.RunnerAccess
   alias Emisar.Fixtures
   alias Emisar.SSO.{DirectoryGroup, GroupRoleMapping, GroupRunnerAccessMapping}
@@ -48,6 +48,25 @@ defmodule Emisar.SSOTest do
          jwks_uri: issuer <> "/jwks"
        }}
     end
+  end
+
+  defmodule RecordingResetOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(_provider, opts) do
+      send(self(), {:reset_oidc_begin_options, opts})
+      {:ok, %{authorize_url: "https://idp.test/auth", state: "s", nonce: "n", pkce_verifier: "v"}}
+    end
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(_provider, params, _stashed) do
+      claims = params["_claims"] || %{}
+      {:ok, %{identifier: claims["sub"], claims: claims}}
+    end
+
+    @impl Emisar.SSO.OIDC
+    def discover(provider), do: StubOIDC.discover(provider)
   end
 
   defmodule BarrierOIDC do
@@ -1918,6 +1937,205 @@ defmodule Emisar.SSOTest do
     test "an unknown or malformed id is :not_found, never a crash" do
       assert SSO.fetch_provider_for_sign_in(Ecto.UUID.generate()) == {:error, :not_found}
       assert SSO.fetch_provider_for_sign_in("not-a-uuid") == {:error, :not_found}
+    end
+  end
+
+  describe "fetch_member_mfa_reset_reauthentication_facts/1" do
+    test "offers only the current session identity on an enabled MFA-satisfying provider" do
+      reset = member_mfa_reset_sso_fixture()
+
+      assert SSO.fetch_member_mfa_reset_reauthentication_facts(reset.subject) ==
+               {:ok, %{provider_name: reset.provider.name}}
+
+      reset.provider
+      |> Ecto.Changeset.change(satisfies_mfa: false)
+      |> Repo.update!()
+
+      assert SSO.fetch_member_mfa_reset_reauthentication_facts(reset.subject) ==
+               {:error, :mfa_reset_reauthentication_unavailable}
+
+      local_subject = %{reset.subject | auth_method: :magic_link, user_identity_id: nil}
+
+      assert SSO.fetch_member_mfa_reset_reauthentication_facts(local_subject) ==
+               {:error, :mfa_reset_reauthentication_unavailable}
+    end
+  end
+
+  describe "begin_member_mfa_reset_reauthentication/3" do
+    test "requests a fresh IdP login and stashes the exact actor identity" do
+      reset = member_mfa_reset_sso_fixture()
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, RecordingResetOIDC)
+
+      assert {:ok, begun} =
+               SSO.begin_member_mfa_reset_reauthentication(
+                 "https://portal.test/sign_in/sso/callback",
+                 reset.actor_session_token_digest,
+                 reset.subject
+               )
+
+      assert_receive {:reset_oidc_begin_options, opts}
+      assert opts[:url_extension] == [{"prompt", "login"}, {"max_age", "0"}]
+      assert begun.actor_id == reset.actor.id
+      assert begun.actor_membership_id == reset.subject.membership_id
+      assert begun.account_id == reset.account.id
+      assert begun.identity_id == reset.identity.id
+      assert begun.provider_identifier == reset.identity.provider_identifier
+      assert begun.provider_id == reset.provider.id
+      assert is_integer(begun.started_at)
+    end
+  end
+
+  describe "complete_member_mfa_reset_reauthentication/4" do
+    test "proves only the stashed current identity without mutating login state" do
+      reset = member_mfa_reset_sso_fixture()
+
+      {:ok, begun} =
+        SSO.begin_member_mfa_reset_reauthentication(
+          "https://portal.test/sign_in/sso/callback",
+          reset.actor_session_token_digest,
+          reset.subject
+        )
+
+      begun = member_mfa_reset_stash(reset, begun)
+
+      before_identity = Repo.reload!(reset.identity)
+
+      claims = %{
+        "sub" => reset.identity.provider_identifier,
+        "auth_time" => System.system_time(:second)
+      }
+
+      assert {:ok, reauthentication} =
+               SSO.complete_member_mfa_reset_reauthentication(
+                 callback(claims),
+                 begun,
+                 reset.actor_session_token_digest,
+                 reset.subject
+               )
+
+      assert reauthentication.identity_id == reset.identity.id
+      assert reauthentication.provider_id == reset.provider.id
+      assert Repo.reload!(reset.identity).last_seen_at == before_identity.last_seen_at
+
+      assert {:ok, %Emisar.Users.User{id: actor_id}, _token} =
+               Auth.fetch_user_and_token_by_session_token(reset.actor_session_token)
+
+      assert actor_id == reset.actor.id
+    end
+
+    test "wrong identity, stale auth_time, or a different actor produces no auth result" do
+      reset = member_mfa_reset_sso_fixture()
+
+      {:ok, begun} =
+        SSO.begin_member_mfa_reset_reauthentication(
+          "https://portal.test/sign_in/sso/callback",
+          reset.actor_session_token_digest,
+          reset.subject
+        )
+
+      begun = member_mfa_reset_stash(reset, begun)
+
+      for claims <- [
+            %{"sub" => "someone-else", "auth_time" => System.system_time(:second)},
+            %{
+              "sub" => reset.identity.provider_identifier,
+              "auth_time" => System.system_time(:second) - 300
+            }
+          ] do
+        assert SSO.complete_member_mfa_reset_reauthentication(
+                 callback(claims),
+                 begun,
+                 reset.actor_session_token_digest,
+                 reset.subject
+               ) == {:error, :mfa_reset_reauthentication_invalid}
+      end
+
+      {_other, _account, other_subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+
+      assert SSO.complete_member_mfa_reset_reauthentication(
+               callback(%{
+                 "sub" => reset.identity.provider_identifier,
+                 "auth_time" => System.system_time(:second)
+               }),
+               begun,
+               reset.actor_session_token_digest,
+               other_subject
+             ) == {:error, :mfa_reset_reauthentication_invalid}
+
+      assert Repo.reload!(reset.identity).last_seen_at == reset.identity.last_seen_at
+    end
+
+    test "an identity rebind during the IdP round-trip invalidates the ceremony" do
+      reset = member_mfa_reset_sso_fixture()
+
+      {:ok, begun} =
+        SSO.begin_member_mfa_reset_reauthentication(
+          "https://portal.test/sign_in/sso/callback",
+          reset.actor_session_token_digest,
+          reset.subject
+        )
+
+      begun = member_mfa_reset_stash(reset, begun)
+
+      rebound =
+        reset.identity
+        |> Ecto.Changeset.change(
+          provider_identifier: "reset-actor-rebound-sub",
+          created_by: :admin
+        )
+        |> Repo.update!()
+
+      assert SSO.complete_member_mfa_reset_reauthentication(
+               callback(%{
+                 "sub" => rebound.provider_identifier,
+                 "auth_time" => System.system_time(:second)
+               }),
+               begun,
+               reset.actor_session_token_digest,
+               reset.subject
+             ) == {:error, :mfa_reset_reauthentication_invalid}
+
+      assert Repo.reload!(rebound).last_seen_at == reset.identity.last_seen_at
+
+      assert {:ok, %Emisar.Users.User{id: actor_id}, _token} =
+               Auth.fetch_user_and_token_by_session_token(reset.actor_session_token)
+
+      assert actor_id == reset.actor.id
+    end
+  end
+
+  describe "ensure_member_mfa_reset_reauthentication_current/4" do
+    test "locks and rejects expired freshness or provider trust revoked after the callback" do
+      reset = member_mfa_reset_sso_fixture()
+      reauthentication = member_mfa_reset_reauthentication(reset)
+
+      assert {:ok, ^reauthentication} =
+               SSO.ensure_member_mfa_reset_reauthentication_current(
+                 Repo,
+                 reauthentication,
+                 reset.actor.id,
+                 reset.account.id
+               )
+
+      stale = %{reauthentication | auth_time: System.system_time(:second) - 300}
+
+      assert SSO.ensure_member_mfa_reset_reauthentication_current(
+               Repo,
+               stale,
+               reset.actor.id,
+               reset.account.id
+             ) == {:error, :mfa_reset_proof_stale}
+
+      reset.provider
+      |> Ecto.Changeset.change(satisfies_mfa: false)
+      |> Repo.update!()
+
+      assert SSO.ensure_member_mfa_reset_reauthentication_current(
+               Repo,
+               reauthentication,
+               reset.actor.id,
+               reset.account.id
+             ) == {:error, :mfa_reset_proof_stale}
     end
   end
 
@@ -7196,6 +7414,74 @@ defmodule Emisar.SSOTest do
   end
 
   # -- Helpers ---------------------------------------------------------
+
+  defp member_mfa_reset_sso_fixture do
+    {actor, account, _subject} = enterprise_owner()
+    provider = provider_fixture(account, %{enabled: true, satisfies_mfa: true})
+
+    identity =
+      Fixtures.SSO.create_user_identity(%{
+        account_id: account.id,
+        provider_id: provider.id,
+        user_id: actor.id,
+        provider_identifier: "reset-actor-sub"
+      })
+
+    subject =
+      Fixtures.Subjects.subject_for(actor, account,
+        auth_method: :sso,
+        mfa: true,
+        user_identity_id: identity.id
+      )
+
+    actor_session_token =
+      Fixtures.Auth.create_session_token!(actor, :sso, DateTime.utc_now(), %{},
+        user_identity_id: identity.id
+      )
+
+    target =
+      Fixtures.Users.create_user()
+      |> Fixtures.Users.set_mfa_state(mfa_enabled_at: DateTime.utc_now())
+
+    target_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: target.id,
+        role: "operator"
+      )
+
+    %{
+      account: account,
+      actor: actor,
+      actor_session_token: actor_session_token,
+      actor_session_token_digest: Crypto.hash(actor_session_token),
+      identity: identity,
+      provider: provider,
+      subject: subject,
+      target: target,
+      target_membership: target_membership
+    }
+  end
+
+  defp member_mfa_reset_stash(reset, begun) do
+    Map.merge(begun, %{
+      target_membership_id: reset.target_membership.id,
+      target_user_id: reset.target.id,
+      target_mfa_enabled_at: reset.target.mfa_enabled_at,
+      target_updated_at: reset.target.updated_at
+    })
+  end
+
+  defp member_mfa_reset_reauthentication(reset) do
+    %{
+      provider_id: reset.provider.id,
+      identity_id: reset.identity.id,
+      provider_identifier: reset.identity.provider_identifier,
+      namespace:
+        {reset.provider.issuer, reset.provider.client_id, reset.provider.identifier_claim},
+      auth_time: System.system_time(:second)
+    }
+  end
 
   defp demote_other_owners(account_id, except: keep_user_id) do
     Accounts.Membership.Query.not_deleted()

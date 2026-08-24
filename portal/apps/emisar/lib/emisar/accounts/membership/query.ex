@@ -15,6 +15,9 @@ defmodule Emisar.Accounts.Membership.Query do
   def by_id(queryable, id),
     do: where(queryable, [memberships: m], m.id == ^id)
 
+  def by_ids(queryable, ids) when is_list(ids),
+    do: where(queryable, [memberships: m], m.id in ^ids)
+
   def by_account_id(queryable, account_id),
     do: where(queryable, [memberships: m], m.account_id == ^account_id)
 
@@ -40,6 +43,9 @@ defmodule Emisar.Accounts.Membership.Query do
 
   def by_role(queryable, role),
     do: where(queryable, [memberships: m], m.role == ^role)
+
+  def ordered_by_id(queryable),
+    do: order_by(queryable, [memberships: m], asc: m.id)
 
   def by_roles(queryable, roles),
     do: where(queryable, [memberships: m], m.role in ^roles)

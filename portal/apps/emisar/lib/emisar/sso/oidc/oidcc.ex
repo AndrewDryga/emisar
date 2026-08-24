@@ -60,6 +60,9 @@ defmodule Emisar.SSO.OIDC.Oidcc do
       state: state,
       nonce: nonce,
       pkce_verifier: verifier,
+      # Fixed caller-owned additions such as the administrator reset step-up's
+      # prompt=login/max_age=0. Callers never forward browser parameters here.
+      url_extension: Keyword.get(opts, :url_extension, []),
       require_pkce: true,
       # We authenticate with a client SECRET, not a signing key — so constrain
       # the client-auth method to the secret-based ones. oidcc otherwise prefers

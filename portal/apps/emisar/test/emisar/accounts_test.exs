@@ -24,6 +24,13 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  defmodule RecordingMfaResetSessionDisconnector do
+    def disconnect_live_sessions(topics) do
+      send(self(), {:mfa_reset_disconnect, topics, Emisar.Repo.in_transaction?()})
+      :ok
+    end
+  end
+
   defp commit_sso_membership(account_id, user_id, role, access, opts) do
     Multi.new()
     |> Accounts.put_sso_membership(account_id, user_id, role, access, opts)
@@ -4633,165 +4640,566 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "reset_member_mfa/2" do
-    test "an owner clears a member's MFA + writes the user.mfa_reset_by_admin audit row" do
-      account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+  describe "verify_member_mfa_reset/4" do
+    test "a current owner TOTP produces a reset-specific proof" do
+      reset = member_mfa_reset_fixture()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
+      assert {:ok, proof} =
+               Accounts.verify_member_mfa_reset(
+                 reset.target_membership,
+                 {:totp, current_totp()},
+                 reset.actor_session_token_digest,
+                 reset.subject
+               )
+
+      assert {:ok, payload} = Auth.verify_member_mfa_reset_proof(proof)
+      assert payload.actor_id == reset.actor.id
+      assert payload.target_user_id == reset.target_user.id
+      assert match?({:local, _generic_proof}, payload.source)
+    end
+
+    test "target state and authorization are checked before a factor is spent" do
+      reset = member_mfa_reset_fixture(target_mfa?: false, actor_role: "viewer")
+      otp = current_totp()
+
+      assert Accounts.verify_member_mfa_reset(
+               reset.target_membership,
+               {:totp, otp},
+               reset.actor_session_token_digest,
+               reset.subject
+             ) == {:error, :unauthorized}
+
+      assert {:ok, _proof} =
+               Auth.verify_current_session_mfa_challenge({:totp, otp}, reset.subject)
+    end
+  end
+
+  describe "issue_member_mfa_reset_sso_proof/4" do
+    test "accepts only the dedicated SSO reauthentication fact shape" do
+      reset = member_mfa_reset_fixture()
+
+      reauthentication = %{
+        provider_id: Repo.generate_id(),
+        identity_id: Repo.generate_id(),
+        provider_identifier: "subject-123",
+        namespace: {"https://idp.example", "client-id", :sub},
+        auth_time: System.system_time(:second),
+        target_membership_id: reset.target_membership.id,
+        target_user_id: reset.target_user.id,
+        target_mfa_enabled_at: reset.target_user.mfa_enabled_at,
+        target_updated_at: reset.target_user.updated_at
+      }
+
+      assert {:ok, proof} =
+               Accounts.issue_member_mfa_reset_sso_proof(
+                 reset.target_membership,
+                 reauthentication,
+                 reset.actor_session_token_digest,
+                 reset.subject
+               )
+
+      assert {:ok, %{source: {:sso, source}}} =
+               Auth.verify_member_mfa_reset_proof(proof)
+
+      assert source ==
+               Map.take(reauthentication, [
+                 :provider_id,
+                 :identity_id,
+                 :provider_identifier,
+                 :namespace,
+                 :auth_time
+               ])
+
+      assert Accounts.issue_member_mfa_reset_sso_proof(
+               reset.target_membership,
+               Map.delete(reauthentication, :auth_time),
+               reset.actor_session_token_digest,
+               reset.subject
+             ) == {:error, :mfa_reset_proof_stale}
+    end
+  end
+
+  describe "reset_member_mfa/4" do
+    test "a recent local proof clears the factor, audits, deletes every target session, and disconnects after commit" do
+      reset = member_mfa_reset_fixture()
+      session_a = Fixtures.Auth.create_session_token!(reset.target_user, :magic_link, nil)
+      session_b = Fixtures.Auth.create_session_token!(reset.target_user, :sso, DateTime.utc_now())
+
+      Emisar.Config.put_override(
+        :emisar,
+        :session_disconnect_handler,
+        {:emisar, RecordingMfaResetSessionDisconnector}
       )
 
-      target_user = enroll_member_mfa(Fixtures.Users.create_user())
+      proof = verified_member_mfa_reset_proof(reset)
 
-      target =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: target_user.id,
-          role: "operator"
-        )
+      assert {:ok, %User{} = updated} =
+               Accounts.reset_member_mfa(
+                 reset.target_membership,
+                 proof,
+                 reset.actor_session_token_digest,
+                 reset.subject
+               )
 
-      owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
-
-      assert {:ok, %User{} = updated} = Accounts.reset_member_mfa(target, owner_subject)
-
-      # Every MFA field is wiped — the member can no longer present a factor.
       assert is_nil(updated.mfa_enabled_at)
       assert is_nil(updated.mfa_secret)
       assert updated.mfa_recovery_codes == []
+      assert Auth.fetch_user_and_token_by_session_token(session_a) == {:error, :not_found}
+      assert Auth.fetch_user_and_token_by_session_token(session_b) == {:error, :not_found}
 
-      # And it's persisted, not just on the returned struct.
-      {:ok, reloaded} = Users.fetch_user_by_id(target_user.id)
-      assert is_nil(reloaded.mfa_enabled_at)
+      expected_topics =
+        Enum.sort([
+          Auth.live_socket_topic_for_session(session_a),
+          Auth.live_socket_topic_for_session(session_b)
+        ])
 
-      events = Emisar.Audit.list_events(owner_subject, page: [limit: 10]) |> elem(1)
-      assert Enum.any?(events, &(&1.event_type == "user.mfa_reset_by_admin"))
+      assert_receive {:mfa_reset_disconnect, topics, false}
+      assert Enum.sort(topics) == expected_topics
+      refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
+
+      assert Repo.aggregate(
+               AuditEvent.Query.all()
+               |> AuditEvent.Query.by_event_type("user.mfa_reset_by_admin"),
+               :count
+             ) == 1
     end
 
-    test "the reset ends every session the member holds" do
-      account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+    test "a recovery-code proof consumes only the presented actor code" do
+      reset = member_mfa_reset_fixture()
+      [used_code | remaining_codes] = reset.actor_recovery_codes
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
+      assert {:ok, proof} =
+               Accounts.verify_member_mfa_reset(
+                 reset.target_membership,
+                 {:recovery_code, used_code},
+                 reset.actor_session_token_digest,
+                 reset.subject
+               )
+
+      assert {:ok, %User{}} =
+               Accounts.reset_member_mfa(
+                 reset.target_membership,
+                 proof,
+                 reset.actor_session_token_digest,
+                 reset.subject
+               )
+
+      actor = Repo.reload!(reset.actor)
+      assert length(actor.mfa_recovery_codes) == length(remaining_codes)
+      refute Crypto.hash(String.downcase(used_code)) in actor.mfa_recovery_codes
+    end
+
+    test "a revoked, expired, or foreign bound actor session grants nothing" do
+      Emisar.Config.put_override(
+        :emisar,
+        :session_disconnect_handler,
+        {:emisar, RecordingMfaResetSessionDisconnector}
       )
 
-      target_user = enroll_member_mfa(Fixtures.Users.create_user())
+      for session_state <- [:revoked, :expired, :foreign] do
+        reset = member_mfa_reset_fixture()
+        target_session = Fixtures.Auth.create_session_token!(reset.target_user, :magic_link, nil)
 
-      target =
+        {proof, token_digest} =
+          case session_state do
+            :foreign ->
+              foreign = Fixtures.Users.create_user()
+              foreign_token = Fixtures.Auth.create_session_token!(foreign, :magic_link, nil)
+              foreign_digest = Crypto.hash(foreign_token)
+
+              {:ok, proof} =
+                Accounts.verify_member_mfa_reset(
+                  reset.target_membership,
+                  {:totp, current_totp()},
+                  foreign_digest,
+                  reset.subject
+                )
+
+              {proof, foreign_digest}
+
+            state when state in [:revoked, :expired] ->
+              proof = verified_member_mfa_reset_proof(reset)
+
+              if state == :revoked do
+                :ok = Auth.delete_session_token(reset.actor_session_token)
+              else
+                :ok =
+                  Fixtures.Auth.backdate_session_token!(
+                    reset.actor_session_token,
+                    DateTime.add(DateTime.utc_now(), -61, :day)
+                  )
+              end
+
+              {proof, reset.actor_session_token_digest}
+          end
+
+        assert Accounts.reset_member_mfa(
+                 reset.target_membership,
+                 proof,
+                 token_digest,
+                 reset.subject
+               ) == {:error, :mfa_reset_proof_stale}
+
+        refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
+
+        assert {:ok, _target, _session} =
+                 Auth.fetch_user_and_token_by_session_token(target_session)
+      end
+
+      refute Repo.exists?(
+               AuditEvent.Query.all()
+               |> AuditEvent.Query.by_event_type("user.mfa_reset_by_admin")
+             )
+
+      refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
+    end
+
+    test "a generic MFA proof and a stale or cross-target reset proof grant nothing" do
+      reset = member_mfa_reset_fixture()
+      otp = current_totp()
+
+      assert {:ok, generic_proof} =
+               Auth.verify_current_session_mfa_challenge({:totp, otp}, reset.subject)
+
+      assert Accounts.reset_member_mfa(
+               reset.target_membership,
+               nil,
+               reset.actor_session_token_digest,
+               reset.subject
+             ) ==
+               {:error, :mfa_reset_proof_stale}
+
+      assert Accounts.reset_member_mfa(
+               reset.target_membership,
+               generic_proof,
+               reset.actor_session_token_digest,
+               reset.subject
+             ) == {:error, :mfa_reset_proof_stale}
+
+      assert {:ok, proof} =
+               Auth.issue_member_mfa_reset_proof(
+                 reset.target_membership,
+                 reset.target_user,
+                 {:local, generic_proof},
+                 reset.actor_session_token_digest,
+                 reset.subject
+               )
+
+      other_user = enroll_member_mfa(Fixtures.Users.create_user())
+
+      other_membership =
         Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: target_user.id,
+          account_id: reset.account.id,
+          user_id: other_user.id,
           role: "operator"
         )
 
-      mfa_token =
-        Fixtures.Auth.create_session_token!(target_user, :magic_link, DateTime.utc_now())
+      assert Accounts.reset_member_mfa(
+               other_membership,
+               proof,
+               reset.actor_session_token_digest,
+               reset.subject
+             ) ==
+               {:error, :mfa_reset_proof_stale}
 
-      plain_token = Fixtures.Auth.create_session_token!(target_user, :magic_link, nil)
-      owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
-
-      assert {:ok, %User{}} = Accounts.reset_member_mfa(target, owner_subject)
-
-      # A reset is the remediation for a compromised factor, so a cookie the
-      # attacker already holds must not outlive it. Stripping its second-factor
-      # claim (what `Auth.session_mfa_verified?/2` does on its own) would leave
-      # that cookie signed in.
-      assert Auth.fetch_user_and_token_by_session_token(mfa_token) == {:error, :not_found}
-      assert Auth.fetch_user_and_token_by_session_token(plain_token) == {:error, :not_found}
+      refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
+      refute is_nil(Repo.reload!(other_user).mfa_enabled_at)
     end
 
-    test "a viewer (no manage_team) is refused" do
-      account = Fixtures.Accounts.create_account()
+    test "the proof cannot cross accounts or authorize self-reset" do
+      reset = member_mfa_reset_fixture()
+      proof = verified_member_mfa_reset_proof(reset)
+      other_account = Fixtures.Accounts.create_account()
 
       Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: Fixtures.Users.create_user().id,
+        account_id: other_account.id,
+        user_id: reset.actor.id,
         role: "owner"
       )
 
-      target_user = enroll_member_mfa(Fixtures.Users.create_user())
+      other_target = enroll_member_mfa(Fixtures.Users.create_user())
 
-      target =
+      other_membership =
         Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: target_user.id,
+          account_id: other_account.id,
+          user_id: other_target.id,
           role: "operator"
         )
 
-      viewer = Fixtures.Users.create_user()
+      other_subject = Fixtures.Subjects.subject_for(reset.actor, other_account)
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+      assert Accounts.reset_member_mfa(
+               other_membership,
+               proof,
+               reset.actor_session_token_digest,
+               other_subject
+             ) ==
+               {:error, :mfa_reset_proof_stale}
 
-      subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      reset = member_mfa_reset_fixture()
 
-      assert Accounts.reset_member_mfa(target, subject) == {:error, :unauthorized}
+      assert {:ok, local_proof} =
+               Auth.verify_current_session_mfa_challenge(
+                 {:totp, current_totp()},
+                 reset.subject
+               )
 
-      # The member's factor is untouched.
-      {:ok, reloaded} = Users.fetch_user_by_id(target_user.id)
-      refute is_nil(reloaded.mfa_enabled_at)
+      current_actor = Repo.reload!(reset.actor)
+
+      assert {:ok, proof} =
+               Auth.issue_member_mfa_reset_proof(
+                 reset.actor_membership,
+                 current_actor,
+                 {:local, local_proof},
+                 reset.actor_session_token_digest,
+                 reset.subject
+               )
+
+      assert Accounts.reset_member_mfa(
+               reset.actor_membership,
+               proof,
+               reset.actor_session_token_digest,
+               reset.subject
+             ) ==
+               {:error, :cannot_modify_self}
+
+      refute is_nil(Repo.reload!(other_target).mfa_enabled_at)
+      refute is_nil(Repo.reload!(reset.actor).mfa_enabled_at)
     end
 
-    test "an admin can't reset an owner's MFA (hierarchy)" do
-      account = Fixtures.Accounts.create_account()
-      owner = enroll_member_mfa(Fixtures.Users.create_user())
+    test "a successful proof cannot reset a later enrollment" do
+      reset = member_mfa_reset_fixture()
+      proof = verified_member_mfa_reset_proof(reset)
 
-      owner_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      assert {:ok, %User{}} =
+               Accounts.reset_member_mfa(
+                 reset.target_membership,
+                 proof,
+                 reset.actor_session_token_digest,
+                 reset.subject
+               )
 
-      admin = Fixtures.Users.create_user()
+      re_enrolled = enroll_member_mfa(Repo.reload!(reset.target_user))
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
+      assert Accounts.reset_member_mfa(
+               reset.target_membership,
+               proof,
+               reset.actor_session_token_digest,
+               reset.subject
+             ) ==
+               {:error, :mfa_reset_proof_stale}
 
-      subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      refute is_nil(Repo.reload!(re_enrolled).mfa_enabled_at)
+    end
 
-      assert Accounts.reset_member_mfa(owner_membership, subject) ==
+    test "fresh authorization and target state are rechecked under lock" do
+      reset = member_mfa_reset_fixture(actor_role: "admin", target_role: "owner")
+      proof = directly_issued_member_mfa_reset_proof(reset)
+
+      assert Accounts.reset_member_mfa(
+               reset.target_membership,
+               proof,
+               reset.actor_session_token_digest,
+               reset.subject
+             ) ==
                {:error, :insufficient_privileges}
 
-      {:ok, reloaded} = Users.fetch_user_by_id(owner.id)
-      refute is_nil(reloaded.mfa_enabled_at)
+      reset = member_mfa_reset_fixture()
+      proof = verified_member_mfa_reset_proof(reset)
+      Fixtures.Memberships.force_role(reset.actor_membership, "viewer")
+
+      assert Accounts.reset_member_mfa(
+               reset.target_membership,
+               proof,
+               reset.actor_session_token_digest,
+               reset.subject
+             ) ==
+               {:error, :unauthorized}
+
+      refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
+
+      reset = member_mfa_reset_fixture()
+      proof = verified_member_mfa_reset_proof(reset)
+
+      pending =
+        reset.target_membership
+        |> Ecto.Changeset.change(
+          invitation_token_digest: "pending-reset-invitation",
+          invitation_accepted_at: nil
+        )
+        |> Repo.update!()
+
+      assert Accounts.reset_member_mfa(
+               pending,
+               proof,
+               reset.actor_session_token_digest,
+               reset.subject
+             ) ==
+               {:error, :invitation_pending}
+
+      refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
     end
 
-    test "an owner of another account can't reset this member's MFA (cross-account)" do
-      account = Fixtures.Accounts.create_account()
+    test "an existing user's unaccepted admin invitation grants no reset authority" do
+      {_actor, _actor_account, actor_subject} = Fixtures.Subjects.owner_subject()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: Fixtures.Users.create_user().id,
-        role: "owner"
-      )
+      {actor, [recovery_code | _remaining_codes]} =
+        Fixtures.Users.enable_mfa!(mfa_reset_secret(), actor_subject)
 
-      target_user = enroll_member_mfa(Fixtures.Users.create_user())
+      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
 
-      target =
+      assert {:ok, %{membership: pending_membership}} =
+               Accounts.invite_user_to_account(
+                 Fixtures.Accounts.invitation_attrs(email: actor.email, role: "admin"),
+                 owner_subject
+               )
+
+      assert pending_membership.invitation_token_digest
+      actor_session = Fixtures.Auth.create_session_token!(actor, :magic_link, nil)
+      actor_session_digest = Crypto.hash(actor_session)
+      pending_subject = Fixtures.Subjects.subject_for(actor, account)
+      target_user = Fixtures.Users.create_user() |> enroll_member_mfa()
+
+      target_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: target_user.id,
           role: "operator"
         )
 
-      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      target_session = Fixtures.Auth.create_session_token!(target_user, :magic_link, nil)
+      recovery_codes_before = Repo.reload!(actor).mfa_recovery_codes
 
-      assert Accounts.reset_member_mfa(target, subject_b) == {:error, :unauthorized}
+      assert Accounts.verify_member_mfa_reset(
+               target_membership,
+               {:recovery_code, recovery_code},
+               actor_session_digest,
+               pending_subject
+             ) == {:error, :unauthorized}
 
-      {:ok, reloaded} = Users.fetch_user_by_id(target_user.id)
-      refute is_nil(reloaded.mfa_enabled_at)
+      assert Repo.reload!(actor).mfa_recovery_codes == recovery_codes_before
+
+      # The same code still succeeds at the factor boundary, proving the
+      # authorization refusal happened before factor consumption. A directly
+      # issued proof then pins the final locked recheck too.
+      assert {:ok, local_proof} =
+               Auth.verify_current_session_mfa_challenge(
+                 {:recovery_code, recovery_code},
+                 pending_subject
+               )
+
+      actor = Repo.reload!(actor)
+      pending_subject = Fixtures.Subjects.subject_for(actor, account)
+
+      assert {:ok, proof} =
+               Auth.issue_member_mfa_reset_proof(
+                 target_membership,
+                 target_user,
+                 {:local, local_proof},
+                 actor_session_digest,
+                 pending_subject
+               )
+
+      Emisar.Config.put_override(
+        :emisar,
+        :session_disconnect_handler,
+        {:emisar, RecordingMfaResetSessionDisconnector}
+      )
+
+      assert Accounts.reset_member_mfa(
+               target_membership,
+               proof,
+               actor_session_digest,
+               pending_subject
+             ) == {:error, :unauthorized}
+
+      refute is_nil(Repo.reload!(target_user).mfa_enabled_at)
+      assert {:ok, _target, _token} = Auth.fetch_user_and_token_by_session_token(target_session)
+      assert {:ok, _actor, _token} = Auth.fetch_user_and_token_by_session_token(actor_session)
+
+      refute Repo.exists?(
+               AuditEvent.Query.all()
+               |> AuditEvent.Query.by_account_id(account.id)
+               |> AuditEvent.Query.by_event_type("user.mfa_reset_by_admin")
+             )
+
+      refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
+    end
+
+    test "an audit rollback preserves MFA, sessions, the proof, and socket state" do
+      reset = member_mfa_reset_fixture()
+      session = Fixtures.Auth.create_session_token!(reset.target_user, :magic_link, nil)
+      proof = verified_member_mfa_reset_proof(reset)
+
+      Emisar.Config.put_override(
+        :emisar,
+        :session_disconnect_handler,
+        {:emisar, RecordingMfaResetSessionDisconnector}
+      )
+
+      bad_subject = %{reset.subject | context: %RequestContext{request_id: 123}}
+
+      assert {:error, {:audit_failed, %Ecto.Changeset{}}} =
+               Accounts.reset_member_mfa(
+                 reset.target_membership,
+                 proof,
+                 reset.actor_session_token_digest,
+                 bad_subject
+               )
+
+      refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
+      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(session)
+      refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
+
+      assert {:ok, %User{}} =
+               Accounts.reset_member_mfa(
+                 reset.target_membership,
+                 proof,
+                 reset.actor_session_token_digest,
+                 reset.subject
+               )
+    end
+  end
+
+  describe "reset_member_mfa_for_support/2" do
+    test "the explicit actorless support capability resets an enrolled target" do
+      reset = member_mfa_reset_fixture()
+      support = support_subject(reset.account)
+
+      assert {:ok, %User{mfa_enabled_at: nil}} =
+               Accounts.reset_member_mfa_for_support(reset.target_membership, support)
+    end
+
+    test "a browser subject and an unenrolled target are refused" do
+      reset = member_mfa_reset_fixture()
+
+      assert Accounts.reset_member_mfa_for_support(
+               reset.target_membership,
+               reset.subject
+             ) == {:error, :unauthorized}
+
+      reset = member_mfa_reset_fixture(target_mfa?: false)
+      support = support_subject(reset.account)
+      target_session = Fixtures.Auth.create_session_token!(reset.target_user, :magic_link, nil)
+
+      Emisar.Config.put_override(
+        :emisar,
+        :session_disconnect_handler,
+        {:emisar, RecordingMfaResetSessionDisconnector}
+      )
+
+      assert Accounts.reset_member_mfa_for_support(reset.target_membership, support) ==
+               {:error, :mfa_not_enabled}
+
+      assert {:ok, _target, _session} =
+               Auth.fetch_user_and_token_by_session_token(target_session)
+
+      refute Repo.exists?(
+               AuditEvent.Query.all()
+               |> AuditEvent.Query.by_event_type("user.mfa_reset_by_admin")
+             )
+
+      refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
     end
   end
 
@@ -6751,6 +7159,87 @@ defmodule Emisar.AccountsTest do
 
   defp enroll_mfa(user) do
     Fixtures.Users.set_mfa_state(user, mfa_enabled_at: DateTime.utc_now())
+  end
+
+  defp member_mfa_reset_fixture(opts \\ []) do
+    account = Fixtures.Accounts.create_account()
+    actor = Fixtures.Users.create_user()
+
+    actor_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: actor.id,
+        role: Keyword.get(opts, :actor_role, "owner")
+      )
+
+    actor_subject = Fixtures.Subjects.subject_for(actor, account)
+    {actor, actor_recovery_codes} = Fixtures.Users.enable_mfa!(mfa_reset_secret(), actor_subject)
+    subject = Fixtures.Subjects.subject_for(actor, account)
+    actor_session_token = Fixtures.Auth.create_session_token!(actor, :magic_link, nil)
+    target_user = Fixtures.Users.create_user()
+
+    target_user =
+      if Keyword.get(opts, :target_mfa?, true),
+        do: enroll_member_mfa(target_user),
+        else: target_user
+
+    target_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: target_user.id,
+        role: Keyword.get(opts, :target_role, "operator")
+      )
+
+    %{
+      account: account,
+      actor: actor,
+      actor_membership: actor_membership,
+      actor_recovery_codes: actor_recovery_codes,
+      actor_session_token: actor_session_token,
+      actor_session_token_digest: Crypto.hash(actor_session_token),
+      subject: subject,
+      target_user: target_user,
+      target_membership: target_membership
+    }
+  end
+
+  defp verified_member_mfa_reset_proof(reset) do
+    {:ok, proof} =
+      Accounts.verify_member_mfa_reset(
+        reset.target_membership,
+        {:totp, current_totp()},
+        reset.actor_session_token_digest,
+        reset.subject
+      )
+
+    proof
+  end
+
+  defp directly_issued_member_mfa_reset_proof(reset) do
+    {:ok, local_proof} =
+      Auth.verify_current_session_mfa_challenge({:totp, current_totp()}, reset.subject)
+
+    {:ok, proof} =
+      Auth.issue_member_mfa_reset_proof(
+        reset.target_membership,
+        reset.target_user,
+        {:local, local_proof},
+        reset.actor_session_token_digest,
+        reset.subject
+      )
+
+    proof
+  end
+
+  defp current_totp, do: NimbleTOTP.verification_code(mfa_reset_secret())
+  defp mfa_reset_secret, do: "JBSWY3DPEHPK3PXP"
+
+  defp support_subject(account) do
+    Fixtures.Subjects.build_subject(
+      account: account,
+      role: :owner,
+      permissions: Auth.Permissions.for_role(:owner)
+    )
   end
 
   # Fully enroll a member's MFA — secret + recovery codes too, not just

@@ -20,6 +20,25 @@ defmodule Emisar.UsersTest do
     end
   end
 
+  describe "fetch_and_lock_users_by_ids/2" do
+    test "locks the exact set in stable id order" do
+      user_a = Fixtures.Users.create_user()
+      user_b = Fixtures.Users.create_user()
+
+      assert {:ok, users} =
+               Users.fetch_and_lock_users_by_ids([user_b.id, user_a.id, user_b.id], Repo)
+
+      assert Enum.map(users, & &1.id) == Enum.sort([user_a.id, user_b.id])
+    end
+
+    test "fails closed when any requested user is missing" do
+      user = Fixtures.Users.create_user()
+
+      assert Users.fetch_and_lock_users_by_ids([user.id, Ecto.UUID.generate()], Repo) ==
+               {:error, :not_found}
+    end
+  end
+
   describe "fetch_user_by_id/1" do
     test "a malformed id is a clean :not_found" do
       assert Users.fetch_user_by_id("not-a-uuid") == {:error, :not_found}

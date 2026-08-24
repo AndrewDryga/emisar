@@ -919,10 +919,16 @@ defmodule EmisarWeb.TeamLiveTest do
           role: "operator"
         )
 
-      {:ok, lv, _html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/settings/team")
+      viewer_conn = build_conn() |> log_in_user(viewer)
+      {:ok, lv, _html} = live(viewer_conn, ~p"/app/#{account}/settings/team")
 
-      %{lv: lv, account: account, target: target, target_membership: target_membership}
+      %{
+        conn: viewer_conn,
+        lv: lv,
+        account: account,
+        target: target,
+        target_membership: target_membership
+      }
     end
 
     test "change_role is refused and the role is untouched", %{
@@ -982,20 +988,22 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Only owners and admins can manage members."
     end
 
-    test "reset_mfa is refused server-side even if the event is forged", %{
-      lv: lv,
+    test "the focused reset route is refused server-side", %{
+      conn: conn,
+      account: account,
       target: target,
       target_membership: target_membership
     } do
-      # Enroll the target so the context's mutation path is the thing being
-      # blocked, not a "not enrolled" no-op.
       enroll_mfa(target)
 
-      html = render_click(lv, "reset_mfa", %{"membership_id" => target_membership.id})
+      assert {:error, {:live_redirect, %{to: to}}} =
+               live(
+                 conn,
+                 ~p"/app/#{account}/settings/team/#{target_membership.id}/reset_2fa"
+               )
 
-      # reset_mfa is wrapped in Permissions.gated, so the denial is the generic
-      # gated flash (apostrophe HTML-escaped); the member's MFA is untouched.
-      assert html =~ "You don&#39;t have permission to do that."
+      assert to == ~p"/app/#{account}/settings/team"
+
       assert Emisar.Repo.reload!(target).mfa_enabled_at
     end
 
@@ -2133,30 +2141,182 @@ defmodule EmisarWeb.TeamLiveTest do
       membership: membership
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
-      # The Reset 2FA action now opens our styled confirm modal instead of a native
-      # data-confirm; its per-member dialog is present iff the action is offered.
-      refute has_element?(lv, "#reset-2fa-#{membership.id}")
+      path = ~p"/app/#{account}/settings/team/#{membership.id}/reset_2fa"
+      refute has_element?(lv, ~s|a[href="#{path}"]|, "Reset 2FA")
 
       enroll_mfa(member)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert has_element?(lv, "#reset-2fa-#{membership.id}")
+      assert has_element?(lv, ~s|a[href="#{path}"]|, "Reset 2FA")
+
+      invited = Fixtures.Users.create_user() |> enroll_mfa()
+
+      pending =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: invited.id,
+          invitation_token_digest: "pending-reset-invite"
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      pending_path = ~p"/app/#{account}/settings/team/#{pending.id}/reset_2fa"
+      refute has_element?(lv, ~s|a[href="#{pending_path}"]|, "Reset 2FA")
     end
 
-    test "an owner resets the member's 2FA and they must re-enroll", %{
+    test "an owner must prove their own current TOTP before the member is reset", %{
+      conn: conn,
+      owner: owner,
+      account: account,
+      member: member,
+      membership: membership
+    } do
+      secret = Emisar.Auth.generate_mfa_secret()
+      session_token = get_session(conn, :user_token)
+
+      Fixtures.Users.enable_mfa!(
+        secret,
+        Fixtures.Subjects.subject_for(owner, account),
+        session_token: session_token
+      )
+
+      enroll_mfa(member)
+
+      {:ok, lv, html} =
+        live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_2fa")
+
+      assert html =~ "This removes their current factor"
+
+      render_hook(lv, "verify_reset_totp", %{
+        "otp" => NimbleTOTP.verification_code(secret)
+      })
+
+      assert_redirect(lv, ~p"/app/#{account}/settings/team")
+
+      reloaded = Emisar.Repo.reload!(member)
+      assert is_nil(reloaded.mfa_enabled_at)
+    end
+
+    test "an owner can use one of their recovery codes for the reset", %{
+      conn: conn,
+      owner: owner,
+      account: account,
+      member: member,
+      membership: membership
+    } do
+      session_token = get_session(conn, :user_token)
+
+      {_owner, [recovery_code | _]} =
+        Fixtures.Users.enable_mfa!(
+          Emisar.Auth.generate_mfa_secret(),
+          Fixtures.Subjects.subject_for(owner, account),
+          session_token: session_token
+        )
+
+      enroll_mfa(member)
+
+      {:ok, lv, _html} =
+        live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_2fa")
+
+      render_click(lv, "use_reset_recovery")
+
+      lv
+      |> form("#member-mfa-reset-recovery", %{"recovery" => %{"code" => recovery_code}})
+      |> render_submit()
+
+      assert_redirect(lv, ~p"/app/#{account}/settings/team")
+      assert is_nil(Emisar.Repo.reload!(member).mfa_enabled_at)
+    end
+
+    test "a stolen session without a current factor cannot submit a reset", %{
       conn: conn,
       account: account,
       member: member,
       membership: membership
     } do
       enroll_mfa(member)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      html = render_click(lv, "reset_mfa", %{"membership_id" => membership.id})
+      {:ok, lv, html} =
+        live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_2fa")
 
-      assert html =~ "2FA reset"
-      reloaded = Emisar.Repo.reload!(member)
-      assert is_nil(reloaded.mfa_enabled_at)
+      assert html =~ "A second factor is required"
+      refute has_element?(lv, "#member-mfa-reset-totp")
+      refute has_element?(lv, "#member-mfa-reset-recovery")
+      refute is_nil(Emisar.Repo.reload!(member).mfa_enabled_at)
+    end
+
+    test "an MFA-satisfying SSO session gets a CSRF-protected reauthentication action", %{
+      conn: conn,
+      owner: owner,
+      account: account,
+      member: member,
+      membership: membership
+    } do
+      provider =
+        Fixtures.SSO.create_identity_provider(%{
+          account_id: account.id,
+          name: "Acme SSO",
+          satisfies_mfa: true
+        })
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: owner.id,
+          provider_identifier: "team-reset-owner"
+        })
+
+      session =
+        Fixtures.Auth.create_session_token!(owner, :sso, DateTime.utc_now(), %{},
+          user_identity_id: identity.id
+        )
+
+      enroll_mfa(member)
+      conn = put_session(conn, :user_token, session)
+
+      {:ok, lv, html} =
+        live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_2fa")
+
+      path = ~p"/app/#{account}/settings/team/#{membership.id}/reset_2fa/sso"
+      assert html =~ "Reauthenticate with your identity provider"
+      assert html =~ "Verify with Acme SSO"
+      refute has_element?(lv, "#member-mfa-reset-totp")
+      refute has_element?(lv, "#member-mfa-reset-recovery")
+      assert has_element?(lv, ~s|a[href="#{path}"][data-method="post"][data-csrf]|)
+    end
+
+    test "a wrong code stays on the focused challenge and leaves the member enrolled", %{
+      conn: conn,
+      owner: owner,
+      account: account,
+      member: member,
+      membership: membership
+    } do
+      secret = Emisar.Auth.generate_mfa_secret()
+      session_token = get_session(conn, :user_token)
+
+      Fixtures.Users.enable_mfa!(
+        secret,
+        Fixtures.Subjects.subject_for(owner, account),
+        session_token: session_token
+      )
+
+      enroll_mfa(member)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_2fa")
+
+      wrong_code =
+        secret
+        |> NimbleTOTP.verification_code()
+        |> String.to_integer()
+        |> Kernel.+(1)
+        |> rem(1_000_000)
+        |> Integer.to_string()
+        |> String.pad_leading(6, "0")
+
+      html = render_hook(lv, "verify_reset_totp", %{"otp" => wrong_code})
+
+      assert html =~ "That authenticator code didn"
+      refute is_nil(Emisar.Repo.reload!(member).mfa_enabled_at)
     end
   end
 
