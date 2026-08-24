@@ -1417,7 +1417,7 @@ defmodule EmisarWeb.CoreComponents do
   defp callout_icon(:neutral), do: "state.info"
   defp callout_icon(:brand), do: "state.info"
   defp callout_icon(:amber), do: "state.warning"
-  defp callout_icon(:rose), do: "state.warning"
+  defp callout_icon(:rose), do: "state.error"
 
   defp callout_icon_name(nil, tone), do: callout_icon(tone)
   defp callout_icon_name(icon, _tone) when is_binary(icon), do: icon

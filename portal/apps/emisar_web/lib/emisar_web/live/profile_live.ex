@@ -99,8 +99,8 @@ defmodule EmisarWeb.ProfileLive do
   defp present_session(%Auth.SessionFacts{} = session) do
     %{
       id: session.id,
-      device_label: session_device_label(session.user_agent),
-      icon: session_device_icon(session.user_agent),
+      device_label: UserAgent.label(session.user_agent),
+      icon: UserAgent.icon(session.user_agent),
       current?: session.current?,
       ip_address: session_ip(session.ip_address),
       inserted_at: session.inserted_at
@@ -723,11 +723,6 @@ defmodule EmisarWeb.ProfileLive do
   defp session_ip(ip) when is_binary(ip) and ip != "", do: ip
   defp session_ip(_ip), do: nil
 
-  defp session_device_label(user_agent) when is_binary(user_agent),
-    do: UserAgent.label(user_agent)
-
-  defp session_device_label(_user_agent), do: "Unknown device"
-
   # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,
   # pack trust, runner presence). The hooks own those nav cues; this page ignores them.
   def handle_info(_msg, socket), do: {:noreply, socket}
@@ -1174,9 +1169,4 @@ defmodule EmisarWeb.ProfileLive do
     </.console_shell>
     """
   end
-
-  # Picks an icon for the session row that hints at the device class —
-  # makes the row visually scannable instead of "wall of identical text".
-  defp session_device_icon(user_agent) when is_binary(user_agent), do: UserAgent.icon(user_agent)
-  defp session_device_icon(_user_agent), do: "infrastructure.network"
 end

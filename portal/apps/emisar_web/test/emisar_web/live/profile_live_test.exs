@@ -487,6 +487,26 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert rendered_session_rows(lv) == 15
     end
 
+    test "a session with no user agent shows the unknown-device mark", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      # A session recorded without a User-Agent header — the row still has to
+      # name a device class, and UserAgent owns what that is. A local fallback
+      # here once answered `infrastructure.network`, putting a globe in a column
+      # of device silhouettes while the drawing made for this case went unused.
+      Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
+        "ip_address" => "198.51.100.7"
+      })
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      assert html =~ "Unknown device"
+      assert html =~ "device.unknown"
+      refute html =~ "infrastructure.network"
+    end
+
     test "renders and revokes same-device sessions independently", %{
       conn: conn,
       user: user,

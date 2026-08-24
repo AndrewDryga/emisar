@@ -59,6 +59,10 @@ defmodule EmisarWeb.Components.CalloutTest do
 
       assert html =~ "bg-rose-400/40"
       assert html =~ "text-rose-400"
+      # Rose is a failure, amber a caution: they carry different marks so the
+      # tone is not the only thing telling them apart.
+      assert html =~ "state.error"
+      refute html =~ "state.warning"
     end
 
     test "renders a medium title above the message" do

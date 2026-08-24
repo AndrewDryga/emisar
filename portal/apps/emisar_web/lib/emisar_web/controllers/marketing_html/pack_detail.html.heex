@@ -33,19 +33,19 @@
           :if={allowed > 0}
           class="inline-flex items-center gap-1.5 rounded-full border border-brand-500/30 bg-brand-500/5 px-3 py-1 text-brand-300"
         >
-          <.icon name="product.run" class="h-3.5 w-3.5" /> {allowed} allowed by default
+          <.icon name="state.success" class="h-3.5 w-3.5" /> {allowed} allowed by default
         </span>
         <span
           :if={gated > 0}
           class="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/5 px-3 py-1 text-amber-300"
         >
-          <.icon name="product.approval" class="h-3.5 w-3.5" /> {gated} need approval by default
+          <.icon name="state.pending" class="h-3.5 w-3.5" /> {gated} need approval by default
         </span>
         <span
           :if={denied > 0}
           class="inline-flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/5 px-3 py-1 text-rose-300"
         >
-          <.icon name="state.cancelled" class="h-3.5 w-3.5" /> {denied} denied by default
+          <.icon name="state.denied" class="h-3.5 w-3.5" /> {denied} denied by default
         </span>
       </div>
 

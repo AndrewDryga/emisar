@@ -191,8 +191,8 @@ defmodule EmisarWeb.IconsTest do
       # sloppy even when no single icon is wrong.
       families = [
         {~s(<circle cx="8" cy="8" r="6.5"),
-         ~w(state.success state.error state.failed state.info state.pending
-            state.not_included state.disabled state.update_available
+         ~w(state.success state.error state.denied state.info state.pending
+            state.disabled state.update_available
             story.eliminated docs.upgrade action.cancel)},
         {~s(M3.5 2H9.5L12.5 5V14H3.5ZM9.5 2V5H12.5),
          ~w(evidence.document evidence.verified_document product.policy trust.declared)}
@@ -203,6 +203,29 @@ defmodule EmisarWeb.IconsTest do
 
         assert body =~ construction,
                "#{token} drifted off its family construction"
+      end
+    end
+
+    test "meanings that deliberately share a drawing stay byte-identical" do
+      # A universal symbol may serve one concept across namespaces (the rule's
+      # own precedent: action.next and diagram.flow_right share the arrow). The
+      # registry has no alias — a shared drawing is two files — so nothing but
+      # this test stops one copy from being redrawn alone. That already happened:
+      # the affirm check drifted half a unit apart at 16px while the 24px pair
+      # still matched, so the ledger's check and a plan-feature check were two
+      # drawings of one meaning.
+      shared = [
+        {"action.approve", "state.included"},
+        {"action.next", "diagram.flow_right"},
+        {"action.move_down", "diagram.flow_down"},
+        {"action.remove", "state.not_included"},
+        {"docs.upgrade", "state.update_available"},
+        {"story.dispatch", "trust.signed_dispatch"}
+      ]
+
+      for {left, right} <- shared, size <- [16, 24] do
+        assert Icons.master(left, size) == Icons.master(right, size),
+               "#{left} and #{right} share a meaning but drew apart at #{size}px"
       end
     end
 

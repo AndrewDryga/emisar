@@ -1523,7 +1523,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               variant={:secondary}
               tone={:rose}
               class="w-full"
-              icon="state.denied"
+              icon="action.deny"
               phx-disable-with="Denying…"
             >
               Deny
@@ -1689,7 +1689,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # the states it distinguishes, not beside a verb. Override keeps the caution
   # triangle: the triangle IS that meaning's drawing, not a box around one.
   defp decision_icon(:approve), do: "action.approve"
-  defp decision_icon(:deny), do: "state.denied"
+  defp decision_icon(:deny), do: "action.deny"
   defp decision_icon(:override), do: "state.warning"
 
   defp decision_icon_class(:approve), do: "text-brand-400"

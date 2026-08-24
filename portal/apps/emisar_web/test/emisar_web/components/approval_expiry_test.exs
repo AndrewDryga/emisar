@@ -110,11 +110,10 @@ defmodule EmisarWeb.Components.ApprovalExpiryTest do
       """)
 
     assert html =~ "expired"
-    assert html =~ "state.expired"
+    assert html =~ "state.expiry"
     assert html =~ "Expired without a decision"
     assert html =~ "text-zinc-400"
     refute html =~ "text-amber-400"
-    refute html =~ "state.pending"
   end
 
   test "renders nothing without an expiry" do

@@ -1335,7 +1335,7 @@ defmodule EmisarWeb.DomainComponents do
            approval isn't an ambiguous static "expires just now"; {" "} is a
            literal space HEEx won't trim. The LocalTime hook carries the absolute
            time on hover. --%>
-      <.icon name={if @expired?, do: "state.expired", else: "state.pending"} class="h-3 w-3" />
+      <.icon name="state.expiry" class="h-3 w-3" />
       {if @expired?, do: "expired", else: "expires"}{" "}<TimeHelpers.local_time
         id={@id}
         value={@expires_at}
