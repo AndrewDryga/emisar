@@ -6,15 +6,43 @@ services:
         condition: service_healthy
     volumes:
       - ${EMISAR_ROOT}/packs/redis/test/fixtures/redis-cli-spy.sh:/usr/local/bin/redis-cli:ro
+      - sentinel-state:/packtest-sentinel:ro
 
   redis:
     image: redis:${PACKTEST_VERSION:-8.8.0}${PACKTEST_DIGEST-}
-    command: redis-server --appendonly yes --requirepass packtest-canary-redis-c08d17
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        chmod 0755 /packtest-sentinel
+        printf 'port 26379\nrequirepass %s\nsentinel monitor mymaster 127.0.0.1 6379 1\nsentinel auth-pass mymaster %s\nsentinel down-after-milliseconds mymaster 60000\n' \
+          "$$REDISCLI_AUTH" "$$REDISCLI_AUTH" >/packtest-sentinel/sentinel.conf
+        chown -R redis:redis /packtest-sentinel
+        # Sentinel rewrites its config privately. Expose only the two harmless
+        # epoch lines the non-root behavior runner needs to compare.
+        (
+          while :; do
+            sed -n '/^sentinel current-epoch /p; /^sentinel leader-epoch mymaster /p' \
+              /packtest-sentinel/sentinel.conf >/packtest-sentinel/election-state.tmp
+            chmod 0644 /packtest-sentinel/election-state.tmp
+            mv -f /packtest-sentinel/election-state.tmp /packtest-sentinel/election-state
+            sleep 0.1
+          done
+        ) &
+        # Re-enter the image entrypoint for each server so it drops from root
+        # to the image's redis user after the root-only fixture setup.
+        /usr/local/bin/docker-entrypoint.sh redis-server --appendonly yes --requirepass "$$REDISCLI_AUTH" &
+        exec /usr/local/bin/docker-entrypoint.sh redis-server /packtest-sentinel/sentinel.conf --sentinel
     environment:
       REDISCLI_AUTH: packtest-canary-redis-c08d17
+    volumes:
+      - sentinel-state:/packtest-sentinel
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli ping >/dev/null && redis-cli -p 26379 ping >/dev/null"]
       interval: 5s
       start_period: 30s
       start_interval: 1s
       retries: 10
+
+volumes:
+  sentinel-state:

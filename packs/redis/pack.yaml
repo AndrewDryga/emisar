@@ -2,9 +2,9 @@ schema_version: 1
 
 id: redis
 name: Redis operations pack
-version: 0.3.13
-# Older versions let callers redirect cluster checks carrying runner credentials.
-retired_below: 0.3.13
+version: 0.3.14
+# Older versions allowed credential redirection or caller-controlled Sentinel votes.
+retired_below: 0.3.14
 description: >
   Deep Redis ops — INFO + memory accounting, slowlog + per-event
   latency, command stats, client list/kill/pause, keyspace introspection
@@ -39,15 +39,17 @@ detect:
 setup:
   summary: >
     redis-cli authenticates with the password in `REDISCLI_AUTH` on the runner
-    host. It does not read host or port from the environment — the actions
-    pass no -h/-p flags, so connections default to the local instance at
-    127.0.0.1:6379.
+    host. Ordinary Redis actions target the local instance at 127.0.0.1:6379;
+    Sentinel actions pass only `-p 26379` and target the local Sentinel. No
+    action reads a destination from the environment or accepts one as an
+    argument.
   env:
     - name: REDISCLI_AUTH
       description: Password sent via AUTH. Omit for an instance with no requirepass/ACL. The matching user must hold the commands the actions you enable will run.
   notes:
     - "`REDISCLI_AUTH` must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
-    - Host and port are not configurable through this pack's env — redis-cli takes them as -h/-p flags, which the actions do not set, so it always targets 127.0.0.1:6379.
+    - Host and port are not configurable through this pack's env — ordinary actions use redis-cli's 127.0.0.1:6379 default, while Sentinel actions set only port 26379 and keep the same local host.
+    - Sentinel must accept the same `REDISCLI_AUTH` password as the ordinary Redis service; every Sentinel action uses that shared runner credential on local port 26379.
     - "`REDISCLI_AUTH` supplies only the password; for an ACL-enabled server with a non-default username, set requirepass-style access or run the runner as a user whose default ACL covers these commands."
     - Critical mutators (flush_db, flushall, swapdb, shutdown_nosave) and config writes need an ACL/user permitted to run them.
   verify: redis.info

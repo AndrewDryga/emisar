@@ -111,6 +111,73 @@ cases:
   - action: redis.role
     expect:
       stdout_contains: [master]
+  - name: redis.sentinel-is-master-down-preserves-election-state
+    action: redis.sentinel_is_master_down
+    args: {ip: 127.0.0.1, port: "6379"}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -ec
+          - >-
+            redis-cli -p 26379 SENTINEL IS-MASTER-DOWN-BY-ADDR
+            127.0.0.1 6379 7 1111111111111111111111111111111111111111 |
+            tail -n 2 >/tmp/packtest-redis-sentinel-vote-before;
+            attempts=0;
+            until grep -q '^sentinel current-epoch 7$' /packtest-sentinel/election-state; do
+              attempts=$((attempts + 1));
+              test "$attempts" -lt 50;
+              sleep 0.1;
+            done;
+            cat /packtest-sentinel/election-state >/tmp/packtest-redis-sentinel-epoch-before;
+            test -s /tmp/packtest-redis-sentinel-vote-before;
+            test "$(wc -l </tmp/packtest-redis-sentinel-epoch-before)" = 2
+    expect:
+      stdout_contains: ["0", "*"]
+    probes:
+      - name: action uses the fixed non-voting wire form
+        argv:
+          - /bin/sh
+          - -ec
+          - >-
+            grep -Fqx -- '-p 26379 SENTINEL IS-MASTER-DOWN-BY-ADDR 127.0.0.1 6379 0 *'
+            /tmp/packtest-redis-sentinel-argv;
+            echo non-voting-argv
+        expect:
+          stdout_contains: [non-voting-argv]
+      - name: current and leader epochs are unchanged
+        argv:
+          - /bin/sh
+          - -ec
+          - >-
+            sleep 1;
+            cat /packtest-sentinel/election-state >/tmp/packtest-redis-sentinel-epoch-after;
+            test "$(cat /tmp/packtest-redis-sentinel-epoch-before)" =
+            "$(cat /tmp/packtest-redis-sentinel-epoch-after)";
+            echo epochs-unchanged
+        expect:
+          stdout_contains: [epochs-unchanged]
+      - name: existing leader vote is unchanged
+        argv:
+          - /bin/sh
+          - -ec
+          - >-
+            redis-cli -p 26379 SENTINEL IS-MASTER-DOWN-BY-ADDR
+            127.0.0.1 6379 7 2222222222222222222222222222222222222222 |
+            tail -n 2 >/tmp/packtest-redis-sentinel-vote-after;
+            test "$(cat /tmp/packtest-redis-sentinel-vote-before)" =
+            "$(cat /tmp/packtest-redis-sentinel-vote-after)";
+            echo vote-unchanged
+        expect:
+          stdout_contains: [vote-unchanged]
+    cleanup:
+      - argv:
+          - rm
+          - -f
+          - /tmp/packtest-redis-sentinel-argv
+          - /tmp/packtest-redis-sentinel-vote-before
+          - /tmp/packtest-redis-sentinel-vote-after
+          - /tmp/packtest-redis-sentinel-epoch-before
+          - /tmp/packtest-redis-sentinel-epoch-after
   - action: redis.scan
     args: {match: "packtest:*"}
     arrange:

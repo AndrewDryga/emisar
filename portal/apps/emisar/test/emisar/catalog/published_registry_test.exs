@@ -41,7 +41,7 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
     # the pair covers both hash code paths.
     test "content_hash matches the Go runner byte-for-byte (golden values)" do
       assert PublishedRegistry.get("redis").content_hash ==
-               "sha256:69d31ad6f22fd80bba7bb114979b9d0bbca9cbb3b306f36cb201fd0ecbe04c15"
+               "sha256:8fa6df8f97427529f796469d7c7c40e10eb3ade7f441402150f1c8a8552c8ccf"
 
       assert PublishedRegistry.get("cassandra").content_hash ==
                "sha256:b15c4f8726c7255c07a405e2cc54222c959d01add776a69d96cc9209ee26df35"
@@ -173,6 +173,29 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
 
       assert Enum.map(action.args, & &1["name"]) == ["module", "frequency"]
       assert Enum.find(action.args, &(&1["name"] == "frequency"))["default"] == "always"
+    end
+
+    test "the Redis Sentinel down-state action publishes only the non-voting form" do
+      pack = PublishedRegistry.get("redis")
+      action = Enum.find(pack.actions, &(&1.id == "redis.sentinel_is_master_down"))
+
+      assert Enum.map(action.args, & &1["name"]) == ["ip", "port"]
+
+      assert action.command == %{
+               binary: "redis-cli",
+               argv: [
+                 "-p",
+                 "26379",
+                 "SENTINEL",
+                 "IS-MASTER-DOWN-BY-ADDR",
+                 "{{ args.ip }}",
+                 "{{ args.port }}",
+                 "0",
+                 "*"
+               ]
+             }
+
+      assert pack.retired_below == "0.3.14"
     end
 
     test "a script-kind action carries no command template" do
