@@ -1,10 +1,9 @@
 defmodule EmisarWeb.MfaSetupLive do
   @moduledoc """
-  Enforced-MFA enrollment interstitial. When an account requires 2FA
-  (`account.settings.require_mfa`) and the signed-in member hasn't enrolled,
-  `UserAuth.on_mount(:ensure_account_compliant)` forwards every /app mount
-  here — most importantly the invite-accept flow, so a fresh invitee
-  enrolls as the natural second step before first seeing the dashboard.
+  Enforced-MFA interstitial. When an account requires 2FA and this session has
+  not proved the current factor, `UserAuth.on_mount(:ensure_account_compliant)`
+  forwards every /app mount here. A fresh member enrolls; an already-enrolled
+  member verifies TOTP or a recovery code for this browser.
 
   Enrollment first requires an explicit current-inbox verification, then
   confirms a TOTP code, shows the recovery codes once, and continues to /app.
@@ -20,17 +19,17 @@ defmodule EmisarWeb.MfaSetupLive do
   @email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up 2FA."
   @email_delivery_error "We could not deliver the verification code. Try again. If it keeps failing, contact support."
 
-  def mount(_params, _session, socket) do
+  def mount(_params, session, socket) do
     user = socket.assigns.current_user
     account = socket.assigns.current_account
 
     # Delegate the enroll-or-leave decision to the shared domain policy so this
     # interstitial can't drift from the on_mount hooks / the controller plug —
     # in particular the MFA exemption stays ACCOUNT-SCOPED (a session SSO-authed
-    # via another account's IdP is NOT exempt here and enrolls).
+    # via another account's IdP is NOT exempt here and must prove local MFA).
     case Accounts.ensure_account_compliant(account, socket.assigns.current_subject) do
       {:error, :mfa_required} ->
-        mount_enrollment(socket, user)
+        mount_required_mfa(socket, user, session["user_token"])
 
       {:error, :sso_required} ->
         # The :ensure_sso_compliant on_mount already bounced a non-SSO session on
@@ -38,8 +37,8 @@ defmodule EmisarWeb.MfaSetupLive do
         # satisfied — belt and suspenders.
         {:ok, push_navigate(socket, to: ~p"/app/#{account}/sso_required")}
 
-      # Already compliant (enrolled, not enforcing, or an MFA-satisfying SSO
-      # session FOR THIS account) — don't strand the user in enrollment.
+      # Already compliant (current local proof, not enforcing, or an
+      # MFA-satisfying SSO session FOR THIS account) — don't strand the user.
       :ok ->
         {:ok, push_navigate(socket, to: ~p"/app")}
 
@@ -48,11 +47,23 @@ defmodule EmisarWeb.MfaSetupLive do
     end
   end
 
-  defp mount_enrollment(socket, _user) do
+  defp mount_required_mfa(socket, user, presented_token) do
+    mode = if is_nil(user.mfa_enabled_at), do: :enrollment, else: :challenge
+
+    title =
+      if mode == :enrollment,
+        do: "Set up two-factor authentication",
+        else: "Verify two-factor authentication"
+
     {:ok,
      socket
-     |> assign(:page_title, "Set up two-factor authentication")
+     |> assign(:page_title, title)
+     |> assign(:mfa_mode, mode)
+     |> assign(:current_session_token, presented_token)
      |> assign(:mfa_recovery_codes, nil)
+     |> assign(:mfa_challenge_mode, :totp)
+     |> assign(:mfa_challenge_error, nil)
+     |> assign(:mfa_recovery_form, to_form(%{"code" => ""}))
      |> reset_mfa_enrollment()}
   end
 
@@ -61,8 +72,13 @@ defmodule EmisarWeb.MfaSetupLive do
     <.auth_layout title="Two-factor authentication required">
       <p class="mb-6 text-sm text-zinc-400">
         <span class="font-semibold text-zinc-200">{@current_account.name}</span>
-        requires two-factor authentication for every member. Set it up now to continue
-        to your dashboard. Learn why we require it in the <.link
+        requires two-factor authentication for every member.
+        <%= if @mfa_mode == :enrollment do %>
+          Set it up now to continue to your dashboard.
+        <% else %>
+          Verify this session to continue to your dashboard.
+        <% end %>
+        Learn why we require it in the <.link
           href={~p"/security"}
           class="text-zinc-400 underline hover:text-zinc-200"
         >
@@ -70,6 +86,47 @@ defmodule EmisarWeb.MfaSetupLive do
       </p>
 
       <%= cond do %>
+        <% @mfa_mode == :challenge -> %>
+          <%= if @mfa_challenge_mode == :totp do %>
+            <.simple_form for={%{}} phx-submit="verify_totp">
+              <.code_input
+                id="mfa-session-otp"
+                name="otp"
+                numeric
+                label="Authenticator code"
+                error={@mfa_challenge_error}
+              />
+              <:actions>
+                <.button class="w-full" phx-disable-with="Verifying...">
+                  Verify <span aria-hidden="true">→</span>
+                </.button>
+              </:actions>
+            </.simple_form>
+
+            <.mode_switch event="use_recovery" lead="Lost your device?">
+              Use a recovery code
+            </.mode_switch>
+          <% else %>
+            <.simple_form for={@mfa_recovery_form} phx-submit="verify_recovery">
+              <.input
+                field={@mfa_recovery_form[:code]}
+                type="text"
+                label="Recovery code"
+                autocomplete="one-time-code"
+                required
+              />
+              <.error :if={@mfa_challenge_error}>{@mfa_challenge_error}</.error>
+              <:actions>
+                <.button class="w-full" phx-disable-with="Verifying...">
+                  Verify <span aria-hidden="true">→</span>
+                </.button>
+              </:actions>
+            </.simple_form>
+
+            <.mode_switch event="use_totp" lead="Have your authenticator?">
+              Enter a code instead
+            </.mode_switch>
+          <% end %>
         <% @mfa_recovery_codes -> %>
           <div class="space-y-4">
             <.secret_reveal
@@ -138,6 +195,21 @@ defmodule EmisarWeb.MfaSetupLive do
     """
   end
 
+  def handle_event("verify_totp", %{"otp" => otp}, socket),
+    do: verify_current_session(socket, {:totp, otp})
+
+  def handle_event("verify_recovery", %{"code" => code}, socket),
+    do: verify_current_session(socket, {:recovery_code, code})
+
+  def handle_event("use_recovery", _params, socket) do
+    {:noreply,
+     socket |> assign(:mfa_challenge_mode, :recovery) |> assign(:mfa_challenge_error, nil)}
+  end
+
+  def handle_event("use_totp", _params, socket) do
+    {:noreply, socket |> assign(:mfa_challenge_mode, :totp) |> assign(:mfa_challenge_error, nil)}
+  end
+
   def handle_event("start_mfa", _params, socket) do
     case Auth.issue_mfa_enrollment_code(socket.assigns.current_subject) do
       {:ok, :sent} ->
@@ -157,7 +229,7 @@ defmodule EmisarWeb.MfaSetupLive do
         {:noreply, assign(socket, :mfa_start_error, @email_unavailable_error)}
 
       {:error, :mfa_already_enabled} ->
-        {:noreply, push_navigate(socket, to: ~p"/app")}
+        {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
 
       {:error, _reason} ->
         {:noreply, assign(socket, :mfa_start_error, @email_delivery_error)}
@@ -195,7 +267,7 @@ defmodule EmisarWeb.MfaSetupLive do
            |> assign(:mfa_start_error, @email_unavailable_error)}
 
         {:error, :mfa_already_enabled} ->
-          {:noreply, push_navigate(socket, to: ~p"/app")}
+          {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
 
         {:error, _reason} ->
           {:noreply,
@@ -219,7 +291,7 @@ defmodule EmisarWeb.MfaSetupLive do
           {:noreply, assign(socket, :mfa_enrollment_email_error, @email_issue_rate_limit_error)}
 
         {:error, :mfa_already_enabled} ->
-          {:noreply, push_navigate(socket, to: ~p"/app")}
+          {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
 
         {:error, _reason} ->
           {:noreply, assign(socket, :mfa_enrollment_email_error, @email_delivery_error)}
@@ -239,12 +311,14 @@ defmodule EmisarWeb.MfaSetupLive do
              secret,
              otp,
              socket.assigns.mfa_enrollment_proof,
+             socket.assigns.current_session_token,
              socket.assigns.current_subject
            ) do
         {:ok, updated, recovery_codes} ->
           {:noreply,
            socket
            |> assign(:current_user, updated)
+           |> assign_current_mfa_proof(updated)
            |> assign(:mfa_recovery_codes, recovery_codes)
            |> assign(:codes_saved?, false)
            |> reset_mfa_enrollment()}
@@ -259,7 +333,13 @@ defmodule EmisarWeb.MfaSetupLive do
            |> assign(:mfa_start_error, "Your account changed. Verify your current email again.")}
 
         {:error, :mfa_already_enabled} ->
-          {:noreply, push_navigate(socket, to: ~p"/app")}
+          {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
+
+        {:error, :session_not_found} ->
+          {:noreply,
+           socket
+           |> put_flash(:error, "Your session changed. Sign in again before enabling 2FA.")
+           |> redirect(to: ~p"/sign_in/magic")}
 
         {:error, _changeset} ->
           {:noreply, assign(socket, :mfa_error, "Could not enable MFA.")}
@@ -281,6 +361,88 @@ defmodule EmisarWeb.MfaSetupLive do
     else
       {:noreply, socket}
     end
+  end
+
+  defp verify_current_session(socket, factor) do
+    with {:ok, proof} <-
+           Auth.verify_current_session_mfa_challenge(
+             factor,
+             socket.assigns.current_subject
+           ),
+         {:ok, _session} <-
+           Auth.complete_current_session_mfa(
+             proof,
+             socket.assigns.current_session_token,
+             socket.assigns.current_subject
+           ) do
+      {:noreply, push_navigate(socket, to: ~p"/app")}
+    else
+      {:error, :rate_limited} ->
+        {:noreply, assign(socket, :mfa_challenge_error, @mfa_rate_limit_error)}
+
+      {:error, :session_not_found} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Your session changed. Sign in again to continue.")
+         |> redirect(to: ~p"/sign_in/magic")}
+
+      {:error, :mfa_proof_stale} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Your 2FA settings changed. Verify the current factor again.")
+         |> push_navigate(to: ~p"/app/mfa_setup")}
+
+      {:error, _reason} ->
+        {:noreply,
+         assign(
+           socket,
+           :mfa_challenge_error,
+           challenge_error(socket.assigns.mfa_challenge_mode)
+         )}
+    end
+  end
+
+  defp challenge_error(:totp),
+    do: "That code didn't match. Check your authenticator app and try again."
+
+  defp challenge_error(:recovery),
+    do: "That recovery code didn't match or has already been used."
+
+  defp assign_current_mfa_proof(socket, user) do
+    subject = %{
+      socket.assigns.current_subject
+      | actor: user,
+        mfa: true,
+        mfa_enrollment_verified_at: user.mfa_enabled_at
+    }
+
+    auth = %{
+      socket.assigns.current_auth
+      | mfa_enrollment_verified_at: user.mfa_enabled_at
+    }
+
+    socket
+    |> assign(:current_subject, subject)
+    |> assign(:current_auth, auth)
+  end
+
+  attr :event, :string, required: true
+  attr :lead, :string, required: true
+  slot :inner_block, required: true
+
+  defp mode_switch(assigns) do
+    ~H"""
+    <p class="mt-6 text-center text-sm text-zinc-400">
+      {@lead}
+      <button
+        type="button"
+        phx-click={@event}
+        class="font-medium text-brand-400 hover:text-brand-300"
+      >
+        {render_slot(@inner_block)}
+      </button>
+    </p>
+    """
   end
 
   defp assign_mfa_form(socket) do

@@ -356,6 +356,7 @@ defmodule EmisarWeb.ProfileLive do
              secret,
              otp,
              socket.assigns.mfa_enrollment_proof,
+             socket.assigns.current_session_token,
              socket.assigns.current_subject
            ) do
         {:ok, updated, recovery_codes} ->
@@ -366,6 +367,7 @@ defmodule EmisarWeb.ProfileLive do
              "2FA enabled. Copy your recovery codes below — they'll only be shown once."
            )
            |> assign(:current_user, updated)
+           |> assign_current_mfa_proof(updated)
            |> assign_mfa_facts(updated)
            |> assign(:mfa_recovery_codes, recovery_codes)
            |> reset_mfa_enrollment()}
@@ -378,6 +380,12 @@ defmodule EmisarWeb.ProfileLive do
            socket
            |> put_flash(:error, "Your account changed. Verify your current email again.")
            |> reset_mfa_enrollment()}
+
+        {:error, :session_not_found} ->
+          {:noreply,
+           socket
+           |> put_flash(:error, "Your session changed. Sign in again before enabling 2FA.")
+           |> push_navigate(to: ~p"/sign_in/magic")}
 
         {:error, :mfa_already_enabled} ->
           {:noreply, refresh_after_mfa_enabled(socket)}
@@ -537,6 +545,24 @@ defmodule EmisarWeb.ProfileLive do
   defp assign_mfa_facts(socket, user) do
     {:ok, facts} = Auth.mfa_facts(%{socket.assigns.current_subject | actor: user})
     assign(socket, :mfa_facts, facts)
+  end
+
+  defp assign_current_mfa_proof(socket, user) do
+    subject = %{
+      socket.assigns.current_subject
+      | actor: user,
+        mfa: true,
+        mfa_enrollment_verified_at: user.mfa_enabled_at
+    }
+
+    auth = %{
+      socket.assigns.current_auth
+      | mfa_enrollment_verified_at: user.mfa_enabled_at
+    }
+
+    socket
+    |> assign(:current_subject, subject)
+    |> assign(:current_auth, auth)
   end
 
   defp assign_profile_form(socket, user) do

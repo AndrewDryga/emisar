@@ -58,7 +58,16 @@ defmodule Emisar.AuthAuditTest do
       {user, account, subject} = Fixtures.Subjects.owner_subject()
       secret = Auth.generate_mfa_secret()
       proof = Fixtures.Users.mfa_enrollment_proof(subject)
-      %{user: user, account: account, secret: secret, subject: subject, proof: proof}
+      session_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+
+      %{
+        user: user,
+        account: account,
+        secret: secret,
+        subject: subject,
+        proof: proof,
+        session_token: session_token
+      }
     end
 
     test "issuing the enrollment challenge audits the request without the code or address", %{
@@ -74,10 +83,13 @@ defmodule Emisar.AuthAuditTest do
       account: account,
       secret: secret,
       subject: subject,
-      proof: proof
+      proof: proof,
+      session_token: session_token
     } do
       otp = NimbleTOTP.verification_code(secret)
-      assert {:ok, updated, _codes} = Auth.enable_mfa(secret, otp, proof, subject)
+
+      assert {:ok, updated, _codes} =
+               Auth.enable_mfa(secret, otp, proof, session_token, subject)
 
       assert [event] = events_of(account, "user.mfa_enabled")
       assert event.actor_id == updated.id
@@ -87,10 +99,17 @@ defmodule Emisar.AuthAuditTest do
       account: account,
       secret: secret,
       subject: subject,
-      proof: proof
+      proof: proof,
+      session_token: session_token
     } do
       {:ok, enabled, _} =
-        Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), proof, subject)
+        Auth.enable_mfa(
+          secret,
+          NimbleTOTP.verification_code(secret),
+          proof,
+          session_token,
+          subject
+        )
 
       assert {:ok, _} = Auth.disable_mfa(NimbleTOTP.verification_code(secret), subject)
       assert [event] = events_of(account, "user.mfa_disabled")
@@ -101,10 +120,17 @@ defmodule Emisar.AuthAuditTest do
       account: account,
       secret: secret,
       subject: subject,
-      proof: proof
+      proof: proof,
+      session_token: session_token
     } do
       {:ok, enabled, _} =
-        Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), proof, subject)
+        Auth.enable_mfa(
+          secret,
+          NimbleTOTP.verification_code(secret),
+          proof,
+          session_token,
+          subject
+        )
 
       assert Auth.verify_mfa_challenge(enabled, {:totp, "000000"}) == {:error, :invalid}
 
@@ -116,10 +142,17 @@ defmodule Emisar.AuthAuditTest do
       account: account,
       secret: secret,
       subject: subject,
-      proof: proof
+      proof: proof,
+      session_token: session_token
     } do
       {:ok, enabled, codes} =
-        Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), proof, subject)
+        Auth.enable_mfa(
+          secret,
+          NimbleTOTP.verification_code(secret),
+          proof,
+          session_token,
+          subject
+        )
 
       assert {:ok, _proof} = Auth.verify_mfa_challenge(enabled, {:recovery_code, hd(codes)})
 
@@ -131,10 +164,17 @@ defmodule Emisar.AuthAuditTest do
       account: account,
       secret: secret,
       subject: subject,
-      proof: proof
+      proof: proof,
+      session_token: session_token
     } do
       {:ok, enabled, _} =
-        Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), proof, subject)
+        Auth.enable_mfa(
+          secret,
+          NimbleTOTP.verification_code(secret),
+          proof,
+          session_token,
+          subject
+        )
 
       assert Auth.verify_mfa_challenge(enabled, {:recovery_code, "not-a-real-code"}) ==
                {:error, :invalid}
@@ -147,13 +187,20 @@ defmodule Emisar.AuthAuditTest do
       account: account,
       secret: secret,
       subject: subject,
-      proof: proof
+      proof: proof,
+      session_token: session_token
     } do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
       subject = %{subject | context: %RequestContext{request_id: "req-mfa-rate-limit"}}
 
       {:ok, enabled, codes} =
-        Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), proof, subject)
+        Auth.enable_mfa(
+          secret,
+          NimbleTOTP.verification_code(secret),
+          proof,
+          session_token,
+          subject
+        )
 
       for _ <- 1..5 do
         assert Auth.verify_mfa_challenge(enabled, {:totp, "000000"}) == {:error, :invalid}
@@ -198,10 +245,17 @@ defmodule Emisar.AuthAuditTest do
       account: account,
       secret: secret,
       subject: subject,
-      proof: proof
+      proof: proof,
+      session_token: session_token
     } do
       {:ok, enabled, _} =
-        Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), proof, subject)
+        Auth.enable_mfa(
+          secret,
+          NimbleTOTP.verification_code(secret),
+          proof,
+          session_token,
+          subject
+        )
 
       {:ok, _, _codes} =
         Auth.regenerate_mfa_recovery_codes(NimbleTOTP.verification_code(secret), subject)

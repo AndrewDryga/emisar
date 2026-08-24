@@ -155,8 +155,9 @@
       <.docs_h2 id="mfa">MFA</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Require MFA</strong>
-        sends unenrolled members to setup before they can use the account. Factors, recovery
-        codes, and how an SSO session can satisfy the requirement are in <.link
+        requires the current browser to prove the member's active factor before it can use the
+        account. Members without TOTP enroll; other unproved sessions enter an authenticator or
+        recovery code. Factor setup and the SSO exemption are in <.link
           navigate={~p"/docs/authentication" <> "#enforcement"}
           class="text-brand-300 hover:text-brand-200"
         >Enforce account sign-in</.link>.

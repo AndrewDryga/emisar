@@ -17,7 +17,12 @@ defmodule EmisarWeb.UserAuth do
   # SSO identity. `fetch_user_and_token_by_session_token/1` returns the
   # `%UserToken{}` on a hit; this is the miss/anonymous default the Subject build
   # reads from, and `Auth.session_mfa_verified?/2` fails it closed.
-  @no_auth %{auth_method: nil, mfa_verified_at: nil, user_identity_id: nil}
+  @no_auth %{
+    auth_method: nil,
+    mfa_verified_at: nil,
+    mfa_enrollment_verified_at: nil,
+    user_identity_id: nil
+  }
 
   # -- Public surface -------------------------------------------------
 
@@ -310,16 +315,18 @@ defmodule EmisarWeb.UserAuth do
   # boundary stashed (a `%UserToken{}` or `@no_auth`). So every audit row the
   # subject produces records how the operator signed in.
   #
-  # `:mfa` is the BOUND answer, not the session's raw stamp: the Subject is the
-  # authorization principal, and consumers downstream of it (the account MFA
-  # compliance path, the audit row's "was this second-factor-protected") see only
-  # the Subject, so the binding has to happen here or not at all.
+  # `:mfa` is the boundary's interpreted answer, not the raw session stamp: local
+  # proof must still match the current enrollment, while an SSO authentication
+  # stamp remains generic provenance. Account compliance consumes the exact
+  # local epoch below or rechecks the current account's provider setting.
   defp auth_opts(assigns) do
     auth = Map.get(assigns, :current_auth, @no_auth)
 
     [
       auth_method: auth.auth_method,
       mfa: Auth.session_mfa_verified?(assigns.current_user, auth),
+      mfa_enrollment_verified_at:
+        Auth.session_mfa_enrollment_verified_at(assigns.current_user, auth),
       user_identity_id: auth.user_identity_id
     ]
   end
@@ -535,8 +542,8 @@ defmodule EmisarWeb.UserAuth do
 
   # Tenant routes enforce the account's SSO and MFA posture from one domain
   # decision. Splitting this across two hooks repeated provider/identity reads
-  # whenever SSO enforcement was enabled. The profile remains the one location
-  # where an unenrolled member may load the voluntary MFA setup UI.
+  # whenever SSO enforcement was enabled. Enrollment and current-session proof
+  # happen only at the unscoped MFA interstitial.
   def on_mount(:ensure_account_compliant, _params, _session, socket) do
     account = socket.assigns.current_account
     subject = socket.assigns.current_subject
@@ -641,9 +648,6 @@ defmodule EmisarWeb.UserAuth do
   end
 
   defp touch_console_activity(_subject), do: :ok
-
-  defp enforce_mfa_requirement(%{view: EmisarWeb.ProfileLive} = socket),
-    do: {:cont, socket}
 
   defp enforce_mfa_requirement(socket),
     do: {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/mfa_setup")}

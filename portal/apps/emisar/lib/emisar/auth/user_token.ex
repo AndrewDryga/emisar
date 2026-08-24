@@ -18,14 +18,14 @@ defmodule Emisar.Auth.UserToken do
     # nil for opaque email/session tokens.
     field :remaining_attempts, :integer
     # How the session was authenticated — carried onto %Auth.Subject{} and
-    # stamped on every audit row (provenance). `auth_method` is the method;
-    # `mfa_verified_at` records WHEN this session proved a second factor, nil for
-    # never (kept separate so "SSO + enforced TOTP" is expressible). Set only at
-    # mint and never updated, on purpose: it is evidence about one sign-in, so
-    # `Auth.session_mfa_verified?/2` binds it to the enrollment it proved rather
-    # than the row moving under it. `user_identity` is :sso.
+    # stamped on every audit row (provenance). `mfa_verified_at` is the generic
+    # assurance present at authentication time: local TOTP for a magic-link
+    # session, IdP assurance for SSO. `mfa_enrollment_verified_at` is separate
+    # because an SSO session may later prove Emisar TOTP; it stores the exact
+    # local enrollment epoch this session proved. `user_identity` is :sso.
     field :auth_method, Ecto.Enum, values: [:magic_link, :sso]
     field :mfa_verified_at, :utc_datetime_usec
+    field :mfa_enrollment_verified_at, :utc_datetime_usec
 
     belongs_to :user, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :user_identity, Emisar.SSO.UserIdentity, where: [deleted_at: nil]

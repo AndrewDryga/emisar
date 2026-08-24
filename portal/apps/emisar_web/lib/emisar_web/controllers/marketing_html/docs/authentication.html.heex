@@ -73,8 +73,11 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Require MFA</strong>
-            sends members who have not enrolled TOTP (any standard authenticator app) to setup
-            before they can use the account.
+            requires this browser to prove the member's current TOTP enrollment before they can
+            use the account. Members without TOTP set it up with any standard authenticator app;
+            other unproved sessions enter an authenticator or recovery code. Completing setup
+            proves only that browser, and disabling then re-enrolling invalidates earlier session
+            proofs.
             Before emisar reveals an authenticator secret, the member confirms a code sent to
             their current email address — a provider that supplies no email leaves enrollment
             closed until an administrator corrects the identity. An SSO connection satisfies

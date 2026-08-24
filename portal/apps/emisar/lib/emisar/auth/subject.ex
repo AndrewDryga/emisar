@@ -22,11 +22,15 @@ defmodule Emisar.Auth.Subject do
       :sso`), or nil for an API key / runner (the actor IS the credential).
       Stamped onto every audit row.
     * `mfa` — whether a second factor is verified for this session (TOTP, or an
-      MFA-enforcing IdP). `true`/`false` for a user session, nil otherwise. The
-      boundary passes `Auth.session_mfa_verified?/2`'s answer, not the raw
-      session stamp, so the Subject — the authorization principal — carries the
-      claim already bound to the user's current enrollment. The raw
-      `mfa_verified_at` stays on the session row for forensics.
+      IdP assertion). `true`/`false` for a user session, nil otherwise. Local
+      proof is bound to the current enrollment; SSO proof remains the assurance
+      recorded at authentication time. Account policy checks the provider's
+      current setting separately. The raw `mfa_verified_at` stays on the session
+      row for forensics.
+    * `mfa_enrollment_verified_at` — the exact local-TOTP enrollment epoch this
+      session proved, or nil. Consumers compare it with the actor's current
+      `mfa_enabled_at`; carrying the epoch rather than a boolean lets a locked
+      re-read reject a disable/re-enroll race.
     * `user_identity_id` — the `%SSO.UserIdentity{}` behind an `:sso`
       session; nil otherwise.
   """
@@ -50,6 +54,7 @@ defmodule Emisar.Auth.Subject do
           context: RequestContext.t(),
           auth_method: auth_method() | nil,
           mfa: boolean() | nil,
+          mfa_enrollment_verified_at: DateTime.t() | nil,
           user_identity_id: binary() | nil
         }
 
@@ -61,12 +66,14 @@ defmodule Emisar.Auth.Subject do
             context: %RequestContext{},
             auth_method: nil,
             mfa: nil,
+            mfa_enrollment_verified_at: nil,
             user_identity_id: nil
 
   @doc """
   Build a subject from a `%Users.User{}` + their `%Accounts.Membership{}`.
   `opts` carry session provenance — `:auth_method` (how this session was
-  authenticated), `:mfa` (was a second factor verified), and
+  authenticated), `:mfa` (was a second factor verified),
+  `:mfa_enrollment_verified_at` (which local enrollment this session proved), and
   `:user_identity_id` (the SSO identity behind it) — threaded from the
   session row so every audit row records it.
   """
@@ -88,6 +95,7 @@ defmodule Emisar.Auth.Subject do
       context: context,
       auth_method: Keyword.get(opts, :auth_method),
       mfa: Keyword.get(opts, :mfa),
+      mfa_enrollment_verified_at: Keyword.get(opts, :mfa_enrollment_verified_at),
       user_identity_id: Keyword.get(opts, :user_identity_id)
     }
   end

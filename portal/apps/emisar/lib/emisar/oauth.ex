@@ -305,6 +305,7 @@ defmodule Emisar.OAuth do
       Subject.for_user(user, account, membership, subject.context,
         auth_method: subject.auth_method,
         mfa: subject.mfa,
+        mfa_enrollment_verified_at: subject.mfa_enrollment_verified_at,
         user_identity_id: subject.user_identity_id
       )
 

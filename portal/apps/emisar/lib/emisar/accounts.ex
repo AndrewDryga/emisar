@@ -127,9 +127,10 @@ defmodule Emisar.Accounts do
       not authenticate via THAT account's own SSO (a magic-link session, or an
       SSO session for a different account); the caller sends the operator to the
       account's step-up.
-    * `{:error, :mfa_required}` — the account mandates MFA and the user is
-      neither enrolled nor on an MFA-satisfying IdP of this account; the caller
-      funnels them into enrollment.
+    * `{:error, :mfa_required}` — the account mandates MFA and this session has
+      neither proved the user's current local enrollment nor authenticated
+      through an MFA-satisfying IdP of this account; the caller funnels it into
+      enrollment or a current-factor challenge.
     * `{:error, :unauthorized}` — the subject cannot view its account.
     * `{:error, :not_found}` — `account` is not the subject's account.
     * `:ok` — compliant, or the account mandates neither control.
@@ -172,21 +173,32 @@ defmodule Emisar.Accounts do
       SSO.identity_belongs_to_account?(subject.user_identity_id, account.id)
   end
 
-  # require_mfa: an enforcing account whose user hasn't enrolled. An SSO session
-  # is exempt ONLY when its provider satisfies MFA (the IdP enforces the second
-  # factor); a provider marked satisfies_mfa: false still funnels the user into
-  # emisar TOTP.
+  # require_mfa: an enforcing account needs proof bound to THIS session and the
+  # user's CURRENT local enrollment. Enrollment alone is not proof: otherwise a
+  # stolen pre-enrollment cookie becomes compliant when its victim enrolls. An
+  # SSO session is independently exempt only while THIS account's provider says
+  # it enforces MFA.
   defp mfa_enrollment_required?(%Account{} = account, %Subject{} = subject) do
     cond do
       not account.settings.require_mfa -> false
-      mfa_enrolled?(subject.actor) -> false
+      local_mfa_session_current?(subject) -> false
       sso_session_satisfies_mfa?(subject, account) -> false
       true -> true
     end
   end
 
-  defp mfa_enrolled?(%Users.User{mfa_enabled_at: %DateTime{}}), do: true
-  defp mfa_enrolled?(_actor), do: false
+  # Both values must be timestamps before equality: nil == nil would otherwise
+  # turn an unenrolled actor and an unproved session into a valid pair. OAuth
+  # copies the proved epoch while replacing `actor` with its locked re-read, so
+  # disable/re-enroll between consent render and mint fails this same choke point.
+  defp local_mfa_session_current?(%Subject{
+         actor: %Users.User{mfa_enabled_at: %DateTime{} = enabled_at},
+         mfa_enrollment_verified_at: %DateTime{} = verified_enrollment
+       })
+       when enabled_at == verified_enrollment,
+       do: true
+
+  defp local_mfa_session_current?(%Subject{}), do: false
 
   # Account-scoped: the SSO identity must belong to THIS account AND its provider
   # must satisfy MFA. A session SSO-authed via a DIFFERENT account's IdP inherits

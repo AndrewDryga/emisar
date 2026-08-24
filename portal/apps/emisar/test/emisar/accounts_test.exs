@@ -417,23 +417,41 @@ defmodule Emisar.AccountsTest do
       assert Accounts.ensure_account_compliant(account, subject) == {:error, :mfa_required}
     end
 
-    test "an enrolled operator satisfies require_mfa", %{account: account, subject: subject} do
+    test "enrollment alone is insufficient; this session must prove the current enrollment", %{
+      account: account,
+      subject: subject
+    } do
       account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
       {user, _recovery_codes} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
-      assert Accounts.ensure_account_compliant(account, %{subject | actor: user}) == :ok
+      enrolled_only = %{subject | actor: user, mfa: false}
+
+      assert Accounts.ensure_account_compliant(account, enrolled_only) ==
+               {:error, :mfa_required}
+
+      proved = %{
+        enrolled_only
+        | mfa: true,
+          mfa_enrollment_verified_at: user.mfa_enabled_at
+      }
+
+      assert Accounts.ensure_account_compliant(account, proved) == :ok
     end
 
-    test "a session replayed across a disable and re-enroll tracks the ENROLLMENT, not its proof",
+    test "a session replayed across disable and re-enroll cannot reuse the old proof epoch",
          %{account: account, subject: subject} do
       account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
 
       {enrolled, [recovery_code | _]} =
         Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
-      # `mfa: true` is the bound claim the boundary stamped when this session's
-      # proof still matched the enrollment behind it.
-      proved_subject = %{subject | actor: enrolled, mfa: true}
+      proved_subject = %{
+        subject
+        | actor: enrolled,
+          mfa: true,
+          mfa_enrollment_verified_at: enrolled.mfa_enabled_at
+      }
+
       assert Accounts.ensure_account_compliant(account, proved_subject) == :ok
 
       {:ok, disabled} = Auth.disable_mfa(recovery_code, proved_subject)
@@ -445,12 +463,10 @@ defmodule Emisar.AccountsTest do
       {re_enrolled, _codes} =
         Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), disabled_subject)
 
-      # This control asks whether the MEMBER holds a factor, never whether this
-      # session proved the current one — so re-enrolling restores compliance even
-      # though the session's own claim is now false. The bound claim is what the
-      # staff-admin gate consumes; this pins where the account control's line is.
-      replayed_subject = %{disabled_subject | actor: re_enrolled, mfa: false}
-      assert Accounts.ensure_account_compliant(account, replayed_subject) == :ok
+      replayed_subject = %{disabled_subject | actor: re_enrolled, mfa: true}
+
+      assert Accounts.ensure_account_compliant(account, replayed_subject) ==
+               {:error, :mfa_required}
     end
 
     test "this account's MFA-satisfying SSO identity clears both controls", %{
@@ -474,6 +490,34 @@ defmodule Emisar.AccountsTest do
       sso_subject = %{subject | auth_method: :sso, user_identity_id: identity.id}
 
       assert Accounts.ensure_account_compliant(account, sso_subject) == :ok
+    end
+
+    test "generic SSO MFA never substitutes for current account-scoped provider trust", %{
+      user: user,
+      account: account,
+      subject: subject
+    } do
+      provider =
+        Fixtures.SSO.create_identity_provider(account_id: account.id, satisfies_mfa: false)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        )
+
+      account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+
+      sso_subject = %{
+        subject
+        | auth_method: :sso,
+          mfa: true,
+          user_identity_id: identity.id
+      }
+
+      assert Accounts.ensure_account_compliant(account, sso_subject) ==
+               {:error, :mfa_required}
     end
 
     test "a subject without account-view permission is unauthorized", %{

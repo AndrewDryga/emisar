@@ -87,11 +87,17 @@ defmodule EmisarWeb.ConnCase do
   """
   def register_and_log_in_staff(conn) do
     {conn, user, account} = register_and_log_in(conn)
-    Fixtures.Users.enable_mfa!(Emisar.Auth.generate_mfa_secret(), owner_subject(user, account))
-    staff_user = Fixtures.Users.mark_user_as_staff(user)
 
-    # Minted AFTER enrolling, so the proof lands past `mfa_enabled_at` the way
-    # a real MFA challenge at sign-in does.
+    {enrolled, _codes} =
+      Fixtures.Users.enable_mfa!(
+        Emisar.Auth.generate_mfa_secret(),
+        owner_subject(user, account)
+      )
+
+    staff_user = Fixtures.Users.mark_user_as_staff(enrolled)
+
+    # Minted after enrolling, so the session changeset binds the exact local
+    # enrollment epoch the MFA challenge proved.
     token = Fixtures.Auth.create_session_token!(staff_user, :magic_link, DateTime.utc_now())
 
     {Plug.Conn.put_session(conn, :user_token, token), staff_user}

@@ -153,30 +153,39 @@ defmodule Emisar.Auth do
   and it is what the boundary calls to BUILD a `%Subject{}`, so there is no
   Subject to take.
 
-  `mfa_verified_at` is fixed at mint, so alone it is a claim about a factor that
-  may since have been torn down. Binding it to the user's CURRENT enrollment is
-  what makes a disable → re-enroll stop satisfying a second-factor gate for every
-  session that only ever proved the previous factor — without deleting a session
-  or signing anyone out.
-
-  An `:sso` session is exempt from that comparison on purpose: the IdP proved the
-  factor, so our own TOTP enrollment lifecycle does not govern it. Comparing it
-  against `mfa_enabled_at` would retroactively strip a valid IdP-proofed session
-  the moment the operator also enrolled TOTP here.
+  Local proof is carried separately from the authentication-time assurance: an
+  SSO session may prove Emisar TOTP after the IdP authenticated it. The local
+  stamp is bound to the user's CURRENT enrollment; the SSO stamp remains the
+  IdP's independent claim.
   """
-  def session_mfa_verified?(%Users.User{}, %UserToken{mfa_verified_at: nil}), do: false
+  def session_mfa_verified?(%Users.User{} = user, %UserToken{} = session) do
+    not is_nil(session_mfa_enrollment_verified_at(user, session)) or
+      sso_mfa_verified_at_authentication?(session)
+  end
 
-  def session_mfa_verified?(%Users.User{}, %UserToken{auth_method: :sso}), do: true
-
-  def session_mfa_verified?(
-        %Users.User{mfa_enabled_at: %DateTime{} = enabled_at},
-        %UserToken{auth_method: :magic_link, mfa_verified_at: verified_at}
-      ),
-      do: DateTime.compare(verified_at, enabled_at) != :lt
-
-  # Fails closed on everything left: an anonymous request's provenance stand-in,
-  # and a magic-link proof with no enrollment behind it to bind against.
   def session_mfa_verified?(_user, _auth), do: false
+
+  @doc """
+  Internal — the exact local enrollment epoch this session proved, or nil. The
+  boundary carries this value onto the Subject so a later locked actor re-read
+  can compare epochs instead of trusting a request-time boolean.
+  """
+  def session_mfa_enrollment_verified_at(
+        %Users.User{mfa_enabled_at: %DateTime{} = enabled_at},
+        %UserToken{mfa_enrollment_verified_at: %DateTime{} = verified_enrollment}
+      )
+      when enabled_at == verified_enrollment,
+      do: enabled_at
+
+  def session_mfa_enrollment_verified_at(_user, _auth), do: nil
+
+  defp sso_mfa_verified_at_authentication?(%UserToken{
+         auth_method: :sso,
+         mfa_verified_at: %DateTime{}
+       }),
+       do: true
+
+  defp sso_mfa_verified_at_authentication?(_session), do: false
 
   @doc """
   Internal — FORCED invalidation of the session row behind a cookie (the
@@ -1344,7 +1353,7 @@ defmodule Emisar.Auth do
   Consumes the emailed MFA-enrollment code and returns a short-lived opaque
   proof. Verification spends the shared current-inbox attempt budget, so
   replacing this token or switching to email-change verification cannot reset
-  the guessing window. `enable_mfa/4` rechecks the proof against the locked
+  the guessing window. `enable_mfa/5` rechecks the proof against the locked
   current user row before writing the new factor.
   """
   def verify_mfa_enrollment_code(
@@ -1457,7 +1466,7 @@ defmodule Emisar.Auth do
 
   @doc """
   Generates a fresh TOTP secret for the user. Caller is responsible for
-  displaying the QR code; nothing is persisted until `enable_mfa/4` confirms
+  displaying the QR code; nothing is persisted until `enable_mfa/5` confirms
   both the current-inbox proof and the authenticator code.
   """
   def generate_mfa_secret, do: Crypto.totp_secret()
@@ -1476,12 +1485,20 @@ defmodule Emisar.Auth do
   base32 strings) along with the user — show these once and never again. The
   plaintext leaves this function and the DB never sees it.
 
-  Self-service — the user is the subject's own actor; the write happens on the
-  locked re-read of their row, so a stale proof or socket snapshot can't clobber
-  a concurrent credential change or replace an existing enrollment.
+  `presented_token` is the raw bearer from the browser completing enrollment.
+  The user enrollment, audit rows, and that exact same-user live session's local
+  proof stamp commit atomically, so recovery codes are never emitted for an
+  enrollment whose browser cannot continue.
   """
-  def enable_mfa(secret, otp, proof, %Subject{actor: %Users.User{} = user} = subject)
-      when is_binary(secret) and is_binary(otp) and is_binary(proof) do
+  def enable_mfa(
+        secret,
+        otp,
+        proof,
+        presented_token,
+        %Subject{actor: %Users.User{} = user} = subject
+      )
+      when is_binary(secret) and is_binary(otp) and is_binary(proof) and
+             is_binary(presented_token) do
     with {:ok, payload} <- verify_mfa_enrollment_proof_for_user(proof, user),
          true <- Crypto.valid_totp?(secret, otp) do
       {plain_codes, digests} = generate_recovery_codes()
@@ -1493,14 +1510,22 @@ defmodule Emisar.Auth do
           {:ok, loaded_user}
         end
       end)
-      |> Multi.merge(fn %{user: loaded_user} ->
-        Users.put_mfa_enrollment(
-          Multi.new(),
+      |> Multi.run(:session, fn repo, %{user: loaded_user} ->
+        fetch_and_lock_current_session(presented_token, loaded_user.id, repo)
+      end)
+      |> Multi.run(:enabled_at, fn _repo, _changes -> {:ok, DateTime.utc_now()} end)
+      |> Multi.merge(fn %{user: loaded_user, session: session, enabled_at: enabled_at} ->
+        Multi.new()
+        |> Users.put_mfa_enrollment(
           loaded_user,
           secret,
-          DateTime.utc_now(),
+          enabled_at,
           digests,
           subject.context
+        )
+        |> Multi.update(
+          :mfa_session,
+          UserToken.Changeset.local_mfa_verified(session, enabled_at)
         )
       end)
       |> Repo.commit_multi()
@@ -1514,7 +1539,23 @@ defmodule Emisar.Auth do
     end
   end
 
-  def enable_mfa(_, _, _, %Subject{}), do: {:error, :mfa_enrollment_proof_stale}
+  def enable_mfa(_, _, _, _, %Subject{}), do: {:error, :mfa_enrollment_proof_stale}
+
+  defp fetch_and_lock_current_session(presented_token, user_id, repo)
+       when is_binary(presented_token) and is_binary(user_id) do
+    UserToken.Query.by_token_digest(Crypto.hash(presented_token))
+    |> UserToken.Query.by_user_id(user_id)
+    |> UserToken.Query.by_context("session")
+    |> UserToken.Query.not_expired("session")
+    |> UserToken.Query.with_valid_auth_method()
+    |> UserToken.Query.lock_for_update()
+    |> repo.fetch(UserToken.Query)
+    |> case do
+      {:ok, %UserToken{} = session} -> {:ok, session}
+      {:error, :not_found} -> {:error, :session_not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   defp mfa_enrollment_proof(%Users.User{} = user) do
     Phoenix.Token.sign(
@@ -1919,6 +1960,62 @@ defmodule Emisar.Auth do
   end
 
   def verify_mfa_challenge(_, _, _), do: {:error, :invalid}
+
+  @doc """
+  Verifies a local-MFA challenge for an already-authenticated user. The Subject
+  is the authorization boundary: the factor is always checked against its actor
+  and the attempt audit uses its request context.
+  """
+  def verify_current_session_mfa_challenge(
+        factor,
+        %Subject{actor: %Users.User{} = user, context: context}
+      ) do
+    verify_mfa_challenge(user, factor, context)
+  end
+
+  def verify_current_session_mfa_challenge(_, %Subject{}), do: {:error, :unauthorized}
+
+  @doc """
+  Internal — finish an already-authenticated browser's local-MFA step-up. The
+  signed `proof` came from `verify_mfa_challenge/3`; this transaction re-locks
+  its user and rechecks the exact enrollment before touching the session. The
+  raw bearer must name one live same-user session, so a stale/revoked/foreign
+  token cannot be upgraded or resurrected.
+
+  Factor consumption and this handoff are deliberately two stages, matching the
+  magic-link MFA completion path. A rare session race may spend one TOTP bucket
+  or recovery code but grants nothing; the operator can retry or sign in again.
+  """
+  def complete_current_session_mfa(
+        proof,
+        presented_token,
+        %Subject{actor: %Users.User{id: subject_user_id}}
+      )
+      when is_binary(proof) and is_binary(presented_token) do
+    case mfa_proof_user_id(proof) do
+      ^subject_user_id ->
+        Multi.new()
+        |> Multi.run(:user, fn repo, _changes ->
+          lock_signing_in_user(subject_user_id, proof, repo)
+        end)
+        |> Multi.run(:session, fn repo, %{user: user} ->
+          fetch_and_lock_current_session(presented_token, user.id, repo)
+        end)
+        |> Multi.update(:mfa_session, fn %{user: user, session: session} ->
+          UserToken.Changeset.local_mfa_verified(session, user.mfa_enabled_at)
+        end)
+        |> Repo.commit_multi()
+        |> case do
+          {:ok, %{mfa_session: session}} -> {:ok, session}
+          {:error, reason} -> {:error, reason}
+        end
+
+      _other ->
+        {:error, :mfa_proof_stale}
+    end
+  end
+
+  def complete_current_session_mfa(_, _, %Subject{}), do: {:error, :mfa_proof_stale}
 
   @doc """
   Internal — the user a verified MFA proof was minted for, so the sign-in

@@ -2156,9 +2156,12 @@ defmodule EmisarWeb.TeamLiveTest do
       account: account
     } do
       secret = Emisar.Auth.generate_mfa_secret()
+      session_token = get_session(conn, :user_token)
 
       {_user, _codes} =
-        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner, account))
+        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner, account),
+          session_token: session_token
+        )
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -2190,7 +2193,11 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "enforcing 2FA is a confirm-modal button (our modal) that fires the handler",
          %{conn: conn, owner: owner, account: account} do
-      enroll_mfa(owner)
+      Fixtures.Users.enable_mfa!(
+        Emisar.Auth.generate_mfa_secret(),
+        Fixtures.Subjects.subject_for(owner, account),
+        session_token: get_session(conn, :user_token)
+      )
 
       # Off: the trigger reads "Enforce 2FA" and opens our confirm dialog.
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")

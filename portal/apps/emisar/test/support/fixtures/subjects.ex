@@ -32,6 +32,7 @@ defmodule Emisar.Fixtures.Subjects do
     Subject.for_user(user, account, membership, context,
       auth_method: opts[:auth_method],
       mfa: opts[:mfa],
+      mfa_enrollment_verified_at: opts[:mfa_enrollment_verified_at],
       user_identity_id: opts[:user_identity_id]
     )
   end

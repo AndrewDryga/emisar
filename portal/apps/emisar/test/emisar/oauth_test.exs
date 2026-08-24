@@ -6,7 +6,7 @@ defmodule Emisar.OAuthTest do
   """
   use Emisar.DataCase, async: true
   alias Emisar.ApiKeys.ApiKey
-  alias Emisar.Fixtures
+  alias Emisar.{Auth, Fixtures}
   alias Emisar.OAuth
   alias Emisar.OAuth.{AuthorizationCode, Client, Token}
 
@@ -74,6 +74,28 @@ defmodule Emisar.OAuthTest do
       },
       overrides
     )
+  end
+
+  defp subject_from_session(account, raw_token) do
+    assert {:ok, user, session} = Auth.fetch_user_and_token_by_session_token(raw_token)
+
+    Fixtures.Subjects.subject_for(user, account,
+      auth_method: session.auth_method,
+      mfa: Auth.session_mfa_verified?(user, session),
+      mfa_enrollment_verified_at: Auth.session_mfa_enrollment_verified_at(user, session),
+      user_identity_id: session.user_identity_id
+    )
+  end
+
+  defp refute_oauth_mint(account) do
+    refute Repo.exists?(ApiKey.Query.all())
+    refute Repo.exists?(AuthorizationCode.Query.all())
+
+    refute Repo.exists?(
+             Emisar.Audit.Event.Query.all()
+             |> Emisar.Audit.Event.Query.by_account_id(account.id)
+             |> Emisar.Audit.Event.Query.by_event_type("oauth.consent_granted")
+           )
   end
 
   describe "register_client/1" do
@@ -543,6 +565,174 @@ defmodule Emisar.OAuthTest do
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
+    end
+
+    test "an enrolled operator without current session proof mints nothing" do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      {enrolled, _codes} =
+        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+
+      raw_token = Fixtures.Auth.create_session_token!(enrolled, :magic_link, nil)
+      unproved = subject_from_session(account, raw_token)
+      Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      assert unproved.actor.id == user.id
+
+      assert OAuth.issue_code(client, authorization_params(challenge), unproved) ==
+               {:error, :mfa_required}
+
+      refute_oauth_mint(account)
+    end
+
+    test "a session bound to the current local enrollment can mint" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      {enrolled, _codes} =
+        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+
+      raw_token =
+        Fixtures.Auth.create_session_token!(enrolled, :magic_link, DateTime.utc_now())
+
+      proved = subject_from_session(account, raw_token)
+      Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      assert proved.mfa_enrollment_verified_at == enrolled.mfa_enabled_at
+
+      assert {:ok, _code, @redirect} =
+               OAuth.issue_code(client, authorization_params(challenge), proved)
+
+      assert Repo.exists?(ApiKey.Query.all())
+      assert Repo.exists?(AuthorizationCode.Query.all())
+
+      assert Repo.exists?(
+               Emisar.Audit.Event.Query.all()
+               |> Emisar.Audit.Event.Query.by_account_id(account.id)
+               |> Emisar.Audit.Event.Query.by_event_type("oauth.consent_granted")
+             )
+    end
+
+    test "disable and re-enroll invalidates the consent snapshot before mint" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      {enrolled, [disable_code | _]} =
+        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+
+      raw_token =
+        Fixtures.Auth.create_session_token!(enrolled, :magic_link, DateTime.utc_now())
+
+      stale = subject_from_session(account, raw_token)
+      assert {:ok, disabled} = Auth.disable_mfa(disable_code, stale)
+
+      {re_enrolled, _codes} =
+        Fixtures.Users.enable_mfa!(
+          Auth.generate_mfa_secret(),
+          %{subject | actor: disabled, mfa: false}
+        )
+
+      refute re_enrolled.mfa_enabled_at == stale.mfa_enrollment_verified_at
+      Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      assert OAuth.issue_code(client, authorization_params(challenge), stale) ==
+               {:error, :mfa_required}
+
+      refute_oauth_mint(account)
+    end
+
+    test "an SSO session stops minting when its current provider no longer satisfies MFA" do
+      {user, account, _subject} = Fixtures.Subjects.owner_subject()
+
+      provider =
+        Fixtures.SSO.create_identity_provider(account_id: account.id, satisfies_mfa: true)
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        })
+
+      raw_token =
+        Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now(), %{},
+          user_identity_id: identity.id
+        )
+
+      sso_subject = subject_from_session(account, raw_token)
+      Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+      first_client = register!("Current provider")
+      {_verifier, challenge} = pkce()
+
+      assert sso_subject.mfa == true
+      assert sso_subject.mfa_enrollment_verified_at == nil
+
+      assert {:ok, _code, @redirect} =
+               OAuth.issue_code(first_client, authorization_params(challenge), sso_subject)
+
+      provider
+      |> Ecto.Changeset.change(satisfies_mfa: false)
+      |> Repo.update!()
+
+      second_client = register!("Downgraded provider")
+
+      assert OAuth.issue_code(second_client, authorization_params(challenge), sso_subject) ==
+               {:error, :mfa_required}
+
+      assert Repo.aggregate(ApiKey.Query.all(), :count) == 1
+      assert Repo.aggregate(AuthorizationCode.Query.all(), :count) == 1
+
+      assert Repo.aggregate(
+               Emisar.Audit.Event.Query.all()
+               |> Emisar.Audit.Event.Query.by_account_id(account.id)
+               |> Emisar.Audit.Event.Query.by_event_type("oauth.consent_granted"),
+               :count
+             ) == 1
+    end
+
+    test "an MFA-satisfying SSO identity from another account mints nothing" do
+      {user, identity_account, _subject} = Fixtures.Subjects.owner_subject()
+
+      provider =
+        Fixtures.SSO.create_identity_provider(
+          account_id: identity_account.id,
+          satisfies_mfa: true
+        )
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: identity_account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        })
+
+      chosen = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: chosen.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      Fixtures.Accounts.set_account_settings(chosen, %{require_mfa: true})
+
+      raw_token =
+        Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now(), %{},
+          user_identity_id: identity.id
+        )
+
+      foreign_sso = subject_from_session(chosen, raw_token)
+      client = register!()
+      {_verifier, challenge} = pkce()
+
+      assert OAuth.issue_code(client, authorization_params(challenge), foreign_sso) ==
+               {:error, :mfa_required}
+
+      refute_oauth_mint(chosen)
     end
 
     test "an active membership still mints a backing key" do

@@ -100,25 +100,37 @@ defmodule Emisar.Fixtures.Users do
   A test asserting `enable_mfa`'s success contract calls this directly; `enable_mfa!`
   wraps it for setup sites that just need an MFA-enabled user.
   """
-  def enroll_mfa(secret, %Subject{} = subject) when is_binary(secret) do
-    proof = mfa_enrollment_proof(subject)
+  def enroll_mfa(secret, %Subject{} = subject, opts \\ []) when is_binary(secret) do
+    {session_token, disposable_session?} =
+      case Keyword.fetch(opts, :session_token) do
+        {:ok, token} -> {token, false}
+        :error -> {Fixtures.Auth.create_session_token!(subject.actor, :magic_link, nil), true}
+      end
 
-    case Emisar.Auth.enable_mfa(
-           secret,
-           NimbleTOTP.verification_code(secret),
-           proof,
-           subject
-         ) do
-      {:error, :invalid_otp} ->
-        Emisar.Auth.enable_mfa(
-          secret,
-          NimbleTOTP.verification_code(secret),
-          proof,
-          subject
-        )
+    try do
+      proof = mfa_enrollment_proof(subject)
 
-      enrolled ->
-        enrolled
+      case Emisar.Auth.enable_mfa(
+             secret,
+             NimbleTOTP.verification_code(secret),
+             proof,
+             session_token,
+             subject
+           ) do
+        {:error, :invalid_otp} ->
+          Emisar.Auth.enable_mfa(
+            secret,
+            NimbleTOTP.verification_code(secret),
+            proof,
+            session_token,
+            subject
+          )
+
+        enrolled ->
+          enrolled
+      end
+    after
+      if disposable_session?, do: Emisar.Auth.delete_session_token(session_token)
     end
   end
 
@@ -139,8 +151,8 @@ defmodule Emisar.Fixtures.Users do
   end
 
   @doc "Enrolls MFA as test setup, unwrapping `enroll_mfa/2` to `{user, recovery_codes}`."
-  def enable_mfa!(secret, %Subject{} = subject) when is_binary(secret) do
-    {:ok, user, codes} = enroll_mfa(secret, subject)
+  def enable_mfa!(secret, %Subject{} = subject, opts \\ []) when is_binary(secret) do
+    {:ok, user, codes} = enroll_mfa(secret, subject, opts)
     {user, codes}
   end
 end

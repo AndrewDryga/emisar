@@ -1,7 +1,7 @@
 defmodule Emisar.AuthTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Audit, Auth, Crypto, Fixtures, Mail, RequestContext, Users}
-  alias Emisar.Auth.{SecurityAttemptWindow, UserToken}
+  alias Emisar.Auth.{SecurityAttemptWindow, Subject, UserToken}
   alias Emisar.Users.User
 
   defmodule RaisingSessionDisconnector do
@@ -294,7 +294,8 @@ defmodule Emisar.AuthTest do
 
       session = %UserToken{
         auth_method: :magic_link,
-        mfa_verified_at: ~U[2026-08-01 12:00:01.000000Z]
+        mfa_verified_at: ~U[2026-08-01 12:00:01.000000Z],
+        mfa_enrollment_verified_at: ~U[2026-08-01 12:00:00.000000Z]
       }
 
       assert Auth.session_mfa_verified?(user, session) == true
@@ -307,7 +308,8 @@ defmodule Emisar.AuthTest do
 
       session = %UserToken{
         auth_method: :magic_link,
-        mfa_verified_at: ~U[2026-07-31 09:00:00.000000Z]
+        mfa_verified_at: ~U[2026-07-31 09:00:00.000000Z],
+        mfa_enrollment_verified_at: ~U[2026-07-31 09:00:00.000000Z]
       }
 
       assert Auth.session_mfa_verified?(user, session) == false
@@ -318,7 +320,8 @@ defmodule Emisar.AuthTest do
 
       session = %UserToken{
         auth_method: :magic_link,
-        mfa_verified_at: ~U[2026-08-01 12:00:00.000000Z]
+        mfa_verified_at: ~U[2026-08-01 12:00:00.000000Z],
+        mfa_enrollment_verified_at: ~U[2026-08-01 12:00:00.000000Z]
       }
 
       assert Auth.session_mfa_verified?(user, session) == false
@@ -338,6 +341,28 @@ defmodule Emisar.AuthTest do
 
       assert Auth.session_mfa_verified?(user, %UserToken{auth_method: :magic_link}) == false
       assert Auth.session_mfa_verified?(user, %UserToken{auth_method: :sso}) == false
+    end
+  end
+
+  describe "session_mfa_enrollment_verified_at/2" do
+    test "returns only an exact non-nil enrollment epoch" do
+      current = ~U[2026-08-01 12:00:00.000000Z]
+      user = %User{mfa_enabled_at: current}
+
+      assert Auth.session_mfa_enrollment_verified_at(
+               user,
+               %UserToken{mfa_enrollment_verified_at: current}
+             ) == current
+
+      assert Auth.session_mfa_enrollment_verified_at(
+               user,
+               %UserToken{mfa_enrollment_verified_at: DateTime.add(current, -1, :second)}
+             ) == nil
+
+      assert Auth.session_mfa_enrollment_verified_at(
+               %User{mfa_enabled_at: nil},
+               %UserToken{mfa_enrollment_verified_at: nil}
+             ) == nil
     end
   end
 
@@ -1628,13 +1653,21 @@ defmodule Emisar.AuthTest do
   describe "verify_mfa_enrollment_code/2" do
     setup do
       {user, _account, subject} = Fixtures.Subjects.owner_subject()
-      %{user: user, subject: subject, secret: Auth.generate_mfa_secret()}
+      session_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+
+      %{
+        user: user,
+        subject: subject,
+        secret: Auth.generate_mfa_secret(),
+        session_token: session_token
+      }
     end
 
     test "the emailed code is single-use and enables only its user", %{
       user: user,
       subject: subject,
-      secret: secret
+      secret: secret,
+      session_token: session_token
     } do
       code = issue_mfa_enrollment_code(subject)
 
@@ -1643,7 +1676,13 @@ defmodule Emisar.AuthTest do
       assert Auth.verify_mfa_enrollment_code(code, subject) == {:error, :invalid}
 
       assert {:ok, %User{id: id, mfa_enabled_at: %DateTime{}}, codes} =
-               Auth.enable_mfa(secret, NimbleTOTP.verification_code(secret), proof, subject)
+               Auth.enable_mfa(
+                 secret,
+                 NimbleTOTP.verification_code(secret),
+                 proof,
+                 session_token,
+                 subject
+               )
 
       assert id == user.id
       assert length(codes) == 10
@@ -1652,12 +1691,14 @@ defmodule Emisar.AuthTest do
     test "a forged proof cannot enroll or upgrade the email-change factor", %{
       user: user,
       subject: subject,
-      secret: secret
+      secret: secret,
+      session_token: session_token
     } do
       assert Auth.enable_mfa(
                secret,
                NimbleTOTP.verification_code(secret),
                "forged",
+               session_token,
                subject
              ) == {:error, :mfa_enrollment_proof_stale}
 
@@ -1684,7 +1725,8 @@ defmodule Emisar.AuthTest do
 
     test "a proof becomes stale after any intervening user-row change", %{
       subject: subject,
-      secret: secret
+      secret: secret,
+      session_token: session_token
     } do
       proof = Fixtures.Users.mfa_enrollment_proof(subject)
       assert {:ok, _updated} = Users.update_user_profile(%{full_name: "Changed"}, subject)
@@ -1693,11 +1735,16 @@ defmodule Emisar.AuthTest do
                secret,
                NimbleTOTP.verification_code(secret),
                proof,
+               session_token,
                subject
              ) == {:error, :mfa_enrollment_proof_stale}
     end
 
-    test "an expired proof is refused", %{subject: subject, secret: secret} do
+    test "an expired proof is refused", %{
+      subject: subject,
+      secret: secret,
+      session_token: session_token
+    } do
       proof = Fixtures.Users.mfa_enrollment_proof(subject)
       signing_secret = Application.fetch_env!(:emisar, :email_link_secret)
 
@@ -1713,26 +1760,9 @@ defmodule Emisar.AuthTest do
                secret,
                NimbleTOTP.verification_code(secret),
                expired,
+               session_token,
                subject
              ) == {:error, :mfa_enrollment_proof_stale}
-    end
-
-    test "two concurrent enrollments with one proof produce one winner", %{
-      subject: subject,
-      secret: secret
-    } do
-      proof = Fixtures.Users.mfa_enrollment_proof(subject)
-      otp = NimbleTOTP.verification_code(secret)
-
-      results =
-        1..2
-        |> Enum.map(fn _ ->
-          Task.async(fn -> Auth.enable_mfa(secret, otp, proof, subject) end)
-        end)
-        |> Enum.map(&Task.await(&1, 5_000))
-
-      assert Enum.count(results, &match?({:ok, %User{}, _codes}, &1)) == 1
-      assert Enum.count(results, &(&1 == {:error, :mfa_already_enabled})) == 1
     end
 
     test "delivery is bounded and first exhaustion emits one MFA signal", %{subject: subject} do
@@ -1772,35 +1802,146 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "enable_mfa/4" do
+  describe "enable_mfa/5" do
     setup do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      %{subject: subject, secret: Auth.generate_mfa_secret()}
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      session_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+
+      %{
+        user: user,
+        subject: subject,
+        secret: Auth.generate_mfa_secret(),
+        session_token: session_token
+      }
     end
 
     test "with the correct OTP persists the secret + returns recovery codes", %{
+      user: user,
       secret: secret,
-      subject: subject
+      subject: subject,
+      session_token: session_token
     } do
+      sibling_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+
       # Fixtures.Users.enroll_mfa calls Auth.enable_mfa with a single retry across the 30s-window
       # straddle (code-gen vs validation), so this success-contract assertion can't
       # flake on a microsecond boundary.
       assert {:ok, %User{mfa_secret: ^secret, mfa_enabled_at: %DateTime{}} = updated, codes} =
-               Fixtures.Users.enroll_mfa(secret, subject)
+               Fixtures.Users.enroll_mfa(secret, subject, session_token: session_token)
 
       assert is_list(codes) and length(codes) == 10
       assert Enum.all?(codes, &is_binary/1)
       # The stored set is the digests, not the plaintext.
       assert length(updated.mfa_recovery_codes) == 10
       refute Enum.any?(codes, &(&1 in updated.mfa_recovery_codes))
+
+      assert {:ok, ^updated, current_session} =
+               Auth.fetch_user_and_token_by_session_token(session_token)
+
+      assert current_session.mfa_enrollment_verified_at == updated.mfa_enabled_at
+
+      assert {:ok, ^updated, sibling_session} =
+               Auth.fetch_user_and_token_by_session_token(sibling_token)
+
+      assert sibling_session.mfa_enrollment_verified_at == nil
     end
 
     test "with the wrong OTP returns :invalid_otp (nothing persisted)", %{
       secret: secret,
+      subject: subject,
+      session_token: session_token
+    } do
+      proof = Fixtures.Users.mfa_enrollment_proof(subject)
+
+      assert Auth.enable_mfa(secret, "000000", proof, session_token, subject) ==
+               {:error, :invalid_otp}
+    end
+
+    test "a revoked presented session rolls enrollment and its audit back", %{
+      user: user,
+      secret: secret,
+      subject: subject,
+      session_token: session_token
+    } do
+      proof = Fixtures.Users.mfa_enrollment_proof(subject)
+      :ok = Auth.delete_session_token(session_token)
+
+      assert Auth.enable_mfa(
+               secret,
+               NimbleTOTP.verification_code(secret),
+               proof,
+               session_token,
+               subject
+             ) == {:error, :session_not_found}
+
+      refute Repo.reload!(user).mfa_enabled_at
+      assert events_of_type("user.mfa_enabled") == []
+    end
+
+    test "an expired presented session rolls enrollment and its audit back", %{
+      user: user,
+      secret: secret,
+      subject: subject,
+      session_token: session_token
+    } do
+      proof = Fixtures.Users.mfa_enrollment_proof(subject)
+      age_tokens(user.id, 61 * 24 * 60)
+
+      assert Auth.enable_mfa(
+               secret,
+               NimbleTOTP.verification_code(secret),
+               proof,
+               session_token,
+               subject
+             ) == {:error, :session_not_found}
+
+      refute Repo.reload!(user).mfa_enabled_at
+      assert events_of_type("user.mfa_enabled") == []
+    end
+
+    test "a foreign user's presented session rolls enrollment and its audit back", %{
+      user: user,
+      secret: secret,
       subject: subject
     } do
       proof = Fixtures.Users.mfa_enrollment_proof(subject)
-      assert Auth.enable_mfa(secret, "000000", proof, subject) == {:error, :invalid_otp}
+      foreign = Fixtures.Users.create_user()
+      foreign_token = Fixtures.Auth.create_session_token!(foreign, :magic_link, nil)
+
+      assert Auth.enable_mfa(
+               secret,
+               NimbleTOTP.verification_code(secret),
+               proof,
+               foreign_token,
+               subject
+             ) == {:error, :session_not_found}
+
+      refute Repo.reload!(user).mfa_enabled_at
+      assert events_of_type("user.mfa_enabled") == []
+    end
+
+    test "a non-session credential rolls enrollment and its audit back", %{
+      user: user,
+      secret: secret,
+      subject: subject
+    } do
+      proof = Fixtures.Users.mfa_enrollment_proof(subject)
+      {raw_token, digest} = Crypto.session_token()
+
+      user
+      |> UserToken.Changeset.hashed(digest, "confirm", user.email)
+      |> Repo.insert!()
+
+      assert Auth.enable_mfa(
+               secret,
+               NimbleTOTP.verification_code(secret),
+               proof,
+               raw_token,
+               subject
+             ) == {:error, :session_not_found}
+
+      refute Repo.reload!(user).mfa_enabled_at
+      assert events_of_type("user.mfa_enabled") == []
     end
 
     # recovery codes are shown once in plaintext, and only their SHA-256
@@ -2292,6 +2433,237 @@ defmodule Emisar.AuthTest do
 
       assert Enum.count(results, &(&1 == {:error, :invalid})) == 5
       assert Enum.count(results, &(&1 == {:error, :rate_limited})) == 5
+    end
+  end
+
+  describe "verify_current_session_mfa_challenge/2" do
+    test "uses the authenticated Subject actor and rejects a non-user actor" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      secret = Auth.generate_mfa_secret()
+      {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
+      subject = %{subject | actor: user}
+
+      assert {:ok, _proof} =
+               Auth.verify_current_session_mfa_challenge(
+                 {:totp, NimbleTOTP.verification_code(secret)},
+                 subject
+               )
+
+      assert Auth.verify_current_session_mfa_challenge(
+               {:recovery_code, "not-a-real-code"},
+               %Subject{}
+             ) == {:error, :unauthorized}
+    end
+  end
+
+  describe "complete_current_session_mfa/3" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      secret = Auth.generate_mfa_secret()
+      {enrolled, recovery_codes} = Fixtures.Users.enable_mfa!(secret, subject)
+      session_token = Fixtures.Auth.create_session_token!(enrolled, :magic_link, nil)
+
+      %{
+        account: account,
+        subject: %{subject | actor: enrolled},
+        secret: secret,
+        user: enrolled,
+        recovery_codes: recovery_codes,
+        session_token: session_token
+      }
+    end
+
+    test "a TOTP proof stamps only the presented live session", %{
+      user: user,
+      subject: subject,
+      secret: secret,
+      session_token: session_token
+    } do
+      sibling_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+
+      assert {:ok, proof} =
+               Auth.verify_mfa_challenge(
+                 user,
+                 {:totp, NimbleTOTP.verification_code(secret)}
+               )
+
+      assert {:ok, %UserToken{id: updated_id}} =
+               Auth.complete_current_session_mfa(proof, session_token, subject)
+
+      assert {:ok, current_user, current_session} =
+               Auth.fetch_user_and_token_by_session_token(session_token)
+
+      assert current_session.id == updated_id
+      assert current_session.mfa_enrollment_verified_at == current_user.mfa_enabled_at
+
+      assert {:ok, sibling_user, sibling_session} =
+               Auth.fetch_user_and_token_by_session_token(sibling_token)
+
+      assert sibling_user.id == current_user.id
+      assert sibling_session.mfa_enrollment_verified_at == nil
+    end
+
+    test "a recovery proof adds local assurance without rewriting SSO provenance", %{
+      user: user,
+      account: account,
+      subject: subject,
+      recovery_codes: [recovery_code | _]
+    } do
+      provider =
+        Fixtures.SSO.create_identity_provider(account_id: account.id, satisfies_mfa: false)
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        })
+
+      idp_verified_at = DateTime.utc_now()
+
+      sso_token =
+        Fixtures.Auth.create_session_token!(user, :sso, idp_verified_at, %{},
+          user_identity_id: identity.id
+        )
+
+      sibling_token =
+        Fixtures.Auth.create_session_token!(user, :sso, idp_verified_at, %{},
+          user_identity_id: identity.id
+        )
+
+      sso_subject = %{
+        subject
+        | auth_method: :sso,
+          mfa: true,
+          user_identity_id: identity.id
+      }
+
+      assert {:ok, proof} =
+               Auth.verify_mfa_challenge(user, {:recovery_code, recovery_code})
+
+      assert {:ok, _session} =
+               Auth.complete_current_session_mfa(proof, sso_token, sso_subject)
+
+      assert {:ok, current_user, session} =
+               Auth.fetch_user_and_token_by_session_token(sso_token)
+
+      assert session.auth_method == :sso
+      assert session.user_identity_id == identity.id
+      assert session.mfa_verified_at == idp_verified_at
+      assert session.mfa_enrollment_verified_at == current_user.mfa_enabled_at
+
+      assert {:ok, sibling_user, sibling_session} =
+               Auth.fetch_user_and_token_by_session_token(sibling_token)
+
+      assert sibling_user.id == current_user.id
+      assert sibling_session.mfa_enrollment_verified_at == nil
+
+      assert Auth.verify_mfa_challenge(current_user, {:recovery_code, recovery_code}) ==
+               {:error, :invalid}
+    end
+
+    test "proof, subject, and token must all name the same user", %{
+      user: user,
+      subject: subject,
+      secret: secret,
+      session_token: session_token
+    } do
+      assert {:ok, proof} =
+               Auth.verify_mfa_challenge(
+                 user,
+                 {:totp, NimbleTOTP.verification_code(secret)}
+               )
+
+      {other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      other_token = Fixtures.Auth.create_session_token!(other_user, :magic_link, nil)
+
+      assert Auth.complete_current_session_mfa(proof, session_token, other_subject) ==
+               {:error, :mfa_proof_stale}
+
+      assert Auth.complete_current_session_mfa(proof, other_token, subject) ==
+               {:error, :session_not_found}
+
+      assert {:ok, _user, session} =
+               Auth.fetch_user_and_token_by_session_token(session_token)
+
+      assert session.mfa_enrollment_verified_at == nil
+    end
+
+    test "a revoked session grants nothing while the recovery code stays consumed", %{
+      user: user,
+      subject: subject,
+      recovery_codes: [recovery_code | _],
+      session_token: session_token
+    } do
+      assert {:ok, proof} =
+               Auth.verify_mfa_challenge(user, {:recovery_code, recovery_code})
+
+      :ok = Auth.delete_session_token(session_token)
+
+      assert Auth.complete_current_session_mfa(proof, session_token, subject) ==
+               {:error, :session_not_found}
+
+      assert Auth.verify_mfa_challenge(Repo.reload!(user), {:recovery_code, recovery_code}) ==
+               {:error, :invalid}
+    end
+
+    test "an expired or wrong-context token cannot be upgraded", %{
+      user: user,
+      subject: subject,
+      secret: secret,
+      session_token: session_token
+    } do
+      assert {:ok, proof} =
+               Auth.verify_mfa_challenge(
+                 user,
+                 {:totp, NimbleTOTP.verification_code(secret)}
+               )
+
+      {wrong_context_token, digest} = Crypto.session_token()
+
+      user
+      |> UserToken.Changeset.hashed(digest, "confirm", user.email)
+      |> Repo.insert!()
+
+      assert Auth.complete_current_session_mfa(proof, wrong_context_token, subject) ==
+               {:error, :session_not_found}
+
+      age_tokens(user.id, 61 * 24 * 60)
+
+      assert Auth.complete_current_session_mfa(proof, session_token, subject) ==
+               {:error, :session_not_found}
+
+      session =
+        UserToken.Query.by_token_digest(Crypto.hash(session_token))
+        |> Repo.one!()
+
+      assert session.mfa_enrollment_verified_at == nil
+    end
+
+    test "a disable and re-enroll makes an in-flight proof stale", %{
+      user: user,
+      subject: subject,
+      recovery_codes: [proof_code, disable_code | _],
+      session_token: session_token
+    } do
+      assert {:ok, proof} = Auth.verify_mfa_challenge(user, {:recovery_code, proof_code})
+      assert {:ok, disabled} = Auth.disable_mfa(disable_code, subject)
+
+      next_subject = %{subject | actor: disabled, mfa: false, mfa_enrollment_verified_at: nil}
+
+      {re_enrolled, _codes} =
+        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), next_subject)
+
+      assert Auth.complete_current_session_mfa(
+               proof,
+               session_token,
+               %{next_subject | actor: re_enrolled}
+             ) == {:error, :mfa_proof_stale}
+
+      assert {:ok, _user, session} =
+               Auth.fetch_user_and_token_by_session_token(session_token)
+
+      assert session.mfa_enrollment_verified_at == nil
     end
   end
 

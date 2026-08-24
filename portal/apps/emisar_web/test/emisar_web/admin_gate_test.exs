@@ -20,11 +20,11 @@ defmodule EmisarWeb.AdminGateTest do
   # inside a function) so the dev-routes-off assertion can check it.
   @dev_routes Application.compile_env(:emisar_web, :dev_routes)
 
-  # A real signed-in session stamped with the moment it proved the second factor
-  # — what an admin holds after clearing the MFA challenge at sign-in. Call it
-  # AFTER enrolling, so the proof lands past `mfa_enabled_at` the way a real
-  # challenge does.
+  # A real signed-in session stamped after clearing the MFA challenge. Call it
+  # after enrollment so the session changeset binds the exact local enrollment
+  # epoch the admin proved.
   defp complete_mfa_challenge(conn, user) do
+    user = Emisar.Repo.reload!(user)
     token = Fixtures.Auth.create_session_token!(user, :magic_link, DateTime.utc_now())
     put_session(conn, :user_token, token)
   end
@@ -195,7 +195,7 @@ defmodule EmisarWeb.AdminGateTest do
 
       # Self-service disable deliberately keeps sessions alive, so this cookie is
       # still a valid credential — the ONLY thing standing between it and the
-      # staff surface is `mfa_verified_at` now predating `mfa_enabled_at`.
+      # staff surface is its local proof naming the replaced enrollment.
       assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(session_token)
 
       conn = get(conn, "/admin/live")
@@ -268,9 +268,9 @@ defmodule EmisarWeb.AdminGateTest do
   describe "the /admin/live socket gate" do
     test "an admin who verified a second factor this session mounts" do
       {user, _account, subject} = Fixtures.Subjects.owner_subject()
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
-      Fixtures.Users.mark_user_as_staff(user)
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, DateTime.utc_now())
+      {enrolled, _codes} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+      staff = Fixtures.Users.mark_user_as_staff(enrolled)
+      token = Fixtures.Auth.create_session_token!(staff, :magic_link, DateTime.utc_now())
 
       assert {:cont, socket} =
                UserAuth.on_mount(:ensure_admin, %{}, %{"user_token" => token}, mount_socket())

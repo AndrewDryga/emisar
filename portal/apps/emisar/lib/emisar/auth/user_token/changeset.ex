@@ -15,6 +15,9 @@ defmodule Emisar.Auth.UserToken.Changeset do
   def session(%Users.User{} = user, digest, metadata, auth_method, mfa_verified_at, opts \\ [])
       when is_binary(digest) and
              (is_nil(mfa_verified_at) or is_struct(mfa_verified_at, DateTime)) do
+    mfa_enrollment_verified_at =
+      if auth_method == :magic_link and not is_nil(mfa_verified_at), do: user.mfa_enabled_at
+
     change(%UserToken{},
       token: digest,
       context: "session",
@@ -22,9 +25,17 @@ defmodule Emisar.Auth.UserToken.Changeset do
       metadata: normalize_metadata(metadata),
       auth_method: auth_method,
       mfa_verified_at: mfa_verified_at,
+      mfa_enrollment_verified_at: mfa_enrollment_verified_at,
       user_identity_id: Keyword.get(opts, :user_identity_id)
     )
   end
+
+  @doc "Records that this exact live session proved the current local MFA enrollment."
+  def local_mfa_verified(
+        %UserToken{context: "session"} = token,
+        %DateTime{} = enrollment_verified_at
+      ),
+      do: change(token, mfa_enrollment_verified_at: enrollment_verified_at)
 
   @doc "Single-use emailed token row (password reset / confirm)."
   def hashed(%Users.User{} = user, digest, context, sent_to)
