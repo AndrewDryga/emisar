@@ -39,6 +39,47 @@ cases:
     arrange: *ingest_metric
     expect:
       stdout_contains: ['"status":"success"', matrix, harness_metric]
+  - name: vm.query-range-allows-seven-days-at-one-minute
+    action: vm.query_range
+    args: {query: harness_metric, window: 7d, step: 60s}
+    env:
+      VM_URL: http://cost-canary
+    expect:
+      stdout_contains: [PACKTEST_VM_COST_CANARY]
+    probes:
+      - argv: [cat, /tmp/packtest-victoriametrics-cost-argv]
+        expect:
+          stdout_contains: [query=harness_metric, start=-7d, end=now, step=60s, timeout=30s]
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-victoriametrics-cost-argv]
+  - name: vm.query-range-rejects-over-point-limit-before-client
+    action: vm.query_range
+    args: {query: harness_metric, window: 7d, step: 59s}
+    env:
+      VM_URL: http://cost-canary
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [evaluation timestamps, maximum is 10081]
+    probes:
+      - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-victoriametrics-cost-argv && echo client-not-invoked"]
+        expect:
+          stdout_contains: [client-not-invoked]
+  - name: vm.query-range-rejects-over-window-limit-before-client
+    action: vm.query_range
+    args: {query: harness_metric, window: 10081m, step: 60s}
+    env:
+      VM_URL: http://cost-canary
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [exceeds the 7d maximum]
+    probes:
+      - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-victoriametrics-cost-argv && echo client-not-invoked"]
+        expect:
+          stdout_contains: [client-not-invoked]
   - action: vm.series
     args: {match: harness_metric, limit: 10}
     arrange: *ingest_metric

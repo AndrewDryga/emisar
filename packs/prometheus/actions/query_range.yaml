@@ -1,9 +1,12 @@
 schema_version: 1
 id: prom.query_range
 title: GET /api/v1/query_range
-kind: exec
+kind: script
 risk: low
-description: Run a range PromQL query (one expr, over a window). Use for trends.
+description: >
+  Run a range PromQL query over a trailing window ending now. The window is
+  limited to 7 days and the window-to-step ratio to 10,081 evaluation
+  timestamps per returned series. Use for bounded trends and incident graphs.
 side_effects:
   - One PromQL range query — can be expensive on large series.
   - Read-only.
@@ -18,26 +21,24 @@ args:
     type: string
     required: false
     default: "1h"
-    description: 'Window: e.g. 1h, 6h, 24h.'
+    description: 'Trailing window ending now, up to 7d, e.g. 1h, 6h, 24h, 7d.'
     validation:
-      pattern: "^[0-9]{1,4}[smhd]$"
+      pattern: "^[1-9][0-9]{0,4}[smhd]$"
   - name: step
     type: string
     required: false
     default: "60s"
-    description: Step.
+    description: 'Resolution between points. Window / step may produce at most 10,081 timestamps.'
     validation:
-      pattern: "^[0-9]{1,4}[sm]$"
+      pattern: "^[1-9][0-9]{0,4}[sm]$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "U=${W##*[0-9]}; N=${W%[smhd]}; case $U in s) M=1;; m) M=60;; h) M=3600;; d) M=86400;; esac; END=$(date -u +%s); START=$((END - N*M)); curl -fsS --globoff --proto =http,https -G --data-urlencode \"query=$Q\" --data-urlencode \"start=$START\" --data-urlencode \"end=$END\" --data-urlencode \"step=$S\" \"${PROM_URL:-http://127.0.0.1:9090}/api/v1/query_range\""
-  env:
-    Q: "{{ args.query }}"
-    W: "{{ args.window }}"
-    S: "{{ args.step }}"
+  script:
+    path: scripts/query_range.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.query }}"
+    - "{{ args.window }}"
+    - "{{ args.step }}"
   timeout: 120s
 output:
   parser: json
@@ -49,3 +50,8 @@ examples:
       query: "rate(node_cpu_seconds_total[5m])"
       window: "1h"
       step: "60s"
+  - title: One week at one-minute resolution
+    args:
+      query: "sum(rate(http_requests_total[5m]))"
+      window: "7d"
+      step: "1m"

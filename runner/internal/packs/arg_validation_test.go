@@ -349,15 +349,17 @@ func TestDispatch_KubernetesCordon_NodeNameBounded(t *testing.T) {
 }
 
 // an observability query/range arg is bounded at dispatch.
-// Grounded in prom.query_range's `window` (pattern `^[0-9]{1,4}[smhd]$`) and
-// `step` (`^[0-9]{1,4}[sm]$`), both interpolated into a `/bin/sh -c` curl
-// pipeline via env: a malformed/metacharacter window is rejected, a real one
-// passes.
+// Grounded in prom.query_range's `window` (pattern
+// `^[1-9][0-9]{0,4}[smhd]$`) and `step` (`^[1-9][0-9]{0,4}[sm]$`), both
+// passed as whole script arguments: zero, a leading zero, and shell syntax are
+// rejected before the semantic window-to-step guard, while a real pair passes.
 func TestDispatch_PromQueryRange_WindowBounded(t *testing.T) {
 	reg := loadRealLibrary(t)
 	const id = "prom.query_range"
 
 	accepted(t, dispatchValidate(t, reg, id, map[string]any{"query": "up", "window": "6h", "step": "60s"}))
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{"query": "up", "window": "0h"}), "window", "pattern")
+	rejected(t, dispatchValidate(t, reg, id, map[string]any{"query": "up", "step": "060s"}), "step", "pattern")
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"query": "up", "window": "6h; id"}), "window", "pattern")
 	rejected(t, dispatchValidate(t, reg, id, map[string]any{"query": "up", "step": "$(id)"}), "step", "pattern")
 }

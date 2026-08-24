@@ -50,6 +50,52 @@ cases:
     args: {query: up}
     expect:
       stdout_contains: ['"status":"success"', '"resultType":"vector"', '"job":"prometheus"']
+  - name: prom.query-range-normal-incident-window
+    action: prom.query_range
+    args: {query: up, window: 1h, step: 60s}
+    expect:
+      stdout_contains: ['"status":"success"', '"resultType":"matrix"', '"job":"prometheus"']
+  - name: prom.query-range-allows-seven-days-at-one-minute
+    action: prom.query_range
+    args: {query: up, window: 7d, step: 60s}
+    env:
+      PROM_URL: http://cost-canary
+    expect:
+      stdout_contains: [PACKTEST_PROM_COST_CANARY]
+    probes:
+      - argv: [cat, /tmp/packtest-prometheus-cost-argv]
+        expect:
+          stdout_contains: [query=up, start=, end=, step=60s, timeout=30s]
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-prometheus-cost-argv]
+  - name: prom.query-range-rejects-over-point-limit-before-client
+    action: prom.query_range
+    args: {query: up, window: 7d, step: 59s}
+    env:
+      PROM_URL: http://cost-canary
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [evaluation timestamps, maximum is 10081]
+    probes:
+      - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-prometheus-cost-argv && echo client-not-invoked"]
+        expect:
+          stdout_contains: [client-not-invoked]
+  - name: prom.query-range-rejects-over-window-limit-before-client
+    action: prom.query_range
+    args: {query: up, window: 10081m, step: 60s}
+    env:
+      PROM_URL: http://cost-canary
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [exceeds the 7d maximum]
+    probes:
+      - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-prometheus-cost-argv && echo client-not-invoked"]
+        expect:
+          stdout_contains: [client-not-invoked]
   - action: prom.rules
     expect:
       stdout_contains: ['"status":"success"', '"groups"']

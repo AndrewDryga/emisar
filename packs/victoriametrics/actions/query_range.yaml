@@ -5,8 +5,9 @@ kind: script
 risk: low
 description: >
   Run a range PromQL/MetricsQL query against VictoriaMetrics — evaluates one
-  expression across a trailing window ending now. Use for trends and rates
-  over time. Can be heavy on high-cardinality series.
+  expression across a trailing window ending now, limited to 7 days and 10,081
+  outer evaluation timestamps per returned series. Use for trends and rates
+  over time. Query cardinality and inner ranges can still make this expensive.
 side_effects:
   - One read-only HTTP GET to the VictoriaMetrics query API.
   - Reads a range of samples — may be expensive on large series.
@@ -21,21 +22,24 @@ args:
     type: string
     required: false
     default: "1h"
-    description: 'Trailing window ending now, e.g. 30m, 1h, 6h, 24h, 7d.'
+    description: 'Trailing window ending now, up to 7d, e.g. 30m, 1h, 6h, 24h, 7d.'
     validation:
-      pattern: '^[0-9]{1,5}[smhdwy]$'
+      pattern: '^[1-9][0-9]{0,4}[smhdwy]$'
   - name: step
     type: string
     required: false
     default: "60s"
-    description: 'Resolution between points, e.g. 15s, 1m, 5m.'
+    description: 'Resolution between points. Window / step may produce at most 10,081 timestamps.'
     validation:
-      pattern: '^[0-9]{1,5}[smh]$'
+      pattern: '^[1-9][0-9]{0,4}[smh]$'
 execution:
   script:
     path: scripts/vmget.sh
     interpreter: /bin/sh
   argv:
+    - "--bounded-range"
+    - "{{ args.window }}"
+    - "{{ args.step }}"
     - "/api/v1/query_range"
     - "--data-urlencode"
     - "query={{ args.query }}"
@@ -45,6 +49,8 @@ execution:
     - "end=now"
     - "--data-urlencode"
     - "step={{ args.step }}"
+    - "--data-urlencode"
+    - "timeout=30s"
   timeout: 120s
 output:
   parser: json

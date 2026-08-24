@@ -6,8 +6,10 @@
 #
 # Read-only GET against the VictoriaLogs LogsQL HTTP API.
 #
-#   $1     path appended to $VL_URL, e.g. /select/logsql/query.
-#   $2...  extra curl flags — normally --data-urlencode "name=value" pairs.
+#   $1     bounded trailing window.
+#   $2     step for bucketed endpoints, or - for endpoints without one.
+#   $3     path appended to $VL_URL, e.g. /select/logsql/query.
+#   $4...  extra curl flags — normally --data-urlencode "name=value" pairs.
 #          Values are rendered into argv by the cloud-validated template
 #          engine and URL-encoded by curl; they never enter a shell string.
 #
@@ -20,10 +22,58 @@
 #
 # VL_URL defaults to a local single-node VictoriaLogs; override it for a
 # remote or vmauth-fronted endpoint.
+set -eu
+
 VL_URL=${VL_URL:-http://127.0.0.1:9428}
+
+duration_seconds() {
+	case "$1" in
+	*s) value=${1%s}; multiplier=1 ;;
+	*m) value=${1%m}; multiplier=60 ;;
+	*h) value=${1%h}; multiplier=3600 ;;
+	*d) value=${1%d}; multiplier=86400 ;;
+	*w) value=${1%w}; multiplier=604800 ;;
+	*) return 1 ;;
+	esac
+	case "$value" in
+	"" | 0* | *[!0-9]* | ??????*) return 1 ;;
+	esac
+	printf '%s\n' "$((value * multiplier))"
+}
+
+window=$1
+step=$2
+shift 2
+
+if ! window_seconds=$(duration_seconds "$window"); then
+	echo "victorialogs: invalid window $window" >&2
+	exit 1
+fi
+if [ "$window_seconds" -gt 86400 ]; then
+	echo "victorialogs: window $window exceeds the 24h maximum" >&2
+	exit 1
+fi
+if [ "$step" != "-" ]; then
+	if ! step_seconds=$(duration_seconds "$step"); then
+		echo "victorialogs: invalid step $step" >&2
+		exit 1
+	fi
+	points=$((window_seconds / step_seconds + 1))
+	if [ "$points" -gt 10081 ]; then
+		echo "victorialogs: window $window at step $step produces $points buckets; maximum is 10081" >&2
+		exit 1
+	fi
+fi
 
 path=$1
 shift
+
+set -- \
+	--data-urlencode "start=$window" \
+	--data-urlencode "end=now" \
+	--data-urlencode "extra_filters=_time:$window" \
+	--data-urlencode "timeout=30s" \
+	"$@"
 
 if [ -n "${VL_BEARER_TOKEN:-}${VL_ACCOUNT_ID:-}${VL_PROJECT_ID:-}" ]; then
 	{

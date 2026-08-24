@@ -3,6 +3,10 @@ versions:
   - version: v1.35.0
     digest: "@sha256:70f4e739c3594a603487491355d9480f9483e9124c841bc61352951c323a7842"
     default: true
+  # v1.8.0 is the oldest safe LogsQL boundary: earlier releases did not
+  # propagate HTTP extra filters into every subquery.
+  - version: v1.8.0-victorialogs
+    digest: "@sha256:b9fbabc71919ecd25a2d1f2e1bc734d325bee7f844ad7cc873f51222a036faad"
 risk_accountability:
   mode: complete
 env:
@@ -12,11 +16,11 @@ defaults:
     stdout_not_empty: true
 cases:
   - action: vl.query
-    args: {query: "_time:1h harness-log-event", limit: 10}
+    args: {query: "harness-log-event", window: 1h, limit: 10}
     arrange: &ingest_log
-      - argv: [/bin/sh, -c, 'printf ''{"_msg":"harness-log-event","level":"info","app":"packtest"}\n'' | curl -fsS -X POST -H "Content-Type: application/stream+json" --data-binary @- "http://victorialogs:9428/insert/jsonline?_stream_fields=app&_msg_field=_msg"']
+      - argv: [/bin/sh, -c, 'printf ''{"_msg":"harness-log-event","level":"info","app":"packtest"}\n'' | /usr/bin/curl -fsS -X POST -H "Content-Type: application/stream+json" --data-binary @- "http://victorialogs:9428/insert/jsonline?_stream_fields=app&_msg_field=_msg"']
       - name: wait for the imported log
-        argv: [/bin/sh, -c, 'curl -fsSG --data-urlencode "query=_time:1h harness-log-event" --data-urlencode limit=1 http://victorialogs:9428/select/logsql/query']
+        argv: [/bin/sh, -c, '/usr/bin/curl -fsSG --data-urlencode "query=harness-log-event" --data-urlencode start=1h --data-urlencode end=now --data-urlencode limit=1 http://victorialogs:9428/select/logsql/query']
         expect:
           stdout_contains: [harness-log-event, packtest]
         retry_for: 5s
@@ -25,7 +29,7 @@ cases:
       stdout_contains: [harness-log-event, packtest]
   - name: vl.query-http-error
     action: vl.query
-    args: {query: "_time:1h *", limit: 1}
+    args: {query: "*", window: 1h, limit: 1}
     env:
       VL_URL: http://victorialogs:9428/does-not-exist
     expect:
@@ -34,32 +38,136 @@ cases:
       reason_contains: [process exited with code 22]
       stderr_contains: ["curl: (22)"]
   - action: vl.hits
-    args: {query: "_time:1h harness-log-event", step: 5m}
+    args: {query: "harness-log-event", window: 1h, step: 5m}
     arrange: *ingest_log
     expect:
       stdout_contains: [timestamps, values]
   - action: vl.field_names
-    args: {query: "_time:1h *"}
+    args: {query: "*", window: 1h}
     arrange: *ingest_log
     expect:
       stdout_contains: [level, app]
   - action: vl.field_values
-    args: {field: level, query: "_time:1h *", limit: 10}
+    args: {field: level, query: "*", window: 1h, limit: 10}
     arrange: *ingest_log
     expect:
       stdout_contains: [info]
   - action: vl.streams
-    args: {query: "_time:1h *", limit: 10}
+    args: {query: "*", window: 1h, limit: 10}
     arrange: *ingest_log
     expect:
       stdout_contains: [packtest]
   - action: vl.stats_query
-    args: {query: "_time:1h * | stats count() logs"}
+    args: {query: "* | stats count() logs", window: 1h}
     arrange: *ingest_log
     expect:
       stdout_contains: [logs, vector]
   - action: vl.stats_query_range
-    args: {query: "_time:1h * | stats count() logs", step: 5m}
+    args: {query: "* | stats count() logs", window: 1h, step: 5m}
     arrange: *ingest_log
     expect:
       stdout_contains: [logs, matrix]
+
+  - name: vl.field-names-omitted-window-uses-safe-default
+    action: vl.field_names
+    env:
+      VL_URL: http://cost-canary
+    expect:
+      stdout_contains: [PACKTEST_VL_COST_CANARY]
+    probes:
+      - argv: [cat, /tmp/packtest-victorialogs-cost-argv]
+        expect:
+          stdout_contains: [start=1h, end=now, 'extra_filters=_time:1h', timeout=30s]
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-victorialogs-cost-argv]
+
+  - name: vl.query-allows-24-hour-window
+    action: vl.query
+    args: {query: "*", window: 24h, limit: 1}
+    env:
+      VL_URL: http://cost-canary
+    expect:
+      stdout_contains: [PACKTEST_VL_COST_CANARY]
+    probes:
+      - argv: [cat, /tmp/packtest-victorialogs-cost-argv]
+        expect:
+          stdout_contains: [start=24h, end=now, 'extra_filters=_time:24h', timeout=30s]
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-victorialogs-cost-argv]
+
+  - name: vl.query-rejects-over-window-limit-before-client
+    action: vl.query
+    args: {query: "*", window: 1441m, limit: 1}
+    env:
+      VL_URL: http://cost-canary
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [exceeds the 24h maximum]
+    probes:
+      - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-victorialogs-cost-argv && echo client-not-invoked"]
+        expect:
+          stdout_contains: [client-not-invoked]
+
+  - name: vl.hits-allows-exact-bucket-limit
+    action: vl.hits
+    args: {query: "*", window: 10080s, step: 1s}
+    env:
+      VL_URL: http://cost-canary
+    expect:
+      stdout_contains: [PACKTEST_VL_COST_CANARY]
+    probes:
+      - argv: [cat, /tmp/packtest-victorialogs-cost-argv]
+        expect:
+          stdout_contains: [start=10080s, step=1s, 'extra_filters=_time:10080s']
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-victorialogs-cost-argv]
+
+  - name: vl.stats-query-range-rejects-over-point-limit-before-client
+    action: vl.stats_query_range
+    args: {query: "* | stats count() logs", window: 10081s, step: 1s}
+    env:
+      VL_URL: http://cost-canary
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [buckets, maximum is 10081]
+    probes:
+      - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-victorialogs-cost-argv && echo client-not-invoked"]
+        expect:
+          stdout_contains: [client-not-invoked]
+
+  - name: vl.stats-query-extra-filter-bounds-time-bypass-subquery
+    action: vl.stats_query
+    args:
+      window: 1h
+      query: >-
+        options(ignore_global_time_filter=true)
+        user_id:in(options(ignore_global_time_filter=true) packtest-old-bypass-marker | keep user_id)
+        packtest-recent-bypass-marker | stats count() logs
+    arrange:
+      - name: ingest one old and one recent log for the same user
+        argv:
+          - /bin/sh
+          - -c
+          - >-
+            old_time=$(date -u -d '2 hours ago' '+%Y-%m-%dT%H:%M:%SZ');
+            printf '{"_time":"%s","_msg":"packtest-old-bypass-marker","user_id":"packtest-bypass-user"}\n{"_msg":"packtest-recent-bypass-marker","user_id":"packtest-bypass-user"}\n' "$old_time" |
+            /usr/bin/curl -fsS -X POST -H 'Content-Type: application/stream+json' --data-binary @- 'http://victorialogs:9428/insert/jsonline?_msg_field=_msg'
+      - name: wait for the old log
+        argv: [/bin/sh, -c, '/usr/bin/curl -fsSG --data-urlencode "query=packtest-old-bypass-marker" --data-urlencode start=3h --data-urlencode end=now http://victorialogs:9428/select/logsql/query']
+        expect:
+          stdout_contains: [packtest-old-bypass-marker]
+        retry_for: 5s
+        retry_every: 100ms
+      - name: wait for the recent log
+        argv: [/bin/sh, -c, '/usr/bin/curl -fsSG --data-urlencode "query=packtest-recent-bypass-marker" --data-urlencode start=1h --data-urlencode end=now http://victorialogs:9428/select/logsql/query']
+        expect:
+          stdout_contains: [packtest-recent-bypass-marker]
+        retry_for: 5s
+        retry_every: 100ms
+    expect:
+      json:
+        /data/result/0/value/1: "0"

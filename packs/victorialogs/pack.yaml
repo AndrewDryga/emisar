@@ -2,13 +2,15 @@ schema_version: 1
 
 id: victorialogs
 name: VictoriaLogs queries
-version: 0.1.8
+version: 0.1.9
+# Older versions allowed low-risk queries to scan unbounded log history.
+retired_below: 0.1.9
 description: >
   Read-only LogsQL access to VictoriaLogs over its HTTP API: search log
   entries, hit histograms over time, stats aggregations (instant + range),
-  and field / stream discovery. Express time ranges inside the LogsQL
-  query via the _time filter. One base URL serves single-node and
-  vmauth-fronted deployments; multitenancy via optional headers.
+  and field / stream discovery. Every request has an enforced trailing time
+  window. One base URL serves single-node and vmauth-fronted deployments;
+  multitenancy via optional headers.
 vendor: emisar
 homepage: https://emisar.dev/packs/victorialogs
 
@@ -59,7 +61,8 @@ setup:
       description: Tenant ProjectID header. Defaults to 0 when unset.
   notes:
     - "Any of `VL_URL` / `VL_BEARER_TOKEN` / `VL_ACCOUNT_ID` / `VL_PROJECT_ID` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
-    - "Bound queries with the LogsQL _time filter — e.g. `_time:5m error` or `_time:1h level:error` — the idiomatic VictoriaLogs way; the actions add no time range of their own. `limit` caps how many entries come back."
+    - "Every query has a trailing `window` (default 1h, maximum 24h), enforced with both the HTTP range and an unconditional `_time` extra filter. A LogsQL `_time` filter may narrow that window but cannot widen it. `vl.hits` and `vl.stats_query_range` are also limited to 10,081 buckets."
+    - "These bounds require VictoriaLogs 1.8.0 or newer, where HTTP extra filters propagate to every subquery. Requests also carry a 30-second provider-side timeout; query cardinality can still add cost."
     - "Tenancy: the default tenant is AccountID=0 / ProjectID=0. Set `VL_ACCOUNT_ID` / `VL_PROJECT_ID` to target another; they are sent as headers over curl stdin."
     - "Every action is a read-only GET — none ingest, delete, or mutate logs. No token or tenant header is sent unless its env var is set."
   verify: vl.field_names

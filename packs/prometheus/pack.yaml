@@ -2,7 +2,9 @@ schema_version: 1
 
 id: prometheus
 name: Prometheus operations
-version: 0.1.15
+version: 0.1.16
+# Older versions allowed low-risk range queries with unbounded evaluation cost.
+retired_below: 0.1.16
 description: >
   Server status, target health, alertmanager linkage, instant + range
   queries, rule listing, TSDB stats, plus admin-API actions for
@@ -39,6 +41,7 @@ setup:
     - "Any of `PROM_URL` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "No credentials are sent. If your Prometheus sits behind an auth proxy, expose it to the runner on a network path that does not require a header, or point `PROM_URL` at a trusted side door."
     - "Admin actions (reload_config, snapshot, clean_tombstones, delete_series) only work if Prometheus was started with --web.enable-admin-api and --web.enable-lifecycle."
+    - "Range queries are limited to 7 days and 10,081 outer evaluation timestamps per returned series, with a 30-second provider-side timeout. This preserves a full week at one-minute resolution; query cardinality, range-vector lookbacks, and subqueries can still add cost."
   verify: prom.build_info
 
 actions:

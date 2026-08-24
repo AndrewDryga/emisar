@@ -1,4 +1,8 @@
 services:
+  runner-tools:
+    volumes:
+      - ${EMISAR_ROOT}/packs/victoriametrics/test/fixtures/curl-spy.sh:/usr/local/bin/curl:ro
+
   victoriametrics:
     image: victoriametrics/victoria-metrics:${PACKTEST_VERSION:-v1.124.0}${PACKTEST_DIGEST-}
     # Production defaults hide newly ingested samples for 30 seconds. This
