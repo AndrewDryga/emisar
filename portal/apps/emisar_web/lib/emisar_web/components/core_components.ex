@@ -731,8 +731,9 @@ defmodule EmisarWeb.CoreComponents do
     """
   end
 
-  defp menu_item_base,
-    do: "emisar-icon-mono flex w-full items-center gap-2 rounded px-3 py-2 text-left"
+  defp menu_item_base do
+    "emisar-icon-mono flex w-full items-center gap-2 rounded px-3 py-2 text-left transition-colors"
+  end
 
   # Toned rows tint like their ghost-button siblings. Neutral steps to
   # zinc-800: menu rows sit on the dropdown's zinc-900 panel, so the ghost

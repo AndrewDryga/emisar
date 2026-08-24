@@ -157,6 +157,33 @@ defmodule EmisarWeb.IconsTest do
       end
     end
 
+    test "a generated 16-grid cut keeps every coordinate on the quarter grid" do
+      # The half grid carries the 1px crispness; dots and radii use quarters.
+      # A drifting coordinate means the cutter regressed or someone edited a
+      # generated file by hand — hand-tuned cuts declare `data-hand-cut` and
+      # are judged visually instead.
+      for path <- @masters,
+          String.ends_with?(path, ".16.svg"),
+          source = File.read!(path),
+          source =~ ~s(viewBox="0 0 16 16"),
+          not (source =~ "data-hand-cut") do
+        numbers =
+          Regex.scan(~r/(?:\bd|\bc?[xy]\d?|\br[xy]?|\bwidth|\bheight)="([^"]+)"/, source,
+            capture: :all_but_first
+          )
+          |> List.flatten()
+          |> Enum.flat_map(&Regex.scan(~r/-?\d*\.?\d+/, &1))
+          |> List.flatten()
+
+        for number <- numbers do
+          value = number |> Float.parse() |> elem(0)
+
+          assert Float.round(value * 4) == value * 4,
+                 "#{path} has off-grid coordinate #{number}"
+        end
+      end
+    end
+
     test "the locked brand and vendor artwork stays out of the registry" do
       # The gate mark and the official identity-provider marks are brand assets
       # with their own components; a semantic namespace would invite a redraw.
