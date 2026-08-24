@@ -8,6 +8,11 @@ versions:
   - version: "13-slim"
     digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
     default: true
+secret_env: [FS_SEARCH_PACKTEST_CANARY]
+env:
+  # This lives in the emisar parent process. A regression that reads
+  # /proc/self/environ exposes it even though the action does not inherit it.
+  FS_SEARCH_PACKTEST_CANARY: packtest-canary-fs-search-environ-7d934b
 risk_accountability:
   mode: complete
 cases:
@@ -248,6 +253,247 @@ cases:
     expect:
       stdout_contains: ["/tmp/packtest-rgrep/nested/app.log:2:bravo ERROR connect refused"]
       stdout_not_contains: [quiet.log]
+
+  # Each script-routed denial asserts the shared guard's own error and that the
+  # delegating reader spy was untouched. This prevents kernel permissions or a
+  # harmless empty device from making the security proof pass vacuously.
+  - name: fs.head-file-rejects-canonical-self-environ-before-reader
+    action: fs.head_file
+    args: {path: /proc/self/environ}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["fs-search: refusing sensitive pseudo-filesystem path:"]
+    probes:
+      - name: head was not invoked
+        argv: [/bin/sh, -c, "test ! -e /tmp/packtest-head-invoked && echo not-invoked"]
+        expect: {stdout_contains: [not-invoked]}
+
+  - name: fs.tail-file-rejects-numeric-pid-memory-before-reader
+    action: fs.tail_file
+    args: {path: /proc/1/mem}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["fs-search: refusing sensitive pseudo-filesystem path: /proc/1/mem"]
+    probes:
+      - name: tail was not invoked
+        argv: [/bin/sh, -c, "test ! -e /tmp/packtest-tail-invoked && echo not-invoked"]
+        expect: {stdout_contains: [not-invoked]}
+
+  - name: fs.grep-file-rejects-canonical-thread-environ-before-reader
+    action: fs.grep_file
+    args: {path: /proc/thread-self/environ, pattern: packtest}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["fs-search: refusing sensitive pseudo-filesystem path:"]
+    probes:
+      - name: grep was not invoked
+        argv: [/bin/sh, -c, "test ! -e /tmp/packtest-grep-invoked && echo not-invoked"]
+        expect: {stdout_contains: [not-invoked]}
+
+  - name: fs.grep-file-rejects-surviving-process-fd-before-reader
+    action: fs.grep_file
+    args: {path: /proc/self/fd/2147483647, pattern: packtest}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["fs-search: refusing sensitive pseudo-filesystem path:"]
+    probes:
+      - name: grep was not invoked
+        argv: [/bin/sh, -c, "test ! -e /tmp/packtest-grep-invoked && echo not-invoked"]
+        expect: {stdout_contains: [not-invoked]}
+
+  - name: fs.grep-recursive-rejects-process-root-before-reader
+    action: fs.grep_recursive
+    args: {path: /proc/1, pattern: packtest}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["fs-search: refusing recursive pseudo-filesystem root: /proc/1"]
+    probes:
+      - name: grep was not invoked
+        argv: [/bin/sh, -c, "test ! -e /tmp/packtest-grep-invoked && echo not-invoked"]
+        expect: {stdout_contains: [not-invoked]}
+
+  - name: fs.grep-recursive-rejects-proc-root-before-reader
+    action: fs.grep_recursive
+    args: {path: /proc, pattern: packtest}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["fs-search: refusing recursive pseudo-filesystem root: /proc"]
+    probes:
+      - name: grep was not invoked
+        argv: [/bin/sh, -c, "test ! -e /tmp/packtest-grep-invoked && echo not-invoked"]
+        expect: {stdout_contains: [not-invoked]}
+
+  - name: fs.grep-recursive-rejects-filesystem-root-before-reader
+    action: fs.grep_recursive
+    args: {path: /, pattern: packtest}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["fs-search: refusing recursive pseudo-filesystem root: /"]
+    probes:
+      - name: grep was not invoked
+        argv: [/bin/sh, -c, "test ! -e /tmp/packtest-grep-invoked && echo not-invoked"]
+        expect: {stdout_contains: [not-invoked]}
+
+  - name: fs.grep-recursive-rejects-process-task-root-before-reader
+    action: fs.grep_recursive
+    args: {path: /proc/1/task, pattern: packtest}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["fs-search: refusing recursive pseudo-filesystem root: /proc/1/task"]
+    probes:
+      - name: grep was not invoked
+        argv: [/bin/sh, -c, "test ! -e /tmp/packtest-grep-invoked && echo not-invoked"]
+        expect: {stdout_contains: [not-invoked]}
+
+  - name: fs.grep-recursive-rejects-thread-root-before-reader
+    action: fs.grep_recursive
+    args: {path: /proc/1/task/1, pattern: packtest}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["fs-search: refusing recursive pseudo-filesystem root: /proc/1/task/1"]
+    probes:
+      - name: grep was not invoked
+        argv: [/bin/sh, -c, "test ! -e /tmp/packtest-grep-invoked && echo not-invoked"]
+        expect: {stdout_contains: [not-invoked]}
+
+  - name: fs.grep-recursive-rejects-fd-root-before-reader
+    action: fs.grep_recursive
+    args: {path: /proc/1/fd, pattern: packtest}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["fs-search: refusing sensitive pseudo-filesystem path: /proc/1/fd"]
+    probes:
+      - name: grep was not invoked
+        argv: [/bin/sh, -c, "test ! -e /tmp/packtest-grep-invoked && echo not-invoked"]
+        expect: {stdout_contains: [not-invoked]}
+
+  - name: fs.head-file-rejects-kcore-before-reader
+    action: fs.head_file
+    args: {path: /proc/kcore}
+    expect:
+      # kcore remains in the descriptor denylist as the first layer; the
+      # shared script carries the same check as defense in depth.
+      status: failure
+      exit: [0]
+      reason_contains: ["argument path: path /proc/kcore is denied"]
+    probes:
+      - name: head was not invoked
+        argv: [/bin/sh, -c, "test ! -e /tmp/packtest-head-invoked && echo not-invoked"]
+        expect: {stdout_contains: [not-invoked]}
+
+  - name: fs.tail-file-rejects-device-before-reader
+    action: fs.tail_file
+    args: {path: /dev/null}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["fs-search: refusing sensitive pseudo-filesystem path: /dev/null"]
+    probes:
+      - name: tail was not invoked
+        argv: [/bin/sh, -c, "test ! -e /tmp/packtest-tail-invoked && echo not-invoked"]
+        expect: {stdout_contains: [not-invoked]}
+
+  - name: fs.grep-file-rejects-symlinked-environ-before-reader
+    action: fs.grep_file
+    args: {path: /tmp/packtest-proc-alias/environ, pattern: packtest}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/packtest-proc-alias && ln -s /proc/1/environ /tmp/packtest-proc-alias/environ"
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["fs-search: refusing sensitive pseudo-filesystem path: /proc/1/environ"]
+    probes:
+      - name: grep was not invoked
+        argv: [/bin/sh, -c, "test ! -e /tmp/packtest-grep-invoked && echo not-invoked"]
+        expect: {stdout_contains: [not-invoked]}
+
+  # Canonical path validation still leaves useful process, kernel-pressure, and
+  # sysfs diagnostics available through the same shared reader.
+  - name: fs.head-file-allows-symlinked-proc-meminfo
+    action: fs.head_file
+    args: {path: /tmp/packtest-proc-alias/meminfo, lines: 2}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/packtest-proc-alias && ln -s /proc/meminfo /tmp/packtest-proc-alias/meminfo"
+    expect:
+      stdout_contains: ["MemTotal:"]
+    probes:
+      - name: head spy delegated the allowed read
+        argv: [/bin/sh, -c, "test -e /tmp/packtest-head-invoked && echo invoked"]
+        expect: {stdout_contains: [invoked]}
+
+  - name: fs.tail-file-allows-proc-pressure
+    action: fs.tail_file
+    args: {path: /proc/pressure/cpu, lines: 2}
+    # The tail spy supplies this diagnostic on Docker hosts that do not mount
+    # PSI files; reaching it is the assertion that the guard kept the path.
+    expect:
+      stdout_contains: ["some avg10="]
+    probes:
+      - name: tail spy handled the allowed read
+        argv: [/bin/sh, -c, "test -e /tmp/packtest-tail-invoked && echo invoked"]
+        expect: {stdout_contains: [invoked]}
+
+  - name: fs.grep-recursive-allows-process-status-file
+    action: fs.grep_recursive
+    args: {path: /proc/1/status, pattern: "^Name:"}
+    expect:
+      stdout_contains: ["Name:"]
+    probes:
+      - name: grep spy delegated the allowed read
+        argv: [/bin/sh, -c, "test -e /tmp/packtest-grep-invoked && echo invoked"]
+        expect: {stdout_contains: [invoked]}
+
+  - name: fs.grep-file-allows-process-limits
+    action: fs.grep_file
+    args: {path: /proc/1/limits, pattern: "^Max open files"}
+    expect:
+      stdout_contains: ["Max open files"]
+
+  - name: fs.grep-recursive-allows-sys-diagnostic-file
+    action: fs.grep_recursive
+    args: {path: /sys/devices/system/cpu/online, pattern: "[0-9]"}
+    expect:
+      stdout_contains: ["/sys/devices/system/cpu/online:1:"]
+
+  - name: fs.grep-file-treats-leading-dash-as-a-pattern
+    action: fs.grep_file
+    args: {path: /tmp/packtest-grep/dash.log, pattern: "-alpha"}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - "mkdir -p /tmp/packtest-grep && printf '%s\\n' '-alpha literal' 'beta' > /tmp/packtest-grep/dash.log"
+    expect:
+      stdout_contains: ["-alpha literal"]
+      stdout_not_contains: [beta]
 
   - action: fs.file_type
     args: {path: /tmp/packtest-filetype/notes.txt}

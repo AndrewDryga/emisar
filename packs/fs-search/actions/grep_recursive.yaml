@@ -1,7 +1,7 @@
 schema_version: 1
 id: fs.grep_recursive
 title: grep -rE <pattern> <path>
-kind: exec
+kind: script
 risk: low
 description: Search recursively under one path. Bounded to 500 matches.
 side_effects:
@@ -35,15 +35,13 @@ args:
     validation:
       pattern: "^[^'\"`$;|&<>]{1,256}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "grep -rEnH --no-messages -m 500 --exclude-dir=.ssh --exclude-dir=ssh --exclude-dir=private --exclude-dir=sudoers.d --exclude=shadow --exclude=gshadow --exclude=shadow- --exclude=gshadow- --exclude=sudoers --exclude=kcore \"$P\" \"${1}\""
-      - "emisar"
-      - "{{ args.path }}"
-  env:
-    P: "{{ args.pattern }}"
+  script:
+    path: scripts/content_read.sh
+    interpreter: /bin/sh
+  argv:
+    - grep-recursive
+    - "{{ args.path }}"
+    - "{{ args.pattern }}"
   timeout: 5m
 output:
   parser: text

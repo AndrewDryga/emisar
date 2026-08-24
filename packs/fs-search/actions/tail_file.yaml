@@ -1,7 +1,7 @@
 schema_version: 1
 id: fs.tail_file
 title: tail -n <N> <file>
-kind: exec
+kind: script
 risk: low
 description: Show the last N lines of one file.
 side_effects:
@@ -37,12 +37,13 @@ args:
       min: 1
       max: 10000
 execution:
-  command:
-    binary: tail
-    argv:
-      - "-n"
-      - "{{ args.lines }}"
-      - "{{ args.path }}"
+  script:
+    path: scripts/content_read.sh
+    interpreter: /bin/sh
+  argv:
+    - tail
+    - "{{ args.path }}"
+    - "{{ args.lines }}"
   timeout: 30s
 output:
   parser: text

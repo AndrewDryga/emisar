@@ -6,6 +6,12 @@ services:
       args:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
     image: emisar-packtest-fs-search-tools:latest
+    volumes:
+      # Delegating spies make each denial prove the content reader was never
+      # invoked; ordinary success cases still exercise the real Debian tools.
+      - ${EMISAR_ROOT}/packs/fs-search/test/fixtures/head-spy.sh:/usr/local/bin/head:ro
+      - ${EMISAR_ROOT}/packs/fs-search/test/fixtures/tail-spy.sh:/usr/local/bin/tail:ro
+      - ${EMISAR_ROOT}/packs/fs-search/test/fixtures/grep-spy.sh:/usr/local/bin/grep:ro
 
   # These actions read the filesystem of the machine the ACTION runs on, which
   # is the client container — so this pack has no service to drive, and every

@@ -1,9 +1,9 @@
 schema_version: 1
 id: fs.grep_file
 title: grep <pattern> <file>
-kind: exec
+kind: script
 risk: low
-description: Show matching lines in one file. Pattern is treated as POSIX BRE.
+description: Show matching lines in one file. Pattern is treated as POSIX ERE.
 side_effects:
   - One read of the file.
   - Read-only.
@@ -40,19 +40,14 @@ args:
     default: false
     description: -i mode.
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      # The pipeline exits with head's status, so guard the file first — otherwise
-      # a missing file reports success with no output, reading as "no matches".
-      - |
-        [ -r "${1}" ] || { echo "file not readable: ${1}" >&2; exit 1; }
-        if [ "{{ args.case_insensitive }}" = "true" ]; then grep -i -E "$P" "${1}" | head -2000; else grep -E "$P" "${1}" | head -2000; fi
-      - "emisar"
-      - "{{ args.path }}"
-  env:
-    P: "{{ args.pattern }}"
+  script:
+    path: scripts/content_read.sh
+    interpreter: /bin/sh
+  argv:
+    - grep-file
+    - "{{ args.path }}"
+    - "{{ args.pattern }}"
+    - "{{ args.case_insensitive }}"
   timeout: 2m
 output:
   parser: text

@@ -1,7 +1,7 @@
 schema_version: 1
 id: fs.head_file
 title: head -n <N> <file>
-kind: exec
+kind: script
 risk: low
 description: Show the first N lines of one file.
 side_effects:
@@ -37,12 +37,13 @@ args:
       min: 1
       max: 10000
 execution:
-  command:
-    binary: head
-    argv:
-      - "-n"
-      - "{{ args.lines }}"
-      - "{{ args.path }}"
+  script:
+    path: scripts/content_read.sh
+    interpreter: /bin/sh
+  argv:
+    - head
+    - "{{ args.path }}"
+    - "{{ args.lines }}"
   timeout: 30s
 output:
   parser: text
