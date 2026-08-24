@@ -79,17 +79,16 @@ it is reached through its semantic token and its provenance stays recorded.
   same centered 24-unit grid, round caps and joins, and geometric-precision
   rendering. A local weight override is reserved for genuinely finer internal
   anatomy and needs native-size evidence.
-- **Optical weight is an ON-SCREEN target, never a grid-unit constant.** A
-  stroke value scales with the viewBox, so one unit number that looks right at
-  24 px collapses into a ~1.1 px hairline by 16 px — the migration shipped that
-  way and small icons read faint, blurry, and smaller than their text (founder
-  correction, 2026-08-23). The renderer holds the drawn stroke at ≈1.55–1.65
-  CSS px at every size: the 16/20 buckets project through a slightly zoomed
-  viewBox (`icon_viewbox/1`) and carry heavier units (`2.2`/`1.85` in
-  `app.css`), converging to `1.55` at 24 px and above — the same optical-size
-  compensation type designers cut into small faces. Judge any weight change at
-  1× device scale too, where fractional strokes blur worst. Pinned by
-  `EmisarWeb.Components.IconTest`.
+- **Optical weight is an ON-SCREEN target, never a grid-unit constant — and
+  the ramp is FINE at the small end.** A stroke value scales with the
+  viewBox, so one unit number set for 24 px lands elsewhere at every other
+  size. The renderer draws 1 px native at 16 (the one universally crisp
+  weight — and what the pre-migration set drew at), ≈1.3 px at 20 through the
+  zoomed viewBox, 1.55 px at 24 and above. Bolder was tried (≈1.6 px
+  everywhere) and read clunky beside the type — the founder's old-vs-new
+  comparison settled it: refinement at small sizes is thin + crisp + full
+  contrast, never bulk. Judge any weight change at 1× device scale too, where
+  fractional strokes blur worst. Pinned by `EmisarWeb.Components.IconTest`.
 - **Compact is an optical master, not another icon.** The regular master is the
   default; a compact must preserve its metaphor and topology, and may enlarge,
   simplify, snap, or separate anatomy for the raster.
@@ -100,18 +99,17 @@ it is reached through its semantic token and its provenance stays recorded.
   scaling each 24-grid drawing 2/3 and snapping to the quarter-pixel grid,
   then inspected as a full sheet at real size; masked, pixel-tuned, and
   transformed masters stay on the 24 grid and keep the zoomed projection. A
-  16-grid file declares `viewBox="0 0 16 16"`, renders 1:1 with a true 1.5 px
+  16-grid file declares `viewBox="0 0 16 16"`, renders 1:1 with a true 1 px
   stroke, and never re-enters the generator as a source (scaling a 16-grid
   file again shrinks it by another 2/3 — the generator guards this). **Its
-  stroke centers sit on ODD quarters (.25/.75):** a 1.5 px stroke centered
-  there puts both edges on device-pixel boundaries at 2×; even quarters put
-  both edges on half pixels — maximum blur, which is why the first snap read
-  no crisper on the founder's retina display. Deltas cannot be snapped
-  independently (a lopsided hexagon), so the cutter absolutizes every path
-  before snapping. **Contrast is the other half of perceived sharpness:** a
-  chrome icon rides its row's own text tone, never a step dimmer — the rail's
-  zinc-500 icons beside zinc-400 labels read as haze whatever the geometry
-  did.
+  stroke centers sit on the HALF grid (.0/.5):** a 1 px stroke centered there
+  puts both edges on device-pixel boundaries at EVERY integer display scale.
+  (A 1.5 px stroke instead needs odd-quarter centers and is only clean at 2× —
+  the bolder experiment lived there.) Deltas cannot be snapped independently
+  (a lopsided hexagon), so the cutter absolutizes every path before snapping.
+  **Contrast is the other half of perceived sharpness:** a chrome icon rides
+  its row's own text tone, never a step dimmer — the rail's zinc-500 icons
+  beside zinc-400 labels read as haze whatever the geometry did.
 - **Outline is the family; fill is emphasis.** Do not maintain outline and
   filled editions as parallel icon sets. A filled part or state is earned only
   when selection or high salience needs it and the icon still belongs beside

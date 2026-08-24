@@ -1,3 +1,3 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <rect x="2.25" y="4.25" width="11.5" height="8" rx="1.5"/><path d="M5.25 4.25V12.25M8.25 4.25V12.25M10.75 4.25V12.25"/>
+  <rect x="2.5" y="4" width="11.5" height="8" rx="1.5"/><path d="M5.5 4V12M8 4V12M10.5 4V12"/>
 </svg>

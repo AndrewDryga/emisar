@@ -10,14 +10,11 @@
    rules state the weight. `overflow: visible` keeps a modifier that reaches
    the edge of the box from clipping.
 
-   The weights are ON-SCREEN targets, not grid units: stroke-width scales with
-   the viewBox, so a unit value that looks right at 24px collapses into a
-   ~1.1px hairline by 16px — small icons rendered thinner exactly where they
-   needed to be bolder, and read faint and blurry beside their text (the
-   founder's correction). With the small buckets' zoomed viewBox (see
-   `icon_viewbox/1`) these units land at ≈1.63px @16, ≈1.62px @20, 1.55px @24
-   — slightly heavier as the box shrinks, the same optical-size compensation
-   text faces use.
+   The weights are ON-SCREEN targets, not grid units. The ramp is FINE at the
+   small end — 1px native @16 (see the unit-16 rule below), ≈1.3px @20,
+   1.55px @24+ — because refinement at small sizes comes from crisp hairlines
+   at full contrast, never from bulk: the bold experiment read clunky beside
+   the type, exactly what the founder's old-vs-new comparison showed.
    --------------------------------------------------------------------------- */
 .emisar-icon {
   display: inline-block;
@@ -34,14 +31,16 @@
   stroke-width: 2.2;
 }
 .emisar-icon[data-icon-grid="20"] {
-  stroke-width: 1.85;
+  stroke-width: 1.48;
 }
-/* A native 16-grid compact renders 1:1, so its units ARE pixels: 1.5 here is
-   a true 1.5px stroke (3 device px on 2x) with coordinates landing exactly
-   where they were drawn — the crisp path. Declared after the grid rules so it
-   wins for the same element. */
+/* A native 16-grid compact renders 1:1, so its units ARE pixels. 1px is the
+   one universally crisp stroke: centered on the half grid its edges land on
+   device-pixel boundaries at every integer display scale — and it is the
+   weight the pre-migration set drew at, the fine, airy feel refinement comes
+   from. Presence comes from contrast and coverage, never from bulk. Declared
+   after the grid rules so it wins for the same element. */
 .emisar-icon[data-icon-unit="16"] {
-  stroke-width: 1.5;
+  stroke-width: 1;
 }
 
 /* Semantic emphasis inside a drawing: pass/added, caution, deny/failure. Every
