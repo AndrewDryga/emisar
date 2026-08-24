@@ -184,6 +184,28 @@ defmodule EmisarWeb.IconsTest do
       end
     end
 
+    test "sibling families share their noun's exact construction at 16px" do
+      # The family contract in pixels: every badge is the same ring, every
+      # document the same sheet, every shield the same shield — differing only
+      # in modifier. A family member drifting to its own outline reads as
+      # sloppy even when no single icon is wrong.
+      families = [
+        {~s(<circle cx="8" cy="8" r="6.5"),
+         ~w(state.success state.error state.failed state.info state.pending
+            state.not_included state.disabled state.update_available
+            story.eliminated docs.upgrade action.cancel)},
+        {~s(M3.5 2H9.5L12.5 5V14H3.5ZM9.5 2V5H12.5),
+         ~w(evidence.document evidence.verified_document product.policy trust.declared)}
+      ]
+
+      for {construction, tokens} <- families, token <- tokens do
+        {:safe, body} = Icons.master(token, 16)
+
+        assert body =~ construction,
+               "#{token} drifted off its family construction"
+      end
+    end
+
     test "the locked brand and vendor artwork stays out of the registry" do
       # The gate mark and the official identity-provider marks are brand assets
       # with their own components; a semantic namespace would invite a redraw.

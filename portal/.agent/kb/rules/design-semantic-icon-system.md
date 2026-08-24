@@ -78,7 +78,16 @@ it is reached through its semantic token and its provenance stays recorded.
 - **One coordinate system.** First-party regular and compact masters use the
   same centered 24-unit grid, round caps and joins, and geometric-precision
   rendering. A local weight override is reserved for genuinely finer internal
-  anatomy and needs native-size evidence.
+  anatomy and needs native-size evidence. **The 24-grid masters sit on the
+  half grid too** (`assets/icons/snap24.mjs`, displacement ≤0.25u): 24px
+  renders 1:1 with the 1.5px stroke, and a half-grid coordinate doubled — the
+  48px render — stays integer, so every first-party size is device-aligned.
+  The masked/pixel-tuned exemptions keep their sub-quarter optical nudges.
+- **Sibling families share their noun's exact construction, test-pinned.**
+  After normalization every badge is byte-for-byte the same r 6.5 ring and
+  every document the same sheet, differing only in modifier —
+  `EmisarWeb.IconsTest` asserts the shared constructions so a family member
+  cannot drift to its own outline.
 - **Optical weight is an ON-SCREEN target, never a grid-unit constant — and
   the ramp is FINE at the small end.** A stroke value scales with the
   viewBox, so one unit number set for 24 px lands elsewhere at every other
