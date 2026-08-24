@@ -102,7 +102,16 @@ it is reached through its semantic token and its provenance stays recorded.
   transformed masters stay on the 24 grid and keep the zoomed projection. A
   16-grid file declares `viewBox="0 0 16 16"`, renders 1:1 with a true 1.5 px
   stroke, and never re-enters the generator as a source (scaling a 16-grid
-  file again shrinks it by another 2/3 — the generator guards this).
+  file again shrinks it by another 2/3 — the generator guards this). **Its
+  stroke centers sit on ODD quarters (.25/.75):** a 1.5 px stroke centered
+  there puts both edges on device-pixel boundaries at 2×; even quarters put
+  both edges on half pixels — maximum blur, which is why the first snap read
+  no crisper on the founder's retina display. Deltas cannot be snapped
+  independently (a lopsided hexagon), so the cutter absolutizes every path
+  before snapping. **Contrast is the other half of perceived sharpness:** a
+  chrome icon rides its row's own text tone, never a step dimmer — the rail's
+  zinc-500 icons beside zinc-400 labels read as haze whatever the geometry
+  did.
 - **Outline is the family; fill is emphasis.** Do not maintain outline and
   filled editions as parallel icon sets. A filled part or state is earned only
   when selection or high salience needs it and the icon still belongs beside

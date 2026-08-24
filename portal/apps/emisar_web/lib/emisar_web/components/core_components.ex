@@ -2156,7 +2156,7 @@ defmodule EmisarWeb.CoreComponents do
       rel="noopener noreferrer"
       class="emisar-icon-mono flex items-center gap-3 rounded-lg px-3 py-1.5 text-zinc-400 transition hover:bg-white/[0.04] hover:text-zinc-100"
     >
-      <.icon name={@icon} class="h-4 w-4 text-zinc-500" />
+      <.icon name={@icon} class="h-4 w-4" />
       <span class="flex-1">{render_slot(@inner_block)}</span>
       <.icon name="action.external_link" class="h-3.5 w-3.5 text-zinc-500" />
     </.link>
@@ -2260,10 +2260,11 @@ defmodule EmisarWeb.CoreComponents do
         !@active && "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100"
       ]}
     >
-      <.icon
-        name={@icon}
-        class={"h-4 w-4 #{if @active, do: "text-brand-400", else: "text-zinc-500"}"}
-      />
+      <%!-- The icon rides the ROW's tone (resting zinc-400, hover zinc-100)
+           rather than sitting a step dimmer: a low-contrast 1.5px stroke reads
+           as haze, and the rail's icons were fainter than their own labels.
+           Active keeps the one brand signal. --%>
+      <.icon name={@icon} class={"h-4 w-4 #{if @active, do: "text-brand-400"}"} />
       <span class="flex-1">{render_slot(@inner_block)}</span>
       <span
         :if={badge_visible?(@badge)}
