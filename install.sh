@@ -184,6 +184,14 @@ require_owned_dir() {
     /*) ;;
     *) reject_dir "${flag} must be an absolute path (got ${path})" ;;
   esac
+  case "$path" in
+    *//*) reject_dir "${flag} must not contain repeated path separators (got ${path})" ;;
+  esac
+  case "/${path#/}/" in
+    */./* | */../*)
+      reject_dir "${flag} must not contain . or .. path components (got ${path})"
+      ;;
+  esac
   case "${path%/}" in
     "" | /bin | /boot | /dev | /etc | /home | /lib | /lib64 | /opt | /proc | /root | /run | \
       /sbin | /srv | /sys | /tmp | /usr | /var | /var/lib | /var/log | /var/run | /Applications | \

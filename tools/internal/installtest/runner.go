@@ -51,6 +51,7 @@ func Runner(root string, out io.Writer) error {
 func runnerChecks() []runnerCheck {
 	return []runnerCheck{
 		{"unattended pack selection", false, runnerUnattendedPacks},
+		{"owned directory validation", false, runnerOwnedDirectoryValidation},
 		{"GitHub token argv hygiene", false, func(h *harness) error { return githubTokenHygiene(h, "install.sh") }},
 		{"enrollment state transitions", true, runnerEnrollmentState},
 		{"binary installation rollback", true, runnerInstallRollback},
@@ -64,6 +65,171 @@ func runnerChecks() []runnerCheck {
 		{"config value validation", false, runnerConfigValueValidation},
 		{"runner id override in config skeleton", false, runnerIDOverride},
 	}
+}
+
+func runnerOwnedDirectoryValidation(h *harness) error {
+	installer := h.repoPath("install.sh")
+	inputs := []struct {
+		env  string
+		flag string
+	}{
+		{env: "BIN_DIR", flag: "--bin-dir"},
+		{env: "ETC_DIR", flag: "--etc-dir"},
+		{env: "DATA_DIR", flag: "--data-dir"},
+		{env: "LOG_DIR", flag: "--log-dir"},
+	}
+	safe := map[string]string{
+		"BIN_DIR":  h.path("owned-dir-validation", "safe", "bin"),
+		"ETC_DIR":  h.path("owned-dir-validation", "safe", "etc"),
+		"DATA_DIR": h.path("owned-dir-validation", "safe", "data"),
+		"LOG_DIR":  h.path("owned-dir-validation", "safe", "log"),
+	}
+
+	mutationBin := h.path("owned-dir-validation", "mutation-bin")
+	mutationTrace := h.path("owned-dir-validation", "mutations")
+	if err := h.mkdir(mutationBin); err != nil {
+		return err
+	}
+	for _, command := range []string{"mkdir", "chown", "chmod", "rm"} {
+		if err := fakeExecutable(filepath.Join(mutationBin, command),
+			`printf '%s\n' "$0 $*" >>"$MUTATION_TRACE"`); err != nil {
+			return err
+		}
+	}
+	if err := fakeExecutable(filepath.Join(mutationBin, "id"), `
+if [ "${1:-}" = "-u" ]; then
+  printf '0\n'
+  exit 0
+fi
+exit 1
+`); err != nil {
+		return err
+	}
+
+	for index, input := range inputs {
+		for _, source := range []string{"flag", "environment"} {
+			if err := os.WriteFile(mutationTrace, nil, 0o600); err != nil {
+				return err
+			}
+			env := map[string]string{
+				"BIN_DIR": safe["BIN_DIR"], "ETC_DIR": safe["ETC_DIR"],
+				"DATA_DIR": safe["DATA_DIR"], "LOG_DIR": safe["LOG_DIR"],
+				"MUTATION_TRACE": mutationTrace,
+				"PATH":           mutationBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+			}
+			component := "/./victim"
+			if index%2 == 1 {
+				component = "/../victim"
+			}
+			invalid := h.path("owned-dir-validation", fmt.Sprintf("case-%d", index)) + component
+			args := []string{installer, "--yes", "--no-service", "--uninstall", "--purge"}
+			if source == "environment" {
+				env[input.env] = invalid
+			} else {
+				for _, candidate := range inputs {
+					value := safe[candidate.env]
+					if candidate.env == input.env {
+						value = invalid
+					}
+					args = append(args, candidate.flag, value)
+				}
+			}
+
+			result := h.command(h.root, env, "bash", args...)
+			if err := expectFailure(result, "must not contain . or .. path components"); err != nil {
+				return fmt.Errorf("%s from %s: %w", input.env, source, err)
+			}
+			if code := exitCode(result.err); code != 2 {
+				return fmt.Errorf("%s from %s exited %d, want validation exit 2", input.env, source, code)
+			}
+			if err := exactFile(mutationTrace, ""); err != nil {
+				return fmt.Errorf("%s from %s reached a mutating command: %w", input.env, source, err)
+			}
+		}
+	}
+
+	for _, root := range []string{"/etc", "/etc/", "/var/lib", "/var/lib/", "/var/log", "/var/log/"} {
+		result := h.functions(installer, []string{"reject_dir", "require_owned_dir"},
+			`require_owned_dir TEST_DIR "$CANDIDATE"`+"\n", map[string]string{"CANDIDATE": root})
+		if err := expectFailure(result, "must not be a system directory"); err != nil {
+			return fmt.Errorf("system root %q: %w", root, err)
+		}
+	}
+	for _, candidate := range []string{
+		"/./tmp/emisar", "/tmp/./emisar", "/tmp/emisar/.", "/tmp/emisar/./",
+		"/../tmp/emisar", "/tmp/../emisar", "/tmp/emisar/..", "/tmp/emisar/../",
+	} {
+		result := h.functions(installer, []string{"reject_dir", "require_owned_dir"},
+			`require_owned_dir TEST_DIR "$CANDIDATE"`+"\n", map[string]string{"CANDIDATE": candidate})
+		if err := expectFailure(result, "must not contain . or .. path components"); err != nil {
+			return fmt.Errorf("dot component %q: %w", candidate, err)
+		}
+	}
+	for _, candidate := range []string{"//etc", "/etc//", "/var//lib", "/var/lib//"} {
+		result := h.functions(installer, []string{"reject_dir", "require_owned_dir"},
+			`require_owned_dir TEST_DIR "$CANDIDATE"`+"\n", map[string]string{"CANDIDATE": candidate})
+		if err := expectFailure(result, "must not contain repeated path separators"); err != nil {
+			return fmt.Errorf("repeated separator %q: %w", candidate, err)
+		}
+	}
+	for _, input := range inputs {
+		result := h.functions(installer, []string{"reject_dir", "require_owned_dir"},
+			`require_owned_dir TEST_DIR "$CANDIDATE"`+"\n", map[string]string{"CANDIDATE": safe[input.env]})
+		if _, err := requireOutput(result); err != nil {
+			return fmt.Errorf("valid %s: %w", input.env, err)
+		}
+	}
+	for _, candidate := range []string{"/tmp/.emisar/data", "/tmp/.../data", "/tmp/emisar../data"} {
+		result := h.functions(installer, []string{"reject_dir", "require_owned_dir"},
+			`require_owned_dir TEST_DIR "$CANDIDATE"`+"\n", map[string]string{"CANDIDATE": candidate})
+		if _, err := requireOutput(result); err != nil {
+			return fmt.Errorf("valid near-miss %q: %w", candidate, err)
+		}
+	}
+
+	validRoot := h.path("owned-dir-validation", "valid-uninstall")
+	validBin := filepath.Join(validRoot, "bin")
+	validEtc := filepath.Join(validRoot, "etc")
+	validData := filepath.Join(validRoot, "data")
+	validLog := filepath.Join(validRoot, "log")
+	fakeRootBin := h.path("owned-dir-validation", "root-bin")
+	if err := h.mkdir(validBin, validEtc, validData, validLog, fakeRootBin); err != nil {
+		return err
+	}
+	if err := fakeExecutable(filepath.Join(fakeRootBin, "id"), `
+if [ "${1:-}" = "-u" ]; then
+  printf '0\n'
+  exit 0
+fi
+exit 1
+`); err != nil {
+		return err
+	}
+	for path, contents := range map[string]string{
+		filepath.Join(validBin, "emisar"):                  "installed binary\n",
+		filepath.Join(validBin, ".emisar-install-receipt"): filepath.Join(validEtc, "install-receipt") + "\n",
+		filepath.Join(validEtc, "install-receipt"):         "schema=1\n",
+		filepath.Join(validData, "token"):                  "cached token\n",
+	} {
+		if err := writeFile(path, contents, 0o600); err != nil {
+			return err
+		}
+	}
+	validResult := h.command(h.root, map[string]string{
+		"PATH": fakeRootBin + string(os.PathListSeparator) + os.Getenv("PATH"),
+	}, "bash", installer, "--yes", "--no-service", "--uninstall", "--purge",
+		"--bin-dir", validBin, "--etc-dir", validEtc, "--data-dir", validData, "--log-dir", validLog)
+	if output, err := requireOutput(validResult); err != nil {
+		return fmt.Errorf("valid custom uninstall: %w", err)
+	} else if !strings.Contains(string(output), "uninstalled") {
+		return fmt.Errorf("valid custom uninstall did not finish:\n%s", output)
+	}
+	for _, path := range []string{filepath.Join(validBin, "emisar"), validEtc, validData, validLog} {
+		if err := requireAbsent(path); err != nil {
+			return fmt.Errorf("valid custom uninstall: %w", err)
+		}
+	}
+	return nil
 }
 
 func runnerUnattendedPacks(h *harness) error {
