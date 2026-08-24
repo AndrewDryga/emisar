@@ -29,6 +29,16 @@ cases:
   - action: redis.command_stats
     expect:
       stdout_contains: [cmdstat]
+  - name: redis.cluster_check-targets-local-instance
+    action: redis.cluster_check
+    expect:
+      stdout_contains: [PACKTEST_REDIS_CLUSTER_TARGET, "127.0.0.1:6379"]
+    probes:
+      - argv: [cat, /tmp/packtest-redis-cluster-check-argv]
+        expect:
+          stdout_contains: ["--cluster check 127.0.0.1:6379"]
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-redis-cluster-check-argv]
   - action: redis.config_get
     args: {pattern: maxmemory}
     expect:

@@ -1,0 +1,14 @@
+services:
+  runner-tools:
+    volumes:
+      - ${EMISAR_ROOT}/packs/dell-ipmi/test/fixtures/ipmitool-spy.sh:/usr/local/bin/ipmitool:ro
+
+  approved-bmc:
+    image: python:${PACKTEST_VERSION:-3.14.0-slim}${PACKTEST_DIGEST-}
+    command: [python3, -m, http.server, "8080", --bind, 0.0.0.0]
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8080/')"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10

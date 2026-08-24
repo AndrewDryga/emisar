@@ -536,7 +536,7 @@ defmodule EmisarWeb.PacksTest do
       # Redis's security fix set a retirement floor; the version window may
       # keep post-fix history, but no version below the floor — vulnerable
       # history never reappears as the pack keeps releasing.
-      assert entry["retired_below"] == "0.3.9"
+      assert entry["retired_below"] == "0.3.13"
 
       for prev <- entry["previous_versions"] do
         assert Version.compare(prev["version"], entry["retired_below"]) in [:eq, :gt]

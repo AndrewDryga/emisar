@@ -1,10 +1,51 @@
-# IPMI talks to a Dell BMC over the management interface. There is no
-# baseboard controller in a container.
-# Declared rather than left silently uncovered, so the gap is a decision in
-# the plan instead of an absence nobody sees.
+services: [approved-bmc]
+versions:
+  - version: "3.14.0-slim"
+    digest: "@sha256:0aecac02dc3d4c5dbb024b753af084cafe41f5416e02193f1ce345d671ec966e"
+    default: true
 risk_accountability:
   mode: complete
   exceptions:
     ipmi.bootdev: requires_hardware
     ipmi.power_control: requires_hardware
     ipmi.sel_clear: requires_hardware
+secret_env: [IPMI_PASSWORD]
+env:
+  IPMI_ALLOWED_HOSTS: APPROVED-BMC
+  IPMI_USER: packtest-monitor
+  IPMI_PASSWORD: packtest-canary-ipmi-password-1a74
+defaults:
+  expect:
+    stdout_not_contains: [packtest-canary-ipmi-password-1a74]
+    stderr_not_contains: [packtest-canary-ipmi-password-1a74]
+# The versioned HTTP service only keeps the harness lifecycle realistic. The
+# mounted ipmitool spy proves wrapper argv and refusal order, not BMC behavior.
+cases:
+  - name: ipmi.chassis_status-uses-allowed-host
+    action: ipmi.chassis_status
+    args: {host: approved-bmc}
+    expect:
+      stdout_contains: ["System Power : on"]
+    probes:
+      - argv: [cat, /tmp/packtest-ipmitool-argv]
+        expect:
+          stdout_contains:
+            - "-I lanplus -H approved-bmc -U packtest-monitor -E -C 3 -L OPERATOR chassis status"
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-ipmitool-argv]
+
+  - name: ipmi.chassis_status-rejects-unlisted-host-before-client
+    action: ipmi.chassis_status
+    args: {host: blocked-bmc}
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [blocked-bmc, IPMI_ALLOWED_HOSTS]
+      stderr_not_contains: [PACKTEST_CLIENT_INVOKED]
+    probes:
+      - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-ipmi-client-invoked && echo ipmi-client-not-invoked"]
+        expect:
+          stdout_contains: [ipmi-client-not-invoked]
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-ipmi-client-invoked]

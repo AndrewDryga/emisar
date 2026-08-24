@@ -1,4 +1,8 @@
 services:
+  runner-tools:
+    volumes:
+      - ${EMISAR_ROOT}/packs/dell-idrac/test/fixtures/curl-spy.sh:/usr/local/bin/curl:ro
+
   idrac:
     image: python:${PACKTEST_VERSION:-3.14.0-slim}${PACKTEST_DIGEST-}
     entrypoint: [python3, /fixture/server.py]

@@ -2,10 +2,10 @@ schema_version: 1
 
 id: dell-idrac
 name: Dell iDRAC (Redfish)
-version: 0.2.4
-# 0.1.0 skipped TLS verification by default, sending Basic credentials over an
-# unverified channel — retired as a security fix.
-retired_below: 0.2.0
+version: 0.2.5
+# Older versions could send runner-held credentials to a caller-chosen target;
+# 0.1.0 also skipped TLS verification by default.
+retired_below: 0.2.5
 description: >
   Monitor and operate a Dell iDRAC over its Redfish REST API with curl — system
   identity and health rollup, the Dell subsystem rollup, storage controllers
@@ -30,10 +30,18 @@ requires:
 setup:
   summary: >
     Every action calls the iDRAC Redfish API at https://{{ args.host }}/redfish
-    via curl on the runner host. Auth is HTTP Basic from `IDRAC_USER` and
+    via curl on the runner host. The target must be listed exactly in
+    `IDRAC_ALLOWED_HOSTS`. Auth is HTTP Basic from `IDRAC_USER` and
     `IDRAC_PASSWORD` (sent as an Authorization header over curl stdin, never in
-    argv or the audit log). Point actions at an iDRAC by its hostname or IP.
+    argv or the audit log).
   env:
+    - name: IDRAC_ALLOWED_HOSTS
+      required: true
+      description: >
+        Comma-separated exact iDRAC hostnames or IPv4 addresses that actions
+        may target. Hostname matching is ASCII case-insensitive; entries do not
+        accept wildcards, CIDRs, URLs, or spaces.
+      example: idrac-web01.mgmt,10.20.0.15
     - name: IDRAC_USER
       required: true
       description: >
@@ -59,7 +67,7 @@ setup:
       example: "true"
   notes:
     - "Create the account in the iDRAC web UI under iDRAC Settings → Users → Local Users: take a free slot, enable it, and give it the Read Only role for the reads or Operator for the job and reset mutators."
-    - "Any of `IDRAC_USER` / `IDRAC_PASSWORD` / `IDRAC_INSECURE` you set must also be allowlisted in the runner's `inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a var present on the host but not allowlisted is silently dropped and the call fails to authenticate."
+    - "`IDRAC_ALLOWED_HOSTS`, `IDRAC_USER`, `IDRAC_PASSWORD`, and any `IDRAC_INSECURE` override must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not inherited is silently dropped and the call is refused or fails to authenticate."
     - "Auth is HTTP Basic on purpose. It consumes no iDRAC session slot, whereas X-Auth-Token sessions draw from the shared web/Redfish session budget (iDRAC9: 8 concurrent, iDRAC8: 6); monitoring tools that open sessions and never close them are the classic cause of a 'maximum number of user sessions reached' lockout of the GUI/admin. Stateless Basic polls avoid that entirely."
     - "Redfish API access (health, power/thermal, SEL/LC logs, firmware inventory, job queue, power control) is available at the iDRAC Basic license tier — this pack needs no Enterprise/Datacenter license. Streaming telemetry (SSE) would; plain polling does not."
     - "Resource IDs are the stable embedded primaries System.Embedded.1 (system/chassis) and iDRAC.Embedded.1 (manager), unchanged across iDRAC8 and iDRAC9. The power/thermal reads use the universal /Power and /Thermal resources; newer firmware also exposes /PowerSubsystem, /ThermalSubsystem, and /Sensors, reachable via the generic get action."

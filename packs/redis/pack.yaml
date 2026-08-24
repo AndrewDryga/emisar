@@ -2,8 +2,9 @@ schema_version: 1
 
 id: redis
 name: Redis operations pack
-version: 0.3.12
-retired_below: 0.3.9
+version: 0.3.13
+# Older versions let callers redirect cluster checks carrying runner credentials.
+retired_below: 0.3.13
 description: >
   Deep Redis ops — INFO + memory accounting, slowlog + per-event
   latency, command stats, client list/kill/pause, keyspace introspection

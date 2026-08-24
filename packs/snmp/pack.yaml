@@ -2,7 +2,9 @@ schema_version: 1
 
 id: snmp
 name: SNMP (net-snmp)
-version: 0.2.3
+version: 0.2.4
+# Older versions could send runner-held credentials to a caller-chosen target.
+retired_below: 0.2.4
 description: >
   Read a network device over SNMP with the net-snmp CLI — system group,
   interface table, BGP peers (BGP4-MIB) and OSPF neighbors / general group
@@ -27,10 +29,19 @@ requires:
 setup:
   summary: >
     Every action runs a net-snmp client (snmpget / snmpbulkwalk) against the
-    {{ args.host }} you pass. Install net-snmp on the runner host (Debian:
+    {{ args.host }} you pass, after requiring that exact destination in
+    `SNMP_ALLOWED_HOSTS`. Install net-snmp on the runner host (Debian:
     apt-get install snmp), enable SNMP on each target device, and set the
-    credentials below. Point actions at a device by its hostname or IP.
+    credentials below.
   env:
+    - name: SNMP_ALLOWED_HOSTS
+      required: true
+      description: >
+        Comma-separated exact device hostnames, IP addresses, or `host:port`
+        destinations that actions may target. Matching is ASCII
+        case-insensitive; entries do not accept wildcards, CIDRs, URLs, or
+        spaces.
+      example: edge01.mgmt,10.20.0.1:1161
     - name: SNMP_VERSION
       required: false
       default: "2c"
@@ -66,7 +77,7 @@ setup:
       required: false
       description: SNMPv3 privacy passphrase. Streamed via snmp.conf, never in argv.
   notes:
-    - "Any of the SNMP_* credentials you set (`SNMP_COMMUNITY`, `SNMP_USER`, `SNMP_AUTH_PASS`, `SNMP_PRIV_PASS`, and the `SNMP_VERSION`/`SNMP_LEVEL`/proto settings) must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "`SNMP_ALLOWED_HOSTS` and any SNMP credentials or protocol settings you set (`SNMP_COMMUNITY`, `SNMP_USER`, `SNMP_AUTH_PASS`, `SNMP_PRIV_PASS`, `SNMP_VERSION`, `SNMP_LEVEL`, and the protocol choices) must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not inherited is silently dropped and the call is refused or fails authentication."
     - "Actions query by NUMERIC OID so they work without MIB files (Debian's `snmp` package ships none by default — `mibs :` is commented out). Output is therefore numeric too; each routing action's description maps the columns and decodes the state enums. Install `snmp-mibs-downloader` on the runner for symbolic names if you prefer."
     - "Enable SNMP on the device first. pfSense: Services → SNMP (set an RO community, bind it to the management interface, not WAN). The host arg is the device address; an unreachable device or wrong community fails the action (non-zero exit), it is not reported as empty."
     - "BGP4-MIB / OSPF-MIB are not served by the base snmpd — FRR exports them over AgentX. On the firewall/router, enable AgentX in FRR (`agentx` in the daemon config) and run bgpd/ospfd with the SNMP module, and set `master agentx` in snmpd.conf. Without that, bgp_peers / ospf_* return nothing even though SNMP itself works (snmp.system will still answer)."

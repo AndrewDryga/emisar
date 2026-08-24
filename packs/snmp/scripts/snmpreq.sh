@@ -28,6 +28,26 @@ tool=$1
 host=$2
 shift 2
 
+normalized_host=$(printf '%s' "$host" | LC_ALL=C tr 'A-Z' 'a-z')
+normalized_allowed_hosts=$(printf '%s' "${SNMP_ALLOWED_HOSTS:-}" | LC_ALL=C tr 'A-Z' 'a-z')
+# The host schema forbids comma, so it is an unambiguous token delimiter. Keep
+# globbing off so operator-supplied entries are compared as literal strings.
+old_ifs=$IFS
+IFS=,
+set -f
+allowed=false
+for allowed_host in $normalized_allowed_hosts; do
+	if [ "$normalized_host" = "$allowed_host" ]; then
+		allowed=true
+		break
+	fi
+done
+IFS=$old_ifs
+if [ "$allowed" != "true" ]; then
+	echo "snmp: target $host is not listed in SNMP_ALLOWED_HOSTS" >&2
+	exit 1
+fi
+
 conf=$(mktemp -d)
 trap 'rm -rf "$conf"' EXIT INT TERM
 

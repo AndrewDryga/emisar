@@ -5,6 +5,7 @@ versions:
     default: true
 secret_env: [IDRAC_PASSWORD]
 env:
+  IDRAC_ALLOWED_HOSTS: IDRAC
   IDRAC_USER: packtest-monitor
   IDRAC_PASSWORD: packtest-canary-idrac-password-9f27
 defaults:
@@ -94,3 +95,21 @@ cases:
       exit: [1]
       reason_contains: [process exited with code 1]
       stderr_contains: [set IDRAC_USER and IDRAC_PASSWORD]
+
+  - name: idrac.system-rejects-unlisted-host-before-curl
+    action: idrac.system
+    args: {host: blocked-target}
+    env:
+      IDRAC_INSECURE: "true"
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [blocked-target, IDRAC_ALLOWED_HOSTS]
+      stderr_not_contains: [PACKTEST_CLIENT_INVOKED]
+    probes:
+      - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-idrac-curl-invoked && echo curl-not-invoked"]
+        expect:
+          stdout_contains: [curl-not-invoked]
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-idrac-curl-invoked]

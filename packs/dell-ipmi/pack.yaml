@@ -2,7 +2,9 @@ schema_version: 1
 
 id: dell-ipmi
 name: Dell iDRAC / IPMI (ipmitool)
-version: 0.1.4
+version: 0.1.5
+# Older versions could send runner-held credentials to a caller-chosen target.
+retired_below: 0.1.5
 description: >
   Out-of-band BMC monitoring and power control over IPMI 2.0 (RMCP+/lanplus)
   with ipmitool — sensor data records, full sensor readings with thresholds,
@@ -28,11 +30,18 @@ requires:
 setup:
   summary: >
     Every action runs ipmitool against the {{ args.host }} BMC you pass, over an
-    encrypted IPMI 2.0 (lanplus) session. The account name is read from
-    `IPMI_USER` and the password from `IPMI_PASSWORD` (via ipmitool's -E, so it
-    never appears in the process arguments or the audit log). Point actions at a
-    BMC by its hostname or IP.
+    encrypted IPMI 2.0 (lanplus) session. The target must be listed exactly in
+    `IPMI_ALLOWED_HOSTS`. The account name is read from `IPMI_USER` and the
+    password from `IPMI_PASSWORD` (via ipmitool's -E, so it never appears in the
+    process arguments or the audit log).
   env:
+    - name: IPMI_ALLOWED_HOSTS
+      required: true
+      description: >
+        Comma-separated exact BMC hostnames or IPv4 addresses that actions may
+        target. Hostname matching is ASCII case-insensitive; entries do not
+        accept wildcards, CIDRs, URLs, or spaces.
+      example: bmc-web01.mgmt,10.20.0.16
     - name: IPMI_USER
       required: true
       description: >
@@ -65,7 +74,7 @@ setup:
         read-only account.
   notes:
     - "Create the BMC account in the iDRAC web UI under iDRAC Settings → Users → Local Users, and grant it the OPERATOR privilege `IPMI_PRIVLEVEL` defaults to. The same account needs its IPMI LAN privilege set, which is configured on that user's page."
-    - "Any of `IPMI_USER` / `IPMI_PASSWORD` / `IPMI_CIPHER` / `IPMI_PRIVLEVEL` you set must also be allowlisted in the runner's `inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a var present on the host but not allowlisted is silently dropped and the session fails to authenticate."
+    - "`IPMI_ALLOWED_HOSTS`, `IPMI_USER`, `IPMI_PASSWORD`, and any `IPMI_CIPHER` / `IPMI_PRIVLEVEL` overrides must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not inherited is silently dropped and the call is refused or fails to authenticate."
     - "IPMI Over LAN ships DISABLED on iDRAC9. Enable it first: iDRAC web UI -> iDRAC Settings -> Connectivity -> Network -> IPMI Settings -> Enable IPMI Over LAN; or `racadm set iDRAC.IPMILan.Enable 1`. iDRAC9 is IPMI 2.0 / RMCP+ only (the legacy `lan` interface is unsupported), which is why the pack uses lanplus."
     - "ipmitool historically exits 0 even when the session fails (bad credential, unreachable BMC, or IPMI Over LAN disabled all surface only on stderr with empty stdout). The pack's wrapper turns an empty result into a real non-zero exit so a failure is loud, not a misleading empty success."
     - "IPMI 2.0 has unfixable protocol weaknesses (RAKP hash disclosure, CVE-2013-4786). Isolate BMCs on a dedicated management VLAN with no internet path (NSA/CISA BMC-hardening guidance), use strong unique BMC passwords, and never enable cipher suite 0."

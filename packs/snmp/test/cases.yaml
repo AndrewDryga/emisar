@@ -7,6 +7,7 @@ risk_accountability:
   mode: complete
 secret_env: [SNMP_COMMUNITY]
 env:
+  SNMP_ALLOWED_HOSTS: SNMPD,SNMPD-FRR
   SNMP_COMMUNITY: packtest-canary-snmp-community-b410
   SNMP_VERSION: "2c"
 cases:
@@ -47,3 +48,37 @@ cases:
       oid: "1.3.6.1.2.1.1"
     expect:
       stdout_contains: [iso.3.6.1.2.1.1, snmpd-sut]
+
+  - name: snmp.system-rejects-unlisted-host-before-client
+    action: snmp.system
+    args:
+      host: blocked-target
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: [blocked-target, SNMP_ALLOWED_HOSTS]
+      stderr_not_contains: [PACKTEST_CLIENT_INVOKED]
+    probes:
+      - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-snmp-client-invoked && echo snmp-client-not-invoked"]
+        expect:
+          stdout_contains: [snmp-client-not-invoked]
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-snmp-client-invoked]
+
+  - name: snmp.system-does-not-collapse-default-port
+    action: snmp.system
+    args:
+      host: snmpd:161
+    expect:
+      status: failure
+      exit: [1]
+      reason_contains: [process exited with code 1]
+      stderr_contains: ["snmpd:161", SNMP_ALLOWED_HOSTS]
+      stderr_not_contains: [PACKTEST_CLIENT_INVOKED]
+    probes:
+      - argv: [/bin/sh, -c, "test ! -e /tmp/packtest-snmp-client-invoked && echo snmp-client-not-invoked"]
+        expect:
+          stdout_contains: [snmp-client-not-invoked]
+    cleanup:
+      - argv: [rm, -f, /tmp/packtest-snmp-client-invoked]

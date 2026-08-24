@@ -4,32 +4,16 @@ title: redis-cli --cluster check
 kind: exec
 risk: low
 description: >
-  `redis-cli --cluster check` against the given host:port — verifies
-  slot coverage, master/replica health, epoch consistency. Use after
-  any topology change.
+  Run `redis-cli --cluster check` from the local Redis entry point at
+  127.0.0.1:6379 — verifies slot coverage, master/replica health, and epoch
+  consistency. Use after any topology change.
 side_effects:
   - Talks to every cluster node briefly.
   - Read-only.
-args:
-  - name: host
-    type: string
-    required: false
-    default: "127.0.0.1"
-    description: Cluster entry-point host.
-    validation:
-      pattern: "^[a-zA-Z0-9._\\-]{1,253}$"
-  - name: port
-    type: integer
-    required: false
-    default: 6379
-    description: Cluster entry-point port.
-    validation:
-      min: 1
-      max: 65535
 execution:
   command:
     binary: redis-cli
-    argv: ["--cluster", "check", "{{ args.host }}:{{ args.port }}"]
+    argv: ["--cluster", "check", "127.0.0.1:6379"]
   timeout: 60s
 output:
   parser: text

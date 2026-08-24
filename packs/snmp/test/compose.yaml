@@ -1,4 +1,8 @@
 services:
+  runner-tools:
+    volumes:
+      - ${EMISAR_ROOT}/packs/snmp/test/fixtures/snmpbulkwalk-spy.sh:/usr/local/bin/snmpbulkwalk:ro
+
   snmpd:
     build:
       context: ${EMISAR_ROOT}/packs/snmp/test/snmpd

@@ -4,6 +4,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    volumes:
+      - ${EMISAR_ROOT}/packs/redis/test/fixtures/redis-cli-spy.sh:/usr/local/bin/redis-cli:ro
 
   redis:
     image: redis:${PACKTEST_VERSION:-8.8.0}${PACKTEST_DIGEST-}
