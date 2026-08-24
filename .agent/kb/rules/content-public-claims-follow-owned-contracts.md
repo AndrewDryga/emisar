@@ -10,9 +10,13 @@ controls, name the layer and state only what that layer proves.
 - Required MCP release clients come from the certification workflow's required
   lanes; evaluator support alone does not make a provider a release gate.
 - Plan features follow the billing entitlement, not nearby pricing prose.
-- Portal audit records and the runner's host-local journal are separate
-  evidence layers. Hash-chain verification proves continuity of the retained
-  journal; it does not prove that host root preserved every original record.
+- Portal audit events, linked run history, and the runner's host-local journal
+  are separate evidence layers. Audit events contain actor and target fields
+  plus lifecycle metadata, not action arguments. Run history retains exact
+  arguments; sensitive descriptors mask only console and API projections. The
+  runner journal stores a redacted argument projection. Hash-chain verification
+  proves continuity of the retained journal; it does not prove that host root
+  preserved every original record.
 - Outbound runner connectivity means the runner establishes the TLS WebSocket
   and exposes no inbound listener. Commands still return through that established
   connection; never turn connection direction into a claim that no command
@@ -40,7 +44,8 @@ into a claim the product cannot prove.
 
 ```text
 Portal audit: searchable off-host record of actions and policy decisions.
-Runner journal: hash-chained records retained on each host.
+Run history: exact arguments, with sensitive fields masked in console and API views.
+Runner journal: redacted arguments in hash-chained records retained on each host.
 ```
 
 ```elixir
@@ -51,6 +56,10 @@ Runner journal: hash-chained records retained on each host.
 
 ```text
 The audit command catches any edited or missing line.
+```
+
+```text
+Every action: actor, redacted arguments, target host, exit code.
 ```
 
 ```text
@@ -66,4 +75,4 @@ page count from the MCP schema registry, and require the Trust Center to name
 both audit layers. When one of these contracts changes, sweep public templates,
 structured data, docs, runbooks, and policy pages for the old count,
 entitlement, required certification lane, unqualified connectivity or signing
-claim, raw-output wording, or unsupported supply-chain level.
+claim, raw-output or argument-storage wording, or unsupported supply-chain level.

@@ -46,8 +46,10 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         For a run, audit records the decisions and the outcome: the denial, the approval gate,
-        the terminal result. The in-between states — pending, sent, running — are on the run's
-        own page, not in the audit trail.
+        the terminal result. Each event links to the run; action arguments stay in run history,
+        which retains the exact values and masks declared sensitive fields only in console and API
+        views. The in-between states — pending, sent, running — are on the run's own page, not in
+        the audit trail.
       </p>
 
       <.docs_h2 id="reading">Reading it in the console</.docs_h2>

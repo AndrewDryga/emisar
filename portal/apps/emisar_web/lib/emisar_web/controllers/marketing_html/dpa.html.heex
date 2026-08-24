@@ -5,7 +5,7 @@
 ============================================================ --%>
 <.legal_page
   title="Data Processing Addendum"
-  updated="July 18, 2026"
+  updated="August 24, 2026"
   summary="The plain version: when emisar processes personal data on your behalf, we act only on your instructions, we never sell it or train on it, our subprocessors are a short named list, and we delete it when you leave. This is the standard DPA we'll sign — email support@emisar.dev for an executable copy."
   toc={[
     {"roles", "1. Roles and scope"},
@@ -56,11 +56,12 @@
     <li>
       <strong>Categories of data.</strong>
       Account information (email, optional name, authentication metadata, request IP) and product
-      telemetry (runner metadata, the actions your operators or AI agents trigger, approvals,
-      policy decisions, and the resulting audit events). Runner output passes through configured
-      pattern redaction on the host before it leaves; an unrecognized secret shape can still pass
-      that filter. We never receive full card numbers. We do not ask for, and you should not send,
-      special-category data.
+      telemetry (runner metadata, the actions your operators or AI agents trigger and their exact
+      arguments, approvals, policy decisions, and the resulting audit events). Fields an action
+      marks as sensitive are masked in console and API views, not removed from storage. Runner
+      output passes through configured pattern redaction on the host before it leaves; an
+      unrecognized secret shape can still pass that filter. We never receive full card numbers. We
+      do not ask for, and you should not send, special-category data.
     </li>
     <li>
       <strong>Data subjects.</strong>

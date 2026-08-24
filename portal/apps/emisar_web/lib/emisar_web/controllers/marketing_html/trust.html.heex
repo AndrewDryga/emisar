@@ -56,10 +56,10 @@
            ]},
           {"product.audit", "Audit & monitoring", "Audit & SIEM", ~p"/docs/audit-and-siem",
            [
-             "Every action: actor, redacted arguments, target host, exit code",
-             "Runner journal: SHA-256 hash-chained JSONL retained on each host",
+             "Portal audit: actor, action, target, policy and approval decisions, outcome, exit code, and linked run",
+             "Run history: exact action arguments retained for the plan's window; sensitive fields are masked in console and API views, not storage",
+             "Runner journal: a redacted copy of action arguments in SHA-256 hash-chained JSONL retained on each host",
              "emisar audit verify reports breaks in the retained runner journal's chain; it cannot prove that a privileged host operator did not replace or truncate the entire local journal",
-             "Portal audit: searchable off-host record of actions and policy decisions",
              "Poll NDJSON into your SIEM with a read-only audit-export token"
            ]},
           {"state.locked", "Data handling", "Privacy policy", ~p"/privacy",

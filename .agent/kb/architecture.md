@@ -45,9 +45,9 @@ drivers. It is not shipped to customers and is not part of the runtime system.
    may render into program text. The staging-only `shell` pack is the explicit
    arbitrary-shell break-glass path.
 6. Runner output is redacted before leaving the host; Emisar retains the
-   resulting redacted output in audit log. Output is also line-buffered and
-   bounded. The runner writes a hash-chained local JSONL event and sends the
-   final result.
+   resulting redacted output in run history, while Portal audit events record
+   decision and execution metadata. Output is also line-buffered and bounded.
+   The runner writes a hash-chained local JSONL event and sends the final result.
 
 The runner websocket contract is versioned in
 [`specs/wire-protocol.md`](specs/wire-protocol.md). Bridge-attested dispatch

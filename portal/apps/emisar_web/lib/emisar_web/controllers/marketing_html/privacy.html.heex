@@ -3,7 +3,7 @@
 ============================================================ --%>
 <.legal_page
   title="Privacy Policy"
-  updated="July 12, 2026"
+  updated="August 24, 2026"
   summary="The plain version: we collect what's needed to run the service, we don't sell your data or train AI on it, and you can export or delete it any time."
   toc={[
     {"collect", "1. What we collect"},
@@ -29,8 +29,10 @@
     <strong>Product telemetry.</strong>
     The control plane stores the data your team actively generates: registered
     runners and their metadata (hostname, version, last-seen), action packs your
-    runners advertise, runs your operators or AI agents trigger, approvals, policy decisions,
-    and the resulting audit events. These records are <em>your</em>
+    runners advertise, runs your operators or AI agents trigger, including their exact action
+    arguments, approvals, policy decisions, and the resulting audit events. Fields an action marks
+    as sensitive are masked in console and API views, not removed from storage. These records are
+    <em>your</em>
     data — we treat them as confidential.
   </p>
   <p>

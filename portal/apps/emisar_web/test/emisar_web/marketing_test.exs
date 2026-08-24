@@ -1127,6 +1127,18 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "sha256sum -c SHA256SUMS"
     end
 
+    test "the /trust page distinguishes Portal audit, run storage, and the runner journal", %{
+      conn: conn
+    } do
+      html = conn |> get(~p"/trust") |> html_response(200) |> squish()
+
+      assert html =~ "Portal audit: actor, action, target"
+      assert html =~ "Run history: exact action arguments retained"
+      assert html =~ "masked in console and API views, not storage"
+      assert html =~ "Runner journal: a redacted copy of action arguments"
+      refute html =~ "Every action: actor, redacted arguments"
+    end
+
     test "the /trust page states assurance and insurance limits precisely", %{
       conn: conn
     } do
@@ -2962,10 +2974,10 @@ defmodule EmisarWeb.MarketingTest do
       # {route, title, date} — the title suffix proves the right head, and
       # the date pins the right page (Refund is the only one on June 5).
       for {route, date} <- [
-            {"/privacy", "July 12, 2026"},
+            {"/privacy", "August 24, 2026"},
             {"/terms", "June 4, 2026"},
             {"/refund-policy", "June 5, 2026"},
-            {"/dpa", "July 18, 2026"}
+            {"/dpa", "August 24, 2026"}
           ] do
         html = conn |> get(route) |> html_response(200)
         assert html =~ "· emisar", "missing title suffix on #{route}"
@@ -3006,6 +3018,8 @@ defmodule EmisarWeb.MarketingTest do
 
       assert text =~ "Related state changes are recorded in the audit log"
       refute text =~ "redacted output in audit log"
+      assert text =~ "trigger and their exact arguments"
+      assert text =~ "masked in console and API views, not removed from storage"
 
       assert text =~ "privileged host operator"
       assert text =~ "replace or truncate the entire local journal"
@@ -3097,6 +3111,7 @@ defmodule EmisarWeb.MarketingTest do
 
     test "the privacy page states the truthful data-handling posture", %{conn: conn} do
       html = conn |> get(~p"/privacy") |> html_response(200)
+      text = squish(html)
 
       # The retention windows match the plans, and the two promises a
       # security product must make: no sale, no AI training on your data.
@@ -3105,6 +3120,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "365 days"
       assert html =~ "do not sell"
       assert html =~ "do not use your data to train AI"
+      assert text =~ "including their exact action arguments"
+      assert text =~ "masked in console and API views, not removed from storage"
     end
 
     test "the terms page states the liability cap, governing law, and license characterization",
