@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -161,6 +162,9 @@ func TestClientInstallAndRemove(t *testing.T) {
 					if err := os.WriteFile(client.ConfigFile, []byte(testCase.existing), 0o600); err != nil {
 						t.Fatal(err)
 					}
+					if err := os.WriteFile(client.ConfigFile+configBackupSuffix, []byte("stale backup"), 0o600); err != nil {
+						t.Fatal(err)
+					}
 				}
 				if client.configured(client.ConfigFile) {
 					t.Fatal("a config without an emisar entry reads as connected")
@@ -185,8 +189,11 @@ func TestClientInstallAndRemove(t *testing.T) {
 					t.Errorf("the API key did not reach the config:\n%s", raw)
 				}
 				if seeded {
-					if _, err := os.Stat(client.ConfigFile + configBackupSuffix); err != nil {
+					backup, err := os.ReadFile(client.ConfigFile + configBackupSuffix)
+					if err != nil {
 						t.Errorf("no backup was written: %v", err)
+					} else if string(backup) != testCase.existing {
+						t.Errorf("backup = %q, want %q", backup, testCase.existing)
 					}
 				}
 				if testCase.entry != "" {
@@ -220,6 +227,142 @@ func TestClientInstallAndRemove(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestClientInstallReplacesBackupWithoutFollowingSymlinks(t *testing.T) {
+	for _, testCase := range []struct {
+		id       string
+		existing string
+	}{
+		{id: "cursor", existing: "{\n  \"mcpServers\": {}\n}\n"},
+		{id: "codex", existing: "model = \"gpt-5\"\n"},
+		{id: "hermes", existing: "model: sonnet\n"},
+	} {
+		t.Run(testCase.id, func(t *testing.T) {
+			adapter, _ := lookupClientAdapter(testCase.id)
+			roots := testConfigRoots(t)
+			client := adapter.resolve(roots)
+			if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(client.ConfigFile, []byte(testCase.existing), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			attackTarget := filepath.Join(roots.home, "root-owned-target")
+			if err := os.WriteFile(attackTarget, []byte("do not overwrite"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			backupPath := client.ConfigFile + configBackupSuffix
+			if err := os.Symlink(attackTarget, backupPath); err != nil {
+				if runtime.GOOS == "windows" {
+					t.Skip("creating a Windows symlink requires developer mode or SeCreateSymbolicLinkPrivilege")
+				}
+				t.Fatal(err)
+			}
+
+			if err := client.install(testEntryRequest("/usr/local/bin/emisar-mcp", testCase.id)); err != nil {
+				t.Fatalf("install: %v", err)
+			}
+			attackContents, err := os.ReadFile(attackTarget)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(attackContents) != "do not overwrite" {
+				t.Fatalf("backup followed the symlink: target = %q", attackContents)
+			}
+			backupInfo, err := os.Lstat(backupPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if backupInfo.Mode()&os.ModeSymlink != 0 {
+				t.Fatal("backup symlink was not replaced")
+			}
+			if runtime.GOOS != "windows" && backupInfo.Mode().Perm() != 0o600 {
+				t.Errorf("backup mode = %v, want 0600", backupInfo.Mode().Perm())
+			}
+			backupContents, err := os.ReadFile(backupPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(backupContents) != testCase.existing {
+				t.Errorf("backup = %q, want %q", backupContents, testCase.existing)
+			}
+		})
+	}
+}
+
+func TestClientInstallRefusesSymlinkedConfigSources(t *testing.T) {
+	for _, testCase := range []struct {
+		id       string
+		existing string
+	}{
+		{id: "cursor", existing: "{\n  \"mcpServers\": {}\n}\n"},
+		{id: "codex", existing: "model = \"gpt-5\"\n"},
+		{id: "hermes", existing: "model: sonnet\n"},
+	} {
+		t.Run(testCase.id, func(t *testing.T) {
+			adapter, _ := lookupClientAdapter(testCase.id)
+			roots := testConfigRoots(t)
+			client := adapter.resolve(roots)
+			if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Join(roots.home, testCase.id+"-config-target")
+			if err := os.WriteFile(target, []byte(testCase.existing), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, client.ConfigFile); err != nil {
+				if runtime.GOOS == "windows" {
+					t.Skip("creating a Windows symlink requires developer mode or SeCreateSymbolicLinkPrivilege")
+				}
+				t.Fatal(err)
+			}
+
+			err := client.install(testEntryRequest("/usr/local/bin/emisar-mcp", testCase.id))
+			if err == nil || !strings.Contains(err.Error(), "is a symlink") {
+				t.Fatalf("install error = %v, want symlink refusal", err)
+			}
+			contents, readErr := os.ReadFile(target)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if string(contents) != testCase.existing {
+				t.Errorf("symlink target changed: got %q, want %q", contents, testCase.existing)
+			}
+			info, statErr := os.Lstat(client.ConfigFile)
+			if statErr != nil {
+				t.Fatal(statErr)
+			}
+			if info.Mode()&os.ModeSymlink == 0 {
+				t.Fatal("refused config symlink was replaced")
+			}
+			if _, statErr := os.Lstat(client.ConfigFile + configBackupSuffix); !errors.Is(statErr, os.ErrNotExist) {
+				t.Errorf("backup written for refused source: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestConfigFileIdentityRejectsPathSwap(t *testing.T) {
+	root := t.TempDir()
+	original := filepath.Join(root, "original.json")
+	path := filepath.Join(root, "config.json")
+	if err := os.WriteFile(original, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("replacement"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	if err := validateConfigFileIdentity(path, file); err == nil || !strings.Contains(err.Error(), "changed while opening") {
+		t.Fatalf("identity error = %v, want changed-path refusal", err)
 	}
 }
 

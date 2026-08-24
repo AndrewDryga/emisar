@@ -107,6 +107,11 @@ func (client detectedClient) install(request clientEntryRequest) error {
 	if err := request.validate(); err != nil {
 		return err
 	}
+	// Refuse before writing a separate env file, so a hostile source cannot
+	// leave credentials behind after an otherwise failed install.
+	if err := refuseConfigSymlink(client.ConfigFile); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
 		return err
 	}
@@ -116,7 +121,7 @@ func (client detectedClient) install(request clientEntryRequest) error {
 		}
 	}
 	if fileHasContent(client.ConfigFile) {
-		if err := copyConfigFile(client.ConfigFile, client.ConfigFile+configBackupSuffix); err != nil {
+		if err := backupConfigFile(client.ConfigFile); err != nil {
 			return err
 		}
 	}
@@ -396,7 +401,7 @@ func editClaudePermission(path string, allow bool) error {
 			return err
 		}
 		if strings.TrimSpace(raw) != "" {
-			if err := copyConfigFile(path, path+configBackupSuffix); err != nil {
+			if err := backupConfigFile(path); err != nil {
 				return err
 			}
 		}
@@ -564,10 +569,10 @@ func writeConfigFile(path, contents string) error {
 	return os.Rename(stagedPath, path)
 }
 
-func copyConfigFile(source, destination string) error {
-	raw, err := readConfigFile(source)
+func backupConfigFile(path string) error {
+	raw, err := readConfigFile(path)
 	if err != nil {
 		return err
 	}
-	return writeConfigFile(destination, raw)
+	return writeConfigFile(path+configBackupSuffix, raw)
 }
