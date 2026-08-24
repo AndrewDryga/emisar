@@ -25,6 +25,17 @@ This is the load-bearing contract:
    If the meaning exists, reuse it exactly. If it does not, add the meaning,
    context, and usage locations before drawing. Never introduce a near-
    duplicate to make one screen feel special.
+5. **A decision button's icon is the plainest verb glyph.** Beside a verb
+   label on an action button, gate rails, brackets, and container framing are
+   product-NOUN language and turn to noise at 16 px — the founder read the
+   rail-framed approve as "a black box with some line". `action.approve` is
+   the bare check and `state.denied` the bare emphatic X; the label and tone
+   carry the specifics. Universal symbols may legitimately recur across
+   namespaces for the same underlying concept (the affirm check is also
+   `state.included`'s drawing, exactly as `action.next` and
+   `diagram.flow_right` share the arrow); the containers stay where they
+   distinguish STATES — circle = failed, box = approved, shield = verified,
+   disc = selected.
 
 A licensed or Heroicons-derived drawing can still be an approved master, but
 it is reached through its semantic token and its provenance stays recorded.
@@ -145,13 +156,13 @@ concept.
   that renders a caller-supplied `icon` inside navigation, a menu panel, or a
   tab strip. Pinned by `EmisarWeb.Components.NavBadgeTest` and
   `EmisarWeb.Components.DropdownTest`.
-- **A technology mark that IS the subject keeps its official ink; a vendor
-  mark used as mere chrome inherits the surface.** Founder call (2026-08-23):
-  `infrastructure.kubernetes` and `infrastructure.nomad` ship the Review 14
-  official artwork — where the reader is choosing "Kubernetes", the trademark
-  color is the recognition. The §7.38 rule still governs vendor marks in
-  console chrome (the SSO tiles); the registry's ink allowlist lives in
-  `EmisarWeb.IconsTest`.
+- **Every registry master inherits the surface — technology marks included.**
+  The official Kubernetes blue was tried in the docs deploy list (founder call,
+  then reversed the same day on seeing it in context): trademark ink inside
+  first-party chrome reads as one foreign accent in a column of house-coloured
+  siblings. A semantic token keeps the official SILHOUETTE and paints in
+  `currentColor`; full-colour artwork belongs only to the locked `vendor.*`
+  marks on their own surfaces (`design-console-ux.md` §7.38).
 - An icon beside text that already states its meaning is decorative and hidden
   from assistive technology. An icon carrying unrepeated meaning gets an
   accessible name and the shared hover/focus tooltip. The visible glyph may be
