@@ -36,6 +36,13 @@
 .emisar-icon[data-icon-grid="20"] {
   stroke-width: 1.85;
 }
+/* A native 16-grid compact renders 1:1, so its units ARE pixels: 1.5 here is
+   a true 1.5px stroke (3 device px on 2x) with coordinates landing exactly
+   where they were drawn — the crisp path. Declared after the grid rules so it
+   wins for the same element. */
+.emisar-icon[data-icon-unit="16"] {
+  stroke-width: 1.5;
+}
 
 /* Semantic emphasis inside a drawing: pass/added, caution, deny/failure. Every
    icon stays whole and distinct without these, so colour never carries the

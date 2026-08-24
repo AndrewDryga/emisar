@@ -175,7 +175,7 @@ defmodule EmisarWeb.DocsNav do
               slug: "connect-multiple-accounts",
               title: "Multiple accounts",
               path: "/docs/connect-multiple-accounts",
-              icon: "identity.organization",
+              icon: "identity.accounts",
               keywords:
                 "multiple accounts staging production alias accounts use --account switch",
               desc:

@@ -8,8 +8,12 @@ defmodule EmisarWeb.Icons do
   in here, so a geometry correction is an ordinary file edit that recompiles.
 
   A token may carry a second master at `<name>.16.svg`. That is an optical
-  variant of the same drawing, not another icon: it exists only where the 16 px
-  raster loses a gap, a center, or a modifier.
+  variant of the same drawing, not another icon. Most are cut on a NATIVE
+  16-unit grid and render 1:1 at small sizes — no fractional downscale, so
+  strokes and edges land consistently on the pixel grid, which is what reads
+  as sharp (the founder's correction; it is also why the old set's mini/micro
+  cuts looked crisp). A compact may instead stay on the 24 grid (the masked
+  and pixel-tuned ones do) and render through the zoomed projection.
 
   Every master is drawn on a centered 24-unit grid. Stroke weight and optical
   projection belong to the output size rather than the file: `grid/1` reports
@@ -59,22 +63,29 @@ defmodule EmisarWeb.Icons do
           nil -> {nil, document}
         end
 
-      {{"#{namespace}.#{name}", compact == ["16"]}, {path, body, defs}}
+      units =
+        cond do
+          File.read!(path) =~ ~s(viewBox="0 0 16 16") -> 16
+          File.read!(path) =~ ~s(viewBox="0 0 24 24") -> 24
+          true -> raise "#{path} is not on the 16- or 24-unit grid"
+        end
+
+      {{"#{namespace}.#{name}", compact == ["16"]}, {path, body, defs, units}}
     end)
 
-  for {_key, {path, _body, _defs}} <- masters, do: @external_resource(path)
+  for {_key, {path, _body, _defs, _units}} <- masters, do: @external_resource(path)
 
   # Marked safe at COMPILE time from files in this repository — never from
   # runner, LLM, or operator input — so a template renders `master/2` directly
   # and no call site reaches for `raw/1` on a variable (IL-16).
-  @regular Map.new(masters, fn {{token, compact?}, {_path, body, _defs}} ->
-             {{token, compact?}, {:safe, body}}
+  @regular Map.new(masters, fn {{token, compact?}, {_path, body, _defs, units}} ->
+             {{token, compact?}, {{:safe, body}, units}}
            end)
 
   @tokens masters |> Enum.map(fn {{token, _compact?}, _master} -> token end) |> Enum.uniq()
 
   @mask_defs masters
-             |> Enum.map(fn {_key, {_path, _body, defs}} -> defs end)
+             |> Enum.map(fn {_key, {_path, _body, defs, _units}} -> defs end)
              |> Enum.reject(&is_nil/1)
              |> Enum.uniq()
              |> Enum.sort()
@@ -88,12 +99,21 @@ defmodule EmisarWeb.Icons do
   how a missing glyph ships invisible.
   """
   @spec master(String.t(), pos_integer()) :: Phoenix.HTML.safe()
-  def master(token, size) when is_binary(token) and is_integer(size) do
+  def master(token, size), do: elem(lookup(token, size), 0)
+
+  @doc """
+  The grid the master `token` resolves to at `size` is drawn on: 16 for a
+  native small cut rendered 1:1, 24 for the shared grid.
+  """
+  @spec units(String.t(), pos_integer()) :: 16 | 24
+  def units(token, size), do: elem(lookup(token, size), 1)
+
+  defp lookup(token, size) when is_binary(token) and is_integer(size) do
     compact = Map.get(@regular, {token, true})
 
     cond do
       size <= 16 and compact -> compact
-      body = Map.get(@regular, {token, false}) -> body
+      master = Map.get(@regular, {token, false}) -> master
       true -> raise ArgumentError, unknown_token_message(token)
     end
   end

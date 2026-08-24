@@ -19,7 +19,7 @@ defmodule EmisarWeb.IconsTest do
     end
 
     test "a meaning with no compact master keeps its regular one at every size" do
-      assert Icons.master("product.runner", 16) == Icons.master("product.runner", 48)
+      assert Icons.master("action.clear_filters", 16) == Icons.master("action.clear_filters", 48)
     end
 
     test "a compact master earns its place by differing from the regular one" do
@@ -68,11 +68,17 @@ defmodule EmisarWeb.IconsTest do
       assert Icons.compact_tokens() -- Icons.tokens() == []
     end
 
-    test "every master is one XML-valid document on the shared 24-unit grid" do
+    test "every master is one XML-valid document on a system grid" do
+      # A regular master lives on the shared 24 grid; a compact may instead be
+      # a native 16-grid cut that renders 1:1 for pixel-crisp small sizes.
       for path <- @masters do
         source = File.read!(path)
 
-        assert source =~ ~s(viewBox="0 0 24 24"), "#{path} leaves the shared grid"
+        if String.ends_with?(path, ".16.svg") do
+          assert source =~ ~r/viewBox="0 0 (?:16 16|24 24)"/, "#{path} leaves the system grids"
+        else
+          assert source =~ ~s(viewBox="0 0 24 24"), "#{path} leaves the shared grid"
+        end
 
         assert {{:xmlElement, :svg, _, _, _, _, _, _, _, _, _, _}, ~c""} =
                  :xmerl_scan.string(String.to_charlist(source), quiet: true),

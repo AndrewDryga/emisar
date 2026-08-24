@@ -1534,31 +1534,34 @@ defmodule EmisarWeb.CoreComponents do
   def icon(assigns) do
     size = assigns.size || icon_size_from_class(assigns.class)
     grid = Icons.grid(size)
+    units = Icons.units(assigns.name, size)
 
     assigns =
-      assign(assigns, master: Icons.master(assigns.name, size), grid: grid)
+      assign(assigns, master: Icons.master(assigns.name, size), grid: grid, units: units)
 
     ~H"""
     <svg
       class={["emisar-icon", @class]}
       data-icon={@name}
       data-icon-grid={@grid}
-      viewBox={icon_viewbox(@grid)}
+      data-icon-unit={@units}
+      viewBox={icon_viewbox(@units, @grid)}
       aria-hidden="true"
     >{@master}</svg>
     """
   end
 
-  # Optical size compensation. A drawing projected 1:1 loses presence as the
-  # box shrinks — at 16px the masters read visibly smaller and thinner than the
-  # text beside them (the founder: icons "look smaller… blurry"). The small
-  # buckets therefore render the SAME masters through a slightly zoomed
-  # viewBox — geometry untouched, projection changed — and `overflow: visible`
-  # means nothing clips. Stroke weight is the other half of the correction and
+  # A native 16-grid compact renders 1:1 — every coordinate lands where it was
+  # drawn on the pixel grid, which is what reads as sharp. A 24-grid master in
+  # a small bucket projects through a slightly zoomed viewBox instead: optical
+  # size compensation, because a drawing scaled down loses presence against
+  # its text (the founder's two corrections, in order). `overflow: visible`
+  # means nothing clips; stroke weight is the projection's other half and
   # lives with these numbers' rationale in `assets/css/app.css`.
-  defp icon_viewbox(16), do: "1.2 1.2 21.6 21.6"
-  defp icon_viewbox(20), do: "0.6 0.6 22.8 22.8"
-  defp icon_viewbox(_grid), do: "0 0 24 24"
+  defp icon_viewbox(16, _grid), do: "0 0 16 16"
+  defp icon_viewbox(_units, 16), do: "1.2 1.2 21.6 21.6"
+  defp icon_viewbox(_units, 20), do: "0.6 0.6 22.8 22.8"
+  defp icon_viewbox(_units, _grid), do: "0 0 24 24"
 
   @doc """
   The masks the icon registry's drawings reference, defined once for the page.
