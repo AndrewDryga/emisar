@@ -1606,10 +1606,11 @@ defmodule Emisar.Audit.Events do
   def identity_provider_configured(%Subject{} = subject, %SSO.IdentityProvider{} = provider),
     do: identity_provider_event(subject, provider, "sso.provider_configured")
 
-  def identity_provider_updated(%Subject{} = subject, %SSO.IdentityProvider{} = provider),
-    do: identity_provider_event(subject, provider, "sso.provider_updated")
+  @provider_audit_fields ~w[name issuer client_id identifier_claim provisioner
+                            allowed_email_domain default_role enabled satisfies_mfa
+                            scim_enabled]a
 
-  @doc "An identity provider update with an explicit default runner-access transition."
+  @doc "An identity provider update with an explicit, non-secret configuration diff."
   def identity_provider_updated(
         %Subject{} = subject,
         %SSO.IdentityProvider{} = before_provider,
@@ -1617,6 +1618,22 @@ defmodule Emisar.Audit.Events do
       ) do
     before_access = provider_runner_access(before_provider)
     after_access = provider_runner_access(after_provider)
+
+    payload =
+      %{
+        kind: to_string(after_provider.kind),
+        before: runner_access_payload(before_access),
+        after: runner_access_payload(after_access),
+        changes: provider_config_changes(before_provider, after_provider)
+      }
+      |> maybe_put_rotation(
+        :client_secret_rotated,
+        before_provider.client_secret != after_provider.client_secret
+      )
+      |> put_scim_token_transition(
+        before_provider.scim_token_hash,
+        after_provider.scim_token_hash
+      )
 
     Audit.changeset(
       after_provider.account_id,
@@ -1626,14 +1643,72 @@ defmodule Emisar.Audit.Events do
           target_kind: "identity_provider",
           target_id: after_provider.id,
           target_label: after_provider.name,
-          payload: %{
-            kind: to_string(after_provider.kind),
-            before: runner_access_payload(before_access),
-            after: runner_access_payload(after_access)
-          }
+          payload: payload
         ]
     )
   end
+
+  defp provider_config_changes(
+         %SSO.IdentityProvider{} = before_provider,
+         %SSO.IdentityProvider{} = after_provider
+       ) do
+    Enum.reduce(@provider_audit_fields, %{}, fn field, changes ->
+      before_value = Map.fetch!(before_provider, field)
+      after_value = Map.fetch!(after_provider, field)
+
+      if before_value == after_value do
+        changes
+      else
+        Map.put(changes, field, %{
+          before: provider_audit_value(field, before_value),
+          after: provider_audit_value(field, after_value)
+        })
+      end
+    end)
+  end
+
+  defp maybe_put_rotation(payload, _field, false), do: payload
+  defp maybe_put_rotation(payload, field, true), do: Map.put(payload, field, true)
+
+  defp put_scim_token_transition(payload, hash, hash), do: payload
+
+  defp put_scim_token_transition(payload, nil, _after_hash),
+    do: Map.put(payload, :scim_token_issued, true)
+
+  defp put_scim_token_transition(payload, _before_hash, nil),
+    do: Map.put(payload, :scim_token_revoked, true)
+
+  defp put_scim_token_transition(payload, _before_hash, _after_hash),
+    do: Map.put(payload, :scim_token_rotated, true)
+
+  # Historical issuer rows may predate the URL-component restriction. Strip the
+  # components that can carry credentials before an old value reaches the audit.
+  defp provider_audit_value(:issuer, value) when is_binary(value) do
+    case URI.new(value) do
+      {:ok,
+       %URI{
+         scheme: "https",
+         host: host,
+         userinfo: nil,
+         query: nil,
+         fragment: nil
+       }}
+      when is_binary(host) and host != "" ->
+        value
+
+      {:ok, %URI{scheme: "https", host: host} = uri} when is_binary(host) and host != "" ->
+        %{uri | userinfo: nil, query: nil, fragment: nil}
+        |> URI.to_string()
+
+      _ ->
+        "[redacted invalid issuer]"
+    end
+  end
+
+  defp provider_audit_value(_field, nil), do: nil
+  defp provider_audit_value(_field, value) when is_boolean(value), do: value
+  defp provider_audit_value(_field, value) when is_atom(value), do: to_string(value)
+  defp provider_audit_value(_field, value) when is_binary(value), do: value
 
   def identity_provider_deleted(%Subject{} = subject, %SSO.IdentityProvider{} = provider),
     do: identity_provider_event(subject, provider, "sso.provider_deleted")

@@ -6,7 +6,9 @@ defmodule Emisar.SSO.IssuerUrl do
   `<issuer>/.well-known/openid-configuration` from the portal's egress, so an
   unguarded issuer is an SSRF primitive (cloud metadata, loopback, internal
   RFC-1918 hosts). We require https and reject hosts that are a loopback / private /
-  link-local / unique-local / metadata IP literal, or `localhost`.
+  link-local / unique-local / metadata IP literal, or `localhost`. Credentials,
+  query parameters, and fragments are refused because they are not part of an
+  OIDC issuer identifier and can carry secrets into fetches and audit history.
 
   A hostname that *resolves* to an internal IP isn't blocked here — pre-resolving
   is TOCTOU-prone (rebinding between check and fetch). The outbound request verifies
@@ -17,25 +19,24 @@ defmodule Emisar.SSO.IssuerUrl do
 
   @doc """
   Check an issuer URL. `{:ok, issuer}` when it's a fetchable https URL whose host
-  isn't a blocked SSRF target; `{:error, :invalid_issuer}` (not https, or no host)
-  or `{:error, :blocked_issuer}` (a private/loopback/metadata target) otherwise.
+  isn't a blocked SSRF target; `{:error, :invalid_issuer}` (not https, no host,
+  or credentials/query/fragment present) or `{:error, :blocked_issuer}` (a
+  private/loopback/metadata target) otherwise.
   """
   @spec validate(term()) :: {:ok, String.t()} | {:error, :invalid_issuer | :blocked_issuer}
   def validate(issuer) when is_binary(issuer) do
-    case URI.parse(issuer) do
-      %URI{scheme: "https", host: host} when is_binary(host) and host != "" ->
-        if blocked_host?(host), do: {:error, :blocked_issuer}, else: {:ok, issuer}
-
-      _ ->
-        {:error, :invalid_issuer}
+    case validate_url(issuer, false) do
+      :ok -> {:ok, issuer}
+      {:error, reason} -> {:error, reason}
     end
   end
 
   def validate(_issuer), do: {:error, :invalid_issuer}
 
   @doc """
-  Check an endpoint the DISCOVERY DOCUMENT handed us, under the same policy as
-  the issuer itself.
+  Check an endpoint the DISCOVERY DOCUMENT handed us. It has the same HTTPS,
+  public-host, no-credentials policy as the issuer. A fixed query string is
+  allowed because OAuth endpoints may define one; fragments remain invalid.
 
   Validating only the issuer stopped short of the actual fetches: a perfectly
   ordinary public HTTPS issuer can return a discovery document whose `jwks_uri`
@@ -54,10 +55,7 @@ defmodule Emisar.SSO.IssuerUrl do
     do: url |> IO.iodata_to_binary() |> validate_endpoint()
 
   def validate_endpoint(url) when is_binary(url) do
-    case validate(url) do
-      {:ok, _url} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
+    validate_url(url, true)
   end
 
   def validate_endpoint(_url), do: {:error, :invalid_issuer}
@@ -72,6 +70,27 @@ defmodule Emisar.SSO.IssuerUrl do
   """
   @spec address_allowed?(:inet.ip_address()) :: boolean()
   def address_allowed?(address) when is_tuple(address), do: not blocked_ip?(address)
+
+  defp validate_url(url, allow_query?) do
+    case URI.parse(url) do
+      %URI{
+        scheme: "https",
+        host: host,
+        userinfo: nil,
+        query: query,
+        fragment: nil
+      }
+      when is_binary(host) and host != "" ->
+        cond do
+          not allow_query? and not is_nil(query) -> {:error, :invalid_issuer}
+          blocked_host?(host) -> {:error, :blocked_issuer}
+          true -> :ok
+        end
+
+      _ ->
+        {:error, :invalid_issuer}
+    end
+  end
 
   defp blocked_host?(host) do
     host = String.downcase(host)

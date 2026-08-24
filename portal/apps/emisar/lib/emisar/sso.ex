@@ -1930,7 +1930,7 @@ defmodule Emisar.SSO do
             do: IdentityProvider.Changeset.scim_token(loaded_provider, prefix, hash, enabled),
             else: :scim_not_supported
         end,
-        audit: &Audit.Events.identity_provider_updated(subject, &1)
+        audit: &Audit.Events.identity_provider_updated(subject, &2.data, &1)
       )
       |> case do
         {:ok, provider} -> {:ok, provider, raw}
@@ -1951,7 +1951,7 @@ defmodule Emisar.SSO do
           |> IdentityProvider.Changeset.disable_scim()
           |> then(&prepare_provider_authorization_change(provider, &1, true))
         end,
-        audit: &Audit.Events.identity_provider_updated(subject, &1),
+        audit: &Audit.Events.identity_provider_updated(subject, &2.data, &1),
         # Sync no longer owns these members' roles — hand control back to operators.
         after_commit: &return_role_control_to_operators/1
       )

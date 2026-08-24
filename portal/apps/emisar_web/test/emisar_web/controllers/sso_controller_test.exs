@@ -5,6 +5,7 @@ defmodule EmisarWeb.SSOControllerTest do
   begin/stash + callback/login plumbing with canned claims and no live IdP.
   """
   use EmisarWeb.ConnCase, async: true
+  import ExUnit.CaptureLog
   alias Emisar.{Fixtures, Repo}
   alias Emisar.SSO.IdentityProvider
 
@@ -42,8 +43,8 @@ defmodule EmisarWeb.SSOControllerTest do
     defp normalize_numeric_auth_time(claims), do: claims
   end
 
-  # A stub whose callback verification fails with an UNMAPPED reason — to exercise
-  # the controller's generic fallback copy (every concrete error has friendlier copy).
+  # A stub whose callback failure has no tailored operator copy — the log still
+  # classifies the transport boundary without exposing the dependency value.
   defmodule FailingOIDC do
     @behaviour Emisar.SSO.OIDC
 
@@ -66,6 +67,75 @@ defmodule EmisarWeb.SSOControllerTest do
 
     @impl Emisar.SSO.OIDC
     def verify_callback(_provider, _params, _stashed), do: {:error, :unreachable}
+  end
+
+  defmodule SensitiveBeginOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(_provider, _opts) do
+      send(self(), :sensitive_begin_oidc_called)
+
+      {:error,
+       {:failed_connect,
+        [
+          {:to_address, {{203, 0, 113, 10}, 443}},
+          {:inet,
+           [
+             cacerts: ["TLS_CA_SENTINEL"],
+             client_secret: "CLIENT_SECRET_SENTINEL"
+           ], {:tls_alert, "RAW_IDP_BODY_SENTINEL"}}
+        ]}}
+    end
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(_provider, _params, _stashed), do: {:error, :unreachable}
+  end
+
+  defmodule SensitiveCallbackOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(_provider, _opts) do
+      {:ok, %{authorize_url: "https://idp.test/auth", state: "s", nonce: "n", pkce_verifier: "v"}}
+    end
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(_provider, _params, _stashed) do
+      send(self(), :sensitive_callback_oidc_called)
+
+      {:error,
+       {:http_error, 401,
+        %{
+          "id_token" => "ID_TOKEN_SENTINEL",
+          "access_token" => "ACCESS_TOKEN_SENTINEL",
+          "refresh_token" => "REFRESH_TOKEN_SENTINEL",
+          "claims" => %{"email" => "CLAIMS_SENTINEL"},
+          "client_secret" => "CLIENT_SECRET_SENTINEL",
+          "body" => "RAW_IDP_BODY_SENTINEL",
+          "tls" => ["TLS_CA_SENTINEL"]
+        }}}
+    end
+  end
+
+  defmodule SensitiveFallbackOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(_provider, _opts), do: {:error, :not_used}
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(_provider, _params, _stashed) do
+      send(self(), :sensitive_fallback_oidc_called)
+
+      {:error,
+       {:unexpected_dependency_failure,
+        %{
+          id_token: "ID_TOKEN_SENTINEL",
+          claims: %{"sub" => "CLAIMS_SENTINEL"},
+          detail: "RAW_IDP_BODY_SENTINEL\nforged_event reason=ok FORGED_LOG_LINE_SENTINEL"
+        }}}
+    end
   end
 
   setup do
@@ -211,6 +281,21 @@ defmodule EmisarWeb.SSOControllerTest do
       assert redirected_to(conn) == ~p"/sign_in"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "no longer available"
       refute get_session(conn, @stash_key)
+    end
+
+    test "begin logs one bounded reason without dependency secrets or TLS payloads", %{conn: conn} do
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, SensitiveBeginOIDC)
+      provider = provider_fixture(enterprise_account())
+
+      log =
+        capture_log(fn ->
+          failed = get(conn, ~p"/sign_in/sso/#{provider.id}")
+          assert redirected_to(failed) == ~p"/sign_in"
+        end)
+
+      assert log =~ "sso_begin_failed reason=idp_unreachable"
+      assert_receive :sensitive_begin_oidc_called
+      refute_sensitive_log(log)
     end
   end
 
@@ -681,6 +766,68 @@ defmodule EmisarWeb.SSOControllerTest do
       assert redirected_to(conn) == ~p"/sign_in"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Single sign-on failed"
       refute get_session(conn, :user_token)
+    end
+
+    test "callback logs one bounded reason without tokens, claims, body, or TLS material", %{
+      conn: conn
+    } do
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, SensitiveCallbackOIDC)
+      provider = provider_fixture(enterprise_account())
+
+      log =
+        capture_log(fn ->
+          failed =
+            conn
+            |> stash_callback(provider)
+            |> get(~p"/sign_in/sso/callback", %{"code" => "AUTH_CODE_SENTINEL"})
+
+          assert redirected_to(failed) == ~p"/sign_in"
+          refute get_session(failed, :user_token)
+        end)
+
+      assert log =~ "sso_callback_failed reason=idp_request_rejected"
+      assert_receive :sensitive_callback_oidc_called
+      refute_sensitive_log(log)
+      refute log =~ "AUTH_CODE_SENTINEL"
+    end
+
+    test "an unknown nested callback failure uses the redacted fallback without log injection", %{
+      conn: conn
+    } do
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, SensitiveFallbackOIDC)
+      provider = provider_fixture(enterprise_account())
+
+      log =
+        capture_log(fn ->
+          failed =
+            conn
+            |> stash_callback(provider)
+            |> get(~p"/sign_in/sso/callback", %{"code" => "AUTH_CODE_SENTINEL"})
+
+          assert redirected_to(failed) == ~p"/sign_in"
+          refute get_session(failed, :user_token)
+        end)
+
+      assert log =~ "sso_callback_failed reason=redacted_failure"
+      assert_receive :sensitive_fallback_oidc_called
+      refute_sensitive_log(log)
+      refute log =~ "AUTH_CODE_SENTINEL"
+      refute log =~ "forged_event reason=ok"
+    end
+  end
+
+  defp refute_sensitive_log(log) do
+    for sentinel <- [
+          "ID_TOKEN_SENTINEL",
+          "ACCESS_TOKEN_SENTINEL",
+          "REFRESH_TOKEN_SENTINEL",
+          "CLAIMS_SENTINEL",
+          "CLIENT_SECRET_SENTINEL",
+          "RAW_IDP_BODY_SENTINEL",
+          "TLS_CA_SENTINEL",
+          "FORGED_LOG_LINE_SENTINEL"
+        ] do
+      refute log =~ sentinel
     end
   end
 

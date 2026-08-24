@@ -134,7 +134,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     # upstream in the context.
     case Oidcc.ProviderConfiguration.load_configuration(issuer, configuration_opts(provider)) do
       {:ok, {config, _expiry}} ->
-        with :ok <- ensure_endpoints_reachable(config) do
+        with :ok <- validate_discovered_configuration(config) do
           {:ok,
            %{
              authorization_endpoint: present(config.authorization_endpoint),
@@ -149,21 +149,8 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     end
   end
 
-  # A trusted issuer is not the same claim as a trusted document. Validating the
-  # issuer stopped short of the fetches that follow: an ordinary public HTTPS
-  # issuer can return a discovery document pointing `jwks_uri` or
-  # `token_endpoint` at loopback, RFC-1918 or the cloud metadata service, and the
-  # worker will GET the JWKS and POST the token exchange to whatever it is
-  # handed. Hold every discovered endpoint to the policy the issuer passed.
-  defp ensure_endpoints_reachable(config) do
-    # An endpoint may live where the ISSUER lives, or anywhere the issuer itself
-    # would have been allowed to live. Same-host adds no reach: whoever vouched
-    # for the issuer vouched for that host. What this refuses is a document that
-    # sends us SOMEWHERE ELSE — the metadata service, loopback, an internal
-    # RFC-1918 box — which is the actual SSRF, and which a perfectly ordinary
-    # public issuer can do.
-    origin = origin_of(config.issuer)
-
+  @doc "Internal — validate every network endpoint parsed from the discovery document."
+  def validate_discovered_configuration(config) do
     # The PAR endpoint is a POST we make before the browser ever leaves, so it is
     # as much an SSRF sink as the token endpoint and belongs under the same
     # policy. Leaving it out meant a document could keep every other endpoint
@@ -176,43 +163,11 @@ defmodule Emisar.SSO.OIDC.Oidcc do
       config.pushed_authorization_request_endpoint
     ]
     |> Enum.reduce_while(:ok, fn endpoint, :ok ->
-      if endpoint_allowed?(endpoint, origin),
+      if IssuerUrl.validate_endpoint(endpoint) == :ok,
         do: {:cont, :ok},
         else: {:halt, {:error, :blocked_discovery_endpoint}}
     end)
   end
-
-  defp endpoint_allowed?(endpoint, issuer_origin) do
-    case origin_of(endpoint) do
-      # Same ORIGIN is the same reach: whoever vouched for the issuer vouched for
-      # that host over that scheme. Comparing hosts alone was not enough — it let
-      # a document downgrade us to `http://<issuer-host>:9200/`, which is neither
-      # the issuer nor anything `validate_endpoint` would have passed. The issuer
-      # is forced to https upstream, so matching its scheme is https in practice.
-      ^issuer_origin when is_tuple(issuer_origin) -> true
-      _ -> IssuerUrl.validate_endpoint(endpoint) == :ok
-    end
-  end
-
-  defp origin_of(nil), do: nil
-  defp origin_of(:undefined), do: nil
-  defp origin_of(value) when is_list(value), do: value |> IO.iodata_to_binary() |> origin_of()
-
-  defp origin_of(value) when is_binary(value) do
-    case URI.parse(value) do
-      %URI{scheme: scheme, host: host, port: port}
-      when is_binary(scheme) and is_binary(host) and host != "" ->
-        # PORT is part of an origin. Comparing scheme and host alone still let a
-        # document send us to `https://<issuer-host>:9200/` — a different service
-        # on the same box, which is the reach this exists to deny.
-        {scheme, String.downcase(host), port || URI.default_port(scheme)}
-
-      _ ->
-        nil
-    end
-  end
-
-  defp origin_of(_value), do: nil
 
   # oidcc renders an absent optional endpoint as :undefined and present ones as
   # uri_string iodata — normalize to a binary or nil for the UI.
@@ -257,7 +212,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   # is refused before anything connects to it.
   defp client_context(%IdentityProvider{} = provider) do
     with {:ok, config} <- load_configuration(provider),
-         :ok <- ensure_endpoints_reachable(config),
+         :ok <- validate_discovered_configuration(config),
          {:ok, jwks} <- load_jwks(config, provider) do
       {:ok,
        Oidcc.ClientContext.from_manual(
@@ -275,7 +230,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   defp refresh_jwks(%IdentityProvider{} = provider) do
     fn _jwks, _kid ->
       with {:ok, config} <- load_configuration(provider),
-           :ok <- ensure_endpoints_reachable(config) do
+           :ok <- validate_discovered_configuration(config) do
         load_jwks(config, provider)
       end
     end

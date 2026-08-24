@@ -40,12 +40,15 @@ defmodule EmisarWeb.SSOController do
       })
       |> redirect(external: begun.authorize_url)
     else
+      {:error, :not_found} ->
+        sso_error(conn, "That single sign-on link is no longer available.")
+
       other ->
         # The operator gets one sentence; the reason belongs in the log. Discarding
         # it left a misconfigured issuer, a blocked address and an IdP that is
         # simply down all looking identical from the outside — a bounce back to the
         # sign-in page with nothing written down anywhere.
-        Logger.warning("SSO begin failed for provider #{provider_id}: #{describe_failure(other)}")
+        log_failure("sso_begin_failed", other)
         sso_error(conn, "That single sign-on link is no longer available.")
     end
   end
@@ -101,7 +104,7 @@ defmodule EmisarWeb.SSOController do
       |> redirect(external: begun.authorize_url)
     else
       other ->
-        Logger.warning("member MFA reset SSO begin failed: #{describe_failure(other)}")
+        log_failure("member_mfa_reset_sso_begin_failed", other)
 
         conn
         |> delete_session(@member_mfa_reset_stash_key)
@@ -110,26 +113,105 @@ defmodule EmisarWeb.SSOController do
     end
   end
 
-  # httpc reports a connect failure as `{protocol, options, reason}`, and for TLS
-  # those options carry the whole CA store — so a plain inspect truncates on the
-  # certificates and drops the reason, which is the only part worth logging.
-  defp describe_failure({:error, {:failed_connect, details}}) do
-    address =
-      case List.keyfind(details, :to_address, 0) do
-        {:to_address, {host, port}} -> "#{host}:#{port}"
-        _ -> "unknown address"
-      end
+  @failure_events ~w[sso_begin_failed sso_callback_failed
+                     member_mfa_reset_sso_begin_failed
+                     member_mfa_reset_sso_callback_failed]
 
-    reason =
-      Enum.find_value(details, "no reason reported", fn
-        {protocol, _options, reason} -> "#{protocol}: #{inspect(reason)}"
-        _ -> nil
-      end)
-
-    "could not connect to #{address} — #{reason}"
+  # oidcc/httpc errors may carry token records, full claims, raw response bodies,
+  # unknown key ids, and the TLS option list (including the CA store). Only the
+  # outer shape is diagnostic; no nested dependency value is log-safe.
+  defp log_failure(event, failure) when event in @failure_events do
+    Logger.warning("#{event} reason=#{failure_reason(failure)}")
   end
 
-  defp describe_failure(other), do: inspect(other)
+  defp failure_reason({:error, reason}), do: failure_reason(reason)
+  defp failure_reason({:failed_connect, _details}), do: "idp_unreachable"
+  defp failure_reason({:timeout, _details}), do: "idp_unreachable"
+
+  defp failure_reason(reason) when reason in [:timeout, :econnrefused, :closed],
+    do: "idp_unreachable"
+
+  defp failure_reason(reason)
+       when reason in [:token_endpoint_unreachable, :discovery_failed, :unreachable],
+       do: "idp_unreachable"
+
+  defp failure_reason({:http_error, status, _body}) when status in 400..499,
+    do: "idp_request_rejected"
+
+  defp failure_reason({:http_error, status, _body}) when status in 500..599,
+    do: "idp_unavailable"
+
+  defp failure_reason({:http_error, _status, _body}), do: "idp_http_error"
+  defp failure_reason(:invalid_content_type), do: "idp_response_invalid"
+  defp failure_reason({:missing_config_property, _field}), do: "provider_config_invalid"
+  defp failure_reason({:invalid_config_property, _field}), do: "provider_config_invalid"
+  defp failure_reason({:grant_type_not_supported, _grant}), do: "provider_config_invalid"
+
+  defp failure_reason(reason)
+       when reason in [
+              :par_required,
+              :request_object_required,
+              :purpose_required,
+              :no_supported_code_challenge,
+              :no_supported_auth_method,
+              :provider_not_ready,
+              :blocked_discovery_endpoint
+            ],
+       do: "provider_config_invalid"
+
+  defp failure_reason(:pkce_verifier_required), do: "authorization_state_invalid"
+
+  defp failure_reason(:state_mismatch), do: "state_mismatch"
+  defp failure_reason(:issuer_mismatch), do: "issuer_mismatch"
+  defp failure_reason({:issuer_mismatch, _issuer}), do: "issuer_mismatch"
+  defp failure_reason(:missing_code), do: "authorization_code_missing"
+  defp failure_reason(:missing_identifier_claim), do: "token_claims_invalid"
+  defp failure_reason({:missing_claim, _claim, _claims}), do: "token_claims_invalid"
+  defp failure_reason({:invalid_property, _property}), do: "token_response_invalid"
+  defp failure_reason({:no_matching_key_with_kid, _kid}), do: "token_validation_failed"
+  defp failure_reason({:none_alg_used, _token}), do: "token_validation_failed"
+  defp failure_reason({:none_alg_used, _jwt, _jws}), do: "token_validation_failed"
+
+  defp failure_reason(reason)
+       when reason in [
+              :no_matching_key,
+              :invalid_jwt_token,
+              :none_alg_used,
+              :bad_access_token_hash,
+              :sub_invalid,
+              :token_expired,
+              :token_not_yet_valid,
+              :not_encrypted
+            ],
+       do: "token_validation_failed"
+
+  defp failure_reason(:not_found), do: "request_context_unavailable"
+
+  defp failure_reason(reason)
+       when reason in [:provider_disabled, :directory_sync_disabled],
+       do: "provider_unavailable"
+
+  defp failure_reason({:account_disabled, _account}), do: "account_disabled"
+  defp failure_reason(:account_disabled), do: "account_disabled"
+  defp failure_reason(:email_domain_not_allowed), do: "email_domain_not_allowed"
+  defp failure_reason(:email_taken), do: "email_already_bound"
+  defp failure_reason(:identity_pending_approval), do: "identity_pending_approval"
+  defp failure_reason(:identity_namespace_changed), do: "provider_config_changed"
+
+  defp failure_reason(reason) when reason in [:invitation_pending, :mfa_not_enabled],
+    do: "reset_target_unavailable"
+
+  defp failure_reason(reason)
+       when reason in [
+              :mfa_reset_reauthentication_invalid,
+              :mfa_reset_reauthentication_unavailable,
+              :mfa_reset_proof_stale
+            ],
+       do: "reauthentication_invalid"
+
+  defp failure_reason(%Ecto.Changeset{}), do: "domain_validation_failed"
+  defp failure_reason(reason) when reason in [nil, false, :unauthorized], do: "unauthorized"
+  defp failure_reason(_reason), do: "redacted_failure"
 
   def callback(conn, params) do
     case {get_session(conn, @member_mfa_reset_stash_key), conn.assigns[:current_user]} do
@@ -185,7 +267,7 @@ defmodule EmisarWeb.SSOController do
         # No stash: this browser never started the sign-in it is finishing. Worth
         # saying, because it is also what a cookie dropped between the two
         # requests looks like.
-        Logger.warning("SSO callback arrived with no sign-in stash in the session")
+        Logger.info("sso_callback_missing_stash")
         sso_error(conn, "Your sign-in session expired. Start again.")
 
       {:pending, request} ->
@@ -196,7 +278,7 @@ defmodule EmisarWeb.SSOController do
         # can fail on state, nonce, PKCE, the token exchange, an email domain or a
         # disabled provider, and every one of them looked identical from outside —
         # a bounce to the sign-in page with nothing written down.
-        Logger.warning("SSO callback failed: #{describe_failure({:error, reason})}")
+        log_failure("sso_callback_failed", {:error, reason})
         sso_error(conn, callback_error_message(reason))
     end
   end
@@ -239,7 +321,7 @@ defmodule EmisarWeb.SSOController do
       |> redirect(to: ~p"/app/#{subject.account}/settings/team")
     else
       reason ->
-        Logger.warning("member MFA reset SSO callback failed: #{describe_failure(reason)}")
+        log_failure("member_mfa_reset_sso_callback_failed", reason)
 
         conn
         |> delete_session(@member_mfa_reset_stash_key)

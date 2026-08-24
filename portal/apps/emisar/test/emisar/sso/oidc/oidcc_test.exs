@@ -140,6 +140,29 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     refute_receive {:oidc_request, "POST", "/token", _body}, 50
   end
 
+  describe "validate_discovered_configuration/1" do
+    test "rejects credentials and fragments even on the issuer's own origin" do
+      for endpoint <- [
+            "https://user:CLIENT_SECRET_SENTINEL@idp.example/token",
+            "https://idp.example/token#FRAGMENT_SENTINEL"
+          ] do
+        config = configuration(%{token_endpoint: endpoint})
+
+        assert Oidcc.validate_discovered_configuration(config) ==
+                 {:error, :blocked_discovery_endpoint}
+      end
+    end
+
+    test "allows fixed query parameters on a public OAuth endpoint" do
+      config =
+        configuration(%{
+          token_endpoint: "https://tokens.other-idp.test/oauth/token?tenant=acme&version=2"
+        })
+
+      assert Oidcc.validate_discovered_configuration(config) == :ok
+    end
+  end
+
   defp provider(attrs \\ %{}) do
     defaults = %{
       id: System.unique_integer([:positive]),
@@ -149,6 +172,19 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     }
 
     struct!(IdentityProvider, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  defp configuration(attrs) do
+    defaults = %{
+      issuer: "https://idp.example",
+      authorization_endpoint: "https://idp.example/authorize",
+      token_endpoint: "https://idp.example/token",
+      userinfo_endpoint: :undefined,
+      jwks_uri: "https://idp.example/jwks",
+      pushed_authorization_request_endpoint: :undefined
+    }
+
+    struct!(Elixir.Oidcc.ProviderConfiguration, Map.merge(defaults, attrs))
   end
 
   defp stashed do

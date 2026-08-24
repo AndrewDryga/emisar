@@ -30,6 +30,16 @@ defmodule Emisar.SSO.IssuerUrlTest do
       assert IssuerUrl.validate(nil) == {:error, :invalid_issuer}
     end
 
+    test "rejects credentials, query parameters, and fragments" do
+      for issuer <- [
+            "https://user:CLIENT_SECRET_SENTINEL@idp.test/tenant",
+            "https://idp.test/tenant?access_token=TOKEN_SENTINEL",
+            "https://idp.test/tenant#TOKEN_SENTINEL"
+          ] do
+        assert IssuerUrl.validate(issuer) == {:error, :invalid_issuer}
+      end
+    end
+
     test "blocks loopback and localhost" do
       assert IssuerUrl.validate("https://127.0.0.1") == {:error, :blocked_issuer}
       assert IssuerUrl.validate("https://localhost") == {:error, :blocked_issuer}
@@ -53,6 +63,25 @@ defmodule Emisar.SSO.IssuerUrlTest do
       assert IssuerUrl.validate("https://[fe80::1]") == {:error, :blocked_issuer}
       # ::ffff:10.0.0.1 — a private v4 smuggled through a v6 literal.
       assert IssuerUrl.validate("https://[::ffff:10.0.0.1]") == {:error, :blocked_issuer}
+    end
+  end
+
+  describe "validate_endpoint/1" do
+    test "allows a cross-origin OAuth endpoint with fixed query parameters" do
+      assert IssuerUrl.validate_endpoint(
+               "https://tokens.other-idp.test/oauth/token?tenant=acme&version=2"
+             ) == :ok
+    end
+
+    test "still rejects credentials, fragments, and private hosts" do
+      assert IssuerUrl.validate_endpoint("https://user:secret@idp.test/token") ==
+               {:error, :invalid_issuer}
+
+      assert IssuerUrl.validate_endpoint("https://idp.test/token#fragment") ==
+               {:error, :invalid_issuer}
+
+      assert IssuerUrl.validate_endpoint("https://127.0.0.1/token?tenant=acme") ==
+               {:error, :blocked_issuer}
     end
   end
 

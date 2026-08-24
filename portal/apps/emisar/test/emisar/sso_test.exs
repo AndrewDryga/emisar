@@ -1573,6 +1573,129 @@ defmodule Emisar.SSOTest do
       assert Repo.reload!(provider).client_secret == "rotated-secret"
     end
 
+    test "the audit records exact safe config changes and only a secret-rotation boolean" do
+      {_user, account, subject} = enterprise_owner()
+
+      provider =
+        provider_fixture(account, %{
+          name: "Old provider",
+          issuer: "https://old-idp.test/tenant",
+          client_id: "old-client",
+          client_secret: "OLD_CLIENT_SECRET_SENTINEL",
+          identifier_claim: :sub,
+          provisioner: :jit,
+          allowed_email_domain: "old.test",
+          default_role: :viewer,
+          enabled: true,
+          satisfies_mfa: false
+        })
+
+      assert {:ok, _updated} =
+               SSO.update_provider(
+                 provider,
+                 %{
+                   name: "New provider",
+                   issuer: "https://new-idp.test/tenant",
+                   client_id: "new-client",
+                   client_secret: "NEW_CLIENT_SECRET_SENTINEL",
+                   identifier_claim: :oid,
+                   provisioner: :manual,
+                   allowed_email_domain: "new.test",
+                   default_role: :operator,
+                   enabled: false,
+                   satisfies_mfa: true
+                 },
+                 subject
+               )
+
+      assert {:ok, [event], _meta} =
+               Audit.list_events(subject, filter: [event_type: ["sso.provider_updated"]])
+
+      assert event.payload["changes"] == %{
+               "name" => %{"before" => "Old provider", "after" => "New provider"},
+               "issuer" => %{
+                 "before" => "https://old-idp.test/tenant",
+                 "after" => "https://new-idp.test/tenant"
+               },
+               "client_id" => %{"before" => "old-client", "after" => "new-client"},
+               "identifier_claim" => %{"before" => "sub", "after" => "oid"},
+               "provisioner" => %{"before" => "jit", "after" => "manual"},
+               "allowed_email_domain" => %{"before" => "old.test", "after" => "new.test"},
+               "default_role" => %{"before" => "viewer", "after" => "operator"},
+               "enabled" => %{"before" => true, "after" => false},
+               "satisfies_mfa" => %{"before" => false, "after" => true}
+             }
+
+      assert event.payload["client_secret_rotated"] == true
+      refute Map.has_key?(event.payload, "scim_token_issued")
+      refute Map.has_key?(event.payload, "scim_token_rotated")
+      refute Map.has_key?(event.payload, "scim_token_revoked")
+
+      payload = inspect(event.payload)
+      refute payload =~ "OLD_CLIENT_SECRET_SENTINEL"
+      refute payload =~ "NEW_CLIENT_SECRET_SENTINEL"
+      refute Map.has_key?(event.payload["changes"], "client_secret")
+      refute payload =~ "scim_token_hash"
+    end
+
+    test "a historical issuer's credential components are stripped from the audit" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, %{client_secret: "old-secret"})
+
+      legacy_issuer =
+        "https://user:ISSUER_SECRET_SENTINEL@legacy-idp.test/tenant?access_token=ISSUER_TOKEN_SENTINEL#ISSUER_FRAGMENT_SENTINEL"
+
+      provider =
+        provider
+        |> Ecto.Changeset.change(issuer: legacy_issuer)
+        |> Repo.update!()
+
+      assert {:ok, _updated} =
+               SSO.update_provider(
+                 provider,
+                 %{issuer: "https://new-idp.test/tenant", client_secret: "new-secret"},
+                 subject
+               )
+
+      assert {:ok, [event], _meta} =
+               Audit.list_events(subject, filter: [event_type: ["sso.provider_updated"]])
+
+      assert event.payload["changes"]["issuer"] == %{
+               "before" => "https://legacy-idp.test/tenant",
+               "after" => "https://new-idp.test/tenant"
+             }
+
+      payload = inspect(event.payload)
+      refute payload =~ "ISSUER_SECRET_SENTINEL"
+      refute payload =~ "ISSUER_TOKEN_SENTINEL"
+      refute payload =~ "ISSUER_FRAGMENT_SENTINEL"
+    end
+
+    test "the audit preserves an explicit default port in an otherwise safe issuer" do
+      {_user, account, subject} = enterprise_owner()
+
+      provider =
+        provider_fixture(account, %{
+          issuer: "https://idp.test/tenant",
+          client_secret: "old-secret"
+        })
+
+      assert {:ok, _updated} =
+               SSO.update_provider(
+                 provider,
+                 %{issuer: "https://idp.test:443/tenant", client_secret: "new-secret"},
+                 subject
+               )
+
+      assert {:ok, [event], _meta} =
+               Audit.list_events(subject, filter: [event_type: ["sso.provider_updated"]])
+
+      assert event.payload["changes"]["issuer"] == %{
+               "before" => "https://idp.test/tenant",
+               "after" => "https://idp.test:443/tenant"
+             }
+    end
+
     test "an update with no client_secret key keeps the stored secret (never wiped)" do
       {_user, account, subject} = enterprise_owner()
       provider = provider_fixture(account, %{client_secret: "keep-this-secret"})
@@ -1584,6 +1707,11 @@ defmodule Emisar.SSOTest do
       reloaded = Repo.reload!(provider)
       assert reloaded.name == "Renamed"
       assert reloaded.client_secret == "keep-this-secret"
+
+      assert {:ok, [event], _meta} =
+               Audit.list_events(subject, filter: [event_type: ["sso.provider_updated"]])
+
+      refute Map.has_key?(event.payload, "client_secret_rotated")
     end
 
     test "a blank or whitespace-only client_secret keeps the stored one" do
@@ -1681,6 +1809,8 @@ defmodule Emisar.SSOTest do
                "pack_mode" => "all",
                "pack_ids" => []
              }
+
+      assert event.payload["changes"] == %{}
     end
 
     test "a free plan is denied on update (:sso_not_available)" do
@@ -4796,6 +4926,19 @@ defmodule Emisar.SSOTest do
       assert enabled.scim_token_prefix == String.slice(raw, 0, 12)
       # The minted bearer authenticates immediately.
       assert {:ok, _} = SSO.authenticate_scim_token(raw)
+
+      assert {:ok, [event], _meta} =
+               Audit.list_events(subject, filter: [event_type: ["sso.provider_updated"]])
+
+      assert event.payload["changes"]["scim_enabled"] == %{
+               "before" => false,
+               "after" => true
+             }
+
+      assert event.payload["scim_token_issued"] == true
+      refute Map.has_key?(event.payload, "scim_token_rotated")
+      refute Map.has_key?(event.payload, "scim_token_revoked")
+      refute inspect(event.payload) =~ raw
     end
 
     test "a Team plan can configure OIDC but is denied SCIM enable (:directory_sync_not_available)" do
@@ -4880,6 +5023,16 @@ defmodule Emisar.SSOTest do
       # The old bearer is dead the instant it's rotated; only the new one works.
       assert SSO.authenticate_scim_token(raw1) == {:error, :unauthorized}
       assert {:ok, _} = SSO.authenticate_scim_token(raw2)
+
+      assert {:ok, events, _meta} =
+               Audit.list_events(subject, filter: [event_type: ["sso.provider_updated"]])
+
+      event = Enum.find(events, &(&1.payload["scim_token_rotated"] == true))
+      assert event.payload["changes"] == %{}
+      refute Map.has_key?(event.payload, "scim_token_issued")
+      refute Map.has_key?(event.payload, "scim_token_revoked")
+      refute inspect(event.payload) =~ raw1
+      refute inspect(event.payload) =~ raw2
     end
 
     test "a non-admin (no manage_sso) is denied → :unauthorized", %{
@@ -4926,6 +5079,20 @@ defmodule Emisar.SSOTest do
       assert is_nil(disabled.scim_token_prefix)
       assert is_nil(disabled.scim_token_hash)
       assert SSO.authenticate_scim_token(raw) == {:error, :unauthorized}
+
+      assert {:ok, events, _meta} =
+               Audit.list_events(subject, filter: [event_type: ["sso.provider_updated"]])
+
+      event = Enum.find(events, &(&1.payload["scim_token_revoked"] == true))
+
+      assert event.payload["changes"]["scim_enabled"] == %{
+               "before" => true,
+               "after" => false
+             }
+
+      refute Map.has_key?(event.payload, "scim_token_issued")
+      refute Map.has_key?(event.payload, "scim_token_rotated")
+      refute inspect(event.payload) =~ raw
     end
 
     test "discards the group snapshot, so re-enabling can't restore a revoked role", %{
