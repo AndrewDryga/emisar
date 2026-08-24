@@ -477,6 +477,7 @@ defmodule Emisar.Auth do
     sessions_query =
       UserToken.Query.by_user_id(user.id)
       |> UserToken.Query.by_context("session")
+      |> UserToken.Query.not_expired("session")
       |> UserToken.Query.with_valid_auth_method()
 
     case Repo.list(sessions_query, UserToken.Query, opts) do
@@ -522,9 +523,12 @@ defmodule Emisar.Auth do
 
   @doc """
   Revoke one of the caller's own sessions by id (Profile's per-device
-  sign-out). Self-service — the user comes from the subject's own
-  actor, and the query is scoped to them so a malicious id can't kill
-  another user's session. Returns :ok | {:error, :not_found}.
+  sign-out). Self-service — the user comes from the subject's own actor, and
+  the query is scoped to them so a malicious id can't kill another user's
+  session. The deleted row returns its digest so only that session's LiveView
+  sockets disconnect after the deletion and audit commit. Returns `:ok |
+  {:error, term()}`; stable scoped denials are `:not_found` and
+  `:unauthorized`, while an audit rejection returns its changeset.
   """
   def revoke_session(token_id, %Subject{actor: %Users.User{} = user} = subject) do
     if Repo.valid_uuid?(token_id) do
@@ -532,17 +536,22 @@ defmodule Emisar.Auth do
         UserToken.Query.by_id(token_id)
         |> UserToken.Query.by_user_id(user.id)
         |> UserToken.Query.by_context("session")
+        |> UserToken.Query.select_token_digests()
 
       Multi.new()
       |> Multi.delete_all(:sessions, session_query)
-      |> Multi.run(:check_affected, fn _repo, %{sessions: {affected, _}} ->
-        if affected == 1, do: {:ok, :revoked}, else: {:error, :not_found}
+      |> Multi.run(:revoked_session_topic, fn
+        _repo, %{sessions: {1, [digest]}} ->
+          {:ok, live_socket_topic(digest)}
+
+        _repo, _changes ->
+          {:error, :not_found}
       end)
       |> Audit.Multi.log_for_user(:audit, user, "user.session_revoked",
         extra: [context: subject.context],
         payload_fn: fn _ -> %{session_id: token_id} end
       )
-      |> Repo.commit_multi()
+      |> Repo.commit_multi(after_commit: &disconnect_revoked_session/1)
       |> case do
         {:ok, _} -> :ok
         {:error, reason} -> {:error, reason}
@@ -551,6 +560,11 @@ defmodule Emisar.Auth do
       {:error, :not_found}
     end
   end
+
+  def revoke_session(_token_id, %Subject{}), do: {:error, :unauthorized}
+
+  defp disconnect_revoked_session(%{revoked_session_topic: topic}),
+    do: disconnect_live_sessions([topic])
 
   @doc """
   Internal — the token-deletion half of

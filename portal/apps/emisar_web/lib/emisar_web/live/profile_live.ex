@@ -221,10 +221,13 @@ defmodule EmisarWeb.ProfileLive do
   def handle_event("revoke_session", %{"id" => id}, socket) do
     case Auth.revoke_session(id, socket.assigns.current_subject) do
       :ok ->
-        {:noreply, socket |> put_flash(:info, "Session revoked.") |> reload_sessions()}
+        {:noreply, socket |> put_flash(:info, "Session signed out.") |> reload_sessions()}
 
       {:error, :not_found} ->
         {:noreply, put_flash(socket, :error, "Session no longer exists.")}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Couldn't sign out this session. Try again.")}
     end
   end
 
@@ -236,9 +239,8 @@ defmodule EmisarWeb.ProfileLive do
 
     msg =
       case revoked_count do
-        0 -> "No other sessions to revoke."
-        1 -> "1 other session signed out."
-        revoked_count -> "#{revoked_count} other sessions signed out."
+        0 -> "No other sessions to sign out."
+        _revoked -> "Other sessions signed out."
       end
 
     # Only the current session survives, and it's always on page 1 — land there

@@ -414,7 +414,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert length(sessions) == 2
 
       html = render_click(lv, "revoke_other_sessions", %{})
-      assert html =~ "1 other session signed out."
+      assert html =~ "Other sessions signed out."
 
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       assert length(sessions) == 1
@@ -517,7 +517,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       html = render_click(lv, "revoke_session", %{"id" => first_session.id})
 
-      assert html =~ "Session revoked."
+      assert html =~ "Session signed out."
       refute html =~ "203.0.113.10"
       assert html =~ "203.0.113.11"
 
@@ -548,7 +548,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      assert render_click(lv, "revoke_session", %{"id" => other.id}) =~ "Session revoked."
+      assert render_click(lv, "revoke_session", %{"id" => other.id}) =~ "Session signed out."
 
       # Down to one — only the current device remains.
       {:ok, remaining, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
@@ -585,7 +585,7 @@ defmodule EmisarWeb.ProfileLiveTest do
     test "revoke_other_sessions with nothing to revoke says so", %{conn: conn, account: account} do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      assert render_click(lv, "revoke_other_sessions", %{}) =~ "No other sessions to revoke."
+      assert render_click(lv, "revoke_other_sessions", %{}) =~ "No other sessions to sign out."
     end
 
     test "the session list is capped at 100 — the bound the page passes", %{

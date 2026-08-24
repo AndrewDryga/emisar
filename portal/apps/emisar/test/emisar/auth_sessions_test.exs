@@ -6,9 +6,14 @@ defmodule Emisar.AuthSessionsTest do
   Profile page calls.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.Auth
-  alias Emisar.Fixtures
-  alias Emisar.RequestContext
+  alias Emisar.{Auth, Config, Fixtures, RequestContext}
+
+  defmodule RecordingSessionDisconnector do
+    def disconnect_live_sessions(topics) do
+      send(self(), {:session_disconnect, topics, Emisar.Repo.in_transaction?()})
+      :ok
+    end
+  end
 
   describe "list_sessions_for_user/3" do
     setup do
@@ -24,6 +29,28 @@ defmodule Emisar.AuthSessionsTest do
       assert {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject)
       assert length(sessions) == 3
       assert Enum.sort_by(sessions, & &1.inserted_at, {:desc, DateTime}) == sessions
+    end
+
+    test "expired rows are absent from the page, total, and next cursor", %{
+      user: user,
+      subject: subject
+    } do
+      expired = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      live = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+
+      :ok =
+        Fixtures.Auth.backdate_session_token!(
+          expired,
+          DateTime.add(DateTime.utc_now(), -61, :day)
+        )
+
+      assert {:ok, [session], metadata} =
+               Auth.list_sessions_for_user(live, subject, page: [limit: 1])
+
+      assert session.current?
+      assert metadata.count == 1
+      assert metadata.next_page_cursor == nil
+      assert Auth.fetch_user_and_token_by_session_token(expired) == {:error, :not_found}
     end
 
     test "only returns the subject's own tokens", %{user: mine, subject: my_subject} do
@@ -149,6 +176,24 @@ defmodule Emisar.AuthSessionsTest do
       assert {:ok, [], _} = Auth.list_sessions_for_user(token, subject)
     end
 
+    test "disconnects the exact token topic only after commit" do
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      assert {:ok, [session], _} = Auth.list_sessions_for_user(token, subject)
+
+      Config.put_override(
+        :emisar,
+        :session_disconnect_handler,
+        {:emisar, RecordingSessionDisconnector}
+      )
+
+      assert Auth.revoke_session(session.id, subject) == :ok
+
+      topic = Auth.live_socket_topic_for_session(token)
+      assert_receive {:session_disconnect, [^topic], false}
+      refute_receive {:session_disconnect, _topics, _in_transaction?}
+    end
+
     test "refuses to revoke another user's session via id" do
       {_mine, _account_a, my_subject} = Fixtures.Subjects.owner_subject()
       {theirs, _account_b, their_subject} = Fixtures.Subjects.owner_subject()
@@ -162,6 +207,17 @@ defmodule Emisar.AuthSessionsTest do
     test "rejects a malformed id without hitting the DB" do
       {_user, _account, subject} = Fixtures.Subjects.owner_subject()
       assert Auth.revoke_session("not-a-uuid", subject) == {:error, :not_found}
+    end
+
+    test "refuses a non-user subject without touching the session" do
+      {user, account, user_subject} = Fixtures.Subjects.owner_subject()
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      assert {:ok, [session], _} = Auth.list_sessions_for_user(token, user_subject)
+      {_raw_key, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      api_subject = Auth.Subject.for_api_key(api_key, account)
+
+      assert Auth.revoke_session(session.id, api_subject) == {:error, :unauthorized}
+      assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(token)
     end
   end
 
