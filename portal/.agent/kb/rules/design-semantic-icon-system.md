@@ -108,6 +108,13 @@ it is reached through its semantic token and its provenance stays recorded.
   each 24-grid drawing 2/3, OPTICALLY NORMALIZES it, and snaps to the half
   grid; masked, pixel-tuned, and transformed masters stay on the 24 grid and
   keep the zoomed projection.
+- **A sparse or multi-element glyph is sized by its DOMINANT element — the
+  bounding box lies.** The twin-sparks draft measured "on target" only because
+  its tiny satellite star stretched the bbox; the star the eye reads was ~9u
+  and the icon shipped visibly smaller than its rail neighbors (founder
+  caught it twice). Size the main form to the archetype target and let
+  satellites ride beyond it; the normalizer cannot judge this, so it is a
+  drawing-time rule verified against neighbors in the rendered row.
 - **Optical normalization is what makes a set feel professional: archetype
   targets, not one size.** Objects and badges fill the box to their class's
   ink target (round 14, square 13.5, wide 14 on the 16 grid — the round
