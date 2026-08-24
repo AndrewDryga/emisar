@@ -47,6 +47,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   # `client_id`, leaving exactly one. Every IdP that supports basic supports
   # post, so preferring it costs nothing elsewhere.
   @secret_auth_methods [:client_secret_post, :client_secret_basic]
+  @request_timeout 15_000
 
   @impl Emisar.SSO.OIDC
   def begin_authorization(%IdentityProvider{} = provider, opts) do
@@ -74,7 +75,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
       # options, which is httpc's unverified default. Configuring the profile only
       # for discovery and JWKS left the two requests that carry the client secret
       # and the code as the unguarded ones.
-      request_opts: request_opts()
+      request_opts: request_options()
     }
 
     with {:ok, context} <- client_context(provider),
@@ -115,7 +116,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
       # Same as begin: secret-based client auth only (see @secret_auth_methods).
       preferred_auth_methods: @secret_auth_methods,
       # The token exchange, for the same reason PAR needs it above.
-      request_opts: request_opts(),
+      request_opts: request_options(),
       # An IdP that rotates signing keys between our JWKS load and its ID token
       # leaves us holding a `kid` we have never seen. The worker used to refetch on
       # that; without one, a rotation would have failed every sign-in until the
@@ -163,11 +164,39 @@ defmodule Emisar.SSO.OIDC.Oidcc do
       config.pushed_authorization_request_endpoint
     ]
     |> Enum.reduce_while(:ok, fn endpoint, :ok ->
-      if IssuerUrl.validate_endpoint(endpoint) == :ok,
+      if endpoint_allowed?(endpoint),
         do: {:cont, :ok},
         else: {:halt, {:error, :blocked_discovery_endpoint}}
     end)
   end
+
+  # The development/test stack explicitly declares its private Keycloak host to
+  # the connect-time Guard. Honor that exact host+port declaration here too;
+  # production ignores the declaration setting. Structural endpoint failures
+  # remain closed before the exception is considered, so credentials, fragments,
+  # cleartext URLs, and undeclared ports never inherit the host allowance.
+  defp endpoint_allowed?(endpoint) do
+    case IssuerUrl.validate_endpoint(endpoint) do
+      :ok -> true
+      {:error, :blocked_issuer} -> declared_endpoint?(endpoint)
+      {:error, :invalid_issuer} -> false
+    end
+  end
+
+  defp declared_endpoint?(endpoint) when is_list(endpoint),
+    do: endpoint |> IO.iodata_to_binary() |> declared_endpoint?()
+
+  defp declared_endpoint?(endpoint) when is_binary(endpoint) do
+    case URI.parse(endpoint) do
+      %URI{scheme: "https", host: host, port: port} when is_binary(host) ->
+        Guard.declared?(host, port || 443)
+
+      _other ->
+        false
+    end
+  end
+
+  defp declared_endpoint?(_endpoint), do: false
 
   # oidcc renders an absent optional endpoint as :undefined and present ones as
   # uri_string iodata — normalize to a binary or nil for the UI.
@@ -262,7 +291,7 @@ defmodule Emisar.SSO.OIDC.Oidcc do
   # and quietly lose the protection we think we have.
   defp configuration_opts(%IdentityProvider{kind: :entra}) do
     %{
-      request_opts: request_opts(),
+      request_opts: request_options(),
       # BINARY key: `document_overrides` is merged into the raw decoded discovery
       # JSON before parsing, and oidcc looks every field up by
       # `atom_to_binary(Key)`. An atom key here is silently ignored, which is
@@ -271,13 +300,18 @@ defmodule Emisar.SSO.OIDC.Oidcc do
     }
   end
 
-  defp configuration_opts(%IdentityProvider{}), do: %{request_opts: request_opts()}
+  defp configuration_opts(%IdentityProvider{}), do: %{request_opts: request_options()}
 
-  defp request_opts do
+  defp request_options do
     %{
-      # The guard's profile, not the default one. This is what puts every request
-      # oidcc makes — and every redirect it follows — behind the SSRF policy.
+      # The guard's profile, not the default one. This puts every request oidcc
+      # makes behind the SSRF policy.
       httpc_profile: Guard.profile(),
+      # oidcc otherwise lets httpc spend one minute buffering one untrusted IdP
+      # response. The pinned adapter disables httpc's automatic redirects and
+      # Retry-After retries, so no detached request can outlive this caller. The
+      # Guard independently bounds each CONNECT tunnel.
+      timeout: @request_timeout,
       ssl: [
         verify: :verify_peer,
         cacerts: :public_key.cacerts_get(),

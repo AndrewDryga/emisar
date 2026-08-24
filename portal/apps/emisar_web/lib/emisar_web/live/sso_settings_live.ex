@@ -1956,6 +1956,9 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp test_error_message(:blocked_issuer),
     do: "The issuer can't be a private, loopback, or metadata address."
 
+  defp test_error_message(:rate_limited),
+    do: "Too many connection tests. Wait a minute and try again."
+
   defp test_error_message(_reason) do
     "Couldn't load the issuer's OIDC discovery document. Check the issuer URL and that the IdP is reachable from the internet."
   end

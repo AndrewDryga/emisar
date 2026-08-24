@@ -485,12 +485,13 @@ defmodule Emisar.SSO do
   (https + not a private/loopback/metadata host) before the fetch. Returns
   `{:ok, %{authorization_endpoint, token_endpoint, userinfo_endpoint, jwks_uri}}`
   or `{:error, :unauthorized | :sso_not_available | :invalid_issuer |
-  :blocked_issuer | term()}` (a discovery failure carries oidcc's reason).
+  :blocked_issuer | :rate_limited | term()}` (a discovery failure carries
+  oidcc's reason).
   """
   def test_provider(issuer, %Subject{} = subject) do
     with :ok <- ensure_can_configure_sso(subject),
          {:ok, issuer} <- IssuerUrl.validate(issuer) do
-      OIDC.discover(%IdentityProvider{issuer: issuer})
+      OIDC.discover(%IdentityProvider{issuer: issuer, account_id: subject.account.id})
     end
   end
 
@@ -1368,7 +1369,9 @@ defmodule Emisar.SSO do
   Build the IdP authorization redirect for an enabled provider. The public
   boundary — the web layer never calls the internal `OIDC` wrapper directly.
   Returns `{:ok, %{authorize_url, state, nonce, pkce_verifier}}`; the web layer
-  stashes the secrets (UA-bound, one-time-use) for `complete_auth/3`.
+  stashes the secrets in its encrypted browser session for `complete_auth/3`.
+  The callback response clears them; the shared provider-work budget bounds
+  replay of a copied pre-response cookie.
   """
   def begin_auth(%IdentityProvider{} = provider, opts),
     do: OIDC.begin_authorization(provider, opts)

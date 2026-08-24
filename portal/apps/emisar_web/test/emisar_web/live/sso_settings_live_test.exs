@@ -804,6 +804,28 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "https URL first"
     end
 
+    test "a capped account gets fixed retry copy without another discovery", %{
+      conn: conn,
+      account: account
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+
+      for _attempt <- 1..20 do
+        assert Emisar.Throttle.check("sso_oidc_account_work", account.id, 20, 60_000) == :ok
+      end
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+
+      lv
+      |> form("#provider_form", %{
+        "provider" => %{"kind" => "okta", "issuer" => "https://idp.test"}
+      })
+      |> render_change()
+
+      html = render_click(lv, "test_connection", %{})
+      assert html =~ "Too many connection tests. Wait a minute and try again."
+    end
+
     test "a non-admin viewer's forged test event is a gated no-op", %{
       conn: conn,
       account: account,

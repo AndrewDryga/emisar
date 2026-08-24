@@ -51,6 +51,7 @@ RUN printf '0.0.0-dev\n' > VERSION
 COPY portal/mix.exs portal/mix.lock ./
 COPY portal/apps/emisar/mix.exs apps/emisar/mix.exs
 COPY portal/apps/emisar_web/mix.exs apps/emisar_web/mix.exs
+COPY portal/patches patches
 RUN mix deps.get --only $MIX_ENV
 RUN mix deps.compile
 

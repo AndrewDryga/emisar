@@ -60,8 +60,11 @@ defmodule Emisar.MixProject do
       {:nimble_totp, "~> 1.0"},
       # OIDC relying-party (SSO). OpenID-certified Erlang lib (EEF
       # Security WG); wrapped behind `Emisar.SSO.OIDC` (IL-19). Brings
-      # `jose` (JWT/JWKS) transitively. /security-deps-audit cleared 2026-06-15.
-      {:oidcc, "~> 3.7"},
+      # `jose` (JWT/JWKS) transitively. Its adapter otherwise enables httpc's
+      # detached Retry-After/redirect work, which can outlive our request cap;
+      # the exact-version compile patch fails closed if upstream bytes drift.
+      # /security-deps-audit cleared 2026-06-15.
+      {:oidcc, "~> 3.7", compile: "elixir ../../patches/oidcc_3_7_bounded_http.exs"},
       # Pure-Elixir QR encoder — used to render scannable TOTP QRs
       # server-side as SVG so the profile MFA setup doesn't need a
       # third-party JS lib or an external image service.

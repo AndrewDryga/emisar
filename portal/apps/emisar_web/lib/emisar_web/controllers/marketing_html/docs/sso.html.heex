@@ -390,6 +390,16 @@
               </td>
             </tr>
             <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">Endpoint responses</td>
+              <td class="px-4 py-3">
+                Each HTTPS request for discovery, JWKS, pushed authorization, or token exchange
+                must complete within 15 seconds. Emisar closes an OIDC connection after 30 seconds
+                or 1 MiB of combined encrypted request-and-response traffic, including protocol
+                overhead. Endpoints must respond directly; automatic redirects and
+                Retry-After retries are not followed.
+              </td>
+            </tr>
+            <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">Authorization</td>
               <td class="px-4 py-3">
                 The provider must support authorization code flow with PKCE. The system uses S256

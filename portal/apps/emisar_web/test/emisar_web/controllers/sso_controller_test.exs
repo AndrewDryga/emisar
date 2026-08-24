@@ -138,6 +138,22 @@ defmodule EmisarWeb.SSOControllerTest do
     end
   end
 
+  defmodule RecordingOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(provider, _opts) do
+      send(self(), {:oidc_begin, provider.id})
+      {:ok, %{authorize_url: "https://idp.test/auth", state: "s", nonce: "n", pkce_verifier: "v"}}
+    end
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(provider, _params, _stashed) do
+      send(self(), {:oidc_callback, provider.id})
+      {:error, :token_endpoint_unreachable}
+    end
+  end
+
   setup do
     Emisar.Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
     :ok
@@ -176,6 +192,11 @@ defmodule EmisarWeb.SSOControllerTest do
       pkce_verifier: "v",
       redirect_uri: "https://emisar.test/sign_in/sso/callback"
     })
+  end
+
+  defp conn_from(index) do
+    build_conn()
+    |> put_req_header("x-forwarded-for", "198.51.100.#{index}, 8.233.97.247")
   end
 
   describe "GET /sign_in/sso/:provider_id (begin)" do
@@ -296,6 +317,46 @@ defmodule EmisarWeb.SSOControllerTest do
       assert log =~ "sso_begin_failed reason=idp_unreachable"
       assert_receive :sensitive_begin_oidc_called
       refute_sensitive_log(log)
+    end
+
+    test "one IP cannot rotate unknown provider ids past the public work cap" do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+
+      for _attempt <- 1..20 do
+        response = get(conn_from(201), ~p"/sign_in/sso/#{Ecto.UUID.generate()}")
+        assert redirected_to(response) == ~p"/sign_in"
+      end
+
+      rejected = get(conn_from(201), ~p"/sign_in/sso/#{Ecto.UUID.generate()}")
+      assert rejected.status == 429
+      assert get_resp_header(rejected, "retry-after") == ["60"]
+
+      allowed = get(conn_from(202), ~p"/sign_in/sso/#{Ecto.UUID.generate()}")
+      assert redirected_to(allowed) == ~p"/sign_in"
+    end
+
+    test "provider work uses the canonical id across UUID casing and leaves another provider free" do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, RecordingOIDC)
+      provider = provider_fixture(enterprise_account())
+      provider_id = provider.id
+
+      for attempt <- 1..20 do
+        path_id = if rem(attempt, 2) == 0, do: String.upcase(provider_id), else: provider_id
+        response = get(conn_from(attempt), "/sign_in/sso/#{path_id}")
+        assert redirected_to(response) == "https://idp.test/auth"
+        assert_receive {:oidc_begin, ^provider_id}
+      end
+
+      rejected = get(conn_from(21), ~p"/sign_in/sso/#{provider_id}")
+      assert rejected.status == 429
+      refute_receive {:oidc_begin, ^provider_id}
+
+      other = provider_fixture(enterprise_account())
+      other_id = other.id
+      allowed = get(conn_from(22), ~p"/sign_in/sso/#{other.id}")
+      assert redirected_to(allowed) == "https://idp.test/auth"
+      assert_receive {:oidc_begin, ^other_id}
     end
   end
 
@@ -511,6 +572,60 @@ defmodule EmisarWeb.SSOControllerTest do
   end
 
   describe "GET /sign_in/sso/callback" do
+    test "a saved callback cookie cannot replay provider work past the shared cap" do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, RecordingOIDC)
+      provider = provider_fixture(enterprise_account())
+      provider_id = provider.id
+
+      begun = get(conn_from(31), ~p"/sign_in/sso/#{provider.id}")
+      assert_receive {:oidc_begin, ^provider_id}
+
+      _log =
+        capture_log(fn ->
+          for attempt <- 32..50 do
+            response =
+              begun
+              |> recycle()
+              |> put_req_header("x-forwarded-for", "198.51.100.#{attempt}, 8.233.97.247")
+              |> get(~p"/sign_in/sso/callback", %{"state" => "s", "code" => "code"})
+
+            assert redirected_to(response) == ~p"/sign_in"
+            assert_receive {:oidc_callback, ^provider_id}
+          end
+
+          rejected =
+            begun
+            |> recycle()
+            |> put_req_header("x-forwarded-for", "198.51.100.51, 8.233.97.247")
+            |> get(~p"/sign_in/sso/callback", %{"state" => "s", "code" => "code"})
+
+          assert redirected_to(rejected) == ~p"/sign_in"
+          refute_receive {:oidc_callback, ^provider_id}
+        end)
+
+      other = provider_fixture(enterprise_account())
+      other_id = other.id
+      allowed = get(conn_from(52), ~p"/sign_in/sso/#{other.id}")
+      assert redirected_to(allowed) == "https://idp.test/auth"
+      assert_receive {:oidc_begin, ^other_id}
+    end
+
+    test "the callback route is independently capped by client IP" do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+
+      for _attempt <- 1..20 do
+        response = get(conn_from(101), ~p"/sign_in/sso/callback")
+        assert redirected_to(response) == ~p"/sign_in"
+      end
+
+      rejected = get(conn_from(101), ~p"/sign_in/sso/callback")
+      assert rejected.status == 429
+
+      allowed = get(conn_from(102), ~p"/sign_in/sso/callback")
+      assert redirected_to(allowed) == ~p"/sign_in"
+    end
+
     test "a normal sign-in callback cannot replace an authenticated session", %{conn: conn} do
       {conn, actor, _actor_account} = register_and_log_in(conn)
       actor_token = get_session(conn, :user_token)

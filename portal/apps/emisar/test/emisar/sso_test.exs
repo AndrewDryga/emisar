@@ -69,6 +69,26 @@ defmodule Emisar.SSOTest do
     def discover(provider), do: StubOIDC.discover(provider)
   end
 
+  defmodule RecordingDiscoveryOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(provider, opts) do
+      send(self(), {:oidc_begin, provider.id})
+      StubOIDC.begin_authorization(provider, opts)
+    end
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(provider, params, stashed),
+      do: StubOIDC.verify_callback(provider, params, stashed)
+
+    @impl Emisar.SSO.OIDC
+    def discover(provider) do
+      send(self(), {:oidc_discover, provider.issuer})
+      StubOIDC.discover(provider)
+    end
+  end
+
   defmodule BarrierOIDC do
     @behaviour Emisar.SSO.OIDC
 
@@ -1987,6 +2007,46 @@ defmodule Emisar.SSOTest do
       refute Repo.one(IdentityProvider)
     end
 
+    test "saved providers and unsaved discovery share one account-wide work budget" do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, RecordingDiscoveryOIDC)
+      {_owner, account, subject} = enterprise_owner()
+
+      providers = [
+        provider_fixture(account, %{kind: :okta, name: "Okta"}),
+        provider_fixture(account, %{kind: :keycloak, name: "Keycloak"}),
+        provider_fixture(account, %{kind: :entra, name: "Entra"}),
+        provider_fixture(account, %{kind: :openid_connect, name: "OIDC"})
+      ]
+
+      for provider <- Enum.take(Stream.cycle(providers), 8) do
+        provider_id = provider.id
+        assert {:ok, _begin} = SSO.begin_auth(provider, [])
+        assert_receive {:oidc_begin, ^provider_id}
+      end
+
+      for _attempt <- 1..12 do
+        assert {:ok, _summary} = SSO.test_provider("https://idp.test", subject)
+        assert_receive {:oidc_discover, "https://idp.test"}
+      end
+
+      underused_provider = hd(providers)
+
+      assert SSO.begin_auth(underused_provider, []) == {:error, :rate_limited}
+      refute_receive {:oidc_begin, _provider_id}
+      assert SSO.test_provider("https://idp.test", subject) == {:error, :rate_limited}
+      refute_receive {:oidc_discover, "https://idp.test"}
+
+      {_other_owner, other_account, other_subject} = enterprise_owner()
+      other_provider = provider_fixture(other_account)
+      other_provider_id = other_provider.id
+
+      assert {:ok, _begin} = SSO.begin_auth(other_provider, [])
+      assert_receive {:oidc_begin, ^other_provider_id}
+      assert {:ok, _summary} = SSO.test_provider("https://idp.test", other_subject)
+      assert_receive {:oidc_discover, "https://idp.test"}
+    end
+
     test "a non-https or malformed issuer is rejected before any fetch" do
       {_owner, _account, subject} = enterprise_owner()
 
@@ -2283,6 +2343,10 @@ defmodule Emisar.SSOTest do
       assert is_binary(state)
       assert is_binary(nonce)
       assert is_binary(verifier)
+    end
+
+    test "fails closed before OIDC work without a canonical provider id" do
+      assert SSO.begin_auth(%IdentityProvider{}, []) == {:error, :provider_not_ready}
     end
   end
 

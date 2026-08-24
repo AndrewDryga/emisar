@@ -6,19 +6,15 @@ defmodule Emisar.SSO.OIDC.Guard do
   ## Why a proxy
 
   Inspecting the discovery document is not enough, and neither is fetching it
-  ourselves. `httpc` follows redirects by default; `oidcc` passes it only a
-  timeout and TLS options, so there is no way to turn that off through
-  `request_opts`. An endpoint that passes every check can answer
-  `302 Location: http://169.254.169.254/…` and `httpc` will follow it — a second
-  request we never see, to an address we never judged, with the HTTPS→HTTP
-  downgrade dropping certificate verification on the way.
+  ourselves. `oidcc` passes a custom httpc profile through every request, and a
+  pinned adapter patch disables automatic redirects and Retry-After retries.
+  The proxy remains the network boundary for every first-party endpoint: a URL
+  that escaped validation, including an HTTPS→HTTP downgrade, still cannot dial
+  around the address policy.
 
-  `autoredirect` is a per-request option we cannot reach. `proxy` is a per-PROFILE
-  option (`httpc:set_options/2`), and `oidcc` does pass `httpc_profile` through.
-  So a dedicated profile pointed here puts a boundary in front of every request
-  the library makes — discovery, JWKS, token exchange, PAR — and in front of every
-  redirect hop too, because `httpc` sends the redirected request through the same
-  proxy.
+  `proxy` is a per-PROFILE option (`httpc:set_options/2`). A dedicated profile
+  pointed here therefore covers discovery, JWKS, token exchange, and PAR without
+  replacing oidcc's HTTP stack.
 
   ## What it enforces
 
@@ -35,6 +31,7 @@ defmodule Emisar.SSO.OIDC.Guard do
   """
   use GenServer
   alias Emisar.SSO.IssuerUrl
+  alias Emisar.SSO.OIDC.Guard.Relay
   require Logger
 
   @profile :emisar_oidc
@@ -42,8 +39,12 @@ defmodule Emisar.SSO.OIDC.Guard do
   # A relay that never times out, and an unbounded number of them, is a way to
   # exhaust the guard without the process ever looking unhealthy — SSO then fails
   # for everyone while the supervisor sees nothing wrong. A tunnel gets an idle
-  # deadline, and the pool is capped.
-  @relay_idle_timeout :timer.minutes(2)
+  # deadline, an absolute lifetime, one combined TLS-byte budget, and a pool cap.
+  @tunnel_max_lifetime 30_000
+  # Discovery, JWKS and token documents are normally tens of KiB. One MiB covers
+  # a deliberately large key set while bounding the bytes httpc can buffer from
+  # any one opaque keep-alive tunnel (both directions combined).
+  @tunnel_max_bytes 1_024 * 1_024
   @max_tunnels 64
   @connect_timeout 10_000
   @max_request_headers 64
@@ -93,7 +94,7 @@ defmodule Emisar.SSO.OIDC.Guard do
         # One process per tunnel: a client that disappears mid-relay must not take
         # the acceptor with it. Past the cap the connection is closed rather than
         # queued, so a flood cannot grow the pool without bound.
-        if Task.Supervisor.children(@tasks) |> length() >= @max_tunnels do
+        if open_tunnels() >= @max_tunnels do
           Logger.warning("OIDC guard refused a tunnel: #{@max_tunnels} already open")
           :gen_tcp.close(socket)
         else
@@ -102,7 +103,11 @@ defmodule Emisar.SSO.OIDC.Guard do
           # while the acceptor still owned the socket, get `{:error, :not_owner}`,
           # and close without answering — an empty reply where a 403 belonged.
           # It only showed under load, which is what made it look like a flake.
-          {:ok, pid} = Task.Supervisor.start_child(@tasks, fn -> await_socket(socket) end)
+          deadline = deadline_after(@tunnel_max_lifetime)
+
+          {:ok, pid} =
+            Task.Supervisor.start_child(@tasks, fn -> await_socket(socket, deadline) end)
+
           :ok = :gen_tcp.controlling_process(socket, pid)
           send(pid, {:owned, socket})
         end
@@ -125,63 +130,88 @@ defmodule Emisar.SSO.OIDC.Guard do
     :httpc.set_options(
       [
         {:proxy, {{~c"127.0.0.1", port}, []}},
-        {:https_proxy, {{~c"127.0.0.1", port}, []}}
+        {:https_proxy, {{~c"127.0.0.1", port}, []}},
+        # Zero persistent sessions makes httpc add `Connection: close` to every
+        # request. One oidcc operation therefore owns at most one Guard slot at a
+        # time: discovery/JWKS/PAR/token requests release their tunnel before the
+        # next begins instead of accumulating for OTP's default two-minute
+        # keep-alive window.
+        {:max_sessions, 0}
       ],
       @profile
     )
   end
 
-  defp await_socket(socket) do
+  defp await_socket(socket, deadline) do
     receive do
-      {:owned, ^socket} -> serve(socket)
+      {:owned, ^socket} -> serve_until_deadline(socket, deadline)
     after
-      @connect_timeout -> :gen_tcp.close(socket)
+      min(@connect_timeout, remaining(deadline)) -> :gen_tcp.close(socket)
     end
   end
 
-  defp serve(socket) do
-    case read_request_line(socket) do
-      {:ok, "CONNECT " <> rest} ->
-        rest |> String.split(" ", parts: 2) |> hd() |> tunnel(socket)
-
-      {:ok, line} ->
-        # Anything that is not CONNECT reached us as cleartext, which for an OIDC
-        # fetch means a redirect downgraded the scheme.
-        Logger.warning("OIDC guard refused a cleartext request: #{inspect(first_token(line))}")
-        refuse(socket, "403 Forbidden")
+  # The explicit timeouts below make each operation return a useful reason. This
+  # timer is the hard backstop: an unexpected blocking call or a mailbox kept busy
+  # by continuous TCP data still cannot outlive the accept-time deadline. Owned
+  # sockets close automatically when the task exits.
+  defp serve_until_deadline(socket, deadline) do
+    case :timer.exit_after(remaining(deadline), self(), :shutdown) do
+      {:ok, timer} ->
+        try do
+          serve(socket, deadline)
+        after
+          _ = :timer.cancel(timer)
+        end
 
       {:error, _reason} ->
         :gen_tcp.close(socket)
     end
   end
 
-  defp tunnel(authority, socket) do
-    with {:ok, host, port} <- split_authority(authority),
-         {:ok, address} <- resolve_allowed(host, port) do
-      connect(socket, host, address, port)
+  defp serve(socket, deadline) do
+    case read_request_line(socket, deadline) do
+      {:ok, "CONNECT " <> rest} ->
+        rest |> String.split(" ", parts: 2) |> hd() |> tunnel(socket, deadline)
+
+      {:ok, line} ->
+        # Anything that is not CONNECT reached us as cleartext, which for an OIDC
+        # fetch means a redirect downgraded the scheme.
+        Logger.warning("OIDC guard refused a cleartext request: #{inspect(first_token(line))}")
+        refuse(socket, "403 Forbidden", deadline)
+
+      {:error, _reason} ->
+        :gen_tcp.close(socket)
+    end
+  end
+
+  defp tunnel(authority, socket, deadline) do
+    with :ok <- ensure_time_remaining(deadline),
+         {:ok, host, port} <- split_authority(authority),
+         {:ok, address} <- resolve_allowed(host, port, deadline) do
+      connect(socket, host, address, port, deadline)
     else
       {:error, {:blocked, host, address}} ->
         Logger.warning("OIDC guard blocked #{host} → #{:inet.ntoa(address)}")
-        refuse(socket, "403 Forbidden")
+        refuse(socket, "403 Forbidden", deadline)
 
       {:error, reason} ->
         Logger.warning("OIDC guard refused #{inspect(authority)}: #{inspect(reason)}")
-        refuse(socket, "502 Bad Gateway")
+        refuse(socket, "502 Bad Gateway", deadline)
     end
   end
 
   # Resolve ONCE and hand back the address, so the connection below dials the thing
   # that was judged rather than repeating the lookup. An IP literal needs no
   # lookup at all; a name gets exactly one.
-  defp resolve_allowed(host, port) do
+  defp resolve_allowed(host, port, deadline) do
     charlist = String.to_charlist(host)
 
     if declared?(host, port) do
-      resolve_declared(host, charlist)
+      resolve_declared(host, charlist, deadline)
     else
       case :inet.parse_address(charlist) do
         {:ok, address} -> judge(host, address)
-        {:error, _reason} -> resolve_and_judge(host, charlist)
+        {:error, _reason} -> resolve_and_judge(host, charlist, deadline)
       end
     end
   end
@@ -220,15 +250,15 @@ defmodule Emisar.SSO.OIDC.Guard do
 
   # Still resolved, and still dialled by the address we resolved — being declared
   # exempts the host from the ADDRESS policy, not from being pinned.
-  defp resolve_declared(host, charlist) do
+  defp resolve_declared(host, charlist, deadline) do
     case :inet.parse_address(charlist) do
       {:ok, address} -> declared_address(host, address)
-      {:error, _reason} -> resolve_declared_name(host, charlist)
+      {:error, _reason} -> resolve_declared_name(host, charlist, deadline)
     end
   end
 
-  defp resolve_declared_name(host, charlist) do
-    case resolve(charlist) do
+  defp resolve_declared_name(host, charlist, deadline) do
+    case resolve(charlist, deadline) do
       {:ok, address} -> declared_address(host, address)
       {:error, reason} -> {:error, reason}
     end
@@ -239,8 +269,8 @@ defmodule Emisar.SSO.OIDC.Guard do
     {:ok, address}
   end
 
-  defp resolve_and_judge(host, charlist) do
-    case resolve(charlist) do
+  defp resolve_and_judge(host, charlist, deadline) do
+    case resolve(charlist, deadline) do
       {:ok, address} -> judge(host, address)
       {:error, reason} -> {:error, reason}
     end
@@ -252,63 +282,32 @@ defmodule Emisar.SSO.OIDC.Guard do
       else: {:error, {:blocked, host, address}}
   end
 
-  defp resolve(charlist) do
-    case :inet.getaddr(charlist, :inet) do
+  defp resolve(charlist, deadline) do
+    case :inet.getaddr(charlist, :inet, remaining(deadline)) do
       {:ok, address} -> {:ok, address}
-      {:error, _} -> :inet.getaddr(charlist, :inet6)
+      {:error, _reason} -> :inet.getaddr(charlist, :inet6, remaining(deadline))
     end
   end
 
-  defp connect(client, host, address, port) do
-    case :gen_tcp.connect(address, port, [:binary, active: false, packet: :raw], @connect_timeout) do
+  defp connect(client, host, address, port, deadline) do
+    socket_opts = [
+      :binary,
+      active: false,
+      packet: :raw,
+      send_timeout: remaining(deadline),
+      send_timeout_close: true
+    ]
+
+    case :gen_tcp.connect(address, port, socket_opts, min(@connect_timeout, remaining(deadline))) do
       {:ok, origin} ->
-        :ok = :gen_tcp.send(client, "HTTP/1.1 200 Connection Established\r\n\r\n")
-        relay(client, origin)
+        case send_with_deadline(client, "HTTP/1.1 200 Connection Established\r\n\r\n", deadline) do
+          :ok -> Relay.run(client, origin, deadline, @tunnel_max_bytes)
+          {:error, _reason} -> close_both(client, origin)
+        end
 
       {:error, reason} ->
         Logger.warning("OIDC guard could not reach #{host}: #{inspect(reason)}")
-        refuse(client, "502 Bad Gateway")
-    end
-  end
-
-  # Opaque both ways. The bytes are TLS records between httpc and the origin.
-  defp relay(client, origin) do
-    :ok = :inet.setopts(client, active: :once)
-    :ok = :inet.setopts(origin, active: :once)
-    relay_loop(client, origin)
-  end
-
-  defp relay_loop(client, origin) do
-    receive do
-      {:tcp, ^client, data} ->
-        case :gen_tcp.send(origin, data) do
-          :ok ->
-            :ok = :inet.setopts(client, active: :once)
-            relay_loop(client, origin)
-
-          {:error, _} ->
-            close_both(client, origin)
-        end
-
-      {:tcp, ^origin, data} ->
-        case :gen_tcp.send(client, data) do
-          :ok ->
-            :ok = :inet.setopts(origin, active: :once)
-            relay_loop(client, origin)
-
-          {:error, _} ->
-            close_both(client, origin)
-        end
-
-      {:tcp_closed, _socket} ->
-        close_both(client, origin)
-
-      {:tcp_error, _socket, _reason} ->
-        close_both(client, origin)
-    after
-      @relay_idle_timeout ->
-        Logger.warning("OIDC guard closed an idle tunnel")
-        close_both(client, origin)
+        refuse(client, "502 Bad Gateway", deadline)
     end
   end
 
@@ -317,13 +316,13 @@ defmodule Emisar.SSO.OIDC.Guard do
     :gen_tcp.close(origin)
   end
 
-  defp read_request_line(socket) do
+  defp read_request_line(socket, tunnel_deadline) do
     # A cap per line AND one deadline for the whole request. Counting lines alone
     # bounded nothing that matters: an unset packet_size lets a single line grow
     # without limit, and a fresh timeout per line let one client hold a task for
     # minutes by trickling headers.
     :ok = :inet.setopts(socket, packet: :line, packet_size: @max_header_bytes)
-    deadline = System.monotonic_time(:millisecond) + @request_timeout
+    deadline = min(tunnel_deadline, deadline_after(@request_timeout))
 
     case :gen_tcp.recv(socket, 0, remaining(deadline)) do
       {:ok, line} ->
@@ -337,7 +336,26 @@ defmodule Emisar.SSO.OIDC.Guard do
     end
   end
 
+  defp deadline_after(timeout), do: System.monotonic_time(:millisecond) + timeout
+
+  defp deadline_expired?(deadline), do: System.monotonic_time(:millisecond) >= deadline
+
+  defp ensure_time_remaining(deadline) do
+    if deadline_expired?(deadline), do: {:error, :timeout}, else: :ok
+  end
+
   defp remaining(deadline), do: max(deadline - System.monotonic_time(:millisecond), 1)
+
+  defp send_with_deadline(socket, data, deadline) do
+    with :ok <- ensure_time_remaining(deadline),
+         :ok <-
+           :inet.setopts(socket,
+             send_timeout: remaining(deadline),
+             send_timeout_close: true
+           ) do
+      :gen_tcp.send(socket, data)
+    end
+  end
 
   # A CONNECT is a whole request: the line, then its headers, then a blank line.
   # Reading only the line left `Host: …\r\n\r\n` sitting in the socket, and the
@@ -394,11 +412,20 @@ defmodule Emisar.SSO.OIDC.Guard do
   # Shut the write side down before closing. A bare close can discard whatever is
   # still in the send buffer, so the refusal arrived as an empty response often
   # enough to look like a parsing bug.
-  defp refuse(socket, status) do
-    _ = :gen_tcp.send(socket, "HTTP/1.1 #{status}\r\nContent-Length: 0\r\n\r\n")
+  defp refuse(socket, status, deadline) do
+    _ = send_with_deadline(socket, "HTTP/1.1 #{status}\r\nContent-Length: 0\r\n\r\n", deadline)
     _ = :gen_tcp.shutdown(socket, :write)
     :gen_tcp.close(socket)
   end
 
   defp first_token(line), do: line |> String.split(" ", parts: 2) |> hd()
+
+  # The acceptor is supervised beside the tunnel tasks. Excluding the current
+  # acceptor process keeps the advertised 64-slot pool literal rather than
+  # silently turning it into 63.
+  defp open_tunnels do
+    @tasks
+    |> Task.Supervisor.children()
+    |> Enum.count(&(&1 != self()))
+  end
 end

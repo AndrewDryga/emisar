@@ -1,5 +1,5 @@
 defmodule Emisar.SSO.OIDC.OidccTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
   alias Emisar.SSO.IdentityProvider
   alias Emisar.SSO.OIDC.Oidcc
 
@@ -97,6 +97,47 @@ defmodule Emisar.SSO.OIDC.OidccTest do
              |> Elixir.Oidcc.Token.validate_id_token(context, opts)
   end
 
+  test "callback requests use the bounded Guard transport policy" do
+    opts = Oidcc.callback_token_options(provider(), stashed())
+
+    assert opts.request_opts.timeout == 15_000
+    assert opts.request_opts.httpc_profile == Emisar.SSO.OIDC.Guard.profile()
+  end
+
+  describe "the pinned oidcc HTTP adapter" do
+    test "does not schedule a Retry-After request after returning" do
+      profile = start_httpc_profile(:emisar_oidcc_no_retry_test)
+      url = start_http_policy_probe(:retry)
+
+      assert {:error, {:http_error, 503, %{}}} =
+               :oidcc_http_util.request(
+                 :get,
+                 {url, []},
+                 %{topic: [:emisar, :oidcc_retry_test]},
+                 %{timeout: 50, httpc_profile: profile}
+               )
+
+      assert_receive {:adapter_request, "/"}
+      refute_receive {:adapter_request, "/"}, 1_100
+    end
+
+    test "does not follow a redirect outside the caller's request lifetime" do
+      profile = start_httpc_profile(:emisar_oidcc_no_redirect_test)
+      url = start_http_policy_probe(:redirect)
+
+      assert {:error, {:http_error, 302, %{}}} =
+               :oidcc_http_util.request(
+                 :get,
+                 {url, []},
+                 %{topic: [:emisar, :oidcc_redirect_test]},
+                 %{timeout: 50, httpc_profile: profile}
+               )
+
+      assert_receive {:adapter_request, "/"}
+      refute_receive {:adapter_request, "/followed"}, 100
+    end
+  end
+
   test "a well-formed callback clears the gates and every fetch goes through the guard" do
     # Two things at once. The state/issuer/code gates let a well-formed callback
     # through — the failure it gets is a transport refusal, not `:state_mismatch` —
@@ -160,6 +201,29 @@ defmodule Emisar.SSO.OIDC.OidccTest do
         })
 
       assert Oidcc.validate_discovered_configuration(config) == :ok
+    end
+
+    test "allows only structurally safe endpoints on an exactly declared private IdP" do
+      Emisar.Config.put_override(:emisar, :sso_allowed_idp_hosts, ["localhost:8443"])
+
+      allowed =
+        configuration(%{
+          token_endpoint: "https://localhost:8443/token?tenant=acme"
+        })
+
+      assert Oidcc.validate_discovered_configuration(allowed) == :ok
+
+      for endpoint <- [
+            "https://localhost:8444/token",
+            "http://localhost:8443/token",
+            "https://user:secret@localhost:8443/token",
+            "https://localhost:8443/token#fragment"
+          ] do
+        config = configuration(%{token_endpoint: endpoint})
+
+        assert Oidcc.validate_discovered_configuration(config) ==
+                 {:error, :blocked_discovery_endpoint}
+      end
     end
   end
 
@@ -237,6 +301,62 @@ defmodule Emisar.SSO.OIDC.OidccTest do
 
     issuer
   end
+
+  defp start_httpc_profile(profile) do
+    assert {:ok, _pid} = :inets.start(:httpc, profile: profile)
+    on_exit(fn -> :inets.stop(:httpc, profile) end)
+    profile
+  end
+
+  defp start_http_policy_probe(mode) do
+    {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])
+    {:ok, {_address, port}} = :inet.sockname(listener)
+    test_pid = self()
+
+    spawn_link(fn -> serve_http_policy_probe(listener, test_pid, mode, port) end)
+    on_exit(fn -> :gen_tcp.close(listener) end)
+
+    ~c"http://127.0.0.1:#{port}/"
+  end
+
+  defp serve_http_policy_probe(listener, test_pid, mode, port) do
+    case :gen_tcp.accept(listener) do
+      {:ok, socket} ->
+        request = read_request(socket)
+        send(test_pid, {:adapter_request, request.path})
+        :ok = :gen_tcp.send(socket, http_policy_response(mode, request.path, port))
+        :ok = :gen_tcp.close(socket)
+        serve_http_policy_probe(listener, test_pid, mode, port)
+
+      {:error, :closed} ->
+        :ok
+
+      {:error, reason} ->
+        exit({:accept_failed, reason})
+    end
+  end
+
+  defp http_policy_response(:retry, _path, _port) do
+    [
+      "HTTP/1.1 503 Service Unavailable\r\n",
+      "retry-after: 1\r\n",
+      "content-type: application/json\r\n",
+      "content-length: 2\r\n",
+      "connection: close\r\n\r\n{}"
+    ]
+  end
+
+  defp http_policy_response(:redirect, "/", port) do
+    [
+      "HTTP/1.1 302 Found\r\n",
+      "location: http://127.0.0.1:#{port}/followed\r\n",
+      "content-type: application/json\r\n",
+      "content-length: 2\r\n",
+      "connection: close\r\n\r\n{}"
+    ]
+  end
+
+  defp http_policy_response(:redirect, "/followed", _port), do: http_response(200, "{}")
 
   defp serve(listener, test_pid, issuer, jwks_uri) do
     case :gen_tcp.accept(listener) do

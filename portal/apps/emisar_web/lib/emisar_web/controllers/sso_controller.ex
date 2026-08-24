@@ -1,11 +1,11 @@
 defmodule EmisarWeb.SSOController do
   @moduledoc """
   The OIDC relying-party login endpoints. `begin/2` redirects to the IdP
-  (stashing the one-time-use, session-bound state/nonce/PKCE-verifier in the
-  session — there is no user-agent binding; do not add one to this docstring
-  without adding it to `begin/2` and `callback/2`). `callback/2` validates the
-  response, then either completes an anonymous sign-in through `Emisar.SSO` or
-  completes an authenticated, purpose-bound member MFA-reset reauthentication.
+  (stashing session-bound state/nonce/PKCE-verifier in the encrypted browser
+  session). The callback response clears that stash; the IP/provider budgets
+  bound replay of a copied pre-response cookie. `callback/2` validates the response,
+  then either completes an anonymous sign-in through `Emisar.SSO` or completes an
+  authenticated, purpose-bound member MFA-reset reauthentication.
   The reset branch preserves the actor's existing session and never provisions
   or signs in an identity.
 
@@ -18,6 +18,14 @@ defmodule EmisarWeb.SSOController do
   alias EmisarWeb.RecentAccounts
   alias EmisarWeb.UserAuth
   require Logger
+
+  # The IP boundary runs before lookup on every route that can start OIDC work.
+  # Provider work is capped separately, on the canonical loaded provider id, in
+  # the shared OIDC adapter so login, callback replay, and MFA-reset reauth cannot
+  # bypass one another's allowance.
+  plug EmisarWeb.Plugs.RateLimit,
+       [bucket: "sso_oidc_ip", limit: 20, window_ms: 60_000, by: :ip]
+       when action in [:begin, :callback, :begin_member_mfa_reset]
 
   # The login transaction secrets the callback needs, kept server-side in the
   # session (signed, bound to this browser) for the duration of the round-trip.
@@ -42,6 +50,15 @@ defmodule EmisarWeb.SSOController do
     else
       {:error, :not_found} ->
         sso_error(conn, "That single sign-on link is no longer available.")
+
+      {:error, :rate_limited} ->
+        conn
+        |> put_resp_header("retry-after", "60")
+        |> put_status(:too_many_requests)
+        |> json(%{
+          error: "rate_limited",
+          message: "Too many requests. Retry in 60s."
+        })
 
       other ->
         # The operator gets one sentence; the reason belongs in the log. Discarding

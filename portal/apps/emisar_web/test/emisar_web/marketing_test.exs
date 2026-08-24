@@ -437,6 +437,10 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "by the identifier claim, not by their email"
     assert html =~ "Pending access requests"
     assert html =~ "The sign-in is refused."
+
+    assert squish(html) =~
+             "Each HTTPS request for discovery, JWKS, pushed authorization, or token exchange must complete within 15 seconds. Emisar closes an OIDC connection after 30 seconds or 1 MiB of combined encrypted request-and-response traffic, including protocol overhead. Endpoints must respond directly; automatic redirects and Retry-After retries are not followed."
+
     # The per-provider consoles moved to their own guides; this page routes there.
     for path <- ~w(okta entra jumpcloud keycloak google-workspace) do
       assert html =~ "/docs/integrations/#{path}"

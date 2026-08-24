@@ -10,7 +10,7 @@ defmodule Emisar.SSO.OIDC.GuardTest do
   request). Refusing both is what closes it — there is no third way for a hop to
   reach the network.
   """
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
   alias Emisar.SSO.IssuerUrl
   alias Emisar.SSO.OIDC.Guard
 
@@ -22,6 +22,29 @@ defmodule Emisar.SSO.OIDC.GuardTest do
   setup do
     port = Guard.port()
     %{port: port}
+  end
+
+  test "the dedicated httpc profile does not retain persistent tunnels" do
+    assert :httpc.get_options([:max_sessions], Guard.profile()) ==
+             {:ok, max_sessions: 0}
+  end
+
+  test "admits 64 tunnels, refuses the 65th, and reuses a released slot", %{port: port} do
+    held = Enum.map(1..64, fn _index -> open_held_socket(port) end)
+    assert_tunnel_count(64)
+
+    {:ok, refused} = connect(port)
+    on_exit(fn -> :gen_tcp.close(refused) end)
+    assert :gen_tcp.recv(refused, 0, @wait) == {:error, :closed}
+
+    [released | _rest] = held
+    :gen_tcp.close(released)
+    assert_tunnel_count(63)
+
+    {:ok, admitted} = connect(port)
+    on_exit(fn -> :gen_tcp.close(admitted) end)
+    :ok = :gen_tcp.send(admitted, "CONNECT 127.0.0.1:9200 HTTP/1.1\r\n\r\n")
+    assert recv(admitted) =~ "403"
   end
 
   test "refuses CONNECT to loopback", %{port: port} do
@@ -136,13 +159,46 @@ defmodule Emisar.SSO.OIDC.GuardTest do
   end
 
   defp speak(port, request) do
-    {:ok, socket} =
-      :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false, packet: :raw], @wait)
+    {:ok, socket} = connect(port)
 
     :ok = :gen_tcp.send(socket, request)
     response = recv(socket)
     :gen_tcp.close(socket)
     response
+  end
+
+  defp open_held_socket(port) do
+    {:ok, socket} = connect(port)
+    on_exit(fn -> :gen_tcp.close(socket) end)
+    socket
+  end
+
+  defp connect(port) do
+    :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false, packet: :raw], @wait)
+  end
+
+  defp assert_tunnel_count(expected, attempts \\ 200)
+
+  defp assert_tunnel_count(expected, 0),
+    do: flunk("expected #{expected} open Guard tunnels, got #{tunnel_count()}")
+
+  defp assert_tunnel_count(expected, attempts) do
+    if tunnel_count() == expected do
+      :ok
+    else
+      receive do
+      after
+        10 -> assert_tunnel_count(expected, attempts - 1)
+      end
+    end
+  end
+
+  defp tunnel_count do
+    acceptor = :sys.get_state(Guard).acceptor
+
+    Emisar.SSO.OIDC.GuardTasks
+    |> Task.Supervisor.children()
+    |> Enum.count(&(&1 != acceptor))
   end
 
   defp recv(socket, acc \\ "") do
