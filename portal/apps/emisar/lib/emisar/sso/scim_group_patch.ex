@@ -239,6 +239,7 @@ defmodule Emisar.SSO.SCIMGroupPatch do
     filtered_remove = filtered_member_remove(path)
 
     cond do
+      whole_members_remove?(path, value) -> {:replace, []}
       members_path?(path) -> member_op(:remove, value)
       filtered_remove != :skip -> filtered_remove
       true -> :unsupported
@@ -281,6 +282,14 @@ defmodule Emisar.SSO.SCIMGroupPatch do
   defp members_path?(nil), do: true
   defp members_path?(path) when is_binary(path), do: downcase(path) == "members"
   defp members_path?(_path), do: false
+
+  # RFC 7644 §3.5.2.2: removing a multi-valued attribute without a filter or
+  # value removes every value. Keep this exact to `path: members`; a pathless
+  # remove does not identify which resource attribute the directory meant.
+  defp whole_members_remove?(path, nil) when is_binary(path),
+    do: downcase(path) == "members"
+
+  defp whole_members_remove?(_path, _value), do: false
 
   # Okta removes one member with `path: members[value eq "<User resource id>"]`
   # and no value. Anything richer is unsupported.

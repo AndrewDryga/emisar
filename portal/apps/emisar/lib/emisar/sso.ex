@@ -2827,6 +2827,9 @@ defmodule Emisar.SSO do
   # approval at a time, with whichever side was not current unable to see them.
   defp link_identity(%IdentityProvider{} = provider, user, %LinkRequest{} = request) do
     case peek_identity(provider, user.id) do
+      %UserIdentity{scim_deleted_at: %DateTime{}} ->
+        {:error, :scim_resource_retired}
+
       %UserIdentity{} = identity ->
         identity
         |> rebind_changeset(request)
@@ -3071,6 +3074,9 @@ defmodule Emisar.SSO do
 
   @doc "Internal — SCIM replaces a provisioned user's attributes."
   defdelegate scim_update_user(provider, id, update), to: SCIM
+
+  @doc "Internal — retires one provisioned SCIM User resource."
+  defdelegate scim_delete_user(provider, id), to: SCIM
 
   @doc "Internal — SCIM applies a PATCH operation list to a provisioned user."
   defdelegate scim_patch_user(provider, id, operations), to: SCIM

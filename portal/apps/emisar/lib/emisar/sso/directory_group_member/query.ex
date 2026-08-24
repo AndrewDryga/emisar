@@ -37,6 +37,32 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
   def by_account_id(queryable \\ all(), account_id),
     do: where(queryable, [group_members: g], g.account_id == ^account_id)
 
+  def with_joined_scim_identity(queryable \\ all()) do
+    identities =
+      Emisar.SSO.UserIdentity.Query.not_deleted()
+      |> Emisar.SSO.UserIdentity.Query.scim_not_deleted()
+
+    with_named_binding(queryable, :identities, fn queryable, binding ->
+      join(queryable, :inner, [group_members: g], identity in ^identities,
+        on: identity.id == g.user_identity_id,
+        as: ^binding
+      )
+    end)
+  end
+
+  def with_joined_retired_scim_identity(queryable \\ all()) do
+    identities =
+      Emisar.SSO.UserIdentity.Query.not_deleted()
+      |> Emisar.SSO.UserIdentity.Query.scim_deleted()
+
+    with_named_binding(queryable, :identities, fn queryable, binding ->
+      join(queryable, :inner, [group_members: g], identity in ^identities,
+        on: identity.id == g.user_identity_id,
+        as: ^binding
+      )
+    end)
+  end
+
   # Distinct external groups a directory has actually pushed via SCIM, tallied per
   # provider — the overview health line's "N groups synced". Counts what SYNCED (a
   # directory can push more groups than the admin has mapped), not the group→role
@@ -53,6 +79,7 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
   # IdP has actually synced rather than a guessed id.
   def group_counts_for_provider(queryable \\ all(), provider_id) do
     queryable
+    |> with_joined_scim_identity()
     |> where([group_members: g], g.provider_id == ^provider_id)
     |> group_by([group_members: g], g.external_group_id)
     |> order_by([group_members: g], asc: g.external_group_id)
@@ -70,15 +97,12 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
 
   # Every membership link a provider has, as `{directory_group_id,
   # user_identity_id}` pairs — SCIM Group members reference the server-issued
-  # User resource id. The live identity join makes a soft-deleted identity
-  # leave the rendered group.
+  # User resource id. The live SCIM identity join makes a retired wire resource
+  # leave the rendered group while its shared OIDC/identity row stays reserved.
   def select_member_ids(queryable \\ all(), provider_id) do
     queryable
     |> where([group_members: g], g.provider_id == ^provider_id)
-    |> join(:inner, [group_members: g], i in ^Emisar.SSO.UserIdentity.Query.not_deleted(),
-      on: i.id == g.user_identity_id,
-      as: :identities
-    )
+    |> with_joined_scim_identity()
     |> order_by([group_members: g, identities: i],
       asc: g.directory_group_id,
       asc: i.id

@@ -3,7 +3,7 @@ defmodule EmisarWeb.SCIMControllerTest do
   The inbound SCIM 2.0 surface (`/scim/v2`) — the directory-sync lifecycle an
   IdP pushes. Covers the §4 web cases: cross-account token isolation, the 401
   SCIM-error gate, provision + idempotent reconcile, the `active:false` and
-  DELETE deprovision (suspend, not delete), the last-active-owner lockout,
+  DELETE retirement, the last-active-owner lockout,
   read + filter, and a discovery endpoint behind auth.
 
   The token's provider-scope IS the authorization, so the tests mint a REAL
@@ -892,20 +892,38 @@ defmodule EmisarWeb.SCIMControllerTest do
       refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
-    test "DELETE deprovisions the same way (204, soft suspend)", %{
+    test "DELETE suspends the member and retires every wire operation on the resource", %{
       conn: conn,
       token: token,
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{user: user, identity: identity}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|del", email: "del@acme.test"})
 
-      conn = conn |> auth(token) |> delete(user_path(token, "okta|del"))
+      path = "/scim/v2/Users/#{identity.id}"
+      conn = conn |> auth(token) |> delete(path)
       assert response(conn, 204)
 
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
       assert {:ok, _user} = Users.fetch_user_by_id(user.id)
+
+      assert conn |> recycle() |> auth(token) |> get(path) |> json_response(404)
+
+      assert conn
+             |> recycle()
+             |> scim_patch(token, path, active_patch(true))
+             |> json_response(404)
+
+      assert conn
+             |> recycle()
+             |> scim_put(token, path, %{"active" => true})
+             |> json_response(404)
+
+      assert conn |> recycle() |> auth(token) |> delete(path) |> json_response(404)
+
+      listed = conn |> recycle() |> scim_get(token, ~p"/scim/v2/Users") |> json_response(200)
+      refute identity.id in Enum.map(listed["Resources"], & &1["id"])
     end
 
     test "deprovisioning the last active owner → SCIM error, not 204", %{conn: conn} do
@@ -944,23 +962,55 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["status"] == "404"
     end
 
-    test "a re-DELETE of an already-suspended user is idempotent (204 again)", %{
+    test "a re-DELETE of an already-retired user is 404", %{
       conn: conn,
       token: token,
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{user: user, identity: identity}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|redel", email: "redel@acme.test"})
 
-      path = user_path(token, "okta|redel")
+      path = "/scim/v2/Users/#{identity.id}"
       assert conn |> auth(token) |> delete(path) |> response(204)
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
 
-      # The second DELETE re-suspends the already-disabled membership — a no-op at
-      # the membership layer, still 204 (the identity row lives on, so it resolves).
-      assert conn |> auth(token) |> delete(path) |> response(204)
+      assert conn |> recycle() |> auth(token) |> delete(path) |> json_response(404)
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+    end
+
+    test "POST after DELETE revives the same resource and person", %{
+      conn: conn,
+      token: token,
+      account: account
+    } do
+      payload = user_payload("okta|recreate", email: "recreate@acme.test")
+      created = conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(201)
+      {:ok, user} = Users.fetch_user_by_email("recreate@acme.test")
+
+      assert conn
+             |> recycle()
+             |> auth(token)
+             |> delete("/scim/v2/Users/#{created["id"]}")
+             |> response(204)
+
+      recreated =
+        conn
+        |> recycle()
+        |> scim_post(token, ~p"/scim/v2/Users", payload)
+        |> json_response(201)
+
+      assert recreated["id"] == created["id"]
+      assert recreated["active"]
+      refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
+
+      identities =
+        SSO.UserIdentity.Query.all()
+        |> SSO.UserIdentity.Query.by_user_id(user.id)
+        |> Repo.all()
+
+      assert [identity] = identities
+      assert identity.id == created["id"]
     end
 
     test "a PATCH active op whose value can't be parsed → 400 invalidValue", %{
@@ -1379,13 +1429,13 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert reactivated["active"] == true
       refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
 
-      # 4. DELETE → SUSPEND, never destroy: 204, membership disabled, user kept.
+      # 4. DELETE → access suspended, wire resource retired, person kept.
       assert conn |> auth(token) |> delete(~p"/scim/v2/Users/#{id}") |> response(204)
 
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
-      # The user row + identity persist — DELETE deactivates, it does not hard-delete.
+      # The person and historical identity row persist, but the SCIM resource is gone.
       assert {:ok, _user} = Users.fetch_user_by_id(user.id)
-      assert {:ok, _scim_user} = SSO.scim_fetch_user(provider, id)
+      assert SSO.scim_fetch_user(provider, id) == {:error, :not_found}
     end
 
     test "`scim_active` drift is self-corrected on the next reconcile (re-POST)", %{

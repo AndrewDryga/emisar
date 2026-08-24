@@ -19,6 +19,7 @@ defmodule Emisar.SSO.Provisioning do
 
   def provider_identities(%IdentityProvider{} = provider) do
     UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.scim_not_deleted()
     |> UserIdentity.Query.by_provider_id(provider.id)
     |> Repo.all()
   end
@@ -330,6 +331,7 @@ defmodule Emisar.SSO.Provisioning do
 
   def load_identities(%IdentityProvider{} = provider, identity_ids) do
     UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.scim_not_deleted()
     |> UserIdentity.Query.by_provider_id(provider.id)
     |> UserIdentity.Query.by_ids(Enum.uniq(identity_ids))
     |> Repo.all()

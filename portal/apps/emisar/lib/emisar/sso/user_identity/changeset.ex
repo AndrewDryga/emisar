@@ -25,16 +25,7 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
     ])
     |> validate_length(:provider_identifier, max: @identifier_max_length, count: :codepoints)
     |> validate_length(:scim_external_id, max: @identifier_max_length, count: :codepoints)
-    |> unique_constraint([:account_id, :provider_id, :provider_identifier],
-      name: :sso_user_identities_active_provider_identifier_index
-    )
-    |> unique_constraint([:account_id, :provider_id, :scim_external_id],
-      name: :sso_user_identities_scim_external_id_index
-    )
-    |> unique_constraint(:user_id,
-      name: :sso_user_identities_live_user_index,
-      message: "already has an identity for this connection"
-    )
+    |> put_live_constraints()
   end
 
   def touch_last_seen(%UserIdentity{} = identity),
@@ -88,4 +79,43 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
   @doc "Flip the SCIM lifecycle flag (provision/deprovision), independent of the membership's `disabled_at`."
   def set_scim_active(%UserIdentity{} = identity, active) when is_boolean(active),
     do: change(identity, scim_active: active)
+
+  @doc "Retire the directory's SCIM resource while preserving its identity history."
+  def delete_scim_resource(%UserIdentity{} = identity, scim_external_id) do
+    now = DateTime.utc_now()
+
+    identity
+    |> change(
+      scim_active: false,
+      scim_deleted_at: now,
+      scim_external_id: scim_external_id,
+      provider_identifier_retired_at: identity.provider_identifier_retired_at || now
+    )
+    |> validate_length(:scim_external_id, max: @identifier_max_length, count: :codepoints)
+    |> unique_constraint([:account_id, :provider_id, :scim_external_id],
+      name: :sso_user_identities_scim_external_id_index
+    )
+  end
+
+  @doc "Restore the same directory resource after a later SCIM create."
+  def revive_scim_resource(%UserIdentity{scim_deleted_at: %DateTime{}} = identity, active)
+      when is_boolean(active) do
+    identity
+    |> change(scim_active: active, scim_deleted_at: nil)
+    |> put_live_constraints()
+  end
+
+  defp put_live_constraints(changeset) do
+    changeset
+    |> unique_constraint([:account_id, :provider_id, :provider_identifier],
+      name: :sso_user_identities_active_provider_identifier_index
+    )
+    |> unique_constraint([:account_id, :provider_id, :scim_external_id],
+      name: :sso_user_identities_scim_external_id_index
+    )
+    |> unique_constraint(:user_id,
+      name: :sso_user_identities_live_user_index,
+      message: "already has an identity for this connection"
+    )
+  end
 end

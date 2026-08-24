@@ -8,6 +8,12 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def not_deleted(queryable \\ all()),
     do: where(queryable, [identities: i], is_nil(i.deleted_at))
 
+  def scim_not_deleted(queryable \\ all()),
+    do: where(queryable, [identities: i], is_nil(i.scim_deleted_at))
+
+  def scim_deleted(queryable \\ all()),
+    do: where(queryable, [identities: i], not is_nil(i.scim_deleted_at))
+
   def provider_identifier_active(queryable \\ all()),
     do: where(queryable, [identities: i], is_nil(i.provider_identifier_retired_at))
 
@@ -33,36 +39,6 @@ defmodule Emisar.SSO.UserIdentity.Query do
 
   def by_provider_identifier(queryable, identifier),
     do: where(queryable, [identities: i], i.provider_identifier == ^identifier)
-
-  @doc """
-  The identity a SCIM create addresses, by EITHER key.
-
-  An approved link rebinds `provider_identifier` to the OIDC subject while
-  `scim_external_id` keeps the directory's own id — deliberately, so the
-  directory can still address the person. Matching only `provider_identifier`
-  made a re-POST miss that row and start linking again, and the next approval
-  flipped the binding back, leaving the person alternating between a broken
-  directory push and a broken sign-in. The directory's own key is preferred when
-  both match different rows.
-
-  The `provider_identifier` fallback only reaches a row NO directory has claimed
-  yet. The two key spaces are independent — an OIDC subject and an externalId are
-  minted by different parts of an IdP and can collide — so matching a claimed row
-  by its subject let one person's `POST /Users` adopt another person's identity,
-  stamp their own externalId on it, and reconcile that member's access to what
-  their own payload asserted.
-  """
-  def by_provider_and_scim_identity(queryable, provider_id, external_id) do
-    queryable
-    |> where(
-      [identities: i],
-      i.provider_id == ^provider_id and
-        (i.scim_external_id == ^external_id or
-           (is_nil(i.scim_external_id) and i.provider_identifier == ^external_id))
-    )
-    |> order_by([identities: i], desc: i.scim_external_id == ^external_id)
-    |> limit(1)
-  end
 
   def by_user_id(queryable, user_id),
     do: where(queryable, [identities: i], i.user_id == ^user_id)
@@ -256,6 +232,12 @@ defmodule Emisar.SSO.UserIdentity.Query do
 
   def ordered_by_recent(queryable),
     do: order_by(queryable, [identities: i], desc: i.inserted_at, desc: i.id)
+
+  def latest_scim_deleted(queryable) do
+    queryable
+    |> order_by([identities: i], desc: i.scim_deleted_at, desc: i.inserted_at, desc: i.id)
+    |> limit(1)
+  end
 
   def offset_page(queryable, offset, limit),
     do: queryable |> offset(^offset) |> limit(^limit)

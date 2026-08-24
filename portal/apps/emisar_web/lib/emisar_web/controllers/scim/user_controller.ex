@@ -11,11 +11,9 @@ defmodule EmisarWeb.SCIM.UserController do
   remains the IdP-owned create/filter correlation value. Every mutation resolves to
   one typed `SSO.SCIMUserUpdate` the domain commits atomically — PATCH hands
   its raw operation list to `SSO.scim_patch_user/3`, which owns the RFC 7644
-  §3.5.2 reduction; PUT and DELETE state the desired update directly — so a
-  rename and a lifecycle change land together or not at all. This controller
-  decodes the wire envelope and renders.
-  Deprovisioning is a SUSPEND, never a delete: both `PATCH active:false`
-  and `DELETE` ask for `active: false` (R8).
+  §3.5.2 reduction; PUT states the desired update directly. DELETE suspends the
+  internal membership and retires the wire resource, preserving the person for
+  an explicit later create. This controller decodes the wire envelope and renders.
   """
   use EmisarWeb, :controller
   alias Emisar.SSO
@@ -134,12 +132,12 @@ defmodule EmisarWeb.SCIM.UserController do
     end
   end
 
-  # DELETE /scim/v2/Users/:id — soft deprovision (suspend), not a hard delete
-  # (R8 / decision 5). 204 No Content on success.
+  # DELETE /scim/v2/Users/:id — suspend access and retire the wire resource.
+  # The internal person/history survives; later operations on this id return 404.
   def delete(conn, %{"id" => id}) do
     provider = conn.assigns.scim_provider
 
-    case SSO.scim_update_user(provider, id, %SSO.SCIMUserUpdate{active: false}) do
+    case SSO.scim_delete_user(provider, id) do
       {:ok, _result} -> send_resp(conn, :no_content, "")
       {:error, reason} -> render_error(conn, reason)
     end

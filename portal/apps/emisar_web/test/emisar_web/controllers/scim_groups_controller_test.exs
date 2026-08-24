@@ -10,7 +10,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
   per-provider bearer via `SSO.enable_scim/2` and drive everything over HTTP.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Repo, SSO}
+  alias Emisar.{Accounts, Repo, SSO}
   alias Emisar.SSO.IdentityProvider
 
   @scim_content_type "application/scim+json"
@@ -554,6 +554,60 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
 
       assert role_of(account.id, incoming.user_id) == :operator
       assert role_of(account.id, keep.user_id) == :viewer
+    end
+
+    test "removing the whole members attribute revokes mapped role and runner access", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      subject: subject,
+      account: account
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "production")
+
+      {:ok, _role_mapping} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-privileged", role: :admin},
+          subject
+        )
+
+      {:ok, _access_mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            external_group_id: "grp-privileged",
+            runner_access_mode: :restricted,
+            scope: ["group:production"]
+          },
+          subject
+        )
+
+      identity = provision(provider, "okta|remove-all")
+      group = create_group(conn, token, "grp-privileged", [identity.id])
+      membership = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
+
+      assert membership.role == :admin
+
+      assert Accounts.runner_access_for_membership(account.id, membership.id) ==
+               %Accounts.RunnerAccess{
+                 mode: :restricted,
+                 groups: ["production"],
+                 runner_ids: []
+               }
+
+      body =
+        conn
+        |> scim_send(token, :patch, "/scim/v2/Groups/#{group["id"]}", %{
+          "Operations" => [%{"op" => "remove", "path" => "members"}]
+        })
+        |> json_response(200)
+
+      assert body["members"] == []
+      assert role_of(account.id, identity.user_id) == :viewer
+
+      assert Accounts.runner_access_for_membership(account.id, membership.id) ==
+               Accounts.RunnerAccess.none()
     end
 
     test "a `remove` after a whole-set `replace` still takes the member out", %{

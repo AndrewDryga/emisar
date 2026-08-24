@@ -13,11 +13,12 @@ defmodule Emisar.SSOTest do
   resolution/JIT/gate logic with canned claims and no live IdP.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Audit, Auth, Crypto, Repo, SSO}
+  alias Emisar.{Accounts, Audit, Auth, Crypto, Repo, SSO, Users}
   alias Emisar.Accounts.RunnerAccess
   alias Emisar.Fixtures
-  alias Emisar.SSO.{DirectoryGroup, GroupRoleMapping, GroupRunnerAccessMapping}
-  alias Emisar.SSO.{IdentityProvider, LinkRequest, SCIMUser, SCIMUserUpdate, UserIdentity}
+  alias Emisar.SSO.{DirectoryGroup, DirectoryGroupMember, GroupRoleMapping}
+  alias Emisar.SSO.{GroupRunnerAccessMapping, IdentityProvider, LinkRequest}
+  alias Emisar.SSO.{SCIMUser, SCIMUserUpdate, UserIdentity}
 
   defmodule StubOIDC do
     @behaviour Emisar.SSO.OIDC
@@ -86,6 +87,13 @@ defmodule Emisar.SSOTest do
     def discover(provider) do
       send(self(), {:oidc_discover, provider.issuer})
       StubOIDC.discover(provider)
+    end
+  end
+
+  defmodule RecordingSessionDisconnector do
+    def disconnect_live_sessions(topics) do
+      owner = Emisar.Config.fetch_env!(:emisar, :task12_disconnect_test_pid)
+      send(owner, {:scim_delete_disconnect, topics, Emisar.Repo.in_transaction?()})
     end
   end
 
@@ -4080,6 +4088,325 @@ defmodule Emisar.SSOTest do
              }) == {:error, :not_found}
 
       assert Repo.reload!(user).full_name == "A Name"
+    end
+  end
+
+  # -- scim_delete_user/2 ----------------------------------------------
+
+  describe "scim_delete_user/2" do
+    test "retires the resource and its group grants, then POST revives the same person" do
+      %{provider: provider, account: account, subject: subject} = scim_provider()
+      Fixtures.Runners.create_runner(account_id: account.id, group: "production")
+
+      {:ok, _role_mapping} =
+        SSO.create_group_mapping(
+          provider,
+          %{external_group_id: "grp-retired", role: :admin},
+          subject
+        )
+
+      {:ok, _access_mapping} =
+        SSO.create_group_runner_access_mapping(
+          provider,
+          %{
+            external_group_id: "grp-retired",
+            runner_access_mode: :restricted,
+            scope: ["group:production"]
+          },
+          subject
+        )
+
+      attrs = scim_attrs(%{external_id: "okta|retire", email: "retire@acme.test"})
+      {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+
+      {:ok, _group} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-retired",
+          member_ids: [identity.id]
+        })
+
+      privileged = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      assert privileged.role == :admin
+
+      assert Accounts.runner_access_for_membership(account.id, privileged.id) ==
+               %RunnerAccess{mode: :restricted, groups: ["production"], runner_ids: []}
+
+      assert {:ok, %{identity: retired, membership: suspended}} =
+               SSO.scim_delete_user(provider, identity.id)
+
+      refute retired.deleted_at
+      assert retired.scim_deleted_at
+      assert retired.provider_identifier_retired_at
+      refute retired.scim_active
+      assert suspended.disabled_at
+      assert SSO.scim_fetch_user(provider, identity.id) == {:error, :not_found}
+      assert {:ok, [], 0} = SSO.scim_list_users(provider)
+
+      reset_membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      assert reset_membership.role == :viewer
+
+      assert Accounts.runner_access_for_membership(account.id, reset_membership.id) ==
+               RunnerAccess.none()
+
+      refute DirectoryGroupMember.Query.not_deleted()
+             |> DirectoryGroupMember.Query.by_user_identity_id(identity.id)
+             |> Repo.exists?()
+
+      assert {:ok, %{user: revived_user, identity: revived, membership: inactive_membership}} =
+               SSO.scim_provision_user(provider, Map.put(attrs, :active, false))
+
+      assert revived_user.id == user.id
+      assert revived.id == identity.id
+      refute revived.deleted_at
+      refute revived.scim_deleted_at
+      assert revived.provider_identifier_retired_at
+      refute revived.scim_active
+      assert inactive_membership.disabled_at
+
+      assert {:ok, %{membership: active_membership}} =
+               SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: true})
+
+      refute active_membership.disabled_at
+      assert active_membership.role == :viewer
+
+      assert Accounts.runner_access_for_membership(account.id, active_membership.id) ==
+               RunnerAccess.none()
+
+      identities =
+        UserIdentity.Query.all()
+        |> UserIdentity.Query.by_user_id(user.id)
+        |> Repo.all()
+
+      assert [%UserIdentity{id: revived_id}] = identities
+      assert revived_id == identity.id
+    end
+
+    test "delete and recreation are provider scoped, and a second delete is not found" do
+      %{provider: provider_a} = scim_provider()
+      %{provider: provider_b} = scim_provider()
+      attrs_a = scim_attrs(%{external_id: "okta|scoped-delete", email: "scoped-a@acme.test"})
+      {:ok, %{identity: identity}} = SSO.scim_provision_user(provider_a, attrs_a)
+
+      assert SSO.scim_delete_user(provider_b, identity.id) == {:error, :not_found}
+      assert {:ok, _user} = SSO.scim_fetch_user(provider_a, identity.id)
+
+      assert {:ok, _result} = SSO.scim_delete_user(provider_a, identity.id)
+      assert SSO.scim_delete_user(provider_a, identity.id) == {:error, :not_found}
+
+      assert {:ok, %{identity: identity_b}} =
+               SSO.scim_provision_user(
+                 provider_b,
+                 scim_attrs(%{
+                   external_id: "okta|scoped-delete",
+                   email: "scoped-b@acme.test"
+                 })
+               )
+
+      refute identity_b.id == identity.id
+      assert Repo.reload!(identity).scim_deleted_at
+
+      assert {:ok, %{identity: revived_a}} = SSO.scim_provision_user(provider_a, attrs_a)
+      assert revived_a.id == identity.id
+      refute revived_a.scim_deleted_at
+    end
+
+    test "recreation restores SCIM but not a rebound OIDC subject that another member claimed" do
+      %{provider: provider, account: account, subject: subject} =
+        scim_provider(%{provisioner: :manual})
+
+      attrs =
+        scim_attrs(%{
+          external_id: "directory-resource",
+          email: "rebound-delete@acme.test"
+        })
+
+      {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+
+      claims = %{
+        "sub" => "admin-linked-subject",
+        "email" => user.email,
+        "email_verified" => true
+      }
+
+      request = capture_request(provider, claims)
+
+      assert {:ok, %{identity: rebound}} =
+               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+
+      refute rebound.provider_identifier_retired_at
+      assert {:ok, _result} = SSO.scim_delete_user(provider, rebound.id)
+
+      retired_request = capture_request(provider, claims)
+
+      assert SSO.approve_link_request(retired_request, RunnerAccess.none(), subject) ==
+               {:error, :scim_resource_retired}
+
+      assert Repo.reload!(rebound).scim_deleted_at
+      assert Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+      assert {:ok, _dismissed} = SSO.dismiss_link_request(retired_request, subject)
+
+      other_user = Fixtures.Users.create_user(email: "new-subject-owner@acme.test")
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: other_user.id,
+        role: :viewer
+      )
+
+      other_request =
+        capture_request(provider, %{
+          "sub" => "directory-resource",
+          "email" => other_user.email,
+          "email_verified" => true
+        })
+
+      assert {:ok, %{identity: other_identity}} =
+               SSO.approve_link_request(other_request, RunnerAccess.none(), subject)
+
+      assert {:ok, %{identity: revived}} = SSO.scim_provision_user(provider, attrs)
+      assert revived.id == identity.id
+      assert revived.provider_identifier_retired_at
+      refute revived.scim_deleted_at
+      assert Repo.reload!(other_identity).provider_identifier_retired_at == nil
+
+      assert {:ok, %{user: signed_in}} =
+               SSO.complete_auth(
+                 provider,
+                 callback(%{"sub" => "directory-resource"}),
+                 %{}
+               )
+
+      assert signed_in.id == other_user.id
+
+      assert {:pending, %LinkRequest{provider_identifier: "admin-linked-subject"}} =
+               SSO.complete_auth(provider, callback(claims), %{})
+
+      identities =
+        UserIdentity.Query.not_deleted()
+        |> UserIdentity.Query.by_provider_id(provider.id)
+        |> Repo.all()
+
+      assert Enum.sort(Enum.map(identities, & &1.id)) ==
+               Enum.sort([identity.id, other_identity.id])
+
+      assert {:ok, %{identity: retired_other}} =
+               SSO.scim_delete_user(provider, other_identity.id)
+
+      refute retired_other.scim_external_id
+      assert retired_other.scim_deleted_at
+      assert {:ok, %SCIMUser{id: original_id}} = SSO.scim_fetch_user(provider, identity.id)
+      assert original_id == identity.id
+
+      assert {:ok, %{identity: reconciled_original}} =
+               SSO.scim_provision_user(provider, attrs)
+
+      assert reconciled_original.id == identity.id
+      assert Repo.reload!(other_identity).scim_deleted_at
+    end
+
+    test "an already-suspended delete still revokes only the exact identity session" do
+      %{provider: provider} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|session-retire")
+      {:ok, user} = Users.fetch_user_by_id(identity.user_id)
+
+      assert {:ok, _result} =
+               SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: false})
+
+      sso_session =
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
+
+      unrelated_session = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      expected_topic = Auth.live_socket_topic_for_session(sso_session)
+
+      Emisar.Config.put_override(
+        :emisar,
+        :session_disconnect_handler,
+        {:emisar, RecordingSessionDisconnector}
+      )
+
+      Emisar.Config.put_override(:emisar, :task12_disconnect_test_pid, self())
+
+      assert {:ok, %{identity: retired}} = SSO.scim_delete_user(provider, identity.id)
+      assert retired.scim_deleted_at
+
+      assert_receive {:scim_delete_disconnect, [^expected_topic], false}
+      assert Auth.fetch_user_and_token_by_session_token(sso_session) == {:error, :not_found}
+
+      assert {:ok, ^user, _token} =
+               Auth.fetch_user_and_token_by_session_token(unrelated_session)
+
+      assert {:ok, %{identity: revived}} =
+               SSO.scim_provision_user(
+                 provider,
+                 scim_attrs(%{
+                   external_id: "okta|session-retire",
+                   email: user.email
+                 })
+               )
+
+      assert revived.provider_identifier_retired_at
+
+      assert {:pending, %LinkRequest{provider_identifier: "okta|session-retire"}} =
+               SSO.complete_auth(
+                 provider,
+                 callback(%{
+                   "sub" => "okta|session-retire",
+                   "email" => user.email,
+                   "email_verified" => true
+                 }),
+                 %{}
+               )
+    end
+
+    test "a rendered OIDC-only SCIM resource reserves its fallback externalId on delete" do
+      %{provider: provider, account: account} = scim_provider(%{provisioner: :manual})
+      user = Fixtures.Users.create_user(email: "oidc-first-delete@acme.test")
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id,
+          provider_identifier: "oidc-first-delete",
+          scim_external_id: nil,
+          created_by: :provider,
+          provisioned_via: :oidc_jit
+        })
+
+      assert {:ok, %SCIMUser{external_id: "oidc-first-delete"}} =
+               SSO.scim_fetch_user(provider, identity.id)
+
+      assert {:ok, %{identity: retired}} = SSO.scim_delete_user(provider, identity.id)
+      assert retired.scim_external_id == "oidc-first-delete"
+
+      assert {:ok, %{user: revived_user, identity: revived}} =
+               SSO.scim_provision_user(
+                 provider,
+                 scim_attrs(%{
+                   external_id: "oidc-first-delete",
+                   email: user.email
+                 })
+               )
+
+      assert revived_user.id == user.id
+      assert revived.id == identity.id
+    end
+
+    test "disabling SCIM returns a retired member to operator control" do
+      %{provider: provider, account: account, subject: subject} = scim_provider()
+      %{identity: identity} = provision(provider, "okta|deleted-before-disable")
+
+      assert {:ok, _result} = SSO.scim_delete_user(provider, identity.id)
+      assert {:ok, _disabled} = SSO.disable_scim(provider, subject)
+
+      returned = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
+      refute returned.directory_managed
+      refute returned.directory_suspended
+      refute returned.directory_provider_id
+
+      assert {:ok, reinstated} = Accounts.reinstate_membership(returned, subject)
+      refute reinstated.disabled_at
     end
   end
 

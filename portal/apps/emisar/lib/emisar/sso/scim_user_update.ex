@@ -1,6 +1,6 @@
 defmodule Emisar.SSO.SCIMUserUpdate do
   @moduledoc """
-  The typed desired state a SCIM PATCH/PUT/DELETE asks of one directory user,
+  The typed desired state a SCIM PATCH or PUT asks of one directory user,
   parsed by the wire boundary and applied by `Emisar.SSO.scim_update_user/3`
   as one atomic transition.
 

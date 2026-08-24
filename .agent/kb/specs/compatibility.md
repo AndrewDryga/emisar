@@ -316,8 +316,11 @@ per page, and report the filtered collection's full count in `totalResults`;
 malformed pagination values fail with 400 `invalidValue`. Users support idempotent
 create/reconcile, `userName eq`/`externalId eq` filters only, PATCH limited to
 `active` and rename attributes, PUT limited to `displayName` plus `active`,
-and DELETE as soft deprovision (suspend), never a hard delete. Groups reconcile
-POSTs by `externalId` when one is supplied. A POST without `externalId`
+and DELETE as membership suspension plus wire-resource retirement: the User is
+omitted from lists and its GET/PATCH/PUT/DELETE routes return 404, while a later
+POST with the same `externalId` restores the same resource and person. An
+`active:true` update restores only an addressable `active:false` resource; it
+does not restore a DELETEd one. Groups reconcile POSTs by `externalId` when one is supplied. A POST without `externalId`
 creates a fresh resource with a new server `id`; the display name is never
 identity. Groups support membership `add`/`remove`/`replace` including Okta's filtered removal form, a
 `displayName eq` filter, and DELETE removes the Group resource, clears its

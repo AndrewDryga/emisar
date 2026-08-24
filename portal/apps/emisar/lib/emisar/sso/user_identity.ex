@@ -15,7 +15,10 @@ defmodule Emisar.SSO.UserIdentity do
   For a SCIM identity, `scim_external_id` is the IdP's `externalId` (equal to
   `provider_identifier` when identifier-matching is configured — decision 4)
   and `scim_active` is its SCIM lifecycle state, distinct from the membership's
-  `disabled_at`.
+  `disabled_at`. SCIM `DELETE /Users` sets `scim_deleted_at` and retires the
+  independent OIDC binding: the wire resource disappears while the shared row,
+  person, externalId reservation, and one-identity slot remain intact. An exact
+  later `externalId` create clears only the SCIM tombstone.
   """
   use Emisar, :schema
 
@@ -31,6 +34,7 @@ defmodule Emisar.SSO.UserIdentity do
     field :scim_external_id, :string
     field :provisioned_via, Ecto.Enum, values: @provisioned_via
     field :scim_active, :boolean, default: true
+    field :scim_deleted_at, :utc_datetime_usec
 
     field :last_seen_at, :utc_datetime_usec
     field :deleted_at, :utc_datetime_usec

@@ -175,8 +175,11 @@
             When the directory deactivates or removes a user,
             <strong class="text-zinc-200">deprovisioning suspends the member</strong>
             — sessions end and their API keys are revoked immediately, so directory
-            offboarding revokes emisar access on its own. The user and audit history remain,
-            and directory reactivation restores access. emisar refuses to deprovision the
+            offboarding revokes emisar access on its own. The person and audit history remain.
+            Deactivation can be reversed with <code>active:true</code>; after DELETE, the
+            directory must POST the same <code>externalId</code>
+            to restore the resource.
+            emisar refuses to deprovision the
             last active owner and returns an error to the directory — promote another owner
             first.
           </span>
@@ -300,9 +303,11 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <code>PATCH active:false</code>
-            and <code>DELETE</code>
-            both suspend the membership. <code>active:true</code>
-            restores a directory suspension.
+            suspends the membership while keeping the User resource addressable, and
+            <code>active:true</code>
+            restores that suspension. <code>DELETE</code>
+            also retires the User resource: later reads and mutations return 404 until the
+            directory POSTs the same <code>externalId</code>.
             A manual administrator
             suspension is not reversed by the directory.
           </span>

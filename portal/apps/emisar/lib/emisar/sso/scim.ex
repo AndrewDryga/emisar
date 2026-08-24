@@ -11,7 +11,7 @@ defmodule Emisar.SSO.SCIM do
   """
   import Emisar.SSO.Provisioning
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Crypto, Repo, Users}
+  alias Emisar.{Accounts, Audit, Auth, Crypto, Repo, Users}
   alias Emisar.SSO.{DirectoryGroup, DirectoryGroupMember, GroupRoleMapping}
   alias Emisar.SSO.IdentityProvider
   alias Emisar.SSO.{SCIMGroupPatch, SCIMUser, SCIMUserPatch, SCIMUserUpdate, UserIdentity}
@@ -130,7 +130,8 @@ defmodule Emisar.SSO.SCIM do
   by `(provider, externalId)`. The IdP-owned value is stored as both the OIDC
   binding identifier and SCIM correlation value; the identity row's UUID is the
   SCIM resource id. An existing identity is reused (idempotent — a re-POST never
-  duplicates); otherwise a fresh user + identity (`created_by: :provider`,
+  duplicates), and a resource retired by `DELETE /Users` revives that same
+  identity and person. Otherwise a fresh user + identity (`created_by: :provider`,
   `provisioned_via: :scim`) + membership at `provider.default_role` are created
   in one `Multi`. Trusts the IdP's email within the connection (collision →
   `:email_taken`, never a merge). `{:ok, %{user, identity, membership}}`.
@@ -143,17 +144,60 @@ defmodule Emisar.SSO.SCIM do
   defp provision_or_load(%IdentityProvider{} = provider, attrs, retry) do
     external_id = attrs[:external_id] || attrs["external_id"]
 
-    queryable =
-      UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.by_provider_and_scim_identity(provider.id, external_id)
-
-    case Repo.peek(queryable) do
+    case live_scim_identity(provider, external_id) do
       %UserIdentity{} = identity ->
         load_provisioned(provider, identity, external_id, attrs, retry)
 
       nil ->
-        provision_scim_user(provider, external_id, attrs, retry)
+        case retired_scim_identity(provider, external_id) do
+          %UserIdentity{} = identity ->
+            :ok = cleanup_retired_group_members(provider, identity)
+            load_provisioned(provider, identity, external_id, attrs, retry)
+
+          nil ->
+            case unclaimed_oidc_identity(provider, external_id) do
+              %UserIdentity{} = identity ->
+                load_provisioned(provider, identity, external_id, attrs, retry)
+
+              nil ->
+                provision_scim_user(provider, external_id, attrs, retry)
+            end
+        end
     end
+  end
+
+  defp live_scim_identity(%IdentityProvider{} = provider, external_id) do
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.scim_not_deleted()
+    |> UserIdentity.Query.by_account_id(provider.account_id)
+    |> UserIdentity.Query.by_provider_and_scim_external_id(provider.id, external_id)
+    |> Repo.peek()
+  end
+
+  # SCIM may adopt an OIDC-first row only when no directory resource already
+  # owns the externalId. Exact live and retired SCIM keys are deliberately
+  # checked first: the two namespaces may contain the same string for different
+  # people, and the directory's own key is authoritative here.
+  defp unclaimed_oidc_identity(%IdentityProvider{} = provider, external_id) do
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.scim_not_deleted()
+    |> UserIdentity.Query.without_scim_external_id()
+    |> UserIdentity.Query.by_account_id(provider.account_id)
+    |> UserIdentity.Query.by_provider_and_identifier(provider.id, external_id)
+    |> Repo.peek()
+  end
+
+  # The SCIM tombstone does NOT release the shared row's external-id or one-user
+  # reservations. A live wire resource wins above; otherwise revive the most
+  # recently retired exact SCIM resource deterministically, never the independent
+  # OIDC provider-identifier namespace.
+  defp retired_scim_identity(%IdentityProvider{} = provider, external_id) do
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.scim_deleted()
+    |> UserIdentity.Query.by_account_id(provider.account_id)
+    |> UserIdentity.Query.by_provider_and_scim_external_id(provider.id, external_id)
+    |> UserIdentity.Query.latest_scim_deleted()
+    |> Repo.peek()
   end
 
   # A re-POST of an existing identity RECONCILES it to the state the directory
@@ -176,11 +220,25 @@ defmodule Emisar.SSO.SCIM do
          retry
        ) do
     active = scim_active_from(attrs)
+    state = if identity.scim_deleted_at, do: :retired, else: :live
 
-    with {:ok, authorization} <- load_repost_authorization(provider, identity, active) do
-      case reconcile_provisioned(provider, identity, external_id, active, authorization) do
-        {:error, :stale_authorization_version} when retry == :may_retry ->
+    with {:ok, authorization} <- load_repost_authorization(provider, identity, active, state) do
+      case reconcile_provisioned(provider, identity, external_id, active, authorization, state) do
+        {:error, reason}
+        when reason in [:stale_authorization_version, :not_found] and retry == :may_retry ->
           provision_or_load(provider, attrs, :final)
+
+        {:error, %Ecto.Changeset{} = changeset} ->
+          cond do
+            identifier_race?(changeset) and retry == :may_retry ->
+              provision_or_load(provider, attrs, :final)
+
+            identifier_race?(changeset) ->
+              {:error, :identifier_taken}
+
+            true ->
+              {:error, changeset}
+          end
 
         result ->
           result
@@ -193,18 +251,35 @@ defmodule Emisar.SSO.SCIM do
   # bumps authorization_version while holding the provider row; the transaction
   # below accepts this bundle only when that version is still current, and the
   # caller retries once on a crossing write.
-  defp load_repost_authorization(_provider, _identity, false), do: {:ok, nil}
+  defp load_repost_authorization(_provider, _identity, false, :live), do: {:ok, nil}
 
-  defp load_repost_authorization(%IdentityProvider{} = provider, %UserIdentity{} = identity, true) do
+  defp load_repost_authorization(%IdentityProvider{} = provider, _identity, false, :retired) do
+    with {:ok, current} <- fetch_current_scim_provider(provider) do
+      {:ok,
+       %{
+         authorization_version: current.authorization_version,
+         authoritative?: true,
+         mapped_role: nil,
+         mapped_access: Accounts.RunnerAccess.none()
+       }}
+    end
+  end
+
+  defp load_repost_authorization(
+         %IdentityProvider{} = provider,
+         %UserIdentity{} = identity,
+         true,
+         state
+       ) do
     with {:ok, current} <- fetch_current_scim_provider(provider) do
       role_mappings = provider_role_mappings(current)
       runner_access_mappings = provider_runner_access_mappings(current)
 
       authoritative? =
-        match?(%DateTime{}, current.scim_groups_synced_at) or
+        state == :retired or match?(%DateTime{}, current.scim_groups_synced_at) or
           (role_mappings == [] and runner_access_mappings == [])
 
-      group_ids = Map.get(group_ids_by_identity([identity]), identity.id, [])
+      group_ids = repost_group_ids(identity, state)
 
       mapped_access =
         runner_access_mappings
@@ -222,7 +297,16 @@ defmodule Emisar.SSO.SCIM do
     end
   end
 
-  defp reconcile_provisioned(provider, identity, external_id, active, authorization) do
+  # A deleted SCIM resource starts a new directory lifecycle. Its old group links
+  # were retired with it, so it returns at provider defaults until current Group
+  # pushes say otherwise. This also fails closed for historical tombstones whose
+  # old links predate that cleanup.
+  defp repost_group_ids(_identity, :retired), do: []
+
+  defp repost_group_ids(%UserIdentity{} = identity, :live),
+    do: Map.get(group_ids_by_identity([identity]), identity.id, [])
+
+  defp reconcile_provisioned(provider, identity, external_id, active, authorization, state) do
     expected_version =
       if authorization, do: authorization.authorization_version, else: :any
 
@@ -230,17 +314,17 @@ defmodule Emisar.SSO.SCIM do
       Multi.new()
       |> put_current_scim_provider(provider, expected_version)
       |> Multi.run(:scim_identity, fn repo, %{locked_provider: locked_provider} ->
-        lock_scim_identity(locked_provider, identity.id, repo)
+        lock_repost_identity(locked_provider, identity.id, state, repo)
       end)
       |> Multi.run(:adopted_identity, fn repo, %{scim_identity: locked_identity} ->
-        adopt_scim_identity(repo, locked_identity, external_id)
+        prepare_repost_identity(repo, locked_identity, external_id, state)
       end)
       |> Multi.run(:user, fn _repo, %{adopted_identity: locked_identity} ->
         Users.fetch_user_by_id(locked_identity.user_id)
       end)
       |> Multi.merge(&reconcile_provisioned_membership_multi(&1, active, authorization))
       |> Multi.run(:updated_identity, fn repo, %{adopted_identity: locked_identity} ->
-        set_identity_scim_active(repo, locked_identity, active)
+        put_repost_identity_state(repo, locked_identity, active, state)
       end)
       |> maybe_put_repost_authorization(authorization)
       |> Multi.run(:result, fn _repo, changes ->
@@ -259,6 +343,39 @@ defmodule Emisar.SSO.SCIM do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  defp lock_repost_identity(provider, id, :live, repo),
+    do: lock_scim_identity(provider, id, repo)
+
+  defp lock_repost_identity(%IdentityProvider{} = provider, id, :retired, repo) do
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.scim_deleted()
+    |> UserIdentity.Query.by_account_id(provider.account_id)
+    |> UserIdentity.Query.by_provider_id(provider.id)
+    |> UserIdentity.Query.by_id(id)
+    |> UserIdentity.Query.lock_for_update()
+    |> repo.fetch(UserIdentity.Query)
+  end
+
+  defp prepare_repost_identity(repo, identity, external_id, :live),
+    do: adopt_scim_identity(repo, identity, external_id)
+
+  defp prepare_repost_identity(
+         _repo,
+         %UserIdentity{scim_external_id: external_id} = identity,
+         external_id,
+         :retired
+       ),
+       do: {:ok, identity}
+
+  defp prepare_repost_identity(_repo, %UserIdentity{}, _external_id, :retired),
+    do: {:error, :identifier_taken}
+
+  defp put_repost_identity_state(repo, identity, active, :live),
+    do: set_identity_scim_active(repo, identity, active)
+
+  defp put_repost_identity_state(repo, identity, active, :retired),
+    do: repo.update(UserIdentity.Changeset.revive_scim_resource(identity, active))
 
   defp adopt_scim_identity(repo, %UserIdentity{scim_external_id: nil} = identity, external_id)
        when is_binary(external_id),
@@ -342,16 +459,25 @@ defmodule Emisar.SSO.SCIM do
       %{membership: _newly_created} ->
         Multi.new()
 
-      %{locked_provider: provider, membership_transition: transition} ->
+      %{
+        locked_provider: provider,
+        membership_transition: %{
+          membership: %Accounts.Membership{directory_provider_id: provider_id} = membership
+        }
+      }
+      when provider_id == provider.id ->
         {role, access} = repost_authorization(provider, authorization)
 
         Accounts.put_sync_membership_authorization(
           Multi.new(),
-          transition.membership,
+          membership,
           role,
           access,
           provider
         )
+
+      %{membership_transition: _transition} ->
+        Multi.new()
     end)
   end
 
@@ -528,7 +654,7 @@ defmodule Emisar.SSO.SCIM do
   end
 
   @doc """
-  Internal — SCIM update (PATCH / PUT / DELETE): apply one directory user's
+  Internal — SCIM update (PATCH / PUT): apply one directory user's
   desired name and lifecycle state (`%SCIMUserUpdate{}`) as ONE transaction.
   The identity is re-read and locked under the provider's scope, a partial
   name is merged against that locked state, and the rename, the membership
@@ -563,9 +689,127 @@ defmodule Emisar.SSO.SCIM do
     end
   end
 
+  @doc """
+  Internal — SCIM `DELETE /Users/{id}`: suspend the account membership and
+  retire the exact directory resource in one provider-scoped transaction. The
+  person and identity history remain, but the resource immediately leaves GET,
+  list, PATCH, PUT and DELETE. A later `POST /Users` carrying the same
+  `externalId` revives this row instead of duplicating the person. Group links
+  are retired with the resource so old mapped grants cannot return on revival.
+  """
+  def scim_delete_user(%IdentityProvider{} = provider, id) do
+    multi =
+      Multi.new()
+      |> put_current_scim_provider(provider)
+      |> Multi.run(:identity, fn repo, %{locked_provider: locked_provider} ->
+        lock_scim_identity(locked_provider, id, repo)
+      end)
+      |> Multi.merge(fn %{locked_provider: locked_provider, identity: identity} ->
+        scim_lifecycle_multi(locked_provider, identity, false)
+      end)
+      |> Multi.merge(&put_deleted_scim_authorization/1)
+      |> Multi.run(:identity_sessions, fn repo, %{identity: identity} ->
+        Auth.delete_identity_session_tokens(identity.user_id, [identity.id], repo)
+      end)
+      |> Multi.run(:deleted_identity, fn repo,
+                                         %{
+                                           locked_provider: locked_provider,
+                                           identity: identity
+                                         } ->
+        delete_scim_resource(repo, locked_provider, identity)
+      end)
+
+    with {:ok, changes} <- Repo.commit_multi(multi, after_commit: &scim_delete_effects/1) do
+      {:ok, %{identity: changes.deleted_identity, membership: scim_updated_membership(changes)}}
+    end
+  end
+
+  defp scim_delete_effects(changes) do
+    :ok = Accounts.membership_lifecycle_effects(changes)
+    :ok = maybe_finish_scim_authorization(changes)
+    :ok = Auth.disconnect_live_socket_topics(changes.identity_sessions.socket_topics)
+    cleanup_retired_group_members(changes.locked_provider, changes.deleted_identity)
+  end
+
+  defp put_deleted_scim_authorization(%{
+         locked_provider: provider,
+         membership_transition: %{
+           membership: %Accounts.Membership{directory_provider_id: provider_id} = membership
+         }
+       })
+       when provider_id == provider.id do
+    Accounts.put_sync_membership_authorization(
+      Multi.new(),
+      membership,
+      provider.default_role,
+      provider_runner_access(provider),
+      provider
+    )
+  end
+
+  defp put_deleted_scim_authorization(%{membership_transition: _transition}), do: Multi.new()
+
+  defp delete_scim_resource(
+         repo,
+         %IdentityProvider{} = provider,
+         %UserIdentity{scim_external_id: nil} = identity
+       ) do
+    reserved_external_id =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_account_id(provider.account_id)
+      |> UserIdentity.Query.by_provider_and_scim_external_id(
+        provider.id,
+        identity.provider_identifier
+      )
+      |> repo.peek()
+      |> case do
+        nil -> identity.provider_identifier
+        %UserIdentity{} -> nil
+      end
+
+    repo.update(UserIdentity.Changeset.delete_scim_resource(identity, reserved_external_id))
+  end
+
+  defp delete_scim_resource(
+         repo,
+         %IdentityProvider{},
+         %UserIdentity{scim_external_id: external_id} = identity
+       ) do
+    repo.update(UserIdentity.Changeset.delete_scim_resource(identity, external_id))
+  end
+
+  defp maybe_finish_scim_authorization(%{target: _target} = changes),
+    do: Accounts.after_sync_membership_authorization_committed(changes)
+
+  defp maybe_finish_scim_authorization(_changes), do: :ok
+
+  # Group links can be numerous. Retire them only after the provider/identity/
+  # membership transaction releases its locks, and repeat the same idempotent
+  # cleanup before revival so a crash after the tombstone fails closed and
+  # self-heals. The identity join makes the UPDATE conditional on the marker in
+  # the statement snapshot. A concurrent revival can therefore expose fresh
+  # group pushes only after this UPDATE's snapshot, so they are never swept.
+  defp cleanup_retired_group_members(
+         %IdentityProvider{} = provider,
+         %UserIdentity{scim_deleted_at: %DateTime{}} = identity
+       ) do
+    now = DateTime.utc_now()
+
+    queryable =
+      DirectoryGroupMember.Query.not_deleted()
+      |> DirectoryGroupMember.Query.by_account_id(provider.account_id)
+      |> DirectoryGroupMember.Query.by_provider_id(provider.id)
+      |> DirectoryGroupMember.Query.by_user_identity_id(identity.id)
+      |> DirectoryGroupMember.Query.with_joined_retired_scim_identity()
+
+    Repo.update_all(queryable, set: [deleted_at: now, updated_at: now])
+    :ok
+  end
+
   defp lock_scim_identity(%IdentityProvider{} = provider, id, repo) do
     if Repo.valid_uuid?(id) do
       UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.scim_not_deleted()
       |> UserIdentity.Query.by_account_id(provider.account_id)
       |> UserIdentity.Query.by_provider_id(provider.id)
       |> UserIdentity.Query.by_id(id)
@@ -690,6 +934,11 @@ defmodule Emisar.SSO.SCIM do
   # the lifecycle write's row wins over the rename's, and an untouched
   # membership is nil.
   defp scim_updated_membership(%{
+         membership: %Accounts.Membership{} = membership
+       }),
+       do: membership
+
+  defp scim_updated_membership(%{
          membership_transition: %{membership: %Accounts.Membership{} = membership}
        }),
        do: membership
@@ -732,6 +981,7 @@ defmodule Emisar.SSO.SCIM do
     # account is always filtered on, belt-and-suspenders).
     queryable =
       UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.scim_not_deleted()
       |> UserIdentity.Query.by_account_id(provider.account_id)
       |> UserIdentity.Query.by_provider_id(provider.id)
       |> apply_scim_filter(scim_filter)
@@ -863,6 +1113,7 @@ defmodule Emisar.SSO.SCIM do
   defp fetch_scim_identity(%IdentityProvider{} = provider, id) do
     if Repo.valid_uuid?(id) do
       UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.scim_not_deleted()
       |> UserIdentity.Query.by_account_id(provider.account_id)
       |> UserIdentity.Query.by_provider_id(provider.id)
       |> UserIdentity.Query.by_id(id)
@@ -1378,6 +1629,7 @@ defmodule Emisar.SSO.SCIM do
 
   defp resolve_member_identity_ids(%IdentityProvider{} = provider, ids) do
     UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.scim_not_deleted()
     |> UserIdentity.Query.by_account_id(provider.account_id)
     |> UserIdentity.Query.by_provider_id(provider.id)
     |> UserIdentity.Query.by_ids(ids)
