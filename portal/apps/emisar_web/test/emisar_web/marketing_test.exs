@@ -1750,13 +1750,17 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     test "the SSO page publishes the generic OIDC and provider lifecycle contracts", %{conn: conn} do
-      html = conn |> get(~p"/docs/sso") |> html_response(200)
+      html = conn |> get(~p"/docs/sso") |> html_response(200) |> squish()
 
       assert html =~ "OIDC contract"
       assert html =~ "PKCE"
       assert html =~ "uses S256"
       assert html =~ "openid"
       assert html =~ "email_verified: true"
+      assert html =~ "An email address and a display name are optional"
+      assert html =~ "Google Workspace proves its tenant"
+      assert html =~ "never proves the email address"
+      assert html =~ "with no additional audience"
       assert html =~ "Require SSO for the account"
       assert html =~ "Rotate a client secret"
       assert html =~ "Disable or delete a connection"

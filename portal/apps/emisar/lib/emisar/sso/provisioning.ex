@@ -83,6 +83,8 @@ defmodule Emisar.SSO.Provisioning do
         claims,
         source
       ) do
+    matched_email = link_match_email(provider, email, claims, source)
+
     attrs = %{
       provider_identifier: identifier,
       source: source,
@@ -90,7 +92,7 @@ defmodule Emisar.SSO.Provisioning do
       email: email,
       full_name: full_name,
       claims: claims,
-      matched_user_id: matched_member_id(provider, email)
+      matched_user_id: matched_member_id(provider, matched_email)
     }
 
     changeset = LinkRequest.Changeset.create(provider.account_id, provider.id, attrs)
@@ -115,7 +117,32 @@ defmodule Emisar.SSO.Provisioning do
     )
   end
 
-  # Collision variant (for `:jit`/SCIM): park a link request ONLY when the email
+  # Email participates in OIDC identity only when the ID token explicitly marks
+  # it verified. The raw claim remains useful display context on a pending
+  # request, but never becomes an account binding or confirmed user address.
+  def verified_email(%IdentityProvider{}, %{
+        "email" => email,
+        "email_verified" => verified
+      })
+      when is_binary(email) and verified in [true, "true"] do
+    case String.trim(email) do
+      "" -> nil
+      email -> email
+    end
+  end
+
+  def verified_email(%IdentityProvider{}, _claims), do: nil
+
+  # The directory is authoritative for SCIM email. OIDC email is only display
+  # context until the signed token explicitly marks it verified. Keeping the
+  # choice here prevents a caller from accidentally supplying raw OIDC email as
+  # an account-binding hint.
+  defp link_match_email(provider, _email, claims, :oidc),
+    do: verified_email(provider, claims)
+
+  defp link_match_email(_provider, email, _claims, :scim), do: email
+
+  # Directory collision variant: park a link request ONLY when the SCIM email
   # matches an existing member, so an admin has someone to link to. A non-member
   # collision has no link target — the caller keeps the genuine `:email_taken`
   # (C1). Returns `:captured | :no_match`.
@@ -125,10 +152,10 @@ defmodule Emisar.SSO.Provisioning do
         email,
         full_name,
         claims,
-        source
+        :scim
       ) do
     if matched_member_id(provider, email) do
-      case capture_link_request(provider, identifier, email, full_name, claims, source) do
+      case capture_link_request(provider, identifier, email, full_name, claims, :scim) do
         {:ok, request} -> {:captured, request}
         {:error, _} -> :no_match
       end

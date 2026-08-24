@@ -42,6 +42,61 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     end
   end
 
+  test "the callback accepts only this client as the ID-token audience" do
+    provider = provider()
+    opts = Oidcc.callback_token_options(provider, stashed())
+    assert opts.trusted_audiences == []
+    key = JOSE.JWK.generate_key({:rsa, 2048})
+
+    configuration = %Elixir.Oidcc.ProviderConfiguration{
+      issuer: provider.issuer,
+      id_token_signing_alg_values_supported: ["RS256"],
+      id_token_encryption_alg_values_supported: [],
+      id_token_encryption_enc_values_supported: []
+    }
+
+    context =
+      Elixir.Oidcc.ClientContext.from_manual(
+        configuration,
+        JOSE.JWK.to_public(key),
+        provider.client_id,
+        :unauthenticated
+      )
+
+    claims = %{
+      "iss" => provider.issuer,
+      "sub" => "subject",
+      "aud" => provider.client_id,
+      "exp" => System.system_time(:second) + 60,
+      "iat" => System.system_time(:second),
+      "nonce" => stashed().nonce
+    }
+
+    assert {:ok, %{"sub" => "subject"}} =
+             claims
+             |> sign_id_token(key)
+             |> Elixir.Oidcc.Token.validate_id_token(context, opts)
+
+    client_only_array =
+      Map.merge(claims, %{"aud" => [provider.client_id], "azp" => provider.client_id})
+
+    assert {:ok, %{"sub" => "subject"}} =
+             client_only_array
+             |> sign_id_token(key)
+             |> Elixir.Oidcc.Token.validate_id_token(context, opts)
+
+    claims =
+      Map.merge(claims, %{
+        "aud" => [provider.client_id, "attacker-audience"],
+        "azp" => provider.client_id
+      })
+
+    assert {:error, {:missing_claim, {"aud", "client-id"}, _claims}} =
+             claims
+             |> sign_id_token(key)
+             |> Elixir.Oidcc.Token.validate_id_token(context, opts)
+  end
+
   test "a well-formed callback clears the gates and every fetch goes through the guard" do
     # Two things at once. The state/issuer/code gates let a well-formed callback
     # through — the failure it gets is a transport refusal, not `:state_mismatch` —
@@ -103,6 +158,13 @@ defmodule Emisar.SSO.OIDC.OidccTest do
       nonce: "nonce",
       pkce_verifier: "pkce-verifier"
     }
+  end
+
+  defp sign_id_token(claims, key) do
+    key
+    |> JOSE.JWT.sign(%{"alg" => "RS256"}, claims)
+    |> JOSE.JWS.compact()
+    |> elem(1)
   end
 
   # Accepts one connection and tells the test. Stands in for the internal host a

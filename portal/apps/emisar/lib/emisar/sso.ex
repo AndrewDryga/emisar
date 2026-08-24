@@ -1227,19 +1227,32 @@ defmodule Emisar.SSO do
   # only on the identifier. When it does not, nothing is authenticated: it becomes
   # a link request for an admin, which is what an unrecognized person gets anyway.
   defp existing_auth_writes(%IdentityProvider{} = provider, identity, claims) do
-    if synthesized_oidc_identifier?(identity) and
-         not claims_name_the_same_person?(identity, claims) do
-      pending_auth_writes(provider, identity.provider_identifier, claims)
-    else
+    if synthesized_oidc_identifier?(identity) do
       Multi.new()
-      |> Multi.update(:identity, UserIdentity.Changeset.touch_last_seen(identity))
-      |> Multi.run(:user, fn _repo, %{identity: identity} ->
-        Users.fetch_user_by_id(identity.user_id)
+      |> Multi.run(:locked_user, fn repo, _changes ->
+        Users.fetch_and_lock_user_by_id(identity.user_id, repo)
       end)
-      |> Multi.run(:auth_result, fn _repo, %{user: user, identity: identity} ->
-        {:ok, {:ok, %{user: user, identity: identity, provider: provider, created?: false}}}
+      |> Multi.merge(fn %{locked_user: user} ->
+        if claims_name_the_same_person?(provider, user, claims) do
+          returning_auth_writes(provider, identity, user)
+        else
+          pending_auth_writes(provider, identity.provider_identifier, claims)
+        end
       end)
+    else
+      returning_auth_writes(provider, identity)
     end
+  end
+
+  defp returning_auth_writes(provider, identity, locked_user \\ nil) do
+    Multi.new()
+    |> Multi.update(:identity, UserIdentity.Changeset.touch_last_seen(identity))
+    |> Multi.run(:user, fn _repo, %{identity: identity} ->
+      if locked_user, do: {:ok, locked_user}, else: Users.fetch_user_by_id(identity.user_id)
+    end)
+    |> Multi.run(:auth_result, fn _repo, %{user: user, identity: identity} ->
+      {:ok, {:ok, %{user: user, identity: identity, provider: provider, created?: false}}}
+    end)
   end
 
   defp synthesized_oidc_identifier?(%UserIdentity{provisioned_via: :scim} = identity),
@@ -1247,11 +1260,10 @@ defmodule Emisar.SSO do
 
   defp synthesized_oidc_identifier?(%UserIdentity{}), do: false
 
-  defp claims_name_the_same_person?(%UserIdentity{} = identity, claims) do
-    with {:ok, user} <- Users.fetch_user_by_id(identity.user_id),
-         email when is_binary(email) <- claims["email"] do
-      # citext compares case-insensitively; trim only what the wire added.
-      String.trim(email) == user.email
+  defp claims_name_the_same_person?(provider, user, claims) do
+    with email when is_binary(email) <- verified_email(provider, claims),
+         {:ok, email_owner} <- Users.fetch_user_by_email(email) do
+      email_owner.id == user.id
     else
       _ -> false
     end
@@ -1318,7 +1330,7 @@ defmodule Emisar.SSO do
         provider.scim_enabled or provider.provisioner == :manual ->
           pending_auth_writes(provider, identifier, claims)
 
-        matched_member_id(provider, claims["email"]) ->
+        matched_member_id(provider, verified_email(provider, claims)) ->
           pending_auth_writes(provider, identifier, claims)
 
         true ->
@@ -1338,7 +1350,7 @@ defmodule Emisar.SSO do
     provisioned_via = Keyword.get(opts, :provisioned_via, :oidc_jit)
     audit = Keyword.get(opts, :audit, &Audit.Events.user_provisioned_via_sso(&1, provider))
     runner_access = Keyword.get(opts, :runner_access, provider_runner_access(provider))
-    user_attrs = %{email: verified_email(claims), full_name: claims["name"]}
+    user_attrs = %{email: verified_email(provider, claims), full_name: claims["name"]}
 
     Multi.new()
     |> Multi.run(:user, fn _repo, _changes -> Users.provision_sso_user(user_attrs) end)
@@ -1368,43 +1380,41 @@ defmodule Emisar.SSO do
     Repo.insert(changeset)
   end
 
-  # R6/§9 C2: trust the email only when the IdP marks it verified (or a
-  # domain-authoritative `hd` is present). Otherwise nil — the user is
-  # identified solely by `(provider, sub)`.
-  defp verified_email(%{"email" => email} = claims) when is_binary(email) do
-    # `email_verified` arrives as a boolean from a JWT-decoded ID token but as the
-    # string "true"/"false" from some IdPs / the SCIM query-param path — normalize
-    # BOTH forms. A domain-authoritative Google `hd` is the other accepted signal
-    # (R6/§9 C2), but an EXPLICIT unverified (`false` OR the string `"false"`)
-    # overrides it (#7 — don't trust a forged `hd` paired with an unverified email;
-    # comparing only against the boolean `false` let the string slip through).
-    verified? = claims["email_verified"] in [true, "true"]
-
-    if verified? or (is_binary(claims["hd"]) and not email_explicitly_unverified?(claims)),
-      do: email,
-      else: nil
-  end
-
-  defp verified_email(_claims), do: nil
-
   defp email_explicitly_unverified?(claims), do: claims["email_verified"] in [false, "false"]
 
-  # H1: when the provider restricts a domain, the IdP-asserted `hd` (preferred)
-  # or the verified email's domain must match; a login with no verified domain
-  # is refused. No restriction (nil) → rely on the IdP's membership boundary.
+  # H1: Google's `hd` is an issuer-owned tenant boundary. Other OIDC providers
+  # do not define it, so only an explicitly verified email can prove their
+  # domain. Raw email remains display context and never grants membership.
   defp ensure_email_domain_allowed(%IdentityProvider{allowed_email_domain: nil}, _claims), do: :ok
 
-  defp ensure_email_domain_allowed(%IdentityProvider{allowed_email_domain: domain}, claims) do
-    if claimed_domain_matches?(claims, domain),
+  defp ensure_email_domain_allowed(
+         %IdentityProvider{allowed_email_domain: domain} = provider,
+         claims
+       ) do
+    if claimed_domain_matches?(provider, claims, domain),
       do: :ok,
       else: {:error, :email_domain_not_allowed}
   end
 
-  defp claimed_domain_matches?(%{"hd" => hd} = claims, domain) when is_binary(hd),
-    do: not email_explicitly_unverified?(claims) and domains_equal?(hd, domain)
+  defp claimed_domain_matches?(
+         %IdentityProvider{kind: :google_workspace} = provider,
+         claims,
+         domain
+       ) do
+    case claims["hd"] do
+      hd when is_binary(hd) ->
+        not email_explicitly_unverified?(claims) and domains_equal?(hd, domain)
 
-  defp claimed_domain_matches?(claims, domain) do
-    case verified_email(claims) do
+      _ ->
+        verified_email_matches_domain?(provider, claims, domain)
+    end
+  end
+
+  defp claimed_domain_matches?(%IdentityProvider{} = provider, claims, domain),
+    do: verified_email_matches_domain?(provider, claims, domain)
+
+  defp verified_email_matches_domain?(provider, claims, domain) do
+    case verified_email(provider, claims) do
       nil -> false
       email -> email_in_domain?(email, domain)
     end
@@ -1417,7 +1427,8 @@ defmodule Emisar.SSO do
     end
   end
 
-  defp domains_equal?(a, b), do: String.downcase(a) == String.downcase(b)
+  defp domains_equal?(a, b),
+    do: String.downcase(String.trim(a)) == String.downcase(String.trim(b))
 
   # Ensure the member has an active membership, reinstating or (re)creating one —
   # the link-approval flow, where an admin explicitly grants access. Runs inside
@@ -2276,18 +2287,30 @@ defmodule Emisar.SSO do
     Multi.new()
     |> put_active_account_lock(provider.account_id)
     |> put_enabled_provider_lock(provider)
-    |> Multi.run(:approver, fn repo, _changes ->
-      ensure_approver_still_holds_authority(provider, subject, repo)
+    |> Multi.merge(fn %{locked_provider: locked_provider} ->
+      case ensure_request_matches_current_namespace(locked_provider, request) do
+        :ok ->
+          Multi.new()
+          |> Multi.run(:approver, fn repo, _changes ->
+            ensure_approver_still_holds_authority(locked_provider, subject, repo)
+          end)
+          |> Multi.append(
+            build_provision_writes(
+              locked_provider,
+              request.provider_identifier,
+              request.claims,
+              created_by: :admin,
+              provisioned_via: :manual,
+              runner_access: access,
+              audit: &Audit.Events.sso_link_request_approved(subject, &1, locked_provider)
+            )
+          )
+          |> Multi.delete(:link_request, request)
+
+        {:error, reason} ->
+          Multi.error(Multi.new(), :request_namespace, reason)
+      end
     end)
-    |> Multi.append(
-      build_provision_writes(provider, request.provider_identifier, request.claims,
-        created_by: :admin,
-        provisioned_via: :manual,
-        runner_access: access,
-        audit: &Audit.Events.sso_link_request_approved(subject, &1, provider)
-      )
-    )
-    |> Multi.delete(:link_request, request)
   end
 
   # An existing account member matched → bind this IdP identity to THAT user (no
@@ -2303,19 +2326,22 @@ defmodule Emisar.SSO do
        ) do
     Multi.new()
     |> put_provider_lock(provider)
-    |> Multi.run(:user, fn repo, _changes ->
-      fetch_matched_member(provider, request, subject, repo)
+    |> Multi.merge(fn %{locked_provider: locked_provider} ->
+      Multi.new()
+      |> Multi.run(:user, fn repo, _changes ->
+        fetch_matched_member(locked_provider, request, subject, repo)
+      end)
+      |> Multi.run(:identity, fn _repo, %{user: user} ->
+        link_identity(locked_provider, user, request)
+      end)
+      |> Multi.run(:membership, fn _repo, %{user: user} ->
+        ensure_active_membership(locked_provider, user)
+      end)
+      |> Multi.insert(:audit, fn %{user: user} ->
+        Audit.Events.sso_existing_user_linked(subject, user, locked_provider)
+      end)
+      |> Multi.delete(:link_request, request)
     end)
-    |> Multi.run(:identity, fn _repo, %{user: user} ->
-      link_identity(provider, user, request)
-    end)
-    |> Multi.run(:membership, fn _repo, %{user: user} ->
-      ensure_active_membership(provider, user)
-    end)
-    |> Multi.insert(:audit, fn %{user: user} ->
-      Audit.Events.sso_existing_user_linked(subject, user, provider)
-    end)
-    |> Multi.delete(:link_request, request)
   end
 
   # Re-verify at approval time (the match was recorded at capture): the matched
@@ -2333,6 +2359,7 @@ defmodule Emisar.SSO do
          repo
        ) do
     with :ok <- ensure_request_matches_current_namespace(provider, request),
+         :ok <- ensure_matched_request_has_trusted_email(provider, request),
          {:ok, approver_role} <- ensure_approver_still_holds_authority(provider, subject, repo),
          {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id),
          %Accounts.Membership{} <- Accounts.peek_sync_membership(provider.account_id, user.id),
@@ -2343,6 +2370,27 @@ defmodule Emisar.SSO do
       _ -> {:error, :matched_user_unavailable}
     end
   end
+
+  # The migration repairs historical rows, but approval is the durable trust
+  # boundary: a stale node or restored database must not turn raw OIDC display
+  # email into an existing-member credential binding. SCIM email is asserted by
+  # the directory and remains the separate authoritative path.
+  defp ensure_matched_request_has_trusted_email(
+         %IdentityProvider{} = provider,
+         %LinkRequest{source: :oidc, claims: claims}
+       ) do
+    if is_binary(verified_email(provider, claims)) do
+      :ok
+    else
+      {:error, :unverified_email}
+    end
+  end
+
+  defp ensure_matched_request_has_trusted_email(
+         %IdentityProvider{},
+         %LinkRequest{source: :scim}
+       ),
+       do: :ok
 
   defp ensure_request_matches_current_namespace(
          %IdentityProvider{} = provider,

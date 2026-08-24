@@ -203,10 +203,13 @@ defmodule EmisarWeb.SSOControllerTest do
     test "a valid stash + verified claims logs the user in with :sso provenance", %{conn: conn} do
       account = enterprise_account()
       provider = provider_fixture(account)
-      # Claims ride the callback as query params, so booleans would arrive as
-      # strings ("email_verified" => "true"); use the all-string `hd` path,
-      # which the verified-email rule honors and which survives the round-trip.
-      claims = %{"sub" => "okta|cb-1", "email" => "cb@acme.test", "hd" => "acme.test"}
+      # Claims ride the callback as query params, so the provider's boolean
+      # email-verification claim arrives as the string "true".
+      claims = %{
+        "sub" => "okta|cb-1",
+        "email" => "cb@acme.test",
+        "email_verified" => "true"
+      }
 
       conn =
         conn
@@ -233,7 +236,12 @@ defmodule EmisarWeb.SSOControllerTest do
     test "account disable between begin and callback prevents JIT side effects", %{conn: conn} do
       {_user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
       provider = provider_fixture(account)
-      claims = %{"sub" => "okta|disabled", "email" => "disabled@acme.test", "hd" => "acme.test"}
+
+      claims = %{
+        "sub" => "okta|disabled",
+        "email" => "disabled@acme.test",
+        "email_verified" => "true"
+      }
 
       conn = conn |> init_test_session(%{}) |> get(~p"/sign_in/sso/#{provider.id}")
 
@@ -255,7 +263,13 @@ defmodule EmisarWeb.SSOControllerTest do
     test "a protected OAuth request resumes after SSO sign-in", %{conn: conn} do
       account = enterprise_account()
       provider = provider_fixture(account)
-      claims = %{"sub" => "okta|oauth", "email" => "oauth@acme.test", "hd" => "acme.test"}
+
+      claims = %{
+        "sub" => "okta|oauth",
+        "email" => "oauth@acme.test",
+        "email_verified" => "true"
+      }
+
       verifier = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
       challenge = Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false)
 
@@ -296,7 +310,12 @@ defmodule EmisarWeb.SSOControllerTest do
     test "a successful callback records the user.signed_in audit with method sso", %{conn: conn} do
       account = enterprise_account()
       provider = provider_fixture(account)
-      claims = %{"sub" => "okta|audit-1", "email" => "audit@acme.test", "hd" => "acme.test"}
+
+      claims = %{
+        "sub" => "okta|audit-1",
+        "email" => "audit@acme.test",
+        "email_verified" => "true"
+      }
 
       conn =
         conn
@@ -320,7 +339,12 @@ defmodule EmisarWeb.SSOControllerTest do
       account = enterprise_account()
       account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
       provider = provider_fixture(account, satisfies_mfa: true)
-      claims = %{"sub" => "okta|mfa-exempt", "email" => "exempt@acme.test", "hd" => "acme.test"}
+
+      claims = %{
+        "sub" => "okta|mfa-exempt",
+        "email" => "exempt@acme.test",
+        "email_verified" => "true"
+      }
 
       logged_in =
         conn
@@ -346,7 +370,12 @@ defmodule EmisarWeb.SSOControllerTest do
       account = enterprise_account()
       account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
       provider = provider_fixture(account, satisfies_mfa: false)
-      claims = %{"sub" => "okta|nomfa", "email" => "nomfa@acme.test", "hd" => "acme.test"}
+
+      claims = %{
+        "sub" => "okta|nomfa",
+        "email" => "nomfa@acme.test",
+        "email_verified" => "true"
+      }
 
       logged_in =
         conn

@@ -88,10 +88,27 @@ defmodule Emisar.SSO.OIDC.Oidcc do
 
   @impl Emisar.SSO.OIDC
   def verify_callback(%IdentityProvider{} = provider, params, stashed) do
-    token_opts = %{
+    token_opts = callback_token_options(provider, stashed)
+
+    with :ok <- ensure_state_matches(params, stashed),
+         :ok <- ensure_response_issuer(params, provider),
+         {:ok, code} <- fetch_code(params),
+         {:ok, context} <- client_context(provider),
+         {:ok, token} <- Oidcc.Token.retrieve(code, context, token_opts),
+         {:ok, identifier} <- extract_identifier(token, provider) do
+      {:ok, %{identifier: identifier, claims: token.id.claims}}
+    end
+  end
+
+  @doc "Internal — the callback's complete oidcc token-validation policy."
+  def callback_token_options(%IdentityProvider{} = provider, stashed) do
+    %{
       redirect_uri: stashed.redirect_uri,
       nonce: stashed.nonce,
       pkce_verifier: stashed.pkce_verifier,
+      # oidcc otherwise accepts any additional audience when our client_id is
+      # also present. Empty means no trusted audience beyond the client itself.
+      trusted_audiences: [],
       # Same as begin: secret-based client auth only (see @secret_auth_methods).
       preferred_auth_methods: @secret_auth_methods,
       # The token exchange, for the same reason PAR needs it above.
@@ -104,15 +121,6 @@ defmodule Emisar.SSO.OIDC.Oidcc do
       # other request.
       refresh_jwks: refresh_jwks(provider)
     }
-
-    with :ok <- ensure_state_matches(params, stashed),
-         :ok <- ensure_response_issuer(params, provider),
-         {:ok, code} <- fetch_code(params),
-         {:ok, context} <- client_context(provider),
-         {:ok, token} <- Oidcc.Token.retrieve(code, context, token_opts),
-         {:ok, identifier} <- extract_identifier(token, provider) do
-      {:ok, %{identifier: identifier, claims: token.id.claims}}
-    end
   end
 
   @impl Emisar.SSO.OIDC

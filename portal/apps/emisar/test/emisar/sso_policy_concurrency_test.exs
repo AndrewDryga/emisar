@@ -233,6 +233,117 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
     end)
   end
 
+  test "a committed email change defeats a waiting synthesized-identity convergence" do
+    unboxed_sso(fn context ->
+      Repo.delete!(context.identity)
+
+      identifier = "directory-#{Ecto.UUID.generate()}"
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: context.account.id,
+          provider_id: context.provider.id,
+          user_id: context.user.id,
+          provider_identifier: identifier,
+          scim_external_id: identifier,
+          provisioned_via: :scim
+        })
+
+      claims = %{
+        "sub" => identifier,
+        "email" => context.user.email,
+        "email_verified" => true
+      }
+
+      parent = self()
+      updater = user_email_update_blocker(context.user, "changed-#{context.user.email}", parent)
+
+      try do
+        assert_receive {:user_email_changed, updater_backend}, 5_000
+
+        callback =
+          unboxed_task(fn ->
+            Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
+            send(parent, {:callback_backend, backend_pid()})
+            SSO.complete_auth(context.provider, %{"_claims" => claims}, %{})
+          end)
+
+        try do
+          assert_receive {:callback_backend, callback_backend}, 5_000
+          await_blocked_by(callback_backend, updater_backend)
+
+          send(updater.pid, :commit)
+          assert {:ok, %User{}} = Task.await(updater, 30_000)
+
+          assert {:pending, %LinkRequest{matched_user_id: nil, email: email}} =
+                   Task.await(callback, 30_000)
+
+          assert email == claims["email"]
+          assert Repo.reload!(identity).last_seen_at == identity.last_seen_at
+        after
+          stop_tasks([callback])
+        end
+      after
+        send(updater.pid, :commit)
+        stop_tasks([updater])
+      end
+    end)
+  end
+
+  test "a namespace update that wins the provider lock defeats a stale link approval" do
+    unboxed_sso(fn context ->
+      request_email = "pending-#{Ecto.UUID.generate()}@example.test"
+
+      request =
+        Fixtures.SSO.create_link_request(
+          provider: context.provider,
+          provider_identifier: "pending-#{Ecto.UUID.generate()}",
+          source: :oidc,
+          namespace_fingerprint: SSO.Provisioning.namespace_fingerprint(context.provider),
+          email: request_email,
+          claims: %{
+            "sub" => "pending-subject",
+            "email" => request_email,
+            "email_verified" => true
+          }
+        )
+
+      parent = self()
+      updater = provider_namespace_update_blocker(context.provider, parent)
+
+      try do
+        assert_receive {:provider_namespace_changed, updater_backend}, 5_000
+
+        approval =
+          unboxed_task(fn ->
+            send(parent, {:approval_backend, backend_pid()})
+
+            SSO.approve_link_request(
+              request,
+              Accounts.RunnerAccess.none(),
+              context.subject
+            )
+          end)
+
+        try do
+          assert_receive {:approval_backend, approval_backend}, 5_000
+          await_blocked_by(approval_backend, updater_backend)
+
+          send(updater.pid, :commit)
+          assert {:ok, %IdentityProvider{}} = Task.await(updater, 30_000)
+          assert Task.await(approval, 30_000) == {:error, :identity_namespace_changed}
+          assert Repo.reload!(request)
+          assert Emisar.Users.fetch_user_by_email(request_email) == {:error, :not_found}
+        after
+          stop_tasks([approval])
+        end
+      after
+        send(updater.pid, :commit)
+        stop_tasks([updater])
+      end
+    end)
+  end
+
   defp provider_blocker(provider, parent) do
     unboxed_task(fn ->
       Repo.transaction(fn ->
@@ -258,6 +369,52 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
 
         receive do
           :rollback -> Repo.rollback(:released)
+        end
+      end)
+    end)
+  end
+
+  defp user_email_update_blocker(user, new_email, parent) do
+    unboxed_task(fn ->
+      Repo.transaction(fn ->
+        locked =
+          User.Query.not_deleted()
+          |> User.Query.by_id(user.id)
+          |> User.Query.lock_for_update()
+          |> Repo.fetch!(User.Query)
+
+        updated =
+          locked
+          |> Ecto.Changeset.change(email: new_email, confirmed_at: nil)
+          |> Repo.update!()
+
+        send(parent, {:user_email_changed, backend_pid()})
+
+        receive do
+          :commit -> updated
+        end
+      end)
+    end)
+  end
+
+  defp provider_namespace_update_blocker(provider, parent) do
+    unboxed_task(fn ->
+      Repo.transaction(fn ->
+        locked =
+          IdentityProvider.Query.not_deleted()
+          |> IdentityProvider.Query.by_id(provider.id)
+          |> IdentityProvider.Query.lock_for_update()
+          |> Repo.fetch!(IdentityProvider.Query)
+
+        updated =
+          locked
+          |> Ecto.Changeset.change(issuer: "https://changed-#{Ecto.UUID.generate()}.test")
+          |> Repo.update!()
+
+        send(parent, {:provider_namespace_changed, backend_pid()})
+
+        receive do
+          :commit -> updated
         end
       end)
     end)

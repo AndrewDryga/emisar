@@ -213,6 +213,34 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload(request) == nil
     end
 
+    test "an unverified OIDC email is shown only as context, never as an existing-account match",
+         %{
+           conn: conn
+         } do
+      {conn, _owner, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      member = Fixtures.Users.create_user(email: "unverified-match@corp.test")
+
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+
+      assert {:ok, request} =
+               Emisar.SSO.Provisioning.capture_link_request(
+                 provider,
+                 "okta|unverified-match",
+                 member.email,
+                 "Unverified Match",
+                 %{"email" => member.email},
+                 :oidc
+               )
+
+      assert is_nil(request.matched_user_id)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+      assert html =~ member.email
+      refute html =~ "Existing account"
+    end
+
     test "the pending-request form reaches the runner access change handler", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")

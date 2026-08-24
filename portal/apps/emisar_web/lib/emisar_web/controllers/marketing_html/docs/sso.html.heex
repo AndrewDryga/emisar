@@ -145,13 +145,12 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Allowed email domain</strong>
-        is optional, and refuses a sign-in from outside one domain. It reads the provider's
+        is optional, and refuses a sign-in from outside one domain. Google Workspace proves its
+        tenant with the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">hd</code>
+        claim. Every other provider must explicitly mark the address with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">email_verified: true</code>, then emisar checks that address's domain. An
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">hd</code>
-        claim when the provider sends one, and otherwise the domain of the
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">email</code>
-        claim — never the identifier claim, which says who someone is rather than where their
-        mail lives. Either source counts only if the provider also sends <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">email_verified</code>, so a self-asserted address cannot pass. Leave the
-        field blank to accept every address the provider returns.
+        claim never proves the email address used to recognise or link a member. Leave the field
+        blank to accept every identity the provider returns.
       </p>
 
       <.docs_screenshot
@@ -407,11 +406,12 @@
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">ID-token claims</td>
               <td class="px-4 py-3">
-                The ID token must contain a stable <code>sub</code>
-                and an <code>email</code>
-                marked by <code>email_verified: true</code>. It can also contain <code>name</code>. emisar reads
-                these claims from the ID token and does not call UserInfo. The Entra preset uses
-                <code>oid</code>
+                The ID token must contain a stable <code>sub</code>. An email address and a
+                display name are optional. emisar trusts <code>email</code>
+                for address storage or member recognition only when the token explicitly marks it
+                with <code>email_verified: true</code>. Google Workspace's <code>hd</code>
+                proves only the tenant, never the address. emisar reads these claims from the ID
+                token and does not call UserInfo. The Entra preset uses <code>oid</code>
                 instead of <code>sub</code>.
               </td>
             </tr>
@@ -419,7 +419,8 @@
               <td class="px-4 py-3 font-semibold text-zinc-100">Validation</td>
               <td class="px-4 py-3">
                 The callback must pass state, nonce, PKCE, ID-token signature, exact issuer,
-                audience, and expiration checks before emisar resolves an identity.
+                expiration, and an audience equal to this connection's client ID with no
+                additional audience before emisar resolves an identity.
               </td>
             </tr>
           </tbody>
@@ -471,10 +472,13 @@
                 Authentication succeeds but emisar refuses the identity
               </td>
               <td class="px-4 py-3">
-                Inspect the ID token. It must contain the configured stable identifier and a
-                verified email. UserInfo-only email or profile claims are not read. If an existing
-                emisar user has that email, an administrator must link the provider identity
-                deliberately. emisar never merges by email.
+                Inspect the ID token. It must contain the configured stable identifier. If the
+                connection restricts an email domain or the identity needs linking, include an
+                explicitly verified email; Google Workspace may instead use a matching
+                <code>hd</code>
+                for its tenant boundary. UserInfo-only email or profile claims are not read. If an
+                existing emisar user has the verified email, an administrator must link the
+                provider identity deliberately. emisar never merges by email.
               </td>
             </tr>
             <tr>

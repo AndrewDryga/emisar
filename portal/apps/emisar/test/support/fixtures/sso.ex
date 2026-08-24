@@ -5,7 +5,7 @@ defmodule Emisar.Fixtures.SSO do
   """
 
   alias Emisar.Repo
-  alias Emisar.SSO.{IdentityProvider, UserIdentity}
+  alias Emisar.SSO.{IdentityProvider, Provisioning, UserIdentity}
 
   @runner_scope_fields [
     :default_runner_access_mode,
@@ -101,6 +101,7 @@ defmodule Emisar.Fixtures.SSO do
       Map.merge(
         %{
           provider_identifier: "sub-#{Emisar.Fixtures.Random.unique_int()}",
+          namespace_fingerprint: Provisioning.namespace_fingerprint(provider),
           email: "pending#{Emisar.Fixtures.Random.unique_int()}@example.com",
           full_name: "Pending Person"
         },

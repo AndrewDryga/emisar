@@ -2123,12 +2123,69 @@ defmodule Emisar.SSOTest do
           role: :viewer
         )
 
-      claims = %{"sub" => "okta|jit", "email" => "jit@acme.test", "email_verified" => true}
+      claims = %{
+        "sub" => "okta|jit",
+        "email" => "  JIT@ACME.TEST  ",
+        "email_verified" => true
+      }
 
       assert {:pending, request} =
                SSO.complete_auth(provider, callback(claims), %{})
 
       assert request.matched_user_id == member.id
+      assert request.email == "  JIT@ACME.TEST  "
+    end
+
+    test "an unverified OIDC email stays display-only and never preselects a member" do
+      for {label, verified} <- [{"absent", :absent}, {"false", false}, {"string-false", "false"}] do
+        {_owner, account, _subject} = enterprise_owner()
+        provider = provider_fixture(account, provisioner: :manual)
+        email = "unverified-#{label}@acme.test"
+        member = Fixtures.Users.create_user(%{email: email})
+
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: :viewer
+        )
+
+        claims = %{"sub" => "okta|#{label}", "email" => email}
+
+        claims =
+          if verified == :absent, do: claims, else: Map.put(claims, "email_verified", verified)
+
+        assert {:pending, %LinkRequest{} = request} =
+                 SSO.complete_auth(provider, callback(claims), %{})
+
+        assert request.email == email
+        assert request.claims["email"] == email
+        assert is_nil(request.matched_user_id)
+      end
+    end
+
+    test "the shared link-capture boundary cannot be handed raw OIDC match authority" do
+      {_owner, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account, provisioner: :manual)
+      member = Fixtures.Users.create_user(%{email: "raw-capture@acme.test"})
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: member.id,
+        role: :viewer
+      )
+
+      assert {:ok, request} =
+               SSO.Provisioning.capture_link_request(
+                 provider,
+                 "okta|raw-capture",
+                 member.email,
+                 "Raw Claim",
+                 %{"email" => member.email},
+                 :oidc
+               )
+
+      assert request.email == member.email
+      assert is_nil(request.matched_user_id)
     end
 
     test "provisioning into account A's provider never lands in account B" do
@@ -2374,30 +2431,44 @@ defmodule Emisar.SSOTest do
   describe "complete_auth/3 — allowed_email_domain gate (H1)" do
     setup do
       {_user, account, _subject} = enterprise_owner()
-      provider = provider_fixture(account, allowed_email_domain: "acme.test")
-      %{provider: provider}
+      %{account: account}
     end
 
-    test "a verified email in the allowed domain is admitted", %{provider: provider} do
+    test "a verified email in the allowed domain is admitted", %{account: account} do
+      provider = provider_fixture(account, allowed_email_domain: "acme.test")
       claims = %{"sub" => "okta|in", "email" => "ok@acme.test", "email_verified" => true}
       assert {:ok, %{user: _}} = SSO.complete_auth(provider, callback(claims), %{})
     end
 
-    test "a verified email outside the allowed domain is refused", %{provider: provider} do
+    test "a verified email outside the allowed domain is refused", %{account: account} do
+      provider = provider_fixture(account, allowed_email_domain: "acme.test")
       claims = %{"sub" => "okta|out", "email" => "x@evil.test", "email_verified" => true}
 
       assert SSO.complete_auth(provider, callback(claims), %{}) ==
                {:error, :email_domain_not_allowed}
     end
 
-    test "a Google hd claim matching the domain is admitted", %{provider: provider} do
+    test "Google Workspace hd proves the domain but not the email address", %{account: account} do
+      provider =
+        provider_fixture(account,
+          kind: :google_workspace,
+          allowed_email_domain: "acme.test"
+        )
+
       claims = %{"sub" => "g|hd", "email" => "x@acme.test", "hd" => "acme.test"}
-      assert {:ok, %{user: _}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{user: user}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert is_nil(user.email)
     end
 
     test "an explicit unverified-email claim cannot use hd to pass the domain gate", %{
-      provider: provider
+      account: account
     } do
+      provider =
+        provider_fixture(account,
+          kind: :google_workspace,
+          allowed_email_domain: "acme.test"
+        )
+
       claims = %{
         "sub" => "g|unverified-hd",
         "email" => "x@acme.test",
@@ -2409,7 +2480,54 @@ defmodule Emisar.SSOTest do
                {:error, :email_domain_not_allowed}
     end
 
-    test "no verified domain is refused when a domain is required", %{provider: provider} do
+    test "Google Workspace treats a present hd as authoritative", %{account: account} do
+      provider =
+        provider_fixture(account,
+          kind: :google_workspace,
+          allowed_email_domain: "acme.test"
+        )
+
+      claims = %{
+        "sub" => "g|wrong-hd",
+        "email" => "x@acme.test",
+        "email_verified" => true,
+        "hd" => "other.test"
+      }
+
+      assert SSO.complete_auth(provider, callback(claims), %{}) ==
+               {:error, :email_domain_not_allowed}
+    end
+
+    test "Okta and generic OIDC ignore hd without an explicitly verified email" do
+      for kind <- [:okta, :openid_connect] do
+        {_owner, account, _subject} = enterprise_owner()
+        domain = "#{kind}.test"
+        provider = provider_fixture(account, kind: kind, allowed_email_domain: domain)
+        claims = %{"sub" => "#{kind}|hd", "email" => "x@#{domain}", "hd" => domain}
+
+        assert SSO.complete_auth(provider, callback(claims), %{}) ==
+                 {:error, :email_domain_not_allowed}
+      end
+    end
+
+    test "a non-Google provider uses verified email and ignores a misleading hd", %{
+      account: account
+    } do
+      provider = provider_fixture(account, kind: :okta, allowed_email_domain: "acme.test")
+
+      claims = %{
+        "sub" => "okta|verified-email",
+        "email" => "ok@acme.test",
+        "email_verified" => "true",
+        "hd" => "evil.test"
+      }
+
+      assert {:ok, %{user: user}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert user.email == "ok@acme.test"
+    end
+
+    test "no verified domain is refused when a domain is required", %{account: account} do
+      provider = provider_fixture(account, allowed_email_domain: "acme.test")
       claims = %{"sub" => "okta|nodomain"}
 
       assert SSO.complete_auth(provider, callback(claims), %{}) ==
@@ -2759,7 +2877,7 @@ defmodule Emisar.SSOTest do
       # Alice herself still converges — same value, and the claims agree on who.
       alice_claims = %{
         "sub" => "shared-value",
-        "email" => "alice@acme.test",
+        "email" => "  ALICE@ACME.TEST  ",
         "email_verified" => true
       }
 
@@ -2768,6 +2886,28 @@ defmodule Emisar.SSOTest do
 
       assert signed_in.id == alice.id
       assert account.id
+    end
+
+    test "an unverified email cannot converge a synthesized directory identity", %{
+      provider: provider
+    } do
+      {:ok, %{identity: identity}} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "shared-unverified",
+          email: "alice-unverified@acme.test"
+        })
+
+      claims = %{
+        "sub" => "shared-unverified",
+        "email" => "alice-unverified@acme.test"
+      }
+
+      assert {:pending, %LinkRequest{} = request} =
+               SSO.complete_auth(provider, callback(claims), %{})
+
+      assert request.email == "alice-unverified@acme.test"
+      assert is_nil(request.matched_user_id)
+      assert Repo.reload!(identity).last_seen_at == identity.last_seen_at
     end
 
     test "a re-capture from the other namespace takes that namespace with it", %{
@@ -6129,7 +6269,8 @@ defmodule Emisar.SSOTest do
       request =
         capture_request(provider, %{
           "sub" => "okta|m",
-          "email" => "member@acme.test",
+          "email" => "  MEMBER@ACME.TEST  ",
+          "email_verified" => "true",
           "name" => "Member"
         })
 
@@ -6150,6 +6291,40 @@ defmodule Emisar.SSOTest do
                existing_access
 
       assert link_requests(provider.id) == []
+    end
+
+    test "a legacy unverified OIDC match cannot be approved", %{
+      account: account,
+      subject: subject,
+      provider: provider
+    } do
+      member = Fixtures.Users.create_user(%{email: "legacy-unverified@acme.test"})
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: member.id,
+        role: :viewer
+      )
+
+      request =
+        Fixtures.SSO.create_link_request(
+          provider: provider,
+          provider_identifier: "okta|legacy-unverified",
+          source: :oidc,
+          email: member.email,
+          claims: %{"sub" => "okta|legacy-unverified", "email" => member.email},
+          matched_user_id: member.id
+        )
+
+      audit_count = Repo.aggregate(Audit.Event, :count)
+
+      assert SSO.approve_link_request(request, RunnerAccess.none(), subject) ==
+               {:error, :unverified_email}
+
+      assert Repo.reload(request)
+      assert Repo.reload(member).email == member.email
+      refute Repo.exists?(UserIdentity.Query.not_deleted())
+      assert Repo.aggregate(Audit.Event, :count) == audit_count
     end
 
     test "refuses when the email already belongs to a non-member user (H1)", %{
