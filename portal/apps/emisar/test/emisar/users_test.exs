@@ -456,7 +456,7 @@ defmodule Emisar.UsersTest do
     end
   end
 
-  describe "regenerate_user_mfa_recovery_codes/5" do
+  describe "regenerate_user_mfa_recovery_codes/4" do
     test "proves a recovery digest and replaces the set in the same locked update" do
       {user, _account, _subject} = enrolled_owner()
       proof_digest = Crypto.hash("current-proof")
@@ -476,11 +476,53 @@ defmodule Emisar.UsersTest do
                  user.id,
                  {:recovery_code, proof_digest},
                  new_digests,
-                 DateTime.utc_now(),
-                 audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated")
+                 audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated"),
+                 clock: fn -> flunk("a recovery-code proof must not sample the TOTP clock") end
                )
 
       assert updated.mfa_recovery_codes == new_digests
+      assert Repo.reload!(user).mfa_recovery_codes == new_digests
+    end
+
+    test "a TOTP proof replaces the set and consumes the same exact bucket" do
+      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
+      secret = "JBSWY3DPEHPK3PXP"
+      before_boundary = ~U[2026-01-01 00:00:29.000000Z]
+      boundary = ~U[2026-01-01 00:00:30.000000Z]
+      code = NimbleTOTP.verification_code(secret, time: boundary)
+      new_digests = [Crypto.hash("fresh-1"), Crypto.hash("fresh-2")]
+      rejected_digests = [Crypto.hash("must-not-land")]
+
+      assert NimbleTOTP.verification_code(secret, time: before_boundary) != code
+
+      {:ok, user} =
+        Users.update_user_mfa(user.id, secret, before_boundary, [],
+          audit: &Audit.user_changesets(&1, "user.mfa_enabled")
+        )
+
+      assert {:ok, %User{} = updated} =
+               Users.regenerate_user_mfa_recovery_codes(
+                 user.id,
+                 {:totp, code},
+                 new_digests,
+                 audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated"),
+                 clock: fn -> boundary end
+               )
+
+      assert updated.mfa_last_used_at == boundary
+      assert updated.mfa_recovery_codes == new_digests
+
+      assert Users.verify_and_consume_mfa(user.id, code, clock: fn -> boundary end) ==
+               {:error, :replay}
+
+      assert Users.regenerate_user_mfa_recovery_codes(
+               user.id,
+               {:totp, code},
+               rejected_digests,
+               audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated"),
+               clock: fn -> boundary end
+             ) == {:error, :replay}
+
       assert Repo.reload!(user).mfa_recovery_codes == new_digests
     end
 
@@ -491,8 +533,8 @@ defmodule Emisar.UsersTest do
                user.id,
                {:totp, "000000"},
                [Crypto.hash("nope")],
-               DateTime.utc_now(),
-               audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated")
+               audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated"),
+               clock: fn -> flunk("an unenrolled user must not sample the TOTP clock") end
              ) == {:error, :mfa_not_enabled}
 
       assert Repo.reload!(user).mfa_recovery_codes == []
@@ -563,7 +605,7 @@ defmodule Emisar.UsersTest do
     test "a valid OTP verifies and stamps the consumed bucket", %{user: user, secret: secret} do
       otp = NimbleTOTP.verification_code(secret)
 
-      assert {:ok, %User{}} = Users.verify_and_consume_mfa(user.id, otp, DateTime.utc_now())
+      assert {:ok, %User{}} = Users.verify_and_consume_mfa(user.id, otp, [])
       assert %DateTime{} = Repo.reload!(user).mfa_last_used_at
     end
 
@@ -574,12 +616,14 @@ defmodule Emisar.UsersTest do
       at = DateTime.utc_now()
       otp = NimbleTOTP.verification_code(secret, time: at)
 
-      assert {:ok, %User{}} = Users.verify_and_consume_mfa(user.id, otp, at)
-      assert Users.verify_and_consume_mfa(user.id, otp, at) == {:error, :replay}
+      assert {:ok, %User{}} = Users.verify_and_consume_mfa(user.id, otp, clock: fn -> at end)
+
+      assert Users.verify_and_consume_mfa(user.id, otp, clock: fn -> at end) ==
+               {:error, :replay}
     end
 
     test "a wrong code is :invalid", %{user: user} do
-      assert Users.verify_and_consume_mfa(user.id, "000000", DateTime.utc_now()) ==
+      assert Users.verify_and_consume_mfa(user.id, "invalid", []) ==
                {:error, :invalid}
     end
 
@@ -594,7 +638,9 @@ defmodule Emisar.UsersTest do
           audit: &Audit.user_changesets(&1, "user.mfa_disabled")
         )
 
-      assert Users.verify_and_consume_mfa(user.id, otp, DateTime.utc_now()) == {:error, :invalid}
+      assert Users.verify_and_consume_mfa(user.id, otp,
+               clock: fn -> flunk("disabled MFA must be rejected before sampling time") end
+             ) == {:error, :invalid}
     end
   end
 

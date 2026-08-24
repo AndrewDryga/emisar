@@ -1731,10 +1731,9 @@ defmodule Emisar.Auth do
          :ok <- throttle_mfa_challenge(user, subject.context) do
       factor = current_mfa_factor(code)
       {plain_codes, digests} = generate_recovery_codes()
-      at = DateTime.utc_now()
 
       id
-      |> Users.regenerate_user_mfa_recovery_codes(factor, digests, at,
+      |> Users.regenerate_user_mfa_recovery_codes(factor, digests,
         audit:
           &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated",
             context: subject.context
@@ -2332,7 +2331,7 @@ defmodule Emisar.Auth do
       # `verify_and_consume_mfa` re-reads the row under a lock and validates +
       # consumes there, so a secret rotated/disabled mid-verify can't slip an old
       # code through. We only AUDIT here from the caller's user.
-      case Users.verify_and_consume_mfa(user.id, otp, DateTime.utc_now()) do
+      case Users.verify_and_consume_mfa(user.id, otp, []) do
         {:ok, %Users.User{} = verified} ->
           {:ok, verified}
 

@@ -203,7 +203,7 @@ defmodule Emisar.CryptoTest do
     end
   end
 
-  describe "valid_totp?/2" do
+  describe "valid_totp?/2 and valid_totp?/3" do
     # replay defense is the CALLER's, not Crypto's: the
     # same code validates as many times as it's presented within its window.
     # Crypto only answers "is this a currently-valid code"; the stamped-bucket
@@ -215,6 +215,16 @@ defmodule Emisar.CryptoTest do
       assert Crypto.valid_totp?(secret, code)
       assert Crypto.valid_totp?(secret, code)
       refute Crypto.valid_totp?(secret, "000000")
+    end
+
+    test "the explicit timestamp form judges exactly one TOTP bucket" do
+      secret = "JBSWY3DPEHPK3PXP"
+      before_boundary = ~U[2026-01-01 00:00:29.000000Z]
+      boundary = ~U[2026-01-01 00:00:30.000000Z]
+      code = NimbleTOTP.verification_code(secret, time: boundary)
+
+      refute Crypto.valid_totp?(secret, code, before_boundary)
+      assert Crypto.valid_totp?(secret, code, boundary)
     end
   end
 

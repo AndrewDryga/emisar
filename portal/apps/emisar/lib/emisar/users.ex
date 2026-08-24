@@ -273,40 +273,45 @@ defmodule Emisar.Users do
   Internal — Auth: prove a current MFA factor and replace every recovery-code
   digest in one locked user-row update. A TOTP proof also stamps its replay
   bucket; a recovery-code proof is matched against the locked current set.
-  `opts[:audit]` commits only with the successful replacement.
+  `opts[:audit]` commits only with the successful replacement. The optional
+  `opts[:clock]` test seam is invoked once under the row lock; production leaves
+  it unset so Users owns the timestamp.
   """
-  def regenerate_user_mfa_recovery_codes(user_id, factor, digests, %DateTime{} = at, opts)
-      when is_list(digests) do
+  def regenerate_user_mfa_recovery_codes(user_id, factor, digests, opts)
+      when is_list(digests) and is_list(opts) do
+    clock = Keyword.get(opts, :clock, &DateTime.utc_now/0)
+
     User.Query.not_deleted()
     |> User.Query.by_id(user_id)
     |> Repo.fetch_and_update(User.Query,
-      with: &regenerate_mfa_recovery_codes(&1, factor, digests, at),
+      with: &regenerate_mfa_recovery_codes(&1, factor, digests, clock),
       audit: Keyword.fetch!(opts, :audit)
     )
   end
 
-  defp regenerate_mfa_recovery_codes(%User{mfa_enabled_at: nil}, _factor, _digests, _at),
+  defp regenerate_mfa_recovery_codes(%User{mfa_enabled_at: nil}, _factor, _digests, _clock),
     do: :mfa_not_enabled
 
   defp regenerate_mfa_recovery_codes(
          %User{mfa_secret: secret} = loaded_user,
          {:totp, otp},
          digests,
-         at
+         clock
        )
        when is_binary(secret) and is_binary(otp) do
-    cond do
-      not Crypto.valid_totp?(secret, otp) -> :invalid
-      totp_bucket(loaded_user.mfa_last_used_at) == totp_bucket(at) -> :replay
-      true -> User.Changeset.regenerated_mfa_recovery_codes(loaded_user, digests, at)
-    end
+    verify_and_consume_totp(
+      loaded_user,
+      otp,
+      clock,
+      &User.Changeset.regenerated_mfa_recovery_codes(loaded_user, digests, &1)
+    )
   end
 
   defp regenerate_mfa_recovery_codes(
          %User{} = loaded_user,
          {:recovery_code, proof_digest},
          digests,
-         _at
+         _clock
        )
        when is_binary(proof_digest) do
     if Enum.any?(loaded_user.mfa_recovery_codes || [], &Crypto.secure_compare(&1, proof_digest)) do
@@ -316,7 +321,7 @@ defmodule Emisar.Users do
     end
   end
 
-  defp regenerate_mfa_recovery_codes(%User{}, _factor, _digests, _at), do: :invalid
+  defp regenerate_mfa_recovery_codes(%User{}, _factor, _digests, _clock), do: :invalid
 
   @doc """
   Internal — Auth: one-shot consume of a recovery-code digest under the
@@ -352,28 +357,48 @@ defmodule Emisar.Users do
   two concurrent submissions of one code can't both pass. Returns `{:ok, user}`
   — the row as it stands AFTER the consume, so the caller can bind a proof to
   the exact enrollment it verified against — or `{:error, :replay | :invalid |
-  :not_found}`.
+  :not_found}`. The optional `opts[:clock]` test seam is invoked once under the
+  row lock; production leaves it unset so Users owns the timestamp.
   """
-  def verify_and_consume_mfa(user_id, otp, %DateTime{} = at) when is_binary(otp) do
+  def verify_and_consume_mfa(user_id, otp, opts) when is_binary(otp) and is_list(opts) do
+    clock = Keyword.get(opts, :clock, &DateTime.utc_now/0)
+
     User.Query.not_deleted()
     |> User.Query.by_id(user_id)
-    |> Repo.fetch_and_update(User.Query, with: &mfa_verify_and_consume(&1, otp, at))
+    |> Repo.fetch_and_update(User.Query, with: &mfa_verify_and_consume(&1, otp, clock))
   end
 
   # Runs on the LOCKED row — any non-changeset return aborts `fetch_and_update`
   # as `{:error, that_value}`.
-  defp mfa_verify_and_consume(%User{mfa_enabled_at: nil}, _otp, _at), do: :invalid
+  defp mfa_verify_and_consume(%User{mfa_enabled_at: nil}, _otp, _clock), do: :invalid
 
-  defp mfa_verify_and_consume(%User{mfa_secret: secret} = loaded_user, otp, at)
+  defp mfa_verify_and_consume(%User{mfa_secret: secret} = loaded_user, otp, clock)
        when is_binary(secret) do
-    cond do
-      not Crypto.valid_totp?(secret, otp) -> :invalid
-      totp_bucket(loaded_user.mfa_last_used_at) == totp_bucket(at) -> :replay
-      true -> User.Changeset.mfa_consumed(loaded_user, at)
-    end
+    verify_and_consume_totp(
+      loaded_user,
+      otp,
+      clock,
+      &User.Changeset.mfa_consumed(loaded_user, &1)
+    )
   end
 
-  defp mfa_verify_and_consume(%User{}, _otp, _at), do: :invalid
+  defp mfa_verify_and_consume(%User{}, _otp, _clock), do: :invalid
+
+  # `clock` is invoked only here, after `Repo.fetch_and_update/3` owns the user
+  # row lock. That one instant judges the code, checks the prior bucket, and is
+  # persisted by the successful changeset; sampling any of those separately can
+  # accept a next-bucket code while stamping the previous bucket.
+  defp verify_and_consume_totp(loaded_user, otp, clock, on_valid) do
+    %DateTime{} = at = clock.()
+    previous_bucket = totp_bucket(loaded_user.mfa_last_used_at)
+    current_bucket = totp_bucket(at)
+
+    cond do
+      not Crypto.valid_totp?(loaded_user.mfa_secret, otp, at) -> :invalid
+      is_integer(previous_bucket) and previous_bucket >= current_bucket -> :replay
+      true -> on_valid.(at)
+    end
+  end
 
   defp unconfirmed_email(%User{confirmed_at: nil} = user, new_email),
     do: User.Changeset.email(user, %{email: new_email})

@@ -360,12 +360,17 @@ defmodule Emisar.Crypto do
   def totp_secret, do: NimbleTOTP.secret()
 
   @doc """
-  Whether `otp` is a currently-valid TOTP for `secret`. No replay guard
-  — that's the caller's stamped-bucket check
-  (`Users.verify_and_consume_mfa/3`, judged under the row lock).
+  Whether `otp` is a valid TOTP for `secret`. The two-argument form samples the
+  current system time for enrollment. Locked consume paths pass their exact
+  post-lock `%DateTime{}` through the three-argument form so validation and the
+  caller's replay stamp cannot straddle different buckets. No replay guard lives
+  here — that remains the locked Users operation's responsibility.
   """
   def valid_totp?(secret, otp) when is_binary(secret) and is_binary(otp),
     do: NimbleTOTP.valid?(secret, otp)
+
+  def valid_totp?(secret, otp, %DateTime{} = at) when is_binary(secret) and is_binary(otp),
+    do: NimbleTOTP.valid?(secret, otp, time: at)
 
   @doc """
   Constant-time binary comparison. False when sizes differ — `:crypto.hash_equals/2`
