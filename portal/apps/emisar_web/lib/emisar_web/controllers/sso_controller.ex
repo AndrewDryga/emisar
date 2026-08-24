@@ -89,6 +89,7 @@ defmodule EmisarWeb.SSOController do
              user,
              account.id,
              user_identity_id: identity.id,
+             provider_identifier: identity.provider_identifier,
              registered?: created?
            ) do
         {:ok, conn} ->

@@ -8,21 +8,31 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def not_deleted(queryable \\ all()),
     do: where(queryable, [identities: i], is_nil(i.deleted_at))
 
+  def provider_identifier_active(queryable \\ all()),
+    do: where(queryable, [identities: i], is_nil(i.provider_identifier_retired_at))
+
   def by_id(queryable, id),
     do: where(queryable, [identities: i], i.id == ^id)
 
   def by_account_id(queryable, account_id),
     do: where(queryable, [identities: i], i.account_id == ^account_id)
 
+  def excluding_account_id(queryable, account_id),
+    do: where(queryable, [identities: i], i.account_id != ^account_id)
+
   # The (provider, sub) binding lookup — the only way an OIDC login resolves
   # to an identity. Never matched by email.
   def by_provider_and_identifier(queryable, provider_id, identifier) do
-    where(
-      queryable,
+    queryable
+    |> provider_identifier_active()
+    |> where(
       [identities: i],
       i.provider_id == ^provider_id and i.provider_identifier == ^identifier
     )
   end
+
+  def by_provider_identifier(queryable, identifier),
+    do: where(queryable, [identities: i], i.provider_identifier == ^identifier)
 
   @doc """
   The identity a SCIM create addresses, by EITHER key.
@@ -81,6 +91,19 @@ defmodule Emisar.SSO.UserIdentity.Query do
   """
   def admin_approved(queryable \\ all()),
     do: where(queryable, [identities: i], i.created_by == :admin)
+
+  @doc """
+  Live OIDC bindings whose authority came from an emisar administrator.
+
+  `created_by` follows the current OIDC binding rather than the row's original
+  provisioning path. The forward migration normalizes pre-field-semantics
+  directory rebinds once; future approvals set it directly.
+  """
+  def admin_approved_provider_identifiers(queryable \\ all()) do
+    queryable
+    |> provider_identifier_active()
+    |> admin_approved()
+  end
 
   @doc "Just the ids, for a caller that needs them before and after a bulk write."
   def select_ids(queryable), do: select(queryable, [identities: i], i.id)

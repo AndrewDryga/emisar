@@ -79,8 +79,9 @@ defmodule Emisar.Auth do
   active account and current identity-provider row locks while recording the
   sign-in and inserting the user-global session credential, so account/provider
   policy cannot change between the trust decision and the write. `opts` must
-  carry the same-user, same-account `:user_identity_id`; the locked provider is
-  the sole authority for the token's IdP MFA stamp. Returns `{:ok, token, mfa?}`
+  carry the callback's same-user, same-account `:user_identity_id` and exact
+  `:provider_identifier`; the locked provider is the sole authority for the
+  token's IdP MFA stamp. Returns `{:ok, token, mfa?}`
   (the raw cookie value plus the committed MFA outcome) or an error tuple.
   """
   def complete_sso_account_sign_in(
@@ -108,7 +109,8 @@ defmodule Emisar.Auth do
         repo,
         Keyword.get(opts, :user_identity_id),
         user.id,
-        account_id
+        account_id,
+        Keyword.get(opts, :provider_identifier)
       )
     end)
     |> Multi.merge(fn _changes ->
@@ -295,6 +297,30 @@ defmodule Emisar.Auth do
     Repo.delete_all(queryable)
     disconnect_live_sessions(topics)
     :ok
+  end
+
+  @doc """
+  Internal — delete the exact identity-bound sessions inside a caller's
+  transaction and return their socket topics for that caller's after-commit
+  effect. The session rows are the only source for those topics, so they must be
+  selected through the same DELETE that removes them.
+  """
+  def delete_identity_session_tokens(%Users.User{} = user, identity_ids, repo)
+      when is_list(identity_ids) do
+    delete_identity_session_tokens(user.id, identity_ids, repo)
+  end
+
+  def delete_identity_session_tokens(user_id, identity_ids, repo)
+      when is_binary(user_id) and is_list(identity_ids) do
+    queryable =
+      UserToken.Query.by_user_id(user_id)
+      |> UserToken.Query.by_context("session")
+      |> UserToken.Query.by_user_identity_ids(identity_ids)
+      |> UserToken.Query.select_token_digests()
+
+    {count, digests} = repo.delete_all(queryable)
+
+    {:ok, %{count: count, socket_topics: Enum.map(digests, &live_socket_topic/1)}}
   end
 
   @doc """

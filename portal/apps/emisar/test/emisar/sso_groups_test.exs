@@ -6,6 +6,7 @@ defmodule Emisar.SSOGroupsTest do
   snapshot and never grant owner.
   """
   use Emisar.DataCase, async: true
+  alias Ecto.Multi
   alias Emisar.{Accounts, Auth, Repo, SSO}
   alias Emisar.Fixtures
   alias Emisar.SSO.{DirectoryGroup, SCIMUserUpdate}
@@ -964,21 +965,28 @@ defmodule Emisar.SSOGroupsTest do
     # membership in another account must never be writable through it — even if a
     # caller resolved it some other way. Today's callers always pass
     # provider-scoped memberships; this pins the write-path backstop.
-    test "sync_suspend_membership rejects a membership outside the provider's account", %{
+    test "a composed suspend rejects a membership outside the provider's account", %{
       provider: provider
     } do
       other = Fixtures.Memberships.create_membership()
 
-      assert Accounts.sync_suspend_membership(other, provider) == {:error, :not_found}
+      assert {:error, :not_found} =
+               Multi.new()
+               |> Accounts.put_sync_membership_lifecycle(other, provider, :suspend)
+               |> Repo.commit_multi()
+
       assert is_nil(Repo.reload!(other).disabled_at)
     end
 
-    test "sync_reinstate_membership rejects a membership outside the provider's account", %{
+    test "a composed reinstate rejects a membership outside the provider's account", %{
       provider: provider
     } do
       other = Fixtures.Memberships.create_membership()
 
-      assert Accounts.sync_reinstate_membership(other, provider) == {:error, :not_found}
+      assert {:error, :not_found} =
+               Multi.new()
+               |> Accounts.put_sync_membership_lifecycle(other, provider, :reinstate)
+               |> Repo.commit_multi()
     end
 
     test "sync_set_membership_role rejects a membership outside the provider's account", %{

@@ -206,7 +206,8 @@ defmodule Emisar.AuthTest do
 
       assert {:ok, token, true} =
                Auth.complete_sso_account_sign_in(user, account.id, context,
-                 user_identity_id: identity.id
+                 user_identity_id: identity.id,
+                 provider_identifier: identity.provider_identifier
                )
 
       assert {:ok, %User{id: id},
@@ -227,7 +228,8 @@ defmodule Emisar.AuthTest do
 
       assert {:ok, token, false} =
                Auth.complete_sso_account_sign_in(user, account.id, context,
-                 user_identity_id: identity.id
+                 user_identity_id: identity.id,
+                 provider_identifier: identity.provider_identifier
                )
 
       assert {:ok, _user, %UserToken{} = stored} =
@@ -252,7 +254,8 @@ defmodule Emisar.AuthTest do
                )
 
       assert Auth.complete_sso_account_sign_in(user, account.id, %RequestContext{},
-               user_identity_id: identity.id
+               user_identity_id: identity.id,
+               provider_identifier: identity.provider_identifier
              ) ==
                {:error, :account_disabled}
 
@@ -272,13 +275,15 @@ defmodule Emisar.AuthTest do
       other_user = Fixtures.Users.create_user()
 
       assert Auth.complete_sso_account_sign_in(other_user, account.id, context,
-               user_identity_id: identity.id
+               user_identity_id: identity.id,
+               provider_identifier: identity.provider_identifier
              ) == {:error, :provider_disabled}
 
       other_account = Fixtures.Accounts.create_account()
 
       assert Auth.complete_sso_account_sign_in(user, other_account.id, context,
-               user_identity_id: identity.id
+               user_identity_id: identity.id,
+               provider_identifier: identity.provider_identifier
              ) == {:error, :provider_disabled}
 
       identity
@@ -286,7 +291,38 @@ defmodule Emisar.AuthTest do
       |> Repo.update!()
 
       assert Auth.complete_sso_account_sign_in(user, account.id, context,
-               user_identity_id: identity.id
+               user_identity_id: identity.id,
+               provider_identifier: identity.provider_identifier
+             ) == {:error, :provider_disabled}
+
+      refute Repo.one(UserToken.Query.by_context("session"))
+    end
+
+    test "binds the mint to the callback identifier and a still-active OIDC binding", %{
+      account: account,
+      identity: identity,
+      user: user
+    } do
+      callback_identifier = identity.provider_identifier
+
+      rebound =
+        identity
+        |> Ecto.Changeset.change(provider_identifier: "rebound-#{Ecto.UUID.generate()}")
+        |> Repo.update!()
+
+      assert Auth.complete_sso_account_sign_in(user, account.id, %RequestContext{},
+               user_identity_id: rebound.id,
+               provider_identifier: callback_identifier
+             ) == {:error, :provider_disabled}
+
+      retired =
+        rebound
+        |> Ecto.Changeset.change(provider_identifier_retired_at: DateTime.utc_now())
+        |> Repo.update!()
+
+      assert Auth.complete_sso_account_sign_in(user, account.id, %RequestContext{},
+               user_identity_id: retired.id,
+               provider_identifier: retired.provider_identifier
              ) == {:error, :provider_disabled}
 
       refute Repo.one(UserToken.Query.by_context("session"))
@@ -571,6 +607,33 @@ defmodule Emisar.AuthTest do
 
       assert Auth.revoke_identity_sessions(user, []) == :ok
       assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(token)
+    end
+  end
+
+  describe "delete_identity_session_tokens/3" do
+    test "deletes only the named identity sessions and returns their exact topics" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        )
+
+      sso =
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
+
+      magic_link = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+
+      assert {:ok, %{count: 1, socket_topics: [topic]}} =
+               Auth.delete_identity_session_tokens(user, [identity.id], Repo)
+
+      assert topic == Auth.live_socket_topic_for_session(sso)
+      assert Auth.fetch_user_and_token_by_session_token(sso) == {:error, :not_found}
+      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(magic_link)
     end
   end
 

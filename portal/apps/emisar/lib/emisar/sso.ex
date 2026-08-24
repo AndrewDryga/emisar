@@ -1357,8 +1357,9 @@ defmodule Emisar.SSO do
     |> Multi.run(:identity, fn _repo, %{user: user} ->
       create_identity(provider, user, identifier, claims, created_by, provisioned_via)
     end)
-    |> Multi.run(:membership, fn _repo, %{user: user} ->
-      Accounts.provision_sso_membership(
+    |> Multi.merge(fn %{user: user} ->
+      Accounts.put_sso_membership(
+        Multi.new(),
         provider.account_id,
         user.id,
         provider.default_role,
@@ -1434,19 +1435,23 @@ defmodule Emisar.SSO do
   # the link-approval flow, where an admin explicitly grants access. Runs inside
   # the approval's Multi, so a committed reinstate is TAGGED for the commit site
   # to fire its broadcast after the transaction, never from within it.
-  defp ensure_active_membership(%IdentityProvider{} = provider, user) do
+  defp ensure_active_membership_multi(%IdentityProvider{} = provider, user) do
     case Accounts.peek_sync_membership(provider.account_id, user.id) do
       %Accounts.Membership{disabled_at: nil} = membership ->
-        {:ok, membership}
+        Multi.run(Multi.new(), :membership, fn _repo, _changes -> {:ok, membership} end)
 
       %Accounts.Membership{} = membership ->
-        with {:ok, membership, changed?} <-
-               Accounts.sync_reinstate_membership(membership, provider) do
-          {:ok, if(changed?, do: {:reinstated, membership}, else: membership)}
-        end
+        Accounts.put_sync_membership_lifecycle(Multi.new(), membership, provider, :reinstate)
+        |> Multi.run(:membership, fn _repo, %{membership_transition: transition} ->
+          case transition.effect do
+            {:reinstated, reinstated} -> {:ok, {:reinstated, reinstated}}
+            nil -> {:ok, transition.membership}
+          end
+        end)
 
       nil ->
-        Accounts.provision_sso_membership(
+        Accounts.put_sso_membership(
+          Multi.new(),
           provider.account_id,
           user.id,
           provider.default_role,
@@ -1469,13 +1474,22 @@ defmodule Emisar.SSO do
   Returns the current locked provider only when the identity is live and belongs
   to the same user and account the session is being minted for.
   """
-  def ensure_identity_provider_enabled(repo, user_identity_id, user_id, account_id)
-      when is_binary(user_identity_id) and is_binary(user_id) and is_binary(account_id) do
+  def ensure_identity_provider_enabled(
+        repo,
+        user_identity_id,
+        user_id,
+        account_id,
+        provider_identifier
+      )
+      when is_binary(user_identity_id) and is_binary(user_id) and is_binary(account_id) and
+             is_binary(provider_identifier) do
     identity =
       UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.provider_identifier_active()
       |> UserIdentity.Query.by_id(user_identity_id)
       |> UserIdentity.Query.by_user_id(user_id)
       |> UserIdentity.Query.by_account_id(account_id)
+      |> UserIdentity.Query.by_provider_identifier(provider_identifier)
       |> repo.peek()
 
     case identity do
@@ -1491,10 +1505,12 @@ defmodule Emisar.SSO do
           %IdentityProvider{enabled: true} = provider ->
             live_identity =
               UserIdentity.Query.not_deleted()
+              |> UserIdentity.Query.provider_identifier_active()
               |> UserIdentity.Query.by_id(user_identity_id)
               |> UserIdentity.Query.by_user_id(user_id)
               |> UserIdentity.Query.by_account_id(account_id)
               |> UserIdentity.Query.by_provider_id(provider.id)
+              |> UserIdentity.Query.by_provider_identifier(provider_identifier)
               |> UserIdentity.Query.lock_for_update()
               |> repo.peek()
 
@@ -1509,8 +1525,14 @@ defmodule Emisar.SSO do
     end
   end
 
-  def ensure_identity_provider_enabled(_repo, _identity_id, _user_id, _account_id),
-    do: {:error, :provider_disabled}
+  def ensure_identity_provider_enabled(
+        _repo,
+        _identity_id,
+        _user_id,
+        _account_id,
+        _provider_identifier
+      ),
+      do: {:error, :provider_disabled}
 
   # A sign-in write additionally re-reads whether the connection is still ENABLED.
   # The provider struct was resolved when the request arrived; disabling it is
@@ -2158,10 +2180,17 @@ defmodule Emisar.SSO do
   # An approval that reinstated a directory-suspended membership owes the team
   # page its broadcast — fired here, after the commit, like every sync side
   # effect (the membership step tags a committed reinstate for exactly this).
-  defp link_approval_membership_effects(%{membership: {:reinstated, membership}}),
-    do: Accounts.membership_reinstated_effects(membership)
+  defp link_approval_membership_effects(changes) do
+    case changes do
+      %{membership: {:reinstated, membership}} ->
+        :ok = Accounts.membership_reinstated_effects(membership)
 
-  defp link_approval_membership_effects(_changes), do: :ok
+      _ ->
+        :ok
+    end
+
+    Accounts.after_membership_activation_committed(changes)
+  end
 
   # Approving a MATCH binds a new IdP credential to an EXISTING person, so
   # whoever holds that credential can afterwards sign in as them. The approver is
@@ -2314,9 +2343,10 @@ defmodule Emisar.SSO do
   end
 
   # An existing account member matched → bind this IdP identity to THAT user (no
-  # new user, no email merge — the admin's approval is the gate). The identity
-  # stores the captured id as BOTH provider_identifier + scim_external_id
-  # (decision 4) so OIDC login and SCIM converge on it afterward; the user's
+  # new user, no email merge — the admin's approval is the gate). OIDC claims
+  # bind only provider_identifier; a SCIM request also owns scim_external_id.
+  # Keeping the directory column nil until the directory asserts it lets later
+  # retirement distinguish an OIDC-only link from a lifecycle row. The user's
   # existing membership is left as-is (never downgraded, never granted owner).
   defp approve_link_request_multi(
          %IdentityProvider{} = provider,
@@ -2325,6 +2355,7 @@ defmodule Emisar.SSO do
          %Subject{} = subject
        ) do
     Multi.new()
+    |> put_active_account_lock(provider.account_id)
     |> put_provider_lock(provider)
     |> Multi.merge(fn %{locked_provider: locked_provider} ->
       Multi.new()
@@ -2334,8 +2365,8 @@ defmodule Emisar.SSO do
       |> Multi.run(:identity, fn _repo, %{user: user} ->
         link_identity(locked_provider, user, request)
       end)
-      |> Multi.run(:membership, fn _repo, %{user: user} ->
-        ensure_active_membership(locked_provider, user)
+      |> Multi.merge(fn %{user: user} ->
+        ensure_active_membership_multi(locked_provider, user)
       end)
       |> Multi.insert(:audit, fn %{user: user} ->
         Audit.Events.sso_existing_user_linked(subject, user, locked_provider)
@@ -2416,35 +2447,71 @@ defmodule Emisar.SSO do
   binding was permitted has stopped being true. So the binding goes with it, and
   the sessions behind it are revoked.
 
-  Directory-asserted identities are untouched. Those were never an emisar-side
-  decision about who a credential belongs to — the IdP said so, and it still does.
+  The OIDC authority is retired in place. A directory-created row whose login
+  identifier was rebound by approval keeps its SCIM external id, active state,
+  groups, and resource id; deleting or rewriting that row would either end its
+  lifecycle or make the directory identifier a credential again. Ordinary
+  directory-asserted identities, whose OIDC and SCIM identifiers still agree,
+  are untouched.
 
-  Returns the number retired.
+  Returns the retired count plus the exact deleted session topics the caller
+  must disconnect after its outer transaction commits.
   """
-  def retire_admin_approved_identities(%Users.User{} = user, repo) do
-    queryable =
+  def retire_admin_approved_identities(user_id, active_account_ids, repo)
+      when is_binary(user_id) and is_list(active_account_ids) do
+    candidates =
       UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.by_user_id(user.id)
-      |> UserIdentity.Query.admin_approved()
+      |> UserIdentity.Query.by_user_id(user_id)
+      |> UserIdentity.Query.admin_approved_provider_identifiers()
 
-    identity_ids = repo.all(UserIdentity.Query.select_ids(queryable))
+    candidates =
+      case active_account_ids do
+        [] -> UserIdentity.Query.by_ids(candidates, [])
+        [only_account_id] -> UserIdentity.Query.excluding_account_id(candidates, only_account_id)
+        [_first, _second | _rest] -> candidates
+      end
+
+    identities = candidates |> UserIdentity.Query.lock_for_update() |> repo.all()
+    identity_ids = Enum.map(identities, & &1.id)
 
     case identity_ids do
       [] ->
-        {:ok, 0}
+        {:ok, %{count: 0, socket_topics: []}}
 
       ids ->
         now = DateTime.utc_now()
 
-        {retired, _} =
+        {preserved_ids, removed_ids} =
+          identities
+          |> Enum.split_with(&directory_owned_identity?/1)
+          |> then(fn {preserved, removed} ->
+            {Enum.map(preserved, & &1.id), Enum.map(removed, & &1.id)}
+          end)
+
+        {preserved, _} =
           UserIdentity.Query.not_deleted()
-          |> UserIdentity.Query.by_ids(ids)
+          |> UserIdentity.Query.by_ids(preserved_ids)
+          |> UserIdentity.Query.provider_identifier_active()
+          |> repo.update_all(
+            set: [
+              provider_identifier_retired_at: now,
+              created_by: :admin,
+              updated_at: now
+            ]
+          )
+
+        {removed, _} =
+          UserIdentity.Query.not_deleted()
+          |> UserIdentity.Query.by_ids(removed_ids)
           |> repo.update_all(set: [deleted_at: now, updated_at: now])
 
-        :ok = Auth.revoke_identity_sessions(user, ids)
-        {:ok, retired}
+        {:ok, session_effect} = Auth.delete_identity_session_tokens(user_id, ids, repo)
+        {:ok, %{count: preserved + removed, socket_topics: session_effect.socket_topics}}
     end
   end
+
+  defp directory_owned_identity?(%UserIdentity{scim_external_id: external_id}),
+    do: is_binary(external_id)
 
   # The approver's own standing, re-read under lock. `%Subject{}.permissions` is a
   # snapshot taken when the session was built, so an admin demoted or suspended
@@ -2496,11 +2563,12 @@ defmodule Emisar.SSO do
         |> Repo.update()
 
       nil ->
-        # A first identity holds the identifier in both roles: the directory and
-        # the login agree on it until one of them says otherwise.
+        # OIDC does not get to reserve the directory namespace. A SCIM request
+        # owns both values; an OIDC-only row stays adoptable until the directory
+        # later claims it through `adopt_scim_external_id/2`.
         attrs = %{
           provider_identifier: request.provider_identifier,
-          scim_external_id: request.provider_identifier,
+          scim_external_id: scim_external_id(request),
           claims: request.claims,
           created_by: :admin,
           provisioned_via: :manual
@@ -2511,6 +2579,11 @@ defmodule Emisar.SSO do
         |> Repo.insert()
     end
   end
+
+  defp scim_external_id(%LinkRequest{source: :scim, provider_identifier: identifier}),
+    do: identifier
+
+  defp scim_external_id(%LinkRequest{}), do: nil
 
   defp rebind_changeset(%UserIdentity{} = identity, %LinkRequest{source: :scim} = request) do
     UserIdentity.Changeset.adopt_scim_external_id(identity, request.provider_identifier)
@@ -2599,20 +2672,26 @@ defmodule Emisar.SSO do
 
   def provider_sync_recent?(%IdentityProvider{}, %DateTime{}), do: false
 
-  @doc "True when sessions via this provider satisfy MFA (decision 4 / N2) — drives the TOTP skip + `require_mfa` exemption."
+  @doc """
+  True when sessions via this provider satisfy MFA (decision 4 / N2) — drives
+  the TOTP skip + `require_mfa` exemption.
+  """
   def provider_satisfies_mfa?(%IdentityProvider{satisfies_mfa: satisfies}), do: satisfies
 
   @doc """
   Internal — SSO sign-in flow: true when an SSO session (identified by its
   `user_identity_id`) satisfies the account's MFA requirement — its provider's
-  `satisfies_mfa` is set. Evaluated on the freshly-resolved identity before the
-  session subject exists. The `require_mfa` exemption gates on THIS, not merely
-  on the session being SSO, so a provider marked `satisfies_mfa: false` still
-  forces emisar TOTP. Returns false for a nil/unknown identity (fail closed).
+  `satisfies_mfa` is set and the OIDC binding is still active. Evaluated on the
+  freshly-resolved identity before the session subject exists. The `require_mfa`
+  exemption gates on THIS, not merely on the session being SSO, so a provider
+  marked `satisfies_mfa: false` still forces emisar TOTP. Returns false for a
+  nil/unknown identity (fail closed).
   """
   def identity_satisfies_mfa?(user_identity_id) when is_binary(user_identity_id) do
     queryable =
-      UserIdentity.Query.not_deleted() |> UserIdentity.Query.by_id(user_identity_id)
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.provider_identifier_active()
+      |> UserIdentity.Query.by_id(user_identity_id)
 
     case Repo.peek(queryable) do
       %UserIdentity{provider_id: provider_id} -> provider_satisfies_mfa_by_id?(provider_id)
@@ -2624,16 +2703,19 @@ defmodule Emisar.SSO do
 
   @doc """
   Internal — require_sso enforcement: is this session's SSO identity one of the
-  account's own? (Pre-Subject.) Matches by the identity's `account_id` ALONE — it
-  deliberately does NOT duplicate provider-state authorization here. Provider
-  disable/delete owns exact credential revocation after its transaction commits;
-  once its identities are soft-deleted this predicate also fails closed. The
-  last-enabled-provider removal guard (`update_provider`/`delete_provider`) keeps
-  the account from being stranded.
+  account's own? (Pre-Subject.) Matches by the identity's `account_id` and an
+  active OIDC binding — it deliberately does NOT duplicate provider-state
+  authorization here. Provider disable/delete owns exact credential revocation
+  after its transaction commits; once its identities are soft-deleted this
+  predicate also fails closed. The last-enabled-provider removal guard
+  (`update_provider`/`delete_provider`) keeps the account from being stranded.
   """
   def identity_belongs_to_account?(user_identity_id, account_id)
       when is_binary(user_identity_id) and is_binary(account_id) do
-    queryable = UserIdentity.Query.not_deleted() |> UserIdentity.Query.by_id(user_identity_id)
+    queryable =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.provider_identifier_active()
+      |> UserIdentity.Query.by_id(user_identity_id)
 
     case Repo.peek(queryable) do
       %UserIdentity{account_id: ^account_id} -> true

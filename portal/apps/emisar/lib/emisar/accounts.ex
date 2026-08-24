@@ -487,7 +487,7 @@ defmodule Emisar.Accounts do
       tag_signup_error(:user, Users.register_user(user_attrs, repo: repo))
     end)
     |> put_account_with_owner(account_attrs)
-    |> Repo.commit_multi()
+    |> Repo.commit_multi(after_commit: &after_membership_activation_committed/1)
     |> case do
       {:ok, %{user: user}} -> {:ok, user}
       {:error, reason} -> {:error, reason}
@@ -507,7 +507,7 @@ defmodule Emisar.Accounts do
     Multi.new()
     |> Multi.run(:user, fn _repo, _changes -> {:ok, user} end)
     |> put_account_with_owner(account_attrs)
-    |> Repo.commit_multi()
+    |> Repo.commit_multi(after_commit: &after_membership_activation_committed/1)
     |> case do
       {:ok, %{account: account}} -> {:ok, account}
       {:error, {_step, %Ecto.Changeset{} = changeset}} -> {:error, changeset}
@@ -570,8 +570,8 @@ defmodule Emisar.Accounts do
     end)
     # Making your own workspace is a second membership like any other: it ends the
     # single-account assumption an admin-approved binding elsewhere was granted on.
-    |> Multi.run(:retired_bindings, fn repo, %{user: user} ->
-      retire_bindings_that_assumed_one_account(repo, user)
+    |> Multi.merge(fn %{membership: membership} ->
+      put_membership_activation_consequence(Multi.new(), membership)
     end)
     # Workspace gets the v2 conservative default policy on creation.
     # Without this, `Policies.evaluate(nil, ...)` would default-deny
@@ -1409,24 +1409,41 @@ defmodule Emisar.Accounts do
     |> Repo.all()
   end
 
-  # A membership somewhere new invalidates the reason any admin-approved SSO
-  # binding this person holds was permitted: approval requires that they belong to
-  # no OTHER account, and that has just stopped being true. Retiring the binding
-  # here is what keeps the approval-time rule honest, since the rule itself cannot
-  # see forward.
-  #
-  # Only when they ALREADY had a membership — a person's first is not a second.
-  defp retire_bindings_that_assumed_one_account(repo, %Users.User{} = user) do
-    existing =
-      Membership.Query.not_deleted()
-      |> Membership.Query.by_user_id(user.id)
-      |> repo.all()
+  @doc """
+  Internal — compose the consequence of one membership becoming active.
 
-    case existing do
-      [_only_the_new_one] -> {:ok, 0}
-      _ -> SSO.retire_admin_approved_identities(user, repo)
-    end
+  Admin approval may bind an OIDC credential to an existing person only while
+  they have no active membership in another account. After a create or real
+  reinstate, the same predicate is re-evaluated against the activated account;
+  a suspended seat is not access and does not retire anything until it becomes
+  active. The DB-only retirement result carries exact socket topics to the
+  outer commit.
+  """
+  def put_membership_activation_consequence(%Multi{} = multi, %Membership{} = membership) do
+    Multi.run(multi, :retired_bindings, fn repo, _changes ->
+      active_account_ids =
+        Membership.Query.not_deleted()
+        |> Membership.Query.not_disabled()
+        |> Membership.Query.by_user_id(membership.user_id)
+        |> Membership.Query.select_account_ids()
+        |> repo.all()
+        |> Enum.uniq()
+
+      SSO.retire_admin_approved_identities(membership.user_id, active_account_ids, repo)
+    end)
   end
+
+  @doc """
+  Internal — finish the external half of a committed membership activation.
+  Identity-bound session rows were deleted in the transaction; their exact
+  socket topics ride in `:retired_bindings` because no query can derive them
+  after the delete.
+  """
+  def after_membership_activation_committed(%{retired_bindings: %{socket_topics: topics}}) do
+    Auth.disconnect_live_socket_topics(topics)
+  end
+
+  def after_membership_activation_committed(%{}), do: :ok
 
   @doc """
   Internal — the same rows as `list_active_memberships_for_user/1`, locked, for a
@@ -1463,26 +1480,41 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — SSO: create a membership for a JIT-provisioned user at the
-  provider's `default_role`. No `%Subject{}` — the caller is the pre-auth SSO
-  callback, scoped to the provider's account; composed into the SSO JIT
-  `Multi` via `Multi.run`. The JIT user is always brand-new, so the
-  `(account, user)` unique can't fire here.
-
-  `active?` mirrors the SCIM `active` flag: a directory that provisions a user
-  it created deactivated (`active: false`) gets a membership born suspended, so
-  a "deactivated in IdP" identity never silently holds access.
+  Internal — compose SSO/SCIM membership creation into a caller's transaction.
+  Active creation includes the cross-account binding consequence; a directory
+  row born suspended has granted no access and deliberately skips it. The
+  caller owns the outer commit and `after_membership_activation_committed/1`.
   """
   # Defense in depth: `:owner` is never assignable via sync (the provider
   # changeset rejects it as a default_role too) — owner is a deliberate human
   # grant needing `manage_owners`.
-  def provision_sso_membership(account_id, user_id, role, access, opts \\ [])
+  def put_sso_membership(
+        multi,
+        account_id,
+        user_id,
+        role,
+        granted,
+        opts \\ []
+      )
 
-  def provision_sso_membership(_account_id, _user_id, :owner, %RunnerAccess{}, _opts) do
-    {:error, :owner_not_assignable}
-  end
+  def put_sso_membership(
+        %Multi{} = multi,
+        _account_id,
+        _user_id,
+        :owner,
+        %RunnerAccess{},
+        _opts
+      ),
+      do: Multi.error(multi, :membership, :owner_not_assignable)
 
-  def provision_sso_membership(account_id, user_id, role, %RunnerAccess{} = granted, opts) do
+  def put_sso_membership(
+        %Multi{} = multi,
+        account_id,
+        user_id,
+        role,
+        %RunnerAccess{} = granted,
+        opts
+      ) do
     active? = Keyword.get(opts, :active?, true)
     directory_managed? = Keyword.get(opts, :directory_managed?, false)
     directory_provider = Keyword.get(opts, :directory_provider)
@@ -1505,16 +1537,22 @@ defmodule Emisar.Accounts do
         directory_provider_version(directory_provider, directory_managed?)
     }
 
-    Multi.new()
+    multi
     |> Multi.insert(:membership, sso_membership_changeset(attrs, active?))
     |> Multi.run(:runner_access, fn repo, %{membership: membership} ->
       replace_runner_access_rows(repo, membership.id, access)
     end)
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{membership: membership}} -> {:ok, membership}
-      {:error, reason} -> {:error, reason}
-    end
+    |> then(fn multi ->
+      if active? do
+        Multi.merge(multi, fn %{membership: membership} ->
+          put_membership_activation_consequence(Multi.new(), membership)
+        end)
+      else
+        Multi.run(multi, :retired_bindings, fn _repo, _changes ->
+          {:ok, %{count: 0, socket_topics: []}}
+        end)
+      end
+    end)
   end
 
   defp sso_membership_changeset(attrs, true), do: Membership.Changeset.create(attrs)
@@ -2530,61 +2568,55 @@ defmodule Emisar.Accounts do
   A member the directory (SCIM) has deactivated (`directory_suspended` — set by the
   SCIM deprovision write path) is refused with `{:error, :deactivated_in_idp}`:
   reinstating them would grant emisar access the IdP revoked. Reactivation must
-  happen in the IdP (its `active: true` re-sync reinstates via
-  `sync_reinstate_membership`). The flag lives on the membership, so the domain
-  enforces this itself off the locked row — no caller-supplied hint, no cycle.
+  happen in the IdP (its `active: true` re-sync composes through
+  `put_sync_membership_lifecycle/4`). The flag lives on the membership, so the
+  domain enforces this itself off the locked row — no caller-supplied hint, no
+  cycle.
   """
   def reinstate_membership(%Membership{} = membership, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id) do
-      Membership.Query.not_deleted()
-      |> Membership.Query.by_id(membership.id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(Membership.Query,
-        with: fn loaded_membership ->
-          # The guards judge the row's CURRENT state under the lock — the caller's
-          # struct is a stale socket snapshot. `directory_suspended` is judged here
-          # too, so a stale UI or crafted event can't reinstate an IdP-revoked member.
-          with :ok <- ensure_not_deactivated_in_idp(loaded_membership),
-               :ok <- ensure_can_modify_membership(loaded_membership, subject) do
-            Membership.Changeset.reinstate(loaded_membership)
-          else
-            {:error, reason} -> reason
-          end
-        end,
-        audit: &Audit.Events.membership_reinstated(subject, &1),
-        after_commit: &broadcast_membership_reinstated/1
-      )
+      Multi.new()
+      |> Multi.run(:membership_target, fn repo, _changes ->
+        loaded =
+          Membership.Query.not_deleted()
+          |> Membership.Query.by_id(membership.id)
+          |> Authorizer.for_subject(subject)
+          |> Membership.Query.lock_for_update()
+          |> repo.peek()
+
+        case loaded do
+          %Membership{} = loaded_membership ->
+            with :ok <- ensure_not_deactivated_in_idp(loaded_membership),
+                 :ok <- ensure_can_modify_membership(loaded_membership, subject) do
+              {:ok, loaded_membership}
+            end
+
+          nil ->
+            {:error, :not_found}
+        end
+      end)
+      |> Multi.update(:membership, fn %{membership_target: loaded_membership} ->
+        Membership.Changeset.reinstate(loaded_membership)
+      end)
+      |> Multi.insert(:audit, fn %{membership: reinstated} ->
+        Audit.Events.membership_reinstated(subject, reinstated)
+      end)
+      |> Multi.merge(fn %{membership: reinstated} ->
+        put_membership_activation_consequence(Multi.new(), reinstated)
+      end)
+      |> Repo.commit_multi(after_commit: &manual_membership_reinstated_effects/1)
+      |> case do
+        {:ok, %{membership: reinstated}} -> {:ok, reinstated}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
-  @doc """
-  Internal — directory sync: suspend a member because the IdP deprovisioned
-  them (SCIM `active:false` / DELETE). No `%Subject{}` — the SCIM bearer's
-  provider-scope is the authorization, validated at the web boundary; the
-  `provider` is threaded only to attribute the audit to the directory.
-
-  Mirrors `suspend_membership/2`'s row mechanics — `disabled_at` under the row
-  lock — and the **last-active-owner guard still fires**: a directory
-  deprovision can never lock out the account's last owner (§9 N5). An
-  already-suspended member is a no-op — in particular a MANUAL suspension
-  keeps manual provenance, so the IdP's later reactivate cannot lift it.
-
-  The session kill / API-key revocation / broadcast are NOT fired here: this
-  write composes into the SCIM boundary's one atomic transaction, so the
-  caller fires `membership_suspended_effects/1` after ITS commit, and only
-  when the third element says the row actually changed. Returns
-  `{:ok, membership, changed?} | {:error, :last_owner | :not_found}`.
-  """
-  def sync_suspend_membership(%Membership{} = membership, %SSO.IdentityProvider{} = provider) do
-    Membership.Query.not_deleted()
-    |> Membership.Query.by_id(membership.id)
-    |> Repo.fetch_and_update(Membership.Query,
-      with: &sync_suspend_change(&1, provider),
-      audit: &Audit.Events.membership_deprovisioned_via_scim(&1, provider)
-    )
-    |> noop_as_unchanged()
+  defp manual_membership_reinstated_effects(%{membership: membership} = changes) do
+    :ok = broadcast_membership_reinstated(membership)
+    after_membership_activation_committed(changes)
   end
 
   defp sync_suspend_change(%Membership{} = membership, provider) do
@@ -2605,10 +2637,10 @@ defmodule Emisar.Accounts do
   Internal — directory sync: the post-commit side effects of a COMMITTED sync
   suspend. Broadcast first so the team-page LV refreshes the row before the
   member's sessions die, then end this account's sessions and revoke the
-  membership's API keys. Split from `sync_suspend_membership/2` because that
-  write joins the SCIM boundary's transaction — firing these inside it would
-  let a later rollback leave the member signed out of an account that never
-  suspended them.
+  membership's API keys. Split from `put_sync_membership_lifecycle/4` because
+  that write joins the SCIM boundary's transaction — firing these inside it
+  would let a later rollback leave the member signed out of an account that
+  never suspended them.
   """
   def membership_suspended_effects(%Membership{} = membership) do
     :ok = broadcast_membership_suspended(membership)
@@ -2626,41 +2658,8 @@ defmodule Emisar.Accounts do
     :ok
   end
 
-  # `{:noop, row}` rides fetch_and_update's abort channel (any non-changeset
-  # `:with` return becomes `{:error, value}`) so an idempotent sync transition
-  # commits nothing — no UPDATE, no audit row — yet still answers `{:ok, …}`
-  # to the SCIM caller. The third element tells that caller whether to fire
-  # the post-commit side effects: only a row that actually changed earns them.
-  defp noop_as_unchanged({:ok, %Membership{} = membership}), do: {:ok, membership, true}
-
-  defp noop_as_unchanged({:error, {:noop, %Membership{} = membership}}),
-    do: {:ok, membership, false}
-
-  defp noop_as_unchanged(other), do: other
-
   defp ensure_not_suspended(%Membership{disabled_at: nil}), do: :ok
   defp ensure_not_suspended(%Membership{} = membership), do: {:error, {:noop, membership}}
-
-  @doc """
-  Internal — directory sync: reinstate a member the IdP re-provisioned
-  (SCIM `active:true`). No `%Subject{}` — see `sync_suspend_membership/2`.
-  Clears `disabled_at` under the row lock — but ONLY a `directory_suspended`
-  row: a manually-suspended member is a no-op that stays suspended (the local
-  break-glass hold wins; an operator lifts it via `reinstate_membership/2`).
-  Like the suspend, this composes into a caller transaction, so the caller
-  fires `membership_reinstated_effects/1` after its commit when the third
-  element says the row changed. Returns
-  `{:ok, membership, changed?} | {:error, :not_found}`.
-  """
-  def sync_reinstate_membership(%Membership{} = membership, %SSO.IdentityProvider{} = provider) do
-    Membership.Query.not_deleted()
-    |> Membership.Query.by_id(membership.id)
-    |> Repo.fetch_and_update(Membership.Query,
-      with: &sync_reinstate_change(&1, provider),
-      audit: &Audit.Events.membership_reprovisioned_via_scim(&1, provider)
-    )
-    |> noop_as_unchanged()
-  end
 
   defp sync_reinstate_change(%Membership{} = membership, provider) do
     # The locked row must live in the provider's account before we write, and
@@ -2679,6 +2678,9 @@ defmodule Emisar.Accounts do
   Internal — compose one SCIM suspend or reinstate into a caller's transaction.
   The membership update and its audit row become top-level Multi results, so the
   outer `Repo.commit_multi/2` broadcasts only after its provider fence commits.
+  Suspend preserves the last-owner guard and manual holds; reinstate lifts only
+  a hold owned by this exact provider. An unchanged transition writes no row or
+  audit and produces no effect.
   Returns the Multi with `:membership_transition` set to `%{membership, effect}`.
   """
   def put_sync_membership_lifecycle(
@@ -2713,6 +2715,17 @@ defmodule Emisar.Accounts do
         end
 
       {:ok, %{membership: changes.lifecycle_membership, effect: effect}}
+    end)
+    |> Multi.merge(fn %{membership_transition: transition} ->
+      case transition.effect do
+        {:reinstated, membership} ->
+          put_membership_activation_consequence(Multi.new(), membership)
+
+        _ ->
+          Multi.run(Multi.new(), :retired_bindings, fn _repo, _changes ->
+            {:ok, %{count: 0, socket_topics: []}}
+          end)
+      end
     end)
   end
 
@@ -2752,6 +2765,17 @@ defmodule Emisar.Accounts do
   """
   def membership_reinstated_effects(%Membership{} = membership),
     do: broadcast_membership_reinstated(membership)
+
+  @doc "Fire a composed membership lifecycle's external effects after its outer commit."
+  def membership_lifecycle_effects(%{membership_transition: transition} = changes) do
+    case transition.effect do
+      {:suspended, membership} -> membership_suspended_effects(membership)
+      {:reinstated, membership} -> membership_reinstated_effects(membership)
+      nil -> :ok
+    end
+
+    after_membership_activation_committed(changes)
+  end
 
   defp ensure_directory_suspended(%Membership{directory_suspended: true}), do: :ok
   defp ensure_directory_suspended(%Membership{} = membership), do: {:error, {:noop, membership}}
@@ -3432,13 +3456,13 @@ defmodule Emisar.Accounts do
       |> Multi.run(:runner_access, fn repo, %{membership: membership, invitation: invitation} ->
         replace_runner_access_rows(repo, membership.id, invitation.runner_access)
       end)
-      |> Multi.run(:retired_bindings, fn repo, %{user: user} ->
-        retire_bindings_that_assumed_one_account(repo, user)
+      |> Multi.merge(fn %{membership: membership} ->
+        put_membership_activation_consequence(Multi.new(), membership)
       end)
       |> Multi.insert(:audit, fn %{user: user, invitation: invitation} ->
         Audit.Events.user_invited(subject, user, invitation.role, invitation.runner_access)
       end)
-      |> Repo.commit_multi()
+      |> Repo.commit_multi(after_commit: &after_membership_activation_committed/1)
       |> case do
         {:ok, %{user: user, membership: membership}} ->
           {:ok, %{membership: membership, user: user, invitation_token: token}}

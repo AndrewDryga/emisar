@@ -12,8 +12,9 @@ defmodule Emisar.BillingManagerRoleTest do
   the money and none of the fleet.
   """
   use Emisar.DataCase, async: true
+  alias Ecto.Multi
   alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Billing, Catalog, Fixtures, Policies}
-  alias Emisar.{Runbooks, Runners, Runs, SSO}
+  alias Emisar.{Repo, Runbooks, Runners, Runs, SSO}
 
   setup do
     account = Fixtures.Accounts.create_account()
@@ -308,13 +309,17 @@ defmodule Emisar.BillingManagerRoleTest do
     test "a directory provisioning it lands with none", %{account: account} do
       user = Fixtures.Users.create_user()
 
-      assert {:ok, %Accounts.Membership{role: :billing_manager} = membership} =
-               Accounts.provision_sso_membership(
+      assert {:ok, %{membership: %Accounts.Membership{role: :billing_manager} = membership}} =
+               Multi.new()
+               |> Accounts.put_sso_membership(
                  account.id,
                  user.id,
                  :billing_manager,
                  Accounts.RunnerAccess.all(),
                  directory_managed?: true
+               )
+               |> Repo.commit_multi(
+                 after_commit: &Accounts.after_membership_activation_committed/1
                )
 
       assert membership.runner_access_mode == :none

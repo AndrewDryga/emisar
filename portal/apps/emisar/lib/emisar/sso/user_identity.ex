@@ -6,12 +6,16 @@ defmodule Emisar.SSO.UserIdentity do
   `claims` keeps identity + forensic claims (sub/email/name/hd/amr/acr/
   auth_time); never the IdP's OAuth tokens.
 
-  `provisioned_via` records who created the binding (OIDC JIT login, SCIM
-  directory sync, or an admin approving a `:manual` link request). For a SCIM
-  identity, `scim_external_id` is the IdP's
-  `externalId` (equal to `provider_identifier` when identifier-matching is
-  configured — decision 4) and `scim_active` is its SCIM lifecycle state,
-  distinct from the membership's `disabled_at`.
+  `provider_identifier_retired_at` disables an admin-approved OIDC binding
+  without deleting the SCIM lifecycle row. The historical value remains on the
+  row, while active-binding uniqueness releases authentication ownership so its
+  current provider-asserted owner may claim it. `created_by` records who granted
+  the current OIDC binding; `provisioned_via` records the row's origin (OIDC JIT
+  login, SCIM directory sync, or an admin approving a `:manual` link request).
+  For a SCIM identity, `scim_external_id` is the IdP's `externalId` (equal to
+  `provider_identifier` when identifier-matching is configured — decision 4)
+  and `scim_active` is its SCIM lifecycle state, distinct from the membership's
+  `disabled_at`.
   """
   use Emisar, :schema
 
@@ -20,6 +24,7 @@ defmodule Emisar.SSO.UserIdentity do
 
   schema "sso_user_identities" do
     field :provider_identifier, :string
+    field :provider_identifier_retired_at, :utc_datetime_usec
     field :claims, :map, default: %{}
     field :created_by, Ecto.Enum, values: @created_by
 

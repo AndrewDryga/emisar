@@ -16,7 +16,7 @@ defmodule Emisar.SSO.SCIM do
   alias Emisar.SSO.IdentityProvider
   alias Emisar.SSO.{SCIMGroupPatch, SCIMUser, SCIMUserPatch, SCIMUserUpdate, UserIdentity}
   @identifier_constraints ~w[
-    sso_user_identities_provider_identifier_index
+    sso_user_identities_active_provider_identifier_index
     sso_user_identities_scim_external_id_index
   ]
 
@@ -238,7 +238,7 @@ defmodule Emisar.SSO.SCIM do
       |> Multi.run(:user, fn _repo, %{adopted_identity: locked_identity} ->
         Users.fetch_user_by_id(locked_identity.user_id)
       end)
-      |> Multi.merge(&reconcile_provisioned_membership_multi(&1, active))
+      |> Multi.merge(&reconcile_provisioned_membership_multi(&1, active, authorization))
       |> Multi.run(:updated_identity, fn repo, %{adopted_identity: locked_identity} ->
         set_identity_scim_active(repo, locked_identity, active)
       end)
@@ -278,7 +278,8 @@ defmodule Emisar.SSO.SCIM do
   # holds, per reprovision_membership) and recompute mapped authorization.
   defp reconcile_provisioned_membership_multi(
          %{locked_provider: provider, user: user, adopted_identity: identity},
-         true
+         true,
+         authorization
        ) do
     case Accounts.peek_sync_membership(provider.account_id, user.id) do
       %Accounts.Membership{disabled_at: nil} = membership ->
@@ -297,18 +298,19 @@ defmodule Emisar.SSO.SCIM do
         end
 
       nil ->
-        Multi.run(Multi.new(), :membership_transition, fn _repo, _changes ->
-          with {:ok, membership} <-
-                 Accounts.provision_sso_membership(
-                   provider.account_id,
-                   user.id,
-                   provider.default_role,
-                   provider_runner_access(provider),
-                   directory_managed?: true,
-                   directory_provider: provider
-                 ) do
-            {:ok, %{membership: membership, effect: nil}}
-          end
+        {role, access} = repost_authorization(provider, authorization)
+
+        Accounts.put_sso_membership(
+          Multi.new(),
+          provider.account_id,
+          user.id,
+          role,
+          access,
+          directory_managed?: true,
+          directory_provider: provider
+        )
+        |> Multi.run(:membership_transition, fn _repo, %{membership: membership} ->
+          {:ok, %{membership: membership, effect: nil}}
         end)
     end
   end
@@ -317,7 +319,8 @@ defmodule Emisar.SSO.SCIM do
   # that asserts "inactive" lands the member in exactly the offboarded state.
   defp reconcile_provisioned_membership_multi(
          %{locked_provider: provider, adopted_identity: identity},
-         false
+         false,
+         _authorization
        ) do
     case Accounts.peek_sync_membership(provider.account_id, identity.user_id) do
       %Accounts.Membership{} = membership ->
@@ -335,22 +338,20 @@ defmodule Emisar.SSO.SCIM do
   end
 
   defp maybe_put_repost_authorization(multi, %{authoritative?: true} = authorization) do
-    Multi.merge(multi, fn %{locked_provider: provider, membership_transition: transition} ->
-      role = authorization.mapped_role || provider.default_role
+    Multi.merge(multi, fn
+      %{membership: _newly_created} ->
+        Multi.new()
 
-      access =
-        Accounts.RunnerAccess.union([
-          provider_runner_access(provider),
-          authorization.mapped_access
-        ])
+      %{locked_provider: provider, membership_transition: transition} ->
+        {role, access} = repost_authorization(provider, authorization)
 
-      Accounts.put_sync_membership_authorization(
-        Multi.new(),
-        transition.membership,
-        role,
-        access,
-        provider
-      )
+        Accounts.put_sync_membership_authorization(
+          Multi.new(),
+          transition.membership,
+          role,
+          access,
+          provider
+        )
     end)
   end
 
@@ -363,17 +364,34 @@ defmodule Emisar.SSO.SCIM do
       nil -> :ok
     end
 
-    if Map.has_key?(changes, :membership) do
+    if Map.has_key?(changes, :target) do
       Accounts.after_sync_membership_authorization_committed(changes)
     else
       :ok
     end
+
+    Accounts.after_membership_activation_committed(changes)
   end
+
+  defp repost_authorization(provider, %{authoritative?: true} = authorization) do
+    role = authorization.mapped_role || provider.default_role
+
+    access =
+      Accounts.RunnerAccess.union([
+        provider_runner_access(provider),
+        authorization.mapped_access
+      ])
+
+    {role, access}
+  end
+
+  defp repost_authorization(provider, _authorization),
+    do: {provider.default_role, provider_runner_access(provider)}
 
   defp provision_scim_user(%IdentityProvider{} = provider, external_id, attrs, retry) do
     multi = build_scim_provision_multi(provider, external_id, attrs)
 
-    case Repo.commit_multi(multi) do
+    case Repo.commit_multi(multi, after_commit: &Accounts.after_membership_activation_committed/1) do
       {:ok, %{user: user, identity: identity, membership: membership}} ->
         {:ok, %{user: user, identity: identity, membership: membership}}
 
@@ -455,8 +473,9 @@ defmodule Emisar.SSO.SCIM do
     |> Multi.run(:identity, fn _repo, %{locked_provider: locked_provider, user: user} ->
       create_scim_identity(locked_provider, user, external_id, attrs)
     end)
-    |> Multi.run(:membership, fn _repo, %{locked_provider: locked_provider, user: user} ->
-      Accounts.provision_sso_membership(
+    |> Multi.merge(fn %{locked_provider: locked_provider, user: user} ->
+      Accounts.put_sso_membership(
+        Multi.new(),
         locked_provider.account_id,
         user.id,
         locked_provider.default_role,
@@ -532,9 +551,8 @@ defmodule Emisar.SSO.SCIM do
       |> Multi.run(:rename, fn _repo, %{locked_provider: locked_provider, identity: identity} ->
         apply_scim_rename(locked_provider, identity, update.name)
       end)
-      |> Multi.run(:lifecycle, fn _repo,
-                                  %{locked_provider: locked_provider, identity: identity} ->
-        apply_scim_lifecycle(locked_provider, identity, update.active)
+      |> Multi.merge(fn %{locked_provider: locked_provider, identity: identity} ->
+        scim_lifecycle_multi(locked_provider, identity, update.active)
       end)
       |> Multi.run(:updated_identity, fn repo, %{identity: identity} ->
         set_identity_scim_active(repo, identity, update.active)
@@ -624,35 +642,36 @@ defmodule Emisar.SSO.SCIM do
     end
   end
 
-  defp apply_scim_lifecycle(_provider, _identity, :keep), do: {:ok, :unchanged}
+  defp scim_lifecycle_multi(_provider, _identity, :keep) do
+    Multi.run(Multi.new(), :membership_transition, fn _repo, _changes ->
+      {:ok, %{membership: nil, effect: nil}}
+    end)
+  end
 
   # An identity whose membership an operator removed locally is ALREADY as
   # deprovisioned as this account can make it, so a deprovision succeeds with
   # nothing to do. Answering `:not_found` told the directory the person does not
   # exist while a read still described them — so it either retried the deactivate
   # forever or concluded they were gone and re-created them, undoing the removal.
-  defp apply_scim_lifecycle(%IdentityProvider{} = provider, identity, false) do
+  defp scim_lifecycle_multi(%IdentityProvider{} = provider, identity, false) do
     case Accounts.peek_sync_membership(provider.account_id, identity.user_id) do
       %Accounts.Membership{} = membership ->
-        with {:ok, membership, changed?} <- Accounts.sync_suspend_membership(membership, provider) do
-          {:ok, if(changed?, do: {:suspended, membership}, else: membership)}
-        end
+        Accounts.put_sync_membership_lifecycle(Multi.new(), membership, provider, :suspend)
 
       nil ->
-        {:ok, :unchanged}
+        Multi.run(Multi.new(), :membership_transition, fn _repo, _changes ->
+          {:ok, %{membership: nil, effect: nil}}
+        end)
     end
   end
 
-  defp apply_scim_lifecycle(%IdentityProvider{} = provider, identity, true) do
+  defp scim_lifecycle_multi(%IdentityProvider{} = provider, identity, true) do
     case Accounts.peek_sync_membership(provider.account_id, identity.user_id) do
       %Accounts.Membership{} = membership ->
-        with {:ok, membership, changed?} <-
-               Accounts.sync_reinstate_membership(membership, provider) do
-          {:ok, if(changed?, do: {:reinstated, membership}, else: membership)}
-        end
+        Accounts.put_sync_membership_lifecycle(Multi.new(), membership, provider, :reinstate)
 
       nil ->
-        {:error, :not_found}
+        Multi.error(Multi.new(), :membership_transition, :not_found)
     end
   end
 
@@ -664,21 +683,16 @@ defmodule Emisar.SSO.SCIM do
 
   # Only a lifecycle write that actually committed earns its side effects — a
   # no-op (already suspended, break-glass hold) fires nothing.
-  defp scim_update_effects(%{lifecycle: {:suspended, membership}}),
-    do: Accounts.membership_suspended_effects(membership)
-
-  defp scim_update_effects(%{lifecycle: {:reinstated, membership}}),
-    do: Accounts.membership_reinstated_effects(membership)
-
-  defp scim_update_effects(_changes), do: :ok
+  defp scim_update_effects(%{membership_transition: _transition} = changes),
+    do: Accounts.membership_lifecycle_effects(changes)
 
   # The freshest membership this transition touched, for the caller's result:
   # the lifecycle write's row wins over the rename's, and an untouched
   # membership is nil.
-  defp scim_updated_membership(%{lifecycle: {_transition, %Accounts.Membership{} = membership}}),
-    do: membership
-
-  defp scim_updated_membership(%{lifecycle: %Accounts.Membership{} = membership}), do: membership
+  defp scim_updated_membership(%{
+         membership_transition: %{membership: %Accounts.Membership{} = membership}
+       }),
+       do: membership
 
   defp scim_updated_membership(%{rename: %Accounts.Membership{} = membership}), do: membership
 

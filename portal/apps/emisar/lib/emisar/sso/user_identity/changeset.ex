@@ -26,7 +26,7 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
     |> validate_length(:provider_identifier, max: @identifier_max_length, count: :codepoints)
     |> validate_length(:scim_external_id, max: @identifier_max_length, count: :codepoints)
     |> unique_constraint([:account_id, :provider_id, :provider_identifier],
-      name: :sso_user_identities_provider_identifier_index
+      name: :sso_user_identities_active_provider_identifier_index
     )
     |> unique_constraint([:account_id, :provider_id, :scim_external_id],
       name: :sso_user_identities_scim_external_id_index
@@ -71,11 +71,17 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
   """
   def rebind_provider_identifier(%UserIdentity{} = identity, identifier, claims) do
     identity
-    |> change(provider_identifier: identifier, claims: claims, last_seen_at: DateTime.utc_now())
+    |> change(
+      provider_identifier: identifier,
+      provider_identifier_retired_at: nil,
+      created_by: :admin,
+      claims: claims,
+      last_seen_at: DateTime.utc_now()
+    )
     |> validate_required([:provider_identifier])
     |> validate_length(:provider_identifier, max: @identifier_max_length, count: :codepoints)
     |> unique_constraint([:account_id, :provider_id, :provider_identifier],
-      name: :sso_user_identities_provider_identifier_index
+      name: :sso_user_identities_active_provider_identifier_index
     )
   end
 

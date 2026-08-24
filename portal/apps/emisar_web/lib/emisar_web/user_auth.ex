@@ -48,7 +48,8 @@ defmodule EmisarWeb.UserAuth do
 
   @doc """
   Completes an SSO sign-in under the account and current-provider locks. `opts`
-  carry the required `:user_identity_id` plus the JIT-provisioning
+  carry the callback's required `:user_identity_id` and exact
+  `:provider_identifier`, plus the JIT-provisioning
   `:registered?` flag. The domain returns the committed MFA outcome used for
   analytics; no web caller chooses it.
   """

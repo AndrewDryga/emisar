@@ -4198,7 +4198,7 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "ensure_identity_provider_enabled/4" do
+  describe "ensure_identity_provider_enabled/5" do
     test "refuses a session for an identity whose connection has been disabled" do
       # Auth calls this INSIDE the session transaction, holding the provider lock
       # across the credential write. complete_auth checks the same thing, but its
@@ -4213,7 +4213,8 @@ defmodule Emisar.SSOTest do
                  Repo,
                  identity.id,
                  identity.user_id,
-                 account.id
+                 account.id,
+                 identity.provider_identifier
                )
 
       assert provider_id == provider.id
@@ -4224,7 +4225,8 @@ defmodule Emisar.SSOTest do
                Repo,
                identity.id,
                identity.user_id,
-               account.id
+               account.id,
+               identity.provider_identifier
              ) ==
                {:error, :provider_disabled}
     end
@@ -4234,7 +4236,8 @@ defmodule Emisar.SSOTest do
                Repo,
                nil,
                Ecto.UUID.generate(),
-               Ecto.UUID.generate()
+               Ecto.UUID.generate(),
+               nil
              ) ==
                {:error, :provider_disabled}
     end
@@ -5888,7 +5891,11 @@ defmodule Emisar.SSOTest do
                )
 
       # The credential the first account's admin approved no longer resolves.
-      assert Repo.reload!(identity).deleted_at
+      # This was an OIDC-only manual link, so it has no directory-owned
+      # externalId and no lifecycle row to preserve.
+      retired = Repo.reload!(identity)
+      assert retired.deleted_at
+      refute retired.provider_identifier_retired_at
 
       assert {:pending, %LinkRequest{}} =
                SSO.complete_auth(
@@ -6155,6 +6162,7 @@ defmodule Emisar.SSOTest do
 
       assert identity.id == directory_identity.id
       assert identity.provider_identifier == "oid-456"
+      assert identity.created_by == :admin
 
       # Rebinding the OIDC identifier leaves the directory correlation value
       # intact for repeated creates and filters.
@@ -6166,6 +6174,268 @@ defmodule Emisar.SSOTest do
         |> Repo.all()
 
       assert Enum.map(live, & &1.id) == [directory_identity.id]
+    end
+
+    test "a foreign membership retires only a rebound directory login", %{
+      subject: subject,
+      provider: provider
+    } do
+      provider = Fixtures.SSO.enable_scim(provider)
+
+      assert {:ok, %{user: member, identity: directory_identity}} =
+               SSO.scim_provision_user(provider, %{
+                 external_id: "directory-external-123",
+                 email: "rebound-directory@acme.test",
+                 full_name: "Directory Person"
+               })
+
+      request =
+        capture_request(provider, %{
+          "sub" => "approved-oidc-subject-456",
+          "email" => member.email,
+          "email_verified" => true
+        })
+
+      assert {:ok, %{identity: rebound}} =
+               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+
+      assert rebound.id == directory_identity.id
+      assert rebound.created_by == :admin
+      assert rebound.provider_identifier == "approved-oidc-subject-456"
+      assert rebound.scim_external_id == "directory-external-123"
+
+      rebound_session =
+        Fixtures.Auth.create_session_token!(member, :sso, nil, %{}, user_identity_id: rebound.id)
+
+      unrelated_session = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
+
+      elsewhere = Fixtures.Accounts.create_account()
+
+      other_subject =
+        Fixtures.Subjects.membership_subject(
+          Fixtures.Memberships.create_membership(
+            account_id: elsewhere.id,
+            user_id: Fixtures.Users.create_user().id,
+            role: "owner"
+          )
+        )
+
+      assert {:ok, _invitation} =
+               Accounts.invite_user_to_account(
+                 Fixtures.Accounts.invitation_attrs(email: member.email, role: "operator"),
+                 other_subject
+               )
+
+      retired = Repo.reload!(rebound)
+      refute retired.deleted_at
+      assert retired.provider_identifier_retired_at
+      assert retired.scim_external_id == "directory-external-123"
+      assert retired.scim_active
+
+      assert Auth.fetch_user_and_token_by_session_token(rebound_session) ==
+               {:error, :not_found}
+
+      assert {:ok, fetched_member, _session} =
+               Auth.fetch_user_and_token_by_session_token(unrelated_session)
+
+      assert fetched_member.id == member.id
+
+      assert {:ok, %SCIMUser{external_id: "directory-external-123", active: true}} =
+               SSO.scim_fetch_user(provider, retired.id)
+
+      assert {:ok, %{membership: suspended, identity: inactive}} =
+               SSO.scim_update_user(provider, retired.id, %SCIMUserUpdate{active: false})
+
+      assert suspended.disabled_at
+      refute inactive.scim_active
+
+      assert {:ok, %{membership: reinstated, identity: active}} =
+               SSO.scim_update_user(provider, retired.id, %SCIMUserUpdate{active: true})
+
+      refute reinstated.disabled_at
+      assert active.scim_active
+      assert Repo.reload!(retired).provider_identifier_retired_at
+
+      assert {:pending, %LinkRequest{provider_identifier: "approved-oidc-subject-456"}} =
+               SSO.complete_auth(
+                 provider,
+                 callback(%{
+                   "sub" => "approved-oidc-subject-456",
+                   "email" => member.email,
+                   "email_verified" => true
+                 }),
+                 %{}
+               )
+
+      assert [same_directory_identity] =
+               UserIdentity.Query.not_deleted()
+               |> UserIdentity.Query.by_user_id(member.id)
+               |> Repo.all()
+
+      assert same_directory_identity.id == directory_identity.id
+    end
+
+    test "an OIDC-first row adopted by SCIM keeps its directory lifecycle after retirement", %{
+      account: account,
+      subject: subject,
+      provider: provider
+    } do
+      provider = Fixtures.SSO.enable_scim(provider)
+      member = Fixtures.Users.create_user(email: "adopted-directory@acme.test")
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+
+      oidc_first =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: member.id,
+          provider_identifier: "shared-directory-id",
+          created_by: :provider,
+          provisioned_via: :oidc_jit
+        })
+
+      assert {:ok, %{identity: adopted}} =
+               SSO.scim_provision_user(provider, %{
+                 external_id: "shared-directory-id",
+                 email: member.email,
+                 full_name: "Adopted Directory Person"
+               })
+
+      assert adopted.id == oidc_first.id
+      assert adopted.provisioned_via == :oidc_jit
+      assert adopted.scim_external_id == "shared-directory-id"
+
+      request =
+        capture_request(provider, %{
+          "sub" => "approved-after-adoption",
+          "email" => member.email,
+          "email_verified" => true
+        })
+
+      assert {:ok, %{identity: rebound}} =
+               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+
+      {_other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, %{membership: _membership}} =
+               Accounts.invite_user_to_account(
+                 Fixtures.Accounts.invitation_attrs(email: member.email, role: "operator"),
+                 other_subject
+               )
+
+      retired = Repo.reload!(rebound)
+      refute retired.deleted_at
+      assert retired.provider_identifier_retired_at
+      assert retired.scim_external_id == "shared-directory-id"
+
+      assert {:ok, %SCIMUser{external_id: "shared-directory-id"}} =
+               SSO.scim_fetch_user(provider, retired.id)
+
+      assert Fixtures.Memberships.fetch_membership(other_account.id, member.id)
+    end
+
+    test "a manual reactivation retires a binding approved while the foreign seat was dormant", %{
+      account: account,
+      subject: subject,
+      provider: provider
+    } do
+      member = Fixtures.Users.create_user(email: "manual-reactivation@acme.test")
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+
+      directory_identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: member.id,
+          provider_identifier: "manual-directory-id",
+          scim_external_id: "manual-directory-id",
+          provisioned_via: :scim
+        })
+
+      {_other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      dormant =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          user_id: member.id,
+          role: "operator"
+        )
+
+      assert {:ok, dormant} = Accounts.suspend_membership(dormant, other_subject)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "manual-approved-subject",
+          "email" => member.email,
+          "email_verified" => true
+        })
+
+      assert {:ok, %{identity: rebound}} =
+               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+
+      assert rebound.id == directory_identity.id
+      refute rebound.provider_identifier_retired_at
+
+      assert {:ok, reinstated} = Accounts.reinstate_membership(dormant, other_subject)
+      refute reinstated.disabled_at
+      assert Repo.reload!(rebound).provider_identifier_retired_at
+    end
+
+    test "a directory re-POST reactivation retires a binding approved while that seat was dormant",
+         %{account: account, subject: subject, provider: provider} do
+      %{provider: foreign_provider} = scim_provider()
+
+      assert {:ok, %{user: member, identity: foreign_identity}} =
+               SSO.scim_provision_user(foreign_provider, %{
+                 external_id: "foreign-directory-id",
+                 email: "scim-reactivation@acme.test",
+                 full_name: "SCIM Reactivation"
+               })
+
+      assert {:ok, %{membership: dormant}} =
+               SSO.scim_update_user(
+                 foreign_provider,
+                 foreign_identity.id,
+                 %SCIMUserUpdate{active: false}
+               )
+
+      assert dormant.disabled_at
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+
+      directory_identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: member.id,
+          provider_identifier: "local-directory-id",
+          scim_external_id: "local-directory-id",
+          provisioned_via: :scim
+        })
+
+      request =
+        capture_request(provider, %{
+          "sub" => "local-approved-subject",
+          "email" => member.email,
+          "email_verified" => true
+        })
+
+      assert {:ok, %{identity: rebound}} =
+               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+
+      assert rebound.id == directory_identity.id
+      refute rebound.provider_identifier_retired_at
+
+      assert {:ok, %{membership: reactivated}} =
+               SSO.scim_provision_user(foreign_provider, %{
+                 external_id: "foreign-directory-id",
+                 email: member.email,
+                 full_name: "SCIM Reactivation",
+                 active: true
+               })
+
+      refute reactivated.disabled_at
+      assert Repo.reload!(rebound).provider_identifier_retired_at
+      refute Repo.reload!(foreign_identity).provider_identifier_retired_at
     end
 
     test "the database refuses a second live identity for one person", %{
@@ -6279,10 +6549,11 @@ defmodule Emisar.SSOTest do
       assert {:ok, %{user: user, identity: identity}} =
                SSO.approve_link_request(request, RunnerAccess.none(), subject)
 
-      # Bound to the EXISTING user; the sub is stored as both ids.
+      # Bound to the EXISTING user. OIDC owns only the login identifier; the
+      # directory column stays available for a later SCIM assertion.
       assert user.id == member.id
       assert identity.provider_identifier == "okta|m"
-      assert identity.scim_external_id == "okta|m"
+      refute identity.scim_external_id
       # The member's existing role is untouched (not downgraded to :operator).
       membership = Fixtures.Memberships.fetch_membership(account.id, member.id)
       assert membership.role == :admin
@@ -6448,7 +6719,7 @@ defmodule Emisar.SSOTest do
 
   # -- subscribe_link_request/1 ---------------------------------------
 
-  describe "retire_admin_approved_identities/2" do
+  describe "retire_admin_approved_identities/3" do
     test "retires only the bindings an admin approved, and revokes their sessions" do
       account = Fixtures.Accounts.create_account()
       provider = provider_fixture(account)
@@ -6464,8 +6735,197 @@ defmodule Emisar.SSOTest do
         })
         |> Repo.insert()
 
-      assert SSO.retire_admin_approved_identities(user, Repo) === {:ok, 1}
+      approved_session =
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{},
+          user_identity_id: admin_approved.id
+        )
+
+      unrelated_session = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      elsewhere = Fixtures.Accounts.create_account()
+
+      assert {:ok, %{count: 1, socket_topics: [topic]}} =
+               SSO.retire_admin_approved_identities(
+                 user.id,
+                 [account.id, elsewhere.id],
+                 Repo
+               )
+
+      assert topic == Auth.live_socket_topic_for_session(approved_session)
       assert Repo.reload!(admin_approved).deleted_at
+      assert Auth.fetch_user_and_token_by_session_token(approved_session) == {:error, :not_found}
+
+      assert {:ok, ^user, _session} =
+               Auth.fetch_user_and_token_by_session_token(unrelated_session)
+    end
+
+    test "preserves a rebound directory row while retiring its OIDC authority" do
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account)
+      user = Fixtures.Users.create_user()
+
+      rebound =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id,
+          provider_identifier: "approved-subject",
+          scim_external_id: "directory-external",
+          created_by: :admin,
+          provisioned_via: :scim
+        })
+
+      elsewhere = Fixtures.Accounts.create_account()
+
+      assert {:ok, %{count: 1}} =
+               SSO.retire_admin_approved_identities(
+                 user.id,
+                 [account.id, elsewhere.id],
+                 Repo
+               )
+
+      retired = Repo.reload!(rebound)
+      refute retired.deleted_at
+      assert retired.provider_identifier_retired_at
+      assert retired.scim_external_id == "directory-external"
+      assert retired.scim_active
+    end
+
+    test "deletes a manual OIDC link with no directory ownership" do
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account)
+      user = Fixtures.Users.create_user()
+
+      manual =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id,
+          provider_identifier: "manual-subject",
+          created_by: :admin,
+          provisioned_via: :manual
+        })
+
+      elsewhere = Fixtures.Accounts.create_account()
+
+      assert {:ok, %{count: 1}} =
+               SSO.retire_admin_approved_identities(
+                 user.id,
+                 [account.id, elsewhere.id],
+                 Repo
+               )
+
+      assert Repo.reload!(manual).deleted_at
+    end
+
+    test "a first active membership in the binding's own account changes nothing" do
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account)
+      user = Fixtures.Users.create_user()
+
+      admin_approved =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id,
+          provider_identifier: "same-account-subject",
+          created_by: :admin,
+          provisioned_via: :manual
+        })
+
+      assert {:ok, %{count: 0, socket_topics: []}} =
+               SSO.retire_admin_approved_identities(user.id, [account.id], Repo)
+
+      unchanged = Repo.reload!(admin_approved)
+      refute unchanged.deleted_at
+      refute unchanged.provider_identifier_retired_at
+    end
+
+    test "retirement releases the OIDC subject without deleting the SCIM resource" do
+      account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(account)
+      original_user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: original_user.id)
+
+      original =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: original_user.id,
+          provider_identifier: "reassignable-subject",
+          scim_external_id: "original-directory-id",
+          created_by: :admin,
+          provisioned_via: :scim
+        })
+
+      elsewhere = Fixtures.Accounts.create_account()
+
+      assert {:ok, %{count: 1}} =
+               SSO.retire_admin_approved_identities(
+                 original_user.id,
+                 [account.id, elsewhere.id],
+                 Repo
+               )
+
+      replacement_user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: replacement_user.id)
+
+      replacement =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: replacement_user.id,
+          provider_identifier: "reassignable-subject"
+        })
+
+      assert {:ok, %{user: authenticated, identity: active_identity, created?: false}} =
+               SSO.complete_auth(
+                 provider,
+                 callback(%{"sub" => "reassignable-subject"}),
+                 %{}
+               )
+
+      assert authenticated.id == replacement_user.id
+      assert active_identity.id == replacement.id
+      refute active_identity.id == original.id
+
+      assert {:ok, %SCIMUser{external_id: "original-directory-id"}} =
+               SSO.scim_fetch_user(provider, original.id)
+    end
+
+    test "creating a sole foreign workspace retires authority from a removed old seat" do
+      old_account = Fixtures.Accounts.create_account()
+      provider = provider_fixture(old_account)
+      user = Fixtures.Users.create_user()
+
+      old_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: old_account.id,
+          user_id: user.id
+        )
+
+      Fixtures.Memberships.mark_membership_as_deleted(old_membership)
+
+      rebound =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: old_account.id,
+          provider_id: provider.id,
+          user_id: user.id,
+          provider_identifier: "removed-seat-subject",
+          scim_external_id: "removed-seat-directory-id",
+          created_by: :admin,
+          provisioned_via: :scim
+        })
+
+      suffix = System.unique_integer([:positive])
+
+      assert {:ok, new_account} =
+               Accounts.create_account_with_owner(
+                 %{name: "New workspace #{suffix}", slug: "new-workspace-#{suffix}"},
+                 user
+               )
+
+      assert Fixtures.Memberships.fetch_membership(new_account.id, user.id)
+      assert Repo.reload!(rebound).provider_identifier_retired_at
     end
 
     test "leaves what the directory itself asserted alone" do
@@ -6484,7 +6944,15 @@ defmodule Emisar.SSOTest do
         })
         |> Repo.insert()
 
-      assert SSO.retire_admin_approved_identities(user, Repo) === {:ok, 0}
+      elsewhere = Fixtures.Accounts.create_account()
+
+      assert {:ok, %{count: 0}} =
+               SSO.retire_admin_approved_identities(
+                 user.id,
+                 [account.id, elsewhere.id],
+                 Repo
+               )
+
       refute Repo.reload!(from_the_directory).deleted_at
     end
   end
