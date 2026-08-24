@@ -39,6 +39,17 @@ defmodule EmisarWeb.Components.FlashTest do
       assert html =~ ~s(phx-hook="FlashAutoClose")
     end
 
+    test "flash icons render mono — a same-hue accent vanishes on the kind-toned tint" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"<CoreComponents.flash kind={:error}>Nope.</CoreComponents.flash>")
+
+      # The container is tinted with the kind's own tone (rose on rose), so the
+      # icon's rose accent had no contrast against it — the ! mark disappeared.
+      assert html =~ "emisar-icon-mono"
+    end
+
     test "auto_close={false} renders no bar and no auto-close hook (state-driven flashes)" do
       assigns = %{}
 

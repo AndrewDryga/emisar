@@ -68,7 +68,10 @@ defmodule EmisarWeb.CoreComponents do
         [
           # z-[60] sits above the sticky marketing nav + console chrome (z-50) so a
           # flash toast is never painted behind them; below the skip-link (z-[100]).
-          "fixed top-4 right-4 z-[60] w-80 sm:w-96 overflow-hidden rounded-xl p-4 pr-10 ring-1 backdrop-blur shadow-lg cursor-pointer",
+          # emisar-icon-mono: the container is tinted with the kind's own tone, so a
+          # same-hue accent inside the icon has no contrast against it — the icon
+          # rides the text tone instead (the rose ! mark vanished on rose-950).
+          "emisar-icon-mono fixed top-4 right-4 z-[60] w-80 sm:w-96 overflow-hidden rounded-xl p-4 pr-10 ring-1 backdrop-blur shadow-lg cursor-pointer",
           @kind == :info && "bg-brand-950/80 text-brand-100 ring-brand-500/40",
           @kind == :error && "bg-rose-950/80 text-rose-100 ring-rose-500/40",
           @kind == :neutral && "bg-zinc-900 text-zinc-200 ring-white/10"

@@ -297,3 +297,16 @@ grep.
   empty the inner element (the fleet's tracks render as empty slots at 16px, no
   progress line) rather than removing it. Judgment rule — reviewed by eye
   against the approved master; not mechanically checkable.
+
+- **A kind-toned container renders its icons mono.** A surface tinted with a
+  semantic tone (the flash: `bg-rose-950/80` for errors, `bg-brand-950/80` for
+  info) already states the tone — an icon accent in the SAME hue sits at a
+  mid value on that deep tint and disappears (`state.error`'s rose-400 `!`
+  mark on rose-950 was the founder report; the currentColor circle stayed
+  visible, so the glyph read as an empty circle). `emisar-icon-mono` on the
+  container makes the whole icon ride the text tone (rose-100/brand-100),
+  which is what the surrounding copy already proves is legible. Washes are
+  different: a 15–20% tint (`docs_callout`) stays near the page background,
+  so light accents keep their contrast and stay colored. Enforced:
+  `EmisarWeb.Components.FlashTest` pins `emisar-icon-mono` on the flash.
+
