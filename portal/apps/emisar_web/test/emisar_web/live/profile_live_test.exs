@@ -1097,7 +1097,12 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute has_element?(lv, "#mfa_recovery_regeneration_form")
       assert has_element?(lv, "#mfa_disable_form")
 
-      disable_submit = lv |> element("#mfa_disable_form button", "Disable 2FA") |> render()
+      assert has_element?(lv, "#mfa_disable_form button", "Confirm and disable")
+      refute has_element?(lv, "#mfa_disable_form button", "Disable 2FA")
+
+      disable_submit =
+        lv |> element("#mfa_disable_form button", "Confirm and disable") |> render()
+
       assert disable_submit =~ "border-rose-500/40"
       refute disable_submit =~ "bg-brand-500"
 
