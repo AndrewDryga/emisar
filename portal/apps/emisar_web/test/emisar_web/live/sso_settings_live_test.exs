@@ -686,7 +686,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       owner = Fixtures.Subjects.subject_for(user, account)
       on = insert_provider(account, %{name: "Synced", kind: :entra})
       {:ok, on, _raw} = SSO.enable_scim(on, owner)
-      {:ok, _lv, synced} = live(conn, ~p"/app/#{account}/settings/sso/#{on.id}")
+      {:ok, lv, synced} = live(conn, ~p"/app/#{account}/settings/sso/#{on.id}")
 
       for note <- [
             "Members and groups stay in sync",
@@ -700,6 +700,33 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       assert synced =~ "remove their emisar access"
       refute synced =~ "remove their Emisar access"
+
+      for {section_id, note} <- [
+            {"directory-sync-#{on.id}", "Members and groups stay in sync"},
+            {"role-mapping-section-#{on.id}", "Choose the role for each synced group"},
+            {"runner-access-mapping-section-#{on.id}",
+             "Each mapping adds runner and pack access"},
+            {"synced-groups-#{on.id}", "Groups received from your identity provider"},
+            {"synced-members-#{on.id}", "Suspend someone here for a temporary hold"}
+          ] do
+        assert has_element?(lv, "##{section_id} > div:first-child")
+        assert has_element?(lv, "##{section_id} > div:nth-child(2)")
+        assert has_element?(lv, "##{section_id} > aside##{section_id}-help", note)
+      end
+
+      # Actions stay in the primary header cell; the help rail begins only on
+      # the content row below it.
+      assert has_element?(
+               lv,
+               "#role-mapping-section-#{on.id} > div:first-child button",
+               "Add mapping"
+             )
+
+      assert has_element?(
+               lv,
+               "#runner-access-mapping-section-#{on.id} > div:first-child button",
+               "Add runner access"
+             )
 
       # The note carries no heading of its own: the section title is directly to
       # its left, and repeating it is what made the old single rail read as a
@@ -1555,7 +1582,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       assert has_element?(
                lv,
-               "#runner-access-mapping-section-#{provider.id} > div > #runner-access-mapping-help-#{provider.id}",
+               "#runner-access-mapping-section-#{provider.id} > #runner-access-mapping-section-#{provider.id}-help",
                "Each mapping adds runner and pack access"
              )
 

@@ -1553,19 +1553,17 @@ defmodule EmisarWeb.SSOSettingsLive do
              group→role). @providers holds exactly the one handle_params loaded. --%>
         <%!-- Back crumb + entity name live in the shell header (detail_header),
              like every other detail page. --%>
-        <%!-- The help moved out of the sections into a rail beside them, so the
-             data starts at its own heading. The rail waits for xl — below that a
-             20rem column would crowd the lists — and stacks BELOW the connection
-             rather than above it: this is a status page, so the record leads. --%>
+        <%!-- Help-bearing sections own their two-column row: the heading and its
+             actions stay in the primary column, while content and help share the
+             row below. The rail waits for xl — below that it stacks after the
+             section content instead of crowding it. --%>
         <div
           :if={@live_action == :show}
           class="mt-4"
         >
-          <%!-- Each section and its note are SIBLING cells of one grid, so the
-               note sits in that section's row — "Synced groups" explained beside
-               Synced groups, not stacked with everything else at the top. Rows are
-               implicit: emit section, note, section, note. A section with nothing
-               to say emits a spacer, hidden below xl so it costs no row there. --%>
+          <%!-- Each help-bearing section spans the outer grid and owns the same
+               internal tracks. Sections with no rail still emit a desktop-only
+               spacer so the next section starts a fresh outer-grid row. --%>
           <div
             :for={provider <- @providers}
             class="grid grid-cols-1 gap-x-12 gap-y-12 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
@@ -1678,12 +1676,6 @@ defmodule EmisarWeb.SSOSettingsLive do
               scim_base_url={@scim_base_url}
               scim_token={@scim_token}
             />
-            <%!-- The provider kind only says SCIM is supported; it does not mean
-                 this connection has enabled provisioning. --%>
-            <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
-              Members and groups stay in sync with your identity provider. Remove someone there to
-              remove their emisar access.
-            </.section_note>
 
             <%!-- This kind can't push SCIM (e.g. Google Workspace) — say so once
                  instead of dangling an enable panel or an Enterprise upsell for a
@@ -1713,10 +1705,6 @@ defmodule EmisarWeb.SSOSettingsLive do
               mapping_edit_form={@mapping_edit_form}
               adding_mapping={@adding_mapping}
             />
-            <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
-              Choose the role for each synced group. If someone belongs to several mapped groups,
-              the highest role wins. Sync never grants Owner.
-            </.section_note>
 
             <.group_runner_access_mapping_section
               :if={@can_configure_directory_sync? and provider.scim_enabled}
@@ -1738,15 +1726,13 @@ defmodule EmisarWeb.SSOSettingsLive do
 
             <.synced_groups_section
               :if={@can_configure_directory_sync? and provider.scim_enabled}
+              id={"synced-groups-#{provider.id}"}
               synced_groups={Map.get(@synced_groups, provider.id, [])}
               load_error?={Map.get(@synced_group_errors, provider.id, false)}
             />
-            <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
-              Groups received from your identity provider. An unmapped group leaves its members at
-              the connection defaults.
-            </.section_note>
 
             <.synced_members_section
+              id={"synced-members-#{provider.id}"}
               members={@synced_members}
               load_error?={@synced_members_load_error?}
               member_role_options={@member_role_options}
@@ -1755,14 +1741,6 @@ defmodule EmisarWeb.SSOSettingsLive do
               current_user_id={@current_user.id}
               scim_enabled={provider.scim_enabled}
             />
-            <.section_note :if={provider.scim_enabled}>
-              Members received through this connection. Suspend someone here for a temporary hold.
-              For offboarding, deactivate them in your identity provider.
-            </.section_note>
-            <.section_note :if={not provider.scim_enabled}>
-              Members added when they first signed in through this connection. Remove their
-              workspace access on the Team page.
-            </.section_note>
 
             <%!-- A plan-posture fact, naked — not a boxed interruption. Only for
                  kinds that CAN do SCIM; the note above covers the ones that can't. --%>
@@ -2549,24 +2527,39 @@ defmodule EmisarWeb.SSOSettingsLive do
     Enum.find_value(kind_options, value, fn {label, v} -> v == value && label end)
   end
 
+  attr :id, :string, required: true
+  slot :header, required: true
   slot :inner_block, required: true
+  slot :note
 
-  # A section's explanation, living in the grid's second column so it lands in
-  # that section's ROW. It carries no title of its own: the section heading is
-  # directly to its left, and repeating it was what made the old single rail read
-  # as a list of headings ("Synced groups & users" above a docs list).
-  defp section_note(assigns) do
+  # One section owns both columns so its heading and actions cannot widen into
+  # the help rail. The content and note share row two at xl; below that, DOM
+  # order gives heading → content → note without breakpoint-specific offsets.
+  defp section_with_note(assigns) do
     ~H"""
-    <aside class="max-w-prose text-sm leading-relaxed text-zinc-400 xl:pt-1">
-      {render_slot(@inner_block)}
-    </aside>
+    <section
+      id={@id}
+      class="grid min-w-0 grid-cols-1 gap-x-12 gap-y-4 xl:col-span-2 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
+    >
+      <div class="min-w-0 xl:col-start-1 xl:row-start-1">
+        {render_slot(@header)}
+      </div>
+      <div class="min-w-0 [&>*:first-child]:mt-0 xl:col-start-1 xl:row-start-2">
+        {render_slot(@inner_block)}
+      </div>
+      <aside
+        :if={@note != []}
+        id={"#{@id}-help"}
+        class="max-w-prose text-sm leading-relaxed text-zinc-400 xl:col-start-2 xl:row-start-2 xl:pt-1"
+      >
+        {render_slot(@note)}
+      </aside>
+    </section>
     """
   end
 
-  # Holds the second column open for a section with nothing to explain, so the
-  # next section starts a fresh row instead of sliding into this one. Hidden
-  # below xl, where the grid is a single column and an empty cell would only add
-  # a gap.
+  # Holds the outer grid's second column open for content with no help rail.
+  # Hidden below xl, where the grid is a single column and costs no row.
   defp section_spacer(assigns) do
     ~H"""
     <div class="hidden xl:block" aria-hidden="true"></div>
@@ -2593,49 +2586,51 @@ defmodule EmisarWeb.SSOSettingsLive do
     assigns = assign(assigns, :revealed_token, revealed_token)
 
     ~H"""
-    <section id={"directory-sync-#{@provider.id}"}>
-      <.section_header title="Directory sync (SCIM)">
-        <:actions>
-          <.chip :if={not @provider.scim_enabled}>Disabled</.chip>
-          <div class="ml-auto flex items-center gap-2">
-            <.button
-              :if={not @provider.scim_enabled}
-              variant={:secondary}
-              size={:sm}
-              phx-click="enable_scim"
-              phx-value-id={@provider.id}
-            >
-              Enable
-            </.button>
-            <.confirm_button
-              :if={@provider.scim_enabled}
-              id={"rotate-scim-#{@provider.id}"}
-              title="Rotate the SCIM token?"
-              confirm_label="Rotate token"
-              variant={:secondary}
-              tone={:neutral}
-              size={:sm}
-              on_confirm={JS.push("rotate_scim", value: %{id: @provider.id})}
-            >
-              <:body>Your IdP will lose access until you paste the new one.</:body>
-              Rotate token
-            </.confirm_button>
-            <.confirm_button
-              :if={@provider.scim_enabled}
-              id={"disable-scim-#{@provider.id}"}
-              title="Disable directory sync?"
-              confirm_label="Disable sync"
-              variant={:secondary}
-              tone={:rose}
-              size={:sm}
-              on_confirm={JS.push("disable_scim", value: %{id: @provider.id})}
-            >
-              <:body>Your IdP can no longer provision or deprovision members through it.</:body>
-              Disable
-            </.confirm_button>
-          </div>
-        </:actions>
-      </.section_header>
+    <.section_with_note id={"directory-sync-#{@provider.id}"}>
+      <:header>
+        <.section_header title="Directory sync (SCIM)">
+          <:actions>
+            <.chip :if={not @provider.scim_enabled}>Disabled</.chip>
+            <div class="ml-auto flex items-center gap-2">
+              <.button
+                :if={not @provider.scim_enabled}
+                variant={:secondary}
+                size={:sm}
+                phx-click="enable_scim"
+                phx-value-id={@provider.id}
+              >
+                Enable
+              </.button>
+              <.confirm_button
+                :if={@provider.scim_enabled}
+                id={"rotate-scim-#{@provider.id}"}
+                title="Rotate the SCIM token?"
+                confirm_label="Rotate token"
+                variant={:secondary}
+                tone={:neutral}
+                size={:sm}
+                on_confirm={JS.push("rotate_scim", value: %{id: @provider.id})}
+              >
+                <:body>Your IdP will lose access until you paste the new one.</:body>
+                Rotate token
+              </.confirm_button>
+              <.confirm_button
+                :if={@provider.scim_enabled}
+                id={"disable-scim-#{@provider.id}"}
+                title="Disable directory sync?"
+                confirm_label="Disable sync"
+                variant={:secondary}
+                tone={:rose}
+                size={:sm}
+                on_confirm={JS.push("disable_scim", value: %{id: @provider.id})}
+              >
+                <:body>Your IdP can no longer provision or deprovision members through it.</:body>
+                Disable
+              </.confirm_button>
+            </div>
+          </:actions>
+        </.section_header>
+      </:header>
 
       <div :if={@provider.scim_enabled} class="mt-4 space-y-4">
         <%!-- A healthy sync is a quiet freshness line — no boxed "all good"
@@ -2722,7 +2717,16 @@ defmodule EmisarWeb.SSOSettingsLive do
           </p>
         </details>
       </div>
-    </section>
+      <%!-- Provider capability does not imply that provisioning is enabled. --%>
+      <:note>
+        <%= if @provider.scim_enabled do %>
+          Members and groups stay in sync with your identity provider. Remove someone there to
+          remove their emisar access.
+        <% else %>
+          Enable directory sync to add and remove members from your identity provider.
+        <% end %>
+      </:note>
+    </.section_with_note>
     """
   end
 
@@ -2746,20 +2750,22 @@ defmodule EmisarWeb.SSOSettingsLive do
   # branch authz on it).
   defp role_mapping_section(assigns) do
     ~H"""
-    <section>
-      <.section_header title="Role mapping" count={@metadata.count} count_tone={:neutral}>
-        <:actions>
-          <.button
-            :if={not @adding_mapping}
-            variant={:secondary}
-            size={:sm}
-            phx-click="add_mapping_form"
-            icon="action.add"
-          >
-            Add mapping
-          </.button>
-        </:actions>
-      </.section_header>
+    <.section_with_note id={"role-mapping-section-#{@provider.id}"}>
+      <:header>
+        <.section_header title="Role mapping" count={@metadata.count} count_tone={:neutral}>
+          <:actions>
+            <.button
+              :if={not @adding_mapping}
+              variant={:secondary}
+              size={:sm}
+              phx-click="add_mapping_form"
+              icon="action.add"
+            >
+              Add mapping
+            </.button>
+          </:actions>
+        </.section_header>
+      </:header>
       <ul :if={@mappings != []} class="mt-4 divide-y divide-zinc-800/70">
         <li :for={mapping <- @mappings} class="py-3 first:pt-0 last:pb-0">
           <div class="flex flex-wrap items-center justify-between gap-2">
@@ -2910,7 +2916,11 @@ defmodule EmisarWeb.SSOSettingsLive do
           </:actions>
         </.simple_form>
       </div>
-    </section>
+      <:note>
+        Choose the role for each synced group. If someone belongs to several mapped groups, the
+        highest role wins. Sync never grants Owner.
+      </:note>
+    </.section_with_note>
     """
   end
 
@@ -2933,227 +2943,223 @@ defmodule EmisarWeb.SSOSettingsLive do
     assigns = assign(assigns, :runners_by_id, Map.new(assigns.runners, &{&1.id, &1}))
 
     ~H"""
-    <section id={"runner-access-mapping-section-#{@provider.id}"} class="xl:col-span-2">
-      <.section_header
-        title="Runner access mapping"
-        count={@metadata.count}
-        count_tone={:neutral}
-      >
-        <:actions>
-          <.button
-            :if={not @adding_mapping}
-            variant={:secondary}
-            size={:sm}
-            phx-click="add_runner_access_mapping_form"
-            icon="action.add"
-          >
-            Add runner access
-          </.button>
-        </:actions>
-      </.section_header>
-      <div class="mt-4 grid grid-cols-1 gap-x-12 gap-y-6 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start">
-        <div class="min-w-0">
-          <ul :if={@mappings != []} class="divide-y divide-zinc-800/70">
-            <li :for={mapping <- @mappings} class="py-3 first:pt-0 last:pb-0">
-              <div class="flex flex-wrap items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="truncate text-sm text-zinc-200">
-                    {directory_group_name(mapping)}
-                  </p>
-                  <p class="font-mono text-[11px] text-zinc-400">
-                    {directory_group_reference(mapping)}
-                  </p>
-                  <dl
-                    id={"runner-access-mapping-facts-#{mapping.id}"}
-                    class="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1"
-                  >
-                    <dt class="text-[10px] uppercase tracking-wider text-zinc-400">runners:</dt>
-                    <dd class="flex min-w-0 flex-wrap items-center gap-1">
-                      <span
-                        :if={mapping_runner_reach_phrase(mapping.runner_access_mode)}
-                        class="text-xs text-zinc-400"
-                      >
-                        {mapping_runner_reach_phrase(mapping.runner_access_mode)}
-                      </span>
-                      <.identity_tag
-                        :for={group <- mapping.runner_scope_groups}
-                        category="group"
-                        value={group}
-                      />
-                      <%!-- The full runner id rides the tag's title; the value half names the
+    <.section_with_note id={"runner-access-mapping-section-#{@provider.id}"}>
+      <:header>
+        <.section_header
+          title="Runner access mapping"
+          count={@metadata.count}
+          count_tone={:neutral}
+        >
+          <:actions>
+            <.button
+              :if={not @adding_mapping}
+              variant={:secondary}
+              size={:sm}
+              phx-click="add_runner_access_mapping_form"
+              icon="action.add"
+            >
+              Add runner access
+            </.button>
+          </:actions>
+        </.section_header>
+      </:header>
+      <div class="min-w-0">
+        <ul :if={@mappings != []} class="divide-y divide-zinc-800/70">
+          <li :for={mapping <- @mappings} class="py-3 first:pt-0 last:pb-0">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="truncate text-sm text-zinc-200">
+                  {directory_group_name(mapping)}
+                </p>
+                <p class="font-mono text-[11px] text-zinc-400">
+                  {directory_group_reference(mapping)}
+                </p>
+                <dl
+                  id={"runner-access-mapping-facts-#{mapping.id}"}
+                  class="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1"
+                >
+                  <dt class="text-[10px] uppercase tracking-wider text-zinc-400">runners:</dt>
+                  <dd class="flex min-w-0 flex-wrap items-center gap-1">
+                    <span
+                      :if={mapping_runner_reach_phrase(mapping.runner_access_mode)}
+                      class="text-xs text-zinc-400"
+                    >
+                      {mapping_runner_reach_phrase(mapping.runner_access_mode)}
+                    </span>
+                    <.identity_tag
+                      :for={group <- mapping.runner_scope_groups}
+                      category="group"
+                      value={group}
+                    />
+                    <%!-- The full runner id rides the tag's title; the value half names the
                        live runner, and falls back to the shared removed-runner label when
                        the id no longer resolves. --%>
-                      <.identity_tag
-                        :for={runner_id <- mapping.runner_scope_runner_ids}
-                        category="runner"
-                        title={runner_id}
-                      >
-                        <% runner = Map.get(@runners_by_id, runner_id) %>
-                        <span :if={runner}>{runner.name}</span>
-                        <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
-                      </.identity_tag>
-                    </dd>
-                    <dt
-                      :if={mapping.runner_access_mode != :none}
-                      class="text-[10px] uppercase tracking-wider text-zinc-400"
+                    <.identity_tag
+                      :for={runner_id <- mapping.runner_scope_runner_ids}
+                      category="runner"
+                      title={runner_id}
                     >
-                      packs:
-                    </dt>
-                    <dd
-                      :if={mapping.runner_access_mode != :none}
-                      class="flex min-w-0 flex-wrap items-center gap-1"
-                    >
-                      <span
-                        :if={mapping_pack_reach_phrase(mapping.pack_access_mode)}
-                        class="text-xs text-zinc-400"
-                      >
-                        {mapping_pack_reach_phrase(mapping.pack_access_mode)}
-                      </span>
-                      <.chip :for={pack_id <- mapping.pack_scope_pack_ids} mono>{pack_id}</.chip>
-                    </dd>
-                  </dl>
-                </div>
-                <div class="flex shrink-0 items-center gap-2">
-                  <.button
-                    :if={@editing_mapping_id != mapping.id}
-                    variant={:secondary}
-                    size={:sm}
-                    phx-click="start_edit_runner_access_mapping"
-                    phx-value-id={mapping.id}
+                      <% runner = Map.get(@runners_by_id, runner_id) %>
+                      <span :if={runner}>{runner.name}</span>
+                      <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
+                    </.identity_tag>
+                  </dd>
+                  <dt
+                    :if={mapping.runner_access_mode != :none}
+                    class="text-[10px] uppercase tracking-wider text-zinc-400"
                   >
-                    Edit
-                  </.button>
-                  <.confirm_button
-                    id={"delete-runner-access-mapping-#{mapping.id}"}
-                    title="Delete this runner-access mapping?"
-                    confirm_label="Delete mapping"
-                    variant={:secondary}
-                    tone={:rose}
-                    size={:sm}
-                    on_confirm={JS.push("delete_runner_access_mapping", value: %{id: mapping.id})}
+                    packs:
+                  </dt>
+                  <dd
+                    :if={mapping.runner_access_mode != :none}
+                    class="flex min-w-0 flex-wrap items-center gap-1"
                   >
-                    <:body>
-                      Current members of this IdP group immediately lose this grant. Their connection
-                      default and other mapped-group grants remain.
-                    </:body>
-                    Delete
-                  </.confirm_button>
-                </div>
-              </div>
-
-              <div :if={@editing_mapping_id == mapping.id and @mapping_edit_form} class="mt-4">
-                <.simple_form
-                  for={@mapping_edit_form}
-                  id={"edit-runner-access-mapping-#{mapping.id}"}
-                  phx-change="validate_edit_runner_access_mapping"
-                  phx-submit="update_runner_access_mapping"
-                >
-                  <input type="hidden" name="runner_access_mapping_id" value={mapping.id} />
-                  <.runner_access_mapping_fields
-                    form={@mapping_edit_form}
-                    synced_groups={@synced_groups}
-                    runners={@runners}
-                    pack_advertisements={@pack_advertisements}
-                    pack_access_restricted?={@pack_access_restricted?}
-                    editing?
-                  />
-                  <:actions>
-                    <.button phx-disable-with="Saving...">Save</.button>
-                    <.button
-                      variant={:ghost}
-                      type="button"
-                      phx-click="cancel_edit_runner_access_mapping"
+                    <span
+                      :if={mapping_pack_reach_phrase(mapping.pack_access_mode)}
+                      class="text-xs text-zinc-400"
                     >
-                      Cancel
-                    </.button>
-                  </:actions>
-                </.simple_form>
+                      {mapping_pack_reach_phrase(mapping.pack_access_mode)}
+                    </span>
+                    <.chip :for={pack_id <- mapping.pack_scope_pack_ids} mono>{pack_id}</.chip>
+                  </dd>
+                </dl>
               </div>
-            </li>
-          </ul>
-          <div class="mt-4">
-            <LiveTable.paginator
-              id={"runner-access-mappings-#{@provider.id}"}
-              path={@path}
-              metadata={@metadata}
-              filter_params={@filter_params}
-              prefix="runner_access_mappings_"
-              page_count={length(@mappings)}
-            />
-          </div>
-
-          <%!-- Claiming no group widens runner reach is a security statement — never
-           make it from a read that failed. --%>
-          <.empty_state
-            :if={@load_error?}
-            variant={:hint}
-            tone={:danger}
-            icon="state.warning"
-            title="Couldn't load runner access mappings"
-            class="mt-4"
-          >
-            This is a load error, not an empty list — IdP groups may well be granting extra runner
-            reach. Refresh the page to try again.
-          </.empty_state>
-          <.empty_state
-            :if={
-              not @load_error? and @mappings == [] and
-                not LiveTable.stale_page?(
-                  0,
-                  @metadata,
-                  @filter_params,
-                  "runner_access_mappings_"
-                )
-            }
-            variant={:hint}
-            class="mt-4"
-          >
-            No IdP groups grant additional runner access. Synced members use the connection default.
-          </.empty_state>
-
-          <div
-            :if={@adding_mapping and @mapping_form}
-            class="mt-5 border-t border-zinc-800/70 pt-5"
-          >
-            <p class="text-sm font-medium text-zinc-300">Add group runner access</p>
-            <.simple_form
-              for={@mapping_form}
-              id={"create-runner-access-mapping-#{@provider.id}"}
-              phx-change="validate_runner_access_mapping"
-              phx-submit="create_runner_access_mapping"
-              class="mt-3"
-            >
-              <input type="hidden" name="provider_id" value={@provider.id} />
-              <.runner_access_mapping_fields
-                form={@mapping_form}
-                synced_groups={@synced_groups}
-                runners={@runners}
-                pack_advertisements={@pack_advertisements}
-                pack_access_restricted?={@pack_access_restricted?}
-              />
-              <:actions>
-                <.button phx-disable-with="Adding...">Add runner access</.button>
+              <div class="flex shrink-0 items-center gap-2">
                 <.button
-                  variant={:ghost}
-                  type="button"
-                  phx-click="cancel_add_runner_access_mapping"
+                  :if={@editing_mapping_id != mapping.id}
+                  variant={:secondary}
+                  size={:sm}
+                  phx-click="start_edit_runner_access_mapping"
+                  phx-value-id={mapping.id}
                 >
-                  Cancel
+                  Edit
                 </.button>
-              </:actions>
-            </.simple_form>
-          </div>
+                <.confirm_button
+                  id={"delete-runner-access-mapping-#{mapping.id}"}
+                  title="Delete this runner-access mapping?"
+                  confirm_label="Delete mapping"
+                  variant={:secondary}
+                  tone={:rose}
+                  size={:sm}
+                  on_confirm={JS.push("delete_runner_access_mapping", value: %{id: mapping.id})}
+                >
+                  <:body>
+                    Current members of this IdP group immediately lose this grant. Their connection
+                    default and other mapped-group grants remain.
+                  </:body>
+                  Delete
+                </.confirm_button>
+              </div>
+            </div>
+
+            <div :if={@editing_mapping_id == mapping.id and @mapping_edit_form} class="mt-4">
+              <.simple_form
+                for={@mapping_edit_form}
+                id={"edit-runner-access-mapping-#{mapping.id}"}
+                phx-change="validate_edit_runner_access_mapping"
+                phx-submit="update_runner_access_mapping"
+              >
+                <input type="hidden" name="runner_access_mapping_id" value={mapping.id} />
+                <.runner_access_mapping_fields
+                  form={@mapping_edit_form}
+                  synced_groups={@synced_groups}
+                  runners={@runners}
+                  pack_advertisements={@pack_advertisements}
+                  pack_access_restricted?={@pack_access_restricted?}
+                  editing?
+                />
+                <:actions>
+                  <.button phx-disable-with="Saving...">Save</.button>
+                  <.button
+                    variant={:ghost}
+                    type="button"
+                    phx-click="cancel_edit_runner_access_mapping"
+                  >
+                    Cancel
+                  </.button>
+                </:actions>
+              </.simple_form>
+            </div>
+          </li>
+        </ul>
+        <div class="mt-4">
+          <LiveTable.paginator
+            id={"runner-access-mappings-#{@provider.id}"}
+            path={@path}
+            metadata={@metadata}
+            filter_params={@filter_params}
+            prefix="runner_access_mappings_"
+            page_count={length(@mappings)}
+          />
         </div>
 
-        <aside
-          id={"runner-access-mapping-help-#{@provider.id}"}
-          class="max-w-prose text-sm leading-relaxed text-zinc-400 xl:pt-1"
+        <%!-- Claiming no group widens runner reach is a security statement — never
+           make it from a read that failed. --%>
+        <.empty_state
+          :if={@load_error?}
+          variant={:hint}
+          tone={:danger}
+          icon="state.warning"
+          title="Couldn't load runner access mappings"
+          class="mt-4"
         >
-          Each mapping adds runner and pack access to the connection defaults. Groups are matched
-          by ID, not by name.
-        </aside>
+          This is a load error, not an empty list — IdP groups may well be granting extra runner
+          reach. Refresh the page to try again.
+        </.empty_state>
+        <.empty_state
+          :if={
+            not @load_error? and @mappings == [] and
+              not LiveTable.stale_page?(
+                0,
+                @metadata,
+                @filter_params,
+                "runner_access_mappings_"
+              )
+          }
+          variant={:hint}
+          class="mt-4"
+        >
+          No IdP groups grant additional runner access. Synced members use the connection default.
+        </.empty_state>
+
+        <div
+          :if={@adding_mapping and @mapping_form}
+          class="mt-5 border-t border-zinc-800/70 pt-5"
+        >
+          <p class="text-sm font-medium text-zinc-300">Add group runner access</p>
+          <.simple_form
+            for={@mapping_form}
+            id={"create-runner-access-mapping-#{@provider.id}"}
+            phx-change="validate_runner_access_mapping"
+            phx-submit="create_runner_access_mapping"
+            class="mt-3"
+          >
+            <input type="hidden" name="provider_id" value={@provider.id} />
+            <.runner_access_mapping_fields
+              form={@mapping_form}
+              synced_groups={@synced_groups}
+              runners={@runners}
+              pack_advertisements={@pack_advertisements}
+              pack_access_restricted?={@pack_access_restricted?}
+            />
+            <:actions>
+              <.button phx-disable-with="Adding...">Add runner access</.button>
+              <.button
+                variant={:ghost}
+                type="button"
+                phx-click="cancel_add_runner_access_mapping"
+              >
+                Cancel
+              </.button>
+            </:actions>
+          </.simple_form>
+        </div>
       </div>
-    </section>
+      <:note>
+        Each mapping adds runner and pack access to the connection defaults. Groups are matched by
+        ID, not by name.
+      </:note>
+    </.section_with_note>
     """
   end
 
@@ -3228,6 +3234,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     """
   end
 
+  attr :id, :string, required: true
   attr :synced_groups, :list, required: true
   attr :load_error?, :boolean, default: false
 
@@ -3238,8 +3245,14 @@ defmodule EmisarWeb.SSOSettingsLive do
   # mapping list can't show.
   defp synced_groups_section(assigns) do
     ~H"""
-    <section>
-      <.section_header title="Synced groups" count={length(@synced_groups)} count_tone={:neutral} />
+    <.section_with_note id={@id}>
+      <:header>
+        <.section_header
+          title="Synced groups"
+          count={length(@synced_groups)}
+          count_tone={:neutral}
+        />
+      </:header>
       <ul :if={@synced_groups != []} class="mt-4 divide-y divide-zinc-800/70">
         <li
           :for={group <- @synced_groups}
@@ -3281,7 +3294,11 @@ defmodule EmisarWeb.SSOSettingsLive do
         No groups synced yet. Once your IdP pushes group memberships over SCIM, they'll appear here
         with their member counts.
       </.empty_state>
-    </section>
+      <:note>
+        Groups received from your identity provider. An unmapped group leaves its members at the
+        connection defaults.
+      </:note>
+    </.section_with_note>
     """
   end
 
@@ -3310,6 +3327,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp directory_group_reference(%{directory_group_id: id}) when is_binary(id),
     do: "emisar group #{id}"
 
+  attr :id, :string, required: true
   attr :members, :list, required: true
   attr :load_error?, :boolean, required: true
   attr :member_role_options, :list, required: true
@@ -3326,12 +3344,14 @@ defmodule EmisarWeb.SSOSettingsLive do
   # its count off the header — "0" would assert a roster size we don't know.
   defp synced_members_section(assigns) do
     ~H"""
-    <section>
-      <.section_header
-        title="Synced members"
-        count={if @load_error?, do: nil, else: length(@members)}
-        count_tone={:neutral}
-      />
+    <.section_with_note id={@id}>
+      <:header>
+        <.section_header
+          title="Synced members"
+          count={if @load_error?, do: nil, else: length(@members)}
+          count_tone={:neutral}
+        />
+      </:header>
       <ul :if={@members != []} class="mt-4 divide-y divide-zinc-800/70">
         <li
           :for={member <- @members}
@@ -3462,7 +3482,16 @@ defmodule EmisarWeb.SSOSettingsLive do
         No one has been provisioned through this connection yet. Members appear here after they sign in
         through it, or after directory sync provisions them.
       </.empty_state>
-    </section>
+      <:note>
+        <%= if @scim_enabled do %>
+          Members received through this connection. Suspend someone here for a temporary hold. For
+          offboarding, deactivate them in your identity provider.
+        <% else %>
+          Members added when they first signed in through this connection. Remove their workspace
+          access on the Team page.
+        <% end %>
+      </:note>
+    </.section_with_note>
     """
   end
 

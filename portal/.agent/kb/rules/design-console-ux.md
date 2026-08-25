@@ -911,6 +911,12 @@ the commit button, where the operator can reach the action before reading what i
     where grammar forces it at the start of a sentence; prefer rewriting the sentence when that keeps
     the brand form natural. Sweep: user-visible string literals such as `Emisar group`, `Emisar
     access`, or `Open Emisar`; exclude Elixir aliases, module names, and proper external titles.
+76. **A help rail never widens the section header or its actions.** A help-bearing section owns both
+    columns, but its heading and controls stay in the primary column on row one; only the section body
+    and help share row two. Reuse one section grid for every help block instead of making one section
+    span the rail or aligning siblings independently. On narrow screens keep DOM order as heading,
+    body, help. Sweep: an Add/Edit action pinned to the page edge above a help rail, and mixed section
+    structures where some help starts beside the title while one starts beside the body.
 
 ## 8. The kit is the contract
 
