@@ -10,12 +10,14 @@ defmodule Emisar.SSO.IssuerUrl do
   query parameters, and fragments are refused because they are not part of an
   OIDC issuer identifier and can carry secrets into fetches and audit history.
 
-  A hostname that *resolves* to an internal IP isn't blocked here — pre-resolving
-  is TOCTOU-prone (rebinding between check and fetch). The outbound request verifies
-  the peer cert + hostname against the system CA store, so reaching an internal
-  service additionally needs a valid public cert for that name; that residual risk
-  is accepted for a trusted, paid-plan, `manage_sso`-gated action.
+  Hostnames are intentionally not resolved during this URL-shape check: a second
+  lookup at fetch time would create a rebinding window. `Emisar.SSO.OIDC.Guard`
+  resolves the name at CONNECT time, applies the shared public-address policy,
+  and dials that exact approved address while the HTTP client still verifies the
+  certificate against the requested hostname.
   """
+
+  alias Emisar.PublicAddress
 
   @doc """
   Check an issuer URL. `{:ok, issuer}` when it's a fetchable https URL whose host
@@ -60,17 +62,6 @@ defmodule Emisar.SSO.IssuerUrl do
 
   def validate_endpoint(_url), do: {:error, :invalid_issuer}
 
-  @doc """
-  Is this a peer address we may open a connection to?
-
-  The URL policy above deliberately does not resolve hostnames — pre-resolving is
-  TOCTOU-prone. This is the other half, asked at CONNECT time by
-  `Emisar.SSO.OIDC.Guard` about an address it has just resolved and is about to
-  dial. Same address ranges, one definition.
-  """
-  @spec address_allowed?(:inet.ip_address()) :: boolean()
-  def address_allowed?(address) when is_tuple(address), do: not blocked_ip?(address)
-
   defp validate_url(url, allow_query?) do
     case URI.parse(url) do
       %URI{
@@ -104,56 +95,10 @@ defmodule Emisar.SSO.IssuerUrl do
 
   defp blocked_ip_literal?(host) do
     case :inet.parse_address(String.to_charlist(host)) do
-      {:ok, ip} -> blocked_ip?(ip)
-      # A hostname (not an IP literal): TLS peer/hostname verification + the
-      # operator-trust gate handle it; we don't pre-resolve (TOCTOU).
+      {:ok, ip} -> not PublicAddress.global_unicast?(ip)
+      # Hostnames are resolved, judged, and pinned by the connect-time Guard; URL
+      # validation deliberately does not perform a weaker preflight lookup.
       {:error, _} -> false
     end
   end
-
-  # An ALLOW policy over global unicast, not a denylist. A denylist grew holes —
-  # 100.64.0.0/10 (carrier NAT, and Alibaba's 100.100.100.200 metadata endpoint),
-  # 198.18.0.0/15 benchmarking fabric, multicast and reserved space all fell
-  # through to allowed, which contradicts the boundary this module claims to draw.
-  # Anything not provably a public address is refused.
-  #
-  # IPv4 special-purpose ranges, per the IANA registry.
-  defp blocked_ip?({0, _, _, _}), do: true
-  defp blocked_ip?({10, _, _, _}), do: true
-  defp blocked_ip?({100, b, _, _}) when b in 64..127, do: true
-  defp blocked_ip?({127, _, _, _}), do: true
-  defp blocked_ip?({169, 254, _, _}), do: true
-  defp blocked_ip?({172, b, _, _}) when b in 16..31, do: true
-  defp blocked_ip?({192, 0, 0, _}), do: true
-  defp blocked_ip?({192, 0, 2, _}), do: true
-  # 192.88.99.0/24 — the deprecated 6to4 relay anycast prefix, marked non-global.
-  defp blocked_ip?({192, 88, 99, _}), do: true
-  defp blocked_ip?({192, 168, _, _}), do: true
-  defp blocked_ip?({198, b, _, _}) when b in 18..19, do: true
-  defp blocked_ip?({198, 51, 100, _}), do: true
-  defp blocked_ip?({203, 0, 113, _}), do: true
-  # Multicast, and everything from 240/4 up including the broadcast address.
-  defp blocked_ip?({a, _, _, _}) when a >= 224, do: true
-
-  # IPv6. Only global unicast is allowed, and the transition prefixes are refused
-  # OUTRIGHT rather than judged by the IPv4 address they embed. IANA marks
-  # ::ffff:0:0/96 not globally reachable and 2002::/16 indeterminate, so "the inner
-  # address looks public" is not a reason to dial them — a real IdP has no business
-  # being addressed that way.
-  defp blocked_ip?({0, 0, 0, 0, 0, 0xFFFF, _, _}), do: true
-  defp blocked_ip?({0x64, 0xFF9B, _, _, _, _, _, _}), do: true
-  defp blocked_ip?({0x2002, _, _, _, _, _, _, _}), do: true
-  # 2001::/23 — IETF protocol assignments: 2001:2::/48 benchmarking, 2001:20::/28
-  # ORCHIDv2 and Teredo all live in here.
-  defp blocked_ip?({0x2001, b, _, _, _, _, _, _}) when b <= 0x01FF, do: true
-  # 2001:db8::/32 — documentation. A separate assignment, OUTSIDE 2001::/23, which
-  # is how it slipped through the first attempt at this.
-  defp blocked_ip?({0x2001, 0x0DB8, _, _, _, _, _, _}), do: true
-  # 3ff0::/20 through 3fff::/20 — documentation, and 3ffe::/16 is the returned
-  # 6bone. The whole /20 goes, not just its last prefix.
-  defp blocked_ip?({h, _, _, _, _, _, _, _}) when h >= 0x3FF0, do: true
-  defp blocked_ip?({h, _, _, _, _, _, _, _}) when h >= 0x2000 and h <= 0x3FEF, do: false
-  defp blocked_ip?({_, _, _, _, _, _, _, _}), do: true
-
-  defp blocked_ip?(_ip), do: false
 end

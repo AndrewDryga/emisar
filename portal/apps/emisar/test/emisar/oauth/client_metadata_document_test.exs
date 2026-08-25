@@ -50,21 +50,28 @@ defmodule Emisar.OAuth.ClientMetadataDocumentTest do
       # serve documents from loopback; this is the production posture.
       Emisar.Config.put_override(:emisar, ClientMetadataDocument, allow_private_hosts: false)
 
-      assert ClientMetadataDocument.fetch("https://localhost/client.json") ==
-               {:error, :blocked_destination}
-
-      assert ClientMetadataDocument.fetch("https://127.0.0.1/client.json") ==
-               {:error, :blocked_destination}
-
-      # The cloud instance-metadata address is the classic SSRF target.
-      assert ClientMetadataDocument.fetch("https://169.254.169.254/client.json") ==
-               {:error, :blocked_destination}
-
-      assert ClientMetadataDocument.fetch("https://10.0.0.5/client.json") ==
-               {:error, :blocked_destination}
-
-      assert ClientMetadataDocument.fetch("https://[::1]/client.json") ==
-               {:error, :blocked_destination}
+      for host <- [
+            "localhost",
+            "127.0.0.1",
+            # The cloud instance-metadata address is the classic SSRF target.
+            "169.254.169.254",
+            "10.0.0.5",
+            "[::1]",
+            "[::ffff:8.8.8.8]",
+            "[64:ff9b::808:808]",
+            "[64:ff9b:1::808:808]",
+            "[2001:2::1]",
+            "[2001:20::1]",
+            "[2001:db8::1]",
+            "[2002:808:808::1]",
+            "[2c10::1]",
+            "[2d00::1]",
+            "[3000::1]",
+            "[3f00::1]"
+          ] do
+        assert ClientMetadataDocument.fetch("https://#{host}/client.json") ==
+                 {:error, :blocked_destination}
+      end
     end
   end
 

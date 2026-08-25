@@ -40,6 +40,8 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
   request volume is negligible.
   """
 
+  alias Emisar.PublicAddress
+
   @required_fields ~w(client_id client_name redirect_uris)
 
   @max_document_bytes 64 * 1024
@@ -112,7 +114,7 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
           # Every answer must be public — a split A/AAAA reply cannot smuggle an
           # internal target past a public one — and then the first is the one we
           # commit to.
-          if Enum.all?(addresses, &public_address?/1),
+          if Enum.all?(addresses, &PublicAddress.global_unicast?/1),
             do: {:ok, hd(addresses)},
             else: {:error, :blocked_destination}
 
@@ -145,47 +147,6 @@ defmodule Emisar.OAuth.ClientMetadataDocument do
       _ -> {:error, :nxdomain}
     end
   end
-
-  # An IPv4-mapped or NAT64-embedded IPv6 address carries a v4 target in its low
-  # 32 bits; judge the embedded address rather than the wrapper.
-  defp public_address?({0, 0, 0, 0, 0, 0xFFFF, ab, cd}),
-    do: public_address?(embedded_v4(ab, cd))
-
-  defp public_address?({0x64, 0xFF9B, 0, 0, 0, 0, ab, cd}),
-    do: public_address?(embedded_v4(ab, cd))
-
-  defp public_address?({a, b, c, d}), do: public_v4?(a, b, c, d)
-  defp public_address?({a, b, _c, _d, _e, _f, _g, _h}), do: public_v6?(a, b)
-  defp public_address?(_address), do: false
-
-  defp embedded_v4(ab, cd),
-    do: {Bitwise.bsr(ab, 8), Bitwise.band(ab, 0xFF), Bitwise.bsr(cd, 8), Bitwise.band(cd, 0xFF)}
-
-  defp public_v4?(0, _b, _c, _d), do: false
-  defp public_v4?(10, _b, _c, _d), do: false
-  defp public_v4?(127, _b, _c, _d), do: false
-  defp public_v4?(100, b, _c, _d) when b in 64..127, do: false
-  defp public_v4?(169, 254, _c, _d), do: false
-  defp public_v4?(172, b, _c, _d) when b in 16..31, do: false
-  defp public_v4?(192, 0, 0, _d), do: false
-  defp public_v4?(192, 0, 2, _d), do: false
-  defp public_v4?(192, 168, _c, _d), do: false
-  defp public_v4?(198, b, _c, _d) when b in 18..19, do: false
-  defp public_v4?(198, 51, 100, _d), do: false
-  defp public_v4?(203, 0, 113, _d), do: false
-  defp public_v4?(a, _b, _c, _d) when a >= 224, do: false
-  defp public_v4?(_a, _b, _c, _d), do: true
-
-  # Unspecified/loopback (::, ::1) collapse to a leading 0 group with the rest
-  # zero, which `embedded_v4` already rejects; the remaining families are
-  # unique-local (fc00::/7), link-local (fe80::/10), multicast (ff00::/8), and
-  # the documentation range.
-  defp public_v6?(0, _b), do: false
-  defp public_v6?(a, _b) when Bitwise.band(a, 0xFE00) == 0xFC00, do: false
-  defp public_v6?(a, _b) when Bitwise.band(a, 0xFFC0) == 0xFE80, do: false
-  defp public_v6?(a, _b) when Bitwise.band(a, 0xFF00) == 0xFF00, do: false
-  defp public_v6?(0x2001, 0xDB8), do: false
-  defp public_v6?(_a, _b), do: true
 
   # -- Fetch ----------------------------------------------------------
 

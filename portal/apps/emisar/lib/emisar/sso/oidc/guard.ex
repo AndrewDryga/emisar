@@ -21,7 +21,7 @@ defmodule Emisar.SSO.OIDC.Guard do
   * **CONNECT only.** A plain absolute-URI request means `http://`, which is how
     an HTTPS→HTTP downgrade would arrive. Refused.
   * **The address, not the name.** The host is resolved here and the resolved
-    address is checked against `Emisar.SSO.IssuerUrl.address_allowed?/1`.
+    address is checked against `Emisar.PublicAddress.global_unicast?/1`.
   * **Dialled by address.** We connect to the exact address we checked, so a name
     that resolves publicly for one lookup and privately for the next cannot be
     rebound between the check and the connection.
@@ -30,7 +30,7 @@ defmodule Emisar.SSO.OIDC.Guard do
     asked for. The guard never sees plaintext and cannot be a MITM.
   """
   use GenServer
-  alias Emisar.SSO.IssuerUrl
+  alias Emisar.PublicAddress
   alias Emisar.SSO.OIDC.Guard.Relay
   require Logger
 
@@ -277,7 +277,7 @@ defmodule Emisar.SSO.OIDC.Guard do
   end
 
   defp judge(host, address) do
-    if IssuerUrl.address_allowed?(address),
+    if PublicAddress.global_unicast?(address),
       do: {:ok, address},
       else: {:error, {:blocked, host, address}}
   end

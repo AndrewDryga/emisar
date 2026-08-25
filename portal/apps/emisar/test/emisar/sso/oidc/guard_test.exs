@@ -4,14 +4,12 @@ defmodule Emisar.SSO.OIDC.GuardTest do
   these drive it the way `httpc` does: speak proxy at it over TCP and see what it
   lets through.
 
-  This is where the redirect hole is covered. `httpc` follows redirects and
-  `oidcc` gives us no way to disable that, so a redirected request arrives here as
-  a fresh CONNECT (or, if the redirect downgraded the scheme, as a cleartext
-  request). Refusing both is what closes it — there is no third way for a hop to
-  reach the network.
+  The pinned HTTP adapter disables automatic redirects. Refusing undeclared
+  CONNECT targets and cleartext requests remains defense in depth if a changed or
+  future request path ever reaches the proxy outside that adapter contract.
   """
   use ExUnit.Case, async: false
-  alias Emisar.SSO.IssuerUrl
+  alias Emisar.PublicAddress
   alias Emisar.SSO.OIDC.Guard
 
   # Generous timeouts on purpose. Two seconds was enough in isolation and flaked
@@ -153,9 +151,9 @@ defmodule Emisar.SSO.OIDC.GuardTest do
     # loopback or RFC-1918, which is precisely what the guard refuses. So the
     # decision is asserted directly, and the tunnel is covered by `./run e2e sso`,
     # where a real Keycloak sits on a non-loopback address in the Docker network.
-    assert IssuerUrl.address_allowed?({93, 184, 216, 34})
-    refute IssuerUrl.address_allowed?({127, 0, 0, 1})
-    refute IssuerUrl.address_allowed?({169, 254, 169, 254})
+    assert PublicAddress.global_unicast?({93, 184, 216, 34})
+    refute PublicAddress.global_unicast?({127, 0, 0, 1})
+    refute PublicAddress.global_unicast?({169, 254, 169, 254})
   end
 
   defp speak(port, request) do
