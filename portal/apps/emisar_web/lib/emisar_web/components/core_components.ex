@@ -1518,7 +1518,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :title, :string, required: true
   attr :primary, :boolean, default: false, doc: "the page's strongest status voice"
   attr :class, :string, default: nil
-  slot :inner_block, required: true
+  slot :inner_block
 
   def status_note(assigns) do
     ~H"""
@@ -1531,7 +1531,9 @@ defmodule EmisarWeb.CoreComponents do
         ]}>
           {@title}
         </div>
-        <p class="mt-1 text-sm leading-relaxed text-zinc-400">{render_slot(@inner_block)}</p>
+        <p :if={@inner_block != []} class="mt-1 text-sm leading-relaxed text-zinc-400">
+          {render_slot(@inner_block)}
+        </p>
       </div>
     </div>
     """
@@ -4334,7 +4336,7 @@ defmodule EmisarWeb.CoreComponents do
   slot :body, required: true
 
   slot :fields,
-    doc: "optional form fields rendered between the consequence and typed confirmation"
+    doc: "optional required input rendered before the consequence"
 
   def confirm_dialog(assigns) do
     # A PLAIN dialog (no token) closes client-side with no `confirm_reset` push,
@@ -4382,11 +4384,29 @@ defmodule EmisarWeb.CoreComponents do
                rose icon lead, a zinc title, zinc body — one voice with every
                other note in the console. The dialog takes its accessible name
                from `aria-label={@title}` above. --%>
-          <.status_note icon="state.warning" tone={@tone} title={@title} primary>
+          <.status_note
+            :if={@fields == []}
+            icon="state.warning"
+            tone={@tone}
+            title={@title}
+            primary
+          >
             {render_slot(@body)}
           </.status_note>
+          <.status_note
+            :if={@fields != []}
+            icon="state.warning"
+            tone={@tone}
+            title={@title}
+            primary
+          />
 
-          <div :if={@fields != []} class="mt-5">{render_slot(@fields)}</div>
+          <div :if={@fields != []} class="mt-5" data-dialog-fields>
+            {render_slot(@fields)}
+          </div>
+          <div :if={@fields != []} class="mt-4" data-dialog-consequence>
+            {render_slot(@body)}
+          </div>
 
           <%!-- Typed-confirm (only when a token is set): the page's
                "confirm_typed" handler holds this in @typed; the Confirm button
@@ -4416,7 +4436,7 @@ defmodule EmisarWeb.CoreComponents do
             />
           </form>
 
-          <div class="mt-6 flex items-center justify-end gap-3">
+          <div class="mt-6 flex items-center justify-end gap-3" data-dialog-actions>
             <.button
               variant={:secondary}
               size={:md}

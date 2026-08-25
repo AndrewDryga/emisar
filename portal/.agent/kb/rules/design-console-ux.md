@@ -242,7 +242,9 @@ one compact bordered exception button in the same action cluster. Selecting eith
 opens the focused confirmation; that dialog owns the consequence and required reason. A mandatory
 reason is already deliberate confirmation, so do not stack a typed challenge on top unless a
 separate high-blast-radius hazard genuinely requires both. Server authorization, audit, and
-mutation semantics remain distinct.
+mutation semantics remain distinct. Ask for the reason first, then state the exact exception in
+the small supporting-copy tier immediately before the actions. Never put that consequence below
+the commit button, where the operator can reach the action before reading what it bypasses.
 
 ## 6. Density budgets
 

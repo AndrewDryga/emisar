@@ -1152,6 +1152,12 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     assert has_element?(lv, "#override-approval-reviews", "linux.uptime")
 
+    assert has_element?(
+             lv,
+             "#override-approval-reviews [data-override-consequence].text-xs",
+             "All other policy and runner checks still apply."
+           )
+
     refute has_element?(
              lv,
              "#override-approval-reviews button[disabled]",

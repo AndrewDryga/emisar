@@ -148,6 +148,29 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
     assert confirm_button_disabled?(html)
   end
 
+  test "caller-owned fields render before the consequence and actions" do
+    assigns = %{}
+
+    html =
+      rendered_to_string(~H"""
+      <CoreComponents.confirm_dialog
+        id="override"
+        title="Approve using override?"
+        confirm_label="Approve using override"
+        on_confirm="override"
+      >
+        <:body><span data-order="consequence">Skips the remaining reviews.</span></:body>
+        <:fields><input data-order="fields" name="reason" /></:fields>
+      </CoreComponents.confirm_dialog>
+      """)
+
+    assert :binary.match(html, ~s(data-order="fields")) <
+             :binary.match(html, ~s(data-order="consequence"))
+
+    assert :binary.match(html, ~s(data-order="consequence")) <
+             :binary.match(html, "data-dialog-actions")
+  end
+
   test "a blank token can never be confirmed (page-level dialog with no target)" do
     assigns = %{}
 

@@ -1621,16 +1621,18 @@ defmodule EmisarWeb.ApprovalDetailLive do
       }
     >
       <:body>
-        This approves <span class="font-medium break-words text-zinc-100">{@request_title}</span>
-        with
-        <span class="font-medium text-zinc-200">
-          {@approved_count} of {@min_approvals} required approvals
-        </span>
-        and skips {remaining_approval_count(@approved_count, @min_approvals)} remaining {plural(
-          remaining_approval_count(@approved_count, @min_approvals),
-          "review"
-        )}. <span :if={@self_blocked?}>It also skips the self-approval rule.</span>
-        All other policy and runner checks still apply.
+        <p data-override-consequence class="text-pretty text-xs leading-relaxed text-zinc-400">
+          This approves <span class="font-medium break-words text-zinc-100">{@request_title}</span>
+          with
+          <span class="font-medium text-zinc-200">
+            {@approved_count} of {@min_approvals} required approvals
+          </span>
+          and skips {remaining_approval_count(@approved_count, @min_approvals)} remaining {plural(
+            remaining_approval_count(@approved_count, @min_approvals),
+            "review"
+          )}. <span :if={@self_blocked?}>It also skips the self-approval rule.</span>
+          All other policy and runner checks still apply.
+        </p>
       </:body>
       <:fields>
         <form id="approval-override-form" phx-change="override_form_changed" class="space-y-2">
