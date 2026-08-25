@@ -719,6 +719,10 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert has_element?(lv, "#connection-summary dd", "Enabled")
       assert has_element?(lv, "#connection-summary dt", "Provider")
       assert has_element?(lv, "#connection-summary", "Connection settings")
+      assert has_element?(lv, "header #view-provider-activity-#{shown.id}", "View activity")
+      assert has_element?(lv, "header #edit-provider-#{shown.id}", "Edit")
+      refute has_element?(lv, "#connection-summary #view-provider-activity-#{shown.id}")
+      refute has_element?(lv, "#connection-summary #edit-provider-#{shown.id}")
       # The per-connection delete dialog is detail-only (never on the overview list).
       assert has_element?(lv, "#delete-provider-#{shown.id}")
       # Delete lives in a bottom danger zone that opens the typed dialog — not a

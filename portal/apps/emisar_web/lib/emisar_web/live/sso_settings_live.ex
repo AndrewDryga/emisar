@@ -1365,6 +1365,32 @@ defmodule EmisarWeb.SSOSettingsLive do
             Single sign-on
         <% end %>
       </:title>
+      <:actions
+        :for={provider <- @providers}
+        :if={@can_configure? and @live_action == :show}
+      >
+        <%!-- These act on the connection record, so they live opposite its
+             title like every other detail-page action. The status row below
+             stays a facts-only read rather than becoming an action toolbar. --%>
+        <.button
+          id={"view-provider-activity-#{provider.id}"}
+          navigate={
+            ~p"/app/#{@current_account}/audit?#{[target_kind: "identity_provider", target_id: provider.id]}"
+          }
+          variant={:secondary}
+          size={:md}
+        >
+          View activity
+        </.button>
+        <.button
+          id={"edit-provider-#{provider.id}"}
+          navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}/edit"}
+          variant={:secondary}
+          size={:md}
+        >
+          Edit
+        </.button>
+      </:actions>
       <div :if={not @can_configure?}>
         <%!-- Two different locks, two different messages (§4): a role gate is
              not an upsell, and pitching plans to an admin-less operator on an
@@ -1548,65 +1574,39 @@ defmodule EmisarWeb.SSOSettingsLive do
                  follow the detail-page meta grammar used by approvals, then the
                  durable configuration reads as a compact definition table. --%>
             <section id="connection-summary">
-              <div class="flex flex-col gap-5 lg:flex-row lg:items-end">
-                <dl class="grid min-w-0 flex-1 grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-4">
-                  <div>
-                    <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                      Status
-                    </dt>
-                    <dd class="mt-1 flex items-center gap-2 text-sm font-medium">
-                      <.status_dot tone={if(provider.enabled, do: :brand, else: :amber)} />
-                      <span class={if(provider.enabled, do: "text-brand-300", else: "text-amber-300")}>
-                        {if(provider.enabled, do: "Enabled", else: "Disabled")}
-                      </span>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                      Provider
-                    </dt>
-                    <dd class="mt-1 text-sm text-zinc-300">{kind_label(provider.kind)}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                      New members
-                    </dt>
-                    <dd class="mt-1 text-sm text-zinc-300">
-                      {provisioner_label(provider.provisioner)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                      Default role
-                    </dt>
-                    <dd class="mt-1 text-sm text-zinc-300">{role_label(provider.default_role)}</dd>
-                  </div>
-                </dl>
-                <%!-- Delete lives in a danger zone at the bottom, not up here beside
-                     a routine Edit — a destructive action shouldn't sit one slip
-                     away from the safe one. --%>
-                <div class="flex shrink-0 items-center gap-3">
-                  <%!-- Both verbs navigate and they share one row, so they share one
-                       button grammar (§7.47) rather than splitting into a bare link
-                       beside a bordered Edit. --%>
-                  <.button
-                    navigate={
-                      ~p"/app/#{@current_account}/audit?#{[target_kind: "identity_provider", target_id: provider.id]}"
-                    }
-                    variant={:secondary}
-                    size={:sm}
-                  >
-                    View activity
-                  </.button>
-                  <.button
-                    navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}/edit"}
-                    variant={:secondary}
-                    size={:sm}
-                  >
-                    Edit
-                  </.button>
+              <dl class="grid min-w-0 grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-4">
+                <div>
+                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    Status
+                  </dt>
+                  <dd class="mt-1 flex items-center gap-2 text-sm font-medium">
+                    <.status_dot tone={if(provider.enabled, do: :brand, else: :amber)} />
+                    <span class={if(provider.enabled, do: "text-brand-300", else: "text-amber-300")}>
+                      {if(provider.enabled, do: "Enabled", else: "Disabled")}
+                    </span>
+                  </dd>
                 </div>
-              </div>
+                <div>
+                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    Provider
+                  </dt>
+                  <dd class="mt-1 text-sm text-zinc-300">{kind_label(provider.kind)}</dd>
+                </div>
+                <div>
+                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    New members
+                  </dt>
+                  <dd class="mt-1 text-sm text-zinc-300">
+                    {provisioner_label(provider.provisioner)}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    Default role
+                  </dt>
+                  <dd class="mt-1 text-sm text-zinc-300">{role_label(provider.default_role)}</dd>
+                </div>
+              </dl>
 
               <div class="mt-8">
                 <.section_header title="Connection settings" />

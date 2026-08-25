@@ -893,6 +893,12 @@ the commit button, where the operator can reach the action before reading what i
     Restore the shared right-aligned control track only when the row is genuinely wide enough to hold
     both sides. Sweep: `sm:flex-row` roster shells paired with a fixed/minimum action track, and
     stacked trailing controls that keep `justify-end` across the full row.
+73. **Record-wide actions belong opposite the detail title, never inside its status facts.** Use the
+    console shell's `:actions` slot for navigation or edits that act on the whole record, so the first
+    body row remains a facts-only read. Placing those buttons beside a status definition list makes
+    them look scoped to that row, creates a false extra column on desktop, and turns them into another
+    fact-grid row on mobile. Sweep: detail-page View activity, Edit, or equivalent record actions
+    rendered beside a status/meta `<dl>` instead of in the title-level action slot.
 
 ## 8. The kit is the contract
 
