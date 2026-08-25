@@ -1290,6 +1290,27 @@ defmodule EmisarWeb.ApprovalDetailLive do
   attr :current_account, :map, required: true
 
   defp decision_panel(assigns) do
+    override_available? =
+      override_available?(
+        assigns.can_override?,
+        assigns.min_approvals,
+        assigns.approved_count,
+        assigns.decisions_error?,
+        assigns.self_blocked?,
+        assigns.already_decided?,
+        assigns.unavailable_action_id
+      )
+
+    approve_label =
+      if assigns.execution_request?,
+        do: execution_action_label(assigns.execution_kind, "Approve"),
+        else: "Approve and send"
+
+    assigns =
+      assigns
+      |> assign(:override_available?, override_available?)
+      |> assign(:approve_label, approve_label)
+
     ~H"""
     <%!-- NAKED on the canvas — a form's fields are self-contained controls
          (the runbook editor / every create flow already sit boxless); the
@@ -1348,6 +1369,18 @@ defmodule EmisarWeb.ApprovalDetailLive do
           <p class="mt-4 text-xs leading-relaxed text-zinc-400">
             You've already recorded your decision on this request. Waiting on the remaining approvers.
           </p>
+          <div :if={@override_available?} class="mt-4" data-shot="approval-override">
+            <.button
+              type="button"
+              variant={:secondary}
+              tone={:amber}
+              class="w-full"
+              icon="action.approve"
+              phx-click={show_confirm_dialog("override-approval-reviews")}
+            >
+              Override required reviews…
+            </.button>
+          </div>
         <% true -> %>
           <%!-- No trusted contract resolves for this action any more, so an
                approve would be refused. Say which action, and point at the one
@@ -1376,8 +1409,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
           >
             You can't use the normal approval path on your own request.
             <span :if={@can_override?}>
-              A different operator can approve it, or if waiting is unsafe, use Break-glass
-              approval below.
+              A different operator can approve it, or if waiting is unsafe, use the override
+              option below.
             </span>
             <span :if={not @can_override?}>A different operator must approve it.</span>
           </p>
@@ -1504,19 +1537,59 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
             <%!-- Approve stays gated for the self-blocked requester; deny is
                  always available (denying your own request is fine). --%>
+            <div
+              :if={not @self_blocked? and is_nil(@unavailable_action_id) and @override_available?}
+              data-shot="approval-override"
+            >
+              <.split_button
+                id="approval-action-split"
+                type="submit"
+                name="decision"
+                value="approve"
+                icon="action.approve"
+                menu_label="More approval actions"
+                phx-disable-with="Approving…"
+              >
+                {@approve_label}
+                <:menu>
+                  <.menu_item
+                    tone={:amber}
+                    icon="state.warning"
+                    phx-click={
+                      JS.remove_attribute("open", to: "#approval-action-split-menu")
+                      |> show_confirm_dialog("override-approval-reviews")
+                    }
+                  >
+                    Override required reviews…
+                  </.menu_item>
+                </:menu>
+              </.split_button>
+            </div>
             <.button
-              :if={not @self_blocked? and is_nil(@unavailable_action_id)}
+              :if={
+                not @self_blocked? and is_nil(@unavailable_action_id) and
+                  not @override_available?
+              }
               name="decision"
               value="approve"
               class="w-full"
               icon="action.approve"
               phx-disable-with="Approving…"
             >
-              {if(@execution_request?,
-                do: execution_action_label(@execution_kind, "Approve"),
-                else: "Approve and send"
-              )}
+              {@approve_label}
             </.button>
+            <div :if={@self_blocked? and @override_available?} data-shot="approval-override">
+              <.button
+                type="button"
+                variant={:secondary}
+                tone={:amber}
+                class="w-full"
+                icon="action.approve"
+                phx-click={show_confirm_dialog("override-approval-reviews")}
+              >
+                Override required reviews…
+              </.button>
+            </div>
             <.button
               name="decision"
               value="deny"
@@ -1531,105 +1604,84 @@ defmodule EmisarWeb.ApprovalDetailLive do
           </form>
       <% end %>
 
-      <section
-        :if={
-          override_available?(
-            @can_override?,
-            @min_approvals,
-            @approved_count,
-            @decisions_error?,
-            @self_blocked?,
-            @already_decided?,
-            @unavailable_action_id
-          )
-        }
-        class="mt-8"
-        data-shot="approval-override"
-      >
-        <.section_header title="Break-glass approval" />
-        <p class="text-xs leading-relaxed text-zinc-400">
-          Owners and admins can release this {target_noun(@execution_request?)} without the
-          remaining reviews. The exception requires a reason, creates no standing grant, and is
-          recorded in the audit trail.
-        </p>
-        <form id="approval-override-form" phx-change="override_form_changed" class="mt-4 space-y-4">
+      <.override_dialog
+        :if={@override_available?}
+        reason={@override_reason}
+        reason_error={@override_reason_error}
+        typed={@typed}
+        request_title={@request_title}
+        approved_count={@approved_count}
+        min_approvals={@min_approvals}
+        self_blocked?={@self_blocked?}
+      />
+    </section>
+    """
+  end
+
+  attr :reason, :string, required: true
+  attr :reason_error, :string, default: nil
+  attr :typed, :string, required: true
+  attr :request_title, :string, required: true
+  attr :approved_count, :integer, required: true
+  attr :min_approvals, :integer, required: true
+  attr :self_blocked?, :boolean, required: true
+
+  defp override_dialog(assigns) do
+    ~H"""
+    <.confirm_dialog
+      id="override-approval-reviews"
+      title="Override required reviews?"
+      confirm_label="Override and send"
+      confirm_token="OVERRIDE"
+      typed={@typed}
+      disabled={not override_reason_present?(@reason)}
+      tone={:amber}
+      on_confirm={
+        JS.push("override", value: %{reason: @reason})
+        |> hide_confirm_dialog("override-approval-reviews")
+      }
+    >
+      <:body>
+        This releases <span class="font-medium break-words text-zinc-100">{@request_title}</span>
+        with
+        <span class="font-medium text-zinc-200">
+          {@approved_count} of {@min_approvals} required approvals
+        </span>
+        and waives {remaining_approval_count(@approved_count, @min_approvals)} remaining {plural(
+          remaining_approval_count(@approved_count, @min_approvals),
+          "review"
+        )}. <span :if={@self_blocked?}>It also waives the policy’s self-approval rule.</span>
+        Scope, expiry, trust, signature, initiator authorization, and runner checks still
+        apply. The exception creates no standing grant; its reason is written to the audit trail.
+      </:body>
+      <:fields>
+        <form id="approval-override-form" phx-change="override_form_changed" class="space-y-2">
           <.input
             type="textarea"
             id="override-reason"
             name="reason"
-            value={@override_reason}
+            value={@reason}
             rows="3"
             maxlength={Approvals.max_decision_reason_length()}
             label="Override reason"
             label_variant={:eyebrow}
             placeholder="Why can’t the required reviews be completed?"
             required
-            aria-invalid={@override_reason_error && "true"}
-            aria-describedby={@override_reason_error && "override-reason-error"}
+            aria-invalid={@reason_error && "true"}
+            aria-describedby={@reason_error && "override-reason-error"}
             class="min-h-0 resize-none"
           />
           <div
-            :if={@override_reason_error}
+            :if={@reason_error}
             id="override-reason-error"
             role="alert"
             aria-live="polite"
           >
-            <.error>{@override_reason_error}</.error>
+            <.error>{@reason_error}</.error>
           </div>
-          <.button
-            type="button"
-            variant={:secondary}
-            tone={:amber}
-            icon="action.approve"
-            class="w-full"
-            disabled={not override_reason_present?(@override_reason)}
-            phx-click={show_confirm_dialog("override-approval-reviews")}
-          >
-            Override required reviews
-          </.button>
         </form>
-
-        <.confirm_dialog
-          id="override-approval-reviews"
-          title="Approve without the remaining reviews"
-          confirm_label="Approve without remaining reviews"
-          confirm_token="OVERRIDE"
-          typed={@typed}
-          tone={:amber}
-          on_confirm={
-            JS.push("override", value: %{reason: @override_reason})
-            |> hide_confirm_dialog("override-approval-reviews")
-          }
-        >
-          <:body>
-            This releases <span class="font-medium break-words text-zinc-100">{@request_title}</span>
-            with
-            <span class="font-medium text-zinc-200">
-              {@approved_count} of {@min_approvals} required approvals
-            </span>
-            and waives {remaining_approval_count(@approved_count, @min_approvals)} remaining {plural(
-              remaining_approval_count(@approved_count, @min_approvals),
-              "review"
-            )}.
-            <span :if={@self_blocked?}>
-              It also waives the policy’s self-approval rule.
-            </span>
-            Scope, expiry, trust, signature, initiator authorization, and runner checks still
-            apply. The exception and reason are written to the audit trail.
-            <span class="mt-4 block">
-              <span class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                Override reason
-              </span>
-              <span
-                tabindex="0"
-                aria-label="Full override reason"
-                class="mt-2 block max-h-32 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-200"
-              >{@override_reason}</span>
-            </span>
-          </:body>
-        </.confirm_dialog>
-      </section>
-    </section>
+      </:fields>
+    </.confirm_dialog>
     """
   end
 

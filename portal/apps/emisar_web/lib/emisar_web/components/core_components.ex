@@ -239,7 +239,13 @@ defmodule EmisarWeb.CoreComponents do
       when is_map_key(rest, :href) or is_map_key(rest, :navigate) or is_map_key(rest, :patch) do
     ~H"""
     <.link
-      class={[button_base(), button_face(@variant, @tone), button_size(@size), @class]}
+      class={[
+        button_base(),
+        button_shape(:standalone),
+        button_face(@variant, @tone),
+        button_size(@size),
+        @class
+      ]}
       {@rest}
     >
       <.icon :if={@icon} name={@icon} class="h-4 w-4" />{render_slot(@inner_block)}
@@ -251,7 +257,13 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <button
       type={@type}
-      class={[button_base(), button_face(@variant, @tone), button_size(@size), @class]}
+      class={[
+        button_base(),
+        button_shape(:standalone),
+        button_face(@variant, @tone),
+        button_size(@size),
+        @class
+      ]}
       {@rest}
     >
       <.icon :if={@icon} name={@icon} class="h-4 w-4" />{render_slot(@inner_block)}
@@ -260,10 +272,14 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   defp button_base do
-    "phx-submit-loading:opacity-75 inline-flex items-center justify-center gap-2 rounded-lg transition " <>
+    "phx-submit-loading:opacity-75 inline-flex items-center justify-center gap-2 transition " <>
       "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 " <>
       "disabled:opacity-50 disabled:cursor-not-allowed"
   end
+
+  defp button_shape(:standalone), do: "rounded-lg"
+  defp button_shape(:split_lead), do: "rounded-l-lg"
+  defp button_shape(:split_menu), do: "rounded-r-lg"
 
   # The variant×tone face matrix — only the combinations in use exist, so a
   # meaningless pair (e.g. filled rose) is a FunctionClauseError, not a
@@ -322,6 +338,67 @@ defmodule EmisarWeb.CoreComponents do
   defp button_size(:lg), do: "px-4 py-2.5 text-sm"
   defp button_size(:md), do: "px-3 py-1.5 text-sm"
   defp button_size(:sm), do: "px-2.5 py-1 text-xs"
+
+  @doc """
+  A primary submit button with an adjacent dropdown for exceptional alternatives.
+
+  The main action keeps the standard brand face and form attributes. The narrow
+  chevron segment opens a shared dropdown panel; callers supply its rows with
+  `<.menu_item>`. Use this when one normal mutation must stay dominant while a
+  rarer alternative remains available without becoming a competing button.
+  """
+  attr :id, :string, required: true
+  attr :type, :string, default: nil
+  attr :icon, :string, default: nil
+  attr :menu_label, :string, required: true
+  attr :class, :string, default: nil
+  attr :rest, :global, include: ~w(disabled form name value)
+
+  slot :inner_block, required: true
+  slot :menu, required: true
+
+  def split_button(assigns) do
+    ~H"""
+    <div id={@id} data-split-button class={["flex w-full", @class]}>
+      <button
+        id={"#{@id}-primary"}
+        type={@type}
+        class={[
+          button_base(),
+          button_shape(:split_lead),
+          button_face(:primary, :brand),
+          button_size(:lg),
+          "min-w-0 flex-1"
+        ]}
+        {@rest}
+      >
+        <.icon :if={@icon} name={@icon} class="h-4 w-4" />{render_slot(@inner_block)}
+      </button>
+      <.dropdown
+        id={"#{@id}-menu"}
+        class="h-auto shrink-0"
+        summary_class={split_button_menu_class()}
+        panel_class="z-30 mt-2 w-72 p-1 text-xs"
+      >
+        <:trigger>
+          <span class="sr-only">{@menu_label}</span>
+          <.icon name="action.disclose" class="h-4 w-4" />
+        </:trigger>
+        {render_slot(@menu)}
+      </.dropdown>
+    </div>
+    """
+  end
+
+  defp split_button_menu_class do
+    [
+      button_base(),
+      button_shape(:split_menu),
+      button_face(:primary, :brand),
+      "h-full min-h-10 min-w-12 border-l border-zinc-950/20 px-3 py-2.5 text-sm"
+    ]
+    |> Enum.join(" ")
+  end
 
   @doc """
   Groups filter options from one dimension as one segmented control.
@@ -4249,11 +4326,15 @@ defmodule EmisarWeb.CoreComponents do
   # enabled immediately. A non-nil token requires the operator to type it.
   attr :confirm_token, :string, default: nil, doc: "when set, the string the operator must type"
   attr :typed, :string, default: "", doc: "the live-typed value held by the page (@typed)"
+  attr :disabled, :boolean, default: false, doc: "an additional caller-owned confirmation gate"
   attr :on_confirm, :any, required: true, doc: "JS/event the enabled Confirm dispatches"
   # `:rose` (default) is a DESTRUCTIVE confirm; `:amber` a caution-approve one
   # (trusting a pack's new code fleet-wide) where rose would over-read as danger.
   attr :tone, :atom, default: :rose, values: [:rose, :amber]
   slot :body, required: true
+
+  slot :fields,
+    doc: "optional form fields rendered between the consequence and typed confirmation"
 
   def confirm_dialog(assigns) do
     # A PLAIN dialog (no token) closes client-side with no `confirm_reset` push,
@@ -4305,6 +4386,8 @@ defmodule EmisarWeb.CoreComponents do
             {render_slot(@body)}
           </.status_note>
 
+          <div :if={@fields != []} class="mt-5">{render_slot(@fields)}</div>
+
           <%!-- Typed-confirm (only when a token is set): the page's
                "confirm_typed" handler holds this in @typed; the Confirm button
                below is disabled until it equals the token. Server authz is
@@ -4352,7 +4435,8 @@ defmodule EmisarWeb.CoreComponents do
               type={if is_nil(@confirm_token), do: "button", else: "submit"}
               form={if is_nil(@confirm_token), do: nil, else: "#{@id}-form"}
               disabled={
-                @confirm_token == "" or (not is_nil(@confirm_token) and @typed != @confirm_token)
+                @disabled or @confirm_token == "" or
+                  (not is_nil(@confirm_token) and @typed != @confirm_token)
               }
               phx-click={if is_nil(@confirm_token), do: @on_confirm}
             >

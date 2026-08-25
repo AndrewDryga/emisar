@@ -233,6 +233,15 @@ rose body text (the old delete modal did all three — the user's "not inline wi
 design"). Entity names in the body are neutral-bright (`text-zinc-200`), never `text-rose-100`.
 The danger reads from the icon + the button + the consequence copy — the surface stays calm.
 
+**A privileged exception stays behind the normal decision until chosen.** A rare override
+must not become a second always-visible form with its own heading, explanation, input, and
+button competing below the ordinary decision. When the normal mutation exists, keep it as
+the dominant half of a split button and put the exceptional alternative in the adjacent
+menu. When policy removes the normal mutation (for example, self-approval is blocked), show
+one compact bordered exception button in the same action cluster. Selecting either entry
+opens the focused confirmation; that dialog owns the consequence, required reason, and any
+typed-confirm friction. Server authorization, audit, and mutation semantics remain distinct.
+
 ## 6. Density budgets
 
 - **One primary job above the fold.** The page's reason-to-exist (the table, the form,

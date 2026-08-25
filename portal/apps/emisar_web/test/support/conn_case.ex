@@ -111,7 +111,7 @@ defmodule EmisarWeb.ConnCase do
   """
   def type_confirm_token(lv, dialog_id, token) do
     lv
-    |> Phoenix.LiveViewTest.element("##{dialog_id} form")
+    |> Phoenix.LiveViewTest.element("##{dialog_id}-form")
     |> Phoenix.LiveViewTest.render_change(%{"confirm_token" => token})
   end
 
@@ -121,7 +121,7 @@ defmodule EmisarWeb.ConnCase do
   (`label`). Returns the rendered HTML.
   """
   def confirm_dialog(lv, dialog_id, label) do
-    form_selector = "##{dialog_id} form"
+    form_selector = "##{dialog_id}-form"
 
     if Phoenix.LiveViewTest.has_element?(lv, form_selector) do
       button_selector = "##{dialog_id} button"

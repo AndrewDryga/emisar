@@ -19,6 +19,19 @@ defmodule EmisarWeb.Components.ButtonTest do
     """)
   end
 
+  defp render_split_button(attrs) do
+    assigns = %{attrs: attrs}
+
+    rendered_to_string(~H"""
+    <CoreComponents.split_button id="approve" menu_label="More approval actions" {@attrs}>
+      Approve and send
+      <:menu>
+        <CoreComponents.menu_item tone={:amber}>Override required reviews…</CoreComponents.menu_item>
+      </:menu>
+    </CoreComponents.split_button>
+    """)
+  end
+
   describe "button/1" do
     test "a plain button renders a <button> with the primary variant" do
       html = render_button(%{})
@@ -66,6 +79,36 @@ defmodule EmisarWeb.Components.ButtonTest do
       assert render_button(%{variant: :ghost, tone: :rose}) =~ "text-rose-300"
       assert render_button(%{variant: :ghost, tone: :amber}) =~ "text-amber-300"
       assert render_button(%{variant: :ghost, tone: :brand}) =~ "text-brand-300"
+    end
+  end
+
+  describe "split_button/1" do
+    test "keeps the primary submit dominant and exposes a labeled adjacent menu" do
+      html =
+        render_split_button(%{
+          type: "submit",
+          name: "decision",
+          value: "approve",
+          icon: "action.approve"
+        })
+
+      assert html =~ ~s(id="approve-primary")
+      assert html =~ ~s(type="submit")
+      assert html =~ ~s(name="decision")
+      assert html =~ ~s(value="approve")
+      assert html =~ "Approve and send"
+      assert html =~ "More approval actions"
+      assert html =~ "Override required reviews…"
+      assert html =~ ~s(id="approve-menu")
+      assert html =~ "data-dropdown-panel"
+    end
+
+    test "joins the two faces and preserves a 40px menu hit target" do
+      html = render_split_button(%{})
+
+      assert html =~ "rounded-l-lg"
+      assert html =~ "rounded-r-lg"
+      assert html =~ "min-h-10 min-w-12"
     end
   end
 end

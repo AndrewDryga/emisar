@@ -747,7 +747,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # The intro must not describe the Approve button (or the reuse offer)
     # the self-blocked requester never sees — only the Deny they still have.
     assert html =~ "You can&#39;t use the normal approval path on your own request."
-    assert html =~ "if waiting is unsafe, use Break-glass"
+    assert html =~ "if waiting is unsafe, use the override"
     assert html =~ "You can still deny your own request — your decision is logged."
     refute html =~ "Approve runs this action once"
     refute html =~ "Approve and send"
@@ -1107,21 +1107,36 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "Casey Approver"
   end
 
-  test "an owner deliberately overrides the remaining reviews and sees the exception ledger", %{
-    conn: conn
-  } do
+  test "an owner chooses the approval override from the split action and sees the exception ledger",
+       %{
+         conn: conn
+       } do
     {conn, owner, account} = register_and_log_in(conn)
     request = pending_request(account, owner, min_approvals: 3)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
-    assert html =~ "Break-glass approval"
+    refute html =~ "Break-glass approval"
     assert html =~ "0 of 3"
 
     assert has_element?(
              lv,
-             "#approval-override-form button[disabled]",
-             "Override required reviews"
+             ~s(#approval-action-split-primary[name="decision"][value="approve"]),
+             "Approve and send"
+           )
+
+    assert has_element?(
+             lv,
+             "#approval-action-split-menu button",
+             "Override required reviews…"
+           )
+
+    assert has_element?(lv, "#override-approval-reviews", "Override required reviews?")
+
+    assert has_element?(
+             lv,
+             "#override-approval-reviews button[disabled]",
+             "Override and send"
            )
 
     lv
@@ -1136,23 +1151,12 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     assert has_element?(lv, "#override-approval-reviews", "linux.uptime")
 
-    assert has_element?(
-             lv,
-             ~s(#override-approval-reviews [aria-label="Full override reason"][tabindex="0"])
-           )
-
-    refute has_element?(
-             lv,
-             "#approval-override-form button[disabled]",
-             "Override required reviews"
-           )
-
     type_confirm_token(lv, "override-approval-reviews", "wrong")
 
     assert has_element?(
              lv,
              "#override-approval-reviews button[disabled]",
-             "Approve without remaining reviews"
+             "Override and send"
            )
 
     type_confirm_token(lv, "override-approval-reviews", "OVERRIDE")
@@ -1160,10 +1164,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute has_element?(
              lv,
              "#override-approval-reviews button[disabled]",
-             "Approve without remaining reviews"
+             "Override and send"
            )
 
-    html = confirm_dialog(lv, "override-approval-reviews", "Approve without remaining reviews")
+    html = confirm_dialog(lv, "override-approval-reviews", "Override and send")
 
     assert html =~ "Approval override recorded. The action was released for dispatch."
     assert has_element?(lv, ~s([data-shot="approval-verdict"]), "approved")
@@ -1218,7 +1222,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert %Approvals.Request{status: :pending} = Repo.reload!(request)
   end
 
-  test "an owner who already voted keeps only the break-glass path", %{conn: conn} do
+  test "an owner who already voted keeps only the focused override path", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
     request = pending_request(account, owner, min_approvals: 2)
     subject = owner_subject(owner, account)
@@ -1230,7 +1234,12 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     assert html =~ "You&#39;ve already recorded your decision"
     refute has_element?(lv, "#approval-decision-form")
-    assert has_element?(lv, ~s([data-shot="approval-override"]))
+
+    assert has_element?(
+             lv,
+             ~s([data-shot="approval-override"] button),
+             "Override required reviews…"
+           )
 
     html = render_hook(lv, "override", %{"reason" => "No second reviewer is available"})
 
@@ -1262,15 +1271,20 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert %Approvals.Request{status: :pending} = Repo.reload!(request)
   end
 
-  test "a self-blocked owner can use break glass on a one-review request", %{conn: conn} do
+  test "a self-blocked owner can use the focused override on a one-review request", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
     request = pending_request(account, owner, allow_self_approval: false)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     assert html =~ "You can&#39;t use the normal approval path on your own request"
-    assert html =~ "if waiting is unsafe, use Break-glass"
-    assert has_element?(lv, ~s([data-shot="approval-override"]))
+    assert html =~ "if waiting is unsafe, use the override"
+
+    assert has_element?(
+             lv,
+             ~s([data-shot="approval-override"] button),
+             "Override required reviews…"
+           )
   end
 
   test "an approved multi-approver request lists every approver in Decisions", %{conn: conn} do

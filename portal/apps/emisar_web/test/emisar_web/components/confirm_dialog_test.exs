@@ -125,6 +125,29 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
     refute confirm_button_disabled?(match)
   end
 
+  test "an additional caller-owned requirement can keep Confirm disabled" do
+    assigns = %{}
+
+    html =
+      rendered_to_string(~H"""
+      <CoreComponents.confirm_dialog
+        id="del"
+        title="Delete"
+        confirm_label="Delete runner"
+        confirm_token="acme-db-01"
+        typed="acme-db-01"
+        disabled
+        on_confirm="delete"
+      >
+        <:body>x</:body>
+        <:fields><input name="reason" /></:fields>
+      </CoreComponents.confirm_dialog>
+      """)
+
+    assert html =~ ~s(name="reason")
+    assert confirm_button_disabled?(html)
+  end
+
   test "a blank token can never be confirmed (page-level dialog with no target)" do
     assigns = %{}
 
