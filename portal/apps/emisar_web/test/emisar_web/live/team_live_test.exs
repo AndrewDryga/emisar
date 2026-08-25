@@ -223,6 +223,13 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert has_element?(
                lv,
+               "#pending-access-requests > ul > li[class~='sm:items-start']"
+             )
+
+      refute has_element?(lv, "#pending-access-requests > ul > li[class~='sm:items-end']")
+
+      assert has_element?(
+               lv,
                "#team-primary-column > #pending-access-requests + #members-section"
              )
 

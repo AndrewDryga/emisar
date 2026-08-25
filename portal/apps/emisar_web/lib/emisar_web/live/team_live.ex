@@ -1648,7 +1648,7 @@ defmodule EmisarWeb.TeamLive do
             <ul class="divide-y divide-zinc-800/70">
               <li
                 :for={request_facts <- @pending_requests}
-                class="grid gap-3 py-3.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
+                class="grid gap-3 py-3.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
               >
                 <% request = request_facts.request %>
                 <div class="min-w-0">

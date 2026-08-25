@@ -917,6 +917,12 @@ the commit button, where the operator can reach the action before reading what i
     span the rail or aligning siblings independently. On narrow screens keep DOM order as heading,
     body, help. Sweep: an Add/Edit action pinned to the page edge above a help rail, and mixed section
     structures where some help starts beside the title while one starts beside the body.
+77. **A mixed-height queue row aligns its primary scan line to the top, not the control bottom.** A
+    labeled select may be taller than the identity beside it; bottom-aligning the whole row pushes the
+    identity down and makes the normal section-header margin look like an oversized blank band. Keep
+    the row top-aligned and bottom-align only the select and buttons inside their own action cluster.
+    Sweep: a titled queue whose first identity begins visibly below the first control label because the
+    outer row uses `items-end`.
 
 ## 8. The kit is the contract
 
