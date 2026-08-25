@@ -1415,6 +1415,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Large runbooks finish, and every result stays readable"
       assert html =~ "Pack CI runs only what changed"
       assert html =~ "Signed dispatch uses your own PKI"
+      assert html =~ "Identity and session flows now carry current authority"
 
       # Product release tags — the commit history, the tags, and the changelog
       # all line up (newest and oldest both rendered).

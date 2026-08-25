@@ -17,12 +17,12 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
-      date: ~D[2026-08-23],
+      date: ~D[2026-08-24],
       slug: "signed-dispatch-uses-your-own-pki",
       title: "Signed dispatch uses your own PKI",
       tag: "v0.42.0",
       summary:
-        "Signed dispatch now uses ordinary X.509 certificates, so the certificate that authorizes a run can come from the PKI you already have instead of a format only emisar reads. The certificate names the runners it may target, and each runner checks the chain against the anchors you configured. The MCP bridge also exposes every tool as a shell command, so a script or an LLM without MCP support can drive emisar directly. Windows support is complete across the bridge, its clients, and ARM64.",
+        "Signed dispatch now uses ordinary X.509 certificates, so the certificate that authorizes a run can come from the PKI you already have instead of a format only emisar reads. The certificate names the runners it may target, and each runner checks the chain against the anchors you configured. The MCP bridge also exposes every tool as a shell command, and Windows support spans the bridge, its clients, and ARM64. Identity and session flows now carry current authority through their final transaction, including MFA, email, SSO, SCIM, device grants, OAuth refresh, and per-session revocation.",
       details: [
         {"Signed dispatch",
          [
@@ -32,20 +32,26 @@ defmodule EmisarWeb.Changelog do
         {"Security",
          [
            "A policy edit is limited to the scope the editor holds, standing grants can be revoked in bulk, an expired agent key is revoked in one step, and a membership suspension records who did it.",
-           "Private identity-provider exemptions are confined to development builds, the privileged installer transport is constrained, and current Bandit advisories are patched."
+           "MFA and SSO decisions are rechecked at their final write: enforced accounts require current proof, administrator resets require a fresh factor tied to the acting session, TOTP replay state uses the locked verification time, and SSO callbacks revalidate provider policy, claims, and account bindings before minting a session.",
+           "Magic links, confirmation codes, and invitations are bound to the current email address. Signup keeps existing-address attempts neutral without creating a public workspace, and exact session revocation removes only the selected credential before disconnecting its socket after commit.",
+           "SCIM writes serialize with provider changes, DELETE retires the directory resource and its independent OIDC authority, and a later POST revives only the SCIM resource. Device-grant claims recheck the approver, and replaying a spent OAuth refresh token revokes that connection and its active successors.",
+           "OIDC work has bounded request, tunnel, and tenant budgets; every outbound destination uses the same public-address policy. Private identity-provider exemptions remain confined to development builds, the privileged installer transport is constrained, and current Bandit advisories are patched."
          ]},
         {"Bridge and CLI",
          [
            "Every MCP tool is now also a bridge command, so a shell script or an LLM without MCP support can call emisar directly. Validation errors say what to send instead, runbook output drains on its own, and typed JSON output is formatted.",
-           "The bridge owns client connect and disconnect, so a client installed later is connected without reinstalling. Windows support covers the installer, its clients, and ARM64."
+           "The bridge owns client connect and disconnect, so a client installed later is connected without reinstalling. Windows support covers the installer, its clients, and ARM64, and client-config backups refuse symlink destinations instead of following them."
          ]},
         {"Packs",
          [
-           "emisar pack diff shows what an upgrade changes, and emisar pack verify proves a pack is configured before you rely on it. Each pack's setup requirements appear on its page and in the CLI, pack suggest can read a registry catalog URL, and Nomad namespaces are supported."
+           "emisar pack diff shows what an upgrade changes, and emisar pack verify proves a pack is configured before you rely on it. Each pack's setup requirements appear on its page and in the CLI, pack suggest can read a registry catalog URL, and Nomad namespaces are supported.",
+           "Credential-bearing remote reads stay on configured destinations, low-risk metrics and log queries have explicit cost bounds, process diagnostics avoid secret-bearing files, and the Redis Sentinel down-state probe is structurally read-only."
          ]},
         {"Console and docs",
          [
            "Approval decision history is consolidated, every signer appears in the verdict, and a loaded choice stays visible while the form is edited.",
+           "Owners and administrators can use an audited break-glass override when the configured approval quorum cannot be reached. Pricing cards, comparison cells, FAQs, and structured offers now read the same Billing plan contract.",
+           "The console now uses one semantic icon system, keeps destructive MFA actions visually and verbally distinct, and makes session inventory and revocation state truthful.",
            "The docs shell switches examples by operating system, the AI agent pages are split per client, and the quickstart, runner, and client-connection pages were rewritten in plain language."
          ]}
       ]
