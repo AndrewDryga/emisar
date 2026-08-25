@@ -474,7 +474,7 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     assert html =~ "Verified against a live Okta Integrator org on August 18, 2026."
-    assert html =~ "Verified against a live JumpCloud tenant on August 18, 2026."
+    assert html =~ "Live-tested against a JumpCloud tenant on August 25, 2026."
 
     # The oid cross-reference goes straight to the Entra guide, not the
     # one-line provider bullet on this same page.
@@ -1963,7 +1963,7 @@ defmodule EmisarWeb.MarketingTest do
         {"/docs/integrations/okta",
          "Live-tested against an Okta Integrator org on August 25, 2026: OIDC sign-in, user lifecycle, group push and rename, group-based role and runner access, and delete/recreate isolation passed."},
         {"/docs/integrations/jumpcloud",
-         "Live-tested against a JumpCloud tenant on August 25, 2026: sign-in, user and group provisioning, profile and group renames, deactivation, reactivation, and group-based role and runner access passed."},
+         "Live-tested against a JumpCloud tenant on August 25, 2026."},
         {"/docs/integrations/entra",
          "Live-tested against a Microsoft Entra tenant on August 25, 2026: OIDC sign-in, user and group provisioning, profile and group renames, deactivation, reactivation, group-based role and runner access, and delete/recreate isolation passed."},
         {"/docs/integrations/google-workspace",
