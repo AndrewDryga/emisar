@@ -498,7 +498,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   defp begin_mfa_enrollment(lv) do
     render_click(lv, "start_mfa", %{})
     assert_received {:email, email}
-    [code] = Regex.run(~r/\d{6}/, email.text_body)
+    code = Fixtures.Auth.code_from_email(email)
 
     render_hook(lv, "verify_mfa_enrollment_email", %{
       "mfa_enrollment" => %{"code" => code}

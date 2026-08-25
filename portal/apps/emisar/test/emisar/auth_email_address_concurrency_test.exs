@@ -27,7 +27,7 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
 
       assert Auth.issue_email_change_code(new_email, subject) == :ok
       assert_received {:email, step_up_email}
-      assert [step_up_code] = Regex.run(~r/\d{6}/, step_up_email.text_body)
+      step_up_code = Fixtures.Auth.code_from_email(step_up_email)
 
       parent = self()
 
@@ -524,8 +524,7 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
   defp issue_email_change_code(new_email, subject) do
     assert Auth.issue_email_change_code(new_email, subject) == :ok
     assert_receive {:email, email}, 5_000
-    assert [code] = Regex.run(~r/\d{6}/, email.text_body)
-    code
+    Fixtures.Auth.code_from_email(email)
   end
 
   defp drain_emails(emails \\ []) do

@@ -22,6 +22,16 @@ it as the origin; when it did not, do not invent one. A new-account sign-up may
 name the account being created, but it cannot link an account that does not exist
 yet.
 
+Put account context into the opening sentence of an identity email. Do not add a
+one-row `Requested from` facts table when `Sign in to Northstar Production` says
+the same thing more naturally. Put request metadata after the expiry and safety
+copy so it remains available without interrupting the task.
+
+A terminal approval email names the person who denied the request when that
+identity resolves inside the request's account. An approved request links to both
+the approval record and the resulting action run or runbook execution; the run is
+a quiet secondary action, not a second primary button.
+
 Do not add chrome that explains itself (`This message was sent by emisar`) or a
 disclaimer that repeats the noun in the sentence. Name the object precisely
 instead: `The approval request was approved` does not claim that the action ran.
@@ -54,6 +64,27 @@ Your approval request was cancelled with 1 of 2 approvals.
 
 In HTML, only `cancelled` is bold and amber. The subject remains `Approval
 cancelled · postgres.vacuum_table`; it is not rendered again above `Hi`.
+
+```text
+Hi Avery,
+
+Use this code to add an authenticator to your emisar sign-in to Northstar Production.
+
+    627194
+
+This code works once and expires in 15 minutes.
+
+If you didn't start this setup, ignore the email. Your authenticator settings will not change.
+
+REQUEST DETAILS
+
+  Time:   25 Aug 2026 at 18:19 UTC
+  From:   203.0.113.42
+  Device: Chrome on macOS
+```
+
+In HTML, `Northstar Production` is the account link. There is no separate account
+facts table.
 
 ## Bad
 

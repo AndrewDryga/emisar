@@ -163,7 +163,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "We sent a new code to"
       refute html =~ "wrong or expired"
       assert_received {:email, resent_email}
-      [code] = Regex.run(~r/\d{6}/, resent_email.text_body)
+      code = Fixtures.Auth.code_from_email(resent_email)
 
       render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => code}})
       assert Emisar.Repo.reload!(user).email == "fresh@example.com"
@@ -190,7 +190,7 @@ defmodule EmisarWeb.ProfileLiveTest do
           email
         end)
 
-      [latest_code] = Regex.run(~r/\d{6}/, latest_email.text_body)
+      latest_code = Fixtures.Auth.code_from_email(latest_email)
 
       html = lv |> element("#email_step_form button", "Resend code") |> render_click()
 
@@ -1274,7 +1274,7 @@ defmodule EmisarWeb.ProfileLiveTest do
   defp begin_mfa_enrollment(lv) do
     render_click(lv, "start_mfa", %{})
     assert_received {:email, email}
-    [code] = Regex.run(~r/\d{6}/, email.text_body)
+    code = Fixtures.Auth.code_from_email(email)
 
     render_hook(lv, "verify_mfa_enrollment_email", %{
       "mfa_enrollment" => %{"code" => code}

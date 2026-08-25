@@ -145,7 +145,7 @@ defmodule Emisar.Fixtures.Users do
         1_000 -> raise "MFA enrollment code email was not delivered"
       end
 
-    [code] = Regex.run(~r/\d{6}/, email.text_body)
+    code = Fixtures.Auth.code_from_email(email)
     {:ok, proof} = Emisar.Auth.verify_mfa_enrollment_code(code, subject)
     proof
   end

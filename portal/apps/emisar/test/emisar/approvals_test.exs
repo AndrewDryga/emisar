@@ -1991,6 +1991,7 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "emails the requester the outcome, without argument values", %{
+      account: account,
       run: run,
       subject: subject
     } do
@@ -2011,6 +2012,8 @@ defmodule Emisar.ApprovalsTest do
       assert email.subject == "Approval complete · linux.uptime"
       assert email.text_body =~ "approved with 1 of 1 approvals"
       assert email.text_body =~ "lgtm"
+      assert email.text_body =~ "/app/#{account.slug}/runs/#{run.id}"
+      assert email.html_body =~ ">View run</a>"
       refute email.text_body =~ "Arguments"
 
       assert Enum.any?(emails, fn email ->
@@ -3463,7 +3466,7 @@ defmodule Emisar.ApprovalsTest do
                end)
 
       assert email.subject == "Approval denied · linux.uptime"
-      assert email.text_body =~ "was denied with 0 of 1"
+      assert email.text_body =~ "was denied by Test User with 0 of 1"
       assert email.text_body =~ "not now"
 
       assert Enum.any?(

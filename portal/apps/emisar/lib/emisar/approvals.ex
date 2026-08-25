@@ -1976,12 +1976,14 @@ defmodule Emisar.Approvals do
       # Preloaded here rather than at the call site: the email builds the
       # canonical slugged approval link, and a slug-less URL 404s.
       request = Repo.preload(request, :account)
+      actor_label = requester_decision_actor_label(request)
 
       case Emisar.Mailers.UserNotifier.deliver_approval_decision(
              requester,
              request,
              approved_count,
-             event_kind
+             event_kind,
+             actor_label
            ) do
         {:ok, _sent} ->
           :ok
@@ -2001,6 +2003,11 @@ defmodule Emisar.Approvals do
         error: inspect(err)
       )
   end
+
+  defp requester_decision_actor_label(%Request{status: :denied} = request),
+    do: approval_actor_label(request.account_id, request.decided_by_id)
+
+  defp requester_decision_actor_label(%Request{}), do: nil
 
   # Telemetry: count a request only when it reaches a TERMINAL decision. A
   # partial approval (still :pending below the threshold) is not an outcome.

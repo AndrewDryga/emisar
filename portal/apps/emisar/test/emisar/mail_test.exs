@@ -299,6 +299,11 @@ defmodule Emisar.MailTest do
         refute email.html_body =~ ">Confirm your emisar email</td>"
         refute email.html_body =~ "This message was sent by emisar"
         assert email.html_body =~ ~s(href="http://localhost/app/#{account.slug}")
+        refute email.html_body =~ ">Requested from<"
+
+        [message, details] = String.split(email.text_body, "REQUEST DETAILS", parts: 2)
+        assert message =~ "If you didn't request this"
+        assert details =~ "203.0.113.12"
         true
       end)
     end
@@ -308,6 +313,18 @@ defmodule Emisar.MailTest do
 
       assert {:ok, %{suppressed: true}} =
                UserNotifier.deliver_account_confirmation(user, "tok")
+    end
+
+    test "escapes the linked account name", %{user: user} do
+      account = Fixtures.Accounts.create_account(name: "Northstar <script>alert(1)</script>")
+
+      UserNotifier.deliver_account_confirmation(user, "tok-confirm", account)
+
+      assert_email_sent(fn email ->
+        assert email.html_body =~ "Northstar &lt;script&gt;alert(1)&lt;/script&gt;"
+        refute email.html_body =~ "<script>alert(1)</script>"
+        true
+      end)
     end
   end
 
@@ -360,15 +377,23 @@ defmodule Emisar.MailTest do
     setup do
       %{
         user: Fixtures.Users.create_user(),
+        account: Fixtures.Accounts.create_account(name: "Northstar"),
         context: %RequestContext{ip_address: "203.0.113.9", user_agent: "Firefox/140 Linux"}
       }
     end
 
     test "the email-change code names the proposed address and request context", %{
       user: user,
+      account: account,
       context: context
     } do
-      UserNotifier.deliver_email_change_code(user, "ABC234", "new@example.com", context)
+      UserNotifier.deliver_email_change_code(
+        user,
+        "ABC234",
+        "new@example.com",
+        context,
+        account
+      )
 
       assert_email_sent(fn email ->
         assert email.subject == "Confirm your sign-in email change"
@@ -376,16 +401,29 @@ defmodule Emisar.MailTest do
         assert email.text_body =~ "new@example.com"
         assert email.text_body =~ "203.0.113.9"
         assert email.text_body =~ "Firefox on Linux"
+
+        assert email.text_body =~
+                 "change your emisar sign-in email for Northstar (http://localhost/app/#{account.slug})"
+
+        refute email.text_body =~ "Requested from:"
+        [message, details] = String.split(email.text_body, "REQUEST DETAILS", parts: 2)
+        assert message =~ "Your sign-in email will stay the same."
+        assert details =~ "203.0.113.9"
         assert is_binary(email.html_body)
+
+        assert email.html_body =~
+                 ~s(href="http://localhost/app/#{account.slug}" target="_top" style="color:#fafafa;font-weight:600;text-decoration:underline;text-underline-offset:2px;">Northstar</a>)
+
         true
       end)
     end
 
     test "the authenticator code says what it authorizes and when it expires", %{
       user: user,
+      account: account,
       context: context
     } do
-      UserNotifier.deliver_mfa_enrollment_code(user, "XYZ789", context)
+      UserNotifier.deliver_mfa_enrollment_code(user, "XYZ789", context, account)
 
       assert_email_sent(fn email ->
         assert email.subject == "Confirm authenticator setup"
@@ -393,6 +431,14 @@ defmodule Emisar.MailTest do
         assert email.text_body =~ "XYZ789"
         assert email.text_body =~ "15 minutes"
         assert email.text_body =~ "203.0.113.9"
+
+        assert email.text_body =~
+                 "authenticator to your emisar sign-in to Northstar (http://localhost/app/#{account.slug})"
+
+        refute email.text_body =~ "Requested from:"
+        [message, details] = String.split(email.text_body, "REQUEST DETAILS", parts: 2)
+        assert message =~ "Your authenticator settings will not change."
+        assert details =~ "203.0.113.9"
         assert is_binary(email.html_body)
         true
       end)
@@ -766,6 +812,7 @@ defmodule Emisar.MailTest do
     } do
       request = %{
         id: "req-decided-1",
+        run_id: "run-decided-1",
         status: :approved,
         reason: "rotate the cert",
         decision_reason: "confirmed with the on-call",
@@ -781,6 +828,10 @@ defmodule Emisar.MailTest do
         assert email.text_body =~ "rotate the cert"
         assert email.text_body =~ "confirmed with the on-call"
         assert email.text_body =~ "/app/globex/approvals/req-decided-1"
+        assert email.text_body =~ "/app/globex/runs/run-decided-1"
+        assert email.html_body =~ ">View approval</a>"
+        assert email.html_body =~ ">View run</a>"
+        assert email.html_body =~ "border:1px solid #27272a"
         refute email.text_body =~ "not proof that the action ran"
         # The approval page is the only place arguments are shown.
         refute email.text_body =~ "Arguments"
@@ -801,12 +852,34 @@ defmodule Emisar.MailTest do
         context: %{"runbook" => %{"title" => "Database maintenance"}}
       }
 
-      UserNotifier.deliver_approval_decision(requester, request)
+      UserNotifier.deliver_approval_decision(requester, request, 0, nil, "Alex Operator")
 
       assert_email_sent(fn email ->
         assert email.subject == "Approval denied · Database maintenance"
-        assert email.text_body =~ "was denied"
+        assert email.text_body =~ "was denied by Alex Operator"
         refute email.text_body =~ "DECISION NOTE"
+        true
+      end)
+    end
+
+    test "links an approved runbook request to its execution", %{requester: requester} do
+      request = %{
+        id: "req-decided-runbook",
+        runbook_execution_id: "execution-123",
+        status: :approved,
+        reason: "apply the reviewed settings",
+        decision_reason: "review complete",
+        account: %{slug: "acme"},
+        context: %{
+          "runbook" => %{"id" => "runbook-123", "title" => "Database maintenance"}
+        }
+      }
+
+      UserNotifier.deliver_approval_decision(requester, request, 2)
+
+      assert_email_sent(fn email ->
+        assert email.text_body =~ "/app/acme/runbooks/runbook-123/runs/execution-123"
+        assert email.html_body =~ ">View run</a>"
         true
       end)
     end

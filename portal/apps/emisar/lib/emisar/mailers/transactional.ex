@@ -4,8 +4,9 @@ defmodule Emisar.Mailers.Transactional do
 
   Callers supply already-authorized, human copy as a small list of explicit
   blocks. This module owns only presentation: the plain-text structure, escaped
-  HTML, preview text, product chrome, and one primary action. Domain mailers
-  remain responsible for deciding which facts are safe to put in durable email.
+  HTML, preview text, product chrome, and the primary and secondary actions.
+  Domain mailers remain responsible for deciding which facts are safe to put
+  in durable email.
   """
   alias Emisar.Mailers.HTML
   alias Emisar.PublicUrl
@@ -25,6 +26,7 @@ defmodule Emisar.Mailers.Transactional do
   @type fact_value :: binary() | {:link, binary(), binary()}
   @type block ::
           {:paragraph, binary()}
+          | {:link_paragraph, binary(), binary(), binary(), binary()}
           | {:facts, [{binary(), fact_value()}]}
           | {:status, binary(), binary(), binary(), :success | :warning | :danger | :neutral}
           | {:section, binary()}
@@ -34,7 +36,8 @@ defmodule Emisar.Mailers.Transactional do
 
   @doc """
   Renders `%{text: binary, html: binary}` from a recipient, title, preview,
-  blocks, and optional `{label, url}` action.
+  blocks, an optional `{label, url}` primary action, and an optional secondary
+  action in the same shape.
   """
   def render(attrs) when is_map(attrs) do
     content = %{
@@ -43,6 +46,7 @@ defmodule Emisar.Mailers.Transactional do
       preview: Map.fetch!(attrs, :preview),
       blocks: Map.get(attrs, :blocks, []),
       action: Map.get(attrs, :action),
+      secondary_action: Map.get(attrs, :secondary_action),
       footer: Map.get(attrs, :footer)
     }
 
@@ -60,6 +64,7 @@ defmodule Emisar.Mailers.Transactional do
       "Hi #{content.recipient},",
       blocks,
       text_action(content.action),
+      text_action(content.secondary_action),
       content.footer
     ]
     |> Enum.reject(&blank?/1)
@@ -68,6 +73,10 @@ defmodule Emisar.Mailers.Transactional do
   end
 
   defp text_block({:paragraph, paragraph}), do: paragraph
+
+  defp text_block({:link_paragraph, before, label, url, suffix}),
+    do: before <> text_fact_value({:link, label, url}) <> suffix
+
   defp text_block({:status, before, status, suffix, _tone}), do: before <> status <> suffix
   defp text_block({:section, title}), do: String.upcase(title)
   defp text_block({:code, code}), do: "    #{code}"
@@ -112,7 +121,7 @@ defmodule Emisar.Mailers.Transactional do
                   <td style="padding:0 0 24px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">Hi #{HTML.escape(content.recipient)},</td>
                 </tr>
                 #{Enum.map_join(content.blocks, &html_block/1)}
-                #{html_action(content.action)}
+                #{html_actions(content.action, content.secondary_action)}
                 #{html_footer(content.footer)}
               </table>
             </td>
@@ -135,6 +144,10 @@ defmodule Emisar.Mailers.Transactional do
 
   defp html_block({:paragraph, paragraph}) do
     ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">#{HTML.escape(paragraph)}</td></tr>)
+  end
+
+  defp html_block({:link_paragraph, before, label, url, suffix}) do
+    ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">#{HTML.escape(before)}<a href="#{HTML.escape(url)}" target="_top" style="color:#{@ink};font-weight:600;text-decoration:underline;text-underline-offset:2px;">#{HTML.escape(label)}</a>#{HTML.escape(suffix)}</td></tr>)
   end
 
   defp html_block({:status, before, status, suffix, tone}) do
@@ -200,18 +213,33 @@ defmodule Emisar.Mailers.Transactional do
     ~s(<tr><td valign="top" width="18" style="padding:3px 0;font-family:#{@font};font-size:15px;line-height:1.55;color:#{@brand};">•</td><td style="padding:3px 0;font-family:#{@font};font-size:14px;line-height:1.55;color:#{@ink_soft};">#{HTML.escape(item)}</td></tr>)
   end
 
-  defp html_action(nil), do: ""
+  defp html_actions(nil, nil), do: ""
 
-  defp html_action({label, url}) do
+  defp html_actions(action, secondary_action) do
+    actions = [{:primary, action}, {:secondary, secondary_action}]
+    buttons = actions |> Enum.reject(fn {_kind, value} -> is_nil(value) end) |> action_cells()
+
     """
     <tr>
       <td style="padding:8px 0 30px;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-          <tr><td bgcolor="#{@brand_fill}" style="border-radius:8px;"><a href="#{HTML.escape(url)}" target="_top" style="display:inline-block;padding:13px 22px;font-family:#{@font};font-size:14px;line-height:1;font-weight:600;color:#{@ground};text-decoration:none;border-radius:8px;">#{HTML.escape(label)}</a></td></tr>
+          <tr>#{buttons}</tr>
         </table>
       </td>
     </tr>
     """
+  end
+
+  defp action_cells(actions) do
+    Enum.map_join(actions, ~s(<td width="10" style="width:10px;"></td>), &action_cell/1)
+  end
+
+  defp action_cell({:primary, {label, url}}) do
+    ~s(<td bgcolor="#{@brand_fill}" style="border-radius:8px;"><a href="#{HTML.escape(url)}" target="_top" style="display:inline-block;padding:13px 22px;font-family:#{@font};font-size:14px;line-height:1;font-weight:600;color:#{@ground};text-decoration:none;border-radius:8px;">#{HTML.escape(label)}</a></td>)
+  end
+
+  defp action_cell({:secondary, {label, url}}) do
+    ~s(<td style="border:1px solid #{@hairline};border-radius:8px;"><a href="#{HTML.escape(url)}" target="_top" style="display:inline-block;padding:12px 21px;font-family:#{@font};font-size:14px;line-height:1;font-weight:600;color:#{@ink};text-decoration:none;border-radius:8px;">#{HTML.escape(label)}</a></td>)
   end
 
   defp html_footer(footer) when is_binary(footer) and footer != "" do

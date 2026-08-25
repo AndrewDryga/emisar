@@ -9,6 +9,12 @@ defmodule Emisar.Fixtures.Auth do
   alias Emisar.Repo
   alias Emisar.Users.User
 
+  @doc "Extracts the six-digit code from a transactional email's dedicated code line."
+  def code_from_email(%{text_body: text_body}) when is_binary(text_body) do
+    [_, code] = Regex.run(~r/^    (\d{6})$/m, text_body)
+    code
+  end
+
   @doc "Persists a raw confirmation factor for a consumer/controller test."
   def create_confirmation_token!(%User{} = user) do
     {raw, digest} = Crypto.email_token()

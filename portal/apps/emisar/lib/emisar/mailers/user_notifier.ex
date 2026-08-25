@@ -40,18 +40,23 @@ defmodule Emisar.Mailers.UserNotifier do
         context \\ %RequestContext{}
       ) do
     url = PublicUrl.url("/confirm/#{token}")
+    email = one_line(user.email)
 
     deliver_transactional(
       user,
       "Confirm your emisar email",
-      "Confirm #{one_line(user.email)}. This link expires in 7 days.",
+      "Confirm #{email}. This link expires in 7 days.",
       [
-        {:paragraph, "Confirm #{one_line(user.email)} to finish setting up your emisar sign-in."},
-        {:facts, identity_facts(account, [{"Email", one_line(user.email)}])},
-        {:section, "Request details"},
-        {:pre, request_details(context)},
+        account_instruction(
+          "Confirm #{email} to finish setting up your emisar sign-in.",
+          "Confirm #{email} to finish setting up your emisar sign-in for ",
+          account,
+          "."
+        ),
         {:paragraph, "This link works once and expires in 7 days."},
-        {:paragraph, "If you didn't request this, ignore this email."}
+        {:paragraph, "If you didn't request this, ignore this email."},
+        {:section, "Request details"},
+        {:pre, request_details(context)}
       ],
       {"Confirm email address", url}
     )
@@ -64,20 +69,25 @@ defmodule Emisar.Mailers.UserNotifier do
         context \\ %RequestContext{}
       ) do
     url = PublicUrl.url("/confirm/#{token}")
+    email = one_line(user.email)
 
     deliver_transactional(
       user,
       "Confirm your new sign-in email",
-      "Confirm #{one_line(user.email)} before the link expires in 7 days.",
+      "Confirm #{email} before the link expires in 7 days.",
       [
-        {:paragraph, "Confirm #{one_line(user.email)} as your new emisar sign-in email."},
-        {:facts, identity_facts(account, [{"New email", one_line(user.email)}])},
-        {:section, "Request details"},
-        {:pre, request_details(context)},
+        account_instruction(
+          "Confirm #{email} as your new emisar sign-in email.",
+          "Confirm #{email} as your new emisar sign-in email for ",
+          account,
+          "."
+        ),
         {:paragraph,
          "This link works once and expires in 7 days. Keep using your current email until you confirm the new one."},
         {:paragraph,
-         "If you didn't request this change, don't use the link. Your sign-in email will stay the same."}
+         "If you didn't request this change, don't use the link. Your sign-in email will stay the same."},
+        {:section, "Request details"},
+        {:pre, request_details(context)}
       ],
       {"Confirm new email", url}
     )
@@ -98,15 +108,19 @@ defmodule Emisar.Mailers.UserNotifier do
       "Your emisar sign-in code",
       "Your one-time sign-in code expires in 15 minutes.",
       [
-        {:paragraph, sign_in_instruction(account)},
+        account_instruction(
+          "Use this code to sign in to emisar.",
+          "Use this code to sign in to ",
+          account,
+          "."
+        ),
         {:code, secret},
-        {:facts, identity_facts(account, [])},
         {:paragraph, "Enter the code in the browser where you asked to sign in."},
         {:paragraph, "It works once and expires in 15 minutes."},
         {:paragraph, "For security, the code only works in that browser."},
+        {:paragraph, "If you didn't ask to sign in, ignore this email."},
         {:section, "Request details"},
-        {:pre, request_details(context)},
-        {:paragraph, "If you didn't ask to sign in, ignore this email."}
+        {:pre, request_details(context)}
       ],
       {"Sign in", url}
     )
@@ -185,14 +199,19 @@ defmodule Emisar.Mailers.UserNotifier do
       "Confirm your sign-in email change",
       "Use this code within 15 minutes to continue changing your sign-in email.",
       [
-        {:paragraph, "Use this code to continue changing your emisar sign-in email."},
+        account_instruction(
+          "Use this code to continue changing your emisar sign-in email.",
+          "Use this code to change your emisar sign-in email for ",
+          account,
+          "."
+        ),
         {:code, code},
-        {:facts, identity_facts(account, [{"New email", one_line(new_email)}])},
-        {:section, "Request details"},
-        {:pre, request_details(context)},
+        {:paragraph, "New sign-in email: #{one_line(new_email)}."},
         {:paragraph, "This code works once and expires in 15 minutes."},
         {:paragraph,
-         "If you didn't request this change, ignore the email. Your sign-in email will stay the same."}
+         "If you didn't request this change, ignore the email. Your sign-in email will stay the same."},
+        {:section, "Request details"},
+        {:pre, request_details(context)}
       ]
     )
   end
@@ -208,14 +227,18 @@ defmodule Emisar.Mailers.UserNotifier do
       "Confirm authenticator setup",
       "Use this code within 15 minutes to continue adding an authenticator.",
       [
-        {:paragraph, "Use this code to add an authenticator to your emisar sign-in."},
+        account_instruction(
+          "Use this code to add an authenticator to your emisar sign-in.",
+          "Use this code to add an authenticator to your emisar sign-in to ",
+          account,
+          "."
+        ),
         {:code, code},
-        {:facts, identity_facts(account, [])},
-        {:section, "Request details"},
-        {:pre, request_details(context)},
         {:paragraph, "This code works once and expires in 15 minutes."},
         {:paragraph,
-         "If you didn't start this setup, ignore the email. Your authenticator settings will not change."}
+         "If you didn't start this setup, ignore the email. Your authenticator settings will not change."},
+        {:section, "Request details"},
+        {:pre, request_details(context)}
       ]
     )
   end
@@ -380,13 +403,14 @@ defmodule Emisar.Mailers.UserNotifier do
         %Users.User{} = requester,
         %{} = request,
         approved_count \\ 0,
-        event_kind \\ nil
+        event_kind \\ nil,
+        actor_label \\ nil
       ) do
     label = approval_decision_label(request)
     quorum = request_quorum(request)
 
     {title, preview, lead} =
-      requester_decision_copy(request.status, approved_count, quorum, event_kind)
+      requester_decision_copy(request.status, approved_count, quorum, event_kind, actor_label)
 
     blocks =
       [
@@ -406,7 +430,8 @@ defmodule Emisar.Mailers.UserNotifier do
       "#{title} · #{one_line(label)}",
       preview,
       blocks,
-      {"View approval", approval_url(request)}
+      {"View approval", approval_url(request)},
+      secondary_action: approved_target_action(request)
     )
   end
 
@@ -560,16 +585,32 @@ defmodule Emisar.Mailers.UserNotifier do
 
   defp account_fact(account), do: account_name(account)
 
-  defp identity_facts(nil, facts), do: present_facts(facts)
-
-  defp identity_facts(account, facts) do
-    present_facts([{"Requested from", account_fact(account)} | facts])
+  defp account_instruction(_fallback, before, %{slug: slug} = account, suffix)
+       when is_binary(slug) do
+    {:link_paragraph, before, account_name(account), PublicUrl.url("/app/#{slug}"), suffix}
   end
 
-  defp sign_in_instruction(nil), do: "Use this code to sign in to emisar."
+  defp account_instruction(fallback, _before, _account, _suffix), do: {:paragraph, fallback}
 
-  defp sign_in_instruction(account),
-    do: "Use this code to sign in to #{account_name(account)} on emisar."
+  defp approved_target_action(%{
+         status: :approved,
+         run_id: run_id,
+         account: %{slug: slug}
+       })
+       when is_binary(run_id) and is_binary(slug),
+       do: {"View run", PublicUrl.url("/app/#{slug}/runs/#{run_id}")}
+
+  defp approved_target_action(%{
+         status: :approved,
+         runbook_execution_id: execution_id,
+         account: %{slug: slug},
+         context: %{"runbook" => %{"id" => runbook_id}}
+       })
+       when is_binary(execution_id) and is_binary(runbook_id) and is_binary(slug) do
+    {"View run", PublicUrl.url("/app/#{slug}/runbooks/#{runbook_id}/runs/#{execution_id}")}
+  end
+
+  defp approved_target_action(_request), do: nil
 
   defp short_id(id) do
     id
@@ -676,7 +717,7 @@ defmodule Emisar.Mailers.UserNotifier do
     }
   end
 
-  defp requester_decision_copy(:approved, count, quorum, :overridden) do
+  defp requester_decision_copy(:approved, count, quorum, :overridden, _actor_label) do
     {
       "Approval override used",
       "An owner or admin used an emergency override.",
@@ -685,7 +726,7 @@ defmodule Emisar.Mailers.UserNotifier do
     }
   end
 
-  defp requester_decision_copy(:approved, count, quorum, _event_kind) do
+  defp requester_decision_copy(:approved, count, quorum, _event_kind, _actor_label) do
     {
       "Approval complete",
       "Your approval request was approved.",
@@ -694,16 +735,18 @@ defmodule Emisar.Mailers.UserNotifier do
     }
   end
 
-  defp requester_decision_copy(:denied, count, quorum, _event_kind) do
+  defp requester_decision_copy(:denied, count, quorum, _event_kind, actor_label) do
+    actor = one_line(actor_label || "An approver")
+
     {
       "Approval denied",
-      "Your approval request was denied.",
-      {:status, "Your approval request was ", "denied", " with #{count} of #{quorum} approvals.",
-       :danger}
+      "#{actor} denied your approval request.",
+      {:status, "Your approval request was ", "denied",
+       " by #{actor} with #{count} of #{quorum} approvals.", :danger}
     }
   end
 
-  defp requester_decision_copy(:expired, count, quorum, _event_kind) do
+  defp requester_decision_copy(:expired, count, quorum, _event_kind, _actor_label) do
     {
       "Approval expired",
       "Your approval request expired.",
@@ -712,7 +755,7 @@ defmodule Emisar.Mailers.UserNotifier do
     }
   end
 
-  defp requester_decision_copy(:cancelled, count, quorum, _event_kind) do
+  defp requester_decision_copy(:cancelled, count, quorum, _event_kind, _actor_label) do
     {
       "Approval cancelled",
       "Your approval request was cancelled.",
@@ -815,6 +858,7 @@ defmodule Emisar.Mailers.UserNotifier do
         preview: one_line(preview),
         blocks: blocks,
         action: action,
+        secondary_action: Keyword.get(opts, :secondary_action),
         footer: Keyword.get(opts, :footer)
       })
 

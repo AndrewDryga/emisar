@@ -399,7 +399,7 @@ defmodule Emisar.AuthAuditTest do
 
       assert Auth.issue_email_change_code(new, subject) == :ok
       assert_received {:email, email}
-      assert [code] = Regex.run(~r/\d{6}/, email.text_body)
+      code = Fixtures.Auth.code_from_email(email)
       assert {:ok, _updated} = Auth.confirm_email_change(new, code, subject)
 
       assert [event] = events_of(account, "user.email_changed")

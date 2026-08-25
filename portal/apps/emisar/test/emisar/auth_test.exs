@@ -54,8 +54,7 @@ defmodule Emisar.AuthTest do
   defp issue_mfa_enrollment_code(subject) do
     assert Auth.issue_mfa_enrollment_code(subject) == {:ok, :sent}
     assert_received {:email, email}
-    assert [code] = Regex.run(~r/\d{6}/, email.text_body)
-    code
+    Fixtures.Auth.code_from_email(email)
   end
 
   describe "roles/0" do
@@ -996,8 +995,11 @@ defmodule Emisar.AuthTest do
                Auth.request_magic_link(user, %RequestContext{}, account_ref: account.slug)
 
       assert_received {:email, sent}
-      assert sent.text_body =~ "sign in to Northstar on emisar"
-      assert sent.text_body =~ "Requested from:  Northstar"
+
+      assert sent.text_body =~
+               "sign in to Northstar (http://localhost/app/#{account.slug})"
+
+      refute sent.text_body =~ "Requested from:"
     end
 
     test "a branded request for an unavailable team issues and sends nothing", %{user: user} do
@@ -1690,7 +1692,7 @@ defmodule Emisar.AuthTest do
       assert_received {:email, email}
       assert [{_, ^current}] = email.to
       assert email.subject =~ "email change"
-      assert [code] = Regex.run(~r/\d{6}/, email.text_body)
+      code = Fixtures.Auth.code_from_email(email)
 
       assert {:ok, %User{email: "new@example.com"}} =
                Auth.confirm_email_change("new@example.com", code, subject)
@@ -1715,11 +1717,11 @@ defmodule Emisar.AuthTest do
     test "issuing again replaces the prior code (single outstanding)", %{subject: subject} do
       :ok = Auth.issue_email_change_code("first@example.com", subject)
       assert_received {:email, first_email}
-      [first_code] = Regex.run(~r/\d{6}/, first_email.text_body)
+      first_code = Fixtures.Auth.code_from_email(first_email)
 
       :ok = Auth.issue_email_change_code("second@example.com", subject)
       assert_received {:email, second_email}
-      [second_code] = Regex.run(~r/\d{6}/, second_email.text_body)
+      second_code = Fixtures.Auth.code_from_email(second_email)
 
       # The first code is gone; only the latest issuance completes the change.
       assert Auth.confirm_email_change("first@example.com", first_code, subject) ==
@@ -1741,7 +1743,7 @@ defmodule Emisar.AuthTest do
 
       assert Auth.begin_email_change("latest@example.com", subject) == {:ok, :code}
       assert_received {:email, latest_email}
-      [latest_code] = Regex.run(~r/\d{6}/, latest_email.text_body)
+      latest_code = Fixtures.Auth.code_from_email(latest_email)
 
       assert Auth.issue_email_change_code("rejected@example.com", subject) ==
                {:error, :rate_limited}
@@ -1770,7 +1772,7 @@ defmodule Emisar.AuthTest do
 
       assert_received {:email, email}
       assert [{_, ^current}] = email.to
-      assert [code] = Regex.run(~r/\d{6}/, email.text_body)
+      code = Fixtures.Auth.code_from_email(email)
 
       assert {:ok, %User{email: "new@example.com"}} =
                Auth.confirm_email_change("new@example.com", code, subject)
@@ -1803,7 +1805,7 @@ defmodule Emisar.AuthTest do
     } do
       {:ok, :code} = Auth.begin_email_change("new@example.com", subject)
       assert_received {:email, email}
-      [code] = Regex.run(~r/\d{6}/, email.text_body)
+      code = Fixtures.Auth.code_from_email(email)
 
       assert {:ok, %User{email: "new@example.com"}} =
                Auth.confirm_email_change("new@example.com", code, subject)
@@ -1814,7 +1816,7 @@ defmodule Emisar.AuthTest do
     } do
       {:ok, :code} = Auth.begin_email_change("bound@example.com", subject)
       assert_received {:email, email}
-      [code] = Regex.run(~r/\d{6}/, email.text_body)
+      code = Fixtures.Auth.code_from_email(email)
 
       # The emailed code is bound to "bound@example.com"; even though a different
       # target is passed here, the binding wins — a confirm can't swap the target.
@@ -1827,7 +1829,7 @@ defmodule Emisar.AuthTest do
     } do
       {:ok, :code} = Auth.begin_email_change("new@example.com", subject)
       assert_received {:email, email}
-      [code] = Regex.run(~r/\d{6}/, email.text_body)
+      code = Fixtures.Auth.code_from_email(email)
 
       wrong_code = if code == "000000", do: "000001", else: "000000"
 
@@ -1846,7 +1848,7 @@ defmodule Emisar.AuthTest do
 
       {:ok, :code} = Auth.begin_email_change("first@example.com", subject)
       assert_received {:email, first_email}
-      [first_code] = Regex.run(~r/\d{6}/, first_email.text_body)
+      first_code = Fixtures.Auth.code_from_email(first_email)
       wrong_first = if first_code == "000000", do: "000001", else: "000000"
 
       for _ <- 1..3 do
@@ -1856,7 +1858,7 @@ defmodule Emisar.AuthTest do
 
       :ok = Auth.issue_email_change_code("latest@example.com", subject)
       assert_received {:email, latest_email}
-      [latest_code] = Regex.run(~r/\d{6}/, latest_email.text_body)
+      latest_code = Fixtures.Auth.code_from_email(latest_email)
       wrong_latest = if latest_code == "000000", do: "000001", else: "000000"
 
       for _ <- 1..2 do
@@ -1892,7 +1894,7 @@ defmodule Emisar.AuthTest do
     } do
       {:ok, :code} = Auth.begin_email_change("new@example.com", subject)
       assert_received {:email, email}
-      [code] = Regex.run(~r/\d{6}/, email.text_body)
+      code = Fixtures.Auth.code_from_email(email)
       age_tokens(user.id, 16)
 
       assert Auth.confirm_email_change("new@example.com", code, subject) ==
@@ -1912,7 +1914,7 @@ defmodule Emisar.AuthTest do
 
       {:ok, :code} = Auth.begin_email_change("moved@example.com", subject)
       assert_received {:email, step_up}
-      [code] = Regex.run(~r/\d{6}/, step_up.text_body)
+      code = Fixtures.Auth.code_from_email(step_up)
 
       assert {:ok, %User{email: "moved@example.com"} = updated} =
                Auth.confirm_email_change("moved@example.com", code, subject)
@@ -1946,7 +1948,7 @@ defmodule Emisar.AuthTest do
 
       {:ok, :code} = Auth.begin_email_change("new@example.com", subject)
       assert_received {:email, step_up}
-      [code] = Regex.run(~r/\d{6}/, step_up.text_body)
+      code = Fixtures.Auth.code_from_email(step_up)
 
       assert {:ok, %User{email: "new@example.com"}} =
                Auth.confirm_email_change("new@example.com", code, subject)
@@ -2075,7 +2077,11 @@ defmodule Emisar.AuthTest do
       assert Auth.deliver_confirmation_instructions(user, account, context) == :ok
 
       assert_received {:email, email}
-      assert email.text_body =~ "Requested from:  Northstar"
+
+      assert email.text_body =~
+               "emisar sign-in for Northstar (http://localhost/app/#{account.slug})"
+
+      refute email.text_body =~ "Requested from:"
       assert email.text_body =~ "203.0.113.18"
     end
   end
