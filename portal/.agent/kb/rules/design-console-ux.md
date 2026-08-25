@@ -899,6 +899,18 @@ the commit button, where the operator can reach the action before reading what i
     them look scoped to that row, creates a false extra column on desktop, and turns them into another
     fact-grid row on mobile. Sweep: detail-page View activity, Edit, or equivalent record actions
     rendered beside a status/meta `<dl>` instead of in the title-level action slot.
+74. **A supporting rail starts with the content it explains, not the nearest outer heading.** Put the
+    heading or status summary across the whole grid, then place the primary content and its help in
+    the next shared row. A rail aligned with a page status strip or section title falsely reads as
+    commentary on that heading and leaves the actual table or editor unpaired. Do not approximate the
+    relationship with a fixed padding offset; encode it in the grid so wrapped headings and responsive
+    layouts cannot drift. Sweep: a detail Docs rail beginning beside status facts instead of the
+    settings table, or section help beginning beside a title instead of the rows beneath it.
+75. **The product name is lowercase `emisar` in customer-facing prose and generated fallback labels.**
+    Capitalized `Emisar` is a code/module namespace, not display copy. Preserve capitalization only
+    where grammar forces it at the start of a sentence; prefer rewriting the sentence when that keeps
+    the brand form natural. Sweep: user-visible string literals such as `Emisar group`, `Emisar
+    access`, or `Open Emisar`; exclude Elixir aliases, module names, and proper external titles.
 
 ## 8. The kit is the contract
 

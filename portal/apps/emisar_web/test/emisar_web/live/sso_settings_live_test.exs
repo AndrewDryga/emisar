@@ -698,6 +698,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         assert synced =~ note
       end
 
+      assert synced =~ "remove their emisar access"
+      refute synced =~ "remove their Emisar access"
+
       # The note carries no heading of its own: the section title is directly to
       # its left, and repeating it is what made the old single rail read as a
       # stack of headings.
@@ -719,6 +722,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert has_element?(lv, "#connection-summary dd", "Enabled")
       assert has_element?(lv, "#connection-summary dt", "Provider")
       assert has_element?(lv, "#connection-summary", "Connection settings")
+      assert has_element?(lv, "#connection-summary > #connection-settings")
+      assert has_element?(lv, "#connection-summary > #connection-docs", "Setting up")
       assert has_element?(lv, "header #view-provider-activity-#{shown.id}", "View activity")
       assert has_element?(lv, "header #edit-provider-#{shown.id}", "Edit")
       refute has_element?(lv, "#connection-summary #view-provider-activity-#{shown.id}")
@@ -1547,6 +1552,13 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       assert html =~ "Runner access mapping"
+
+      assert has_element?(
+               lv,
+               "#runner-access-mapping-section-#{provider.id} > div > #runner-access-mapping-help-#{provider.id}",
+               "Each mapping adds runner and pack access"
+             )
+
       refute html =~ "No runners registered yet"
       render_click(lv, "add_runner_access_mapping_form", %{})
 
@@ -1681,6 +1693,31 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       assert has_element?(lv, "span[title='#{runner.id}']", "Removed runner")
       refute html =~ "r21"
+    end
+
+    test "an IdP group without an external id uses the lowercase emisar fallback", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      assert {:ok, %{identity: identity}} =
+               SSO.scim_provision_user(provider, %{
+                 external_id: "user-with-server-owned-group",
+                 email: "server-owned-group@example.com",
+                 full_name: "Server-owned group member"
+               })
+
+      assert {:ok, group} =
+               SSO.scim_upsert_group(provider, %{
+                 external_id: nil,
+                 display: "Server-owned group",
+                 member_ids: [identity.id]
+               })
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert html =~ "emisar group #{group.id}"
+      refute html =~ "Emisar group"
     end
 
     test "the role select never offers Owner; a forced owner mapping is rejected inline", %{

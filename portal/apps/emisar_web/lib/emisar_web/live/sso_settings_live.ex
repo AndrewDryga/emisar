@@ -1573,8 +1573,11 @@ defmodule EmisarWeb.SSOSettingsLive do
             <%!-- The title already names the connection. Its operational facts
                  follow the detail-page meta grammar used by approvals, then the
                  durable configuration reads as a compact definition table. --%>
-            <section id="connection-summary">
-              <dl class="grid min-w-0 grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-4">
+            <section
+              id="connection-summary"
+              class="grid grid-cols-1 gap-x-12 gap-y-8 xl:col-span-2 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
+            >
+              <dl class="grid min-w-0 grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-4 xl:col-span-2">
                 <div>
                   <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                     Status
@@ -1608,7 +1611,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 </div>
               </dl>
 
-              <div class="mt-8">
+              <div id="connection-settings">
                 <.section_header title="Connection settings" />
                 <dl class="divide-y divide-zinc-800/70 border-y border-zinc-800/70">
                   <div class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
@@ -1652,22 +1655,22 @@ defmodule EmisarWeb.SSOSettingsLive do
                   </div>
                 </dl>
               </div>
-            </section>
 
-            <aside class="text-sm leading-relaxed xl:pt-1">
-              <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Docs</p>
-              <ul class="mt-3 space-y-2">
-                <li>
-                  <.doc_link href={docs_path_for_kind(to_string(provider.kind))}>
-                    Setting up {setup_kind_label(to_string(provider.kind))}
-                  </.doc_link>
-                </li>
-                <li :if={SSO.supports_scim?(provider.kind)}>
-                  <.doc_link href="/docs/scim">Directory sync</.doc_link>
-                </li>
-                <li><.doc_link href="/docs/teams-and-access">Roles &amp; access</.doc_link></li>
-              </ul>
-            </aside>
+              <aside id="connection-docs" class="text-sm leading-relaxed xl:pt-1">
+                <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Docs</p>
+                <ul class="mt-3 space-y-2">
+                  <li>
+                    <.doc_link href={docs_path_for_kind(to_string(provider.kind))}>
+                      Setting up {setup_kind_label(to_string(provider.kind))}
+                    </.doc_link>
+                  </li>
+                  <li :if={SSO.supports_scim?(provider.kind)}>
+                    <.doc_link href="/docs/scim">Directory sync</.doc_link>
+                  </li>
+                  <li><.doc_link href="/docs/teams-and-access">Roles &amp; access</.doc_link></li>
+                </ul>
+              </aside>
+            </section>
 
             <.scim_section
               :if={@can_configure_directory_sync? and SSO.supports_scim?(provider.kind)}
@@ -1679,7 +1682,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                  this connection has enabled provisioning. --%>
             <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
               Members and groups stay in sync with your identity provider. Remove someone there to
-              remove their Emisar access.
+              remove their emisar access.
             </.section_note>
 
             <%!-- This kind can't push SCIM (e.g. Google Workspace) — say so once
@@ -1732,10 +1735,6 @@ defmodule EmisarWeb.SSOSettingsLive do
               pack_advertisements={@pack_advertisements}
               pack_access_restricted?={@pack_access_restricted?}
             />
-            <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
-              Each mapping adds runner and pack access to the connection defaults. Groups are
-              matched by ID, not by name.
-            </.section_note>
 
             <.synced_groups_section
               :if={@can_configure_directory_sync? and provider.scim_enabled}
@@ -2934,7 +2933,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     assigns = assign(assigns, :runners_by_id, Map.new(assigns.runners, &{&1.id, &1}))
 
     ~H"""
-    <section>
+    <section id={"runner-access-mapping-section-#{@provider.id}"} class="xl:col-span-2">
       <.section_header
         title="Runner access mapping"
         count={@metadata.count}
@@ -2952,192 +2951,207 @@ defmodule EmisarWeb.SSOSettingsLive do
           </.button>
         </:actions>
       </.section_header>
-      <ul :if={@mappings != []} class="mt-4 divide-y divide-zinc-800/70">
-        <li :for={mapping <- @mappings} class="py-3 first:pt-0 last:pb-0">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="truncate text-sm text-zinc-200">
-                {directory_group_name(mapping)}
-              </p>
-              <p class="font-mono text-[11px] text-zinc-400">
-                {directory_group_reference(mapping)}
-              </p>
-              <dl
-                id={"runner-access-mapping-facts-#{mapping.id}"}
-                class="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1"
-              >
-                <dt class="text-[10px] uppercase tracking-wider text-zinc-400">runners:</dt>
-                <dd class="flex min-w-0 flex-wrap items-center gap-1">
-                  <span
-                    :if={mapping_runner_reach_phrase(mapping.runner_access_mode)}
-                    class="text-xs text-zinc-400"
+      <div class="mt-4 grid grid-cols-1 gap-x-12 gap-y-6 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start">
+        <div class="min-w-0">
+          <ul :if={@mappings != []} class="divide-y divide-zinc-800/70">
+            <li :for={mapping <- @mappings} class="py-3 first:pt-0 last:pb-0">
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="truncate text-sm text-zinc-200">
+                    {directory_group_name(mapping)}
+                  </p>
+                  <p class="font-mono text-[11px] text-zinc-400">
+                    {directory_group_reference(mapping)}
+                  </p>
+                  <dl
+                    id={"runner-access-mapping-facts-#{mapping.id}"}
+                    class="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1"
                   >
-                    {mapping_runner_reach_phrase(mapping.runner_access_mode)}
-                  </span>
-                  <.identity_tag
-                    :for={group <- mapping.runner_scope_groups}
-                    category="group"
-                    value={group}
-                  />
-                  <%!-- The full runner id rides the tag's title; the value half names the
+                    <dt class="text-[10px] uppercase tracking-wider text-zinc-400">runners:</dt>
+                    <dd class="flex min-w-0 flex-wrap items-center gap-1">
+                      <span
+                        :if={mapping_runner_reach_phrase(mapping.runner_access_mode)}
+                        class="text-xs text-zinc-400"
+                      >
+                        {mapping_runner_reach_phrase(mapping.runner_access_mode)}
+                      </span>
+                      <.identity_tag
+                        :for={group <- mapping.runner_scope_groups}
+                        category="group"
+                        value={group}
+                      />
+                      <%!-- The full runner id rides the tag's title; the value half names the
                        live runner, and falls back to the shared removed-runner label when
                        the id no longer resolves. --%>
-                  <.identity_tag
-                    :for={runner_id <- mapping.runner_scope_runner_ids}
-                    category="runner"
-                    title={runner_id}
+                      <.identity_tag
+                        :for={runner_id <- mapping.runner_scope_runner_ids}
+                        category="runner"
+                        title={runner_id}
+                      >
+                        <% runner = Map.get(@runners_by_id, runner_id) %>
+                        <span :if={runner}>{runner.name}</span>
+                        <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
+                      </.identity_tag>
+                    </dd>
+                    <dt
+                      :if={mapping.runner_access_mode != :none}
+                      class="text-[10px] uppercase tracking-wider text-zinc-400"
+                    >
+                      packs:
+                    </dt>
+                    <dd
+                      :if={mapping.runner_access_mode != :none}
+                      class="flex min-w-0 flex-wrap items-center gap-1"
+                    >
+                      <span
+                        :if={mapping_pack_reach_phrase(mapping.pack_access_mode)}
+                        class="text-xs text-zinc-400"
+                      >
+                        {mapping_pack_reach_phrase(mapping.pack_access_mode)}
+                      </span>
+                      <.chip :for={pack_id <- mapping.pack_scope_pack_ids} mono>{pack_id}</.chip>
+                    </dd>
+                  </dl>
+                </div>
+                <div class="flex shrink-0 items-center gap-2">
+                  <.button
+                    :if={@editing_mapping_id != mapping.id}
+                    variant={:secondary}
+                    size={:sm}
+                    phx-click="start_edit_runner_access_mapping"
+                    phx-value-id={mapping.id}
                   >
-                    <% runner = Map.get(@runners_by_id, runner_id) %>
-                    <span :if={runner}>{runner.name}</span>
-                    <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
-                  </.identity_tag>
-                </dd>
-                <dt
-                  :if={mapping.runner_access_mode != :none}
-                  class="text-[10px] uppercase tracking-wider text-zinc-400"
-                >
-                  packs:
-                </dt>
-                <dd
-                  :if={mapping.runner_access_mode != :none}
-                  class="flex min-w-0 flex-wrap items-center gap-1"
-                >
-                  <span
-                    :if={mapping_pack_reach_phrase(mapping.pack_access_mode)}
-                    class="text-xs text-zinc-400"
+                    Edit
+                  </.button>
+                  <.confirm_button
+                    id={"delete-runner-access-mapping-#{mapping.id}"}
+                    title="Delete this runner-access mapping?"
+                    confirm_label="Delete mapping"
+                    variant={:secondary}
+                    tone={:rose}
+                    size={:sm}
+                    on_confirm={JS.push("delete_runner_access_mapping", value: %{id: mapping.id})}
                   >
-                    {mapping_pack_reach_phrase(mapping.pack_access_mode)}
-                  </span>
-                  <.chip :for={pack_id <- mapping.pack_scope_pack_ids} mono>{pack_id}</.chip>
-                </dd>
-              </dl>
-            </div>
-            <div class="flex shrink-0 items-center gap-2">
-              <.button
-                :if={@editing_mapping_id != mapping.id}
-                variant={:secondary}
-                size={:sm}
-                phx-click="start_edit_runner_access_mapping"
-                phx-value-id={mapping.id}
-              >
-                Edit
-              </.button>
-              <.confirm_button
-                id={"delete-runner-access-mapping-#{mapping.id}"}
-                title="Delete this runner-access mapping?"
-                confirm_label="Delete mapping"
-                variant={:secondary}
-                tone={:rose}
-                size={:sm}
-                on_confirm={JS.push("delete_runner_access_mapping", value: %{id: mapping.id})}
-              >
-                <:body>
-                  Current members of this IdP group immediately lose this grant. Their connection
-                  default and other mapped-group grants remain.
-                </:body>
-                Delete
-              </.confirm_button>
-            </div>
+                    <:body>
+                      Current members of this IdP group immediately lose this grant. Their connection
+                      default and other mapped-group grants remain.
+                    </:body>
+                    Delete
+                  </.confirm_button>
+                </div>
+              </div>
+
+              <div :if={@editing_mapping_id == mapping.id and @mapping_edit_form} class="mt-4">
+                <.simple_form
+                  for={@mapping_edit_form}
+                  id={"edit-runner-access-mapping-#{mapping.id}"}
+                  phx-change="validate_edit_runner_access_mapping"
+                  phx-submit="update_runner_access_mapping"
+                >
+                  <input type="hidden" name="runner_access_mapping_id" value={mapping.id} />
+                  <.runner_access_mapping_fields
+                    form={@mapping_edit_form}
+                    synced_groups={@synced_groups}
+                    runners={@runners}
+                    pack_advertisements={@pack_advertisements}
+                    pack_access_restricted?={@pack_access_restricted?}
+                    editing?
+                  />
+                  <:actions>
+                    <.button phx-disable-with="Saving...">Save</.button>
+                    <.button
+                      variant={:ghost}
+                      type="button"
+                      phx-click="cancel_edit_runner_access_mapping"
+                    >
+                      Cancel
+                    </.button>
+                  </:actions>
+                </.simple_form>
+              </div>
+            </li>
+          </ul>
+          <div class="mt-4">
+            <LiveTable.paginator
+              id={"runner-access-mappings-#{@provider.id}"}
+              path={@path}
+              metadata={@metadata}
+              filter_params={@filter_params}
+              prefix="runner_access_mappings_"
+              page_count={length(@mappings)}
+            />
           </div>
 
-          <div :if={@editing_mapping_id == mapping.id and @mapping_edit_form} class="mt-4">
+          <%!-- Claiming no group widens runner reach is a security statement — never
+           make it from a read that failed. --%>
+          <.empty_state
+            :if={@load_error?}
+            variant={:hint}
+            tone={:danger}
+            icon="state.warning"
+            title="Couldn't load runner access mappings"
+            class="mt-4"
+          >
+            This is a load error, not an empty list — IdP groups may well be granting extra runner
+            reach. Refresh the page to try again.
+          </.empty_state>
+          <.empty_state
+            :if={
+              not @load_error? and @mappings == [] and
+                not LiveTable.stale_page?(
+                  0,
+                  @metadata,
+                  @filter_params,
+                  "runner_access_mappings_"
+                )
+            }
+            variant={:hint}
+            class="mt-4"
+          >
+            No IdP groups grant additional runner access. Synced members use the connection default.
+          </.empty_state>
+
+          <div
+            :if={@adding_mapping and @mapping_form}
+            class="mt-5 border-t border-zinc-800/70 pt-5"
+          >
+            <p class="text-sm font-medium text-zinc-300">Add group runner access</p>
             <.simple_form
-              for={@mapping_edit_form}
-              id={"edit-runner-access-mapping-#{mapping.id}"}
-              phx-change="validate_edit_runner_access_mapping"
-              phx-submit="update_runner_access_mapping"
+              for={@mapping_form}
+              id={"create-runner-access-mapping-#{@provider.id}"}
+              phx-change="validate_runner_access_mapping"
+              phx-submit="create_runner_access_mapping"
+              class="mt-3"
             >
-              <input type="hidden" name="runner_access_mapping_id" value={mapping.id} />
+              <input type="hidden" name="provider_id" value={@provider.id} />
               <.runner_access_mapping_fields
-                form={@mapping_edit_form}
+                form={@mapping_form}
                 synced_groups={@synced_groups}
                 runners={@runners}
                 pack_advertisements={@pack_advertisements}
                 pack_access_restricted?={@pack_access_restricted?}
-                editing?
               />
               <:actions>
-                <.button phx-disable-with="Saving...">Save</.button>
+                <.button phx-disable-with="Adding...">Add runner access</.button>
                 <.button
                   variant={:ghost}
                   type="button"
-                  phx-click="cancel_edit_runner_access_mapping"
+                  phx-click="cancel_add_runner_access_mapping"
                 >
                   Cancel
                 </.button>
               </:actions>
             </.simple_form>
           </div>
-        </li>
-      </ul>
-      <div class="mt-4">
-        <LiveTable.paginator
-          id={"runner-access-mappings-#{@provider.id}"}
-          path={@path}
-          metadata={@metadata}
-          filter_params={@filter_params}
-          prefix="runner_access_mappings_"
-          page_count={length(@mappings)}
-        />
-      </div>
+        </div>
 
-      <%!-- Claiming no group widens runner reach is a security statement — never
-           make it from a read that failed. --%>
-      <.empty_state
-        :if={@load_error?}
-        variant={:hint}
-        tone={:danger}
-        icon="state.warning"
-        title="Couldn't load runner access mappings"
-        class="mt-4"
-      >
-        This is a load error, not an empty list — IdP groups may well be granting extra runner
-        reach. Refresh the page to try again.
-      </.empty_state>
-      <.empty_state
-        :if={
-          not @load_error? and @mappings == [] and
-            not LiveTable.stale_page?(
-              0,
-              @metadata,
-              @filter_params,
-              "runner_access_mappings_"
-            )
-        }
-        variant={:hint}
-        class="mt-4"
-      >
-        No IdP groups grant additional runner access. Synced members use the connection default.
-      </.empty_state>
-
-      <div :if={@adding_mapping and @mapping_form} class="mt-5 border-t border-zinc-800/70 pt-5">
-        <p class="text-sm font-medium text-zinc-300">Add group runner access</p>
-        <.simple_form
-          for={@mapping_form}
-          id={"create-runner-access-mapping-#{@provider.id}"}
-          phx-change="validate_runner_access_mapping"
-          phx-submit="create_runner_access_mapping"
-          class="mt-3"
+        <aside
+          id={"runner-access-mapping-help-#{@provider.id}"}
+          class="max-w-prose text-sm leading-relaxed text-zinc-400 xl:pt-1"
         >
-          <input type="hidden" name="provider_id" value={@provider.id} />
-          <.runner_access_mapping_fields
-            form={@mapping_form}
-            synced_groups={@synced_groups}
-            runners={@runners}
-            pack_advertisements={@pack_advertisements}
-            pack_access_restricted?={@pack_access_restricted?}
-          />
-          <:actions>
-            <.button phx-disable-with="Adding...">Add runner access</.button>
-            <.button
-              variant={:ghost}
-              type="button"
-              phx-click="cancel_add_runner_access_mapping"
-            >
-              Cancel
-            </.button>
-          </:actions>
-        </.simple_form>
+          Each mapping adds runner and pack access to the connection defaults. Groups are matched
+          by ID, not by name.
+        </aside>
       </div>
     </section>
     """
@@ -3291,10 +3305,10 @@ defmodule EmisarWeb.SSOSettingsLive do
        do: external_group_id
 
   defp directory_group_reference(%{id: id}) when is_binary(id),
-    do: "Emisar group #{String.slice(id, 0, 8)}"
+    do: "emisar group #{id}"
 
   defp directory_group_reference(%{directory_group_id: id}) when is_binary(id),
-    do: "Emisar group #{String.slice(id, 0, 8)}"
+    do: "emisar group #{id}"
 
   attr :members, :list, required: true
   attr :load_error?, :boolean, required: true
