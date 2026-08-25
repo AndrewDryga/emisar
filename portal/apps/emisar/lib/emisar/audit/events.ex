@@ -626,6 +626,19 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # A caller presented a refresh token that this server already rotated away.
+  # The raw credential and its digest never enter the event; the backing key is
+  # the operator-visible connection that was revoked in response.
+  def oauth_refresh_token_reused(%OAuth.Token{} = token, %ApiKeys.ApiKey{} = key) do
+    Audit.changeset(key.account_id, "oauth.refresh_token_reused",
+      actor_kind: "system",
+      target_kind: "api_key",
+      target_id: key.id,
+      target_label: key.name,
+      payload: %{client_id: token.client_id}
+    )
+  end
+
   # -- Runbooks --------------------------------------------------------
 
   def runbook_created(%Subject{} = subject, %Runbooks.Runbook{} = runbook) do

@@ -1107,11 +1107,14 @@ defmodule Emisar.OAuthTest do
           "code_verifier" => verifier
         })
 
-      %{account: account, client: client, tokens: tokens}
+      %{account: account, client: client, subject: subject, tokens: tokens}
     end
 
     test "rotates the refresh token and issues a fresh access token",
          %{client: client, tokens: tokens} do
+      token = Repo.get_by!(Token, refresh_token_hash: Emisar.Crypto.hash(tokens.refresh_token))
+      :ok = Emisar.ApiKeys.subscribe_account_api_keys(token.account_id)
+
       assert {:ok, fresh} =
                OAuth.refresh(%{
                  "refresh_token" => tokens.refresh_token,
@@ -1123,14 +1126,119 @@ defmodule Emisar.OAuthTest do
       assert "emor-" <> _ = fresh.refresh_token
       assert fresh.refresh_token != tokens.refresh_token
 
-      # The rotated (old) refresh token is dead.
+      # Ordinary one-time rotation retires the predecessor and leaves the new
+      # pair usable until somebody actually replays that spent credential.
+      assert OAuth.resolve_access_token(tokens.access_token, @resource) == {:error, :invalid}
+      assert {:ok, _} = OAuth.resolve_access_token(fresh.access_token, @resource)
+      refute_receive {:list_changed, :api_key, "api_key.revoked", _key_id}
+    end
+
+    test "spent refresh-token reuse revokes the backing connection and every successor",
+         %{client: client, subject: subject, tokens: tokens} do
+      assert {:ok, fresh} =
+               OAuth.refresh(%{
+                 "refresh_token" => tokens.refresh_token,
+                 "client_id" => client.id
+               })
+
+      assert {:ok, %{api_key: key}} =
+               OAuth.resolve_access_token(fresh.access_token, @resource)
+
+      :ok = Emisar.ApiKeys.subscribe_account_api_keys(key.account_id)
+
       assert OAuth.refresh(%{
                "refresh_token" => tokens.refresh_token,
                "client_id" => client.id
              }) == {:error, :invalid_grant}
 
-      # The new access token resolves.
-      assert {:ok, _} = OAuth.resolve_access_token(fresh.access_token, @resource)
+      assert %ApiKey{revoked_at: %DateTime{}, revoked_by_id: nil} = Repo.reload!(key)
+      assert OAuth.resolve_access_token(fresh.access_token, @resource) == {:error, :invalid}
+      assert_receive {:list_changed, :api_key, "api_key.revoked", key_id}, 500
+      assert key_id == key.id
+
+      assert Enum.all?(
+               Repo.all(Token.Query.by_api_key_ids([key.id])),
+               &match?(%Token{revoked_at: %DateTime{}}, &1)
+             )
+
+      assert {:ok, [event], _meta} =
+               Emisar.Audit.list_events(subject,
+                 filter: [event_type: ["oauth.refresh_token_reused"]]
+               )
+
+      assert event.actor_kind == "system"
+      assert event.target_id == key.id
+      assert event.payload == %{"client_id" => client.id}
+      refute inspect(event) =~ tokens.refresh_token
+      refute inspect(event) =~ Base.encode16(Emisar.Crypto.hash(tokens.refresh_token))
+
+      # Repeated replay stays a generic denial and does not create audit noise.
+      assert OAuth.refresh(%{
+               "refresh_token" => tokens.refresh_token,
+               "client_id" => client.id
+             }) == {:error, :invalid_grant}
+
+      assert {:ok, [_event], _meta} =
+               Emisar.Audit.list_events(subject,
+                 filter: [event_type: ["oauth.refresh_token_reused"]]
+               )
+
+      refute_receive {:list_changed, :api_key, "api_key.revoked", _key_id}
+    end
+
+    test "a spent token with a different client or resource does not revoke the connection",
+         %{client: client, tokens: tokens} do
+      assert {:ok, fresh} =
+               OAuth.refresh(%{
+                 "refresh_token" => tokens.refresh_token,
+                 "client_id" => client.id
+               })
+
+      other = register!("Other")
+
+      assert OAuth.refresh(%{
+               "refresh_token" => tokens.refresh_token,
+               "client_id" => other.id
+             }) == {:error, :invalid_grant}
+
+      assert OAuth.refresh(%{
+               "refresh_token" => tokens.refresh_token,
+               "client_id" => client.id,
+               "resource" => "https://other.example/mcp"
+             }) == {:error, :invalid_target}
+
+      assert {:ok, %{api_key: key}} =
+               OAuth.resolve_access_token(fresh.access_token, @resource)
+
+      assert is_nil(key.revoked_at)
+    end
+
+    test "an expired spent refresh token does not revoke its live successor",
+         %{client: client, subject: subject, tokens: tokens} do
+      assert {:ok, fresh} =
+               OAuth.refresh(%{
+                 "refresh_token" => tokens.refresh_token,
+                 "client_id" => client.id
+               })
+
+      spent = Repo.get_by!(Token, refresh_token_hash: Emisar.Crypto.hash(tokens.refresh_token))
+      expired_at = DateTime.add(DateTime.utc_now(), -1, :second)
+      Repo.update!(Ecto.Changeset.change(spent, refresh_expires_at: expired_at))
+
+      assert OAuth.refresh(%{
+               "refresh_token" => tokens.refresh_token,
+               "client_id" => client.id
+             }) == {:error, :invalid_grant}
+
+      assert {:ok, %{api_key: key}} =
+               OAuth.resolve_access_token(fresh.access_token, @resource)
+
+      assert is_nil(key.revoked_at)
+
+      assert {:ok, [], _meta} =
+               Emisar.Audit.list_events(subject,
+                 filter: [event_type: ["oauth.refresh_token_reused"]]
+               )
     end
 
     test "fails closed once the backing api_key is revoked", %{client: client, tokens: tokens} do
@@ -1183,6 +1291,16 @@ defmodule Emisar.OAuthTest do
                "refresh_token" => tokens.refresh_token,
                "client_id" => other.id
              }) == {:error, :invalid_grant}
+
+      # A mismatched public client id is an unrelated invalid request, not a
+      # reuse signal; the rightful client can still rotate the grant.
+      original = Repo.get_by!(Token, refresh_token_hash: Emisar.Crypto.hash(tokens.refresh_token))
+
+      assert {:ok, _fresh} =
+               OAuth.refresh(%{
+                 "refresh_token" => tokens.refresh_token,
+                 "client_id" => original.client_id
+               })
     end
 
     test "rejects a refresh whose resource mismatches the granted resource (RFC 8707)",

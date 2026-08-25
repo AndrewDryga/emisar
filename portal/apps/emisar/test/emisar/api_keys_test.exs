@@ -1449,6 +1449,22 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "broadcast_backing_key_revoked/1" do
+    test "announces an OAuth backing-key revocation on the account topic" do
+      {user, account, _subject} = owner_subject_pair()
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      {:ok, key} =
+        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+
+      :ok = ApiKeys.subscribe_account_api_keys(account.id)
+      assert ApiKeys.broadcast_backing_key_revoked(key) == :ok
+
+      assert_receive {:list_changed, :api_key, "api_key.revoked", key_id}, 500
+      assert key_id == key.id
+    end
+  end
+
   describe "mint_quick_key/2" do
     test "mints a pre-scoped auto key, hidden until first use" do
       {_user, _account, subject} = owner_subject_pair()
@@ -2102,6 +2118,45 @@ defmodule Emisar.ApiKeysTest do
 
       assert %ApiKey{id: id} = ApiKeys.peek_api_key_by_id(key.id)
       assert id == key.id
+    end
+  end
+
+  describe "put_oauth_refresh_reuse_revocation/2" do
+    test "revokes the exact OAuth backing key once inside the caller's transaction" do
+      {user, account, _subject} = owner_subject_pair()
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      {:ok, key} =
+        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+
+      assert {:ok, %{oauth_backing_key_revocation: first}} =
+               Ecto.Multi.new()
+               |> ApiKeys.put_oauth_refresh_reuse_revocation(key.id)
+               |> Repo.commit_multi()
+
+      assert first.revoked?
+      assert %ApiKey{revoked_at: %DateTime{}, revoked_by_id: nil} = first.key
+
+      assert {:ok, %{oauth_backing_key_revocation: second}} =
+               Ecto.Multi.new()
+               |> ApiKeys.put_oauth_refresh_reuse_revocation(key.id)
+               |> Repo.commit_multi()
+
+      refute second.revoked?
+      assert second.key.id == key.id
+    end
+
+    test "rejects a non-OAuth key without mutating it" do
+      {_user, account, subject} = owner_subject_pair()
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "Operator key"}, subject)
+
+      assert {:error, :not_found} =
+               Ecto.Multi.new()
+               |> ApiKeys.put_oauth_refresh_reuse_revocation(key.id)
+               |> Repo.commit_multi()
+
+      assert ApiKeys.key_usable?(Repo.reload!(key), DateTime.utc_now())
+      assert key.account_id == account.id
     end
   end
 

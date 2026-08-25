@@ -13,6 +13,9 @@ defmodule Emisar.OAuth.Token.Query do
   def by_api_key_ids(queryable \\ all(), api_key_ids) when is_list(api_key_ids),
     do: where(queryable, [tokens: t], t.api_key_id in ^api_key_ids)
 
+  def by_id(queryable \\ all(), id),
+    do: where(queryable, [tokens: t], t.id == ^id)
+
   @doc "Selects each matched token's backing api_key id — the cleanup's live-connection guard."
   def select_api_key_ids(queryable),
     do: select(queryable, [tokens: t], t.api_key_id)

@@ -2031,6 +2031,7 @@ defmodule Emisar.AuditTest do
       assert {"audit.exported", "Audit log exported"} in values
       assert {"action_run.failed", "Run failed"} in values
       assert {"approval.overridden", "Approval review requirement overridden"} in values
+      assert {"oauth.refresh_token_reused", "OAuth refresh token reused"} in values
       assert Enum.all?(values, fn {type, label} -> is_binary(type) and is_binary(label) end)
     end
   end
@@ -2040,7 +2041,8 @@ defmodule Emisar.AuditTest do
       for t <- ~w[user.sign_in_failed user.mfa_failed
                   action_run.failed action_run.error runner.error action_run.timed_out
                   approval.denied action_run.denied action_run.refused
-                  pack_trust_rejected runner.version_rejected] do
+                  pack_trust_rejected runner.version_rejected
+                  oauth.refresh_token_reused] do
         assert Audit.event_outcome(t) == :danger, "expected #{t} to be :danger"
       end
     end

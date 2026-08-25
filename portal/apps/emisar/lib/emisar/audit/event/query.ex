@@ -40,6 +40,7 @@ defmodule Emisar.Audit.Event.Query do
     {"api_key.device_grant_approved", "Agent connect approved"},
     {"api_key.device_grant_denied", "Agent connect denied"},
     {"oauth.consent_granted", "OAuth client authorized"},
+    {"oauth.refresh_token_reused", "OAuth refresh token reused"},
     {"pack_trust_baseline_match", "Pack auto-trusted (baseline match)"},
     {"pack_trust_baseline_mismatch", "Pack pinned to baseline (drift)"},
     {"pack_trust_baseline_reconciled", "Pack auto-trusted (baseline caught up)"},
@@ -167,6 +168,7 @@ defmodule Emisar.Audit.Event.Query do
 
   def outcome(event_type) when is_binary(event_type) do
     cond do
+      event_type == "oauth.refresh_token_reused" -> :danger
       event_type == "approval.overridden" -> :warn
       String.ends_with?(event_type, @danger_suffixes) -> :danger
       String.ends_with?(event_type, @warn_suffixes) -> :warn
@@ -234,7 +236,8 @@ defmodule Emisar.Audit.Event.Query do
        {"api_key.retired_by_rotation", "Retired by rotation"},
        {"api_key.device_grant_approved", "Agent connect approved"},
        {"api_key.device_grant_denied", "Agent connect denied"},
-       {"oauth.consent_granted", "OAuth client authorized"}
+       {"oauth.consent_granted", "OAuth client authorized"},
+       {"oauth.refresh_token_reused", "Refresh token reused"}
      ]},
     {"Sign-in",
      [
@@ -862,6 +865,9 @@ defmodule Emisar.Audit.Event.Query do
        "A rotated key's successor was used for the first time — the key it replaces was revoked automatically."},
     "oauth.consent_granted" =>
       {true, true, true, "A user authorized an OAuth client to act on their behalf."},
+    "oauth.refresh_token_reused" =>
+      {false, false, true,
+       "A spent OAuth refresh token was presented again, so the connection was revoked."},
     "pack_trust_baseline_match" =>
       {false, false, true,
        "A runner advertised a pack matching the compiled-in baseline — auto-trusted."},

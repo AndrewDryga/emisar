@@ -753,6 +753,12 @@ defmodule Emisar.ApiKeys do
   """
   def broadcast_backing_key_created(%ApiKey{} = key), do: broadcast_api_key_created(key)
 
+  @doc """
+  Internal — `Emisar.OAuth.refresh/1` announces a backing key automatically
+  revoked after refresh-token reuse, after the containing transaction commits.
+  """
+  def broadcast_backing_key_revoked(%ApiKey{} = key), do: broadcast_api_key_revoked(key)
+
   defp account_api_keys_topic(account_id), do: "account:#{account_id}:api_keys"
 
   defp broadcast_api_key_created(%ApiKey{} = key) do
@@ -1250,6 +1256,34 @@ defmodule Emisar.ApiKeys do
       default_expiry: false
     )
     |> Repo.insert()
+  end
+
+  @doc """
+  Internal composition step for OAuth refresh-token reuse containment. Locks
+  the exact non-deleted OAuth backing key, revokes it when still live, and
+  returns whether this call performed the transition. OAuth owns the surrounding
+  transaction, successor-token revocation, and reuse audit event.
+  """
+  def put_oauth_refresh_reuse_revocation(%Multi{} = multi, api_key_id)
+      when is_binary(api_key_id) do
+    Multi.run(multi, :oauth_backing_key_revocation, fn repo, _changes ->
+      queryable =
+        ApiKey.Query.oauth_backing()
+        |> ApiKey.Query.not_deleted()
+        |> ApiKey.Query.by_id(api_key_id)
+        |> ApiKey.Query.lock_for_update()
+
+      with {:ok, key} <- repo.fetch(queryable, ApiKey.Query) do
+        if is_nil(key.revoked_at) do
+          case repo.update(ApiKey.Changeset.revoke(key, nil)) do
+            {:ok, revoked} -> {:ok, %{key: revoked, revoked?: true}}
+            {:error, reason} -> {:error, reason}
+          end
+        else
+          {:ok, %{key: key, revoked?: false}}
+        end
+      end
+    end)
   end
 
   @doc """

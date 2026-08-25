@@ -292,7 +292,9 @@ proxy responses, and blips on any other status keep polling), retries only
 code — so a new terminal poll error is an additive change. The breaking
 direction is a new retryable code: a deployed installer would abort on it,
 so `slow_down` or any other retry signal needs a new poll contract. Already-issued `emk-` keys and
-refresh tokens are saved customer credentials and must keep authenticating.
+live refresh tokens are saved customer credentials and must keep authenticating. Replaying a
+still-unexpired refresh token that rotation already spent revokes its backing OAuth connection and
+every active successor; the operator must reconnect the client to establish a fresh grant.
 
 ### Enterprise SSO callback and SCIM provisioning
 

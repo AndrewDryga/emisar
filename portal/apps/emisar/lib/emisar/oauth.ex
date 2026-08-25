@@ -420,48 +420,78 @@ defmodule Emisar.OAuth do
   refresh token is the credential, resolved before a Subject exists).
   Validates the refresh token (live, matching client), rotates it
   (public-client requirement), and issues a fresh access + refresh pair
-  from the same backing key.
+  from the same backing key. Reuse of a still-current spent refresh token
+  revokes the backing connection and every active pair derived from it.
   """
   @spec refresh(map()) :: {:ok, map()} | {:error, atom()}
   def refresh(%{"refresh_token" => raw, "client_id" => client_id} = params)
       when is_binary(raw) and is_binary(client_id) do
+    refresh_hash = Crypto.hash(raw)
+
     Multi.new()
-    |> Multi.run(:token, fn repo, _changes ->
-      token =
+    # This first read authorizes nothing. It only finds the account whose lock
+    # orders all refreshes before the exact token is re-read under its own lock.
+    # Account-first ordering lets a spent predecessor revoke every successor
+    # without deadlocking a concurrent refresh of one of those successors.
+    |> Multi.run(:refresh_candidate, fn repo, _changes ->
+      candidate =
         Token.Query.all()
-        |> Token.Query.not_revoked()
-        |> Token.Query.by_refresh_hash(Crypto.hash(raw))
-        |> Token.Query.lock_for_update()
+        |> Token.Query.by_refresh_hash(refresh_hash)
         |> repo.one()
 
-      with %Token{} <- token,
-           :ok <-
-             check(presented_client_matches?(repo, token.client_id, client_id), :invalid_grant),
-           :ok <- check(resource_param_ok?(token.resource, params["resource"]), :invalid_target),
-           :ok <- check(live?(token.refresh_expires_at), :invalid_grant),
-           # Fail closed when the backing api_key has been revoked / deleted /
-           # expired since the grant was issued. Without this a refresh keeps
-           # minting access tokens off a dead key — and revoking the key is the
-           # operator's off-switch for an OAuth connection, so the refresh path
-           # must honor it, not just the resolve path.
-           :ok <- check(backing_key_usable?(token.api_key_id), :invalid_grant) do
-        {:ok, token}
-      else
-        {:error, reason} -> {:error, reason}
-        _ -> {:error, :invalid_grant}
+      case candidate do
+        %Token{} = token -> {:ok, token}
+        nil -> {:error, :invalid_grant}
       end
     end)
-    |> Multi.run(:account, fn repo, %{token: token} ->
-      case Accounts.fetch_and_lock_account(token.account_id, repo: repo) do
+    |> Multi.run(:account, fn repo, %{refresh_candidate: candidate} ->
+      case Accounts.fetch_and_lock_account(candidate.account_id, repo: repo) do
         {:ok, account} -> {:ok, account}
         {:error, :not_found} -> {:error, :invalid_grant}
       end
     end)
-    # Rotate: revoke the old row, issue a new pair from the same key.
-    |> Multi.run(:revoked, fn repo, %{token: token} ->
-      repo.update(Token.Changeset.revoke(token))
+    |> Multi.run(:token, fn repo, %{refresh_candidate: candidate} ->
+      token =
+        Token.Query.all()
+        |> Token.Query.by_id(candidate.id)
+        |> Token.Query.by_refresh_hash(refresh_hash)
+        |> Token.Query.lock_for_update()
+        |> repo.one()
+
+      classify_refresh_token(repo, token, client_id, params["resource"])
     end)
-    |> Multi.run(:tokens, fn _repo, %{token: token} ->
+    |> Multi.merge(&refresh_multi/1)
+    |> Repo.commit_multi(after_commit: &after_refresh_committed/1)
+    |> case do
+      {:ok, %{tokens: tokens}} -> {:ok, tokens}
+      {:ok, %{refresh_reuse: :detected}} -> {:error, :invalid_grant}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def refresh(_), do: {:error, :invalid_request}
+
+  defp classify_refresh_token(_repo, nil, _client_id, _resource),
+    do: {:error, :invalid_grant}
+
+  defp classify_refresh_token(repo, %Token{} = token, client_id, resource) do
+    with :ok <- check(live?(token.refresh_expires_at), :invalid_grant),
+         :ok <- check(presented_client_matches?(repo, token.client_id, client_id), :invalid_grant),
+         :ok <- check(resource_param_ok?(token.resource, resource), :invalid_target) do
+      if is_nil(token.revoked_at) do
+        with :ok <- check(backing_key_usable?(token.api_key_id), :invalid_grant) do
+          {:ok, %{state: :live, token: token}}
+        end
+      else
+        {:ok, %{state: :reused, token: token}}
+      end
+    end
+  end
+
+  defp refresh_multi(%{token: %{state: :live, token: token}}) do
+    Multi.new()
+    |> Multi.update(:revoked, Token.Changeset.revoke(token))
+    |> Multi.run(:tokens, fn _repo, _changes ->
       mint_token_pair(%{
         client_id: token.client_id,
         account_id: token.account_id,
@@ -471,14 +501,40 @@ defmodule Emisar.OAuth do
         resource: token.resource
       })
     end)
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{tokens: tokens}} -> {:ok, tokens}
+  end
+
+  defp refresh_multi(%{token: %{state: :reused, token: token}}) do
+    Multi.new()
+    |> ApiKeys.put_oauth_refresh_reuse_revocation(token.api_key_id)
+    |> Multi.run(:refresh_reuse, fn repo, %{oauth_backing_key_revocation: revocation} ->
+      now = DateTime.utc_now()
+
+      Token.Query.all()
+      |> Token.Query.by_api_key_ids([token.api_key_id])
+      |> Token.Query.not_revoked()
+      |> repo.update_all(set: [revoked_at: now, updated_at: now])
+
+      with :ok <- maybe_audit_refresh_reuse(repo, token, revocation) do
+        {:ok, :detected}
+      end
+    end)
+  end
+
+  defp maybe_audit_refresh_reuse(repo, token, %{key: key, revoked?: true}) do
+    case repo.insert(Audit.Events.oauth_refresh_token_reused(token, key)) do
+      {:ok, _event} -> :ok
       {:error, reason} -> {:error, reason}
     end
   end
 
-  def refresh(_), do: {:error, :invalid_request}
+  defp maybe_audit_refresh_reuse(_repo, _token, %{revoked?: false}), do: :ok
+
+  defp after_refresh_committed(%{
+         oauth_backing_key_revocation: %{key: key, revoked?: true}
+       }),
+       do: ApiKeys.broadcast_backing_key_revoked(key)
+
+  defp after_refresh_committed(_changes), do: :ok
 
   # -- Token resolution (MCP auth path) -------------------------------
 
