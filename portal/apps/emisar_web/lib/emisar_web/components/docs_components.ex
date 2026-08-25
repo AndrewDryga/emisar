@@ -417,6 +417,36 @@ defmodule EmisarWeb.DocsComponents do
   end
 
   @doc """
+  A compact field-by-field checklist for a provider form with several controls.
+
+  Each row keeps the provider's label beside the exact value or action, so a
+  reader can work down a settings screen without extracting five independent
+  choices from one paragraph. Explanations stay in the value slot only when
+  they prevent a real configuration or security mistake.
+  """
+  slot :setting, required: true do
+    attr :label, :string, required: true
+  end
+
+  def docs_settings(assigns) do
+    ~H"""
+    <dl class="mt-4 divide-y divide-zinc-800/70 border-y border-zinc-800/70">
+      <div
+        :for={setting <- @setting}
+        class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4"
+      >
+        <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+          {setting.label}
+        </dt>
+        <dd class="text-pretty text-sm leading-6 text-zinc-400">
+          {render_slot(setting)}
+        </dd>
+      </div>
+    </dl>
+    """
+  end
+
+  @doc """
   The collapsible "What does the install script do?" block under the runner
   install command. The quickstart and the Linux-host page both show the command,
   so they share one answer — two hand-rolled copies had already drifted apart.

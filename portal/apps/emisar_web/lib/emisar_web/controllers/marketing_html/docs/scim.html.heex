@@ -9,7 +9,7 @@
         {"enable", "Enabling directory sync"},
         {"protocol", "SCIM protocol reference"},
         {"providers", "Provider guides"},
-        {"role-mapping", "Mapping groups to roles"},
+        {"role-mapping", "Role mapping"},
         {"runner-access-mapping", "Mapping groups to runners"},
         {"troubleshooting", "Troubleshooting"},
         {"security-notes", "Security notes"}
@@ -421,13 +421,13 @@
         </li>
       </ul>
 
-      <.docs_h2 id="role-mapping">Mapping directory groups to roles</.docs_h2>
+      <.docs_h2 id="role-mapping">Role mapping</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        With directory sync on, map an IdP group (by its SCIM <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>) to an emisar role
+        Role mapping pairs an exact synced directory group with an emisar role
         — <strong class="text-zinc-200">viewer</strong>, <strong class="text-zinc-200">operator</strong>, <strong class="text-zinc-200">billing manager</strong>,
         or <strong class="text-zinc-200">admin</strong>. A member in several mapped groups gets the
         <strong class="text-zinc-200">highest</strong>
-        role mapped to any of them.
+        role mapped to any of them. Renaming a group does not break its mapping.
         <strong class="text-zinc-200">Owner is never assignable through
         sync</strong>
         — it stays a deliberate human assignment.
@@ -436,7 +436,7 @@
       <.docs_screenshot
         src="/images/docs/sso/scim-group-role-mapping.webp"
         title="emisar console · Role mapping"
-        caption="Each mapping pairs a directory group — by its externalId — with the role its members land at. A synced group you don't map leaves its members at the connection's default role."
+        caption="Each mapping pairs one exact synced directory group with the role its members land at. A synced group you don't map leaves its members at the connection's default role."
         alt="The Role mapping panel on a connection: two mappings — the Platform Engineers directory group (externalId kc-grp-platform) mapped to Admin, and SRE On-call (kc-grp-sre) mapped to Operator — each with Edit and Delete, plus an Add mapping button."
       />
 

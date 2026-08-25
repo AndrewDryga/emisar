@@ -1750,7 +1750,8 @@ defmodule EmisarWeb.SSOSettingsLive do
               class="max-w-prose text-sm leading-relaxed text-zinc-400"
             >
               <span class="font-medium text-zinc-200">SCIM directory sync</span>
-              — automatic provisioning and offboarding from your IdP, plus group→role mapping —
+              — automatic provisioning and offboarding from your IdP, plus Role mapping for
+              directory groups —
               is available on the Enterprise plan.
               <.link
                 navigate={~p"/pricing"}

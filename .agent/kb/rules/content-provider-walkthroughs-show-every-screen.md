@@ -1,10 +1,17 @@
-# Third-party walkthroughs show every screen, in its chosen state, with the target marked
+# Third-party walkthroughs show every screen and organize every setting
 
 **Rule.** A setup guide for a third-party console is a *walkthrough*: one numbered step per
 screen the operator actually encounters, one screenshot per step, each captured **after** the
 step's input is entered or its option selected, with the exact control outlined. A guide that
 shows one screenshot of a multi-screen flow, or shows a form before it is filled, is not a
 walkthrough — it is a screenshot with prose around it.
+
+When one screen contains several independent controls, introduce the screen in one sentence and
+list the controls in their visual order as label/value rows. Use the provider's exact field label,
+the value or action to take, and only the explanation that prevents a real mistake. Keep that
+explanation in the same row as the setting it qualifies. Do not make the reader extract a redirect
+URI, a wildcard decision, a grant type, an assignment choice, and their security consequences from
+one paragraph.
 
 **Why.** The reader is in someone else's console, which we do not control and which they may
 never have opened. Everything they need to find they must find by eye. An unmarked full-console
@@ -16,6 +23,10 @@ Marking the target is also the only defence against a **default you did not choo
 that pre-selects an option will produce a working-looking result that is silently wrong — and
 because you never clicked it, you have no memory of a decision to re-examine. Outlining the
 control forces you to look at what is actually selected before the shot goes in the docs.
+
+The field/value checklist does the same job in prose. Provider forms are scanned label by label;
+matching that order lets the reader move down the page without remembering several choices at
+once, and it keeps a security caveat beside the control that creates the risk.
 
 The crop and marker are part of the instruction, not decoration. Keep the complete right edge
 of every relevant field, button, and table column. Paint the outline above the vendor controls
@@ -50,6 +61,15 @@ screenshot(ctx, outDir, "jc-07-general-info")
 <.docs_screenshot src="/images/docs/sso/jumpcloud-sso-options.webp" ... />
 ```
 
+```elixir
+# Several controls on one screen follow the form's own order.
+<.docs_settings>
+  <:setting label="Sign-in redirect URIs">Use the callback from emisar.</:setting>
+  <:setting label="Allow wildcard *">Leave it off. A wildcard broadens trusted redirects.</:setting>
+  <:setting label="Grant type">Leave Authorization Code selected.</:setting>
+</.docs_settings>
+```
+
 ## ❌ Bad
 
 ```go
@@ -64,6 +84,12 @@ chromedp.Run(ctx, chromedp.KeyEvent("emisar"))  // the docs get the empty frame
 <p class="font-semibold text-zinc-100">Start a custom application.</p>
 # "go to Access → SSO Applications and press Add New Application. emisar is not
 #  in the catalog, so scroll past the featured tiles and choose Custom Application"
+```
+
+```elixir
+# Five independent settings hidden in one paragraph force the reader to parse
+# and remember the screen instead of following it.
+<p>Name the app. Paste the callback. Leave wildcard off. Keep Authorization Code…</p>
 ```
 
 ## How it's enforced

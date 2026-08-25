@@ -87,18 +87,34 @@
               Register emisar's callback as the only redirect.
             </p>
             <p class="mt-1.5">
-              Name the application. Paste emisar's callback into <strong class="text-zinc-200">Sign-in redirect URIs</strong>. It ends with
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>
-              on your emisar host. The Add provider page has a copy button. Make this the only entry
-              and leave <strong class="text-zinc-200">Allow wildcard *</strong>
-              off. A wildcard
-              redirect creates an open-redirect risk. Leave
-              <strong class="text-zinc-200">Authorization Code</strong>
-              ticked. For assignment,
-              <strong class="text-zinc-200">Skip group assignment for now</strong>
-              is the right default — emisar decides who gets what through its own group&nbsp;→&nbsp;role
-              mapping.
+              Name the application, then set the sign-in controls explicitly:
             </p>
+            <.docs_settings>
+              <:setting label="Application name">
+                Use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>, or another
+                name your administrators will recognize.
+              </:setting>
+              <:setting label="Sign-in redirect URIs">
+                Copy the callback from the Add provider page. It ends with
+                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>
+                on your emisar host. Keep it as the only entry.
+              </:setting>
+              <:setting label="Allow wildcard *">
+                Leave it off. A wildcard broadens which redirect destinations Okta will trust.
+              </:setting>
+              <:setting label="Grant type">
+                Leave <strong class="text-zinc-200">Authorization Code</strong> selected.
+              </:setting>
+              <:setting label="Assignments">
+                Choose <strong class="text-zinc-200">Skip group assignment for now</strong>. Okta
+                app assignment controls who may sign in; Emisar's
+                <.link
+                  navigate={~p"/docs/scim#role-mapping"}
+                  class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
+                >Role mapping</.link>
+                separately controls which Emisar role a synced directory group grants.
+              </:setting>
+            </.docs_settings>
             <.docs_screenshot
               src="/images/docs/sso/okta-oidc-settings.webp"
               title="Okta Admin Console · New Web App Integration"
@@ -281,11 +297,23 @@
               Still under <strong class="text-zinc-200">Provisioning</strong>, open
               <strong class="text-zinc-200">To App</strong>
               → <strong class="text-zinc-200">Edit</strong>
-              and enable <strong class="text-zinc-200">Create Users</strong>, <strong class="text-zinc-200">Update User Attributes</strong>, and <strong class="text-zinc-200">Deactivate Users</strong>. Deactivate is the one that
-              makes offboarding automatic, and it covers reactivation too. Leave
-              <strong class="text-zinc-200">Sync Password</strong>
-              off — emisar has no passwords to sync.
+              and set each operation as follows:
             </p>
+            <.docs_settings>
+              <:setting label="Create Users">
+                <strong class="text-zinc-200">On.</strong> Assigned people can be provisioned.
+              </:setting>
+              <:setting label="Update User Attributes">
+                <strong class="text-zinc-200">On.</strong> Profile changes reach Emisar.
+              </:setting>
+              <:setting label="Deactivate Users">
+                <strong class="text-zinc-200">On.</strong> This makes offboarding automatic and
+                also carries reactivation.
+              </:setting>
+              <:setting label="Sync Password">
+                <strong class="text-zinc-200">Off.</strong> Emisar has no passwords to sync.
+              </:setting>
+            </.docs_settings>
             <.docs_screenshot
               src="/images/docs/sso/okta-scim-to-app.webp"
               title="Okta Admin Console · Provisioning to App"
@@ -359,10 +387,12 @@
 
       <p class="mt-8 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Next:</strong>
-        map directory groups to emisar roles or runner access — <.link
+        configure
+        <.link
           navigate={~p"/docs/scim#role-mapping"}
           class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
-        >group mapping</.link>.
+        >Role mapping</.link>
+        or runner access for the synced groups that need them.
       </p>
     </.docs_layout>
   </section>

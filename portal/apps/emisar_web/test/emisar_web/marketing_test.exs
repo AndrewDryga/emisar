@@ -488,6 +488,11 @@ defmodule EmisarWeb.MarketingTest do
     assert okta =~ "Directory sync"
     assert okta =~ "/images/docs/sso/okta-oidc-create.webp"
     assert okta =~ "/images/docs/sso/okta-scim-verified.webp"
+    assert okta =~ "<dl"
+    assert okta =~ "Sign-in redirect URIs"
+    assert okta =~ "Allow wildcard *"
+    assert okta =~ "Role mapping"
+    refute okta =~ "group&nbsp;→&nbsp;role"
 
     keycloak = conn |> get(~p"/docs/integrations/keycloak") |> html_response(200)
     # The verified Keycloak path is exact and backed by privacy-safe captures.
@@ -521,6 +526,9 @@ defmodule EmisarWeb.MarketingTest do
     refute html =~ "deletes the user"
     # Owner is never assignable via sync.
     assert html =~ "Owner is never assignable through"
+    assert html =~ "Role mapping pairs"
+    refute html =~ "by its SCIM"
+    refute html =~ "Mapping groups to roles"
   end
 
   test "the sitemap lists the SSO docs page", %{conn: conn} do

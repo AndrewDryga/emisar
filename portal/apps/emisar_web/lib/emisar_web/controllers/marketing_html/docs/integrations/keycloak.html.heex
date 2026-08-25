@@ -86,12 +86,25 @@
             <.docs_step_venue>Keycloak</.docs_step_venue>
             <p class="font-semibold text-zinc-100">Enable only the flow emisar uses.</p>
             <p class="mt-1.5">
-              Turn <strong class="text-zinc-200">Client authentication</strong>
-              and <strong class="text-zinc-200">Require PKCE</strong>
-              on. Keep <strong class="text-zinc-200">Standard flow</strong>
-              on and leave the PKCE method on <span class="text-zinc-300">S256</span>. Leave
-              Authorization, DPoP, Direct access grants, Implicit flow, Service accounts roles,
-              and every device flow off. Then click <strong class="text-zinc-200">Next</strong>.
+              Set the capability controls before continuing:
+            </p>
+            <.docs_settings>
+              <:setting label="Client authentication">
+                <strong class="text-zinc-200">On.</strong>
+              </:setting>
+              <:setting label="Standard flow">
+                <strong class="text-zinc-200">On.</strong>
+              </:setting>
+              <:setting label="Require PKCE">
+                <strong class="text-zinc-200">On</strong>, with method <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">S256</code>.
+              </:setting>
+              <:setting label="Every other flow">
+                <strong class="text-zinc-200">Off.</strong> This includes Authorization, DPoP,
+                Direct access grants, Implicit flow, Service accounts roles, and both device flows.
+              </:setting>
+            </.docs_settings>
+            <p class="mt-4">
+              Select <strong class="text-zinc-200">Next</strong>.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/keycloak-client-capabilities.webp"
