@@ -190,14 +190,6 @@ defmodule EmisarWeb.BillingLive do
   defp price_label(%{monthly_price_cents: cents}, :month),
     do: "$#{div(cents, 100)} / runner / month"
 
-  # "N months free" on the annual cycle when it beats 12× monthly; nil for
-  # free/enterprise or any plan whose annual price carries no discount.
-  defp savings_note(%{monthly_price_cents: m, annual_price_cents: a})
-       when is_integer(m) and m > 0 and is_integer(a) and a > 0 and a < m * 12,
-       do: "#{12 - div(a, m)} months free"
-
-  defp savings_note(_plan), do: nil
-
   defp current_plan?(%{key: key}, %{plan: current}), do: key == current
 
   # Tier position in @plan_order so a card can tell an upgrade from a downgrade.
@@ -624,15 +616,18 @@ defmodule EmisarWeb.BillingLive do
 
                   <p class="mt-2 text-sm text-zinc-400">
                     {price_label(plan, @cycle)}
-                    <span :if={@cycle == :year and savings_note(plan)} class="text-brand-400">
-                      · {savings_note(plan)}
+                    <span
+                      :if={@cycle == :year and Billing.annual_savings_label(plan)}
+                      class="text-brand-400"
+                    >
+                      · {Billing.annual_savings_label(plan)}
                     </span>
                   </p>
 
                   <ul class="mt-4 flex-1 space-y-2 text-xs text-zinc-300">
-                    <li :for={f <- plan.features} class="flex items-start gap-2">
+                    <li :for={{_id, label} <- plan.features} class="flex items-start gap-2">
                       <.icon name="state.included" class="mt-0.5 h-4 w-4 flex-none text-brand-400" />
-                      <span class="leading-relaxed">{f}</span>
+                      <span class="leading-relaxed">{label}</span>
                     </li>
                   </ul>
 

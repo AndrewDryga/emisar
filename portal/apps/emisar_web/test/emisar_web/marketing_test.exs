@@ -277,16 +277,15 @@ defmodule EmisarWeb.MarketingTest do
     assert home =~ "Fifteen local clients"
 
     pricing = conn |> get(~p"/pricing") |> html_response(200)
+    pricing_document = LazyHTML.from_document(pricing)
 
-    assert [siem_row] =
-             Regex.run(
-               ~r/<tr>\s*<td[^>]*>SIEM export<\/td>(.*?)<\/tr>/s,
-               pricing,
-               capture: :all_but_first
-             )
+    assert pricing_comparison_row_text(pricing_document, "audit-export") == "SIEM export —"
 
-    assert siem_row =~ ">—</td>"
-    assert length(Regex.scan(~r/data-icon="state\.included"/, siem_row)) == 2
+    assert pricing_document
+           |> LazyHTML.query(~s([data-feature="audit-export"] [data-icon="state.included"]))
+           |> LazyHTML.attribute("data-icon")
+           |> length() == 2
+
     assert home =~ "Audit trail; SIEM export on Team+"
 
     trust = conn |> get(~p"/trust") |> html_response(200)
@@ -342,26 +341,54 @@ defmodule EmisarWeb.MarketingTest do
 
   test "pricing page carries a monthly/annual toggle with both Team prices", %{conn: conn} do
     html = conn |> get(~p"/pricing") |> html_response(200)
+    document = LazyHTML.from_document(html)
+    team = Emisar.Billing.plan("team")
 
     # The toggle (a plain-JS class swap — no LiveSocket on marketing) plus both
     # per-cycle Team prices are server-rendered; the annual block starts hidden.
     assert html =~ ~s(data-cycle-toggle)
     assert html =~ ~s(data-cycle="year")
-    assert html =~ "$20"
-    assert html =~ "/ runner / mo"
-    assert html =~ "$200"
-    assert html =~ "/ runner / yr"
-    assert html =~ "2 months free"
+
+    assert pricing_cycle_text(document, "month") ==
+             "$#{div(team.monthly_price_cents, 100)} / runner / mo"
+
+    assert pricing_cycle_text(document, "year") ==
+             "$#{div(team.annual_price_cents, 100)} / runner / yr"
+
+    assert pricing_cycle_toggle_text(document) =~
+             "#{12 - div(team.annual_price_cents, team.monthly_price_cents)} months free"
   end
 
   test "pricing page emits a FAQPage with the visible questions in sync", %{conn: conn} do
     html = conn |> get(~p"/pricing") |> html_response(200)
+    document = LazyHTML.from_document(html)
 
     # The visible accordion and the FAQPage JSON-LD are driven by the same
-    # list, so a question that renders must also appear in the structured data.
-    assert html =~ "What counts as a"
-    assert html =~ ~s("@type":"FAQPage")
-    assert html =~ "How does billing work?"
+    # list, so compare the complete ordered question/answer pairs.
+    visible_faqs =
+      document
+      |> LazyHTML.query("[data-pricing-faqs] details")
+      |> Enum.map(fn details ->
+        {
+          details |> LazyHTML.query("summary") |> LazyHTML.text() |> squish(),
+          details |> LazyHTML.query("p") |> LazyHTML.text() |> squish()
+        }
+      end)
+
+    structured_faqs =
+      html
+      |> ld_graph()
+      |> Enum.find(&(&1["@type"] == "FAQPage"))
+      |> Map.fetch!("mainEntity")
+      |> Enum.map(fn question ->
+        {question["name"], question["acceptedAnswer"]["text"]}
+      end)
+
+    assert visible_faqs == structured_faqs
+
+    assert Enum.any?(visible_faqs, fn {question, _answer} ->
+             question == "How does billing work?"
+           end)
   end
 
   test "quickstart documents the optional auto-permit step, framed as safe server-side gating",
@@ -627,41 +654,135 @@ defmodule EmisarWeb.MarketingTest do
     end
   end
 
-  # Emisar.Billing owns what a plan grants — billing_live renders plan.features
-  # straight from it — while /pricing types the same list by hand. They had
-  # already drifted: Team's "Audit export (CSV + SIEM)" shipped in the product
-  # and appeared in the console and in /docs/billing, but not on the page where
-  # someone decides to buy.
-  #
-  # The page may say MORE than the contract: an uptime target and automated
-  # invoices are marketing's to promise and are not plan entitlements. It may
-  # not say less.
+  # Billing owns plan facts. The pricing template renders those definitions
+  # directly and adds only clearly local commercial promises such as uptime.
   describe "pricing reflects the plan contract" do
-    test "every feature Billing grants a plan appears on that plan's card", %{conn: conn} do
-      html = conn |> get(~p"/pricing") |> html_response(200) |> squish()
+    test "each card renders its own Billing feature list", %{conn: conn} do
+      document = conn |> get(~p"/pricing") |> html_response(200) |> LazyHTML.from_document()
 
-      missing =
-        for {_id, plan} <- Emisar.Billing.plans(),
-            feature <- plan.features,
-            # Enterprise's "Everything in Team" is a reference to another card,
-            # not a feature line of its own.
-            feature != "Everything in Team",
-            not String.contains?(html, feature),
-            do: "#{plan.name}: #{feature}"
+      for {id, plan} <- Emisar.Billing.plans() do
+        card = pricing_plan_card_text(document, id)
 
-      assert missing == [],
-             "/pricing omits plan features Emisar.Billing grants: #{inspect(missing)}"
+        for {_feature_id, label} <- plan.features do
+          assert card =~ label, "#{plan.name} card omits Billing feature: #{label}"
+        end
+      end
+
+      # These remain public commercial promises rather than Billing feature
+      # gates. Keeping them explicit prevents the plan contract from claiming
+      # enforcement it does not provide.
+      assert pricing_plan_card_text(document, "free") =~ "All policy features"
+      assert pricing_plan_card_text(document, "team") =~ "99.95% uptime target"
+      assert pricing_plan_card_text(document, "team") =~ "Automated invoices"
+      assert pricing_plan_card_text(document, "enterprise") =~ "99.99% uptime SLA"
+      assert pricing_plan_card_text(document, "enterprise") =~ "Custom commercial terms"
     end
 
-    test "the limits Billing enforces are the limits the page advertises", %{conn: conn} do
-      html = conn |> get(~p"/pricing") |> html_response(200)
+    test "cards, comparison, and metadata render Billing names, prices, and limits", %{
+      conn: conn
+    } do
+      document = conn |> get(~p"/pricing") |> html_response(200) |> LazyHTML.from_document()
       free = Emisar.Billing.plan("free")
       team = Emisar.Billing.plan("team")
+      enterprise = Emisar.Billing.plan("enterprise")
+      free_card = pricing_plan_card_text(document, "free")
+      team_card = pricing_plan_card_text(document, "team")
+      enterprise_card = pricing_plan_card_text(document, "enterprise")
 
-      assert html =~ "#{free.runners_limit} runners"
-      assert html =~ "#{free.audit_retention_days}-day audit retention"
-      assert html =~ "#{team.runners_limit} runners"
-      assert html =~ "#{team.audit_retention_days}-day audit retention"
+      assert free_card =~ free.name
+      assert free_card =~ "#{free.runners_limit} runners"
+      assert free_card =~ "#{free.members_limit} user"
+      assert free_card =~ "#{free.audit_retention_days}-day audit retention"
+      assert free_card =~ "$#{div(free.monthly_price_cents, 100)}"
+
+      assert team_card =~ team.name
+      assert team_card =~ "#{team.runners_limit} runners"
+      assert team_card =~ "#{team.audit_retention_days}-day audit retention"
+
+      assert pricing_cycle_text(document, "month") ==
+               "$#{div(team.monthly_price_cents, 100)} / runner / mo"
+
+      assert pricing_cycle_text(document, "year") ==
+               "$#{div(team.annual_price_cents, 100)} / runner / yr"
+
+      assert pricing_cycle_toggle_text(document) =~
+               "#{12 - div(team.annual_price_cents, team.monthly_price_cents)} months free"
+
+      assert enterprise_card =~ enterprise.name
+
+      expected_enterprise_price =
+        if is_nil(enterprise.monthly_price_cents),
+          do: "Custom",
+          else: "$#{div(enterprise.monthly_price_cents, 100)}"
+
+      assert enterprise_card =~ expected_enterprise_price
+      assert enterprise_card =~ "#{enterprise.audit_retention_days}-day audit retention"
+
+      meta_description = pricing_meta_description(document)
+
+      assert meta_description =~
+               "#{free.name} covers #{free.runners_limit} runners and #{free.members_limit} user"
+
+      assert meta_description =~
+               "#{team.name} is $#{div(team.monthly_price_cents, 100)} per runner per month"
+
+      assert pricing_comparison_row_text(document, "runners") =~
+               "#{free.runners_limit} #{team.runners_limit} Unlimited"
+
+      assert pricing_comparison_row_text(document, "users") =~
+               "#{free.members_limit} Unlimited Unlimited"
+
+      assert pricing_comparison_row_text(document, "audit-retention") =~
+               "#{free.audit_retention_days} days #{team.audit_retention_days} days " <>
+                 "#{enterprise.audit_retention_days} days"
+    end
+
+    test "comparison and FAQs derive feature membership from Billing", %{conn: conn} do
+      document = conn |> get(~p"/pricing") |> html_response(200) |> LazyHTML.from_document()
+      plans = Emisar.Billing.plans()
+      team_features = plans["team"].features
+
+      for {row, feature} <- [
+            {"audit-export", :audit_export},
+            {"sso", :sso},
+            {"scim", :scim}
+          ],
+          {plan_id, plan} <- plans do
+        cell = pricing_comparison_cell(document, row, plan_id)
+        included? = Keyword.has_key?(expanded_plan_features(plan, team_features), feature)
+
+        icons =
+          cell
+          |> LazyHTML.query(~s([data-icon="state.included"]))
+          |> LazyHTML.attribute("data-icon")
+
+        if included? do
+          assert icons == ["state.included"]
+        else
+          assert icons == []
+          assert cell |> LazyHTML.text() |> squish() == "—"
+        end
+      end
+
+      for {plan_id, plan} <- plans do
+        assert pricing_comparison_cell_text(document, "support", plan_id) ==
+                 Keyword.fetch!(plan.features, :support)
+
+        assert pricing_comparison_cell_text(document, "deployment", plan_id) ==
+                 Keyword.get(plan.features, :deployment_planning, "—")
+      end
+
+      faq_text =
+        document
+        |> LazyHTML.query("[data-pricing-faqs]")
+        |> LazyHTML.text(separator: " ")
+        |> squish()
+
+      assert faq_text =~ "is on #{plans["team"].name} and #{plans["enterprise"].name}"
+      assert faq_text =~ "which is #{plans["enterprise"].name}"
+
+      assert faq_text =~
+               "Human users are unlimited on #{plans["team"].name} and #{plans["enterprise"].name}."
     end
   end
 
@@ -2926,10 +3047,12 @@ defmodule EmisarWeb.MarketingTest do
       assert Enum.all?(faq["mainEntity"], &(&1["@type"] == "Question"))
     end
 
-    test "the pricing JSON-LD graph carries a Product with two Offers + a FAQPage",
+    test "the pricing JSON-LD graph derives its Product offers from Billing",
          %{conn: conn} do
       html = conn |> get(~p"/pricing") |> html_response(200)
       graph = ld_graph(html)
+      free = Emisar.Billing.plan("free")
+      team = Emisar.Billing.plan("team")
 
       product = Enum.find(graph, &(&1["@type"] == "Product"))
       assert product, "no Product node in pricing JSON-LD"
@@ -2937,8 +3060,11 @@ defmodule EmisarWeb.MarketingTest do
       offers = product["offers"]
       assert is_list(offers) and length(offers) == 2
       by_name = Map.new(offers, &{&1["name"], &1})
-      assert by_name["Free"]["price"] == "0"
-      assert by_name["Team"]["price"] == "20"
+      assert by_name[free.name]["price"] == Integer.to_string(div(free.monthly_price_cents, 100))
+      assert by_name[free.name]["description"] =~ "#{free.runners_limit} runners"
+      assert by_name[free.name]["description"] =~ "#{free.audit_retention_days}-day"
+      assert by_name[team.name]["price"] == Integer.to_string(div(team.monthly_price_cents, 100))
+      assert by_name[team.name]["description"] =~ "#{team.audit_retention_days}-day"
 
       assert Enum.any?(graph, &(&1["@type"] == "FAQPage"))
     end
@@ -3246,6 +3372,60 @@ defmodule EmisarWeb.MarketingTest do
   # Collapsing runs of whitespace lets a copy assertion pin the sentence
   # instead of the formatter's wrapping.
   defp squish(html), do: html |> String.split() |> Enum.join(" ")
+
+  defp pricing_plan_card_text(document, plan_id) do
+    document
+    |> LazyHTML.query(~s(div[data-plan="#{plan_id}"]))
+    |> LazyHTML.text(separator: " ")
+    |> squish()
+  end
+
+  defp pricing_cycle_text(document, cycle) do
+    document
+    |> LazyHTML.query(~s([data-plan="team"] [data-cycle-price="#{cycle}"]))
+    |> LazyHTML.text(separator: " ")
+    |> squish()
+  end
+
+  defp pricing_cycle_toggle_text(document) do
+    document
+    |> LazyHTML.query("[data-cycle-toggle]")
+    |> LazyHTML.text(separator: " ")
+    |> squish()
+  end
+
+  defp pricing_comparison_row_text(document, feature) do
+    document
+    |> LazyHTML.query(~s(#compare [data-feature="#{feature}"]))
+    |> LazyHTML.text(separator: " ")
+    |> squish()
+  end
+
+  defp pricing_comparison_cell(document, feature, plan_id) do
+    LazyHTML.query(document, ~s(#compare [data-feature="#{feature}"] [data-plan="#{plan_id}"]))
+  end
+
+  defp pricing_comparison_cell_text(document, feature, plan_id) do
+    document
+    |> pricing_comparison_cell(feature, plan_id)
+    |> LazyHTML.text(separator: " ")
+    |> squish()
+  end
+
+  defp pricing_meta_description(document) do
+    [description] =
+      document
+      |> LazyHTML.query(~s(meta[name="description"]))
+      |> LazyHTML.attribute("content")
+
+    description
+  end
+
+  defp expanded_plan_features(plan, team_features) do
+    if Keyword.has_key?(plan.features, :team),
+      do: plan.features ++ team_features,
+      else: plan.features
+  end
 
   # Pull every external (`href="http…"`) anchor out of rendered HTML so a
   # test can assert the whole set carries the safe-rel pair, not just the

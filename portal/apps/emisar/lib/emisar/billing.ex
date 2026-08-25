@@ -19,6 +19,8 @@ defmodule Emisar.Billing do
   alias Emisar.Billing.{Authorizer, Entitlements, PaddleClient, Subscription}
   require Logger
 
+  # Feature IDs are the stable plan-membership contract; labels are the shared
+  # copy rendered by both BillingLive and the public pricing page.
   @plans %{
     "free" => %{
       name: "Free",
@@ -27,7 +29,12 @@ defmodule Emisar.Billing do
       runners_limit: 3,
       members_limit: 1,
       audit_retention_days: 7,
-      features: ["3 runners", "1 user", "7-day audit retention", "Community support"]
+      features: [
+        runners: "3 runners",
+        members: "1 user",
+        audit_retention: "7-day audit retention",
+        support: "Community support"
+      ]
     },
     "team" => %{
       name: "Team",
@@ -39,11 +46,11 @@ defmodule Emisar.Billing do
       members_limit: :unlimited,
       audit_retention_days: 90,
       features: [
-        "Unlimited users",
-        "Single sign-on (OIDC)",
-        "90-day audit retention",
-        "Audit export (CSV + SIEM)",
-        "Email support"
+        members: "Unlimited users",
+        sso: "Single sign-on (OIDC)",
+        audit_retention: "90-day audit retention",
+        audit_export: "Audit export (CSV + SIEM)",
+        support: "Email support"
       ]
     },
     "enterprise" => %{
@@ -54,13 +61,13 @@ defmodule Emisar.Billing do
       members_limit: :unlimited,
       audit_retention_days: 365,
       features: [
-        "Everything in Team",
-        "SCIM directory sync",
-        "365-day audit retention",
-        "Security and procurement review",
-        "Dedicated Slack support channel",
-        "Design-partner deployment planning",
-        "Rollout support"
+        team: "Everything in Team",
+        scim: "SCIM directory sync",
+        audit_retention: "365-day audit retention",
+        security_review: "Security and procurement review",
+        support: "Dedicated Slack support channel",
+        deployment_planning: "Design-partner deployment planning",
+        rollout_support: "Rollout support"
       ]
     }
   }
@@ -91,6 +98,22 @@ defmodule Emisar.Billing do
 
   def plans, do: @plans
   def plan(name) when is_binary(name), do: Map.get(@plans, name)
+
+  @doc "Display copy for an exact whole-month annual discount; nil when there is none."
+  def annual_savings_label(%{
+        monthly_price_cents: monthly,
+        annual_price_cents: annual
+      })
+      when is_integer(monthly) and monthly > 0 and is_integer(annual) do
+    savings = monthly * 12 - annual
+
+    if savings > 0 and rem(savings, monthly) == 0 do
+      months = div(savings, monthly)
+      "#{months} #{if months == 1, do: "month", else: "months"} free"
+    end
+  end
+
+  def annual_savings_label(_plan), do: nil
 
   @doc """
   The account's current plan name — derived from its mirrored Paddle

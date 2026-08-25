@@ -42,7 +42,10 @@
             aria-pressed="false"
             class="rounded-md px-4 py-1.5 text-zinc-400 transition-colors hover:text-zinc-200"
           >
-            Annual <span class="text-brand-400">· 2 months free</span>
+            Annual
+            <span :if={@team_annual_savings} class="text-brand-400">
+              · {@team_annual_savings}
+            </span>
           </button>
         </div>
       </div>
@@ -50,11 +53,11 @@
       <%!-- Tiers --%>
       <div class="mx-auto mt-10 grid max-w-5xl grid-cols-1 gap-6 lg:max-w-none lg:grid-cols-3 lg:gap-8">
         <%!-- Free --%>
-        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <h2 class="text-lg font-semibold text-zinc-50">Free</h2>
+        <div data-plan="free" class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
+          <h2 class="text-lg font-semibold text-zinc-50">{@free_plan.name}</h2>
           <p class="mt-2 text-sm text-zinc-400">For evaluation and solo use.</p>
           <p class="mt-6 flex items-baseline gap-x-1">
-            <span class="text-5xl font-bold tracking-tight text-zinc-50">$0</span>
+            <span class="text-5xl font-bold tracking-tight text-zinc-50">${@free_price}</span>
             <span class="text-sm font-semibold text-zinc-400">/ forever</span>
           </p>
           <.marketing_button
@@ -66,69 +69,55 @@
           >
             Start free
           </.marketing_button>
-          <ul class="mt-8 space-y-3 text-sm text-zinc-300">
-            <li class="flex items-start gap-3">
+          <ul data-plan-features="free" class="mt-8 space-y-3 text-sm text-zinc-300">
+            <li :for={{_id, feature} <- @free_plan.features} class="flex items-start gap-3">
               <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              3 runners
+              {feature}
             </li>
-            <li class="flex items-start gap-3">
-              <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              1 user
-            </li>
-            <li class="flex items-start gap-3">
-              <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              7-day audit retention
-            </li>
+            <%!-- Policy is available on every plan; it is product-wide marketing copy,
+                 not a Billing entitlement. --%>
             <li class="flex items-start gap-3">
               <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
               All policy features
-            </li>
-            <li class="flex items-start gap-3">
-              <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              Community support
             </li>
           </ul>
         </div>
 
         <%!-- Team --%>
-        <div class="relative rounded-2xl border-2 border-brand-500 bg-zinc-950/80 p-8 shadow-2xl shadow-brand-900/30">
+        <div
+          data-plan="team"
+          class="relative rounded-2xl border-2 border-brand-500 bg-zinc-950/80 p-8 shadow-2xl shadow-brand-900/30"
+        >
           <span class="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand-500 px-4 py-1 text-xs font-semibold text-zinc-950">
             Most popular
           </span>
-          <h2 class="text-lg font-semibold text-brand-300">Team</h2>
+          <h2 class="text-lg font-semibold text-brand-300">{@team_plan.name}</h2>
           <p class="mt-2 text-sm text-zinc-400">For production teams.</p>
           <p class="mt-6 flex items-baseline gap-x-1" data-cycle-price="month">
-            <span class="text-5xl font-bold tracking-tight text-zinc-50">$20</span>
+            <span class="text-5xl font-bold tracking-tight text-zinc-50">
+              ${@team_monthly_price}
+            </span>
             <span class="text-sm font-semibold text-zinc-400">/ runner / mo</span>
           </p>
           <p class="mt-6 flex hidden items-baseline gap-x-1" data-cycle-price="year">
-            <span class="text-5xl font-bold tracking-tight text-zinc-50">$200</span>
+            <span class="text-5xl font-bold tracking-tight text-zinc-50">
+              ${@team_annual_price}
+            </span>
             <span class="text-sm font-semibold text-zinc-400">/ runner / yr</span>
           </p>
           <.marketing_button href={~p"/sign_up"} size={:lg} block class="mt-8">
             Start free
           </.marketing_button>
-          <ul class="mt-8 space-y-3 text-sm text-zinc-300">
+          <ul data-plan-features="team" class="mt-8 space-y-3 text-sm text-zinc-300">
             <li class="flex items-start gap-3">
               <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-brand-400" />
-              Up to 100 runners
+              Up to {@team_plan.runners_limit} runners
             </li>
-            <li class="flex items-start gap-3">
+            <li :for={{_id, feature} <- @team_plan.features} class="flex items-start gap-3">
               <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-brand-400" />
-              Unlimited users
+              {feature}
             </li>
-            <li class="flex items-start gap-3">
-              <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-brand-400" />
-              90-day audit retention
-            </li>
-            <li class="flex items-start gap-3">
-              <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-brand-400" />
-              Single sign-on (OIDC)
-            </li>
-            <li class="flex items-start gap-3">
-              <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-brand-400" />
-              Audit export (CSV + SIEM)
-            </li>
+            <%!-- Availability and invoicing are commercial promises, not feature gates. --%>
             <li class="flex items-start gap-3">
               <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-brand-400" />
               99.95% uptime target
@@ -137,19 +126,20 @@
               <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-brand-400" />
               Automated invoices
             </li>
-            <li class="flex items-start gap-3">
-              <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-brand-400" />
-              Email support
-            </li>
           </ul>
         </div>
 
         <%!-- Enterprise --%>
-        <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
-          <h2 class="text-lg font-semibold text-zinc-50">Enterprise</h2>
+        <div
+          data-plan="enterprise"
+          class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8"
+        >
+          <h2 class="text-lg font-semibold text-zinc-50">{@enterprise_plan.name}</h2>
           <p class="mt-2 text-sm text-zinc-400">For design partners and regulated teams.</p>
           <p class="mt-6 flex items-baseline gap-x-1">
-            <span class="text-5xl font-bold tracking-tight text-zinc-50">Custom</span>
+            <span class="text-5xl font-bold tracking-tight text-zinc-50">
+              {@enterprise_price}
+            </span>
           </p>
           <.marketing_button
             variant={:secondary}
@@ -170,38 +160,26 @@
               or book a 30-minute demo &rarr;
             </a>
           </p>
-          <ul class="mt-8 space-y-3 text-sm text-zinc-300">
+          <ul data-plan-features="enterprise" class="mt-8 space-y-3 text-sm text-zinc-300">
             <li class="flex items-start gap-3">
               <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              Unlimited runners and users
+              <%= if @enterprise_plan.runners_limit == :unlimited and @enterprise_plan.members_limit == :unlimited do %>
+                Unlimited runners and users
+              <% else %>
+                {@enterprise_plan.runners_limit} runners and {@enterprise_plan.members_limit} users
+              <% end %>
             </li>
-            <li class="flex items-start gap-3">
+            <li
+              :for={{_id, feature} <- @enterprise_plan.features}
+              class="flex items-start gap-3"
+            >
               <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              365-day audit retention
+              {feature}
             </li>
-            <li class="flex items-start gap-3">
-              <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              SCIM directory sync
-            </li>
+            <%!-- The SLA and contract terms are negotiated promises, not entitlements. --%>
             <li class="flex items-start gap-3">
               <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
               99.99% uptime SLA
-            </li>
-            <li class="flex items-start gap-3">
-              <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              Security and procurement review
-            </li>
-            <li class="flex items-start gap-3">
-              <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              Dedicated Slack support channel
-            </li>
-            <li class="flex items-start gap-3">
-              <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              Design-partner deployment planning
-            </li>
-            <li class="flex items-start gap-3">
-              <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
-              Rollout support
             </li>
             <li class="flex items-start gap-3">
               <.icon name="state.included" class="mt-0.5 h-5 w-5 flex-none text-zinc-500" />
@@ -272,33 +250,51 @@
           <thead class="bg-zinc-950/80">
             <tr>
               <th scope="col" class="px-6 py-4 text-left font-semibold text-zinc-300">Feature</th>
-              <th scope="col" class="px-6 py-4 text-left font-semibold text-zinc-300">Free</th>
-              <th scope="col" class="px-6 py-4 text-left font-semibold text-brand-300">Team</th>
               <th scope="col" class="px-6 py-4 text-left font-semibold text-zinc-300">
-                Enterprise
+                {@free_plan.name}
+              </th>
+              <th scope="col" class="px-6 py-4 text-left font-semibold text-brand-300">
+                {@team_plan.name}
+              </th>
+              <th scope="col" class="px-6 py-4 text-left font-semibold text-zinc-300">
+                {@enterprise_plan.name}
               </th>
             </tr>
           </thead>
           <tbody class="divide-y divide-zinc-900 bg-zinc-950/40">
-            <tr>
+            <tr data-feature="runners">
               <td class="px-6 py-4 font-medium text-zinc-100">Runners</td>
-              <td class="px-6 py-4 text-zinc-400">3</td>
-              <td class="px-6 py-4 text-zinc-400">100</td>
-              <td class="px-6 py-4 text-zinc-400">Unlimited</td>
+              <td class="px-6 py-4 text-zinc-400">{@free_plan.runners_limit}</td>
+              <td class="px-6 py-4 text-zinc-400">{@team_plan.runners_limit}</td>
+              <td class="px-6 py-4 text-zinc-400">
+                {if @enterprise_plan.runners_limit == :unlimited,
+                  do: "Unlimited",
+                  else: @enterprise_plan.runners_limit}
+              </td>
             </tr>
-            <tr>
+            <tr data-feature="users">
               <td class="px-6 py-4 font-medium text-zinc-100">Users</td>
-              <td class="px-6 py-4 text-zinc-400">1</td>
-              <td class="px-6 py-4 text-zinc-400">Unlimited</td>
-              <td class="px-6 py-4 text-zinc-400">Unlimited</td>
+              <td class="px-6 py-4 text-zinc-400">{@free_plan.members_limit}</td>
+              <td class="px-6 py-4 text-zinc-400">
+                {if @team_plan.members_limit == :unlimited,
+                  do: "Unlimited",
+                  else: @team_plan.members_limit}
+              </td>
+              <td class="px-6 py-4 text-zinc-400">
+                {if @enterprise_plan.members_limit == :unlimited,
+                  do: "Unlimited",
+                  else: @enterprise_plan.members_limit}
+              </td>
             </tr>
-            <tr>
+            <tr data-feature="audit-retention">
               <td class="px-6 py-4 font-medium text-zinc-100">Audit retention</td>
-              <td class="px-6 py-4 text-zinc-400">7 days</td>
-              <td class="px-6 py-4 text-zinc-400">90 days</td>
-              <td class="px-6 py-4 text-zinc-400">365 days</td>
+              <td class="px-6 py-4 text-zinc-400">{@free_plan.audit_retention_days} days</td>
+              <td class="px-6 py-4 text-zinc-400">{@team_plan.audit_retention_days} days</td>
+              <td class="px-6 py-4 text-zinc-400">
+                {@enterprise_plan.audit_retention_days} days
+              </td>
             </tr>
-            <tr>
+            <tr data-feature="policy">
               <td class="px-6 py-4 font-medium text-zinc-100">Policy + approvals</td>
               <td class="px-6 py-4 text-zinc-400">
                 <.icon name="state.included" class="h-5 w-5 text-brand-400" />
@@ -310,7 +306,7 @@
                 <.icon name="state.included" class="h-5 w-5 text-brand-400" />
               </td>
             </tr>
-            <tr>
+            <tr data-feature="mcp">
               <td class="px-6 py-4 font-medium text-zinc-100">MCP server</td>
               <td class="px-6 py-4 text-zinc-400">
                 <.icon name="state.included" class="h-5 w-5 text-brand-400" />
@@ -322,7 +318,7 @@
                 <.icon name="state.included" class="h-5 w-5 text-brand-400" />
               </td>
             </tr>
-            <tr>
+            <tr data-feature="pack-trust">
               <td class="px-6 py-4 font-medium text-zinc-100">Pack trust + drift blocking</td>
               <td class="px-6 py-4 text-zinc-400">
                 <.icon name="state.included" class="h-5 w-5 text-brand-400" />
@@ -334,51 +330,71 @@
                 <.icon name="state.included" class="h-5 w-5 text-brand-400" />
               </td>
             </tr>
-            <tr>
+            <tr data-feature="audit-export">
               <td class="px-6 py-4 font-medium text-zinc-100">SIEM export</td>
-              <td class="px-6 py-4 text-zinc-500">—</td>
-              <td class="px-6 py-4 text-zinc-400">
-                <.icon name="state.included" class="h-5 w-5 text-brand-400" />
+              <td data-plan="free" class="px-6 py-4 text-zinc-500">
+                <.plan_feature_availability included={@comparison["free"].audit_export} />
               </td>
-              <td class="px-6 py-4 text-zinc-400">
-                <.icon name="state.included" class="h-5 w-5 text-brand-400" />
+              <td data-plan="team" class="px-6 py-4 text-zinc-400">
+                <.plan_feature_availability included={@comparison["team"].audit_export} />
+              </td>
+              <td data-plan="enterprise" class="px-6 py-4 text-zinc-400">
+                <.plan_feature_availability included={@comparison["enterprise"].audit_export} />
               </td>
             </tr>
-            <tr>
+            <tr data-feature="sso">
               <td class="px-6 py-4 font-medium text-zinc-100">Single sign-on (OIDC)</td>
-              <td class="px-6 py-4 text-zinc-500">—</td>
-              <td class="px-6 py-4 text-zinc-400">
-                <.icon name="state.included" class="h-5 w-5 text-brand-400" />
+              <td data-plan="free" class="px-6 py-4 text-zinc-500">
+                <.plan_feature_availability included={@comparison["free"].sso} />
               </td>
-              <td class="px-6 py-4 text-zinc-400">
-                <.icon name="state.included" class="h-5 w-5 text-brand-400" />
+              <td data-plan="team" class="px-6 py-4 text-zinc-400">
+                <.plan_feature_availability included={@comparison["team"].sso} />
+              </td>
+              <td data-plan="enterprise" class="px-6 py-4 text-zinc-400">
+                <.plan_feature_availability included={@comparison["enterprise"].sso} />
               </td>
             </tr>
-            <tr>
+            <tr data-feature="scim">
               <td class="px-6 py-4 font-medium text-zinc-100">SCIM directory sync</td>
-              <td class="px-6 py-4 text-zinc-500">—</td>
-              <td class="px-6 py-4 text-zinc-500">—</td>
-              <td class="px-6 py-4 text-zinc-400">
-                <.icon name="state.included" class="h-5 w-5 text-brand-400" />
+              <td data-plan="free" class="px-6 py-4 text-zinc-500">
+                <.plan_feature_availability included={@comparison["free"].scim} />
+              </td>
+              <td data-plan="team" class="px-6 py-4 text-zinc-500">
+                <.plan_feature_availability included={@comparison["team"].scim} />
+              </td>
+              <td data-plan="enterprise" class="px-6 py-4 text-zinc-400">
+                <.plan_feature_availability included={@comparison["enterprise"].scim} />
               </td>
             </tr>
-            <tr>
+            <tr data-feature="uptime">
               <td class="px-6 py-4 font-medium text-zinc-100">Uptime</td>
               <td class="px-6 py-4 text-zinc-500">—</td>
               <td class="px-6 py-4 text-zinc-400">99.95% target</td>
               <td class="px-6 py-4 text-zinc-400">99.99% SLA</td>
             </tr>
-            <tr>
+            <tr data-feature="deployment">
               <td class="px-6 py-4 font-medium text-zinc-100">Deployment planning</td>
-              <td class="px-6 py-4 text-zinc-500">—</td>
-              <td class="px-6 py-4 text-zinc-500">—</td>
-              <td class="px-6 py-4 text-zinc-400">Design partner</td>
+              <td data-plan="free" class="px-6 py-4 text-zinc-500">
+                {@comparison["free"].deployment || "—"}
+              </td>
+              <td data-plan="team" class="px-6 py-4 text-zinc-500">
+                {@comparison["team"].deployment || "—"}
+              </td>
+              <td data-plan="enterprise" class="px-6 py-4 text-zinc-400">
+                {@comparison["enterprise"].deployment || "—"}
+              </td>
             </tr>
-            <tr>
+            <tr data-feature="support">
               <td class="px-6 py-4 font-medium text-zinc-100">Support</td>
-              <td class="px-6 py-4 text-zinc-400">Community</td>
-              <td class="px-6 py-4 text-zinc-400">Email</td>
-              <td class="px-6 py-4 text-zinc-400">Dedicated Slack support channel</td>
+              <td data-plan="free" class="px-6 py-4 text-zinc-400">
+                {@comparison["free"].support || "—"}
+              </td>
+              <td data-plan="team" class="px-6 py-4 text-zinc-400">
+                {@comparison["team"].support || "—"}
+              </td>
+              <td data-plan="enterprise" class="px-6 py-4 text-zinc-400">
+                {@comparison["enterprise"].support || "—"}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -387,7 +403,7 @@
   </section>
 
   <%!-- FAQ --%>
-  <section class="py-24 sm:py-32">
+  <section data-pricing-faqs class="py-24 sm:py-32">
     <div class="mx-auto max-w-4xl px-6 lg:px-8">
       <.marketing_heading tag="h2" scale={:section}>
         Frequently asked questions

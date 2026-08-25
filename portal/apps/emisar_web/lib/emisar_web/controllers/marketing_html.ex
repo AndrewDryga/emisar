@@ -43,6 +43,15 @@ defmodule EmisarWeb.MarketingHTML do
     """
   end
 
+  attr :included, :boolean, required: true
+
+  def plan_feature_availability(assigns) do
+    ~H"""
+    <.icon :if={@included} name="state.included" class="h-5 w-5 text-brand-400" />
+    <span :if={!@included}>—</span>
+    """
+  end
+
   # Icon meaning for an action row in the pack-detail action list. `exec` runs
   # a binary, `script` is a packaged shell script. Any future kind falls back
   # to the pack itself.

@@ -101,7 +101,8 @@ defmodule Emisar.BillingTest do
     test "enterprise names the dedicated Slack support channel the pricing page promises" do
       # The exact phrase the pricing card + comparison table use — the plan
       # contract and the public promise must stay one string.
-      assert "Dedicated Slack support channel" in Billing.plans()["enterprise"].features
+      assert Keyword.fetch!(Billing.plans()["enterprise"].features, :support) ==
+               "Dedicated Slack support channel"
     end
   end
 
@@ -117,6 +118,26 @@ defmodule Emisar.BillingTest do
       # A renamed/legacy plan name isn't in the map — plan/1 returns nil and the
       # callers (check_limit, billing_summary) fall back to plan("free").
       assert is_nil(Billing.plan("platinum"))
+    end
+  end
+
+  describe "annual_savings_label/1" do
+    test "describes only exact whole-month annual discounts" do
+      assert Billing.annual_savings_label(Billing.plan("team")) == "2 months free"
+
+      assert Billing.annual_savings_label(%{
+               monthly_price_cents: 2000,
+               annual_price_cents: 22_000
+             }) ==
+               "1 month free"
+
+      refute Billing.annual_savings_label(%{
+               monthly_price_cents: 2000,
+               annual_price_cents: 23_000
+             })
+
+      refute Billing.annual_savings_label(Billing.plan("free"))
+      refute Billing.annual_savings_label(Billing.plan("enterprise"))
     end
   end
 

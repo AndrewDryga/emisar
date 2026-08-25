@@ -12,7 +12,7 @@ defmodule EmisarWeb.MarketingController do
   between routes, sitemap, and per-page metadata.
   """
   use EmisarWeb, :controller
-  alias Emisar.Catalog
+  alias Emisar.{Billing, Catalog}
   alias EmisarWeb.UserAgent
 
   plug :put_layout, html: {EmisarWeb.Layouts, :app}
@@ -250,11 +250,9 @@ defmodule EmisarWeb.MarketingController do
     )
   end
 
-  # Pricing FAQ — single source of truth for the visible accordion and
-  # the FAQPage JSON-LD, so Google's rich result matches the on-page text.
+  # Static pricing FAQ answers. The two answers that name plan membership are
+  # built from Billing in pricing_faqs/1 instead.
   @pricing_faqs [
-    {"What counts as a \"runner\"?",
-     "One installation of the emisar binary on one host — VM, container, or bare metal. Run as many runners as your plan allows. Human users are unlimited on Team and Enterprise."},
     {"Do you store the output of my commands?",
      "Runner output is redacted before leaving the host and retained in run history. The audit trail stores terminal outcome metadata, including who, when, action, runner, reason, and exit code. Redaction uses 20 built-in patterns plus your own per-action rules."},
     {"How does billing work?",
@@ -263,68 +261,193 @@ defmodule EmisarWeb.MarketingController do
      "The current product uses the hosted emisar control plane. The runner, MCP bridge, and packs are Apache-2.0 open source, and the repository includes deployable control-plane code (Business Source License) for evaluation — but supported self-hosted and air-gapped deployments are not generally available today. Tell us if that boundary is a requirement."},
     {"Can I cancel any time?",
      "Yes. Cancel from billing settings to stop renewal in Paddle. Cancellation does not downgrade your emisar plan automatically today. Billing keeps showing the current plan until its mirrored plan changes."},
-    {"Do you support SSO and SCIM?",
-     "Yes. OIDC single sign-on (Okta, Entra ID, JumpCloud, Google Workspace, Keycloak, or any compliant provider) is on Team and Enterprise. Automatic offboarding needs SCIM 2.0 directory sync, which is Enterprise: deactivate someone in your IdP and emisar ends their sessions and revokes their keys without anyone touching the console. With OIDC alone they can't sign in again, but a live session or an existing API key keeps working until you suspend them here."},
     {"Do you offer startup discounts?",
      "Yes. Email sales@emisar.dev with your YC or pre-seed letter and we'll take it from there."}
   ]
 
-  # Product + per-plan Offer + FAQ rich data for the pricing page. Prices
-  # mirror `Emisar.Billing.@plans` (Free = 3 runners, Team = $20/runner).
-  @pricing_ld Jason.encode!(
-                %{
-                  "@context" => "https://schema.org",
-                  "@graph" => [
-                    %{
-                      "@type" => "Product",
-                      "name" => "emisar",
-                      "description" =>
-                        "Approved infrastructure actions for AI agents — policy, approvals, searchable audit, and a hash-chained runner journal instead of SSH.",
-                      "brand" => %{"@type" => "Brand", "name" => "emisar"},
-                      "offers" => [
-                        %{
-                          "@type" => "Offer",
-                          "name" => "Free",
-                          "price" => "0",
-                          "priceCurrency" => "USD",
-                          "description" => "Up to 3 runners, 1 user, 7-day audit retention"
-                        },
-                        %{
-                          "@type" => "Offer",
-                          "name" => "Team",
-                          "price" => "20",
-                          "priceCurrency" => "USD",
-                          "description" =>
-                            "Per runner / month. Unlimited users, 90-day audit retention"
-                        }
-                      ]
-                    },
-                    %{
-                      "@type" => "FAQPage",
-                      "mainEntity" =>
-                        Enum.map(@pricing_faqs, fn {question, answer} ->
-                          %{
-                            "@type" => "Question",
-                            "name" => question,
-                            "acceptedAnswer" => %{"@type" => "Answer", "text" => answer}
-                          }
-                        end)
-                    }
-                  ]
-                },
-                escape: :html_safe
-              )
+  @pricing_plan_order ~w(free team enterprise)
 
   def pricing(conn, _params) do
+    plans = Billing.plans()
+    free_plan = Map.fetch!(plans, "free")
+    team_plan = Map.fetch!(plans, "team")
+    enterprise_plan = Map.fetch!(plans, "enterprise")
+    faqs = pricing_faqs(plans)
+
     render(conn, :pricing,
       page_title: "Pricing — per runner, not per seat",
-      meta_description:
-        "Per runner, not per seat. Free covers 3 runners and 1 user; Team is $20 per runner per month with unlimited users and 90-day audit retention; Enterprise is custom.",
+      meta_description: pricing_meta_description(free_plan, team_plan, enterprise_plan),
       canonical_url: @base <> "/pricing",
       og_image: @base <> "/images/og/og-pricing.png",
-      faqs: @pricing_faqs,
-      json_ld: @pricing_ld
+      faqs: faqs,
+      free_plan: free_plan,
+      team_plan: team_plan,
+      enterprise_plan: enterprise_plan,
+      comparison: pricing_comparison(plans),
+      free_price: dollars(free_plan.monthly_price_cents),
+      team_monthly_price: dollars(team_plan.monthly_price_cents),
+      team_annual_price: dollars(team_plan.annual_price_cents),
+      team_annual_savings: Billing.annual_savings_label(team_plan),
+      enterprise_price: price_label(enterprise_plan.monthly_price_cents),
+      json_ld: pricing_ld(free_plan, team_plan, faqs)
     )
+  end
+
+  defp pricing_meta_description(free_plan, team_plan, enterprise_plan) do
+    "Per runner, not per seat. #{free_plan.name} covers #{free_plan.runners_limit} runners " <>
+      "and #{member_limit(free_plan.members_limit)}; #{team_plan.name} is " <>
+      "$#{dollars(team_plan.monthly_price_cents)} per runner per month with " <>
+      "#{member_limit(team_plan.members_limit)} and #{team_plan.audit_retention_days}-day " <>
+      "audit retention; #{enterprise_plan.name} is " <>
+      "#{price_description(enterprise_plan.monthly_price_cents)}."
+  end
+
+  defp pricing_ld(free_plan, team_plan, faqs) do
+    Jason.encode!(
+      %{
+        "@context" => "https://schema.org",
+        "@graph" => [
+          %{
+            "@type" => "Product",
+            "name" => "emisar",
+            "description" =>
+              "Approved infrastructure actions for AI agents — policy, approvals, searchable audit, and a hash-chained runner journal instead of SSH.",
+            "brand" => %{"@type" => "Brand", "name" => "emisar"},
+            "offers" => [
+              %{
+                "@type" => "Offer",
+                "name" => free_plan.name,
+                "price" => dollars(free_plan.monthly_price_cents),
+                "priceCurrency" => "USD",
+                "description" =>
+                  "Up to #{free_plan.runners_limit} runners, " <>
+                    "#{member_limit(free_plan.members_limit)}, " <>
+                    "#{free_plan.audit_retention_days}-day audit retention"
+              },
+              %{
+                "@type" => "Offer",
+                "name" => team_plan.name,
+                "price" => dollars(team_plan.monthly_price_cents),
+                "priceCurrency" => "USD",
+                "description" =>
+                  "Per runner / month. #{String.capitalize(member_limit(team_plan.members_limit))}, " <>
+                    "#{team_plan.audit_retention_days}-day audit retention"
+              }
+            ]
+          },
+          %{
+            "@type" => "FAQPage",
+            "mainEntity" =>
+              Enum.map(faqs, fn {question, answer} ->
+                %{
+                  "@type" => "Question",
+                  "name" => question,
+                  "acceptedAnswer" => %{"@type" => "Answer", "text" => answer}
+                }
+              end)
+          }
+        ]
+      },
+      escape: :html_safe
+    )
+  end
+
+  defp pricing_faqs(plans) do
+    team_plan = Map.fetch!(plans, "team")
+    enterprise_plan = Map.fetch!(plans, "enterprise")
+    [output, billing, self_host, cancel, startup_discounts] = @pricing_faqs
+    sso_plans = plans_with_feature(plans, :sso)
+    scim_plans = plans_with_feature(plans, :scim)
+
+    member_copy =
+      if team_plan.members_limit == enterprise_plan.members_limit do
+        "Human users are #{member_availability(team_plan.members_limit)} on " <>
+          "#{team_plan.name} and #{enterprise_plan.name}."
+      else
+        "#{team_plan.name} includes #{member_limit(team_plan.members_limit)}; " <>
+          "#{enterprise_plan.name} includes #{member_limit(enterprise_plan.members_limit)}."
+      end
+
+    [
+      {"What counts as a \"runner\"?",
+       "One installation of the emisar binary on one host — VM, container, or bare metal. " <>
+         "Run as many runners as your plan allows. #{member_copy}"},
+      output,
+      billing,
+      self_host,
+      cancel,
+      {"Do you support SSO and SCIM?",
+       "Yes. OIDC single sign-on (Okta, Entra ID, JumpCloud, Google Workspace, Keycloak, " <>
+         "or any compliant provider) is on #{sso_plans}. Automatic offboarding needs SCIM " <>
+         "2.0 directory sync, which is #{scim_plans}: deactivate someone in your IdP and " <>
+         "emisar ends their sessions and revokes their keys without anyone touching the " <>
+         "console. With OIDC alone they can't sign in again, but a live session or an " <>
+         "existing API key keeps working until you suspend them here."},
+      startup_discounts
+    ]
+  end
+
+  defp pricing_comparison(plans) do
+    Map.new(@pricing_plan_order, fn plan_id ->
+      plan = Map.fetch!(plans, plan_id)
+
+      {plan_id,
+       %{
+         audit_export: plan_supports_feature?(plans, plan_id, :audit_export),
+         sso: plan_supports_feature?(plans, plan_id, :sso),
+         scim: plan_supports_feature?(plans, plan_id, :scim),
+         support: plan_feature(plan, :support),
+         deployment: plan_feature(plan, :deployment_planning)
+       }}
+    end)
+  end
+
+  defp plans_with_feature(plans, feature) do
+    @pricing_plan_order
+    |> Enum.filter(&plan_supports_feature?(plans, &1, feature))
+    |> Enum.map(&(plans |> Map.fetch!(&1) |> Map.fetch!(:name)))
+    |> join_plan_names()
+  end
+
+  defp plan_supports_feature?(plans, plan_id, feature) do
+    plan = Map.fetch!(plans, plan_id)
+    team_plan = Map.fetch!(plans, "team")
+
+    Keyword.has_key?(plan.features, feature) or
+      (Keyword.has_key?(plan.features, :team) and Keyword.has_key?(team_plan.features, feature))
+  end
+
+  defp plan_feature(plan, feature), do: Keyword.get(plan.features, feature)
+
+  defp join_plan_names([]), do: "no current plan"
+  defp join_plan_names([name]), do: name
+  defp join_plan_names([first, second]), do: "#{first} and #{second}"
+
+  defp join_plan_names(names) do
+    {last, initial} = List.pop_at(names, -1)
+    "#{Enum.join(initial, ", ")}, and #{last}"
+  end
+
+  defp member_limit(:unlimited), do: "unlimited users"
+  defp member_limit(1), do: "1 user"
+  defp member_limit(limit), do: "#{limit} users"
+
+  defp member_availability(:unlimited), do: "unlimited"
+  defp member_availability(limit), do: "limited to #{member_limit(limit)}"
+
+  defp price_label(nil), do: "Custom"
+  defp price_label(cents), do: "$#{dollars(cents)}"
+
+  defp price_description(nil), do: "custom"
+  defp price_description(cents), do: "$#{dollars(cents)} per runner per month"
+
+  defp dollars(cents) when is_integer(cents) do
+    major = div(cents, 100)
+
+    case rem(cents, 100) do
+      0 -> Integer.to_string(major)
+      minor -> "#{major}.#{minor |> Integer.to_string() |> String.pad_leading(2, "0")}"
+    end
   end
 
   # Changelog — data-driven from EmisarWeb.Changelog so the page and the
