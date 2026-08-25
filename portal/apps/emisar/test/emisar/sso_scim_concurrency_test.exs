@@ -4,7 +4,7 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
   alias Ecto.Adapters.SQL.Sandbox
   alias Emisar.{Accounts, Fixtures, Repo, SSO, Users}
   alias Emisar.Accounts.{Account, Membership, RunnerAccess}
-  alias Emisar.SSO.{GroupRoleMapping, GroupRunnerAccessMapping}
+  alias Emisar.SSO.{DirectoryGroup, GroupRoleMapping, GroupRunnerAccessMapping}
   alias Emisar.SSO.{IdentityProvider, LinkRequest, SCIMUserUpdate, UserIdentity}
   alias Emisar.Users.User
 
@@ -258,6 +258,45 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
       after
         send(writer.pid, :commit)
         stop_tasks([writer])
+      end
+    end)
+  end
+
+  test "mapping creation and group deletion serialize without resurrecting the deleted grant" do
+    unboxed_scim(fn context ->
+      attrs = scim_attrs(context, "map-delete")
+
+      {:ok, %{identity: identity, membership: membership}} =
+        SSO.scim_provision_user(context.provider, attrs)
+
+      assert {:ok, group} =
+               SSO.scim_upsert_group(context.provider, %{
+                 display: "Concurrent Admins",
+                 member_ids: [identity.id]
+               })
+
+      mapper =
+        unboxed_task(fn ->
+          SSO.create_group_mapping(
+            context.provider,
+            %{directory_group_id: group.id, role: :admin},
+            context.subject
+          )
+        end)
+
+      deleter = unboxed_task(fn -> SSO.scim_delete_group(context.provider, group.id) end)
+
+      try do
+        mapping_result = Task.await(mapper, 30_000)
+        assert {:ok, _deleted_group} = Task.await(deleter, 30_000)
+
+        assert match?({:ok, %GroupRoleMapping{}}, mapping_result) or
+                 mapping_result == {:error, :not_found}
+
+        assert SSO.scim_fetch_group(context.provider, group.id) == {:error, :not_found}
+        assert Repo.reload!(membership).role == :viewer
+      after
+        stop_tasks([mapper, deleter])
       end
     end)
   end
@@ -688,20 +727,24 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
       Repo.transaction(fn ->
         locked = lock_provider!(provider.id)
 
+        group =
+          DirectoryGroup.Query.not_deleted()
+          |> DirectoryGroup.Query.by_account_id(provider.account_id)
+          |> DirectoryGroup.Query.by_provider_id(provider.id)
+          |> DirectoryGroup.Query.by_external_group_id("grp-current")
+          |> Repo.fetch!(DirectoryGroup.Query)
+
         _role_mapping =
           provider.account_id
-          |> GroupRoleMapping.Changeset.create(provider.id, %{
-            external_group_id: "grp-current",
-            role: :operator
-          })
+          |> GroupRoleMapping.Changeset.create(provider.id, group, %{role: :operator})
           |> Repo.insert!()
 
         _access_mapping =
           provider.account_id
           |> GroupRunnerAccessMapping.Changeset.create(
             provider.id,
+            group,
             %{
-              external_group_id: "grp-current",
               runner_access_mode: :restricted,
               scope: ["group:mapped"],
               pack_access_mode: :restricted,

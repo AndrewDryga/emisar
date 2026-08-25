@@ -1953,12 +1953,15 @@ defmodule EmisarWeb.MarketingTest do
     test "each provider guide publishes the evidence its claim rests on", %{conn: conn} do
       evidence = [
         {"/docs/integrations/okta",
-         "Verified against a live Okta Integrator org on August 18, 2026."},
+         "Live-tested against an Okta Integrator org on August 25, 2026: OIDC sign-in, user lifecycle, group push and rename, group-based role and runner access, and delete/recreate isolation passed."},
         {"/docs/integrations/jumpcloud",
-         "Verified against a live JumpCloud tenant on August 18, 2026."},
-        {"/docs/integrations/entra", "Guide reviewed July 31, 2026."},
-        {"/docs/integrations/google-workspace", "Guide reviewed July 31, 2026."},
-        {"/docs/integrations/keycloak", "Guide reviewed July 31, 2026."}
+         "Live-tested against a JumpCloud tenant on August 25, 2026: sign-in, user and group provisioning, profile and group renames, deactivation, reactivation, and group-based role and runner access passed."},
+        {"/docs/integrations/entra",
+         "Live-tested against a Microsoft Entra tenant on August 25, 2026: OIDC sign-in, user and group provisioning, profile and group renames, deactivation, reactivation, group-based role and runner access, and delete/recreate isolation passed."},
+        {"/docs/integrations/google-workspace",
+         "Live-tested against Google Workspace on August 25, 2026: Internal-domain OIDC sign-in passed. Google Workspace does not provide outbound SCIM for custom applications."},
+        {"/docs/integrations/keycloak",
+         "Live-tested against Keycloak on August 25, 2026: TLS OIDC sign-in and the emisar SCIM protocol suite passed. Keycloak does not provide stock outbound SCIM."}
       ]
 
       for {route, sentence} <- evidence do

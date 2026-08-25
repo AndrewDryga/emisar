@@ -2,17 +2,25 @@
 // (client id) and Certificates & secrets. Playwright drives the Azure portal
 // where chromedp only ever rendered its home page.
 import { launchChromium, loadEnv, totp } from './entra-env.mjs'
+import { mkdirSync } from 'node:fs'
 
 const env = loadEnv()
 
 const outline = async (page, text) => {
-  await page.evaluate(label => {
+  const marked = await page.evaluate(label => {
     const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0
+    for (const prior of document.querySelectorAll('[data-emisar-docs-highlight=true]')) {
+      prior.remove()
+    }
     const hits = [...document.querySelectorAll('*')]
       .filter(el => visible(el) && (el.textContent || '').trim() === label)
     if (!hits.length) return false
     hits.sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length)
-    const t = hits[0].closest('div,section,li,tr') || hits[0]
+    const t =
+      hits[0].closest('button,a,[role=button],[role=menuitem],li,tr') ||
+      hits[0].parentElement ||
+      hits[0]
+    t.scrollIntoView({ block: 'center' })
     if (t.tagName === 'TR') {
       // Ring the CELLS, not the row. A row's outline paints under its cells'
       // backgrounds, so an opaque table keeps only the part of the ring outside
@@ -25,13 +33,26 @@ const outline = async (page, text) => {
         cell.style.boxShadow = ring.join(', ')
       })
     } else {
-      t.style.outline = '3px solid #10b981'
-      t.style.outlineOffset = '3px'
-      t.style.borderRadius = '6px'
+      const box = t.getBoundingClientRect()
+      const ring = document.createElement('div')
+      ring.dataset.emisarDocsHighlight = 'true'
+      Object.assign(ring.style, {
+        position: 'fixed',
+        left: `${box.left - 3}px`,
+        top: `${box.top - 3}px`,
+        width: `${box.width + 6}px`,
+        height: `${box.height + 6}px`,
+        border: '3px solid #10b981',
+        borderRadius: '6px',
+        boxSizing: 'border-box',
+        pointerEvents: 'none',
+        zIndex: '2147483647',
+      })
+      document.body.appendChild(ring)
     }
-    t.scrollIntoView({ block: 'center' })
     return true
   }, text).catch(() => false)
+  if (!marked) throw new Error(`nothing labelled "${text}" to outline`)
   await page.waitForTimeout(600)
 }
 
@@ -62,8 +83,29 @@ for (let i = 0; i < 12; i++) {
 }
 console.log('signed in')
 
+const outDir = process.env.ENTRA_CAPTURE_OUT || '/tmp/entra'
+mkdirSync(outDir, { recursive: true })
+const maskTenantIdentifiers = async () => {
+  for (const frame of page.frames()) {
+    await frame.evaluate(() => {
+      const scrub = value => value
+        .replace(/\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b/gi, '••••••••••••••••••••')
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        node.nodeValue = scrub(node.nodeValue || '')
+      }
+      for (const input of document.querySelectorAll('input')) {
+        if (input.value) input.value = scrub(input.value)
+      }
+    }).catch(() => {})
+  }
+}
 const shot = async (name) => {
-  await page.screenshot({ path: `/tmp/entra/${name}.png` })
+  await maskTenantIdentifiers()
+  await page.screenshot({
+    path: `${outDir}/${name}.png`,
+    clip: { x: 0, y: 42, width: 1440, height: 900 },
+  })
   console.log('shot', name)
 }
 
@@ -81,7 +123,7 @@ await page.goto(
   `https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/Credentials/appId/${appId}`,
   { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(20000)
-await outline(page, 'Client secrets')
+await outline(page, 'New client secret')
 await shot('pw-02-client-secrets')
 
 await browser.close()

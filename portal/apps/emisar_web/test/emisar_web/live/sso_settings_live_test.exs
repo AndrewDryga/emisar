@@ -37,6 +37,17 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     provider
   end
 
+  defp sync_group(provider, external_group_id, display) do
+    {:ok, group} =
+      SSO.scim_upsert_group(provider, %{
+        external_id: external_group_id,
+        display: display,
+        member_ids: []
+      })
+
+    group
+  end
+
   describe "as an enterprise admin" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
@@ -228,7 +239,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
                ~s|input[name="provider[default_runner_scope][]"][value="group:retired-fleet"][checked]:not([disabled])|
              )
 
-      refute Repo.one(IdentityProvider)
+      refute IdentityProvider.Query.not_deleted()
+             |> IdentityProvider.Query.by_account_id(account.id)
+             |> Repo.one()
     end
 
     test "picking a provider type doesn't accuse the operator of blank fields", %{
@@ -1384,6 +1397,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       provider: provider,
       owner: owner
     } do
+      group = sync_group(provider, "00g-admins", "Admins")
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       # The add form is behind the "Add mapping" button — hidden until clicked.
@@ -1396,8 +1410,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         |> form("#create-mapping-#{provider.id}", %{
           "provider_id" => provider.id,
           "mapping" => %{
-            "external_group_id" => "00g-admins",
-            "external_group_display" => "Admins",
+            "directory_group_id" => group.id,
             "role" => "admin"
           }
         })
@@ -1425,13 +1438,14 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     } do
       for n <- 1..21 do
         suffix = n |> Integer.to_string() |> String.pad_leading(2, "0")
+        role_group = sync_group(provider, "role-group-#{suffix}", "Role group #{suffix}")
+        access_group = sync_group(provider, "access-group-#{suffix}", "Access group #{suffix}")
 
         {:ok, _mapping} =
           SSO.create_group_mapping(
             provider,
             %{
-              external_group_id: "role-group-#{suffix}",
-              external_group_display: "Role group #{suffix}",
+              directory_group_id: role_group.id,
               role: :operator
             },
             owner
@@ -1441,15 +1455,14 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           SSO.create_group_runner_access_mapping(
             provider,
             %{
-              external_group_id: "access-group-#{suffix}",
-              external_group_display: "Access group #{suffix}",
+              directory_group_id: access_group.id,
               runner_access_mode: :all
             },
             owner
           )
       end
 
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       assert has_element?(lv, "#role-mappings-#{provider.id}-pager", "20 / 21 total")
 
@@ -1459,10 +1472,12 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
                "20 / 21 total"
              )
 
-      assert html =~ "Role group 01"
-      refute html =~ "Role group 21"
-      assert html =~ "Access group 01"
-      refute html =~ "Access group 21"
+      role_html = lv |> element("#role-mapping-section-#{provider.id}") |> render()
+      access_html = lv |> element("#runner-access-mapping-section-#{provider.id}") |> render()
+      assert role_html =~ "Role group 01"
+      refute role_html =~ "Role group 21"
+      assert access_html =~ "Access group 01"
+      refute access_html =~ "Access group 21"
 
       _html =
         lv
@@ -1470,17 +1485,22 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         |> render_click()
 
       assert has_element?(lv, "#role-mappings-#{provider.id}-pager", "1 / 21")
-      assert render(lv) =~ "Role group 21"
-      refute render(lv) =~ "Access group 21"
+      assert lv |> element("#role-mapping-section-#{provider.id}") |> render() =~ "Role group 21"
+
+      refute lv
+             |> element("#runner-access-mapping-section-#{provider.id}")
+             |> render() =~ "Access group 21"
 
       _html =
         lv
         |> element("#runner-access-mappings-#{provider.id}-pager a", "Next →")
         |> render_click()
 
-      html = render(lv)
-      assert html =~ "Role group 21"
-      assert html =~ "Access group 21"
+      assert lv |> element("#role-mapping-section-#{provider.id}") |> render() =~ "Role group 21"
+
+      assert lv
+             |> element("#runner-access-mapping-section-#{provider.id}")
+             |> render() =~ "Access group 21"
 
       {:ok, role_mappings, _meta} =
         SSO.list_group_mappings(provider, owner, page: [limit: 100])
@@ -1524,18 +1544,19 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "Role group 01"
     end
 
-    test "edits a mapping's display + role through the inline edit form", %{
+    test "edits a mapping's role while its synced group identity and display stay fixed", %{
       conn: conn,
       account: account,
       provider: provider,
       owner: owner
     } do
+      group = sync_group(provider, "00g-eng", "Eng")
+
       {:ok, mapping} =
         SSO.create_group_mapping(
           provider,
           %{
-            "external_group_id" => "00g-eng",
-            "external_group_display" => "Eng",
+            "directory_group_id" => group.id,
             "role" => "operator"
           },
           owner
@@ -1543,15 +1564,14 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      # Open the inline editor for this mapping (the externalId is the immutable
-      # key; only display + role are editable).
+      # The synced group is immutable mapping identity. Only the role is editable.
       _ = render_click(lv, "start_edit_mapping", %{"id" => mapping.id})
 
       html =
         lv
         |> form("#edit-mapping-#{mapping.id}", %{
           "mapping_id" => mapping.id,
-          "mapping" => %{"external_group_display" => "Engineering", "role" => "admin"}
+          "mapping" => %{"role" => "admin"}
         })
         |> render_submit()
 
@@ -1559,9 +1579,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, [updated], _meta} = SSO.list_group_mappings(provider, owner)
       assert updated.id == mapping.id
-      # The externalId (immutable key) is unchanged; display + role applied.
+      assert updated.directory_group_id == group.id
       assert updated.external_group_id == "00g-eng"
-      assert updated.external_group_display == "Engineering"
+      assert updated.external_group_display == "Eng"
       assert updated.role == :admin
     end
 
@@ -1577,6 +1597,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       assert {:ok, [%{id: runner_id}]} = Emisar.Runners.list_all_runners_for_account(owner)
       assert runner_id == runner.id
+      group = sync_group(provider, "grp-database", "Database team")
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       assert html =~ "Runner access mapping"
@@ -1605,7 +1626,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         |> form("#create-runner-access-mapping-#{provider.id}", %{
           "provider_id" => provider.id,
           "runner_access_mapping" => %{
-            "external_group_id" => "grp-database",
+            "directory_group_id" => group.id,
             "runner_access_mode" => "restricted"
           }
         })
@@ -1618,8 +1639,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         |> form("#create-runner-access-mapping-#{provider.id}", %{
           "provider_id" => provider.id,
           "runner_access_mapping" => %{
-            "external_group_id" => "grp-database",
-            "external_group_display" => "Database team",
+            "directory_group_id" => group.id,
             "runner_access_mode" => "restricted",
             "scope" => ["group:database"]
           }
@@ -1650,7 +1670,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         |> form("#edit-runner-access-mapping-#{mapping.id}", %{
           "runner_access_mapping_id" => mapping.id,
           "runner_access_mapping" => %{
-            "external_group_display" => "Database team",
             "runner_access_mode" => "all"
           }
         })
@@ -1675,12 +1694,13 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       runner =
         Fixtures.Runners.create_runner(account_id: account.id, name: "r20", group: "database")
 
+      group = sync_group(provider, "grp-database", "Database team")
+
       {:ok, _mapping} =
         SSO.create_group_runner_access_mapping(
           provider,
           %{
-            "external_group_id" => "grp-database",
-            "external_group_display" => "Database team",
+            "directory_group_id" => group.id,
             "runner_access_mode" => "restricted",
             "scope" => ["runner:#{runner.id}"]
           },
@@ -1701,12 +1721,13 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       runner =
         Fixtures.Runners.create_runner(account_id: account.id, name: "r21", group: "database")
 
+      group = sync_group(provider, "grp-database", "Database team")
+
       {:ok, _mapping} =
         SSO.create_group_runner_access_mapping(
           provider,
           %{
-            "external_group_id" => "grp-database",
-            "external_group_display" => "Database team",
+            "directory_group_id" => group.id,
             "runner_access_mode" => "restricted",
             "scope" => ["runner:#{runner.id}"]
           },
@@ -1754,6 +1775,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       provider: provider,
       owner: owner
     } do
+      group = sync_group(provider, "grp-owner", "Owners")
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       # Reveal the add form (behind the "Add mapping" button), then read its role select.
@@ -1772,7 +1794,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       rejected =
         render_submit(lv, "create_mapping", %{
           "provider_id" => provider.id,
-          "mapping" => %{"external_group_id" => "grp-owner", "role" => "owner"}
+          "mapping" => %{"directory_group_id" => group.id, "role" => "owner"}
         })
 
       assert rejected =~ "directory sync cannot grant owner"
@@ -1811,10 +1833,12 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # The admin seeds a mapping; after the role drops to viewer the update and
       # delete handlers (Permissions.gated + context `manage_sso`) refuse forged
       # events — the mapping keeps its role and is never soft-deleted.
+      group = sync_group(provider, "00g-keep", "Keep")
+
       {:ok, mapping} =
         SSO.create_group_mapping(
           provider,
-          %{"external_group_id" => "00g-keep", "role" => "operator"},
+          %{"directory_group_id" => group.id, "role" => "operator"},
           owner
         )
 

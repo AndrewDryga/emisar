@@ -876,7 +876,8 @@ defmodule EmisarWeb.SSOSettingsLive do
            |> reload_mappings(provider)}
 
         {:error, %Ecto.Changeset{} = changeset} ->
-          {:noreply, put_mapping_form(socket, provider_id, mapping_to_form(provider, changeset))}
+          form = mapping_to_form(provider, Map.put(changeset, :action, :insert))
+          {:noreply, put_mapping_form(socket, provider_id, form)}
 
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, error_message(reason))}

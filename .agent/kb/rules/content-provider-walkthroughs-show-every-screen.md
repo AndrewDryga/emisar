@@ -17,6 +17,13 @@ that pre-selects an option will produce a working-looking result that is silentl
 because you never clicked it, you have no memory of a decision to re-examine. Outlining the
 control forces you to look at what is actually selected before the shot goes in the docs.
 
+The crop and marker are part of the instruction, not decoration. Keep the complete right edge
+of every relevant field, button, and table column. Paint the outline above the vendor controls
+so an input cannot cover one of its edges. When the instruction names a labelled unit, outline
+the whole unit — heading, input, and action — rather than the heading alone. When every element
+in the shown card is relevant, omit the outline instead of turning the card into a nest of green
+boxes.
+
 ## The three failures this rule exists to stop
 
 | Symptom | What the reader concludes | Actual defect |
@@ -66,10 +73,14 @@ Review, plus two mechanical habits in the capture drivers
 
 - `highlight(label)` outlines the smallest element carrying the text;
   `highlightControl(section)` outlines the row around a checkbox/radio, which carry no text of
-  their own. Call one immediately before every `screenshot`.
-- **Look at every captured image before wiring it in.** Not the filename, not the driver's log
-  line — the pixels. An MFA prompt captioned "Client Credentials" and a frame scrolled past the
-  field its caption described both passed a green run and shipped.
+  their own; `highlightGroup(anchor, companion)` frames a complete labelled unit. Call the
+  appropriate helper immediately before every `screenshot`, except when the whole shown card is
+  the instruction.
+- **Look at every final published image at the width the docs render it before wiring it in.**
+  Not the filename, not the driver's log line, and not only the uncropped capture — the final
+  pixels. Check all four edges, marker continuity, selected state, secrets and account chrome,
+  and that the caption describes what is visible. An MFA prompt captioned "Client Credentials"
+  and a frame scrolled past the field its caption described both passed a green run and shipped.
 
 Related: [`shared-docker-inputs-enter-at-narrowest-layer.md`](shared-docker-inputs-enter-at-narrowest-layer.md)
 is the same shape one layer down — put the thing where its consumer is, not where it was

@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -27,6 +28,7 @@ func main() {
 	env := flag.String("env", "portal/.agent/secrets/entra-trial.env", "env file with the tenant credentials")
 	outDir := flag.String("out", "/tmp/entra", "directory for the captured PNGs")
 	headless := flag.Bool("headless", true, "run Chrome headless")
+	formOnly := flag.Bool("form-only", false, "capture the filled registration form without creating an app")
 	flag.Parse()
 
 	values, err := readEnv(*env)
@@ -36,7 +38,7 @@ func main() {
 	if err := os.MkdirAll(*outDir, 0o755); err != nil {
 		fail(err)
 	}
-	if err := run(values, *outDir, *headless); err != nil {
+	if err := run(values, *outDir, *headless, *formOnly); err != nil {
 		fail(err)
 	}
 }
@@ -69,7 +71,7 @@ func readEnv(path string) (map[string]string, error) {
 	return values, scanner.Err()
 }
 
-func run(env map[string]string, outDir string, headless bool) error {
+func run(env map[string]string, outDir string, headless, formOnly bool) error {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", headless),
 		chromedp.WindowSize(1440, 1000),
@@ -91,7 +93,7 @@ func run(env map[string]string, outDir string, headless bool) error {
 	if err := idpcapture.Screenshot(ctx, outDir, "en-01-signed-in"); err != nil {
 		return err
 	}
-	return appRegistrationFlow(ctx, env, outDir)
+	return appRegistrationFlow(ctx, env, outDir, formOnly)
 }
 
 // signIn walks Microsoft's sign-in sequence. Every screen lives in ONE DOM that
@@ -202,7 +204,7 @@ func submitTOTP(ctx context.Context, env map[string]string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("  submitting TOTP", code)
+	fmt.Println("  submitting TOTP passcode")
 	return chromedp.Run(ctx,
 		chromedp.SendKeys(`input[name="otc"]`, code, chromedp.ByQuery),
 		chromedp.Click(`input[type="submit"]`, chromedp.ByQuery),
@@ -235,11 +237,11 @@ func describePage(ctx context.Context) error {
 // appRegistrationFlow captures the sign-in half of the Entra walkthrough: the
 // registration form with emisar's redirect URI, then the client secret. This is
 // the half that works on a free tenant — provisioning needs P1.
-func appRegistrationFlow(ctx context.Context, env map[string]string, outDir string) error {
+func appRegistrationFlow(ctx context.Context, env map[string]string, outDir string, formOnly bool) error {
 	// Registering again would mint yet another duplicate — seven accumulated before
 	// the list blade's failure to render made them visible. With a client id in
 	// hand, go straight to the saved app.
-	if env["ENTRA_CLIENT_ID"] != "" {
+	if env["ENTRA_CLIENT_ID"] != "" && !formOnly {
 		fmt.Println("  app already registered — skipping the create form")
 		return openRegisteredApp(ctx, env, outDir)
 	}
@@ -247,9 +249,6 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 		chromedp.Navigate("https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade"),
 		chromedp.Sleep(18*time.Second),
 	); err != nil {
-		return err
-	}
-	if err := describePage(ctx); err != nil {
 		return err
 	}
 	if err := idpcapture.Screenshot(ctx, outDir, "en-03-new-registration-blank"); err != nil {
@@ -270,9 +269,20 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 		_ = idpcapture.Screenshot(ctx, outDir, "en-04-platform-failed")
 		return err
 	}
-	_ = highlight(ctx, "Redirect URI")
+	if err := highlightRegistrationGroup(ctx); err != nil {
+		return err
+	}
 	if err := idpcapture.Screenshot(ctx, outDir, "en-04-new-registration-filled"); err != nil {
 		return err
+	}
+	if err := markRegistrationDocsViewport(ctx); err != nil {
+		return err
+	}
+	if err := idpcapture.ScreenshotElement(ctx, outDir, "en-04-new-registration-filled-docs", "[data-emisar-docs-entra-registration=true]"); err != nil {
+		return err
+	}
+	if formOnly {
+		return nil
 	}
 
 	if err := clickTextAtCentre(ctx, "Register"); err != nil {
@@ -282,6 +292,83 @@ func appRegistrationFlow(ctx context.Context, env map[string]string, outDir stri
 		return err
 	}
 	return openRegisteredApp(ctx, env, outDir)
+}
+
+func markRegistrationDocsViewport(ctx context.Context) error {
+	const script = `(() => {
+	  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+	  const register = [...document.querySelectorAll('*')]
+	    .filter(el => visible(el) && (el.textContent || el.value || '').trim() === 'Register')
+	    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length)[0];
+	  if (!register) return false;
+	  const bottom = Math.min(document.documentElement.clientHeight,
+	    register.getBoundingClientRect().bottom + 28);
+	  const crop = document.createElement('div');
+	  crop.dataset.emisarDocsEntraRegistration = 'true';
+	  Object.assign(crop.style, {
+	    position: 'fixed', left: '0', top: '42px', width: '1440px',
+	    height: Math.max(700, bottom - 42) + 'px',
+	    pointerEvents: 'none', zIndex: '2147483647'
+	  });
+  document.body.appendChild(crop);
+  return true;
+})()`
+	var marked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if !marked {
+		return fmt.Errorf("could not isolate the Entra registration blade")
+	}
+	return nil
+}
+
+// highlightRegistrationGroup rings the complete redirect-URI unit: heading,
+// explanation, platform, and URL. An outline applied to the heading's own node
+// disappeared underneath the two inputs and looked broken in the published shot.
+func highlightRegistrationGroup(ctx context.Context) error {
+	const script = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const heading = [...document.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').trim() === 'Redirect URI (optional)')
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length)[0];
+  const uri = [...document.querySelectorAll('input')]
+    .filter(visible)
+    .find(el => (el.value || '').includes('/sign_in/sso/callback'));
+  if (!heading || !uri) return false;
+  let node = heading;
+  for (let up = 0; up < 8 && node; up++, node = node.parentElement) {
+    const box = node.getBoundingClientRect();
+    if (node.contains(uri) && box.width >= 600 && box.height >= 80 && box.height <= 180) {
+      node.scrollIntoView({block: 'center'});
+      const current = node.getBoundingClientRect();
+      const ring = document.createElement('div');
+      Object.assign(ring.style, {
+        position: 'absolute',
+        left: (current.left + window.scrollX - 4) + 'px',
+        top: (current.top + window.scrollY - 4) + 'px',
+        width: (current.width + 8) + 'px',
+        height: (current.height + 8) + 'px',
+        border: '3px solid #10b981',
+        borderRadius: '8px',
+        boxSizing: 'border-box',
+        pointerEvents: 'none',
+        zIndex: '2147483647'
+      });
+      document.body.appendChild(ring);
+      return true;
+    }
+  }
+  return false;
+})()`
+	var marked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if !marked {
+		return errors.New("could not outline the complete Entra redirect URI group")
+	}
+	return chromedp.Run(ctx, chromedp.Sleep(700*time.Millisecond))
 }
 
 // openRegisteredApp captures the saved app's overview.

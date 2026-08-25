@@ -1,9 +1,12 @@
 defmodule Emisar.SSO.GroupRunnerAccessMapping do
   @moduledoc """
-  Explicit additive runner access granted by one synced IdP group.
+  Explicit additive runner access granted by one immutable, server-owned SCIM
+  directory-group resource.
 
   Role mappings remain separate because an IdP group may grant either concern,
   both, or neither, and runner access can contain several group/runner scopes.
+  The external id and display fields are read-only audit/rollback snapshots;
+  they never identify the mapped group.
   """
   use Emisar, :schema
 
@@ -27,6 +30,7 @@ defmodule Emisar.SSO.GroupRunnerAccessMapping do
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :provider, Emisar.SSO.IdentityProvider, where: [deleted_at: nil]
+    belongs_to :directory_group, Emisar.SSO.DirectoryGroup, where: [deleted_at: nil]
 
     timestamps()
   end

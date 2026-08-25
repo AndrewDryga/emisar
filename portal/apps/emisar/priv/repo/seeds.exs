@@ -2629,15 +2629,27 @@ if System.get_env("EMISAR_DEV_FIXED_SCIM_TOKEN") not in [nil, ""] do
       {"kc-grp-security", "Security Review", ~w(kc|nadia), nil}
     ]
 
-    # Map the two mapped groups BEFORE syncing members, so each group sync
-    # recomputes its members' roles against the mapping (leave "Security Review"
-    # unmapped). A duplicate mapping on a repeat seed is expected — ignore it.
-    for {ext, display, _members, role} <- scim_groups, not is_nil(role) do
+    # A mapping belongs to an exact server-owned SCIM group resource. Create the
+    # empty resources first, map their immutable ids, then sync members so each
+    # push recomputes against the mapping. Leave "Security Review" unmapped.
+    scim_groups_by_external_id =
+      Map.new(scim_groups, fn {ext, display, _members, _role} ->
+        {:ok, group} =
+          Emisar.SSO.scim_upsert_group(scim_provider, %{
+            external_id: ext,
+            display: display,
+            member_ids: []
+          })
+
+        {ext, group}
+      end)
+
+    # A duplicate mapping on a repeat seed is expected — ignore it.
+    for {ext, _display, _members, role} <- scim_groups, not is_nil(role) do
       case Emisar.SSO.create_group_mapping(
              scim_provider,
              %{
-               "external_group_id" => ext,
-               "external_group_display" => display,
+               "directory_group_id" => Map.fetch!(scim_groups_by_external_id, ext).id,
                "role" => to_string(role)
              },
              owner_subject

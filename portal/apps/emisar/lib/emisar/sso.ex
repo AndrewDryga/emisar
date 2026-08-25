@@ -158,7 +158,7 @@ defmodule Emisar.SSO do
   @doc """
   The users provisioned through `provider` — its `UserIdentity` rows (SCIM sync,
   SSO first-login, or approved link), each preloaded with the user, most-recent
-  first. Powers the connection page's "Synced users" list. Requires `manage_sso`;
+  first. Powers the connection page's "Synced members" list. Requires `manage_sso`;
   scoped to the account. Returns `{:ok, [%UserIdentity{}]}`.
   """
   def list_synced_users(%IdentityProvider{} = provider, %Subject{} = subject) do
@@ -266,13 +266,13 @@ defmodule Emisar.SSO do
   @doc """
   Changeset for the group→role mapping form. From a `%IdentityProvider{}` it's a
   create form (account/provider come from the provider); from a `%GroupRoleMapping{}`
-  it's the inline edit form (only display + role are cast). The owner-exclusion +
+  it's the inline edit form (only role is cast). The owner-exclusion +
   required-field validations match the server write path.
   """
   def change_group_mapping(provider_or_mapping, attrs \\ %{})
 
   def change_group_mapping(%IdentityProvider{} = provider, attrs),
-    do: GroupRoleMapping.Changeset.create(provider.account_id, provider.id, attrs)
+    do: GroupRoleMapping.Changeset.form(provider.account_id, provider.id, attrs)
 
   def change_group_mapping(%GroupRoleMapping{} = mapping, attrs),
     do: GroupRoleMapping.Changeset.update(mapping, attrs)
@@ -297,7 +297,7 @@ defmodule Emisar.SSO do
         mapping_selection(attrs, subject.account.id, %GroupRunnerAccessMapping{})
 
       {:ok,
-       GroupRunnerAccessMapping.Changeset.create(
+       GroupRunnerAccessMapping.Changeset.form(
          provider.account_id,
          provider.id,
          attrs,
@@ -1503,7 +1503,7 @@ defmodule Emisar.SSO do
         Users.fetch_and_lock_user_by_id(identity.user_id, repo)
       end)
       |> Multi.merge(fn %{locked_user: user} ->
-        if claims_name_the_same_person?(provider, user, claims) do
+        if claims_name_the_same_person?(provider, identity, user, claims) do
           returning_auth_writes(provider, identity, user)
         else
           pending_auth_writes(provider, identity.provider_identifier, claims)
@@ -1530,12 +1530,71 @@ defmodule Emisar.SSO do
 
   defp synthesized_oidc_identifier?(%UserIdentity{}), do: false
 
-  defp claims_name_the_same_person?(provider, user, claims) do
+  # Entra and Okta omit `email_verified` from real ID tokens. Email remains
+  # unusable as identity evidence, but their tenant-bound stable identifiers can
+  # converge with the exact active SCIM resource whose externalId created this
+  # binding. This stays provider-specific: the issuer must be the one the
+  # callback already verified, the claim must name the same synthesized
+  # identifier, the SCIM lifecycle must be live, and the account membership must
+  # still be active. An explicit false email claim never rides this omission-only
+  # path.
+  defp claims_name_the_same_person?(
+         %IdentityProvider{
+           kind: :entra,
+           scim_enabled: true,
+           identifier_claim: :oid
+         } = provider,
+         %UserIdentity{
+           provisioned_via: :scim,
+           scim_active: true,
+           scim_deleted_at: nil,
+           provider_identifier_retired_at: nil
+         } = identity,
+         user,
+         %{"iss" => issuer, "oid" => oid} = claims
+       ) do
+    oid == identity.provider_identifier and
+      oid == identity.scim_external_id and
+      issuer == provider.issuer and
+      not Map.has_key?(claims, "email_verified") and
+      active_scim_membership?(provider, user)
+  end
+
+  defp claims_name_the_same_person?(
+         %IdentityProvider{
+           kind: :okta,
+           scim_enabled: true,
+           identifier_claim: :sub
+         } = provider,
+         %UserIdentity{
+           provisioned_via: :scim,
+           scim_active: true,
+           scim_deleted_at: nil,
+           provider_identifier_retired_at: nil
+         } = identity,
+         user,
+         %{"iss" => issuer, "sub" => sub} = claims
+       ) do
+    sub == identity.provider_identifier and
+      sub == identity.scim_external_id and
+      issuer == provider.issuer and
+      not Map.has_key?(claims, "email_verified") and
+      active_scim_membership?(provider, user)
+  end
+
+  defp claims_name_the_same_person?(provider, _identity, user, claims) do
     with email when is_binary(email) <- verified_email(provider, claims),
          {:ok, email_owner} <- Users.fetch_user_by_email(email) do
       email_owner.id == user.id
     else
       _ -> false
+    end
+  end
+
+  defp active_scim_membership?(provider, user) do
+    case Accounts.peek_sync_membership(provider.account_id, user.id) do
+      %Accounts.Membership{disabled_at: nil, directory_suspended: false} -> true
+      _missing_or_inactive -> false
     end
   end
 
@@ -1893,7 +1952,7 @@ defmodule Emisar.SSO do
     DirectoryGroupMember.Query.not_deleted()
     |> DirectoryGroupMember.Query.by_user_identity_id(identity.id)
     |> Repo.all()
-    |> Enum.map(& &1.external_group_id)
+    |> Enum.map(& &1.directory_group_id)
   end
 
   # -- Directory sync (SCIM) — config (Subject-gated) ------------------
@@ -1997,13 +2056,13 @@ defmodule Emisar.SSO do
   # -- Directory sync (SCIM) — group→role mapping config (Subject-gated) --
 
   @doc """
-  List each external group a provider has synced via SCIM with its distinct
+  List each group resource a provider has synced via SCIM with its distinct
   member count — the synced-groups readout, and (projected to ids) the picker
   source for map-after-first-sync so an admin keys a role mapping on a real
   synced group. Each row also carries its current role and runner-access
   mappings, if any, so paginating the editable lists cannot make an off-page
   mapping look absent. `manage_sso` + Enterprise; account-scoped and ordered by
-  external group id.
+  immutable server id.
   """
   def list_synced_groups(%IdentityProvider{} = provider, %Subject{} = subject) do
     with :ok <- ensure_can_manage_sso(subject),
@@ -2016,37 +2075,38 @@ defmodule Emisar.SSO do
         DirectoryGroupMember.Query.not_deleted()
         |> DirectoryGroupMember.Query.group_counts_for_provider(provider.id)
         |> Repo.all()
-        |> Map.new(&{&1.external_group_id, &1})
+        |> Map.new(&{&1.directory_group_id, &1})
 
       role_mappings =
         GroupRoleMapping.Query.not_deleted()
         |> GroupRoleMapping.Query.by_provider_id(provider.id)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
-        |> Map.new(&{&1.external_group_id, &1})
+        |> Map.new(&{&1.directory_group_id, &1})
 
       runner_access_mappings =
         GroupRunnerAccessMapping.Query.not_deleted()
         |> GroupRunnerAccessMapping.Query.by_provider_id(provider.id)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
-        |> Map.new(&{&1.external_group_id, &1})
+        |> Map.new(&{&1.directory_group_id, &1})
 
       groups =
         DirectoryGroup.Query.not_deleted()
         |> DirectoryGroup.Query.by_account_id(provider.account_id)
         |> DirectoryGroup.Query.by_provider_id(provider.id)
-        |> DirectoryGroup.Query.with_external_group_id()
-        |> DirectoryGroup.Query.ordered_by_external_group_id()
+        |> DirectoryGroup.Query.ordered_by_display()
         |> Repo.all()
         |> Enum.map(fn group ->
-          counted = Map.get(counts, group.external_group_id, %{})
+          counted = Map.get(counts, group.id, %{})
 
           %{
+            id: group.id,
             external_group_id: group.external_group_id,
+            display: group.display,
             member_count: Map.get(counted, :member_count, 0),
-            mapping: Map.get(role_mappings, group.external_group_id),
-            runner_access_mapping: Map.get(runner_access_mappings, group.external_group_id)
+            mapping: Map.get(role_mappings, group.id),
+            runner_access_mapping: Map.get(runner_access_mappings, group.id)
           }
         end)
 
@@ -2057,12 +2117,9 @@ defmodule Emisar.SSO do
   @doc "List a provider's group→role mappings. `manage_sso` + enterprise; account-scoped."
   def list_group_mappings(%IdentityProvider{id: provider_id}, %Subject{} = subject, opts \\ []) do
     with :ok <- ensure_can_manage_sso(subject) do
-      # No pre-ordering: the query module's cursor (external_group_id, id) drives
-      # the ORDER BY so it matches the keyset WHERE. `external_group_display` is
-      # nullable, so it can't be a keyset field (this paginator can't compare
-      # NULLs) — order on the required external_group_id instead.
       GroupRoleMapping.Query.not_deleted()
       |> GroupRoleMapping.Query.by_provider_id(provider_id)
+      |> GroupRoleMapping.Query.with_preloaded_directory_group()
       |> Authorizer.for_subject(subject)
       |> Repo.list(GroupRoleMapping.Query, opts)
     end
@@ -2077,7 +2134,9 @@ defmodule Emisar.SSO do
   def create_group_mapping(%IdentityProvider{} = provider, attrs, %Subject{} = subject) do
     with :ok <- ensure_can_configure_directory_sync(subject),
          :ok <- ensure_grantable_role(attrs["role"] || attrs[:role], subject),
-         {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
+         {:ok, provider} <- fetch_provider_by_id(provider.id, subject),
+         form = GroupRoleMapping.Changeset.form(provider.account_id, provider.id, attrs),
+         :ok <- valid_mapping_form(form) do
       multi = create_group_mapping_multi(provider, attrs, subject)
 
       case Repo.commit_multi(multi,
@@ -2089,67 +2148,107 @@ defmodule Emisar.SSO do
     end
   end
 
+  defp valid_mapping_form(%Ecto.Changeset{valid?: true}), do: :ok
+  defp valid_mapping_form(%Ecto.Changeset{} = changeset), do: {:error, changeset}
+
   defp create_group_mapping_multi(%IdentityProvider{} = provider, attrs, %Subject{} = subject) do
-    changeset = GroupRoleMapping.Changeset.create(provider.account_id, provider.id, attrs)
+    directory_group_id = attrs["directory_group_id"] || attrs[:directory_group_id]
 
     Multi.new()
-    |> Multi.run(:authorization_version, fn _repo, _changes ->
-      prepare_mapping_authorization_change(
-        provider.account_id,
-        provider.id,
-        Ecto.Changeset.get_field(changeset, :external_group_id)
-      )
+    |> Multi.run(:authorization_change, fn _repo, _changes ->
+      prepare_mapping_authorization_change(provider.account_id, provider.id, directory_group_id)
     end)
-    |> Multi.insert(:mapping, changeset)
+    |> Multi.insert(:mapping, fn %{authorization_change: %{group: group}} ->
+      GroupRoleMapping.Changeset.create(provider.account_id, provider.id, group, attrs)
+    end)
     |> Multi.insert(:audit, fn %{mapping: mapping} ->
       Audit.Events.group_role_mapping_created(subject, provider, mapping)
     end)
   end
 
-  @doc "Update a group→role mapping (its role / display). `manage_sso` + enterprise; account-scoped. Reconciles current group members after commit and rejects `:owner`."
-  def update_group_mapping(%GroupRoleMapping{id: id}, attrs, %Subject{} = subject) do
+  @doc "Update a group→role mapping's role. `manage_sso` + enterprise; account-scoped. Reconciles current group members after commit and rejects `:owner`."
+  def update_group_mapping(
+        %GroupRoleMapping{id: id, provider_id: provider_id},
+        attrs,
+        %Subject{} = subject
+      ) do
     with :ok <- ensure_can_configure_directory_sync(subject),
          :ok <- ensure_grantable_role(attrs["role"] || attrs[:role], subject) do
-      GroupRoleMapping.Query.not_deleted()
-      |> GroupRoleMapping.Query.by_id(id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(GroupRoleMapping.Query,
-        with: fn mapping ->
-          case prepare_mapping_authorization_change(
-                 mapping.account_id,
-                 mapping.provider_id,
-                 mapping.external_group_id
-               ) do
-            {:ok, _provider} -> GroupRoleMapping.Changeset.update(mapping, attrs)
-            {:error, reason} -> reason
-          end
-        end,
-        audit: &Audit.Events.group_role_mapping_updated(subject, &1),
-        after_commit: &recompute_mapping_members/1
+      Multi.new()
+      |> put_mapping_provider_lock(provider_id, subject)
+      |> Multi.run(:locked_mapping, fn _repo, %{locked_provider: provider} ->
+        GroupRoleMapping.Query.not_deleted()
+        |> GroupRoleMapping.Query.by_provider_id(provider.id)
+        |> GroupRoleMapping.Query.by_id(id)
+        |> GroupRoleMapping.Query.lock_for_update()
+        |> Authorizer.for_subject(subject)
+        |> Repo.fetch(GroupRoleMapping.Query)
+      end)
+      |> Multi.run(:authorization_change, fn _repo,
+                                             %{
+                                               locked_provider: provider,
+                                               locked_mapping: mapping
+                                             } ->
+        prepare_locked_mapping_authorization_change(
+          provider,
+          mapping.directory_group_id,
+          :live
+        )
+      end)
+      |> Multi.update(:mapping, fn %{locked_mapping: mapping} ->
+        GroupRoleMapping.Changeset.update(mapping, attrs)
+      end)
+      |> Multi.insert(:audit, fn %{mapping: mapping} ->
+        Audit.Events.group_role_mapping_updated(subject, mapping)
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{mapping: mapping} ->
+          recompute_mapping_members(mapping)
+        end
       )
+      |> mapping_result()
     end
   end
 
   @doc "Soft-delete a group→role mapping. `manage_sso` + enterprise; account-scoped. Reconciles current group members after commit."
-  def delete_group_mapping(%GroupRoleMapping{id: id}, %Subject{} = subject) do
+  def delete_group_mapping(
+        %GroupRoleMapping{id: id, provider_id: provider_id},
+        %Subject{} = subject
+      ) do
     with :ok <- ensure_can_configure_directory_sync(subject) do
-      GroupRoleMapping.Query.not_deleted()
-      |> GroupRoleMapping.Query.by_id(id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(GroupRoleMapping.Query,
-        with: fn mapping ->
-          case prepare_mapping_authorization_change(
-                 mapping.account_id,
-                 mapping.provider_id,
-                 mapping.external_group_id
-               ) do
-            {:ok, _provider} -> GroupRoleMapping.Changeset.delete(mapping)
-            {:error, reason} -> reason
-          end
-        end,
-        audit: &Audit.Events.group_role_mapping_deleted(subject, &1),
-        after_commit: &recompute_mapping_members/1
+      Multi.new()
+      |> put_mapping_provider_lock(provider_id, subject)
+      |> Multi.run(:locked_mapping, fn _repo, %{locked_provider: provider} ->
+        GroupRoleMapping.Query.not_deleted()
+        |> GroupRoleMapping.Query.by_provider_id(provider.id)
+        |> GroupRoleMapping.Query.by_id(id)
+        |> GroupRoleMapping.Query.lock_for_update()
+        |> Authorizer.for_subject(subject)
+        |> Repo.fetch(GroupRoleMapping.Query)
+      end)
+      |> Multi.run(:authorization_change, fn _repo,
+                                             %{
+                                               locked_provider: provider,
+                                               locked_mapping: mapping
+                                             } ->
+        prepare_locked_mapping_authorization_change(
+          provider,
+          mapping.directory_group_id,
+          :including_deleted
+        )
+      end)
+      |> Multi.update(:mapping, fn %{locked_mapping: mapping} ->
+        GroupRoleMapping.Changeset.delete(mapping)
+      end)
+      |> Multi.insert(:audit, fn %{mapping: mapping} ->
+        Audit.Events.group_role_mapping_deleted(subject, mapping)
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{mapping: mapping} ->
+          recompute_mapping_members(mapping)
+        end
       )
+      |> mapping_result()
     end
   end
 
@@ -2162,6 +2261,7 @@ defmodule Emisar.SSO do
     with :ok <- ensure_can_manage_sso(subject) do
       GroupRunnerAccessMapping.Query.not_deleted()
       |> GroupRunnerAccessMapping.Query.by_provider_id(provider_id)
+      |> GroupRunnerAccessMapping.Query.with_preloaded_directory_group()
       |> Authorizer.for_subject(subject)
       |> Repo.list(GroupRunnerAccessMapping.Query, opts)
     end
@@ -2179,24 +2279,32 @@ defmodule Emisar.SSO do
          {:ok, provider} <- fetch_provider_by_id(provider.id, subject),
          {attrs, allowlist} =
            mapping_selection(attrs, provider.account_id, %GroupRunnerAccessMapping{}),
-         changeset =
-           GroupRunnerAccessMapping.Changeset.create(
+         form =
+           GroupRunnerAccessMapping.Changeset.form(
              provider.account_id,
              provider.id,
              attrs,
              allowlist
            ),
-         {:ok, access} <- runner_access_mapping_from_changeset(changeset),
+         {:ok, access} <- runner_access_mapping_from_changeset(form),
          :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access) do
       Multi.new()
-      |> Multi.run(:authorization_version, fn _repo, _changes ->
+      |> Multi.run(:authorization_change, fn _repo, _changes ->
         prepare_mapping_authorization_change(
           provider.account_id,
           provider.id,
-          Ecto.Changeset.get_field(changeset, :external_group_id)
+          Ecto.Changeset.get_field(form, :directory_group_id)
         )
       end)
-      |> Multi.insert(:mapping, changeset)
+      |> Multi.insert(:mapping, fn %{authorization_change: %{group: group}} ->
+        GroupRunnerAccessMapping.Changeset.create(
+          provider.account_id,
+          provider.id,
+          group,
+          attrs,
+          allowlist
+        )
+      end)
       |> Multi.insert(:audit, fn %{mapping: mapping} ->
         Audit.Events.group_runner_access_mapping_created(subject, provider, mapping)
       end)
@@ -2214,67 +2322,110 @@ defmodule Emisar.SSO do
 
   @doc "Update an IdP-group runner-access grant and immediately reconcile current members."
   def update_group_runner_access_mapping(
-        %GroupRunnerAccessMapping{id: id},
+        %GroupRunnerAccessMapping{id: id, provider_id: provider_id},
         attrs,
         %Subject{} = subject
       ) do
     with :ok <- ensure_can_configure_directory_sync(subject) do
-      GroupRunnerAccessMapping.Query.not_deleted()
-      |> GroupRunnerAccessMapping.Query.by_id(id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(GroupRunnerAccessMapping.Query,
-        with: fn mapping ->
-          # The locked row is what the selection is resolved against: its
-          # account owns the runners, so a cross-account id never gets here.
-          {attrs, allowlist} = mapping_selection(attrs, mapping.account_id, mapping)
-          changeset = GroupRunnerAccessMapping.Changeset.update(mapping, attrs, allowlist)
+      Multi.new()
+      |> put_mapping_provider_lock(provider_id, subject)
+      |> Multi.run(:locked_mapping, fn _repo, %{locked_provider: provider} ->
+        GroupRunnerAccessMapping.Query.not_deleted()
+        |> GroupRunnerAccessMapping.Query.by_provider_id(provider.id)
+        |> GroupRunnerAccessMapping.Query.by_id(id)
+        |> GroupRunnerAccessMapping.Query.lock_for_update()
+        |> Authorizer.for_subject(subject)
+        |> Repo.fetch(GroupRunnerAccessMapping.Query)
+      end)
+      |> Multi.run(:validated_mapping, fn _repo, %{locked_mapping: mapping} ->
+        {attrs, allowlist} = mapping_selection(attrs, mapping.account_id, mapping)
+        changeset = GroupRunnerAccessMapping.Changeset.update(mapping, attrs, allowlist)
 
-          with {:ok, access} <- runner_access_mapping_from_changeset(changeset),
-               :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access),
-               {:ok, _provider} <-
-                 prepare_mapping_authorization_change(
-                   mapping.account_id,
-                   mapping.provider_id,
-                   mapping.external_group_id
-                 ) do
-            changeset
-          else
-            {:error, %Ecto.Changeset{} = invalid} -> invalid
-            {:error, reason} -> reason
-          end
-        end,
-        audit: fn updated, changeset ->
-          Audit.Events.group_runner_access_mapping_updated(subject, changeset.data, updated)
-        end,
-        after_commit: &recompute_runner_access_mapping_members/1
+        with {:ok, access} <- runner_access_mapping_from_changeset(changeset),
+             :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access) do
+          {:ok, changeset}
+        end
+      end)
+      |> Multi.run(:authorization_change, fn _repo,
+                                             %{
+                                               locked_provider: provider,
+                                               locked_mapping: mapping
+                                             } ->
+        prepare_locked_mapping_authorization_change(
+          provider,
+          mapping.directory_group_id,
+          :live
+        )
+      end)
+      |> Multi.update(:mapping, & &1.validated_mapping)
+      |> Multi.insert(:audit, fn %{locked_mapping: before_mapping, mapping: mapping} ->
+        Audit.Events.group_runner_access_mapping_updated(subject, before_mapping, mapping)
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{mapping: mapping} ->
+          recompute_runner_access_mapping_members(mapping)
+        end
       )
+      |> mapping_result()
     end
   end
 
   @doc "Delete an IdP-group runner-access grant and immediately revoke its derived reach."
   def delete_group_runner_access_mapping(
-        %GroupRunnerAccessMapping{id: id},
+        %GroupRunnerAccessMapping{id: id, provider_id: provider_id},
         %Subject{} = subject
       ) do
     with :ok <- ensure_can_configure_directory_sync(subject) do
-      GroupRunnerAccessMapping.Query.not_deleted()
-      |> GroupRunnerAccessMapping.Query.by_id(id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(GroupRunnerAccessMapping.Query,
-        with: fn mapping ->
-          case prepare_mapping_authorization_change(
-                 mapping.account_id,
-                 mapping.provider_id,
-                 mapping.external_group_id
-               ) do
-            {:ok, _provider} -> GroupRunnerAccessMapping.Changeset.delete(mapping)
-            {:error, reason} -> reason
-          end
-        end,
-        audit: &Audit.Events.group_runner_access_mapping_deleted(subject, &1),
-        after_commit: &recompute_runner_access_mapping_members/1
+      Multi.new()
+      |> put_mapping_provider_lock(provider_id, subject)
+      |> Multi.run(:locked_mapping, fn _repo, %{locked_provider: provider} ->
+        GroupRunnerAccessMapping.Query.not_deleted()
+        |> GroupRunnerAccessMapping.Query.by_provider_id(provider.id)
+        |> GroupRunnerAccessMapping.Query.by_id(id)
+        |> GroupRunnerAccessMapping.Query.lock_for_update()
+        |> Authorizer.for_subject(subject)
+        |> Repo.fetch(GroupRunnerAccessMapping.Query)
+      end)
+      |> Multi.run(:authorization_change, fn _repo,
+                                             %{
+                                               locked_provider: provider,
+                                               locked_mapping: mapping
+                                             } ->
+        prepare_locked_mapping_authorization_change(
+          provider,
+          mapping.directory_group_id,
+          :including_deleted
+        )
+      end)
+      |> Multi.update(:mapping, fn %{locked_mapping: mapping} ->
+        GroupRunnerAccessMapping.Changeset.delete(mapping)
+      end)
+      |> Multi.insert(:audit, fn %{mapping: mapping} ->
+        Audit.Events.group_runner_access_mapping_deleted(subject, mapping)
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{mapping: mapping} ->
+          recompute_runner_access_mapping_members(mapping)
+        end
       )
+      |> mapping_result()
     end
+  end
+
+  defp mapping_result({:ok, %{mapping: mapping}}), do: {:ok, mapping}
+  defp mapping_result({:error, reason}), do: {:error, reason}
+
+  # SCIM writes lock provider → group before touching mapping snapshots. Every
+  # operator mapping mutation starts with the same provider fence, so a rename
+  # cannot deadlock against an update/delete that grabbed the mapping row first.
+  defp put_mapping_provider_lock(multi, provider_id, %Subject{} = subject) do
+    Multi.run(multi, :locked_provider, fn _repo, _changes ->
+      IdentityProvider.Query.not_deleted()
+      |> IdentityProvider.Query.by_id(provider_id)
+      |> IdentityProvider.Query.lock_for_update()
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(IdentityProvider.Query)
+    end)
   end
 
   defp runner_access_mapping_from_changeset(%Ecto.Changeset{} = changeset) do
@@ -2288,7 +2439,7 @@ defmodule Emisar.SSO do
     end
   end
 
-  defp prepare_mapping_authorization_change(account_id, provider_id, external_group_id) do
+  defp prepare_mapping_authorization_change(account_id, provider_id, directory_group_id) do
     provider =
       IdentityProvider.Query.not_deleted()
       |> IdentityProvider.Query.by_account_id(account_id)
@@ -2296,9 +2447,18 @@ defmodule Emisar.SSO do
       |> IdentityProvider.Query.lock_for_update()
       |> Repo.fetch(IdentityProvider.Query)
 
-    with {:ok, %IdentityProvider{scim_enabled: true} = provider} <- provider,
-         {:ok, updated_provider} <- bump_provider_authorization_version(provider) do
-      user_ids = external_group_user_ids(provider, external_group_id)
+    with {:ok, %IdentityProvider{} = provider} <- provider,
+         {:ok, group} <- fetch_live_directory_group(provider, directory_group_id) do
+      maybe_prepare_mapping_authorization_change(provider, group)
+    end
+  end
+
+  defp maybe_prepare_mapping_authorization_change(
+         %IdentityProvider{scim_enabled: true} = provider,
+         %DirectoryGroup{} = group
+       ) do
+    with {:ok, updated_provider} <- bump_provider_authorization_version(provider) do
+      user_ids = directory_group_user_ids(provider, group.id)
 
       {:ok, _version} =
         Accounts.mark_directory_authorization_pending(
@@ -2309,16 +2469,57 @@ defmodule Emisar.SSO do
           updated_provider.authorization_version
         )
 
-      {:ok, updated_provider}
-    else
-      {:ok, %IdentityProvider{} = provider} -> {:ok, provider}
-      {:error, reason} -> {:error, reason}
+      {:ok, %{provider: updated_provider, group: group}}
     end
   end
 
-  defp external_group_user_ids(provider, external_group_id) do
+  defp maybe_prepare_mapping_authorization_change(
+         %IdentityProvider{} = provider,
+         %DirectoryGroup{} = group
+       ),
+       do: {:ok, %{provider: provider, group: group}}
+
+  defp fetch_live_directory_group(%IdentityProvider{} = provider, directory_group_id) do
+    if Repo.valid_uuid?(directory_group_id) do
+      DirectoryGroup.Query.not_deleted()
+      |> DirectoryGroup.Query.by_account_id(provider.account_id)
+      |> DirectoryGroup.Query.by_provider_id(provider.id)
+      |> DirectoryGroup.Query.by_id(directory_group_id)
+      |> DirectoryGroup.Query.lock_for_update()
+      |> Repo.fetch(DirectoryGroup.Query)
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp prepare_locked_mapping_authorization_change(provider, directory_group_id, group_scope) do
+    fetch =
+      case group_scope do
+        :live -> &fetch_live_directory_group/2
+        :including_deleted -> &fetch_directory_group/2
+      end
+
+    with {:ok, group} <- fetch.(provider, directory_group_id) do
+      maybe_prepare_mapping_authorization_change(provider, group)
+    end
+  end
+
+  defp fetch_directory_group(%IdentityProvider{} = provider, directory_group_id) do
+    if Repo.valid_uuid?(directory_group_id) do
+      DirectoryGroup.Query.all()
+      |> DirectoryGroup.Query.by_account_id(provider.account_id)
+      |> DirectoryGroup.Query.by_provider_id(provider.id)
+      |> DirectoryGroup.Query.by_id(directory_group_id)
+      |> DirectoryGroup.Query.lock_for_update()
+      |> Repo.fetch(DirectoryGroup.Query)
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp directory_group_user_ids(provider, directory_group_id) do
     provider
-    |> current_group_members_by_external_id(external_group_id)
+    |> current_group_members(directory_group_id)
     |> Enum.map(& &1.user_identity_id)
     |> then(&load_identities(provider, &1))
     |> Enum.map(& &1.user_id)
@@ -2347,7 +2548,7 @@ defmodule Emisar.SSO do
       %IdentityProvider{scim_enabled: true} = provider ->
         identity_ids =
           provider
-          |> current_group_members_by_external_id(mapping.external_group_id)
+          |> current_group_members(mapping.directory_group_id)
           |> Enum.map(& &1.user_identity_id)
 
         provider

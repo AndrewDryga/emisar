@@ -2,16 +2,28 @@ defmodule Emisar.SSO.GroupRoleMapping.Changeset do
   use Emisar, :changeset
   alias Emisar.SSO.GroupRoleMapping
 
-  @create_fields ~w[external_group_id external_group_display role]a
-  @update_fields ~w[external_group_display role]a
+  @create_fields ~w[directory_group_id role]a
+  @update_fields ~w[role]a
   @max_string_length 255
 
-  def create(account_id, provider_id, attrs) do
+  def form(account_id, provider_id, attrs) do
     %GroupRoleMapping{}
     |> cast(attrs, @create_fields)
     |> put_change(:account_id, account_id)
     |> put_change(:provider_id, provider_id)
-    |> validate_required([:account_id, :provider_id, :external_group_id, :role])
+    |> validate_required([:account_id, :provider_id, :directory_group_id, :role])
+    |> changeset()
+  end
+
+  def create(account_id, provider_id, group, attrs) do
+    %GroupRoleMapping{}
+    |> cast(attrs, @create_fields)
+    |> put_change(:account_id, account_id)
+    |> put_change(:provider_id, provider_id)
+    |> put_change(:directory_group_id, group.id)
+    |> put_change(:external_group_id, group.external_group_id)
+    |> put_change(:external_group_display, group.display)
+    |> validate_required([:account_id, :provider_id, :directory_group_id, :role])
     |> changeset()
   end
 
@@ -31,11 +43,13 @@ defmodule Emisar.SSO.GroupRoleMapping.Changeset do
     # assignment (decision 7). Defense in depth: `Accounts.sync_set_membership_role/3`
     # also refuses `:owner`, but rejecting it here keeps an owner mapping from
     # ever being stored in the first place.
-    |> validate_length(:external_group_id, max: @max_string_length)
     |> validate_length(:external_group_display, max: @max_string_length)
     |> validate_exclusion(:role, [:owner], message: "directory sync cannot grant owner")
-    |> unique_constraint([:provider_id, :external_group_id],
-      name: :sso_directory_group_role_mappings_provider_group_index
+    |> unique_constraint([:provider_id, :directory_group_id],
+      name: :sso_group_role_mappings_provider_group_id_index
+    )
+    |> foreign_key_constraint(:directory_group_id,
+      name: :sso_group_role_mapping_directory_group_fkey
     )
   end
 end

@@ -17,6 +17,15 @@ defmodule Emisar.SSO.GroupRoleMapping.Query do
   def by_provider_id(queryable, provider_id),
     do: where(queryable, [mappings: m], m.provider_id == ^provider_id)
 
+  def by_directory_group_id(queryable, directory_group_id),
+    do: where(queryable, [mappings: m], m.directory_group_id == ^directory_group_id)
+
+  def with_preloaded_directory_group(queryable) do
+    preload(queryable, directory_group: ^Emisar.SSO.DirectoryGroup.Query.all())
+  end
+
+  def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
+
   # {provider_id, count} rows — the per-connection group-mapping tallies for the
   # overview. Group by provider so one query covers every connection.
   def count_by_provider(queryable) do
@@ -25,10 +34,7 @@ defmodule Emisar.SSO.GroupRoleMapping.Query do
     |> select([mappings: m], {m.provider_id, count(m.id)})
   end
 
-  def by_external_group_id(queryable, external_group_id),
-    do: where(queryable, [mappings: m], m.external_group_id == ^external_group_id)
-
   @impl Emisar.Repo.Query
   def cursor_fields,
-    do: [{:mappings, :asc, :external_group_id}, {:mappings, :asc, :id}]
+    do: [{:mappings, :asc, :directory_group_id}, {:mappings, :asc, :id}]
 end

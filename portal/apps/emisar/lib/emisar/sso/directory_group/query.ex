@@ -21,8 +21,19 @@ defmodule Emisar.SSO.DirectoryGroup.Query do
   def by_external_group_id(queryable, external_group_id),
     do: where(queryable, [groups: g], g.external_group_id == ^external_group_id)
 
-  def with_external_group_id(queryable \\ all()),
-    do: where(queryable, [groups: g], not is_nil(g.external_group_id))
+  # Okta omits externalId on Group POST, then remembers our returned resource id
+  # and probes it as `externalId eq "<id>"` before subsequent pushes. Match only
+  # that exact immutable id while the IdP-owned attribute is absent; do not
+  # synthesize or persist an externalId, and never fall back to displayName.
+  def by_external_group_id_or_unset_resource_id(queryable, external_group_id) do
+    where(
+      queryable,
+      [groups: g],
+      g.external_group_id == ^external_group_id or
+        (is_nil(g.external_group_id) and
+           fragment("?::text = ?", g.id, ^external_group_id))
+    )
+  end
 
   @doc """
   The `displayName eq` probe Entra sends before every push, matched
@@ -49,6 +60,21 @@ defmodule Emisar.SSO.DirectoryGroup.Query do
 
   def ordered_by_external_group_id(queryable),
     do: order_by(queryable, [groups: g], asc: g.external_group_id, asc: g.id)
+
+  def ordered_by_display(queryable) do
+    order_by(queryable, [groups: g],
+      asc:
+        fragment(
+          "lower(coalesce(nullif(?, ''), ?, ?::text))",
+          g.display,
+          g.external_group_id,
+          g.id
+        ),
+      asc: g.id
+    )
+  end
+
+  def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
 
   def count_by_provider(queryable \\ all()) do
     queryable

@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -30,9 +31,15 @@ const (
 	consoleURL           = "https://console.cloud.google.com/auth/overview"
 	docsRedirectURI      = "https://emisar.dev/sign_in/sso/callback"
 	captureClientName    = "emisar docs capture"
+	certifyClientName    = "emisar login certification"
 	redactedUser         = "admin@example.com"
 	redactedClientID     = "000000000000-example.apps.googleusercontent.com"
 	redactedClientSecret = "GOCSPX-example-redacted-client-secret"
+)
+
+var (
+	googleClientIDPattern     = regexp.MustCompile(`[0-9]{6,}-[a-z0-9]{10,}\.apps\.googleusercontent\.com`)
+	googleClientSecretPattern = regexp.MustCompile(`GOCSPX-[A-Za-z0-9_-]{6,}`)
 )
 
 func main() {
@@ -50,6 +57,7 @@ func main() {
 	freshProject := flag.String("fresh-project", "", "create this project first and walk its Get started wizard")
 	project := flag.String("project", "", "capture against this project id instead of the credential's own project")
 	certifyRedirect := flag.String("certify-redirect-uri", "", "create a client for this redirect URI and write its credentials to portal/.agent/secrets/google-cert-client.env")
+	certifyCredentials := flag.String("certify-credentials", "portal/.agent/secrets/google-cert-client.env", "ignored env file for the certification client's credentials")
 	certifyLogin := flag.String("certify-login", "", "drive a real OIDC sign-in through this emisar begin URL and report where it lands")
 	deleteProjects := flag.String("delete-projects", "", "comma-separated project ids to shut down, then exit")
 	listProjects := flag.Bool("list-projects", false, "print the account's projects and whether each has an auth config")
@@ -74,7 +82,7 @@ func main() {
 	if err := os.MkdirAll(*outDir, 0o755); err != nil {
 		fail(err)
 	}
-	if err := run(env, *outDir, *headless, *cleanupOnly, *freshProject, *listProjects, *acceptCloudTOS, *project, *deleteProjects, *certifyRedirect, *certifyLogin); err != nil {
+	if err := run(env, *outDir, *headless, *cleanupOnly, *freshProject, *listProjects, *acceptCloudTOS, *project, *deleteProjects, *certifyRedirect, *certifyCredentials, *certifyLogin); err != nil {
 		fail(err)
 	}
 }
@@ -107,7 +115,7 @@ func readEnv(path string) (map[string]string, error) {
 	return env, scanner.Err()
 }
 
-func run(env map[string]string, outDir string, headless, cleanupOnly bool, freshProject string, listProjects, acceptCloudTOS bool, project, deleteProjects, certifyRedirect, certifyLogin string) error {
+func run(env map[string]string, outDir string, headless, cleanupOnly bool, freshProject string, listProjects, acceptCloudTOS bool, project, deleteProjects, certifyRedirect, certifyCredentials, certifyLogin string) error {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", headless),
 		chromedp.Flag("lang", "en-US"),
@@ -184,7 +192,7 @@ func run(env map[string]string, outDir string, headless, cleanupOnly bool, fresh
 		return certifyLoginFlow(ctx, env, outDir, certifyLogin)
 	}
 	if certifyRedirect != "" {
-		if err := certifyClientFlow(ctx, env, outDir, certifyRedirect); err != nil {
+		if err := certifyClientFlow(ctx, env, outDir, certifyRedirect, certifyCredentials); err != nil {
 			_ = idpcapture.Screenshot(ctx, outDir, "google-failed")
 			_ = describePage(ctx, env)
 			return err
@@ -662,12 +670,17 @@ func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginU
 	if err != nil {
 		return err
 	}
+	begin, err := url.Parse(beginURL)
+	if err != nil || begin.Scheme == "" || begin.Host == "" {
+		return errors.New("the emisar begin URL has no origin")
+	}
+	emisarOrigin := begin.Scheme + "://" + begin.Host
 
-	if err := chromedp.Run(ctx, chromedp.Navigate("http://localhost:4010/sign_in")); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Navigate(emisarOrigin+"/sign_in")); err != nil {
 		return err
 	}
 	if err := chromedp.Run(ctx, network.SetCookie(sessionCookieName, session).
-		WithDomain("localhost").WithPath("/")); err != nil {
+		WithURL(emisarOrigin+"/").WithPath("/")); err != nil {
 		return err
 	}
 
@@ -699,7 +712,7 @@ func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginU
 		if err != nil {
 			return err
 		}
-		fmt.Printf("  at Google: %s\n", firstLine(body))
+		fmt.Printf("  at Google: %s\n", firstLine(redactGoogleText(body, env)))
 
 		// The account first, then whatever advances the screen. Match by position
 		// rather than by label: the buttons are localized.
@@ -711,7 +724,11 @@ func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginU
 				return err
 			}
 			if clicked {
-				fmt.Printf("  clicked %q\n", label)
+				if label == env["GOOGLE_TEST_USER"] {
+					fmt.Println("  clicked the certification account")
+				} else {
+					fmt.Printf("  clicked %q\n", label)
+				}
 				advanced = true
 				break
 			}
@@ -732,13 +749,21 @@ func certifyLoginFlow(ctx context.Context, env map[string]string, outDir, beginU
 		return err
 	}
 	_ = idpcapture.Screenshot(ctx, outDir, "google-certify-login")
-	fmt.Printf("  landed on %s\n", location)
-	fmt.Printf("  page says: %s\n", firstLine(body))
+	fmt.Printf("  landed on %s\n", routeOnly(location))
+	fmt.Printf("  page says: %s\n", firstLine(redactGoogleText(body, env)))
 
 	if strings.Contains(location, "/sign_in") {
-		return fmt.Errorf("sign-in did not complete — still on %s", location)
+		return fmt.Errorf("sign-in did not complete — still on %s", routeOnly(location))
 	}
 	return nil
+}
+
+func routeOnly(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "<invalid route>"
+	}
+	return parsed.Path
 }
 
 // deepText collects text across open SHADOW ROOTS. Google's sign-in screens keep
@@ -828,7 +853,7 @@ func beginSignIn(beginURL string) (string, string, error) {
 
 	location := response.Header.Get("Location")
 	if !strings.Contains(location, "accounts.google.com") {
-		return "", "", fmt.Errorf("emisar did not start a Google sign-in (status %d, location %q)", response.StatusCode, location)
+		return "", "", fmt.Errorf("emisar did not start a Google sign-in (status %d)", response.StatusCode)
 	}
 
 	for _, cookie := range response.Cookies() {
@@ -893,7 +918,7 @@ func firstLine(text string) string {
 //
 // The credentials are written to the secrets directory rather than printed: they
 // are live, and a transcript is not where a client secret should live.
-func certifyClientFlow(ctx context.Context, env map[string]string, outDir, redirectURI string) error {
+func certifyClientFlow(ctx context.Context, env map[string]string, outDir, redirectURI, credentialsPath string) error {
 	if err := waitForText(ctx, "Google Auth Platform", 90*time.Second); err != nil {
 		return err
 	}
@@ -915,7 +940,7 @@ func certifyClientFlow(ctx context.Context, env map[string]string, outDir, redir
 	if err := chooseOption(ctx, "Application type", "Web application"); err != nil {
 		return err
 	}
-	if err := fillField(ctx, "Name", "emisar login certification"); err != nil {
+	if err := fillField(ctx, "Name", certifyClientName); err != nil {
 		return err
 	}
 	if err := addURIUnder(ctx, "Authorized redirect URIs", redirectURI); err != nil {
@@ -947,12 +972,11 @@ func certifyClientFlow(ctx context.Context, env map[string]string, outDir, redir
 		return errors.New("the created-client dialog did not yield both a client id and secret")
 	}
 
-	path := "portal/.agent/secrets/google-cert-client.env"
 	body := fmt.Sprintf("# emisar OIDC login certification client — redirect %s\nGOOGLE_CERT_CLIENT_ID=%s\nGOOGLE_CERT_CLIENT_SECRET=%s\n", redirectURI, parts[0], parts[1])
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(credentialsPath, []byte(body), 0o600); err != nil {
 		return err
 	}
-	fmt.Printf("  wrote %s (client %s…)\n", path, parts[0][:12])
+	fmt.Printf("  wrote %s (client %s…)\n", credentialsPath, parts[0][:12])
 	return nil
 }
 
@@ -960,7 +984,7 @@ func countCaptureClients(ctx context.Context) (int, error) {
 	script := fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
   return [...document.querySelectorAll('tr')]
-    .filter(tr => visible(tr) && (tr.textContent || '').includes(%q)).length;
+	.filter(tr => visible(tr) && (tr.textContent || '').includes(%q)).length;
 })()`, captureClientName)
 	var count int
 	err := chromedp.Run(ctx, chromedp.Evaluate(script, &count))
@@ -992,29 +1016,43 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 		// The row's own trash icon, not a "more" menu — this table puts Delete
 		// straight in an Actions column, which is why looking for a menu found
 		// nothing and left the clients behind.
-		open := fmt.Sprintf(`(() => {
+		selectRow := fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
   const row = [...document.querySelectorAll('tr')]
-    .find(tr => visible(tr) && (tr.textContent || '').includes(%q));
+	.find(tr => visible(tr) && (tr.textContent || '').includes(%q));
   if (!row) return false;
-  const buttons = [...row.querySelectorAll('button,[role=button],a')].filter(visible);
-  const trash = buttons.find(el => {
-    const name = (el.getAttribute('aria-label') || el.textContent || '').toLowerCase();
-    return name.includes('delete') || name.includes('remove');
-  }) || buttons[buttons.length - 1];
-  if (!trash) return false;
-  trash.click();
+  const box = row.querySelector('input[type=checkbox],[role=checkbox]');
+  if (!box) return false;
+  box.click();
   return true;
 })()`, captureClientName)
-		var opened bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(open, &opened)); err != nil {
+		var selected bool
+		if err := chromedp.Run(ctx, chromedp.Evaluate(selectRow, &selected)); err != nil {
 			return err
 		}
-		if !opened {
+		if !selected {
 			if attempt == 0 {
 				fmt.Println("  no capture clients to remove")
 			}
 			return nil
+		}
+		if err := chromedp.Run(ctx, chromedp.Sleep(time.Second)); err != nil {
+			return err
+		}
+		const openDelete = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const button = [...document.querySelectorAll('button,[role=button],a')]
+    .find(el => visible(el) && !el.disabled && /^delete$/i.test((el.textContent || '').trim()));
+  if (!button) return false;
+  button.click();
+  return true;
+})()`
+		var opened bool
+		if err := chromedp.Run(ctx, chromedp.Evaluate(openDelete, &opened)); err != nil {
+			return err
+		}
+		if !opened {
+			return errors.New("the selected capture client did not enable the Delete action")
 		}
 		if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
 			return err
@@ -1058,7 +1096,8 @@ func removeCaptureClients(ctx context.Context, env map[string]string, outDir str
 		// is why ten deletions changed nothing.
 		const press = `(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const dialog = [...document.querySelectorAll('[role=dialog],[role=alertdialog]')].find(visible) ||
+  const dialog = [...document.querySelectorAll('[role=dialog],[role=alertdialog]')]
+      .find(el => visible(el) && /delete this credential/i.test(el.textContent || '')) ||
     [...document.querySelectorAll('*')]
       .filter(el => visible(el) && (el.textContent || '').includes('delete this credential'))
       .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length)[0];
@@ -1492,7 +1531,71 @@ func capture(ctx context.Context, env map[string]string, outDir, name string, ma
 	if err := chromedp.Run(ctx, chromedp.Sleep(700*time.Millisecond)); err != nil {
 		return err
 	}
-	return idpcapture.Screenshot(ctx, outDir, name)
+	if err := idpcapture.Screenshot(ctx, outDir, name); err != nil {
+		return err
+	}
+	if name == "google-08-client-created" {
+		if err := markGoogleCredentialDialog(ctx); err != nil {
+			return err
+		}
+		return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-google-credentials=true]")
+	}
+	height := 900
+	if name == "google-02-audience" || name == "google-06-clients" {
+		height = 360
+	}
+	if err := markGoogleDocsPanel(ctx, height); err != nil {
+		return err
+	}
+	return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-google-panel=true]")
+}
+
+func markGoogleDocsPanel(ctx context.Context, height int) error {
+	script := fmt.Sprintf(`(() => {
+  const gemini = [...document.querySelectorAll('*')]
+    .filter(el => (el.textContent || '').trim().startsWith('Try agentic Gemini CLI in Cloud Shell'))
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length)[0];
+  let promo = gemini;
+  for (let up = 0; up < 8 && promo && getComputedStyle(promo).position !== 'fixed'; up++) promo = promo.parentElement;
+  if (promo) promo.style.display = 'none';
+  document.querySelector('[data-emisar-docs-google-panel=true]')?.remove();
+  const crop = document.createElement('div');
+  crop.dataset.emisarDocsGooglePanel = 'true';
+  Object.assign(crop.style, {
+    position: 'fixed', left: '285px', top: '85px', width: '1155px', height: '%dpx',
+    pointerEvents: 'none', zIndex: '2147483647'
+  });
+  document.body.appendChild(crop);
+  return true;
+})()`, height)
+	var marked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if !marked {
+		return errors.New("could not isolate the Google Auth Platform from account chrome")
+	}
+	return nil
+}
+
+func markGoogleCredentialDialog(ctx context.Context) error {
+	const script = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const dialog = [...document.querySelectorAll('[role=dialog]')]
+    .find(el => visible(el) && (el.textContent || '').includes('Client ID') &&
+      (el.textContent || '').includes('Client secret'));
+  if (!dialog) return false;
+  dialog.dataset.emisarDocsGoogleCredentials = 'true';
+  return true;
+})()`
+	var marked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if !marked {
+		return errors.New("could not isolate the Google OAuth credential dialog")
+	}
+	return nil
 }
 
 func deidentify(ctx context.Context, env map[string]string) error {
@@ -1804,12 +1907,18 @@ func describePage(ctx context.Context, env map[string]string) error {
 	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &description)); err != nil {
 		return err
 	}
-	for _, value := range env {
-		if value != "" {
-			description = strings.ReplaceAll(description, value, "<redacted>")
-		}
-	}
+	description = redactGoogleText(description, env)
 	fmt.Println("--- page ---")
 	fmt.Println(description)
 	return nil
+}
+
+func redactGoogleText(value string, env map[string]string) string {
+	for _, configured := range env {
+		if configured != "" {
+			value = strings.ReplaceAll(value, configured, "<redacted>")
+		}
+	}
+	value = googleClientIDPattern.ReplaceAllString(value, "<redacted-client-id>")
+	return googleClientSecretPattern.ReplaceAllString(value, "<redacted-client-secret>")
 }

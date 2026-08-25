@@ -19,6 +19,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 // missing, rather than failing on a module-not-found for a hardcoded path.
 export const launchChromium = async options => {
   const from = process.env.EMISAR_PLAYWRIGHT || 'playwright'
+  const executablePath = process.env.EMISAR_CHROMIUM_EXECUTABLE
   let playwright
   try {
     playwright = await import(from)
@@ -30,7 +31,7 @@ export const launchChromium = async options => {
       { cause }
     )
   }
-  return playwright.chromium.launch(options)
+  return playwright.chromium.launch(executablePath ? { ...options, executablePath } : options)
 }
 
 // The credentials live outside the repo tree by design. Default to the path the

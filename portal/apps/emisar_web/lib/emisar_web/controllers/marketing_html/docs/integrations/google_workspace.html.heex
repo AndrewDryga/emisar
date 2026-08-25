@@ -4,8 +4,8 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="integrations-google-workspace"
-      updated="July 31, 2026"
-      evidence="Guide reviewed July 31, 2026."
+      updated="August 25, 2026"
+      evidence="Live-tested against Google Workspace on August 25, 2026: Internal-domain OIDC sign-in passed. Google Workspace does not provide outbound SCIM for custom applications."
       toc={[
         {"sso", "Single sign-on"},
         {"scim", "Directory sync"}
@@ -99,7 +99,7 @@
               src="/images/docs/sso/google-audience.webp"
               title="Google Auth Platform · Audience"
               caption="Internal is the whole domain restriction. Google refuses outside accounts itself."
-              alt="Step 2, Audience, of Google's project configuration, with the Internal user type selected and outlined in green above the External option."
+              alt="The Google Auth Platform Audience page showing the current user type as Internal and offering a Make external button."
             />
           </div>
         </li>
@@ -136,12 +136,6 @@
               Open <strong class="text-zinc-200">Clients → Create client</strong>. Existing clients are
               listed here too, so this is where you come back to if you need the client ID again.
             </p>
-            <.docs_screenshot
-              src="/images/docs/sso/google-clients.webp"
-              title="Google Auth Platform · Clients"
-              caption="Also where an existing client's ID is read from later."
-              alt="The Clients page of Google Auth Platform with the Create client button outlined in green above a table of OAuth 2.0 Client IDs."
-            />
           </div>
         </li>
         <li class="flex gap-4">

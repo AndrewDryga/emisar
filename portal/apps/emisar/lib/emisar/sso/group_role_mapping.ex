@@ -1,9 +1,12 @@
 defmodule Emisar.SSO.GroupRoleMapping do
   @moduledoc """
-  Maps an IdP group (by its SCIM `externalId`) to an emisar role for a
-  provider. Directory sync recomputes a member's role as the HIGHEST mapped
-  role over the groups they belong to. `role` is validated non-`:owner` in
-  the changeset — sync can never grant owner (decision 7).
+  Maps one immutable, server-owned SCIM directory-group resource to an emisar
+  role for a provider. Directory sync recomputes a member's role as the HIGHEST
+  mapped role over the groups they belong to. `role` is validated non-`:owner`
+  in the changeset — sync can never grant owner (decision 7).
+
+  `external_group_id` and `external_group_display` are read-only snapshots for
+  audit and rollback. They never identify the mapped group.
   """
   use Emisar, :schema
   alias Emisar.Auth
@@ -17,6 +20,7 @@ defmodule Emisar.SSO.GroupRoleMapping do
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :provider, Emisar.SSO.IdentityProvider, where: [deleted_at: nil]
+    belongs_to :directory_group, Emisar.SSO.DirectoryGroup, where: [deleted_at: nil]
 
     timestamps()
   end

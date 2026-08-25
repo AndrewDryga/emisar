@@ -38,6 +38,22 @@ func Screenshot(ctx context.Context, outDir, name string) error {
 	return nil
 }
 
+// ScreenshotElement writes the rendered box for the first visible node matching
+// selector. Provider guides use it for the instruction panel so account chrome,
+// plan badges, and other tenant-specific controls never enter a public asset.
+func ScreenshotElement(ctx context.Context, outDir, name, selector string) error {
+	var buffer []byte
+	if err := chromedp.Run(ctx, chromedp.Screenshot(selector, &buffer, chromedp.ByQuery)); err != nil {
+		return err
+	}
+	path := filepath.Join(outDir, name+".png")
+	if err := os.WriteFile(path, buffer, 0o644); err != nil {
+		return err
+	}
+	fmt.Println("  element shot", name)
+	return nil
+}
+
 // ClickRadio clicks the first visible radio input whose label starts with
 // label, reporting whether one was found.
 func ClickRadio(ctx context.Context, label string) (bool, error) {

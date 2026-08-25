@@ -140,13 +140,7 @@ func selectProviderKind(kind string) string {
 // flagged it before. Only the host is substituted; no value is invented.
 const showProductionHost = `(()=>{const from=location.origin,to='https://emisar.dev';const walk=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);const hits=[];while(walk.nextNode())if(walk.currentNode.nodeValue.includes(from))hits.push(walk.currentNode);hits.forEach(n=>n.nodeValue=n.nodeValue.split(from).join(to));document.querySelectorAll('[data-copy-text]').forEach(el=>el.setAttribute('data-copy-text',el.getAttribute('data-copy-text').split(from).join(to)));return true})()`
 
-const clickSSOConnection = `(()=>{const a=[...document.querySelectorAll('a[href*="/settings/sso/"]')].find(x=>/\/settings\/sso\/[0-9a-f-]{8,}/.test(x.getAttribute('href')));if(a){a.click();return true}return false})()`
-
-// openIdPGuide unfolds the connection's "Point your IdP at this connection"
-// disclosure. It is a <details>, not a button, so clickText can't reach it —
-// set `open` directly. The guide IS the setup instruction the docs page is
-// teaching, so a shot of it collapsed shows the reader nothing.
-const openIdPGuide = `(()=>{const s=[...document.querySelectorAll('summary')].find(x=>x.textContent.trim()==='Point your IdP at this connection');if(s&&s.parentElement){s.parentElement.open=true;return true}return false})()`
+const clickSSOConnection = `(()=>{const a=[...document.querySelectorAll('a[href*="/settings/sso/"]')].find(x=>/\/settings\/sso\/[0-9a-f-]{8,}/.test(x.getAttribute('href')));if(!a)return false;location.assign(a.href);return true})()`
 
 // docsShots — one entry per docs screenshot, each cropped to the one feature
 // its page teaches, at docsWidth unless the content genuinely needs more room.
@@ -210,7 +204,7 @@ var docsShots = []shot{
 	{Name: "runbook-start", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1440, TopCSS: 1050, Output: "docs/runbooks/start.webp"},
 	{Name: "runbook-approval", Path: "/app/demo/approvals", Clicks: []string{navigateRowLink(`#pending a[href*="/approvals/"]`, "Edge configuration rollout", "#approval-decision-form")}, Anchor: Anchor{Selector: "#shell-canvas"}, Width: 1280, TopCSS: 1120, Output: "docs/runbooks/approval.webp"},
 	{Name: "runbook-result", Path: "/app/demo/runbooks", Clicks: []string{navigateRowLink(`a[href*="/runbooks/"][href$="/run"]`, "Edge configuration rollout", "#runbook-start-execution"), waitForResolvedRunbookPlan, navigateRowLink(`a[href*="/runs/"]`, "completed Tuesday", "#runbook-execution-result")}, Anchor: Anchor{Selector: "#runbook-execution-result"}, Width: 1280, TopCSS: 1650, Output: "docs/runbooks/result.webp"},
-	{Name: "sso-directory-sync", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection, openIdPGuide, showProductionHost}, Anchor: Anchor{Heading: "Directory sync (SCIM)", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-directory-sync.webp"},
+	{Name: "sso-directory-sync", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection, showProductionHost}, Anchor: Anchor{Heading: "Directory sync (SCIM)", Climb: "section"}, Width: docsWidth, Output: "docs/sso/sso-directory-sync.webp"},
 	// The SSO concept page is vendor-neutral, so these three take the connection
 	// form with NO provider chosen — the generic field set every provider shares.
 	// One shot per field group, matching the page's own three h3 sections; the
@@ -244,7 +238,7 @@ var docsShots = []shot{
 	// its explanation, outlined. It used to be the entire 3,290px form, which shows
 	// the reader everything and points at nothing.
 	{Name: "scim-group-role-mapping", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Role mapping", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-group-role-mapping.webp"},
-	{Name: "scim-synced-users", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Heading: "Synced users", Climb: "section"}, Width: docsWidth, Output: "docs/sso/scim-synced-users.webp"},
+	{Name: "scim-synced-users", Path: "/app/demo/settings/team", Clicks: []string{clickSSOConnection}, Anchor: Anchor{Selector: `[id^="synced-members-"]`}, Width: docsWidth, Output: "docs/sso/scim-synced-users.webp"},
 }
 
 // keycloakShots are the customer-visible steps in Keycloak's OIDC client flow.

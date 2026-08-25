@@ -104,20 +104,21 @@ defmodule EmisarWeb.SCIM.GroupController do
   end
 
   # GET /scim/v2/Groups — the provider's synced groups. `filter` carries the
-  # `displayName eq "..."` probe Entra makes before every push; answering it is
-  # what stops the IdP re-creating a group it already synced on every cycle.
+  # `displayName eq "..."` probe Entra makes and the `externalId eq "..."`
+  # probe Okta makes before later pushes; answering them is what stops the IdP
+  # re-creating or erroring a group it already synced.
   # A present filter we cannot honor is declined instead of silently returning
   # the whole directory and letting an existence probe mistake any result for a
   # match.
   def index(conn, params) do
     provider = conn.assigns.scim_provider
 
-    case display_name_filter(Map.get(params, "filter")) do
+    case group_filter(Map.get(params, "filter")) do
       :unsupported ->
         bad_request(
           conn,
           "invalidFilter",
-          ~s(Only `displayName eq "..."` filters are supported.)
+          ~s(Only `displayName eq "..."` and `externalId eq "..."` filters are supported.)
         )
 
       opts ->
@@ -142,22 +143,28 @@ defmodule EmisarWeb.SCIM.GroupController do
     end
   end
 
-  # `displayName eq "Platform Engineers"` — the only Group filter we promise.
-  defp display_name_filter(nil), do: []
+  defp group_filter(nil), do: []
 
-  defp display_name_filter(filter) when is_binary(filter) do
-    case Regex.run(~r/^\s*displayName\s+eq\s+"([^"]*)"\s*$/i, filter) do
-      [_, value] -> [display_name: value]
-      _ -> unquoted_display_name_filter(filter)
+  defp group_filter(filter) when is_binary(filter) do
+    case Regex.run(~r/^\s*(displayName|externalId)\s+eq\s+"([^"]*)"\s*$/i, filter) do
+      [_, attribute, value] -> group_filter_option(attribute, value)
+      _ -> unquoted_group_filter(filter)
     end
   end
 
-  defp display_name_filter(_filter), do: :unsupported
+  defp group_filter(_filter), do: :unsupported
 
-  defp unquoted_display_name_filter(filter) do
-    case Regex.run(~r/^\s*displayName\s+eq\s+([^\s"]+)\s*$/i, filter) do
-      [_, value] -> [display_name: value]
+  defp unquoted_group_filter(filter) do
+    case Regex.run(~r/^\s*(displayName|externalId)\s+eq\s+([^\s"]+)\s*$/i, filter) do
+      [_, attribute, value] -> group_filter_option(attribute, value)
       _ -> :unsupported
+    end
+  end
+
+  defp group_filter_option(attribute, value) do
+    case String.downcase(attribute) do
+      "displayname" -> [display_name: value]
+      "externalid" -> [external_id: value]
     end
   end
 

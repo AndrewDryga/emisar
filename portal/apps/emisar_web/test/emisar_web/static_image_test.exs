@@ -11,7 +11,7 @@ defmodule EmisarWeb.StaticImageTest do
     # stores its canvas size differently from the simple lossy form, and 18 of our
     # images use it — they were measured as nil until this clause existed.
     test "reads an extended (VP8X) WebP" do
-      assert StaticImage.dimensions("/images/docs/sso/google-branding.webp") == {1520, 915}
+      assert StaticImage.dimensions("/images/docs/sso/google-branding.webp") == {2310, 1800}
     end
 
     test "reads a PNG" do

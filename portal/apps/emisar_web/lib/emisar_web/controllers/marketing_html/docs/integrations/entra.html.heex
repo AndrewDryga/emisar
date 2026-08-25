@@ -4,8 +4,8 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="integrations-entra"
-      updated="July 31, 2026"
-      evidence="Guide reviewed July 31, 2026."
+      updated="August 25, 2026"
+      evidence="Live-tested against a Microsoft Entra tenant on August 25, 2026: OIDC sign-in, user and group provisioning, profile and group renames, deactivation, reactivation, group-based role and runner access, and delete/recreate isolation passed."
       toc={[
         {"sso", "Single sign-on"},
         {"scim", "Directory sync"}
@@ -29,6 +29,15 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Connecting an identity provider is a paid feature. <.plan_note tier={:team} />
       </p>
+      <.docs_callout kind={:note} title="Provision the person before testing sign-in.">
+        <p>
+          Entra's v2 ID token does not include <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">email_verified</code>.
+          emisar accepts that omission only when the token's
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+          matches an active member provisioned by this Entra connection. Complete directory sync
+          below before testing the first sign-in.
+        </p>
+      </.docs_callout>
       <ol class="mt-8 space-y-10">
         <li class="flex gap-4">
           <span class="grid h-8 w-8 flex-none place-items-center rounded-full bg-brand-500/20 text-sm font-semibold text-brand-300">
@@ -97,8 +106,8 @@
             <.docs_screenshot
               src="/images/docs/sso/entra-client-secret.webp"
               title="Microsoft Entra · Certificates &amp; secrets"
-              caption="Value is masked the moment you navigate away — the Secret ID beside it is not the secret, so copy the Value while it is still shown."
-              alt="The app's Certificates and secrets blade, Client secrets tab, listing one secret named emisar SSO with an expiry date, a masked Value column, and a separate Secret ID column."
+              caption="Press New client secret, then copy Value while it is shown. Secret ID is not the credential."
+              alt="The emisar app's Certificates and secrets blade with New client secret outlined in green above one saved secret whose Value and Secret ID are masked."
             />
           </div>
         </li>
@@ -150,7 +159,8 @@
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
               to each application. The
               <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
-              claim also matches the value directory sync sends. Select <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
+              claim also matches the value directory sync sends. Save the connection. After
+              directory sync below has provisioned the same person, select <strong class="text-zinc-200">Enabled</strong>, save again, and sign in.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/entra-emisar-credentials.webp"
@@ -164,9 +174,10 @@
 
       <.docs_h2 id="scim">Directory sync</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Sign-in works without directory sync. Directory sync makes Entra responsible for the
-        member lifecycle. It provisions people and removes their access after offboarding.
-        <.plan_note tier={:enterprise} />
+        Directory sync makes Entra responsible for the member lifecycle, provisioning people and
+        removing their access after offboarding. It also supplies the active identity record used
+        to join Entra's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+        claim to sign-in. <.plan_note tier={:enterprise} />
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         You need the connection's <strong class="text-zinc-200">SCIM base URL</strong>
@@ -217,8 +228,8 @@
             <.docs_screenshot
               src="/images/docs/sso/entra-provisioning.webp"
               title="Microsoft Entra · Enterprise application provisioning"
-              caption="The Provisioning blade of the enterprise application — a different object from the app registration that handles sign-in. Connect your application is where the Tenant URL and Secret Token go."
-              alt="The emisar SCIM enterprise application's Provisioning overview in the Entra portal, offering New configuration, Start provisioning and Pause provisioning in its command bar, with a Get started panel whose Create configuration step, outlined in green, holds a Connect your application button."
+              caption="After the live test, the Provisioning overview reported a completed incremental cycle with one group and two users."
+              alt="The emisar directory sync enterprise application's Provisioning overview in Entra, with tenant-specific identifiers masked and Current cycle status: Incremental sync completed outlined in green above 100% completed, one group and two users."
             />
             <p class="mt-4">
               Press <strong class="text-zinc-200">Test Connection</strong>. Entra queries a random
@@ -228,9 +239,9 @@
 
             <.docs_screenshot
               src="/images/docs/sso/entra-provisioning-credentials.webp"
-              title="Microsoft Entra · New provisioning configuration"
-              caption="Leave the authentication method on Bearer. Secret token takes the ems- bearer, and Test connection sits directly beneath — Entra will not let you Create until it passes."
-              alt="Entra's New provisioning configuration form for the emisar SCIM enterprise application, its Admin credentials block outlined in green: Select authentication method set to Bearer authentication, Tenant URL filled with https://emisar.dev/scim/v2, a filled but masked Secret token field, a Test connection button, and an enabled Create button below — Entra enables Create only once the test has passed."
+              title="Microsoft Entra · Connectivity"
+              caption="Leave authentication on Bearer. Tenant URL and the masked bearer sit together above Test connection."
+              alt="The Connectivity page for the emisar directory sync enterprise application, with the connection form outlined in green: Bearer authentication selected, Tenant URL set to https://emisar.dev/scim/v2, Secret token masked, and Test connection beneath."
             />
           </div>
         </li>
@@ -253,8 +264,8 @@
             <.docs_screenshot
               src="/images/docs/sso/entra-attribute-mapping.webp"
               title="Microsoft Entra · Attribute mapping"
-              caption="The row to change, among about twenty: mailNickname is what Entra sends as externalId until you say otherwise."
-              alt="The emisar SCIM application's Attribute mapping list on the Users tab, with columns for Source Attribute, Target Attribute, Mapping Type and Matching Precedence. The row mapping mailNickname to externalId is outlined in green, among rows for givenName, jobTitle, mail, manager and others."
+              caption="The saved result: objectId now feeds externalId. Open this row to verify the complete mapping."
+              alt="The emisar directory sync application's Attribute mapping list on the Users tab, with the row mapping objectId to externalId outlined in green among the surrounding user mappings."
             />
 
             <.docs_screenshot
@@ -293,15 +304,14 @@
               on. Scope is separate from assignment and defaults to everyone. Change it, or Entra
               sends the entire directory regardless of assignment. Entra syncs roughly every 40
               minutes. New members appear under
-              <strong class="text-zinc-200">Synced users</strong>
-              after the next cycle, not immediately. Their Entra groups then become available for
-              role mappings.
+              <strong class="text-zinc-200">Synced members</strong>
+              after the next cycle, not immediately. Their Entra groups then appear under <strong class="text-zinc-200">Synced groups</strong>.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/entra-assign-users.webp"
               title="Entra · Users and groups"
-              caption="Provisioning only ever pushes what is assigned here."
-              alt="The Users and groups page of the emisar SCIM enterprise application, with Add user/group outlined in green above an empty assignment list."
+              caption="The certification group is assigned here and was provisioned to emisar."
+              alt="The Users and groups page of the emisar SCIM enterprise application, with Add user/group visible and the assigned emisar certification members group outlined in green."
             />
           </div>
         </li>

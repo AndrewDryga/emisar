@@ -272,8 +272,7 @@ defmodule Emisar.SSO.Provisioning do
     DirectoryGroupMember.Query.not_deleted()
     |> DirectoryGroupMember.Query.by_user_identity_ids(Enum.map(identities, & &1.id))
     |> Repo.all()
-    |> Enum.reject(&is_nil(&1.external_group_id))
-    |> Enum.group_by(& &1.user_identity_id, & &1.external_group_id)
+    |> Enum.group_by(& &1.user_identity_id, & &1.directory_group_id)
   end
 
   def provider_role_mappings(%IdentityProvider{} = provider) do
@@ -291,7 +290,7 @@ defmodule Emisar.SSO.Provisioning do
   def effective_runner_access(provider, group_ids, mappings) do
     group_access =
       mappings
-      |> Enum.filter(&(&1.external_group_id in group_ids))
+      |> Enum.filter(&(&1.directory_group_id in group_ids))
       |> Enum.map(&runner_access_mapping_access/1)
 
     Accounts.RunnerAccess.union([provider_runner_access(provider) | group_access])
@@ -308,7 +307,7 @@ defmodule Emisar.SSO.Provisioning do
   def highest_role_for_groups(group_ids, mappings) do
     roles =
       mappings
-      |> Enum.filter(&(&1.external_group_id in group_ids))
+      |> Enum.filter(&(&1.directory_group_id in group_ids))
       |> Enum.map(& &1.role)
 
     Enum.find(@sync_role_precedence, &(&1 in roles))
@@ -318,12 +317,6 @@ defmodule Emisar.SSO.Provisioning do
     DirectoryGroupMember.Query.not_deleted()
     |> DirectoryGroupMember.Query.by_provider_id(provider.id)
     |> DirectoryGroupMember.Query.by_directory_group_id(directory_group_id)
-    |> Repo.all()
-  end
-
-  def current_group_members_by_external_id(%IdentityProvider{} = provider, external_group_id) do
-    DirectoryGroupMember.Query.not_deleted()
-    |> DirectoryGroupMember.Query.by_provider_and_group(provider.id, external_group_id)
     |> Repo.all()
   end
 

@@ -4,8 +4,8 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="integrations-okta"
-      updated="August 18, 2026"
-      evidence="Verified against a live Okta Integrator org on August 18, 2026."
+      updated="August 25, 2026"
+      evidence="Live-tested against an Okta Integrator org on August 25, 2026: OIDC sign-in, user lifecycle, group push and rename, group-based role and runner access, and delete/recreate isolation passed."
       toc={[
         {"sso", "Single sign-on"},
         {"scim", "Directory sync"}
@@ -256,8 +256,8 @@
             <.docs_screenshot
               src="/images/docs/sso/okta-scim-verified.webp"
               title="Okta Admin Console · Test API Credentials"
-              caption="Okta calls emisar directly with the bearer, so a pass here means the credential and URL are both right."
-              alt="Okta's SCIM API integration form after a successful test: a green banner reading SCIM 2.0 Test App (Header Auth) was verified successfully, with Enable API integration ticked, the emisar SCIM base URL in the Base URL field, a masked API Token, and Import Groups enabled."
+              caption="The green result confirms that Okta reached emisar with this URL and bearer."
+              alt="Okta's SCIM API integration form after a successful live test, with a green verified-success message, the emisar SCIM base URL filled, the API Token masked, and Import Groups enabled."
             />
             <p class="mt-4">
               A failed test means the token or URL is wrong. Check for a truncated token and a base
@@ -307,14 +307,14 @@
               tab, use <strong class="text-zinc-200">Assign</strong>
               → <strong class="text-zinc-200">Assign to People</strong>
               (or to a group). Each person you assign appears in emisar under
-              <strong class="text-zinc-200">Synced users</strong>
+              <strong class="text-zinc-200">Synced members</strong>
               at the connection's default role, and each one you unassign is deprovisioned there.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/okta-scim-assignments.webp"
               title="Okta · Assignments"
-              caption="Empty until you assign someone — this tab is the list of people Okta will provision."
-              alt="The Assignments tab of the emisar directory sync application in Okta, with the Assign dropdown button outlined in green above an empty People list reading No users found."
+              caption="This live assignment provisioned the certification user through the assigned Okta group."
+              alt="The Assignments tab of the emisar directory sync application in Okta, with the Assign dropdown outlined in green and one assigned certification user listed below it."
             />
           </div>
         </li>
@@ -324,18 +324,21 @@
           </span>
           <div class="min-w-0 text-base leading-7 text-zinc-400">
             <.docs_step_venue>Okta</.docs_step_venue>
-            <p class="font-semibold text-zinc-100">Push the groups you want to map roles from.</p>
+            <p class="font-semibold text-zinc-100">
+              Push the groups you want to map access from.
+            </p>
             <p class="mt-1.5">
-              Complete this step only if directory groups control roles. Groups travel on their own
-              tab — <strong class="text-zinc-200">Push Groups</strong>, beside Assignments, not
-              part of the To App settings you just turned on. Push a group here and it shows up in
-              emisar as a synced group you can map to a role, below.
+              Complete this step when Okta groups control roles or runner access. Groups travel on their
+              own tab — <strong class="text-zinc-200">Push Groups</strong>, beside Assignments, not
+              part of the To App settings you just turned on. Push a group here and it appears in
+              emisar under <strong class="text-zinc-200">Synced groups</strong>, ready to map by its
+              immutable directory-group identity.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/okta-scim-push-groups.webp"
               title="Okta · Push Groups"
-              caption="A separate tab from Assignments, and easy to miss — assigning people does not push their groups."
-              alt="The Push Groups tab of the emisar directory sync application in Okta, with the Push Groups dropdown button outlined in green above an empty table reading No groups found for this filter."
+              caption="This group was pushed successfully and is Active. Assigning people does not push their groups."
+              alt="The Push Groups tab of the emisar directory sync application in Okta, with the Push Groups action outlined in green and one certification group listed with Push Status Active."
             />
           </div>
         </li>
@@ -356,10 +359,10 @@
 
       <p class="mt-8 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Next:</strong>
-        map directory groups to emisar roles so access follows your IdP — <.link
+        map directory groups to emisar roles or runner access — <.link
           navigate={~p"/docs/scim#role-mapping"}
           class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
-        >role mapping</.link>.
+        >group mapping</.link>.
       </p>
     </.docs_layout>
   </section>

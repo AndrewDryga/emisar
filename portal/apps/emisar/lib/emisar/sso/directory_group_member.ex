@@ -6,8 +6,9 @@ defmodule Emisar.SSO.DirectoryGroupMember do
   Replaced wholesale on a group sync (PUT) and patched by member-level
   `add`/`remove` ops (PATCH).
 
-  The directory-owned external id and display remain denormalized for role and
-  runner-access mapping evaluation. A provider probe group may have neither.
+  The directory-owned external id and display remain denormalized for SCIM
+  reconciliation and rendering. Authorization follows `directory_group_id`.
+  A provider probe group may have neither external attribute.
   """
   use Emisar, :schema
 

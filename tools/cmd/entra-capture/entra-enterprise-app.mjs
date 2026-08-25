@@ -68,7 +68,8 @@ const outline = async (page, label, { exact = true } = {}) => {
   await page.waitForTimeout(600)
 }
 
-mkdirSync('/tmp/entra', { recursive: true })
+const outDir = process.env.ENTRA_CAPTURE_OUT || '/tmp/entra'
+mkdirSync(outDir, { recursive: true })
 
 const browser = await launchChromium({ headless: true })
 // An EXPLICIT context, because the second capture needs a second page in the same
@@ -102,7 +103,10 @@ for (let i = 0; i < 12; i++) {
 console.log('signed in')
 
 const shot = async name => {
-  await page.screenshot({ path: `/tmp/entra/${name}.png` })
+  await page.screenshot({
+    path: `${outDir}/${name}.png`,
+    clip: { x: 0, y: 42, width: 1520, height: 900 },
+  })
   console.log('shot', name)
 }
 
@@ -119,6 +123,11 @@ await page.waitForTimeout(12000)
 await page.getByText('Create your own application').first().waitFor({ timeout: 90000 })
 await outline(page, 'Create your own application')
 await shot('pw-10-create-enterprise-app')
+if (process.env.ENTRA_CAPTURE_GALLERY_ONLY === '1') {
+  await browser.close()
+  console.log('done')
+  process.exit(0)
+}
 
 // 2. Assigning the people to sync. Users and groups on the app decides who is in
 // scope; provisioning only ever pushes what is assigned here.

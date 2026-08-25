@@ -23,6 +23,7 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -69,20 +70,24 @@ func submitPasscode(code string) string {
 }
 
 func main() {
-	var secretsPath, outDir, only, flow string
-	var headless, inventory, cleanup bool
+	var secretsPath, outDir, only, flow, pushGroup string
+	var headless, inventory, cleanup, configureSCIM, retryPush, deactivatePush bool
 	flag.StringVar(&secretsPath, "secrets", "portal/.agent/secrets/okta-integrator.env", "creds env file")
 	flag.StringVar(&outDir, "out", "", "directory for captured PNGs")
 	flag.StringVar(&only, "only", "", "comma-separated screen names (default: all)")
 	// The flow otherwise comes from OKTA_FLOW in the secrets FILE, so exporting it
 	// in the shell silently did nothing and the run took the other branch.
 	flag.StringVar(&flow, "flow", "", `which walkthrough to capture ("oidc"; default: provisioning)`)
+	flag.StringVar(&pushGroup, "push-group", "", "push this assigned Okta group through the configured SCIM app")
 	flag.BoolVar(&headless, "headless", true, "run Chrome headless")
 	// This rig creates app integrations AND users in the founder's tenant. Until
 	// now it had no way to say what it had left behind, so nobody could tell what
 	// was ours — see .agent/kb/rules/shared-capture-rigs-own-what-they-create.md.
 	flag.BoolVar(&inventory, "inventory", false, "list the apps and users this rig creates, then exit")
 	flag.BoolVar(&cleanup, "cleanup", false, "delete the apps and users this rig created, then exit")
+	flag.BoolVar(&configureSCIM, "configure-scim", false, "replace and verify the saved SCIM endpoint credential")
+	flag.BoolVar(&retryPush, "retry-push", false, "retry the errored group push mapping")
+	flag.BoolVar(&deactivatePush, "deactivate-push", false, "deactivate the current group push mapping")
 	flag.Parse()
 
 	if outDir == "" {
@@ -96,7 +101,16 @@ func main() {
 	if flow != "" {
 		env["OKTA_FLOW"] = flow
 	}
-	if err := run(env, outDir, only, headless, inventory, cleanup); err != nil {
+	if pushGroup != "" {
+		env["OKTA_PUSH_GROUP"] = pushGroup
+	}
+	if retryPush {
+		env["OKTA_RETRY_PUSH"] = "1"
+	}
+	if deactivatePush {
+		env["OKTA_DEACTIVATE_PUSH"] = "1"
+	}
+	if err := run(env, outDir, only, headless, inventory, cleanup, configureSCIM); err != nil {
 		fail(err)
 	}
 }
@@ -130,6 +144,7 @@ func readEnv(path string) (map[string]string, error) {
 	// JumpCloud rig.
 	for _, key := range []string{
 		"EMISAR_PUBLIC_URL", "EMISAR_SCIM_TOKEN", "EMISAR_DOCS_HOST", "OKTA_SCIM_APP_ID",
+		"OKTA_OIDC_APP_NAME",
 	} {
 		if value, present := os.LookupEnv(key); present {
 			env[key] = value
@@ -412,7 +427,7 @@ func clearMFA(ctx context.Context, env map[string]string) error {
 		if err := chromedp.Run(ctx, chromedp.Evaluate(submitPasscode(code), &submitted)); err != nil {
 			return err
 		}
-		fmt.Printf("  mfa: submitted %s (attempt %d, accepted=%t)\n", code, attempt+1, submitted)
+		fmt.Printf("  mfa: submitted passcode (attempt %d, accepted=%t)\n", attempt+1, submitted)
 		if err := chromedp.Run(ctx, chromedp.Sleep(6*time.Second)); err != nil {
 			return err
 		}
@@ -426,7 +441,7 @@ func clearMFA(ctx context.Context, env map[string]string) error {
 	return fmt.Errorf("MFA not cleared — stuck at %s", location)
 }
 
-func run(env map[string]string, outDir, only string, headless, inventory, cleanup bool) error {
+func run(env map[string]string, outDir, only string, headless, inventory, cleanup, configureSCIM bool) error {
 	token, err := sessionToken(env)
 	if err != nil {
 		return err
@@ -437,7 +452,7 @@ func run(env map[string]string, outDir, only string, headless, inventory, cleanu
 
 	options := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", headless),
-		chromedp.WindowSize(1440, 1200),
+		chromedp.WindowSize(1680, 1200),
 	)
 	allocator, cancelAllocator := chromedp.NewExecAllocator(context.Background(), options...)
 	defer cancelAllocator()
@@ -480,7 +495,7 @@ func run(env map[string]string, outDir, only string, headless, inventory, cleanu
 		return fmt.Errorf("not in the admin console — still at %s", current)
 	}
 
-	return captureFlow(ctx, env, outDir, only)
+	return captureFlow(ctx, env, outDir, only, configureSCIM)
 }
 
 // clickText clicks the first visible control whose trimmed label matches, and
@@ -572,7 +587,7 @@ func typeInto(ctx context.Context, hint, value string) (bool, error) {
 // captureFlow walks the SCIM setup path an emisar customer follows, pausing at
 // each screen the docs page teaches. Okta's console is a SPA, so every step
 // settles on a sleep rather than a load event.
-func captureFlow(ctx context.Context, env map[string]string, outDir, only string) error {
+func captureFlow(ctx context.Context, env map[string]string, outDir, only string, configureSCIM bool) error {
 	wanted := map[string]bool{}
 	for _, name := range strings.Split(only, ",") {
 		if trimmed := strings.TrimSpace(name); trimmed != "" {
@@ -590,7 +605,53 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 		if err := clearMFA(ctx, env); err != nil {
 			return err
 		}
-		return idpcapture.Screenshot(ctx, outDir, name)
+		if err := idpcapture.Screenshot(ctx, outDir, name); err != nil {
+			return err
+		}
+		switch name {
+		case "oidc-01-create-dialog":
+			if err := markOIDCCreateDialog(ctx); err != nil {
+				return err
+			}
+			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-oidc-create=true]")
+		case "oidc-03-new-web-app":
+			if err := markOIDCSettingsPanel(ctx); err != nil {
+				return err
+			}
+			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-oidc-settings=true]")
+		case "oidc-04-client-credentials":
+			if err := markOIDCCredentialsPanel(ctx); err != nil {
+				return err
+			}
+			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-oidc-credentials=true]")
+		case "02-catalog-search":
+			if err := markCatalogPanel(ctx); err != nil {
+				return err
+			}
+			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-catalog=true]")
+		case "10-test-api-credentials":
+			if err := markCredentialPanel(ctx); err != nil {
+				return err
+			}
+			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-panel=true]")
+		case "12-to-app-settings":
+			if err := markLifecyclePanel(ctx); err != nil {
+				return err
+			}
+			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-lifecycle=true]")
+		case "13-assignments":
+			if err := markDocsPanel(ctx, "Assign", "Convert assignments", "data-emisar-docs-assignments", 700, 300, 900); err != nil {
+				return err
+			}
+			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-assignments=true]")
+		case "14-push-groups":
+			if err := markDocsPanel(ctx, "Push Groups", "Push Status", "data-emisar-docs-push-groups", 900, 300, 900); err != nil {
+				return err
+			}
+			return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-push-groups=true]")
+		default:
+			return nil
+		}
 	}
 	settle := func(seconds int) error {
 		return chromedp.Run(ctx, chromedp.Sleep(time.Duration(seconds)*time.Second))
@@ -614,13 +675,16 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 	}
 
 	if env["OKTA_FLOW"] == "oidc" {
+		if len(wanted) == 1 && wanted["oidc-04-client-credentials"] {
+			return oidcCredentialsShot(ctx, env, shoot, settle)
+		}
 		return oidcFlow(ctx, env, shoot, step, settle)
 	}
 
 	// Resuming against an app that already exists: skip creation (Okta would
 	// happily make a duplicate) and go straight to its Provisioning tab.
 	if env["OKTA_SCIM_APP_ID"] != "" {
-		return provisioningFlow(ctx, env, shoot, step, settle)
+		return provisioningFlow(ctx, env, shoot, step, settle, configureSCIM)
 	}
 
 	if err := shoot("01-applications"); err != nil {
@@ -646,6 +710,9 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 	}
 	if err := shoot("02-catalog-search"); err != nil {
 		return err
+	}
+	if len(wanted) == 1 && wanted["02-catalog-search"] {
+		return nil
 	}
 
 	pickedApp, err := clickContaining(ctx, "SCIM 2.0 Test App (Header Auth)")
@@ -683,33 +750,286 @@ func captureFlow(ctx context.Context, env map[string]string, outDir, only string
 	if err := shoot("06-app-created"); err != nil {
 		return err
 	}
-	return reportPage(ctx)
+	if configureSCIM {
+		var location string
+		if err := chromedp.Run(ctx, chromedp.Location(&location)); err != nil {
+			return err
+		}
+		parsed, err := url.Parse(location)
+		if err != nil {
+			return err
+		}
+		parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+		for index := 0; index+3 < len(parts); index++ {
+			if parts[index] == "app" && parts[index+2] == "instance" {
+				env["OKTA_SCIM_APP_NAME"] = parts[index+1]
+				env["OKTA_SCIM_APP_ID"] = parts[index+3]
+				break
+			}
+		}
+		if env["OKTA_SCIM_APP_ID"] == "" || env["OKTA_SCIM_APP_NAME"] == "" {
+			return fmt.Errorf("could not read the created SCIM app identity from %s", parsed.Path)
+		}
+		fmt.Printf("  created SCIM app %s\n", env["OKTA_SCIM_APP_ID"])
+		return provisioningFlow(ctx, env, shoot, step, settle, true)
+	}
+	return nil
 }
 
-// provisioningFlow captures the half that actually wires Okta to emisar: the
-// API-integration form, the credential test, and the To App lifecycle settings.
-// highlightSelector rings a control named outright, for a form whose visible
-// labels do not identify its fields.
-func highlightSelector(ctx context.Context, selector string) error {
-	script := fmt.Sprintf(`(() => {
-  const el = document.querySelector(%q);
-  if (!el || !(el.offsetWidth > 0 || el.offsetHeight > 0)) return false;
-  el.style.boxShadow = 'inset 0 0 0 3px #10b981';
-  el.style.borderRadius = '8px';
-  el.scrollIntoView({block: 'center'});
+func markOIDCSettingsPanel(ctx context.Context) error {
+	const script = `(() => {
+  const outlined = [...document.querySelectorAll('[data-emisar-docs-highlight=true]')]
+    .filter(el => {
+      const box = el.getBoundingClientRect();
+      return box.width > 0 && box.height > 0;
+    });
+  if (outlined.length < 2) return false;
+  const boxes = outlined.map(el => el.getBoundingClientRect());
+  const padding = 24;
+  const left = Math.max(0, Math.min(...boxes.map(box => box.left)) - padding);
+  const top = Math.max(0, Math.min(...boxes.map(box => box.top)) - padding);
+  const right = Math.min(document.documentElement.clientWidth,
+    Math.max(...boxes.map(box => box.right)) + padding);
+  const bottom = Math.max(...boxes.map(box => box.bottom)) + padding;
+  const crop = document.createElement('div');
+  crop.dataset.emisarDocsOidcSettings = 'true';
+  Object.assign(crop.style, {
+    position: 'fixed',
+    left: left + 'px',
+    top: top + 'px',
+    width: (right - left) + 'px',
+    height: (bottom - top) + 'px',
+    pointerEvents: 'none',
+    zIndex: '2147483647'
+  });
+  document.body.appendChild(crop);
   return true;
-})()`, selector)
+})()`
 	var marked bool
 	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
 		return err
 	}
 	if !marked {
-		return fmt.Errorf("nothing matching %s to highlight", selector)
+		return errors.New("could not isolate the Okta OIDC settings from account chrome")
 	}
-	fmt.Printf("  highlighted %s\n", selector)
-	return chromedp.Run(ctx, chromedp.Sleep(600*time.Millisecond))
+	return nil
 }
 
+func markOIDCCreateDialog(ctx context.Context) error {
+	const script = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const dialog = [...document.querySelectorAll('[role=dialog]')]
+    .find(el => visible(el) && (el.textContent || '').includes('OIDC - OpenID Connect') &&
+      (el.textContent || '').includes('Web Application'));
+  if (!dialog) return false;
+  dialog.dataset.emisarDocsOidcCreate = 'true';
+  return true;
+})()`
+	var marked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if !marked {
+		return errors.New("could not isolate the Okta OIDC create dialog")
+	}
+	return nil
+}
+
+func markCatalogPanel(ctx context.Context) error {
+	const script = `(() => {
+  const content = document.querySelector('#content');
+  if (!content) return false;
+  const box = content.getBoundingClientRect();
+  const crop = document.createElement('div');
+  crop.dataset.emisarDocsCatalog = 'true';
+  Object.assign(crop.style, {
+    position: 'absolute',
+    left: (box.left + window.scrollX) + 'px',
+    top: (box.top + window.scrollY) + 'px',
+    width: Math.min(box.width, document.documentElement.clientWidth - box.left) + 'px',
+    height: Math.min(700, document.documentElement.clientHeight - box.top) + 'px',
+    pointerEvents: 'none',
+    zIndex: '2147483647'
+  });
+  document.body.appendChild(crop);
+  return true;
+})()`
+	var marked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if !marked {
+		return errors.New("could not isolate the Okta catalog from account chrome")
+	}
+	return nil
+}
+
+func markOIDCCredentialsPanel(ctx context.Context) error {
+	const script = `(() => {
+  const rings = [...document.querySelectorAll('[data-emisar-docs-highlight=true]')];
+  if (rings.length < 2) return '';
+  const boxes = rings.map(el => el.getBoundingClientRect());
+  const padding = 28;
+  const left = Math.max(0, Math.min(...boxes.map(box => box.left)) - padding);
+  // The heading sits about one text row above the first highlighted control.
+  // Derive the crop from the visible rings: Okta keeps a duplicate off-canvas
+  // heading in its SPA whose transformed coordinates are outside scrollHeight.
+  const top = Math.max(0, Math.min(...boxes.map(box => box.top)) - 70);
+  const right = Math.min(document.documentElement.clientWidth,
+    Math.max(...boxes.map(box => box.right)) + padding);
+  const bottom = Math.max(...boxes.map(box => box.bottom)) + padding;
+  const crop = document.createElement('div');
+  crop.dataset.emisarDocsOidcCredentials = 'true';
+  Object.assign(crop.style, {
+    position: 'fixed',
+    left: left + 'px',
+    top: top + 'px',
+    width: (right - left) + 'px',
+    height: (bottom - top) + 'px',
+    pointerEvents: 'none',
+    zIndex: '2147483647'
+  });
+  document.body.appendChild(crop);
+  return JSON.stringify({left, top, right, bottom, width: right - left,
+    height: bottom - top});
+})()`
+	var marked string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if marked == "" {
+		return errors.New("could not isolate the complete Okta OIDC credential controls")
+	}
+	fmt.Println("  OIDC credential crop", marked)
+	return nil
+}
+
+func markLifecyclePanel(ctx context.Context) error {
+	const script = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const exact = label => [...document.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').trim() === label)
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length)[0];
+  const title = exact('Provisioning to App');
+  const sync = exact('Sync Password');
+  const save = [...document.querySelectorAll('button,input,a')]
+    .filter(visible)
+    .find(el => (el.textContent || el.value || '').trim() === 'Save');
+  if (!title || !sync || !save) return false;
+  const boxes = [title, sync, save].map(el => el.getBoundingClientRect());
+  const left = Math.max(0, Math.min(...boxes.map(box => box.left)) - 24);
+  const top = Math.max(0, Math.min(...boxes.map(box => box.top)) - 24);
+  const right = Math.min(document.documentElement.clientWidth,
+    Math.max(...boxes.map(box => box.right)) + 24);
+  const bottom = Math.min(document.documentElement.clientHeight,
+    Math.max(...boxes.map(box => box.bottom)) + 24);
+  const crop = document.createElement('div');
+  crop.dataset.emisarDocsLifecycle = 'true';
+  Object.assign(crop.style, {
+    position: 'fixed', left: left + 'px', top: top + 'px',
+    width: (right - left) + 'px', height: (bottom - top) + 'px',
+    pointerEvents: 'none', zIndex: '2147483647'
+  });
+  document.body.appendChild(crop);
+  return true;
+})()`
+	var marked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if !marked {
+		return errors.New("could not isolate the complete Okta provisioning-to-app controls")
+	}
+	return nil
+}
+
+// markCredentialPanel scopes the public credential screenshot to the live form
+// card. The surrounding Okta console carries the signed-in admin and tenant; the
+// card itself contains every control the operator needs and no account chrome.
+func markCredentialPanel(ctx context.Context) error {
+	const script = `(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const success = [...document.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').includes('was verified successfully'))
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length)[0];
+  const button = [...document.querySelectorAll('button,input,a')]
+    .filter(visible)
+    .find(el => (el.textContent || el.value || '').trim() === 'Test API Credentials');
+  const save = [...document.querySelectorAll('button,input,a')]
+    .filter(visible)
+    .find(el => (el.textContent || el.value || '').trim() === 'Save');
+  if (!success || !button || !save) return false;
+  const notice = success.closest('[role=alert]') || success.parentElement;
+  // Okta pins the Integration heading over the first row of its success alert
+  // at this viewport size. Keep the real alert in normal layout but give it the
+  // missing breathing room so neither the text nor the success icon is clipped.
+  notice.style.marginTop = '24px';
+  notice.style.marginBottom = '8px';
+  const boxes = [notice, button, save].map(el => el.getBoundingClientRect());
+  const left = Math.max(0, Math.min(...boxes.map(box => box.left)) - 110);
+  const top = Math.max(0, Math.min(...boxes.map(box => box.top)) - 64);
+  const right = Math.min(document.documentElement.clientWidth,
+    Math.max(...boxes.map(box => box.right)) + 24);
+  const bottom = Math.min(document.documentElement.clientHeight,
+    Math.max(...boxes.map(box => box.bottom)) + 24);
+  const crop = document.createElement('div');
+  crop.dataset.emisarDocsPanel = 'true';
+  Object.assign(crop.style, {
+    position: 'fixed', left: left + 'px', top: top + 'px',
+    width: (right - left) + 'px', height: (bottom - top) + 'px',
+    pointerEvents: 'none', zIndex: '2147483647'
+  });
+  document.body.appendChild(crop);
+  return true;
+})()`
+	var marked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if !marked {
+		return errors.New("could not isolate the verified Okta SCIM credential panel")
+	}
+	return nil
+}
+
+// markDocsPanel chooses the first complete card that contains both named controls.
+// Public provider shots must include the card's real right edge; selecting the
+// first merely-wide ancestor produced 670px crops whose fields and outlines were
+// visibly sliced.
+func markDocsPanel(
+	ctx context.Context,
+	anchor, mustInclude, attribute string,
+	minWidth, minHeight, maxHeight int,
+) error {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const hits = [...document.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').trim() === %q)
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length);
+  let node = hits[0];
+  for (let up = 0; up < 14 && node; up++, node = node.parentElement) {
+    const box = node.getBoundingClientRect();
+    if ((node.textContent || '').includes(%q) &&
+        box.width >= %d && box.height >= %d && box.height <= %d) {
+      node.setAttribute(%q, 'true');
+      return node.tagName + ' ' + Math.round(box.width) + 'x' + Math.round(box.height);
+    }
+  }
+  return '';
+})()`, anchor, mustInclude, minWidth, minHeight, maxHeight, attribute)
+	var marked string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if marked == "" {
+		return fmt.Errorf("could not isolate the Okta panel spanning %q..%q", anchor, mustInclude)
+	}
+	fmt.Printf("  isolated %q..%q on %s\n", anchor, mustInclude, marked)
+	return nil
+}
+
+// provisioningFlow captures the half that actually wires Okta to emisar: the
+// API-integration form, the credential test, and the To App lifecycle settings.
 // captureConfiguredCredentials opens the saved SCIM connection for editing and
 // shoots it. Nothing is saved and Test API Credentials is NOT pressed — the point
 // is to show the operator which three controls matter, and pressing it against an
@@ -720,6 +1040,7 @@ func captureConfiguredCredentials(
 	shoot func(string) error,
 	step func(string) error,
 	settle func(int) error,
+	configure bool,
 ) error {
 	if err := step("Integration"); err != nil {
 		return err
@@ -733,25 +1054,74 @@ func captureConfiguredCredentials(
 	if err := settle(3); err != nil {
 		return err
 	}
-
-	// By FIELD NAME, not by label. The creation path fills these the same way,
-	// with the comment that the labels are decorative — and matching a label is
-	// what failed here.
-	// Named outright, and NOT the same names the creation form uses: on a saved
-	// configuration the token field is `scim_auth_header_value_new`, because the
-	// stored token is write-only and you supply a replacement rather than read it.
-	for _, selector := range []string{
-		`[name="scim_base_url"]`,
-		`[name="scim_auth_header_value_new"]`,
-		`[name="m-verify"]`,
-	} {
-		if err := highlightSelector(ctx, selector); err != nil {
+	if configure {
+		base := strings.TrimSuffix(env["EMISAR_PUBLIC_URL"], "/") + "/scim/v2"
+		if base == "/scim/v2" || env["EMISAR_SCIM_TOKEN"] == "" {
+			return errors.New("-configure-scim needs EMISAR_PUBLIC_URL and EMISAR_SCIM_TOKEN")
+		}
+		if err := typeRealKeys(ctx, "scim_base_url", base); err != nil {
 			return err
+		}
+		if err := typeRealKeys(ctx, "scim_auth_header_value_new", env["EMISAR_SCIM_TOKEN"]); err != nil {
+			return err
+		}
+		if err := clickSelector(ctx, "#m-verify-button"); err != nil {
+			return err
+		}
+		verified, err := waitForText(ctx, "was verified successfully", 12)
+		if err != nil {
+			return err
+		}
+		if !verified {
+			return errors.New("okta did not verify the replacement SCIM credential")
+		}
+		if err := deidentifySCIMBaseURL(ctx, env); err != nil {
+			return err
+		}
+		if err := shoot("10-test-api-credentials"); err != nil {
+			return err
+		}
+		if err := clickSelector(ctx, "#userMgmtSettings\\.button\\.submit"); err != nil {
+			return err
+		}
+		fmt.Println("  verified and saved the replacement SCIM credential")
+		return settle(8)
+	}
+
+	if err := deidentifySCIMBaseURL(ctx, env); err != nil {
+		return err
+	}
+
+	if err := shoot("10-test-api-credentials"); err != nil {
+		return err
+	}
+
+	// Leave the saved configuration exactly as it was.
+	if _, err := clickText(ctx, "Cancel"); err != nil {
+		return err
+	}
+	if err := settle(1); err != nil {
+		return err
+	}
+	for _, label := range []string{"Discard changes", "Discard"} {
+		discarded, err := clickText(ctx, label)
+		if err != nil {
+			return err
+		}
+		if discarded {
+			fmt.Println("  discarded the de-identified screenshot-only edit")
+			break
 		}
 	}
 
-	// The saved Base URL is the capture rig's tunnel. Swap it for the product host
-	// before the shot — a customer's reads emisar.dev, and ours must not ship.
+	return settle(3)
+}
+
+// deidentifySCIMBaseURL keeps the customer-facing /scim/v2 path while removing
+// the temporary tunnel host used by the live certification run. Assigning the
+// DOM property without firing a React input event changes only the screenshot;
+// Save still writes the real configured value.
+func deidentifySCIMBaseURL(ctx context.Context, env map[string]string) error {
 	docsHost := env["EMISAR_DOCS_HOST"]
 	if docsHost == "" {
 		docsHost = "https://emisar.dev"
@@ -767,10 +1137,9 @@ func captureConfiguredCredentials(
   if (!field) return false;
   let path = '/scim/v2';
   try { path = new URL(field.value).pathname || path } catch (_) {}
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-  setter.call(field, %q + path);
-  field.dispatchEvent(new Event('input', {bubbles: true}));
-  return true;
+	const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+	setter.call(field, %q + path);
+	return true;
 })()`, strings.TrimSuffix(docsHost, "/"))
 
 	var rewritten bool
@@ -782,17 +1151,7 @@ func captureConfiguredCredentials(
 	if !rewritten {
 		return errors.New("could not de-identify the SCIM base URL before the shot")
 	}
-
-	if err := shoot("10-test-api-credentials"); err != nil {
-		return err
-	}
-
-	// Leave the saved configuration exactly as it was.
-	if _, err := clickText(ctx, "Cancel"); err != nil {
-		return err
-	}
-
-	return settle(3)
+	return nil
 }
 
 func provisioningFlow(
@@ -801,6 +1160,7 @@ func provisioningFlow(
 	shoot func(string) error,
 	step func(string) error,
 	settle func(int) error,
+	configureSCIM bool,
 ) error {
 	instance := fmt.Sprintf("%s/admin/app/%s/instance/%s/#tab-provisioning",
 		env["OKTA_ADMIN_URL"], env["OKTA_SCIM_APP_NAME"], env["OKTA_SCIM_APP_ID"])
@@ -823,6 +1183,54 @@ func provisioningFlow(
 	if err := shoot("07-provisioning-tab"); err != nil {
 		return err
 	}
+	if env["OKTA_DEACTIVATE_PUSH"] == "1" {
+		if err := step("Push Groups"); err != nil {
+			return err
+		}
+		if err := settle(3); err != nil {
+			return err
+		}
+		return deactivateGroupPush(ctx, settle, env["OKTA_PUSH_GROUP"])
+	}
+	if env["OKTA_RETRY_PUSH"] == "1" {
+		if err := step("Push Groups"); err != nil {
+			return err
+		}
+		if err := settle(3); err != nil {
+			return err
+		}
+		if err := retryErroredPush(ctx, settle); err != nil {
+			return err
+		}
+		if err := shoot("14-push-groups"); err != nil {
+			return err
+		}
+		return nil
+	}
+	if pushGroup := env["OKTA_PUSH_GROUP"]; pushGroup != "" {
+		if err := step("Assignments"); err != nil {
+			return err
+		}
+		if err := settle(3); err != nil {
+			return err
+		}
+		if err := shoot("13-assignments"); err != nil {
+			return err
+		}
+		if err := step("Push Groups"); err != nil {
+			return err
+		}
+		if err := settle(3); err != nil {
+			return err
+		}
+		if err := pushGroupByName(ctx, pushGroup, settle); err != nil {
+			return err
+		}
+		if err := shoot("14-push-groups"); err != nil {
+			return err
+		}
+		return nil
+	}
 
 	// Re-runs land on an already-configured app, where this button no longer
 	// exists — the credential screens are captured, so skip to the lifecycle half
@@ -838,11 +1246,11 @@ func provisioningFlow(
 		// step names.
 		fmt.Println("  already configured — opening Integration to shoot the credentials")
 
-		if err := captureConfiguredCredentials(ctx, env, shoot, step, settle); err != nil {
+		if err := captureConfiguredCredentials(ctx, env, shoot, step, settle, configureSCIM); err != nil {
 			return err
 		}
 
-		return lifecycleFlow(ctx, instance, shoot, step, settle)
+		return lifecycleFlow(ctx, instance, shoot, step, settle, env["OKTA_PUSH_GROUP"])
 	}
 	if err := settle(5); err != nil {
 		return err
@@ -905,11 +1313,95 @@ func provisioningFlow(
 	}
 	// Capture the public, de-identified credential form only after the real
 	// configuration is durable; the helper cancels without changing it.
-	if err := captureConfiguredCredentials(ctx, env, shoot, step, settle); err != nil {
+	if err := captureConfiguredCredentials(ctx, env, shoot, step, settle, configureSCIM); err != nil {
 		return err
 	}
 
-	return lifecycleFlow(ctx, instance, shoot, step, settle)
+	return lifecycleFlow(ctx, instance, shoot, step, settle, env["OKTA_PUSH_GROUP"])
+}
+
+func deactivateGroupPush(ctx context.Context, settle func(int) error, group string) error {
+	encodedGroup, _ := json.Marshal(group)
+	open := fmt.Sprintf(`(() => {
+		const visible = element => element.offsetWidth > 0 || element.offsetHeight > 0;
+		const labels = Array.from(document.querySelectorAll('a,button,div,span,td'))
+			.filter(element => visible(element) && (element.textContent || '').includes(%s))
+			.sort((left, right) => left.getElementsByTagName('*').length - right.getElementsByTagName('*').length);
+		const label = labels[0];
+		if (!label) return false;
+		let row = label;
+		for (let up = 0; up < 10 && row; up++, row = row.parentElement) {
+			const action = Array.from(row.querySelectorAll('a,button,[role=button]'))
+				.find(element => visible(element) && (element.textContent || '').trim() === 'Active');
+			if (action) { action.click(); return true; }
+		}
+		return false;
+	})()`, encodedGroup)
+	var opened bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(open, &opened)); err != nil {
+		return err
+	}
+	if !opened {
+		return fmt.Errorf("the active push mapping for %q was not found", group)
+	}
+	if err := settle(1); err != nil {
+		return err
+	}
+	clicked, err := clickContaining(ctx, "Deactivate group push")
+	if err != nil {
+		return err
+	}
+	if !clicked {
+		return errors.New("the group push menu offered no deactivate action")
+	}
+	if err := settle(2); err != nil {
+		return err
+	}
+	for _, label := range []string{"Deactivate", "Confirm"} {
+		confirmed, err := clickText(ctx, label)
+		if err != nil {
+			return err
+		}
+		if confirmed {
+			break
+		}
+	}
+	fmt.Printf("  deactivated group push for %q\n", group)
+	return settle(8)
+}
+
+func retryErroredPush(ctx context.Context, settle func(int) error) error {
+	clicked, err := clickContaining(ctx, "Error")
+	if err != nil {
+		return err
+	}
+	if !clicked {
+		return errors.New("the errored group push status was not found")
+	}
+	if err := settle(1); err != nil {
+		return err
+	}
+	for _, label := range []string{"Retry", "Retry push", "Retry All Groups", "Push Now"} {
+		clicked, err = clickText(ctx, label)
+		if err != nil {
+			return err
+		}
+		if clicked {
+			fmt.Printf("  clicked group push action %q\n", label)
+			return settle(12)
+		}
+	}
+	var controls []string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`Array.from(document.querySelectorAll('a,button,[role=menuitem]'))
+		.filter(element => element.offsetWidth > 0 || element.offsetHeight > 0)
+		.map(element => (element.textContent || element.value || '').trim())
+		.filter(Boolean)`, &controls)); err != nil {
+		return err
+	}
+	if len(controls) > 30 {
+		controls = controls[len(controls)-30:]
+	}
+	return fmt.Errorf("the errored group push menu offered no retry action; visible controls: %q", controls)
 }
 
 // lifecycleFlow captures Provisioning → To App, Assignments and Push Groups —
@@ -920,6 +1412,7 @@ func lifecycleFlow(
 	shoot func(string) error,
 	step func(string) error,
 	settle func(int) error,
+	pushGroup string,
 ) error {
 	// The two callers arrive with the Integration pane in different states — a
 	// fresh save has just re-rendered it, a re-run never left it — so the
@@ -991,24 +1484,8 @@ func lifecycleFlow(
 		}
 	}
 	fmt.Println("  all three lifecycle operations verified ON")
-	// One outline per control the step tells the operator to touch — including
-	// Sync Password, which the step says to LEAVE OFF and which the reader has to
-	// find to confirm that. Spanning the whole panel in a single group needed a
-	// climb deeper than the helper walks, so it silently marked nothing.
-	for _, label := range []string{
-		"Create Users",
-		"Update User Attributes",
-		"Deactivate Users",
-		"Sync Password",
-	} {
-		if err := highlightGroup(ctx, label, "Enable"); err != nil {
-			return err
-		}
-	}
-	// Centre BETWEEN the four settings. The last highlight left the viewport on
-	// Sync Password, cutting the section heading off the top; scrolling to the
-	// heading instead cut Sync Password off the bottom. The second row centres all
-	// four rings in one frame.
+	// Every visible row is part of this instruction, so separate outlines add
+	// noise. Centre between the four settings and capture the complete card.
 	if err := scrollToText(ctx, "Update User Attributes"); err != nil {
 		return err
 	}
@@ -1043,13 +1520,110 @@ func lifecycleFlow(
 	if err := settle(3); err != nil {
 		return err
 	}
-	if err := highlight(ctx, "Push Groups"); err != nil {
+	if pushGroup != "" {
+		if err := pushGroupByName(ctx, pushGroup, settle); err != nil {
+			return err
+		}
+	}
+	if err := highlightLowest(ctx, "Push Groups"); err != nil {
 		return err
 	}
 	if err := shoot("14-push-groups"); err != nil {
 		return err
 	}
-	return reportPage(ctx)
+	return nil
+}
+
+func pushGroupByName(ctx context.Context, group string, settle func(int) error) error {
+	const openMenu = `(() => {
+		const visible = element => element.offsetWidth > 0 || element.offsetHeight > 0;
+		const candidates = Array.from(document.querySelectorAll('a,button,[role=button]'))
+			.filter(element => visible(element) && (element.textContent || '').includes('Push Groups'))
+			.sort((left, right) => right.getBoundingClientRect().top - left.getBoundingClientRect().top);
+		const button = candidates[0];
+		if (!button) return false;
+		button.click();
+		return true;
+	})()`
+	var opened bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(openMenu, &opened)); err != nil {
+		return err
+	}
+	if !opened {
+		return errors.New("the Push Groups menu button was not found")
+	}
+	if err := settle(1); err != nil {
+		return err
+	}
+	if selected, err := clickContaining(ctx, "Find groups by name"); err != nil {
+		return err
+	} else if !selected {
+		return errors.New("the Find groups by name menu item was not found")
+	}
+	if err := settle(2); err != nil {
+		return err
+	}
+	encodedGroup, _ := json.Marshal(group)
+	const search = `(() => {
+		const visible = element => element.offsetWidth > 0 || element.offsetHeight > 0;
+		const dialogs = Array.from(document.querySelectorAll('[role=dialog],.modal')).filter(visible);
+		const scope = dialogs[dialogs.length - 1] || document;
+		const input = Array.from(scope.querySelectorAll('input')).find(visible);
+		if (!input) return false;
+		input.focus();
+		input.select && input.select();
+		return true;
+	})()`
+	var focused bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(search, &focused)); err != nil {
+		return err
+	}
+	if !focused {
+		return errors.New("the group search input was not found")
+	}
+	if err := chromedp.Run(ctx, chromedp.KeyEvent(group)); err != nil {
+		return err
+	}
+	if err := settle(3); err != nil {
+		return err
+	}
+	selectGroup := fmt.Sprintf(`(() => {
+		const visible = element => element.offsetWidth > 0 || element.offsetHeight > 0;
+		const matches = Array.from(document.querySelectorAll('a,button,li,div,span,[role=option]'))
+			.filter(element => visible(element) && (element.textContent || '').includes(%s))
+			.sort((left, right) => left.getElementsByTagName('*').length - right.getElementsByTagName('*').length);
+		const label = matches[0];
+		if (!label) return false;
+		(label.closest('a,button,li,[role=option]') || label).click();
+		return true;
+	})()`, encodedGroup)
+	var selected bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(selectGroup, &selected)); err != nil {
+		return err
+	}
+	if !selected {
+		return fmt.Errorf("assigned Okta group %q was not offered for push", group)
+	}
+	if err := settle(2); err != nil {
+		return err
+	}
+	if saved, err := clickText(ctx, "Save"); err != nil {
+		return err
+	} else if !saved {
+		return errors.New("the Push Group Save button was not found")
+	}
+	if err := settle(10); err != nil {
+		return err
+	}
+	shown, err := waitForText(ctx, group, 6)
+	if err != nil {
+		return err
+	}
+	if !shown {
+		return fmt.Errorf("pushed group %q did not appear in the Okta table", group)
+	}
+	fmt.Printf("  pushed assigned group %q through SCIM\n", group)
+	return nil
 }
 
 // clickRadio selects the radio whose label starts with the given text.
@@ -1108,8 +1682,8 @@ func sectionChecked(ctx context.Context, section string) (bool, error) {
 	return checked, err
 }
 
-// highlightGroup outlines the container holding BOTH anchor and companion text —
-// the wide highlight that frames a full control group rather than one label.
+// highlightGroup frames the container holding both anchor and companion text.
+// The ring is a top-layer overlay so opaque vendor inputs cannot cover an edge.
 func highlightGroup(ctx context.Context, anchor, mustInclude string) error {
 	script := fmt.Sprintf(`(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
@@ -1133,28 +1707,26 @@ func highlightGroup(ctx context.Context, anchor, mustInclude string) error {
     if (block && node.getBoundingClientRect().height >= 24) break;
     node = node.parentElement;
   }
-  node.scrollIntoView({block: 'center'});
-  // A table row is the other way to get bars with no sides: an outline on a <tr>
-  // renders only its horizontal segments, and this shot shipped looking like a
-  // set of underlines because of it. Ring the CELLS instead.
-  if (getComputedStyle(node).display === 'table-row') {
-    const cells = [...node.children];
-    if (!cells.length) return false;
-    cells.forEach((cell, i) => {
-      const ring = ['inset 0 3px 0 #10b981', 'inset 0 -3px 0 #10b981'];
-      if (i === 0) ring.push('inset 3px 0 0 #10b981');
-      if (i === cells.length - 1) ring.push('inset -3px 0 0 #10b981');
-      cell.style.boxShadow = ring.join(', ');
-    });
-    return true;
-  }
-  // INSIDE the box, not around it. An outward ring on these rows came back as a
-  // pair of horizontal bars: the row is a plain grid div, but something paints
-  // over the 3px band to either side of it. An inset shadow lives in the row's
-  // own box, above its background and below its content, out of reach.
-  node.style.boxShadow = 'inset 0 0 0 3px #10b981';
-  node.style.borderRadius = '8px';
+  node.scrollIntoView({block: 'nearest'});
   const box = node.getBoundingClientRect();
+  // Paint the marker in a top-layer overlay rather than on the vendor node.
+  // Okta inputs sit above their row background and used to erase the top edge
+  // of an inset shadow. The overlay stays complete across inputs and buttons.
+  const ring = document.createElement('div');
+  ring.dataset.emisarDocsHighlight = 'true';
+  Object.assign(ring.style, {
+    position: 'fixed',
+    left: (box.left - 3) + 'px',
+    top: (box.top - 3) + 'px',
+    width: (box.width + 6) + 'px',
+    height: (box.height + 6) + 'px',
+    border: '3px solid #10b981',
+    borderRadius: '8px',
+    boxSizing: 'border-box',
+    pointerEvents: 'none',
+    zIndex: '2147483647'
+  });
+  document.body.appendChild(ring);
   return node.tagName + ' display=' + getComputedStyle(node).display +
     ' ' + Math.round(box.width) + 'x' + Math.round(box.height);
 })()`, anchor, mustInclude)
@@ -1162,10 +1734,8 @@ func highlightGroup(ctx context.Context, anchor, mustInclude string) error {
 	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
 		return err
 	}
-	// FAIL, don't warn. This printed the result and carried on, so a highlight
-	// that matched nothing shipped a screenshot with no outline on it — which is
-	// exactly how the "Provisioning to App" shot reached the docs bare. A missing
-	// outline is a broken instruction, not a cosmetic miss.
+	// FAIL, don't warn. A missing outline is a broken instruction, not a cosmetic
+	// miss.
 	if marked == "" {
 		return fmt.Errorf("nothing spanning %q..%q to highlight", anchor, mustInclude)
 	}
@@ -1236,6 +1806,34 @@ func highlight(ctx context.Context, label string) error {
 		return fmt.Errorf("nothing matching %q to highlight", label)
 	}
 	fmt.Printf("  highlighted %q\n", label)
+	return chromedp.Run(ctx, chromedp.Sleep(1200*time.Millisecond))
+}
+
+// highlightLowest disambiguates repeated labels by choosing the lowest
+// interactive control. Okta renders both a Push Groups tab and a Push Groups
+// action; the walkthrough step means the action inside the table card.
+func highlightLowest(ctx context.Context, label string) error {
+	script := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const matches = [...document.querySelectorAll('a,button,[role=button]')]
+    .filter(el => visible(el) && (el.textContent || '').trim() === %q)
+    .sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+  const target = matches[0];
+  if (!target) return false;
+  target.style.outline = '3px solid #10b981';
+  target.style.outlineOffset = '3px';
+  target.style.borderRadius = '6px';
+  target.scrollIntoView({block: 'nearest'});
+  return true;
+})()`, label)
+	var marked bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
+		return err
+	}
+	if !marked {
+		return fmt.Errorf("no interactive %q control to highlight", label)
+	}
+	fmt.Printf("  highlighted lowest %q control\n", label)
 	return chromedp.Run(ctx, chromedp.Sleep(1200*time.Millisecond))
 }
 
@@ -1329,7 +1927,11 @@ func oidcCredentialsShot(
 	}
 	// Wait for the list to paint before clicking into it — the click otherwise
 	// lands on nothing and the failure only surfaces two steps later.
-	listed, err := waitForText(ctx, "emisar", 10)
+	appMarker := env["OKTA_OIDC_APP_NAME"]
+	if appMarker == "" {
+		appMarker = "emisar"
+	}
+	listed, err := waitForText(ctx, appMarker, 10)
 	if err != nil {
 		return err
 	}
@@ -1337,15 +1939,25 @@ func oidcCredentialsShot(
 		_ = reportPage(ctx)
 		return fmt.Errorf("the applications list never rendered")
 	}
-	// The OIDC app is named "emisar"; the SCIM one is "SCIM 2.0 Test App (Header
-	// Auth)", so an exact-text match cannot pick the wrong one.
-	opened, err := clickText(ctx, "emisar")
-	if err != nil {
+	openApp := fmt.Sprintf(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const hits = [...document.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').trim() === %q)
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length);
+  const label = hits[0];
+  if (!label) return false;
+  const row = label.closest('a,[role=link],tr,[role=row]');
+  const target = row && row.matches('a,[role=link]') ? row : row && row.querySelector('a,[href]');
+  (target || row || label).click();
+  return true;
+})()`, appMarker)
+	var opened bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(openApp, &opened)); err != nil {
 		return err
 	}
 	if !opened {
 		_ = reportPage(ctx)
-		return fmt.Errorf("no OIDC app named %q in the applications list", "emisar")
+		return errors.New("configured OIDC app was not found in the applications list")
 	}
 	if err := settle(8); err != nil {
 		return err
@@ -1363,6 +1975,23 @@ func oidcCredentialsShot(
 	if !shown {
 		return fmt.Errorf("the app's Client Credentials card never rendered")
 	}
+	// A client id is public, but it is still tenant-specific evidence. The guide
+	// teaches where to copy it, not the burner org's actual identifier.
+	var maskedClientID bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
+  const field = [...document.querySelectorAll('input')]
+    .find(el => visible(el) && /^0oa/i.test(el.value || ''));
+  if (!field) return false;
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(field, '••••••••••••••••••••');
+  return true;
+})()`, &maskedClientID)); err != nil {
+		return err
+	}
+	if !maskedClientID {
+		return errors.New("could not mask the Okta OIDC client id")
+	}
 	// Box what the step says to copy — the id with its help text, and the secrets
 	// table — rather than the whole Client Credentials card, which would swallow
 	// the settings the reader must NOT touch.
@@ -1378,7 +2007,7 @@ func oidcCredentialsShot(
 	if err := shoot("oidc-04-client-credentials"); err != nil {
 		return err
 	}
-	return reportPage(ctx)
+	return nil
 }
 
 func oidcFlow(

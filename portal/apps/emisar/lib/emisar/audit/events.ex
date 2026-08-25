@@ -1575,8 +1575,9 @@ defmodule Emisar.Audit.Events do
         [
           target_kind: "identity_provider",
           target_id: provider_id(provider, mapping),
-          target_label: mapping.external_group_display || mapping.external_group_id,
+          target_label: group_mapping_label(mapping),
           payload: %{
+            directory_group_id: mapping.directory_group_id,
             external_group_id: mapping.external_group_id,
             before: runner_access_payload(before_access),
             after: runner_access_payload(after_access)
@@ -1603,8 +1604,9 @@ defmodule Emisar.Audit.Events do
         [
           target_kind: "identity_provider",
           target_id: provider_id(provider, mapping),
-          target_label: mapping.external_group_display || mapping.external_group_id,
+          target_label: group_mapping_label(mapping),
           payload: %{
+            directory_group_id: mapping.directory_group_id,
             external_group_id: mapping.external_group_id,
             role: to_string(mapping.role)
           }
@@ -1615,6 +1617,10 @@ defmodule Emisar.Audit.Events do
   defp provider_id(%SSO.IdentityProvider{id: id}, _mapping), do: id
   defp provider_id(nil, %SSO.GroupRoleMapping{provider_id: id}), do: id
   defp provider_id(nil, %SSO.GroupRunnerAccessMapping{provider_id: id}), do: id
+
+  defp group_mapping_label(mapping) do
+    mapping.external_group_display || mapping.external_group_id || mapping.directory_group_id
+  end
 
   def identity_provider_configured(%Subject{} = subject, %SSO.IdentityProvider{} = provider),
     do: identity_provider_event(subject, provider, "sso.provider_configured")

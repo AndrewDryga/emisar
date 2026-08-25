@@ -13,6 +13,7 @@ defmodule Emisar.SSO.SCIM do
   alias Ecto.Multi
   alias Emisar.{Accounts, Audit, Auth, Crypto, Repo, Users}
   alias Emisar.SSO.{DirectoryGroup, DirectoryGroupMember, GroupRoleMapping}
+  alias Emisar.SSO.GroupRunnerAccessMapping
   alias Emisar.SSO.IdentityProvider
   alias Emisar.SSO.{SCIMGroupPatch, SCIMUser, SCIMUserPatch, SCIMUserUpdate, UserIdentity}
   @identifier_constraints ~w[
@@ -283,7 +284,7 @@ defmodule Emisar.SSO.SCIM do
 
       mapped_access =
         runner_access_mappings
-        |> Enum.filter(&(&1.external_group_id in group_ids))
+        |> Enum.filter(&(&1.directory_group_id in group_ids))
         |> Enum.map(&runner_access_mapping_access/1)
         |> Accounts.RunnerAccess.union()
 
@@ -1008,9 +1009,11 @@ defmodule Emisar.SSO.SCIM do
   @doc """
   Internal — SCIM read: the provider's synced directory groups as
   `[%{id, external_group_id, display, member_ids}]`, ordered stably.
-  An optional `:display_name` filter answers the `displayName eq` probe Entra
-  makes before every group push; without a group read it never matches an
-  existing group and re-POSTs the whole directory each cycle.
+  Optional `:display_name` and `:external_id` filters answer the provider probes
+  that precede a group push. Okta omits externalId on create, then probes our
+  returned resource id as externalId; for Okta only, an unset externalId matches
+  that exact immutable resource id without changing the stored or rendered
+  attribute.
 
   `display` is whatever the directory last pushed on the group resource. Role
   mappings and membership rows carry historical copies for their own workflows,
@@ -1018,6 +1021,7 @@ defmodule Emisar.SSO.SCIM do
   """
   def scim_list_groups(%IdentityProvider{} = provider, opts \\ []) do
     {display_name, opts} = Keyword.pop(opts, :display_name)
+    {external_id, opts} = Keyword.pop(opts, :external_id)
     {offset, opts} = Keyword.pop(opts, :offset, 0)
     {limit, _opts} = Keyword.pop(opts, :limit, 100)
 
@@ -1031,7 +1035,7 @@ defmodule Emisar.SSO.SCIM do
       DirectoryGroup.Query.not_deleted()
       |> DirectoryGroup.Query.by_account_id(provider.account_id)
       |> DirectoryGroup.Query.by_provider_id(provider.id)
-      |> apply_scim_group_filter(display_name)
+      |> apply_scim_group_filter(provider, display_name, external_id)
 
     total_results = Repo.aggregate(groups_queryable, :count, :id)
 
@@ -1097,10 +1101,16 @@ defmodule Emisar.SSO.SCIM do
     end
   end
 
-  defp apply_scim_group_filter(queryable, nil), do: queryable
+  defp apply_scim_group_filter(queryable, _provider, nil, nil), do: queryable
 
-  defp apply_scim_group_filter(queryable, display_name),
+  defp apply_scim_group_filter(queryable, _provider, display_name, nil),
     do: DirectoryGroup.Query.by_display(queryable, display_name)
+
+  defp apply_scim_group_filter(queryable, %IdentityProvider{kind: :okta}, nil, external_id),
+    do: DirectoryGroup.Query.by_external_group_id_or_unset_resource_id(queryable, external_id)
+
+  defp apply_scim_group_filter(queryable, _provider, nil, external_id),
+    do: DirectoryGroup.Query.by_external_group_id(queryable, external_id)
 
   defp apply_scim_filter(queryable, {:user_name, value}),
     do: UserIdentity.Query.by_user_name(queryable, value)
@@ -1729,10 +1739,9 @@ defmodule Emisar.SSO.SCIM do
     :ok
   end
 
-  # Refresh the IdP's group label wherever it is stored: on the group's own
-  # membership rows, so an unmapped group still answers SCIM reads by name, and
-  # on any matching role mapping, so the config UI shows the current name. A PUT
-  # that omits displayName must not erase either, so nil is a no-op.
+  # Refresh the IdP's group label wherever it is stored: on membership rows and
+  # both authorization mapping snapshots. Identity remains the immutable group
+  # UUID; a PUT that omits displayName must not erase the display snapshot.
   defp refresh_group_display(_provider, _group, nil), do: :ok
 
   defp refresh_group_display(%IdentityProvider{} = provider, %DirectoryGroup{} = group, display) do
@@ -1744,12 +1753,15 @@ defmodule Emisar.SSO.SCIM do
 
     Repo.update_all(members_queryable, set: [external_group_display: display, updated_at: now])
 
-    if group.external_group_id do
-      GroupRoleMapping.Query.not_deleted()
-      |> GroupRoleMapping.Query.by_provider_id(provider.id)
-      |> GroupRoleMapping.Query.by_external_group_id(group.external_group_id)
-      |> Repo.update_all(set: [external_group_display: display, updated_at: now])
-    end
+    GroupRoleMapping.Query.not_deleted()
+    |> GroupRoleMapping.Query.by_provider_id(provider.id)
+    |> GroupRoleMapping.Query.by_directory_group_id(group.id)
+    |> Repo.update_all(set: [external_group_display: display, updated_at: now])
+
+    GroupRunnerAccessMapping.Query.not_deleted()
+    |> GroupRunnerAccessMapping.Query.by_provider_id(provider.id)
+    |> GroupRunnerAccessMapping.Query.by_directory_group_id(group.id)
+    |> Repo.update_all(set: [external_group_display: display, updated_at: now])
 
     :ok
   end

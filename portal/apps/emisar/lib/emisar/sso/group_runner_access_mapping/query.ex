@@ -19,10 +19,24 @@ defmodule Emisar.SSO.GroupRunnerAccessMapping.Query do
     where(queryable, [group_runner_access_mappings: m], m.provider_id == ^provider_id)
   end
 
+  def by_directory_group_id(queryable \\ all(), directory_group_id) do
+    where(
+      queryable,
+      [group_runner_access_mappings: m],
+      m.directory_group_id == ^directory_group_id
+    )
+  end
+
+  def with_preloaded_directory_group(queryable \\ all()) do
+    preload(queryable, directory_group: ^Emisar.SSO.DirectoryGroup.Query.all())
+  end
+
+  def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
+
   @impl Emisar.Repo.Query
   def cursor_fields do
     [
-      {:group_runner_access_mappings, :asc, :external_group_id},
+      {:group_runner_access_mappings, :asc, :directory_group_id},
       {:group_runner_access_mappings, :asc, :id}
     ]
   end

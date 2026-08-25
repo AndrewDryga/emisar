@@ -11,7 +11,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Accounts, Repo, SSO}
-  alias Emisar.SSO.IdentityProvider
+  alias Emisar.SSO.{DirectoryGroup, IdentityProvider}
 
   @scim_content_type "application/scim+json"
   @scim_string_limit 255
@@ -56,6 +56,73 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
 
   defp role_of(account_id, user_id),
     do: Fixtures.Memberships.fetch_membership(account_id, user_id).role
+
+  # Authorization mappings bind to a SCIM resource that already exists. Older
+  # controller cases describe the fixture group by externalId because the HTTP
+  # push under test happens later; materialize the exact empty resource without
+  # replacing members when it is already present, then map its immutable UUID.
+  defp create_group_mapping(provider, attrs, subject) do
+    with true <- subject.account.id == provider.account_id,
+         true <- SSO.subject_can_configure_directory_sync?(subject),
+         {:ok, group} <- mapping_group(provider, attrs) do
+      SSO.create_group_mapping(provider, put_directory_group_id(attrs, group.id), subject)
+    else
+      false -> SSO.create_group_mapping(provider, attrs, subject)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp create_group_runner_access_mapping(provider, attrs, subject) do
+    with true <- subject.account.id == provider.account_id,
+         true <- SSO.subject_can_configure_directory_sync?(subject),
+         {:ok, group} <- mapping_group(provider, attrs) do
+      attrs = put_directory_group_id(attrs, group.id)
+      SSO.create_group_runner_access_mapping(provider, attrs, subject)
+    else
+      false -> SSO.create_group_runner_access_mapping(provider, attrs, subject)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp mapping_group(provider, attrs) do
+    directory_group_id = attrs[:directory_group_id] || attrs["directory_group_id"]
+    external_group_id = attrs[:external_group_id] || attrs["external_group_id"]
+
+    cond do
+      is_binary(directory_group_id) ->
+        DirectoryGroup.Query.not_deleted()
+        |> DirectoryGroup.Query.by_account_id(provider.account_id)
+        |> DirectoryGroup.Query.by_provider_id(provider.id)
+        |> DirectoryGroup.Query.by_id(directory_group_id)
+        |> Repo.fetch(DirectoryGroup.Query)
+
+      is_binary(external_group_id) ->
+        case DirectoryGroup.Query.not_deleted()
+             |> DirectoryGroup.Query.by_account_id(provider.account_id)
+             |> DirectoryGroup.Query.by_provider_id(provider.id)
+             |> DirectoryGroup.Query.by_external_group_id(external_group_id)
+             |> Repo.fetch(DirectoryGroup.Query) do
+          {:ok, group} ->
+            {:ok, group}
+
+          {:error, :not_found} ->
+            SSO.scim_upsert_group(provider, %{
+              external_id: external_group_id,
+              display: attrs[:external_group_display] || attrs["external_group_display"],
+              member_ids: []
+            })
+        end
+
+      true ->
+        {:error, :missing_group}
+    end
+  end
+
+  defp put_directory_group_id(attrs, id) do
+    if Enum.any?(Map.keys(attrs), &is_binary/1),
+      do: Map.put(attrs, "directory_group_id", id),
+      else: Map.put(attrs, :directory_group_id, id)
+  end
 
   # A SCIM Group payload as Okta/Entra send it.
   defp group_payload(external_id, member_ids, opts \\ []) do
@@ -125,7 +192,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     } do
       # A mapping (grp-ops → :operator) + a provisioned member at the default :viewer.
       {:ok, _mapping} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-ops", external_group_display: "Operators", role: :operator},
           subject
@@ -223,7 +290,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       account: account
     } do
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
       identity = provision(provider, "okta|member")
 
@@ -265,10 +332,10 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       # Same external group id + role mapped in BOTH accounts; a member with the
       # SAME external id provisioned in each.
       {:ok, _} =
-        SSO.create_group_mapping(provider_a, %{external_group_id: "grp", role: :admin}, subject_a)
+        create_group_mapping(provider_a, %{external_group_id: "grp", role: :admin}, subject_a)
 
       {:ok, _} =
-        SSO.create_group_mapping(provider_b, %{external_group_id: "grp", role: :admin}, subject_b)
+        create_group_mapping(provider_b, %{external_group_id: "grp", role: :admin}, subject_b)
 
       id_a = provision(provider_a, "okta|shared")
       id_b = provision(provider_b, "okta|shared")
@@ -306,7 +373,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       account: account
     } do
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
       identity = provision(provider, "okta|patch")
       group_id = create_group(conn, token, "grp-adm")["id"]
@@ -525,7 +592,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       account: account
     } do
       {:ok, _} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-ops", role: :operator},
           subject
@@ -570,14 +637,14 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       Fixtures.Runners.create_runner(account_id: account.id, group: "production")
 
       {:ok, _role_mapping} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-privileged", role: :admin},
           subject
         )
 
       {:ok, _access_mapping} =
-        SSO.create_group_runner_access_mapping(
+        create_group_runner_access_mapping(
           provider,
           %{
             external_group_id: "grp-privileged",
@@ -622,7 +689,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       account: account
     } do
       {:ok, _} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-ops", role: :operator},
           subject
@@ -656,7 +723,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       account: account
     } do
       {:ok, _} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-ops", role: :operator},
           subject
@@ -709,7 +776,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       account: account
     } do
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
       identity = provision(provider, "okta|protected")
 
@@ -740,7 +807,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       account: account
     } do
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
       identity = provision(provider, "okta|pathless")
       group_id = create_group(conn, token, "grp-adm")["id"]
@@ -765,7 +832,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       account: account
     } do
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
       identity = provision(provider, "okta|caseop")
       group_id = create_group(conn, token, "grp-adm")["id"]
@@ -805,7 +872,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       account: account
     } do
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
       identity = provision(provider, "okta|stay")
 
@@ -861,10 +928,10 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       # Same group id + :admin mapping in both accounts; a member with the SAME
       # external id provisioned in each.
       {:ok, _} =
-        SSO.create_group_mapping(provider_a, %{external_group_id: "grp", role: :admin}, subject_a)
+        create_group_mapping(provider_a, %{external_group_id: "grp", role: :admin}, subject_a)
 
       {:ok, _} =
-        SSO.create_group_mapping(provider_b, %{external_group_id: "grp", role: :admin}, subject_b)
+        create_group_mapping(provider_b, %{external_group_id: "grp", role: :admin}, subject_b)
 
       id_a = provision(provider_a, "okta|shared")
       id_b = provision(provider_b, "okta|shared")
@@ -902,7 +969,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       account: account
     } do
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
       identity = provision(provider, "okta|del")
 
@@ -930,7 +997,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       account: account
     } do
       {:ok, _} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-ops", role: :operator},
           subject
@@ -963,7 +1030,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       # `PUT /Groups/viewers` carrying `externalId: "admins"` used to rewrite the
       # ADMIN group's membership — a request mutating a resource it never named.
       {:ok, _} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-admins", role: :admin},
           subject
@@ -1026,7 +1093,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       account: account
     } do
       {:ok, _} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-ops", role: :operator},
           subject
@@ -1089,10 +1156,10 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
     test "DELETE; a member also in another mapped group recomputes to the remaining highest",
          %{conn: conn, token: token, provider: provider, subject: subject, account: account} do
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
       {:ok, _} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-op", role: :operator},
           subject
@@ -1203,6 +1270,72 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
         conn |> auth(token) |> get("/scim/v2/Groups/#{body["id"]}") |> json_response(200)
 
       assert fetched["members"] == [%{"value" => identity.id}]
+    end
+
+    test "Okta can probe an externalId-less Group by the returned resource id", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      identity = provision(provider, "okta|resource-probe")
+
+      created =
+        conn
+        |> auth(token)
+        |> post(~p"/scim/v2/Groups", %{
+          "displayName" => "Okta resource probe",
+          "members" => [%{"value" => identity.id}],
+          "schemas" => ["urn:ietf:params:scim:schemas:core:2.0:Group"]
+        })
+        |> json_response(201)
+
+      resource_filter = ~s(externalId eq "#{created["id"]}")
+
+      matched =
+        conn
+        |> auth(token)
+        |> get(~p"/scim/v2/Groups?filter=#{resource_filter}")
+        |> json_response(200)
+
+      assert matched["totalResults"] == 1
+      assert [group] = matched["Resources"]
+      assert group["id"] == created["id"]
+      refute Map.has_key?(group, "externalId")
+
+      missing_filter = ~s(externalId eq "#{Repo.generate_id()}")
+
+      missed =
+        conn
+        |> auth(token)
+        |> get(~p"/scim/v2/Groups?filter=#{missing_filter}")
+        |> json_response(200)
+
+      assert missed["totalResults"] == 0
+    end
+
+    test "GET /Groups filters a real IdP externalId exactly", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      identity = provision(provider, "okta|external-probe")
+
+      {:ok, expected} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-external-probe",
+          display: "External probe",
+          member_ids: [identity.id]
+        })
+
+      body =
+        conn
+        |> auth(token)
+        |> get(~p"/scim/v2/Groups?filter=externalId eq \"grp-external-probe\"")
+        |> json_response(200)
+
+      expected_id = expected.id
+      assert body["totalResults"] == 1
+      assert [%{"id" => ^expected_id, "externalId" => "grp-external-probe"}] = body["Resources"]
     end
 
     test "same-name no-externalId probes receive distinct server ids", %{conn: conn, token: token} do
@@ -1458,7 +1591,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       %{token: token, provider: provider, subject: subject, account: account} = scim_provider()
 
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
       kept = provision(provider, "okta|kept")
 
@@ -1490,7 +1623,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
   # assertions where the same external id is seeded in two providers).
   defp seed_admin_group_member(provider, subject, group_id, external_id) do
     {:ok, _} =
-      SSO.create_group_mapping(provider, %{external_group_id: group_id, role: :admin}, subject)
+      create_group_mapping(provider, %{external_group_id: group_id, role: :admin}, subject)
 
     identity = provision(provider, external_id)
 

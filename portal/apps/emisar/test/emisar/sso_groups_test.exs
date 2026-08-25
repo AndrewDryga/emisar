@@ -200,7 +200,7 @@ defmodule Emisar.SSOGroupsTest do
       assert role_of(account.id, identity.user_id) == :viewer
 
       {:ok, _} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-ops", role: :operator},
           subject
@@ -228,7 +228,7 @@ defmodule Emisar.SSOGroupsTest do
       assert role_of(account.id, id2.user_id) == :viewer
 
       {:ok, _} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-ops", role: :operator},
           subject
@@ -255,17 +255,17 @@ defmodule Emisar.SSOGroupsTest do
       %{identity: identity} = provision(provider, "okta|multi")
 
       {:ok, _} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-view", role: :viewer},
           subject
         )
 
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
       {:ok, _} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-op", role: :operator},
           subject
@@ -304,7 +304,7 @@ defmodule Emisar.SSOGroupsTest do
       %{identity: identity} = provision(provider, "okta|patch")
 
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
       {:ok, _} =
         SSO.scim_upsert_group(provider, %{
@@ -335,7 +335,7 @@ defmodule Emisar.SSOGroupsTest do
       %{identity: identity} = provision(provider, "okta|known")
 
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-mix", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-mix", role: :admin}, subject)
 
       # The group lists a known + an unprovisioned member id; only the known
       # one is tracked + recomputed.
@@ -397,7 +397,7 @@ defmodule Emisar.SSOGroupsTest do
       %{identity: gone_identity, membership: gone_membership} = provision(provider, "okta|gone")
 
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
       # An operator removed one member from the team (membership soft-deleted)
       # while their identity lived on — so the recompute will find no membership
@@ -457,7 +457,7 @@ defmodule Emisar.SSOGroupsTest do
 
     test "retires the group and revokes what it granted", %{provider: provider, subject: subject} do
       {:ok, _} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-gone", role: :admin},
           subject
@@ -540,6 +540,108 @@ defmodule Emisar.SSOGroupsTest do
     end
   end
 
+  describe "externalId-less group authorization" do
+    setup do
+      scim_provider()
+    end
+
+    test "the exact resource grants role and runner access; rename keeps it, delete/recreate does not",
+         %{provider: provider, subject: subject, account: account} do
+      %{identity: selected} = provision(provider, "okta|selected")
+      %{identity: same_name} = provision(provider, "okta|same-name")
+
+      assert {:ok, selected_group} =
+               SSO.scim_upsert_group(provider, %{
+                 display: "Certification Admins",
+                 member_ids: [selected.id]
+               })
+
+      assert is_nil(selected_group.external_group_id)
+
+      assert {:ok, same_name_group} =
+               SSO.scim_upsert_group(provider, %{
+                 display: "Certification Admins",
+                 member_ids: [same_name.id]
+               })
+
+      refute same_name_group.id == selected_group.id
+
+      assert {:ok, role_mapping} =
+               SSO.create_group_mapping(
+                 provider,
+                 %{directory_group_id: selected_group.id, role: :admin},
+                 subject
+               )
+
+      assert {:ok, access_mapping} =
+               SSO.create_group_runner_access_mapping(
+                 provider,
+                 %{directory_group_id: selected_group.id, runner_access_mode: :all},
+                 subject
+               )
+
+      assert role_mapping.directory_group_id == selected_group.id
+      assert access_mapping.directory_group_id == selected_group.id
+      assert role_of(account.id, selected.user_id) == :admin
+      assert access_of(account.id, selected.user_id) == Accounts.RunnerAccess.all()
+      assert role_of(account.id, same_name.user_id) == :viewer
+      assert access_of(account.id, same_name.user_id) == Accounts.RunnerAccess.none()
+
+      assert {:ok, renamed} =
+               SSO.scim_rename_group(provider, selected_group.id, "Renamed Admins")
+
+      assert renamed.id == selected_group.id
+      assert role_of(account.id, selected.user_id) == :admin
+      assert access_of(account.id, selected.user_id) == Accounts.RunnerAccess.all()
+
+      assert {:ok, _deleted_group} = SSO.scim_delete_group(provider, selected_group.id)
+      assert role_of(account.id, selected.user_id) == :viewer
+      assert access_of(account.id, selected.user_id) == Accounts.RunnerAccess.none()
+
+      assert {:ok, recreated} =
+               SSO.scim_upsert_group(provider, %{
+                 display: "Renamed Admins",
+                 member_ids: [selected.id]
+               })
+
+      refute recreated.id == selected_group.id
+      assert role_of(account.id, selected.user_id) == :viewer
+      assert access_of(account.id, selected.user_id) == Accounts.RunnerAccess.none()
+
+      # Dormant mappings remain operator-owned config and can still be removed
+      # after the directory resource has gone away.
+      assert {:ok, _deleted} = SSO.delete_group_mapping(role_mapping, subject)
+
+      assert {:ok, _deleted} =
+               SSO.delete_group_runner_access_mapping(access_mapping, subject)
+    end
+
+    test "foreign-provider resource ids are not found and the database rejects a forged tenant tuple",
+         %{provider: provider, subject: subject, account: account} do
+      %{provider: other_provider} = scim_provider()
+      assert {:ok, foreign_group} = SSO.scim_upsert_group(other_provider, %{display: "Foreign"})
+
+      assert SSO.create_group_mapping(
+               provider,
+               %{directory_group_id: foreign_group.id, role: :admin},
+               subject
+             ) == {:error, :not_found}
+
+      group = Repo.get!(DirectoryGroup, foreign_group.id)
+
+      changeset =
+        Emisar.SSO.GroupRoleMapping.Changeset.create(
+          account.id,
+          provider.id,
+          group,
+          %{role: :admin}
+        )
+
+      assert {:error, rejected} = Repo.insert(changeset)
+      assert "does not exist" in errors_on(rejected).directory_group_id
+    end
+  end
+
   describe "reconcile_pending_authorizations/1" do
     setup do
       context = scim_provider()
@@ -562,7 +664,7 @@ defmodule Emisar.SSOGroupsTest do
       assert access_of(account.id, identity.user_id) == Accounts.RunnerAccess.none()
 
       {:ok, db_mapping} =
-        SSO.create_group_runner_access_mapping(
+        create_group_runner_access_mapping(
           provider,
           %{
             external_group_id: "grp-db",
@@ -573,7 +675,7 @@ defmodule Emisar.SSOGroupsTest do
         )
 
       {:ok, app_mapping} =
-        SSO.create_group_runner_access_mapping(
+        create_group_runner_access_mapping(
           provider,
           %{
             external_group_id: "grp-app",
@@ -621,7 +723,7 @@ defmodule Emisar.SSOGroupsTest do
       %{identity: identity} = provision(provider, "okta|runner-all")
 
       {:ok, _restricted} =
-        SSO.create_group_runner_access_mapping(
+        create_group_runner_access_mapping(
           provider,
           %{
             external_group_id: "grp-db",
@@ -632,7 +734,7 @@ defmodule Emisar.SSOGroupsTest do
         )
 
       {:ok, all_mapping} =
-        SSO.create_group_runner_access_mapping(
+        create_group_runner_access_mapping(
           provider,
           %{external_group_id: "grp-all", runner_access_mode: :all},
           subject
@@ -662,7 +764,7 @@ defmodule Emisar.SSOGroupsTest do
       %{identity: identity} = provision(provider, "okta|runner-reactivate")
 
       {:ok, mapping} =
-        SSO.create_group_runner_access_mapping(
+        create_group_runner_access_mapping(
           provider,
           %{
             external_group_id: "grp-db",
@@ -710,7 +812,7 @@ defmodule Emisar.SSOGroupsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _mapping} =
-        SSO.create_group_runner_access_mapping(
+        create_group_runner_access_mapping(
           provider,
           %{
             external_group_id: "grp-runner",
@@ -807,7 +909,7 @@ defmodule Emisar.SSOGroupsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _mapping} =
-        SSO.create_group_runner_access_mapping(
+        create_group_runner_access_mapping(
           provider,
           %{
             external_group_id: "grp-runner",
@@ -895,7 +997,7 @@ defmodule Emisar.SSOGroupsTest do
       Fixtures.Memberships.force_role(membership, "owner")
 
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
       {:ok, _} =
         SSO.scim_upsert_group(provider, %{
@@ -916,7 +1018,7 @@ defmodule Emisar.SSOGroupsTest do
       %{identity: identity} = provision(provider, "okta|demote")
 
       {:ok, _} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-adm", role: :admin}, subject)
 
       {:ok, _} =
         SSO.scim_upsert_group(provider, %{
@@ -1028,14 +1130,14 @@ defmodule Emisar.SSOGroupsTest do
         })
 
       {:ok, role_mapping} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-adm", role: :admin},
           subject
         )
 
       {:ok, access_mapping} =
-        SSO.create_group_runner_access_mapping(
+        create_group_runner_access_mapping(
           provider,
           %{external_group_id: "grp-ops", runner_access_mode: :all},
           subject
@@ -1074,12 +1176,12 @@ defmodule Emisar.SSOGroupsTest do
   # -- Config: list + pagination ---------------------------------------
 
   describe "list_group_mappings/3 keyset pagination" do
-    test "a multi-page walk returns every mapping once, ordered by external_group_id" do
+    test "a multi-page walk returns every immutable group mapping once" do
       %{provider: provider, subject: subject} = scim_provider()
 
       for n <- 1..6 do
         {:ok, _} =
-          SSO.create_group_mapping(
+          create_group_mapping(
             provider,
             %{external_group_id: "grp-#{n}", role: :admin},
             subject
@@ -1087,11 +1189,12 @@ defmodule Emisar.SSOGroupsTest do
       end
 
       {:ok, all, _} = SSO.list_group_mappings(provider, subject)
-      assert Enum.map(all, & &1.external_group_id) == ~w[grp-1 grp-2 grp-3 grp-4 grp-5 grp-6]
+      directory_group_ids = Enum.map(all, & &1.directory_group_id)
+      assert directory_group_ids == Enum.sort(directory_group_ids)
       reference_order = Enum.map(all, & &1.id)
 
-      # A cursor that disagreed with the ORDER BY (display vs external_group_id)
-      # would skip or duplicate rows across pages.
+      # A cursor that disagreed with the UUID ORDER BY would skip or duplicate
+      # rows across pages.
       walked = walk_pages(&SSO.list_group_mappings(provider, subject, &1), 2)
       assert Enum.map(walked, & &1.id) == reference_order
     end
@@ -1104,7 +1207,7 @@ defmodule Emisar.SSOGroupsTest do
       %{provider: provider, subject: subject} = scim_provider()
 
       assert {:error, %Ecto.Changeset{} = changeset} =
-               SSO.create_group_mapping(
+               create_group_mapping(
                  provider,
                  %{external_group_id: "grp-owner", role: :owner},
                  subject
@@ -1114,7 +1217,7 @@ defmodule Emisar.SSOGroupsTest do
 
       # And an existing non-owner mapping can't be edited up to :owner either.
       {:ok, mapping} =
-        SSO.create_group_mapping(
+        create_group_mapping(
           provider,
           %{external_group_id: "grp-admins", role: :admin},
           subject
@@ -1149,7 +1252,7 @@ defmodule Emisar.SSOGroupsTest do
       assert role_of(account.id, identity.user_id) == :viewer
 
       assert {:ok, mapping} =
-               SSO.create_group_mapping(
+               create_group_mapping(
                  provider,
                  %{external_group_id: "grp-existing", role: :admin},
                  subject
@@ -1172,74 +1275,74 @@ defmodule Emisar.SSOGroupsTest do
       scim_provider()
     end
 
-    test "a create missing external_group_id or role is rejected", %{
+    test "a create missing directory_group_id or role is rejected", %{
       provider: provider,
       subject: subject
     } do
       assert {:error, changeset} =
-               SSO.create_group_mapping(provider, %{role: :admin}, subject)
+               create_group_mapping(provider, %{role: :admin}, subject)
 
-      assert "can't be blank" in errors_on(changeset).external_group_id
+      assert "can't be blank" in errors_on(changeset).directory_group_id
 
       assert {:error, changeset} =
-               SSO.create_group_mapping(provider, %{external_group_id: "grp-x"}, subject)
+               create_group_mapping(provider, %{external_group_id: "grp-x"}, subject)
 
       assert "can't be blank" in errors_on(changeset).role
     end
 
-    test "a duplicate (provider, external_group_id) hits the unique index", %{
+    test "a duplicate (provider, directory_group_id) hits the unique index", %{
       provider: provider,
       subject: subject
     } do
       assert {:ok, _} =
-               SSO.create_group_mapping(
+               create_group_mapping(
                  provider,
                  %{external_group_id: "00g-dupe", role: :admin},
                  subject
                )
 
       assert {:error, changeset} =
-               SSO.create_group_mapping(
+               create_group_mapping(
                  provider,
                  %{external_group_id: "00g-dupe", role: :operator},
                  subject
                )
 
-      # The unique index on (provider_id, external_group_id) maps the violation
+      # The unique index on (provider_id, directory_group_id) maps the violation
       # onto the first constraint field, :provider_id.
       assert "has already been taken" in errors_on(changeset).provider_id
     end
 
-    test "overlong group mapping identifiers are rejected before the database", %{
+    test "external group attributes cannot retarget or rename a mapping", %{
       provider: provider,
       subject: subject
     } do
-      overlong = overlong_scim_id()
-
-      assert {:error, changeset} =
-               SSO.create_group_mapping(
-                 provider,
-                 %{external_group_id: overlong, role: :admin},
-                 subject
-               )
-
-      assert "should be at most 255 character(s)" in errors_on(changeset).external_group_id
-
       assert {:ok, mapping} =
-               SSO.create_group_mapping(
+               create_group_mapping(
                  provider,
-                 %{external_group_id: "grp-valid", role: :admin},
+                 %{
+                   external_group_id: "grp-stable",
+                   external_group_display: "Stable",
+                   role: :admin
+                 },
                  subject
                )
 
-      assert {:error, changeset} =
+      assert {:ok, updated} =
                SSO.update_group_mapping(
                  mapping,
-                 %{external_group_display: overlong},
+                 %{
+                   external_group_id: "grp-forged",
+                   external_group_display: "Forged",
+                   role: :operator
+                 },
                  subject
                )
 
-      assert "should be at most 255 character(s)" in errors_on(changeset).external_group_display
+      assert updated.directory_group_id == mapping.directory_group_id
+      assert updated.external_group_id == "grp-stable"
+      assert updated.external_group_display == "Stable"
+      assert updated.role == :operator
     end
   end
 
@@ -1251,7 +1354,7 @@ defmodule Emisar.SSOGroupsTest do
 
       # Happy path: an enterprise owner can CRUD the mappings.
       assert {:ok, mapping} =
-               SSO.create_group_mapping(
+               create_group_mapping(
                  provider,
                  %{external_group_id: "grp-1", external_group_display: "Admins", role: :admin},
                  subject
@@ -1278,7 +1381,7 @@ defmodule Emisar.SSOGroupsTest do
 
       viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert SSO.create_group_mapping(
+      assert create_group_mapping(
                provider,
                %{external_group_id: "grp-2", role: :admin},
                viewer_subject
@@ -1289,7 +1392,7 @@ defmodule Emisar.SSOGroupsTest do
       # Denial: a Team plan can configure OIDC but not SCIM group mappings.
       {_u, _team_account, team_subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
 
-      assert SSO.create_group_mapping(
+      assert create_group_mapping(
                provider,
                %{external_group_id: "grp-3", role: :admin},
                team_subject
@@ -1299,14 +1402,14 @@ defmodule Emisar.SSOGroupsTest do
       # provider's mappings (create can't find the provider; list scopes empty).
       {_ub, _account_b, subject_b} = enterprise_owner()
 
-      assert SSO.create_group_mapping(
+      assert create_group_mapping(
                provider,
                %{external_group_id: "grp-4", role: :admin},
                subject_b
              ) == {:error, :not_found}
 
       {:ok, mapping_a} =
-        SSO.create_group_mapping(provider, %{external_group_id: "grp-5", role: :admin}, subject)
+        create_group_mapping(provider, %{external_group_id: "grp-5", role: :admin}, subject)
 
       assert {:ok, [], _meta} = SSO.list_group_mappings(provider, subject_b)
       # And B can't update/delete A's mapping (row-scoped to B's account).
@@ -1318,6 +1421,84 @@ defmodule Emisar.SSOGroupsTest do
   end
 
   # -- Helpers ---------------------------------------------------------
+
+  # Most cases in this file predate server-owned Group ids and describe their
+  # fixture group by externalId. Materialize that exact SCIM resource first,
+  # then exercise the production mapping API with its immutable UUID. Denial
+  # cases never get fixture-side writes before the authorization check.
+  defp create_group_mapping(provider, attrs, subject) do
+    with true <- subject.account.id == provider.account_id,
+         true <- SSO.subject_can_configure_directory_sync?(subject),
+         {:ok, group} <- mapping_group(provider, attrs) do
+      attrs = put_directory_group_id(attrs, group.id)
+      SSO.create_group_mapping(provider, attrs, subject)
+    else
+      false -> SSO.create_group_mapping(provider, attrs, subject)
+      {:error, :missing_group} -> SSO.create_group_mapping(provider, attrs, subject)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp create_group_runner_access_mapping(provider, attrs, subject) do
+    with true <- subject.account.id == provider.account_id,
+         true <- SSO.subject_can_configure_directory_sync?(subject),
+         {:ok, group} <- mapping_group(provider, attrs) do
+      attrs = put_directory_group_id(attrs, group.id)
+      SSO.create_group_runner_access_mapping(provider, attrs, subject)
+    else
+      false -> SSO.create_group_runner_access_mapping(provider, attrs, subject)
+      {:error, :missing_group} -> SSO.create_group_runner_access_mapping(provider, attrs, subject)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp mapping_group(provider, attrs) do
+    directory_group_id = attrs[:directory_group_id] || attrs["directory_group_id"]
+    external_group_id = attrs[:external_group_id] || attrs["external_group_id"]
+
+    cond do
+      is_binary(directory_group_id) ->
+        group =
+          DirectoryGroup.Query.not_deleted()
+          |> DirectoryGroup.Query.by_account_id(provider.account_id)
+          |> DirectoryGroup.Query.by_provider_id(provider.id)
+          |> DirectoryGroup.Query.by_id(directory_group_id)
+          |> Repo.peek()
+
+        if group, do: {:ok, group}, else: {:error, :missing_group}
+
+      is_binary(external_group_id) ->
+        fetch_or_create_mapping_group(provider, external_group_id, attrs)
+
+      true ->
+        {:error, :missing_group}
+    end
+  end
+
+  defp put_directory_group_id(attrs, id) do
+    if Enum.any?(Map.keys(attrs), &is_binary/1),
+      do: Map.put(attrs, "directory_group_id", id),
+      else: Map.put(attrs, :directory_group_id, id)
+  end
+
+  defp fetch_or_create_mapping_group(provider, external_group_id, attrs) do
+    group =
+      DirectoryGroup.Query.not_deleted()
+      |> DirectoryGroup.Query.by_account_id(provider.account_id)
+      |> DirectoryGroup.Query.by_provider_id(provider.id)
+      |> DirectoryGroup.Query.by_external_group_id(external_group_id)
+      |> Repo.peek()
+
+    if group do
+      {:ok, group}
+    else
+      SSO.scim_upsert_group(provider, %{
+        external_id: external_group_id,
+        display: attrs[:external_group_display] || attrs["external_group_display"],
+        member_ids: []
+      })
+    end
+  end
 
   defp demote_other_owners(account_id, except: keep_user_id) do
     Accounts.Membership.Query.not_deleted()
