@@ -886,6 +886,13 @@ the commit button, where the operator can reach the action before reading what i
     zone at the bottom may span the page because it is deliberately outside the routine content/help
     pairing. Sweep: a detail page opening with floating name/status chips or an uneven two-column
     pile of unlabeled configuration facts.
+72. **A roster row splits identity from trailing controls only when both sides fit.** Before the
+    desktop breakpoint, let identity use the full row and place role/actions beneath it, aligned to
+    the identity text rather than pinned to the far edge. A fixed trailing track at tablet width
+    creates visible dead space while names, provenance, and metadata wrap inside the squeezed column.
+    Restore the shared right-aligned control track only when the row is genuinely wide enough to hold
+    both sides. Sweep: `sm:flex-row` roster shells paired with a fixed/minimum action track, and
+    stacked trailing controls that keep `justify-end` across the full row.
 
 ## 8. The kit is the contract
 

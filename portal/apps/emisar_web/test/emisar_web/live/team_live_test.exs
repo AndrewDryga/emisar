@@ -29,6 +29,27 @@ defmodule EmisarWeb.TeamLiveTest do
       refute html =~ "Only owners and admins can invite"
     end
 
+    test "member controls stack with the identity until desktop width", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(
+               lv,
+               ~s|#member-row-#{membership.id}[class~="lg:flex-row"]|
+             )
+
+      refute has_element?(
+               lv,
+               ~s|#member-row-#{membership.id}[class~="sm:flex-row"]|
+             )
+
+      assert has_element?(
+               lv,
+               ~s|#member-controls-#{membership.id}[class~="justify-start"][class~="pl-14"][class~="lg:justify-end"][class~="lg:pl-0"]|
+             )
+    end
+
     test "the roster has one name-or-email search plus role and status filters", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       kept_user = Fixtures.Users.create_user(full_name: "Filter Finch")

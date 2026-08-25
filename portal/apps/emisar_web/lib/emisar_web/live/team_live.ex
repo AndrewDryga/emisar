@@ -1796,10 +1796,13 @@ defmodule EmisarWeb.TeamLive do
                   <% membership = member.membership %>
                   <% directory = Map.get(@directory_by_user_id, membership.user_id) %>
                   <% suspended_by_label = Map.get(member, :suspended_by_label) %>
-                  <%!-- On a phone the role/Actions controls stack BELOW the
-                   name+email instead of cramming the row (which truncated
-                   "Sam Patel" to "Sa…"); they sit on the right at sm+. --%>
-                  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                  <%!-- Until desktop width, identity owns the row and the
+                   controls sit beneath it. Splitting sooner reserves a wide
+                   empty track while the member's name and provenance wrap. --%>
+                  <div
+                    id={"member-row-#{membership.id}"}
+                    class="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4"
+                  >
                     <div class="flex min-w-0 flex-1 items-start gap-4">
                       <.avatar name={Accounts.member_display_name(membership, membership.user) || "?"} />
 
@@ -2017,7 +2020,10 @@ defmodule EmisarWeb.TeamLive do
                      regular role + Actions pair without donating another 2rem of the
                      identity line to empty track; a rare own row carrying two verbs
                      grows rather than overflowing. --%>
-                    <div class="flex shrink-0 items-center justify-end gap-1.5 pl-14 sm:min-w-[12.5rem] sm:pl-0">
+                    <div
+                      id={"member-controls-#{membership.id}"}
+                      class="flex shrink-0 items-center justify-start gap-1.5 pl-14 lg:min-w-[12.5rem] lg:justify-end lg:pl-0"
+                    >
                       <%= cond do %>
                         <% @can_manage_team? and not member.self_owner? and not member.role_editable? -> %>
                           <%!-- Synced role: the IdP owns it (a role mapping, or the
