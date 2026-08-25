@@ -347,7 +347,7 @@ defmodule Emisar.Mailers.MonthlyReport do
     <tr>
       <td style="padding:22px 0 0;border-top:1px solid #{@hairline};font-family:#{@font};font-size:12px;line-height:1.7;color:#{@ink_soft};">
         You're receiving this monthly report as an owner of #{HTML.escape(content.account_name)}.<br />
-        <a href="#{HTML.escape(content.unsubscribe_url)}" style="color:#{@ink_soft};text-decoration:underline;">Unsubscribe</a>
+        <a href="#{HTML.escape(content.unsubscribe_url)}" style="color:#{@brand_text};text-decoration:underline;">Unsubscribe</a>
       </td>
     </tr>
     """

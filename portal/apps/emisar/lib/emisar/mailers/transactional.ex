@@ -27,6 +27,7 @@ defmodule Emisar.Mailers.Transactional do
   @type block ::
           {:paragraph, binary()}
           | {:link_paragraph, binary(), binary(), binary(), binary()}
+          | {:emphasis, binary(), binary(), binary()}
           | {:facts, [{binary(), fact_value()}]}
           | {:status, binary(), binary(), binary(), :success | :warning | :danger | :neutral}
           | {:section, binary()}
@@ -77,6 +78,7 @@ defmodule Emisar.Mailers.Transactional do
   defp text_block({:link_paragraph, before, label, url, suffix}),
     do: before <> text_fact_value({:link, label, url}) <> suffix
 
+  defp text_block({:emphasis, before, value, suffix}), do: before <> value <> suffix
   defp text_block({:status, before, status, suffix, _tone}), do: before <> status <> suffix
   defp text_block({:section, title}), do: String.upcase(title)
   defp text_block({:code, code}), do: "    #{code}"
@@ -147,7 +149,11 @@ defmodule Emisar.Mailers.Transactional do
   end
 
   defp html_block({:link_paragraph, before, label, url, suffix}) do
-    ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">#{HTML.escape(before)}<a href="#{HTML.escape(url)}" target="_top" style="color:#{@ink};font-weight:600;text-decoration:underline;text-underline-offset:2px;">#{HTML.escape(label)}</a>#{HTML.escape(suffix)}</td></tr>)
+    ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">#{HTML.escape(before)}<a href="#{HTML.escape(url)}" target="_top" style="color:#{@brand};font-weight:600;text-decoration:underline;text-underline-offset:2px;">#{HTML.escape(label)}</a>#{HTML.escape(suffix)}</td></tr>)
+  end
+
+  defp html_block({:emphasis, before, value, suffix}) do
+    ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">#{HTML.escape(before)}<strong style="font-weight:700;color:#{@ink};">#{HTML.escape(value)}</strong>#{HTML.escape(suffix)}</td></tr>)
   end
 
   defp html_block({:status, before, status, suffix, tone}) do
@@ -204,7 +210,7 @@ defmodule Emisar.Mailers.Transactional do
   end
 
   defp html_fact_value({:link, label, url}) do
-    ~s(<a href="#{HTML.escape(url)}" target="_top" style="color:#{@ink};text-decoration:underline;text-underline-offset:2px;">#{HTML.escape(label)}</a>)
+    ~s(<a href="#{HTML.escape(url)}" target="_top" style="color:#{@brand};text-decoration:underline;text-underline-offset:2px;">#{HTML.escape(label)}</a>)
   end
 
   defp html_fact_value(value), do: HTML.escape(value)

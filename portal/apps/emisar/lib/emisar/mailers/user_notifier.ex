@@ -115,9 +115,8 @@ defmodule Emisar.Mailers.UserNotifier do
           "."
         ),
         {:code, secret},
-        {:paragraph, "Enter the code in the browser where you asked to sign in."},
-        {:paragraph, "It works once and expires in 15 minutes."},
-        {:paragraph, "For security, the code only works in that browser."},
+        {:paragraph,
+         "Enter the code in the browser where you asked to sign in. It works once, only in that browser, and expires in 15 minutes."},
         {:paragraph, "If you didn't ask to sign in, ignore this email."},
         {:section, "Request details"},
         {:pre, request_details(context)}
@@ -206,7 +205,7 @@ defmodule Emisar.Mailers.UserNotifier do
           "."
         ),
         {:code, code},
-        {:paragraph, "New sign-in email: #{one_line(new_email)}."},
+        {:emphasis, "New sign-in email: ", one_line(new_email), "."},
         {:paragraph, "This code works once and expires in 15 minutes."},
         {:paragraph,
          "If you didn't request this change, ignore the email. Your sign-in email will stay the same."},

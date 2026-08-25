@@ -27,6 +27,16 @@ one-row `Requested from` facts table when `Sign in to Northstar Production` says
 the same thing more naturally. Put request metadata after the expiry and safety
 copy so it remains available without interrupting the task.
 
+Use paragraph breaks for a real change of job, not after every sentence. Keep a
+short instruction with the constraints that explain how to complete it, then
+give recovery or `If you didn't request this` guidance its own paragraph. Do not
+turn one thought into a stack of one-line fragments, and do not merge the task,
+expiry, security boundary, and recovery path into one wall of text.
+
+Text links use the email palette's brand green. A new sign-in email address is
+bold wherever the recipient must verify which address they are changing to;
+the label around it stays in the normal body tier.
+
 A terminal approval email names the person who denied the request when that
 identity resolves inside the request's account. An approved request links to both
 the approval record and the resulting action run or runbook execution; the run is
@@ -85,6 +95,12 @@ REQUEST DETAILS
 
 In HTML, `Northstar Production` is the account link. There is no separate account
 facts table.
+
+```text
+Enter the code in the browser where you asked to sign in. It works once, only in that browser, and expires in 15 minutes.
+
+If you didn't ask to sign in, ignore this email.
+```
 
 ## Bad
 

@@ -341,6 +341,10 @@ defmodule Emisar.MailTest do
         assert email.html_body =~ ~s(href="http://localhost/sign_in/magic/tok-magic/ABC234")
         assert email.html_body =~ ~s(target="_top")
         assert email.html_body =~ ">Sign in</a>"
+
+        assert email.text_body =~
+                 "Enter the code in the browser where you asked to sign in. It works once, only in that browser, and expires in 15 minutes.\n\nIf you didn't ask to sign in, ignore this email."
+
         true
       end)
     end
@@ -412,7 +416,10 @@ defmodule Emisar.MailTest do
         assert is_binary(email.html_body)
 
         assert email.html_body =~
-                 ~s(href="http://localhost/app/#{account.slug}" target="_top" style="color:#fafafa;font-weight:600;text-decoration:underline;text-underline-offset:2px;">Northstar</a>)
+                 ~s(href="http://localhost/app/#{account.slug}" target="_top" style="color:#36e6a5;font-weight:600;text-decoration:underline;text-underline-offset:2px;">Northstar</a>)
+
+        assert email.html_body =~
+                 ~s(New sign-in email: <strong style="font-weight:700;color:#fafafa;">new@example.com</strong>.)
 
         true
       end)
