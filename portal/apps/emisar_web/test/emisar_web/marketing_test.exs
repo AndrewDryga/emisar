@@ -473,7 +473,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "/docs/integrations/#{path}"
     end
 
-    assert html =~ "Verified against a live Okta Integrator org on August 18, 2026."
+    assert html =~ "Live-tested against an Okta Integrator org on August 25, 2026."
     assert html =~ "Live-tested against a JumpCloud tenant on August 25, 2026."
 
     # The oid cross-reference goes straight to the Entra guide, not the
@@ -1961,15 +1961,14 @@ defmodule EmisarWeb.MarketingTest do
     test "each provider guide publishes the evidence its claim rests on", %{conn: conn} do
       evidence = [
         {"/docs/integrations/okta",
-         "Live-tested against an Okta Integrator org on August 25, 2026: OIDC sign-in, user lifecycle, group push and rename, group-based role and runner access, and delete/recreate isolation passed."},
+         "Live-tested against an Okta Integrator org on August 25, 2026."},
         {"/docs/integrations/jumpcloud",
          "Live-tested against a JumpCloud tenant on August 25, 2026."},
         {"/docs/integrations/entra",
-         "Live-tested against a Microsoft Entra tenant on August 25, 2026: OIDC sign-in, user and group provisioning, profile and group renames, deactivation, reactivation, group-based role and runner access, and delete/recreate isolation passed."},
+         "Live-tested against a Microsoft Entra tenant on August 25, 2026."},
         {"/docs/integrations/google-workspace",
-         "Live-tested against Google Workspace on August 25, 2026: Internal-domain OIDC sign-in passed. Google Workspace does not provide outbound SCIM for custom applications."},
-        {"/docs/integrations/keycloak",
-         "Live-tested against Keycloak on August 25, 2026: TLS OIDC sign-in and the emisar SCIM protocol suite passed. Keycloak does not provide stock outbound SCIM."}
+         "Live-tested against Google Workspace on August 25, 2026."},
+        {"/docs/integrations/keycloak", "Live-tested against Keycloak on August 25, 2026."}
       ]
 
       for {route, sentence} <- evidence do
