@@ -1276,7 +1276,14 @@ defmodule Emisar.Auth do
 
       case result do
         {:ok, %{user: loaded_user}} ->
-          _ = Mailers.UserNotifier.deliver_email_change_code(loaded_user, code)
+          _ =
+            Mailers.UserNotifier.deliver_email_change_code(
+              loaded_user,
+              code,
+              new_email,
+              subject.context
+            )
+
           :ok
 
         {:error, reason} ->
@@ -1379,7 +1386,7 @@ defmodule Emisar.Auth do
     case result do
       {:ok, %{factor_outcome: {:ok, _email, _user}, email_change: updated}} ->
         _ =
-          Mailers.UserNotifier.deliver_confirmation_instructions(updated, raw_confirmation)
+          Mailers.UserNotifier.deliver_email_change_confirmation(updated, raw_confirmation)
 
         {:ok, updated}
 
@@ -1449,7 +1456,7 @@ defmodule Emisar.Auth do
   """
   def deliver_confirmation_instructions(%Users.User{} = user) do
     with {:ok, locked_user, token} <- issue_confirmation_token(user.id) do
-      _ = Mailers.UserNotifier.deliver_confirmation_instructions(locked_user, token)
+      _ = Mailers.UserNotifier.deliver_account_confirmation(locked_user, token)
     end
 
     :ok
@@ -1629,7 +1636,11 @@ defmodule Emisar.Auth do
       |> case do
         {:ok, %{user: locked_user, token: token}} ->
           delivery =
-            case Mailers.UserNotifier.deliver_mfa_enrollment_code(locked_user, code) do
+            case Mailers.UserNotifier.deliver_mfa_enrollment_code(
+                   locked_user,
+                   code,
+                   subject.context
+                 ) do
               {:ok, %{suppressed: true}} -> {:ok, :suppressed}
               {:ok, _sent} -> {:ok, :sent}
               {:error, reason} -> {:error, reason}

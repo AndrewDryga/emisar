@@ -15,8 +15,9 @@ defmodule Emisar.Fixtures.Runs do
   Persists a `:success` action run by default. Caller supplies `:account_id`
   (a runner is created in it) or nothing (a fresh account + runner). Override
   `:status`, `:action_id`, `:source`, `:request_id`, `:args_raw`,
-  `:sensitive_arg_names`, `:expected_pack_hash`, and `:inserted_at` (to land a
-  run in a report window) as needed.
+  `:sensitive_arg_names`, `:expected_pack_hash`, `:inserted_at` (to land a run
+  in a report window), and `:sent_at` (to model work handed to a runner) as
+  needed.
   """
   def create_run(attrs \\ %{}) do
     attrs = Map.new(attrs)
@@ -40,11 +41,16 @@ defmodule Emisar.Fixtures.Runs do
 
     {:ok, run} = params |> ActionRun.Changeset.create() |> Repo.insert()
 
-    case attrs[:inserted_at] do
-      %DateTime{} = ts -> run |> change(inserted_at: ts) |> Repo.update!()
-      nil -> run
-    end
+    overrides =
+      %{}
+      |> maybe_put_datetime(:inserted_at, attrs[:inserted_at])
+      |> maybe_put_datetime(:sent_at, attrs[:sent_at])
+
+    if overrides == %{}, do: run, else: run |> change(overrides) |> Repo.update!()
   end
+
+  defp maybe_put_datetime(attrs, key, %DateTime{} = value), do: Map.put(attrs, key, value)
+  defp maybe_put_datetime(attrs, _key, _value), do: attrs
 
   @doc """
   Replaces a run's stored argument bytes with a payload the create changeset

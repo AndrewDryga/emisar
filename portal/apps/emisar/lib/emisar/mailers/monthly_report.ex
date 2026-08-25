@@ -35,7 +35,7 @@ defmodule Emisar.Mailers.MonthlyReport do
   # the closest thing every recipient already has installed.
   @font "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 
-  @stat_tracks 3
+  @stat_tracks 5
   @track_width trunc(100 / @stat_tracks)
 
   # Zero-width joiners after the preview text, so a client that pads the inbox
@@ -55,7 +55,7 @@ defmodule Emisar.Mailers.MonthlyReport do
       period: Calendar.strftime(report.period_start, "%B %Y"),
       dashboard_url: PublicUrl.url("/app/#{account.slug}"),
       unsubscribe_url: unsubscribe_url,
-      runs: report.runs,
+      runs: with_in_progress(report.runs),
       approvals: report.approvals,
       runners: report.runners,
       team_size: report.team_size
@@ -88,9 +88,10 @@ defmodule Emisar.Mailers.MonthlyReport do
   defp text_runs(runs) do
     """
     RUNS
-      #{number(runs.total)} #{runs_caption(runs.distinct_runners)}
+      #{number(runs.total)} #{run_label(runs.total)} recorded
+      #{runs_caption(runs)}
 
-    #{text_rows([{"Succeeded", runs.success}, {"Failed", runs.failed}, {"Denied by policy", runs.denied}])}\
+    #{text_rows([{"Succeeded", runs.success}, {"Failed", runs.failed}, {"Denied by policy", runs.denied}, {"Cancelled", runs.cancelled}, {"In progress", runs.in_progress}])}\
     """
   end
 
@@ -102,7 +103,7 @@ defmodule Emisar.Mailers.MonthlyReport do
     APPROVALS
       #{number(approvals.requested)} held for a human decision
 
-    #{text_rows([{"Approved", approvals.approved}, {"Denied", approvals.denied}])}\
+    #{text_rows([{"Approved", approvals.approved}, {"Denied", approvals.denied}, {"Expired", approvals.expired}, {"Cancelled", approvals.cancelled}, {"Waiting", approvals.pending}])}\
     """
   end
 
@@ -110,7 +111,7 @@ defmodule Emisar.Mailers.MonthlyReport do
     rows = [
       {"Active runners", content.runners},
       {"Team members", content.team_size},
-      {"Approvals waiting", content.approvals.pending}
+      {"Approvals waiting", content.approvals.waiting_now}
     ]
 
     "RIGHT NOW\n" <> text_rows(rows)
@@ -173,7 +174,7 @@ defmodule Emisar.Mailers.MonthlyReport do
   # The inbox snippet — the numbers, before anyone opens anything.
   defp preview(runs) do
     text =
-      "#{number(runs.total)} runs · #{number(runs.success)} succeeded · #{number(runs.failed)} failed"
+      "#{number(runs.total)} #{run_label(runs.total)} · #{number(runs.success)} succeeded · #{number(runs.failed)} failed"
 
     ~s(<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">#{HTML.escape(text)}#{@preview_pad}</div>)
   end
@@ -209,17 +210,25 @@ defmodule Emisar.Mailers.MonthlyReport do
     stats = [
       {"Succeeded", runs.success, @brand_text},
       {"Failed", runs.failed, @rose},
-      {"Denied by policy", runs.denied, @rose}
+      {"Denied by policy", runs.denied, @rose},
+      {"Cancelled", runs.cancelled, @ink_soft},
+      {"In progress", runs.in_progress, @amber}
     ]
 
-    card("Runs", number(runs.total), runs_caption(runs.distinct_runners), stats)
+    card("Runs", number(runs.total), runs_caption(runs), stats)
   end
 
   # Nothing was gated this month — three zeros would read as a broken report.
   defp approvals_card(%{requested: 0}), do: ""
 
   defp approvals_card(approvals) do
-    stats = [{"Approved", approvals.approved, @brand_text}, {"Denied", approvals.denied, @rose}]
+    stats = [
+      {"Approved", approvals.approved, @brand_text},
+      {"Denied", approvals.denied, @rose},
+      {"Expired", approvals.expired, @amber},
+      {"Cancelled", approvals.cancelled, @ink_soft},
+      {"Waiting", approvals.pending, @amber}
+    ]
 
     card(
       "Approvals",
@@ -256,8 +265,8 @@ defmodule Emisar.Mailers.MonthlyReport do
 
   # Counts on one row, labels on the next, so every number shares a baseline and
   # a label that wraps on a narrow screen only makes the label row taller. Every
-  # card spends the same three tracks, so the approvals split lines up with the
-  # runs split above it; a card with fewer stats leaves its last track empty.
+  # card spends the same five tracks, so the approvals split lines up with the
+  # runs split above it.
   defp stat_columns(stats) do
     tracks = stats ++ List.duplicate(nil, @stat_tracks - length(stats))
 
@@ -290,7 +299,8 @@ defmodule Emisar.Mailers.MonthlyReport do
     rows = [
       {"Active runners", content.runners, @ink},
       {"Team members", content.team_size, @ink},
-      {"Approvals waiting", content.approvals.pending, waiting_color(content.approvals.pending)}
+      {"Approvals waiting", content.approvals.waiting_now,
+       waiting_color(content.approvals.waiting_now)}
     ]
 
     """
@@ -349,10 +359,21 @@ defmodule Emisar.Mailers.MonthlyReport do
 
   # -- Formatting ----------------------------------------------------------
 
-  # Every run was denied at creation, so none was ever handed to a runner.
-  defp runs_caption(0), do: "runs"
-  defp runs_caption(1), do: "runs, dispatched to 1 runner"
-  defp runs_caption(distinct_runners), do: "runs, dispatched across #{distinct_runners} runners"
+  defp with_in_progress(runs) do
+    in_progress = runs.total - runs.success - runs.failed - runs.denied - runs.cancelled
+    Map.put(runs, :in_progress, max(in_progress, 0))
+  end
+
+  defp runs_caption(%{dispatched: 0}), do: "No work was dispatched to a runner."
+
+  defp runs_caption(%{dispatched: dispatched, distinct_runners: 1}),
+    do: "#{number(dispatched)} dispatched to 1 runner."
+
+  defp runs_caption(%{dispatched: dispatched, distinct_runners: runners}),
+    do: "#{number(dispatched)} dispatched across #{number(runners)} runners."
+
+  defp run_label(1), do: "run"
+  defp run_label(_count), do: "runs"
 
   # Thousands separators, right to left, so a busy fleet reads 12,018 not 12018.
   defp number(count) do

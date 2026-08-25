@@ -2959,6 +2959,38 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "fetch_active_membership_for_user/2" do
+    test "returns only the exact account's active membership" do
+      account = Fixtures.Accounts.create_account()
+      other_account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      assert {:ok, %Membership{id: id}} =
+               Accounts.fetch_active_membership_for_user(account.id, user.id)
+
+      assert id == membership.id
+
+      assert Accounts.fetch_active_membership_for_user(other_account.id, user.id) ==
+               {:error, :not_found}
+    end
+
+    test "does not return a suspended membership" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      Fixtures.Memberships.suspend_membership(membership)
+
+      assert Accounts.fetch_active_membership_for_user(account.id, user.id) ==
+               {:error, :not_found}
+    end
+  end
+
   describe "peek_active_membership/2" do
     test "returns the membership when it is active (not deleted, not disabled)" do
       account = Fixtures.Accounts.create_account()
@@ -6024,8 +6056,12 @@ defmodule Emisar.AccountsTest do
 
       assert_receive {:email, sent}
       assert sent.to == [{"", email}]
-      assert sent.subject == "You're invited to #{account.name} on emisar"
+      assert sent.subject == "Join #{account.name} on emisar"
       assert sent.text_body =~ "/accept_invitation/"
+      assert sent.text_body =~ "Role:"
+      assert sent.text_body =~ "Operator"
+      assert sent.text_body =~ "Invitation expires:"
+      assert is_binary(sent.html_body)
     end
 
     test "a suppressed address still gets the invitation, but no email is sent" do

@@ -168,8 +168,11 @@ defmodule Emisar.Runs.ActionRun.Query do
   def by_action_id(queryable, action_id),
     do: where(queryable, [runs: r], r.action_id == ^action_id)
 
-  def distinct_runner_count(queryable),
-    do: select(queryable, [runs: r], count(r.runner_id, :distinct))
+  def distinct_dispatched_runner_count(queryable) do
+    queryable
+    |> where([runs: r], not is_nil(r.sent_at))
+    |> select([runs: r], count(r.runner_id, :distinct))
+  end
 
   @doc """
   One-row aggregate for the dashboard stats: total runs plus the per-outcome
@@ -184,7 +187,8 @@ defmodule Emisar.Runs.ActionRun.Query do
       success: filter(count(r.id), r.status == ^:success),
       failed: filter(count(r.id), r.status in ^failed_statuses),
       denied: filter(count(r.id), r.status == ^:denied),
-      cancelled: filter(count(r.id), r.status == ^:cancelled)
+      cancelled: filter(count(r.id), r.status == ^:cancelled),
+      dispatched: filter(count(r.id), not is_nil(r.sent_at))
     })
   end
 

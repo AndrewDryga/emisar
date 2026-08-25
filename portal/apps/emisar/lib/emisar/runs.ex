@@ -408,8 +408,9 @@ defmodule Emisar.Runs do
   Internal — monthly report job: run outcome tallies for one account over a
   `[from, to)` window. Subject-less; the job scopes by the explicit, already-
   bounded `account_id`. Returns the `outcome_totals` map
-  (`%{total, success, failed, denied, cancelled}`) plus `:distinct_runners` —
-  how many distinct runners the account exercised in the window.
+  (`%{total, success, failed, denied, cancelled, dispatched}`) plus
+  `:distinct_runners` — how many distinct runners actually received work in
+  the window. A policy-denied or still-queued row does not exercise a runner.
   """
   def report_run_stats(account_id, %DateTime{} = from, %DateTime{} = to) do
     window =
@@ -419,7 +420,7 @@ defmodule Emisar.Runs do
       |> ActionRun.Query.inserted_before(to)
 
     totals = window |> ActionRun.Query.outcome_totals(@failure_statuses) |> Repo.one()
-    distinct_runners = window |> ActionRun.Query.distinct_runner_count() |> Repo.one()
+    distinct_runners = window |> ActionRun.Query.distinct_dispatched_runner_count() |> Repo.one()
 
     Map.put(totals, :distinct_runners, distinct_runners)
   end

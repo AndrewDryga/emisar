@@ -8,14 +8,14 @@ defmodule EmisarWeb.MailTo do
   @security "security@emisar.dev"
 
   @doc "Returns a support `mailto:` href with a prefilled subject/body and optional context footer."
-  def support(opts \\ []), do: build(@support, "emisar support request", support_body(), opts)
+  def support(opts \\ []), do: build(@support, "Support request · emisar", support_body(), opts)
 
   @doc "Returns a sales `mailto:` href with a prefilled subject/body and optional context footer."
-  def sales(opts \\ []), do: build(@sales, "emisar - talk to sales", sales_body(), opts)
+  def sales(opts \\ []), do: build(@sales, "Talk to sales · emisar", sales_body(), opts)
 
   @doc "Returns a security-disclosure `mailto:` href with a prefilled subject/body template."
   def security(opts \\ []),
-    do: build(@security, "emisar - security disclosure", security_body(), opts)
+    do: build(@security, "Security disclosure · emisar", security_body(), opts)
 
   @doc "Builds a context footer map from assigns containing `current_account` and/or `current_user`."
   def context(assigns) do
@@ -36,16 +36,21 @@ defmodule EmisarWeb.MailTo do
     "mailto:#{to}?subject=#{enc(subject)}&body=#{enc(body)}"
   end
 
-  defp support_body, do: "Hi emisar team,\n\n"
+  defp support_body do
+    "Hi emisar team,\n\nPlease help with the following issue.\n\n" <>
+      "What happened:\n\nWhat I expected:\n\nWhen it happened (include timezone):\n\nPage or URL:\n\nRequest or error ID:\n\nBusiness impact:\n\n" <>
+      "Please let me know if you need anything else. I have not included passwords, API keys, tokens, or customer data.\n"
+  end
 
   defp sales_body do
-    "Hi emisar team,\n\nWe're evaluating emisar and would like to talk. A bit about us:\n\n" <>
-      "- Team / company:\n- What you'd use it for:\n- Rough fleet size:\n\n"
+    "Hi emisar team,\n\nWe're evaluating emisar and would like to talk.\n\n" <>
+      "Team or company:\n\nWhat we want agents or operators to run:\n\nCurrent workflow or tooling:\n\nApproximate runner and team size:\n\nSecurity, identity, or procurement requirements:\n\nTarget timeline:\n"
   end
 
   defp security_body do
-    "Hi emisar security team,\n\nReporting a potential security issue.\n\n" <>
-      "- Affected area:\n- What you observed:\n- Steps to reproduce:\n\n"
+    "Hi emisar security team,\n\nI'm reporting a potential security issue.\n\n" <>
+      "Affected product area and version:\n\nSecurity impact:\n\nSteps to reproduce:\n\nEvidence or proof of concept:\n\nSuggested remediation (optional):\n\nDisclosure timeline or coordination needs:\n\nPreferred contact details:\n\n" <>
+      "I have not included active credentials, secrets, or customer data. Please tell me how to transfer sensitive evidence securely.\n"
   end
 
   # Appended only when we know who is asking; saves support a round-trip.

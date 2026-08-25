@@ -97,8 +97,9 @@ defmodule Emisar.Approvals do
 
   @doc """
   Internal — monthly report job: approval activity for one account. The
-  window `[from, to)` yields requested/approved/denied counts; `pending` is the
-  account's current all-time backlog (a call-to-action, not window-bound).
+  window `[from, to)` yields requested counts and every current outcome;
+  `waiting_now` is the account's current all-time backlog (a call-to-action,
+  not window-bound).
   Subject-less — the job scopes by the explicit, already-bounded `account_id`.
   """
   def report_request_stats(account_id, %DateTime{} = from, %DateTime{} = to) do
@@ -109,12 +110,12 @@ defmodule Emisar.Approvals do
       |> Request.Query.status_totals()
       |> Repo.one()
 
-    pending =
+    waiting_now =
       Request.Query.pending()
       |> Request.Query.by_account_id(account_id)
       |> Repo.aggregate(:count)
 
-    Map.put(window_totals, :pending, pending)
+    Map.put(window_totals, :waiting_now, waiting_now)
   end
 
   @doc """
@@ -589,6 +590,7 @@ defmodule Emisar.Approvals do
     Enum.each(changes, fn
       {{:runbook_execution_request_cancel, _execution_id}, {:cancelled, %Request{} = request}} ->
         broadcast_approval(request)
+        notify_cancelled_request(request)
 
       _other ->
         :ok
@@ -661,13 +663,13 @@ defmodule Emisar.Approvals do
   # (`:notify_approvers_async?` flips this).
   defp notify_approval_created(%Request{} = request, %Runs.ActionRun{} = run) do
     broadcast_approval(request)
-    run_notify(fn -> notify_approvers(request, run, request.requested_by_id) end)
+    run_notify(fn -> notify_approvers(request, run, request.requested_by_id, :requested) end)
     :ok
   end
 
   defp notify_runbook_execution_approval_created(%Request{} = request) do
     broadcast_approval(request)
-    run_notify(fn -> notify_runbook_execution_approvers(request) end)
+    run_notify(fn -> notify_runbook_execution_approvers(request, :requested) end)
     :ok
   end
 
@@ -702,7 +704,7 @@ defmodule Emisar.Approvals do
   # batch isn't a memory hazard if a future plan removes the cap entirely.
   @notify_page_size 200
 
-  defp notify_approvers(%Request{} = request, run, requested_by_id) do
+  defp notify_approvers(%Request{} = request, run, requested_by_id, event) do
     # Preload runner so the email body can show the runner's name
     # ("db-prod-01") instead of its UUID — approvers shouldn't need to
     # context-switch into the app just to know what's being touched.
@@ -720,14 +722,15 @@ defmodule Emisar.Approvals do
         {:action_run, run},
         requested_by_id,
         %{runners: [runner], pack_ids: [pack_id]},
-        nil
+        nil,
+        event
       )
     else
       _ -> Logger.warning("action_approval_notification_scope_failed", req_id: request.id)
     end
   end
 
-  defp notify_runbook_execution_approvers(%Request{} = request) do
+  defp notify_runbook_execution_approvers(%Request{} = request, event) do
     request = Repo.preload(request, :account)
 
     with {:ok, targets} <-
@@ -741,7 +744,8 @@ defmodule Emisar.Approvals do
         :runbook_execution,
         request.requested_by_id,
         target_access,
-        nil
+        nil,
+        event
       )
     else
       _ ->
@@ -759,7 +763,8 @@ defmodule Emisar.Approvals do
          target,
          requested_by_id,
          target_access,
-         cursor
+         cursor,
+         event
        ) do
     page_opts =
       [limit: @notify_page_size]
@@ -784,10 +789,10 @@ defmodule Emisar.Approvals do
           target_access
         )
     end)
-    |> Enum.each(&deliver_approval_email(&1, request, target))
+    |> Enum.each(&deliver_approval_email(&1, request, target, event))
 
     if next,
-      do: notify_approvers_pages(request, target, requested_by_id, target_access, next),
+      do: notify_approvers_pages(request, target, requested_by_id, target_access, next, event),
       else: :ok
   end
 
@@ -844,7 +849,7 @@ defmodule Emisar.Approvals do
   # `RunnerAccess.pack_in_scope?/2` encodes that distinction for nil.
   defp approval_pack_id(nil), do: {:ok, nil}
 
-  defp deliver_approval_email(membership, request, {:action_run, run}) do
+  defp deliver_approval_email(membership, request, {:action_run, run}, :requested) do
     # The mail shows only what THIS recipient may see: the eligible active
     # membership we just filtered to IS their authorization, so the notifier
     # projects the run's arguments through their own subject.
@@ -857,22 +862,36 @@ defmodule Emisar.Approvals do
         Emisar.Mailers.UserNotifier.deliver_approval_request(
           subject,
           request,
-          run
+          run,
+          approval_actor_label(request.account_id, request.requested_by_id)
         )
       end
     )
   end
 
-  defp deliver_approval_email(membership, request, :runbook_execution) do
+  defp deliver_approval_email(membership, request, :runbook_execution, :requested) do
+    subject = Subject.for_user(membership.user, request.account, membership)
+
     deliver_approval_email_result(
       membership,
       request,
       fn ->
         Emisar.Mailers.UserNotifier.deliver_runbook_execution_approval_request(
-          membership.user,
-          request
+          subject,
+          request,
+          approval_actor_label(request.account_id, request.requested_by_id)
         )
       end
+    )
+  end
+
+  defp deliver_approval_email(membership, request, _target, event) when is_map(event) do
+    subject = Subject.for_user(membership.user, request.account, membership)
+
+    deliver_approval_email_result(
+      membership,
+      request,
+      fn -> Emisar.Mailers.UserNotifier.deliver_approval_event(subject, request, event) end
     )
   end
 
@@ -1476,7 +1495,7 @@ defmodule Emisar.Approvals do
           |> then(&Request.Query.by_id(Request.Query.all(), &1.id))
           |> Repo.peek()
           |> case do
-            %Request{} = cancelled -> broadcast_approval(cancelled)
+            %Request{} = cancelled -> broadcast_and_notify_cancelled_request(cancelled)
             nil -> :ok
           end
         end
@@ -1547,7 +1566,7 @@ defmodule Emisar.Approvals do
     do: {:error, :not_found}
 
   defp finalize(
-         _repo,
+         repo,
          %Request{status: :pending, run_id: run_id} = locked,
          :deny,
          by_user_id,
@@ -1560,13 +1579,15 @@ defmodule Emisar.Approvals do
     # returns :already_decided for them). The run cancel is composed as steps in
     # the outer transaction by maybe_cancel_run/4 — not here — so it can't
     # broadcast before the denial commits.
+    count = repo.one(Decision.Query.approved_distinct_decider_count(locked.id))
+
     with {:ok, denied} <- guarded_transition(locked, :denied, by_user_id, reason) do
-      {:ok, %{action: :cancelled, request: denied, approved_count: nil}}
+      {:ok, %{action: :cancelled, request: denied, approved_count: count}}
     end
   end
 
   defp finalize(
-         _repo,
+         repo,
          %Request{
            status: :pending,
            run_id: nil,
@@ -1578,8 +1599,10 @@ defmodule Emisar.Approvals do
          _attrs
        )
        when is_binary(execution_id) do
+    count = repo.one(Decision.Query.approved_distinct_decider_count(locked.id))
+
     with {:ok, denied} <- guarded_transition(locked, :denied, by_user_id, reason) do
-      {:ok, %{action: :halt_runbook_execution, request: denied, approved_count: nil}}
+      {:ok, %{action: :halt_runbook_execution, request: denied, approved_count: count}}
     end
   end
 
@@ -1782,10 +1805,17 @@ defmodule Emisar.Approvals do
 
   # After-commit side effects, keyed off the committed outcome. Dispatch fires
   # ONLY on a finalizing approve (:dispatch) — never on a sub-threshold vote.
-  defp after_decision(%{outcome: %{action: :dispatch, run: run, request: request}}) do
+  defp after_decision(%{outcome: %{action: :dispatch, run: run, request: request}} = changes) do
     broadcast_approval(request)
     count_approval_decision(request)
-    notify_requester_of_decision(request)
+    notify_approvers_of_event(changes)
+
+    notify_requester_of_decision(
+      request,
+      changes.outcome.approved_count,
+      requester_event_kind(changes)
+    )
+
     # `commit_multi` asserts `:ok = callback.(changes)`, and these all return a
     # tagged tuple on a real failure — an approved run whose runner was since
     # deleted returns {:error, :not_dispatchable}, which raised a MatchError
@@ -1796,30 +1826,127 @@ defmodule Emisar.Approvals do
     :ok
   end
 
-  defp after_decision(%{
-         outcome: %{action: action, request: request}
-       })
+  defp after_decision(
+         %{
+           outcome: %{action: action, request: request}
+         } = changes
+       )
        when action in [:advance_runbook_execution, :halt_runbook_execution] do
     broadcast_approval(request)
     count_approval_decision(request)
-    notify_requester_of_decision(request)
+    notify_approvers_of_event(changes)
+
+    notify_requester_of_decision(
+      request,
+      changes.outcome.approved_count,
+      requester_event_kind(changes)
+    )
+
     _ = Emisar.Runbooks.approval_settled(request.runbook_execution_id)
     :ok
   end
 
-  defp after_decision(%{outcome: %{action: :cancelled, request: request}, run_cancel: run_cancel}) do
+  defp after_decision(
+         %{outcome: %{action: :cancelled, request: request}, run_cancel: run_cancel} = changes
+       ) do
     broadcast_approval(request)
     count_approval_decision(request)
-    notify_requester_of_decision(request)
+    notify_approvers_of_event(changes)
+
+    notify_requester_of_decision(
+      request,
+      changes.outcome.approved_count,
+      requester_event_kind(changes)
+    )
+
     _ = Runs.broadcast_cancelled_run(run_cancel)
     :ok
   end
 
-  defp after_decision(%{outcome: %{request: request}}) do
+  defp after_decision(%{outcome: %{request: request}} = changes) do
     broadcast_approval(request)
     count_approval_decision(request)
-    notify_requester_of_decision(request)
+    notify_approvers_of_event(changes)
+
+    notify_requester_of_decision(
+      request,
+      changes.outcome.approved_count,
+      requester_event_kind(changes)
+    )
+
     :ok
+  end
+
+  defp notify_approvers_of_event(%{outcome: %{request: request}} = changes) do
+    event = approval_notification_event(changes)
+    notify_approvers_of_request_event(request, event)
+  end
+
+  defp notify_approvers_of_request_event(%Request{} = request, event) do
+    run_notify(fn ->
+      case request do
+        %Request{run_id: run_id} when is_binary(run_id) ->
+          case Runs.peek_run_by_id(run_id) do
+            %Runs.ActionRun{} = run ->
+              notify_approvers(request, run, request.requested_by_id, event)
+
+            nil ->
+              Logger.warning("action_approval_update_notification_target_missing",
+                req_id: request.id
+              )
+          end
+
+        %Request{runbook_execution_id: execution_id} when is_binary(execution_id) ->
+          notify_runbook_execution_approvers(request, event)
+      end
+    end)
+
+    :ok
+  end
+
+  defp approval_notification_event(%{
+         decision: %Decision{} = decision,
+         outcome: %{request: request, approved_count: count}
+       }) do
+    kind =
+      case {decision.decision, request.status} do
+        {:approve, :pending} -> :vote
+        {:approve, :approved} -> :approved
+        {:deny, :denied} -> :denied
+      end
+
+    %{
+      id: decision.id,
+      kind: kind,
+      approved_count: count,
+      actor_label: approval_actor_label(request.account_id, decision.decider_id),
+      occurred_at: decision.decided_at,
+      reason: request.decision_reason
+    }
+  end
+
+  defp approval_notification_event(%{outcome: %{request: request, approved_count: count}}) do
+    %{
+      id: request.id,
+      kind: :overridden,
+      approved_count: count,
+      actor_label: approval_actor_label(request.account_id, request.decided_by_id),
+      occurred_at: request.decided_at,
+      reason: request.decision_reason
+    }
+  end
+
+  defp requester_event_kind(%{decision: %Decision{}}), do: nil
+  defp requester_event_kind(%{outcome: %{request: %Request{status: :approved}}}), do: :overridden
+  defp requester_event_kind(_changes), do: nil
+
+  defp approval_actor_label(account_id, user_id) do
+    with {:ok, user} <- Users.fetch_user_by_id(user_id),
+         {:ok, membership} <- Accounts.fetch_active_membership_for_user(account_id, user_id) do
+      Accounts.member_display_name(membership, user)
+    else
+      _ -> "An approver"
+    end
   end
 
   # The operator who asked hears the outcome once it's terminal — a vote that
@@ -1828,21 +1955,34 @@ defmodule Emisar.Approvals do
   # front of dispatch. `requested_by_id` is already the accountable human
   # (`effective_requester/2` resolves an API-key run to the key's owner at
   # creation), so a request with no resolvable person simply gets no email.
-  defp notify_requester_of_decision(%Request{status: status} = request)
-       when status in [:approved, :denied, :expired] do
-    run_notify(fn -> deliver_decision_email(request) end)
+  defp notify_requester_of_decision(request, approved_count, event_kind \\ nil)
+
+  defp notify_requester_of_decision(
+         %Request{status: status} = request,
+         approved_count,
+         event_kind
+       )
+       when status in [:approved, :denied, :expired, :cancelled] do
+    run_notify(fn -> deliver_decision_email(request, approved_count, event_kind) end)
     :ok
   end
 
-  defp notify_requester_of_decision(%Request{}), do: :ok
+  defp notify_requester_of_decision(%Request{}, _approved_count, _event_kind), do: :ok
 
-  defp deliver_decision_email(%Request{} = request) do
-    with {:ok, requester} <- Users.fetch_user_by_id(request.requested_by_id) do
+  defp deliver_decision_email(%Request{} = request, approved_count, event_kind) do
+    with {:ok, requester} <- Users.fetch_user_by_id(request.requested_by_id),
+         {:ok, _membership} <-
+           Accounts.fetch_active_membership_for_user(request.account_id, requester.id) do
       # Preloaded here rather than at the call site: the email builds the
       # canonical slugged approval link, and a slug-less URL 404s.
       request = Repo.preload(request, :account)
 
-      case Emisar.Mailers.UserNotifier.deliver_approval_decision(requester, request) do
+      case Emisar.Mailers.UserNotifier.deliver_approval_decision(
+             requester,
+             request,
+             approved_count,
+             event_kind
+           ) do
         {:ok, _sent} ->
           :ok
 
@@ -1977,15 +2117,35 @@ defmodule Emisar.Approvals do
     end
   end
 
-  @doc "Broadcast action-approval cancellations returned by `cancel_locked_requests/3`."
+  @doc "Broadcast and notify action-approval cancellations returned by `cancel_locked_requests/3`."
   def broadcast_cancelled_requests(requests) when is_list(requests),
-    do: Enum.each(requests, &broadcast_approval/1)
+    do: Enum.each(requests, &broadcast_and_notify_cancelled_request/1)
 
-  @doc "Internal — `Runs.cancel_run` after-commit broadcast for a run-cancel-driven request cancel."
+  @doc "Internal — `Runs.cancel_run` after-commit notification for a run-cancel-driven request cancel."
   def broadcast_request_cancelled({:cancelled, %Request{} = request}),
-    do: broadcast_approval(request)
+    do: broadcast_and_notify_cancelled_request(request)
 
   def broadcast_request_cancelled(_), do: :ok
+
+  defp broadcast_and_notify_cancelled_request(%Request{} = request) do
+    broadcast_approval(request)
+    notify_cancelled_request(request)
+  end
+
+  defp notify_cancelled_request(%Request{} = request) do
+    approved_count = Repo.one(Decision.Query.approved_distinct_decider_count(request.id))
+
+    notify_approvers_of_request_event(request, %{
+      id: request.id,
+      kind: :cancelled,
+      approved_count: approved_count,
+      actor_label: nil,
+      occurred_at: request.decided_at,
+      reason: request.decision_reason
+    })
+
+    notify_requester_of_decision(request, approved_count)
+  end
 
   # -- PubSub ----------------------------------------------------------
 
@@ -2484,6 +2644,9 @@ defmodule Emisar.Approvals do
       |> Multi.run(:approval_target, fn repo, _changes ->
         lock_approval_target(repo, request)
       end)
+      |> Multi.run(:approved_count, fn repo, _changes ->
+        {:ok, repo.one(Decision.Query.approved_distinct_decider_count(request.id))}
+      end)
       # Claim the still-pending request as expired; 0 rows means another
       # decision landed between the sweep's SELECT and here — abort as a
       # benign no-op.
@@ -2506,7 +2669,17 @@ defmodule Emisar.Approvals do
       after_commit: fn changes ->
         broadcast_approval(changes.reloaded)
         count_approval_decision(changes.reloaded)
-        notify_requester_of_decision(changes.reloaded)
+
+        notify_approvers_of_request_event(changes.reloaded, %{
+          id: changes.reloaded.id,
+          kind: :expired,
+          approved_count: changes.approved_count,
+          actor_label: nil,
+          occurred_at: now,
+          reason: changes.reloaded.decision_reason
+        })
+
+        notify_requester_of_decision(changes.reloaded, changes.approved_count)
         _ = Runs.broadcast_cancelled_run(Map.get(changes, :run_cancel))
         _ = maybe_advance_expired_execution(changes.reloaded)
         :ok

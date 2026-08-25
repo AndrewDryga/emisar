@@ -102,6 +102,16 @@ resource "google_monitoring_alert_policy" "lb_5xx" {
   display_name = "Emisar: Load Balancer 5xx Ratio High"
   combiner     = "OR"
 
+  documentation {
+    content   = "More than 5% of load-balancer requests have returned 5xx responses for five minutes, so customers are seeing failures even if readiness still passes. Confirm the affected host and response codes in load-balancer logs, then correlate backend status details, latency, Portal errors, and the most recent rollout before changing capacity or restarting instances."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "load-balancer"
+    signal    = "errors"
+  }
+
   conditions {
     display_name = "5xx Responses Above 5% for 5 Minutes"
     condition_threshold {
@@ -167,6 +177,16 @@ resource "google_monitoring_alert_policy" "cert_expiry" {
   display_name = "Emisar: TLS Certificate Expiring"
   combiner     = "OR"
 
+  documentation {
+    content   = "The certificate actually served by the control-plane endpoint expires within 14 days, which means managed renewal is not completing. Check Certificate Manager status, DNS authorization, CAA records, and issuance errors; after repair, verify the renewed certificate on the public endpoint rather than relying only on control-plane status."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "tls"
+    signal    = "expiry"
+  }
+
   conditions {
     display_name = "Served Certificate Expires Within 14 Days"
     condition_threshold {
@@ -192,6 +212,16 @@ resource "google_monitoring_alert_policy" "mig_below_target" {
   display_name = "Emisar: Instance Group Below Target"
   combiner     = "OR"
 
+  documentation {
+    content   = "The Portal managed instance group has remained below its configured target for 15 minutes, so creation, repair, or rollout is stuck rather than briefly converging. Inspect the group's current and recent actions, failed instance operations, image startup, quota, and the active rollout; restore the missing healthy instance before considering any target-size change."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "portal-mig"
+    signal    = "capacity"
+  }
+
   conditions {
     display_name = "Running Instances Below Target for 15 Minutes"
     condition_threshold {
@@ -216,6 +246,16 @@ resource "google_monitoring_alert_policy" "nat_allocation" {
   display_name = "Emisar: Cloud NAT Allocation Failure"
   combiner     = "OR"
 
+  documentation {
+    content   = "Cloud NAT could not allocate ports for five minutes, so Portal egress can fail while inbound traffic remains healthy. Check NAT allocation and dropped-packet metrics, current instance and connection volume, recent scaling, and router/NAT configuration; then verify image pulls and critical provider connections after the signal clears."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "cloud-nat"
+    signal    = "egress"
+  }
+
   conditions {
     display_name = "NAT Port Allocation Failures"
     condition_threshold {
@@ -232,4 +272,3 @@ resource "google_monitoring_alert_policy" "nat_allocation" {
 
   notification_channels = local.paging_notification_channels
 }
-

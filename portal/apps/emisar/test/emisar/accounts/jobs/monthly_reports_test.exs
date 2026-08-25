@@ -25,7 +25,8 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
       Fixtures.Runs.create_run(
         account_id: account.id,
         status: :success,
-        inserted_at: in_window()
+        inserted_at: in_window(),
+        sent_at: in_window()
       )
     end
 
@@ -50,7 +51,8 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
       assert email.to == [{"", owner.email}]
       assert email.subject == "Your emisar report for #{account.name} — #{period}"
       assert email.reply_to == {"", "support@emisar.dev"}
-      assert email.text_body =~ "3 runs, dispatched"
+      assert email.text_body =~ "3 runs recorded"
+      assert email.text_body =~ "3 dispatched"
       assert email.text_body =~ ~r/Succeeded\s+3$/m
       assert email.text_body =~ "Active runners"
       assert email.text_body =~ "/app/#{account.slug}"
@@ -153,9 +155,9 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
 
       by_address = Map.new(emails, fn email -> {email.to |> hd() |> elem(1), email} end)
 
-      assert by_address[owner_a.email].text_body =~ "2 runs, dispatched"
+      assert by_address[owner_a.email].text_body =~ "2 runs recorded"
       assert by_address[owner_a.email].text_body =~ "/app/#{account_a.slug}"
-      assert by_address[owner_b.email].text_body =~ "5 runs, dispatched"
+      assert by_address[owner_b.email].text_body =~ "5 runs recorded"
       assert by_address[owner_b.email].text_body =~ "/app/#{account_b.slug}"
     end
   end

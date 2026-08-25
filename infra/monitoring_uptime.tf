@@ -60,6 +60,16 @@ resource "google_monitoring_alert_policy" "uptime" {
   display_name = "Emisar: Control Plane Unreachable"
   combiner     = "OR"
 
+  documentation {
+    content   = "The external HTTPS readiness check has failed for five minutes, so the control plane or its database is not serving successfully from at least one checker. Confirm the public endpoint and `/readyz`, then inspect DNS and TLS, load-balancer backend health, Portal errors, Cloud SQL availability, and the most recent rollout to locate the failing layer."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "control-plane"
+    signal    = "availability"
+  }
+
   conditions {
     display_name = "Uptime Check Failed"
     condition_threshold {
@@ -86,6 +96,16 @@ resource "google_monitoring_alert_policy" "uptime" {
 resource "google_monitoring_alert_policy" "pack_registry_checks" {
   display_name = "Emisar: Pack Registry Integrity Check Failed"
   combiner     = "OR"
+
+  documentation {
+    content   = "The public pack catalog no longer returns the expected schema marker for ten minutes, so clients may be unable to read a valid registry even if the endpoint still returns HTTP success. Fetch the catalog directly, confirm its status and leading response body, then check the latest pack publication, registry hosting, and cache behavior before republishing."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "pack-registry"
+    signal    = "integrity"
+  }
 
   dynamic "conditions" {
     for_each = {
@@ -114,4 +134,3 @@ resource "google_monitoring_alert_policy" "pack_registry_checks" {
 
   notification_channels = local.alert_notification_channels
 }
-

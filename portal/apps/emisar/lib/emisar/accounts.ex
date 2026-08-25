@@ -2021,6 +2021,20 @@ defmodule Emisar.Accounts do
 
   def peek_active_membership(_account_id, _membership_id), do: nil
 
+  @doc """
+  Internal — approval notification eligibility: the active membership for one
+  user in one account. Returns `{:ok, membership} | {:error, :not_found}`.
+  """
+  def fetch_active_membership_for_user(account_id, user_id)
+      when is_binary(account_id) and is_binary(user_id) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.not_disabled()
+    |> Membership.Query.by_account_and_user(account_id, user_id)
+    |> Repo.fetch(Membership.Query)
+  end
+
+  def fetch_active_membership_for_user(_account_id, _user_id), do: {:error, :not_found}
+
   @doc "Internal - lock a run initiator's current active membership in the caller's transaction."
   def fetch_and_lock_active_membership(repo, account_id, membership_id)
       when is_binary(account_id) and is_binary(membership_id) do
@@ -4142,7 +4156,13 @@ defmodule Emisar.Accounts do
     %{membership: membership, user: user, invitation_token: token} = invitation
 
     delivery =
-      case Emisar.Mailers.UserNotifier.deliver_account_invitation(user, inviter, account, token) do
+      case Emisar.Mailers.UserNotifier.deliver_account_invitation(
+             user,
+             inviter,
+             account,
+             membership,
+             token
+           ) do
         {:ok, %{suppressed: true}} -> {:ok, :suppressed}
         {:ok, _sent} -> {:ok, :sent}
         {:error, reason} -> {:error, reason}

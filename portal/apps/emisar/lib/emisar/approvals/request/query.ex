@@ -200,15 +200,18 @@ defmodule Emisar.Approvals.Request.Query do
     do: where(queryable, [requests: r], r.requested_at >= ^from and r.requested_at < ^to)
 
   @doc """
-  One-row aggregate for the monthly report: requests filed in the window plus
-  the approved/denied decision split, counted with SQL FILTER so the context
-  does no app-side summing.
+  One-row aggregate for the monthly report: every request filed in the window
+  and its current outcome, counted with SQL FILTER so the context does no
+  app-side summing. These outcome counts always reconcile to `requested`.
   """
   def status_totals(queryable) do
     select(queryable, [requests: r], %{
       requested: count(r.id),
       approved: filter(count(r.id), r.status == ^:approved),
-      denied: filter(count(r.id), r.status == ^:denied)
+      denied: filter(count(r.id), r.status == ^:denied),
+      expired: filter(count(r.id), r.status == ^:expired),
+      cancelled: filter(count(r.id), r.status == ^:cancelled),
+      pending: filter(count(r.id), r.status == ^:pending)
     })
   end
 

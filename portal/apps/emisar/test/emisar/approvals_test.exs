@@ -666,7 +666,7 @@ defmodule Emisar.ApprovalsTest do
   end
 
   describe "report_request_stats/3" do
-    test "tallies window requested/approved/denied plus current pending" do
+    test "tallies every window outcome plus the current waiting backlog" do
       account = Fixtures.Accounts.create_account()
       from = ~U[2026-06-01 00:00:00.000000Z]
       to = ~U[2026-07-01 00:00:00.000000Z]
@@ -705,6 +705,9 @@ defmodule Emisar.ApprovalsTest do
       assert stats.approved == 2
       assert stats.denied == 1
       assert stats.pending == 1
+      assert stats.expired == 0
+      assert stats.cancelled == 0
+      assert stats.waiting_now == 1
     end
 
     test "excludes another account's requests (cross-account isolation)" do
@@ -730,6 +733,7 @@ defmodule Emisar.ApprovalsTest do
       assert stats.requested == 1
       assert stats.approved == 1
       assert stats.pending == 0
+      assert stats.waiting_now == 0
     end
   end
 
@@ -1425,6 +1429,37 @@ defmodule Emisar.ApprovalsTest do
       assert members["admin"].email in recipients
       refute members["operator"].email in recipients
     end
+
+    test "rechecks current eligibility before a lifecycle update", %{
+      account: account,
+      run: run,
+      members: members
+    } do
+      {:ok, request} =
+        Approvals.create_request(run, Fixtures.Users.create_user().id, "needs approval")
+
+      _created = notified_emails()
+
+      owner_membership = Fixtures.Memberships.fetch_membership(account.id, members["owner"].id)
+      Fixtures.Memberships.suspend_membership(owner_membership)
+
+      cancelled =
+        request
+        |> Ecto.Changeset.change(
+          status: :cancelled,
+          decided_at: DateTime.utc_now(),
+          decision_reason: "parent run cancelled"
+        )
+        |> Repo.update!()
+
+      assert Approvals.broadcast_cancelled_requests([cancelled]) == :ok
+
+      recipients = notified_recipients()
+      refute members["owner"].email in recipients
+      assert members["admin"].email in recipients
+      assert members["operator"].email in recipients
+      refute members["viewer"].email in recipients
+    end
   end
 
   describe "create_request_in_multi/5" do
@@ -1966,12 +2001,22 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :approved}, _run}} =
                Approvals.approve_request(request, subject, "lgtm")
 
-      assert [email] = notified_emails()
-      assert Enum.map(email.to, &elem(&1, 1)) == [subject.actor.email]
-      assert email.subject == "Approved: linux.uptime"
-      assert email.text_body =~ "was approved"
+      emails = notified_emails()
+
+      assert [email] =
+               Enum.filter(emails, fn email ->
+                 Enum.map(email.to, &elem(&1, 1)) == [subject.actor.email]
+               end)
+
+      assert email.subject == "Approval requirements met · linux.uptime"
+      assert email.text_body =~ "received 1 of 1 required approvals"
       assert email.text_body =~ "lgtm"
       refute email.text_body =~ "Arguments"
+
+      assert Enum.any?(emails, fn email ->
+               email.headers["In-Reply-To"] &&
+                 email.text_body =~ "approval gate completed with 1 of 1"
+             end)
     end
 
     test "a sub-threshold vote is not an outcome, so the requester hears nothing", %{
@@ -1987,8 +2032,35 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :pending}, :pending}} =
                Approvals.approve_request(request, subject, "one of two")
 
-      assert notified_emails() == []
+      emails = notified_emails()
+      recipients = Enum.flat_map(emails, &Enum.map(&1.to, fn {_name, email} -> email end))
+
+      refute subject.actor.email in recipients
+      assert Enum.any?(emails, &(&1.text_body =~ "tally became 1 of 2"))
       assert account.id == request.account_id
+    end
+
+    test "a removed requester receives no tenant outcome detail", %{
+      account: account,
+      run: run,
+      subject: requester_subject
+    } do
+      {:ok, request} =
+        Approvals.create_request(run, requester_subject.actor.id, "needs approve")
+
+      _created = notified_emails()
+
+      membership =
+        Fixtures.Memberships.fetch_membership(account.id, requester_subject.actor.id)
+
+      Fixtures.Memberships.suspend_membership(membership)
+      decider = operator_subject(account)
+
+      assert {:ok, {%Request{status: :approved}, _run}} =
+               Approvals.approve_request(request, decider, "reviewed")
+
+      recipients = notified_recipients()
+      refute requester_subject.actor.email in recipients
     end
 
     test "a decision emits [:emisar, :approval, :decided] tagged by the decision", %{
@@ -2671,11 +2743,19 @@ defmodule Emisar.ApprovalsTest do
 
   describe "override_request/3" do
     test "an admin releases below quorum with one distinct audit receipt and no extra vote" do
-      %{account: account, request: request, run: run} = gated_request(min_approvals: 3)
+      %{
+        account: account,
+        request: request,
+        run: run,
+        requester_subject: requester_subject
+      } = gated_request(min_approvals: 3, requester_role: :operator)
+
       first = distinct_operator(account)
 
       assert {:ok, {%Request{status: :pending}, :pending}} =
                Approvals.approve_request(request, first, "reviewed")
+
+      _pre_override_emails = notified_emails()
 
       admin = Fixtures.Users.create_user()
 
@@ -2712,6 +2792,15 @@ defmodule Emisar.ApprovalsTest do
       assert event.payload["remaining_approvals_waived"] == 2
       refute event.payload["self_approval_waived"]
       refute Enum.any?(events, &(&1.event_type == "approval.approved"))
+
+      emails = notified_emails()
+
+      assert Enum.any?(emails, fn email ->
+               Enum.map(email.to, &elem(&1, 1)) == [requester_subject.actor.email] &&
+                 email.subject == "Review requirement overridden · linux.uptime" &&
+                 email.text_body =~ "with 1 of 3 approvals received" &&
+                 email.text_body =~ "remaining review requirement was waived"
+             end)
     end
 
     test "an owner may override after voting, including a no-self-approval request" do
@@ -3362,11 +3451,21 @@ defmodule Emisar.ApprovalsTest do
       assert {:ok, {%Request{status: :denied}, _run}} =
                Approvals.deny_request(request, subject, "not now")
 
-      assert [email] = notified_emails()
-      assert Enum.map(email.to, &elem(&1, 1)) == [subject.actor.email]
-      assert email.subject == "Denied: linux.uptime"
-      assert email.text_body =~ "was denied"
+      emails = notified_emails()
+
+      assert [email] =
+               Enum.filter(emails, fn email ->
+                 Enum.map(email.to, &elem(&1, 1)) == [subject.actor.email]
+               end)
+
+      assert email.subject == "Approval denied · linux.uptime"
+      assert email.text_body =~ "was denied with 0 of 1"
       assert email.text_body =~ "not now"
+
+      assert Enum.any?(
+               emails,
+               &(&1.headers["In-Reply-To"] && &1.text_body =~ "denied this request")
+             )
     end
 
     test "cancels the run with the built-in 'approval denied' message when no reason is given", %{

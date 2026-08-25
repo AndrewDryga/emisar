@@ -2,6 +2,16 @@ resource "google_monitoring_alert_policy" "db_cpu" {
   display_name = "Emisar: Cloud SQL CPU High"
   combiner     = "OR"
 
+  documentation {
+    content   = "Cloud SQL CPU has remained above 90% for five minutes. Use Query Insights and database activity to identify expensive queries, lock contention, connection pressure, or a workload change, and correlate the rise with the most recent Portal rollout before resizing the instance."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "cloud-sql"
+    signal    = "cpu"
+  }
+
   conditions {
     display_name = "CPU Above 90% for 5 Minutes"
     condition_threshold {
@@ -23,6 +33,16 @@ resource "google_monitoring_alert_policy" "db_disk" {
   display_name = "Emisar: Cloud SQL Disk Near Full"
   combiner     = "OR"
 
+  documentation {
+    content   = "Cloud SQL disk utilization has remained above 90% for five minutes, leaving little headroom for writes, WAL, maintenance, and temporary work. Check current size, growth rate, automatic-storage settings and quota, then identify unexpected table, index, WAL, or temporary-file growth before capacity is exhausted."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "cloud-sql"
+    signal    = "disk"
+  }
+
   conditions {
     display_name = "Disk Above 90% for 5 Minutes"
     condition_threshold {
@@ -43,6 +63,16 @@ resource "google_monitoring_alert_policy" "db_disk" {
 resource "google_monitoring_alert_policy" "db_memory" {
   display_name = "Emisar: Cloud SQL Memory High"
   combiner     = "OR"
+
+  documentation {
+    content   = "Cloud SQL memory utilization has remained above 90% for five minutes. Correlate the signal with active connections, query workload, cache behavior, swap, latency, and recent application changes; high memory alone is not proof of a leak, so identify the pressure source before restarting or resizing."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "cloud-sql"
+    signal    = "memory"
+  }
 
   conditions {
     display_name = "Memory Above 90% for 5 Minutes"
@@ -100,6 +130,16 @@ resource "google_monitoring_alert_policy" "db_down" {
 resource "google_monitoring_alert_policy" "db_txid" {
   display_name = "Emisar: Cloud SQL Transaction ID Wraparound Risk"
   combiner     = "OR"
+
+  documentation {
+    content   = "PostgreSQL transaction-ID utilization has remained above 70% for 15 minutes, so normal autovacuum is not containing wraparound risk. Find the oldest open transactions, blocked or failing autovacuum work, and abandoned replication slots; remove the blocker and confirm utilization is falling before the database approaches its write-protection limit."
+    mime_type = "text/markdown"
+  }
+
+  user_labels = {
+    component = "cloud-sql"
+    signal    = "txid"
+  }
 
   conditions {
     display_name = "Transaction ID Utilization Above 70% for 15 Minutes"

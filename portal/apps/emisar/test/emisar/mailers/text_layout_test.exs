@@ -69,23 +69,47 @@ defmodule Emisar.Mailers.TextLayoutTest do
     user = Fixtures.Users.create_user(full_name: "Andrew Dryga")
     account = Fixtures.Accounts.create_account(name: "Fleet Ops")
 
-    UserNotifier.deliver_confirmation_instructions(user, "tok-confirm")
+    UserNotifier.deliver_account_confirmation(user, "tok-confirm")
     confirmation = sent_text_body()
+
+    UserNotifier.deliver_email_change_confirmation(user, "tok-new-email")
+    email_change_confirmation = sent_text_body()
 
     UserNotifier.deliver_magic_link(user, "tok", "ABC234", request_context())
     magic_link = sent_text_body()
 
-    UserNotifier.deliver_email_change_code(user, "ABC234")
+    UserNotifier.deliver_email_change_code(
+      user,
+      "ABC234",
+      "new@example.com",
+      request_context()
+    )
+
     email_change = sent_text_body()
 
-    UserNotifier.deliver_mfa_enrollment_code(user, "ABC234")
+    UserNotifier.deliver_mfa_enrollment_code(user, "ABC234", request_context())
     mfa_enrollment = sent_text_body()
 
-    UserNotifier.deliver_account_invitation(user, user, account, "tok-invite")
+    invitation_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+    UserNotifier.deliver_account_invitation(
+      user,
+      user,
+      account,
+      invitation_membership,
+      "tok-invite"
+    )
+
     invitation = sent_text_body()
 
     [
       {"confirmation", confirmation},
+      {"email change confirmation", email_change_confirmation},
       {"magic link", magic_link},
       {"email change code", email_change},
       {"authenticator code", mfa_enrollment},
@@ -93,17 +117,13 @@ defmodule Emisar.Mailers.TextLayoutTest do
       {"approval request", approval_request_body(user, account)},
       {"runbook approval request", runbook_approval_request_body(user, account)},
       {"approval decision", approval_decision_body(user, account)},
+      {"approval update", approval_event_body(user, account)},
       {"monthly report", monthly_report_text(user, account)}
     ]
   end
 
   defp approval_request_body(user, account) do
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
     subject = Fixtures.Subjects.membership_subject(membership)
     runner = Fixtures.Runners.create_runner(account_id: account.id, name: "edge-1")
@@ -159,7 +179,9 @@ defmodule Emisar.Mailers.TextLayoutTest do
       }
     }
 
-    UserNotifier.deliver_runbook_execution_approval_request(user, request)
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    subject = Fixtures.Subjects.membership_subject(membership)
+    UserNotifier.deliver_runbook_execution_approval_request(subject, request)
     sent_text_body()
   end
 
@@ -177,12 +199,51 @@ defmodule Emisar.Mailers.TextLayoutTest do
     sent_text_body()
   end
 
+  defp approval_event_body(user, account) do
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    subject = Fixtures.Subjects.membership_subject(membership)
+
+    request = %{
+      id: "req-event-1",
+      min_approvals: 2,
+      account: account,
+      context: %{"action_id" => "caddy.reload_config"}
+    }
+
+    UserNotifier.deliver_approval_event(subject, request, %{
+      id: "decision-1",
+      kind: :vote,
+      approved_count: 1,
+      actor_label: "Avery Operator",
+      occurred_at: ~U[2026-08-25 12:30:00Z],
+      reason: "Reviewed with the on-call"
+    })
+
+    sent_text_body()
+  end
+
   defp monthly_report_text(user, account) do
     report = %{
       period_start: ~U[2026-07-01 00:00:00Z],
       period_end: ~U[2026-08-01 00:00:00Z],
-      runs: %{total: 18, success: 17, failed: 1, denied: 0, cancelled: 0, distinct_runners: 1},
-      approvals: %{requested: 4, approved: 3, denied: 1, pending: 1},
+      runs: %{
+        total: 18,
+        success: 17,
+        failed: 1,
+        denied: 0,
+        cancelled: 0,
+        dispatched: 18,
+        distinct_runners: 1
+      },
+      approvals: %{
+        requested: 4,
+        approved: 3,
+        denied: 1,
+        expired: 0,
+        cancelled: 0,
+        pending: 0,
+        waiting_now: 1
+      },
       runners: 1,
       team_size: 2
     }

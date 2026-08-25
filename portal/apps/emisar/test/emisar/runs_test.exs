@@ -818,7 +818,8 @@ defmodule Emisar.RunsTest do
           account_id: account.id,
           runner_id: runner.id,
           status: status,
-          inserted_at: in_window
+          inserted_at: in_window,
+          sent_at: if(status == :denied, do: nil, else: in_window)
         )
       end
 
@@ -836,7 +837,9 @@ defmodule Emisar.RunsTest do
       assert stats.success == 2
       assert stats.failed == 1
       assert stats.denied == 1
-      # All four in-window runs used the one runner.
+      assert stats.dispatched == 3
+      # Three in-window runs were actually sent to the one runner; the denied
+      # row never exercised it.
       assert stats.distinct_runners == 1
     end
 
@@ -847,7 +850,13 @@ defmodule Emisar.RunsTest do
       to = ~U[2026-07-01 00:00:00.000000Z]
       at = ~U[2026-06-15 12:00:00.000000Z]
 
-      Fixtures.Runs.create_run(account_id: account.id, status: :success, inserted_at: at)
+      Fixtures.Runs.create_run(
+        account_id: account.id,
+        status: :success,
+        inserted_at: at,
+        sent_at: at
+      )
+
       Fixtures.Runs.create_run(account_id: other_account.id, status: :failed, inserted_at: at)
 
       assert %{total: 1, success: 1, failed: 0} = Runs.report_run_stats(account.id, from, to)
