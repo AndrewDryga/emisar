@@ -1541,16 +1541,21 @@ func capture(ctx context.Context, env map[string]string, outDir, name string, ma
 		return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-google-credentials=true]")
 	}
 	height := 900
+	width := 1155
 	if name == "google-02-audience" || name == "google-06-clients" {
 		height = 360
 	}
-	if err := markGoogleDocsPanel(ctx, height); err != nil {
+	if name == "google-07-web-application" {
+		width = 550
+		height = 790
+	}
+	if err := markGoogleDocsPanel(ctx, width, height); err != nil {
 		return err
 	}
 	return idpcapture.ScreenshotElement(ctx, outDir, name+"-docs", "[data-emisar-docs-google-panel=true]")
 }
 
-func markGoogleDocsPanel(ctx context.Context, height int) error {
+func markGoogleDocsPanel(ctx context.Context, width, height int) error {
 	script := fmt.Sprintf(`(() => {
   const gemini = [...document.querySelectorAll('*')]
     .filter(el => (el.textContent || '').trim().startsWith('Try agentic Gemini CLI in Cloud Shell'))
@@ -1562,12 +1567,12 @@ func markGoogleDocsPanel(ctx context.Context, height int) error {
   const crop = document.createElement('div');
   crop.dataset.emisarDocsGooglePanel = 'true';
   Object.assign(crop.style, {
-    position: 'fixed', left: '285px', top: '85px', width: '1155px', height: '%dpx',
+    position: 'fixed', left: '285px', top: '85px', width: '%dpx', height: '%dpx',
     pointerEvents: 'none', zIndex: '2147483647'
   });
   document.body.appendChild(crop);
   return true;
-})()`, height)
+})()`, width, height)
 	var marked bool
 	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
 		return err

@@ -341,14 +341,25 @@ func highlightRegistrationGroup(ctx context.Context) error {
     const box = node.getBoundingClientRect();
     if (node.contains(uri) && box.width >= 600 && box.height >= 80 && box.height <= 180) {
       node.scrollIntoView({block: 'center'});
-      const current = node.getBoundingClientRect();
+      const boxes = [node.getBoundingClientRect(), uri.getBoundingClientRect()];
+      const current = {
+        left: Math.min(...boxes.map(box => box.left)),
+        top: Math.min(...boxes.map(box => box.top)),
+        right: Math.max(...boxes.map(box => box.right)),
+        bottom: Math.max(...boxes.map(box => box.bottom))
+      };
+      current.width = current.right - current.left;
+      current.height = current.bottom - current.top;
+      // At this fixed capture viewport Entra paints the heading and platform
+      // selector 105px left of the CSS box it reports for their group.
+      const paintedLeftOverflow = 105;
       const ring = document.createElement('div');
       Object.assign(ring.style, {
-        position: 'absolute',
-        left: (current.left + window.scrollX - 4) + 'px',
-        top: (current.top + window.scrollY - 4) + 'px',
-        width: (current.width + 8) + 'px',
-        height: (current.height + 8) + 'px',
+        position: 'fixed',
+        left: (current.left - paintedLeftOverflow - 8) + 'px',
+        top: (current.top - 8) + 'px',
+        width: (current.width + paintedLeftOverflow + 16) + 'px',
+        height: (current.height + 16) + 'px',
         border: '3px solid #10b981',
         borderRadius: '8px',
         boxSizing: 'border-box',

@@ -1690,7 +1690,8 @@ func highlightGroup(ctx context.Context, anchor, mustInclude string) error {
   const hits = [...document.querySelectorAll('*')]
     .filter(el => visible(el) && (el.textContent || '').includes(%q))
     .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length);
-  let node = hits[0];
+  const anchorNode = hits[0];
+  let node = anchorNode;
   if (!node) return false;
   for (let up = 0; up < 10 && node; up++) {
     if ((node.textContent || '').includes(%q)) break;
@@ -1708,7 +1709,24 @@ func highlightGroup(ctx context.Context, anchor, mustInclude string) error {
     node = node.parentElement;
   }
   node.scrollIntoView({block: 'nearest'});
-  const box = node.getBoundingClientRect();
+  const companionNode = [...node.querySelectorAll('*')]
+    .filter(el => visible(el) && (el.textContent || '').includes(%q))
+    .sort((a, b) => a.getElementsByTagName('*').length - b.getElementsByTagName('*').length)[0];
+  const boxes = [node, anchorNode, companionNode]
+    .filter(Boolean)
+    .map(el => el.getBoundingClientRect())
+    .filter(box => box.width > 0 && box.height > 0);
+  const box = {
+    left: Math.min(...boxes.map(box => box.left)),
+    top: Math.min(...boxes.map(box => box.top)),
+    right: Math.max(...boxes.map(box => box.right)),
+    bottom: Math.max(...boxes.map(box => box.bottom))
+  };
+  box.width = box.right - box.left;
+  box.height = box.bottom - box.top;
+  // Okta paints the row label to the left of the flex box it reports. Include
+  // that overflow so the marker frames "Client ID", not only its input.
+  const paintedLeftOverflow = %q === 'Client ID' ? 48 : 0;
   // Paint the marker in a top-layer overlay rather than on the vendor node.
   // Okta inputs sit above their row background and used to erase the top edge
   // of an inset shadow. The overlay stays complete across inputs and buttons.
@@ -1716,10 +1734,10 @@ func highlightGroup(ctx context.Context, anchor, mustInclude string) error {
   ring.dataset.emisarDocsHighlight = 'true';
   Object.assign(ring.style, {
     position: 'fixed',
-    left: (box.left - 3) + 'px',
-    top: (box.top - 3) + 'px',
-    width: (box.width + 6) + 'px',
-    height: (box.height + 6) + 'px',
+    left: (box.left - paintedLeftOverflow - 8) + 'px',
+    top: (box.top - 8) + 'px',
+    width: (box.width + paintedLeftOverflow + 16) + 'px',
+    height: (box.height + 16) + 'px',
     border: '3px solid #10b981',
     borderRadius: '8px',
     boxSizing: 'border-box',
@@ -1729,7 +1747,7 @@ func highlightGroup(ctx context.Context, anchor, mustInclude string) error {
   document.body.appendChild(ring);
   return node.tagName + ' display=' + getComputedStyle(node).display +
     ' ' + Math.round(box.width) + 'x' + Math.round(box.height);
-})()`, anchor, mustInclude)
+})()`, anchor, mustInclude, mustInclude, anchor)
 	var marked string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
 		return err
