@@ -2353,7 +2353,7 @@ defmodule Emisar.Accounts do
   defp on_membership_role_changed(%Membership{} = membership, %Ecto.Changeset{} = changeset) do
     broadcast_membership_role_changed(membership)
     refresh_member_sessions_if_role_changed(changeset.data.role, membership)
-    maybe_revoke_reduced_member_api_keys(changeset.data.role, membership)
+    maybe_revoke_reduced_member_credentials(changeset.data.role, membership)
   end
 
   # after_commit for the operator role change, whose Multi carries the locked
@@ -2372,7 +2372,7 @@ defmodule Emisar.Accounts do
       changes.runner_access
     )
 
-    maybe_revoke_reduced_member_api_keys(target.role, membership)
+    maybe_revoke_reduced_member_credentials(target.role, membership)
 
     if changes.runner_access == previous,
       do: :ok,
@@ -2427,12 +2427,12 @@ defmodule Emisar.Accounts do
   # Authz here is permission-based, not rank-based (`Auth.Role` deliberately has
   # no rank), so "reduction" is a permission-subset test — the new role losing a
   # permission the old one held. An elevation or a no-op keeps the keys.
-  defp maybe_revoke_reduced_member_api_keys(
+  defp maybe_revoke_reduced_member_credentials(
          old_role,
          %Membership{role: new_role} = membership
        ) do
     if reduced_permissions?(old_role, new_role) do
-      revoke_membership_api_keys(membership)
+      revoke_membership_credentials(membership)
     else
       :ok
     end
@@ -2662,7 +2662,7 @@ defmodule Emisar.Accounts do
             # suspension actually commits. Otherwise a rolled-back update
             # would still kick the user out of every tab / kill their keys.
             &end_account_sessions/1,
-            &revoke_membership_api_keys/1
+            &revoke_membership_credentials/1
           ]
         )
 
@@ -2678,8 +2678,9 @@ defmodule Emisar.Accounts do
   # so unlike sessions (which self-heal at membership resolution) they keep
   # working until revoked; this kills MCP `emk-` dispatch and the OAuth
   # backing keys behind `emo-` tokens together.
-  defp revoke_membership_api_keys(%Membership{} = membership) do
+  defp revoke_membership_credentials(%Membership{} = membership) do
     {:ok, _count} = ApiKeys.revoke_keys_for_membership(membership.id)
+    {:ok, _count} = ApiKeys.revoke_device_grants_for_membership(membership.id)
     :ok
   end
 
@@ -2766,7 +2767,7 @@ defmodule Emisar.Accounts do
   def membership_suspended_effects(%Membership{} = membership) do
     :ok = broadcast_membership_suspended(membership)
     :ok = end_account_sessions(membership)
-    :ok = revoke_membership_api_keys(membership)
+    :ok = revoke_membership_credentials(membership)
   end
 
   # Only the sessions THIS account authenticated. Revoking every session token the
@@ -3059,7 +3060,7 @@ defmodule Emisar.Accounts do
         access
       )
 
-      maybe_revoke_reduced_member_api_keys(previous_membership.role, membership)
+      maybe_revoke_reduced_member_credentials(previous_membership.role, membership)
     end
   end
 
@@ -3822,7 +3823,7 @@ defmodule Emisar.Accounts do
           # until it remounts. Disconnect + revoke it after the delete commits,
           # alongside the API keys that would otherwise keep dispatching.
           &end_account_sessions/1,
-          &revoke_membership_api_keys/1
+          &revoke_membership_credentials/1
         ]
       )
     end

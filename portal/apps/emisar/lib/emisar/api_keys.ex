@@ -1031,6 +1031,24 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
+  Internal — deny every live approved device grant bound to `membership_id`.
+  Membership suspension, removal, or authorization reduction calls this beside
+  key revocation so a grant approved before the change cannot mint a replacement
+  key afterwards. Returns `{:ok, count}`.
+  """
+  def revoke_device_grants_for_membership(membership_id) when is_binary(membership_id) do
+    now = DateTime.utc_now()
+
+    {count, _} =
+      DeviceGrant.Query.by_approved_by_membership_id(membership_id)
+      |> DeviceGrant.Query.by_status(:approved)
+      |> DeviceGrant.Query.not_expired(now)
+      |> Repo.update_all(set: [status: :denied, updated_at: now])
+
+    {:ok, count}
+  end
+
+  @doc """
   Internal — the API-key auth boundary: resolves a presented bearer
   token to an `%ApiKey{}` so the MCP controller's `:authenticate` plug
   can build a `%Subject{}`, so it runs BEFORE any subject exists. Bumps
@@ -1534,19 +1552,44 @@ defmodule Emisar.ApiKeys do
   def claim_device_grant(device_code) when is_binary(device_code) do
     digest = Crypto.mcp_device_code_digest(device_code)
 
-    Multi.new()
-    |> Multi.run(:grant, fn repo, _changes ->
-      queryable =
-        DeviceGrant.Query.by_device_code_digest(digest)
-        |> DeviceGrant.Query.lock_for_update()
+    grant =
+      DeviceGrant.Query.by_device_code_digest(digest)
+      |> Repo.peek()
 
-      judge_claimable(repo.peek(queryable), repo)
-    end)
-    |> Multi.run(:account, fn repo, %{grant: grant} ->
-      case Accounts.fetch_and_lock_account(grant.account_id, repo: repo) do
+    case grant do
+      %DeviceGrant{status: :approved} = approved -> claim_approved_device_grant(digest, approved)
+      grant -> {:error, judge_device_grant_state(grant)}
+    end
+  end
+
+  # The unlocked read identifies which account and membership to lock; it grants
+  # no authority. The transaction then follows account -> membership -> grant,
+  # rechecking every field under those locks before minting.
+  defp claim_approved_device_grant(digest, %DeviceGrant{} = snapshot) do
+    Multi.new()
+    |> Multi.run(:account, fn repo, _changes ->
+      case Accounts.fetch_and_lock_account(snapshot.account_id, repo: repo) do
         {:ok, account} -> {:ok, account}
         {:error, :not_found} -> {:error, :access_denied}
       end
+    end)
+    |> Multi.run(:membership, fn repo, %{account: account} ->
+      case Accounts.fetch_and_lock_membership(
+             account.id,
+             snapshot.approved_by_membership_id,
+             repo: repo
+           ) do
+        {:ok, membership} -> ensure_grant_approver_authorized(membership, snapshot)
+        {:error, :not_found} -> {:error, :access_denied}
+      end
+    end)
+    |> Multi.run(:grant, fn repo, %{account: account, membership: membership} ->
+      locked =
+        DeviceGrant.Query.by_device_code_digest(digest)
+        |> DeviceGrant.Query.lock_for_update()
+        |> repo.peek()
+
+      ensure_locked_grant_claimable(locked, account, membership)
     end)
     |> Multi.run(:client_keys, fn repo, %{grant: grant} ->
       mint_grant_keys(repo, grant)
@@ -1578,44 +1621,55 @@ defmodule Emisar.ApiKeys do
     end
   end
 
-  # The poll-state machine: only an unexpired approved grant whose approver
-  # still exists yields keys; every other state is its RFC 8628 poll error.
-  defp judge_claimable(nil, _repo), do: {:error, :invalid_grant}
-  defp judge_claimable(%DeviceGrant{status: :claimed}, _repo), do: {:error, :invalid_grant}
-  defp judge_claimable(%DeviceGrant{status: :denied}, _repo), do: {:error, :access_denied}
-  defp judge_claimable(%DeviceGrant{status: :expired}, _repo), do: {:error, :expired_token}
+  defp ensure_grant_approver_authorized(
+         %Accounts.Membership{} = membership,
+         %DeviceGrant{} = grant
+       ) do
+    permission = Authorizer.issue_quick_key_permission()
+    role = Subject.effective_membership_role(membership)
 
-  defp judge_claimable(%DeviceGrant{} = grant, repo) do
-    cond do
-      DeviceGrant.expired?(grant) -> {:error, :expired_token}
-      grant.status == :pending -> {:error, :authorization_pending}
-      true -> ensure_approver_still_valid(grant, repo)
-    end
-  end
-
-  # A removed approver or deleted account kills the grant — the recorded
-  # identity IS the claim-time authorization, so it must still exist. The
-  # struct preload on an internal, already-authorized path is the sanctioned
-  # IL-10 exception (the assocs' `where: [deleted_at: nil]` does the vetting).
-  defp ensure_approver_still_valid(%DeviceGrant{} = grant, repo) do
-    grant = repo.preload(grant, [:account, :approved_by_membership])
-
-    # Existence is not standing. The assoc's `where: [deleted_at: nil]` catches a
-    # REMOVED approver, but suspension sets `disabled_at` — so an operator
-    # offboarded inside the grant's 15-minute window still minted live emk- keys
-    # on their own seat, moments after suspend_membership's own after_commit had
-    # revoked every key they held. SCIM deprovisioning writes the same column, so
-    # this covered automated offboarding too.
-    if is_nil(grant.account) or not approver_in_good_standing?(grant.approved_by_membership) do
-      {:error, :access_denied}
+    if membership.id == grant.approved_by_membership_id and
+         membership.account_id == grant.account_id and
+         membership.user_id == grant.approved_by_id and
+         permission in Authorizer.list_permissions_for_role(role) do
+      {:ok, membership}
     else
-      {:ok, grant}
+      {:error, :access_denied}
     end
   end
 
-  defp approver_in_good_standing?(nil), do: false
-  defp approver_in_good_standing?(%Accounts.Membership{disabled_at: nil}), do: true
-  defp approver_in_good_standing?(%Accounts.Membership{}), do: false
+  defp ensure_locked_grant_claimable(
+         %DeviceGrant{} = grant,
+         account,
+         %Accounts.Membership{} = membership
+       ) do
+    if grant.account_id == account.id and
+         grant.approved_by_membership_id == membership.id and
+         grant.approved_by_id == membership.user_id do
+      case judge_device_grant_state(grant) do
+        :approved -> {:ok, grant}
+        reason -> {:error, reason}
+      end
+    else
+      {:error, :access_denied}
+    end
+  end
+
+  defp ensure_locked_grant_claimable(nil, _account, %Accounts.Membership{}),
+    do: {:error, :invalid_grant}
+
+  defp judge_device_grant_state(nil), do: :invalid_grant
+  defp judge_device_grant_state(%DeviceGrant{status: :claimed}), do: :invalid_grant
+  defp judge_device_grant_state(%DeviceGrant{status: :denied}), do: :access_denied
+  defp judge_device_grant_state(%DeviceGrant{status: :expired}), do: :expired_token
+
+  defp judge_device_grant_state(%DeviceGrant{} = grant) do
+    cond do
+      DeviceGrant.expired?(grant) -> :expired_token
+      grant.status == :pending -> :authorization_pending
+      grant.status == :approved -> :approved
+    end
+  end
 
   # Deliberate per-row inserts: each key mints its own secret via a
   # `mint_quick` changeset (auto-generated, invisible until first use — the

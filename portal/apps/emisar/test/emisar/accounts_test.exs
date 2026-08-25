@@ -3568,6 +3568,13 @@ defmodule Emisar.AccountsTest do
       {_raw, key} =
         Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: admin.id)
 
+      admin_subject = Fixtures.Subjects.membership_subject(admin_membership)
+
+      {:ok, _device_code, user_code, _grant} =
+        Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(user_code, admin_subject)
+
       # Re-applying the same role is a no-op (a SCIM reconcile does this), so
       # the delegation survives.
       assert {:ok, unchanged} =
@@ -3580,6 +3587,7 @@ defmodule Emisar.AccountsTest do
       # so a demoted admin's MCP bridge would still reach the whole fleet.
       assert {:ok, _} = Accounts.update_membership_role(unchanged, "viewer", subject)
       refute is_nil(Repo.reload!(key).revoked_at)
+      assert Repo.reload!(grant).status == :denied
     end
 
     test "a member without manage_team permission cannot change a role" do
@@ -4010,6 +4018,13 @@ defmodule Emisar.AccountsTest do
       {_raw, key} =
         Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: admin.id)
 
+      admin_subject = Fixtures.Subjects.membership_subject(admin_membership)
+
+      {:ok, _device_code, user_code, _grant} =
+        Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(user_code, admin_subject)
+
       assert is_nil(Emisar.Repo.reload!(key).revoked_at)
 
       assert {:ok, _} = Accounts.suspend_membership(admin_membership, owner_subject)
@@ -4017,6 +4032,7 @@ defmodule Emisar.AccountsTest do
       # after_commit revokes the keys the suspended member minted so they
       # can't keep dispatching via MCP / OAuth after losing access.
       refute is_nil(Emisar.Repo.reload!(key).revoked_at)
+      assert Repo.reload!(grant).status == :denied
     end
 
     test "operator cannot suspend anyone", %{account: account, target: target} do
@@ -5585,11 +5601,19 @@ defmodule Emisar.AccountsTest do
       {_raw, key} =
         Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: member.id)
 
+      member_subject = Fixtures.Subjects.membership_subject(member_membership)
+
+      {:ok, _device_code, user_code, _grant} =
+        Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, grant} = Emisar.ApiKeys.approve_device_grant(user_code, member_subject)
+
       assert {:ok, _} = Accounts.delete_membership(member_membership, subject)
 
       # Removal revokes minted keys after commit, cutting off MCP / OAuth
       # alongside the member's now-invalidated browser sessions.
       refute is_nil(Emisar.Repo.reload!(key).revoked_at)
+      assert Repo.reload!(grant).status == :denied
     end
 
     test "removing a member ends their access here without signing them out elsewhere" do

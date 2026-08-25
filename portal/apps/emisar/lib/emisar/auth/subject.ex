@@ -138,17 +138,18 @@ defmodule Emisar.Auth.Subject do
   # Directory changes fail closed while their durable role + runner-access
   # reconciliation is pending. A human owner remains an owner; directory sync
   # is never allowed to grant or revoke that role.
-  defp effective_membership_role(%Accounts.Membership{role: role})
-       when role in [:owner, "owner"],
-       do: :owner
+  @doc "The membership role currently allowed to authorize work, including directory fail-closed state."
+  def effective_membership_role(%Accounts.Membership{role: role})
+      when role in [:owner, "owner"],
+      do: :owner
 
-  defp effective_membership_role(%Accounts.Membership{
-         directory_authorization_pending_version: version
-       })
-       when is_integer(version),
-       do: :viewer
+  def effective_membership_role(%Accounts.Membership{
+        directory_authorization_pending_version: version
+      })
+      when is_integer(version),
+      do: :viewer
 
-  defp effective_membership_role(%Accounts.Membership{role: role}), do: role_atom(role)
+  def effective_membership_role(%Accounts.Membership{role: role}), do: role_atom(role)
 
   # -- Helpers used by every context's `ensure_X_in_subject_account` -
 

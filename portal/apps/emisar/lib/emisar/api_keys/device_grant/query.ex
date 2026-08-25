@@ -13,6 +13,9 @@ defmodule Emisar.ApiKeys.DeviceGrant.Query do
   def by_status(queryable \\ all(), status),
     do: where(queryable, [device_grants: g], g.status == ^status)
 
+  def by_approved_by_membership_id(queryable \\ all(), membership_id),
+    do: where(queryable, [device_grants: g], g.approved_by_membership_id == ^membership_id)
+
   def not_expired(queryable \\ all(), now),
     do: where(queryable, [device_grants: g], g.expires_at > ^now)
 

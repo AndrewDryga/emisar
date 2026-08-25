@@ -1824,6 +1824,28 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "revoke_device_grants_for_membership/1" do
+    test "denies only that membership's live approved grants, idempotently" do
+      {_owner, account, subject} = owner_subject_pair()
+      other_subject = member_subject(account, :operator)
+
+      {:ok, _device_code, target_user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, target} = ApiKeys.approve_device_grant(target_user_code, subject)
+
+      {:ok, _device_code, other_user_code, _grant} =
+        ApiKeys.open_device_grant(["cursor"], %RequestContext{})
+
+      {:ok, other} = ApiKeys.approve_device_grant(other_user_code, other_subject)
+
+      assert ApiKeys.revoke_device_grants_for_membership(subject.membership_id) == {:ok, 1}
+      assert Repo.reload!(target).status == :denied
+      assert Repo.reload!(other).status == :approved
+      assert ApiKeys.revoke_device_grants_for_membership(subject.membership_id) == {:ok, 0}
+    end
+  end
+
   describe "peek_api_key_by_secret/1" do
     test "returns the key for a valid raw secret + bumps last_used_at" do
       {raw, key} = Fixtures.ApiKeys.create_api_key()
@@ -2594,6 +2616,113 @@ defmodule Emisar.ApiKeysTest do
 
       assert ApiKeys.claim_device_grant(device_code) == {:error, :expired_token}
       # No keys minted for the dead grant.
+      assert Repo.all(ApiKey) == []
+    end
+
+    test "a current viewer role kills a surviving approved grant at claim" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "operator"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      {:ok, device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
+      Fixtures.Memberships.force_role(membership, "viewer")
+
+      # The direct fixture change deliberately skips the normal after-commit
+      # invalidation, proving the claim boundary itself rechecks current role.
+      assert Repo.reload!(approved).status == :approved
+      assert ApiKeys.claim_device_grant(device_code) == {:error, :access_denied}
+      assert Repo.all(ApiKey) == []
+    end
+
+    test "pending directory authorization fails closed at claim" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "operator"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      {:ok, device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      assert {:ok, _version} =
+               Accounts.mark_directory_authorization_pending(
+                 Repo,
+                 account.id,
+                 provider.id,
+                 [user.id],
+                 3
+               )
+
+      assert is_integer(Repo.reload!(membership).directory_authorization_pending_version)
+      assert Repo.reload!(approved).status == :approved
+      assert ApiKeys.claim_device_grant(device_code) == {:error, :access_denied}
+      assert Repo.all(ApiKey) == []
+      refute Enum.any?(Repo.all(Audit.Event), &(&1.event_type == "api_key.created"))
+    end
+
+    test "pending directory authorization does not demote a human owner at claim" do
+      {user, account, subject} = owner_subject_pair()
+
+      {:ok, device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, _approved} = ApiKeys.approve_device_grant(user_code, subject)
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      assert {:ok, _version} =
+               Accounts.mark_directory_authorization_pending(
+                 Repo,
+                 account.id,
+                 provider.id,
+                 [user.id],
+                 3
+               )
+
+      assert {:ok, %{client_keys: %{"claude-code" => _raw}}} =
+               ApiKeys.claim_device_grant(device_code)
+    end
+
+    test "a current suspension kills a surviving approved grant at claim" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "operator"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      {:ok, device_code, user_code, _grant} =
+        ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
+
+      {:ok, approved} = ApiKeys.approve_device_grant(user_code, subject)
+      Fixtures.Memberships.suspend_membership(membership)
+
+      assert Repo.reload!(approved).status == :approved
+      assert ApiKeys.claim_device_grant(device_code) == {:error, :access_denied}
       assert Repo.all(ApiKey) == []
     end
 
