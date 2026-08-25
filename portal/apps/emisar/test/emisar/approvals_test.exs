@@ -2008,14 +2008,14 @@ defmodule Emisar.ApprovalsTest do
                  Enum.map(email.to, &elem(&1, 1)) == [subject.actor.email]
                end)
 
-      assert email.subject == "Approval requirements met · linux.uptime"
-      assert email.text_body =~ "received 1 of 1 required approvals"
+      assert email.subject == "Approval complete · linux.uptime"
+      assert email.text_body =~ "approved with 1 of 1 approvals"
       assert email.text_body =~ "lgtm"
       refute email.text_body =~ "Arguments"
 
       assert Enum.any?(emails, fn email ->
                email.headers["In-Reply-To"] &&
-                 email.text_body =~ "approval gate completed with 1 of 1"
+                 email.text_body =~ "approval request was approved with 1 of 1"
              end)
     end
 
@@ -2036,7 +2036,12 @@ defmodule Emisar.ApprovalsTest do
       recipients = Enum.flat_map(emails, &Enum.map(&1.to, fn {_name, email} -> email end))
 
       refute subject.actor.email in recipients
-      assert Enum.any?(emails, &(&1.text_body =~ "tally became 1 of 2"))
+
+      assert Enum.any?(
+               emails,
+               &(&1.text_body =~ "approved this request. 1 of 2 approvals received")
+             )
+
       assert account.id == request.account_id
     end
 
@@ -2797,9 +2802,8 @@ defmodule Emisar.ApprovalsTest do
 
       assert Enum.any?(emails, fn email ->
                Enum.map(email.to, &elem(&1, 1)) == [requester_subject.actor.email] &&
-                 email.subject == "Review requirement overridden · linux.uptime" &&
-                 email.text_body =~ "with 1 of 3 approvals received" &&
-                 email.text_body =~ "remaining review requirement was waived"
+                 email.subject == "Approval override used · linux.uptime" &&
+                 email.text_body =~ "emergency override after 1 of 3 approvals"
              end)
     end
 
@@ -3464,7 +3468,8 @@ defmodule Emisar.ApprovalsTest do
 
       assert Enum.any?(
                emails,
-               &(&1.headers["In-Reply-To"] && &1.text_body =~ "denied this request")
+               &(&1.headers["In-Reply-To"] &&
+                   &1.text_body =~ "approval request was denied by")
              )
     end
 

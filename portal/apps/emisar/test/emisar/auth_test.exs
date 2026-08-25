@@ -990,12 +990,14 @@ defmodule Emisar.AuthTest do
     end
 
     test "a branded request issues for a live team", %{user: user} do
-      account = Fixtures.Accounts.create_account()
+      account = Fixtures.Accounts.create_account(name: "Northstar")
 
       assert {:ok, %{delivery: {:ok, :sent}}} =
                Auth.request_magic_link(user, %RequestContext{}, account_ref: account.slug)
 
-      assert_received {:email, _sent}
+      assert_received {:email, sent}
+      assert sent.text_body =~ "sign in to Northstar on emisar"
+      assert sent.text_body =~ "Requested from:  Northstar"
     end
 
     test "a branded request for an unavailable team issues and sends nothing", %{user: user} do
@@ -2053,7 +2055,7 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "deliver_confirmation_instructions/1" do
+  describe "deliver_confirmation_instructions/3" do
     test "issues a fresh token, emails the confirm link, and returns :ok" do
       user = Fixtures.Users.create_user(confirmed?: false)
 
@@ -2063,6 +2065,18 @@ defmodule Emisar.AuthTest do
       assert [{_, to}] = email.to
       assert to == user.email
       assert email.subject =~ "Confirm"
+    end
+
+    test "includes the account and request origin when they are available" do
+      user = Fixtures.Users.create_user(confirmed?: false)
+      account = Fixtures.Accounts.create_account(name: "Northstar")
+      context = %RequestContext{ip_address: "203.0.113.18"}
+
+      assert Auth.deliver_confirmation_instructions(user, account, context) == :ok
+
+      assert_received {:email, email}
+      assert email.text_body =~ "Requested from:  Northstar"
+      assert email.text_body =~ "203.0.113.18"
     end
   end
 

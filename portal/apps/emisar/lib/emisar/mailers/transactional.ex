@@ -17,12 +17,16 @@ defmodule Emisar.Mailers.Transactional do
   @ink_soft "#a1a1aa"
   @brand "#36e6a5"
   @brand_fill "#14cf8d"
+  @rose "#fda4af"
+  @amber "#fcd34d"
   @font "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
   @preview_pad String.duplicate("&#847;&zwnj;&nbsp;", 40)
 
+  @type fact_value :: binary() | {:link, binary(), binary()}
   @type block ::
           {:paragraph, binary()}
-          | {:facts, [{binary(), binary()}]}
+          | {:facts, [{binary(), fact_value()}]}
+          | {:status, binary(), binary(), binary(), :success | :warning | :danger | :neutral}
           | {:section, binary()}
           | {:code, binary()}
           | {:pre, binary()}
@@ -56,8 +60,7 @@ defmodule Emisar.Mailers.Transactional do
       "Hi #{content.recipient},",
       blocks,
       text_action(content.action),
-      content.footer,
-      "— emisar"
+      content.footer
     ]
     |> Enum.reject(&blank?/1)
     |> Enum.join("\n\n")
@@ -65,6 +68,7 @@ defmodule Emisar.Mailers.Transactional do
   end
 
   defp text_block({:paragraph, paragraph}), do: paragraph
+  defp text_block({:status, before, status, suffix, _tone}), do: before <> status <> suffix
   defp text_block({:section, title}), do: String.upcase(title)
   defp text_block({:code, code}), do: "    #{code}"
   defp text_block({:pre, value}), do: indent(value)
@@ -75,9 +79,12 @@ defmodule Emisar.Mailers.Transactional do
     width = facts |> Enum.map(fn {label, _value} -> String.length(label) end) |> Enum.max()
 
     Enum.map_join(facts, "\n", fn {label, value} ->
-      "  #{String.pad_trailing(label <> ":", width + 1)}  #{value}"
+      "  #{String.pad_trailing(label <> ":", width + 1)}  #{text_fact_value(value)}"
     end)
   end
+
+  defp text_fact_value({:link, label, url}), do: "#{label} (#{url})"
+  defp text_fact_value(value), do: value
 
   defp text_action(nil), do: nil
   defp text_action({label, url}), do: "#{label}:\n\n#{url}"
@@ -102,10 +109,7 @@ defmodule Emisar.Mailers.Transactional do
               <table role="presentation" align="center" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;">
                 #{masthead()}
                 <tr>
-                  <td style="padding:0 0 13px;font-family:#{@font};font-size:26px;line-height:1.25;font-weight:600;letter-spacing:-0.015em;color:#{@ink};">#{HTML.escape(content.title)}</td>
-                </tr>
-                <tr>
-                  <td style="padding:0 0 22px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">Hi #{HTML.escape(content.recipient)},</td>
+                  <td style="padding:0 0 24px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">Hi #{HTML.escape(content.recipient)},</td>
                 </tr>
                 #{Enum.map_join(content.blocks, &html_block/1)}
                 #{html_action(content.action)}
@@ -131,6 +135,10 @@ defmodule Emisar.Mailers.Transactional do
 
   defp html_block({:paragraph, paragraph}) do
     ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">#{HTML.escape(paragraph)}</td></tr>)
+  end
+
+  defp html_block({:status, before, status, suffix, tone}) do
+    ~s(<tr><td style="padding:0 0 18px;font-family:#{@font};font-size:15px;line-height:1.65;color:#{@ink_soft};">#{HTML.escape(before)}<strong style="font-weight:700;color:#{status_color(tone)};">#{HTML.escape(status)}</strong>#{HTML.escape(suffix)}</td></tr>)
   end
 
   defp html_block({:section, title}) do
@@ -177,10 +185,16 @@ defmodule Emisar.Mailers.Transactional do
     """
     <tr>
       <td valign="top" style="padding:11px 14px 11px 0;border-bottom:1px solid #{@hairline};font-family:#{@font};font-size:13px;line-height:1.5;color:#{@ink_soft};">#{HTML.escape(label)}</td>
-      <td valign="top" align="right" style="padding:11px 0;border-bottom:1px solid #{@hairline};font-family:#{@font};font-size:13px;line-height:1.5;font-weight:600;color:#{@ink};">#{HTML.escape(value)}</td>
+      <td valign="top" align="right" style="padding:11px 0;border-bottom:1px solid #{@hairline};font-family:#{@font};font-size:13px;line-height:1.5;font-weight:600;color:#{@ink};">#{html_fact_value(value)}</td>
     </tr>
     """
   end
+
+  defp html_fact_value({:link, label, url}) do
+    ~s(<a href="#{HTML.escape(url)}" target="_top" style="color:#{@ink};text-decoration:underline;text-underline-offset:2px;">#{HTML.escape(label)}</a>)
+  end
+
+  defp html_fact_value(value), do: HTML.escape(value)
 
   defp list_item(item) do
     ~s(<tr><td valign="top" width="18" style="padding:3px 0;font-family:#{@font};font-size:15px;line-height:1.55;color:#{@brand};">•</td><td style="padding:3px 0;font-family:#{@font};font-size:14px;line-height:1.55;color:#{@ink_soft};">#{HTML.escape(item)}</td></tr>)
@@ -200,15 +214,20 @@ defmodule Emisar.Mailers.Transactional do
     """
   end
 
-  defp html_footer(footer) do
-    message = if blank?(footer), do: "This message was sent by emisar.", else: footer
-
+  defp html_footer(footer) when is_binary(footer) and footer != "" do
     """
     <tr>
-      <td style="padding:20px 0 0;border-top:1px solid #{@hairline};font-family:#{@font};font-size:12px;line-height:1.65;color:#{@ink_soft};">#{HTML.escape(message)}</td>
+      <td style="padding:20px 0 0;border-top:1px solid #{@hairline};font-family:#{@font};font-size:12px;line-height:1.65;color:#{@ink_soft};">#{HTML.escape(footer)}</td>
     </tr>
     """
   end
+
+  defp html_footer(_footer), do: ""
+
+  defp status_color(:success), do: @brand
+  defp status_color(:warning), do: @amber
+  defp status_color(:danger), do: @rose
+  defp status_color(:neutral), do: @ink
 
   defp indent(value), do: value |> String.split("\n") |> Enum.map_join("\n", &("  " <> &1))
   defp blank?(value), do: is_nil(value) or value == ""

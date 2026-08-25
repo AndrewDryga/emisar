@@ -25,7 +25,6 @@ defmodule Emisar.Mailers.MonthlyReport do
   @ink_soft "#a1a1aa"
   # A zero count: readable at display size, quiet enough to recede.
   @ink_zero "#71717a"
-  @brand "#36e6a5"
   @brand_text "#57ecb2"
   @brand_fill "#14cf8d"
   @rose "#fda4af"
@@ -195,13 +194,10 @@ defmodule Emisar.Mailers.MonthlyReport do
   defp heading(content) do
     """
     <tr>
-      <td style="padding:0 0 10px;font-family:#{@font};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#{@brand};">Monthly report · #{HTML.escape(content.period)}</td>
+      <td style="padding:0 0 14px;font-family:#{@font};font-size:15px;line-height:1.6;color:#{@ink_soft};">Hi #{HTML.escape(content.recipient)},</td>
     </tr>
     <tr>
-      <td style="padding:0 0 14px;font-family:#{@font};font-size:26px;line-height:1.25;font-weight:600;letter-spacing:-0.015em;color:#{@ink};">#{HTML.escape(content.account_name)}</td>
-    </tr>
-    <tr>
-      <td style="padding:0 0 28px;font-family:#{@font};font-size:15px;line-height:1.6;color:#{@ink_soft};">Hi #{HTML.escape(content.recipient)} — here's what you and your agents ran through emisar last month.</td>
+      <td style="padding:0 0 28px;font-family:#{@font};font-size:15px;line-height:1.6;color:#{@ink_soft};">Here's what you and your agents ran through emisar for <strong style="font-weight:600;color:#{@ink};">#{HTML.escape(content.account_name)}</strong> in #{HTML.escape(content.period)}.</td>
     </tr>
     """
   end

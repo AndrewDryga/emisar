@@ -33,37 +33,51 @@ defmodule Emisar.Mailers.UserNotifier do
      Application.get_env(:emisar, :mailer_from_email, "no-reply@emisar.dev")}
   end
 
-  def deliver_account_confirmation(%Users.User{} = user, token) do
+  def deliver_account_confirmation(
+        %Users.User{} = user,
+        token,
+        account \\ nil,
+        context \\ %RequestContext{}
+      ) do
     url = PublicUrl.url("/confirm/#{token}")
 
     deliver_transactional(
       user,
-      "Confirm your emisar account",
-      "Finish setting up your account. This link expires in 7 days.",
+      "Confirm your emisar email",
+      "Confirm #{one_line(user.email)}. This link expires in 7 days.",
       [
-        {:paragraph, "Confirm this email address to finish setting up your emisar account."},
-        {:paragraph, "The link works once and expires in 7 days."},
-        {:paragraph, "If you didn't create this account, you can ignore this email."}
+        {:paragraph, "Confirm #{one_line(user.email)} to finish setting up your emisar sign-in."},
+        {:facts, identity_facts(account, [{"Email", one_line(user.email)}])},
+        {:section, "Request details"},
+        {:pre, request_details(context)},
+        {:paragraph, "This link works once and expires in 7 days."},
+        {:paragraph, "If you didn't request this, ignore this email."}
       ],
       {"Confirm email address", url}
     )
   end
 
-  def deliver_email_change_confirmation(%Users.User{} = user, token) do
+  def deliver_email_change_confirmation(
+        %Users.User{} = user,
+        token,
+        account \\ nil,
+        context \\ %RequestContext{}
+      ) do
     url = PublicUrl.url("/confirm/#{token}")
 
     deliver_transactional(
       user,
       "Confirm your new sign-in email",
-      "Confirm this address before the change expires in 7 days.",
+      "Confirm #{one_line(user.email)} before the link expires in 7 days.",
       [
+        {:paragraph, "Confirm #{one_line(user.email)} as your new emisar sign-in email."},
+        {:facts, identity_facts(account, [{"New email", one_line(user.email)}])},
+        {:section, "Request details"},
+        {:pre, request_details(context)},
         {:paragraph,
-         "Your current sign-in was verified. Confirm this new email address to complete the change."},
-        {:facts, [{"New sign-in email", one_line(user.email)}]},
+         "This link works once and expires in 7 days. Keep using your current email until you confirm the new one."},
         {:paragraph,
-         "The link works once and expires in 7 days. Until you confirm it, this address can't be used to sign in."},
-        {:paragraph,
-         "If you didn't request this change, don't confirm it and contact your workspace administrator."}
+         "If you didn't request this change, don't use the link. Your sign-in email will stay the same."}
       ],
       {"Confirm new email", url}
     )
@@ -74,7 +88,8 @@ defmodule Emisar.Mailers.UserNotifier do
         token_id,
         secret,
         context \\ %RequestContext{},
-        return_to \\ nil
+        return_to \\ nil,
+        account \\ nil
       ) do
     url = PublicUrl.url("/sign_in/magic/#{token_id}/#{secret}#{return_to_query(return_to)}")
 
@@ -83,17 +98,17 @@ defmodule Emisar.Mailers.UserNotifier do
       "Your emisar sign-in code",
       "Your one-time sign-in code expires in 15 minutes.",
       [
-        {:paragraph,
-         "Enter this code on the sign-in page in the browser where you asked to sign in."},
+        {:paragraph, sign_in_instruction(account)},
         {:code, secret},
-        {:paragraph,
-         "The code works once, expires in 15 minutes, and only works in the browser that requested it."},
+        {:facts, identity_facts(account, [])},
+        {:paragraph, "Enter the code in the browser where you asked to sign in."},
+        {:paragraph, "It works once and expires in 15 minutes."},
+        {:paragraph, "For security, the code only works in that browser."},
         {:section, "Request details"},
         {:pre, request_details(context)},
-        {:paragraph,
-         "Didn't ask to sign in? You can ignore this email. If unexpected sign-in emails keep arriving, tell your workspace administrator."}
+        {:paragraph, "If you didn't ask to sign in, ignore this email."}
       ],
-      {"Sign in to emisar", url}
+      {"Sign in", url}
     )
   end
 
@@ -162,20 +177,22 @@ defmodule Emisar.Mailers.UserNotifier do
         %Users.User{} = user,
         code,
         new_email,
-        %RequestContext{} = context
+        %RequestContext{} = context,
+        account \\ nil
       ) do
     deliver_transactional(
       user,
       "Confirm your sign-in email change",
       "Use this code within 15 minutes to continue changing your sign-in email.",
       [
-        {:paragraph, "Enter this code in emisar to continue changing your sign-in email."},
+        {:paragraph, "Use this code to continue changing your emisar sign-in email."},
         {:code, code},
-        {:facts, [{"New email", one_line(new_email)}]},
+        {:facts, identity_facts(account, [{"New email", one_line(new_email)}])},
         {:section, "Request details"},
         {:pre, request_details(context)},
+        {:paragraph, "This code works once and expires in 15 minutes."},
         {:paragraph,
-         "The code works once and expires in 15 minutes. If you didn't request this, ignore the email; your sign-in address will not change without this code."}
+         "If you didn't request this change, ignore the email. Your sign-in email will stay the same."}
       ]
     )
   end
@@ -183,20 +200,22 @@ defmodule Emisar.Mailers.UserNotifier do
   def deliver_mfa_enrollment_code(
         %Users.User{} = user,
         code,
-        %RequestContext{} = context
+        %RequestContext{} = context,
+        account \\ nil
       ) do
     deliver_transactional(
       user,
       "Confirm authenticator setup",
       "Use this code within 15 minutes to continue adding an authenticator.",
       [
-        {:paragraph,
-         "Enter this code in emisar to continue adding an authenticator to your account."},
+        {:paragraph, "Use this code to add an authenticator to your emisar sign-in."},
         {:code, code},
+        {:facts, identity_facts(account, [])},
         {:section, "Request details"},
         {:pre, request_details(context)},
+        {:paragraph, "This code works once and expires in 15 minutes."},
         {:paragraph,
-         "The code works once and expires in 15 minutes. If you didn't start this setup, ignore the email; no authenticator can be added without this code."}
+         "If you didn't start this setup, ignore the email. Your authenticator settings will not change."}
       ]
     )
   end
@@ -227,23 +246,24 @@ defmodule Emisar.Mailers.UserNotifier do
 
     facts =
       [
-        {"Workspace", account_name(request.account)},
+        {"Account", account_fact(request.account)},
         {"Action", label},
         {"Runner", runner_email_label(run)},
         {"Requested by", one_line(requester_name || "Account member")},
         {"Channel", run_source_label(run.source)},
         {"Requested", format_datetime(Map.get(request, :requested_at))},
         {"Expires", format_datetime(Map.get(request, :expires_at))},
-        {"Approvals", "0 of #{quorum} received"},
-        {"Policy", one_line(Map.get(run, :policy_reason) || "No policy reason recorded")},
+        {"Approvals", "0 of #{quorum}"},
+        {"Requester can approve", requester_approval_label(request)},
+        {"Why approval is needed",
+         one_line(Map.get(run, :policy_reason) || "No reason recorded")},
         {"Matched rules", format_matched_rules(run)}
       ]
       |> present_facts()
 
     blocks =
       [
-        {:paragraph,
-         "This action is waiting for your approval. Review the current request before deciding."},
+        {:status, "This action ", "needs your approval", ".", :warning},
         {:facts, facts}
       ]
       |> add_quoted_block("Request reason", Map.get(request, :reason))
@@ -253,17 +273,14 @@ defmodule Emisar.Mailers.UserNotifier do
         {:section, "Redacted arguments"},
         {:pre, format_args_for_email(run, subject)}
       ])
-      |> Kernel.++([{:paragraph, approval_boundary_copy(request)}])
 
     deliver_transactional(
       approver,
       approval_subject(request, label),
-      "Approval needed · 0 of #{quorum} approvals received.",
+      "Needs approval · 0 of #{quorum} approvals received.",
       blocks,
       {"Review approval", url},
-      headers: approval_thread_headers(:requested, request, subject),
-      footer:
-        "You must be signed in and currently authorized to decide. The approval page is the source of current status."
+      headers: approval_thread_headers(:requested, request, subject)
     )
   end
 
@@ -286,36 +303,30 @@ defmodule Emisar.Mailers.UserNotifier do
 
     blocks =
       [
-        {:paragraph,
-         "This frozen runbook plan is waiting for your approval. Review the current request before deciding."},
+        {:status, "This runbook ", "needs your approval", ".", :warning},
         {:facts,
          present_facts([
-           {"Workspace", account_name(request.account)},
+           {"Account", account_fact(request.account)},
            {"Runbook", one_line(title)},
            {"Requested by", one_line(requester_name || "Account member")},
            {"Stages", Integer.to_string(length(stages))},
            {"Actions", Integer.to_string(total)},
            {"Requested", format_datetime(Map.get(request, :requested_at))},
            {"Expires", format_datetime(Map.get(request, :expires_at))},
-           {"Approvals", "0 of #{quorum} received"}
+           {"Approvals", "0 of #{quorum}"},
+           {"Requester can approve", requester_approval_label(request)}
          ])}
       ]
       |> add_quoted_block("Request reason", Map.get(request, :reason))
       |> Kernel.++([{:section, "Frozen execution plan"}, {:pre, format_execution_items(stages)}])
-      |> Kernel.++([
-        {:paragraph,
-         "Approval applies only to this frozen plan. Current policy, runner access, action contracts, and pack trust can still stop dispatch."}
-      ])
 
     deliver_transactional(
       approver,
       approval_subject(request, title),
-      "Approval needed · 0 of #{quorum} approvals received.",
+      "Needs approval · 0 of #{quorum} approvals received.",
       blocks,
       {"Review approval", approval_url(request)},
-      headers: approval_thread_headers(:requested, request, subject),
-      footer:
-        "You must be signed in and currently authorized to decide. The approval page is the source of current status."
+      headers: approval_thread_headers(:requested, request, subject)
     )
   end
 
@@ -327,29 +338,24 @@ defmodule Emisar.Mailers.UserNotifier do
       ) do
     quorum = request_quorum(request)
     count = Map.get(event, :approved_count, 0)
-    {title, preview, lead} = approval_event_copy(event, count, quorum)
+    {preview, lead} = approval_event_copy(event, count, quorum)
 
     facts =
       [
-        {"Workspace", account_name(request.account)},
+        {"Account", account_fact(request.account)},
         {"Request", one_line(approval_decision_label(request))},
-        {"Approvals", "#{count} of #{quorum} received"},
-        {"Status", title},
-        {"Changed by", one_line(Map.get(event, :actor_label))},
-        {"Changed", format_datetime(Map.get(event, :occurred_at))}
+        {"Approvals", "#{count} of #{quorum}"},
+        {"Updated by", one_line(Map.get(event, :actor_label))},
+        {"Updated", format_datetime(Map.get(event, :occurred_at))}
       ]
       |> present_facts()
 
     blocks =
       [
-        {:paragraph, lead},
+        lead,
         {:facts, facts}
       ]
       |> add_quoted_block("Decision note", Map.get(event, :reason))
-      |> Kernel.++([
-        {:paragraph,
-         "This message reports the approval gate only. It does not mean the action was dispatched or completed; open emisar for current status."}
-      ])
 
     deliver_transactional(
       approver,
@@ -357,8 +363,7 @@ defmodule Emisar.Mailers.UserNotifier do
       preview,
       blocks,
       {"View current status", approval_url(request)},
-      headers: approval_thread_headers(event, request, subject),
-      footer: "This update was sent because you are currently eligible to approve this request."
+      headers: approval_thread_headers(event, request, subject)
     )
   end
 
@@ -385,21 +390,16 @@ defmodule Emisar.Mailers.UserNotifier do
 
     blocks =
       [
-        {:paragraph, lead},
+        lead,
         {:facts,
          present_facts([
-           {"Workspace", account_name(request.account)},
+           {"Account", account_fact(request.account)},
            {"Request", one_line(label)},
-           {"Approvals", "#{approved_count} of #{quorum} received"},
-           {"Status", title}
+           {"Approvals", "#{approved_count} of #{quorum}"}
          ])}
       ]
       |> add_quoted_block("Request reason", Map.get(request, :reason))
       |> add_quoted_block("Decision note", Map.get(request, :decision_reason))
-      |> Kernel.++([
-        {:paragraph,
-         "This is the approval outcome, not proof that the action ran. Open emisar for current execution status and the full decision record."}
-      ])
 
     deliver_transactional(
       requester,
@@ -511,23 +511,19 @@ defmodule Emisar.Mailers.UserNotifier do
       "Join #{account_name} on emisar",
       "#{inviter_name} invited you to join #{account_name}. The invitation expires in 7 days.",
       [
-        {:paragraph,
-         "#{inviter_name} invited you to join the #{account_name} workspace on emisar."},
+        {:paragraph, "#{inviter_name} invited you to join #{account_name} on emisar."},
         {:facts,
          [
+           {"Account", account_fact(account)},
            {"Role", Emisar.Auth.role_label(membership.role)},
            {"Runner access", invitation_runner_access(membership)},
            {"Pack access", invitation_pack_access(membership)},
            {"Invitation expires", invitation_expiry(membership)}
          ]},
         {:paragraph,
-         "emisar lets people and agents run declared infrastructure actions within workspace policy, approvals, and audit."},
-        {:paragraph,
-         "If you weren't expecting this invitation, you can ignore it. The link does not grant access until you accept."}
+         "If you weren't expecting this invitation, ignore it. You will not join the account unless you accept."}
       ],
-      {"Accept invitation", url},
-      footer:
-        "After accepting, emisar signs you in with a one-time email link or your workspace identity provider."
+      {"Accept invitation", url}
     )
   end
 
@@ -554,8 +550,26 @@ defmodule Emisar.Mailers.UserNotifier do
   end
 
   defp account_name(%{name: name}) when is_binary(name), do: one_line(name)
+  defp account_name(%{account_name: name}) when is_binary(name), do: one_line(name)
   defp account_name(%{slug: slug}) when is_binary(slug), do: one_line(slug)
-  defp account_name(_account), do: "Workspace"
+  defp account_name(_account), do: "Account"
+
+  defp account_fact(%{slug: slug} = account) when is_binary(slug) do
+    {:link, account_name(account), PublicUrl.url("/app/#{slug}")}
+  end
+
+  defp account_fact(account), do: account_name(account)
+
+  defp identity_facts(nil, facts), do: present_facts(facts)
+
+  defp identity_facts(account, facts) do
+    present_facts([{"Requested from", account_fact(account)} | facts])
+  end
+
+  defp sign_in_instruction(nil), do: "Use this code to sign in to emisar."
+
+  defp sign_in_instruction(account),
+    do: "Use this code to sign in to #{account_name(account)} on emisar."
 
   defp short_id(id) do
     id
@@ -600,13 +614,9 @@ defmodule Emisar.Mailers.UserNotifier do
   defp request_quorum(%{min_approvals: value}) when is_integer(value) and value > 0, do: value
   defp request_quorum(_request), do: 1
 
-  defp approval_boundary_copy(%{allow_self_approval: false}) do
-    "The requester cannot approve this request. Even after approval, current policy and runner checks can still stop dispatch."
-  end
-
-  defp approval_boundary_copy(_request) do
-    "Even after approval, current policy and runner checks can still stop dispatch."
-  end
+  defp requester_approval_label(%{allow_self_approval: false}), do: "No"
+  defp requester_approval_label(%{allow_self_approval: true}), do: "Yes"
+  defp requester_approval_label(_request), do: nil
 
   defp run_source_label(:mcp), do: "MCP"
   defp run_source_label(:runbook), do: "Runbook"
@@ -616,67 +626,99 @@ defmodule Emisar.Mailers.UserNotifier do
     actor = one_line(Map.get(event, :actor_label) || "An approver")
 
     {
-      "Vote recorded",
       "#{actor} approved · #{count} of #{quorum} approvals received.",
-      "#{actor} approved this request. At that decision, the tally became #{count} of #{quorum}. The request may have changed since this email was sent."
+      {:status, "#{actor} ", "approved",
+       " this request. #{count} of #{quorum} approvals received.", :success}
     }
   end
 
   defp approval_event_copy(%{kind: :approved}, count, quorum) do
     {
-      "Approval requirements met",
-      "Approval requirements met · #{count} of #{quorum} approvals received.",
-      "The approval gate completed with #{count} of #{quorum} required approvals. This releases the request for the next dispatch check; it does not confirm execution."
+      "Approved · #{count} of #{quorum} approvals received.",
+      {:status, "This approval request was ", "approved",
+       " with #{count} of #{quorum} approvals.", :success}
     }
   end
 
   defp approval_event_copy(%{kind: :denied} = event, count, quorum) do
     actor = one_line(Map.get(event, :actor_label) || "An approver")
 
-    {"Denied", "#{actor} denied the request.",
-     "#{actor} denied this request. The approval gate is closed at #{count} of #{quorum} approvals."}
+    {
+      "#{actor} denied the request.",
+      {:status, "This approval request was ", "denied",
+       " by #{actor} with #{count} of #{quorum} approvals.", :danger}
+    }
   end
 
   defp approval_event_copy(%{kind: :expired}, count, quorum) do
-    {"Expired", "Approval window expired · #{count} of #{quorum} approvals received.",
-     "The approval window expired before enough approvals were received. The gate closed at #{count} of #{quorum}."}
+    {
+      "Approval expired · #{count} of #{quorum} approvals received.",
+      {:status, "This approval request ", "expired", " with #{count} of #{quorum} approvals.",
+       :warning}
+    }
   end
 
   defp approval_event_copy(%{kind: :cancelled}, count, quorum) do
-    {"Cancelled", "Approval request cancelled.",
-     "The request was cancelled before the approval gate completed. The tally was #{count} of #{quorum}."}
+    {
+      "Approval cancelled · #{count} of #{quorum} approvals received.",
+      {:status, "This approval request was ", "cancelled",
+       " with #{count} of #{quorum} approvals.", :warning}
+    }
   end
 
-  defp approval_event_copy(%{kind: :overridden}, count, quorum) do
-    {"Review requirement overridden",
-     "Review requirement overridden · #{count} of #{quorum} approvals received.",
-     "An authorized owner or administrator used the audited override. The request had #{count} of #{quorum} approvals; the remaining review requirement was waived for this request only."}
+  defp approval_event_copy(%{kind: :overridden} = event, count, quorum) do
+    actor = one_line(Map.get(event, :actor_label) || "An owner or admin")
+
+    {
+      "#{actor} used an emergency override.",
+      {:status, "#{actor} used an ", "emergency override",
+       " after #{count} of #{quorum} approvals.", :warning}
+    }
   end
 
   defp requester_decision_copy(:approved, count, quorum, :overridden) do
-    {"Review requirement overridden",
-     "Your approval request was released with an audited override.",
-     "An authorized owner or administrator overrode the review requirement with #{count} of #{quorum} approvals received. The remaining review requirement was waived for this request only."}
+    {
+      "Approval override used",
+      "An owner or admin used an emergency override.",
+      {:status, "An owner or admin used an ", "emergency override",
+       " after #{count} of #{quorum} approvals.", :warning}
+    }
   end
 
   defp requester_decision_copy(:approved, count, quorum, _event_kind) do
-    {"Approval requirements met", "Your approval request met its review requirement.",
-     "Your request received #{count} of #{quorum} required approvals. It is eligible for the next dispatch check, but this does not confirm execution."}
+    {
+      "Approval complete",
+      "Your approval request was approved.",
+      {:status, "Your approval request was ", "approved",
+       " with #{count} of #{quorum} approvals.", :success}
+    }
   end
 
   defp requester_decision_copy(:denied, count, quorum, _event_kind) do
-    {"Approval denied", "Your approval request was denied.",
-     "Your request was denied with #{count} of #{quorum} required approvals received."}
+    {
+      "Approval denied",
+      "Your approval request was denied.",
+      {:status, "Your approval request was ", "denied", " with #{count} of #{quorum} approvals.",
+       :danger}
+    }
   end
 
   defp requester_decision_copy(:expired, count, quorum, _event_kind) do
-    {"Approval expired", "Your approval request expired.",
-     "Your request expired before enough approvals were received. The gate closed at #{count} of #{quorum}."}
+    {
+      "Approval expired",
+      "Your approval request expired.",
+      {:status, "Your approval request ", "expired", " with #{count} of #{quorum} approvals.",
+       :warning}
+    }
   end
 
   defp requester_decision_copy(:cancelled, count, quorum, _event_kind) do
-    {"Approval cancelled", "Your approval request was cancelled.",
-     "Your request was cancelled with #{count} of #{quorum} required approvals received."}
+    {
+      "Approval cancelled",
+      "Your approval request was cancelled.",
+      {:status, "Your approval request was ", "cancelled",
+       " with #{count} of #{quorum} approvals.", :warning}
+    }
   end
 
   defp add_quoted_block(blocks, _title, nil), do: blocks
@@ -695,8 +737,13 @@ defmodule Emisar.Mailers.UserNotifier do
   defp present_facts(facts) do
     facts
     |> Enum.reject(fn {_label, value} -> is_nil(value) or value == "" end)
-    |> Enum.map(fn {label, value} -> {one_line(label), one_line(value)} end)
+    |> Enum.map(fn {label, value} -> {one_line(label), present_fact_value(value)} end)
   end
+
+  defp present_fact_value({:link, label, url}),
+    do: {:link, one_line(label), one_line(url)}
+
+  defp present_fact_value(value), do: one_line(value)
 
   defp format_datetime(%DateTime{} = datetime),
     do: Calendar.strftime(datetime, "%-d %b %Y at %H:%M UTC")

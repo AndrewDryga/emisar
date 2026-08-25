@@ -641,10 +641,11 @@ defmodule Emisar.Auth do
   so nothing was sent), or `{:error, reason}`.
   """
   def request_magic_link(%Users.User{} = user, %RequestContext{} = context, opts \\ []) do
-    with :ok <- ensure_magic_link_account(Keyword.get(opts, :account_ref)) do
+    with {:ok, account} <- ensure_magic_link_account(Keyword.get(opts, :account_ref)) do
       issue_and_deliver_magic_link(
         user,
         context,
+        account,
         Keyword.get(opts, :return_to),
         Keyword.get(opts, :owner_registration),
         Keyword.get(opts, :prior_magic_link_token_id)
@@ -664,10 +665,10 @@ defmodule Emisar.Auth do
     %{token_id: Repo.generate_id(), nonce: nonce}
   end
 
-  defp ensure_magic_link_account(nil), do: :ok
+  defp ensure_magic_link_account(nil), do: {:ok, nil}
 
   defp ensure_magic_link_account(account_ref) when is_binary(account_ref) do
-    with {:ok, _account} <- Accounts.fetch_account_by_id_or_slug(account_ref), do: :ok
+    Accounts.fetch_account_by_id_or_slug(account_ref)
   end
 
   defp ensure_magic_link_account(_account_ref), do: {:error, :not_found}
@@ -679,11 +680,12 @@ defmodule Emisar.Auth do
   defp issue_and_deliver_magic_link(
          %Users.User{} = user,
          context,
+         account,
          return_to,
          owner_registration,
          prior_token_id
        ) do
-    with {:ok, locked_user, token_id, nonce, secret} <-
+    with {:ok, locked_user, token_id, nonce, secret, registration} <-
            issue_magic_link(
              user.id,
              user.email,
@@ -697,7 +699,8 @@ defmodule Emisar.Auth do
                token_id,
                secret,
                context,
-               return_to
+               return_to,
+               account || registration
              ) do
           {:ok, %{suppressed: true}} -> {:ok, :suppressed}
           {:ok, _sent} -> {:ok, :sent}
@@ -751,8 +754,8 @@ defmodule Emisar.Auth do
       |> Repo.commit_multi()
 
     case result do
-      {:ok, %{user: user, token: token}} ->
-        {:ok, user, token.id, nonce, secret}
+      {:ok, %{user: user, token: token, owner_registration: registration}} ->
+        {:ok, user, token.id, nonce, secret, registration}
 
       {:error, reason} ->
         {:error, reason}
@@ -1281,7 +1284,8 @@ defmodule Emisar.Auth do
               loaded_user,
               code,
               new_email,
-              subject.context
+              subject.context,
+              subject.account
             )
 
           :ok
@@ -1386,7 +1390,12 @@ defmodule Emisar.Auth do
     case result do
       {:ok, %{factor_outcome: {:ok, _email, _user}, email_change: updated}} ->
         _ =
-          Mailers.UserNotifier.deliver_email_change_confirmation(updated, raw_confirmation)
+          Mailers.UserNotifier.deliver_email_change_confirmation(
+            updated,
+            raw_confirmation,
+            subject.account,
+            subject.context
+          )
 
         {:ok, updated}
 
@@ -1454,9 +1463,19 @@ defmodule Emisar.Auth do
   and the portal banner all call this so the token + delivery never drift.
   Best-effort: returns `:ok` regardless of the mailer result.
   """
-  def deliver_confirmation_instructions(%Users.User{} = user) do
+  def deliver_confirmation_instructions(
+        %Users.User{} = user,
+        account \\ nil,
+        context \\ %RequestContext{}
+      ) do
     with {:ok, locked_user, token} <- issue_confirmation_token(user.id) do
-      _ = Mailers.UserNotifier.deliver_account_confirmation(locked_user, token)
+      _ =
+        Mailers.UserNotifier.deliver_account_confirmation(
+          locked_user,
+          token,
+          account,
+          context
+        )
     end
 
     :ok
@@ -1639,7 +1658,8 @@ defmodule Emisar.Auth do
             case Mailers.UserNotifier.deliver_mfa_enrollment_code(
                    locked_user,
                    code,
-                   subject.context
+                   subject.context,
+                   subject.account
                  ) do
               {:ok, %{suppressed: true}} -> {:ok, :suppressed}
               {:ok, _sent} -> {:ok, :sent}

@@ -45,7 +45,7 @@ defmodule EmisarWeb.EmailConfirmationHookTest do
     html = render_click(lv, "resend_confirmation", %{})
 
     assert html =~ "Confirmation email sent to #{user.email}"
-    assert_email_sent(subject: "Confirm your emisar account", to: {"", user.email})
+    assert_email_sent(subject: "Confirm your emisar email", to: {"", user.email})
   end
 
   test "resending while already confirmed sends nothing and says so", %{conn: conn} do

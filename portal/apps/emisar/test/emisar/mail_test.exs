@@ -279,15 +279,26 @@ defmodule Emisar.MailTest do
       %{user: Fixtures.Users.create_user()}
     end
 
-    test "carries the subject, confirm link, expiry, and reassurance line", %{user: user} do
-      UserNotifier.deliver_account_confirmation(user, "tok-confirm")
+    test "carries the email, account origin, request context, confirm link, and expiry", %{
+      user: user
+    } do
+      account = Fixtures.Accounts.create_account(name: "Northstar")
+      context = %RequestContext{ip_address: "203.0.113.12"}
+      UserNotifier.deliver_account_confirmation(user, "tok-confirm", account, context)
 
       assert_email_sent(fn email ->
-        assert email.subject == "Confirm your emisar account"
+        assert email.subject == "Confirm your emisar email"
         assert email.text_body =~ "/confirm/tok-confirm"
         assert email.text_body =~ "expires in 7 days"
-        assert email.text_body =~ "If you didn't create this account"
+        assert email.text_body =~ user.email
+        assert email.text_body =~ "Northstar"
+        assert email.text_body =~ "/app/#{account.slug}"
+        assert email.text_body =~ "203.0.113.12"
+        assert email.text_body =~ "If you didn't request this"
         assert is_binary(email.html_body)
+        refute email.html_body =~ ">Confirm your emisar email</td>"
+        refute email.html_body =~ "This message was sent by emisar"
+        assert email.html_body =~ ~s(href="http://localhost/app/#{account.slug}")
         true
       end)
     end
@@ -312,7 +323,7 @@ defmodule Emisar.MailTest do
         assert email.text_body =~ "15 minutes"
         assert email.html_body =~ ~s(href="http://localhost/sign_in/magic/tok-magic/ABC234")
         assert email.html_body =~ ~s(target="_top")
-        assert email.html_body =~ ">Sign in to emisar</a>"
+        assert email.html_body =~ ">Sign in</a>"
         true
       end)
     end
@@ -378,7 +389,7 @@ defmodule Emisar.MailTest do
 
       assert_email_sent(fn email ->
         assert email.subject == "Confirm authenticator setup"
-        assert email.text_body =~ "adding an authenticator"
+        assert email.text_body =~ "add an authenticator"
         assert email.text_body =~ "XYZ789"
         assert email.text_body =~ "15 minutes"
         assert email.text_body =~ "203.0.113.9"
@@ -418,10 +429,12 @@ defmodule Emisar.MailTest do
         assert email.subject == "Join Globex on emisar"
         assert email.text_body =~ "Dana Inviter"
         assert email.text_body =~ "Globex"
+        assert email.text_body =~ "/app/#{account.slug}"
         assert email.text_body =~ "/accept_invitation/tok-invite"
         assert email.text_body =~ "Role:"
         assert email.text_body =~ "Operator"
         assert email.text_body =~ "Invitation expires:"
+        assert email.html_body =~ ~s(href="http://localhost/app/#{account.slug}")
         assert is_binary(email.html_body)
         true
       end)
@@ -512,7 +525,7 @@ defmodule Emisar.MailTest do
         assert email.text_body =~ ~s("path": "/etc/caddy")
         assert email.text_body =~ ~s("token": "[REDACTED]")
         refute email.text_body =~ "secret-value"
-        assert email.text_body =~ "0 of 1 received"
+        assert email.text_body =~ "0 of 1"
         refute email.text_body =~ "decide_approval"
         assert email.text_body =~ "/app/#{account.slug}/approvals/req-id-123"
         refute email.text_body =~ "/app/approvals/req-id-123"
@@ -559,7 +572,7 @@ defmodule Emisar.MailTest do
       root = "<approval.request.request-123.#{subject.membership_id}@emisar.dev>"
       assert initial.headers["Message-ID"] == root
       refute Map.has_key?(initial.headers, "In-Reply-To")
-      assert initial.text_body =~ "0 of 2 received"
+      assert initial.text_body =~ "0 of 2"
 
       UserNotifier.deliver_approval_event(subject, request, %{
         id: "decision-456",
@@ -575,8 +588,10 @@ defmodule Emisar.MailTest do
       assert update.headers["Message-ID"] =~ "approval.vote.decision-456"
       assert update.headers["In-Reply-To"] == root
       assert update.headers["References"] == root
-      assert update.text_body =~ "1 of 2 received"
-      assert update.text_body =~ "does not mean the action was dispatched or completed"
+      assert update.text_body =~ "1 of 2"
+      assert update.html_body =~ "<strong"
+      assert update.html_body =~ "color:#36e6a5;"
+      refute update.text_body =~ "does not mean the action was dispatched or completed"
     end
 
     test "sanitizes headers and visually quotes hostile request copy", %{
@@ -619,14 +634,14 @@ defmodule Emisar.MailTest do
       }
 
       cases = [
-        {:approved, 3, "approval gate completed with 3 of 3"},
-        {:denied, 1, "approval gate is closed at 1 of 3"},
-        {:expired, 2, "expired before enough approvals were received"},
-        {:cancelled, 1, "cancelled before the approval gate completed"},
-        {:overridden, 1, "remaining review requirement was waived"}
+        {:approved, 3, "approval request was approved with 3 of 3", "#36e6a5"},
+        {:denied, 1, "approval request was denied by Alex Operator with 1 of 3", "#fda4af"},
+        {:expired, 2, "approval request expired with 2 of 3", "#fcd34d"},
+        {:cancelled, 1, "approval request was cancelled with 1 of 3", "#fcd34d"},
+        {:overridden, 1, "used an emergency override after 1 of 3", "#fcd34d"}
       ]
 
-      Enum.each(cases, fn {kind, count, expected} ->
+      Enum.each(cases, fn {kind, count, expected, color} ->
         UserNotifier.deliver_approval_event(subject, request, %{
           id: "event-#{kind}",
           kind: kind,
@@ -639,7 +654,8 @@ defmodule Emisar.MailTest do
         assert_receive {:email, email}
         assert email.subject =~ "Approval · linux.uptime"
         assert email.text_body =~ expected
-        assert email.text_body =~ "#{count} of 3 received"
+        assert email.text_body =~ "#{count} of 3"
+        assert email.html_body =~ "color:#{color};"
         assert email.headers["In-Reply-To"] == email.headers["References"]
         assert is_binary(email.html_body)
       end)
@@ -760,11 +776,12 @@ defmodule Emisar.MailTest do
       UserNotifier.deliver_approval_decision(requester, request)
 
       assert_email_sent(fn email ->
-        assert email.subject == "Approval requirements met · caddy.reload_config"
-        assert email.text_body =~ "received 0 of 1 required approvals"
+        assert email.subject == "Approval complete · caddy.reload_config"
+        assert email.text_body =~ "approved with 0 of 1 approvals"
         assert email.text_body =~ "rotate the cert"
         assert email.text_body =~ "confirmed with the on-call"
         assert email.text_body =~ "/app/globex/approvals/req-decided-1"
+        refute email.text_body =~ "not proof that the action ran"
         # The approval page is the only place arguments are shown.
         refute email.text_body =~ "Arguments"
         refute email.text_body =~ "abc"
@@ -808,7 +825,7 @@ defmodule Emisar.MailTest do
 
       assert_email_sent(fn email ->
         assert email.subject == "Approval expired · linux.systemctl_restart"
-        assert email.text_body =~ "expired before enough approvals were received"
+        assert email.text_body =~ "expired with 0 of 1 approvals"
         true
       end)
     end
@@ -829,10 +846,10 @@ defmodule Emisar.MailTest do
       UserNotifier.deliver_approval_decision(requester, request, 1, :overridden)
 
       assert_email_sent(fn email ->
-        assert email.subject == "Review requirement overridden · postgres.restore"
-        assert email.text_body =~ "with 1 of 3 approvals received"
-        assert email.text_body =~ "remaining review requirement was waived"
-        refute email.text_body =~ "Approval requirements met"
+        assert email.subject == "Approval override used · postgres.restore"
+        assert email.text_body =~ "emergency override after 1 of 3 approvals"
+        assert email.html_body =~ "color:#fcd34d;"
+        refute email.text_body =~ "remaining review requirement was waived"
         true
       end)
     end

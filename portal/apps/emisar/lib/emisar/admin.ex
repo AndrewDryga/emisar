@@ -211,7 +211,9 @@ defmodule Emisar.Admin do
       {:error, :not_found} ->
         with {:ok, user} <- Users.fetch_or_create_user_by_email(String.trim(email)),
              {:ok, account} <- Accounts.create_account_with_owner(%{name: name, slug: slug}, user) do
-          if is_nil(user.confirmed_at), do: Auth.deliver_confirmation_instructions(user)
+          if is_nil(user.confirmed_at),
+            do: Auth.deliver_confirmation_instructions(user, account)
+
           {:ok, account |> account_result() |> Map.put(:created, true)}
         end
     end

@@ -74,7 +74,7 @@ defmodule Emisar.Mailers.MonthlyReportTest do
       rendered = MonthlyReport.render(recipient, account, report(), "https://emisar.dev/u")
 
       assert rendered.text =~ "Hi nameless@example.com,"
-      assert rendered.html =~ "Hi nameless@example.com —"
+      assert rendered.html =~ "Hi nameless@example.com,"
     end
 
     test "reports the approvals that gated work in both bodies" do

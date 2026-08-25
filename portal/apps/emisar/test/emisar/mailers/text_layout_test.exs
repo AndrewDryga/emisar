@@ -22,9 +22,6 @@ defmodule Emisar.Mailers.TextLayoutTest do
   alias Emisar.RequestContext
   alias Emisar.Runs
 
-  # The one prose line that is deliberately a fragment.
-  @signoff "— emisar"
-
   describe "every transactional email" do
     test "keeps each paragraph on one line" do
       Enum.each(bodies(), fn {email, body} ->
@@ -47,13 +44,13 @@ defmodule Emisar.Mailers.TextLayoutTest do
 
   # Structure sets its own measure and is not prose: the blank line between
   # blocks, an indented code or `Label:` block, an ALL-CAPS section eyebrow, a
-  # line carrying a URL, and the signoff. What remains is a sentence.
+  # line carrying a URL. What remains is a sentence.
   defp prose_lines(body) do
     body
     |> String.split("\n")
     |> Enum.reject(fn line ->
       line == "" or String.starts_with?(line, " ") or line =~ ~r{https?://} or
-        String.upcase(line) == line or line == @signoff
+        String.upcase(line) == line
     end)
   end
 
@@ -69,25 +66,32 @@ defmodule Emisar.Mailers.TextLayoutTest do
     user = Fixtures.Users.create_user(full_name: "Andrew Dryga")
     account = Fixtures.Accounts.create_account(name: "Fleet Ops")
 
-    UserNotifier.deliver_account_confirmation(user, "tok-confirm")
+    UserNotifier.deliver_account_confirmation(user, "tok-confirm", account, request_context())
     confirmation = sent_text_body()
 
-    UserNotifier.deliver_email_change_confirmation(user, "tok-new-email")
+    UserNotifier.deliver_email_change_confirmation(
+      user,
+      "tok-new-email",
+      account,
+      request_context()
+    )
+
     email_change_confirmation = sent_text_body()
 
-    UserNotifier.deliver_magic_link(user, "tok", "ABC234", request_context())
+    UserNotifier.deliver_magic_link(user, "tok", "ABC234", request_context(), nil, account)
     magic_link = sent_text_body()
 
     UserNotifier.deliver_email_change_code(
       user,
       "ABC234",
       "new@example.com",
-      request_context()
+      request_context(),
+      account
     )
 
     email_change = sent_text_body()
 
-    UserNotifier.deliver_mfa_enrollment_code(user, "ABC234", request_context())
+    UserNotifier.deliver_mfa_enrollment_code(user, "ABC234", request_context(), account)
     mfa_enrollment = sent_text_body()
 
     invitation_membership =
