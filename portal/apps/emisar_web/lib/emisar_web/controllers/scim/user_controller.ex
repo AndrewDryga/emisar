@@ -17,7 +17,7 @@ defmodule EmisarWeb.SCIM.UserController do
   """
   use EmisarWeb, :controller
   alias Emisar.SSO
-  alias EmisarWeb.SCIM.Resource
+  alias EmisarWeb.SCIM.{Resource, Response}
 
   plug EmisarWeb.SCIM.Auth
 
@@ -176,9 +176,15 @@ defmodule EmisarWeb.SCIM.UserController do
   defp render_current(conn, status, id) do
     case SSO.scim_fetch_user(conn.assigns.scim_provider, id) do
       {:ok, scim_user} ->
-        conn
-        |> put_status(status)
-        |> json(Resource.to_user(scim_user))
+        resource = Resource.to_user(scim_user)
+
+        if status == :created do
+          Response.created(conn, :user, id, resource)
+        else
+          conn
+          |> put_status(status)
+          |> json(resource)
+        end
 
       {:error, :not_found} ->
         not_found(conn, id)

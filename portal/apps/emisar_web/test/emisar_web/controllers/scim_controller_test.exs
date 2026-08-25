@@ -269,16 +269,20 @@ defmodule EmisarWeb.SCIMControllerTest do
       token: token,
       account: account
     } do
-      body =
+      conn =
         conn
         |> scim_post(token, ~p"/scim/v2/Users", user_payload("okta|new", email: "new@acme.test"))
-        |> json_response(201)
+
+      body = json_response(conn, 201)
+      location = Emisar.PublicUrl.url("/scim/v2/Users/#{body["id"]}")
 
       assert body["schemas"] == ["urn:ietf:params:scim:schemas:core:2.0:User"]
       assert body["externalId"] == "okta|new"
       assert body["userName"] == "new@acme.test"
       assert body["active"] == true
       assert body["meta"]["resourceType"] == "User"
+      assert body["meta"]["location"] == location
+      assert get_resp_header(conn, "location") == [location]
       assert Repo.valid_uuid?(body["id"])
       refute body["id"] == body["externalId"]
 
@@ -972,7 +976,9 @@ defmodule EmisarWeb.SCIMControllerTest do
         SSO.scim_provision_user(provider, %{external_id: "okta|redel", email: "redel@acme.test"})
 
       path = "/scim/v2/Users/#{identity.id}"
-      assert conn |> auth(token) |> delete(path) |> response(204)
+      deleted = conn |> auth(token) |> delete(path)
+      assert response(deleted, 204)
+      assert get_resp_header(deleted, "content-type") == ["application/scim+json; charset=utf-8"]
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
 
       assert conn |> recycle() |> auth(token) |> delete(path) |> json_response(404)
@@ -1878,19 +1884,24 @@ defmodule EmisarWeb.SCIMControllerTest do
   # -- Response envelope -----------------------------------------------
 
   describe "response envelope" do
-    test "the outbound content-type is `application/json`, not `application/scim+json`", %{
+    test "success and error responses use the SCIM JSON media type", %{
       conn: conn
     } do
       %{token: token} = scim_provider()
 
-      conn = conn |> auth(token) |> get(~p"/scim/v2/ServiceProviderConfig")
-      assert json_response(conn, 200)
+      success = conn |> auth(token) |> get(~p"/scim/v2/ServiceProviderConfig")
+      error = conn |> auth(token) |> get(~p"/scim/v2/Users/not-a-resource")
+      unauthorized = get(conn, ~p"/scim/v2/Users")
 
-      # We respond via Phoenix `json/2`, so the content-type is plain
-      # `application/json`. The `+json` SCIM suffix is accepted INBOUND only
-      # (router :scim pipeline); strict clients expecting `application/scim+json`
-      # back would be surprised — documented here so the choice is deliberate.
-      assert get_resp_header(conn, "content-type") == ["application/json; charset=utf-8"]
+      assert json_response(success, 200)
+      assert json_response(error, 404)
+      assert json_response(unauthorized, 401)
+
+      for response <- [success, error, unauthorized] do
+        assert get_resp_header(response, "content-type") == [
+                 "application/scim+json; charset=utf-8"
+               ]
+      end
     end
   end
 

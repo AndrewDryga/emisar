@@ -18,7 +18,7 @@ defmodule EmisarWeb.SCIM.GroupController do
   """
   use EmisarWeb, :controller
   alias Emisar.SSO
-  alias EmisarWeb.SCIM.Resource
+  alias EmisarWeb.SCIM.{Resource, Response}
 
   plug EmisarWeb.SCIM.Auth
   @max_group_member_ids 5_000
@@ -106,41 +106,60 @@ defmodule EmisarWeb.SCIM.GroupController do
   # GET /scim/v2/Groups — the provider's synced groups. `filter` carries the
   # `displayName eq "..."` probe Entra makes before every push; answering it is
   # what stops the IdP re-creating a group it already synced on every cycle.
-  # An unparseable filter lists everything rather than erroring — a broad answer
-  # still lets the IdP find its group, where a 400 fails the whole sync.
+  # A present filter we cannot honor is declined instead of silently returning
+  # the whole directory and letting an existence probe mistake any result for a
+  # match.
   def index(conn, params) do
     provider = conn.assigns.scim_provider
-    opts = display_name_filter(params)
 
-    case Resource.parse_pagination(params) do
-      {:ok, page} ->
-        {:ok, groups, total_results} =
-          SSO.scim_list_groups(
-            provider,
-            opts ++ [offset: page.start_index - 1, limit: page.count]
-          )
-
-        resources = Enum.map(groups, &Resource.to_group(&1, &1.member_ids))
-        json(conn, Resource.list_response(resources, total_results, page.start_index))
-
-      {:error, :invalid_pagination} ->
+    case display_name_filter(Map.get(params, "filter")) do
+      :unsupported ->
         bad_request(
           conn,
-          "invalidValue",
-          "SCIM `startIndex` and `count` must be base-10 integers."
+          "invalidFilter",
+          ~s(Only `displayName eq "..."` filters are supported.)
         )
+
+      opts ->
+        case Resource.parse_pagination(params) do
+          {:ok, page} ->
+            {:ok, groups, total_results} =
+              SSO.scim_list_groups(
+                provider,
+                opts ++ [offset: page.start_index - 1, limit: page.count]
+              )
+
+            resources = Enum.map(groups, &Resource.to_group(&1, &1.member_ids))
+            json(conn, Resource.list_response(resources, total_results, page.start_index))
+
+          {:error, :invalid_pagination} ->
+            bad_request(
+              conn,
+              "invalidValue",
+              "SCIM `startIndex` and `count` must be base-10 integers."
+            )
+        end
     end
   end
 
-  # `displayName eq "Platform Engineers"` — the only Group filter IdPs send.
-  defp display_name_filter(%{"filter" => filter}) when is_binary(filter) do
-    case Regex.run(~r/^\s*displayName\s+eq\s+"(.*)"\s*$/i, filter) do
+  # `displayName eq "Platform Engineers"` — the only Group filter we promise.
+  defp display_name_filter(nil), do: []
+
+  defp display_name_filter(filter) when is_binary(filter) do
+    case Regex.run(~r/^\s*displayName\s+eq\s+"([^"]*)"\s*$/i, filter) do
       [_, value] -> [display_name: value]
-      _ -> []
+      _ -> unquoted_display_name_filter(filter)
     end
   end
 
-  defp display_name_filter(_params), do: []
+  defp display_name_filter(_filter), do: :unsupported
+
+  defp unquoted_display_name_filter(filter) do
+    case Regex.run(~r/^\s*displayName\s+eq\s+([^\s"]+)\s*$/i, filter) do
+      [_, value] -> [display_name: value]
+      _ -> :unsupported
+    end
+  end
 
   defp oversized_members?(members) when is_list(members),
     do: length(members) > @max_group_member_ids
@@ -153,9 +172,15 @@ defmodule EmisarWeb.SCIM.GroupController do
   # -- rendering ------------------------------------------------------
 
   defp render_group(conn, status, summary) do
-    conn
-    |> put_status(status)
-    |> json(Resource.to_group(summary, summary.member_ids))
+    resource = Resource.to_group(summary, summary.member_ids)
+
+    if status == :created do
+      Response.created(conn, :group, summary.id, resource)
+    else
+      conn
+      |> put_status(status)
+      |> json(resource)
+    end
   end
 
   defp render_error(conn, :invalid_scim_group),

@@ -134,7 +134,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       identity = provision(provider, "okta|u1")
       assert role_of(account.id, identity.user_id) == :viewer
 
-      body =
+      conn =
         conn
         |> scim_send(
           token,
@@ -142,7 +142,9 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
           ~p"/scim/v2/Groups",
           group_payload("grp-ops", [identity.id], display: "Operators")
         )
-        |> json_response(201)
+
+      body = json_response(conn, 201)
+      location = Emisar.PublicUrl.url("/scim/v2/Groups/#{body["id"]}")
 
       # The SCIM Group resource.
       assert body["schemas"] == ["urn:ietf:params:scim:schemas:core:2.0:Group"]
@@ -152,6 +154,8 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["displayName"] == "Operators"
       assert body["members"] == [%{"value" => identity.id}]
       assert body["meta"]["resourceType"] == "Group"
+      assert body["meta"]["location"] == location
+      assert get_resp_header(conn, "location") == [location]
 
       # The member's role was recomputed to the mapped role.
       assert role_of(account.id, identity.user_id) == :operator
@@ -1351,6 +1355,44 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
         |> json_response(200)
 
       assert missed["totalResults"] == 0
+
+      unquoted =
+        conn
+        |> auth(token)
+        |> get(~p"/scim/v2/Groups?filter=displayName eq Nobody")
+        |> json_response(200)
+
+      assert unquoted["totalResults"] == 0
+    end
+
+    test "GET /Groups rejects unsupported and malformed filters instead of listing all", %{
+      conn: conn,
+      token: token,
+      provider: provider
+    } do
+      identity = provision(provider, "okta|filter")
+
+      {:ok, _} =
+        SSO.scim_upsert_group(provider, %{
+          external_id: "grp-filter",
+          display: "Platform Engineers",
+          member_ids: [identity.id]
+        })
+
+      for filter <- [~s(displayName co "Platform"), ~s(displayName eq "unterminated)] do
+        response =
+          conn
+          |> auth(token)
+          |> get(~p"/scim/v2/Groups?filter=#{filter}")
+
+        body = json_response(response, 400)
+        assert body["scimType"] == "invalidFilter"
+        assert body["status"] == "400"
+
+        assert get_resp_header(response, "content-type") == [
+                 "application/scim+json; charset=utf-8"
+               ]
+      end
     end
 
     test "GET /Groups/:id round-trips a pushed group", %{

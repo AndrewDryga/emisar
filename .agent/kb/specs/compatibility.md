@@ -329,7 +329,7 @@ parses are load-bearing for specific IdPs and are part of the contract: the
 case-insensitive and schemeless `Authorization` header (Okta header-auth
 apps), unquoted `eq` filter values, and the externalId-less Group create used by
 JumpCloud's activation probe. An unsupported Users filter fails with 400 `invalidFilter`;
-an unparseable Groups filter deliberately lists everything instead.
+unsupported or unparseable Group filters fail with the same 400 `invalidFilter` response.
 
 **What happens on skew.** An IdP sending an unsupported operation gets an
 explicit SCIM error (`invalidPath`, `invalidFilter`, `tooMany`, 409

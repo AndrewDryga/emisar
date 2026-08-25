@@ -59,6 +59,8 @@ defmodule EmisarWeb.Router do
   # content-type resolves to the `json` extension via MIME's `+json` suffix,
   # so `:accepts ["json"]` accepts it and Plug.Parsers' :json entry parses it.
   pipeline :scim do
+    plug EmisarWeb.SCIM.Response
+
     # Two limits, because one cannot do both jobs. The per-credential limit is
     # the real budget, but it can only bucket what the caller PRESENTS, and a
     # fabricated token parses as happily as a real one — so rotating credentials
@@ -69,13 +71,15 @@ defmodule EmisarWeb.Router do
       bucket: "scim_ip",
       limit: 1_200,
       window_ms: 60_000,
-      by: :ip
+      by: :ip,
+      on_reject: {EmisarWeb.SCIM.Response, :rate_limited}
 
     plug EmisarWeb.Plugs.RateLimit,
       bucket: "scim",
       limit: 300,
       window_ms: 60_000,
-      by: :bearer
+      by: :bearer,
+      on_reject: {EmisarWeb.SCIM.Response, :rate_limited}
 
     plug :accepts, ["json"]
   end
