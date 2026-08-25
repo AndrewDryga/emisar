@@ -923,6 +923,12 @@ the commit button, where the operator can reach the action before reading what i
     the row top-aligned and bottom-align only the select and buttons inside their own action cluster.
     Sweep: a titled queue whose first identity begins visibly below the first control label because the
     outer row uses `items-end`.
+78. **A composite section owns its heading-to-body spacing once.** When a grid wrapper places the
+    heading and body in separate rows with `gap-y-*`, neutralize the shared section header's bottom
+    margin inside that wrapper. Letting both margins survive doubles the normal rhythm and detaches the
+    first status or field from its heading. Keep the shared header default for ordinary document flow;
+    only the composite wrapper replaces it with its row gap. Sweep: a `section_header` inside a grid
+    row followed by another grid row where both `mb-*` and `gap-y-*` separate the same two blocks.
 
 ## 8. The kit is the contract
 

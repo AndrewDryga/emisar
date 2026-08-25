@@ -1062,6 +1062,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert has_element?(lv, "#disable-scim-#{provider.id}")
       assert sync_controls =~ "Rotate token"
       assert sync_controls =~ "Disable"
+      assert sync_controls =~ "first-child]:mb-0"
       refute sync_controls =~ "Enabled"
 
       reloaded = Repo.reload!(provider)

@@ -2541,7 +2541,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       id={@id}
       class="grid min-w-0 grid-cols-1 gap-x-12 gap-y-4 xl:col-span-2 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
     >
-      <div class="min-w-0 xl:col-start-1 xl:row-start-1">
+      <div class="min-w-0 [&>*:first-child]:mb-0 xl:col-start-1 xl:row-start-1">
         {render_slot(@header)}
       </div>
       <div class="min-w-0 [&>*:first-child]:mt-0 xl:col-start-1 xl:row-start-2">
