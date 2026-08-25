@@ -239,8 +239,10 @@ button competing below the ordinary decision. When the normal mutation exists, k
 the dominant half of a split button and put the exceptional alternative in the adjacent
 menu. When policy removes the normal mutation (for example, self-approval is blocked), show
 one compact bordered exception button in the same action cluster. Selecting either entry
-opens the focused confirmation; that dialog owns the consequence, required reason, and any
-typed-confirm friction. Server authorization, audit, and mutation semantics remain distinct.
+opens the focused confirmation; that dialog owns the consequence and required reason. A mandatory
+reason is already deliberate confirmation, so do not stack a typed challenge on top unless a
+separate high-blast-radius hazard genuinely requires both. Server authorization, audit, and
+mutation semantics remain distinct.
 
 ## 6. Density budgets
 

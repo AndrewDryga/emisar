@@ -26,7 +26,7 @@ defmodule EmisarWeb.Components.ButtonTest do
     <CoreComponents.split_button id="approve" menu_label="More approval actions" {@attrs}>
       Approve and send
       <:menu>
-        <CoreComponents.menu_item tone={:amber}>Override required reviews…</CoreComponents.menu_item>
+        <CoreComponents.menu_item tone={:amber}>Approve using override</CoreComponents.menu_item>
       </:menu>
     </CoreComponents.split_button>
     """)
@@ -98,7 +98,7 @@ defmodule EmisarWeb.Components.ButtonTest do
       assert html =~ ~s(value="approve")
       assert html =~ "Approve and send"
       assert html =~ "More approval actions"
-      assert html =~ "Override required reviews…"
+      assert html =~ "Approve using override"
       assert html =~ ~s(id="approve-menu")
       assert html =~ "data-dropdown-panel"
     end

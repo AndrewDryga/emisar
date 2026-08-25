@@ -1128,15 +1128,16 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert has_element?(
              lv,
              "#approval-action-split-menu button",
-             "Override required reviews…"
+             "Approve using override"
            )
 
-    assert has_element?(lv, "#override-approval-reviews", "Override required reviews?")
+    assert has_element?(lv, "#override-approval-reviews", "Approve using override?")
+    refute has_element?(lv, "#override-approval-reviews-form")
 
     assert has_element?(
              lv,
              "#override-approval-reviews button[disabled]",
-             "Override and send"
+             "Approve using override"
            )
 
     lv
@@ -1151,23 +1152,13 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     assert has_element?(lv, "#override-approval-reviews", "linux.uptime")
 
-    type_confirm_token(lv, "override-approval-reviews", "wrong")
-
-    assert has_element?(
-             lv,
-             "#override-approval-reviews button[disabled]",
-             "Override and send"
-           )
-
-    type_confirm_token(lv, "override-approval-reviews", "OVERRIDE")
-
     refute has_element?(
              lv,
              "#override-approval-reviews button[disabled]",
-             "Override and send"
+             "Approve using override"
            )
 
-    html = confirm_dialog(lv, "override-approval-reviews", "Override and send")
+    html = confirm_dialog(lv, "override-approval-reviews", "Approve using override")
 
     assert html =~ "Approval override recorded. The action was released for dispatch."
     assert has_element?(lv, ~s([data-shot="approval-verdict"]), "approved")
@@ -1238,7 +1229,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert has_element?(
              lv,
              ~s([data-shot="approval-override"] button),
-             "Override required reviews…"
+             "Approve using override"
            )
 
     html = render_hook(lv, "override", %{"reason" => "No second reviewer is available"})
@@ -1283,7 +1274,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert has_element?(
              lv,
              ~s([data-shot="approval-override"] button),
-             "Override required reviews…"
+             "Approve using override"
            )
   end
 

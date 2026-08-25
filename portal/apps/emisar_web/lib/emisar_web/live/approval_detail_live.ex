@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ApprovalDetailLive do
   use EmisarWeb, :live_view
   alias Emisar.{Approvals, Audit, Catalog, Runners, Runs}
-  alias EmisarWeb.{ConfirmDialog, Permissions, RunbookWorkflowComponents}
+  alias EmisarWeb.{Permissions, RunbookWorkflowComponents}
 
   # The full grant-reuse duration menu (label + posted value), in display order.
   # `grant_duration_options/1` narrows it to what the account's lifetime cap
@@ -21,7 +21,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp mount_disconnected(socket) do
     {:ok,
      socket
-     |> ConfirmDialog.init()
      |> assign(:loaded?, false)
      |> assign(:page_title, "Approval")
      |> assign(:request, nil)
@@ -77,7 +76,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
         {:ok,
          socket
-         |> ConfirmDialog.init()
          |> assign(:loaded?, true)
          |> assign(:page_title, title)
          |> assign_request(request)
@@ -361,12 +359,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
     {:noreply, update(socket, :grant_reuse_open?, &(not &1))}
   end
 
-  def handle_event("confirm_typed", params, socket),
-    do: {:noreply, ConfirmDialog.put_typed(socket, params)}
-
-  def handle_event("confirm_reset", _params, socket),
-    do: {:noreply, ConfirmDialog.reset(socket)}
-
   def handle_event("override_form_changed", params, socket) do
     {:noreply, assign_override_fields(socket, params)}
   end
@@ -481,7 +473,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
           {:ok, {request, target}} ->
             {:noreply,
              socket
-             |> ConfirmDialog.reset()
              |> assign_request(request)
              |> assign_decisions(request)
              |> put_flash(:info, override_success_message(target))}
@@ -522,7 +513,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp override_failed(socket, :override_reason_required, params) do
     {:noreply,
      socket
-     |> ConfirmDialog.reset()
      |> assign_override_fields(params)
      |> assign(:override_reason_error, "Explain why the required reviews cannot be completed.")}
   end
@@ -530,7 +520,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp override_failed(socket, :decision_reason_too_long, params) do
     {:noreply,
      socket
-     |> ConfirmDialog.reset()
      |> assign_override_fields(params)
      |> assign(
        :override_reason_error,
@@ -541,7 +530,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp override_failed(socket, :unauthorized, _params) do
     {:noreply,
      socket
-     |> ConfirmDialog.reset()
      |> put_flash(:error, "Only current owners and admins can override required reviews.")
      |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/approvals")}
   end
@@ -549,7 +537,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp override_failed(socket, :not_found, _params) do
     {:noreply,
      socket
-     |> ConfirmDialog.reset()
      |> put_flash(:error, "Approval is no longer available under your current access.")
      |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/approvals")}
   end
@@ -558,7 +545,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
        when reason in [:action_not_found, :pack_untrusted, :pack_retired, :action_unavailable] do
     {:noreply,
      socket
-     |> ConfirmDialog.reset()
      |> assign_override_fields(params)
      |> assign(:unavailable_action_id, socket.assigns.request.context["action_id"])
      |> put_flash(:error, decision_error_message(reason))}
@@ -567,7 +553,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp override_failed(socket, reason, _params) do
     {:noreply,
      socket
-     |> ConfirmDialog.reset()
      |> refetch_request()
      |> put_flash(:error, decision_error_message(reason))}
   end
@@ -1214,7 +1199,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
               decision_reason_error={@decision_reason_error}
               override_reason={@override_reason}
               override_reason_error={@override_reason_error}
-              typed={@typed}
               request_title={request_title(@request)}
               grant_duration_options={@grant_duration_options}
               grant_reuse_open?={@grant_reuse_open?}
@@ -1252,7 +1236,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   attr :decision_reason_error, :string, default: nil
   attr :override_reason, :string, default: ""
   attr :override_reason_error, :string, default: nil
-  attr :typed, :string, default: ""
   attr :request_title, :string, required: true
   # Drives the reuse-window UI: the Match / Limit-to fields only show
   # once a real grant is being minted (duration != "once"). Defaulted so
@@ -1376,9 +1359,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
               tone={:amber}
               class="w-full"
               icon="action.approve"
-              phx-click={show_confirm_dialog("override-approval-reviews")}
+              phx-click={open_confirm("override-approval-reviews")}
             >
-              Override required reviews…
+              Approve using override
             </.button>
           </div>
         <% true -> %>
@@ -1557,10 +1540,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
                     icon="state.warning"
                     phx-click={
                       JS.remove_attribute("open", to: "#approval-action-split-menu")
-                      |> show_confirm_dialog("override-approval-reviews")
+                      |> open_confirm("override-approval-reviews")
                     }
                   >
-                    Override required reviews…
+                    Approve using override
                   </.menu_item>
                 </:menu>
               </.split_button>
@@ -1585,9 +1568,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
                 tone={:amber}
                 class="w-full"
                 icon="action.approve"
-                phx-click={show_confirm_dialog("override-approval-reviews")}
+                phx-click={open_confirm("override-approval-reviews")}
               >
-                Override required reviews…
+                Approve using override
               </.button>
             </div>
             <.button
@@ -1608,7 +1591,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
         :if={@override_available?}
         reason={@override_reason}
         reason_error={@override_reason_error}
-        typed={@typed}
         request_title={@request_title}
         approved_count={@approved_count}
         min_approvals={@min_approvals}
@@ -1620,7 +1602,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   attr :reason, :string, required: true
   attr :reason_error, :string, default: nil
-  attr :typed, :string, required: true
   attr :request_title, :string, required: true
   attr :approved_count, :integer, required: true
   attr :min_approvals, :integer, required: true
@@ -1630,29 +1611,26 @@ defmodule EmisarWeb.ApprovalDetailLive do
     ~H"""
     <.confirm_dialog
       id="override-approval-reviews"
-      title="Override required reviews?"
-      confirm_label="Override and send"
-      confirm_token="OVERRIDE"
-      typed={@typed}
+      title="Approve using override?"
+      confirm_label="Approve using override"
       disabled={not override_reason_present?(@reason)}
       tone={:amber}
       on_confirm={
         JS.push("override", value: %{reason: @reason})
-        |> hide_confirm_dialog("override-approval-reviews")
+        |> close_confirm("override-approval-reviews")
       }
     >
       <:body>
-        This releases <span class="font-medium break-words text-zinc-100">{@request_title}</span>
+        This approves <span class="font-medium break-words text-zinc-100">{@request_title}</span>
         with
         <span class="font-medium text-zinc-200">
           {@approved_count} of {@min_approvals} required approvals
         </span>
-        and waives {remaining_approval_count(@approved_count, @min_approvals)} remaining {plural(
+        and skips {remaining_approval_count(@approved_count, @min_approvals)} remaining {plural(
           remaining_approval_count(@approved_count, @min_approvals),
           "review"
-        )}. <span :if={@self_blocked?}>It also waives the policy’s self-approval rule.</span>
-        Scope, expiry, trust, signature, initiator authorization, and runner checks still
-        apply. The exception creates no standing grant; its reason is written to the audit trail.
+        )}. <span :if={@self_blocked?}>It also skips the self-approval rule.</span>
+        All other policy and runner checks still apply.
       </:body>
       <:fields>
         <form id="approval-override-form" phx-change="override_form_changed" class="space-y-2">
@@ -1663,7 +1641,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             value={@reason}
             rows="3"
             maxlength={Approvals.max_decision_reason_length()}
-            label="Override reason"
+            label="Reason"
             label_variant={:eyebrow}
             placeholder="Why can’t the required reviews be completed?"
             required
