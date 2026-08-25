@@ -1597,7 +1597,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert_email_sent(fn sent ->
         sent.to == [{"", email}] and
-          sent.subject == "You're invited to #{account.name} on emisar" and
+          sent.subject == "Join #{account.name} on emisar" and
           sent.text_body =~ "/accept_invitation/"
       end)
     end
