@@ -998,7 +998,9 @@ defmodule EmisarWeb.ProfileLive do
                 />
                 <.error :if={@mfa_disable_error}>{@mfa_disable_error}</.error>
                 <:actions>
-                  <.button phx-disable-with="Disabling...">Disable 2FA</.button>
+                  <.button variant={:secondary} tone={:rose} phx-disable-with="Disabling...">
+                    Disable 2FA
+                  </.button>
                   <.button
                     variant={:ghost}
                     type="button"
