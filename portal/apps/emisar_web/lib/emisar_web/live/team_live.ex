@@ -1608,139 +1608,6 @@ defmodule EmisarWeb.TeamLive do
 
       <.loading_state :if={@live_action == :index and @loading?} />
 
-      <%!-- The queue read failed for someone who administers it, so the section
-           below would disappear along with the people waiting in it. --%>
-      <section
-        :if={@live_action == :index and not @loading? and @pending_requests_error?}
-        class="mb-8"
-      >
-        <.section_header title="Pending access requests" />
-        <.empty_state
-          variant={:hint}
-          tone={:danger}
-          icon="state.warning"
-          title="Couldn't load access requests"
-        >
-          This is a load error, not an empty queue — someone may be locked out waiting on you.
-          Refresh the page to try again.
-        </.empty_state>
-      </section>
-
-      <%!-- Pending SSO access requests — people blocked waiting for an admin,
-           across every connection. Time-sensitive, so it leads the page, full
-           width above the roster + Security panel. Only an SSO admin with
-           requests sees it (the read gates on manage_sso + plan → []). --%>
-      <section
-        :if={
-          @live_action == :index and not @loading? and not @pending_requests_error? and
-            @pending_requests != []
-        }
-        class="mb-8"
-      >
-        <.section_header
-          title="Pending access requests"
-          count={length(@pending_requests)}
-          count_tone={:amber}
-        />
-        <ul class="divide-y divide-zinc-800/70">
-          <li
-            :for={request_facts <- @pending_requests}
-            class="flex flex-wrap items-center justify-between gap-3 py-3.5"
-          >
-            <% request = request_facts.request %>
-            <div class="min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="truncate text-sm text-zinc-200">
-                  {Accounts.user_display_name(request) || "Unknown user"}
-                </span>
-                <.chip :if={request.matched_user_id} tone={:amber}>Existing account</.chip>
-              </div>
-              <div class="mt-0.5 truncate text-xs text-zinc-400">
-                <span :if={email = Accounts.secondary_user_email(request)}>{email}</span>
-                <span :if={Accounts.secondary_user_email(request)} class="text-zinc-500">·</span>
-                <span class="font-mono">{request.provider_identifier}</span>
-              </div>
-              <p :if={request.matched_user_id} class="mt-1 max-w-prose text-xs text-amber-300/80">
-                Approving lets this connection sign in as the existing {request.email} account.
-              </p>
-            </div>
-            <div class="flex shrink-0 items-center gap-2">
-              <form
-                :if={is_nil(request.matched_user_id)}
-                id={"approve-request-#{request.id}"}
-                phx-change="approval_access_changed"
-                phx-submit="approve_request"
-                class="w-full space-y-2 sm:w-80"
-              >
-                <input type="hidden" name="_request_id" value={request.id} />
-                <.input
-                  type="select"
-                  name="runner_access_mode"
-                  value={Map.get(@approval_access_modes, request.id, "none")}
-                  label="Runner access"
-                  options={[
-                    {"No runners", "none"},
-                    {"All runners", "all"},
-                    {"Selected runners", "restricted"}
-                  ]}
-                />
-                <.runner_scope_select
-                  :if={Map.get(@approval_access_modes, request.id) == "restricted"}
-                  name="scope[]"
-                  label="Selected runners"
-                  runners={@runners}
-                  selected={Map.get(@approval_scope_drafts, request.id, [])}
-                  validation_error={Map.get(@approval_scope_errors, request.id)}
-                  load_error={RunnerScope.runner_load_error(@runner_load_error?)}
-                />
-                <.pack_access_field
-                  runner_mode={Map.get(@approval_access_modes, request.id, "none")}
-                  runner_scope={Map.get(@approval_scope_drafts, request.id, [])}
-                  runners={@runners}
-                  advertisements={@pack_advertisements}
-                  grant_limited?={@pack_access_restricted?}
-                  load_error={RunnerScope.pack_load_error(@pack_load_error?)}
-                  variant={:select}
-                  mode_name="pack_access_mode"
-                  mode_value={Map.get(@approval_pack_modes, request.id, "all")}
-                  scope_name="pack_scope[]"
-                  selected={Map.get(@approval_pack_drafts, request.id, [])}
-                  validation_error={Map.get(@approval_pack_errors, request.id)}
-                />
-                <.button variant={:secondary} tone={:amber} size={:sm}>Approve</.button>
-              </form>
-              <.confirm_button
-                :if={request.matched_user_id}
-                id={"approve-request-#{request.id}"}
-                title={approve_title(request)}
-                confirm_label="Approve"
-                variant={:secondary}
-                tone={:amber}
-                size={:sm}
-                on_confirm={
-                  JS.push("approve_request", value: %{id: request.id, runner_access_mode: "none"})
-                }
-              >
-                <:body>{approve_body(request)}</:body>
-                Approve
-              </.confirm_button>
-              <.confirm_button
-                id={"dismiss-request-#{request.id}"}
-                title="Dismiss this request?"
-                confirm_label="Dismiss"
-                variant={:secondary}
-                tone={:rose}
-                size={:sm}
-                on_confirm={JS.push("dismiss_request", value: %{id: request.id})}
-              >
-                <:body>They'll need to sign in again to re-request.</:body>
-                Dismiss
-              </.confirm_button>
-            </div>
-          </li>
-        </ul>
-      </section>
-
       <%!-- Single-column list. Each row is a member: avatar, name +
            email, role pill, joined, "..." menu. Inline edit form
            opens directly under the row instead of in a bolted-on
@@ -1753,8 +1620,147 @@ defmodule EmisarWeb.TeamLive do
         :if={@live_action == :index and not @loading?}
         class="grid grid-cols-1 gap-x-10 gap-y-8 lg:grid-cols-3 lg:items-start"
       >
-        <div class="lg:col-span-2">
-          <section>
+        <div id="team-primary-column" class="space-y-8 lg:col-span-2">
+          <%!-- The queue belongs to the roster column: these requests become
+               members, while Security keeps its stable side rail. --%>
+          <section :if={@pending_requests_error?} id="pending-access-requests">
+            <.section_header title="Pending access requests" />
+            <.empty_state
+              variant={:hint}
+              tone={:danger}
+              icon="state.warning"
+              title="Couldn't load access requests"
+            >
+              This is a load error, not an empty queue — someone may be locked out waiting on you.
+              Refresh the page to try again.
+            </.empty_state>
+          </section>
+
+          <section
+            :if={not @pending_requests_error? and @pending_requests != []}
+            id="pending-access-requests"
+          >
+            <.section_header
+              title="Pending access requests"
+              count={length(@pending_requests)}
+              count_tone={:amber}
+            />
+            <ul class="divide-y divide-zinc-800/70">
+              <li
+                :for={request_facts <- @pending_requests}
+                class="grid gap-3 py-3.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
+              >
+                <% request = request_facts.request %>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="truncate text-sm text-zinc-200">
+                      {Accounts.user_display_name(request) || "Unknown user"}
+                    </span>
+                    <.chip :if={request.matched_user_id} tone={:amber}>Existing account</.chip>
+                  </div>
+                  <div class="mt-0.5 truncate text-xs text-zinc-400">
+                    <span :if={email = Accounts.secondary_user_email(request)}>{email}</span>
+                    <span :if={Accounts.secondary_user_email(request)} class="text-zinc-500">·</span>
+                    <span class="font-mono">{request.provider_identifier}</span>
+                  </div>
+                  <p
+                    :if={request.matched_user_id}
+                    class="mt-1 max-w-prose text-xs text-amber-300/80"
+                  >
+                    Approving lets this connection sign in as the existing {request.email} account.
+                  </p>
+                </div>
+                <div class="flex w-full flex-nowrap items-end gap-2 sm:w-auto sm:justify-end">
+                  <form
+                    :if={is_nil(request.matched_user_id)}
+                    id={"approve-request-#{request.id}"}
+                    phx-change="approval_access_changed"
+                    phx-submit="approve_request"
+                    class="min-w-0 flex-1 space-y-2 sm:w-44 sm:flex-none"
+                  >
+                    <input type="hidden" name="_request_id" value={request.id} />
+                    <.input
+                      type="select"
+                      name="runner_access_mode"
+                      value={Map.get(@approval_access_modes, request.id, "none")}
+                      label="Runner access"
+                      size={:compact}
+                      class="min-w-0"
+                      options={[
+                        {"No runners", "none"},
+                        {"All runners", "all"},
+                        {"Selected runners", "restricted"}
+                      ]}
+                    />
+                    <.runner_scope_select
+                      :if={Map.get(@approval_access_modes, request.id) == "restricted"}
+                      name="scope[]"
+                      label="Selected runners"
+                      runners={@runners}
+                      selected={Map.get(@approval_scope_drafts, request.id, [])}
+                      validation_error={Map.get(@approval_scope_errors, request.id)}
+                      load_error={RunnerScope.runner_load_error(@runner_load_error?)}
+                    />
+                    <.pack_access_field
+                      runner_mode={Map.get(@approval_access_modes, request.id, "none")}
+                      runner_scope={Map.get(@approval_scope_drafts, request.id, [])}
+                      runners={@runners}
+                      advertisements={@pack_advertisements}
+                      grant_limited?={@pack_access_restricted?}
+                      load_error={RunnerScope.pack_load_error(@pack_load_error?)}
+                      variant={:select}
+                      mode_name="pack_access_mode"
+                      mode_value={Map.get(@approval_pack_modes, request.id, "all")}
+                      scope_name="pack_scope[]"
+                      selected={Map.get(@approval_pack_drafts, request.id, [])}
+                      validation_error={Map.get(@approval_pack_errors, request.id)}
+                    />
+                  </form>
+                  <.button
+                    :if={is_nil(request.matched_user_id)}
+                    type="submit"
+                    form={"approve-request-#{request.id}"}
+                    variant={:secondary}
+                    tone={:amber}
+                    size={:sm}
+                  >
+                    Approve
+                  </.button>
+                  <.confirm_button
+                    :if={request.matched_user_id}
+                    id={"approve-request-#{request.id}"}
+                    title={approve_title(request)}
+                    confirm_label="Approve"
+                    variant={:secondary}
+                    tone={:amber}
+                    size={:sm}
+                    on_confirm={
+                      JS.push("approve_request",
+                        value: %{id: request.id, runner_access_mode: "none"}
+                      )
+                    }
+                  >
+                    <:body>{approve_body(request)}</:body>
+                    Approve
+                  </.confirm_button>
+                  <.confirm_button
+                    id={"dismiss-request-#{request.id}"}
+                    title="Dismiss this request?"
+                    confirm_label="Dismiss"
+                    variant={:secondary}
+                    tone={:rose}
+                    size={:sm}
+                    on_confirm={JS.push("dismiss_request", value: %{id: request.id})}
+                  >
+                    <:body>They'll need to sign in again to re-request.</:body>
+                    Dismiss
+                  </.confirm_button>
+                </div>
+              </li>
+            </ul>
+          </section>
+
+          <section id="members-section">
             <%!-- Member list — naked hairline rows; the per-row `<details>`
              action dropdown floats freely (nothing clips on the canvas).
              Inline edit and scope-edit forms render INSIDE the :item slot
@@ -1802,7 +1808,7 @@ defmodule EmisarWeb.TeamLive do
                          identity markers (2FA, directory source, self) may sit
                          beside the name; caution states stack below instead of
                          piling amber boxes around it (§7.62). --%>
-                        <div class="flex flex-wrap items-center gap-2">
+                        <div class="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                           <span
                             id={"member-name-#{membership.id}"}
                             class="truncate font-medium text-zinc-100"
@@ -2681,14 +2687,14 @@ defmodule EmisarWeb.TeamLive do
     ~H"""
     <.link
       navigate={~p"/app/#{@account}/settings/sso/#{@identity.provider_id}"}
-      class="inline-flex items-center gap-1 rounded-md bg-zinc-800/70 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300 ring-1 ring-inset ring-white/10 transition hover:bg-zinc-700/70 hover:text-zinc-100"
+      class="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md bg-zinc-800/70 px-1.5 py-0.5 text-[11px] font-medium text-zinc-300 ring-1 ring-inset ring-white/10 transition hover:bg-zinc-700/70 hover:text-zinc-100"
       title={"Provisioned via #{provisioned_via_label(@identity.provisioned_via)} — #{@identity.provider_name}"}
     >
       <%!-- A directory SOURCE is identity metadata, not a pass state — the sync
            glyph stays neutral zinc (brand green is reserved for healthy/pass),
            so a roster of synced members doesn't paint itself green. --%>
-      <.icon name="identity.directory_sync" class="h-3 w-3 text-zinc-400" />
-      {provisioned_via_label(@identity.provisioned_via)} · {@identity.provider_name}
+      <.icon name="identity.directory_sync" class="h-3 w-3 shrink-0 text-zinc-400" />
+      <span class="truncate">{sync_badge_label(@identity)}</span>
     </.link>
     """
   end
@@ -2697,6 +2703,12 @@ defmodule EmisarWeb.TeamLive do
   defp provisioned_via_label(:oidc_jit), do: "SSO"
   defp provisioned_via_label(:manual), do: "Linked"
   defp provisioned_via_label(_), do: "Synced"
+
+  defp sync_badge_label(%{provisioned_via: :scim, provider_name: provider_name}),
+    do: provider_name
+
+  defp sync_badge_label(identity),
+    do: "#{provisioned_via_label(identity.provisioned_via)} · #{identity.provider_name}"
 
   # The roster row's action slot, in three shapes: your OWN row gets the audit
   # jump (plus the email remedy while yours is unconfirmed), a manager gets the

@@ -198,6 +198,12 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Pending access requests"
       assert html =~ "Dana Ops"
       assert html =~ "dana@corp.test"
+      assert has_element?(lv, "#team-primary-column > #pending-access-requests")
+
+      assert has_element?(
+               lv,
+               "#team-primary-column > #pending-access-requests + #members-section"
+             )
 
       # Approve is a styled confirm modal (not a native data-confirm); its Confirm
       # dispatches approve_request. Provisioning drops the request from the list —
@@ -1986,6 +1992,14 @@ defmodule EmisarWeb.TeamLiveTest do
       synced = scim_synced_member(account)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(
+               lv,
+               "a[title='Provisioned via SCIM — Acme Okta']",
+               "Acme Okta"
+             )
+
+      refute render(lv) =~ "SCIM · Acme Okta"
 
       refute has_element?(
                lv,

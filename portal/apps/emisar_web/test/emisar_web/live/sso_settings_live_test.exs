@@ -681,7 +681,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # absent too — a note exists to explain the section beside it.
       refute html =~ "Adds runners on top of the connection default"
       refute html =~ "What your IdP has actually pushed"
-      assert html =~ "their membership stays"
+      assert html =~ "Members added when they first signed in"
 
       owner = Fixtures.Subjects.subject_for(user, account)
       on = insert_provider(account, %{name: "Synced", kind: :entra})
@@ -689,11 +689,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, _lv, synced} = live(conn, ~p"/app/#{account}/settings/sso/#{on.id}")
 
       for note <- [
-            "Your IdP pushes members and groups over SCIM",
-            "Sets the role a group&#39;s members land at",
-            "Adds runners on top of the connection default",
-            "What your IdP has actually pushed",
-            "Everyone provisioned through this connection"
+            "Members and groups stay in sync",
+            "Choose the role for each synced group",
+            "Each mapping adds runner and pack access",
+            "Groups received from your identity provider",
+            "Suspend someone here for a temporary hold"
           ] do
         assert synced =~ note
       end
@@ -715,11 +715,17 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{shown.id}")
 
       assert html =~ "Acme Okta"
+      assert has_element?(lv, "#connection-summary dt", "Status")
+      assert has_element?(lv, "#connection-summary dd", "Enabled")
+      assert has_element?(lv, "#connection-summary dt", "Provider")
+      assert has_element?(lv, "#connection-summary", "Connection settings")
       # The per-connection delete dialog is detail-only (never on the overview list).
       assert has_element?(lv, "#delete-provider-#{shown.id}")
       # Delete lives in a bottom danger zone that opens the typed dialog — not a
       # ghost button beside Edit up top.
       assert html =~ "Delete this connection"
+      assert has_element?(lv, "#connection-danger-zone")
+      assert lv |> element("#connection-danger-zone") |> render() =~ "xl:col-span-2"
       # A single-connection view — the other connection isn't on this page.
       refute html =~ "Globex Google"
     end
@@ -1001,14 +1007,14 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     } do
       {:ok, lv, sign_in_only} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      refute sign_in_only =~ "Removing someone there removes them here"
+      refute sign_in_only =~ "Members and groups stay in sync"
 
       html = render_click(lv, "enable_scim", %{"id" => provider.id})
 
       assert html =~ "Directory sync enabled."
       assert html =~ "shown only once"
       assert html =~ "/scim/v2"
-      assert html =~ "Removing someone there removes them here"
+      assert html =~ "Members and groups stay in sync"
       # The freshly-minted ems- token is rendered exactly once, in the reveal.
       assert html =~ "ems-"
       # The IdP-side SCIM setup steps appear once sync is on.
@@ -1143,9 +1149,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{google.id}")
 
       assert html =~ "isn&#39;t available for Google Workspace"
-      # Kept short: the template wraps this sentence, so the rendered HTML carries
-      # a newline mid-phrase.
-      assert html =~ "has no inbound SCIM"
+      assert html =~ "Members are added when they first"
       refute html =~ "enable_scim"
     end
 
@@ -1191,14 +1195,21 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       owner = Fixtures.Subjects.subject_for(user, account)
       {:ok, provider, _raw} = SSO.enable_scim(provider, owner)
 
-      {:ok, %{membership: membership}} =
+      {:ok, %{identity: identity, membership: membership}} =
         SSO.scim_provision_user(provider, %{
           external_id: "kc|dana",
           email: "dana@northstar.example",
           full_name: "Dana Sync"
         })
 
-      %{conn: conn, user: user, account: account, provider: provider, membership: membership}
+      %{
+        conn: conn,
+        user: user,
+        account: account,
+        provider: provider,
+        identity: identity,
+        membership: membership
+      }
     end
 
     test "lists the provisioned member and suspends them from the connection page", %{
@@ -1216,6 +1227,34 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       render_click(lv, "suspend_member", %{"membership_id" => membership.id})
 
       assert Emisar.Accounts.Membership.disabled?(Repo.reload!(membership))
+    end
+
+    test "an IdP-deactivated member keeps a disabled Reactivate action with its remedy", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      identity: identity,
+      membership: membership
+    } do
+      {:ok, _} =
+        SSO.scim_update_user(
+          provider,
+          identity.id,
+          %SSO.SCIMUserUpdate{active: false}
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      trigger = "#reactivate-in-idp-#{membership.id}-tt"
+
+      assert has_element?(lv, "#{trigger} button[disabled]", "Reactivate")
+
+      assert has_element?(
+               lv,
+               "#{trigger} [role='tooltip']",
+               "Reactivate them there"
+             )
+
+      refute has_element?(lv, "#{trigger} button[phx-click]")
     end
 
     test "a connection with nobody provisioned keeps the confident empty copy", %{
@@ -1549,6 +1588,16 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       assert {:ok, [mapping], _meta} =
                SSO.list_group_runner_access_mappings(provider, owner)
+
+      mapping_facts =
+        lv
+        |> element("#runner-access-mapping-facts-#{mapping.id}")
+        |> render()
+
+      assert mapping_facts =~ "runners:"
+      assert mapping_facts =~ "packs:"
+      refute mapping_facts =~ "Selected runners"
+      refute mapping_facts =~ "Selected packs"
 
       render_click(lv, "start_edit_runner_access_mapping", %{"id" => mapping.id})
 

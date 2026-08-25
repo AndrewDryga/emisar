@@ -858,6 +858,35 @@ the commit button, where the operator can reach the action before reading what i
     control standing alone in its own block), especially where a leading status marker
     carries a hand-computed `mt-*`.
 
+68. **A needs-attention queue stays with the collection it feeds.** Pending invitations,
+    access requests, and review work render immediately above the roster or list they will
+    change, inside that collection's primary column. They never span across a stable security,
+    help, or posture rail. Keep the ordinary decision row compact: a compact select and its
+    action share one baseline when the choice has no expanded fields; reveal detailed scope
+    beneath only when the selected mode needs it. Preserve any security consequence beside the
+    identity it qualifies. Sweep: a page-local queue placed outside the page's primary/rail grid,
+    full-width selects for a three-value decision, or an action stranded on a second row.
+69. **Directory provenance is a suffix of the member identity, not a competing data row.** The
+    linked marker names the connection; omit a redundant protocol prefix when the directory icon
+    and destination already establish the source. Let the marker shrink within the title line and
+    truncate only when the row truly runs out of room. When it wraps, its vertical gap to the
+    following metadata must exceed its gap to the title, so it still reads as part of the identity.
+    Sweep: `SCIM · Provider` provenance, a fixed-width marker that wraps despite available title-row
+    space, or metadata touching a wrapped marker more closely than the marker touches the name.
+70. **An upstream-owned blocked action keeps its expected control in place.** When an operator
+    expects an action but another authority owns the state, render the normal action disabled and
+    put the short reason plus remedy in an accessible tooltip. Do not replace it with passive prose
+    that changes the row geometry, and never wire a local event that could override the upstream
+    authority. Sweep: `Reactivate in your IdP` text where sibling rows show a Reactivate button, or
+    an enabled local action for a directory-deactivated member.
+71. **A connection detail leads with status, then durable settings.** The shell title owns the
+    connection name; do not repeat provider and enabled state as an unlabeled chip cluster beneath
+    it. Use the standard labeled detail-fact row for operational status and a compact aligned
+    definition table for issuer, claims, access defaults, and authentication posture. A destructive
+    zone at the bottom may span the page because it is deliberately outside the routine content/help
+    pairing. Sweep: a detail page opening with floating name/status chips or an uneven two-column
+    pile of unlabeled configuration facts.
+
 ## 8. The kit is the contract
 
 - The shared kit lives in `core_components.ex` (+ `EmisarWeb.LiveTable`,

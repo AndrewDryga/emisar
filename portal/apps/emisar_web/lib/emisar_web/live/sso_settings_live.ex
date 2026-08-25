@@ -1544,17 +1544,44 @@ defmodule EmisarWeb.SSOSettingsLive do
             :for={provider <- @providers}
             class="grid grid-cols-1 gap-x-12 gap-y-12 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
           >
-            <%!-- The connection record, NAKED on the canvas (the detail-page
-                 meta grammar) — status chips + Edit lead, the facts flow as a
-                 naked meta row. Editing is its own page (/edit). The shell
-                 title already carries the name; this block is the status. --%>
-            <section>
-              <div class="flex flex-wrap items-start justify-between gap-3">
-                <div class="flex min-w-0 flex-wrap items-center gap-2">
-                  <.chip>{kind_label(provider.kind)}</.chip>
-                  <.status_badge :if={provider.enabled} status="enabled" />
-                  <.chip :if={not provider.enabled} tone={:amber}>Disabled</.chip>
-                </div>
+            <%!-- The title already names the connection. Its operational facts
+                 follow the detail-page meta grammar used by approvals, then the
+                 durable configuration reads as a compact definition table. --%>
+            <section id="connection-summary">
+              <div class="flex flex-col gap-5 lg:flex-row lg:items-end">
+                <dl class="grid min-w-0 flex-1 grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-4">
+                  <div>
+                    <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Status
+                    </dt>
+                    <dd class="mt-1 flex items-center gap-2 text-sm font-medium">
+                      <.status_dot tone={if(provider.enabled, do: :brand, else: :amber)} />
+                      <span class={if(provider.enabled, do: "text-brand-300", else: "text-amber-300")}>
+                        {if(provider.enabled, do: "Enabled", else: "Disabled")}
+                      </span>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Provider
+                    </dt>
+                    <dd class="mt-1 text-sm text-zinc-300">{kind_label(provider.kind)}</dd>
+                  </div>
+                  <div>
+                    <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      New members
+                    </dt>
+                    <dd class="mt-1 text-sm text-zinc-300">
+                      {provisioner_label(provider.provisioner)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Default role
+                    </dt>
+                    <dd class="mt-1 text-sm text-zinc-300">{role_label(provider.default_role)}</dd>
+                  </div>
+                </dl>
                 <%!-- Delete lives in a danger zone at the bottom, not up here beside
                      a routine Edit — a destructive action shouldn't sit one slip
                      away from the safe one. --%>
@@ -1581,43 +1608,49 @@ defmodule EmisarWeb.SSOSettingsLive do
                 </div>
               </div>
 
-              <div class="mt-6 space-y-6">
-                <.meta_field label="Issuer" wrap>
-                  <span class="font-mono text-zinc-300">{provider.issuer}</span>
-                </.meta_field>
-                <div class="grid grid-cols-2 gap-x-10 gap-y-6">
-                  <.meta_field label="New members">
-                    <span class="text-zinc-300">{provisioner_label(provider.provisioner)}</span>
-                  </.meta_field>
-                  <.meta_field label="Default role">
-                    <span class="text-zinc-300">{role_label(provider.default_role)}</span>
-                  </.meta_field>
-                  <.meta_field label="Default runner access">
-                    <span class="text-zinc-300">
-                      {runner_access_mode_label(provider.default_runner_access_mode)}
-                    </span>
-                  </.meta_field>
-                  <.meta_field
-                    :if={provider.default_runner_access_mode != :none}
-                    label="Default pack access"
+              <div class="mt-8">
+                <.section_header title="Connection settings" />
+                <dl class="divide-y divide-zinc-800/70 border-y border-zinc-800/70">
+                  <div class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+                    <dt class="text-xs font-medium text-zinc-400">Issuer</dt>
+                    <dd class="break-all font-mono text-sm text-zinc-300">{provider.issuer}</dd>
+                  </div>
+                  <div class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+                    <dt class="text-xs font-medium text-zinc-400">Identifier claim</dt>
+                    <dd class="font-mono text-sm text-zinc-300">{provider.identifier_claim}</dd>
+                  </div>
+                  <div
+                    :if={provider.allowed_email_domain}
+                    class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4"
                   >
-                    <span class="text-zinc-300">
+                    <dt class="text-xs font-medium text-zinc-400">Email domain</dt>
+                    <dd class="text-sm text-zinc-300">@{provider.allowed_email_domain}</dd>
+                  </div>
+                  <div class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+                    <dt class="text-xs font-medium text-zinc-400">Runner access</dt>
+                    <dd class="text-sm text-zinc-300">
+                      {runner_access_mode_label(provider.default_runner_access_mode)}
+                    </dd>
+                  </div>
+                  <div
+                    :if={provider.default_runner_access_mode != :none}
+                    class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4"
+                  >
+                    <dt class="text-xs font-medium text-zinc-400">Pack access</dt>
+                    <dd class="text-sm text-zinc-300">
                       {pack_access_mode_label(provider.default_pack_access_mode)}
-                    </span>
-                  </.meta_field>
-                  <.meta_field label="Identifier claim">
-                    <span class="font-mono text-zinc-300">{provider.identifier_claim}</span>
-                  </.meta_field>
-                  <.meta_field :if={provider.allowed_email_domain} label="Email domain">
-                    <span class="text-zinc-300">@{provider.allowed_email_domain}</span>
-                  </.meta_field>
-                  <.meta_field label="2FA requirement" wrap>
-                    <span :if={provider.satisfies_mfa} class="text-zinc-300">
-                      Satisfied by this provider
-                    </span>
-                    <span :if={not provider.satisfies_mfa} class="text-zinc-400">Not satisfied</span>
-                  </.meta_field>
-                </div>
+                    </dd>
+                  </div>
+                  <div class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+                    <dt class="text-xs font-medium text-zinc-400">Two-factor authentication</dt>
+                    <dd class="text-sm text-zinc-300">
+                      {if(provider.satisfies_mfa,
+                        do: "Satisfied by this provider",
+                        else: "Not satisfied by this provider"
+                      )}
+                    </dd>
+                  </div>
+                </dl>
               </div>
             </section>
 
@@ -1645,7 +1678,8 @@ defmodule EmisarWeb.SSOSettingsLive do
             <%!-- The provider kind only says SCIM is supported; it does not mean
                  this connection has enabled provisioning. --%>
             <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
-              Your IdP pushes members and groups over SCIM. Removing someone there removes them here.
+              Members and groups stay in sync with your identity provider. Remove someone there to
+              remove their Emisar access.
             </.section_note>
 
             <%!-- This kind can't push SCIM (e.g. Google Workspace) — say so once
@@ -1655,9 +1689,9 @@ defmodule EmisarWeb.SSOSettingsLive do
               :if={not SSO.supports_scim?(provider.kind)}
               class="max-w-prose text-sm leading-relaxed text-zinc-400"
             >
-              <span class="font-medium text-zinc-200">Directory sync (SCIM)</span>
-              isn't available for {kind_label(provider.kind)} — it has no inbound SCIM for a custom
-              app. Members are provisioned on their first sign-in through this connection.
+              <span class="font-medium text-zinc-200">Directory sync</span>
+              isn't available for {kind_label(provider.kind)}. Members are added when they first
+              sign in through this connection.
             </p>
             <.section_spacer :if={not SSO.supports_scim?(provider.kind)} />
 
@@ -1677,8 +1711,8 @@ defmodule EmisarWeb.SSOSettingsLive do
               adding_mapping={@adding_mapping}
             />
             <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
-              Sets the role a group's members land at. In several mapped groups the highest wins —
-              and sync never grants owner.
+              Choose the role for each synced group. If someone belongs to several mapped groups,
+              the highest role wins. Sync never grants Owner.
             </.section_note>
 
             <.group_runner_access_mapping_section
@@ -1699,8 +1733,8 @@ defmodule EmisarWeb.SSOSettingsLive do
               pack_access_restricted?={@pack_access_restricted?}
             />
             <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
-              Adds runners on top of the connection default. Groups are matched by id, never by
-              name.
+              Each mapping adds runner and pack access to the connection defaults. Groups are
+              matched by ID, not by name.
             </.section_note>
 
             <.synced_groups_section
@@ -1709,8 +1743,8 @@ defmodule EmisarWeb.SSOSettingsLive do
               load_error?={Map.get(@synced_group_errors, provider.id, false)}
             />
             <.section_note :if={@can_configure_directory_sync? and provider.scim_enabled}>
-              What your IdP has actually pushed. A group with no role mapping leaves its members at
-              the connection's default role.
+              Groups received from your identity provider. An unmapped group leaves its members at
+              the connection defaults.
             </.section_note>
 
             <.synced_members_section
@@ -1723,13 +1757,12 @@ defmodule EmisarWeb.SSOSettingsLive do
               scim_enabled={provider.scim_enabled}
             />
             <.section_note :if={provider.scim_enabled}>
-              Everyone provisioned through this connection. Suspending someone here holds until you
-              lift it, and directory sync offboards them when your IdP does.
+              Members received through this connection. Suspend someone here for a temporary hold.
+              For offboarding, deactivate them in your identity provider.
             </.section_note>
             <.section_note :if={not provider.scim_enabled}>
-              Everyone provisioned through this connection, at its default role. Removing them in
-              your IdP stops the sign-in, but their membership stays — take it away on the Team
-              page.
+              Members added when they first signed in through this connection. Remove their
+              workspace access on the Team page.
             </.section_note>
 
             <%!-- A plan-posture fact, naked — not a boxed interruption. Only for
@@ -1759,7 +1792,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             <%!-- Danger zone at the bottom — the destructive action lives apart
                  from the routine config above (its own canvas section) and still
                  runs the typed confirm. The space-y-12 wrapper owns the rhythm. --%>
-            <section>
+            <section id="connection-danger-zone" class="xl:col-span-2">
               <.section_header title="Danger zone" />
               <div class="divide-y divide-zinc-800/70">
                 <.confirm_zone
@@ -1776,7 +1809,6 @@ defmodule EmisarWeb.SSOSettingsLive do
                 </.confirm_zone>
               </div>
             </section>
-            <.section_spacer />
 
             <.confirm_dialog
               id={"delete-provider-#{provider.id}"}
@@ -2736,13 +2768,10 @@ defmodule EmisarWeb.SSOSettingsLive do
               <.icon name="identity.group" class="h-4 w-4 shrink-0 text-zinc-500" />
               <div class="min-w-0">
                 <p class="truncate text-sm text-zinc-200">
-                  {mapping.external_group_display || mapping.external_group_id}
+                  {directory_group_name(mapping)}
                 </p>
-                <p
-                  :if={mapping.external_group_display}
-                  class="truncate font-mono text-[11px] text-zinc-400"
-                >
-                  {mapping.external_group_id}
+                <p class="truncate font-mono text-[11px] text-zinc-400">
+                  {directory_group_reference(mapping)}
                 </p>
               </div>
             </div>
@@ -2777,9 +2806,8 @@ defmodule EmisarWeb.SSOSettingsLive do
             </div>
           </div>
 
-          <%!-- Inline edit — display + role (the group's externalId is the
-               immutable key). Reuses the page's mapping changeset; the owner
-               error surfaces inline here too. --%>
+          <%!-- The immutable group resource is fixed; inline edit changes only
+               the role. The owner error surfaces inline here too. --%>
           <div :if={@editing_mapping_id == mapping.id and @mapping_edit_form} class="mt-3">
             <.simple_form
               for={@mapping_edit_form}
@@ -2788,12 +2816,6 @@ defmodule EmisarWeb.SSOSettingsLive do
               phx-submit="update_mapping"
             >
               <input type="hidden" name="mapping_id" value={mapping.id} />
-              <.input
-                field={@mapping_edit_form[:external_group_display]}
-                type="text"
-                label="Display name"
-                placeholder="Admins"
-              />
               <.input
                 field={@mapping_edit_form[:role]}
                 type="select"
@@ -2853,8 +2875,8 @@ defmodule EmisarWeb.SSOSettingsLive do
 
       <%!-- Add a mapping — revealed by the "Add mapping" button (not always open);
            a divided region within the card (not a nested box). account_id/provider_id
-           are server-side. Pick from synced groups once they exist; free-text before
-           the first sync. --%>
+           are server-side. The group must be an exact synced resource; there is
+           deliberately no free-text identity fallback. --%>
       <div :if={@adding_mapping and @mapping_form} class="mt-5 border-t border-zinc-800/70 pt-5">
         <p class="text-sm font-medium text-zinc-300">Add a mapping</p>
         <.simple_form
@@ -2865,31 +2887,13 @@ defmodule EmisarWeb.SSOSettingsLive do
           class="mt-3"
         >
           <input type="hidden" name="provider_id" value={@provider.id} />
-          <%!-- One balanced row: group + optional display + role read left-to-right
-               (role rightmost, mirroring the list rows above). Three even columns
-               avoid the orphaned third field a 2-col grid leaves. --%>
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <.input
-              :if={@synced_groups != []}
-              field={@mapping_form[:external_group_id]}
+              field={@mapping_form[:directory_group_id]}
               type="select"
               label="IdP group"
-              options={Enum.map(@synced_groups, & &1.external_group_id)}
-              prompt="Pick a synced group"
-            />
-            <.input
-              :if={@synced_groups == []}
-              field={@mapping_form[:external_group_id]}
-              type="text"
-              label="IdP group ID"
-              placeholder="syncs first, then pick…"
-              class="font-mono"
-            />
-            <.input
-              field={@mapping_form[:external_group_display]}
-              type="text"
-              label="Display (optional)"
-              placeholder="Admins"
+              options={Enum.map(@synced_groups, &directory_group_option/1)}
+              prompt={if @synced_groups == [], do: "Sync a group first", else: "Pick a synced group"}
             />
             <.input
               field={@mapping_form[:role]}
@@ -2953,37 +2957,60 @@ defmodule EmisarWeb.SSOSettingsLive do
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div class="min-w-0">
               <p class="truncate text-sm text-zinc-200">
-                {mapping.external_group_display || mapping.external_group_id}
+                {directory_group_name(mapping)}
               </p>
-              <p :if={mapping.external_group_display} class="font-mono text-[11px] text-zinc-400">
-                {mapping.external_group_id}
+              <p class="font-mono text-[11px] text-zinc-400">
+                {directory_group_reference(mapping)}
               </p>
-              <div class="mt-1 flex flex-wrap gap-1">
-                <.chip>{runner_access_mode_label(mapping.runner_access_mode)}</.chip>
-                <.identity_tag
-                  :for={group <- mapping.runner_scope_groups}
-                  category="group"
-                  value={group}
-                />
-                <%!-- The full runner id rides the tag's title; the value half names the
-                     live runner, and falls back to the shared removed-runner label when
-                     the id no longer resolves. --%>
-                <.identity_tag
-                  :for={runner_id <- mapping.runner_scope_runner_ids}
-                  category="runner"
-                  title={runner_id}
+              <dl
+                id={"runner-access-mapping-facts-#{mapping.id}"}
+                class="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1"
+              >
+                <dt class="text-[10px] uppercase tracking-wider text-zinc-400">runners:</dt>
+                <dd class="flex min-w-0 flex-wrap items-center gap-1">
+                  <span
+                    :if={mapping_runner_reach_phrase(mapping.runner_access_mode)}
+                    class="text-xs text-zinc-400"
+                  >
+                    {mapping_runner_reach_phrase(mapping.runner_access_mode)}
+                  </span>
+                  <.identity_tag
+                    :for={group <- mapping.runner_scope_groups}
+                    category="group"
+                    value={group}
+                  />
+                  <%!-- The full runner id rides the tag's title; the value half names the
+                       live runner, and falls back to the shared removed-runner label when
+                       the id no longer resolves. --%>
+                  <.identity_tag
+                    :for={runner_id <- mapping.runner_scope_runner_ids}
+                    category="runner"
+                    title={runner_id}
+                  >
+                    <% runner = Map.get(@runners_by_id, runner_id) %>
+                    <span :if={runner}>{runner.name}</span>
+                    <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
+                  </.identity_tag>
+                </dd>
+                <dt
+                  :if={mapping.runner_access_mode != :none}
+                  class="text-[10px] uppercase tracking-wider text-zinc-400"
                 >
-                  <% runner = Map.get(@runners_by_id, runner_id) %>
-                  <span :if={runner}>{runner.name}</span>
-                  <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
-                </.identity_tag>
-                <.chip>{pack_access_mode_label(mapping.pack_access_mode)}</.chip>
-                <.identity_tag
-                  :for={pack_id <- mapping.pack_scope_pack_ids}
-                  category="pack"
-                  value={pack_id}
-                />
-              </div>
+                  packs:
+                </dt>
+                <dd
+                  :if={mapping.runner_access_mode != :none}
+                  class="flex min-w-0 flex-wrap items-center gap-1"
+                >
+                  <span
+                    :if={mapping_pack_reach_phrase(mapping.pack_access_mode)}
+                    class="text-xs text-zinc-400"
+                  >
+                    {mapping_pack_reach_phrase(mapping.pack_access_mode)}
+                  </span>
+                  <.chip :for={pack_id <- mapping.pack_scope_pack_ids} mono>{pack_id}</.chip>
+                </dd>
+              </dl>
             </div>
             <div class="flex shrink-0 items-center gap-2">
               <.button
@@ -3128,24 +3155,12 @@ defmodule EmisarWeb.SSOSettingsLive do
     <div class="space-y-4">
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <.input
-          :if={not @editing? and @synced_groups != []}
-          field={@form[:external_group_id]}
+          :if={not @editing?}
+          field={@form[:directory_group_id]}
           type="select"
           label="IdP group"
-          options={Enum.map(@synced_groups, & &1.external_group_id)}
-          prompt="Pick a synced group"
-        />
-        <.input
-          :if={not @editing? and @synced_groups == []}
-          field={@form[:external_group_id]}
-          type="text"
-          label="IdP group ID"
-          class="font-mono"
-        />
-        <.input
-          field={@form[:external_group_display]}
-          type="text"
-          label="Display name (optional)"
+          options={Enum.map(@synced_groups, &directory_group_option/1)}
+          prompt={if @synced_groups == [], do: "Sync a group first", else: "Pick a synced group"}
         />
       </div>
 
@@ -3220,13 +3235,10 @@ defmodule EmisarWeb.SSOSettingsLive do
             <.icon name="identity.group" class="h-4 w-4 shrink-0 text-zinc-500" />
             <div class="min-w-0">
               <p class="truncate text-sm text-zinc-200">
-                {(group.mapping && group.mapping.external_group_display) || group.external_group_id}
+                {directory_group_name(group)}
               </p>
-              <p
-                :if={group.mapping && group.mapping.external_group_display}
-                class="truncate font-mono text-[11px] text-zinc-400"
-              >
-                {group.external_group_id}
+              <p class="truncate font-mono text-[11px] text-zinc-400">
+                {directory_group_reference(group)}
               </p>
             </div>
           </div>
@@ -3261,6 +3273,28 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp members_label(1), do: "1 member"
   defp members_label(count), do: "#{count} members"
+
+  defp directory_group_option(group),
+    do: {"#{directory_group_name(group)} · #{directory_group_reference(group)}", group.id}
+
+  defp directory_group_name(%{display: display}) when is_binary(display) and display != "",
+    do: display
+
+  defp directory_group_name(%{external_group_display: display})
+       when is_binary(display) and display != "",
+       do: display
+
+  defp directory_group_name(group), do: directory_group_reference(group)
+
+  defp directory_group_reference(%{external_group_id: external_group_id})
+       when is_binary(external_group_id) and external_group_id != "",
+       do: external_group_id
+
+  defp directory_group_reference(%{id: id}) when is_binary(id),
+    do: "Emisar group #{String.slice(id, 0, 8)}"
+
+  defp directory_group_reference(%{directory_group_id: id}) when is_binary(id),
+    do: "Emisar group #{String.slice(id, 0, 8)}"
 
   attr :members, :list, required: true
   attr :load_error?, :boolean, required: true
@@ -3382,16 +3416,19 @@ defmodule EmisarWeb.SSOSettingsLive do
               >
                 Reactivate
               </.button>
-              <%!-- The IdP deactivated them — emisar keeps them suspended; reactivation
-                 is the IdP's to make (its active:true re-syncs), so no Reactivate here. --%>
-              <span
+              <%!-- Keep the expected action in place, but disabled: the IdP owns
+                   this state and its next active:true sync performs the change. --%>
+              <.tooltip
                 :if={
                   Accounts.membership_disabled?(member.membership) and not member.identity.scim_active
                 }
-                class="text-xs text-zinc-400"
+                id={"reactivate-in-idp-#{member.membership.id}"}
+                text="This member was deactivated in your identity provider. Reactivate them there."
               >
-                Reactivate in your IdP
-              </span>
+                <.button variant={:secondary} tone={:neutral} size={:sm} disabled>
+                  Reactivate
+                </.button>
+              </.tooltip>
             <% end %>
           </div>
         </li>
@@ -3442,6 +3479,13 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp runner_access_mode_label(:none), do: "No runners"
   defp runner_access_mode_label(:all), do: "All runners"
   defp runner_access_mode_label(:restricted), do: "Selected runners"
+
+  defp mapping_runner_reach_phrase(:none), do: "None"
+  defp mapping_runner_reach_phrase(:all), do: "All"
+  defp mapping_runner_reach_phrase(:restricted), do: nil
+
+  defp mapping_pack_reach_phrase(:all), do: "All"
+  defp mapping_pack_reach_phrase(:restricted), do: nil
 
   defp pack_access_mode_label(:all), do: "All packs"
   defp pack_access_mode_label(:restricted), do: "Selected packs"
