@@ -2597,6 +2597,7 @@ defmodule Emisar.SSO do
     %{
       request: %{request | provider: nil},
       provider: provider_facts(provider),
+      default_role: provider.default_role,
       default_runner_access: provider_runner_access(provider)
     }
   end

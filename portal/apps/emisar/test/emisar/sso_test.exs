@@ -6688,6 +6688,7 @@ defmodule Emisar.SSOTest do
       assert facts.provider.id == provider.id
       assert facts.provider.name == "Okta"
       assert facts.provider.enabled?
+      assert facts.default_role == :viewer
       assert facts.default_runner_access == RunnerAccess.all()
       assert facts.request.provider == nil
     end

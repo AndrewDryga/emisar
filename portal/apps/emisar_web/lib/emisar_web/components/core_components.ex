@@ -4378,7 +4378,7 @@ defmodule EmisarWeb.CoreComponents do
              walks out into the page dimmed behind the backdrop. --%>
         <.focus_wrap
           id={"#{@id}-wrap"}
-          class="w-full max-w-md rounded-xl bg-zinc-900 p-6 shadow-2xl ring-1 ring-white/10"
+          class="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-xl bg-zinc-900 p-6 shadow-2xl ring-1 ring-white/10"
         >
           <%!-- The header IS a status_note (the shared note grammar): a bare
                rose icon lead, a zinc title, zinc body — one voice with every

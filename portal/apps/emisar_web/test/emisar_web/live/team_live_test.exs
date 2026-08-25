@@ -206,7 +206,9 @@ defmodule EmisarWeb.TeamLiveTest do
     test "pending SSO access requests surface on Team, and approving clears one", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
-      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      provider =
+        Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Okta workforce")
 
       request =
         Fixtures.SSO.create_link_request(
@@ -221,30 +223,137 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "dana@corp.test"
       assert has_element?(lv, "#team-primary-column > #pending-access-requests")
 
-      assert has_element?(
-               lv,
-               "#pending-access-requests > ul > li[class~='sm:items-start']"
-             )
-
-      refute has_element?(lv, "#pending-access-requests > ul > li[class~='sm:items-end']")
+      row = "#pending-access-request-#{request.id}"
+      dialog = "#approve-request-dialog-#{request.id}"
+      assert has_element?(lv, row, "Okta workforce")
+      refute has_element?(lv, "#{row} select")
+      refute has_element?(lv, row, request.provider_identifier)
+      assert has_element?(lv, "#{dialog} #approve-request-#{request.id}")
+      assert has_element?(lv, dialog, request.provider_identifier)
+      assert has_element?(lv, dialog, "Workspace role")
+      assert has_element?(lv, dialog, "Runner access")
 
       assert has_element?(
                lv,
                "#team-primary-column > #pending-access-requests + #members-section"
              )
 
-      # Approve is a styled confirm modal (not a native data-confirm); its Confirm
-      # dispatches approve_request. Provisioning drops the request from the list —
-      # the only one, so the whole queue clears (name lingers in the flash).
-      assert has_element?(lv, "#approve-request-#{request.id}")
+      # The modal's final click carries only the request id; its reviewed access
+      # draft is server-owned. Provisioning drops the request from the list — the
+      # only one, so the whole queue clears (name lingers in the flash).
 
-      render_click(lv, "approve_request", %{
-        "id" => request.id,
-        "runner_access_mode" => "none"
-      })
+      render_click(lv, "approve_request", %{"id" => request.id})
 
       refute render(lv) =~ "Pending access requests"
       assert Emisar.Repo.reload(request) == nil
+    end
+
+    test "an existing-account request keeps the risk marker in the row and its consequence in the modal",
+         %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      provider =
+        Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Okta workforce")
+
+      member = Fixtures.Users.create_user(email: "linked@corp.test", full_name: "Linked Member")
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: :admin
+        )
+
+      original_access = Emisar.Accounts.runner_access_for_membership(account.id, membership.id)
+
+      request =
+        Fixtures.SSO.create_link_request(
+          provider: provider,
+          email: member.email,
+          full_name: member.full_name,
+          matched_user_id: member.id,
+          claims: %{
+            "email" => member.email,
+            "email_verified" => true,
+            "name" => member.full_name
+          }
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      row = "#pending-access-request-#{request.id}"
+      dialog = "#approve-request-dialog-#{request.id}"
+
+      assert has_element?(lv, row, "Existing account")
+      assert has_element?(lv, row, "Okta workforce")
+      refute has_element?(lv, row, "Approving lets this connection")
+      refute has_element?(lv, "#{row} select")
+      refute has_element?(lv, "#{dialog} form")
+      assert has_element?(lv, dialog, "Current role unchanged")
+
+      assert has_element?(
+               lv,
+               dialog,
+               "The member's current role, runner access, and pack access stay unchanged."
+             )
+
+      render_click(lv, "approve_request", %{
+        "id" => request.id,
+        "runner_access_mode" => "restricted",
+        "scope" => ["runner:not-reviewed"]
+      })
+
+      assert Emisar.Repo.reload(request) == nil
+      unchanged = Fixtures.Memberships.fetch_membership(account.id, member.id)
+      assert unchanged.role == :admin
+
+      assert Emisar.Accounts.runner_access_for_membership(account.id, unchanged.id) ==
+               original_access
+    end
+
+    test "approval uses the access choices reviewed in the modal", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      request =
+        Fixtures.SSO.create_link_request(
+          provider: provider,
+          email: "scoped-access@corp.test",
+          full_name: "Scoped Access",
+          claims: %{
+            "email" => "scoped-access@corp.test",
+            "email_verified" => true,
+            "name" => "Scoped Access"
+          }
+        )
+
+      _runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      render_change(lv, "approval_access_changed", %{
+        "_request_id" => request.id,
+        "runner_access_mode" => "restricted",
+        "scope" => ["group:database"]
+      })
+
+      approved =
+        render_click(lv, "approve_request", %{
+          "id" => request.id,
+          "runner_access_mode" => "all"
+        })
+
+      refute approved =~ "Couldn't approve that request."
+      assert Emisar.Repo.reload(request) == nil
+      {:ok, user} = Emisar.Users.fetch_user_by_email("scoped-access@corp.test")
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) ==
+               %Emisar.Accounts.RunnerAccess{
+                 mode: :restricted,
+                 groups: ["database"],
+                 runner_ids: []
+               }
     end
 
     test "an unverified OIDC email is shown only as context, never as an existing-account match",

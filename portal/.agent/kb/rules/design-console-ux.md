@@ -861,11 +861,13 @@ the commit button, where the operator can reach the action before reading what i
 68. **A needs-attention queue stays with the collection it feeds.** Pending invitations,
     access requests, and review work render immediately above the roster or list they will
     change, inside that collection's primary column. They never span across a stable security,
-    help, or posture rail. Keep the ordinary decision row compact: a compact select and its
-    action share one baseline when the choice has no expanded fields; reveal detailed scope
-    beneath only when the selected mode needs it. Preserve any security consequence beside the
-    identity it qualifies. Sweep: a page-local queue placed outside the page's primary/rail grid,
-    full-width selects for a three-value decision, or an action stranded on a second row.
+    help, or posture rail. Keep the queue itself to identity, source, security marker, and actions;
+    put grant choices, expanded scope, and the full decision consequence in the focused modal the
+    action opens. A security marker such as `Existing account` stays beside the identity even when
+    its explanatory consequence moves into the modal, so the queue never hides why one request is
+    riskier than another. Sweep: a page-local queue placed outside the page's primary/rail grid,
+    grant selects or warning paragraphs expanding every row, or a modal that asks for approval
+    before showing the consequence.
 69. **Directory provenance is a suffix of the member identity, not a competing data row.** The
     linked marker names the connection; omit a redundant protocol prefix when the directory icon
     and destination already establish the source. Let the marker shrink within the title line and

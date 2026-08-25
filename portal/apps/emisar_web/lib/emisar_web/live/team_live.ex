@@ -430,19 +430,11 @@ defmodule EmisarWeb.TeamLive do
     end
   end
 
-  def handle_event("approve_request", %{"id" => id} = params, socket) do
+  def handle_event("approve_request", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
       SSO.subject_can_configure_sso?(socket.assigns.current_subject),
-      &do_approve_request(&1, id, params)
-    )
-  end
-
-  def handle_event("approve_request", %{"_request_id" => id} = params, socket) do
-    Permissions.gated(
-      socket,
-      SSO.subject_can_configure_sso?(socket.assigns.current_subject),
-      &do_approve_request(&1, id, params)
+      &do_approve_request(&1, id, approval_params(&1, id))
     )
   end
 
@@ -1104,6 +1096,8 @@ defmodule EmisarWeb.TeamLive do
     |> assign(:approval_access_modes, modes)
     |> assign(:approval_scope_drafts, drafts)
     |> assign(:approval_scope_errors, %{})
+    |> assign(:approval_pack_modes, %{})
+    |> assign(:approval_pack_drafts, %{})
     |> assign(:approval_pack_errors, %{})
   end
 
@@ -1120,6 +1114,29 @@ defmodule EmisarWeb.TeamLive do
       socket.assigns.runners,
       Map.keys(socket.assigns.pack_advertisements)
     )
+  end
+
+  # The review dialog keeps its draft in the socket as each choice changes. The
+  # final click carries only the request id; a caller cannot smuggle a different
+  # access grant around the reviewed controls in the approval event itself.
+  defp approval_params(socket, id) do
+    case Enum.find(socket.assigns.pending_requests, &(&1.request.id == id)) do
+      %{request: %{matched_user_id: matched_user_id}} when not is_nil(matched_user_id) ->
+        %{
+          "runner_access_mode" => "none",
+          "scope" => [],
+          "pack_access_mode" => "all",
+          "pack_scope" => []
+        }
+
+      _new_or_missing_request ->
+        %{
+          "runner_access_mode" => Map.get(socket.assigns.approval_access_modes, id, "none"),
+          "scope" => Map.get(socket.assigns.approval_scope_drafts, id, []),
+          "pack_access_mode" => Map.get(socket.assigns.approval_pack_modes, id, "all"),
+          "pack_scope" => Map.get(socket.assigns.approval_pack_drafts, id, [])
+        }
+    end
   end
 
   defp do_approve_request(socket, id, params) do
@@ -1210,10 +1227,27 @@ defmodule EmisarWeb.TeamLive do
   defp request_label(request),
     do: Accounts.user_display_name(request) || request.provider_identifier
 
-  defp approve_title(%{email: email}), do: "Link this connection to #{email}?"
+  defp approval_title(%{request: %{matched_user_id: nil} = request}),
+    do: "Approve access for #{request_label(request)}?"
 
-  defp approve_body(%{email: _email}),
-    do: "That IdP identity will then sign in as this existing user."
+  defp approval_title(%{request: %{matched_user_id: _id}}),
+    do: "Approve this existing-account link?"
+
+  defp approval_disabled?(%{request: %{matched_user_id: matched_user_id}}, _assigns)
+       when not is_nil(matched_user_id),
+       do: false
+
+  defp approval_disabled?(%{request: %{id: request_id}}, assigns) do
+    runner_scope_missing? =
+      Map.get(assigns.approval_access_modes, request_id) == "restricted" and
+        Map.get(assigns.approval_scope_drafts, request_id, []) == []
+
+    pack_scope_missing? =
+      Map.get(assigns.approval_pack_modes, request_id) == "restricted" and
+        Map.get(assigns.approval_pack_drafts, request_id, []) == []
+
+    runner_scope_missing? or pack_scope_missing?
+  end
 
   # The set of member emails on the deliverability suppression list — drives
   # the "Email bouncing" badge. Degrades to empty (no badges) on a denied read.
@@ -1646,118 +1680,155 @@ defmodule EmisarWeb.TeamLive do
               count_tone={:amber}
             />
             <ul class="divide-y divide-zinc-800/70">
-              <li
+              <.list_row
                 :for={request_facts <- @pending_requests}
-                class="grid gap-3 py-3.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
+                id={"pending-access-request-#{request_facts.request.id}"}
+                padding="py-3.5"
               >
-                <% request = request_facts.request %>
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="truncate text-sm text-zinc-200">
-                      {Accounts.user_display_name(request) || "Unknown user"}
-                    </span>
-                    <.chip :if={request.matched_user_id} tone={:amber}>Existing account</.chip>
-                  </div>
-                  <div class="mt-0.5 truncate text-xs text-zinc-400">
-                    <span :if={email = Accounts.secondary_user_email(request)}>{email}</span>
-                    <span :if={Accounts.secondary_user_email(request)} class="text-zinc-500">·</span>
-                    <span class="font-mono">{request.provider_identifier}</span>
-                  </div>
-                  <p
-                    :if={request.matched_user_id}
-                    class="mt-1 max-w-prose text-xs text-amber-300/80"
+                <:title>
+                  <span class="truncate text-sm text-zinc-200">
+                    {Accounts.user_display_name(request_facts.request) || "Unknown user"}
+                  </span>
+                </:title>
+                <:chips>
+                  <.chip :if={request_facts.request.matched_user_id} tone={:amber}>
+                    Existing account
+                  </.chip>
+                </:chips>
+                <:meta>
+                  <span :if={email = Accounts.secondary_user_email(request_facts.request)}>
+                    {email}
+                  </span>
+                  <span
+                    :if={Accounts.secondary_user_email(request_facts.request)}
+                    class="text-zinc-500"
                   >
-                    Approving lets this connection sign in as the existing {request.email} account.
-                  </p>
-                </div>
-                <div class="flex w-full flex-nowrap items-end gap-2 sm:w-auto sm:justify-end">
-                  <form
-                    :if={is_nil(request.matched_user_id)}
-                    id={"approve-request-#{request.id}"}
-                    phx-change="approval_access_changed"
-                    phx-submit="approve_request"
-                    class="min-w-0 flex-1 space-y-2 sm:w-44 sm:flex-none"
-                  >
-                    <input type="hidden" name="_request_id" value={request.id} />
-                    <.input
-                      type="select"
-                      name="runner_access_mode"
-                      value={Map.get(@approval_access_modes, request.id, "none")}
-                      label="Runner access"
-                      size={:compact}
-                      class="min-w-0"
-                      options={[
-                        {"No runners", "none"},
-                        {"All runners", "all"},
-                        {"Selected runners", "restricted"}
-                      ]}
-                    />
-                    <.runner_scope_select
-                      :if={Map.get(@approval_access_modes, request.id) == "restricted"}
-                      name="scope[]"
-                      label="Selected runners"
-                      runners={@runners}
-                      selected={Map.get(@approval_scope_drafts, request.id, [])}
-                      validation_error={Map.get(@approval_scope_errors, request.id)}
-                      load_error={RunnerScope.runner_load_error(@runner_load_error?)}
-                    />
-                    <.pack_access_field
-                      runner_mode={Map.get(@approval_access_modes, request.id, "none")}
-                      runner_scope={Map.get(@approval_scope_drafts, request.id, [])}
-                      runners={@runners}
-                      advertisements={@pack_advertisements}
-                      grant_limited?={@pack_access_restricted?}
-                      load_error={RunnerScope.pack_load_error(@pack_load_error?)}
-                      variant={:select}
-                      mode_name="pack_access_mode"
-                      mode_value={Map.get(@approval_pack_modes, request.id, "all")}
-                      scope_name="pack_scope[]"
-                      selected={Map.get(@approval_pack_drafts, request.id, [])}
-                      validation_error={Map.get(@approval_pack_errors, request.id)}
-                    />
-                  </form>
+                    ·
+                  </span>
+                  <span>{request_facts.provider.name}</span>
+                </:meta>
+                <:actions>
                   <.button
-                    :if={is_nil(request.matched_user_id)}
-                    type="submit"
-                    form={"approve-request-#{request.id}"}
+                    id={"review-access-request-#{request_facts.request.id}"}
+                    type="button"
                     variant={:secondary}
                     tone={:amber}
                     size={:sm}
+                    aria-haspopup="dialog"
+                    aria-controls={"approve-request-dialog-#{request_facts.request.id}"}
+                    phx-click={open_confirm("approve-request-dialog-#{request_facts.request.id}")}
                   >
                     Approve
                   </.button>
                   <.confirm_button
-                    :if={request.matched_user_id}
-                    id={"approve-request-#{request.id}"}
-                    title={approve_title(request)}
-                    confirm_label="Approve"
-                    variant={:secondary}
-                    tone={:amber}
-                    size={:sm}
-                    on_confirm={
-                      JS.push("approve_request",
-                        value: %{id: request.id, runner_access_mode: "none"}
-                      )
-                    }
-                  >
-                    <:body>{approve_body(request)}</:body>
-                    Approve
-                  </.confirm_button>
-                  <.confirm_button
-                    id={"dismiss-request-#{request.id}"}
+                    id={"dismiss-request-#{request_facts.request.id}"}
                     title="Dismiss this request?"
                     confirm_label="Dismiss"
                     variant={:secondary}
                     tone={:rose}
                     size={:sm}
-                    on_confirm={JS.push("dismiss_request", value: %{id: request.id})}
+                    on_confirm={JS.push("dismiss_request", value: %{id: request_facts.request.id})}
                   >
                     <:body>They'll need to sign in again to re-request.</:body>
                     Dismiss
                   </.confirm_button>
-                </div>
-              </li>
+                </:actions>
+              </.list_row>
             </ul>
+
+            <%= for request_facts <- @pending_requests do %>
+              <% request = request_facts.request %>
+              <% approval_dialog_id = "approve-request-dialog-#{request.id}" %>
+              <.confirm_dialog
+                id={approval_dialog_id}
+                title={approval_title(request_facts)}
+                confirm_label="Approve access"
+                tone={:amber}
+                disabled={approval_disabled?(request_facts, assigns)}
+                on_confirm={
+                  JS.push("approve_request", value: %{id: request.id})
+                  |> close_confirm(approval_dialog_id)
+                }
+              >
+                <:fields>
+                  <div class="space-y-5">
+                    <dl class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-sm">
+                      <dt class="text-zinc-400">Connection</dt>
+                      <dd class="min-w-0 text-zinc-200">{request_facts.provider.name}</dd>
+                      <dt class="text-zinc-400">Email</dt>
+                      <dd class="min-w-0 break-words text-zinc-200">{request.email}</dd>
+                      <dt class="text-zinc-400">Provider ID</dt>
+                      <dd class="min-w-0 break-all font-mono text-xs text-zinc-300">
+                        {request.provider_identifier}
+                      </dd>
+                      <dt class="text-zinc-400">Workspace role</dt>
+                      <dd class="min-w-0 text-zinc-200">
+                        {if request.matched_user_id,
+                          do: "Current role unchanged",
+                          else: Emisar.Auth.role_label(request_facts.default_role)}
+                      </dd>
+                    </dl>
+
+                    <form
+                      :if={is_nil(request.matched_user_id)}
+                      id={"approve-request-#{request.id}"}
+                      phx-change="approval_access_changed"
+                      class="space-y-3 border-t border-zinc-800/70 pt-5"
+                    >
+                      <input type="hidden" name="_request_id" value={request.id} />
+                      <.input
+                        type="select"
+                        name="runner_access_mode"
+                        value={Map.get(@approval_access_modes, request.id, "none")}
+                        label="Runner access"
+                        size={:compact}
+                        class="min-w-0"
+                        options={[
+                          {"No runners", "none"},
+                          {"All runners", "all"},
+                          {"Selected runners", "restricted"}
+                        ]}
+                      />
+                      <.runner_scope_select
+                        :if={Map.get(@approval_access_modes, request.id) == "restricted"}
+                        name="scope[]"
+                        label="Selected runners"
+                        runners={@runners}
+                        selected={Map.get(@approval_scope_drafts, request.id, [])}
+                        validation_error={Map.get(@approval_scope_errors, request.id)}
+                        load_error={RunnerScope.runner_load_error(@runner_load_error?)}
+                      />
+                      <.pack_access_field
+                        runner_mode={Map.get(@approval_access_modes, request.id, "none")}
+                        runner_scope={Map.get(@approval_scope_drafts, request.id, [])}
+                        runners={@runners}
+                        advertisements={@pack_advertisements}
+                        grant_limited?={@pack_access_restricted?}
+                        load_error={RunnerScope.pack_load_error(@pack_load_error?)}
+                        variant={:select}
+                        mode_name="pack_access_mode"
+                        mode_value={Map.get(@approval_pack_modes, request.id, "all")}
+                        scope_name="pack_scope[]"
+                        selected={Map.get(@approval_pack_drafts, request.id, [])}
+                        validation_error={Map.get(@approval_pack_errors, request.id)}
+                      />
+                    </form>
+                  </div>
+                </:fields>
+                <:body>
+                  <p class="text-sm leading-relaxed text-zinc-300">
+                    <%= if request.matched_user_id do %>
+                      This SSO identity will sign in as the existing account above. The member's
+                      current role, runner access, and pack access stay unchanged.
+                    <% else %>
+                      This creates a member with the {Emisar.Auth.role_label(
+                        request_facts.default_role
+                      )} role and the runner and pack access selected above.
+                    <% end %>
+                  </p>
+                </:body>
+              </.confirm_dialog>
+            <% end %>
           </section>
 
           <section id="members-section">
