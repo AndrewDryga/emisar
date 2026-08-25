@@ -42,7 +42,7 @@ func (d *driver) roleOf(externalID string) string {
 	  alias Emisar.{Accounts, Repo, SSO}
 	  identity =
 	    SSO.UserIdentity.Query.not_deleted()
-	    |> SSO.UserIdentity.Query.by_provider_and_scim_identity("` + d.providerID + `", "` + externalID + `")
+	    |> SSO.UserIdentity.Query.by_provider_and_scim_external_id("` + d.providerID + `", "` + externalID + `")
 	    |> Repo.peek()
 	  case identity && Accounts.peek_sync_membership(identity.account_id, identity.user_id) do
 	    nil -> IO.puts("none")
@@ -540,7 +540,7 @@ func (d *driver) testOffboardingEndsAccess() {
 		  alias Emisar.{Auth, Repo, SSO}
 		  identity =
 		    SSO.UserIdentity.Query.not_deleted()
-		    |> SSO.UserIdentity.Query.by_provider_and_scim_identity("` + d.providerID + `", "` + d.aliceKCID + `")
+		    |> SSO.UserIdentity.Query.by_provider_and_scim_external_id("` + d.providerID + `", "` + d.aliceKCID + `")
 		    |> Repo.peek()
 		  count =
 		    Auth.UserToken.Query.by_user_id(identity.user_id)
@@ -576,7 +576,7 @@ func (d *driver) testOffboardingEndsAccess() {
 	  alias Emisar.{Accounts, Repo, SSO}
 	  identity =
 	    SSO.UserIdentity.Query.not_deleted()
-	    |> SSO.UserIdentity.Query.by_provider_and_scim_identity("` + d.providerID + `", "` + d.aliceKCID + `")
+	    |> SSO.UserIdentity.Query.by_provider_and_scim_external_id("` + d.providerID + `", "` + d.aliceKCID + `")
 	    |> Repo.peek()
 	  membership = Accounts.peek_sync_membership(identity.account_id, identity.user_id)
 	  IO.puts(to_string(not is_nil(membership.disabled_at)))`)
