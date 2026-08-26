@@ -15,6 +15,7 @@ defmodule EmisarWeb.SSOController do
   """
   use EmisarWeb, :controller
   alias Emisar.{Accounts, Auth, SSO, Users}
+  alias EmisarWeb.OIDCIdentityHandoff
   alias EmisarWeb.RecentAccounts
   alias EmisarWeb.UserAuth
   require Logger
@@ -25,12 +26,13 @@ defmodule EmisarWeb.SSOController do
   # bypass one another's allowance.
   plug EmisarWeb.Plugs.RateLimit,
        [bucket: "sso_oidc_ip", limit: 20, window_ms: 60_000, by: :ip]
-       when action in [:begin, :callback, :begin_member_mfa_reset]
+       when action in [:begin, :callback, :begin_member_mfa_reset, :begin_identity_link]
 
   # The login transaction secrets the callback needs, kept server-side in the
   # session (signed, bound to this browser) for the duration of the round-trip.
   @stash_key :sso_login
   @member_mfa_reset_stash_key :member_mfa_reset_sso
+  @identity_link_stash_key :sso_identity_link
 
   def begin(conn, %{"provider_id" => provider_id}) do
     redirect_uri = url(~p"/sign_in/sso/callback")
@@ -130,9 +132,67 @@ defmodule EmisarWeb.SSOController do
     end
   end
 
+  def begin_identity_link(
+        conn,
+        %{"account_id_or_slug" => account_ref, "handoff" => handoff}
+      ) do
+    redirect_uri = url(~p"/sign_in/sso/callback")
+
+    with %Users.User{} = user <- conn.assigns[:current_user],
+         %Auth.UserToken{token: actor_session_token_digest} <- conn.assigns[:current_auth],
+         {:ok, subject} <- UserAuth.subject_for_account(conn, account_ref),
+         {:ok, payload} <- OIDCIdentityHandoff.verify(handoff),
+         {:ok, provider_id, purpose, proof} <-
+           identity_handoff_payload(payload, user, subject, actor_session_token_digest),
+         {:ok, begun} <-
+           SSO.begin_identity_link(
+             provider_id,
+             purpose,
+             redirect_uri,
+             proof,
+             actor_session_token_digest,
+             subject
+           ) do
+      stash =
+        begun
+        |> Map.take([
+          :actor_id,
+          :actor_membership_id,
+          :actor_session_token_digest,
+          :account_id,
+          :provider_id,
+          :namespace,
+          :purpose,
+          :local_proof,
+          :started_at,
+          :state,
+          :nonce,
+          :pkce_verifier
+        ])
+        |> Map.put(:redirect_uri, redirect_uri)
+        |> Map.put(:return_path, identity_link_return_path(subject.account, provider_id, purpose))
+
+      conn
+      |> delete_session(@stash_key)
+      |> delete_session(@member_mfa_reset_stash_key)
+      |> put_session(@identity_link_stash_key, stash)
+      |> redirect(external: begun.authorize_url)
+    else
+      reason ->
+        log_failure("sso_identity_link_begin_failed", reason)
+
+        conn
+        |> delete_session(@identity_link_stash_key)
+        |> put_flash(:error, "Couldn't start provider sign-in. Confirm your code and try again.")
+        |> redirect(to: identity_link_failure_path(account_ref))
+    end
+  end
+
   @failure_events ~w[sso_begin_failed sso_callback_failed
                      member_mfa_reset_sso_begin_failed
-                     member_mfa_reset_sso_callback_failed]
+                     member_mfa_reset_sso_callback_failed
+                     sso_identity_link_begin_failed
+                     sso_identity_link_callback_failed]
 
   # oidcc/httpc errors may carry token records, full claims, raw response bodies,
   # unknown key ids, and the TLS option list (including the CA store). Only the
@@ -214,6 +274,10 @@ defmodule EmisarWeb.SSOController do
   defp failure_reason(:email_taken), do: "email_already_bound"
   defp failure_reason(:identity_pending_approval), do: "identity_pending_approval"
   defp failure_reason(:identity_namespace_changed), do: "provider_config_changed"
+  defp failure_reason(:identity_already_linked), do: "identity_conflict"
+  defp failure_reason(:different_identity_already_linked), do: "identity_conflict"
+  defp failure_reason(:identity_step_up_stale), do: "local_proof_stale"
+  defp failure_reason(:identity_link_invalid), do: "identity_link_invalid"
 
   defp failure_reason(reason) when reason in [:invitation_pending, :mfa_not_enabled],
     do: "reset_target_unavailable"
@@ -231,17 +295,51 @@ defmodule EmisarWeb.SSOController do
   defp failure_reason(_reason), do: "redacted_failure"
 
   def callback(conn, params) do
+    case get_session(conn, @identity_link_stash_key) do
+      %{} = stash ->
+        complete_identity_link(conn, params, stash)
+
+      nil ->
+        complete_non_link_callback(conn, params)
+    end
+  end
+
+  defp complete_non_link_callback(conn, params) do
     case {get_session(conn, @member_mfa_reset_stash_key), conn.assigns[:current_user]} do
-      {%{} = stash, _current_user} ->
-        complete_member_mfa_reset(conn, params, stash)
+      {%{} = stash, _current_user} -> complete_member_mfa_reset(conn, params, stash)
+      {nil, %Users.User{}} -> conn |> delete_session(@stash_key) |> redirect(to: ~p"/app")
+      {nil, nil} -> complete_sign_in(conn, params)
+    end
+  end
 
-      {nil, %Users.User{}} ->
+  defp complete_identity_link(conn, params, stash) do
+    return_path = identity_link_stashed_return_path(stash)
+
+    with %Users.User{} <- conn.assigns[:current_user],
+         %Auth.UserToken{token: actor_session_token_digest} <- conn.assigns[:current_auth],
+         account_id when is_binary(account_id) <- Map.get(stash, :account_id),
+         {:ok, subject} <- UserAuth.subject_for_account(conn, account_id),
+         {:ok, %{provider: provider, purpose: purpose}} <-
+           SSO.complete_identity_link(
+             params,
+             stash,
+             actor_session_token_digest,
+             subject
+           ) do
+      message = identity_link_success_message(provider.name, purpose)
+
+      conn
+      |> delete_session(@identity_link_stash_key)
+      |> put_flash(:info, message)
+      |> redirect(to: return_path)
+    else
+      reason ->
+        log_failure("sso_identity_link_callback_failed", reason)
+
         conn
-        |> delete_session(@stash_key)
-        |> redirect(to: ~p"/app")
-
-      {nil, nil} ->
-        complete_sign_in(conn, params)
+        |> delete_session(@identity_link_stash_key)
+        |> put_flash(:error, identity_link_error_message(reason))
+        |> redirect(to: return_path)
     end
   end
 
@@ -346,6 +444,68 @@ defmodule EmisarWeb.SSOController do
         |> redirect(to: member_mfa_reset_failure_path(account_ref))
     end
   end
+
+  defp identity_handoff_payload(
+         %{
+           actor_id: actor_id,
+           actor_membership_id: membership_id,
+           actor_session_token_digest: session_digest,
+           account_id: account_id,
+           provider_id: provider_id,
+           purpose: purpose,
+           proof: proof
+         },
+         %Users.User{id: actor_id},
+         %{membership_id: membership_id, account: %{id: account_id}},
+         session_digest
+       )
+       when is_binary(provider_id) and purpose in [:link, :verify_provider] and is_binary(proof),
+       do: {:ok, provider_id, purpose, proof}
+
+  defp identity_handoff_payload(_payload, _user, _subject, _session_digest),
+    do: {:error, :invalid}
+
+  defp identity_link_return_path(account, _provider_id, :link),
+    do: ~p"/app/#{account}/settings/profile"
+
+  defp identity_link_return_path(account, provider_id, :verify_provider),
+    do: ~p"/app/#{account}/settings/sso/#{provider_id}"
+
+  defp identity_link_stashed_return_path(%{
+         account_id: account_id,
+         provider_id: provider_id,
+         purpose: purpose
+       })
+       when is_binary(account_id) and is_binary(provider_id) and
+              purpose in [:link, :verify_provider],
+       do: identity_link_return_path(account_id, provider_id, purpose)
+
+  defp identity_link_stashed_return_path(_stash), do: ~p"/app"
+
+  defp identity_link_failure_path(account_ref) when is_binary(account_ref),
+    do: ~p"/app/#{account_ref}/settings/profile"
+
+  defp identity_link_failure_path(_account_ref), do: ~p"/app"
+
+  defp identity_link_success_message(provider_name, :link),
+    do: "#{provider_name} is now linked to your profile."
+
+  defp identity_link_success_message(provider_name, :verify_provider),
+    do: "#{provider_name} sign-in verified and linked to your profile."
+
+  defp identity_link_error_message({:error, reason}), do: identity_link_error_message(reason)
+
+  defp identity_link_error_message(:identity_already_linked),
+    do: "That provider identity is already linked to another profile. Nothing changed."
+
+  defp identity_link_error_message(:different_identity_already_linked),
+    do: "Your profile already has a different identity for this provider. Remove it first."
+
+  defp identity_link_error_message(:identity_namespace_changed),
+    do: "The provider settings changed during verification. Start again."
+
+  defp identity_link_error_message(_reason),
+    do: "Provider sign-in could not be verified. Start again."
 
   defp member_mfa_reset_failure_path(account_id) when is_binary(account_id),
     do: ~p"/app/#{account_id}/settings/team"

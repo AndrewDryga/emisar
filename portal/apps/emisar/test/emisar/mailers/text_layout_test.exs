@@ -94,6 +94,17 @@ defmodule Emisar.Mailers.TextLayoutTest do
     UserNotifier.deliver_mfa_enrollment_code(user, "ABC234", request_context(), account)
     mfa_enrollment = sent_text_body()
 
+    UserNotifier.deliver_oidc_identity_step_up_code(
+      user,
+      "123456",
+      "Okta Workforce",
+      :link,
+      request_context(),
+      account
+    )
+
+    oidc_identity_step_up = sent_text_body()
+
     invitation_membership =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
@@ -117,6 +128,7 @@ defmodule Emisar.Mailers.TextLayoutTest do
       {"magic link", magic_link},
       {"email change code", email_change},
       {"authenticator code", mfa_enrollment},
+      {"OIDC identity step-up", oidc_identity_step_up},
       {"invitation", invitation},
       {"approval request", approval_request_body(user, account)},
       {"runbook approval request", runbook_approval_request_body(user, account)},

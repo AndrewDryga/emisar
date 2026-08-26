@@ -65,6 +65,8 @@ defmodule Emisar.Audit.Event.Query do
     {"user.invitation_accepted", "User accepted invitation"},
     {"user.email_confirmed", "Email confirmed"},
     {"user.email_change_requested", "Email change requested"},
+    {"user.oidc_identity_step_up_requested", "Sign-in method confirmation requested"},
+    {"user.oidc_identity_step_up_rate_limited", "Sign-in method confirmation rate limited"},
     {"user.email_change_rate_limited", "Email change rate limited"},
     {"user.email_changed", "Email changed"},
     {"user.inbox_step_up_rate_limited", "Inbox step-up rate limited"},
@@ -137,6 +139,9 @@ defmodule Emisar.Audit.Event.Query do
     {"sso.provider_configured", "SSO provider configured"},
     {"sso.provider_updated", "SSO provider updated"},
     {"sso.provider_deleted", "SSO provider deleted"},
+    {"sso.provider_sign_in_verified", "SSO provider sign-in verified"},
+    {"sso.identity_linked", "SSO identity linked"},
+    {"sso.identity_unlinked", "SSO identity unlinked"},
     {"sso.link_request_approved", "SSO link request approved"},
     {"sso.link_request_dismissed", "SSO link request dismissed"},
     {"audit.exported", "Audit log exported"},
@@ -252,6 +257,8 @@ defmodule Emisar.Audit.Event.Query do
     {"User security",
      [
        {"user.email_change_requested", "Email change requested"},
+       {"user.oidc_identity_step_up_requested", "Sign-in method confirmation requested"},
+       {"user.oidc_identity_step_up_rate_limited", "Sign-in method confirmation rate limited"},
        {"user.email_change_rate_limited", "Email change rate limited"},
        {"user.email_changed", "Email changed"},
        {"user.inbox_step_up_rate_limited", "Inbox step-up rate limited"},
@@ -343,6 +350,9 @@ defmodule Emisar.Audit.Event.Query do
        {"sso.provider_configured", "Provider configured"},
        {"sso.provider_updated", "Provider updated"},
        {"sso.provider_deleted", "Provider deleted"},
+       {"sso.provider_sign_in_verified", "Provider sign-in verified"},
+       {"sso.identity_linked", "Identity linked"},
+       {"sso.identity_unlinked", "Identity unlinked"},
        {"sso.link_request_approved", "Link request approved"},
        {"sso.link_request_dismissed", "Link request dismissed"}
      ]},
@@ -925,6 +935,11 @@ defmodule Emisar.Audit.Event.Query do
       {true, false, false, "A user proved ownership of their email address."},
     "user.email_change_requested" =>
       {true, true, false, "A user asked to change their sign-in email (confirmation pending)."},
+    "user.oidc_identity_step_up_requested" =>
+      {true, true, false, "A user requested fresh proof before changing an SSO sign-in method."},
+    "user.oidc_identity_step_up_rate_limited" =>
+      {true, false, false,
+       "An SSO sign-in method confirmation was refused after the user reached its limit."},
     "user.email_change_rate_limited" =>
       {true, false, false,
        "An email-change code delivery was refused after the user reached its limit."},
@@ -1049,6 +1064,12 @@ defmodule Emisar.Audit.Event.Query do
     "sso.group_runner_access_mapping_deleted" =>
       {true, true, true, "An admin removed a directory-group runner-access mapping."},
     "sso.provider_configured" => {true, true, true, "An admin configured an identity provider."},
+    "sso.provider_sign_in_verified" =>
+      {true, true, true, "An admin completed an OIDC sign-in verification."},
+    "sso.identity_linked" =>
+      {true, true, true, "A user verified and linked an SSO identity to their profile."},
+    "sso.identity_unlinked" =>
+      {true, true, true, "A user removed a verified SSO identity from their profile."},
     "sso.provider_updated" =>
       {true, true, true, "An admin changed an identity provider's configuration."},
     "sso.provider_deleted" => {true, true, true, "An admin removed an identity provider."},

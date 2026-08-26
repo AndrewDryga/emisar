@@ -11,6 +11,7 @@ defmodule Emisar.Auth.UserToken.Query do
   @magic_link_verified_validity_in_minutes 10
   @email_change_validity_in_minutes 15
   @mfa_enrollment_validity_in_minutes 15
+  @oidc_identity_step_up_validity_in_minutes 15
 
   def all,
     do: from(t in UserToken, as: :tokens)
@@ -69,6 +70,9 @@ defmodule Emisar.Auth.UserToken.Query do
 
   defp validity_in_days("mfa_enrollment"),
     do: @mfa_enrollment_validity_in_minutes / (24 * 60)
+
+  defp validity_in_days("oidc_identity_step_up"),
+    do: @oidc_identity_step_up_validity_in_minutes / (24 * 60)
 
   @doc ~S(Preload the token's user, scoped to live users — a soft-deleted user's token preloads no user.)
   def with_preloaded_user(queryable \\ all()) do

@@ -1215,6 +1215,7 @@ defmodule Emisar.Auth do
     "magic_link_verified",
     "confirm",
     "email_change",
+    "oidc_identity_step_up",
     "mfa_enrollment_pending",
     "mfa_enrollment"
   ]
@@ -1222,6 +1223,11 @@ defmodule Emisar.Auth do
   @email_change_issue_window_ms 15 * 60_000
   @inbox_step_up_limit 5
   @inbox_step_up_window_ms 5 * 60_000
+  @oidc_identity_step_up_attempts 5
+  @oidc_identity_step_up_issue_limit 5
+  @oidc_identity_step_up_issue_window_ms 15 * 60_000
+  @oidc_identity_step_up_proof_salt "oidc identity step up proof"
+  @oidc_identity_step_up_proof_max_age_seconds 5 * 60
 
   @doc """
   Mints + emails a 6-digit step-up code to the user's CURRENT address, binding
@@ -1454,6 +1460,270 @@ defmodule Emisar.Auth do
 
   defp record_email_change_factor_failure(_factor, _user, reason, _context),
     do: {:error, reason}
+
+  # -- OIDC identity step-up ------------------------------------------
+
+  @doc """
+  Begin fresh local proof before linking, testing, or removing an OIDC identity.
+  A user with local MFA supplies an authenticator or recovery code; otherwise a
+  single-use code goes to the current inbox. The provider and purpose are bound
+  into both the stored code and the short-lived proof returned by confirmation.
+  """
+  def begin_oidc_identity_step_up(
+        provider_id,
+        provider_name,
+        purpose,
+        %Subject{actor: %Users.User{id: user_id}} = subject
+      )
+      when is_binary(provider_id) and is_binary(provider_name) and
+             purpose in [:link, :verify_provider, :unlink] do
+    with {:ok, user} <- Users.fetch_user_by_id(user_id) do
+      if mfa_enabled?(user) do
+        {:ok, :mfa}
+      else
+        with :ok <-
+               issue_oidc_identity_step_up_code(
+                 user,
+                 provider_id,
+                 provider_name,
+                 purpose,
+                 subject
+               ) do
+          {:ok, :email}
+        end
+      end
+    end
+  end
+
+  @doc "Issue a replacement current-inbox code for an in-progress OIDC identity step-up."
+  def resend_oidc_identity_step_up_code(
+        provider_id,
+        provider_name,
+        purpose,
+        %Subject{actor: %Users.User{id: user_id}} = subject
+      )
+      when is_binary(provider_id) and is_binary(provider_name) and
+             purpose in [:link, :verify_provider, :unlink] do
+    case Users.fetch_user_by_id(user_id) do
+      {:ok, %Users.User{mfa_enabled_at: nil} = user} ->
+        issue_oidc_identity_step_up_code(user, provider_id, provider_name, purpose, subject)
+
+      {:ok, %Users.User{}} ->
+        {:error, :factor_changed}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp issue_oidc_identity_step_up_code(user, provider_id, provider_name, purpose, subject) do
+    with :ok <-
+           throttle_security_attempt(
+             user,
+             :oidc_identity_step_up_issue,
+             @oidc_identity_step_up_issue_limit,
+             @oidc_identity_step_up_issue_window_ms,
+             subject.context
+           ) do
+      {code, digest} = Crypto.credential_step_up_code()
+
+      result =
+        Multi.new()
+        |> Multi.run(:user, fn repo, _changes ->
+          with {:ok, locked_user} <- Users.fetch_and_lock_user_by_id(user.id, repo),
+               nil <- locked_user.mfa_enabled_at do
+            {:ok, locked_user}
+          else
+            %DateTime{} -> {:error, :factor_changed}
+            {:error, reason} -> {:error, reason}
+          end
+        end)
+        |> Multi.delete_all(:prior, fn %{user: locked_user} ->
+          UserToken.Query.by_user_id(locked_user.id)
+          |> UserToken.Query.by_context("oidc_identity_step_up")
+        end)
+        |> Multi.insert(:token, fn %{user: locked_user} ->
+          UserToken.Changeset.oidc_identity_step_up(
+            locked_user,
+            digest,
+            provider_id,
+            purpose,
+            @oidc_identity_step_up_attempts
+          )
+        end)
+        |> Audit.Multi.log_for_user(:audit, nil, "user.oidc_identity_step_up_requested",
+          user_fn: & &1.user,
+          payload_fn: fn _changes ->
+            %{provider_id: provider_id, purpose: Atom.to_string(purpose)}
+          end,
+          extra: [context: subject.context]
+        )
+        |> Repo.commit_multi()
+
+      case result do
+        {:ok, %{user: locked_user}} ->
+          _ =
+            Mailers.UserNotifier.deliver_oidc_identity_step_up_code(
+              locked_user,
+              code,
+              provider_name,
+              purpose,
+              subject.context,
+              subject.account
+            )
+
+          :ok
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  @doc "Confirm fresh local proof and return an opaque OIDC-purpose proof."
+  def confirm_oidc_identity_step_up(
+        provider_id,
+        purpose,
+        code,
+        %Subject{actor: %Users.User{id: user_id}} = subject
+      )
+      when is_binary(provider_id) and is_binary(code) and
+             purpose in [:link, :verify_provider, :unlink] do
+    code = String.trim(code)
+
+    with {:ok, user} <- Users.fetch_user_by_id(user_id),
+         {:ok, verified_user} <-
+           verify_oidc_identity_step_up_factor(user, provider_id, purpose, code, subject) do
+      {:ok, oidc_identity_step_up_proof(verified_user, provider_id, purpose)}
+    end
+  end
+
+  defp verify_oidc_identity_step_up_factor(
+         %Users.User{mfa_enabled_at: %DateTime{}} = user,
+         _provider_id,
+         _purpose,
+         code,
+         subject
+       ),
+       do: verify_current_mfa_factor(user, code, subject.context)
+
+  defp verify_oidc_identity_step_up_factor(user, provider_id, purpose, code, subject) do
+    with :ok <-
+           throttle_security_attempt(
+             user,
+             :inbox_step_up,
+             @inbox_step_up_limit,
+             @inbox_step_up_window_ms,
+             subject.context
+           ) do
+      consume_oidc_identity_step_up_code(user.id, provider_id, purpose, code)
+    end
+  end
+
+  defp consume_oidc_identity_step_up_code(user_id, provider_id, purpose, code) do
+    Multi.new()
+    |> Multi.run(:user, fn repo, _changes -> Users.fetch_and_lock_user_by_id(user_id, repo) end)
+    |> Multi.run(:outcome, fn repo, %{user: user} ->
+      token =
+        UserToken.Query.by_user_id(user.id)
+        |> UserToken.Query.by_context("oidc_identity_step_up")
+        |> UserToken.Query.not_expired("oidc_identity_step_up")
+        |> UserToken.Query.with_attempts_remaining()
+        |> UserToken.Query.lock_for_update()
+        |> repo.one()
+
+      verify_oidc_identity_step_up_code(repo, token, user, provider_id, purpose, code)
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{outcome: {:ok, user}}} -> {:ok, user}
+      {:ok, %{outcome: {:error, reason}}} -> {:error, reason}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp verify_oidc_identity_step_up_code(repo, token, user, provider_id, purpose, code) do
+    expected_metadata = %{
+      "provider_id" => provider_id,
+      "purpose" => Atom.to_string(purpose),
+      "user_updated_at" => DateTime.to_iso8601(user.updated_at)
+    }
+
+    cond do
+      is_nil(token) or not is_nil(user.mfa_enabled_at) ->
+        {:ok, {:error, :invalid}}
+
+      token.sent_to != user.email or token.metadata != expected_metadata ->
+        {:ok, {:error, :invalid}}
+
+      Crypto.secure_compare(Crypto.hash(code), token.token) ->
+        {:ok, _deleted} = repo.delete(token)
+        {:ok, {:ok, user}}
+
+      true ->
+        {:ok, _updated} = repo.update(UserToken.Changeset.decrement_attempts(token))
+        {:ok, {:error, :invalid}}
+    end
+  end
+
+  @doc "Recheck an OIDC identity proof against a freshly loaded user row."
+  def verify_oidc_identity_step_up_proof(proof, provider_id, purpose, %Users.User{} = user)
+      when is_binary(proof) and is_binary(provider_id) and
+             purpose in [:link, :verify_provider, :unlink] do
+    case Phoenix.Token.verify(mfa_proof_secret(), @oidc_identity_step_up_proof_salt, proof,
+           max_age: @oidc_identity_step_up_proof_max_age_seconds
+         ) do
+      {:ok, payload} ->
+        if payload == oidc_identity_step_up_proof_payload(user, provider_id, purpose),
+          do: :ok,
+          else: {:error, :identity_step_up_stale}
+
+      _other ->
+        {:error, :identity_step_up_stale}
+    end
+  end
+
+  def verify_oidc_identity_step_up_proof(_proof, _provider_id, _purpose, %Users.User{}),
+    do: {:error, :identity_step_up_stale}
+
+  @doc "Lock and verify the exact live session bound to an OIDC identity action."
+  def ensure_oidc_identity_step_up_current(
+        repo,
+        proof,
+        session_token_digest,
+        provider_id,
+        purpose,
+        %Users.User{} = user
+      )
+      when is_binary(session_token_digest) do
+    session_query =
+      UserToken.Query.by_token_digest(session_token_digest)
+      |> UserToken.Query.by_user_id(user.id)
+      |> UserToken.Query.by_context("session")
+      |> UserToken.Query.not_expired("session")
+      |> UserToken.Query.with_valid_auth_method()
+      |> UserToken.Query.lock_for_update()
+
+    with :ok <- verify_oidc_identity_step_up_proof(proof, provider_id, purpose, user),
+         {:ok, %UserToken{}} <- repo.fetch(session_query, UserToken.Query) do
+      :ok
+    else
+      _other -> {:error, :identity_step_up_stale}
+    end
+  end
+
+  defp oidc_identity_step_up_proof(user, provider_id, purpose) do
+    Phoenix.Token.sign(
+      mfa_proof_secret(),
+      @oidc_identity_step_up_proof_salt,
+      oidc_identity_step_up_proof_payload(user, provider_id, purpose)
+    )
+  end
+
+  defp oidc_identity_step_up_proof_payload(user, provider_id, purpose) do
+    {:oidc_identity_step_up, user.id, user.email, user.mfa_enabled_at, user.updated_at,
+     provider_id, purpose}
+  end
 
   # -- Email confirmation ----------------------------------------------
 
@@ -2098,7 +2368,13 @@ defmodule Emisar.Auth do
   def check_security_attempt(user, scope, limit, window_ms, context \\ %RequestContext{})
 
   def check_security_attempt(%Users.User{id: user_id} = user, scope, limit, window_ms, context)
-      when scope in [:mfa_challenge, :inbox_step_up, :email_change_issue, :mfa_enrollment_issue] and
+      when scope in [
+             :mfa_challenge,
+             :inbox_step_up,
+             :email_change_issue,
+             :mfa_enrollment_issue,
+             :oidc_identity_step_up_issue
+           ] and
              is_integer(limit) and limit > 0 and is_integer(window_ms) and window_ms > 0 and
              is_struct(context, RequestContext) do
     if Emisar.Config.get_env(:emisar, :rate_limit_enabled, true) do
@@ -2227,6 +2503,25 @@ defmodule Emisar.Auth do
       user,
       "user.inbox_step_up_rate_limited",
       :inbox_step_up,
+      limit,
+      window_ms,
+      context
+    )
+  end
+
+  defp maybe_log_security_attempt_exhausted(
+         multi,
+         %Users.User{} = user,
+         :oidc_identity_step_up_issue,
+         limit,
+         window_ms,
+         %RequestContext{} = context
+       ) do
+    log_security_attempt_exhausted(
+      multi,
+      user,
+      "user.oidc_identity_step_up_rate_limited",
+      :oidc_identity_step_up_issue,
       limit,
       window_ms,
       context

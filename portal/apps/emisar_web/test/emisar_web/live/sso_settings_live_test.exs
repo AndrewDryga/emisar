@@ -37,6 +37,33 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     provider
   end
 
+  defp mark_sign_in_verified(provider, user) do
+    identity =
+      Fixtures.SSO.create_user_identity(%{
+        account_id: provider.account_id,
+        provider_id: provider.id,
+        user_id: user.id,
+        created_by: :user,
+        provisioned_via: :oidc_link
+      })
+
+    digest =
+      [
+        provider.kind,
+        provider.issuer,
+        provider.client_id,
+        provider.client_secret,
+        provider.identifier_claim,
+        provider.allowed_email_domain
+      ]
+      |> :erlang.term_to_binary()
+      |> Emisar.Crypto.hash()
+
+    provider
+    |> IdentityProvider.Changeset.verify_sign_in(user.id, identity.id, digest)
+    |> Repo.update!()
+  end
+
   defp sync_group(provider, external_group_id, display) do
     {:ok, group} =
       SSO.scim_upsert_group(provider, %{
@@ -71,6 +98,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert new_html =~ "Member provisioning"
       refute new_html =~ "User provisioning"
       assert new_html =~ "/sign_in/sso/callback"
+      assert new_html =~ "Check issuer"
+      assert new_html =~ "stay disabled until you save them and verify a real sign-in"
+      refute new_html =~ ~s(name="provider[enabled]")
     end
 
     test "creates a connection through the form, then lands on its detail", %{
@@ -779,6 +809,99 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute html =~ "Globex Google"
     end
 
+    test "separates issuer discovery from a real sign-in verification", %{
+      conn: conn,
+      account: account
+    } do
+      provider = insert_provider(account, %{name: "Saved but disabled", enabled: false})
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      assert has_element?(lv, "#sign-in-verification", "Sign-in verification")
+      assert has_element?(lv, "#sign-in-verification", "client ID")
+      assert has_element?(lv, "#sign-in-verification", "client secret")
+      assert has_element?(lv, "#sign-in-verification", "callback")
+      assert html =~ "It does not enable this connection."
+      assert html =~ "No administrator has completed a real sign-in"
+
+      assert has_element?(
+               lv,
+               "#verify-provider-sign-in-#{provider.id}",
+               "Verify sign-in and link my profile"
+             )
+
+      assert Repo.reload!(provider).enabled == false
+    end
+
+    test "keeps a wrong admin proof inline and arms only a valid verification handoff", %{
+      conn: conn,
+      account: account
+    } do
+      provider = insert_provider(account, %{name: "Workforce Okta", enabled: false})
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      lv |> element("#verify-provider-sign-in-#{provider.id}") |> render_click()
+      assert_received {:email, email}
+      assert has_element?(lv, "#provider_oidc_step_form")
+
+      wrong =
+        render_hook(lv, "confirm_oidc_step_up", %{
+          "oidc_step" => %{"code" => "000000"}
+        })
+
+      assert wrong =~ "wrong or expired"
+      refute wrong =~ ~s(name="handoff")
+
+      confirmed =
+        render_hook(lv, "confirm_oidc_step_up", %{
+          "oidc_step" => %{"code" => Fixtures.Auth.code_from_email(email)}
+        })
+
+      assert confirmed =~ "phx-trigger-action"
+      assert confirmed =~ ~s(action="/app/#{account.slug}/settings/sso/identity/link")
+      assert confirmed =~ ~s(name="handoff")
+      assert Repo.reload!(provider).enabled == false
+    end
+
+    test "offers activation only after current settings have a real sign-in receipt", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      unverified = insert_provider(account, %{name: "Needs verification", enabled: false})
+      {:ok, unverified_lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{unverified.id}")
+
+      refute has_element?(unverified_lv, "#enable-verified-provider-#{unverified.id}")
+
+      denied =
+        render_click(unverified_lv, "enable_verified_provider", %{
+          "provider_id" => unverified.id
+        })
+
+      assert denied =~ "Verify a real sign-in"
+      refute Repo.reload!(unverified).enabled
+
+      verified =
+        insert_provider(account, %{name: "Ready to enable", kind: :keycloak, enabled: false})
+        |> mark_sign_in_verified(user)
+
+      {:ok, verified_lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{verified.id}")
+
+      assert html =~ "You completed a real sign-in"
+      assert html =~ "Members still cannot use it"
+
+      assert has_element?(verified_lv, "#enable-verified-provider-#{verified.id}")
+      assert has_element?(verified_lv, "button", "Enable for members")
+
+      enabled =
+        render_click(verified_lv, "enable_verified_provider", %{
+          "provider_id" => verified.id
+        })
+
+      assert enabled =~ "Connection enabled for members."
+      assert Repo.reload!(verified).enabled
+    end
+
     test "a connection from another account reads as not found — back to the overview", %{
       conn: conn,
       account: account
@@ -814,6 +937,24 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       assert html =~ "Single sign-on needs an owner or admin role."
       refute html =~ "Acme Okta"
+    end
+
+    test "a non-admin forged verification event cannot issue a code", %{
+      conn: conn,
+      account: account,
+      user: user
+    } do
+      provider = insert_provider(account, %{name: "Acme Okta"})
+      _ = make_viewer(user)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      html =
+        render_click(lv, "start_provider_sign_in_verification", %{
+          "provider_id" => provider.id
+        })
+
+      refute html =~ "provider_oidc_step_form"
+      refute_received {:email, _email}
     end
   end
 

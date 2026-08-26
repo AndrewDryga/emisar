@@ -318,6 +318,553 @@ defmodule Emisar.SSO do
     end
   end
 
+  # -- Self-service OIDC identity linking -----------------------------
+
+  @identity_link_reauthentication_max_age_seconds 120
+  @identity_link_reauthentication_clock_skew_seconds 30
+
+  @doc "The enabled SSO methods this user may link from the current workspace."
+  def list_self_service_identity_facts(
+        %Subject{actor: %Users.User{id: user_id}, account: %{id: account_id}} = subject
+      ) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_sso_posture_permission()
+           ) do
+      providers =
+        IdentityProvider.Query.not_deleted()
+        |> IdentityProvider.Query.enabled()
+        |> IdentityProvider.Query.by_account_id(account_id)
+        |> IdentityProvider.Query.ordered_by_name()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      identities =
+        UserIdentity.Query.not_deleted()
+        |> UserIdentity.Query.by_account_id(account_id)
+        |> UserIdentity.Query.by_user_id(user_id)
+        |> Repo.all()
+        |> Map.new(&{&1.provider_id, &1})
+
+      {:ok,
+       Enum.map(providers, fn provider ->
+         identity = Map.get(identities, provider.id)
+
+         %{
+           provider_id: provider.id,
+           provider_name: provider.name,
+           linked?: active_identity?(identity),
+           removable?: active_identity?(identity) and identity.created_by == :user,
+           identity_id: identity && identity.id,
+           verified_at: identity && identity.last_seen_at
+         }
+       end)}
+    end
+  end
+
+  def list_self_service_identity_facts(%Subject{}), do: {:error, :unauthorized}
+
+  @doc "A provider's durable real-sign-in receipt and the acting admin's link state."
+  def provider_sign_in_verification_facts(
+        %IdentityProvider{id: provider_id},
+        %Subject{actor: %Users.User{id: user_id}} = subject
+      ) do
+    with {:ok, provider} <- fetch_provider_by_id(provider_id, subject) do
+      identity =
+        UserIdentity.Query.not_deleted()
+        |> UserIdentity.Query.provider_identifier_active()
+        |> UserIdentity.Query.by_provider_id(provider.id)
+        |> UserIdentity.Query.by_user_id(user_id)
+        |> Repo.peek()
+
+      status = provider_sign_in_verification_status(provider)
+
+      {:ok,
+       %{
+         status: status,
+         verified_at: provider.sign_in_verified_at,
+         verified_by_current_user?: provider.sign_in_verified_by_user_id == user_id,
+         linked?: not is_nil(identity),
+         identity_id: identity && identity.id
+       }}
+    end
+  end
+
+  @doc "Begin a dedicated OIDC identity action after fresh local proof."
+  def begin_identity_link(
+        provider_id,
+        purpose,
+        redirect_uri,
+        proof,
+        actor_session_token_digest,
+        %Subject{} = subject
+      )
+      when is_binary(provider_id) and purpose in [:link, :verify_provider] and
+             is_binary(redirect_uri) and is_binary(proof) and
+             is_binary(actor_session_token_digest) do
+    with {:ok, provider} <- fetch_identity_link_provider(provider_id, purpose, subject),
+         {:ok, user} <- Users.fetch_user_by_id(Subject.actor_id(subject)),
+         :ok <- Auth.verify_oidc_identity_step_up_proof(proof, provider_id, purpose, user),
+         {:ok, begun} <-
+           OIDC.begin_authorization(provider,
+             redirect_uri: redirect_uri,
+             url_extension: [{"prompt", "login"}, {"max_age", "0"}]
+           ) do
+      {:ok,
+       Map.merge(begun, %{
+         actor_id: user.id,
+         actor_membership_id: subject.membership_id,
+         actor_session_token_digest: actor_session_token_digest,
+         account_id: provider.account_id,
+         provider_id: provider.id,
+         namespace: callback_namespace(provider),
+         purpose: purpose,
+         local_proof: proof,
+         started_at: System.system_time(:second)
+       })}
+    end
+  end
+
+  @doc "Complete an OIDC identity action without creating a user, membership, or session."
+  def complete_identity_link(
+        params,
+        stashed,
+        actor_session_token_digest,
+        %Subject{} = subject
+      )
+      when is_map(params) and is_map(stashed) and is_binary(actor_session_token_digest) do
+    with :ok <- ensure_identity_link_stash(stashed, actor_session_token_digest, subject),
+         :ok <- ensure_identity_link_purpose_authorized(subject, stashed.purpose),
+         {:ok, provider} <- fetch_identity_link_provider_from_stash(stashed),
+         {:ok, %{identifier: identifier, claims: claims}} <-
+           OIDC.verify_callback(provider, params, stashed),
+         {:ok, _auth_time} <- identity_link_auth_time(claims, stashed),
+         {:ok, result} <-
+           commit_identity_link(
+             provider,
+             identifier,
+             claims,
+             stashed,
+             actor_session_token_digest,
+             subject
+           ) do
+      {:ok, result}
+    else
+      {:error, reason} -> {:error, reason}
+      _other -> {:error, :identity_link_invalid}
+    end
+  end
+
+  def complete_identity_link(_params, _stashed, _digest, %Subject{}),
+    do: {:error, :identity_link_invalid}
+
+  @doc "Remove one user-verified OIDC binding after fresh local proof."
+  def unlink_identity(
+        identity_id,
+        proof,
+        actor_session_token_digest,
+        %Subject{actor: %Users.User{id: user_id}, account: %{id: account_id}} = subject
+      )
+      when is_binary(identity_id) and is_binary(proof) and
+             is_binary(actor_session_token_digest) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_sso_posture_permission()
+           ),
+         %UserIdentity{provider_id: provider_id} <-
+           peek_scoped_user_identity(identity_id, account_id, user_id) do
+      unlink_identity_transaction(
+        identity_id,
+        provider_id,
+        proof,
+        actor_session_token_digest,
+        subject
+      )
+    else
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def unlink_identity(_identity_id, _proof, _digest, %Subject{}),
+    do: {:error, :unauthorized}
+
+  defp active_identity?(%UserIdentity{provider_identifier_retired_at: nil}), do: true
+  defp active_identity?(_identity), do: false
+
+  defp provider_sign_in_verification_status(
+         %IdentityProvider{
+           sign_in_verified_at: %DateTime{},
+           sign_in_verified_configuration_digest: stored
+         } = provider
+       )
+       when is_binary(stored) do
+    if Crypto.secure_compare(stored, provider_sign_in_configuration_digest(provider)),
+      do: :verified,
+      else: :stale
+  end
+
+  defp provider_sign_in_verification_status(%IdentityProvider{}), do: :unverified
+
+  defp provider_sign_in_configuration_digest(%IdentityProvider{} = provider) do
+    [
+      provider.kind,
+      provider.issuer,
+      provider.client_id,
+      provider.client_secret,
+      provider.identifier_claim,
+      provider.allowed_email_domain
+    ]
+    |> :erlang.term_to_binary()
+    |> Crypto.hash()
+  end
+
+  defp fetch_identity_link_provider(provider_id, :verify_provider, %Subject{} = subject) do
+    with :ok <- ensure_can_configure_sso(subject) do
+      fetch_provider_by_id(provider_id, subject)
+    end
+  end
+
+  defp fetch_identity_link_provider(provider_id, :link, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.view_sso_posture_permission()
+           ) do
+      IdentityProvider.Query.not_deleted()
+      |> IdentityProvider.Query.enabled()
+      |> IdentityProvider.Query.by_account_id(subject.account.id)
+      |> IdentityProvider.Query.by_id(provider_id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(IdentityProvider.Query)
+    end
+  end
+
+  defp fetch_identity_link_provider_from_stash(%{
+         provider_id: provider_id,
+         account_id: account_id
+       }) do
+    if Repo.valid_uuid?(provider_id) and Repo.valid_uuid?(account_id) do
+      IdentityProvider.Query.not_deleted()
+      |> IdentityProvider.Query.by_account_id(account_id)
+      |> IdentityProvider.Query.by_id(provider_id)
+      |> Repo.fetch(IdentityProvider.Query)
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp fetch_identity_link_provider_from_stash(_stash), do: {:error, :not_found}
+
+  defp ensure_identity_link_stash(stashed, actor_session_token_digest, subject) do
+    valid? =
+      Map.get(stashed, :actor_id) == Subject.actor_id(subject) and
+        Map.get(stashed, :actor_membership_id) == subject.membership_id and
+        Map.get(stashed, :account_id) == subject.account.id and
+        Map.get(stashed, :actor_session_token_digest) == actor_session_token_digest and
+        Map.get(stashed, :purpose) in [:link, :verify_provider] and
+        is_binary(Map.get(stashed, :provider_id)) and
+        is_binary(Map.get(stashed, :local_proof)) and
+        is_tuple(Map.get(stashed, :namespace)) and
+        is_integer(Map.get(stashed, :started_at))
+
+    if valid?, do: :ok, else: {:error, :identity_link_invalid}
+  end
+
+  defp identity_link_auth_time(%{"auth_time" => auth_time}, %{started_at: started_at})
+       when is_integer(auth_time) and is_integer(started_at) do
+    now = System.system_time(:second)
+    skew = @identity_link_reauthentication_clock_skew_seconds
+    max_age = @identity_link_reauthentication_max_age_seconds
+
+    if auth_time >= started_at - skew and auth_time >= now - max_age - skew and
+         auth_time <= now + skew,
+       do: {:ok, auth_time},
+       else: {:error, :identity_link_invalid}
+  end
+
+  defp identity_link_auth_time(_claims, _stashed), do: {:error, :identity_link_invalid}
+
+  defp commit_identity_link(provider, identifier, claims, stashed, digest, subject) do
+    Multi.new()
+    |> Multi.run(:account, fn repo, _changes ->
+      Accounts.fetch_and_lock_account(provider.account_id, repo: repo)
+    end)
+    |> Multi.run(:provider, fn repo, _changes ->
+      lock_identity_link_provider(repo, provider, stashed)
+    end)
+    |> Multi.run(:actor, fn repo, %{account: account, provider: locked_provider} ->
+      lock_identity_link_actor(repo, account, locked_provider, stashed, digest, subject)
+    end)
+    |> Multi.run(:identity, fn repo, %{actor: %{user: user}, provider: locked_provider} ->
+      link_identity_to_actor(repo, locked_provider, user, identifier, claims)
+    end)
+    |> Multi.insert(:identity_audit, fn %{
+                                          actor: %{subject: current_subject, user: user},
+                                          provider: locked_provider
+                                        } ->
+      Audit.Events.sso_identity_linked(current_subject, user, locked_provider)
+    end)
+    |> Multi.merge(&provider_verification_writes(&1, stashed.purpose))
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{identity: identity, provider: locked_provider}} ->
+        {:ok, %{identity: identity, provider: locked_provider, purpose: stashed.purpose}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp lock_identity_link_provider(repo, started_provider, stashed) do
+    current =
+      IdentityProvider.Query.not_deleted()
+      |> IdentityProvider.Query.by_account_id(started_provider.account_id)
+      |> IdentityProvider.Query.by_id(started_provider.id)
+      |> IdentityProvider.Query.lock_for_update()
+      |> repo.peek()
+
+    with %IdentityProvider{} = provider <- current,
+         true <- callback_namespace(provider) == stashed.namespace,
+         :ok <- ensure_identity_link_provider_enabled(provider, stashed.purpose) do
+      {:ok, provider}
+    else
+      false -> {:error, :identity_namespace_changed}
+      nil -> {:error, :provider_disabled}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp ensure_identity_link_provider_enabled(%IdentityProvider{}, :verify_provider), do: :ok
+  defp ensure_identity_link_provider_enabled(%IdentityProvider{enabled: true}, :link), do: :ok
+
+  defp ensure_identity_link_provider_enabled(%IdentityProvider{}, :link),
+    do: {:error, :provider_disabled}
+
+  defp lock_identity_link_actor(repo, account, provider, stashed, digest, subject) do
+    with {:ok, user} <- Users.fetch_and_lock_user_by_id(stashed.actor_id, repo),
+         {:ok, membership} <-
+           Accounts.fetch_and_lock_active_membership(
+             repo,
+             account.id,
+             stashed.actor_membership_id
+           ),
+         true <- membership.user_id == user.id,
+         current_subject = current_identity_link_subject(subject, user, account, membership),
+         :ok <- ensure_identity_link_purpose_authorized(current_subject, stashed.purpose),
+         :ok <-
+           Auth.ensure_oidc_identity_step_up_current(
+             repo,
+             stashed.local_proof,
+             digest,
+             provider.id,
+             stashed.purpose,
+             user
+           ) do
+      {:ok, %{user: user, membership: membership, subject: current_subject}}
+    else
+      false -> {:error, :unauthorized}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp current_identity_link_subject(subject, user, account, membership) do
+    Subject.for_user(user, account, membership, subject.context,
+      auth_method: subject.auth_method,
+      mfa: subject.mfa,
+      mfa_enrollment_verified_at: subject.mfa_enrollment_verified_at,
+      user_identity_id: subject.user_identity_id
+    )
+  end
+
+  defp ensure_identity_link_purpose_authorized(subject, :verify_provider),
+    do: ensure_can_configure_sso(subject)
+
+  defp ensure_identity_link_purpose_authorized(subject, purpose)
+       when purpose in [:link, :unlink] do
+    Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_sso_posture_permission())
+  end
+
+  defp link_identity_to_actor(repo, provider, user, identifier, claims) do
+    identifier_identity =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_provider_and_identifier(provider.id, identifier)
+      |> UserIdentity.Query.lock_for_update()
+      |> repo.peek()
+
+    user_identity =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_provider_id(provider.id)
+      |> UserIdentity.Query.by_user_id(user.id)
+      |> UserIdentity.Query.lock_for_update()
+      |> repo.peek()
+
+    with :ok <- ensure_identity_link_target(identifier_identity, user_identity, user.id),
+         :ok <- ensure_email_domain_allowed(provider, claims) do
+      persist_self_verified_identity(repo, provider, user, user_identity, identifier, claims)
+    end
+  end
+
+  defp ensure_identity_link_target(%UserIdentity{user_id: user_id}, _current, user_id), do: :ok
+
+  defp ensure_identity_link_target(%UserIdentity{}, _current, _user_id),
+    do: {:error, :identity_already_linked}
+
+  defp ensure_identity_link_target(nil, %UserIdentity{} = current, _user_id) do
+    if active_identity?(current), do: {:error, :different_identity_already_linked}, else: :ok
+  end
+
+  defp ensure_identity_link_target(nil, nil, _user_id), do: :ok
+
+  defp persist_self_verified_identity(repo, provider, user, nil, identifier, claims) do
+    UserIdentity.Changeset.create(provider.account_id, provider.id, user.id, %{
+      provider_identifier: identifier,
+      claims: claims,
+      created_by: :user,
+      provisioned_via: :oidc_link
+    })
+    |> repo.insert()
+  end
+
+  defp persist_self_verified_identity(repo, _provider, _user, identity, identifier, claims) do
+    identity
+    |> UserIdentity.Changeset.verify_by_user(identifier, claims)
+    |> repo.update()
+  end
+
+  defp provider_verification_writes(changes, :verify_provider) do
+    provider = changes.provider
+    identity = changes.identity
+    current_subject = changes.actor.subject
+
+    Multi.new()
+    |> Multi.update(
+      :verified_provider,
+      IdentityProvider.Changeset.verify_sign_in(
+        provider,
+        current_subject.actor.id,
+        identity.id,
+        provider_sign_in_configuration_digest(provider)
+      )
+    )
+    |> Multi.insert(
+      :provider_audit,
+      Audit.Events.identity_provider_sign_in_verified(current_subject, provider)
+    )
+  end
+
+  defp provider_verification_writes(_changes, :link), do: Multi.new()
+
+  defp peek_scoped_user_identity(identity_id, account_id, user_id) do
+    if Repo.valid_uuid?(identity_id) do
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_id(identity_id)
+      |> UserIdentity.Query.by_account_id(account_id)
+      |> UserIdentity.Query.by_user_id(user_id)
+      |> Repo.peek()
+    end
+  end
+
+  defp unlink_identity_transaction(identity_id, provider_id, proof, digest, subject) do
+    result =
+      Multi.new()
+      |> Multi.run(:account, fn repo, _changes ->
+        Accounts.fetch_and_lock_account(subject.account.id, repo: repo)
+      end)
+      |> Multi.run(:provider, fn repo, _changes ->
+        IdentityProvider.Query.not_deleted()
+        |> IdentityProvider.Query.by_account_id(subject.account.id)
+        |> IdentityProvider.Query.by_id(provider_id)
+        |> IdentityProvider.Query.lock_for_update()
+        |> repo.fetch(IdentityProvider.Query)
+      end)
+      |> Multi.run(:actor, fn repo, %{account: account, provider: provider} ->
+        unlink_identity_actor(repo, account, provider, proof, digest, subject)
+      end)
+      |> Multi.run(:identity, fn repo, %{actor: %{user: user}, provider: provider} ->
+        lock_unlink_identity(repo, identity_id, provider, user)
+      end)
+      |> Multi.update(:removed_identity, fn %{identity: identity} ->
+        unlink_identity_changeset(identity)
+      end)
+      |> Multi.run(:session_effect, fn repo, %{actor: %{user: user}, identity: identity} ->
+        Auth.delete_identity_session_tokens(user, [identity.id], repo)
+      end)
+      |> Multi.insert(:audit, fn %{
+                                   actor: %{subject: current_subject, user: user},
+                                   provider: provider
+                                 } ->
+        Audit.Events.sso_identity_unlinked(current_subject, user, provider)
+      end)
+      |> Repo.commit_multi(after_commit: &unlink_identity_effects/1)
+
+    case result do
+      {:ok, %{removed_identity: identity}} -> {:ok, identity}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp unlink_identity_actor(repo, account, provider, proof, digest, subject) do
+    stashed = %{
+      actor_id: Subject.actor_id(subject),
+      actor_membership_id: subject.membership_id,
+      local_proof: proof,
+      purpose: :unlink
+    }
+
+    lock_identity_link_actor(repo, account, provider, stashed, digest, subject)
+  end
+
+  defp lock_unlink_identity(repo, identity_id, provider, user) do
+    identity =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.provider_identifier_active()
+      |> UserIdentity.Query.by_id(identity_id)
+      |> UserIdentity.Query.by_account_id(provider.account_id)
+      |> UserIdentity.Query.by_provider_id(provider.id)
+      |> UserIdentity.Query.by_user_id(user.id)
+      |> UserIdentity.Query.lock_for_update()
+      |> repo.peek()
+
+    with %UserIdentity{created_by: :user} = identity <- identity,
+         false <- removal_strands_required_sso?(identity, user) do
+      {:ok, identity}
+    else
+      nil -> {:error, :not_found}
+      %UserIdentity{} -> {:error, :identity_not_user_verified}
+      true -> {:error, :required_sso_identity}
+    end
+  end
+
+  defp removal_strands_required_sso?(identity, user) do
+    account_requires_sso?(identity.account_id) and
+      not another_usable_identity?(identity, user)
+  end
+
+  defp another_usable_identity?(identity, user) do
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.provider_identifier_active()
+    |> UserIdentity.Query.by_account_id(identity.account_id)
+    |> UserIdentity.Query.by_user_id(user.id)
+    |> UserIdentity.Query.excluding_provider_id(identity.provider_id)
+    |> UserIdentity.Query.with_enabled_provider()
+    |> Repo.exists?()
+  end
+
+  defp unlink_identity_changeset(%UserIdentity{scim_external_id: external_id} = identity)
+       when is_binary(external_id),
+       do: UserIdentity.Changeset.retire_provider_identifier(identity)
+
+  defp unlink_identity_changeset(%UserIdentity{} = identity),
+    do: UserIdentity.Changeset.delete(identity)
+
+  defp unlink_identity_effects(%{session_effect: %{socket_topics: topics}}),
+    do: Auth.disconnect_live_socket_topics(topics)
+
+  defp unlink_identity_effects(_changes), do: :ok
+
   # -- Config mutations ------------------------------------------------
 
   @doc "Create an SSO connection. `manage_sso` + the Team or Enterprise plan. `{:ok, provider} | {:error, reason}`."
@@ -411,6 +958,9 @@ defmodule Emisar.SSO do
       cond do
         not grantable_role?(Ecto.Changeset.get_change(changeset, :default_role), subject) ->
           :role_exceeds_your_permissions
+
+        enabling_unverified_provider?(loaded_provider, changeset) ->
+          :sign_in_verification_required
 
         disabling_last_required_provider?(loaded_provider, changeset) ->
           :require_sso_last_provider
@@ -595,7 +1145,9 @@ defmodule Emisar.SSO do
   # because a create is where it's chosen. An unrecognized kind normalizes
   # nothing — the changeset's enum rejects it.
   defp new_provider_attrs(attrs) do
-    attrs = drop_blank_secret(attrs)
+    # Creation is always the save step, never activation. Even a crafted form
+    # cannot put an unverified provider on the member sign-in surface.
+    attrs = attrs |> drop_blank_secret() |> put_attr(:enabled, false)
 
     case fetch_attr_kind(attrs) do
       {:ok, metadata} ->
@@ -609,6 +1161,16 @@ defmodule Emisar.SSO do
       :error ->
         attrs
     end
+  end
+
+  defp enabling_unverified_provider?(provider, changeset) do
+    enabling? = not provider.enabled and Ecto.Changeset.get_change(changeset, :enabled) == true
+
+    enabling? and
+      changeset
+      |> Ecto.Changeset.apply_changes()
+      |> provider_sign_in_verification_status()
+      |> Kernel.!=(:verified)
   end
 
   # Update + edit-form normalization, from the PERSISTED kind — an edit never

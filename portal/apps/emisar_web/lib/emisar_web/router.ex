@@ -437,6 +437,8 @@ defmodule EmisarWeb.Router do
              SSOController,
              :begin_member_mfa_reset
 
+        post "/settings/sso/identity/link", SSOController, :begin_identity_link
+
         live "/settings/sso", SSOSettingsLive, :index
         live "/settings/sso/new", SSOSettingsLive, :new
         live "/settings/sso/:id", SSOSettingsLive, :show

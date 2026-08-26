@@ -37,6 +37,17 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
   def delete(%IdentityProvider{} = provider),
     do: change(provider, deleted_at: DateTime.utc_now())
 
+  @doc "Record a completed administrator sign-in against this exact configuration."
+  def verify_sign_in(%IdentityProvider{} = provider, user_id, identity_id, configuration_digest)
+      when is_binary(user_id) and is_binary(identity_id) and is_binary(configuration_digest) do
+    change(provider,
+      sign_in_verified_at: DateTime.utc_now(),
+      sign_in_verified_by_user_id: user_id,
+      sign_in_verified_identity_id: identity_id,
+      sign_in_verified_configuration_digest: configuration_digest
+    )
+  end
+
   def bump_authorization_version(%Ecto.Changeset{} = changeset, current_version) do
     put_change(changeset, :authorization_version, current_version + 1)
   end

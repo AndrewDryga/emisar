@@ -215,6 +215,47 @@ defmodule Emisar.Mailers.UserNotifier do
     )
   end
 
+  def deliver_oidc_identity_step_up_code(
+        %Users.User{} = user,
+        code,
+        provider_name,
+        purpose,
+        %RequestContext{} = context,
+        account
+      )
+      when is_binary(provider_name) and purpose in [:link, :verify_provider, :unlink] do
+    {subject, action} = oidc_identity_step_up_copy(provider_name, purpose)
+
+    deliver_transactional(
+      user,
+      subject,
+      "Use this code within 15 minutes to #{action}.",
+      [
+        account_instruction(
+          "Use this code to #{action} in emisar.",
+          "Use this code to #{action} in ",
+          account,
+          "."
+        ),
+        {:code, code},
+        {:paragraph, "This code works once and expires in 15 minutes."},
+        {:paragraph,
+         "If you didn't request this, ignore the email. Your sign-in methods will not change."},
+        {:section, "Request details"},
+        {:pre, request_details(context)}
+      ]
+    )
+  end
+
+  defp oidc_identity_step_up_copy(provider_name, :link),
+    do: {"Confirm linking #{one_line(provider_name)}", "link #{one_line(provider_name)}"}
+
+  defp oidc_identity_step_up_copy(provider_name, :verify_provider),
+    do: {"Confirm testing #{one_line(provider_name)}", "test #{one_line(provider_name)} sign-in"}
+
+  defp oidc_identity_step_up_copy(provider_name, :unlink),
+    do: {"Confirm removing #{one_line(provider_name)}", "remove #{one_line(provider_name)}"}
+
   def deliver_mfa_enrollment_code(
         %Users.User{} = user,
         code,

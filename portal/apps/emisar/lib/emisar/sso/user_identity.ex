@@ -22,8 +22,8 @@ defmodule Emisar.SSO.UserIdentity do
   """
   use Emisar, :schema
 
-  @created_by [:provider, :admin]
-  @provisioned_via [:oidc_jit, :scim, :manual]
+  @created_by [:provider, :admin, :user]
+  @provisioned_via [:oidc_jit, :oidc_link, :scim, :manual]
 
   schema "sso_user_identities" do
     field :provider_identifier, :string

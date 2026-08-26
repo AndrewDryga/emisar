@@ -1732,6 +1732,12 @@ defmodule Emisar.Audit.Events do
   def identity_provider_deleted(%Subject{} = subject, %SSO.IdentityProvider{} = provider),
     do: identity_provider_event(subject, provider, "sso.provider_deleted")
 
+  def identity_provider_sign_in_verified(
+        %Subject{} = subject,
+        %SSO.IdentityProvider{} = provider
+      ),
+      do: identity_provider_event(subject, provider, "sso.provider_sign_in_verified")
+
   defp identity_provider_event(
          %Subject{} = subject,
          %SSO.IdentityProvider{} = provider,
@@ -1799,6 +1805,36 @@ defmodule Emisar.Audit.Events do
             provider_id: provider.id,
             provider_kind: to_string(provider.kind)
           }
+        ]
+    )
+  end
+
+  @doc "A user explicitly verified and linked their own identity on this provider."
+  def sso_identity_linked(
+        %Subject{} = subject,
+        %Users.User{} = user,
+        %SSO.IdentityProvider{} = provider
+      ),
+      do: sso_self_identity_event(subject, user, provider, "sso.identity_linked")
+
+  @doc "A user removed their own verified identity from this provider."
+  def sso_identity_unlinked(
+        %Subject{} = subject,
+        %Users.User{} = user,
+        %SSO.IdentityProvider{} = provider
+      ),
+      do: sso_self_identity_event(subject, user, provider, "sso.identity_unlinked")
+
+  defp sso_self_identity_event(subject, user, provider, event_type) do
+    Audit.changeset(
+      provider.account_id,
+      event_type,
+      actor(subject) ++
+        [
+          target_kind: "user",
+          target_id: user.id,
+          target_label: user.email || user.full_name,
+          payload: %{provider_id: provider.id, provider_kind: to_string(provider.kind)}
         ]
     )
   end

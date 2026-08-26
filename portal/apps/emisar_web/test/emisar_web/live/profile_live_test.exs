@@ -390,6 +390,110 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
   end
 
+  describe "OIDC sign-in methods" do
+    setup %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+
+      provider =
+        Fixtures.SSO.create_identity_provider(
+          account_id: account.id,
+          name: "Workforce Okta"
+        )
+
+      %{account: account, conn: conn, provider: provider, user: user}
+    end
+
+    test "lists an enabled workspace provider and explains the account-wide consequence", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      assert html =~ "Sign-in methods"
+      assert html =~ "signs you into every workspace this profile can access"
+      assert has_element?(lv, "#oidc-identity-#{provider.id}", "Workforce Okta")
+      assert has_element?(lv, "#link-oidc-#{provider.id}", "Link")
+    end
+
+    test "keeps a wrong local proof inline and arms only a valid handoff", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      lv |> element("#link-oidc-#{provider.id}") |> render_click()
+      assert_received {:email, email}
+      assert has_element?(lv, "#oidc_step_form")
+
+      wrong =
+        render_hook(lv, "confirm_oidc_step_up", %{
+          "oidc_step" => %{"code" => "000000"}
+        })
+
+      assert wrong =~ "wrong or expired"
+      refute wrong =~ ~s(name="handoff")
+
+      confirmed =
+        render_hook(lv, "confirm_oidc_step_up", %{
+          "oidc_step" => %{"code" => Fixtures.Auth.code_from_email(email)}
+        })
+
+      assert confirmed =~ "phx-trigger-action"
+      assert confirmed =~ ~s(action="/app/#{account.slug}/settings/sso/identity/link")
+      assert confirmed =~ ~s(name="handoff")
+    end
+
+    test "a user-verified identity has explicit removal friction and unlinks inline", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      user: user
+    } do
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id,
+          created_by: :user,
+          provisioned_via: :oidc_link
+        })
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      assert html =~ "Linked and verified by you"
+      assert has_element?(lv, "#remove-oidc-#{provider.id}", "Remove")
+      assert has_element?(lv, "#remove-oidc-dialog-#{provider.id}", "Type Workforce Okta")
+
+      render_click(lv, "start_oidc_unlink", %{"identity_id" => identity.id})
+      assert_received {:email, email}
+
+      html =
+        render_hook(lv, "confirm_oidc_step_up", %{
+          "oidc_step" => %{"code" => Fixtures.Auth.code_from_email(email)}
+        })
+
+      assert html =~ "Workforce Okta was removed from your profile."
+      refute has_element?(lv, "#remove-oidc-#{provider.id}")
+      assert has_element?(lv, "#link-oidc-#{provider.id}", "Link")
+      assert Emisar.Repo.reload!(identity).deleted_at
+    end
+
+    test "a forged provider id outside the current workspace fails closed", %{
+      conn: conn,
+      account: account
+    } do
+      foreign = Fixtures.SSO.create_identity_provider(name: "Foreign Provider")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      html = render_click(lv, "start_oidc_link", %{"provider_id" => foreign.id})
+
+      assert html =~ "That sign-in method is no longer available."
+      refute_received {:email, _email}
+    end
+  end
+
   describe "sessions" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)

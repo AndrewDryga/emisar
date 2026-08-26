@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ProfileLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Auth, Users}
-  alias EmisarWeb.{LiveForm, LiveTable, UserAgent}
+  alias Emisar.{Auth, SSO, Users}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, OIDCIdentityHandoff, UserAgent}
   alias Phoenix.LiveView.JS
 
   # Both step-ups on this page — the email-change authenticator branch and
@@ -30,6 +30,10 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
      |> assign(:filter_params, %{})
      |> assign(:sessions_error?, false)
+     |> assign(:oidc_identities, [])
+     |> assign(:oidc_identities_error?, false)
+     |> reset_oidc_step_up()
+     |> ConfirmDialog.init()
      |> assign_mfa_facts(user)
      |> assign_profile_form(user)
      |> assign_email_form(user)
@@ -47,9 +51,23 @@ defmodule EmisarWeb.ProfileLive do
   # connected params load fills it in, and each prev/next patch re-runs it.
   defp maybe_load_sessions(socket, params) do
     if connected?(socket) do
-      load_sessions(socket, params)
+      socket |> load_sessions(params) |> load_oidc_identities()
     else
       assign(socket, :filter_params, params)
+    end
+  end
+
+  defp load_oidc_identities(socket) do
+    case SSO.list_self_service_identity_facts(socket.assigns.current_subject) do
+      {:ok, identities} ->
+        socket
+        |> assign(:oidc_identities, identities)
+        |> assign(:oidc_identities_error?, false)
+
+      {:error, _reason} ->
+        socket
+        |> assign(:oidc_identities, [])
+        |> assign(:oidc_identities_error?, true)
     end
   end
 
@@ -217,6 +235,100 @@ defmodule EmisarWeb.ProfileLive do
      |> assign_email_form(socket.assigns.current_user)
      |> reset_email_step()}
   end
+
+  def handle_event("start_oidc_link", %{"provider_id" => provider_id}, socket) do
+    case find_oidc_identity(socket, provider_id: provider_id) do
+      %{linked?: false} = identity ->
+        {:noreply, begin_oidc_step_up(socket, identity, :link)}
+
+      %{linked?: true, removable?: false} = identity ->
+        {:noreply, begin_oidc_step_up(socket, identity, :link)}
+
+      %{linked?: true, removable?: true} ->
+        {:noreply, put_flash(socket, :info, "That sign-in method is already linked.")}
+
+      nil ->
+        {:noreply, put_flash(socket, :error, "That sign-in method is no longer available.")}
+    end
+  end
+
+  def handle_event("start_oidc_unlink", %{"identity_id" => identity_id}, socket) do
+    case find_oidc_identity(socket, identity_id: identity_id) do
+      %{removable?: true} = identity ->
+        {:noreply, begin_oidc_step_up(socket, identity, :unlink)}
+
+      %{linked?: true} ->
+        {:noreply,
+         put_flash(socket, :error, "Verify this sign-in method yourself before removing it.")}
+
+      nil ->
+        {:noreply, put_flash(socket, :error, "That sign-in method is no longer linked.")}
+    end
+  end
+
+  def handle_event("confirm_oidc_step_up", %{"oidc_step" => %{"code" => code}}, socket) do
+    case socket.assigns.oidc_step do
+      %{provider_id: provider_id, purpose: purpose} = step ->
+        case Auth.confirm_oidc_identity_step_up(
+               provider_id,
+               purpose,
+               String.trim(code || ""),
+               socket.assigns.current_subject
+             ) do
+          {:ok, proof} ->
+            complete_oidc_step_up(socket, step, proof)
+
+          {:error, :rate_limited} ->
+            {:noreply, assign(socket, :oidc_step_error, @mfa_rate_limit_error)}
+
+          {:error, :replay} ->
+            {:noreply,
+             assign(socket, :oidc_step_error, "That authenticator code was already used.")}
+
+          {:error, _reason} ->
+            {:noreply, assign(socket, :oidc_step_error, oidc_step_error(step.factor))}
+        end
+
+      nil ->
+        {:noreply, put_flash(socket, :error, "Choose a sign-in method first.")}
+    end
+  end
+
+  def handle_event("resend_oidc_step_up", _params, socket) do
+    case socket.assigns.oidc_step do
+      %{factor: :email} = step ->
+        case Auth.resend_oidc_identity_step_up_code(
+               step.provider_id,
+               step.provider_name,
+               step.purpose,
+               socket.assigns.current_subject
+             ) do
+          :ok ->
+            {:noreply,
+             socket
+             |> assign(:oidc_step_error, nil)
+             |> put_flash(:info, "We sent a new code to #{socket.assigns.current_user.email}.")}
+
+          {:error, :rate_limited} ->
+            {:noreply, assign(socket, :oidc_step_error, @email_issue_rate_limit_error)}
+
+          {:error, _reason} ->
+            {:noreply, assign(socket, :oidc_step_error, "Couldn't send a new code. Try again.")}
+        end
+
+      _other ->
+        {:noreply, put_flash(socket, :error, "Start the confirmation again.")}
+    end
+  end
+
+  def handle_event("cancel_oidc_step_up", _params, socket),
+    do: {:noreply, reset_oidc_step_up(socket)}
+
+  def handle_event("confirm_typed", params, socket),
+    do: {:noreply, ConfirmDialog.put_typed(socket, params)}
+
+  def handle_event("confirm_reset", _params, socket),
+    do: {:noreply, ConfirmDialog.reset(socket)}
 
   def handle_event("revoke_session", %{"id" => id}, socket) do
     case Auth.revoke_session(id, socket.assigns.current_subject) do
@@ -662,6 +774,106 @@ defmodule EmisarWeb.ProfileLive do
   defp step_up_error(_),
     do: "That confirmation code is wrong or expired. Try again, or resend a new one."
 
+  defp begin_oidc_step_up(socket, identity, purpose) do
+    case Auth.begin_oidc_identity_step_up(
+           identity.provider_id,
+           identity.provider_name,
+           purpose,
+           socket.assigns.current_subject
+         ) do
+      {:ok, factor} ->
+        socket
+        |> assign(:oidc_step, Map.merge(identity, %{purpose: purpose, factor: factor}))
+        |> assign(:oidc_step_error, nil)
+        |> assign(:oidc_step_form, to_form(%{"code" => ""}, as: "oidc_step"))
+        |> maybe_flash_oidc_code(factor)
+
+      {:error, :rate_limited} ->
+        put_flash(socket, :error, @email_issue_rate_limit_error)
+
+      {:error, _reason} ->
+        put_flash(socket, :error, "Couldn't start confirmation. Try again.")
+    end
+  end
+
+  defp maybe_flash_oidc_code(socket, :email),
+    do: put_flash(socket, :info, "We emailed a confirmation code to your current address.")
+
+  defp maybe_flash_oidc_code(socket, :mfa), do: socket
+
+  defp complete_oidc_step_up(socket, %{purpose: :unlink} = step, proof) do
+    case SSO.unlink_identity(
+           step.identity_id,
+           proof,
+           socket.assigns.current_auth.token,
+           socket.assigns.current_subject
+         ) do
+      {:ok, _identity} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "#{step.provider_name} was removed from your profile.")
+         |> reset_oidc_step_up()
+         |> load_oidc_identities()}
+
+      {:error, :required_sso_identity} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :error,
+           "Link another enabled sign-in method before removing the one this workspace requires."
+         )
+         |> reset_oidc_step_up()}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Couldn't remove that sign-in method. Refresh and try again.")
+         |> reset_oidc_step_up()}
+    end
+  end
+
+  defp complete_oidc_step_up(socket, %{purpose: :link} = step, proof) do
+    payload = %{
+      actor_id: socket.assigns.current_user.id,
+      actor_membership_id: socket.assigns.current_subject.membership_id,
+      actor_session_token_digest: socket.assigns.current_auth.token,
+      account_id: socket.assigns.current_account.id,
+      provider_id: step.provider_id,
+      purpose: :link,
+      proof: proof
+    }
+
+    {:noreply,
+     socket
+     |> assign(:oidc_handoff, OIDCIdentityHandoff.sign(payload))
+     |> assign(:oidc_trigger_submit, true)
+     |> assign(:oidc_step_error, nil)}
+  end
+
+  defp oidc_step_error(:mfa),
+    do: "That authenticator or recovery code didn't match. Try again."
+
+  defp oidc_step_error(:email),
+    do: "That confirmation code is wrong or expired. Try again, or resend it."
+
+  defp find_oidc_identity(socket, match) do
+    Enum.find(socket.assigns.oidc_identities, fn identity ->
+      Enum.all?(match, &oidc_identity_matches?(identity, &1))
+    end)
+  end
+
+  defp oidc_identity_matches?(identity, {field, value}),
+    do: Map.get(identity, field) == value
+
+  defp reset_oidc_step_up(socket) do
+    socket
+    |> assign(:oidc_step, nil)
+    |> assign(:oidc_step_error, nil)
+    |> assign(:oidc_step_form, to_form(%{"code" => ""}, as: "oidc_step"))
+    |> assign(:oidc_handoff, nil)
+    |> assign(:oidc_trigger_submit, false)
+  end
+
   defp assign_mfa_form(socket) do
     assign(socket, :mfa_form, to_form(%{"otp" => ""}, as: "mfa"))
   end
@@ -802,8 +1014,6 @@ defmodule EmisarWeb.ProfileLive do
                 phx-change="validate_email"
                 phx-submit="save_email"
               >
-                <%!-- No field label — the panel title "Email" carries it (one
-                     voice on a single-field panel); aria-label for a11y. --%>
                 <.input
                   field={@email_form[:email]}
                   type="email"
@@ -831,7 +1041,7 @@ defmodule EmisarWeb.ProfileLive do
                 </p>
                 <p :if={step == :code} class="text-xs text-zinc-400">
                   We emailed a 6-digit code to your current address ({@current_user.email}). Entering
-                  it proves it's really you — an open session alone can't change your email.
+                  it confirms it's really you — an open session alone can't change your email.
                 </p>
                 <p :if={step == :totp} class="text-xs text-zinc-400">
                   Enter the code from your authenticator app — your second factor confirms the change.
@@ -865,6 +1075,151 @@ defmodule EmisarWeb.ProfileLive do
                 </:actions>
               </.simple_form>
           <% end %>
+        </section>
+
+        <section id="single-sign-on">
+          <.section_header title="Sign-in methods">
+            <:subtitle>
+              Link an enabled provider from this workspace to your emisar profile. A linked method
+              signs you into every workspace this profile can access.
+            </:subtitle>
+          </.section_header>
+
+          <.empty_state
+            :if={@oidc_identities_error?}
+            tone={:danger}
+            icon="state.warning"
+            title="Couldn't load sign-in methods"
+          >
+            Refresh the page to try again.
+          </.empty_state>
+
+          <p
+            :if={not @oidc_identities_error? and @oidc_identities == []}
+            class="text-sm text-zinc-400"
+          >
+            This workspace has no enabled single sign-on connections.
+          </p>
+
+          <ul
+            :if={@oidc_identities != []}
+            id="oidc-identities"
+            class="divide-y divide-zinc-800/70 border-y border-zinc-800/70"
+          >
+            <li
+              :for={identity <- @oidc_identities}
+              id={"oidc-identity-#{identity.provider_id}"}
+              class="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div class="min-w-0">
+                <p class="font-medium text-zinc-100">{identity.provider_name}</p>
+                <p class="mt-1 text-xs text-zinc-400">
+                  <%= cond do %>
+                    <% identity.removable? -> %>
+                      Linked and verified by you
+                      <span :if={identity.verified_at}> · <.local_time
+                        id={"oidc-verified-#{identity.provider_id}"}
+                        value={identity.verified_at}
+                        mode={:relative}
+                      /></span>
+                    <% identity.linked? -> %>
+                      Linked by your workspace · verify it yourself before removal
+                    <% true -> %>
+                      Not linked to your profile
+                  <% end %>
+                </p>
+              </div>
+              <div class="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+                <.button
+                  :if={not identity.removable?}
+                  id={"link-oidc-#{identity.provider_id}"}
+                  type="button"
+                  variant={:secondary}
+                  size={:sm}
+                  phx-click="start_oidc_link"
+                  phx-value-provider_id={identity.provider_id}
+                >
+                  {if(identity.linked?, do: "Verify", else: "Link")}
+                </.button>
+                <.button
+                  :if={identity.removable?}
+                  id={"remove-oidc-#{identity.provider_id}"}
+                  type="button"
+                  variant={:secondary}
+                  tone={:rose}
+                  size={:sm}
+                  phx-click={show_confirm_dialog("remove-oidc-dialog-#{identity.provider_id}")}
+                >
+                  Remove
+                </.button>
+                <.confirm_dialog
+                  :if={identity.removable?}
+                  id={"remove-oidc-dialog-#{identity.provider_id}"}
+                  title={"Remove #{identity.provider_name}?"}
+                  confirm_label="Continue to confirmation"
+                  confirm_token={identity.provider_name}
+                  typed={@typed}
+                  on_confirm={
+                    JS.push("start_oidc_unlink", value: %{identity_id: identity.identity_id})
+                    |> hide_confirm_dialog("remove-oidc-dialog-#{identity.provider_id}")
+                  }
+                >
+                  <:body>
+                    This removes a way to sign in. Sessions created with it will be signed out.
+                  </:body>
+                </.confirm_dialog>
+              </div>
+            </li>
+          </ul>
+
+          <.simple_form
+            :if={@oidc_step}
+            for={@oidc_step_form}
+            id="oidc_step_form"
+            class="mt-5 max-w-md"
+            phx-submit="confirm_oidc_step_up"
+            phx-trigger-action={@oidc_trigger_submit}
+            action={~p"/app/#{@current_account}/settings/sso/identity/link"}
+            method="post"
+          >
+            <p class="text-sm text-zinc-300">
+              <%= if @oidc_step.purpose == :unlink do %>
+                Confirm removing {@oidc_step.provider_name} from your profile.
+              <% else %>
+                Confirm your current emisar profile before signing in with {@oidc_step.provider_name}.
+              <% end %>
+            </p>
+            <p class="text-xs text-zinc-400">
+              <%= if @oidc_step.factor == :email do %>
+                Enter the 6-digit code sent to {@current_user.email}.
+              <% else %>
+                Enter an authenticator code or one recovery code.
+              <% end %>
+            </p>
+            <.input
+              field={@oidc_step_form[:code]}
+              type="text"
+              label="Confirmation code"
+              autocomplete="one-time-code"
+              required
+            />
+            <input :if={@oidc_handoff} type="hidden" name="handoff" value={@oidc_handoff} />
+            <.error :if={@oidc_step_error}>{@oidc_step_error}</.error>
+            <:actions>
+              <.button phx-disable-with="Confirming...">Confirm</.button>
+              <.button
+                :if={@oidc_step.factor == :email}
+                type="button"
+                variant={:secondary}
+                phx-click="resend_oidc_step_up"
+              >
+                Resend code
+              </.button>
+              <.button type="button" variant={:ghost} phx-click="cancel_oidc_step_up">
+                Cancel
+              </.button>
+            </:actions>
+          </.simple_form>
         </section>
 
         <section>

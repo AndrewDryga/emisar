@@ -98,6 +98,24 @@ defmodule Emisar.Auth.UserToken.Changeset do
     )
   end
 
+  @doc "Current-inbox proof for one explicit OIDC identity action."
+  def oidc_identity_step_up(%Users.User{} = user, digest, provider_id, purpose, attempts)
+      when is_binary(digest) and is_binary(provider_id) and
+             purpose in [:link, :verify_provider, :unlink] and is_integer(attempts) do
+    change(%UserToken{},
+      token: digest,
+      context: "oidc_identity_step_up",
+      sent_to: user.email,
+      user_id: user.id,
+      remaining_attempts: attempts,
+      metadata: %{
+        "provider_id" => provider_id,
+        "purpose" => Atom.to_string(purpose),
+        "user_updated_at" => DateTime.to_iso8601(user.updated_at)
+      }
+    )
+  end
+
   @doc "Pending current-inbox code, promoted only after its email is accepted for delivery."
   def pending_mfa_enrollment(%Users.User{} = user, digest, attempts)
       when is_binary(digest) and is_integer(attempts) do

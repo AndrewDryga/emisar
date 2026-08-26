@@ -166,6 +166,15 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def by_provider_id(queryable, provider_id),
     do: where(queryable, [identities: i], i.provider_id == ^provider_id)
 
+  def excluding_provider_id(queryable, provider_id),
+    do: where(queryable, [identities: i], i.provider_id != ^provider_id)
+
+  def with_enabled_provider(queryable) do
+    queryable
+    |> with_joined_provider()
+    |> where([provider: provider], provider.enabled == true)
+  end
+
   def select_user_ids(queryable \\ all()),
     do: select(queryable, [identities: i], i.user_id)
 

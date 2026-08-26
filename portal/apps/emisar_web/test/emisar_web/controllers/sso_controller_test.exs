@@ -6,12 +6,14 @@ defmodule EmisarWeb.SSOControllerTest do
   """
   use EmisarWeb.ConnCase, async: true
   import ExUnit.CaptureLog
-  alias Emisar.{Fixtures, Repo}
+  alias Emisar.{Auth, Crypto, Fixtures, Repo}
   alias Emisar.SSO.IdentityProvider
+  alias EmisarWeb.OIDCIdentityHandoff
 
   # The session key the controller stashes the OIDC transaction secrets under.
   @stash_key "sso_login"
   @member_mfa_reset_stash_key "member_mfa_reset_sso"
+  @identity_link_stash_key "sso_identity_link"
 
   defmodule StubOIDC do
     @behaviour Emisar.SSO.OIDC
@@ -571,6 +573,160 @@ defmodule EmisarWeb.SSOControllerTest do
     end
   end
 
+  describe "POST /app/:account/settings/sso/identity/link" do
+    test "starts the signed identity-link ceremony and binds its session stash", %{conn: conn} do
+      link = identity_link_controller_fixture(conn)
+
+      begun =
+        post(link.conn, ~p"/app/#{link.account}/settings/sso/identity/link", %{
+          "handoff" => link.handoff
+        })
+
+      assert redirected_to(begun) == "https://idp.test/auth"
+
+      stash = get_session(begun, @identity_link_stash_key)
+      assert stash.actor_id == link.user.id
+      assert stash.actor_membership_id == link.membership.id
+      assert stash.actor_session_token_digest == link.session_digest
+      assert stash.account_id == link.account.id
+      assert stash.provider_id == link.provider.id
+      assert stash.purpose == :link
+      assert stash.return_path == ~p"/app/#{link.account}/settings/profile"
+      assert is_integer(stash.started_at)
+      refute get_session(begun, @stash_key)
+      refute get_session(begun, @member_mfa_reset_stash_key)
+      assert get_session(begun, :user_token) == link.session_token
+    end
+
+    test "the callback links the identity without replacing the current session", %{conn: conn} do
+      link = identity_link_controller_fixture(conn)
+
+      begun =
+        post(link.conn, ~p"/app/#{link.account}/settings/sso/identity/link", %{
+          "handoff" => link.handoff
+        })
+
+      token_count_before = Auth.UserToken.Query.by_user_id(link.user.id) |> Repo.aggregate(:count)
+
+      completed =
+        begun
+        |> recycle()
+        |> get(~p"/sign_in/sso/callback", %{
+          "_claims" => %{
+            "sub" => "workforce|linked-user",
+            "email" => link.user.email,
+            "email_verified" => "true",
+            "auth_time" => System.system_time(:second)
+          }
+        })
+
+      assert redirected_to(completed) == ~p"/app/#{link.account.id}/settings/profile"
+      assert Phoenix.Flash.get(completed.assigns.flash, :info) =~ "linked to your profile"
+      refute get_session(completed, @identity_link_stash_key)
+      assert get_session(completed, :user_token) == link.session_token
+
+      assert {:ok, _user, %Auth.UserToken{auth_method: :magic_link, user_identity_id: nil}} =
+               Auth.fetch_user_and_token_by_session_token(link.session_token)
+
+      assert Auth.UserToken.Query.by_user_id(link.user.id) |> Repo.aggregate(:count) ==
+               token_count_before
+
+      identity =
+        Emisar.SSO.UserIdentity.Query.not_deleted()
+        |> Emisar.SSO.UserIdentity.Query.by_provider_id(link.provider.id)
+        |> Emisar.SSO.UserIdentity.Query.by_user_id(link.user.id)
+        |> Repo.one!()
+
+      assert identity.provider_identifier == "workforce|linked-user"
+      assert identity.created_by == :user
+    end
+
+    test "a copied handoff cannot cross accounts or sessions", %{conn: conn} do
+      link = identity_link_controller_fixture(conn)
+      other_account = Fixtures.Accounts.create_account(plan: "enterprise")
+
+      _other_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          user_id: link.user.id,
+          role: "owner"
+        )
+
+      wrong_account =
+        post(link.conn, ~p"/app/#{other_account}/settings/sso/identity/link", %{
+          "handoff" => link.handoff
+        })
+
+      assert redirected_to(wrong_account) == ~p"/app/#{other_account}/settings/profile"
+      refute get_session(wrong_account, @identity_link_stash_key)
+
+      replacement_session = Fixtures.Auth.create_session_token!(link.user, :magic_link, nil)
+
+      wrong_session =
+        link.conn
+        |> put_session(:user_token, replacement_session)
+        |> post(~p"/app/#{link.account}/settings/sso/identity/link", %{
+          "handoff" => link.handoff
+        })
+
+      assert redirected_to(wrong_session) == ~p"/app/#{link.account}/settings/profile"
+      refute get_session(wrong_session, @identity_link_stash_key)
+    end
+
+    test "an invalid handoff fails closed without beginning provider work", %{conn: conn} do
+      link = identity_link_controller_fixture(conn)
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, RecordingOIDC)
+
+      failed =
+        post(link.conn, ~p"/app/#{link.account}/settings/sso/identity/link", %{
+          "handoff" => "not-signed"
+        })
+
+      assert redirected_to(failed) == ~p"/app/#{link.account}/settings/profile"
+      assert Phoenix.Flash.get(failed.assigns.flash, :error) =~ "Confirm your code"
+      refute get_session(failed, @identity_link_stash_key)
+      refute_receive {:oidc_begin, _provider_id}
+    end
+
+    test "verifies a disabled saved provider without enabling it or replacing the session", %{
+      conn: conn
+    } do
+      verification =
+        identity_link_controller_fixture(conn, purpose: :verify_provider, enabled: false)
+
+      begun =
+        post(
+          verification.conn,
+          ~p"/app/#{verification.account}/settings/sso/identity/link",
+          %{"handoff" => verification.handoff}
+        )
+
+      completed =
+        begun
+        |> recycle()
+        |> get(~p"/sign_in/sso/callback", %{
+          "_claims" => %{
+            "sub" => "workforce|verifying-admin",
+            "email" => verification.user.email,
+            "email_verified" => "true",
+            "auth_time" => System.system_time(:second)
+          }
+        })
+
+      assert redirected_to(completed) ==
+               ~p"/app/#{verification.account.id}/settings/sso/#{verification.provider.id}"
+
+      assert Phoenix.Flash.get(completed.assigns.flash, :info) =~ "sign-in verified"
+      assert get_session(completed, :user_token) == verification.session_token
+
+      reloaded = Repo.reload!(verification.provider)
+      assert reloaded.enabled == false
+      assert %DateTime{} = reloaded.sign_in_verified_at
+      assert reloaded.sign_in_verified_by_user_id == verification.user.id
+      assert is_binary(reloaded.sign_in_verified_identity_id)
+    end
+  end
+
   describe "GET /sign_in/sso/callback" do
     test "a saved callback cookie cannot replay provider work past the shared cap" do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
@@ -991,6 +1147,50 @@ defmodule EmisarWeb.SSOControllerTest do
       session_token: session_token,
       target: target,
       target_membership: target_membership
+    }
+  end
+
+  defp identity_link_controller_fixture(conn, opts \\ []) do
+    {user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    purpose = Keyword.get(opts, :purpose, :link)
+    provider = provider_fixture(account, enabled: Keyword.get(opts, :enabled, true))
+    session_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+    session_digest = Crypto.hash(session_token)
+
+    assert {:ok, :email} =
+             Auth.begin_oidc_identity_step_up(provider.id, provider.name, purpose, subject)
+
+    assert_received {:email, email}
+
+    assert {:ok, proof} =
+             Auth.confirm_oidc_identity_step_up(
+               provider.id,
+               purpose,
+               Fixtures.Auth.code_from_email(email),
+               subject
+             )
+
+    handoff =
+      OIDCIdentityHandoff.sign(%{
+        actor_id: user.id,
+        actor_membership_id: membership.id,
+        actor_session_token_digest: session_digest,
+        account_id: account.id,
+        provider_id: provider.id,
+        purpose: purpose,
+        proof: proof
+      })
+
+    %{
+      account: account,
+      conn: conn |> init_test_session(%{}) |> put_session(:user_token, session_token),
+      handoff: handoff,
+      membership: membership,
+      provider: provider,
+      session_digest: session_digest,
+      session_token: session_token,
+      user: user
     }
   end
 end

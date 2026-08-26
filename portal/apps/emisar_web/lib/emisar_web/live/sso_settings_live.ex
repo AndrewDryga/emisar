@@ -1,7 +1,8 @@
 defmodule EmisarWeb.SSOSettingsLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Catalog, Runners, SSO}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MailTo, Permissions, RunnerScope}
+  alias Emisar.{Accounts, Auth, Catalog, Runners, SSO}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MailTo}
+  alias EmisarWeb.{OIDCIdentityHandoff, Permissions, RunnerScope}
   alias Phoenix.LiveView.JS
 
   @role_mapping_prefix "role_mappings_"
@@ -122,9 +123,11 @@ defmodule EmisarWeb.SSOSettingsLive do
       # nil. Never re-rendered from a stored value — write-only, like every
       # emisar secret.
       |> assign(:scim_token, nil)
-      # The "Test connection" capstone's last result on /new: nil, {:ok, summary},
+      # The issuer discovery check's last result on /new: nil, {:ok, summary},
       # or {:error, reason}. Cleared whenever the form changes so it never lies.
       |> assign(:test_result, nil)
+      |> assign(:sign_in_verification, nil)
+      |> reset_oidc_step_up()
       # False until the connected mount pass runs the list read — so the
       # "No connections yet" empty state never flashes for a team that *has*
       # connections (the first, unconnected pass renders chrome only).
@@ -206,12 +209,20 @@ defmodule EmisarWeb.SSOSettingsLive do
         |> load_group_mappings([provider], params)
         |> load_synced_members(provider)
         |> load_runners()
+        |> load_sign_in_verification(provider)
         |> assign_form(SSO.change_provider(socket.assigns.current_subject))
 
       {:error, :not_found} ->
         socket
         |> put_flash(:error, "Connection not found.")
         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")
+    end
+  end
+
+  defp load_sign_in_verification(socket, provider) do
+    case SSO.provider_sign_in_verification_facts(provider, socket.assigns.current_subject) do
+      {:ok, facts} -> assign(socket, :sign_in_verification, facts)
+      {:error, _reason} -> assign(socket, :sign_in_verification, nil)
     end
   end
 
@@ -409,12 +420,74 @@ defmodule EmisarWeb.SSOSettingsLive do
     Permissions.gated(socket, socket.assigns.can_configure?, &do_create(&1, params))
   end
 
-  # The setup capstone: run a real OIDC discovery against the issuer the operator
-  # has typed (read from the live form), so a working connection is proven before
-  # it's saved. The context SSRF-validates the issuer and writes no row.
+  # Probe only the discovery document for the issuer currently in the form. This
+  # intentionally does not claim the client credentials or callback work; that
+  # proof needs a saved provider and the real sign-in verification on its detail.
   def handle_event("test_connection", _params, socket) do
     Permissions.gated(socket, socket.assigns.can_configure?, &do_test_connection/1)
   end
+
+  def handle_event("start_provider_sign_in_verification", %{"provider_id" => id}, socket) do
+    Permissions.gated(socket, socket.assigns.can_configure?, &start_provider_verification(&1, id))
+  end
+
+  def handle_event("confirm_oidc_step_up", %{"oidc_step" => %{"code" => code}}, socket) do
+    case socket.assigns.oidc_step do
+      %{provider_id: provider_id} = step ->
+        case Auth.confirm_oidc_identity_step_up(
+               provider_id,
+               :verify_provider,
+               String.trim(code || ""),
+               socket.assigns.current_subject
+             ) do
+          {:ok, proof} ->
+            complete_provider_step_up(socket, step, proof)
+
+          {:error, :rate_limited} ->
+            {:noreply, assign(socket, :oidc_step_error, mfa_limit_error())}
+
+          {:error, :replay} ->
+            {:noreply,
+             assign(socket, :oidc_step_error, "That authenticator code was already used.")}
+
+          {:error, _reason} ->
+            {:noreply, assign(socket, :oidc_step_error, provider_step_error(step.factor))}
+        end
+
+      nil ->
+        {:noreply, put_flash(socket, :error, "Start sign-in verification first.")}
+    end
+  end
+
+  def handle_event("resend_oidc_step_up", _params, socket) do
+    case socket.assigns.oidc_step do
+      %{factor: :email} = step ->
+        case Auth.resend_oidc_identity_step_up_code(
+               step.provider_id,
+               step.provider_name,
+               :verify_provider,
+               socket.assigns.current_subject
+             ) do
+          :ok ->
+            {:noreply,
+             socket
+             |> assign(:oidc_step_error, nil)
+             |> put_flash(:info, "We sent a new code to #{socket.assigns.current_user.email}.")}
+
+          {:error, :rate_limited} ->
+            {:noreply, assign(socket, :oidc_step_error, email_limit_error())}
+
+          {:error, _reason} ->
+            {:noreply, assign(socket, :oidc_step_error, "Couldn't send a new code. Try again.")}
+        end
+
+      _other ->
+        {:noreply, put_flash(socket, :error, "Start sign-in verification again.")}
+    end
+  end
+
+  def handle_event("cancel_oidc_step_up", _params, socket),
+    do: {:noreply, reset_oidc_step_up(socket)}
 
   def handle_event("validate_edit", %{"provider_id" => id, "provider" => params} = event, socket) do
     case find_provider(socket, id) do
@@ -425,6 +498,10 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   def handle_event("update", %{"provider_id" => id, "provider" => params}, socket) do
     Permissions.gated(socket, socket.assigns.can_configure?, &do_update(&1, id, params))
+  end
+
+  def handle_event("enable_verified_provider", %{"provider_id" => id}, socket) do
+    Permissions.gated(socket, socket.assigns.can_configure?, &do_enable_verified_provider(&1, id))
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
@@ -712,6 +789,80 @@ defmodule EmisarWeb.SSOSettingsLive do
      assign(socket, :test_result, SSO.test_provider(issuer, socket.assigns.current_subject))}
   end
 
+  defp start_provider_verification(socket, id) do
+    case find_provider(socket, id) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "That connection is no longer available.")}
+
+      provider ->
+        case Auth.begin_oidc_identity_step_up(
+               provider.id,
+               provider.name,
+               :verify_provider,
+               socket.assigns.current_subject
+             ) do
+          {:ok, factor} ->
+            {:noreply,
+             socket
+             |> assign(:oidc_step, %{
+               provider_id: provider.id,
+               provider_name: provider.name,
+               factor: factor
+             })
+             |> assign(:oidc_step_error, nil)
+             |> assign(:oidc_step_form, to_form(%{"code" => ""}, as: "oidc_step"))
+             |> maybe_flash_provider_code(factor)}
+
+          {:error, :rate_limited} ->
+            {:noreply, put_flash(socket, :error, email_limit_error())}
+
+          {:error, _reason} ->
+            {:noreply, put_flash(socket, :error, "Couldn't start sign-in verification.")}
+        end
+    end
+  end
+
+  defp maybe_flash_provider_code(socket, :email),
+    do: put_flash(socket, :info, "We emailed a confirmation code to your current address.")
+
+  defp maybe_flash_provider_code(socket, :mfa), do: socket
+
+  defp complete_provider_step_up(socket, step, proof) do
+    payload = %{
+      actor_id: socket.assigns.current_user.id,
+      actor_membership_id: socket.assigns.current_subject.membership_id,
+      actor_session_token_digest: socket.assigns.current_auth.token,
+      account_id: socket.assigns.current_account.id,
+      provider_id: step.provider_id,
+      purpose: :verify_provider,
+      proof: proof
+    }
+
+    {:noreply,
+     socket
+     |> assign(:oidc_handoff, OIDCIdentityHandoff.sign(payload))
+     |> assign(:oidc_trigger_submit, true)
+     |> assign(:oidc_step_error, nil)}
+  end
+
+  defp reset_oidc_step_up(socket) do
+    socket
+    |> assign(:oidc_step, nil)
+    |> assign(:oidc_step_error, nil)
+    |> assign(:oidc_step_form, to_form(%{"code" => ""}, as: "oidc_step"))
+    |> assign(:oidc_handoff, nil)
+    |> assign(:oidc_trigger_submit, false)
+  end
+
+  defp provider_step_error(:mfa),
+    do: "That authenticator or recovery code didn't match. Try again."
+
+  defp provider_step_error(:email),
+    do: "That confirmation code is wrong or expired. Try again, or resend it."
+
+  defp mfa_limit_error, do: "Too many attempts. Wait a few minutes, then try again."
+  defp email_limit_error, do: "Too many code requests. Wait up to 15 minutes, then try again."
+
   defp do_update(socket, id, params) do
     case find_provider(socket, id) do
       nil ->
@@ -744,6 +895,21 @@ defmodule EmisarWeb.SSOSettingsLive do
             {:noreply, put_flash(socket, :error, error_message(reason))}
         end
     end
+  end
+
+  defp do_enable_verified_provider(socket, id) do
+    with_provider(socket, id, fn provider ->
+      case SSO.update_provider(provider, %{enabled: true}, socket.assigns.current_subject) do
+        {:ok, _provider} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "Connection enabled for members.")
+           |> reload()}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, error_message(reason))}
+      end
+    end)
   end
 
   defp do_delete(socket, id) do
@@ -1238,6 +1404,10 @@ defmodule EmisarWeb.SSOSettingsLive do
     "This connection has already signed people in, so its issuer, client ID and identifier claim are fixed — changing them would repoint existing members' identities at whoever the new provider asserts. Rotate the client secret here; to move to a different provider, add a new connection."
   end
 
+  defp error_message(:sign_in_verification_required) do
+    "Verify a real sign-in with the current connection settings before enabling it for members."
+  end
+
   defp error_message(:scim_not_supported) do
     "This provider can't push a directory to emisar, so there's no SCIM token to issue. Members provision on their first sign-in instead."
   end
@@ -1457,15 +1627,15 @@ defmodule EmisarWeb.SSOSettingsLive do
               <.test_result :if={@test_result} result={@test_result} />
               <:actions>
                 <.button phx-disable-with="Saving...">Add connection</.button>
-                <%!-- The capstone: prove the issuer is reachable before saving.
-                   type="button" so it probes (phx-click) instead of submitting. --%>
+                <%!-- This only checks issuer discovery. type="button" keeps the
+                     probe separate from saving the provider. --%>
                 <.button
                   type="button"
                   variant={:secondary}
                   phx-click="test_connection"
                   phx-disable-with="Testing…"
                 >
-                  Test connection
+                  Check issuer
                 </.button>
               </:actions>
             </.simple_form>
@@ -1609,6 +1779,145 @@ defmodule EmisarWeb.SSOSettingsLive do
                   <dd class="mt-1 text-sm text-zinc-300">{role_label(provider.default_role)}</dd>
                 </div>
               </dl>
+
+              <div id="sign-in-verification" class="xl:col-span-2">
+                <.section_header title="Sign-in verification">
+                  <:subtitle>
+                    Sign in through this provider to check the client ID, client secret, redirect,
+                    and callback. A successful check also links your provider identity to your
+                    emisar profile. It does not enable this connection.
+                  </:subtitle>
+                </.section_header>
+
+                <.event_block
+                  :if={@sign_in_verification && @sign_in_verification.status == :verified}
+                  icon="state.success"
+                  tone={:brand}
+                  title="Sign-in verified"
+                >
+                  <:body>
+                    <%= if @sign_in_verification.verified_by_current_user? do %>
+                      You completed a real sign-in
+                    <% else %>
+                      An administrator completed a real sign-in
+                    <% end %>
+                    <span :if={@sign_in_verification.verified_at}> <.local_time
+                      id={"provider-sign-in-verified-#{provider.id}"}
+                      value={@sign_in_verification.verified_at}
+                      mode={:relative}
+                    /></span>.
+                    <%= if provider.enabled do %>
+                      Members can use this connection. Your profile is linked to it.
+                    <% else %>
+                      Your profile is linked to it. Members still cannot use it.
+                    <% end %>
+                  </:body>
+                </.event_block>
+
+                <.event_block
+                  :if={@sign_in_verification && @sign_in_verification.status == :stale}
+                  icon="state.warning"
+                  tone={:amber}
+                  title="Sign-in needs another check"
+                >
+                  <:body>
+                    The login settings changed after the last successful check. Verify again before
+                    relying on this connection.
+                  </:body>
+                </.event_block>
+
+                <.event_block
+                  :if={is_nil(@sign_in_verification) or @sign_in_verification.status == :unverified}
+                  icon="state.warning"
+                  tone={:amber}
+                  title="Not verified"
+                >
+                  <:body>
+                    No administrator has completed a real sign-in through this connection yet.
+                  </:body>
+                </.event_block>
+
+                <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  <.confirm_button
+                    :if={
+                      (@sign_in_verification && @sign_in_verification.status == :verified) and
+                        not provider.enabled
+                    }
+                    id={"enable-verified-provider-#{provider.id}"}
+                    title={"Enable #{provider.name} for members?"}
+                    confirm_label="Enable connection"
+                    size={:md}
+                    on_confirm={
+                      JS.push("enable_verified_provider", value: %{provider_id: provider.id})
+                    }
+                  >
+                    <:body>
+                      Members can start signing in through this connection. Magic-link sign-in
+                      remains available until you separately require SSO for the team.
+                    </:body>
+                    Enable for members
+                  </.confirm_button>
+
+                  <.button
+                    id={"verify-provider-sign-in-#{provider.id}"}
+                    type="button"
+                    variant={:secondary}
+                    size={:md}
+                    phx-click="start_provider_sign_in_verification"
+                    phx-value-provider_id={provider.id}
+                  >
+                    {if(@sign_in_verification && @sign_in_verification.status == :verified,
+                      do: "Verify again",
+                      else: "Verify sign-in and link my profile"
+                    )}
+                  </.button>
+                </div>
+
+                <.simple_form
+                  :if={@oidc_step && @oidc_step.provider_id == provider.id}
+                  for={@oidc_step_form}
+                  id="provider_oidc_step_form"
+                  class="mt-5 max-w-md"
+                  phx-submit="confirm_oidc_step_up"
+                  phx-trigger-action={@oidc_trigger_submit}
+                  action={~p"/app/#{@current_account}/settings/sso/identity/link"}
+                  method="post"
+                >
+                  <p class="text-sm text-zinc-300">
+                    Confirm your current emisar profile before opening {provider.name} sign-in.
+                  </p>
+                  <p class="text-xs text-zinc-400">
+                    <%= if @oidc_step.factor == :email do %>
+                      Enter the 6-digit code sent to {@current_user.email}.
+                    <% else %>
+                      Enter an authenticator code or one recovery code.
+                    <% end %>
+                  </p>
+                  <.input
+                    field={@oidc_step_form[:code]}
+                    type="text"
+                    label="Confirmation code"
+                    autocomplete="one-time-code"
+                    required
+                  />
+                  <input :if={@oidc_handoff} type="hidden" name="handoff" value={@oidc_handoff} />
+                  <.error :if={@oidc_step_error}>{@oidc_step_error}</.error>
+                  <:actions>
+                    <.button phx-disable-with="Confirming...">Confirm</.button>
+                    <.button
+                      :if={@oidc_step.factor == :email}
+                      type="button"
+                      variant={:secondary}
+                      phx-click="resend_oidc_step_up"
+                    >
+                      Resend code
+                    </.button>
+                    <.button type="button" variant={:ghost} phx-click="cancel_oidc_step_up">
+                      Cancel
+                    </.button>
+                  </:actions>
+                </.simple_form>
+              </div>
 
               <div id="connection-settings">
                 <.section_header title="Connection settings" />
@@ -1911,16 +2220,18 @@ defmodule EmisarWeb.SSOSettingsLive do
     """
   end
 
-  # The "Test connection" capstone's outcome. Dispatch on the result shape:
-  # discovery succeeded (the endpoints prove a real OIDC IdP) vs. a reason.
+  # The issuer check's outcome: discovery succeeded vs. a bounded reason.
   attr :result, :any, required: true
 
   defp test_result(%{result: {:ok, summary}} = assigns) do
     assigns = assign(assigns, :summary, summary)
 
     ~H"""
-    <.event_block icon="state.success" tone={:brand} title="Discovery succeeded">
-      <:body>This issuer serves a valid OIDC configuration.</:body>
+    <.event_block icon="state.success" tone={:brand} title="Issuer reached">
+      <:body>
+        We found a valid OIDC discovery document. This does not check the client ID, client secret,
+        or a real sign-in.
+      </:body>
       <%!-- An IdP's three endpoints share a long prefix and differ only in the
            trailing path segment, which is exactly where the truncation lands —
            so each value carries its full self as the hover escape. --%>
@@ -1955,7 +2266,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     <.event_block
       icon="state.warning"
       tone={:rose}
-      title="Connection test failed"
+      title="Issuer check failed"
     >
       <:body>{@message}</:body>
     </.event_block>
@@ -2223,7 +2534,11 @@ defmodule EmisarWeb.SSOSettingsLive do
       <section>
         <.section_header title="Security & activation">
           <:subtitle>
-            Whether this provider satisfies 2FA, and whether members can use it yet.
+            <%= if @editing? do %>
+              Whether this provider satisfies 2FA, and whether members can use it yet.
+            <% else %>
+              New connections stay disabled until you save them and verify a real sign-in.
+            <% end %>
           </:subtitle>
         </.section_header>
         <div class="space-y-3">
@@ -2253,6 +2568,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             </p>
           </div>
           <.input
+            :if={@editing?}
             field={@form[:enabled]}
             type="checkbox"
             label="Enabled (members can sign in through this connection)"

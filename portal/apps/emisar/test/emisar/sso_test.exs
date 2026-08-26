@@ -1384,11 +1384,11 @@ defmodule Emisar.SSOTest do
                )
     end
 
-    test "a second ENABLED provider of the same kind hits the unique (account, kind) index" do
+    test "a crafted create cannot enable a provider before verification" do
       {_user, account, subject} = enterprise_owner()
       _first = provider_fixture(account, %{kind: :okta, enabled: true})
 
-      assert {:error, changeset} =
+      assert {:ok, provider} =
                SSO.configure_provider(
                  %{
                    kind: :okta,
@@ -1401,16 +1401,14 @@ defmodule Emisar.SSOTest do
                  subject
                )
 
-      # The partial unique index (one enabled provider per (account, kind)) maps
-      # the violation onto the first constraint field, :account_id.
-      assert "has already been taken" in errors_on(changeset).account_id
+      refute provider.enabled
     end
 
-    test "two ENABLED providers with the same allowed_email_domain hit the unique index" do
+    test "a crafted create stays disabled even when its email domain is already active" do
       {_user, account, subject} = enterprise_owner()
       _first = provider_fixture(account, %{kind: :okta, allowed_email_domain: "acme.test"})
 
-      assert {:error, changeset} =
+      assert {:ok, provider} =
                SSO.configure_provider(
                  %{
                    kind: :keycloak,
@@ -1424,7 +1422,8 @@ defmodule Emisar.SSOTest do
                  subject
                )
 
-      assert errors_on(changeset).allowed_email_domain != []
+      refute provider.enabled
+      assert provider.allowed_email_domain == "acme.test"
     end
 
     test "omitting kind / name / issuer / client_id surfaces the required-field errors" do
@@ -1642,6 +1641,16 @@ defmodule Emisar.SSOTest do
       assert SSO.fetch_provider_by_id(provider.id, sb) == {:error, :not_found}
       assert SSO.update_provider(provider, %{name: "Hijacked"}, sb) == {:error, :not_found}
       assert SSO.delete_provider(provider, sb) == {:error, :not_found}
+    end
+
+    test "a disabled provider cannot be activated before a real sign-in is verified" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, %{enabled: false})
+
+      assert SSO.update_provider(provider, %{enabled: true}, subject) ==
+               {:error, :sign_in_verification_required}
+
+      refute Repo.reload!(provider).enabled
     end
 
     test "changing the issuer to a non-https URL is rejected on update" do

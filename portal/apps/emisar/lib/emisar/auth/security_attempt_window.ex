@@ -8,7 +8,13 @@ defmodule Emisar.Auth.SecurityAttemptWindow do
   """
   use Emisar, :schema
 
-  @scopes [:mfa_challenge, :inbox_step_up, :email_change_issue, :mfa_enrollment_issue]
+  @scopes [
+    :mfa_challenge,
+    :inbox_step_up,
+    :email_change_issue,
+    :mfa_enrollment_issue,
+    :oidc_identity_step_up_issue
+  ]
 
   schema "auth_security_attempt_windows" do
     field :scope, Ecto.Enum, values: @scopes

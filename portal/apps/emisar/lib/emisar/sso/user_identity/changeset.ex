@@ -31,6 +31,29 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
   def touch_last_seen(%UserIdentity{} = identity),
     do: change(identity, last_seen_at: DateTime.utc_now())
 
+  @doc "Record the user's explicit OIDC proof, reviving or rebinding a retired row when needed."
+  def verify_by_user(%UserIdentity{} = identity, identifier, claims) do
+    identity
+    |> change(
+      provider_identifier: identifier,
+      provider_identifier_retired_at: nil,
+      created_by: :user,
+      claims: claims,
+      last_seen_at: DateTime.utc_now()
+    )
+    |> validate_required([:provider_identifier])
+    |> validate_length(:provider_identifier, max: @identifier_max_length, count: :codepoints)
+    |> put_live_constraints()
+  end
+
+  @doc "Retire a self-verified OIDC binding while preserving a SCIM lifecycle row."
+  def retire_provider_identifier(%UserIdentity{} = identity),
+    do: change(identity, provider_identifier_retired_at: DateTime.utc_now())
+
+  @doc "Soft-delete an OIDC-only identity after its user removes the binding."
+  def delete(%UserIdentity{} = identity),
+    do: change(identity, deleted_at: DateTime.utc_now())
+
   @doc """
   Take directory ownership of an identity that arrived through OIDC first.
 
