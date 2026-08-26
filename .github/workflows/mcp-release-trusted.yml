@@ -307,6 +307,7 @@ jobs:
     environment:
       name: public-releases
     permissions:
+      attestations: write
       contents: write
       id-token: write
     env:
@@ -342,6 +343,66 @@ jobs:
           # the rename costs nothing and is unambiguous.)
           ( cd release && shasum -a 256 emisar-mcp-*.tar.gz emisar-mcp-*.zip > SHA256SUMS-MCP )
           ls -la release/
+
+      # Attestation bundles contain ephemeral certificates and timestamps, so a
+      # full rerun cannot overwrite the fixed-name create-only object with a
+      # freshly signed bundle. Reuse only bytes that still verify for this exact
+      # checksum file, trusted workflow, tag ref, and hosted-runner identity.
+      - name: Reuse existing checksum attestation
+        id: existing_checksum_provenance
+        if: ${{ !github.event.repository.private }}
+        env:
+          BUNDLE_URL: https://storage.googleapis.com/emisar-pack-registry/releases/mcp/${{ github.ref_name }}/SHA256SUMS-MCP.sigstore.jsonl
+        run: |
+          set -euo pipefail
+          if ! status=$(curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+            --connect-timeout 15 --max-time 300 --retry 4 --retry-delay 2 \
+            --silent --show-error --location --output release/SHA256SUMS-MCP.sigstore.jsonl \
+            --write-out '%{http_code}' "$BUNDLE_URL"); then
+            echo "::error::could not check for an existing checksum attestation"
+            exit 1
+          fi
+          case "$status" in
+            200)
+              gh attestation verify release/SHA256SUMS-MCP \
+                --bundle release/SHA256SUMS-MCP.sigstore.jsonl \
+                --repo AndrewDryga/emisar \
+                --signer-workflow AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml \
+                --source-ref "$GITHUB_REF" \
+                --deny-self-hosted-runners >/dev/null
+              echo "found=true" >> "$GITHUB_OUTPUT"
+              ;;
+            404)
+              rm -f release/SHA256SUMS-MCP.sigstore.jsonl
+              echo "found=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::checksum attestation lookup returned HTTP ${status}"
+              exit 1
+              ;;
+          esac
+
+      - name: Attest release checksum metadata
+        id: checksum_provenance
+        if: ${{ !github.event.repository.private && steps.existing_checksum_provenance.outputs.found != 'true' }}
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+        with:
+          subject-path: release/SHA256SUMS-MCP
+
+      - name: Preserve offline checksum attestation
+        if: ${{ !github.event.repository.private && steps.existing_checksum_provenance.outputs.found != 'true' }}
+        env:
+          BUNDLE_PATH: ${{ steps.checksum_provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          test -s "$BUNDLE_PATH"
+          gh attestation verify release/SHA256SUMS-MCP \
+            --bundle "$BUNDLE_PATH" \
+            --repo AndrewDryga/emisar \
+            --signer-workflow AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml \
+            --source-ref "$GITHUB_REF" \
+            --deny-self-hosted-runners >/dev/null
+          cp -- "$BUNDLE_PATH" release/SHA256SUMS-MCP.sigstore.jsonl
 
       - name: Derive version
         id: ver
@@ -387,6 +448,14 @@ jobs:
             cmp "release/${windows_archive}" "/tmp/${windows_archive}"
           done
 
+      - name: Verify primary checksum attestation
+        if: ${{ !github.event.repository.private }}
+        run: |
+          set -euo pipefail
+          base="https://emisar.dev/releases/mcp/${RELEASE_TAG}"
+          curl -fsS --retry 4 --retry-delay 2 "${base}/SHA256SUMS-MCP.sigstore.jsonl" -o /tmp/published-SHA256SUMS-MCP.sigstore.jsonl
+          cmp release/SHA256SUMS-MCP.sigstore.jsonl /tmp/published-SHA256SUMS-MCP.sigstore.jsonl
+
       - name: Publish GitHub release mirror
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
@@ -403,4 +472,5 @@ jobs:
             release/emisar-mcp-*.zip
             release/emisar-mcp-*.zip.sha256
             release/SHA256SUMS-MCP
+            ${{ !github.event.repository.private && 'release/SHA256SUMS-MCP.sigstore.jsonl' || '' }}
           fail_on_unmatched_files: true
