@@ -1,7 +1,7 @@
 schema_version: 1
 id: consul.list_sessions
 title: GET /v1/session/list
-kind: exec
+kind: script
 risk: low
 description: 'List active sessions cluster-wide: ID, node, TTL, behavior.'
 side_effects: ["One API call.", "Read-only."]
@@ -9,11 +9,10 @@ search_terms:
   - who holds locks
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CONSUL_HTTP_TOKEN\" ] && printf 'X-Consul-Token: %s\\n' \"$CONSUL_HTTP_TOKEN\"; } | curl -fsS --globoff --proto =http,https -H @- \"${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/session/list\""
+  script:
+    path: scripts/api_request.sh
+    interpreter: /bin/sh
+  argv: [GET, /v1/session/list]
   timeout: 30s
 output:
   parser: json

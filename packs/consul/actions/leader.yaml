@@ -1,7 +1,7 @@
 schema_version: 1
 id: consul.leader
 title: GET /v1/status/leader
-kind: exec
+kind: script
 risk: low
 description: >
   Show the current Raft leader address for this datacenter. Reads the status
@@ -15,11 +15,10 @@ search_terms:
   - leader election
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CONSUL_HTTP_TOKEN\" ] && printf 'X-Consul-Token: %s\\n' \"$CONSUL_HTTP_TOKEN\"; } | curl -fsS --globoff --proto =http,https -H @- \"${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/status/leader\""
+  script:
+    path: scripts/api_request.sh
+    interpreter: /bin/sh
+  argv: [GET, /v1/status/leader]
   timeout: 15s
 output:
   parser: json

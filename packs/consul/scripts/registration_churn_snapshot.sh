@@ -20,9 +20,18 @@ fi
 consul_get() {
 	path=$1
 	destination=$2
-	curl -fsS --globoff --proto '=http,https' \
+	shift 2
+	[ -n "${CONSUL_CACERT:-}" ] && set -- --cacert "$CONSUL_CACERT" "$@"
+	if { [ -n "${CONSUL_CLIENT_CERT:-}" ] && [ -z "${CONSUL_CLIENT_KEY:-}" ]; } ||
+		{ [ -z "${CONSUL_CLIENT_CERT:-}" ] && [ -n "${CONSUL_CLIENT_KEY:-}" ]; }; then
+		printf 'CONSUL_CLIENT_CERT and CONSUL_CLIENT_KEY must be set together\n' >&2
+		return 2
+	fi
+	[ -n "${CONSUL_CLIENT_CERT:-}" ] && set -- --cert "$CONSUL_CLIENT_CERT" "$@"
+	[ -n "${CONSUL_CLIENT_KEY:-}" ] && set -- --key "$CONSUL_CLIENT_KEY" "$@"
+	curl -q -fsS --globoff --proto '=http,https' \
 		--connect-timeout 2 --max-time 10 \
-		-H @"$headers" "$base_url$path" >"$destination"
+		-H @"$headers" "$@" "$base_url$path" >"$destination"
 }
 
 consul_get /v1/agent/metrics "$snapshot_dir/metrics-before.json"

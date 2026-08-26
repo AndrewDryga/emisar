@@ -1,7 +1,7 @@
 schema_version: 1
 id: consul.force_check_pass
 title: PUT /v1/agent/check/pass/<check_id>
-kind: exec
+kind: script
 risk: high
 description: Force one TTL check into the PASSING state; discovery resumes routing traffic to the service even if it is genuinely unhealthy. The check stays passing until the next TTL expires.
 side_effects:
@@ -24,14 +24,10 @@ args:
     validation:
       pattern: "^[A-Za-z0-9 _.,:/()#@=+-]{1,255}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - '{ [ -n "$CONSUL_HTTP_TOKEN" ] && printf "X-Consul-Token: %s\n" "$CONSUL_HTTP_TOKEN"; } | curl -fsS --globoff --proto =http,https -XPUT -H @- --data-urlencode "note=$NOTE" -G "${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/agent/check/pass/$CHECK_ID"'
-  env:
-    NOTE: "{{ args.note }}"
-    CHECK_ID: "{{ args.check_id }}"
+  script:
+    path: scripts/api_request.sh
+    interpreter: /bin/sh
+  argv: [PUT, "/v1/agent/check/pass/{{ args.check_id }}", --data-urlencode, "note={{ args.note }}", -G]
   timeout: 30s
 output:
   parser: text

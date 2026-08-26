@@ -1,7 +1,7 @@
 schema_version: 1
 id: consul.list_checks_critical
 title: GET /v1/health/state/critical
-kind: exec
+kind: script
 risk: low
 description: List every check currently in CRITICAL state across the catalog.
 side_effects: ["One API call.", "Read-only."]
@@ -10,11 +10,10 @@ search_terms:
   - failing services
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CONSUL_HTTP_TOKEN\" ] && printf 'X-Consul-Token: %s\\n' \"$CONSUL_HTTP_TOKEN\"; } | curl -fsS --globoff --proto =http,https -H @- \"${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/health/state/critical\""
+  script:
+    path: scripts/api_request.sh
+    interpreter: /bin/sh
+  argv: [GET, /v1/health/state/critical]
   timeout: 30s
 output:
   parser: json

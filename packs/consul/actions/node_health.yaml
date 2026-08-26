@@ -1,7 +1,7 @@
 schema_version: 1
 id: consul.node_health
 title: GET /v1/health/node/<node>
-kind: exec
+kind: script
 risk: low
 description: List all checks for one node + their status.
 side_effects: ["One API call.", "Read-only."]
@@ -14,13 +14,10 @@ args:
       # First char is non-dash so a "-flag"-shaped value can't be parsed as a flag if this ever lands as a bare positional.
       pattern: "^[a-zA-Z0-9_.][a-zA-Z0-9_.\\-]{0,127}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CONSUL_HTTP_TOKEN\" ] && printf 'X-Consul-Token: %s\\n' \"$CONSUL_HTTP_TOKEN\"; } | curl -fsS --globoff --proto =http,https -H @- \"${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/health/node/${1}\""
-      - "emisar"
-      - "{{ args.node }}"
+  script:
+    path: scripts/api_request.sh
+    interpreter: /bin/sh
+  argv: [GET, "/v1/health/node/{{ args.node }}"]
   timeout: 30s
 output:
   parser: json

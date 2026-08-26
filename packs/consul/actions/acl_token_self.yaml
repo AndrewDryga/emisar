@@ -1,7 +1,7 @@
 schema_version: 1
 id: consul.acl_token_self
 title: GET /v1/acl/token/self
-kind: exec
+kind: script
 risk: low
 description: Show metadata on the runner's own token — accessor, policies, roles, expiration. The SecretID the API returns is redacted from the output.
 side_effects:
@@ -9,11 +9,10 @@ side_effects:
   - Read-only; the SecretID field returned by the API is redacted before output.
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CONSUL_HTTP_TOKEN\" ] && printf 'X-Consul-Token: %s\\n' \"$CONSUL_HTTP_TOKEN\"; } | curl -fsS --globoff --proto =http,https -H @- \"${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/acl/token/self\""
+  script:
+    path: scripts/api_request.sh
+    interpreter: /bin/sh
+  argv: [GET, /v1/acl/token/self]
   timeout: 15s
 output:
   parser: json

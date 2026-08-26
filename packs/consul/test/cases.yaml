@@ -9,6 +9,8 @@ risk_accountability:
     consul.raft_remove_peer: requires_cluster
 env:
   CONSUL_HTTP_ADDR: "http://consul:8500"
+  CONSUL_HTTP_TOKEN: packtest-canary-consul-token-71e4
+secret_env: [CONSUL_HTTP_TOKEN]
 cases:
   - action: consul.agent_checks
     expect:
@@ -36,9 +38,81 @@ cases:
         /suspicious_loopback_registrations/count: 1
     cleanup:
       - argv: [/bin/sh, -c, 'curl -fsS -X PUT "$CONSUL_HTTP_ADDR/v1/agent/service/deregister/packtest-loopback"']
+  - name: consul.registration-churn-snapshot-private-ca-mtls
+    action: consul.registration_churn_snapshot
+    args: {sample_seconds: 5, limit: 10}
+    env:
+      CONSUL_HTTP_ADDR: https://consul:8501
+      CONSUL_CACERT: /packs/consul/test/fixtures/tls/ca.pem
+      CONSUL_CLIENT_CERT: /packs/consul/test/fixtures/tls/client.pem
+      CONSUL_CLIENT_KEY: /packs/consul/test/fixtures/tls/client-key.pem
+    expect:
+      json:
+        /sample_seconds: 5
   - action: consul.agent_self
     expect:
       stdout_contains: [Config, Member]
+  - name: consul.agent-self-private-ca-mtls
+    action: consul.agent_self
+    env:
+      CONSUL_HTTP_ADDR: https://consul:8501
+      CONSUL_CACERT: /packs/consul/test/fixtures/tls/ca.pem
+      CONSUL_CLIENT_CERT: /packs/consul/test/fixtures/tls/client.pem
+      CONSUL_CLIENT_KEY: /packs/consul/test/fixtures/tls/client-key.pem
+    expect:
+      stdout_contains: [Config, Member]
+  - name: consul.agent-self-private-ca-required
+    action: consul.agent_self
+    env:
+      CONSUL_HTTP_ADDR: https://consul:8501
+      CONSUL_CLIENT_CERT: /packs/consul/test/fixtures/tls/client.pem
+      CONSUL_CLIENT_KEY: /packs/consul/test/fixtures/tls/client-key.pem
+    expect:
+      status: failure
+      exit: [60]
+      reason_contains: [process exited with code 60]
+      stderr_contains: [certificate]
+  - name: consul.agent-self-client-identity-pair-required
+    action: consul.agent_self
+    env:
+      CONSUL_HTTP_ADDR: https://consul:8501
+      CONSUL_CACERT: /packs/consul/test/fixtures/tls/ca.pem
+      CONSUL_CLIENT_CERT: /packs/consul/test/fixtures/tls/client.pem
+    expect:
+      status: failure
+      exit: [2]
+      reason_contains: [process exited with code 2]
+      stderr_contains: [CONSUL_CLIENT_CERT and CONSUL_CLIENT_KEY must be set together]
+  - name: consul.agent-self-consul-tls-env
+    action: consul.agent_self
+    env:
+      PATH: /packs/consul/test/fixtures/bin:/usr/local/bin:/usr/bin:/bin
+      CONSUL_HTTP_ADDR: https://consul.example:8501
+      CONSUL_HTTP_TOKEN: packtest-canary-consul-token-fake-568c
+      CONSUL_CACERT: /tmp/consul-ca.pem
+      CONSUL_CLIENT_CERT: /tmp/consul-client.pem
+      CONSUL_CLIENT_KEY: /tmp/consul-client-key.pem
+    expect:
+      stdout_contains: [Config, Member]
+    probes:
+      - argv:
+          - /bin/sh
+          - -c
+          - >-
+            grep -Fx -- '--cacert' /tmp/packtest-consul-curl-argv &&
+            grep -Fx -- '/tmp/consul-ca.pem' /tmp/packtest-consul-curl-argv &&
+            grep -Fx -- '--cert' /tmp/packtest-consul-curl-argv &&
+            grep -Fx -- '/tmp/consul-client.pem' /tmp/packtest-consul-curl-argv &&
+            grep -Fx -- '--key' /tmp/packtest-consul-curl-argv &&
+            grep -Fx -- '/tmp/consul-client-key.pem' /tmp/packtest-consul-curl-argv &&
+            grep -Fx -- 'https://consul.example:8501/v1/agent/self' /tmp/packtest-consul-curl-argv &&
+            test "$(head -n 1 /tmp/packtest-consul-curl-argv)" = '-q' &&
+            ! grep -F -- 'packtest-canary-consul-token-fake-568c' /tmp/packtest-consul-curl-argv &&
+            grep -Fx -- 'X-Consul-Token: packtest-canary-consul-token-fake-568c' /tmp/packtest-consul-curl-stdin
+        expect:
+          stdout_contains: [https://consul.example:8501/v1/agent/self]
+    cleanup:
+      - argv: [/bin/rm, -f, /tmp/packtest-consul-curl-argv, /tmp/packtest-consul-curl-stdin]
   - name: consul.agent-self-http-error
     action: consul.agent_self
     env:
@@ -73,6 +147,11 @@ cases:
     expect:
       stdout_contains: [consul]
   - action: consul.members
+    env:
+      CONSUL_HTTP_ADDR: https://consul:8501
+      CONSUL_CACERT: /packs/consul/test/fixtures/tls/ca.pem
+      CONSUL_CLIENT_CERT: /packs/consul/test/fixtures/tls/client.pem
+      CONSUL_CLIENT_KEY: /packs/consul/test/fixtures/tls/client-key.pem
     expect:
       stdout_contains: [alive, server]
   - action: consul.raft_peers

@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+printf '%s\n' "$@" > /tmp/packtest-consul-curl-argv
+cat > /tmp/packtest-consul-curl-stdin
+printf '{"Config":{},"Member":{}}\n'

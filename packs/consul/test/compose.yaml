@@ -11,7 +11,10 @@ services:
 
   consul:
     image: hashicorp/consul:${PACKTEST_VERSION:-2.0.2}${PACKTEST_DIGEST-}
-    command: agent -dev -client=0.0.0.0
+    command: agent -dev -client=0.0.0.0 -config-file=/consul/config/packtest-tls.hcl
+    volumes:
+      - ${EMISAR_ROOT}/packs/consul/test/fixtures/consul-tls.hcl:/consul/config/packtest-tls.hcl:ro
+      - ${EMISAR_ROOT}/packs/consul/test/fixtures/tls:/consul/config/packtest-tls:ro
     healthcheck:
       # Both signals, and each earns its place. An elected leader means the agent
       # is SERVING, not merely listening — the readiness question. Metrics is

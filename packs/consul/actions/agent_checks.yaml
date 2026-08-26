@@ -1,17 +1,16 @@
 schema_version: 1
 id: consul.agent_checks
 title: GET /v1/agent/checks
-kind: exec
+kind: script
 risk: low
 description: List checks registered with the local agent + their current status.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CONSUL_HTTP_TOKEN\" ] && printf 'X-Consul-Token: %s\\n' \"$CONSUL_HTTP_TOKEN\"; } | curl -fsS --globoff --proto =http,https -H @- \"${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/agent/checks\""
+  script:
+    path: scripts/api_request.sh
+    interpreter: /bin/sh
+  argv: [GET, /v1/agent/checks]
   timeout: 15s
 output:
   parser: json

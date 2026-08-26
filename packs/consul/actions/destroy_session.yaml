@@ -1,7 +1,7 @@
 schema_version: 1
 id: consul.destroy_session
 title: PUT /v1/session/destroy/<id>
-kind: exec
+kind: script
 risk: high
 description: Destroy one session. Any locks held are released; KV entries with release behavior are unlocked.
 side_effects:
@@ -19,13 +19,10 @@ args:
     validation:
       pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CONSUL_HTTP_TOKEN\" ] && printf 'X-Consul-Token: %s\\n' \"$CONSUL_HTTP_TOKEN\"; } | curl -fsS --globoff --proto =http,https -XPUT -H @- \"${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/session/destroy/${1}\""
-      - "emisar"
-      - "{{ args.session_id }}"
+  script:
+    path: scripts/api_request.sh
+    interpreter: /bin/sh
+  argv: [PUT, "/v1/session/destroy/{{ args.session_id }}"]
   timeout: 15s
 output:
   parser: text

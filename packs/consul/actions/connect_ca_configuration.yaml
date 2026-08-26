@@ -1,7 +1,7 @@
 schema_version: 1
 id: consul.connect_ca_configuration
 title: GET /v1/connect/ca/configuration
-kind: exec
+kind: script
 risk: low
 description: Show CA provider configuration (which CA, intermediate cert TTL, etc). Provider secrets the config map may carry — the Vault provider's Token and the built-in provider's PrivateKey — are redacted from the output.
 side_effects:
@@ -9,11 +9,10 @@ side_effects:
   - Read-only; provider secret fields (Token, PrivateKey) are redacted before output.
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ [ -n \"$CONSUL_HTTP_TOKEN\" ] && printf 'X-Consul-Token: %s\\n' \"$CONSUL_HTTP_TOKEN\"; } | curl -fsS --globoff --proto =http,https -H @- \"${CONSUL_HTTP_ADDR:-http://127.0.0.1:8500}/v1/connect/ca/configuration\""
+  script:
+    path: scripts/api_request.sh
+    interpreter: /bin/sh
+  argv: [GET, /v1/connect/ca/configuration]
   timeout: 15s
 output:
   parser: json
