@@ -12,10 +12,8 @@ defmodule EmisarWeb.UserSessionController do
 
   use EmisarWeb, :controller
   alias Emisar.{Auth, Config, Throttle, Users}
-  alias EmisarWeb.Analytics
-  alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff}
-  alias EmisarWeb.{RecentAccounts, RegistrationHandoff, RequestContext}
-  alias EmisarWeb.{ReturnTo, UserAuth}
+  alias EmisarWeb.{Analytics, BillingIntent, MagicLinkHandoff, MfaChallengeHandoff}
+  alias EmisarWeb.{RecentAccounts, RegistrationHandoff, RequestContext, ReturnTo, UserAuth}
 
   # The split-code magic link keeps its browser-side nonce in this signed,
   # 15-minute, http-only cookie (`token_id:nonce`); the email carries the
@@ -49,6 +47,7 @@ defmodule EmisarWeb.UserSessionController do
     return_to = ReturnTo.app_path(params["return_to"])
     handoff = params["registration_handoff"]
     prior_token_id = get_session(conn, :magic_link_token_id)
+    billing_intent = requested_billing_intent(conn, params, prior_token_id)
     # Throttle by recipient so the form can't bomb an inbox — an ETS-bucket key,
     # not a DB lookup (citext owns DB comparison), so the no-app-downcase rule
     # doesn't apply.
@@ -57,7 +56,7 @@ defmodule EmisarWeb.UserSessionController do
 
     case Throttle.check("magic_link", key, 5, 900_000) do
       :ok ->
-        conn = clear_magic_request(conn)
+        conn = conn |> clear_magic_request() |> replace_billing_intent(billing_intent)
 
         conn =
           with {:ok, user} <- Users.fetch_user_by_email(email),
@@ -87,11 +86,12 @@ defmodule EmisarWeb.UserSessionController do
         # so they can retry the same neutral submission after the recipient cap.
         conn
         |> clear_magic_request()
+        |> replace_billing_intent(verified_billing_intent(params["billing_intent"]))
         |> put_flash(
           :error,
           "You've asked for several sign-in emails for that address. Wait a few minutes, then try signup again."
         )
-        |> redirect(to: ~p"/sign_up")
+        |> redirect(to: sign_up_path(verified_billing_intent(params["billing_intent"])))
 
       {:error, :rate_limited} ->
         # A resend must not replace a still-live real factor (and its server-side
@@ -116,6 +116,7 @@ defmodule EmisarWeb.UserSessionController do
   def magic_link_start(conn, _params) do
     conn
     |> clear_magic_request()
+    |> replace_billing_intent(nil)
     |> redirect(to: ~p"/sign_in/magic?sent=1")
   end
 
@@ -283,6 +284,37 @@ defmodule EmisarWeb.UserSessionController do
 
   defp put_magic_return_to(conn, nil), do: conn
   defp put_magic_return_to(conn, path), do: put_session(conn, :user_return_to, path)
+
+  # A fresh signup submission must present the signed choice again; this keeps
+  # an abandoned Team click from leaking into a later ordinary sign-in. A resend
+  # has no handoff field, so it may inherit the still-live choice only while the
+  # same browser still carries the factor it is replacing.
+  defp requested_billing_intent(conn, params, prior_token_id) do
+    case verified_billing_intent(params["billing_intent"]) do
+      token when is_binary(token) ->
+        token
+
+      nil ->
+        if is_binary(prior_token_id) and magic_request_present?(conn),
+          do: verified_billing_intent(get_session(conn, :billing_intent)),
+          else: nil
+    end
+  end
+
+  defp verified_billing_intent(token) do
+    case BillingIntent.verify(token) do
+      {:ok, _intent} -> token
+      {:error, :invalid} -> nil
+    end
+  end
+
+  defp replace_billing_intent(conn, token) when is_binary(token),
+    do: put_session(conn, :billing_intent, token)
+
+  defp replace_billing_intent(conn, nil), do: delete_session(conn, :billing_intent)
+
+  defp sign_up_path(token) when is_binary(token), do: ~p"/sign_up?billing_intent=#{token}"
+  defp sign_up_path(nil), do: ~p"/sign_up"
 
   defp read_magic_cookie(conn) do
     conn = fetch_cookies(conn, signed: [@magic_cookie])

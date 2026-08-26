@@ -13,7 +13,7 @@ defmodule EmisarWeb.MarketingController do
   """
   use EmisarWeb, :controller
   alias Emisar.{Billing, Catalog}
-  alias EmisarWeb.UserAgent
+  alias EmisarWeb.{BillingIntent, UserAgent}
 
   plug :put_layout, html: {EmisarWeb.Layouts, :app}
   plug :assign_detected_os
@@ -274,6 +274,11 @@ defmodule EmisarWeb.MarketingController do
     enterprise_plan = Map.fetch!(plans, "enterprise")
     faqs = pricing_faqs(plans)
 
+    team_intents = %{
+      month: BillingIntent.sign("team", :month),
+      year: BillingIntent.sign("team", :year)
+    }
+
     render(conn, :pricing,
       page_title: "Pricing — per runner, not per seat",
       meta_description: pricing_meta_description(free_plan, team_plan, enterprise_plan),
@@ -288,6 +293,10 @@ defmodule EmisarWeb.MarketingController do
       team_monthly_price: dollars(team_plan.monthly_price_cents),
       team_annual_price: dollars(team_plan.annual_price_cents),
       team_annual_savings: Billing.annual_savings_label(team_plan),
+      team_intent_paths: %{
+        month: ~p"/start/team/#{team_intents.month}",
+        year: ~p"/start/team/#{team_intents.year}"
+      },
       enterprise_price: price_label(enterprise_plan.monthly_price_cents),
       json_ld: pricing_ld(free_plan, team_plan, faqs)
     )

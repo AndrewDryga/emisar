@@ -1,13 +1,20 @@
 defmodule EmisarWeb.BillingLive do
   use EmisarWeb, :live_view
   alias Emisar.Billing
-  alias EmisarWeb.{MailTo, Permissions}
+  alias EmisarWeb.{BillingIntent, MailTo, Permissions}
 
   @plan_order ["free", "team", "enterprise"]
 
-  def mount(_params, _session, socket) do
+  def mount(params, _session, socket) do
+    billing_intent = billing_intent(params["billing_intent"])
+
     socket =
-      assign(socket, page_title: "Billing", loading?: not connected?(socket), cycle: :month)
+      assign(socket,
+        page_title: "Billing",
+        loading?: not connected?(socket),
+        cycle: (billing_intent && billing_intent.cycle) || :month,
+        billing_intent: billing_intent
+      )
 
     if connected?(socket) do
       account = socket.assigns.current_account
@@ -68,7 +75,10 @@ defmodule EmisarWeb.BillingLive do
   # Pure UI state — flips the plan cards between monthly and annual pricing;
   # the chosen cycle rides on the Upgrade click, so no re-fetch here.
   def handle_event("set_cycle", %{"cycle" => cycle}, socket) do
-    {:noreply, assign(socket, :cycle, parse_cycle(cycle))}
+    case parse_cycle(cycle) do
+      {:ok, cycle} -> {:noreply, assign(socket, :cycle, cycle)}
+      {:error, :invalid_cycle} -> {:noreply, put_flash(socket, :error, "Unknown billing cycle.")}
+    end
   end
 
   def handle_event("upgrade", %{"plan" => plan} = params, socket) do
@@ -76,11 +86,12 @@ defmodule EmisarWeb.BillingLive do
       socket,
       Billing.subject_can_manage_billing?(socket.assigns.current_subject),
       fn socket ->
-        if plan in @plan_order do
+        with {:ok, cycle} <- parse_cycle(params["cycle"]),
+             true <- Billing.self_service_checkout?(plan, cycle) do
           case Billing.start_checkout(
                  socket.assigns.current_account,
                  plan,
-                 parse_cycle(params["cycle"]),
+                 cycle,
                  socket.assigns.current_subject
                ) do
             {:ok, url} ->
@@ -99,7 +110,7 @@ defmodule EmisarWeb.BillingLive do
                put_flash(socket, :error, "Could not start checkout: #{humanize_reason(reason)}")}
           end
         else
-          {:noreply, put_flash(socket, :error, "Unknown plan.")}
+          _invalid -> {:noreply, put_flash(socket, :error, "Unknown plan or billing cycle.")}
         end
       end
     )
@@ -177,9 +188,27 @@ defmodule EmisarWeb.BillingLive do
   defp limit_label(n) when is_integer(n), do: Integer.to_string(n)
   defp limit_label(_), do: "—"
 
-  # Whitelist the cycle off the client (IL-14) — anything but "year" is monthly.
-  defp parse_cycle("year"), do: :year
-  defp parse_cycle(_), do: :month
+  # Whitelist the cycle off the client (IL-14). Invalid values fail closed;
+  # silently treating one as monthly would change the commercial choice.
+  defp parse_cycle("month"), do: {:ok, :month}
+  defp parse_cycle("year"), do: {:ok, :year}
+  defp parse_cycle(_), do: {:error, :invalid_cycle}
+
+  defp billing_intent(token) do
+    case BillingIntent.verify(token) do
+      {:ok, intent} -> intent
+      {:error, :invalid} -> nil
+    end
+  end
+
+  defp billing_intent_actionable?(intent, summary, subject) do
+    not is_nil(intent) and intent.plan == "team" and
+      plan_rank("team") > plan_rank(summary.plan) and
+      Billing.subject_can_manage_billing?(subject)
+  end
+
+  defp cycle_label(:month), do: "Monthly billing"
+  defp cycle_label(:year), do: "Annual billing"
 
   defp price_label(%{monthly_price_cents: nil}, _cycle), do: "Custom pricing"
   defp price_label(%{monthly_price_cents: 0}, _cycle), do: "$0"
@@ -565,6 +594,22 @@ defmodule EmisarWeb.BillingLive do
                  requires manage-billing, so the CTA — not the card — is what
                  that permission gates. --%>
             <section>
+              <.status_note
+                :if={
+                  billing_intent_actionable?(
+                    @billing_intent,
+                    @summary,
+                    @current_subject
+                  )
+                }
+                icon="product.billing"
+                tone={:brand}
+                title={"Review Team for #{@current_account.name}"}
+                class="mb-5"
+              >
+                {cycle_label(@cycle)} is selected. Choose Upgrade to Team below to open checkout.
+                Nothing is charged until you confirm there.
+              </.status_note>
               <.section_header title="Plans">
                 <:actions>
                   <%!-- Monthly/annual is pure UI state (set_cycle) — the chosen
@@ -608,9 +653,30 @@ defmodule EmisarWeb.BillingLive do
                   <div class="flex items-center justify-between gap-2">
                     <h3 class="text-lg font-semibold text-zinc-100">{plan.name}</h3>
                     <.chip :if={current_plan?(plan, @summary)} tone={:neutral}>current</.chip>
+                    <.chip
+                      :if={
+                        plan.key == "team" and
+                          billing_intent_actionable?(
+                            @billing_intent,
+                            @summary,
+                            @current_subject
+                          )
+                      }
+                      tone={:brand}
+                    >
+                      selected
+                    </.chip>
                     <%!-- Upsell merch only reads as such BELOW the badged plan —
                      a customer already above it gets silence. --%>
-                    <.chip :if={plan.key == "team" and plan_rank("team") > plan_rank(@summary.plan)}>
+                    <.chip :if={
+                      plan.key == "team" and
+                        plan_rank("team") > plan_rank(@summary.plan) and
+                        not billing_intent_actionable?(
+                          @billing_intent,
+                          @summary,
+                          @current_subject
+                        )
+                    }>
                       most popular
                     </.chip>
                   </div>

@@ -13,9 +13,14 @@ export function initPricingCycle() {
 
   const buttons = toggle.querySelectorAll("[data-cycle]")
   const prices = document.querySelectorAll("[data-cycle-price]")
+  const intentLinks = document.querySelectorAll("[data-cycle-intent-link]")
 
   const apply = (cycle) => {
     prices.forEach((el) => el.classList.toggle("hidden", el.dataset.cyclePrice !== cycle))
+    intentLinks.forEach((link) => {
+      const href = link.getAttribute(`data-cycle-href-${cycle}`)
+      if (href) link.setAttribute("href", href)
+    })
     buttons.forEach((btn) => {
       const active = btn.dataset.cycle === cycle
       btn.setAttribute("aria-pressed", active ? "true" : "false")

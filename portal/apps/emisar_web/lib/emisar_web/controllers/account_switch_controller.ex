@@ -9,14 +9,12 @@ defmodule EmisarWeb.AccountSwitchController do
   """
   use EmisarWeb, :controller
   alias Emisar.Accounts
-  alias EmisarWeb.UserAuth
+  alias EmisarWeb.{BillingIntent, UserAuth}
 
-  def switch(conn, %{"account_id" => account_id}) when is_binary(account_id) do
+  def switch(conn, %{"account_id" => account_id} = params) when is_binary(account_id) do
     case Accounts.switch_account(account_id, conn.assigns.current_subject) do
       {:ok, membership} ->
-        conn
-        |> UserAuth.switch_account(membership)
-        |> redirect(to: ~p"/app/#{membership.account}")
+        continue_after_switch(conn, membership, params["billing_intent"])
 
       {:error, _reason} ->
         conn
@@ -29,5 +27,21 @@ defmodule EmisarWeb.AccountSwitchController do
     conn
     |> put_flash(:error, "Missing account id.")
     |> redirect(to: ~p"/app")
+  end
+
+  defp continue_after_switch(conn, membership, token) do
+    case BillingIntent.verify(token) do
+      {:ok, _intent} ->
+        conn
+        |> delete_session(:billing_intent)
+        |> UserAuth.switch_account(membership)
+        |> redirect(to: ~p"/app/#{membership.account}/settings/billing?billing_intent=#{token}")
+
+      {:error, :invalid} ->
+        conn
+        |> delete_session(:billing_intent)
+        |> UserAuth.switch_account(membership)
+        |> redirect(to: ~p"/app/#{membership.account}")
+    end
   end
 end

@@ -48,6 +48,7 @@ defmodule EmisarWeb.BillingLiveTest do
       loading and failed-with-retry states.
   """
   use EmisarWeb.ConnCase, async: true
+  alias EmisarWeb.BillingIntent
   alias EmisarWeb.BillingLiveTest.InvoicesDownPaddleClient
 
   defp downgrade_to(user, role) when is_binary(role) do
@@ -137,6 +138,63 @@ defmodule EmisarWeb.BillingLiveTest do
                render_click(lv, "upgrade", %{"plan" => "team", "cycle" => "year"})
 
       assert url =~ "stub.paddle.test/checkout"
+    end
+
+    test "a signed annual Team choice is preselected but still requires Upgrade", %{
+      conn: conn,
+      account: account
+    } do
+      token = BillingIntent.sign("team", :year)
+
+      {:ok, lv, html} =
+        live(conn, ~p"/app/#{account}/settings/billing?billing_intent=#{token}")
+
+      assert html =~ "Review Team for Test Co"
+      assert html =~ "Annual billing is selected"
+      assert html =~ "Nothing is charged until you confirm there"
+      refute html =~ "most popular"
+      assert has_element?(lv, "button[phx-value-cycle='year'][phx-click='upgrade']")
+    end
+
+    test "an invalid choice falls back to monthly without checkout context", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, html} =
+        live(conn, ~p"/app/#{account}/settings/billing?billing_intent=forged")
+
+      refute html =~ "Review Team for"
+      assert html =~ "most popular"
+      assert has_element?(lv, "button[phx-value-cycle='month'][phx-click='upgrade']")
+    end
+
+    test "crafted plan and cadence events fail closed without checkout", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert render_click(lv, "set_cycle", %{"cycle" => "weekly"}) =~
+               "Unknown billing cycle"
+
+      assert render_click(lv, "upgrade", %{"plan" => "enterprise", "cycle" => "month"}) =~
+               "Unknown plan or billing cycle"
+
+      assert render_click(lv, "upgrade", %{"plan" => "team", "cycle" => "weekly"}) =~
+               "Unknown plan or billing cycle"
+    end
+
+    test "a Team choice does not show an upgrade prompt on an existing Team account", %{
+      conn: conn,
+      account: account
+    } do
+      insert_subscription(account, "active")
+      token = BillingIntent.sign("team", :year)
+
+      {:ok, _lv, html} =
+        live(conn, ~p"/app/#{account}/settings/billing?billing_intent=#{token}")
+
+      refute html =~ "Review Team for"
     end
 
     test "the enterprise card mails sales with account context, not checkout", %{

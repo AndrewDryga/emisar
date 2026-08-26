@@ -359,6 +359,28 @@ defmodule EmisarWeb.MarketingTest do
              "#{12 - div(team.annual_price_cents, team.monthly_price_cents)} months free"
   end
 
+  test "pricing renders signed monthly and annual Team destinations", %{conn: conn} do
+    document = conn |> get(~p"/pricing") |> html_response(200) |> LazyHTML.from_document()
+    team_link = LazyHTML.query(document, "[data-cycle-intent-link]")
+
+    [month_path] = LazyHTML.attribute(team_link, "data-cycle-href-month")
+    [year_path] = LazyHTML.attribute(team_link, "data-cycle-href-year")
+    [default_path] = LazyHTML.attribute(team_link, "href")
+
+    assert default_path == month_path
+    assert "/start/team/" <> month_token = month_path
+    assert "/start/team/" <> year_token = year_path
+
+    assert EmisarWeb.BillingIntent.verify(month_token) ==
+             {:ok, %{plan: "team", cycle: :month}}
+
+    assert EmisarWeb.BillingIntent.verify(year_token) ==
+             {:ok, %{plan: "team", cycle: :year}}
+
+    assert LazyHTML.query(document, ~s([data-plan="free"] a[href="/sign_up"])) != []
+    assert LazyHTML.text(team_link) =~ "Continue with Team"
+  end
+
   test "pricing page emits a FAQPage with the visible questions in sync", %{conn: conn} do
     html = conn |> get(~p"/pricing") |> html_response(200)
     document = LazyHTML.from_document(html)

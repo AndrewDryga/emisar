@@ -2,6 +2,7 @@ defmodule EmisarWeb.OnboardingLiveTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Accounts, Repo}
   alias Emisar.Accounts.Membership
+  alias EmisarWeb.BillingIntent
 
   describe "workspace creation" do
     test "an 80-char name is accepted and arms the switch POST", %{conn: conn} do
@@ -122,11 +123,15 @@ defmodule EmisarWeb.OnboardingLiveTest do
       # suspended) who hits the app isn't 404'd or logged out: `require_authenticated_user`
       # → `assign_current_account` (the nil-ref branch) steers them to /onboarding,
       # and the page renders the create-workspace form so they can self-serve.
-      conn = log_in_user(conn, Fixtures.Users.create_user())
+      user = Fixtures.Users.create_user()
+      conn = log_in_user(conn, user)
 
       assert redirected_to(get(conn, ~p"/app")) == ~p"/onboarding"
 
-      {:ok, _lv, html} = live(conn, ~p"/onboarding")
+      {:ok, lv, html} = live(conn, ~p"/onboarding")
+      state = :sys.get_state(lv.pid)
+
+      assert state.socket.assigns.current_user.id == user.id
       assert html =~ "Set up your workspace"
       assert html =~ "onboarding_form"
     end
@@ -166,6 +171,63 @@ defmodule EmisarWeb.OnboardingLiveTest do
       assert redirected_to(switched) == ~p"/app/#{created.account}"
       assert get_session(switched, :current_account_id) == created.account_id
       refute get_session(switched, :current_account_id) == first.id
+    end
+
+    test "a Team choice survives workspace creation and lands on Billing for the new workspace",
+         %{
+           conn: conn
+         } do
+      user = Fixtures.Users.create_user()
+      token = BillingIntent.sign("team", :year)
+
+      conn =
+        conn
+        |> log_in_user(user)
+        |> Plug.Conn.put_session(:billing_intent, token)
+
+      {:ok, lv, html} = live(conn, ~p"/onboarding")
+      assert html =~ "Team checkout · Annual billing"
+      assert html =~ "Create this workspace on Free, then review Team billing"
+      assert html =~ ~s(name="billing_intent" value="#{token}")
+
+      submitted =
+        lv
+        |> form("#onboarding_form", %{"account" => %{"name" => "Annual Team Space"}})
+        |> render_submit()
+
+      assert submitted =~ "phx-trigger-action"
+
+      created =
+        Membership.Query.not_deleted()
+        |> Membership.Query.by_user_id(user.id)
+        |> Repo.all()
+        |> Repo.preload(:account)
+        |> Enum.find(&(&1.account.name == "Annual Team Space"))
+
+      switched =
+        post(conn, ~p"/app/accounts/switch", %{
+          "account_id" => created.account_id,
+          "billing_intent" => token
+        })
+
+      assert redirected_to(switched) ==
+               ~p"/app/#{created.account}/settings/billing?billing_intent=#{token}"
+
+      assert get_session(switched, :current_account_id) == created.account_id
+      refute get_session(switched, :billing_intent)
+    end
+
+    test "an invalid Team choice degrades to ordinary Free onboarding", %{conn: conn} do
+      conn =
+        conn
+        |> log_in_user(Fixtures.Users.create_user())
+        |> Plug.Conn.put_session(:billing_intent, "forged")
+
+      {:ok, _lv, html} = live(conn, ~p"/onboarding")
+
+      assert html =~ "Starts on the Free plan"
+      refute html =~ "Team checkout"
+      refute html =~ ~s(name="billing_intent")
     end
   end
 

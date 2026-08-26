@@ -21,7 +21,7 @@ defmodule EmisarWeb.AuthFlowTest do
   describe "GET /sign_up" do
     test "renders the registration form (no password to set)", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/sign_up")
-      assert html =~ "Start your free workspace"
+      assert html =~ "Create your workspace"
       assert html =~ "Work email"
       assert html =~ "sign-in link"
       refute html =~ "Password"

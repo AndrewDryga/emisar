@@ -2,14 +2,15 @@ defmodule EmisarWeb.UserSessionControllerTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Accounts, Auth, Repo, Users}
   alias Emisar.Audit.Event
-  alias EmisarWeb.{MagicLinkHandoff, MfaChallengeHandoff, RegistrationHandoff}
+  alias EmisarWeb.{BillingIntent, MagicLinkHandoff, MfaChallengeHandoff, RegistrationHandoff}
 
   describe "split-code magic link" do
     # Drive the real request, then pull token_id + the 6-char secret out of the
     # email. The returned conn carries the signed nonce cookie (via recycle), so a
     # follow-up confirm/code request is "the same browser" that requested.
-    defp request_magic_link(conn, email) do
-      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => email}})
+    defp request_magic_link(conn, email, extra_params \\ %{}) do
+      params = Map.put(extra_params, "user", %{"email" => email})
+      conn = post(conn, ~p"/sign_in/magic/start", params)
       assert_received {:email, sent}
       [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
       {recycle(conn), token_id, secret}
@@ -110,6 +111,97 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
       assert get_session(conn, :user_token)
       assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "Welcome to emisar"
+    end
+
+    test "a Team choice survives owner registration and session renewal", %{conn: conn} do
+      user = Fixtures.Users.create_user(confirmed?: false)
+      intent = BillingIntent.sign("team", :year)
+
+      started =
+        post(conn, ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "registration_handoff" =>
+            RegistrationHandoff.sign(user.id, "Team Checkout Co", "Inbox Owner"),
+          "billing_intent" => intent
+        })
+
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+
+      completed = get(recycle(started), ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert redirected_to(completed) == ~p"/app/billing/start"
+      assert get_session(completed, :billing_intent) == intent
+      assert get_session(completed, :user_token)
+    end
+
+    test "a returning-email decoy keeps billing intent but creates no workspace", %{
+      conn: conn,
+      user: user
+    } do
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      intent = BillingIntent.sign("team", :month)
+
+      started =
+        post(conn, ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "registration_handoff" => RegistrationHandoff.decoy("Decoy Co", "Decoy Owner"),
+          "billing_intent" => intent
+        })
+
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+      completed = get(recycle(started), ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert redirected_to(completed) == ~p"/app/billing/start"
+      assert get_session(completed, :billing_intent) == intent
+      refute Repo.get_by(Accounts.Account, name: "Decoy Co")
+    end
+
+    test "a resend inherits a still-live Team choice from the same browser factor", %{conn: conn} do
+      user = Fixtures.Users.create_user(confirmed?: false)
+      intent = BillingIntent.sign("team", :year)
+
+      started =
+        post(conn, ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "registration_handoff" => RegistrationHandoff.sign(user.id, "Resend Team", nil),
+          "billing_intent" => intent
+        })
+
+      assert_received {:email, _first}
+
+      resent =
+        post(recycle(started), ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email}
+        })
+
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+      completed = get(recycle(resent), ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert redirected_to(completed) == ~p"/app/billing/start"
+      assert get_session(completed, :billing_intent) == intent
+    end
+
+    test "an ordinary sign-in clears an abandoned Team choice", %{conn: conn, user: user} do
+      intent = BillingIntent.sign("team", :month)
+      conn = Plug.Test.init_test_session(conn, %{billing_intent: intent})
+
+      started = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+      completed = get(recycle(started), ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert redirected_to(completed) == ~p"/app"
+      refute get_session(completed, :billing_intent)
     end
 
     test "a resend with no posted handoff retains the server-side registration intent", %{
@@ -381,6 +473,27 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
       refute get_session(conn, :user_token)
       assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
+    end
+
+    test "a branded sign-in target wins over a leftover Team choice", %{conn: conn, user: user} do
+      account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+      billing_intent = BillingIntent.sign("team", :year)
+
+      {conn, token_id, secret} =
+        request_magic_link(conn, user.email, %{"billing_intent" => billing_intent})
+
+      conn =
+        get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}?#{[return_to: "/app/#{account.slug}"]}")
+
+      assert redirected_to(conn) == ~p"/app/#{account}"
+      refute get_session(conn, :billing_intent)
     end
 
     test "one login audits user.signed_in exactly once per account", %{conn: conn, user: user} do
@@ -665,6 +778,27 @@ defmodule EmisarWeb.UserSessionControllerTest do
       # audit row bound to the enrollment it was taken against.
       assert %DateTime{} = session_token.mfa_verified_at
       refute get_session(conn, :mfa_pending_user_id)
+    end
+
+    test "a valid Team choice survives the MFA challenge and session renewal", %{conn: conn} do
+      %{user: user, secret: secret} = enrolled_mfa_user()
+      {conn, token_id, handoff} = pending_mfa_sign_in(conn, user, secret)
+      billing_intent = BillingIntent.sign("team", :year)
+
+      conn =
+        conn
+        |> init_test_session(%{
+          mfa_pending_user_id: user.id,
+          mfa_pending_magic_link_token_id: token_id,
+          mfa_pending_registered?: false,
+          mfa_pending_at: System.system_time(:second),
+          billing_intent: billing_intent
+        })
+        |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
+
+      assert get_session(conn, :user_token)
+      assert get_session(conn, :billing_intent) == billing_intent
+      assert redirected_to(conn) == ~p"/app/billing/start"
     end
 
     test "a stale half-authentication cannot be completed later", %{conn: conn} do

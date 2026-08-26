@@ -10,7 +10,7 @@ defmodule EmisarWeb.UserAuth do
   import Phoenix.Controller
   alias Emisar.{Accounts, ApiKeys, Approvals, Auth, Catalog, Marketing, Runners, SSO}
   alias Emisar.Auth.Subject
-  alias EmisarWeb.{Analytics, MarketingAttribution}
+  alias EmisarWeb.{Analytics, BillingIntent, MarketingAttribution}
   alias EmisarWeb.RequestContext
 
   # Session provenance for an unauthenticated request — no method, no factor, no
@@ -74,15 +74,36 @@ defmodule EmisarWeb.UserAuth do
 
   defp finish_log_in(conn, user, token, auth_method, mfa, registered?) do
     user_return_to = get_session(conn, :user_return_to)
+    billing_intent = verified_billing_intent(get_session(conn, :billing_intent))
     attribution = MarketingAttribution.current(conn)
     if registered?, do: Marketing.account_signed_up(user, attribution)
 
     conn
     |> renew_session()
     |> put_token_in_session(token)
+    |> maybe_restore_billing_intent(user_return_to, billing_intent)
     |> maybe_flash_just_registered(user, registered?)
     |> Analytics.track_authentication(user, auth_method, mfa, registered?, attribution)
-    |> redirect(to: user_return_to || signed_in_path(conn))
+    |> redirect(to: user_return_to || billing_intent_path(billing_intent) || signed_in_path(conn))
+  end
+
+  # A branded account return is the operator's explicit authentication target
+  # and wins over a stale pricing choice. Otherwise renew_session/1 would clear
+  # the valid opaque intent before the protected workspace selector can consume
+  # it, so restore that one key after renewal.
+  defp maybe_restore_billing_intent(conn, nil, token) when is_binary(token),
+    do: put_session(conn, :billing_intent, token)
+
+  defp maybe_restore_billing_intent(conn, _return_to, _token), do: conn
+
+  defp billing_intent_path(token) when is_binary(token), do: ~p"/app/billing/start"
+  defp billing_intent_path(_token), do: nil
+
+  defp verified_billing_intent(token) do
+    case BillingIntent.verify(token) do
+      {:ok, _intent} -> token
+      {:error, :invalid} -> nil
+    end
   end
 
   # The first sign-in right after registering (magic-link round-trip or SSO JIT).

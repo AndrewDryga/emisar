@@ -99,6 +99,10 @@ defmodule Emisar.Billing do
   def plans, do: @plans
   def plan(name) when is_binary(name), do: Map.get(@plans, name)
 
+  @doc "True only for a plan and cadence sold through self-service checkout."
+  def self_service_checkout?("team", cycle) when cycle in [:month, :year], do: true
+  def self_service_checkout?(_plan, _cycle), do: false
+
   @doc "Display copy for an exact whole-month annual discount; nil when there is none."
   def annual_savings_label(%{
         monthly_price_cents: monthly,
@@ -501,41 +505,47 @@ defmodule Emisar.Billing do
   `cycle` (`:month` | `:year`) and returns the URL the operator should be
   redirected to. The price comes from the live Paddle catalog, so a
   new/changed price needs no deploy; `{:error, :plan_not_in_catalog}` when
-  no product identifies as the plan or it has no active price for the
-  requested cycle (nor a recurring price to fall back to).
+  no product identifies as the plan or it has no active one-period price
+  for the requested cycle.
   """
   def start_checkout(%Accounts.Account{} = account, plan_name, cycle, %Subject{} = subject)
-      when is_binary(plan_name) and cycle in [:month, :year] do
+      when is_binary(plan_name) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_billing_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized),
+         :ok <- ensure_self_service_checkout(plan_name, cycle),
          :ok <- ensure_no_live_subscription(account.id) do
-      if Map.has_key?(@plans, plan_name) do
-        # The returned URL is the account's DEFAULT PAYMENT LINK (our /checkout
-        # page running Paddle.js) + ?_ptxn=<transaction> — Paddle has no hosted
-        # checkout. Deliberately no per-transaction checkout.url override: that
-        # requires its own domain approval, while the default link is the
-        # canonical mechanism. The post-payment redirect is the page's
-        # successUrl setting, not a transaction field.
-        with {:ok, price_id} <- resolve_checkout_price_id(plan_name, cycle),
-             {:ok, customer_id, _account} <- ensure_paddle_customer(account, subject),
-             {:ok, %{"url" => url}} <-
-               Emisar.Billing.PaddleClient.create_checkout_session(%{
-                 customer: customer_id,
-                 price_id: price_id,
-                 # Per-runner pricing floors at ONE seat: a zero-runner
-                 # account (fresh signup) must still be able to buy, and
-                 # Paddle rejects quantity 0.
-                 quantity: max(current_count(account, :runners), 1)
-               }) do
-          {:ok, url}
-        end
-      else
-        {:error, :unknown_plan}
+      # The returned URL is the account's DEFAULT PAYMENT LINK (our /checkout
+      # page running Paddle.js) + ?_ptxn=<transaction> — Paddle has no hosted
+      # checkout. Deliberately no per-transaction checkout.url override: that
+      # requires its own domain approval, while the default link is the
+      # canonical mechanism. The post-payment redirect is the page's
+      # successUrl setting, not a transaction field.
+      with {:ok, price_id} <- resolve_checkout_price_id(plan_name, cycle),
+           {:ok, customer_id, _account} <- ensure_paddle_customer(account, subject),
+           {:ok, %{"url" => url}} <-
+             Emisar.Billing.PaddleClient.create_checkout_session(%{
+               customer: customer_id,
+               price_id: price_id,
+               # Per-runner pricing floors at ONE seat: a zero-runner
+               # account (fresh signup) must still be able to buy, and
+               # Paddle rejects quantity 0.
+               quantity: max(current_count(account, :runners), 1)
+             }) do
+        {:ok, url}
       end
+    end
+  end
+
+  defp ensure_self_service_checkout(plan_name, cycle) do
+    cond do
+      self_service_checkout?(plan_name, cycle) -> :ok
+      plan_name == "team" -> {:error, :invalid_cycle}
+      Map.has_key?(@plans, plan_name) -> {:error, :plan_not_self_service}
+      true -> {:error, :unknown_plan}
     end
   end
 
@@ -584,19 +594,19 @@ defmodule Emisar.Billing do
 
   defp known_plan_from_name(_name), do: nil
 
-  # Prefer the requested cycle's active price; fall back to any active
-  # recurring price so a catalog listing only one cycle still resolves
-  # (an annual-only plan asked for monthly, say).
+  # Select ONLY a one-period active price for the requested cycle. Falling back
+  # to another cadence—or accepting "every 2 years" as annual—would change the
+  # commercial contract rather than provide a catalog convenience.
   defp checkout_price_of_product(%{"prices" => prices}, cycle) when is_list(prices) do
     active = Enum.filter(prices, &(&1["status"] == "active"))
 
     requested =
-      Enum.find(active, &(get_in(&1, ["billing_cycle", "interval"]) == cycle_interval(cycle)))
+      Enum.find(active, fn price ->
+        get_in(price, ["billing_cycle", "interval"]) == cycle_interval(cycle) and
+          get_in(price, ["billing_cycle", "frequency"]) == 1
+      end)
 
-    fallback =
-      Enum.find(active, &(get_in(&1, ["billing_cycle", "interval"]) in ["month", "year"]))
-
-    case requested || fallback do
+    case requested do
       %{"id" => price_id} -> {:ok, price_id}
       _ -> {:error, :plan_not_in_catalog}
     end

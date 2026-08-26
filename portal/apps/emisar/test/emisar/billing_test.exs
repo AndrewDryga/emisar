@@ -121,6 +121,16 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "self_service_checkout?/2" do
+    test "allows only Team at the two published cadences" do
+      assert Billing.self_service_checkout?("team", :month)
+      assert Billing.self_service_checkout?("team", :year)
+      refute Billing.self_service_checkout?("free", :month)
+      refute Billing.self_service_checkout?("enterprise", :year)
+      refute Billing.self_service_checkout?("team", :week)
+    end
+  end
+
   describe "annual_savings_label/1" do
     test "describes only exact whole-month annual discounts" do
       assert Billing.annual_savings_label(Billing.plan("team")) == "2 months free"
@@ -734,7 +744,7 @@ defmodule Emisar.BillingTest do
       # The console renders "Manage billing" rather than "Upgrade" here, but a
       # crafted phx-click reaches the context directly — and Paddle would bill
       # both subscriptions.
-      assert Billing.start_checkout(account, "enterprise", :month, subject) ==
+      assert Billing.start_checkout(account, "team", :month, subject) ==
                {:error, :subscription_already_active}
     end
 
@@ -774,6 +784,20 @@ defmodule Emisar.BillingTest do
       # in BillingCheckoutArgsTest against the capturing client).
       assert {:ok, url} = Billing.start_checkout(account, "team", :year, subject)
       assert url =~ "stub.paddle.test/checkout"
+    end
+
+    test "only Team with an exact supported cadence is self-service", %{
+      account: account,
+      subject: subject
+    } do
+      assert Billing.start_checkout(account, "free", :month, subject) ==
+               {:error, :plan_not_self_service}
+
+      assert Billing.start_checkout(account, "enterprise", :year, subject) ==
+               {:error, :plan_not_self_service}
+
+      assert Billing.start_checkout(account, "team", :week, subject) ==
+               {:error, :invalid_cycle}
     end
 
     test "an operator (view, not manage) is refused with :unauthorized", %{account: account} do
@@ -2680,29 +2704,30 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
   # The canned catalog carries both cycles, so the captured
   # create_checkout_session args assert the cycle→price selection.
   def list_products do
-    {:ok,
-     [
-       %{
-         "id" => "pro_captured_team",
-         "name" => "team",
-         "status" => "active",
-         "custom_data" => %{"plan" => "team"},
-         "prices" => [
-           %{
-             "id" => "pri_team_01",
-             "status" => "active",
-             "billing_cycle" => %{"interval" => "month", "frequency" => 1},
-             "unit_price" => %{"amount" => "2000", "currency_code" => "USD"}
-           },
-           %{
-             "id" => "pri_team_annual_01",
-             "status" => "active",
-             "billing_cycle" => %{"interval" => "year", "frequency" => 1},
-             "unit_price" => %{"amount" => "20000", "currency_code" => "USD"}
-           }
-         ]
-       }
-     ]}
+    default = [
+      %{
+        "id" => "pro_captured_team",
+        "name" => "team",
+        "status" => "active",
+        "custom_data" => %{"plan" => "team"},
+        "prices" => [
+          %{
+            "id" => "pri_team_01",
+            "status" => "active",
+            "billing_cycle" => %{"interval" => "month", "frequency" => 1},
+            "unit_price" => %{"amount" => "2000", "currency_code" => "USD"}
+          },
+          %{
+            "id" => "pri_team_annual_01",
+            "status" => "active",
+            "billing_cycle" => %{"interval" => "year", "frequency" => 1},
+            "unit_price" => %{"amount" => "20000", "currency_code" => "USD"}
+          }
+        ]
+      }
+    ]
+
+    {:ok, Emisar.Config.get_env(:emisar, :billing_test_catalog, default)}
   end
 
   @impl true
@@ -2759,6 +2784,80 @@ defmodule Emisar.BillingCheckoutArgsTest do
 
     assert {:ok, _url} = Billing.start_checkout(account, "team", :year, subject)
     assert_received {:create_checkout_session, %{price_id: "pri_team_annual_01"}}
+  end
+
+  test "a missing requested cadence never falls back to the other active price" do
+    user = Fixtures.Users.create_user()
+    account = Fixtures.Accounts.create_account()
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: user.id,
+      role: "owner"
+    )
+
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    account = %{account | paddle_customer_id: "ctm_exact_cycle_01"}
+
+    Emisar.Config.put_override(:emisar, :billing_test_catalog, [
+      %{
+        "id" => "pro_month_only",
+        "name" => "team",
+        "status" => "active",
+        "custom_data" => %{"plan" => "team"},
+        "prices" => [
+          %{
+            "id" => "pri_month_only",
+            "status" => "active",
+            "billing_cycle" => %{"interval" => "month", "frequency" => 1}
+          }
+        ]
+      }
+    ])
+
+    assert Billing.start_checkout(account, "team", :year, subject) ==
+             {:error, :plan_not_in_catalog}
+
+    refute_received {:create_checkout_session, _attrs}
+  end
+
+  test "a multi-period price never satisfies a monthly or annual choice" do
+    user = Fixtures.Users.create_user()
+    account = Fixtures.Accounts.create_account()
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: user.id,
+      role: "owner"
+    )
+
+    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    account = %{account | paddle_customer_id: "ctm_exact_frequency_01"}
+
+    for cycle <- [:month, :year] do
+      interval = Atom.to_string(cycle)
+
+      Emisar.Config.put_override(:emisar, :billing_test_catalog, [
+        %{
+          "id" => "pro_#{interval}_frequency_two",
+          "name" => "team",
+          "status" => "active",
+          "custom_data" => %{"plan" => "team"},
+          "prices" => [
+            %{
+              "id" => "pri_#{interval}_frequency_two",
+              "status" => "active",
+              "billing_cycle" => %{"interval" => interval, "frequency" => 2}
+            }
+          ]
+        }
+      ])
+
+      assert Billing.start_checkout(account, "team", cycle, subject) ==
+               {:error, :plan_not_in_catalog}
+
+      refute_received {:create_checkout_session, _attrs}
+    end
   end
 
   test "a zero-runner account checks out at quantity 1 — Paddle rejects 0" do

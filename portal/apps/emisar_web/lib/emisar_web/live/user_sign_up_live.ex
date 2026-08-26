@@ -1,7 +1,7 @@
 defmodule EmisarWeb.UserSignUpLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Throttle, Users}
-  alias EmisarWeb.{LiveForm, RegistrationHandoff, RequestContext}
+  alias EmisarWeb.{BillingIntent, LiveForm, RegistrationHandoff, RequestContext}
 
   @signup_limit 20
   @signup_window_ms 60 * 60_000
@@ -10,10 +10,13 @@ defmodule EmisarWeb.UserSignUpLive do
   # into the form so the operator doesn't retype what they just typed.
   def mount(params, _session, socket) do
     changeset = Users.change_user(%Emisar.Users.User{}, Map.take(params, ["email"]))
+    {billing_intent, billing_choice} = billing_choice(params["billing_intent"])
 
     {:ok,
      socket
-     |> assign(:page_title, "Create an account")
+     |> assign(:page_title, "Create your workspace")
+     |> assign(:billing_intent, billing_intent)
+     |> assign(:billing_choice, billing_choice)
      |> assign(:trigger_submit, false)
      |> assign(:account_name, "")
      |> assign(:account_name_error, nil)
@@ -24,9 +27,16 @@ defmodule EmisarWeb.UserSignUpLive do
 
   def render(assigns) do
     ~H"""
-    <.auth_layout title="Start your free workspace">
-      <p class="mb-6 text-sm text-zinc-400">
+    <.auth_layout title="Create your workspace">
+      <p :if={is_nil(@billing_choice)} class="mb-6 text-sm text-zinc-400">
         Free plan: 3 runners, 7-day audit retention, 1 seat. No credit card.
+      </p>
+      <p :if={@billing_choice} class="mb-6 text-sm leading-relaxed text-zinc-400">
+        <span class="font-medium text-zinc-200">
+          Team checkout · {cycle_label(@billing_choice.cycle)}.
+        </span>
+        Create your workspace and verify your email, then review Team billing before checkout.
+        Nothing is charged now.
       </p>
 
       <%!-- On a successful save we flip `trigger_submit` and the form POSTs its
@@ -74,6 +84,13 @@ defmodule EmisarWeb.UserSignUpLive do
         <%!-- Carries the workspace/profile intent to the inbox-proof factor.
              Existing-email submissions carry an equal-shaped decoy, so this
              client-visible value never reveals whether registration can resume. --%>
+        <input
+          :if={@billing_intent}
+          type="hidden"
+          name="billing_intent"
+          value={@billing_intent}
+        />
+
         <input
           :if={@registration_handoff}
           type="hidden"
@@ -220,4 +237,14 @@ defmodule EmisarWeb.UserSignUpLive do
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
     do: assign(socket, :form, to_form(changeset, as: "user"))
+
+  defp billing_choice(token) do
+    case BillingIntent.verify(token) do
+      {:ok, choice} -> {token, choice}
+      {:error, :invalid} -> {nil, nil}
+    end
+  end
+
+  defp cycle_label(:month), do: "Monthly billing"
+  defp cycle_label(:year), do: "Annual billing"
 end

@@ -105,8 +105,16 @@
             </span>
             <span class="text-sm font-semibold text-zinc-400">/ runner / yr</span>
           </p>
-          <.marketing_button href={~p"/sign_up"} size={:lg} block class="mt-8">
-            Start free
+          <.marketing_button
+            href={@team_intent_paths.month}
+            data-cycle-intent-link
+            data-cycle-href-month={@team_intent_paths.month}
+            data-cycle-href-year={@team_intent_paths.year}
+            size={:lg}
+            block
+            class="mt-8"
+          >
+            Continue with Team
           </.marketing_button>
           <ul data-plan-features="team" class="mt-8 space-y-3 text-sm text-zinc-300">
             <li class="flex items-start gap-3">

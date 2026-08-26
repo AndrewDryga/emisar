@@ -101,6 +101,7 @@ defmodule EmisarWeb.Router do
   end
 
   @auth_live_session_keys [
+    :billing_intent,
     :magic_link_email,
     :magic_link_expires_at,
     :mfa_pending_user_id,
@@ -108,9 +109,11 @@ defmodule EmisarWeb.Router do
     :sso_pending_request
   ]
 
-  # LiveView signs only the session data explicitly returned here into its
-  # websocket session. These pre-auth LiveViews are fed by controller flows that
-  # set short-lived markers in Plug session; keep the allowlist narrow.
+  # LiveView merges this map into the ordinary Plug session before signing the
+  # websocket session. Mirror only the short-lived controller markers that the
+  # pre-auth mounts read by string key; the base session still carries the
+  # authenticated keys used by mixed signed-in/signed-out flows such as
+  # onboarding and invitation acceptance.
   def auth_live_session(conn) do
     session =
       @auth_live_session_keys
@@ -302,6 +305,10 @@ defmodule EmisarWeb.Router do
     pipe_through [:browser, :noindex]
 
     get "/confirm/:token", UserConfirmationController, :confirm
+    # Public pricing handoff: verifies a purpose-bound Team/cycle choice and
+    # stores only that opaque choice before entering auth or the protected
+    # workspace selector. No account, URL, or Paddle resource rides in it.
+    get "/start/team/:intent", BillingIntentController, :capture
     # The Paddle default payment link: Paddle.js auto-opens the checkout
     # overlay for the ?_ptxn= transaction. Utility page — noindex, no auth
     # (the transaction id is the capability; Paddle's overlay does the rest).
@@ -352,6 +359,13 @@ defmodule EmisarWeb.Router do
     get "/sso", AccountRedirectController, :sso
     get "/sso/new", AccountRedirectController, :add_sso_provider
     get "/billing", AccountRedirectController, :billing
+
+    # Literal plan-intent selector before the dynamic account scope: GET only
+    # renders choices; the CSRF-protected POST re-resolves and pins the chosen
+    # workspace before the ordinary Billing page can start checkout.
+    get "/billing/start", BillingIntentController, :show
+    post "/billing/start", BillingIntentController, :select
+    post "/billing/start/cancel", BillingIntentController, :cancel
 
     # Paddle's post-payment redirect. The checkout page can't know the account
     # slug at render time, so this resolves the session's current account and
@@ -461,6 +475,7 @@ defmodule EmisarWeb.Router do
     pipe_through [:browser, :noindex]
 
     live_session :onboarding,
+      session: {__MODULE__, :auth_live_session, []},
       on_mount: [{EmisarWeb.UserAuth, :mount_current_user}] do
       live "/onboarding", OnboardingLive, :new
       # Invitation acceptance has to work whether the visitor is signed

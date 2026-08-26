@@ -6,7 +6,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Users
-  alias EmisarWeb.RegistrationHandoff
+  alias EmisarWeb.{BillingIntent, RegistrationHandoff}
 
   defp sign_up_params(overrides \\ %{}) do
     Map.merge(
@@ -33,11 +33,30 @@ defmodule EmisarWeb.UserSignUpLiveTest do
   test "renders the registration form (no password to set)", %{conn: conn} do
     {:ok, _lv, html} = live(conn, ~p"/sign_up")
 
-    assert html =~ "Start your free workspace"
+    assert html =~ "Create your workspace"
     assert html =~ "Team or company name"
     # Passwordless: the page states up front that a one-time link is emailed.
     assert html =~ "one-time sign-in link"
     refute html =~ ~s|name="user[password]"|
+  end
+
+  test "a valid Team choice changes the copy and rides the signup POST", %{conn: conn} do
+    token = BillingIntent.sign("team", :year)
+    {:ok, lv, html} = live(conn, ~p"/sign_up?billing_intent=#{token}")
+
+    assert html =~ "Team checkout"
+    assert html =~ "Annual billing"
+    assert html =~ "Nothing is charged now"
+    refute html =~ "Free plan:"
+    assert has_element?(lv, ~s(input[name="billing_intent"][value="#{token}"]))
+  end
+
+  test "an invalid Team choice falls back to the ordinary Free signup", %{conn: conn} do
+    {:ok, lv, html} = live(conn, ~p"/sign_up?billing_intent=forged")
+
+    assert html =~ "Free plan: 3 runners"
+    refute html =~ "Team checkout"
+    refute has_element?(lv, ~s(input[name="billing_intent"]), "forged")
   end
 
   test "the landing CTA's ?email= arrives pre-filled, not retyped", %{conn: conn} do
