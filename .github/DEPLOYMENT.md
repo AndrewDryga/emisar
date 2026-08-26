@@ -41,7 +41,7 @@ Configure these environments with deployment branches restricted to `main`:
 | `portal-production-plan` | Protected `main` only (no reviewer) | `TFC_PLAN_TOKEN` | Uploads the reviewed configuration and creates the saved production plan. Workspace auto-apply stays disabled and apply remains manual — the HCP Confirm & Apply is the human gate, so a second GitHub approval here would be redundant. |
 | `pack-registry-approval` | Required reviewer + protected `main` | None | Cancellable approval-only gate. This is the single human release decision for a pack publication; a newer selected pack release supersedes an older waiting approval. |
 | `pack-registry-production` | Protected `main` only (no reviewer) | None | Non-cancellable serialized publication through short-lived, environment-bound GCP WIF credentials. The release decision lives on `pack-registry-approval`; a bare rerun of an old publication job is refused by the workflow's superseded-release check when a newer release has since published. |
-| `public-releases` | `runner-v*` and `mcp-v*` tag policies (no reviewer) | None | Signed runner and MCP bridge builds plus GCS publication through short-lived, environment-bound WIF credentials. The signed annotated tag targeting current main is the release decision; the tag patterns and WIF condition bind attestation and artifact publication to the two release workflows. A failed tag run is recovered by rerunning that same run, preserving its original tag and source SHA. |
+| `public-releases` | `runner-v*` and `mcp-v*` tag policies (no reviewer) | None | Signed runner and MCP bridge builds plus GCS publication through short-lived, environment-bound WIF credentials. The signed annotated tag targeting current main is the release decision; the tag patterns and WIF condition bind attestation and artifact publication to the two release workflows. After source verification passes, recover a downstream failure with **Re-run failed jobs**; source verification always requires current main and a full rerun after main advances fails closed. |
 | `mcp-registry-publication` | `v*` and `main` recovery policies (no reviewer) | `MCP_PRIVATE_KEY` | Publishes the hosted server listing. The workflow verifies the signed tag, its green Required - CI, and the live publisher-key proof before the secret is used. `main` is allowed only so the current hardened publisher can recover an existing immutable product release. |
 
 The single reviewer-gated environment is `pack-registry-approval` — one human
@@ -94,10 +94,11 @@ conclusion.
 
 Runner, MCP bridge, and product releases accept only exact SemVer signed
 annotated tags targeting current `main`. Their workflows verify GitHub's
-signature result and the tag's commit before building or publishing. A runner
-or MCP bridge rerun keeps the original tag and source SHA, so recovery after
-`main` advances requires rerunning the failed Actions run rather than creating
-another trigger. Product `v*` tags publish only the hosted
+signature result and the tag's commit before building or publishing. Once that
+verification succeeds, a runner or MCP bridge recovery after `main` advances
+uses **Re-run failed jobs**, preserving the successful verifier and the original
+tag/source SHA; a full rerun deliberately fails instead of weakening the
+current-main check. Product `v*` tags publish only the hosted
 MCP Registry listing; infrastructure deploys only from reviewed `main` plans.
 
 | Workflow | Tag | Publishes |

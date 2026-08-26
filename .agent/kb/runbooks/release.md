@@ -91,8 +91,10 @@ git push origin runner-vX.Y.Z     # release workflow builds + publishes
 
 `git config --local tag.gpgsign true` (above) covers these too. Release workflows
 also verify GitHub's signature result and require the tag to target current
-`main`; a failed tag workflow is recovered by rerunning that same Actions run,
-not by moving or recreating the tag. The workflow attests the archives, uploads
+`main` every time source verification executes. After that job succeeds, recover
+a downstream failure with **Re-run failed jobs** so GitHub preserves the green
+verification; never use **Re-run all jobs** after `main` advances, and never move
+or recreate the tag. The workflow attests the archives, uploads
 the immutable files and manifest below `https://emisar.dev/releases/`, advances
 `latest.json`, verifies the public bytes, and finally publishes GitHub Releases
 as the secondary mirror.

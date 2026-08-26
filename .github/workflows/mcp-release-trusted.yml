@@ -5,9 +5,9 @@ name: Trusted - MCP Bridge Release
 # the caller supplies no release inputs. It builds the standalone `emisar-mcp`
 # stdio bridge for darwin + linux (amd64 + arm64) and Windows (amd64 + arm64),
 # signs build provenance via Sigstore, publishes to the Emisar release tree,
-# then mirrors the files to GitHub Releases. The first
-# attempt requires current main; Actions UI reruns preserve the original
-# SHA/ref and require only that the signed tag remains on main.
+# then mirrors the files to GitHub Releases. Every verifier run requires
+# current main. After it passes, recover a downstream failure by rerunning
+# failed jobs so GitHub preserves that successful authorization.
 #
 # A non-release caller cannot reach release authority: the verify job accepts
 # only an exact signed MCP release tag, every authority-bearing job depends on
@@ -45,7 +45,6 @@ jobs:
     env:
       GOTOOLCHAIN: local
       RELEASE_TAG: ${{ github.ref_name }}
-      RUN_ATTEMPT: ${{ github.run_attempt }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -75,12 +74,8 @@ jobs:
             echo "::error::tag target does not match the checked-out commit"; exit 1; }
           git merge-base --is-ancestor HEAD origin/main || {
             echo "::error::release tag target is not on main"; exit 1; }
-          if [ "$RUN_ATTEMPT" = 1 ]; then
-            test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || {
-              echo "::error::new release tags must target current main"; exit 1; }
-          else
-            echo "Recovery attempt ${RUN_ATTEMPT}: signed tag target remains on main; current-tip equality is intentionally relaxed."
-          fi
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || {
+            echo "::error::release tags must target current main; after a successful verification, recover downstream failures by rerunning failed jobs only"; exit 1; }
 
       - name: Require successful CI for tagged commit
         # The release process tags only after the commit's Required - CI
