@@ -130,9 +130,11 @@ its actions from itself:
 - The default shipped systemd unit runs the runner as a dedicated
   unprivileged user (`emisar`). That is the security boundary —
   actions can do whatever the OS lets that user do.
-- Operators who want to grant elevated privileges to specific
-  actions configure sudo / polkit / capabilities for the runner
-  user. See [`runner/README.md`](../../../runner/README.md#granting-elevated-privileges-to-specific-actions).
+- Linux action children always enter `no_new_privs`, so sudo and other
+  setuid/setgid helpers cannot elevate them, and file capabilities on action
+  binaries cannot add authority. Give the runner user narrow direct access
+  through groups or ACLs, or use a mediated service boundary such as
+  polkit/D-Bus. See [`runner/README.md`](../../../runner/README.md#giving-actions-the-os-access-they-need).
 - Operators who want defense-in-depth sandboxing on top can drop in
   an opt-in systemd hardening override. See
   [`runner/README.md`](../../../runner/README.md#hardening-optional).

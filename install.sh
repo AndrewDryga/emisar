@@ -471,8 +471,9 @@ systemd_unit() {
 #
 #   * The runner process itself runs as an unprivileged user.
 #   * Actions can do whatever the OS lets that user do.
-#   * Operators who want specific actions to need root configure
-#     sudo or polkit rules for the runner user.
+#   * Actions cannot elevate through sudo, setuid/setgid helpers, or file
+#     capabilities. Grant the runner user narrow direct access (groups/ACLs)
+#     or use a mediated service boundary such as polkit/D-Bus.
 #   * Operators who want defense-in-depth (ProtectSystem, ProtectHome,
 #     RestrictNamespaces, MemoryDenyWriteExecute, etc.) drop in an
 #     /etc/systemd/system/emisar.service.d/harden.conf override.

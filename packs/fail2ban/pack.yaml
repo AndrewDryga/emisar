@@ -2,7 +2,7 @@ schema_version: 1
 
 id: fail2ban
 name: fail2ban
-version: 0.1.8
+version: 0.1.9
 description: >
   fail2ban inventory + per-jail banned-IP listings plus operator mutators
   for incident response: ban an IP into a jail, unban a false positive,
@@ -25,7 +25,7 @@ setup:
   summary: >
     Operates on the local runner host — no credentials needed.
   notes:
-    - "fail2ban-client talks to the local fail2ban daemon socket — every action (including status and version) needs root or write access to that socket. Run the runner as root or via sudo."
+    - "The fail2ban-client actions talk to the local daemon socket and need write access through its owner, group, or ACL. f2b.log_tail instead needs read access to /var/log/fail2ban.log. Grant only the access the actions you enable require; sudo cannot elevate an action because the runner enforces no_new_privs."
   verify: f2b.status
 
 actions:

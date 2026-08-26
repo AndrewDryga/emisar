@@ -2,7 +2,7 @@ schema_version: 1
 
 id: debian
 name: Debian/Ubuntu package operations
-version: 0.1.10
+version: 0.1.11
 description: >
   Operator pack for Debian/Ubuntu hosts. Read-only inventory and
   patching diagnostics, plus narrow apt install/remove actions for a
@@ -23,7 +23,7 @@ setup:
     Operates on the local runner host — no credentials needed.
   notes:
     - "Read-only inventory (dpkg_status, apt_upgradable, apt_security_check, kernel_info) needs no privilege."
-    - "Mutators (apt_install, apt_remove, apt_autoremove) and apt_update need root — run the runner as root or via sudo."
+    - "Mutators (apt_install, apt_remove, apt_autoremove) and apt_update require the runner service itself to have root authority; sudo cannot elevate an action because the runner enforces no_new_privs."
   verify: debian.dpkg_status
 
 actions:

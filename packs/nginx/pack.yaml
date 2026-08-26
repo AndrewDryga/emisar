@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nginx
 name: Nginx operations pack
-version: 0.2.20
+version: 0.2.21
 retired_below: 0.2.15
 description: >
   Operator pack for nginx — read-only status + access-log analysis,
@@ -46,7 +46,7 @@ setup:
       description: Where this host's nginx error log lives, for error_tail. Same reasoning as `NGINX_ACCESS_LOG`.
       example: /data/logs/nginx/error.log
   notes:
-    - "reload, quit_graceful, and stop_immediate signal the master process and need root (run the runner as root or via sudo)."
+    - "reload, quit_graceful, and stop_immediate signal the master process. The runner service identity must already be allowed to signal it (for example by sharing its UID or holding CAP_KILL/root authority); sudo cannot elevate an action because the runner enforces no_new_privs."
     - "Status actions require `stub_status on;` in a location reachable from 127.0.0.1; the `url` arg is loopback-only (127.0.0.1/localhost/[::1]) — pass a non-default port/path, not an off-host target."
     - "Logs outside `/var/log/nginx`: set `NGINX_ACCESS_LOG` / `NGINX_ERROR_LOG` (and allowlist them in the runner's `execution.inherit_env`). The log_path argument stays contained to `/var/log/nginx` because a caller — including an LLM — supplies it; the environment is host-administrator state, and anyone who can set it can already read the file. The official container image symlinks access.log to stdout, in which case no file exists to read at any path and the host's log collector owns it. For unrestricted `/var/log` access, install linux-core, whose name says so."
   verify: nginx.active_version

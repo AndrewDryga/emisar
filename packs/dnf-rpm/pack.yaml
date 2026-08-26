@@ -2,7 +2,7 @@ schema_version: 1
 
 id: dnf-rpm
 name: RHEL/Fedora package ops
-version: 0.1.10
+version: 0.1.11
 description: >
   Counterpart to the `debian` pack for RHEL/CentOS/Fedora/Alma/Rocky:
   rpm inventory, dnf check-update, narrow install/remove actions for a
@@ -22,7 +22,7 @@ setup:
     Operates on the local runner host — no credentials needed.
   notes:
     - "Read-only inventory (rpm_qa, rpm_qi, rpm_ql, rpm_verify, dnf_check_update, dnf_history, dnf_repolist) needs no privilege."
-    - "Mutators (dnf_install, dnf_remove, dnf_clean_metadata, upgrade_pkg, reinstall_pkg, autoremove) need root — run the runner as root or via sudo."
+    - "Mutators (dnf_install, dnf_remove, dnf_clean_metadata, upgrade_pkg, reinstall_pkg, autoremove) require the runner service itself to have root authority; sudo cannot elevate an action because the runner enforces no_new_privs."
   verify: rpm.rpm_qa
 
 actions:

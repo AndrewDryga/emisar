@@ -2,7 +2,7 @@ schema_version: 1
 
 id: systemd-deep
 name: Systemd deep introspection pack
-version: 0.1.16
+version: 0.1.17
 retired_below: 0.1.14
 description: >
   Deeper systemd state than linux-core: failed units, list-units,
@@ -24,7 +24,7 @@ setup:
     Operates on the local runner host — no credentials needed.
   notes:
     - "Most introspection (failed_units, list_units, timers, cgroup_tree, analyze_*, unit_show) is read-only and needs no privilege."
-    - "Mutators (daemon_reload, unit_start/stop/restart/reload/kill/mask/unmask, reset_failed) and vacuum_journal need root — run the runner as root, via sudo, or grant the matching polkit rule."
+    - "Mutators (daemon_reload, unit_start/stop/restart/reload/kill/mask/unmask, reset_failed) need a matching polkit rule or a runner service identity with direct authority. vacuum_journal needs direct journal-management authority. sudo cannot elevate an action because the runner enforces no_new_privs."
   verify: systemd.failed_units
 
 actions:

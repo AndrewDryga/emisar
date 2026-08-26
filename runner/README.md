@@ -282,6 +282,12 @@ certificate. Setup, scope, rotation, replay protection, and refusal codes are in
 
 ## Hardening (optional)
 
+On Linux, every action child always enters `no_new_privs` before it executes.
+That is part of the runner's execution boundary, independent of systemd and
+not an optional hardening setting. It prevents setuid/setgid helpers and file
+capabilities on action binaries from adding privileges anywhere in the action's
+process tree.
+
 The installed systemd unit is deliberately modest because every service
 sandbox directive also constrains the actions it launches. For example:
 
@@ -289,7 +295,6 @@ sandbox directive also constrains the actions it launches. For example:
 | --- | --- |
 | `ProtectSystem=strict` | Blocks actions that write outside declared writable paths |
 | `ProtectHome=yes` | Blocks reads under `/home` |
-| `NoNewPrivileges=yes` | Blocks actions that use `sudo` |
 | `ProtectProc=invisible` | Breaks process and `/proc` diagnostics |
 | `PrivateDevices=yes` | Blocks storage and device actions |
 | `MemoryDenyWriteExecute=yes` | Breaks JIT runtimes |
@@ -300,7 +305,6 @@ profile can start with:
 
 ```ini
 [Service]
-NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
@@ -320,10 +324,18 @@ Install it under `/etc/systemd/system/emisar.service.d/harden.conf`, run
 `sudo systemctl daemon-reload`, restart the service, and use `emisar doctor`
 plus representative local action runs to prove the profile fits the host.
 
-## Granting elevated privileges to specific actions
+## Giving actions the OS access they need
 
 The default Linux service user is unprivileged. Grant only the OS authority
-required by the packs installed on that host.
+required by the packs installed on that host. An action cannot gain authority
+through `sudo`, another setuid/setgid helper, or file capabilities on the binary
+it executes: `no_new_privs` blocks all three. A sudoers rule for `emisar` will
+never elevate an action.
+
+Prefer direct, narrow access. Add the `emisar` user to a group that already owns
+the resource, or grant an ACL on the exact socket, file, or directory the pack
+needs. For a privileged operation exposed by a local service, use that service's
+authorization boundary instead of changing the action process's identity.
 
 For systemd actions, prefer a narrow polkit rule:
 
@@ -339,15 +351,12 @@ polkit.addRule(function(action, subject) {
 });
 ```
 
-For other commands, a sudoers rule must match the exact binary and bounded argv
-shape used by the action:
-
-```sudoers
-emisar ALL=(root) NOPASSWD: /usr/sbin/iptables -L*, /usr/bin/journalctl -u *
-```
-
-Validate it with `visudo -c -f /etc/sudoers.d/emisar`. Do not run the service as
-root in production; that turns a runner compromise into full host compromise.
+An action may declare `execution.user` to drop to a different local identity,
+but the runner service must already have authority to make that switch. The
+default unprivileged service cannot become another user. Do not run the service
+as root in production merely to make an action work; that turns a runner
+compromise into full host compromise. Give the dedicated service identity the
+smallest direct or mediated access the installed packs actually need.
 
 ## Development
 
