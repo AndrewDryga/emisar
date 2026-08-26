@@ -1946,7 +1946,7 @@ defmodule EmisarWeb.TeamLive do
                               (member.confirmation_pending? and not member.pending_invitation?)
                           }
                           id={"member-statuses-#{membership.id}"}
-                          class="text-xs leading-5"
+                          class="mb-1 text-xs leading-5"
                         >
                           <div
                             :if={member.disabled?}

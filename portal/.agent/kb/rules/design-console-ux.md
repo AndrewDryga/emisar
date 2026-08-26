@@ -945,6 +945,10 @@ the commit button, where the operator can reach the action before reading what i
     conditionally rendered wrapper as the content it introduces, so hiding the content removes the
     line and the space with it. Sweep: always-present borders or empty divider wrappers immediately
     before conditional warnings, errors, or detail sections.
+82. **A metadata stack keeps one vertical row gap.** Give adjacent status, activity, and scope rows
+    the same explicit spacing; a conditional row owns its margin so hiding it removes the gap too.
+    Keep stronger separation from the identity heading outside the stack. Sweep: card metadata
+    blocks where one child has `mt-*` while an adjacent conditional child relies only on line-height.
 
 ## 8. The kit is the contract
 

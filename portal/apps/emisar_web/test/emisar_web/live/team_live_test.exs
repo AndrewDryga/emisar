@@ -1990,6 +1990,9 @@ defmodule EmisarWeb.TeamLiveTest do
       subscribe_team(account)
       render_click(lv, "suspend", %{"membership_id" => membership.id})
 
+      assert has_element?(lv, "#member-statuses-#{membership.id}.mb-1")
+      assert has_element?(lv, "#member-access-#{membership.id}.mt-1")
+
       assert has_element?(
                lv,
                "#member-status-suspended-#{membership.id} #member-suspended-#{membership.id}",
@@ -2672,7 +2675,10 @@ defmodule EmisarWeb.TeamLiveTest do
         )
         |> Fixtures.Memberships.set_last_active_at(DateTime.utc_now())
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      refute has_element?(lv, "#member-statuses-#{membership.id}")
+      assert has_element?(lv, "#member-access-#{membership.id}.mt-1")
 
       # Both relative times render as the viewer-local <time> (consistent with
       # the rest of the app), not a static server string.
