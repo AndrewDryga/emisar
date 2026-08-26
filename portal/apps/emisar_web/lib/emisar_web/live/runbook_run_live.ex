@@ -681,7 +681,7 @@ defmodule EmisarWeb.RunbookRunLive do
       current_account={@current_account}
       switchable_accounts={@switchable_accounts}
       section={:runbooks}
-      width={if @result, do: :detail, else: :table}
+      width={:table}
     >
       <:title>
         <%!-- A dispatch form or execution detail belongs to ONE runbook, so
@@ -698,15 +698,22 @@ defmodule EmisarWeb.RunbookRunLive do
         />
       </:title>
       <:actions>
-        <.button
+        <.confirm_button
           :if={@projection && not @projection.execution.terminal?}
+          id="cancel-runbook-execution"
+          title="Cancel this runbook execution?"
+          confirm_label="Cancel execution"
+          pending_label="Cancelling…"
           variant={:secondary}
           tone={:rose}
-          phx-click="cancel_execution"
-          data-confirm="Cancel this runbook execution? Already-running actions receive a cancellation request."
+          on_confirm={JS.push("cancel_execution")}
         >
+          <:body>
+            Cancels the current <span class="font-medium text-zinc-200">{@runbook.title}</span>
+            execution. Queued actions will not start; already-running actions receive a cancellation request.
+          </:body>
           Cancel execution
-        </.button>
+        </.confirm_button>
         <.button
           :if={
             @projection && @projection.execution.terminal? &&

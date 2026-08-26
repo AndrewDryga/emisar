@@ -705,7 +705,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       refute stage_header =~ "rounded-full"
       refute stage_header =~ "succeeded succeeded"
-      assert html =~ "max-w-6xl"
+      assert html =~ "max-w-7xl"
       refute has_element?(lv, "details[id^=execution-item-]")
       refute has_element?(lv, "[data-role=item-disclosure]")
       refute has_element?(lv, "#runbook-execution-result", "Arguments")
@@ -876,6 +876,18 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       runbook = published_runbook(subject, runner)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       start(lv)
+
+      assert has_element?(lv, "#cancel-runbook-execution[role=dialog][aria-modal=true]")
+
+      assert has_element?(
+               lv,
+               "#cancel-runbook-execution-confirm[phx-disable-with='Cancelling…']",
+               "Cancel execution"
+             )
+
+      assert has_element?(lv, "#cancel-runbook-execution", runbook.title)
+      assert has_element?(lv, "#cancel-runbook-execution", "Queued actions will not start")
+      refute render(lv) =~ "data-confirm"
 
       html = render_click(lv, "cancel_execution", %{})
       assert html =~ "Execution cancelled"
