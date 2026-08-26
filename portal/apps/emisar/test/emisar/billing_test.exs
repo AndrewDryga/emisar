@@ -698,6 +698,23 @@ defmodule Emisar.BillingTest do
   end
 
   describe "check_limit/2 — entitlements override the compiled plan limits" do
+    test "Free's compiled member limit is one" do
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
+
+      assert Billing.check_limit(account, :members) ==
+               {:error, :over_limit, "free", 1}
+    end
+
+    test "Team's compiled member limit is unlimited" do
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+
+      for _ <- 1..12 do
+        Fixtures.Memberships.create_membership(account_id: account.id)
+      end
+
+      assert Billing.check_limit(account, :members) == :ok
+    end
+
     test "a lower runners_limit entitlement blocks before the plan default would" do
       account = Fixtures.Accounts.create_account()
 

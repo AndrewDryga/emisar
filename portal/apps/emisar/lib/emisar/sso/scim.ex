@@ -313,6 +313,7 @@ defmodule Emisar.SSO.SCIM do
 
     multi =
       Multi.new()
+      |> put_active_account_lock(provider.account_id)
       |> put_current_scim_provider(provider, expected_version)
       |> Multi.run(:scim_identity, fn repo, %{locked_provider: locked_provider} ->
         lock_repost_identity(locked_provider, identity.id, state, repo)
@@ -595,6 +596,7 @@ defmodule Emisar.SSO.SCIM do
     }
 
     Multi.new()
+    |> put_active_account_lock(provider.account_id)
     |> put_current_scim_provider(provider)
     |> Multi.run(:user, fn _repo, _changes -> Users.provision_sso_user(user_attrs) end)
     |> Multi.run(:identity, fn _repo, %{locked_provider: locked_provider, user: user} ->

@@ -891,6 +891,36 @@ defmodule EmisarWeb.SSOControllerTest do
       assert auth.user_identity_id
     end
 
+    test "a full member entitlement gives the signer an actionable denial", %{conn: conn} do
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+
+      Fixtures.Accounts.create_subscription(account, "enterprise",
+        entitlements: %{"members_limit" => 1}
+      )
+
+      provider = provider_fixture(account)
+      email = "sso-cap@acme.test"
+
+      failed =
+        conn
+        |> stash_callback(provider)
+        |> get(~p"/sign_in/sso/callback", %{
+          "_claims" => %{
+            "sub" => "okta|member-cap",
+            "email" => email,
+            "email_verified" => "true"
+          }
+        })
+
+      assert redirected_to(failed) == ~p"/sign_in"
+
+      assert Phoenix.Flash.get(failed.assigns.flash, :error) ==
+               "This workspace has reached its member limit. Ask an admin to upgrade its plan."
+
+      refute get_session(failed, :user_token)
+      assert Emisar.Users.fetch_user_by_email(email) == {:error, :not_found}
+    end
+
     test "account disable between begin and callback prevents JIT side effects", %{conn: conn} do
       {_user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
       provider = provider_fixture(account)

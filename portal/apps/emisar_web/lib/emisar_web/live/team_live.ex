@@ -707,6 +707,24 @@ defmodule EmisarWeb.TeamLive do
         email = params |> Map.get("email", "") |> String.trim()
         {:noreply, put_flash(socket, :error, "#{email} is already a member.")}
 
+      {:error, :over_limit, "free", 1} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Free includes one user. Upgrade to Team before inviting another."
+         )}
+
+      {:error, :over_limit, _plan, limit} ->
+        member = if limit == 1, do: "member", else: "members"
+
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This account's plan allows #{limit} #{member}. Increase its member limit before inviting another."
+         )}
+
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Could not send invitation.")}
     end
@@ -1192,6 +1210,24 @@ defmodule EmisarWeb.TeamLive do
            "This sign-in does not match a directory member. Fix the provider identity mapping, then have the user sign in again."
          )
          |> assign_sso_state()}
+
+      {:error, {:over_limit, "free", 1}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Free includes one user. Upgrade to Team before approving another member."
+         )}
+
+      {:error, {:over_limit, _plan, limit}} ->
+        member = if limit == 1, do: "member", else: "members"
+
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This account's plan allows #{limit} #{member}. Increase its member limit before approving another."
+         )}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Couldn't approve that request.")}

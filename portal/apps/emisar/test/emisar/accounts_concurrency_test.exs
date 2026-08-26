@@ -18,6 +18,64 @@ defmodule Emisar.AccountsConcurrencyTest do
     end
   end
 
+  test "concurrent invitations cannot both claim the final member slot" do
+    Sandbox.unboxed_run(Repo, fn ->
+      suffix = Ecto.UUID.generate()
+      owner_email = "member-cap-owner-#{suffix}@example.test"
+
+      invitee_emails = [
+        "member-cap-a-#{suffix}@example.test",
+        "member-cap-b-#{suffix}@example.test"
+      ]
+
+      owner = Fixtures.Users.create_user(%{email: owner_email})
+
+      {:ok, account} =
+        Accounts.create_account_with_owner(
+          %{name: "Member cap #{suffix}", slug: "member-cap-#{suffix}"},
+          owner
+        )
+
+      _subscription =
+        Fixtures.Accounts.create_subscription(account, "team",
+          entitlements: %{"members_limit" => 2}
+        )
+
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      parent = self()
+
+      contenders =
+        Enum.map(invitee_emails, &member_cap_contender(&1, parent, subject))
+
+      try do
+        contender_pids =
+          Enum.map(contenders, fn _task ->
+            assert_receive {:member_cap_ready, contender_pid}, 5_000
+            contender_pid
+          end)
+
+        Enum.each(contender_pids, &send(&1, :claim_member_slot))
+        results = Enum.map(contenders, &Task.await(&1, 30_000))
+
+        assert Enum.count(results, &match?({:ok, %{membership: _membership}}, &1)) == 1
+
+        assert Enum.count(
+                 results,
+                 &(&1 == {:error, :over_limit, "team", 2})
+               ) == 1
+
+        assert Accounts.count_memberships(account.id) == 2
+      after
+        stop_tasks(contenders)
+        Repo.delete_all(from(stored in Account, where: stored.id == ^account.id))
+
+        Repo.delete_all(
+          from(stored in User, where: stored.email in ^[owner_email | invitee_emails])
+        )
+      end
+    end)
+  end
+
   test "MFA enforcement cannot commit while the owner is concurrently disabling MFA" do
     unboxed_owner(fn account, owner, subject, recovery_code ->
       parent = self()
@@ -536,6 +594,20 @@ defmodule Emisar.AccountsConcurrencyTest do
         fun.()
       after
         :ok = Sandbox.checkin(Repo)
+      end
+    end)
+  end
+
+  defp member_cap_contender(email, parent, subject) do
+    unboxed_task(fn ->
+      send(parent, {:member_cap_ready, self()})
+
+      receive do
+        :claim_member_slot ->
+          Accounts.invite_user_to_account(
+            Fixtures.Accounts.invitation_attrs(email: email, role: "viewer"),
+            subject
+          )
       end
     end)
   end

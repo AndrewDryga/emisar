@@ -38,6 +38,8 @@ defmodule Emisar.MfaEnforcementTest do
           owner
         )
 
+      Fixtures.Accounts.create_subscription(account, "team")
+
       owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       email = "operator-#{System.unique_integer([:positive])}@example.com"

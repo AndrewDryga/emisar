@@ -261,7 +261,9 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
 
       try do
         assert_receive {:session_token_locked, token_backend}, 5_000
-        {other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+        {other_owner, other_account, other_subject} =
+          Fixtures.Subjects.owner_subject(%{plan: "team"})
 
         try do
           activation =
@@ -344,7 +346,9 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
 
       try do
         assert_receive {:user_no_key_update_locked, user_backend}, 5_000
-        {other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+        {other_owner, other_account, other_subject} =
+          Fixtures.Subjects.owner_subject(%{plan: "team"})
 
         try do
           minter =
@@ -424,7 +428,9 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
 
       try do
         assert_receive {:identity_locked, identity_backend}, 5_000
-        {other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+        {other_owner, other_account, other_subject} =
+          Fixtures.Subjects.owner_subject(%{plan: "team"})
 
         try do
           approval =
@@ -494,7 +500,9 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
 
       try do
         assert_receive {:session_token_locked, token_backend}, 5_000
-        {other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+        {other_owner, other_account, other_subject} =
+          Fixtures.Subjects.owner_subject(%{plan: "team"})
 
         try do
           activation =

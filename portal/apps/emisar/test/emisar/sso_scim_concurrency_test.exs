@@ -470,7 +470,7 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
     end)
   end
 
-  test "a colliding create commits first and provider deletion sweeps its request" do
+  test "a colliding create queued first cannot refill after deletion wins its fallback" do
     unboxed_scim(fn context ->
       attrs = prepare_collision(context, "collision-first")
       parent = self()
@@ -501,11 +501,11 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
 
             send(blocker.pid, :release)
             assert {:ok, %Account{}} = Task.await(blocker, 30_000)
-            assert Task.await(collision, 30_000) == {:error, :email_taken}
 
             assert {:ok, %IdentityProvider{deleted_at: %DateTime{}}} =
                      Task.await(deletion, 30_000)
 
+            assert Task.await(collision, 30_000) == {:error, :directory_sync_disabled}
             refute link_request_exists?(context.provider.id)
           after
             stop_tasks([deletion])

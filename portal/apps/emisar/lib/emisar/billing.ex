@@ -472,10 +472,10 @@ defmodule Emisar.Billing do
   Returns :ok if the account is within plan limits for `resource`.
   Returns `{:error, :over_limit, plan, limit}` otherwise.
 
-  Internal — called by `Runners.register_via_enrollment_key/2` on the
-  bootstrap path before any Subject exists, and by `Catalog`/admin
-  flows that already authorized upstream. The check itself is
-  account-scoped (the runner counting), not subject-scoped.
+  Internal — called by runner bootstrap before any Subject exists, by Accounts
+  inside the locked membership-creation transaction, and by Catalog/admin flows
+  that already authorized upstream. The check itself is account-scoped (the
+  owning context's row count), not subject-scoped.
   """
   def check_limit(%Accounts.Account{} = account, resource) do
     posture = account.id |> peek_subscription_for_account() |> effective_plan()

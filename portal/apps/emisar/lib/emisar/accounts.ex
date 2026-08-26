@@ -673,6 +673,10 @@ defmodule Emisar.Accounts do
 
   defp put_owner_membership(%Multi{} = multi, user_key) do
     multi
+    |> put_membership_capacity(
+      & &1.account.id,
+      &Map.fetch!(&1, user_key).id
+    )
     |> Multi.run(:membership, fn repo, %{account: account} = changes ->
       user = Map.fetch!(changes, user_key)
 
@@ -1602,9 +1606,12 @@ defmodule Emisar.Accounts do
 
   @doc """
   Internal — compose SSO/SCIM membership creation into a caller's transaction.
-  Active creation includes the cross-account binding consequence; a directory
-  row born suspended has granted no access and deliberately skips it. The
-  caller owns the outer commit and `after_membership_activation_committed/1`.
+  The account row serializes the plan-capacity decision with every other
+  membership creator; an existing membership returns `:already_member`, while
+  a full plan returns `{:over_limit, plan, limit}`. Active creation includes the
+  cross-account binding consequence; a directory row born suspended has granted
+  no access and deliberately skips it. The caller owns the outer commit and
+  `after_membership_activation_committed/1`.
   """
   # Defense in depth: `:owner` is never assignable via sync (the provider
   # changeset rejects it as a default_role too) — owner is a deliberate human
@@ -1659,6 +1666,7 @@ defmodule Emisar.Accounts do
     }
 
     multi
+    |> put_membership_capacity(account_id, user_id)
     |> Multi.insert(:membership, sso_membership_changeset(attrs, active?))
     |> Multi.run(:runner_access, fn repo, %{membership: membership} ->
       replace_runner_access_rows(repo, membership.id, access)
@@ -1686,6 +1694,60 @@ defmodule Emisar.Accounts do
     do: version
 
   defp directory_provider_version(_provider, _managed?), do: 0
+
+  # The account row is the predicate lock for a plan's member count: every path
+  # that can insert a membership takes it before counting. Postgres row locks
+  # cannot protect the absence of the next membership row, but this shared parent
+  # row can serialize that decision without raising the transaction isolation
+  # level. Keeping the duplicate check inside the same fence preserves the more
+  # useful `:already_member` answer even when the plan is otherwise full.
+  defp put_membership_capacity(%Multi{} = multi, account_id, user_id) do
+    multi
+    |> put_membership_account_lock(account_id)
+    |> put_membership_capacity_check(user_id)
+  end
+
+  defp put_membership_account_lock(%Multi{} = multi, account_id) do
+    Multi.run(multi, :membership_account, fn repo, changes ->
+      account_id = resolve_membership_value(account_id, changes)
+      fetch_and_lock_account(account_id, repo: repo)
+    end)
+  end
+
+  defp put_membership_capacity_check(%Multi{} = multi, user_id) do
+    Multi.run(multi, :membership_capacity, fn repo, changes ->
+      user_id = resolve_membership_value(user_id, changes)
+      account = Map.fetch!(changes, :membership_account)
+
+      membership_exists? =
+        if is_nil(user_id) do
+          false
+        else
+          queryable =
+            Membership.Query.not_deleted()
+            |> Membership.Query.by_account_and_user(account.id, user_id)
+
+          repo.exists?(queryable)
+        end
+
+      if membership_exists? do
+        {:error, :already_member}
+      else
+        case Billing.check_limit(account, :members) do
+          :ok -> {:ok, :available}
+          {:error, :over_limit, plan, limit} -> {:error, {:over_limit, plan, limit}}
+        end
+      end
+    end)
+  end
+
+  defp resolve_membership_value(value, changes) when is_function(value, 1), do: value.(changes)
+  defp resolve_membership_value(value, _changes), do: value
+
+  defp membership_limit_error({:over_limit, plan, limit}),
+    do: {:error, :over_limit, plan, limit}
+
+  defp membership_limit_error(reason), do: {:error, reason}
 
   @doc """
   Canonical runner access for a picker's explicit mode plus the raw
@@ -3887,22 +3949,18 @@ defmodule Emisar.Accounts do
   `{:ok, %{membership: m, user: u, invitation_token: token}}` on success,
   `{:error, %Ecto.Changeset{}}` when the submission is invalid, or
   `{:error, :already_member | :unauthorized | :insufficient_privileges |
-  :runner_access_exceeds_subject}`.
+  :runner_access_exceeds_subject}` or
+  `{:error, :over_limit, plan, limit}` when the account has no free member slot.
 
-  The submission is revalidated against the account's live runner rows as the
-  transaction's first step — before the placeholder user, the membership, the
-  audit row, or any delivery — so a runner soft-deleted while the operator was
-  composing cannot slip into the grant.
+  The account and selected runner rows are locked before the placeholder user,
+  membership, audit row, or delivery. This serializes concurrent member creators
+  and keeps a runner soft-delete from slipping into the grant.
 
   The caller is responsible for sending the invitation email; this
   context only persists the records and mints the token.
   """
   def invite_user_to_account(attrs, %Subject{account: %Account{id: account_id}} = subject)
       when is_map(attrs) do
-    # Team seats are intentionally NOT capped (no Billing.check_limit(:members)
-    # here, unlike the runner cap): giving away collaboration is a deliberate
-    # growth lever — Free's members_limit + the Team meter are aspirational, not
-    # gates. Revisit only if seat-based pricing lands. (PENDING_DECISIONS, 2026-06-14.)
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -3911,12 +3969,14 @@ defmodule Emisar.Accounts do
       {token, token_digest} = Crypto.user_invite_token()
 
       Multi.new()
+      |> put_membership_account_lock(account_id)
       |> Multi.run(:invitation, fn repo, _changes ->
         validate_invitation(repo, attrs, subject)
       end)
       |> Multi.run(:user, fn repo, %{invitation: invitation} ->
         Users.fetch_or_create_and_lock_user_by_email(invitation.email, repo)
       end)
+      |> put_membership_capacity_check(fn %{user: user} -> user.id end)
       |> Multi.insert(:membership, fn %{user: user, invitation: invitation} ->
         Membership.Changeset.create(%{
           account_id: account_id,
@@ -3958,7 +4018,7 @@ defmodule Emisar.Accounts do
             else: {:error, changeset}
 
         {:error, reason} ->
-          {:error, reason}
+          membership_limit_error(reason)
       end
     end
   end

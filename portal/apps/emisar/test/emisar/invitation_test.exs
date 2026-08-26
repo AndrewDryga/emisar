@@ -4,6 +4,7 @@ defmodule Emisar.InvitationTest do
   alias Emisar.Accounts.RunnerAccess
 
   defp inviter_subject(account) do
+    _subscription = Fixtures.Accounts.create_subscription(account, "team")
     inviter = Fixtures.Users.create_user()
 
     _ =
@@ -208,7 +209,8 @@ defmodule Emisar.InvitationTest do
       assert Emisar.Users.fetch_user_by_email("foreign-scope@example.test") ==
                {:error, :not_found}
 
-      assert {:ok, [], _meta} = Emisar.Audit.list_events(subject)
+      assert {:ok, [], _meta} =
+               Emisar.Audit.list_events(subject, filter: [event_type: ["user.invited"]])
     end
 
     test "refuses runner access beyond the inviter's current grant", %{
@@ -233,7 +235,9 @@ defmodule Emisar.InvitationTest do
                {:error, :runner_access_exceeds_subject}
 
       assert Emisar.Users.fetch_user_by_email("over-grant@example.test") == {:error, :not_found}
-      assert {:ok, [], _meta} = Emisar.Audit.list_events(owner_subject)
+
+      assert {:ok, [], _meta} =
+               Emisar.Audit.list_events(owner_subject, filter: [event_type: ["user.invited"]])
     end
 
     test "a runner deleted after the form validated is refused at the write", %{
@@ -273,7 +277,9 @@ defmodule Emisar.InvitationTest do
       assert changeset.action == :insert
       assert "must have the @ sign and no spaces" in errors_on(changeset).email
       assert "is invalid" in errors_on(changeset).role
-      assert {:ok, [], _meta} = Emisar.Audit.list_events(subject)
+
+      assert {:ok, [], _meta} =
+               Emisar.Audit.list_events(subject, filter: [event_type: ["user.invited"]])
     end
 
     test "trims the email; the citext column owns case-insensitive identity", %{subject: subject} do
@@ -413,10 +419,18 @@ defmodule Emisar.InvitationTest do
       invitee: invitee,
       token: token
     } do
+      {:ok, account} = Accounts.fetch_account_by_id(membership.account_id)
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        entitlements: %{"members_limit" => 2}
+      )
+
+      assert Accounts.count_memberships(account.id) == 2
       assert {:ok, accepted} = Accounts.mark_invitation_accepted(membership, token, invitee)
       assert accepted.invitation_accepted_at
       assert is_nil(accepted.invitation_token_digest)
       assert is_nil(accepted.invitation_sent_to)
+      assert Accounts.count_memberships(account.id) == 2
 
       # The stale struct replayed: the fresh row is no longer pending.
       assert Accounts.mark_invitation_accepted(membership, token, invitee) ==
@@ -600,7 +614,7 @@ defmodule Emisar.InvitationTest do
     end
 
     test "a forged stale account id cannot bypass the real account lock" do
-      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       other_account = Fixtures.Accounts.create_account()
 
       {:ok, %{membership: membership, invitation_token: token}} =

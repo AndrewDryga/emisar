@@ -237,6 +237,19 @@ defmodule EmisarWeb.SCIM.UserController do
     |> json(Resource.error(409, "uniqueness", "That email address is not available."))
   end
 
+  defp render_error(conn, {:over_limit, _plan, limit}) do
+    member = if limit == 1, do: "member", else: "members"
+
+    conn
+    |> put_status(:forbidden)
+    |> json(
+      Resource.error(
+        403,
+        "This account's plan allows #{limit} #{member}. Increase its member limit before provisioning another user."
+      )
+    )
+  end
+
   defp render_error(conn, :too_many_scim_operations),
     do: bad_request(conn, "tooMany", "PATCH carries too many operations.")
 

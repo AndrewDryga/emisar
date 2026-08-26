@@ -236,6 +236,7 @@ defmodule Emisar.BillingManagerRoleTest do
   # operations — role first, access first, directory sync — that leaves one.
   describe "no runner or pack scope, by any route" do
     setup %{account: account} do
+      Fixtures.Accounts.create_subscription(account, "team")
       owner = Fixtures.Users.create_user()
 
       Fixtures.Memberships.create_membership(
@@ -349,6 +350,7 @@ defmodule Emisar.BillingManagerRoleTest do
     test "an admin assigns it too — admins hold the manage_billing it grants", %{
       account: account
     } do
+      Fixtures.Accounts.create_subscription(account, "team")
       admin = Fixtures.Users.create_user()
 
       Fixtures.Memberships.create_membership(

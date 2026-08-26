@@ -290,6 +290,32 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Accounts.peek_sync_membership(account.id, user.id)
     end
 
+    test "a full member entitlement returns an untyped SCIM forbidden error", %{
+      conn: conn,
+      token: token,
+      account: account
+    } do
+      Fixtures.Accounts.create_subscription(account, "enterprise",
+        entitlements: %{"members_limit" => 1}
+      )
+
+      email = "scim-cap@acme.test"
+
+      body =
+        conn
+        |> scim_post(
+          token,
+          ~p"/scim/v2/Users",
+          user_payload("okta|member-cap", email: email)
+        )
+        |> json_response(403)
+
+      refute Map.has_key?(body, "scimType")
+      assert body["detail"] =~ "allows 1 member"
+      assert Users.fetch_user_by_email(email) == {:error, :not_found}
+      assert Accounts.count_memberships(account.id) == 1
+    end
+
     test "a POST with active:false provisions the user already suspended (deactivated in the IdP)",
          %{
            conn: conn,
