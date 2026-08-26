@@ -52,4 +52,16 @@ defmodule Emisar.Fixtures.Policies do
 
     policy
   end
+
+  @doc "Test helper: writes a malformed approval shape that the production changeset refuses."
+  def corrupt_approval_settings(policy, approval) do
+    rules =
+      if approval == :missing,
+        do: Map.delete(policy.rules, "approval"),
+        else: Map.put(policy.rules, "approval", approval)
+
+    policy
+    |> Ecto.Changeset.change(rules: rules)
+    |> Repo.update!()
+  end
 end

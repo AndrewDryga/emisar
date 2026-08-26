@@ -5,6 +5,7 @@ defmodule EmisarWeb.RunbookImportLive do
   use EmisarWeb, :live_view
   alias Emisar.Runbooks
   alias EmisarWeb.{CoreComponents, Permissions}
+  require Logger
 
   @empty_params %{"title" => "", "json" => ""}
 
@@ -160,7 +161,12 @@ defmodule EmisarWeb.RunbookImportLive do
       {:error, issues} when is_list(issues) ->
         {:noreply, assign(socket, :json_errors, Enum.map(issues, &issue_message/1))}
 
-      {:error, _reason} ->
+      {:error, reason} ->
+        Logger.error(
+          "runbook import failed account_id=#{socket.assigns.current_account.id} " <>
+            "reason=#{inspect(reason)}"
+        )
+
         {:noreply, put_flash(socket, :error, "Could not import this runbook.")}
     end
   end

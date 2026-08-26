@@ -2,6 +2,7 @@ defmodule EmisarWeb.RunNewLive do
   use EmisarWeb, :live_view
   alias Emisar.{ActionContract, Catalog, Runners, Runs}
   alias EmisarWeb.Permissions
+  require Logger
 
   def mount(%{"runner_id" => runner_id, "action_id" => action_id}, _session, socket) do
     case Catalog.fetch_action_by_id(action_id, runner_id, socket.assigns.current_subject) do
@@ -249,21 +250,70 @@ defmodule EmisarWeb.RunNewLive do
                "This action cannot start on the runner because its primary executable is missing. Install the tool and reload the runner."
              )}
 
+          {:error, :action_contract_changed} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "This action changed while the form was open. Reload the page and review the current arguments before dispatching."
+             )}
+
+          {:error, :pack_out_of_scope} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "This action's pack is outside your access scope. Ask an admin to grant access on the team page."
+             )}
+
+          {:error, :invalid_attestation} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "Dispatch authority could not be verified. Reload the page and try again."
+             )}
+
+          {:error, :action_required} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "This action is no longer available. Reload the page and choose a current action."
+             )}
+
+          {:error, :reason_required} ->
+            {:noreply, put_flash(socket, :error, "Add a reason before dispatching this action.")}
+
           # The run record itself was rejected (its fields key to the
           # dispatch envelope — runner_id, source, … — not to the action's
           # arguments, so there's no per-arg input to pin these on). A
           # concise flash is correct here; the inline arg errors above
           # already caught anything the operator can fix in a field.
-          {:error, %Ecto.Changeset{}} ->
-            {:noreply,
-             put_flash(socket, :error, "Could not dispatch the run — reload and try again.")}
+          {:error, %Ecto.Changeset{} = changeset} ->
+            {:noreply, unexpected_dispatch_failure(socket, changeset.errors)}
 
-          # Don't swallow an unexpected error into "Something went wrong" —
-          # surface the actual code so the operator (and the logs) can act.
+          # The operator gets one bounded recovery path. The full internal term
+          # stays in server logs with the account, runner, and action needed to
+          # diagnose it; transport vocabulary never becomes customer copy.
           {:error, other} ->
-            {:noreply, put_flash(socket, :error, "Dispatch failed (#{inspect(other)}).")}
+            {:noreply, unexpected_dispatch_failure(socket, other)}
         end
     end
+  end
+
+  defp unexpected_dispatch_failure(socket, reason) do
+    Logger.error(
+      "operator dispatch failed account_id=#{socket.assigns.current_account.id} " <>
+        "runner_id=#{socket.assigns.runner_id} action_id=#{socket.assigns.action.action_id} " <>
+        "reason=#{inspect(reason)}"
+    )
+
+    put_flash(
+      socket,
+      :error,
+      "The run could not be dispatched. Reload the page and try again. If it keeps failing, contact support."
+    )
   end
 
   # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,

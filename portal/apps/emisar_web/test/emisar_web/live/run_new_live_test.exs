@@ -5,8 +5,9 @@ defmodule EmisarWeb.RunNewLiveTest do
   field (rose border, message beneath it), not in a flash banner.
   """
   use EmisarWeb.ConnCase, async: true
+  import ExUnit.CaptureLog
   alias Emisar.Auth.Subject
-  alias Emisar.{Repo, Runners, Runs}
+  alias Emisar.{Catalog, Repo, Runners, Runs}
 
   defp action_with_required_arg(account) do
     runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -54,6 +55,35 @@ defmodule EmisarWeb.RunNewLiveTest do
       )
 
     {runner, action}
+  end
+
+  defp advertise_versioned_action(runner, risk \\ "low") do
+    Catalog.observe_state(runner, %{
+      "hostname" => runner.hostname,
+      "version" => runner.runner_version,
+      "labels" => runner.labels,
+      "packs" => %{
+        "linux-core" => %{
+          "version" => "1.0.0",
+          "hash" => Fixtures.Catalog.pack_hash("run-new-contract")
+        }
+      },
+      "actions" => [
+        %{
+          "id" => "linux.uptime",
+          "pack_id" => "linux-core",
+          "title" => "Uptime",
+          "summary" => "Reports uptime",
+          "description" => "Reports uptime",
+          "kind" => "exec",
+          "risk" => risk,
+          "side_effects" => [],
+          "args" => [],
+          "examples" => [],
+          "search_terms" => []
+        }
+      ]
+    })
   end
 
   test "missing required arg renders inline on the field, not in a flash", %{conn: conn} do
@@ -572,6 +602,76 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     assert html =~ "no longer advertises that action"
     assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+  end
+
+  test "an action contract changed after mount tells the operator to reload", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    assert {:ok, _runner} = advertise_versioned_action(runner)
+
+    [pack_version] = Fixtures.Catalog.list_pack_versions(account.id)
+
+    assert {:ok, _trusted} =
+             Catalog.trust_pack_version(pack_version.id, owner_subject(user, account))
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/linux.uptime")
+
+    # The runner changes the advertised contract while this form still holds
+    # the reviewed low-risk shape. Dispatch must refuse rather than silently run
+    # the new medium-risk contract.
+    assert {:ok, _runner} = advertise_versioned_action(runner, "medium")
+
+    html = submit_dispatch(lv, %{}, "checking host uptime")
+
+    assert html =~ "This action changed while the form was open"
+    assert html =~ "Reload the page and review the current arguments"
+    refute html =~ "action_contract_changed"
+    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+  end
+
+  test "an unexpected dispatch reason gets bounded copy and diagnostic logging", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+
+    policy =
+      Fixtures.Policies.create_policy(
+        account_id: account.id,
+        created_by_id: user.id,
+        rules: %{
+          "schema_version" => 2,
+          "defaults" => %{
+            "low" => "require_approval",
+            "medium" => "require_approval",
+            "high" => "require_approval",
+            "critical" => "require_approval"
+          },
+          "overrides" => [],
+          "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
+        }
+      )
+
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+    Fixtures.Policies.corrupt_approval_settings(policy, :missing)
+
+    log =
+      capture_log(fn ->
+        html = submit_dispatch(lv, %{}, "checking host uptime")
+
+        assert html =~ "The run could not be dispatched"
+        assert html =~ "contact support"
+        refute html =~ "invalid_policy_approval"
+        refute html =~ "Dispatch failed"
+      end)
+
+    assert log =~ "operator dispatch failed"
+    assert log =~ "account_id=#{account.id}"
+    assert log =~ "runner_id=#{runner.id}"
+    assert log =~ "action_id=linux.uptime"
+    assert log =~ "reason=:invalid_policy_approval"
   end
 
   # An operator scoped to a DIFFERENT runner group cannot even open the dispatch
