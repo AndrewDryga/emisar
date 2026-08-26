@@ -11,10 +11,10 @@ name: Trusted - Runner Release
 #   * The verify job accepts only an exact signed runner release tag and every
 #     authority-bearing job depends on it.
 #   * The build step gates on `environment: public-releases`, whose tag
-#     patterns (`runner-v*`, `mcp-v*`) bound which refs may reach it. Today the
-#     signed annotated tag targeting current main IS the human release
-#     decision — the environment carries no required reviewer while the
-#     repository has a single maintainer (see DEPLOYMENT.md).
+#     patterns (`runner-v*`, `mcp-v*`) bound which refs may reach it and whose
+#     independent reviewer approves publication with self-review disabled.
+#   * GCP accepts only this reusable workflow's path and exact commit SHA. The
+#     caller-selected workflow contents cannot mint publisher credentials.
 #   * The thin caller grants the maximum permissions the called workflow may
 #     use; individual jobs below narrow them to the scopes they need.
 #
@@ -138,8 +138,7 @@ jobs:
     # Sigstore OIDC token used for attestation is minted only for a ref the
     # environment's tag patterns admit (`runner-v*`/`mcp-v*`) — an arbitrary
     # branch can never produce an attested-by-our-workflow artefact. The
-    # human decision is the signed tag itself; re-add required reviewers
-    # here the moment a second collaborator gains write access.
+    # independent reviewer is the publication decision after the signed tag.
     environment:
       name: public-releases
     strategy:
@@ -485,7 +484,7 @@ jobs:
         id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
-          workload_identity_provider: projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github
+          workload_identity_provider: projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github-releases
           service_account: emisar-release-publisher@emisar.iam.gserviceaccount.com
           token_format: access_token
 
