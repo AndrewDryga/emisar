@@ -762,6 +762,89 @@ defmodule EmisarWeb.RunNewLiveTest do
     refute Runs.subject_can_dispatch_run?(runner_subject)
   end
 
+  test "renders closed values and scalar bounds as real controls", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    action =
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "gcp.dns_record_upsert",
+        args_schema: %{
+          "args" => [
+            %{
+              "name" => "type",
+              "type" => "string",
+              "required" => true,
+              "description" => "DNS record type",
+              "validation" => %{"enum" => ["A", "AAAA", "TXT"]}
+            },
+            %{
+              "name" => "ttl",
+              "type" => "integer",
+              "required" => true,
+              "description" => "Record TTL in seconds",
+              "validation" => %{"min" => 1, "max" => 604_800}
+            },
+            %{
+              "name" => "routing_policy",
+              "type" => "string",
+              "required" => false,
+              "description" => "Traffic routing policy",
+              "validation" => %{"allowed" => ["simple", "weighted"]}
+            },
+            %{
+              "name" => "name",
+              "type" => "string",
+              "required" => false,
+              "description" => "Fully qualified DNS name",
+              "validation" => %{"max_length" => 253}
+            }
+          ]
+        }
+      )
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+
+    option_values =
+      html
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query(~s(select[name="args[type]"] option))
+      |> LazyHTML.attribute("value")
+
+    assert option_values == ["", "A", "AAAA", "TXT"]
+    assert has_element?(lv, ~s(select[name="args[type]"][required]))
+
+    assert has_element?(
+             lv,
+             ~s(select[name="args[routing_policy]"] option[value="weighted"])
+           )
+
+    assert has_element?(
+             lv,
+             ~s(input[name="args[ttl]"][type="number"][min="1"][max="604800"][step="1"])
+           )
+
+    assert has_element?(lv, ~s(input[name="args[name]"][maxlength="253"]))
+    assert html =~ "name (optional)"
+
+    # A caller can bypass the browser control, so the domain contract still
+    # rejects an out-of-set value and leaves no run behind.
+    html =
+      render_submit(lv, "dispatch", %{
+        "args" => %{
+          "type" => "CNAME",
+          "ttl" => "300",
+          "routing_policy" => "simple",
+          "name" => "api.example.test."
+        },
+        "reason" => "updating the application record"
+      })
+
+    assert html =~ "is not an allowed value"
+    assert {:ok, [], _page} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+  end
+
   # a non-numeric integer arg renders an
   # inline parse error on the field ("expected integer"), not a flash, and no run
   # is dispatched.

@@ -482,9 +482,8 @@ defmodule EmisarWeb.RunNewLive do
   end
 
   # Maps a runner action arg's declared type to the form input type + an
-  # optional hint shown beneath the field. Fallback is a plain text
-  # input with no hint, so adding a new arg type is a one-line entry
-  # here rather than a new cond branch.
+  # optional hint shown beneath the field. A closed scalar set overrides the
+  # primitive control with the same native select grammar as runbook inputs.
   @input_type_for %{
     "boolean" => {"checkbox", nil},
     "integer" => {"number", nil},
@@ -493,7 +492,72 @@ defmodule EmisarWeb.RunNewLive do
     "integer_array" => {"text", "Comma-separated."},
     "duration" => {"text", "Go duration (e.g. 30s, 5m, 2h)."}
   }
-  defp input_type_for(type), do: Map.get(@input_type_for, type, {"text", nil})
+
+  defp input_type_for(_type, [_option | _rest]), do: {"select", nil}
+  defp input_type_for(type, []), do: Map.get(@input_type_for, type, {"text", nil})
+
+  defp input_options(%{"type" => type}) when type in ["boolean", "string_array", "integer_array"],
+    do: []
+
+  defp input_options(%{"validation" => validation}) when is_map(validation) do
+    validation
+    |> closed_values()
+    |> Enum.flat_map(fn
+      value when is_binary(value) or is_number(value) or is_boolean(value) ->
+        string = to_string(value)
+        [{string, string}]
+
+      _invalid ->
+        []
+    end)
+  end
+
+  defp input_options(_arg), do: []
+
+  defp closed_values(validation) do
+    enum = validation_list(validation["enum"])
+    allowed = validation_list(validation["allowed"])
+
+    case {enum, allowed} do
+      {[], values} ->
+        values
+
+      {values, []} ->
+        values
+
+      {enum, allowed} ->
+        Enum.filter(enum, fn candidate -> Enum.any?(allowed, &(&1 == candidate)) end)
+    end
+  end
+
+  defp validation_list(values) when is_list(values) and values != [], do: values
+  defp validation_list(_values), do: []
+
+  defp input_prompt("select", options) do
+    if Enum.any?(options, fn {_label, value} -> value == "" end), do: nil, else: "Choose…"
+  end
+
+  defp input_prompt(_type, _options), do: nil
+
+  defp input_step(%{"type" => "integer"}), do: "1"
+  defp input_step(%{"type" => "number"}), do: "any"
+  defp input_step(_arg), do: nil
+
+  defp input_bound(%{"type" => type, "validation" => validation}, key)
+       when type in ["integer", "number"] and is_map(validation) do
+    case validation[key] do
+      value when is_number(value) -> value
+      _value -> nil
+    end
+  end
+
+  defp input_bound(_arg, _key), do: nil
+
+  defp input_maxlength(%{"type" => type, "validation" => %{"max_length" => max}})
+       when type in ["string", "path"] and is_integer(max) and max >= 0,
+       do: max
+
+  defp input_maxlength(_arg), do: nil
 
   # Mark-optional-only: a required arg shows its bare name, an optional one is
   # tagged "(optional)" so the operator can tell what they may leave blank.
@@ -505,9 +569,16 @@ defmodule EmisarWeb.RunNewLive do
 
   defp arg_input(assigns) do
     type = assigns.arg["type"]
+    options = input_options(assigns.arg)
+    {input_type, type_hint} = input_type_for(type, options)
 
-    {input_type, hint} = input_type_for(type)
-    assigns = assign(assigns, input_type: input_type, hint: hint)
+    assigns =
+      assign(assigns,
+        input_type: input_type,
+        options: options,
+        prompt: input_prompt(input_type, options),
+        hint: if(input_type == "select", do: assigns.arg["description"], else: type_hint)
+      )
 
     ~H"""
     <div>
@@ -515,8 +586,14 @@ defmodule EmisarWeb.RunNewLive do
         field={@form[@arg["name"]]}
         type={@input_type}
         label={arg_label(@arg)}
+        options={@options}
+        prompt={@prompt}
         required={@arg["required"]}
-        placeholder={@arg["description"]}
+        placeholder={if(@input_type == "select", do: nil, else: @arg["description"])}
+        min={input_bound(@arg, "min")}
+        max={input_bound(@arg, "max")}
+        maxlength={input_maxlength(@arg)}
+        step={input_step(@arg)}
       />
       <p :if={@hint} class="mt-1 text-xs text-zinc-400">{@hint}</p>
     </div>
