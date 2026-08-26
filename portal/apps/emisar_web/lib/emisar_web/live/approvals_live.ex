@@ -569,7 +569,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 </.empty_state>
                 <.empty_state
                   :if={not @pending_error?}
-                  icon="state.approved"
+                  icon="product.approval"
                   title="Nothing waiting."
                 >
                   Approvals show up here when
@@ -772,7 +772,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 </.empty_state>
                 <.empty_state
                   :if={not @grants_error? and not grants_disabled?(@current_account)}
-                  icon="identity.credential"
+                  icon="product.approval"
                   title="No active grants."
                 >
                   Grants appear when you approve a run with a duration other than

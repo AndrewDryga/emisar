@@ -485,6 +485,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
 
     assert html =~ "Nothing waiting."
+    assert html =~ ~s(data-icon="product.approval")
     refute html =~ "Couldn&#39;t load pending approvals."
     # The empty-state points the operator at the policy that gates runs.
     assert html =~ ~p"/app/#{account}/policies"
@@ -502,6 +503,9 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
     assert html =~ "No active grants."
     assert html =~ "No decided approvals yet."
+    assert has_element?(lv, ~s(#pending-empty [data-icon="product.approval"]))
+    assert has_element?(lv, ~s(#grants-empty [data-icon="product.approval"]))
+    assert has_element?(lv, ~s(#decided-empty [data-icon="product.approval"]))
     refute has_element?(lv, "#revoke-all-grants")
   end
 
