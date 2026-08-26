@@ -1,6 +1,6 @@
 // Package attest defines the canonical encoding of a dispatch attestation —
 // the exact bytes the MCP bridge signs and the runner verifies. The bridge holds a
-// certified Ed25519 leaf key; the runner trusts the customer's CA public key in
+// certified Ed25519 or ECDSA P-256 leaf key; the runner trusts the customer's CA public key in
 // local config. The control plane only RELAYS the attestation: it can neither
 // forge a signature nor alter its action, pack, exact args, public runner refs,
 // reason, operation, origin, nonce, or time without verification failing.
@@ -58,7 +58,7 @@ type Claim struct {
 	Reason     string
 	// Evidence and Expected are the narrative a HUMAN APPROVER reads. They are
 	// bound by digest, not carried: together they run to 6,000 characters
-	// against an 8 KiB envelope budget, and `ArgsRaw` already establishes that
+	// against a 16 KiB envelope budget, and `ArgsRaw` already establishes that
 	// a large field is signed as a hash of its exact bytes.
 	//
 	// Both are optional and both are ALWAYS hashed — an absent one signs as the

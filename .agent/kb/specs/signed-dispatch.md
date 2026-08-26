@@ -1,14 +1,15 @@
 # Signed dispatch (bridge-attested dispatch)
 
 A runner can be told to **refuse the control plane's authority**: with signing
-enforced, it executes an action only if the dispatch carries a valid Ed25519
-signature produced by a customer-authorized MCP bridge — and that signature is
-vouched for by a **certificate** issued by a trusted, offline certificate
-authority. The control plane **relays** the signature and the certificate; it
-holds no private key, so it cannot forge or alter one, widen its signed runner
-set, or originate a valid signed run. A preserved replay journal prevents nonce
-reuse on that runner identity. A replacement that reuses the external ID must
-preserve that state or rotate its identity and trust material.
+enforced, it executes an action only if the dispatch carries a valid signature
+from an Ed25519 or ECDSA P-256 leaf key held by a customer-authorized MCP bridge
+— and that signature is vouched for by a **certificate** issued by a trusted,
+offline certificate authority. The control plane **relays** the signature and
+the certificate; it holds no private key, so it cannot forge or alter one, widen
+its signed runner set, or originate a valid signed run. A preserved replay
+journal prevents nonce reuse on that runner identity. A replacement that reuses
+the external ID must preserve that state or rotate its identity and trust
+material.
 
 This is the strongest defense emisar offers against a compromised control plane.
 It is **opt-in per runner** and a deliberate trade: while it's on, the portal,
@@ -57,7 +58,7 @@ operator's signing key. So:
    only the digests, not the narrative text, so signing does not independently
    authenticate what a compromised portal renders to an approver. v4 signed what
    runs; v5 also binds the bridge-supplied evidence and expected result. The
-   Ed25519 **leaf** private key never leaves the operator's machine. The bridge
+   **leaf private key** never leaves the operator's machine. The bridge
    never decodes and re-encodes the action arguments, so values above `2^53`,
    exponent spellings, object order, and escapes remain exactly what was signed.
 2. The portal bounds and stores the known envelope fields, resolves the selected
@@ -197,13 +198,13 @@ the CA **private** key to store offline, and the two MCP env vars.
   change at all.
 
   ```sh
-  emisar signing new-cert --ca-id ca-1a2b3c4d --ca-key <CA private key> \
-    --key-id op-alice --scope group=prod --ttl 24h
+  emisar signing new-cert --ca-key <CA private key> --ca-cert <CA certificate> \
+    --key-name op-alice --scope group=prod --ttl 24h
   ```
 
-  It prints `EMISAR_SIGNING_KEY` + `EMISAR_SIGNING_CERT` for that operator. If
-  the operator already has a leaf keypair, pass `--pubkey <hex>` and it certifies
-  that key instead of minting one.
+  It mints a new leaf key and prints `EMISAR_SIGNING_KEY` +
+  `EMISAR_SIGNING_CERT` for that operator. To certify an existing or HSM-held
+  leaf key, issue the certificate through your own PKI using the profile above.
 
 - **A new runner**: add the same `trusted_cas` block to its config and restart it.
   Every operator holding a CA-issued certificate in that runner's scope can

@@ -155,10 +155,11 @@
         <li>
           <strong>Bridge-attested dispatch (the strongest cloud-compromise defense).</strong>
           With <code>signing.enforce_signatures</code>
-          on, the runner requires a valid v5 Ed25519 signature. The signature binds the origin,
-          action, immutable pack, exact arguments, exact runner set, reason, operation, nonce, and
-          time. It also binds digests of the evidence and expected result shown to an approver.
-          A certificate from the trusted offline CA must vouch for the leaf key.
+          on, the runner requires a valid v5 signature from an Ed25519 or ECDSA P-256 leaf key. The
+          signature binds the origin, action, immutable pack, exact arguments, exact runner set,
+          reason, operation, nonce, and time. It also binds digests of the evidence and expected
+          result shown to an approver. A certificate from the trusted offline CA must vouch for
+          the leaf key.
         </li>
         <li>
           <strong>The control plane cannot forge signed work.</strong>

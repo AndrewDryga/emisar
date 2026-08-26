@@ -52,10 +52,10 @@ type Config struct {
 
 // Signing is the bridge-attested-dispatch gate: the strongest defense against
 // a compromised control plane. When enforce_signatures is on, the runner runs a
-// dispatch ONLY if it carries a valid Ed25519 attestation whose leaf key is
-// vouched for by a certificate signed by one of the trusted CAs — so the cloud
-// can relay a customer-authorized bridge's signed action but can never originate
-// one itself.
+// dispatch ONLY if it carries a valid attestation whose Ed25519 or ECDSA P-256
+// leaf key is vouched for by a certificate signed by one of the trusted CAs —
+// so the cloud can relay a customer-authorized bridge's signed action but can
+// never originate one itself.
 // The runner ALSO advertises this to the cloud, which then disables its own
 // (operator/runbook) dispatch to this runner.
 //
@@ -76,7 +76,7 @@ type Signing struct {
 	MaxAttestationAge actionspec.Duration `yaml:"max_attestation_age,omitempty"`
 }
 
-// TrustedCA is one Ed25519 certificate-authority public key the runner trusts.
+// TrustedCA is one certificate-authority public key the runner trusts.
 // The offline CA issues short-lived X.509 certificates that vouch for leaf
 // signing keys; the runner verifies the presented chain against these anchors,
 // applies the emisar certificate profile, then verifies the attestation under

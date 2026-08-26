@@ -231,7 +231,7 @@ numbers with `UseNumber`; values above 2^53 are never converted through
 The bridge sends `Emisar-Attestation` as unpadded base64url of the bounded JSON
 envelope. The portal accepts at most 16384 encoded header bytes, compares its
 fields with the authenticated request, and relays the decoded envelope unchanged.
-The Ed25519 signature covers fixed JSON binding:
+The Ed25519 or ECDSA P-256 leaf-key signature covers fixed JSON binding:
 
 - literal version and tool name;
 - canonical portal origin;

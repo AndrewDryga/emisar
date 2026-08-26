@@ -354,7 +354,7 @@ lower bound), `cursor` (opaque resume point, wins over `since`),
 `event_type` (repeatable or comma-separated), and `limit` (default 100,
 cap 1000). Any non-empty page returns `X-Next-Cursor`; a full page also
 returns `Link: <…>; rel="next"`; an empty page returns neither. Each exported
-event today carries the 14 top-level fields `id`, `occurred_at`,
+event today carries the 15 top-level fields `id`, `occurred_at`,
 `account_id`, `event_type`, `actor_kind`, `actor_id`, `actor_label`,
 `target_kind`, `target_id`, `target_label`, `ip_address`, `user_agent`,
 `request_id`, `mcp_client_metadata`, and `payload`. The CSV download's header
@@ -365,7 +365,7 @@ artifact.
 **What happens on skew.** A key of the wrong kind fails with 403
 `wrong_key_kind`; a malformed parameter with 400 `invalid_params`. Adding a
 new top-level field or event type is additive; removing or renaming one of
-the 14 fields, a parameter, or the `X-Next-Cursor` header is breaking. A
+the 15 fields, a parameter, or the `X-Next-Cursor` header is breaking. A
 SIEM persists its last cursor across polls, so previously issued cursor
 values must remain resumable; a change to the cursor encoding must keep
 accepting the old form for the deprecation window.
@@ -385,6 +385,7 @@ doctor
 events tail|cat|grep
 signing init|new-ca|new-cert
 state [check-dispatch-log]
+update
 version
 completion
 help
@@ -398,10 +399,11 @@ as permission to rename the ones it forgot. `action run --arg/--reason/
 --timeout/--stream`, `pack install --hash/--dest/--force`, `pack suggest
 --catalog/--names-only`, `pack update --dry-run`, `audit verify --all`, `events
 tail --lines/-f`, `events grep --action/--caller/--event`, `state
-check-dispatch-log --data-dir`, and the whole `signing` group's `--ca-id`,
-`--ca-key`, `--key-id`, `--scope`, `--ttl`, and `--pubkey` are all inside the
-freeze. These command names and flags, including the documented aliases, are
-public inputs. The structured output
+check-dispatch-log --data-dir`, `signing init --ca-name/--scope/--ttl/--key`,
+`signing new-ca --ca-name/--ttl/--key`, and `signing new-cert
+--ca-key/--ca-cert/--key-name/--scope/--ttl/--key` are all inside the freeze.
+These command names and flags, including the documented aliases, are public
+inputs. The structured output
 `--json` emits exists to be parsed by scripts, so those shapes freeze with the
 flags: after 1.0 they change only additively.
 
@@ -417,7 +419,8 @@ the `--registry` flag select a pack registry.
 With no command, the MCP bridge keeps its stdio behavior. Its direct CLI surface
 has a local `auth` / `auth login [URL]` browser device flow, local
 `auth status [URL]`, an installer-facing `auth import [URL]`, `accounts list
-[--json]`, and `accounts use <slug-or-id>`, then a descriptor-driven tool
+[--json]`, `accounts use <slug-or-id>`, `connect [--all | --client <id>]`, and
+`disconnect [--all | --client <id>] [--forget]`, then a descriptor-driven tool
 surface: `list_tools [--json]` lists the live server catalog, `help <tool>
 [--json]` and, for non-conflicting names, `<tool> --help` document one live
 descriptor. `<tool> [JSON | -]` calls any exact tool name with an omitted `{}`,

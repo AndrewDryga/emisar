@@ -189,7 +189,7 @@ defmodule Emisar.Runs.Attestation do
     expected_refs = Enum.sort(facts.runner_refs)
 
     # The approver-facing narrative is bound by digest, not carried — it
-    # runs to 6,000 characters against an 8 KiB envelope. Comparing here is
+    # runs to 6,000 characters against a 16 KiB envelope. Comparing here is
     # the point of binding it: the text an operator is shown when deciding
     # is the text the bridge signed, and an absent field hashes too, so the
     # control plane cannot ADD a justification the caller never gave.

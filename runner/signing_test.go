@@ -245,7 +245,7 @@ func TestSigningNewCACmd_HumanOutput(t *testing.T) {
 	}
 	for _, want := range []string{
 		"enforce_signatures: true", "trusted_cas:", "name: ca-prod", "pem: |",
-		"BEGIN CERTIFICATE", "OFFLINE", "emisar signing new-cert",
+		"BEGIN CERTIFICATE", "OFFLINE", "emisar signing new-cert", "--ca-key", "--ca-cert",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("signing new-ca guide missing %q\n--- output ---\n%s", want, out)

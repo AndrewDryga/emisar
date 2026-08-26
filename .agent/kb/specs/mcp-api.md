@@ -1124,7 +1124,7 @@ portal may validate its bounded structure and compare its fields for early
 feedback, but only the runner's configured customer CA is authoritative. The
 portal never manufactures or rewrites an attestation.
 
-The base64url-encoded `Emisar-Attestation` header is at most 8192 bytes, below
+The base64url-encoded `Emisar-Attestation` header is at most 16384 bytes, below
 the portal HTTP server's single-header limit. Both sides reject a larger value
 before decoding or allocation.
 

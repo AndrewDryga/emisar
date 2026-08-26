@@ -268,9 +268,9 @@ identity without any disk-backed identity state.
 
 ## Signed dispatch (optional)
 
-A runner can require every action to carry an Ed25519 intent signed by the MCP
-bridge. The control plane can relay that action but cannot originate it, change
-its exact arguments, or widen its runner set.
+A runner can require every action to carry intent signed by the MCP bridge with
+an Ed25519 or ECDSA P-256 leaf key. The control plane can relay that action but
+cannot originate it, change its exact arguments, or widen its runner set.
 
 Run `emisar signing init`, add the generated CA public key under
 `signing.trusted_cas`, and configure the MCP bridge with the leaf key and

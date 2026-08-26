@@ -1,8 +1,8 @@
 package main
 
 // Bridge-attested dispatch is the bridge's one semantic exception. The
-// operator's Ed25519 key lives only here, so the portal can relay an authorized
-// run_action intent but cannot manufacture one. HTTPS and the API key already
+// operator's certified leaf key lives only here, so the portal can relay an
+// authorized run_action intent but cannot manufacture one. HTTPS and the API key already
 // authenticate every ordinary bridge request; reads and other mutations are
 // deliberately never signed.
 
@@ -337,7 +337,7 @@ func validSignedAction(actionID, packRef, reason, evidence, expected string) boo
 	// schema-valid call reads as invalid input here and is forwarded unsigned.
 	// reason is maxLength 2000 in the registry and bounded in CHARACTERS by the
 	// portal's verifier, so count runes: a byte bound put ~90 CJK characters
-	// over the line. The 8 KiB header check at the end of signFrame is the real
+	// over the line. The 16 KiB header check at the end of signFrame is the real
 	// budget, and it fails closed.
 	return actionID != "" && len(actionID) <= 128 &&
 		packRef != "" && len(packRef) <= maxSignedPackRefBytes &&

@@ -60,10 +60,10 @@ execution: {}
 
 # Signing is the bridge-attested-dispatch gate — the strongest defense
 # against a compromised control plane. With enforce_signatures on, the
-# runner runs a dispatch ONLY if it carries a valid Ed25519 attestation whose
-# leaf key is vouched for by a still-valid, in-scope certificate from one of
-# the trusted CAs below, is inside the freshness window, and uses a nonce it
-# hasn't seen. The cloud can RELAY a customer-authorized bridge's signed action
+# runner runs a dispatch ONLY if it carries a valid attestation whose Ed25519 or
+# ECDSA P-256 leaf key is vouched for by a still-valid, in-scope certificate
+# from one of the trusted CAs below, is inside the freshness window, and uses a
+# nonce it hasn't seen. The cloud can RELAY a customer-authorized bridge's signed action
 # but can never originate one. The runner advertises enforcement to the cloud,
 # which then disables its own (operator/runbook) dispatch here.
 #

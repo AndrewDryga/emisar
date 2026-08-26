@@ -9,7 +9,7 @@
 // direct CLI adds bounded, terminal-safe views for the fixed tool contracts and
 // may follow exact read-only continuations after a human-mode mutation; --json
 // remains one logical invocation and follows no continuations. Bridge-attested
-// dispatch (sign.go) recognizes only `run_action` and carries its Ed25519 intent
+// dispatch (sign.go) recognizes only `run_action` and carries its signed intent
 // signature in a private HTTP header, because the signing key must stay here and
 // never reach the control plane.
 //

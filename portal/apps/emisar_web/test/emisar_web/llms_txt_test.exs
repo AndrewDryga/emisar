@@ -21,6 +21,13 @@ defmodule EmisarWeb.LLMsTxtTest do
     end
   end
 
+  test "the signed-dispatch entry names every accepted leaf algorithm" do
+    body = File.read!(@llms_path)
+
+    assert body =~ "leaf keys are Ed25519 or ECDSA P-256"
+    refute body =~ "scoped Ed25519 certificates"
+  end
+
   test "every linked emisar page is public, canonical, and live", %{conn: conn} do
     body = File.read!(@llms_path)
 

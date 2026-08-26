@@ -87,9 +87,9 @@ changes.
 - **Two records.** The control-plane audit includes denied and pending requests;
   every runner also writes its execution attempts and local refusals to a
   hash-chained JSONL journal.
-- **Optional bridge-attested dispatch.** A runner can require an Ed25519 intent
-  signed by the customer-authorized MCP bridge, so the control plane cannot
-  originate or widen a permitted call.
+- **Optional bridge-attested dispatch.** A runner can require intent signed by
+  the customer-authorized MCP bridge with an Ed25519 or ECDSA P-256 leaf key,
+  so the control plane cannot originate or widen a permitted call.
 
 Read the exact guarantees, limitations, and threat model in
 [`.agent/kb/specs/security-model.md`](.agent/kb/specs/security-model.md).

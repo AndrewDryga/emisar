@@ -284,7 +284,8 @@ certificate.
 The CERTIFICATE goes in every runner's config under signing.trusted_cas (safe to
 commit). The PRIVATE key stays OFFLINE — keep it on an operator's machine or a
 vault, never on a runner and never on the control plane. You issue short-lived
-operator certificates with it via "emisar signing new-cert --ca-key <private-key>".
+operator certificates with it via
+"emisar signing new-cert --ca-key <private-key> --ca-cert <certificate>".
 
 To issue from your own PKI instead, see the certificate profile in
 https://emisar.dev/docs/signed-dispatch.`,
@@ -324,7 +325,7 @@ https://emisar.dev/docs/signed-dispatch.`,
 			fmt.Print("2. CA PRIVATE key — store this OFFLINE (never on a runner or the control plane):\n\n")
 			fmt.Printf("   %s\n\n", caKeyEncoded)
 			fmt.Print("Issue operator certificates with:\n")
-			fmt.Print("   emisar signing new-cert --ca-key <the-private-key-above> --scope group=<g> --ttl 24h\n")
+			fmt.Print("   emisar signing new-cert --ca-key <the-private-key-above> --ca-cert <the-certificate-above> --scope group=<g> --ttl 24h\n")
 			return nil
 		},
 	}

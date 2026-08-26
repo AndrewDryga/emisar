@@ -325,10 +325,19 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
       </p>
       <ol class="mt-4 space-y-3 text-base text-zinc-300 list-decimal pl-6">
         <li>
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
-            emisar signing new-cert --ca-id acme-2026 --ca-key &lt;offline CA key&gt; --scope group=prod --ttl 24h
-          </code>
-          mints a new leaf + cert under the existing CA.
+          Set <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">CA_KEY</code>
+          to the saved private key and
+          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">CA_CERT</code>
+          to its PEM certificate, then mint the replacement: <.docs_code
+            phx-no-format
+            label="shell"
+            copy_text={
+              ~S(emisar signing new-cert --ca-key "$CA_KEY" --ca-cert "$CA_CERT" --key-name op-alice --scope group=prod --ttl 24h)
+            }
+          ><span class="text-zinc-500">$</span> emisar signing new-cert \
+    --ca-key <span class="text-brand-300">"$CA_KEY"</span> \
+    --ca-cert <span class="text-brand-300">"$CA_CERT"</span> \
+    --key-name op-alice --scope group=prod --ttl 24h</.docs_code>
         </li>
         <li>
           Switch your MCP bridge to the new <code>EMISAR_SIGNING_KEY</code>

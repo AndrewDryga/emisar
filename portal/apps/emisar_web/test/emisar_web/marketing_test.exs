@@ -1298,6 +1298,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Pull requests run with read-only permissions"
       assert html =~ "CycloneDX SBOM"
       assert html =~ "immutable digest"
+      assert html =~ "Signed dispatch (Ed25519 or ECDSA P-256 leaf keys)"
+      refute html =~ "Signed dispatch (Ed25519)"
       assert html =~ "Confirm\n            &amp; Apply"
       assert html =~ "out-of-scope hosts from current fleet and dispatch surfaces"
       refute html =~ "members never see out-of-scope hosts"
@@ -1616,6 +1618,7 @@ defmodule EmisarWeb.MarketingTest do
       # The honest "what emisar is not" boundary section.
       assert html =~ "What emisar is not"
       assert html =~ "customer-authorized MCP bridge"
+      assert html =~ "Ed25519 or ECDSA P-256 leaf key"
       refute html =~ "user-signed action"
     end
 
@@ -1638,6 +1641,12 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "EMISAR_SIGNING_KEY"
       assert html =~ "EMISAR_SIGNING_CERT"
       assert html =~ "max_attestation_age"
+      assert html =~ "--ca-key"
+      assert html =~ "--ca-cert"
+      assert html =~ "--key-name"
+      refute html =~ "--ca-id"
+      refute html =~ "--key-id"
+      refute html =~ "--pubkey"
 
       assert html =~
                "A customer-authorized bridge signs each request with a key the control plane never holds."
