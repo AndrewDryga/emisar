@@ -1859,9 +1859,8 @@ EOF
       if [ "${SERVICE_STARTED}" = "1" ]; then
         cat <<EOF
 
-The service is running. Check status / logs:
-  sudo systemctl status emisar
-  sudo journalctl -u emisar -f
+The service is running. Check the runner connection:
+  sudo ${BIN_DIR}/emisar status
 EOF
       else
         cat <<EOF
@@ -1869,9 +1868,8 @@ EOF
        sudo systemctl start emisar
      Or restart after editing config:
        sudo systemctl restart emisar
-  4. Check status / logs:
-       sudo systemctl status emisar
-       sudo journalctl -u emisar -f
+  4. Check the runner connection:
+       sudo ${BIN_DIR}/emisar status
 EOF
       fi
       ;;

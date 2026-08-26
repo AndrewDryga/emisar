@@ -161,6 +161,10 @@ actions fail; it costs one real call per pack.`,
 // are skipped rather than run against a zero config. probe adds the one check
 // that executes actions; without it doctor stays entirely offline.
 func runDoctor(ctx context.Context, probe bool) []checkResult {
+	return runDoctorChecks(ctx, probe, true)
+}
+
+func runDoctorChecks(ctx context.Context, probe, includeCloud bool) []checkResult {
 	cfg, cfgResult := checkConfig()
 	results := []checkResult{cfgResult}
 	if cfg == nil {
@@ -189,8 +193,10 @@ func runDoctor(ctx context.Context, probe bool) []checkResult {
 		results = append(results, *service)
 	}
 
-	client := httpsecurity.ClientWithTLS12(&http.Client{Timeout: cloudProbeTimeout})
-	results = append(results, checkCloud(ctx, cfg, client))
+	if includeCloud {
+		client := httpsecurity.ClientWithTLS12(&http.Client{Timeout: cloudProbeTimeout})
+		results = append(results, checkCloud(ctx, cfg, client))
+	}
 
 	return results
 }

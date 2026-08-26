@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runner-cli"
-      updated="August 23, 2026"
+      updated="August 26, 2026"
       toc={[
         {"running", "Running the CLI"},
         {"connect", "The connect daemon"},
@@ -33,7 +33,8 @@
         </.link>.
       </p>
 
-      <.docs_code phx-no-format label="web-01" copy_text="sudo emisar pack list"><span class="text-zinc-500">$</span> sudo emisar doctor          <span class="text-zinc-500"># offline preflight — run this first</span>
+      <.docs_code phx-no-format label="web-01" copy_text="sudo emisar status"><span class="text-zinc-500">$</span> sudo emisar status          <span class="text-zinc-500"># live daemon + connection summary</span>
+<span class="text-zinc-500">$</span> sudo emisar doctor          <span class="text-zinc-500"># offline preflight when status reports a problem</span>
 <span class="text-zinc-500">$</span> sudo emisar events tail -f  <span class="text-zinc-500"># the host-side security log, live</span>
 <span class="text-zinc-500">$</span> sudo emisar pack list
 ID            VERSION  ACTIONS  HASH                 DESCRIPTION
@@ -77,7 +78,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
             — machine-readable JSON, on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">action list</code>, every
             <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack</code>
             verb except <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install</code>
-            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">uninstall</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit verify</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">version</code>, and the signing verbs. A command that emits no JSON rejects the flag rather than sending human text into your pipeline.
+            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">uninstall</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">status</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit verify</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">version</code>, and the signing verbs. A command that emits no JSON rejects the flag rather than sending human text into your pipeline.
           </span>
         </li>
       </ul>
@@ -97,7 +98,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
             <%= for {what, path} <- [
               {"Config", "/etc/emisar/config.yaml"},
               {"Packs", "/etc/emisar/packs"},
-              {"Data dir (dispatch log, signing nonces)", "/var/lib/emisar"},
+              {"Data dir (dispatch log, signing nonces, runtime status)", "/var/lib/emisar"},
               {"Cached runner token", "/var/lib/emisar/token"},
               {"Events journal", "/var/log/emisar/events.jsonl"}
             ] do %>
@@ -132,7 +133,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         sends SIGHUP, which re-reads packs, rebuilds the signing verifier, and re-advertises
         the catalog on the live connection — in-flight runs keep executing across it.
       </p>
-      <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> sudo systemctl status emisar     <span class="text-zinc-500"># is the daemon up?</span>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> sudo emisar status               <span class="text-zinc-500"># daemon, connection, catalog, and in-flight runs</span>
+<span class="text-zinc-500">$</span> sudo systemctl status emisar     <span class="text-zinc-500"># is the service process up?</span>
 <span class="text-zinc-500">$</span> sudo journalctl -u emisar -f      <span class="text-zinc-500"># stream its logs</span>
 <span class="text-zinc-500">$</span> sudo systemctl reload emisar      <span class="text-zinc-500"># re-read packs + signing config (SIGHUP)</span>
 <span class="text-zinc-500">$</span> sudo systemctl restart emisar     <span class="text-zinc-500"># full restart</span></.docs_code>
@@ -389,6 +391,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-400">
             <%= for {cmd, what, mode} <- [
+              {"emisar status", "Correlate the live daemon lock and PID with its owner-only runtime snapshot. Reports the last successful heartbeat send, advertised catalog, uptime, connection attempts, and in-flight runs. Exits nonzero when the daemon or connection is unhealthy.", "Reads only"},
               {"emisar doctor", "Offline preflight: config, credential, dispatch log, pack dirs, packs, action binaries, service, and control-plane reachability. Exits nonzero if any check fails. --probe adds the pack verify run.", "Reads only"},
               {"emisar state", "Print the runner_state JSON this host advertises to the control plane.", "Reads only"},
               {"emisar events tail", "Print recent journal events. -f follows new events. --lines sets the count and defaults to 50.", "Reads only"},
@@ -407,10 +410,15 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           </tbody>
         </table>
       </div>
-      <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> sudo emisar doctor              <span class="text-zinc-500"># offline preflight — run this first</span>
+      <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> sudo emisar status              <span class="text-zinc-500"># running daemon + connection summary</span>
+<span class="text-zinc-500">$</span> sudo emisar doctor              <span class="text-zinc-500"># offline preflight when status reports a problem</span>
 <span class="text-zinc-500">$</span> sudo emisar events tail -f      <span class="text-zinc-500"># the local journal, live</span>
 <span class="text-zinc-500">$</span> sudo emisar audit verify --all  <span class="text-zinc-500"># re-derive the journal hash chain</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">status</code>
+        reads a mode-0600 snapshot written by the running daemon and verifies it against the held
+        process lock, PID, and heartbeat freshness. It proves only the host's latest successful
+        send; the console is authoritative for current control-plane receipt.
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>
         never opens a cloud session, and executes no action unless you pass <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--probe</code>, which adds the
         <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack verify</code>

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="quickstart"
-      updated="August 20, 2026"
+      updated="August 26, 2026"
       toc={[
         {"create-account", "Create your account"},
         {"install-runner", "Install the runner"},
@@ -79,11 +79,27 @@
         The console updates on its own: your host appears under <a
           href={~p"/app/runners"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Runners</a>, online, advertising the actions it can run. On the host, the same event is
-        in the journal:
+        >Runners</a>, online, advertising the actions it can run. On the host, ask the daemon for
+        its current local view:
       </p>
-      <.docs_code phx-no-format label="shell" copy_text="journalctl -u emisar -f"><span class="text-zinc-500">$</span> journalctl -u emisar -f
-<span class="text-zinc-500">level=INFO msg=cloud.connected actions=… packs=… inflight_runs=0</span></.docs_code>
+      <.docs_code phx-no-format label="shell" copy_text="sudo emisar status"><span class="text-zinc-500">$</span> sudo emisar status
+emisar status
+
+  ✓  connection    connected · heartbeat sent 3s ago
+  ✓  catalog       4 packs · 82 actions advertised · all available
+  ✓  process       PID 1842 · up 2m15s · 1 connection attempt(s)
+  ✓  runs          0 in flight (last reported by the daemon)
+  ✓  checks        7 local readiness checks passed
+
+Runner is connected and healthy.</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        This is local operational evidence. The
+        <a
+          href={~p"/app/runners"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runners</a>
+        page is authoritative for whether the control plane currently sees the host.
+      </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The stock <code class="font-mono">linux-core</code>
         pack is trusted automatically because its hash matches the one emisar publishes. A

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -85,6 +86,10 @@ type Options struct {
 	// optional diagnostic state, which is useful for in-memory test clients.
 	TerminalShutdownPath string
 
+	// RuntimeStatusPath receives the daemon's local operational snapshot.
+	// Empty disables it for in-memory clients and tests.
+	RuntimeStatusPath string
+
 	// Verifier is the INITIAL signature verifier gating dispatches; SIGHUP
 	// swaps it live via Client.SetVerifier. Nil (or a non-enforcing verifier)
 	// means client-signature enforcement is disabled.
@@ -137,6 +142,10 @@ type Client struct {
 	// fixed poll. Buffered size 1 — many enqueues between drains collapse
 	// into one wake, and senderLoop drains every run's outbox per wake.
 	wake chan struct{}
+
+	statusMu      sync.Mutex
+	runtimeStatus RuntimeStatus
+	runtimeWriter *runtimeStatusWriter
 }
 
 // runState is the per-request outbox. handleRun appends to it; the
@@ -202,7 +211,15 @@ func NewClient(d Dialer, opts Options) *Client {
 		finalizeRetries: map[string]struct{}{},
 		readvertise:     make(chan struct{}, 1),
 		wake:            make(chan struct{}, 1),
+		runtimeStatus: RuntimeStatus{
+			SchemaVersion:         1,
+			PID:                   os.Getpid(),
+			State:                 RuntimeStateConnecting,
+			StartedAt:             time.Now().UTC(),
+			HeartbeatEverySeconds: int64((opts.HeartbeatEvery + time.Second - 1) / time.Second),
+		},
 	}
+	c.runtimeStatus.UpdatedAt = c.runtimeStatus.StartedAt
 	c.verifier.Store(opts.Verifier)
 	return c
 }
@@ -232,6 +249,9 @@ func (c *Client) signalSend() {
 // coalesced — multiple Readvertise() invocations between sends produce
 // exactly one extra send.
 func (c *Client) Readvertise() {
+	c.updateRuntimeStatus(func(status *RuntimeStatus, _ time.Time) {
+		status.AdvertisementPending = true
+	})
 	select {
 	case c.readvertise <- struct{}{}:
 	default:
@@ -242,6 +262,9 @@ func (c *Client) Readvertise() {
 // In-flight actions survive reconnects; their queued messages replay
 // once the new session is established.
 func (c *Client) Run(ctx context.Context) error {
+	c.startRuntimeStatus()
+	defer c.stopRuntimeStatus()
+
 	if c.dedup.loadErr != nil {
 		// Refusing to start over unreadable at-most-once state is deliberate
 		// (a fresh empty log could double-run a redelivered mutation) — but
@@ -256,6 +279,9 @@ func (c *Client) Run(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return c.shutdown(err)
 		}
+		c.updateRuntimeStatus(func(status *RuntimeStatus, _ time.Time) {
+			status.ConnectionAttempts++
+		})
 		connected, err := c.runSession(ctx)
 		// Only a cancelled PARENT context means "shut the client down". A
 		// session that ended on its own — sender or heartbeat hit a write
@@ -279,6 +305,9 @@ func (c *Client) Run(ctx context.Context) error {
 		if errors.Is(err, ErrUnauthorized) {
 			return c.shutdown(err)
 		}
+		c.updateRuntimeStatus(func(status *RuntimeStatus, _ time.Time) {
+			status.State = RuntimeStateReconnecting
+		})
 		// A session that actually connected clears the backoff: the drop
 		// that ended it is a fresh failure, not a continuation of the
 		// reconnect storm. Without this the backoff ratchets up across
@@ -329,6 +358,12 @@ func (c *Client) runSession(parent context.Context) (bool, error) {
 	if err := conn.Send(sessionCtx, state); err != nil {
 		return true, fmt.Errorf("send state: %w", err)
 	}
+	c.updateRuntimeStatus(func(status *RuntimeStatus, now time.Time) {
+		status.State = RuntimeStateConnected
+		status.ConnectedAt = &now
+		status.LastHeartbeatSentAt = nil
+		setRuntimeCatalog(status, state)
+	})
 	if err := ClearTerminalShutdown(c.opts.TerminalShutdownPath); err != nil {
 		c.opts.Logger.Warn("cloud.shutdown_state_clear_failed", "error", err)
 	}
@@ -915,6 +950,7 @@ func (c *Client) markRunStarted(s *runState) {
 		RequestID:       s.requestID,
 	}})
 	s.mu.Unlock()
+	c.updateRuntimeStatus(func(_ *RuntimeStatus, _ time.Time) {})
 	c.signalSend()
 }
 
@@ -926,12 +962,14 @@ func (c *Client) finishRun(s *runState, result ActionResultMsg) {
 		// The durable reservation also prevents re-execution after a restart.
 		s.terminal = &result
 		s.mu.Unlock()
+		c.updateRuntimeStatus(func(_ *RuntimeStatus, _ time.Time) {})
 		c.opts.Logger.Error("cloud.dedup_persist_failed", "request_id", s.requestID, "error", err)
 		c.signalSend()
 		return
 	}
 	s.pending = append(s.pending, result)
 	s.mu.Unlock()
+	c.updateRuntimeStatus(func(_ *RuntimeStatus, _ time.Time) {})
 	c.signalSend()
 }
 
@@ -1297,6 +1335,9 @@ func (c *Client) readvertiseLoop(
 			"actions", len(state.Actions),
 			"packs", len(state.Packs),
 		)
+		c.updateRuntimeStatus(func(status *RuntimeStatus, _ time.Time) {
+			setRuntimeCatalog(status, state)
+		})
 		return true
 	}
 
@@ -1343,15 +1384,19 @@ func (c *Client) heartbeatLoop(ctx context.Context, sessionCancel context.Cancel
 			return
 		case <-t.C:
 			load := c.countInflight()
+			now := time.Now().UTC()
 			err := conn.Send(ctx, HeartbeatMsg{
 				Envelope:   Envelope{Type: MsgHeartbeat, ProtocolVersion: ProtocolVersion},
-				Time:       time.Now().UTC().Format(time.RFC3339),
+				Time:       now.Format(time.RFC3339),
 				ActionLoad: load,
 			})
 			if err != nil {
 				c.opts.Logger.Warn("cloud.heartbeat_failed", "error", err)
 				return
 			}
+			c.updateRuntimeStatus(func(status *RuntimeStatus, _ time.Time) {
+				status.LastHeartbeatSentAt = &now
+			})
 		}
 	}
 }

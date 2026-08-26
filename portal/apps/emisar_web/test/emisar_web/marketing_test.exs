@@ -1591,6 +1591,10 @@ defmodule EmisarWeb.MarketingTest do
       refute html =~ "--packs linux-core"
       assert html =~ "host-matched starter packs"
       assert html =~ ~s(href="/install.sh")
+      assert html =~ "sudo emisar status"
+      assert html =~ "heartbeat sent 3s ago"
+      assert html =~ "Runner is connected and healthy."
+      refute html =~ "journalctl -u emisar -f"
     end
 
     test "the quickstart routes each LLM client and proves the first MCP run", %{conn: conn} do
@@ -2098,6 +2102,8 @@ defmodule EmisarWeb.MarketingTest do
       refute keys =~ "non-expiring quick-connect keys"
 
       cli = conn |> get(~p"/docs/runner-cli") |> html_response(200)
+      assert cli =~ "sudo emisar status"
+      assert cli =~ "last successful heartbeat send"
       assert cli =~ "emisar audit verify --all"
       assert cli =~ "/etc/emisar/config.yaml"
       assert cli =~ "sudo emisar update"

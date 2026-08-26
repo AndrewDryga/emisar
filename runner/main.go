@@ -94,6 +94,7 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 	add("actions", actionCmd())
 	add("actions", packCmd())
 	add("diag", emitsJSON(doctorCmd()))
+	add("diag", emitsJSON(statusCmd()))
 	add("diag", stateCmd())
 	add("diag", eventsCmd())
 	add("diag", auditCmd())

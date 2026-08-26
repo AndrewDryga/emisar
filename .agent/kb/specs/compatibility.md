@@ -386,6 +386,7 @@ action list|describe|run
 pack install|suggest|update|list|info|uninstall|validate
 audit verify
 doctor
+status
 events tail|cat|grep
 signing init|new-ca|new-cert
 state [check-dispatch-log]
@@ -409,7 +410,14 @@ check-dispatch-log --data-dir`, `signing init --ca-name/--scope/--ttl/--key`,
 These command names and flags, including the documented aliases, are public
 inputs. The structured output
 `--json` emits exists to be parsed by scripts, so those shapes freeze with the
-flags: after 1.0 they change only additively.
+flags: after 1.0 they change only additively. That includes the complete
+`status --json` report and its embedded `runtime` object.
+
+The runner also writes `<paths.data_dir>/runtime-status.json` with exact
+`schema_version: 1`. It is an owner-only, advisory operational snapshot for
+`emisar status`: the reader must correlate it with the held runner lock, live
+PID, and heartbeat freshness. It is not a control-plane receipt, trust decision,
+or authority boundary. Its JSON shape joins the compatibility freeze at 1.0.
 
 The runner configuration is YAML with exact `schema_version: 1` and strict
 keys. Its top-level sections are `runner`, `cloud`, `paths`, `execution`,

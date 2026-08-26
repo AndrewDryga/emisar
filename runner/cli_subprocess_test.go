@@ -151,7 +151,7 @@ func TestCLI_NoArgsAndHelpPrintRootHelpExitZero(t *testing.T) {
 			// The help must enumerate the subcommands (the operator's map of the
 			// CLI) and the category headers that group them.
 			for _, want := range []string{
-				"Usage:", "connect", "pack", "action", "audit", "doctor", "events", "signing", "state", "update", "version",
+				"Usage:", "connect", "pack", "action", "audit", "doctor", "status", "events", "signing", "state", "update", "version",
 				"Serve:", "Actions & packs:", "Diagnose & audit:", "Maintain:", "Signed dispatch:",
 			} {
 				if !strings.Contains(stdout, want) {
@@ -352,6 +352,25 @@ func TestCLI_JSONFlagPayloads(t *testing.T) {
 			t.Errorf("report must carry its checks, got %#v", report["checks"])
 		}
 		for _, forbidden := range []string{"emisar doctor", "✓", "✗", "\x1b["} {
+			if strings.Contains(stdout, forbidden) {
+				t.Errorf("--json output must not contain %q:\n%s", forbidden, stdout)
+			}
+		}
+	})
+
+	t.Run("status emits JSON and refuses a leftover-or-absent daemon", func(t *testing.T) {
+		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "status", "--json"}, nil)
+		if code != 1 {
+			t.Fatalf("exit = %d, want 1; stderr=%q", code, stderr)
+		}
+		var report map[string]any
+		if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+			t.Fatalf("status --json must emit a JSON object, got %q: %v", stdout, err)
+		}
+		if report["status"] != "fail" {
+			t.Errorf(`status = %#v, want "fail"`, report["status"])
+		}
+		for _, forbidden := range []string{"emisar status", "✓", "✗", "\x1b["} {
 			if strings.Contains(stdout, forbidden) {
 				t.Errorf("--json output must not contain %q:\n%s", forbidden, stdout)
 			}

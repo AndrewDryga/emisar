@@ -30,17 +30,18 @@ available for development and evaluation.
 3. Verify the host and the control-plane connection:
 
    ```sh
-   sudo emisar doctor
-   sudo systemctl status emisar
-   sudo journalctl -u emisar -f
+   sudo emisar status
    ```
 
 4. Confirm the runner is online in the console. Dispatch `linux.uptime` with
    a reason and check that the result appears in the audit trail.
 
-`emisar doctor` is the first troubleshooting command. It checks configuration,
-credentials, pack contents, required host binaries, and control-plane reachability
-without opening a cloud session, and reports all failures in one run.
+`emisar status` reads the running daemon's owner-only local snapshot and reports
+its last successful heartbeat send, advertised catalog, process uptime, and
+in-flight run count. The console remains authoritative for whether the control
+plane currently sees the runner. If status reports a problem, `emisar doctor`
+checks configuration, credentials, pack contents, required host binaries, and
+control-plane reachability without opening a cloud session.
 
 The complete operator walkthrough is at
 [emisar.dev/docs/quickstart](https://emisar.dev/docs/quickstart). Container and
@@ -83,6 +84,7 @@ The supervised installer uses these paths by default:
 | `/etc/emisar/runner.env` | Mode-0600 enrollment key and pack credentials |
 | `/etc/emisar/packs/` | Installed action packs |
 | `/var/lib/emisar/` | Per-runner token and durable execution state |
+| `/var/lib/emisar/runtime-status.json` | Mode-0600 advisory daemon health snapshot for `emisar status` |
 | `/var/log/emisar/events.jsonl` | Hash-chained local security journal |
 
 The portal-generated install command writes the URL and enrollment key for you.
@@ -197,7 +199,8 @@ the locally installed catalog.
 | Start | `sudo systemctl start emisar` | `sudo launchctl bootstrap system /Library/LaunchDaemons/com.emisar.runner.plist` |
 | Stop | `sudo systemctl stop emisar` | `sudo launchctl bootout system /Library/LaunchDaemons/com.emisar.runner.plist` |
 | Restart | `sudo systemctl restart emisar` | bootout, then bootstrap |
-| Status | `sudo systemctl status emisar` | `sudo launchctl print system/com.emisar.runner` |
+| Runner health | `sudo emisar status` | `sudo emisar status` |
+| Service state | `sudo systemctl status emisar` | `sudo launchctl print system/com.emisar.runner` |
 | Follow logs | `sudo journalctl -u emisar -f` | `tail -f /var/log/emisar/emisar.err.log` |
 | Reload packs and signing trust | `sudo systemctl reload emisar` | `sudo launchctl kill HUP system/com.emisar.runner` |
 | Tail the local journal | `sudo emisar events tail` | `sudo emisar events tail` |

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -35,21 +36,32 @@ func notifyRunnerReload(cfg *config.Config) bool {
 	if dataDir == "" {
 		return false
 	}
-	lockPath := runnerLockPath(dataDir)
-
-	held, err := fsutil.ProbeFileLock(lockPath)
+	pid, held, err := probeRunnerLockOwner(dataDir)
 	if err != nil || !held {
 		return false
 	}
+	return syscall.Kill(pid, syscall.SIGHUP) == nil
+}
 
+// probeRunnerLockOwner returns the PID recorded by a currently held runner
+// lock. The flock is the liveness proof; an unlocked record is stale even when
+// its PID happens to have been reused by another process.
+func probeRunnerLockOwner(dataDir string) (pid int, held bool, err error) {
+	lockPath := runnerLockPath(dataDir)
+	held, err = fsutil.ProbeFileLock(lockPath)
+	if os.IsNotExist(err) {
+		return 0, false, nil
+	}
+	if err != nil || !held {
+		return 0, held, err
+	}
 	raw, err := os.ReadFile(lockPath)
 	if err != nil {
-		return false
+		return 0, true, err
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	pid, err = strconv.Atoi(strings.TrimSpace(string(raw)))
 	if err != nil || pid <= 0 {
-		return false
+		return 0, true, fmt.Errorf("runner lock has an invalid PID record")
 	}
-
-	return syscall.Kill(pid, syscall.SIGHUP) == nil
+	return pid, true, nil
 }
