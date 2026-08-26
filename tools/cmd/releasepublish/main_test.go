@@ -163,6 +163,10 @@ func TestPublishUploadsImmutableObjectsBeforeLatest(t *testing.T) {
 	if manifest.Tag != "runner-v1.2.3" || len(manifest.Artifacts) != 4 {
 		t.Fatalf("latest manifest = %+v", manifest)
 	}
+	bundleName := "releases/runner/runner-v1.2.3/SHA256SUMS.sigstore.jsonl"
+	if got := fake.objects[bundleName].contentType; got != "application/json" {
+		t.Errorf("%s Content-Type = %q, want application/json", bundleName, got)
+	}
 }
 
 func TestPublishIsIdempotentAndDoesNotMoveLatestBackward(t *testing.T) {
@@ -212,6 +216,9 @@ func TestPublishMCPIncludesWindowsArchives(t *testing.T) {
 	}
 	if len(manifest.Artifacts) != 6 || manifest.Artifacts[4].Name != names[0] || manifest.Artifacts[5].Name != names[1] {
 		t.Fatalf("latest manifest artifacts = %+v", manifest.Artifacts)
+	}
+	if _, ok := fake.objects["releases/mcp/mcp-v1.2.3/SHA256SUMS-MCP.sigstore.jsonl"]; !ok {
+		t.Fatal("MCP checksum attestation bundle was not published")
 	}
 }
 
@@ -275,6 +282,75 @@ func TestPublishRejectsDifferentBytesAtImmutablePath(t *testing.T) {
 	}
 }
 
+func TestPublishRejectsRegeneratedAttestationBundle(t *testing.T) {
+	dir := buildRelease(t, "runner", "1.2.3")
+	fake := newFakeGCS(t)
+	opts := testOptions(dir, fake, "runner", "runner-v1.2.3", strings.Repeat("e", 40))
+	if err := publish(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SHA256SUMS.sigstore.jsonl"), []byte("{\"bundle\":\"regenerated\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := publish(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "SHA256SUMS.sigstore.jsonl already exists with different bytes") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestPublishRejectsMissingOrUnboundedAttestationBundleBeforeUpload(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, string)
+		want   string
+	}{
+		{
+			name: "missing",
+			mutate: func(t *testing.T, path string) {
+				t.Helper()
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "open SHA256SUMS.sigstore.jsonl",
+		},
+		{
+			name: "empty",
+			mutate: func(t *testing.T, path string) {
+				t.Helper()
+				if err := os.Truncate(path, 0); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "SHA256SUMS.sigstore.jsonl is empty",
+		},
+		{
+			name: "oversized",
+			mutate: func(t *testing.T, path string) {
+				t.Helper()
+				if err := os.Truncate(path, maxAttestationBundleSize+1); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "SHA256SUMS.sigstore.jsonl exceeds 4194304 bytes",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := buildRelease(t, "runner", "1.2.3")
+			tt.mutate(t, filepath.Join(dir, "SHA256SUMS.sigstore.jsonl"))
+			fake := newFakeGCS(t)
+			err := publish(context.Background(), testOptions(dir, fake, "runner", "runner-v1.2.3", strings.Repeat("f", 40)))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want substring %q", err, tt.want)
+			}
+			if len(fake.order) != 0 {
+				t.Fatalf("uploaded before validation: %v", fake.order)
+			}
+		})
+	}
+}
+
 func testOptions(dir string, fake *fakeGCS, component, tag, revision string) options {
 	return options{
 		dir:            dir,
@@ -321,6 +397,9 @@ func buildRelease(t *testing.T, component, version string) string {
 		fmt.Fprintf(&checksums, "%s  %s\n", digest, name)
 	}
 	if err := os.WriteFile(filepath.Join(dir, checksumsName), []byte(checksums.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, checksumsName+".sigstore.jsonl"), []byte("{\"bundle\":true}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return dir

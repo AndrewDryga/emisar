@@ -27,8 +27,9 @@ import (
 )
 
 const (
-	defaultEndpoint = "https://storage.googleapis.com"
-	maxObjectBytes  = 256 << 20
+	defaultEndpoint          = "https://storage.googleapis.com"
+	maxObjectBytes           = 256 << 20
+	maxAttestationBundleSize = 4 << 20
 )
 
 var errPrecondition = errors.New("object generation changed")
@@ -218,6 +219,20 @@ func buildObjects(opts options, version semver) ([]object, []byte, error) {
 		name:        base + checksumName,
 		contentType: "text/plain",
 		data:        checksums,
+		immutable:   true,
+	})
+	bundleName := checksumName + ".sigstore.jsonl"
+	bundle, err := readBounded(filepath.Join(opts.dir, bundleName), maxAttestationBundleSize)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(bundle) == 0 {
+		return nil, nil, fmt.Errorf("%s is empty", bundleName)
+	}
+	objects = append(objects, object{
+		name:        base + bundleName,
+		contentType: "application/json",
+		data:        bundle,
 		immutable:   true,
 	})
 	manifest, err := json.MarshalIndent(releaseManifest{

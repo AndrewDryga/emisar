@@ -71,10 +71,10 @@ resource "google_iam_workload_identity_pool_provider" "github_releases" {
     "assertion.repository == \"${var.github_repository}\"",
     "assertion.repository_id == \"${var.github_repository_id}\"",
     "assertion.environment == \"public-releases\"",
-    "assertion.job_workflow_sha == \"e20ae8f8e98931868b369b7c1d58892a28ad219d\"",
+    "assertion.job_workflow_sha == \"8bc034250767a3d3d8f4c84c9f6e1d693a624a23\"",
     "(${join(" || ", [
-      "(assertion.ref.startsWith(\"refs/tags/runner-v\") && assertion.job_workflow_ref == \"${var.github_repository}/.github/workflows/runner-release-trusted.yml@e20ae8f8e98931868b369b7c1d58892a28ad219d\")",
-      "(assertion.ref.startsWith(\"refs/tags/mcp-v\") && assertion.job_workflow_ref == \"${var.github_repository}/.github/workflows/mcp-release-trusted.yml@e20ae8f8e98931868b369b7c1d58892a28ad219d\")",
+      "(assertion.ref.startsWith(\"refs/tags/runner-v\") && assertion.job_workflow_ref == \"${var.github_repository}/.github/workflows/runner-release-trusted.yml@8bc034250767a3d3d8f4c84c9f6e1d693a624a23\")",
+      "(assertion.ref.startsWith(\"refs/tags/mcp-v\") && assertion.job_workflow_ref == \"${var.github_repository}/.github/workflows/mcp-release-trusted.yml@8bc034250767a3d3d8f4c84c9f6e1d693a624a23\")",
     ])})",
   ])
 }

@@ -170,7 +170,7 @@ resource "google_storage_bucket_iam_member" "release_pointer_publisher" {
 resource "google_service_account_iam_member" "release_publisher_wif" {
   service_account_id = google_service_account.release_publisher.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.job_workflow_sha/e20ae8f8e98931868b369b7c1d58892a28ad219d"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.job_workflow_sha/8bc034250767a3d3d8f4c84c9f6e1d693a624a23"
 
   depends_on = [google_iam_workload_identity_pool_provider.github_releases]
 }
