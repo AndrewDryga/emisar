@@ -587,10 +587,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # through to the context, which re-checks the live plan and rejects it.
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
-      {_deleted, _} =
-        Emisar.Billing.Subscription.Query.all()
-        |> Emisar.Billing.Subscription.Query.by_account_id(account.id)
-        |> Repo.delete_all()
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
 
       refute Emisar.Billing.sso_available?(account)
 
@@ -1313,15 +1310,14 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       owner = Fixtures.Subjects.subject_for(user, account)
       {:ok, provider, _raw} = SSO.enable_scim(provider, owner)
 
-      {_deleted, _} =
-        Emisar.Billing.Subscription.Query.all()
-        |> Emisar.Billing.Subscription.Query.by_account_id(account.id)
-        |> Repo.delete_all()
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
 
       refute Emisar.Billing.sso_available?(account)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
+      assert html =~ "This connection is dormant"
+      assert html =~ "Sign-ins and its directory token are refused"
       assert html =~ "Disable directory sync"
       refute html =~ "Turn off directory sync"
       assert has_element?(lv, "#disable-scim-#{provider.id}")

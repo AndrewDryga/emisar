@@ -191,20 +191,46 @@ defmodule EmisarWeb.Components.CalloutTest do
   end
 
   describe "subscription_banner/1" do
-    test "past_due renders the rose callout; healthy statuses render nothing" do
+    test "dunning renders the rose callout; healthy states render nothing" do
       assigns = %{}
 
-      past_due =
-        rendered_to_string(~H|<DomainComponents.subscription_banner status="past_due" />|)
+      dunning =
+        rendered_to_string(
+          ~H|<DomainComponents.subscription_banner entitlement_state={:dunning} status="past_due" />|
+        )
 
-      assert past_due =~ "Payment past due"
-      assert past_due =~ "bg-rose-400/40"
+      assert dunning =~ "Payment recovery in progress"
+      assert dunning =~ "Paid features remain available"
+      assert dunning =~ "bg-rose-400/40"
 
       healthy =
-        rendered_to_string(~H|<DomainComponents.subscription_banner status="active" />|)
+        rendered_to_string(
+          ~H|<DomainComponents.subscription_banner entitlement_state={:active} status="active" />|
+        )
 
       refute healthy =~ "bg-rose-400/40"
       refute healthy =~ "bg-amber-300/40"
+    end
+
+    test "expired and unresolved states explain the access boundary" do
+      assigns = %{}
+
+      expired =
+        rendered_to_string(
+          ~H|<DomainComponents.subscription_banner entitlement_state={:expired} status="canceled" />|
+        )
+
+      assert expired =~ "Subscription ended"
+      assert expired =~ "Free limits"
+      assert expired =~ "Paid integrations are dormant"
+
+      unresolved =
+        rendered_to_string(
+          ~H|<DomainComponents.subscription_banner entitlement_state={:unresolved} status="mystery" />|
+        )
+
+      assert unresolved =~ "Billing status unavailable"
+      assert unresolved =~ "an unused one-time audit CSV allowance"
     end
   end
 end

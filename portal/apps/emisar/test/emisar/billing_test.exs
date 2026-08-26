@@ -22,12 +22,20 @@ defmodule Emisar.BillingTest.ErrorPaddleClient do
   def create_checkout_session(_attrs), do: {:error, :paddle_unavailable}
 
   @impl true
+  def bind_checkout_transaction(_id, _binding), do: {:error, :paddle_unavailable}
+
+  @impl true
   # A non-`{:ok, %{"url" => _}}` shape — the live API returning something we
   # don't model. `open_billing_portal/2` passes it through verbatim.
   def create_billing_portal_session(_attrs), do: {:error, :paddle_unavailable}
 
   @impl true
   def retrieve_subscription(_id), do: {:error, :paddle_unavailable}
+
+  @impl true
+  def retrieve_transaction(_id), do: {:error, :paddle_unavailable}
+  @impl true
+  def list_subscriptions(_attrs), do: {:error, :paddle_unavailable}
 
   @impl true
   def list_products, do: {:error, :paddle_unavailable}
@@ -67,10 +75,18 @@ defmodule Emisar.BillingTest.ConflictingCustomerPaddleClient do
   def cancel_subscription(_id), do: {:error, :unused}
   @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
+
+  @impl true
+  def bind_checkout_transaction(_id, _binding), do: {:error, :unused}
   @impl true
   def create_billing_portal_session(_attrs), do: {:error, :unused}
   @impl true
   def retrieve_subscription(_id), do: {:error, :unused}
+
+  @impl true
+  def retrieve_transaction(_id), do: {:error, :unused}
+  @impl true
+  def list_subscriptions(_attrs), do: {:error, :unused}
   @impl true
   def list_products, do: {:error, :unused}
   @impl true
@@ -179,14 +195,16 @@ defmodule Emisar.BillingTest do
       assert Billing.directory_sync_available?(account)
     end
 
-    test "status-agnostic: a canceled subscription still grants its plan", %{account: account} do
-      # Billing status is advisory today — it informs (banners), it never
-      # restricts — so a lapsed subscription keeps resolving to its plan
-      # until status enforcement becomes a deliberate product decision.
+    test "a canceled subscription uses Free entitlements but retains its subscribed plan", %{
+      account: account
+    } do
       Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
 
-      assert Billing.account_plan(account) == "enterprise"
-      assert Billing.sso_available?(account)
+      assert Billing.account_plan(account) == "free"
+      refute Billing.sso_available?(account)
+
+      assert {:ok, %{plan: "free", subscribed_plan: "enterprise", entitlement_state: :expired}} =
+               Billing.support_plan(account)
     end
 
     test "a webhook plan change is reflected immediately — the account row is never touched" do
@@ -208,6 +226,63 @@ defmodule Emisar.BillingTest do
       # enterprise — proof the gate reads the subscription, not the account.
       assert Billing.account_plan(account) == "enterprise"
       assert Billing.sso_available?(account)
+    end
+  end
+
+  describe "entitlement_state/2" do
+    test "projects every owned lifecycle state at the exact scheduled deadline" do
+      now = ~U[2026-08-26 12:00:00.000000Z]
+      future = DateTime.add(now, 60, :second)
+      past = DateTime.add(now, -1, :second)
+
+      assert Billing.entitlement_state(nil, now) == :free
+      assert Billing.entitlement_state(%Subscription{status: "complimentary"}, now) == :active
+      assert Billing.entitlement_state(%Subscription{status: "active"}, now) == :active
+      assert Billing.entitlement_state(%Subscription{status: "trialing"}, now) == :active
+
+      assert Billing.entitlement_state(
+               %Subscription{status: "past_due", collection_mode: "automatic"},
+               now
+             ) == :dunning
+
+      assert Billing.entitlement_state(%Subscription{status: "past_due"}, now) == :unresolved
+
+      for action <- ["cancel", "pause"] do
+        assert Billing.entitlement_state(
+                 %Subscription{
+                   status: "past_due",
+                   collection_mode: "manual",
+                   scheduled_change_action: action,
+                   scheduled_change_effective_at: future
+                 },
+                 now
+               ) == :unresolved
+      end
+
+      ending = %Subscription{
+        status: "active",
+        scheduled_change_action: "cancel",
+        scheduled_change_effective_at: future
+      }
+
+      assert Billing.entitlement_state(ending, now) == :ending
+
+      assert Billing.entitlement_state(%{ending | scheduled_change_effective_at: now}, now) ==
+               :expired
+
+      assert Billing.entitlement_state(%{ending | scheduled_change_effective_at: past}, now) ==
+               :expired
+
+      assert Billing.entitlement_state(
+               %{ending | scheduled_change_action: "pause"},
+               now
+             ) == :ending
+
+      assert Billing.entitlement_state(%Subscription{status: "paused"}, now) == :expired
+      assert Billing.entitlement_state(%Subscription{status: "canceled"}, now) == :expired
+
+      assert Billing.entitlement_state(%Subscription{status: "future_vendor_state"}, now) ==
+               :unresolved
     end
   end
 
@@ -248,6 +323,15 @@ defmodule Emisar.BillingTest do
 
       assert Billing.account_audit_retention_days(account.id) == 90
     end
+
+    test "unresolved lifecycle denies paid features but preserves the longest retention" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "team", status: "future_vendor_state")
+
+      assert Billing.account_plan(account) == "free"
+      refute Billing.sso_available?(account)
+      assert Billing.account_audit_retention_days(account.id) == 365
+    end
   end
 
   describe "sso_available?/1" do
@@ -284,6 +368,16 @@ defmodule Emisar.BillingTest do
       )
 
       assert Billing.sso_available?(custom)
+    end
+  end
+
+  describe "sso_available_for_account_id?/2" do
+    test "rechecks the authoritative row by id for pre-auth and locked callers" do
+      account = Fixtures.Accounts.create_account(plan: "team")
+      assert Billing.sso_available_for_account_id?(account.id, [])
+
+      Fixtures.Accounts.create_subscription(account, "team", status: "canceled")
+      refute Billing.sso_available_for_account_id?(account.id, [])
     end
   end
 
@@ -324,6 +418,16 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "continuous_audit_export_available_for_account_id?/2" do
+    test "withdraws repeated export when the subscription expires" do
+      account = Fixtures.Accounts.create_account(plan: "team")
+      assert Billing.continuous_audit_export_available_for_account_id?(account.id, [])
+
+      Fixtures.Accounts.create_subscription(account, "team", status: "paused")
+      refute Billing.continuous_audit_export_available_for_account_id?(account.id, [])
+    end
+  end
+
   describe "directory_sync_available?/1" do
     setup do
       %{account: Fixtures.Accounts.create_account()}
@@ -350,6 +454,16 @@ defmodule Emisar.BillingTest do
       )
 
       assert Billing.directory_sync_available?(account)
+    end
+  end
+
+  describe "directory_sync_available_for_account_id?/2" do
+    test "withdraws SCIM when Enterprise expires" do
+      account = Fixtures.Accounts.create_account(plan: "enterprise")
+      assert Billing.directory_sync_available_for_account_id?(account.id, [])
+
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
+      refute Billing.directory_sync_available_for_account_id?(account.id, [])
     end
   end
 
@@ -632,7 +746,7 @@ defmodule Emisar.BillingTest do
       assert is_nil(updated.paddle_updated_at)
     end
 
-    test "a cancel with no updated_at still cancels" do
+    test "a cancel is ordered by the webhook occurred_at when data has no updated_at" do
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_cancel_01"})
 
       {:ok, _} =
@@ -640,15 +754,13 @@ defmodule Emisar.BillingTest do
           paddle_subscription_id: "sub_cancel_01",
           plan: "team",
           status: "active",
-          paddle_updated_at: DateTime.utc_now()
+          paddle_updated_at: ~U[2026-08-25 00:00:00.000000Z]
         })
 
-      # Paddle does not always send updated_at. The staleness guard drops what it
-      # cannot prove is newer, which for a cancel left the account ACTIVE
-      # forever — with a 200 back, so Paddle never retried.
       assert {:ok, _} =
                Billing.apply_webhook_event(%{
                  "event_type" => "subscription.canceled",
+                 "occurred_at" => "2026-08-26T00:00:00Z",
                  "data" => %{"id" => "sub_cancel_01"}
                })
 
@@ -683,14 +795,6 @@ defmodule Emisar.BillingTest do
                })
 
       assert Emisar.Runners.count_billable_runners(account.id) == 5
-
-      # account_plan is status-agnostic, so "team" still resolves even after cancel;
-      # set the plan to free to model the real downgrade and prove the gate then
-      # blocks only the NEXT runner while the over-cap five keep running.
-      # A support plan flip is a manual write: the vendor staleness guard would
-      # otherwise drop it, because a mirrored row now carries paddle_updated_at.
-      {:ok, _} =
-        Billing.upsert_subscription(account.id, %{plan: "free", status: "canceled"}, manual: true)
 
       assert Billing.account_plan(account) == "free"
       assert Billing.check_limit(account, :runners) === {:error, :over_limit, "free", 3}
@@ -1280,6 +1384,37 @@ defmodule Emisar.BillingTest do
       refute subscription.billing_interval
     end
 
+    test "a first-seen webhook cannot replace a different live subscription" do
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_live_webhook_01"})
+
+      {:ok, live} =
+        Billing.upsert_subscription(account.id, %{
+          paddle_subscription_id: "sub_live_webhook_01",
+          plan: "team",
+          status: "active"
+        })
+
+      binding = Emisar.Crypto.paddle_account_binding(account.id, "txn_competing_webhook")
+
+      event =
+        subscription_created_event(
+          "evt_competing_webhook",
+          account.paddle_customer_id,
+          "pri_team_01"
+        )
+        |> put_in(["data", "custom_data"], %{"emisar_account_binding" => binding})
+        |> put_in(["data", "transaction_id"], "txn_competing_webhook")
+
+      assert Billing.record_and_apply_event(
+               "evt_competing_webhook",
+               "subscription.created",
+               event
+             ) == {:error, {:apply_failed, :different_live_subscription}}
+
+      assert Repo.reload!(live).paddle_subscription_id == "sub_live_webhook_01"
+      refute processed_event?("evt_competing_webhook")
+    end
+
     test "mirrors the price's billing cadence so an annual subscriber is priced per year" do
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_annual_01"})
 
@@ -1397,7 +1532,12 @@ defmodule Emisar.BillingTest do
 
     test "falls back to the account's current plan when the payload carries no plan identity" do
       account =
-        Fixtures.Accounts.create_account(%{plan: "enterprise", paddle_customer_id: "ctm_ent_01"})
+        Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_ent_01"})
+
+      Fixtures.Accounts.create_subscription(account, "enterprise",
+        paddle_subscription_id: "sub_old_enterprise_01",
+        status: "canceled"
+      )
 
       # A lean payload with no product object — nothing identifies the plan.
       event =
@@ -1669,15 +1809,14 @@ defmodule Emisar.BillingTest do
     test "an apply failure rolls back the dedup row so redelivery reprocesses" do
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_fail_01"})
 
-      # A payload with no status fails `validate_required(:status)` inside
-      # the same transaction — the apply returns {:error, changeset}. (An
+      # A payload with no status is malformed inside the same transaction. An
       # UNKNOWN status string deliberately persists — Paddle owns the value
-      # space — so a missing field is the failure mode to exercise here.)
+      # space — so a missing field is the failure mode to exercise here.
       bad_event =
         subscription_created_event("evt_fail", account.paddle_customer_id, nil)
         |> put_in(["data", "status"], nil)
 
-      assert {:error, {:apply_failed, %Ecto.Changeset{}}} =
+      assert {:error, {:apply_failed, :malformed_subscription}} =
                Billing.record_and_apply_event("evt_fail", "subscription.created", bad_event)
 
       # The dedup row MUST be absent — otherwise Paddle's retry is swallowed.
@@ -1935,10 +2074,9 @@ defmodule Emisar.BillingTest do
 
   describe "apply_webhook_event/1 — subscription.updated rollback + ordering" do
     test "a missing status on an update fails the apply and rolls the dedup row back" do
-      # An update lacking `status` fails `validate_required([..., :status])` exactly
-      # as a created does (the upsert changeset is shared), so the apply returns
-      # {:error, changeset}, record_and_apply_event rolls the dedup row back, and
-      # Paddle's redelivery reprocesses rather than being swallowed.
+      # A full lifecycle payload without status is malformed before any partial
+      # update can preserve the old value. The apply error rolls the dedup row
+      # back, so Paddle's redelivery is reprocessed rather than swallowed.
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_upd_nostatus_01"})
 
       created =
@@ -1959,7 +2097,7 @@ defmodule Emisar.BillingTest do
         )
         |> put_in(["data", "status"], nil)
 
-      assert {:error, {:apply_failed, %Ecto.Changeset{}}} =
+      assert {:error, {:apply_failed, :malformed_subscription}} =
                Billing.record_and_apply_event(
                  "evt_upd_nostatus_apply",
                  "subscription.updated",
@@ -2053,11 +2191,8 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "apply_webhook_event/1 — subscription.canceled keeps entitlement" do
-    test "a canceled subscription still resolves to its plan (advisory-only status)" do
-      # Cancel writes ONLY status: "canceled"; account_plan/1 is status-agnostic,
-      # so the plan/limits are unchanged and a runner under the (Team) cap still
-      # registers. Status is an advisory banner, never an entitlement gate.
+  describe "apply_webhook_event/1 — subscription.canceled expires entitlement" do
+    test "a canceled subscription uses Free limits without deleting existing resources" do
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_cancel_ent_01"})
 
       {:ok, _} =
@@ -2073,8 +2208,7 @@ defmodule Emisar.BillingTest do
                  "data" => %{"id" => "sub_cancel_ent_01"}
                })
 
-      # Entitlement untouched: still Team, still well under the 100-runner cap.
-      assert Billing.account_plan(account) == "team"
+      assert Billing.account_plan(account) == "free"
       assert Billing.check_limit(account, :runners) == :ok
     end
 
@@ -2124,12 +2258,8 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "apply_webhook_event/1 — unmodeled subscription event types" do
-    test "pause/resume/trialing are unhandled no-ops that leave the mirror untouched" do
-      # emisar does NOT mirror subscription.paused/resumed/trialing — they hit
-      # the catch-all `apply_webhook_event(_event), do: :ok`. The existing row's
-      # status is preserved (those banner statuses only arise via a
-      # subscription.updated payload, which IS modeled).
+  describe "apply_webhook_event/1 — lifecycle event types" do
+    test "pause, resume, and trial events converge through the shared mapper" do
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_unmodeled_01"})
 
       {:ok, _} =
@@ -2139,19 +2269,25 @@ defmodule Emisar.BillingTest do
           status: "active"
         })
 
-      for event_type <- ["subscription.paused", "subscription.resumed", "subscription.trialing"] do
-        assert Billing.apply_webhook_event(%{
-                 "event_type" => event_type,
-                 "data" => %{
-                   "id" => "sub_unmodeled_01",
-                   "customer_id" => account.paddle_customer_id,
-                   "status" => "paused"
-                 }
-               }) == :ok
+      for {event_type, status, expected_state} <- [
+            {"subscription.paused", "paused", :expired},
+            {"subscription.resumed", "active", :active},
+            {"subscription.trialing", "trialing", :active}
+          ] do
+        assert {:ok, subscription} =
+                 Billing.apply_webhook_event(%{
+                   "event_type" => event_type,
+                   "data" => %{
+                     "id" => "sub_unmodeled_01",
+                     "customer_id" => account.paddle_customer_id,
+                     "status" => status
+                   }
+                 })
+
+        assert Billing.entitlement_state(subscription) == expected_state
       end
 
-      # The mirror still reads its pre-event status — none of the three wrote.
-      assert %Subscription{status: "active"} =
+      assert %Subscription{status: "trialing"} =
                Subscription.Query.all()
                |> Subscription.Query.by_account_id(account.id)
                |> Repo.one()
@@ -2266,6 +2402,274 @@ defmodule Emisar.BillingTest do
       Map.put(item, "product", product)
     else
       item
+    end
+  end
+
+  describe "reconcile_subscription_data/1" do
+    test "discovers a missed created event by Paddle customer and fails malformed input closed" do
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_discovery_01"})
+
+      assert {:ok, %Subscription{account_id: account_id, status: "active"}} =
+               Billing.reconcile_subscription_data(%{
+                 "id" => "sub_discovery_01",
+                 "customer_id" => account.paddle_customer_id,
+                 "status" => "active",
+                 "collection_mode" => "automatic",
+                 "items" => [subscription_item("pri_team_01", [])]
+               })
+
+      assert account_id == account.id
+
+      assert Billing.reconcile_subscription_data(%{"id" => "sub_no_status"}) ==
+               {:error, :malformed_subscription}
+    end
+
+    test "a response fetched before a webhook cannot rewind the newer lifecycle state" do
+      account = Fixtures.Accounts.create_account()
+
+      {:ok, before_fetch} =
+        Billing.upsert_subscription(account.id, %{
+          paddle_subscription_id: "sub_reconcile_race_01",
+          plan: "team",
+          status: "active",
+          paddle_updated_at: ~U[2026-08-26 00:00:00.000000Z]
+        })
+
+      {:ok, canceled} =
+        Billing.upsert_subscription(account.id, %{
+          status: "canceled",
+          paddle_event_occurred_at: ~U[2026-08-26 00:01:00.000000Z]
+        })
+
+      stale_response = %{
+        "id" => "sub_reconcile_race_01",
+        "status" => "active",
+        "updated_at" => "2026-08-26T00:00:00Z"
+      }
+
+      assert Billing.reconcile_subscription_data(stale_response,
+               expected_subscription: before_fetch
+             ) == {:error, :stale_reconciliation}
+
+      assert Repo.reload!(canceled).status == "canceled"
+    end
+
+    test "a late webhook cannot rewind a newer repaired object state" do
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_repair_order_01"})
+
+      {:ok, _subscription} =
+        Billing.upsert_subscription(account.id, %{
+          paddle_subscription_id: "sub_repair_order_01",
+          plan: "team",
+          status: "active",
+          paddle_updated_at: ~U[2026-08-26 00:10:00.000000Z],
+          paddle_event_occurred_at: ~U[2026-08-26 00:10:00.000000Z]
+        })
+
+      assert {:ok, %Subscription{status: "canceled"}} =
+               Billing.reconcile_subscription_data(%{
+                 "id" => "sub_repair_order_01",
+                 "customer_id" => account.paddle_customer_id,
+                 "status" => "canceled",
+                 "updated_at" => "2026-08-26T00:30:00Z"
+               })
+
+      assert {:ok, %Subscription{status: "canceled"}} =
+               Billing.apply_webhook_event(%{
+                 "event_type" => "subscription.updated",
+                 "occurred_at" => "2026-08-26T00:20:00Z",
+                 "data" => %{
+                   "id" => "sub_repair_order_01",
+                   "customer_id" => account.paddle_customer_id,
+                   "status" => "active",
+                   "updated_at" => "2026-08-26T00:20:00Z"
+                 }
+               })
+
+      # Once ordering is established, a timestamp-free webhook is not allowed
+      # to opt out of it either.
+      assert {:ok, %Subscription{status: "canceled"}} =
+               Billing.apply_webhook_event(%{
+                 "event_type" => "subscription.updated",
+                 "data" => %{
+                   "id" => "sub_repair_order_01",
+                   "customer_id" => account.paddle_customer_id,
+                   "status" => "active"
+                 }
+               })
+    end
+  end
+
+  describe "reconcile_subscription_data/2" do
+    test "refuses a provider response when the expected mirror changed before application" do
+      account = Fixtures.Accounts.create_account()
+
+      {:ok, before_fetch} =
+        Billing.upsert_subscription(account.id, %{
+          paddle_subscription_id: "sub_expected_mirror_01",
+          plan: "team",
+          status: "active",
+          paddle_updated_at: ~U[2026-08-26 00:00:00.000000Z]
+        })
+
+      {:ok, canceled} =
+        Billing.upsert_subscription(account.id, %{
+          status: "canceled",
+          paddle_event_occurred_at: ~U[2026-08-26 00:01:00.000000Z]
+        })
+
+      assert Billing.reconcile_subscription_data(
+               %{
+                 "id" => "sub_expected_mirror_01",
+                 "status" => "active",
+                 "updated_at" => "2026-08-26T00:00:00Z"
+               },
+               expected_subscription: before_fetch
+             ) == {:error, :stale_reconciliation}
+
+      assert Repo.reload!(canceled).status == "canceled"
+    end
+  end
+
+  describe "reconcile_discovered_subscription_data/1" do
+    test "inserts a missing mirror and skips subscriptions the local sweep already owns" do
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_discovered_01"})
+
+      discovered = %{
+        "id" => "sub_discovered_01",
+        "customer_id" => account.paddle_customer_id,
+        "status" => "active",
+        "items" => [subscription_item("pri_team_01", [])]
+      }
+
+      assert {:ok, subscription} = Billing.reconcile_discovered_subscription_data(discovered)
+
+      {:ok, canceled} =
+        Billing.upsert_subscription(account.id, %{
+          status: "canceled",
+          paddle_event_occurred_at: ~U[2026-08-26 00:01:00.000000Z]
+        })
+
+      assert Billing.reconcile_discovered_subscription_data(discovered) == :ok
+      assert Repo.reload!(canceled).status == "canceled"
+      assert subscription.id == canceled.id
+    end
+
+    test "replaces only the unchanged terminal mirror for a missed resubscribe" do
+      account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_resubscribe_01"})
+
+      {:ok, old_subscription} =
+        Billing.upsert_subscription(account.id, %{
+          paddle_subscription_id: "sub_old_canceled_01",
+          plan: "team",
+          status: "canceled",
+          paddle_updated_at: ~U[2026-08-20 00:00:00.000000Z]
+        })
+
+      discovered = %{
+        "id" => "sub_new_active_01",
+        "customer_id" => account.paddle_customer_id,
+        "status" => "active",
+        "collection_mode" => "automatic",
+        "updated_at" => "2026-08-26T00:00:00Z",
+        "items" => [subscription_item("pri_team_01", [])]
+      }
+
+      assert {:ok, replacement} = Billing.reconcile_discovered_subscription_data(discovered)
+      assert replacement.id == old_subscription.id
+      assert replacement.paddle_subscription_id == "sub_new_active_01"
+      assert replacement.status == "active"
+
+      account_two =
+        Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_live_conflict_01"})
+
+      {:ok, live} =
+        Billing.upsert_subscription(account_two.id, %{
+          paddle_subscription_id: "sub_live_existing_01",
+          plan: "team",
+          status: "active"
+        })
+
+      assert Billing.reconcile_discovered_subscription_data(%{
+               "id" => "sub_competing_01",
+               "customer_id" => account_two.paddle_customer_id,
+               "status" => "active"
+             }) == {:error, :different_live_subscription}
+
+      assert Repo.reload!(live).paddle_subscription_id == "sub_live_existing_01"
+    end
+
+    test "uses checkout account binding when a Paddle customer is shared" do
+      shared_customer_id = "ctm_shared_customer_01"
+
+      account_one =
+        Fixtures.Accounts.create_account(%{paddle_customer_id: shared_customer_id})
+
+      account_two =
+        Fixtures.Accounts.create_account(%{paddle_customer_id: shared_customer_id})
+
+      unbound = %{
+        "id" => "sub_shared_unbound_01",
+        "customer_id" => shared_customer_id,
+        "status" => "active",
+        "items" => [subscription_item("pri_team_01", [])]
+      }
+
+      assert Billing.reconcile_discovered_subscription_data(unbound) ==
+               {:error, :ambiguous_paddle_customer}
+
+      binding = Emisar.Crypto.paddle_account_binding(account_two.id, "txn_shared_bound_01")
+
+      bound =
+        Map.put(unbound, "custom_data", %{"emisar_account_binding" => binding})
+        |> Map.put("id", "sub_shared_bound_01")
+
+      assert {:ok, subscription} = Billing.reconcile_discovered_subscription_data(bound)
+      assert subscription.account_id == account_two.id
+
+      refute Subscription.Query.all()
+             |> Subscription.Query.by_account_id(account_one.id)
+             |> Repo.exists?()
+
+      assert Billing.reconcile_discovered_subscription_data(
+               Map.put(bound, "id", "sub_shared_replayed_01")
+             ) == {:error, :invalid_subscription_account_binding}
+
+      assert Billing.reconcile_discovered_subscription_data(
+               bound
+               |> Map.put("id", "sub_shared_tampered_01")
+               |> put_in(["custom_data", "emisar_account_binding"], binding <> "x")
+             ) == {:error, :invalid_subscription_account_binding}
+    end
+  end
+
+  describe "subscription_mirror_attrs/2" do
+    test "maps generic scheduled lifecycle facts and an event ordering watermark" do
+      attrs =
+        Billing.subscription_mirror_attrs(
+          %{
+            "id" => "sub_lifecycle_01",
+            "status" => "active",
+            "collection_mode" => "automatic",
+            "scheduled_change" => %{
+              "action" => "pause",
+              "effective_at" => "2026-09-01T00:00:00Z"
+            }
+          },
+          event_occurred_at: ~U[2026-08-26 00:00:00.000000Z]
+        )
+
+      assert attrs.collection_mode == "automatic"
+      assert attrs.scheduled_change_action == "pause"
+      assert %DateTime{} = attrs.scheduled_change_effective_at
+      refute attrs.cancel_at_period_end
+      assert attrs.paddle_event_occurred_at == ~U[2026-08-26 00:00:00.000000Z]
+
+      assert %{
+               scheduled_change_action: nil,
+               scheduled_change_effective_at: nil,
+               cancel_at_period_end: false
+             } = Billing.subscription_mirror_attrs(%{"scheduled_change" => nil}, [])
     end
   end
 
@@ -2678,7 +3082,14 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
 
   # Not what any of these stubs exercise; the behaviour requires it.
   @impl true
-  def cancel_subscription(id), do: {:ok, %{"id" => id, "status" => "canceled"}}
+  def cancel_subscription(id) do
+    report({:cancel_subscription, id})
+
+    case Emisar.Config.get_env(:emisar, :billing_cancel_error) do
+      nil -> {:ok, %{"id" => id, "status" => "canceled"}}
+      reason -> {:error, reason}
+    end
+  end
 
   # The capturing pid rides in app env (set per-test) so the client stays
   # stateless — the same pattern BillingSyncTest's fail-id client uses.
@@ -2705,7 +3116,18 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
   @impl true
   def create_checkout_session(attrs) do
     report({:create_checkout_session, attrs})
-    {:ok, %{"url" => "https://stub.paddle.test/checkout/captured"}}
+
+    {:ok,
+     %{
+       "id" => "txn_captured_01",
+       "url" => "https://stub.paddle.test/checkout/captured"
+     }}
+  end
+
+  @impl true
+  def bind_checkout_transaction(id, binding) do
+    report({:bind_checkout_transaction, id, binding})
+    {:ok, %{"id" => id}}
   end
 
   @impl true
@@ -2716,6 +3138,11 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
 
   @impl true
   def retrieve_subscription(_id), do: {:error, :unused}
+
+  @impl true
+  def retrieve_transaction(_id), do: {:error, :unused}
+  @impl true
+  def list_subscriptions(_attrs), do: {:error, :unused}
 
   @impl true
   # The canned catalog carries both cycles, so the captured
@@ -2788,6 +3215,143 @@ defmodule Emisar.BillingCheckoutArgsTest do
     assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
 
     assert_received {:create_checkout_session, %{quantity: 5, price_id: "pri_team_01"}}
+    assert_received {:bind_checkout_transaction, transaction_id, binding}
+
+    assert Emisar.Crypto.verify_paddle_account_binding(binding) ==
+             {:ok, {account.id, transaction_id}}
+  end
+
+  test "a checkout completed after account closure is canceled instead of reactivating it" do
+    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+    assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
+    assert_received {:bind_checkout_transaction, transaction_id, binding}
+
+    assert {:ok, closed} = Accounts.close_account(account.id, "No longer needed", subject)
+    assert %DateTime{} = closed.deleted_at
+    refute_received {:cancel_subscription, _id}
+
+    event = %{
+      "event_id" => "evt_late_closed_checkout_01",
+      "event_type" => "subscription.created",
+      "occurred_at" => "2026-08-26T00:00:00Z",
+      "data" => %{
+        "id" => "sub_late_closed_checkout_01",
+        "customer_id" => "ctm_captured_01",
+        "status" => "active",
+        "transaction_id" => transaction_id,
+        "custom_data" => %{"emisar_account_binding" => binding},
+        "items" => [
+          %{
+            "product" => %{"name" => "team", "custom_data" => %{"plan" => "team"}},
+            "price" => %{"id" => "pri_team_01"}
+          }
+        ]
+      }
+    }
+
+    assert Billing.record_and_apply_event(
+             "evt_late_closed_checkout_01",
+             "subscription.created",
+             event
+           ) == :ok
+
+    assert_received {:cancel_subscription, "sub_late_closed_checkout_01"}
+
+    refute Emisar.Billing.Subscription.Query.all()
+           |> Emisar.Billing.Subscription.Query.by_account_id(account.id)
+           |> Emisar.Repo.exists?()
+  end
+
+  test "a late checkout is canceled even when closure retained another active mirror" do
+    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+    assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
+    assert_received {:bind_checkout_transaction, transaction_id, binding}
+
+    {:ok, retained} =
+      Billing.upsert_subscription(account.id, %{
+        paddle_subscription_id: "sub_retained_at_close_01",
+        plan: "team",
+        status: "active"
+      })
+
+    assert {:ok, _closed} = Accounts.close_account(account.id, "No longer needed", subject)
+    assert_received {:cancel_subscription, "sub_retained_at_close_01"}
+
+    event = %{
+      "event_id" => "evt_second_late_checkout_01",
+      "event_type" => "subscription.created",
+      "occurred_at" => "2026-08-26T00:00:00Z",
+      "data" => %{
+        "id" => "sub_second_late_checkout_01",
+        "customer_id" => "ctm_captured_01",
+        "status" => "active",
+        "transaction_id" => transaction_id,
+        "custom_data" => %{"emisar_account_binding" => binding},
+        "items" => [
+          %{
+            "product" => %{"name" => "team", "custom_data" => %{"plan" => "team"}},
+            "price" => %{"id" => "pri_team_01"}
+          }
+        ]
+      }
+    }
+
+    assert Billing.record_and_apply_event(
+             "evt_second_late_checkout_01",
+             "subscription.created",
+             event
+           ) == :ok
+
+    assert_received {:cancel_subscription, "sub_second_late_checkout_01"}
+    assert Emisar.Repo.reload!(retained).paddle_subscription_id == "sub_retained_at_close_01"
+  end
+
+  test "a failed late-checkout cancellation remains retryable and creates no subscription" do
+    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+    assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
+    assert_received {:bind_checkout_transaction, transaction_id, binding}
+    assert {:ok, _closed} = Accounts.close_account(account.id, "No longer needed", subject)
+
+    Emisar.Config.put_override(:emisar, :billing_cancel_error, :paddle_unavailable)
+
+    event = %{
+      "event_id" => "evt_late_closed_checkout_failed_01",
+      "event_type" => "subscription.created",
+      "occurred_at" => "2026-08-26T00:00:00Z",
+      "data" => %{
+        "id" => "sub_late_closed_checkout_failed_01",
+        "customer_id" => "ctm_captured_01",
+        "status" => "active",
+        "transaction_id" => transaction_id,
+        "custom_data" => %{"emisar_account_binding" => binding},
+        "items" => [
+          %{
+            "product" => %{"name" => "team", "custom_data" => %{"plan" => "team"}},
+            "price" => %{"id" => "pri_team_01"}
+          }
+        ]
+      }
+    }
+
+    assert Billing.record_and_apply_event(
+             "evt_late_closed_checkout_failed_01",
+             "subscription.created",
+             event
+           ) == {:error, {:apply_failed, :paddle_unavailable}}
+
+    assert_received {:cancel_subscription, "sub_late_closed_checkout_failed_01"}
+
+    refute Emisar.Repo.exists?(
+             from event in "paddle_processed_events",
+               where: event.id == "evt_late_closed_checkout_failed_01"
+           )
+
+    refute Emisar.Billing.Subscription.Query.all()
+           |> Emisar.Billing.Subscription.Query.by_account_id(account.id)
+           |> Emisar.Repo.exists?()
   end
 
   test "the billing cycle selects the matching catalog price" do

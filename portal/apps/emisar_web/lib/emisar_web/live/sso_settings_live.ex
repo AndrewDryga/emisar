@@ -161,9 +161,9 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp load_for_action(%{assigns: %{has_sso_permission?: false}} = socket, _params), do: socket
 
-  # A downgrade does not stop an existing connection working, so a permission
-  # holder can still open it and remove it. Adding and editing are what the plan
-  # actually gates, and those views load nothing.
+  # Expiry makes an existing connection dormant, but a permission holder can
+  # still inspect and remove its stored trust. Adding and editing are paid
+  # operations, and those views load nothing without the entitlement.
   defp load_for_action(
          %{assigns: %{can_configure?: false, live_action: action}} = socket,
          _params
@@ -2089,9 +2089,8 @@ defmodule EmisarWeb.SSOSettingsLive do
     """
   end
 
-  # A connection that outlived the plan that bought it. It is still accepting
-  # sign-ins, so hiding it behind the upsell left an owner unable to retire a
-  # credential they no longer wanted — the one action offered here is removing it.
+  # A dormant connection remains visible so an owner can retire configuration
+  # and tokens without paying to regain the cleanup controls.
   attr :provider, :map, required: true
   attr :typed, :string, required: true
 
@@ -2100,8 +2099,9 @@ defmodule EmisarWeb.SSOSettingsLive do
     <section class="mt-8">
       <.section_header title={@provider.name} />
       <p class="mt-2 text-sm leading-relaxed text-zinc-400">
-        This connection is still accepting sign-ins, and its directory token still works. Upgrade
-        to configure it again, or shut either one down now — neither needs a plan.
+        This connection is dormant. Sign-ins and its directory token are refused until paid access
+        returns. You can disable directory sync or remove the connection now — neither cleanup
+        action needs a plan.
       </p>
       <div class="mt-4 divide-y divide-zinc-800/70">
         <%!-- Containing a leaked directory token must not cost the operator their

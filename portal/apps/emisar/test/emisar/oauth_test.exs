@@ -542,6 +542,7 @@ defmodule Emisar.OAuthTest do
 
     test "an account that requires SSO refuses a magic-link session" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Accounts.create_subscription(account, "team")
       Fixtures.SSO.create_identity_provider(account_id: account.id)
       Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
       client = register!()

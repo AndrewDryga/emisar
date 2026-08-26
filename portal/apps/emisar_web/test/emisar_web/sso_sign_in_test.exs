@@ -173,6 +173,7 @@ defmodule EmisarWeb.SSOSignInTest do
       conn: conn
     } do
       account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "team")
       provider = enabled_provider(account, "Acme Okta")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/sign_in")

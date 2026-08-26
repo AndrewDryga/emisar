@@ -2376,6 +2376,7 @@ defmodule EmisarWeb.TeamLiveTest do
   describe "reset a member's 2FA" do
     setup %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
       member = Fixtures.Users.create_user()
 
       membership =

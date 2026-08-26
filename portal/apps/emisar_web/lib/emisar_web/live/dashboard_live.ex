@@ -369,7 +369,12 @@ defmodule EmisarWeb.DashboardLive do
 
   defp live_dashboard(assigns) do
     ~H"""
-    <.subscription_banner status={@billing.subscription_status}>
+    <.subscription_banner
+      entitlement_state={@billing.entitlement_state}
+      status={@billing.subscription_status}
+      scheduled_action={@billing.scheduled_change_action}
+      scheduled_effective_at={@billing.scheduled_change_effective_at || @billing.current_period_end}
+    >
       <:cta :if={@can_manage_billing}>
         <.button
           variant={:secondary}

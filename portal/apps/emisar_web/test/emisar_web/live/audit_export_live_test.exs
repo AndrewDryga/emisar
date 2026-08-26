@@ -327,14 +327,16 @@ defmodule EmisarWeb.AuditExportLiveTest do
       assert json_response(denied, 401) == %{"error" => "unauthorized"}
     end
 
-    test "a free-plan account is redirected to billing", %{conn: _conn} do
+    test "a free-plan owner can inspect cleanup but cannot mint a continuous-export token", %{
+      conn: _conn
+    } do
       {conn, _user, account} = register_and_log_in(build_conn())
 
-      assert {:error, {:live_redirect, %{to: to, flash: flash}}} =
-               live(conn, ~p"/app/#{account}/audit/export")
+      assert {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit/export")
 
-      assert to == ~p"/app/#{account}/settings/billing"
-      assert %{"info" => "Continuous SIEM export is available on Team."} = flash
+      assert html =~ "Continuous export is paused"
+      assert html =~ "one-time CSV"
+      refute has_element?(lv, "button[phx-click='create_export_key']")
     end
 
     test "the SIEM card is hidden from a non-manager (operator)", %{account: account} do

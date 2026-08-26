@@ -1081,7 +1081,7 @@ defmodule Emisar.Audit.Event.Query do
     "audit.retention_swept" =>
       {false, false, false, "The retention sweep pruned events past their retain-until date."},
     "subscription.changed" =>
-      {false, false, true, "The billing plan changed (via checkout or the billing provider)."},
+      {false, false, true, "The billing plan or paid-access state changed."},
     "staff.account_viewed" =>
       {false, false, true, "Emisar staff opened this workspace in the internal support console."}
   }

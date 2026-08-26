@@ -104,6 +104,38 @@ defmodule Emisar.Crypto do
     end
   end
 
+  @paddle_account_binding_salt "Paddle subscription account binding"
+
+  @doc """
+  Signs the account identity attached to a Paddle checkout transaction. The
+  token has no age limit because Paddle copies it to the long-lived
+  subscription and repair may need it years later.
+  """
+  def paddle_account_binding(account_id, transaction_id)
+      when is_binary(account_id) and is_binary(transaction_id) do
+    Phoenix.Token.sign(
+      email_link_secret(),
+      @paddle_account_binding_salt,
+      {:v1, account_id, transaction_id}
+    )
+  end
+
+  @doc "Verifies a Paddle checkout account binding. Returns `{:ok, {account_id, transaction_id}} | {:error, :invalid}`."
+  def verify_paddle_account_binding(token) when is_binary(token) do
+    case Phoenix.Token.verify(email_link_secret(), @paddle_account_binding_salt, token,
+           max_age: :infinity
+         ) do
+      {:ok, {:v1, account_id, transaction_id}}
+      when is_binary(account_id) and is_binary(transaction_id) ->
+        {:ok, {account_id, transaction_id}}
+
+      _invalid ->
+        {:error, :invalid}
+    end
+  end
+
+  def verify_paddle_account_binding(_token), do: {:error, :invalid}
+
   defp email_link_secret, do: Application.fetch_env!(:emisar, :email_link_secret)
 
   # The emailed magic-link secret is a short, typable code; the browser-side

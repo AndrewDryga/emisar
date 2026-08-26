@@ -477,6 +477,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   describe "SSO precedes MFA on the enrollment interstitial" do
     setup %{account: account} do
       # require_sso + require_mfa, with an enabled connection so require_sso is live.
+      Fixtures.Accounts.create_subscription(account, "team")
       Fixtures.SSO.create_identity_provider(account_id: account.id)
       Fixtures.Accounts.set_account_settings(account, %{require_sso: true, require_mfa: true})
       :ok

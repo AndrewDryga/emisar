@@ -374,7 +374,14 @@ defmodule EmisarWeb.BillingLive do
       </.empty_state>
 
       <div :if={not @loading? and not is_nil(@summary)} class="space-y-6">
-        <.subscription_banner status={@summary.subscription_status}>
+        <.subscription_banner
+          entitlement_state={@summary.entitlement_state}
+          status={@summary.subscription_status}
+          scheduled_action={@summary.scheduled_change_action}
+          scheduled_effective_at={
+            @summary.scheduled_change_effective_at || @summary.current_period_end
+          }
+        >
           <:cta :if={Billing.subject_can_manage_billing?(@current_subject)}>
             <.button
               variant={:secondary}
@@ -413,13 +420,16 @@ defmodule EmisarWeb.BillingLive do
                    on …". --%>
                 <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
                   <.chip
-                    :if={@summary.cancel_at_period_end == true and @summary.current_period_end}
+                    :if={
+                      @summary.entitlement_state == :ending &&
+                        (@summary.scheduled_change_effective_at || @summary.current_period_end)
+                    }
                     tone={:amber}
                   >
-                    Cancels on
+                    {if @summary.scheduled_change_action == "pause", do: "Pauses", else: "Ends"} on
                     <.local_time
-                      id="billing-cancels-on"
-                      value={@summary.current_period_end}
+                      id="billing-access-ends-on"
+                      value={@summary.scheduled_change_effective_at || @summary.current_period_end}
                       class="inline"
                     />
                   </.chip>
@@ -428,7 +438,11 @@ defmodule EmisarWeb.BillingLive do
                     <.local_time id="billing-trial-ends" value={@summary.trial_end} class="inline" />
                   </.chip>
                   <span
-                    :if={@summary.current_period_end && @summary.cancel_at_period_end != true}
+                    :if={
+                      @summary.entitlement_state in [:active, :dunning] &&
+                        @summary.current_period_end && @summary.cancel_at_period_end != true &&
+                        is_nil(@summary.scheduled_change_action)
+                    }
                     class="text-zinc-400"
                   >
                     Next charge

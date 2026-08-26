@@ -374,7 +374,9 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
       refute log =~ "ctm_decode_leak_marker"
     end
 
-    test "an apply failure → 500, logging field names but never payload values", %{conn: conn} do
+    test "a malformed lifecycle event → 500, logging a safe category but never payload values", %{
+      conn: conn
+    } do
       import ExUnit.CaptureLog
 
       account_with_customer("ctm_apply_fail")
@@ -386,8 +388,8 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
           subscription_id: "sub_apply_fail"
         )
 
-      # Paddle owns `status` (open string), but the upsert requires it —
-      # a null status is the natural in-the-wild apply failure.
+      # Paddle owns `status` (open string), but every lifecycle payload requires
+      # a binary value. Reject the malformed envelope before any mirror write.
       event = put_in(event, ["data", "status"], nil)
 
       log =
@@ -396,8 +398,8 @@ defmodule EmisarWeb.PaddleWebhookControllerTest do
           assert json_response(conn, 500) == %{"error" => "apply_failed"}
         end)
 
-      assert log =~ "invalid_changeset[status]"
-      # The redaction contract: field names only, no payload-derived values.
+      assert log =~ "malformed_subscription"
+      # The redaction contract: a fixed category only, no payload-derived values.
       refute log =~ "evt_apply_fail"
       refute log =~ "ctm_apply_fail"
       refute log =~ "sub_apply_fail"

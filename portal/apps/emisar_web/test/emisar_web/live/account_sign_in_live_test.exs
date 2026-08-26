@@ -12,6 +12,8 @@ defmodule EmisarWeb.AccountSignInLiveTest do
   alias Emisar.SSO.IdentityProvider
 
   defp enabled_provider(account, name) do
+    Fixtures.Accounts.create_subscription(account, "team")
+
     {:ok, provider} =
       Repo.insert(
         IdentityProvider.Changeset.create(account.id, %{
@@ -62,6 +64,20 @@ defmodule EmisarWeb.AccountSignInLiveTest do
     assert html =~ "This team requires single sign-on"
     refute html =~ ~s|action="/sign_in/magic/start"|
     refute html =~ "Email me a sign-in link"
+  end
+
+  test "an expired require_sso account offers recovery by magic link", %{conn: conn} do
+    account = Fixtures.Accounts.create_account(%{name: "Recoverable Co"})
+    provider = enabled_provider(account, "Dormant Okta")
+    Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
+    Fixtures.Accounts.create_subscription(account, "team", status: "canceled")
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/sign_in")
+
+    refute html =~ ~p"/sign_in/sso/#{provider.id}"
+    refute html =~ "This team requires single sign-on"
+    assert html =~ ~s|action="/sign_in/magic/start"|
+    assert html =~ "Email me a sign-in link"
   end
 
   test "the 'different team' link drops to the generic SSO picker", %{conn: conn} do

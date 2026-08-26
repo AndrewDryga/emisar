@@ -1861,12 +1861,26 @@ defmodule Emisar.Audit.Events do
   DISTINCT from the Mixpanel `Analytics.Events.subscription_changed` — this is the
   in-app AUDIT trail (so a downgrade-to-wipe leaves evidence), not analytics.
   """
-  def subscription_changed(account_id, from_plan, to_plan) when is_binary(account_id) do
+  def subscription_changed(account_id, from_plan, to_plan, opts \\ [])
+      when is_binary(account_id) do
+    payload =
+      %{from: from_plan, to: to_plan}
+      |> Emisar.Maps.put_present(:from_state, opts[:from_state])
+      |> Emisar.Maps.put_present(:to_state, opts[:to_state])
+      |> Emisar.Maps.put_present(:from_status, opts[:from_status])
+      |> Emisar.Maps.put_present(:to_status, opts[:to_status])
+      |> Emisar.Maps.put_present(:subscribed_plan, opts[:subscribed_plan])
+      |> Emisar.Maps.put_present(:scheduled_change_action, opts[:scheduled_change_action])
+      |> Emisar.Maps.put_present(
+        :scheduled_change_effective_at,
+        opts[:scheduled_change_effective_at]
+      )
+
     Audit.changeset(account_id, "subscription.changed",
       actor_kind: "system",
       target_kind: "account",
       target_id: account_id,
-      payload: %{from: from_plan, to: to_plan}
+      payload: payload
     )
   end
 

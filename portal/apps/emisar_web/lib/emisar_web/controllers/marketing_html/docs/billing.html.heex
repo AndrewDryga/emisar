@@ -214,7 +214,17 @@
       <.docs_callout kind={:note} title="Cancelling keeps your plan until the period ends">
         <p>
           Cancelling does not cut access immediately: the plan and its limits stay active
-          until the cancellation date Paddle schedules, and Billing shows that date.
+          until the cancellation date Paddle schedules, and Billing shows that date. At that
+          deadline the account moves to Free limits. Paid integrations become dormant, but their
+          configuration is kept so an owner can resubscribe, use an unused one-time audit CSV
+          allowance, or clean up.
+        </p>
+      </.docs_callout>
+      <.docs_callout kind={:note} title="Payment recovery keeps Team access available">
+        <p>
+          When an automatic payment is past due, Paddle manages the retry period and Team features
+          remain available. If recovery ends in a pause or cancellation, the account moves to Free
+          limits. Billing shows the current state and links to payment details.
         </p>
       </.docs_callout>
 
@@ -244,8 +254,8 @@
 
       <.docs_h2 id="payment-failure">If a payment fails</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A failed renewal does not lock you out: Paddle retries the charge and emails the
-        billing contact, and your plan and limits stay active while it retries.
+        A failed renewal does not lock you out: Paddle retries the charge, and your plan
+        and limits stay active while it retries.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Open <a

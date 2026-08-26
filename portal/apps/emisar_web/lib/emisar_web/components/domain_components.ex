@@ -26,28 +26,36 @@ defmodule EmisarWeb.DomainComponents do
   @runner_update_command "sudo emisar update"
 
   @doc """
-  Banner shown above a billing surface when the account's Paddle subscription
-  needs attention (past_due / paused / canceled). Healthy/nil/unknown status →
-  renders nothing. Shared by the billing page and the dashboard so the copy +
-  severity live in one place.
+  Banner shown above billing surfaces when an account is in payment recovery,
+  approaching a scheduled end, expired, or waiting for a trustworthy billing
+  state. Shared by Billing and the dashboard so each lifecycle state has one
+  severity and one explanation.
 
-  Copy is purely informational — emisar does NOT gate features on subscription
-  status, so it must never imply lost access (that would be a promise the code
-  doesn't keep; if enforcement is ever wired, revisit the wording). Pass a
-  `:cta` slot for the "Manage billing" affordance — a portal button on the
-  billing page, a link to it on the dashboard — and omit it where the viewer
-  can't manage billing.
+  Pass a `:cta` slot for the "Manage billing" affordance — a portal button on
+  the billing page, a link to it on the dashboard — and omit it where the
+  viewer can't manage billing.
 
-      <.subscription_banner status={@summary.subscription_status}>
+      <.subscription_banner
+        entitlement_state={@summary.entitlement_state}
+        status={@summary.subscription_status}
+      >
         <:cta :if={Billing.subject_can_manage_billing?(@current_subject)}>…</:cta>
       </.subscription_banner>
   """
+  attr :entitlement_state, :atom, default: :free
   attr :status, :any, default: nil
+  attr :scheduled_action, :any, default: nil
+  attr :scheduled_effective_at, :any, default: nil
   attr :class, :any, default: nil
   slot :cta
 
   def subscription_banner(assigns) do
-    assigns = assign(assigns, :alert, subscription_alert(assigns.status))
+    assigns =
+      assign(
+        assigns,
+        :alert,
+        subscription_alert(assigns.entitlement_state, assigns.status, assigns.scheduled_action)
+      )
 
     ~H"""
     <.callout
@@ -58,39 +66,72 @@ defmodule EmisarWeb.DomainComponents do
       class={@class}
     >
       {@alert.body}
+      <span :if={@alert.show_effective_at && @scheduled_effective_at}>
+        Access changes
+        <TimeHelpers.local_time
+          id="subscription-access-changes-at"
+          value={@scheduled_effective_at}
+          class="inline"
+        />.
+      </span>
       <:action :if={@cta != []}>{render_slot(@cta)}</:action>
     </.callout>
     """
   end
 
-  # Maps a Paddle subscription status to a banner. active/trialing/nil are
-  # healthy (no banner); past_due is the loud "fix your card" case; paused and
-  # canceled are amber FYIs. An unknown status we don't model gets no banner —
-  # don't alarm on a state we can't explain (Paddle owns the value space; see
-  # Subscription.Changeset). Copy is advisory only — emisar does not gate on
-  # subscription status, so it must not imply lost access.
-  defp subscription_alert("past_due"),
+  defp subscription_alert(:dunning, _status, _scheduled_action),
     do: %{
       tone: :rose,
-      title: "Payment past due",
-      body: "Your last payment failed — update your card so the next charge goes through."
+      title: "Payment recovery in progress",
+      body:
+        "Paid features remain available while Paddle retries the payment. Update your payment details before recovery ends.",
+      show_effective_at: false
     }
 
-  defp subscription_alert("paused"),
+  defp subscription_alert(:ending, _status, "pause"),
     do: %{
       tone: :amber,
-      title: "Subscription paused",
-      body: "Resume it from the billing portal when you're ready."
+      title: "Paid access is scheduled to pause",
+      body: "Paid features remain available until the scheduled pause.",
+      show_effective_at: true
     }
 
-  defp subscription_alert("canceled"),
+  defp subscription_alert(:ending, _status, _scheduled_action),
     do: %{
       tone: :amber,
-      title: "Subscription canceled",
-      body: "Resubscribe from billing to start a new subscription."
+      title: "Paid access is scheduled to end",
+      body: "Paid features remain available until the scheduled end.",
+      show_effective_at: true
     }
 
-  defp subscription_alert(_), do: nil
+  defp subscription_alert(:expired, "paused", _scheduled_action),
+    do: %{
+      tone: :amber,
+      title: "Paid access paused",
+      body:
+        "This account now uses Free limits. Paid integrations are dormant until the subscription resumes.",
+      show_effective_at: false
+    }
+
+  defp subscription_alert(:expired, _status, _scheduled_action),
+    do: %{
+      tone: :amber,
+      title: "Subscription ended",
+      body:
+        "This account now uses Free limits. Paid integrations are dormant; resubscribe from Billing to restore them.",
+      show_effective_at: false
+    }
+
+  defp subscription_alert(:unresolved, _status, _scheduled_action),
+    do: %{
+      tone: :rose,
+      title: "Billing status unavailable",
+      body:
+        "Paid features are temporarily unavailable while billing status is verified. Billing, recovery, an unused one-time audit CSV allowance, and cleanup remain available.",
+      show_effective_at: false
+    }
+
+  defp subscription_alert(_entitlement_state, _status, _scheduled_action), do: nil
 
   @doc """
   A compact run-summary row — the action_id (mono), an optional target-runner +

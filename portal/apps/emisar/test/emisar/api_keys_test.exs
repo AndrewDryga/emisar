@@ -874,6 +874,16 @@ defmodule Emisar.ApiKeysTest do
                {:error, :audit_export_not_available}
     end
 
+    test "a canceled subscription cannot mint a continuous-export token" do
+      {_user, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team", status: "canceled")
+
+      assert ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject) ==
+               {:error, :audit_export_not_available}
+
+      refute Repo.one(ApiKey)
+    end
+
     test "a granted entitlement enables the mint on an otherwise ineligible plan" do
       {_user, account, subject} = owner_subject_pair()
 
@@ -1053,6 +1063,23 @@ defmodule Emisar.ApiKeysTest do
       )
 
       assert ApiKeys.rotate_api_key(key, subject) == {:error, :audit_export_not_available}
+    end
+
+    test "rotation authorizes the persisted kind after the plan expires" do
+      {_user, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
+
+      Fixtures.Accounts.create_subscription(account, "team", status: "canceled")
+
+      # Callers do not get to relabel an audit credential as an ordinary MCP
+      # key and use that weaker entitlement gate to mint its successor.
+      forged = %{key | kind: :mcp}
+
+      assert ApiKeys.rotate_api_key(forged, subject) ==
+               {:error, :audit_export_not_available}
+
+      assert Repo.aggregate(ApiKey, :count) == 1
     end
 
     test "an operator rotates a key they minted themselves" do

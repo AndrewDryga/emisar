@@ -60,6 +60,16 @@ defmodule Emisar.Billing.PaddleClient.Live do
   end
 
   @impl true
+  def bind_checkout_transaction(id, binding) do
+    case patch_json("/transactions/#{id}", %{
+           custom_data: %{emisar_account_binding: binding}
+         }) do
+      {:ok, %{"data" => transaction}} -> {:ok, transaction}
+      other -> other
+    end
+  end
+
+  @impl true
   def create_billing_portal_session(attrs) do
     with {:ok,
           %{
@@ -74,12 +84,52 @@ defmodule Emisar.Billing.PaddleClient.Live do
   end
 
   @impl true
+  def retrieve_transaction(id) do
+    case get("/transactions/#{id}") do
+      {:ok, %{"data" => transaction}} -> {:ok, transaction}
+      other -> other
+    end
+  end
+
+  @impl true
   def retrieve_subscription(id) do
     case get("/subscriptions/#{id}") do
       {:ok, %{"data" => sub}} -> {:ok, sub}
       other -> other
     end
   end
+
+  @impl true
+  def list_subscriptions(attrs) do
+    query =
+      %{
+        "per_page" => attrs[:limit] || 100,
+        "status" => "active,trialing,past_due,paused"
+      }
+      |> maybe_put_query("after", attrs[:after])
+      |> URI.encode_query()
+
+    case get("/subscriptions?#{query}") do
+      {:ok, response} ->
+        parse_subscription_page(response)
+
+      other ->
+        other
+    end
+  end
+
+  @doc false
+  def parse_subscription_page(%{
+        "data" => subscriptions,
+        "meta" => %{"pagination" => %{"has_more" => has_more} = pagination}
+      })
+      when is_list(subscriptions) and is_boolean(has_more) do
+    with {:ok, next_after} <- next_subscription_cursor(pagination) do
+      {:ok, %{subscriptions: subscriptions, next_after: next_after}}
+    end
+  end
+
+  def parse_subscription_page(_response), do: {:error, :malformed_subscription_page}
 
   # Paddle cancels a subscription by PATCHing scheduled_change, not by DELETE.
   # `effective_from: "immediately"` because this is called when an account is
@@ -213,6 +263,24 @@ defmodule Emisar.Billing.PaddleClient.Live do
 
     request_json(request)
   end
+
+  defp maybe_put_query(query, _key, nil), do: query
+  defp maybe_put_query(query, key, value), do: Map.put(query, key, value)
+
+  defp next_subscription_cursor(%{"has_more" => false}), do: {:ok, nil}
+
+  defp next_subscription_cursor(%{"has_more" => true, "next" => next_url})
+       when is_binary(next_url) and next_url != "" do
+    with query when is_binary(query) <- URI.parse(next_url).query,
+         %{"after" => after_cursor} when is_binary(after_cursor) and after_cursor != "" <-
+           URI.decode_query(query) do
+      {:ok, after_cursor}
+    else
+      _ -> {:error, :malformed_subscription_page}
+    end
+  end
+
+  defp next_subscription_cursor(_pagination), do: {:error, :malformed_subscription_page}
 
   defp request_json(request) do
     case Finch.request(request, Emisar.Finch, receive_timeout: 8_000) do

@@ -3158,11 +3158,11 @@ defmodule EmisarWeb.MarketingTest do
 
     test "each legal page carries its own title-suffix and last-updated date", %{conn: conn} do
       # {route, title, date} — the title suffix proves the right head, and
-      # the date pins the right page (Refund is the only one on June 5).
+      # Each legal surface declares the date of its current published text.
       for {route, date} <- [
             {"/privacy", "August 26, 2026"},
-            {"/terms", "June 4, 2026"},
-            {"/refund-policy", "June 5, 2026"},
+            {"/terms", "August 26, 2026"},
+            {"/refund-policy", "August 26, 2026"},
             {"/dpa", "August 26, 2026"}
           ] do
         html = conn |> get(route) |> html_response(200)

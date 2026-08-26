@@ -453,6 +453,9 @@ defmodule Emisar.ApiKeys do
 
       Multi.new()
       |> put_active_account_lock(account_id)
+      |> Multi.run(:kind_available, fn repo, _changes ->
+        ensure_key_kind_available(input.kind, account_id, repo)
+      end)
       |> Multi.insert(:key, changeset)
       |> Multi.insert(:audit, fn %{key: key} ->
         Audit.Events.api_key_created(subject, key)
@@ -479,8 +482,6 @@ defmodule Emisar.ApiKeys do
   """
   def rotate_api_key(%ApiKey{} = key, %Subject{} = subject) do
     with :ok <- ensure_can_manage_key(key, subject) do
-      {raw, prefix, hash} = mint_for_kind(key.kind)
-
       source_queryable =
         ApiKey.Query.not_deleted()
         |> ApiKey.Query.by_id(key.id)
@@ -492,12 +493,17 @@ defmodule Emisar.ApiKeys do
       |> Multi.run(:source, fn repo, _changes ->
         with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
              :ok <- ensure_can_manage_key(source, subject),
-             :ok <- ensure_rotatable(source),
-             :ok <- ensure_key_kind_available(source.kind, subject.account) do
+             :ok <- ensure_rotatable(source) do
           {:ok, source}
         end
       end)
-      |> Multi.insert(:key, fn %{source: source} ->
+      |> Multi.run(:kind_available, fn repo, %{source: source} ->
+        ensure_key_kind_available(source.kind, subject.account.id, repo)
+      end)
+      |> Multi.run(:credential, fn _repo, %{source: source} ->
+        {:ok, mint_for_kind(source.kind)}
+      end)
+      |> Multi.insert(:key, fn %{credential: {_raw, prefix, hash}, source: source} ->
         ApiKey.Changeset.create(
           source.account_id,
           source.created_by_id,
@@ -514,7 +520,7 @@ defmodule Emisar.ApiKeys do
       end)
       |> Repo.commit_multi(after_commit: &broadcast_api_key_created(&1.key))
       |> case do
-        {:ok, %{key: successor}} -> {:ok, raw, successor}
+        {:ok, %{credential: {raw, _prefix, _hash}, key: successor}} -> {:ok, raw, successor}
         {:error, reason} -> {:error, reason}
       end
     end
@@ -723,6 +729,17 @@ defmodule Emisar.ApiKeys do
   end
 
   defp ensure_key_kind_available(_kind, _account), do: :ok
+
+  defp ensure_key_kind_available(:audit_export, account_id, repo) do
+    if Billing.continuous_audit_export_available_for_account_id?(account_id,
+         repo: repo,
+         lock?: true
+       ),
+       do: {:ok, :available},
+       else: {:error, :audit_export_not_available}
+  end
+
+  defp ensure_key_kind_available(_kind, _account_id, _repo), do: {:ok, :available}
 
   # The attribute set a successor inherits — shared by operator rotation and
   # auto-rotation so the two paths can't drift. Just identity + kind now; the

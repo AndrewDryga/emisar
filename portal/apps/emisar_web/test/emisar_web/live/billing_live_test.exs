@@ -18,9 +18,15 @@ defmodule EmisarWeb.BillingLiveTest.InvoicesDownPaddleClient do
   @impl true
   defdelegate create_checkout_session(attrs), to: Stub
   @impl true
+  defdelegate bind_checkout_transaction(id, binding), to: Stub
+  @impl true
   defdelegate create_billing_portal_session(attrs), to: Stub
   @impl true
   defdelegate retrieve_subscription(id), to: Stub
+  @impl true
+  defdelegate retrieve_transaction(id), to: Stub
+  @impl true
+  defdelegate list_subscriptions(attrs), to: Stub
   @impl true
   defdelegate list_products, to: Stub
   @impl true
@@ -730,8 +736,8 @@ defmodule EmisarWeb.BillingLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      assert html =~ "Payment past due"
-      assert html =~ "update your card"
+      assert html =~ "Payment recovery in progress"
+      assert html =~ "Update your payment details"
       # The owner can fix it — the banner surfaces the billing portal.
       assert has_element?(lv, "button[phx-click='manage_billing']", "Manage billing")
     end
@@ -742,10 +748,9 @@ defmodule EmisarWeb.BillingLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      assert html =~ "Subscription canceled"
-      # Honest copy: nothing gates on subscription status, so the banner must
-      # not imply lost access / paid features.
-      refute html =~ "paid features"
+      assert html =~ "Subscription ended"
+      assert html =~ "Free limits"
+      assert html =~ "Paid integrations are dormant"
     end
 
     test "a healthy account shows no failure banner", %{conn: conn} do
@@ -753,8 +758,29 @@ defmodule EmisarWeb.BillingLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      refute html =~ "Payment past due"
-      refute html =~ "Subscription canceled"
+      refute html =~ "Payment recovery in progress"
+      refute html =~ "Subscription ended"
+    end
+
+    test "a scheduled cancellation keeps paid access and names its deadline", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      effective_at = DateTime.add(DateTime.utc_now(), 86_400, :second)
+
+      insert_subscription_with(account, %{
+        plan: "team",
+        status: "active",
+        scheduled_change_action: "cancel",
+        scheduled_change_effective_at: effective_at,
+        current_period_end: effective_at
+      })
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
+
+      assert html =~ "Paid access is scheduled to end"
+      assert html =~ "Paid features remain available until the scheduled end"
+      assert html =~ "Ends on"
+      refute html =~ "Next charge"
+      assert html =~ "Team"
     end
 
     test "a paused subscription shows the amber paused banner", %{conn: conn} do
@@ -763,39 +789,29 @@ defmodule EmisarWeb.BillingLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      assert html =~ "Subscription paused"
-      assert html =~ "Resume it from the billing portal"
+      assert html =~ "Paid access paused"
+      assert html =~ "Free limits"
       # Amber FYI, not the rose payment-failure tone.
-      refute html =~ "Payment past due"
+      refute html =~ "Payment recovery in progress"
     end
 
-    test "an unknown/unmodeled status shows no banner (don't alarm)", %{conn: conn} do
-      # subscription_alert/1 only models past_due/paused/canceled; anything else
-      # → nil → no banner. Paddle owns the status value space, so a state we can't
-      # explain must not raise a scary banner.
+    test "an unknown status fails closed with a recovery-oriented banner", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       insert_subscription(account, "some_unmodeled_status")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      refute html =~ "Payment past due"
-      refute html =~ "Subscription paused"
-      refute html =~ "Subscription canceled"
-      # The page still renders fine for the unmodeled status.
+      assert html =~ "Billing status unavailable"
+      assert html =~ "Paid features are temporarily unavailable"
+      assert html =~ "an unused one-time audit CSV allowance"
       assert html =~ "Current plan"
     end
 
-    test "the banner copy nudges to fix payment, never implying lost access", %{conn: _conn} do
-      # emisar never gates features on subscription status, so each modeled status
-      # gets an advisory payment/resubscribe nudge ONLY — the copy must never imply
-      # access is lost (a promise the code doesn't keep). Assert the known advisory
-      # body for each status, plus the absence of the specific lost-access
-      # phrasings that would be a regression. (Scoped to multi-word phrases —
-      # single words like "lost" appear in unrelated page chrome.)
+    test "the banner distinguishes dunning access from expired access", %{conn: _conn} do
       cases = [
-        {"past_due", "update your card so the next charge goes through"},
-        {"paused", "Resume it from the billing portal"},
-        {"canceled", "Resubscribe from billing to start a new subscription"}
+        {"past_due", "Paid features remain available"},
+        {"paused", "Paid integrations are dormant"},
+        {"canceled", "Paid integrations are dormant"}
       ]
 
       for {status, advisory_body} <- cases do
@@ -804,13 +820,7 @@ defmodule EmisarWeb.BillingLiveTest do
 
         {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-        # The banner shows its advisory body…
         assert html =~ advisory_body
-        # …and never a lost-access / locked-out promise.
-        refute html =~ "no longer have access"
-        refute html =~ "access has been"
-        refute html =~ "paid features"
-        refute html =~ "lost access"
       end
     end
 
@@ -824,14 +834,19 @@ defmodule EmisarWeb.BillingLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
-      assert html =~ "Payment past due"
+      assert html =~ "Payment recovery in progress"
       refute has_element?(lv, "button[phx-click='manage_billing']")
     end
   end
 
   defp insert_subscription(account, status) do
     {:ok, subscription} =
-      %{account_id: account.id, plan: "team", status: status}
+      %{
+        account_id: account.id,
+        plan: "team",
+        status: status,
+        collection_mode: if(status == "past_due", do: "automatic")
+      }
       |> Emisar.Billing.Subscription.Changeset.upsert()
       |> Emisar.Repo.insert()
 

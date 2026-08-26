@@ -401,6 +401,7 @@ defmodule Emisar.AccountsTest do
       account: account,
       subject: subject
     } do
+      Fixtures.Accounts.create_subscription(account, "team")
       Fixtures.SSO.create_identity_provider(account_id: account.id)
       account = Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
 
@@ -423,6 +424,7 @@ defmodule Emisar.AccountsTest do
       account: account,
       subject: subject
     } do
+      Fixtures.Accounts.create_subscription(account, "team")
       Fixtures.SSO.create_identity_provider(account_id: account.id)
       account = Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
 
@@ -444,6 +446,18 @@ defmodule Emisar.AccountsTest do
 
       assert Accounts.ensure_account_compliant(account, foreign_sso_subject) ==
                {:error, :sso_required}
+    end
+
+    test "require_sso fails open when the retained provider's paid access has expired", %{
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Accounts.create_subscription(account, "team")
+      Fixtures.SSO.create_identity_provider(account_id: account.id)
+      account = Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
+      Fixtures.Accounts.create_subscription(account, "team", status: "canceled")
+
+      assert Accounts.ensure_account_compliant(account, subject) == :ok
     end
 
     test "require_mfa rejects an operator who has not enrolled", %{
@@ -1210,6 +1224,7 @@ defmodule Emisar.AccountsTest do
     test "an owner can enable require_sso" do
       account = Fixtures.Accounts.create_account()
       owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      Fixtures.Accounts.create_subscription(account, "team")
 
       # require_sso needs a way in — enabling it with no enabled connection would
       # lock everyone out, owners included, so the domain refuses it.
@@ -1221,6 +1236,7 @@ defmodule Emisar.AccountsTest do
 
     test "an admin can enable require_sso (owners + admins manage security settings)" do
       account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "team")
       admin = Fixtures.Users.create_user()
 
       Fixtures.Memberships.create_membership(
@@ -1389,6 +1405,7 @@ defmodule Emisar.AccountsTest do
       owner = Fixtures.Users.create_user()
       subject = Fixtures.Subjects.subject_for(owner, account)
       enroll_mfa(owner)
+      Fixtures.Accounts.create_subscription(account, "team")
 
       # require_sso needs a way in — enabling it with no enabled connection would
       # lock everyone out, owners included, so the domain refuses it.
@@ -1404,7 +1421,13 @@ defmodule Emisar.AccountsTest do
       assert settings.require_mfa
       assert settings.require_sso
 
-      assert Enum.sort(Enum.map(Repo.all(Audit.Event), & &1.event_type)) ==
+      security_events =
+        Audit.Event
+        |> Repo.all()
+        |> Enum.map(& &1.event_type)
+        |> Enum.filter(&String.starts_with?(&1, "account.require_"))
+
+      assert Enum.sort(security_events) ==
                ["account.require_mfa_set", "account.require_sso_set"]
     end
   end
@@ -2645,6 +2668,7 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, %{mfa_enforcement: :available}} = Accounts.fetch_team_security_facts(subject)
 
+      Fixtures.Accounts.create_subscription(account, "team")
       Fixtures.SSO.create_identity_provider(account_id: account.id, enabled: true)
 
       {:ok, _account} =
@@ -6855,13 +6879,13 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "peek_account_by_paddle_customer_id/1" do
+  describe "resolve_paddle_subscription_account/2" do
     test "resolves the account a Paddle customer id belongs to" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
       {:ok, linked} = Accounts.put_account_paddle_customer_sync(account, "ctm_123", owner.id)
 
-      assert %Account{id: id} = Accounts.peek_account_by_paddle_customer_id("ctm_123")
+      assert {:ok, %Account{id: id}} = Accounts.resolve_paddle_subscription_account("ctm_123")
       assert id == linked.id
     end
 
@@ -6874,12 +6898,29 @@ defmodule Emisar.AccountsTest do
       {:ok, _} = Accounts.put_account_paddle_customer_sync(account, "ctm_deleted", owner.id)
       Fixtures.Accounts.mark_account_as_deleted(account)
 
-      assert %Account{id: id} = Accounts.peek_account_by_paddle_customer_id("ctm_deleted")
+      assert {:ok, %Account{id: id}} =
+               Accounts.resolve_paddle_subscription_account("ctm_deleted")
+
       assert id == account.id
     end
 
-    test "returns nil for an unknown customer id (the webhook no-ops on it)" do
-      assert is_nil(Accounts.peek_account_by_paddle_customer_id("ctm_unknown"))
+    test "returns not found for an unknown customer id" do
+      assert Accounts.resolve_paddle_subscription_account("ctm_unknown") ==
+               {:error, :not_found}
+    end
+
+    test "requires an account binding when a customer id is shared" do
+      first = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_shared"})
+      second = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_shared"})
+
+      assert Accounts.resolve_paddle_subscription_account("ctm_shared") ==
+               {:error, :ambiguous}
+
+      assert {:ok, %Account{id: id}} =
+               Accounts.resolve_paddle_subscription_account("ctm_shared", second.id)
+
+      assert id == second.id
+      refute id == first.id
     end
   end
 

@@ -3,9 +3,10 @@ defmodule Emisar.Billing.Subscription.Changeset do
   alias Emisar.Billing.Subscription
 
   @fields ~w[
-    account_id paddle_subscription_id paddle_price_id plan status billing_interval
+    account_id paddle_subscription_id paddle_price_id plan status collection_mode billing_interval
     unit_price_amount currency_code billing_frequency entitlements quantity
-    current_period_start current_period_end cancel_at_period_end trial_end paddle_updated_at
+    current_period_start current_period_end cancel_at_period_end scheduled_change_action
+    scheduled_change_effective_at trial_end paddle_updated_at paddle_event_occurred_at
   ]a
 
   @doc """
@@ -23,6 +24,7 @@ defmodule Emisar.Billing.Subscription.Changeset do
     subscription
     |> cast(attrs, @fields)
     |> put_change(:paddle_updated_at, nil)
+    |> put_change(:paddle_event_occurred_at, nil)
     |> validate_required([:account_id, :plan, :status])
     |> validate_number(:unit_price_amount, greater_than_or_equal_to: 0)
     |> validate_number(:billing_frequency, greater_than: 0)
@@ -55,12 +57,49 @@ defmodule Emisar.Billing.Subscription.Changeset do
   # dropping it prevents an old delivery from rewinding the mirror. Legacy rows
   # without a stored timestamp still accept the next event and establish the
   # guard when Paddle supplies `updated_at`.
-  defp stale_update?(%Subscription{paddle_updated_at: %DateTime{} = stored}, attrs) do
-    case attrs[:paddle_updated_at] || attrs["paddle_updated_at"] do
-      %DateTime{} = incoming -> DateTime.compare(incoming, stored) == :lt
-      _ -> true
-    end
+  defp stale_update?(%Subscription{} = subscription, attrs) do
+    incoming_event = attrs[:paddle_event_occurred_at] || attrs["paddle_event_occurred_at"]
+    incoming_object = attrs[:paddle_updated_at] || attrs["paddle_updated_at"]
+
+    stored_latest =
+      latest_timestamp(subscription.paddle_event_occurred_at, subscription.paddle_updated_at)
+
+    event_stale? =
+      if is_struct(incoming_event, DateTime),
+        do: older?(incoming_event, subscription.paddle_event_occurred_at),
+        else: has_key?(attrs, :paddle_event_occurred_at) and is_struct(stored_latest, DateTime)
+
+    object_stale? =
+      cond do
+        is_struct(incoming_object, DateTime) ->
+          older?(incoming_object, subscription.paddle_updated_at)
+
+        has_key?(attrs, :paddle_updated_at) and
+            is_struct(subscription.paddle_updated_at, DateTime) ->
+          true
+
+        true ->
+          false
+      end
+
+    missing_order? =
+      not is_struct(incoming_event, DateTime) and not is_struct(incoming_object, DateTime) and
+        is_struct(stored_latest, DateTime)
+
+    event_stale? or object_stale? or missing_order?
   end
 
-  defp stale_update?(_subscription, _attrs), do: false
+  defp latest_timestamp(nil, nil), do: nil
+  defp latest_timestamp(%DateTime{} = timestamp, nil), do: timestamp
+  defp latest_timestamp(nil, %DateTime{} = timestamp), do: timestamp
+
+  defp latest_timestamp(%DateTime{} = left, %DateTime{} = right) do
+    if DateTime.compare(left, right) == :lt, do: right, else: left
+  end
+
+  defp older?(_incoming, nil), do: false
+  defp older?(incoming, stored), do: DateTime.compare(incoming, stored) == :lt
+
+  defp has_key?(attrs, key),
+    do: Map.has_key?(attrs, key) or Map.has_key?(attrs, Atom.to_string(key))
 end

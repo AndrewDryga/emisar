@@ -2,7 +2,7 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
   use ExUnit.Case, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, Fixtures, Repo, SSO, Users}
+  alias Emisar.{Accounts, Billing, Fixtures, Repo, SSO, Users}
   alias Emisar.Accounts.{Account, Membership, RunnerAccess}
   alias Emisar.SSO.{DirectoryGroup, GroupRoleMapping, GroupRunnerAccessMapping}
   alias Emisar.SSO.{IdentityProvider, LinkRequest, SCIMUserUpdate, UserIdentity}
@@ -299,6 +299,50 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
         stop_tasks([mapper, deleter])
       end
     end)
+  end
+
+  for family <- [:role, :runner_access], operation <- [:create, :update] do
+    test "subscription cancellation fences a stale #{family} mapping #{operation}" do
+      family = unquote(family)
+      operation = unquote(operation)
+
+      unboxed_scim(fn context ->
+        scenario = paid_mapping_scenario(context, family, operation)
+        before = scenario.snapshot.()
+        parent = self()
+        cancellation = staged_subscription_cancellation(context.account.id, parent)
+
+        try do
+          assert_receive {:subscription_cancellation_staged, cancellation_backend}, 5_000
+
+          mutation =
+            unboxed_task(fn ->
+              send(parent, {:mapping_backend, backend_pid()})
+              scenario.run.()
+            end)
+
+          try do
+            assert_receive {:mapping_backend, mapping_backend}, 5_000
+            await_blocked_by(mapping_backend, cancellation_backend)
+
+            send(cancellation.pid, :commit)
+
+            assert {:ok, %Billing.Subscription{status: "canceled"}} =
+                     Task.await(cancellation, 30_000)
+
+            assert Task.await(mutation, 30_000) ==
+                     {:error, :directory_sync_not_available}
+
+            assert scenario.snapshot.() == before
+          after
+            stop_tasks([mutation])
+          end
+        after
+          send(cancellation.pid, :commit)
+          stop_tasks([cancellation])
+        end
+      end)
+    end
   end
 
   test "a fresh create waiting on provider config uses the locked current role and access defaults" do
@@ -665,6 +709,131 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
       email: email,
       full_name: "Collision"
     }
+  end
+
+  defp paid_mapping_scenario(context, :role, operation) do
+    {:ok, group} =
+      SSO.scim_upsert_group(context.provider, %{
+        external_id: "grp-role-#{operation}",
+        member_ids: []
+      })
+
+    mapping =
+      if operation == :update do
+        {:ok, mapping} =
+          SSO.create_group_mapping(
+            context.provider,
+            %{directory_group_id: group.id, role: :viewer},
+            context.subject
+          )
+
+        mapping
+      end
+
+    run =
+      case operation do
+        :create ->
+          fn ->
+            SSO.create_group_mapping(
+              context.provider,
+              %{directory_group_id: group.id, role: :admin},
+              context.subject
+            )
+          end
+
+        :update ->
+          fn -> SSO.update_group_mapping(mapping, %{role: :admin}, context.subject) end
+      end
+
+    %{run: run, snapshot: fn -> role_mapping_snapshot(context.provider.id) end}
+  end
+
+  defp paid_mapping_scenario(context, :runner_access, operation) do
+    source_group = "source-#{operation}"
+    target_group = "target-#{operation}"
+    Fixtures.Runners.create_runner(account_id: context.account.id, group: source_group)
+    Fixtures.Runners.create_runner(account_id: context.account.id, group: target_group)
+
+    {:ok, group} =
+      SSO.scim_upsert_group(context.provider, %{
+        external_id: "grp-access-#{operation}",
+        member_ids: []
+      })
+
+    attrs = fn runner_group ->
+      %{
+        directory_group_id: group.id,
+        runner_access_mode: :restricted,
+        scope: ["group:#{runner_group}"]
+      }
+    end
+
+    mapping =
+      if operation == :update do
+        {:ok, mapping} =
+          SSO.create_group_runner_access_mapping(
+            context.provider,
+            attrs.(source_group),
+            context.subject
+          )
+
+        mapping
+      end
+
+    run =
+      case operation do
+        :create ->
+          fn ->
+            SSO.create_group_runner_access_mapping(
+              context.provider,
+              attrs.(target_group),
+              context.subject
+            )
+          end
+
+        :update ->
+          fn ->
+            SSO.update_group_runner_access_mapping(
+              mapping,
+              attrs.(target_group),
+              context.subject
+            )
+          end
+      end
+
+    %{run: run, snapshot: fn -> runner_mapping_snapshot(context.provider.id) end}
+  end
+
+  defp role_mapping_snapshot(provider_id) do
+    GroupRoleMapping.Query.not_deleted()
+    |> GroupRoleMapping.Query.by_provider_id(provider_id)
+    |> Repo.all()
+    |> Enum.map(&{&1.id, &1.role})
+    |> Enum.sort()
+  end
+
+  defp runner_mapping_snapshot(provider_id) do
+    GroupRunnerAccessMapping.Query.not_deleted()
+    |> GroupRunnerAccessMapping.Query.by_provider_id(provider_id)
+    |> Repo.all()
+    |> Enum.map(&{&1.id, &1.runner_access_mode, &1.runner_scope_groups})
+    |> Enum.sort()
+  end
+
+  defp staged_subscription_cancellation(account_id, parent) do
+    unboxed_task(fn ->
+      backend = backend_pid()
+
+      Repo.transaction(fn ->
+        {:ok, _account} = Accounts.fetch_and_lock_account(account_id)
+        {:ok, subscription} = Billing.upsert_subscription(account_id, %{status: "canceled"})
+        send(parent, {:subscription_cancellation_staged, backend})
+
+        receive do
+          :commit -> subscription
+        end
+      end)
+    end)
   end
 
   defp account_blocker(account_id, parent) do

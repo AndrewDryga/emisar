@@ -15,8 +15,13 @@ defmodule Emisar.Billing.PaddleClient do
   @callback update_customer(map()) :: {:ok, map()} | {:error, term()}
   @callback list_customers(map()) :: {:ok, [map()]} | {:error, term()}
   @callback create_checkout_session(map()) :: {:ok, map()} | {:error, term()}
+  @callback bind_checkout_transaction(String.t(), String.t()) ::
+              {:ok, map()} | {:error, term()}
   @callback create_billing_portal_session(map()) :: {:ok, map()} | {:error, term()}
+  @callback retrieve_transaction(String.t()) :: {:ok, map()} | {:error, term()}
   @callback retrieve_subscription(String.t()) :: {:ok, map()} | {:error, term()}
+  @callback list_subscriptions(keyword()) ::
+              {:ok, %{subscriptions: [map()], next_after: String.t() | nil}} | {:error, term()}
   @callback cancel_subscription(String.t()) :: {:ok, map()} | {:error, term()}
   @callback list_products() :: {:ok, [map()]} | {:error, term()}
   @callback list_transactions(map()) :: {:ok, [map()]} | {:error, term()}
@@ -30,8 +35,11 @@ defmodule Emisar.Billing.PaddleClient do
   def update_customer(attrs), do: client().update_customer(attrs)
   def list_customers(attrs), do: client().list_customers(attrs)
   def create_checkout_session(attrs), do: client().create_checkout_session(attrs)
+  def bind_checkout_transaction(id, binding), do: client().bind_checkout_transaction(id, binding)
   def create_billing_portal_session(attrs), do: client().create_billing_portal_session(attrs)
+  def retrieve_transaction(id), do: client().retrieve_transaction(id)
   def retrieve_subscription(id), do: client().retrieve_subscription(id)
+  def list_subscriptions(attrs), do: client().list_subscriptions(attrs)
   def cancel_subscription(id), do: client().cancel_subscription(id)
   def list_products, do: client().list_products()
   def list_transactions(attrs), do: client().list_transactions(attrs)

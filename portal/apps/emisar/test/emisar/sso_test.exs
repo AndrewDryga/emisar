@@ -1967,6 +1967,20 @@ defmodule Emisar.SSOTest do
       assert Repo.reload!(provider).name == "Okta"
     end
 
+    test "an expired account may disable a retained provider but cannot edit it" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, %{enabled: true})
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
+
+      assert SSO.update_provider(provider, %{name: "Renamed"}, subject) ==
+               {:error, :sso_not_available}
+
+      assert {:ok, %IdentityProvider{enabled: false}} =
+               SSO.update_provider(provider, %{enabled: false}, subject)
+
+      assert Repo.reload!(provider).name == "Okta"
+    end
+
     test "a viewer (no manage_sso) is denied" do
       {_owner, account, _owner_subject} = enterprise_owner()
       provider = provider_fixture(account)
@@ -2035,9 +2049,8 @@ defmodule Emisar.SSOTest do
     end
 
     test "a downgraded plan can still delete — the connection outlived the plan, not the risk" do
-      # Downgrading does not stop an existing connection accepting sign-ins, so
-      # refusing the delete left an owner holding a live credential they had no
-      # way to retire.
+      # Expiry makes the connection dormant; deleting the stored trust remains
+      # an owner recovery and cleanup action, not a paid feature.
       {_user, account, subject} = Fixtures.Subjects.owner_subject(%{})
       provider = provider_fixture(account)
 
@@ -2230,6 +2243,14 @@ defmodule Emisar.SSOTest do
 
       assert SSO.list_enabled_providers_for_account(account_b.id) == []
     end
+
+    test "an expired account discovers no SSO provider" do
+      {_user, account, _subject} = enterprise_owner()
+      _provider = provider_fixture(account, %{enabled: true})
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
+
+      assert SSO.list_enabled_providers_for_account(account.id) == []
+    end
   end
 
   # -- fetch_provider_for_sign_in/1 (pre-Subject) ----------------------
@@ -2253,6 +2274,14 @@ defmodule Emisar.SSOTest do
     test "an unknown or malformed id is :not_found, never a crash" do
       assert SSO.fetch_provider_for_sign_in(Ecto.UUID.generate()) == {:error, :not_found}
       assert SSO.fetch_provider_for_sign_in("not-a-uuid") == {:error, :not_found}
+    end
+
+    test "an expired account cannot begin through a retained provider" do
+      {_user, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account, %{enabled: true})
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
+
+      assert SSO.fetch_provider_for_sign_in(provider.id) == {:error, :not_found}
     end
   end
 
@@ -2985,6 +3014,26 @@ defmodule Emisar.SSOTest do
 
       assert SSO.complete_auth(disabled, callback(claims), %{}) == {:error, :provider_disabled}
     end
+
+    test "a cancellation committed before callback completion refuses the session" do
+      {_user, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account)
+
+      claims = %{
+        "sub" => "okta|expired",
+        "email" => "expired@acme.test",
+        "email_verified" => true
+      }
+
+      {_canceled, callback_result} =
+        callback_after_verified(provider, claims, fn ->
+          Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
+        end)
+
+      assert callback_result == {:error, :sso_not_available}
+
+      assert Users.fetch_user_by_email(claims["email"]) == {:error, :not_found}
+    end
   end
 
   describe "complete_auth/3 — allowed_email_domain gate (H1)" do
@@ -3134,6 +3183,17 @@ defmodule Emisar.SSOTest do
       {:ok, _provider} = SSO.disable_scim(provider, subject)
 
       assert SSO.authenticate_scim_token(token) == {:error, :unauthorized}
+    end
+
+    test "an expired account refuses its retained token without touching last-seen", %{
+      account: account,
+      provider: provider,
+      token: token
+    } do
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
+
+      assert SSO.authenticate_scim_token(token) == {:error, :unauthorized}
+      assert is_nil(Repo.reload!(provider).scim_last_seen_at)
     end
 
     test "token A resolves to provider A only — never account B's provider", %{
@@ -3355,6 +3415,24 @@ defmodule Emisar.SSOTest do
       assert Users.fetch_user_by_email(email) == {:error, :not_found}
       assert Accounts.count_memberships(account.id) == 1
       refute Repo.exists?(UserIdentity.Query.not_deleted())
+    end
+
+    test "a provider authenticated before cancellation cannot write afterward", %{
+      account: account,
+      token: token
+    } do
+      assert {:ok, stale_provider} = SSO.authenticate_scim_token(token)
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
+
+      email = "expired-scim-#{System.unique_integer([:positive])}@acme.test"
+
+      assert SSO.scim_provision_user(stale_provider, %{
+               external_id: "expired-scim",
+               email: email,
+               full_name: "Expired SCIM"
+             }) == {:error, :directory_sync_disabled}
+
+      assert Users.fetch_user_by_email(email) == {:error, :not_found}
     end
 
     test "a duplicate create carrying active:false offboards rather than reactivating", %{
@@ -5162,6 +5240,26 @@ defmodule Emisar.SSOTest do
       assert role_of(account.id, identity.user_id) == :operator
     end
 
+    test "a group request authenticated before cancellation cannot mutate afterward", %{
+      account: account,
+      token: token
+    } do
+      assert {:ok, stale_provider} = SSO.authenticate_scim_token(token)
+      Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
+
+      assert SSO.scim_upsert_group(stale_provider, %{
+               external_id: "grp-after-expiry",
+               display: "After expiry",
+               member_ids: []
+             }) == {:error, :directory_sync_disabled}
+
+      refute Repo.exists?(
+               DirectoryGroup.Query.not_deleted()
+               |> DirectoryGroup.Query.by_account_id(account.id)
+               |> DirectoryGroup.Query.by_external_group_id("grp-after-expiry")
+             )
+    end
+
     test "an unknown member resource id is ignored (not yet provisioned)", %{
       provider: provider,
       subject: subject,
@@ -5881,9 +5979,8 @@ defmodule Emisar.SSOTest do
       provider: provider,
       account: account
     } do
-      # The token keeps authenticating after a downgrade, so an owner who cannot
-      # disable it has a live directory credential and no way to revoke it. Only
-      # buying the feature back was gated on the plan; giving it up never is.
+      # Expiry stops authentication immediately, but the owner must still be
+      # able to retire the stored bearer and provider configuration.
       {:ok, _enabled, raw} = SSO.enable_scim(provider, subject)
       assert {:ok, _} = SSO.authenticate_scim_token(raw)
 
@@ -8075,6 +8172,7 @@ defmodule Emisar.SSOTest do
 
     test "retirement releases the OIDC subject without deleting the SCIM resource" do
       account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "enterprise")
       provider = provider_fixture(account)
       original_user = Fixtures.Users.create_user()
       Fixtures.Memberships.create_membership(account_id: account.id, user_id: original_user.id)

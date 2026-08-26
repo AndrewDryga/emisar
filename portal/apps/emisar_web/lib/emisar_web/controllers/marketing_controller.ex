@@ -260,7 +260,7 @@ defmodule EmisarWeb.MarketingController do
     {"Can I self-host?",
      "The current product uses the hosted emisar control plane. The runner, MCP bridge, and packs are Apache-2.0 open source, and the repository includes deployable control-plane code (Business Source License) for evaluation — but supported self-hosted and air-gapped deployments are not generally available today. Tell us if that boundary is a requirement."},
     {"Can I cancel any time?",
-     "Yes. Cancel from billing settings to stop renewal in Paddle. Cancellation does not downgrade your emisar plan automatically today. Billing keeps showing the current plan until its mirrored plan changes."},
+     "Yes. Cancel from billing settings to stop renewal in Paddle. Paid features and limits remain available until the scheduled end of the billing period, then the account moves to Free limits."},
     {"Do you offer startup discounts?",
      "Yes. Email sales@emisar.dev with your YC or pre-seed letter and we'll take it from there."}
   ]

@@ -192,6 +192,7 @@ defmodule Emisar.AuthTest do
   describe "complete_sso_account_sign_in/4" do
     setup do
       {user, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Accounts.create_subscription(account, "team")
 
       provider = Fixtures.SSO.create_identity_provider(%{account_id: account.id})
 

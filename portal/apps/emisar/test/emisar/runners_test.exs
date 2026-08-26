@@ -4283,13 +4283,14 @@ defmodule Emisar.RunnersTest do
       assert Billing.check_limit(account, :runners) == :ok
     end
 
-    test "a past_due account keeps full plan limits — status never gates registration" do
-      # account_plan/1 is status-agnostic, so a Team account whose subscription
-      # lapsed to past_due still resolves to the Team cap (100) and registers a
-      # runner under it. Billing status is advisory (banners), never an entitlement
-      # gate — register_via_enrollment_key only blocks on the runner cap.
+    test "an automatically collected past_due account keeps Team limits during dunning" do
       account = Fixtures.Accounts.create_account()
-      Fixtures.Accounts.create_subscription(account, "team", status: "past_due")
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        status: "past_due",
+        collection_mode: "automatic"
+      )
+
       user = Fixtures.Users.create_user()
 
       assert Billing.account_plan(account) == "team"

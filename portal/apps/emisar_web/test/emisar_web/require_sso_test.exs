@@ -11,6 +11,8 @@ defmodule EmisarWeb.RequireSSOTest do
   alias Emisar.SSO.{IdentityProvider, UserIdentity}
 
   defp enabled_provider(account) do
+    Fixtures.Accounts.create_subscription(account, "team")
+
     {:ok, provider} =
       Repo.insert(
         IdentityProvider.Changeset.create(account.id, %{
@@ -130,6 +132,7 @@ defmodule EmisarWeb.RequireSSOTest do
       conn: conn,
       account: account
     } do
+      Fixtures.Accounts.create_subscription(account, "team")
       require_sso!(account)
 
       # No enabled provider exists, so the gate can't ever be satisfied — it fails
@@ -212,6 +215,7 @@ defmodule EmisarWeb.RequireSSOTest do
 
     test "owner cannot turn it on with no connection — flashed, no change (handler guards too)",
          %{conn: conn, account: account} do
+      Fixtures.Accounts.create_subscription(account, "team")
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
       html = render_click(lv, "toggle_require_sso", %{})
 

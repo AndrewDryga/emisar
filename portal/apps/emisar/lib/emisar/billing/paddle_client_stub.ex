@@ -51,6 +51,14 @@ defmodule Emisar.Billing.PaddleClient.Stub do
   end
 
   @impl true
+  def bind_checkout_transaction(id, _binding), do: {:ok, %{"id" => id}}
+
+  @impl true
+  def retrieve_transaction(id) do
+    {:ok, %{"id" => id, "subscription_id" => String.replace_prefix(id, "txn_", "sub_")}}
+  end
+
+  @impl true
   def create_billing_portal_session(attrs) do
     {:ok,
      %{
@@ -113,6 +121,9 @@ defmodule Emisar.Billing.PaddleClient.Stub do
        ]
      }}
   end
+
+  @impl true
+  def list_subscriptions(_attrs), do: {:ok, %{subscriptions: [], next_after: nil}}
 
   @impl true
   def list_transactions(_attrs) do

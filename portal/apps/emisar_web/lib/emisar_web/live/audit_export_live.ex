@@ -11,23 +11,13 @@ defmodule EmisarWeb.AuditExportLive do
   alias Phoenix.LiveView.JS
 
   def mount(_params, _session, socket) do
-    cond do
-      not Billing.continuous_audit_export_available?(socket.assigns.current_account) ->
-        # Continuous SIEM export is paid. The owner-only CSV fallback lives on
-        # the audit page and grants no token or API access.
-        {:ok,
-         socket
-         |> put_flash(:info, "Continuous SIEM export is available on Team.")
-         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/billing")}
-
-      not ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject) ->
-        {:ok,
-         socket
-         |> put_flash(:info, "Managing export tokens needs an admin role.")
-         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/audit")}
-
-      true ->
-        mount_export(socket)
+    if ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject) do
+      mount_export(socket)
+    else
+      {:ok,
+       socket
+       |> put_flash(:info, "Managing export tokens needs an admin role.")
+       |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/audit")}
     end
   end
 
@@ -41,6 +31,10 @@ defmodule EmisarWeb.AuditExportLive do
     {:ok,
      socket
      |> assign(:page_title, "SIEM export")
+     |> assign(
+       :continuous_export_available?,
+       Billing.continuous_audit_export_available?(socket.assigns.current_account)
+     )
      |> assign(:export_secret, nil)
      |> assign(:base_audit_url, UrlHelpers.derive_base_url(socket) <> "/api/audit")
      |> assign_export_keys()}
@@ -166,13 +160,23 @@ defmodule EmisarWeb.AuditExportLive do
            the mint action, hairline token rows below — the panel island died
            with the old design. The one box left is the shown-once secret. --%>
       <section id="siem-export">
+        <.callout
+          :if={not @continuous_export_available?}
+          tone={:amber}
+          icon="state.warning"
+          title="Continuous export is paused"
+          class="mb-6"
+        >
+          Existing tokens no longer read audit events. You can revoke them here, use the owner's
+          one-time CSV from the audit log, or restore a paid plan from Billing.
+        </.callout>
         <.section_header title="Export tokens">
           <:subtitle>
             Read-only, admin-minted, revocable — separate from the LLM-agent keys.
           </:subtitle>
           <:actions>
             <.button
-              :if={is_nil(@export_secret)}
+              :if={@continuous_export_available? and is_nil(@export_secret)}
               variant={:secondary}
               size={:md}
               class="shrink-0"

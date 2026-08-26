@@ -532,13 +532,17 @@ defmodule Emisar.SSO do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.view_sso_posture_permission()
-           ) do
+           ),
+         true <- Billing.sso_available?(subject.account) do
       IdentityProvider.Query.not_deleted()
       |> IdentityProvider.Query.enabled()
       |> IdentityProvider.Query.by_account_id(subject.account.id)
       |> IdentityProvider.Query.by_id(provider_id)
       |> Authorizer.for_subject(subject)
       |> Repo.fetch(IdentityProvider.Query)
+    else
+      false -> {:error, :sso_not_available}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -592,6 +596,7 @@ defmodule Emisar.SSO do
     |> Multi.run(:account, fn repo, _changes ->
       Accounts.fetch_and_lock_account(provider.account_id, repo: repo)
     end)
+    |> put_sso_entitlement(provider.account_id)
     |> Multi.run(:provider, fn repo, _changes ->
       lock_identity_link_provider(repo, provider, stashed)
     end)
@@ -893,13 +898,16 @@ defmodule Emisar.SSO do
 
   @doc "Update a connection's config (locked re-read). `manage_sso` + Team or Enterprise. `{:ok, provider} | {:error, reason}`."
   def update_provider(%IdentityProvider{id: id}, attrs, %Subject{} = subject) do
-    with :ok <- ensure_can_configure_sso(subject),
+    cleanup_only? = provider_disable_only?(attrs)
+
+    with :ok <- ensure_can_update_provider(subject, cleanup_only?),
          {:ok, scoped_provider} <- fetch_provider_by_id(id, subject) do
       Multi.new()
       # Disabling a connection consults the account's require_sso invariant.
       # Take the shared account fence before the provider row, matching every
       # OIDC/SCIM path that may need both locks.
       |> put_active_account_lock(scoped_provider.account_id)
+      |> maybe_put_sso_entitlement(scoped_provider.account_id, cleanup_only?)
       |> Multi.run(:update_target, fn repo, _changes ->
         queryable =
           IdentityProvider.Query.not_deleted()
@@ -1282,7 +1290,9 @@ defmodule Emisar.SSO do
   defp last_required_provider?(provider) do
     _ = Accounts.fetch_and_lock_account(provider.account_id)
 
-    account_requires_sso?(provider.account_id) and not another_enabled_provider?(provider)
+    account_requires_sso?(provider.account_id) and
+      Billing.sso_available_for_account_id?(provider.account_id) and
+      not another_enabled_provider?(provider)
   end
 
   defp account_requires_sso?(account_id) do
@@ -1302,6 +1312,8 @@ defmodule Emisar.SSO do
 
   defp configure_multi(changeset, subject) do
     Multi.new()
+    |> put_active_account_lock(subject.account.id)
+    |> put_sso_entitlement(subject.account.id)
     |> Multi.insert(:provider, changeset)
     |> Multi.insert(:audit, fn %{provider: provider} ->
       Audit.Events.identity_provider_configured(subject, provider)
@@ -1638,21 +1650,32 @@ defmodule Emisar.SSO do
 
   @doc "Internal — sign-in: an account's enabled SSO providers, name-ordered, for the per-account sign-in page (pre-Subject)."
   def list_enabled_providers_for_account(account_id) when is_binary(account_id) do
-    IdentityProvider.Query.not_deleted()
-    |> IdentityProvider.Query.enabled()
-    |> IdentityProvider.Query.by_account_id(account_id)
-    |> IdentityProvider.Query.ordered_by_name()
-    |> Repo.all()
+    if Billing.sso_available_for_account_id?(account_id) do
+      IdentityProvider.Query.not_deleted()
+      |> IdentityProvider.Query.enabled()
+      |> IdentityProvider.Query.by_account_id(account_id)
+      |> IdentityProvider.Query.ordered_by_name()
+      |> Repo.all()
+    else
+      []
+    end
   end
 
   @doc "Internal — sign-in: an enabled provider by id, for the begin-auth redirect (pre-Subject)."
   def fetch_provider_for_sign_in(id) do
     if Repo.valid_uuid?(id) do
-      IdentityProvider.Query.not_deleted()
-      |> IdentityProvider.Query.enabled()
-      |> IdentityProvider.Query.with_active_account()
-      |> IdentityProvider.Query.by_id(id)
-      |> Repo.fetch(IdentityProvider.Query)
+      provider_query =
+        IdentityProvider.Query.not_deleted()
+        |> IdentityProvider.Query.enabled()
+        |> IdentityProvider.Query.with_active_account()
+        |> IdentityProvider.Query.by_id(id)
+
+      with {:ok, provider} <- Repo.fetch(provider_query, IdentityProvider.Query),
+           true <- Billing.sso_available_for_account_id?(provider.account_id) do
+        {:ok, provider}
+      else
+        _ -> {:error, :not_found}
+      end
     else
       {:error, :not_found}
     end
@@ -1770,14 +1793,16 @@ defmodule Emisar.SSO do
       when is_binary(provider_id) and is_binary(identity_id) and
              is_binary(provider_identifier) and is_tuple(namespace) and is_integer(auth_time) and
              is_binary(actor_id) and is_binary(account_id) do
-    provider =
+    provider_query =
       IdentityProvider.Query.not_deleted()
       |> IdentityProvider.Query.by_account_id(account_id)
       |> IdentityProvider.Query.by_id(provider_id)
       |> IdentityProvider.Query.lock_for_update()
-      |> repo.peek()
 
-    with %IdentityProvider{enabled: true, satisfies_mfa: true} = provider <- provider,
+    with true <-
+           Billing.sso_available_for_account_id?(account_id, repo: repo, lock?: true),
+         %IdentityProvider{enabled: true, satisfies_mfa: true} = provider <-
+           repo.peek(provider_query),
          :ok <- ensure_member_mfa_reset_auth_time_current(auth_time),
          true <- callback_namespace(provider) == namespace,
          %UserIdentity{} <-
@@ -1819,7 +1844,8 @@ defmodule Emisar.SSO do
            ),
          %UserIdentity{provider: %IdentityProvider{} = provider} = identity <-
            peek_member_mfa_reset_identity(identity_id, actor_id, account_id, subject),
-         true <- provider.enabled and provider.satisfies_mfa do
+         true <- provider.enabled and provider.satisfies_mfa,
+         true <- Billing.sso_available?(subject.account) do
       {:ok, {identity, provider}}
     else
       _other -> {:error, :mfa_reset_reauthentication_unavailable}
@@ -1966,6 +1992,7 @@ defmodule Emisar.SSO do
   defp commit_verified_auth(started_provider, namespace, identifier, claims, attempt) do
     Multi.new()
     |> put_active_account_lock(started_provider.account_id)
+    |> put_sso_entitlement(started_provider.account_id)
     |> put_callback_provider_lock(started_provider, namespace, claims)
     |> Multi.merge(fn %{locked_provider: provider} ->
       verified_auth_writes(provider, identifier, claims)
@@ -2219,6 +2246,7 @@ defmodule Emisar.SSO do
   defp commit_verified_email_collision(started_provider, namespace, identifier, claims) do
     Multi.new()
     |> put_active_account_lock(started_provider.account_id)
+    |> put_sso_entitlement(started_provider.account_id)
     |> put_callback_provider_lock(started_provider, namespace, claims)
     |> Multi.merge(fn %{locked_provider: provider} ->
       cond do
@@ -2388,13 +2416,15 @@ defmodule Emisar.SSO do
       when is_binary(user_identity_id) and is_binary(user_id) and is_binary(account_id) and
              is_binary(provider_identifier) do
     identity =
-      UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.provider_identifier_active()
-      |> UserIdentity.Query.by_id(user_identity_id)
-      |> UserIdentity.Query.by_user_id(user_id)
-      |> UserIdentity.Query.by_account_id(account_id)
-      |> UserIdentity.Query.by_provider_identifier(provider_identifier)
-      |> repo.peek()
+      if Billing.sso_available_for_account_id?(account_id, repo: repo, lock?: true) do
+        UserIdentity.Query.not_deleted()
+        |> UserIdentity.Query.provider_identifier_active()
+        |> UserIdentity.Query.by_id(user_identity_id)
+        |> UserIdentity.Query.by_user_id(user_id)
+        |> UserIdentity.Query.by_account_id(account_id)
+        |> UserIdentity.Query.by_provider_identifier(provider_identifier)
+        |> repo.peek()
+      end
 
     case identity do
       %UserIdentity{provider_id: provider_id} ->
@@ -2554,23 +2584,36 @@ defmodule Emisar.SSO do
     with :ok <- ensure_can_configure_directory_sync(subject) do
       {raw, prefix, hash} = Crypto.scim_token()
 
-      IdentityProvider.Query.not_deleted()
-      |> IdentityProvider.Query.by_id(id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(IdentityProvider.Query,
-        # Judged on the locked row, not on the console's copy: a kind with no
-        # inbound SCIM must never end up holding a live bearer that authenticates
-        # a directory it can't have. Disable stays open, so a token minted before
-        # this can still be retired.
-        with: fn loaded_provider ->
-          if ProviderKind.supports_scim?(loaded_provider.kind),
-            do: IdentityProvider.Changeset.scim_token(loaded_provider, prefix, hash, enabled),
-            else: :scim_not_supported
-        end,
-        audit: &Audit.Events.identity_provider_updated(subject, &2.data, &1)
-      )
+      Multi.new()
+      |> put_active_account_lock(subject.account.id)
+      |> put_directory_sync_entitlement(subject.account.id)
+      |> Multi.run(:scim_target, fn repo, _changes ->
+        queryable =
+          IdentityProvider.Query.not_deleted()
+          |> IdentityProvider.Query.by_id(id)
+          |> Authorizer.for_subject(subject)
+          |> IdentityProvider.Query.lock_for_update()
+
+        with {:ok, loaded_provider} <- repo.fetch(queryable, IdentityProvider.Query),
+             true <- ProviderKind.supports_scim?(loaded_provider.kind) do
+          {:ok,
+           %{
+             provider: loaded_provider,
+             changeset:
+               IdentityProvider.Changeset.scim_token(loaded_provider, prefix, hash, enabled)
+           }}
+        else
+          false -> {:error, :scim_not_supported}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
+      |> Multi.update(:provider, fn %{scim_target: %{changeset: changeset}} -> changeset end)
+      |> Multi.insert(:audit, fn %{scim_target: %{provider: before}, provider: updated} ->
+        Audit.Events.identity_provider_updated(subject, before, updated)
+      end)
+      |> Repo.commit_multi()
       |> case do
-        {:ok, provider} -> {:ok, provider, raw}
+        {:ok, %{provider: provider}} -> {:ok, provider, raw}
         {:error, reason} -> {:error, reason}
       end
     end
@@ -2730,6 +2773,7 @@ defmodule Emisar.SSO do
     directory_group_id = attrs["directory_group_id"] || attrs[:directory_group_id]
 
     Multi.new()
+    |> put_directory_mapping_fence(subject.account.id)
     |> Multi.run(:authorization_change, fn _repo, _changes ->
       prepare_mapping_authorization_change(provider.account_id, provider.id, directory_group_id)
     end)
@@ -2750,6 +2794,7 @@ defmodule Emisar.SSO do
     with :ok <- ensure_can_configure_directory_sync(subject),
          :ok <- ensure_grantable_role(attrs["role"] || attrs[:role], subject) do
       Multi.new()
+      |> put_directory_mapping_fence(subject.account.id)
       |> put_mapping_provider_lock(provider_id, subject)
       |> Multi.run(:locked_mapping, fn _repo, %{locked_provider: provider} ->
         GroupRoleMapping.Query.not_deleted()
@@ -2792,6 +2837,7 @@ defmodule Emisar.SSO do
       ) do
     with :ok <- ensure_can_configure_directory_sync(subject) do
       Multi.new()
+      |> put_directory_mapping_fence(subject.account.id)
       |> put_mapping_provider_lock(provider_id, subject)
       |> Multi.run(:locked_mapping, fn _repo, %{locked_provider: provider} ->
         GroupRoleMapping.Query.not_deleted()
@@ -2864,6 +2910,7 @@ defmodule Emisar.SSO do
          {:ok, access} <- runner_access_mapping_from_changeset(form),
          :ok <- Accounts.ensure_runner_access_grant_allowed(subject, access) do
       Multi.new()
+      |> put_directory_mapping_fence(subject.account.id)
       |> Multi.run(:authorization_change, fn _repo, _changes ->
         prepare_mapping_authorization_change(
           provider.account_id,
@@ -2903,6 +2950,7 @@ defmodule Emisar.SSO do
       ) do
     with :ok <- ensure_can_configure_directory_sync(subject) do
       Multi.new()
+      |> put_directory_mapping_fence(subject.account.id)
       |> put_mapping_provider_lock(provider_id, subject)
       |> Multi.run(:locked_mapping, fn _repo, %{locked_provider: provider} ->
         GroupRunnerAccessMapping.Query.not_deleted()
@@ -2952,6 +3000,7 @@ defmodule Emisar.SSO do
       ) do
     with :ok <- ensure_can_configure_directory_sync(subject) do
       Multi.new()
+      |> put_directory_mapping_fence(subject.account.id)
       |> put_mapping_provider_lock(provider_id, subject)
       |> Multi.run(:locked_mapping, fn _repo, %{locked_provider: provider} ->
         GroupRunnerAccessMapping.Query.not_deleted()
@@ -2990,9 +3039,16 @@ defmodule Emisar.SSO do
   defp mapping_result({:ok, %{mapping: mapping}}), do: {:ok, mapping}
   defp mapping_result({:error, reason}), do: {:error, reason}
 
-  # SCIM writes lock provider → group before touching mapping snapshots. Every
-  # operator mapping mutation starts with the same provider fence, so a rename
-  # cannot deadlock against an update/delete that grabbed the mapping row first.
+  defp put_directory_mapping_fence(multi, account_id) do
+    multi
+    |> put_active_account_lock(account_id)
+    |> put_directory_sync_entitlement(account_id)
+  end
+
+  # After the shared account -> subscription entitlement fence, SCIM mapping
+  # writes lock provider -> group before touching mapping snapshots. Every
+  # operator mapping mutation keeps that order, so a rename cannot deadlock
+  # against an update/delete that grabbed the mapping row first.
   defp put_mapping_provider_lock(multi, provider_id, %Subject{} = subject) do
     Multi.run(multi, :locked_provider, fn _repo, _changes ->
       IdentityProvider.Query.not_deleted()
@@ -3402,6 +3458,7 @@ defmodule Emisar.SSO do
     # Nothing here reads the approver's row otherwise.
     Multi.new()
     |> put_active_account_lock(provider.account_id)
+    |> put_sso_entitlement(provider.account_id)
     |> put_enabled_provider_lock(provider)
     |> Multi.merge(fn %{locked_provider: locked_provider} ->
       if locked_provider.scim_enabled do
@@ -3447,6 +3504,7 @@ defmodule Emisar.SSO do
        ) do
     Multi.new()
     |> put_active_account_lock(provider.account_id)
+    |> put_sso_entitlement(provider.account_id)
     |> put_provider_lock(provider)
     |> Multi.merge(fn %{locked_provider: locked_provider} ->
       Multi.new()
@@ -3848,11 +3906,9 @@ defmodule Emisar.SSO do
   end
 
   # A plan gate bounds what an account may ADD or keep running — never what it may
-  # SEE or TAKE AWAY. A downgrade does not stop existing OIDC and SCIM credentials
-  # working, so gating the reads and the destructive verbs on the plan left an
-  # owner with live credentials they were structurally unable to retire: the
-  # console could not list the connection, and delete/disable refused. Reads and
-  # cleanup check the permission alone.
+  # SEE or TAKE AWAY. Expiry makes OIDC and SCIM credentials dormant, but an owner
+  # must still be able to retire stored trust and configuration. Reads and exact
+  # cleanup operations therefore check permission alone.
   #
   # "Destructive" means STOPS something, not "is spelled delete". Removing a group
   # mapping recomputes its members, and a member left in no mapped group falls
@@ -3870,6 +3926,23 @@ defmodule Emisar.SSO do
     end
   end
 
+  defp ensure_can_update_provider(subject, true), do: ensure_can_manage_sso(subject)
+  defp ensure_can_update_provider(subject, false), do: ensure_can_configure_sso(subject)
+
+  defp provider_disable_only?(attrs) when is_map(attrs) do
+    case Map.to_list(attrs) do
+      [{key, value}] when key in [:enabled, "enabled"] and value in [false, "false"] -> true
+      _ -> false
+    end
+  end
+
+  defp provider_disable_only?(_attrs), do: false
+
+  defp maybe_put_sso_entitlement(multi, _account_id, true), do: multi
+
+  defp maybe_put_sso_entitlement(multi, account_id, false),
+    do: put_sso_entitlement(multi, account_id)
+
   defp ensure_can_configure_directory_sync(%Subject{account: account} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_sso_permission()) do
@@ -3877,6 +3950,25 @@ defmodule Emisar.SSO do
         do: :ok,
         else: {:error, :directory_sync_not_available}
     end
+  end
+
+  defp put_sso_entitlement(multi, account_id) do
+    Multi.run(multi, :sso_entitlement, fn repo, _changes ->
+      if Billing.sso_available_for_account_id?(account_id, repo: repo, lock?: true),
+        do: {:ok, :available},
+        else: {:error, :sso_not_available}
+    end)
+  end
+
+  defp put_directory_sync_entitlement(multi, account_id) do
+    Multi.run(multi, :directory_sync_entitlement, fn repo, _changes ->
+      if Billing.directory_sync_available_for_account_id?(account_id,
+           repo: repo,
+           lock?: true
+         ),
+         do: {:ok, :available},
+         else: {:error, :directory_sync_not_available}
+    end)
   end
 
   # -- SCIM (directory sync) ---------------------------------------------------

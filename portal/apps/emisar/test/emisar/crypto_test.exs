@@ -256,4 +256,16 @@ defmodule Emisar.CryptoTest do
       assert Crypto.verify_monthly_report_unsubscribe_token("nope") == {:error, :invalid}
     end
   end
+
+  describe "paddle_account_binding/1 and verify_paddle_account_binding/1" do
+    test "round-trips the account and rejects tampering without expiring" do
+      account_id = Ecto.UUID.generate()
+      transaction_id = "txn_binding_test"
+      token = Crypto.paddle_account_binding(account_id, transaction_id)
+
+      assert Crypto.verify_paddle_account_binding(token) == {:ok, {account_id, transaction_id}}
+      assert Crypto.verify_paddle_account_binding(token <> "x") == {:error, :invalid}
+      assert Crypto.verify_paddle_account_binding(nil) == {:error, :invalid}
+    end
+  end
 end

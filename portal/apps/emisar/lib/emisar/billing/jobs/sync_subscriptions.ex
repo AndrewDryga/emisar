@@ -8,7 +8,6 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
     initial_delay: :timer.minutes(2),
     executor: Emisar.Jobs.Executors.GloballyUnique
 
-  import Emisar.Maps, only: [put_present: 3]
   alias Emisar.{Billing, Repo}
   require Logger
 
@@ -17,7 +16,8 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
   @impl Emisar.Jobs.Executors.GloballyUnique
   def execute(config) do
     limit = Keyword.get(config, :limit, @subscriptions_per_page)
-    sweep_page(limit, nil)
+    :ok = sweep_page(limit, nil)
+    discover_page(limit, nil)
   end
 
   defp sweep_page(limit, after_subscription_id) do
@@ -60,26 +60,25 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
 
   defp sync(%Billing.Subscription{paddle_subscription_id: nil}), do: :ok
 
-  defp sync(%Billing.Subscription{
-         paddle_subscription_id: paddle_subscription_id,
-         account_id: account_id
-       }) do
+  defp sync(
+         %Billing.Subscription{
+           paddle_subscription_id: paddle_subscription_id,
+           account_id: account_id
+         } = subscription
+       ) do
     case Billing.PaddleClient.retrieve_subscription(paddle_subscription_id) do
       {:ok, subscription_data} ->
-        plan = Billing.Entitlements.plan_slug(subscription_data)
-        entitlements = Billing.Entitlements.from_paddle_subscription(subscription_data)
-
-        attrs =
-          %{status: subscription_data["status"]}
-          |> Map.merge(Billing.subscription_item_attrs(subscription_data))
-          |> put_present(:plan, plan)
-          |> put_present(:entitlements, entitlements)
-          |> put_present(:current_period_end, Billing.extract_next_billed_at(subscription_data))
-          |> put_present(:paddle_updated_at, Billing.extract_paddle_updated_at(subscription_data))
-
-        case Billing.upsert_subscription(account_id, attrs) do
+        case Billing.reconcile_subscription_data(subscription_data,
+               expected_subscription: subscription
+             ) do
           {:ok, _subscription} ->
             :ok
+
+          :ok ->
+            Logger.warning("billing_sync.subscription_unmatched",
+              paddle_subscription_id: paddle_subscription_id,
+              account_id: account_id
+            )
 
           {:error, reason} ->
             Logger.warning("billing_sync.upsert_failed",
@@ -99,4 +98,67 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
         :ok
     end
   end
+
+  # The local-row sweep repairs missed updates. This provider-side discovery
+  # pass repairs the other half: a missed subscription.created event left no
+  # local row to retrieve, so list current subscriptions and resolve each one by
+  # its mirrored Paddle customer id.
+  defp discover_page(limit, after_cursor) do
+    case Billing.PaddleClient.list_subscriptions(limit: limit, after: after_cursor) do
+      {:ok, %{subscriptions: subscriptions, next_after: next_after}}
+      when is_list(subscriptions) ->
+        Enum.each(subscriptions, &reconcile_discovered_safely/1)
+
+        case next_after do
+          nil ->
+            :ok
+
+          next_after when is_binary(next_after) and next_after != after_cursor ->
+            discover_page(limit, next_after)
+
+          _repeated_or_malformed ->
+            log_discovery_failure(:non_advancing_cursor)
+        end
+
+      {:error, reason} ->
+        log_discovery_failure(reason)
+    end
+  end
+
+  defp log_discovery_failure(reason) do
+    Logger.warning("billing_sync.discovery_failed",
+      error: inspect(Billing.redacted_paddle_error(reason))
+    )
+
+    :ok
+  end
+
+  defp reconcile_discovered_safely(subscription_data) do
+    paddle_subscription_id = discovered_subscription_id(subscription_data)
+
+    case Billing.reconcile_discovered_subscription_data(subscription_data) do
+      {:ok, _subscription} ->
+        :ok
+
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("billing_sync.discovery_upsert_failed",
+          paddle_subscription_id: paddle_subscription_id,
+          error: inspect(Billing.redacted_paddle_error(reason))
+        )
+    end
+  rescue
+    error ->
+      Logger.warning("billing_sync.discovery_crashed",
+        paddle_subscription_id: discovered_subscription_id(subscription_data),
+        error: inspect(error.__struct__)
+      )
+
+      :ok
+  end
+
+  defp discovered_subscription_id(%{"id" => id}) when is_binary(id), do: id
+  defp discovered_subscription_id(_subscription_data), do: "unknown"
 end

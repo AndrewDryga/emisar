@@ -55,9 +55,11 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — lock the active account row (`FOR NO KEY UPDATE`) inside the CALLER's
+  Internal — lock the account row (`FOR NO KEY UPDATE`) inside the CALLER's
   transaction (pass the Multi's `repo`) so concurrent per-account work serializes
-  on it.
+  on it. The default requires an active account; `include_deleted?: true` is for
+  provider lifecycle receipts that must serialize with account closure after the
+  row is tombstoned.
 
   Runners uses it as the first step of its registration / enable Multi:
   the plan-limit count is a TOCTOU otherwise (two callers both read `current <
@@ -67,7 +69,12 @@ defmodule Emisar.Accounts do
     if Repo.valid_uuid?(account_id) do
       repo = Keyword.get(opts, :repo, Repo)
 
-      Account.Query.active()
+      queryable =
+        if Keyword.get(opts, :include_deleted?, false),
+          do: Account.Query.all(),
+          else: Account.Query.active()
+
+      queryable
       |> Account.Query.by_id(account_id)
       |> Account.Query.lock_for_update()
       |> repo.fetch(Account.Query)
@@ -4768,18 +4775,42 @@ defmodule Emisar.Accounts do
   defp owner_user_result({:error, :not_found}), do: {:error, :not_found}
 
   @doc """
-  Internal — Billing webhook resolve: the account a Paddle customer id
-  belongs to, nil-or-struct (`peek` — an unknown customer_id is a meaningful
-  no-match the webhook handler no-ops on).
+  Internal — resolves a signed Paddle subscription to its account by customer
+  id and, when present, the immutable account id copied from checkout custom
+  data. Returns `{:ok, account} | {:error, :not_found | :ambiguous}`.
   """
-  def peek_account_by_paddle_customer_id(customer_id) when is_binary(customer_id) do
-    # Deliberately `all()`, not `not_deleted()`: a tombstoned account's
-    # subscription webhooks (cancellation, final invoices) must still
-    # resolve so Billing can close the books on it.
-    Account.Query.all()
-    |> Account.Query.by_paddle_customer_id(customer_id)
-    |> Repo.peek()
+  def resolve_paddle_subscription_account(customer_id, account_id \\ nil)
+
+  def resolve_paddle_subscription_account(customer_id, account_id)
+      when is_binary(customer_id) and is_binary(account_id) do
+    if Repo.valid_uuid?(account_id) do
+      # Deliberately `all()`, not `not_deleted()`: terminal lifecycle receipts
+      # must still resolve after account closure.
+      Account.Query.all()
+      |> Account.Query.by_id(account_id)
+      |> Account.Query.by_paddle_customer_id(customer_id)
+      |> Repo.fetch(Account.Query)
+    else
+      {:error, :not_found}
+    end
   end
+
+  def resolve_paddle_subscription_account(customer_id, nil) when is_binary(customer_id) do
+    accounts =
+      Account.Query.all()
+      |> Account.Query.by_paddle_customer_id(customer_id)
+      |> Account.Query.limit_to(2)
+      |> Repo.all()
+
+    case accounts do
+      [account] -> {:ok, account}
+      [] -> {:error, :not_found}
+      [_first, _second] -> {:error, :ambiguous}
+    end
+  end
+
+  def resolve_paddle_subscription_account(_customer_id, _account_id),
+    do: {:error, :not_found}
 
   @doc """
   Internal — Billing: stamp a successful Paddle customer sync.

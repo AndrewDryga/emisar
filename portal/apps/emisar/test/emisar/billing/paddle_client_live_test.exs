@@ -67,6 +67,45 @@ defmodule Emisar.Billing.PaddleClientLiveTest do
     end
   end
 
+  describe "parse_subscription_page/1" do
+    test "extracts an advancing cursor only while Paddle reports more pages" do
+      assert Live.parse_subscription_page(%{
+               "data" => [%{"id" => "sub_one"}],
+               "meta" => %{
+                 "pagination" => %{
+                   "has_more" => true,
+                   "next" => "https://api.paddle.com/subscriptions?after=sub_one&per_page=1"
+                 }
+               }
+             }) ==
+               {:ok, %{subscriptions: [%{"id" => "sub_one"}], next_after: "sub_one"}}
+
+      assert Live.parse_subscription_page(%{
+               "data" => [],
+               "meta" => %{
+                 "pagination" => %{
+                   "has_more" => false,
+                   "next" => "https://api.paddle.com/subscriptions?after=ignored"
+                 }
+               }
+             }) == {:ok, %{subscriptions: [], next_after: nil}}
+    end
+
+    test "fails closed when has_more lacks a usable cursor" do
+      for pagination <- [
+            %{"has_more" => true},
+            %{"has_more" => true, "next" => ""},
+            %{"has_more" => true, "next" => "https://api.paddle.com/subscriptions?after="},
+            %{"has_more" => true, "next" => "https://api.paddle.com/subscriptions"}
+          ] do
+        assert Live.parse_subscription_page(%{
+                 "data" => [],
+                 "meta" => %{"pagination" => pagination}
+               }) == {:error, :malformed_subscription_page}
+      end
+    end
+  end
+
   defp signature_for(payload, timestamp, secret) do
     signed_payload = "#{timestamp}:#{payload}"
     digest = :crypto.mac(:hmac, :sha256, secret, signed_payload)

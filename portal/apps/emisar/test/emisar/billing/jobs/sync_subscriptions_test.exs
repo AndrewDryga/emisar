@@ -26,6 +26,25 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest.ControlledPaddleClient do
   end
 
   @impl true
+  def list_subscriptions(attrs) do
+    page = Config.get_env(:emisar, :billing_sync_test_discovery_page)
+
+    selected =
+      case page do
+        %{pages: pages} when is_map(pages) -> Map.fetch!(pages, attrs[:after])
+        configured when is_map(configured) -> configured
+        nil -> %{subscriptions: [], next_after: nil}
+      end
+
+    {:ok, selected}
+  end
+
+  @impl true
+  def retrieve_transaction(id) do
+    {:ok, %{"id" => id, "subscription_id" => String.replace_prefix(id, "txn_", "sub_")}}
+  end
+
+  @impl true
   def create_customer(_attrs), do: {:error, :unused}
   @impl true
   def update_customer(_attrs), do: {:error, :unused}
@@ -33,6 +52,8 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest.ControlledPaddleClient do
   def list_customers(_attrs), do: {:error, :unused}
   @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
+  @impl true
+  def bind_checkout_transaction(_id, _binding), do: {:error, :unused}
   @impl true
   def create_billing_portal_session(_attrs), do: {:error, :unused}
   @impl true
@@ -74,6 +95,7 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
   leave an account on stale entitlements.
   """
   use Emisar.DataCase, async: true
+  import ExUnit.CaptureLog
   alias Emisar.Billing
   alias Emisar.Billing.Jobs.SyncSubscriptions
   alias Emisar.Billing.Jobs.SyncSubscriptionsTest.ControlledPaddleClient
@@ -136,6 +158,157 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
       |> Repo.one()
 
     assert later_subscription.status == "active"
+  end
+
+  test "execute/1 discovers a provider subscription when the created webhook was missed", %{} do
+    Emisar.Config.put_override(:emisar, :paddle_client, ControlledPaddleClient)
+
+    account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_missed_created"})
+
+    Emisar.Config.put_override(:emisar, :billing_sync_test_discovery_page, %{
+      subscriptions: [
+        %{
+          "id" => "sub_missed_created",
+          "customer_id" => account.paddle_customer_id,
+          "custom_data" => %{
+            "emisar_account_binding" =>
+              Emisar.Crypto.paddle_account_binding(account.id, "txn_missed_created")
+          },
+          "status" => "active",
+          "collection_mode" => "automatic",
+          "updated_at" => "2026-08-26T00:00:00Z",
+          "items" => [
+            %{
+              "product" => %{"name" => "team", "custom_data" => %{"plan" => "team"}},
+              "price" => %{"id" => "pri_team_01"}
+            }
+          ]
+        }
+      ],
+      next_after: nil
+    })
+
+    assert SyncSubscriptions.execute([]) == :ok
+
+    assert %Subscription{
+             paddle_subscription_id: "sub_missed_created",
+             status: "active",
+             collection_mode: "automatic"
+           } =
+             Subscription.Query.all()
+             |> Subscription.Query.by_account_id(account.id)
+             |> Repo.one()
+  end
+
+  @tag capture_log: true
+  test "a malformed discovery item does not starve the valid items after it", %{} do
+    Emisar.Config.put_override(:emisar, :paddle_client, ControlledPaddleClient)
+
+    account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_after_malformed"})
+
+    Emisar.Config.put_override(:emisar, :billing_sync_test_discovery_page, %{
+      subscriptions: [
+        :malformed,
+        %{
+          "id" => "sub_after_malformed",
+          "customer_id" => account.paddle_customer_id,
+          "custom_data" => %{
+            "emisar_account_binding" =>
+              Emisar.Crypto.paddle_account_binding(account.id, "txn_after_malformed")
+          },
+          "status" => "active",
+          "collection_mode" => "automatic",
+          "updated_at" => "2026-08-26T00:00:00Z",
+          "items" => [
+            %{
+              "product" => %{"name" => "team", "custom_data" => %{"plan" => "team"}},
+              "price" => %{"id" => "pri_team_01"}
+            }
+          ]
+        }
+      ],
+      next_after: nil
+    })
+
+    assert SyncSubscriptions.execute([]) == :ok
+
+    assert %Subscription{paddle_subscription_id: "sub_after_malformed"} =
+             Subscription.Query.all()
+             |> Subscription.Query.by_account_id(account.id)
+             |> Repo.one()
+  end
+
+  test "execute/1 follows provider discovery cursors across pages", %{} do
+    Emisar.Config.put_override(:emisar, :paddle_client, ControlledPaddleClient)
+
+    first = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_page_first_01"})
+    second = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_page_second_01"})
+
+    subscription = fn id, account ->
+      transaction_id = String.replace_prefix(id, "sub_", "txn_")
+
+      %{
+        "id" => id,
+        "customer_id" => account.paddle_customer_id,
+        "custom_data" => %{
+          "emisar_account_binding" =>
+            Emisar.Crypto.paddle_account_binding(account.id, transaction_id)
+        },
+        "status" => "active",
+        "updated_at" => "2026-08-26T00:00:00Z",
+        "items" => [
+          %{
+            "product" => %{"name" => "team", "custom_data" => %{"plan" => "team"}},
+            "price" => %{"id" => "pri_team_01"}
+          }
+        ]
+      }
+    end
+
+    Emisar.Config.put_override(:emisar, :billing_sync_test_discovery_page, %{
+      pages: %{
+        nil => %{
+          subscriptions: [subscription.("sub_page_first_01", first)],
+          next_after: "sub_page_first_01"
+        },
+        "sub_page_first_01" => %{
+          subscriptions: [subscription.("sub_page_second_01", second)],
+          next_after: nil
+        }
+      }
+    })
+
+    assert SyncSubscriptions.execute(limit: 1) == :ok
+
+    for {account, paddle_id} <- [
+          {first, "sub_page_first_01"},
+          {second, "sub_page_second_01"}
+        ] do
+      assert %Subscription{paddle_subscription_id: ^paddle_id} =
+               Subscription.Query.all()
+               |> Subscription.Query.by_account_id(account.id)
+               |> Repo.one()
+    end
+  end
+
+  @tag capture_log: true
+  test "execute/1 stops and reports a repeated discovery cursor" do
+    Emisar.Config.put_override(:emisar, :paddle_client, ControlledPaddleClient)
+
+    Emisar.Config.put_override(:emisar, :billing_sync_test_discovery_page, %{
+      pages: %{
+        nil => %{subscriptions: [], next_after: "same"},
+        "same" => %{subscriptions: [], next_after: "same"}
+      }
+    })
+
+    log =
+      capture_log(fn ->
+        assert SyncSubscriptions.execute(limit: 1) == :ok
+      end)
+
+    assert log =~ "billing_sync.discovery_failed"
+    assert log =~ "non_advancing_cursor"
   end
 
   test "execute/1 skips a mirror row with no vendor subscription id", %{account: account} do
@@ -276,6 +449,12 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsUnknownStatusTest.UnknownStatusPa
     do: {:ok, %{"id" => id, "status" => "some_new_paddle_status"}}
 
   @impl true
+  def list_subscriptions(_attrs), do: {:ok, %{subscriptions: [], next_after: nil}}
+
+  @impl true
+  def retrieve_transaction(_id), do: {:error, :unused}
+
+  @impl true
   def create_customer(_attrs), do: {:error, :unused}
   @impl true
   def update_customer(_attrs), do: {:error, :unused}
@@ -283,6 +462,8 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsUnknownStatusTest.UnknownStatusPa
   def list_customers(_attrs), do: {:error, :unused}
   @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
+  @impl true
+  def bind_checkout_transaction(_id, _binding), do: {:error, :unused}
   @impl true
   def create_billing_portal_session(_attrs), do: {:error, :unused}
   @impl true
@@ -350,6 +531,10 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest.NoPeriodPaddleClient
   @impl true
   def retrieve_subscription(id), do: {:ok, %{"id" => id, "status" => "active"}}
   @impl true
+  def list_subscriptions(_attrs), do: {:ok, %{subscriptions: [], next_after: nil}}
+  @impl true
+  def retrieve_transaction(_id), do: {:error, :unused}
+  @impl true
   def create_customer(_attrs), do: {:error, :unused}
   @impl true
   def update_customer(_attrs), do: {:error, :unused}
@@ -357,6 +542,8 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest.NoPeriodPaddleClient
   def list_customers(_attrs), do: {:error, :unused}
   @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
+  @impl true
+  def bind_checkout_transaction(_id, _binding), do: {:error, :unused}
   @impl true
   def create_billing_portal_session(_attrs), do: {:error, :unused}
   @impl true
@@ -426,6 +613,12 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsRedactionTest.HttpErrorPaddleClie
     do: {:error, {:http, 500, ~s({"customer_id":"ctm_secret"})}}
 
   @impl true
+  def list_subscriptions(_attrs), do: {:ok, %{subscriptions: [], next_after: nil}}
+
+  @impl true
+  def retrieve_transaction(_id), do: {:error, :unused}
+
+  @impl true
   def create_customer(_attrs), do: {:error, :unused}
   @impl true
   def update_customer(_attrs), do: {:error, :unused}
@@ -433,6 +626,8 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsRedactionTest.HttpErrorPaddleClie
   def list_customers(_attrs), do: {:error, :unused}
   @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
+  @impl true
+  def bind_checkout_transaction(_id, _binding), do: {:error, :unused}
   @impl true
   def create_billing_portal_session(_attrs), do: {:error, :unused}
   @impl true

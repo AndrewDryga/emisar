@@ -150,6 +150,8 @@ defmodule Emisar.AdminTest do
       assert overview.billing ==
                %{
                  plan: "free",
+                 subscribed_plan: "free",
+                 entitlement_state: :free,
                  source: "free",
                  subscription_status: nil,
                  paddle_subscription_id: nil

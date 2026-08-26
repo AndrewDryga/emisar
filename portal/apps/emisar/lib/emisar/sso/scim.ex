@@ -11,7 +11,7 @@ defmodule Emisar.SSO.SCIM do
   """
   import Emisar.SSO.Provisioning
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Crypto, Repo, Users}
+  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, Users}
   alias Emisar.SSO.{DirectoryGroup, DirectoryGroupMember, GroupRoleMapping}
   alias Emisar.SSO.GroupRunnerAccessMapping
   alias Emisar.SSO.IdentityProvider
@@ -56,7 +56,8 @@ defmodule Emisar.SSO.SCIM do
 
       with %IdentityProvider{scim_token_hash: hash} = provider <- Repo.peek(queryable),
            true <- is_binary(hash),
-           true <- Crypto.secure_compare(hash, Crypto.hash(raw)) do
+           true <- Crypto.secure_compare(hash, Crypto.hash(raw)),
+           true <- Billing.directory_sync_available_for_account_id?(provider.account_id) do
         {:ok, touch_scim_last_seen(provider)}
       else
         _ -> {:error, :unauthorized}
@@ -107,9 +108,16 @@ defmodule Emisar.SSO.SCIM do
         do: IdentityProvider.Query.lock_for_update(queryable),
         else: queryable
 
-    case repo.fetch(queryable, IdentityProvider.Query) do
-      {:ok, current} -> {:ok, current}
-      {:error, _reason} -> {:error, :directory_sync_disabled}
+    if Billing.directory_sync_available_for_account_id?(provider.account_id,
+         repo: repo,
+         lock?: Keyword.get(opts, :lock?, false)
+       ) do
+      case repo.fetch(queryable, IdentityProvider.Query) do
+        {:ok, current} -> {:ok, current}
+        {:error, _reason} -> {:error, :directory_sync_disabled}
+      end
+    else
+      {:error, :directory_sync_disabled}
     end
   end
 
@@ -1527,17 +1535,19 @@ defmodule Emisar.SSO.SCIM do
   end
 
   defp lock_provider!(%IdentityProvider{} = provider) do
-    locked = lock_provider_row!(provider)
-
-    # The bearer resolved this provider once, at the start of the request. Sync
-    # can be turned off while the request is still in flight — and the write then
-    # re-stamped the epoch, recreated the rows a disable had just discarded, and
-    # reapplied roles and runner access from a directory the account had stopped
-    # trusting. The locked row decides.
-    unless locked.scim_enabled do
-      Repo.rollback(:directory_sync_disabled)
+    # Bearer authentication happened before the request entered the domain.
+    # Rebuild its authority under the same account -> subscription -> provider
+    # lock order as user provisioning, so cancellation and a group mutation
+    # serialize rather than accepting a stale paid entitlement.
+    with {:ok, _account} <- Accounts.fetch_and_lock_account(provider.account_id, repo: Repo),
+         {:ok, locked} <- fetch_current_scim_provider(provider, Repo, lock?: true) do
+      stamp_group_sync!(locked)
+    else
+      {:error, reason} -> Repo.rollback(reason)
     end
+  end
 
+  defp stamp_group_sync!(locked) do
     # Reaching a group write IS the directory pushing groups. Stamped under the
     # same lock the write holds, so the recompute below can tell an empty
     # snapshot from an absent one.

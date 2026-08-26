@@ -87,6 +87,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       conn: conn
     } do
       {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
       _ = enabled_provider(account)
       require_sso!(account)
 
@@ -110,10 +111,10 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
 
     test "an SSO-compliant session for the account still downloads the CSV", %{conn: conn} do
       {_conn, user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
       provider = enabled_provider(account)
       require_sso!(account)
       identity = identity_for(account, provider, user)
-      Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _} =
         Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "alice")
@@ -137,6 +138,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       require_mfa!(account)
 
       other = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(other, "team")
       other_provider = enabled_provider(other)
       foreign_identity = identity_for(other, other_provider, user)
 
@@ -153,9 +155,9 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       # without breaking the legitimate case.
       {_conn, user, account} = register_and_log_in(conn)
       require_mfa!(account)
+      Fixtures.Accounts.create_subscription(account, "team")
       provider = enabled_provider(account)
       identity = identity_for(account, provider, user)
-      Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _} =
         Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "alice")
@@ -175,6 +177,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       conn: conn
     } do
       {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
       _ = enabled_provider(account)
       require_sso!(account)
 
@@ -195,6 +198,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       {conn, user, session_account} = register_and_log_in(conn)
 
       chosen = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(chosen, "team")
       _ = enabled_provider(chosen)
       require_sso!(chosen)
 
@@ -249,6 +253,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       # grant a different, non-enforcing account it belongs to — the removed
       # session-account plug wrongly blocked this (and even blocked "deny").
       {conn, user, session_account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(session_account, "team")
       _ = enabled_provider(session_account)
       require_sso!(session_account)
 
@@ -276,6 +281,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       conn: conn
     } do
       {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "team")
       _ = enabled_provider(account)
       require_sso!(account)
 
