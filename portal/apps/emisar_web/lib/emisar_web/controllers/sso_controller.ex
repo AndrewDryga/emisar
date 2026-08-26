@@ -20,6 +20,8 @@ defmodule EmisarWeb.SSOController do
   alias EmisarWeb.UserAuth
   require Logger
 
+  plug :put_layout, [html: {EmisarWeb.Layouts, :app}] when action in [:begin_identity_link]
+
   # The IP boundary runs before lookup on every route that can start OIDC work.
   # Provider work is capped separately, on the canonical loaded provider id, in
   # the shared OIDC adapter so login, callback replay, and MFA-reset reauth cannot
@@ -152,7 +154,8 @@ defmodule EmisarWeb.SSOController do
              proof,
              actor_session_token_digest,
              subject
-           ) do
+           ),
+         :ok <- validate_authorize_url(begun.authorize_url) do
       stash =
         begun
         |> Map.take([
@@ -176,7 +179,10 @@ defmodule EmisarWeb.SSOController do
       |> delete_session(@stash_key)
       |> delete_session(@member_mfa_reset_stash_key)
       |> put_session(@identity_link_stash_key, stash)
-      |> redirect(external: begun.authorize_url)
+      |> put_resp_header("cache-control", "no-store")
+      |> assign(:page_title, "Opening provider sign-in")
+      |> assign(:authorize_url, begun.authorize_url)
+      |> render(:identity_redirect)
     else
       reason ->
         log_failure("sso_identity_link_begin_failed", reason)
@@ -293,6 +299,22 @@ defmodule EmisarWeb.SSOController do
   defp failure_reason(%Ecto.Changeset{}), do: "domain_validation_failed"
   defp failure_reason(reason) when reason in [nil, false, :unauthorized], do: "unauthorized"
   defp failure_reason(_reason), do: "redacted_failure"
+
+  # This is a browser navigation target, not a server fetch, but it still comes
+  # from the swappable OIDC adapter. Keep non-HTTP schemes, credentials and
+  # fragments out even if a faulty adapter bypasses discovery validation.
+  defp validate_authorize_url(url) when is_binary(url) do
+    case URI.parse(url) do
+      %URI{scheme: "https", host: host, userinfo: nil, fragment: nil}
+      when is_binary(host) and host != "" ->
+        :ok
+
+      _other ->
+        {:error, :provider_config_invalid}
+    end
+  end
+
+  defp validate_authorize_url(_url), do: {:error, :provider_config_invalid}
 
   def callback(conn, params) do
     case get_session(conn, @identity_link_stash_key) do

@@ -156,6 +156,24 @@ defmodule EmisarWeb.SSOControllerTest do
     end
   end
 
+  defmodule UnsafeAuthorizeOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(_provider, _opts) do
+      {:ok,
+       %{
+         authorize_url: "javascript:alert('unsafe')",
+         state: "s",
+         nonce: "n",
+         pkce_verifier: "v"
+       }}
+    end
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(_provider, _params, _stashed), do: {:error, :not_used}
+  end
+
   setup do
     Emisar.Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
     :ok
@@ -582,7 +600,16 @@ defmodule EmisarWeb.SSOControllerTest do
           "handoff" => link.handoff
         })
 
-      assert redirected_to(begun) == "https://idp.test/auth"
+      body = html_response(begun, 200)
+      assert body =~ ~s(data-authorize-url="https://idp.test/auth")
+      assert body =~ "window.location.replace(target)"
+      assert get_resp_header(begun, "location") == []
+      assert get_resp_header(begun, "cache-control") == ["no-store"]
+
+      assert [csp] = get_resp_header(begun, "content-security-policy")
+      assert csp =~ "form-action 'self'"
+      assert [nonce] = Regex.run(~r/'nonce-([^']+)'/, csp, capture: :all_but_first)
+      assert body =~ ~s(<script nonce="#{nonce}">)
 
       stash = get_session(begun, @identity_link_stash_key)
       assert stash.actor_id == link.user.id
@@ -596,6 +623,22 @@ defmodule EmisarWeb.SSOControllerTest do
       refute get_session(begun, @stash_key)
       refute get_session(begun, @member_mfa_reset_stash_key)
       assert get_session(begun, :user_token) == link.session_token
+    end
+
+    test "refuses a non-HTTPS authorization target before rendering browser navigation", %{
+      conn: conn
+    } do
+      link = identity_link_controller_fixture(conn)
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, UnsafeAuthorizeOIDC)
+
+      failed =
+        post(link.conn, ~p"/app/#{link.account}/settings/sso/identity/link", %{
+          "handoff" => link.handoff
+        })
+
+      assert redirected_to(failed) == ~p"/app/#{link.account}/settings/profile"
+      assert Phoenix.Flash.get(failed.assigns.flash, :error) =~ "Couldn't start provider sign-in"
+      refute get_session(failed, @identity_link_stash_key)
     end
 
     test "the callback links the identity without replacing the current session", %{conn: conn} do

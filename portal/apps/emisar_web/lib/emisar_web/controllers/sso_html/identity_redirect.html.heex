@@ -1,0 +1,25 @@
+<div class="mx-auto flex min-h-[60vh] w-full max-w-md flex-col items-center justify-center px-6 py-24 text-center">
+  <span class="grid h-12 w-12 place-items-center rounded-xl bg-brand-500/10 text-brand-300 ring-1 ring-brand-500/25">
+    <.icon name="state.locked" class="h-5 w-5" />
+  </span>
+  <h1 class="font-display mt-5 text-balance text-xl font-semibold tracking-[-0.01em] text-zinc-100">
+    Opening provider sign-in…
+  </h1>
+  <p class="mt-2 text-pretty text-sm leading-relaxed text-zinc-400">
+    Continue with your provider to finish linking your identity.
+  </p>
+  <p class="mt-6 text-xs text-zinc-500">
+    Not moving?
+    <a href={@authorize_url} rel="noreferrer" class="text-brand-300 hover:text-brand-200">
+      Continue to your provider
+    </a>
+  </p>
+</div>
+
+<div id="sso-identity-redirect" data-authorize-url={@authorize_url} hidden></div>
+<script nonce={@csp_nonce}>
+  (function () {
+    var target = document.getElementById("sso-identity-redirect").dataset.authorizeUrl;
+    window.location.replace(target);
+  })();
+</script>

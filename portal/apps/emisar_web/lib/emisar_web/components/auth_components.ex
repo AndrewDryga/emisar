@@ -125,6 +125,7 @@ defmodule EmisarWeb.AuthComponents do
               <p class="mt-1 text-sm leading-relaxed text-zinc-400">{@explanation}</p>
             </div>
             <.icon_button
+              id={"#{@id}-close"}
               icon="action.close"
               label="Close"
               size={:compact}
@@ -170,13 +171,14 @@ defmodule EmisarWeb.AuthComponents do
               <.button phx-disable-with="Confirming...">Continue</.button>
               <.button
                 :if={@step.factor == :email}
+                id={"#{@id}-resend"}
                 type="button"
                 variant={:secondary}
+                class="hover:bg-zinc-800"
                 phx-click="resend_oidc_step_up"
               >
                 Resend
               </.button>
-              <.button type="button" variant={:ghost} phx-click={@close}>Cancel</.button>
             </:actions>
           </.simple_form>
         </.focus_wrap>

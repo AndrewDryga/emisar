@@ -224,6 +224,13 @@ Before the match, the disabled submitter keeps both paths inert. Plain confirmat
 modals have no input and remain click-only; opening one must not turn Enter elsewhere
 on the page into acceptance.
 
+**One dismissal action per focused dialog.** When the close button, backdrop, and Escape
+all perform the same server-owned cancellation, the footer does not repeat that action as
+another Cancel button. The close button keeps a 40px target and an accessible name; every
+dismissal path clears the same LiveView assign. A secondary button on the raised
+`bg-zinc-900` dialog surface must hover to a visibly different surface such as
+`bg-zinc-800` — reusing its resting background is not a hover state.
+
 **The dialog's LOOK is the calm note grammar, not an alarm wall.** A `confirm_dialog` is a
 NEUTRAL raised surface (`bg-zinc-900 ring-white/10` — the console dropdown recipe), and its
 header IS a `<.status_note tone={:rose} primary>` — a bare toned icon, a **zinc** title, a

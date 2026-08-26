@@ -445,6 +445,30 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert confirmed =~ ~s(name="handoff")
     end
 
+    test "resends visibly and closes the link dialog through server state", %{
+      conn: conn,
+      account: account,
+      provider: provider
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      lv |> element("#link-oidc-#{provider.id}") |> render_click()
+      assert_received {:email, _email}
+
+      html = render(lv)
+      assert html =~ ~s(id="profile-oidc-step-close")
+      assert html =~ ~s(id="profile-oidc-step-resend")
+      assert html =~ "hover:bg-zinc-800"
+      refute html =~ ">Cancel<"
+
+      lv |> element("#profile-oidc-step-resend") |> render_click()
+      assert_received {:email, _replacement_email}
+      assert render(lv) =~ "We sent a new code"
+
+      lv |> element("#profile-oidc-step-close") |> render_click()
+      refute has_element?(lv, "#profile-oidc-step-form")
+    end
+
     test "a user-verified identity has explicit removal friction and unlinks inline", %{
       conn: conn,
       account: account,

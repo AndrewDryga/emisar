@@ -864,6 +864,30 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert Repo.reload!(provider).enabled == false
     end
 
+    test "resends visibly and closes the verification dialog through server state", %{
+      conn: conn,
+      account: account
+    } do
+      provider = insert_provider(account, %{name: "Workforce Okta", enabled: false})
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+
+      lv |> element("#verify-provider-sign-in-#{provider.id}") |> render_click()
+      assert_received {:email, _email}
+
+      html = render(lv)
+      assert html =~ ~s(id="provider-oidc-step-close")
+      assert html =~ ~s(id="provider-oidc-step-resend")
+      assert html =~ "hover:bg-zinc-800"
+      refute html =~ ">Cancel<"
+
+      lv |> element("#provider-oidc-step-resend") |> render_click()
+      assert_received {:email, _replacement_email}
+      assert render(lv) =~ "We sent a new code"
+
+      lv |> element("#provider-oidc-step-close") |> render_click()
+      refute has_element?(lv, "#provider-oidc-step-form")
+    end
+
     test "offers activation only after current settings have a real sign-in receipt", %{
       conn: conn,
       account: account,
