@@ -379,6 +379,7 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 			"mcp/internal/attest/attest.go",
 			"runner/internal/signing/signing.go",
 			"runner/internal/attest/attest.go",
+			"portal/apps/emisar/lib/emisar/runs/attestation.ex",
 		} {
 			writeFixture(t, root, file, "package main\n")
 			commitAll(t, root, "signing seam")

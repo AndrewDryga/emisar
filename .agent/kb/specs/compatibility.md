@@ -98,9 +98,10 @@ message. `cloud_shutdown`, `runner_disabled`, and `account_disabled` reconnect.
 `runner_revoked` persists a terminal shutdown and requires re-enrollment;
 `runner_version_unsupported` persists one and requires a supported binary.
 The runner's wire golden captures every known frame. CI rejects a changed frame
-until the golden is deliberately regenerated, and refuses non-additive
-regeneration at the same `protocol_version`; a rename, removal, or retype must
-bump the protocol version.
+until the golden is deliberately regenerated, and the update command refuses
+non-additive regeneration at the same `protocol_version`; a rename, removal,
+retype, list mutation, or rewrite of a captured enum, status, or other scalar
+must bump the protocol version. There are no permanent same-version waivers.
 
 ### Pack, action, catalog, and trusted-manifest schemas
 
@@ -222,8 +223,9 @@ revision); the negotiated `MCP-Protocol-Version` must be sent on later
 requests, and an unsupported header is rejected with HTTP 400 (`-32022`).
 Tool names and descriptor field sets are compiled and fixture-checked. Tool
 inputs are strict: unknown or renamed fields are rejected. The bridge
-identifies itself as `emisar-mcp/<version>` and the current bridge
-threshold is `mcp_minimum >= 0.3.0`, also warn-only in production today.
+identifies itself as `emisar-mcp/<version>`. MCP `0.10.0` introduced the
+`cert_chain` envelope accepted by the current Portal, so the current bridge
+threshold is `mcp_minimum >= 0.10.0`, still warn-only in production today.
 
 **What happens on skew.** An older client calling a renamed or removed tool
 gets JSON-RPC `method-not-found`. A stray or renamed input field is rejected;
