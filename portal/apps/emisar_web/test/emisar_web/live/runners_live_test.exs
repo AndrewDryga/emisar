@@ -498,6 +498,20 @@ defmodule EmisarWeb.RunnersLiveTest do
       Fixtures.Runners.mark_disconnected_at(runner, at)
     end
 
+    test "housekeeping stays in document flow after the fleet while only help hides below xl",
+         %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
+
+      assert has_element?(lv, "#runners-supporting-rail:not(.hidden) #runners-cleanup")
+      assert html =~ ~s(id="runner-explainer" class="hidden xl:block")
+
+      assert text_position(html, ~s(id="runners")) <
+               text_position(html, ~s(id="runners-supporting-rail"))
+    end
+
     test "an owner turns the retention window on from the select", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)

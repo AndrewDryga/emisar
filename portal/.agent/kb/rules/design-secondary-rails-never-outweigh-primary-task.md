@@ -5,6 +5,11 @@
 A fixed-width secondary rail may appear beside a task only when the remaining primary
 column is visibly wider. Otherwise, keep one column and place the rail after the task.
 
+An interactive control or read-only current setting is part of the task, even when it
+shares a rail with help. Never hide that state with the rail. Below the split, keep the
+setting in document flow after the primary table or list and hide only optional
+explanatory content.
+
 Move every rail-dependent behavior at the same breakpoint: grid tracks, sticky
 positioning, ordering, top margins, and visibility. A rail that becomes sticky or visible
 before its grid splits recreates the same imbalance in a different form.
@@ -51,7 +56,8 @@ container padding, and the inter-column gap are subtracted.
 Search LiveView and component templates for fixed secondary tracks such as `22rem` and
 `340px`, especially those introduced at `lg`. Inspect each layout rather than replacing
 breakpoints blindly: peer columns and intentionally narrow task surfaces are different
-patterns.
+patterns. Also inspect breakpoint-hidden rail wrappers that contain a form, gated
+setting, or current account value; those controls must remain reachable below the split.
 
 ## Enforcement
 

@@ -966,6 +966,10 @@ the commit button, where the operator can reach the action before reading what i
     font's full ascent/descent line box or nudging every size by a fixed pixel offset is not enough.
     Sweep: circular selected-workspace checks beside square account avatars, and initial-only tiles
     centered by their line box instead of their visible capital.
+84. **A responsive rail may hide help, never an active setting.** Interactive controls and read-only
+    current settings remain in document flow at every width. Below the two-column split, stack them
+    after the primary table or list and hide only optional explanatory content. Sweep: a
+    breakpoint-hidden rail wrapper containing a form, gated setting, or current account value.
 
 ## 8. The kit is the contract
 
