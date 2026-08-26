@@ -1913,7 +1913,8 @@ defmodule Emisar.Audit.Events do
       count: count,
       limit: Keyword.get(opts, :limit),
       event_types: Keyword.get(opts, :event_types, []),
-      from: export_position(opts)
+      from: export_position(opts),
+      transport: "siem"
     }
   end
 
@@ -1930,6 +1931,7 @@ defmodule Emisar.Audit.Events do
     |> Map.put_new(:from, "beginning")
     |> Map.put(:count, count)
     |> Map.put(:limit, nil)
+    |> Map.put(:transport, "csv")
   end
 
   defp export_position(opts) do

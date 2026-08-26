@@ -1523,6 +1523,140 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "reserve_one_time_audit_csv_export/2" do
+    test "a current owner gets one durable reservation and a concurrent start is refused" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, reserved} = Accounts.reserve_one_time_audit_csv_export(account.id, subject)
+      assert reserved.one_time_audit_csv_export_reservation_id
+      assert reserved.one_time_audit_csv_export_reserved_at
+      refute reserved.one_time_audit_csv_exported_at
+
+      assert Accounts.reserve_one_time_audit_csv_export(account.id, subject) ==
+               {:error, :export_in_progress}
+    end
+
+    test "a stale owner Subject is refused after its membership is demoted" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      Accounts.Membership
+      |> Repo.get!(subject.membership_id)
+      |> Ecto.Changeset.change(role: :admin)
+      |> Repo.update!()
+
+      assert Accounts.reserve_one_time_audit_csv_export(account.id, subject) ==
+               {:error, :unauthorized}
+    end
+
+    test "an expired reservation is replaced and fenced before the old request can complete" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {:ok, first} = Accounts.reserve_one_time_audit_csv_export(account.id, subject)
+      first_id = first.one_time_audit_csv_export_reservation_id
+
+      first
+      |> Ecto.Changeset.change(
+        one_time_audit_csv_export_reserved_at: DateTime.add(DateTime.utc_now(), -31 * 60, :second)
+      )
+      |> Repo.update!()
+
+      assert {:ok, replacement} =
+               Accounts.reserve_one_time_audit_csv_export(account.id, subject)
+
+      replacement_id = replacement.one_time_audit_csv_export_reservation_id
+      refute replacement_id == first_id
+
+      assert Accounts.complete_one_time_audit_csv_export(
+               account.id,
+               first_id,
+               subject,
+               [filter: []],
+               1
+             ) == {:error, :reservation_mismatch}
+
+      refute Repo.reload!(account).one_time_audit_csv_exported_at
+
+      assert {:ok, completed} =
+               Accounts.complete_one_time_audit_csv_export(
+                 account.id,
+                 replacement_id,
+                 subject,
+                 [filter: []],
+                 1
+               )
+
+      assert completed.one_time_audit_csv_exported_at
+    end
+
+    test "an absent, malformed, or foreign account id is not found" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert Accounts.reserve_one_time_audit_csv_export(Ecto.UUID.generate(), subject) ==
+               {:error, :not_found}
+
+      assert Accounts.reserve_one_time_audit_csv_export("not-an-account-id", subject) ==
+               {:error, :not_found}
+
+      foreign_account = Fixtures.Accounts.create_account()
+
+      assert Accounts.reserve_one_time_audit_csv_export(foreign_account.id, subject) ==
+               {:error, :not_found}
+    end
+  end
+
+  describe "release_one_time_audit_csv_export/2" do
+    test "only the matching reservation can be released" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {:ok, reserved} = Accounts.reserve_one_time_audit_csv_export(account.id, subject)
+
+      assert Accounts.release_one_time_audit_csv_export(account.id, Ecto.UUID.generate()) ==
+               {:error, :reservation_mismatch}
+
+      assert {:ok, released} =
+               Accounts.release_one_time_audit_csv_export(
+                 account.id,
+                 reserved.one_time_audit_csv_export_reservation_id
+               )
+
+      refute released.one_time_audit_csv_export_reservation_id
+      refute released.one_time_audit_csv_export_reserved_at
+    end
+  end
+
+  describe "complete_one_time_audit_csv_export/5" do
+    test "completion stamps the account and its audit receipt atomically" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {:ok, reserved} = Accounts.reserve_one_time_audit_csv_export(account.id, subject)
+      reservation_id = reserved.one_time_audit_csv_export_reservation_id
+
+      assert {:ok, completed} =
+               Accounts.complete_one_time_audit_csv_export(
+                 account.id,
+                 reservation_id,
+                 subject,
+                 [filter: []],
+                 7
+               )
+
+      assert completed.one_time_audit_csv_exported_at
+      refute completed.one_time_audit_csv_export_reservation_id
+
+      exported =
+        AuditEvent
+        |> Repo.all()
+        |> Enum.find(&(&1.account_id == account.id and &1.event_type == "audit.exported"))
+
+      assert %AuditEvent{payload: %{"count" => 7}} = exported
+
+      assert Accounts.complete_one_time_audit_csv_export(
+               account.id,
+               reservation_id,
+               subject,
+               [filter: []],
+               7
+             ) == {:error, :reservation_mismatch}
+    end
+  end
+
   describe "put_account_pack_retention_days/3" do
     setup do
       account = Fixtures.Accounts.create_account()

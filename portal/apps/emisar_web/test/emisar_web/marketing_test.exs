@@ -279,7 +279,16 @@ defmodule EmisarWeb.MarketingTest do
     pricing = conn |> get(~p"/pricing") |> html_response(200)
     pricing_document = LazyHTML.from_document(pricing)
 
-    assert pricing_comparison_row_text(pricing_document, "audit-export") == "SIEM export —"
+    assert pricing_comparison_row_text(pricing_document, "audit-csv") ==
+             "One-time audit CSV for the owner"
+
+    assert pricing_comparison_row_text(pricing_document, "audit-export") ==
+             "Repeated audit CSV + continuous SIEM export —"
+
+    assert pricing_document
+           |> LazyHTML.query(~s([data-feature="audit-csv"] [data-icon="state.included"]))
+           |> LazyHTML.attribute("data-icon")
+           |> length() == 3
 
     assert pricing_document
            |> LazyHTML.query(~s([data-feature="audit-export"] [data-icon="state.included"]))
@@ -773,6 +782,7 @@ defmodule EmisarWeb.MarketingTest do
       team_features = plans["team"].features
 
       for {row, feature} <- [
+            {"audit-csv", :audit_csv},
             {"audit-export", :audit_export},
             {"sso", :sso},
             {"scim", :scim}
@@ -2816,12 +2826,13 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s(href="/docs/credentials#audit-tokens")
     end
 
-    test "audit & SIEM explains its own exports without calling them activity", %{conn: conn} do
+    test "audit & SIEM distinguishes export receipts from workspace activity", %{conn: conn} do
       html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200) |> squish()
 
       assert html =~ ~s(id="health")
       assert html =~ "audit.exported"
-      assert html =~ "as operator activity"
+      assert html =~ "as ordinary workspace activity"
+      assert html =~ "unexpected actor, address, time, or transport"
 
       # Each read can create the event the next read finds, so "drain until
       # empty" is a loop that feeds itself.
@@ -3149,10 +3160,10 @@ defmodule EmisarWeb.MarketingTest do
       # {route, title, date} — the title suffix proves the right head, and
       # the date pins the right page (Refund is the only one on June 5).
       for {route, date} <- [
-            {"/privacy", "August 24, 2026"},
+            {"/privacy", "August 26, 2026"},
             {"/terms", "June 4, 2026"},
             {"/refund-policy", "June 5, 2026"},
-            {"/dpa", "August 24, 2026"}
+            {"/dpa", "August 26, 2026"}
           ] do
         html = conn |> get(route) |> html_response(200)
         assert html =~ "· emisar", "missing title suffix on #{route}"
@@ -3201,6 +3212,28 @@ defmodule EmisarWeb.MarketingTest do
 
       refute text =~
                "Signed dispatch and local admission control — a compromised control plane cannot forge an action"
+    end
+
+    test "privacy and the DPA distinguish one-time audit CSV from continuous export", %{
+      conn: conn
+    } do
+      privacy = conn |> get(~p"/privacy") |> html_response(200) |> squish()
+      dpa = conn |> get(~p"/dpa") |> html_response(200) |> squish()
+
+      for text <- [privacy, dpa] do
+        assert text =~ "account owner can create one downloadable"
+        assert text =~ "audit-log"
+        assert text =~ "allowance is used as soon as the file is ready"
+        assert text =~ "before your browser starts saving it"
+        assert text =~ "Team and Enterprise add repeated CSV downloads"
+        assert text =~ "/api/audit"
+        assert text =~ "full account snapshot"
+      end
+
+      assert privacy =~ "up to 100,000 events"
+      assert privacy =~ "256 MiB"
+      assert privacy =~ "not a full account archive"
+      refute privacy =~ "working on a one-click export"
     end
 
     test "the privacy, trust, and DPA pages name only the real subprocessors", %{conn: conn} do

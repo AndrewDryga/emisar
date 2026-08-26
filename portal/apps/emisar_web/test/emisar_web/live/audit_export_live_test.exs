@@ -334,7 +334,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
                live(conn, ~p"/app/#{account}/audit/export")
 
       assert to == ~p"/app/#{account}/settings/billing"
-      assert %{"info" => "Audit export is available on the Team plan."} = flash
+      assert %{"info" => "Continuous SIEM export is available on Team."} = flash
     end
 
     test "the SIEM card is hidden from a non-manager (operator)", %{account: account} do

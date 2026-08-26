@@ -94,7 +94,13 @@
               <td class="px-4 py-3 align-top whitespace-nowrap">Team and Enterprise</td>
             </tr>
             <tr>
-              <td class="px-4 py-3 align-top text-zinc-300">Audit export (CSV + SIEM)</td>
+              <td class="px-4 py-3 align-top text-zinc-300">One-time audit CSV for the owner</td>
+              <td class="px-4 py-3 align-top whitespace-nowrap">Every plan</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 align-top text-zinc-300">
+                Repeated audit CSV + continuous SIEM export
+              </td>
               <td class="px-4 py-3 align-top whitespace-nowrap">Team and Enterprise</td>
             </tr>
             <tr>
@@ -119,8 +125,8 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Audit export.</strong>
-            Every plan keeps the full trail in the console; taking it out — the CSV download
-            and the NDJSON API — is what the plan gates. See <.link
+            Every plan gives an owner one filtered audit CSV. Team and Enterprise add repeated
+            CSV downloads and the continuous NDJSON API. See <.link
               navigate={~p"/docs/audit-and-siem"}
               class="text-brand-400 hover:text-brand-300"
             >audit &amp; SIEM</.link>.

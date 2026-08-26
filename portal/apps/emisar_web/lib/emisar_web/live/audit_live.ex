@@ -7,7 +7,7 @@ defmodule EmisarWeb.AuditLive do
   request id) at `/app/audit/:id`.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{ApiKeys, Audit, Billing}
+  alias Emisar.{Accounts, ApiKeys, Audit, Billing}
   alias EmisarWeb.{AuditSummary, LiveTable}
 
   @reload_debounce_ms 500
@@ -24,13 +24,11 @@ defmodule EmisarWeb.AuditLive do
     {:ok,
      socket
      |> assign(:page_title, "Audit log")
-     # One subscription read per mount, not one per rendered template branch —
-     # this page re-renders on every debounced audit broadcast, and the
-     # entitlement can't change without leaving the page.
      |> assign(
-       :audit_export_available?,
-       Billing.audit_export_available?(socket.assigns.current_account)
+       :continuous_audit_export_available?,
+       Billing.continuous_audit_export_available?(socket.assigns.current_account)
      )
+     |> assign(:csv_export_access, Audit.csv_export_access(socket.assigns.current_subject))
      # The facet panel is collapsed by default — the trail leads the page. It
      # opens on MOUNT when the URL already carries an active facet (a shared
      # filtered link must never hide its controls); after that the flag is
@@ -65,6 +63,10 @@ defmodule EmisarWeb.AuditLive do
     |> assign(:load_error?, false)
   end
 
+  def handle_info({:audit_event, %Emisar.Audit.Event{event_type: "audit.exported"}}, socket) do
+    {:noreply, socket |> refresh_export_access() |> schedule_reload()}
+  end
+
   def handle_info({:audit_event, _event}, socket), do: {:noreply, schedule_reload(socket)}
 
   def handle_info(:reload_audit, socket),
@@ -79,6 +81,28 @@ defmodule EmisarWeb.AuditLive do
   defp schedule_reload(socket) do
     Process.send_after(self(), :reload_audit, @reload_debounce_ms)
     assign(socket, :reload_scheduled?, true)
+  end
+
+  # A controller download leaves this LiveView mounted. Refresh the account
+  # carried by its Subject when the atomic export receipt arrives so the sole
+  # one-time action becomes its consumed state without a manual page reload.
+  defp refresh_export_access(socket) do
+    case Accounts.fetch_account_by_id(socket.assigns.current_account.id) do
+      {:ok, account} ->
+        subject = %{socket.assigns.current_subject | account: account}
+
+        socket
+        |> assign(:current_account, account)
+        |> assign(:current_subject, subject)
+        |> assign(:csv_export_access, Audit.csv_export_access(subject))
+        |> assign(
+          :continuous_audit_export_available?,
+          Billing.continuous_audit_export_available?(account)
+        )
+
+      {:error, :not_found} ->
+        socket
+    end
   end
 
   def handle_event("toggle_filters", _params, socket),
@@ -361,24 +385,45 @@ defmodule EmisarWeb.AuditLive do
            not the intro prose and never below the rows. --%>
       <:actions :if={Audit.subject_can_export_audit?(@current_subject)}>
         <%!-- :md, not :sm — a control on the 28px title row needs the full-size
-             button to hold its own beside the H1. Export downloads the CURRENT
-             FILTERED VIEW as CSV; both export surfaces are Team+ (the console
-             trail is on every plan — taking the data OUT is paid). On a lower
-             plan the control is a disabled lock button with a downward tooltip
-             naming the gate; upgrading is the Billing nav item. A reader who
-             holds only the billing slice gets no export control at all — the
-             domain refuses the download, so an upgrade prompt would be a lie. --%>
-        <%= if @audit_export_available? do %>
-          <.button variant={:secondary} size={:md} href={audit_download_path(assigns)} download>
-            Export CSV
-          </.button>
-        <% else %>
-          <.upgrade_button tip="CSV export is on the Team plan — upgrade to turn it on">
-            Export CSV
-          </.upgrade_button>
+             button to hold its own beside the H1. The CSV is the CURRENT
+             FILTERED VIEW. Owners without the continuous entitlement may take
+             it once; paid full-trail roles may repeat it. A billing-only reader
+             gets no control because exporting their narrow slice would imply a
+             portability right the domain does not grant. --%>
+        <%= case @csv_export_access do %>
+          <% :repeatable -> %>
+            <.form for={%{}} action={audit_download_path(assigns)} method="post">
+              <.button
+                type="submit"
+                variant={:secondary}
+                size={:md}
+                title="Download the current filtered audit view as CSV"
+              >
+                Export CSV
+              </.button>
+            </.form>
+          <% :one_time -> %>
+            <.form for={%{}} action={audit_download_path(assigns)} method="post">
+              <.button
+                type="submit"
+                variant={:secondary}
+                size={:md}
+                title="The one-time allowance is used when the CSV is prepared, before browser transfer"
+              >
+                Download one-time CSV
+              </.button>
+            </.form>
+          <% :used -> %>
+            <.upgrade_button tip="The one-time CSV was created — Team allows repeated exports">
+              Export CSV
+            </.upgrade_button>
+          <% :unavailable -> %>
+            <.upgrade_button tip="Repeated CSV export is on the Team plan">
+              Export CSV
+            </.upgrade_button>
         <% end %>
         <%= if ApiKeys.subject_can_manage_api_keys?(@current_subject) do %>
-          <%= if @audit_export_available? do %>
+          <%= if @continuous_audit_export_available? do %>
             <.button
               variant={:secondary}
               size={:md}
@@ -400,7 +445,8 @@ defmodule EmisarWeb.AuditLive do
       </.page_intro>
       <.page_intro :if={not Audit.subject_sees_billing_audit_only?(@current_subject)}>
         The append-only record of actions, approvals, and access changes in this account —
-        exportable to your SIEM for independent, long-term retention.
+        owners can create one CSV on any plan; Team and Enterprise add repeated CSV and SIEM
+        export. The one-time allowance is used when the file is prepared, before browser transfer.
         <.doc_link href="/docs/audit-and-siem">Audit log docs</.doc_link>
       </.page_intro>
 

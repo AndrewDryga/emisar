@@ -186,7 +186,7 @@ defmodule Emisar.BillingManagerRoleTest do
     test "cannot export the trail", %{subject: subject} do
       refute Audit.subject_can_export_audit?(subject)
       assert Audit.list_for_export(subject) == {:error, :unauthorized}
-      assert Audit.list_events_for_export(subject) == {:error, :unauthorized}
+      assert Audit.start_csv_export(subject) == {:error, :unauthorized}
     end
   end
 

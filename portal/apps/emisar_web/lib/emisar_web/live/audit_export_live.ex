@@ -12,12 +12,12 @@ defmodule EmisarWeb.AuditExportLive do
 
   def mount(_params, _session, socket) do
     cond do
-      not Billing.audit_export_available?(socket.assigns.current_account) ->
-        # Export (this SIEM feed and the CSV download alike) is Team+ — the
-        # console trail stays on every plan; taking the data OUT is paid.
+      not Billing.continuous_audit_export_available?(socket.assigns.current_account) ->
+        # Continuous SIEM export is paid. The owner-only CSV fallback lives on
+        # the audit page and grants no token or API access.
         {:ok,
          socket
-         |> put_flash(:info, "Audit export is available on the Team plan.")
+         |> put_flash(:info, "Continuous SIEM export is available on Team.")
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/billing")}
 
       not ApiKeys.subject_can_manage_api_keys?(socket.assigns.current_subject) ->
@@ -93,7 +93,7 @@ defmodule EmisarWeb.AuditExportLive do
           {:error, :audit_export_not_available} ->
             {:noreply,
              s
-             |> put_flash(:info, "Audit export is available on the Team plan.")
+             |> put_flash(:info, "Continuous SIEM export is available on Team.")
              |> push_navigate(to: ~p"/app/#{s.assigns.current_account}/settings/billing")}
 
           {:error, _} ->

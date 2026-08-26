@@ -18,7 +18,7 @@ defmodule EmisarWeb.Components.TooltipTest do
 
       html =
         rendered_to_string(~H"""
-        <CoreComponents.tooltip text="CSV export is on the Team plan — upgrade to turn it on">
+        <CoreComponents.tooltip text="Repeated CSV export is on the Team plan">
           <span>Export CSV</span>
         </CoreComponents.tooltip>
         """)
@@ -32,7 +32,7 @@ defmodule EmisarWeb.Components.TooltipTest do
       # aria-describedby points at the bubble's id, so AT reads the reason.
       [_, tooltip_id] = Regex.run(~r/aria-describedby="([^"]+)"/, html)
       assert html =~ ~s(id="#{tooltip_id}")
-      assert html =~ "CSV export is on the Team plan — upgrade to turn it on"
+      assert html =~ "Repeated CSV export is on the Team plan"
 
       # aria-label is gone — the description carries the copy without shadowing
       # the trigger's own name.

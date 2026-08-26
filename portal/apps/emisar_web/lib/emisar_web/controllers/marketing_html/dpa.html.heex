@@ -5,7 +5,7 @@
 ============================================================ --%>
 <.legal_page
   title="Data Processing Addendum"
-  updated="August 24, 2026"
+  updated="August 26, 2026"
   summary="The plain version: when emisar processes personal data on your behalf, we act only on your instructions, we never sell it or train on it, our subprocessors are a short named list, and we delete it when you leave. This is the standard DPA we'll sign — email support@emisar.dev for an executable copy."
   toc={[
     {"roles", "1. Roles and scope"},
@@ -163,8 +163,13 @@
   <p>
     Taking into account the nature of the processing, we will help you respond to data-subject
     requests (access, rectification, erasure, portability, restriction, objection). Much of this
-    you can do yourself: audit events are exported as NDJSON from <code>/api/audit</code>, and a full
-    account snapshot or deletion is available by emailing <a href={EmisarWeb.MailTo.support()}>support@emisar.dev</a>.
+    you can do yourself: an account owner can create one downloadable, filtered audit-log CSV on
+    any plan. That allowance is used as soon as the file is ready, before your browser starts
+    saving it. Team and Enterprise add repeated CSV downloads and the continuous
+    <code>/api/audit</code>
+    NDJSON feed. A full account snapshot or deletion remains available by emailing <a href={
+      EmisarWeb.MailTo.support()
+    }>support@emisar.dev</a>.
   </p>
 
   <h2 id="transfers">8. International transfers</h2>

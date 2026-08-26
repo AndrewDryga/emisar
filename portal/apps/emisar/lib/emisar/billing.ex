@@ -33,6 +33,7 @@ defmodule Emisar.Billing do
         runners: "3 runners",
         members: "1 user",
         audit_retention: "7-day audit retention",
+        audit_csv: "One-time audit CSV for the owner",
         support: "Community support"
       ]
     },
@@ -49,7 +50,8 @@ defmodule Emisar.Billing do
         members: "Unlimited users",
         sso: "Single sign-on (OIDC)",
         audit_retention: "90-day audit retention",
-        audit_export: "Audit export (CSV + SIEM)",
+        audit_csv: "One-time audit CSV for the owner",
+        audit_export: "Repeated audit CSV + continuous SIEM export",
         support: "Email support"
       ]
     },
@@ -260,8 +262,8 @@ defmodule Emisar.Billing do
     )
   end
 
-  @doc "True when the account's plan includes audit-log export — the CSV download AND the SIEM/NDJSON API (a `features_audit_export_enabled?` entitlement, else Team and Enterprise). Free keeps the in-console trail; taking the data OUT is the paid surface."
-  def audit_export_available?(%Accounts.Account{} = account) do
+  @doc "True when the account's plan includes repeated audit CSV downloads and the continuous SIEM/NDJSON API (a `features_audit_export_enabled?` entitlement, else Team and Enterprise). Every plan separately gives an owner one CSV export."
+  def continuous_audit_export_available?(%Accounts.Account{} = account) do
     posture = account.id |> peek_subscription_for_account() |> effective_plan()
 
     entitled_feature(

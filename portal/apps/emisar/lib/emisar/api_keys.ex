@@ -717,7 +717,7 @@ defmodule Emisar.ApiKeys do
   # entitlement. The web's plan checks are courtesy UX; this gate is
   # authoritative. MCP keys are on every plan.
   defp ensure_key_kind_available(:audit_export, %Accounts.Account{} = account) do
-    if Billing.audit_export_available?(account),
+    if Billing.continuous_audit_export_available?(account),
       do: :ok,
       else: {:error, :audit_export_not_available}
   end

@@ -2,8 +2,8 @@ defmodule Emisar.AccountsConcurrencyTest do
   use ExUnit.Case, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, Auth, Config, Crypto, Fixtures, Repo, Users}
-  alias Emisar.Accounts.Account
+  alias Emisar.{Accounts, Audit, Auth, Config, Crypto, Fixtures, Repo, Users}
+  alias Emisar.Accounts.{Account, Membership}
   alias Emisar.Audit.Event, as: AuditEvent
   alias Emisar.Auth.UserToken
   alias Emisar.Users.User
@@ -72,6 +72,125 @@ defmodule Emisar.AccountsConcurrencyTest do
         Repo.delete_all(
           from(stored in User, where: stored.email in ^[owner_email | invitee_emails])
         )
+      end
+    end)
+  end
+
+  test "concurrent Free-owner CSV requests cannot both claim the one-time export" do
+    Sandbox.unboxed_run(Repo, fn ->
+      suffix = Ecto.UUID.generate()
+      owner_email = "audit-csv-owner-#{suffix}@example.test"
+      owner = Fixtures.Users.create_user(%{email: owner_email})
+
+      {:ok, account} =
+        Accounts.create_account_with_owner(
+          %{name: "Audit CSV #{suffix}", slug: "audit-csv-#{suffix}"},
+          owner
+        )
+
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      parent = self()
+
+      contenders =
+        for _ <- 1..2 do
+          unboxed_task(fn ->
+            send(parent, {:audit_csv_ready, self()})
+
+            receive do
+              :claim_audit_csv -> Audit.start_csv_export(subject)
+            end
+          end)
+        end
+
+      try do
+        contender_pids =
+          Enum.map(contenders, fn _task ->
+            assert_receive {:audit_csv_ready, contender_pid}, 5_000
+            contender_pid
+          end)
+
+        Enum.each(contender_pids, &send(&1, :claim_audit_csv))
+        results = Enum.map(contenders, &Task.await(&1, 30_000))
+
+        assert [{:ok, {:one_time, reservation_id}}] =
+                 Enum.filter(results, &match?({:ok, {:one_time, _reservation_id}}, &1))
+
+        assert Enum.count(
+                 results,
+                 &(&1 == {:error, :audit_csv_export_in_progress})
+               ) == 1
+
+        assert {:ok, _account} =
+                 Audit.finish_csv_export(
+                   subject,
+                   {:one_time, reservation_id},
+                   [filter: []],
+                   1
+                 )
+
+        assert Repo.reload!(account).one_time_audit_csv_exported_at
+      after
+        stop_tasks(contenders)
+        Repo.delete_all(from(stored in Account, where: stored.id == ^account.id))
+        Repo.delete_all(from(stored in User, where: stored.email == ^owner_email))
+      end
+    end)
+  end
+
+  test "a one-time CSV claim rechecks an owner demoted while the stale request waits" do
+    Sandbox.unboxed_run(Repo, fn ->
+      suffix = Ecto.UUID.generate()
+      owner_email = "audit-csv-demotion-#{suffix}@example.test"
+      owner = Fixtures.Users.create_user(%{email: owner_email})
+
+      {:ok, account} =
+        Accounts.create_account_with_owner(
+          %{name: "Audit CSV demotion #{suffix}", slug: "audit-csv-demotion-#{suffix}"},
+          owner
+        )
+
+      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      parent = self()
+
+      demoter =
+        unboxed_task(fn ->
+          Repo.transaction(fn ->
+            membership =
+              Repo.one!(
+                from(stored in Membership,
+                  where: stored.id == ^subject.membership_id,
+                  lock: "FOR UPDATE"
+                )
+              )
+
+            send(parent, :audit_csv_membership_locked)
+
+            receive do
+              :commit_audit_csv_demotion ->
+                membership |> Ecto.Changeset.change(role: :admin) |> Repo.update!()
+            end
+          end)
+        end)
+
+      assert_receive :audit_csv_membership_locked, 5_000
+
+      claimant =
+        unboxed_task(fn ->
+          send(parent, :audit_csv_claim_started)
+          Accounts.reserve_one_time_audit_csv_export(account.id, subject)
+        end)
+
+      try do
+        assert_receive :audit_csv_claim_started, 5_000
+        send(demoter.pid, :commit_audit_csv_demotion)
+
+        assert {:ok, %Membership{role: :admin}} = Task.await(demoter, 30_000)
+        assert Task.await(claimant, 30_000) == {:error, :unauthorized}
+        refute Repo.reload!(account).one_time_audit_csv_export_reservation_id
+      after
+        stop_tasks([demoter, claimant])
+        Repo.delete_all(from(stored in Account, where: stored.id == ^account.id))
+        Repo.delete_all(from(stored in User, where: stored.email == ^owner_email))
       end
     end)
   end

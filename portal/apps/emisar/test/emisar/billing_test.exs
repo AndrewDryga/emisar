@@ -287,24 +287,24 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "audit_export_available?/1" do
+  describe "continuous_audit_export_available?/1" do
     setup do
       %{account: Fixtures.Accounts.create_account()}
     end
 
     test "true on Team and Enterprise (CSV download + SIEM API)", %{account: account} do
       Fixtures.Accounts.create_subscription(account, "team")
-      assert Billing.audit_export_available?(account)
+      assert Billing.continuous_audit_export_available?(account)
 
       enterprise = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(enterprise, "enterprise")
-      assert Billing.audit_export_available?(enterprise)
+      assert Billing.continuous_audit_export_available?(enterprise)
     end
 
     test "false on Free — the in-console trail stays; taking data out is paid", %{
       account: account
     } do
-      refute Billing.audit_export_available?(account)
+      refute Billing.continuous_audit_export_available?(account)
     end
 
     test "an audit-export entitlement overrides the plan gate", %{account: account} do
@@ -312,7 +312,7 @@ defmodule Emisar.BillingTest do
         entitlements: %{"features_audit_export_enabled?" => false}
       )
 
-      refute Billing.audit_export_available?(account)
+      refute Billing.continuous_audit_export_available?(account)
 
       granted = Fixtures.Accounts.create_account()
 
@@ -320,7 +320,7 @@ defmodule Emisar.BillingTest do
         entitlements: %{"features_audit_export_enabled?" => true}
       )
 
-      assert Billing.audit_export_available?(granted)
+      assert Billing.continuous_audit_export_available?(granted)
     end
   end
 

@@ -82,7 +82,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
     )
   end
 
-  describe "GET /app/:account/audit/download" do
+  describe "POST /app/:account/audit/download" do
     test "a magic-link session in a require_sso account is bounced, never handed the CSV", %{
       conn: conn
     } do
@@ -90,7 +90,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       _ = enabled_provider(account)
       require_sso!(account)
 
-      conn = get(conn, ~p"/app/#{account}/audit/download")
+      conn = post(conn, ~p"/app/#{account}/audit/download")
 
       # A 302 to the SSO step-up — BEFORE the Team-plan gate (no subscription
       # here), proving the compliance plug runs first; no CSV body is streamed.
@@ -103,7 +103,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       {conn, _user, account} = register_and_log_in(conn)
       require_mfa!(account)
 
-      conn = get(conn, ~p"/app/#{account}/audit/download")
+      conn = post(conn, ~p"/app/#{account}/audit/download")
 
       assert redirected_to(conn) == ~p"/app/mfa_setup"
     end
@@ -119,7 +119,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
         Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "alice")
 
       conn =
-        get(
+        post(
           sso_session(user, identity),
           ~p"/app/#{account}/audit/download?event_type=user.invited"
         )
@@ -140,7 +140,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       other_provider = enabled_provider(other)
       foreign_identity = identity_for(other, other_provider, user)
 
-      conn = get(sso_session(user, foreign_identity), ~p"/app/#{account}/audit/download")
+      conn = post(sso_session(user, foreign_identity), ~p"/app/#{account}/audit/download")
 
       assert redirected_to(conn) == ~p"/app/mfa_setup"
     end
@@ -161,7 +161,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
         Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "alice")
 
       conn =
-        get(
+        post(
           sso_session(user, identity),
           ~p"/app/#{account}/audit/download?event_type=user.invited"
         )

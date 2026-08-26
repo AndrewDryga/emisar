@@ -1077,7 +1077,7 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true, "A user approved linking their SSO identity to an existing account."},
     "sso.link_request_dismissed" =>
       {true, true, true, "A user dismissed an SSO identity-link request."},
-    "audit.exported" => {true, false, true, "Audit events were exported over the SIEM API."},
+    "audit.exported" => {true, false, true, "Audit events were exported as CSV or to a SIEM."},
     "audit.retention_swept" =>
       {false, false, false, "The retention sweep pruned events past their retain-until date."},
     "subscription.changed" =>

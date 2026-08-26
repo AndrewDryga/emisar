@@ -349,6 +349,12 @@ deprecation path, and already-issued `ems-` tokens must keep authenticating.
 (`application/x-ndjson`, one event object per line) for SIEM collectors,
 authenticated by a bearer `emk-` API key of the dedicated `audit_export`
 kind. The console also serves a CSV download of the same trail.
+An account owner may create one downloadable, filtered CSV on any plan; the
+continuous-export entitlement allows repeated CSV downloads and the SIEM API.
+The one-time allowance is consumed when the bounded artifact and its
+`audit.exported` receipt are committed, before browser transfer begins. A
+console CSV is bounded to 100,000 events or 256 MiB, whichever comes first; an
+empty or oversized attempt does not consume the owner's one-time export.
 
 **How it is versioned today.** There is no path version; the contract is the
 parameter and field names. Query parameters are `since` (ISO 8601 inclusive
