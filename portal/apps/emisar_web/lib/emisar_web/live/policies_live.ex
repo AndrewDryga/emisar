@@ -776,6 +776,7 @@ defmodule EmisarWeb.PoliciesLive do
             </div>
             <aside class="lg:col-span-1">
               <.policy_rail
+                editor_id="account"
                 catalog={@account.catalog}
                 defaults={@account.defaults}
                 overrides={@account.overrides}
@@ -867,6 +868,7 @@ defmodule EmisarWeb.PoliciesLive do
   end
 
   attr :catalog, :map, required: true, doc: "%{action_id => risk} the policy governs"
+  attr :editor_id, :string, required: true
   attr :defaults, :map, required: true
   attr :overrides, :list, required: true
   attr :approval, :map, required: true
@@ -888,11 +890,12 @@ defmodule EmisarWeb.PoliciesLive do
       assign(assigns,
         outcome: Policies.simulate_outcome(rules, assigns.catalog),
         breakdown: Catalog.risk_breakdown_of(assigns.catalog),
+        single_reviewer?: single_reviewer_gate?(assigns.approval),
         total: map_size(assigns.catalog)
       )
 
     ~H"""
-    <div class="space-y-5">
+    <div id={"policy-rail-" <> @editor_id} class="space-y-5">
       <div>
         <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">In effect</h3>
         <p :if={@total > 0} class="mt-1 text-xs leading-relaxed text-zinc-400">
@@ -921,6 +924,8 @@ defmodule EmisarWeb.PoliciesLive do
         <.outcome_row tone={:amber} label="Needs approval" stat={@outcome["require_approval"]} />
         <.outcome_row tone={:rose} label="Denied" stat={@outcome["deny"]} />
       </div>
+
+      <.single_reviewer_warning :if={@single_reviewer?} />
 
       <%!-- The catalog's danger profile — the counts the tier decisions above act
            on. Compact: pill + count, most-severe first. "View all" opens the full
@@ -951,6 +956,23 @@ defmodule EmisarWeb.PoliciesLive do
         </dl>
       </div>
     </div>
+    """
+  end
+
+  attr :class, :string, default: nil
+
+  # One source for the effective approval warning rendered beside the controls
+  # and in their live preview, so the two security reads cannot drift.
+  defp single_reviewer_warning(assigns) do
+    ~H"""
+    <.event_block
+      tone={:amber}
+      icon="security.posture_warning"
+      title="In effect — a single approval is enough, and the requester may approve their own request"
+      class={@class}
+    >
+      <:body>Choose a different operator, or raise the count, to add independent review.</:body>
+    </.event_block>
     """
   end
 
@@ -1108,6 +1130,7 @@ defmodule EmisarWeb.PoliciesLive do
       </div>
       <aside :if={@ruleset.scope_type} class="lg:col-span-1">
         <.policy_rail
+          editor_id={@ruleset.uid}
           catalog={@ruleset.catalog}
           defaults={@ruleset.defaults}
           overrides={@ruleset.overrides}
@@ -1300,15 +1323,7 @@ defmodule EmisarWeb.PoliciesLive do
              in the calm icon-caps-a-spine grammar (`event_block`), not a wash box — the
              amber icon carries the severity. The remedy is descriptive, so it shows for
              everyone (a viewer still learns how the gate could be tightened). --%>
-        <.event_block
-          :if={@single_reviewer?}
-          tone={:amber}
-          icon="security.posture_warning"
-          title="In effect — a single approval is enough, and the requester may approve their own request"
-          class="mt-6"
-        >
-          <:body>Choose a different operator, or raise the count, to add independent review.</:body>
-        </.event_block>
+        <.single_reviewer_warning :if={@single_reviewer?} class="mt-6" />
 
         <%!-- A scoped ruleset REPLACES the default wholesale, so an override
              seeded from a pre-gate template can silently weaken the approval

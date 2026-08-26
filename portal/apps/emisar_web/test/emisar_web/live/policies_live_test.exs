@@ -670,7 +670,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~ "distinct operators, before the action runs"
     end
 
-    test "self-approval + a single approval folds the warning into the in-effect line", %{
+    test "self-approval + a single approval warns beside the controls and in the preview", %{
       conn: conn
     } do
       {conn, user, account} = register_and_log_in(conn)
@@ -685,15 +685,21 @@ defmodule EmisarWeb.PoliciesLiveTest do
           subject
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       assert html =~
                ~r/<label[^>]*ring-2[^>]*ring-brand-500\/50[^>]*>\s*<input[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="true"[^>]*checked/
 
-      # The verdict states the effect AND folds in the guidance in one place
-      # (no separate warning banner).
-      assert html =~ "the requester may approve their own request"
-      assert html =~ "Choose a different operator, or raise the count, to add independent review"
+      form_html = lv |> element("#policy-form-account") |> render()
+      rail_html = lv |> element("#policy-rail-account") |> render()
+
+      for warning_html <- [form_html, rail_html] do
+        assert warning_html =~ "the requester may approve their own request"
+
+        assert warning_html =~
+                 "Choose a different operator, or raise the count, to add independent review"
+      end
+
       refute html =~ "Self-approval is allowed and only one approval is required"
     end
 
@@ -710,12 +716,17 @@ defmodule EmisarWeb.PoliciesLiveTest do
           subject
         )
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       # Two approvals means a second person must sign off even if the requester is one —
-      # a real gate, so no single-reviewer warning box.
-      refute html =~ "the requester may approve their own request"
-      refute html =~ "add independent review"
+      # a real gate, so neither the controls nor their preview shows a warning.
+      for safe_html <- [
+            lv |> element("#policy-form-account") |> render(),
+            lv |> element("#policy-rail-account") |> render()
+          ] do
+        refute safe_html =~ "the requester may approve their own request"
+        refute safe_html =~ "add independent review"
+      end
     end
 
     test "a healthy four-eyes gate shows no verdict callout", %{conn: conn} do
@@ -1319,13 +1330,21 @@ defmodule EmisarWeb.PoliciesLiveTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
       # deny_all/0 carries the lax explicit gate (1 approver, self-approval
       # allowed), so this scope is weaker than the strict account default.
-      {:ok, _} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
+      {:ok, scoped} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       assert html =~ "Weaker approval gate than the default policy"
       assert html =~ "requires fewer approvals (1 vs 2)"
       assert html =~ "lets the requester approve their own action"
+
+      for warning_html <- [
+            lv |> element("#policy-form-#{scoped.id}") |> render(),
+            lv |> element("#policy-rail-#{scoped.id}") |> render()
+          ] do
+        assert warning_html =~ "the requester may approve their own request"
+        assert warning_html =~ "add independent review"
+      end
     end
 
     test "a scoped ruleset at least as strict as the default shows no warning", %{
