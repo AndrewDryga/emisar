@@ -1684,6 +1684,15 @@ defmodule EmisarWeb.MarketingTest do
 
       assert html =~ "emisar pack validate"
       assert html =~ "emisar pack install"
+      assert html =~ "Requires:  linux · my-cli ✓"
+
+      assert html =~
+               "Hash:      sha256:e8edc3660cb2cf7a8f3fe0d9cea167d07565b8287f57bd089b4dd737eb0e3844"
+
+      assert html =~ "ok my.do_other_thing  5ms"
+      assert html =~ "Reloaded the runner — it re-reads packs and re-advertises"
+      assert html =~ ">…</span>"
+      refute html =~ "ok my.do_thing"
       # The binary-only path: authors validate with no service and no account.
       assert html =~ "--no-service"
       assert html =~ "--hash"
