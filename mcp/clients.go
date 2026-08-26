@@ -334,9 +334,12 @@ func (adapter clientAdapter) installed(roots configRoots) bool {
 }
 
 var (
-	tomlEmisarTable = regexp.MustCompile(`(?m)^\[mcp_servers\.emisar\][ \t]*$`)
-	yamlEmisarEntry = regexp.MustCompile(`(?m)^[ \t]+emisar:[ \t]*$`)
-	jsonEmisarKey   = regexp.MustCompile(`"emisar"[ \t\r\n]*:`)
+	tomlEmisarTable = regexp.MustCompile(`(?m)^[ \t]*\[mcp_servers\.emisar\][ \t]*$`)
+	// Noncanonical but valid TOML spellings are refused rather than merged. The
+	// tiny editor owns one spelling and must never append a semantic duplicate.
+	tomlEmisarReference = regexp.MustCompile(`(?m)^[ \t]*(?:\[[^]\r\n]*mcp_servers[^]\r\n]*emisar[^]\r\n]*\][^\r\n]*|[^#\r\n]*mcp_servers[^#\r\n]*emisar[^#\r\n]*=)`)
+	yamlEmisarEntry     = regexp.MustCompile(`(?m)^[ \t]+emisar:[ \t]*$`)
+	jsonEmisarKey       = regexp.MustCompile(`"emisar"[ \t\r\n]*:`)
 )
 
 // configured reports whether the file already carries an emisar entry. A JSON
@@ -415,9 +418,15 @@ func refuseConfigSymlink(path string) error {
 	return nil
 }
 
-func fileHasContent(path string) bool {
+func fileHasContent(path string) (bool, error) {
 	raw, err := readConfigFile(path)
-	return err == nil && strings.TrimSpace(raw) != ""
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(raw) != "", nil
 }
 
 // detectClients returns every supported client present on this machine.

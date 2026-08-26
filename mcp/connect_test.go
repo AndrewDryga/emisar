@@ -3,10 +3,17 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseConnectArgs(t *testing.T) {
@@ -117,6 +124,249 @@ func TestSelectClientsWithoutATerminal(t *testing.T) {
 			t.Fatalf("selection = %+v ok=%v", selection, ok)
 		}
 	})
+}
+
+func TestConnectPreflightDoesNotRequestAKeyForAnUnwritableConfig(t *testing.T) {
+	roots := useConnectTestHome(t)
+	adapter, _ := lookupClientAdapter("goose")
+	client := adapter.resolve(roots)
+	if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Goose owns this top-level key, but without an existing Emisar child the
+	// deliberately small YAML editor cannot safely merge into it.
+	if err := os.WriteFile(client.ConfigFile, []byte("extensions:\n  developer:\n    enabled: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		http.Error(w, "authorization must not start", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	authenticator := testConnectAuthenticator(server)
+	var stdout, stderr bytes.Buffer
+	code := connectClients(
+		connectOptions{origin: server.URL, clientIDs: []string{"goose"}},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		authenticator,
+	)
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if requests != 0 {
+		t.Fatalf("authorization requests = %d, want 0", requests)
+	}
+	if !strings.Contains(stderr.String(), "No approval was requested") {
+		t.Errorf("the refusal did not explain the credential boundary:\n%s", stderr.String())
+	}
+}
+
+func TestConnectPreflightChecksEveryActualDestination(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		id   string
+		jam  func(*testing.T, detectedClient)
+	}{
+		{
+			name: "backup",
+			id:   "codex",
+			jam: func(t *testing.T, client detectedClient) {
+				t.Helper()
+				if err := os.Mkdir(client.ConfigFile+configBackupSuffix, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "env file",
+			id:   "vscode",
+			jam: func(t *testing.T, client detectedClient) {
+				t.Helper()
+				if err := os.Remove(client.EnvFilePath); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(client.EnvFilePath, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			roots := useConnectTestHome(t)
+			adapter, _ := lookupClientAdapter(testCase.id)
+			client := adapter.resolve(roots)
+			if err := client.install(testEntryRequest("/usr/local/bin/emisar-mcp", testCase.id)); err != nil {
+				t.Fatalf("arrange connected client: %v", err)
+			}
+			testCase.jam(t, client)
+
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				requests++
+				http.Error(w, "authorization must not start", http.StatusInternalServerError)
+			}))
+			defer server.Close()
+			var stdout, stderr bytes.Buffer
+			code := connectClients(
+				connectOptions{origin: server.URL, clientIDs: []string{testCase.id}},
+				strings.NewReader(""),
+				&stdout,
+				&stderr,
+				testConnectAuthenticator(server),
+			)
+			if code != 1 {
+				t.Fatalf("exit = %d, want 1\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+			}
+			if requests != 0 {
+				t.Fatalf("authorization requests = %d, want 0", requests)
+			}
+			if !strings.Contains(stderr.String(), "No approval was requested") {
+				t.Errorf("the refusal did not explain the credential boundary:\n%s", stderr.String())
+			}
+		})
+	}
+}
+
+func TestExplicitReconnectRotatesKeyAndRepointsURL(t *testing.T) {
+	roots := useConnectTestHome(t)
+	adapter, _ := lookupClientAdapter("codex")
+	client := adapter.resolve(roots)
+	if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(client.ConfigFile, []byte("model = \"gpt-5\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	oldKey := testAPIKey(0x41)
+	oldCLIKey := testAPIKey(0x42)
+	oldServer := newConnectAuthServer(t, "codex", oldKey, oldCLIKey)
+	defer oldServer.Close()
+	var stdout, stderr bytes.Buffer
+	code := connectClients(
+		connectOptions{origin: oldServer.URL, clientIDs: []string{"codex"}},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		testConnectAuthenticator(oldServer),
+	)
+	if code != 0 {
+		t.Fatalf("first connect exit = %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	before, err := readConfigFile(client.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newKey := testAPIKey(0x43)
+	newCLIKey := testAPIKey(0x44)
+	newServer := newConnectAuthServer(t, "codex", newKey, newCLIKey)
+	defer newServer.Close()
+	stdout.Reset()
+	stderr.Reset()
+	code = connectClients(
+		connectOptions{origin: newServer.URL, clientIDs: []string{"codex"}},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		testConnectAuthenticator(newServer),
+	)
+	if code != 0 {
+		t.Fatalf("reconnect exit = %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	after, err := readConfigFile(client.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{newServer.URL, newKey} {
+		if !strings.Contains(after, want) {
+			t.Errorf("reconnect did not write %q:\n%s", want, after)
+		}
+	}
+	for _, stale := range []string{oldServer.URL, oldKey} {
+		if strings.Contains(after, stale) {
+			t.Errorf("reconnect kept %q:\n%s", stale, after)
+		}
+	}
+	backup, err := os.ReadFile(client.ConfigFile + configBackupSuffix)
+	if err != nil {
+		t.Fatalf("reconnect backup: %v", err)
+	}
+	if string(backup) != before {
+		t.Errorf("reconnect backup differs from the replaced config\n got: %q\nwant: %q", backup, before)
+	}
+	if !strings.Contains(stdout.String(), "connected") {
+		t.Errorf("successful reconnect was not reported:\n%s", stdout.String())
+	}
+}
+
+func useConnectTestHome(t *testing.T) configRoots {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("EMISAR_ALLOW_INSECURE", "1")
+	roots, err := currentConfigRoots()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return roots
+}
+
+func testConnectAuthenticator(server *httptest.Server) deviceAuthenticator {
+	return deviceAuthenticator{
+		client:      server.Client(),
+		openBrowser: func(string) bool { return false },
+		stdoutIsTTY: func(io.Writer) bool { return false },
+		now:         time.Now,
+		wait:        func(context.Context, time.Duration) error { return nil },
+	}
+}
+
+func newConnectAuthServer(t *testing.T, clientID, clientKey, cliKey string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/mcp/device_authorization":
+			var body struct {
+				RequestedClients []string `json:"requested_clients"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Errorf("decode authorization request: %v", err)
+			}
+			if !slices.Equal(body.RequestedClients, []string{deviceAuthClientID, clientID}) {
+				t.Errorf("requested clients = %#v", body.RequestedClients)
+			}
+			origin := "http://" + request.Host
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"device_code":               "emdg-0123456789abcdef",
+				"user_code":                 "ABCD-2345",
+				"verification_uri":          origin + "/activate",
+				"verification_uri_complete": origin + "/activate?code=ABCD-2345",
+				"expires_in":                60,
+				"interval":                  1,
+			})
+		case "/api/mcp/device_token":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"account_id":   blitzAccountID,
+				"account_slug": "blitz",
+				"account_name": "Blitz",
+				"client_keys": map[string]string{
+					deviceAuthClientID: cliKey,
+					clientID:           clientKey,
+				},
+			})
+		default:
+			http.NotFound(w, request)
+		}
+	}))
 }
 
 func TestAskYesNoDefaultsToNo(t *testing.T) {

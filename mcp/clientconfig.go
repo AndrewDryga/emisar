@@ -13,6 +13,7 @@ import (
 const (
 	emisarServerName    = "emisar"
 	configBackupSuffix  = ".emisar-bak"
+	preflightAPIKey     = "emk-preflight"
 	claudeToolPattern   = "mcp__emisar__*"
 	grokToolPermission  = "MCPTool(emisar__*)"
 	codexApprovalOption = "default_tools_approval_mode"
@@ -101,84 +102,168 @@ func (request clientEntryRequest) validate() error {
 	return nil
 }
 
+// preflight proves the selected config can be rendered and its destinations
+// can be written before browser approval mints a client credential.
+func (client detectedClient) preflight(request clientEntryRequest) error {
+	request.APIKey = preflightAPIKey
+	request.EnvFile = client.EnvFilePath
+	if err := request.validate(); err != nil {
+		return err
+	}
+	if err := prepareConfigPath(client.ConfigFile); err != nil {
+		return err
+	}
+	if _, err := client.renderConfig(request); err != nil {
+		return err
+	}
+	if err := probeConfigWrite(client.ConfigFile); err != nil {
+		return err
+	}
+	hasContent, err := fileHasContent(client.ConfigFile)
+	if err != nil {
+		return err
+	}
+	if hasContent {
+		if err := validateReplaceableTarget(client.ConfigFile+configBackupSuffix, true); err != nil {
+			return err
+		}
+	}
+	if client.EnvFilePath != "" {
+		if err := prepareClientEnvPath(client.EnvFilePath); err != nil {
+			return err
+		}
+		if err := probeConfigWrite(client.EnvFilePath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // install writes this client's emisar entry, backing up an existing file first.
 func (client detectedClient) install(request clientEntryRequest) error {
 	request.EnvFile = client.EnvFilePath
 	if err := request.validate(); err != nil {
 		return err
 	}
-	// Refuse before writing a separate env file, so a hostile source cannot
+	// Render before writing a separate env file, so a hostile config cannot
 	// leave credentials behind after an otherwise failed install.
-	if err := refuseConfigSymlink(client.ConfigFile); err != nil {
+	if err := prepareConfigPath(client.ConfigFile); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+	edited, err := client.renderConfig(request)
+	if err != nil {
 		return err
+	}
+	hasContent, err := fileHasContent(client.ConfigFile)
+	if err != nil {
+		return err
+	}
+	if hasContent {
+		if err := validateReplaceableTarget(client.ConfigFile+configBackupSuffix, true); err != nil {
+			return err
+		}
+		if err := backupConfigFile(client.ConfigFile); err != nil {
+			return err
+		}
 	}
 	if client.EnvFilePath != "" {
 		if err := writeClientEnvFile(client.EnvFilePath, request); err != nil {
 			return err
 		}
 	}
-	if fileHasContent(client.ConfigFile) {
-		if err := backupConfigFile(client.ConfigFile); err != nil {
-			return err
-		}
+	return writeConfigFile(client.ConfigFile, edited)
+}
+
+func prepareConfigPath(path string) error {
+	if err := refuseConfigSymlink(path); err != nil {
+		return err
 	}
+	return os.MkdirAll(filepath.Dir(path), 0o700)
+}
+
+func probeConfigWrite(path string) error {
+	probe, err := os.CreateTemp(filepath.Dir(path), ".emisar-mcp-check.*")
+	if err != nil {
+		return err
+	}
+	probePath := probe.Name()
+	if err := probe.Close(); err != nil {
+		_ = os.Remove(probePath)
+		return err
+	}
+	return os.Remove(probePath)
+}
+
+func validateReplaceableTarget(path string, allowSymlink bool) error {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode().IsRegular() || allowSymlink && info.Mode()&os.ModeSymlink != 0 {
+		return nil
+	}
+	return fmt.Errorf("%s is not a replaceable file", path)
+}
+
+func (client detectedClient) renderConfig(request clientEntryRequest) (string, error) {
 	switch client.format {
 	case formatTOML:
-		return client.installTOML(request)
+		return client.renderTOML(request)
 	case formatYAML:
-		return client.installYAML(request)
+		return client.renderYAML(request)
 	default:
-		return client.installJSON(request)
+		return client.renderJSON(request)
 	}
 }
 
-func (client detectedClient) installJSON(request clientEntryRequest) error {
+func (client detectedClient) renderJSON(request clientEntryRequest) (string, error) {
 	raw, err := readConfigFile(client.ConfigFile)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+		return "", err
 	}
 	entry := client.entry(request)
 	edited, err := insertJSONMember(raw, client.container, emisarServerName, entry)
 	if err != nil {
-		return err
+		return "", err
 	}
 	document, err := parseJSONConfig(edited)
 	if err != nil {
-		return fmt.Errorf("the edited config is not valid JSON: %w", err)
+		return "", fmt.Errorf("the edited config is not valid JSON: %w", err)
 	}
 	written, ok := lookupJSONPath(document, client.container, emisarServerName)
 	if !ok || !sameJSONValue(written, entry) {
-		return errors.New("the emisar entry did not survive the edit")
+		return "", errors.New("the emisar entry did not survive the edit")
 	}
-	return writeConfigFile(client.ConfigFile, edited)
+	return edited, nil
 }
 
-func (client detectedClient) installTOML(request clientEntryRequest) error {
+func (client detectedClient) renderTOML(request clientEntryRequest) (string, error) {
 	raw, err := readConfigFile(client.ConfigFile)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+		return "", err
 	}
-	if tomlEmisarTable.MatchString(raw) {
-		return nil
+	withoutEmisar := removeTOMLTable(raw)
+	if tomlEmisarReference.MatchString(withoutEmisar) {
+		return "", errors.New("this config uses an unsupported TOML spelling for emisar")
 	}
 	command, err := quoteConfigString(request.Command)
 	if err != nil {
-		return err
+		return "", err
 	}
 	origin, err := quoteConfigString(request.Origin)
 	if err != nil {
-		return err
+		return "", err
 	}
 	key, err := quoteConfigString(request.APIKey)
 	if err != nil {
-		return err
+		return "", err
 	}
 	id, err := quoteConfigString(request.ClientID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	var block strings.Builder
 	block.WriteString("[mcp_servers.emisar]\n")
@@ -187,53 +272,48 @@ func (client detectedClient) installTOML(request clientEntryRequest) error {
 	if request.AutoPermit && client.autoPermit == autoPermitEntryApprovalMode {
 		fmt.Fprintf(&block, "%s = \"approve\"\n", codexApprovalOption)
 	}
-	return writeConfigFile(client.ConfigFile, appendConfigBlock(raw, block.String()))
+	return appendConfigBlock(withoutEmisar, block.String()), nil
 }
 
-func (client detectedClient) installYAML(request clientEntryRequest) error {
+func (client detectedClient) renderYAML(request clientEntryRequest) (string, error) {
 	raw, err := readConfigFile(client.ConfigFile)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	// Appending a whole top-level key is always valid; merging into an existing
-	// one risks a duplicate key, so that case takes the manual snippet instead.
-	if regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(client.yamlTop) + `:`).MatchString(raw) {
-		return fmt.Errorf("this config already defines %s", client.yamlTop)
+		return "", err
 	}
 	command, err := quoteConfigString(request.Command)
 	if err != nil {
-		return err
+		return "", err
 	}
 	origin, err := quoteConfigString(request.Origin)
 	if err != nil {
-		return err
+		return "", err
 	}
 	key, err := quoteConfigString(request.APIKey)
 	if err != nil {
-		return err
+		return "", err
 	}
 	id, err := quoteConfigString(request.ClientID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	var block strings.Builder
 	if client.ID == "hermes" {
-		block.WriteString("mcp_servers:\n  emisar:\n")
-		fmt.Fprintf(&block, "    command: %s\n", command)
-		block.WriteString("    env:\n")
-		fmt.Fprintf(&block, "      EMISAR_URL: %s\n", origin)
-		fmt.Fprintf(&block, "      EMISAR_API_KEY: %s\n", key)
-		fmt.Fprintf(&block, "      EMISAR_CLIENT: %s\n", id)
+		block.WriteString("emisar:\n")
+		fmt.Fprintf(&block, "  command: %s\n", command)
+		block.WriteString("  env:\n")
+		fmt.Fprintf(&block, "    EMISAR_URL: %s\n", origin)
+		fmt.Fprintf(&block, "    EMISAR_API_KEY: %s\n", key)
+		fmt.Fprintf(&block, "    EMISAR_CLIENT: %s\n", id)
 	} else {
-		block.WriteString("extensions:\n  emisar:\n    name: emisar\n")
-		fmt.Fprintf(&block, "    cmd: %s\n", command)
-		block.WriteString("    args: []\n    enabled: true\n    envs:\n")
-		fmt.Fprintf(&block, "      EMISAR_URL: %s\n", origin)
-		fmt.Fprintf(&block, "      EMISAR_API_KEY: %s\n", key)
-		fmt.Fprintf(&block, "      EMISAR_CLIENT: %s\n", id)
-		block.WriteString("    type: stdio\n    timeout: 300\n")
+		block.WriteString("emisar:\n  name: emisar\n")
+		fmt.Fprintf(&block, "  cmd: %s\n", command)
+		block.WriteString("  args: []\n  enabled: true\n  envs:\n")
+		fmt.Fprintf(&block, "    EMISAR_URL: %s\n", origin)
+		fmt.Fprintf(&block, "    EMISAR_API_KEY: %s\n", key)
+		fmt.Fprintf(&block, "    EMISAR_CLIENT: %s\n", id)
+		block.WriteString("  type: stdio\n  timeout: 300\n")
 	}
-	return writeConfigFile(client.ConfigFile, appendConfigBlock(raw, block.String()))
+	return replaceYAMLEntry(raw, client.yamlTop, block.String())
 }
 
 func appendConfigBlock(raw, block string) string {
@@ -241,6 +321,94 @@ func appendConfigBlock(raw, block string) string {
 		return block
 	}
 	return strings.TrimRight(raw, "\n") + "\n\n" + block
+}
+
+// replaceYAMLEntry replaces only our direct child when the client already has
+// a shared top-level key. A top-level key without our child is still refused:
+// hand-merging arbitrary YAML is outside this deliberately small editor.
+func replaceYAMLEntry(raw, top, entry string) (string, error) {
+	lines := strings.Split(raw, "\n")
+	topIndex := -1
+	for index, line := range lines {
+		trimmed := strings.TrimRight(line, " \t\r")
+		if trimmed == top+":" {
+			if topIndex >= 0 {
+				return "", fmt.Errorf("this config defines %s more than once", top)
+			}
+			topIndex = index
+		}
+	}
+	if topIndex < 0 {
+		if regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(top) + `:`).MatchString(raw) {
+			return "", fmt.Errorf("this config already defines %s", top)
+		}
+		block := top + ":\n" + indentYAMLBlock(entry, 2)
+		return appendConfigBlock(raw, block), nil
+	}
+
+	topEnd := len(lines)
+	childIndent := -1
+	for index := topIndex + 1; index < len(lines); index++ {
+		trimmed := strings.TrimRight(lines[index], "\r")
+		if strings.TrimSpace(trimmed) == "" {
+			continue
+		}
+		indent := len(trimmed) - len(strings.TrimLeft(trimmed, " \t"))
+		if indent == 0 {
+			topEnd = index
+			break
+		}
+		if strings.HasPrefix(strings.TrimSpace(trimmed), "#") {
+			continue
+		}
+		if childIndent < 0 || indent < childIndent {
+			childIndent = indent
+		}
+	}
+
+	entryStart := -1
+	for index := topIndex + 1; index < topEnd; index++ {
+		trimmed := strings.TrimRight(lines[index], "\r")
+		indent := len(trimmed) - len(strings.TrimLeft(trimmed, " \t"))
+		if indent == childIndent && strings.TrimSpace(trimmed) == emisarServerName+":" {
+			if entryStart >= 0 {
+				return "", errors.New("this config defines emisar more than once")
+			}
+			entryStart = index
+		}
+	}
+	if entryStart < 0 {
+		return "", fmt.Errorf("this config already defines %s without an emisar entry", top)
+	}
+
+	entryEnd := topEnd
+	for index := entryStart + 1; index < topEnd; index++ {
+		trimmed := strings.TrimRight(lines[index], "\r")
+		if strings.TrimSpace(trimmed) == "" {
+			continue
+		}
+		indent := len(trimmed) - len(strings.TrimLeft(trimmed, " \t"))
+		if indent <= childIndent {
+			entryEnd = index
+			break
+		}
+	}
+
+	replacement := strings.Split(strings.TrimSuffix(indentYAMLBlock(entry, childIndent), "\n"), "\n")
+	edited := make([]string, 0, len(lines)-entryEnd+entryStart+len(replacement))
+	edited = append(edited, lines[:entryStart]...)
+	edited = append(edited, replacement...)
+	edited = append(edited, lines[entryEnd:]...)
+	return strings.Join(edited, "\n"), nil
+}
+
+func indentYAMLBlock(block string, spaces int) string {
+	prefix := strings.Repeat(" ", spaces)
+	lines := strings.Split(strings.TrimSuffix(block, "\n"), "\n")
+	for index := range lines {
+		lines[index] = prefix + lines[index]
+	}
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // remove drops this client's emisar entry and the backup the install left.
@@ -289,7 +457,7 @@ func (client detectedClient) remove() error {
 // removeTOMLTable drops [mcp_servers.emisar] and its child tables through the
 // next unrelated table header. A client's own CLI may have written the env as a
 // child table where this bridge writes an inline one.
-var tomlEmisarHeader = regexp.MustCompile(`^\[mcp_servers\.emisar(\.[^\]]+)?\][ \t]*$`)
+var tomlEmisarHeader = regexp.MustCompile(`^[ \t]*\[mcp_servers\.emisar(\.[^\]]+)?\][ \t]*$`)
 
 func removeTOMLTable(raw string) string {
 	lines := strings.Split(raw, "\n")
@@ -301,7 +469,7 @@ func removeTOMLTable(raw string) string {
 		case tomlEmisarHeader.MatchString(trimmed):
 			skipping = true
 			continue
-		case strings.HasPrefix(trimmed, "["):
+		case strings.HasPrefix(strings.TrimLeft(trimmed, " \t"), "["):
 			skipping = false
 		}
 		if !skipping {
@@ -522,16 +690,7 @@ func removeGrokPermission(path string) error {
 // writeClientEnvFile keeps a syncable editor config free of the API key: the
 // key lives beside the bridge's own credential state instead.
 func writeClientEnvFile(path string, request clientEntryRequest) error {
-	directory := filepath.Dir(path)
-	for _, candidate := range []string{filepath.Dir(directory), directory, path} {
-		if info, err := os.Lstat(candidate); err == nil && info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%s is a symlink", candidate)
-		}
-	}
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return err
-	}
-	if err := os.Chmod(directory, 0o700); err != nil {
+	if err := prepareClientEnvPath(path); err != nil {
 		return err
 	}
 	body := fmt.Sprintf(
@@ -539,6 +698,25 @@ func writeClientEnvFile(path string, request clientEntryRequest) error {
 		request.Origin, request.APIKey, request.ClientID,
 	)
 	return writeConfigFile(path, body)
+}
+
+func prepareClientEnvPath(path string) error {
+	directory := filepath.Dir(path)
+	for _, candidate := range []string{filepath.Dir(directory), directory, path} {
+		if info, err := os.Lstat(candidate); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s is a symlink", candidate)
+		}
+	}
+	if err := validateReplaceableTarget(path, false); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(directory, 0o700); err != nil {
+		return err
+	}
+	return nil
 }
 
 // writeConfigFile stages beside the target and renames. A plain write would

@@ -230,6 +230,194 @@ func TestClientInstallAndRemove(t *testing.T) {
 	}
 }
 
+func TestClientReconnectRotatesCredentialsThenRepointsOrigin(t *testing.T) {
+	for _, testCase := range clientConfigCases {
+		t.Run(testCase.id, func(t *testing.T) {
+			adapter, ok := lookupClientAdapter(testCase.id)
+			if !ok {
+				t.Fatalf("unknown client %q", testCase.id)
+			}
+			roots := testConfigRoots(t)
+			client := adapter.resolve(roots)
+			if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(client.ConfigFile, []byte(testCase.existing), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			first := testEntryRequest("/usr/local/bin/emisar-mcp", testCase.id)
+			first.Origin = "https://old.example"
+			first.APIKey = "emk-old"
+			if err := client.install(first); err != nil {
+				t.Fatalf("first install: %v", err)
+			}
+			before, err := readConfigFile(client.ConfigFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			rotated := first
+			rotated.APIKey = "emk-new"
+			if err := client.preflight(rotated); err != nil {
+				t.Fatalf("reconnect preflight: %v", err)
+			}
+			if err := client.install(rotated); err != nil {
+				t.Fatalf("key rotation: %v", err)
+			}
+			afterRotation, credentials := readClientCredentials(t, client)
+			for _, want := range []string{rotated.Origin, rotated.APIKey} {
+				if !strings.Contains(credentials, want) {
+					t.Errorf("key rotation did not write %q:\n%s", want, credentials)
+				}
+			}
+			if strings.Contains(credentials, first.APIKey) {
+				t.Errorf("key rotation kept %q:\n%s", first.APIKey, credentials)
+			}
+			backup, err := os.ReadFile(client.ConfigFile + configBackupSuffix)
+			if err != nil {
+				t.Fatalf("rotation backup: %v", err)
+			}
+			if string(backup) != before {
+				t.Errorf("rotation backup differs from the replaced config\n got: %q\nwant: %q", backup, before)
+			}
+
+			repointed := rotated
+			repointed.Origin = "https://new.example"
+			if err := client.preflight(repointed); err != nil {
+				t.Fatalf("repoint preflight: %v", err)
+			}
+			if err := client.install(repointed); err != nil {
+				t.Fatalf("URL repoint: %v", err)
+			}
+			after, credentials := readClientCredentials(t, client)
+			for _, want := range []string{repointed.Origin, repointed.APIKey} {
+				if !strings.Contains(credentials, want) {
+					t.Errorf("URL repoint did not write %q:\n%s", want, credentials)
+				}
+			}
+			if strings.Contains(credentials, first.Origin) {
+				t.Errorf("URL repoint kept %q:\n%s", first.Origin, credentials)
+			}
+			if testCase.unrelated != "" && !strings.Contains(after, testCase.unrelated) {
+				t.Errorf("reconnect dropped %q:\n%s", testCase.unrelated, after)
+			}
+			backup, err = os.ReadFile(client.ConfigFile + configBackupSuffix)
+			if err != nil {
+				t.Fatalf("repoint backup: %v", err)
+			}
+			if string(backup) != afterRotation {
+				t.Errorf("repoint backup differs from the replaced config\n got: %q\nwant: %q", backup, afterRotation)
+			}
+			if !client.configured(client.ConfigFile) {
+				t.Fatal("reconnected config no longer reads as connected")
+			}
+		})
+	}
+}
+
+func readClientCredentials(t *testing.T, client detectedClient) (string, string) {
+	t.Helper()
+	raw, err := readConfigFile(client.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials := raw
+	if client.EnvFilePath != "" {
+		env, readErr := readConfigFile(client.EnvFilePath)
+		if readErr != nil {
+			t.Fatalf("env file: %v", readErr)
+		}
+		credentials += "\n" + env
+	}
+	return raw, credentials
+}
+
+func TestTOMLReconnectReplacesTheWholeEmisarTableFamily(t *testing.T) {
+	adapter, _ := lookupClientAdapter("codex")
+	client := adapter.resolve(testConfigRoots(t))
+	if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	existing := "model = \"gpt-5\"\n\n[mcp_servers.emisar]\ncommand = \"old\"\n\n[mcp_servers.emisar.env]\nEMISAR_URL = \"https://old.example\"\nEMISAR_API_KEY = \"emk-old\"\n\n[profiles.work]\nname = \"work\"\n"
+	if err := os.WriteFile(client.ConfigFile, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	request := testEntryRequest("/usr/local/bin/emisar-mcp", "codex")
+	request.Origin = "https://new.example"
+	request.APIKey = "emk-new"
+	if err := client.install(request); err != nil {
+		t.Fatalf("reconnect: %v", err)
+	}
+	raw, err := readConfigFile(client.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kept := range []string{"model = \"gpt-5\"", "[profiles.work]", "https://new.example", "emk-new"} {
+		if !strings.Contains(raw, kept) {
+			t.Errorf("reconnect dropped %q:\n%s", kept, raw)
+		}
+	}
+	if strings.Count(raw, "[mcp_servers.emisar]") != 1 || strings.Contains(raw, "[mcp_servers.emisar.env]") || strings.Contains(raw, "old.example") {
+		t.Errorf("the old Emisar table family survived reconnect:\n%s", raw)
+	}
+}
+
+func TestYAMLReconnectKeepsSiblingEntries(t *testing.T) {
+	adapter, _ := lookupClientAdapter("goose")
+	client := adapter.resolve(testConfigRoots(t))
+	if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	existing := "extensions:\n  developer:\n    enabled: true\n  emisar:\n    name: emisar\n    cmd: \"old\"\n    envs:\n      EMISAR_URL: \"https://old.example\"\n      EMISAR_API_KEY: \"emk-old\"\n  memory:\n    enabled: false\n"
+	if err := os.WriteFile(client.ConfigFile, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	request := testEntryRequest("/usr/local/bin/emisar-mcp", "goose")
+	request.Origin = "https://new.example"
+	request.APIKey = "emk-new"
+	if err := client.install(request); err != nil {
+		t.Fatalf("reconnect: %v", err)
+	}
+	raw, err := readConfigFile(client.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kept := range []string{"developer:", "memory:", "enabled: false", "https://new.example", "emk-new"} {
+		if !strings.Contains(raw, kept) {
+			t.Errorf("reconnect dropped %q:\n%s", kept, raw)
+		}
+	}
+	if strings.Count(raw, "extensions:") != 1 || strings.Count(raw, "  emisar:") != 1 || strings.Contains(raw, "old.example") {
+		t.Errorf("the old YAML entry survived reconnect:\n%s", raw)
+	}
+}
+
+func TestReconnectPreflightRefusesAmbiguousTOMLAndYAML(t *testing.T) {
+	for _, testCase := range []struct {
+		id     string
+		config string
+	}{
+		{id: "codex", config: "mcp_servers.emisar = { command = \"old\" }\n"},
+		{id: "codex", config: "[mcp_servers.\"emisar\"] # client-written\ncommand = \"old\"\n"},
+		{id: "goose", config: "extensions:\n  emisar:\n    cmd: \"old\"\n  emisar:\n    cmd: \"also-old\"\n"},
+	} {
+		t.Run(testCase.id, func(t *testing.T) {
+			adapter, _ := lookupClientAdapter(testCase.id)
+			client := adapter.resolve(testConfigRoots(t))
+			if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(client.ConfigFile, []byte(testCase.config), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := client.preflight(testEntryRequest("/usr/local/bin/emisar-mcp", testCase.id)); err == nil {
+				t.Fatal("expected an ambiguous existing entry to be refused")
+			}
+		})
+	}
+}
+
 func TestClientInstallReplacesBackupWithoutFollowingSymlinks(t *testing.T) {
 	for _, testCase := range []struct {
 		id       string

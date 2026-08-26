@@ -159,6 +159,28 @@ func connectClients(
 		return 0
 	}
 
+	preflightFailures := 0
+	for _, client := range selection.clients {
+		request := clientEntryRequest{
+			Command:    command,
+			Origin:     origin,
+			ClientID:   client.ID,
+			AutoPermit: selection.autoPermit && client.autoPermit != autoPermitNone,
+		}
+		if err := client.preflight(request); err != nil {
+			preflightFailures++
+			writeCLIWarning(
+				stderr,
+				client.Label+": could not safely update "+client.ConfigFile,
+				[]string{err.Error()},
+				"No approval was requested. Fix this config, then run `emisar-mcp connect` again.",
+			)
+		}
+	}
+	if preflightFailures > 0 {
+		return 1
+	}
+
 	requested := make([]string, 0, len(selection.clients)+1)
 	if selection.cliNeeded {
 		requested = append(requested, deviceAuthClientID)
@@ -569,7 +591,8 @@ USAGE
 WHAT IT DOES
   Detects the supported LLM clients installed for your user, runs one browser
   approval covering the direct CLI and every client you choose, and writes each
-  client's own configuration shape. An already-connected client is left alone.
+  client's own configuration shape. --all leaves connected clients alone;
+  explicitly naming one with --client refreshes its key and server URL.
 
 FLAGS
   --url <origin>
@@ -580,7 +603,7 @@ FLAGS
     Connect every detected client that is not connected yet, without asking.
 
   --client <id>
-    Connect one client by id; repeatable. Ids: ` + sortedClientIDs() + `
+    Connect or refresh one client by id; repeatable. Ids: ` + sortedClientIDs() + `
 
   --yes
     Do not ask for confirmation.
