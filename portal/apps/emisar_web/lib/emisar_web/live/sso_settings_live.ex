@@ -3293,30 +3293,34 @@ defmodule EmisarWeb.SSOSettingsLive do
                   class="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1"
                 >
                   <dt class="text-[10px] uppercase tracking-wider text-zinc-400">runners:</dt>
-                  <dd class="flex min-w-0 flex-wrap items-center gap-1">
-                    <span
-                      :if={mapping_runner_reach_phrase(mapping.runner_access_mode)}
-                      class="text-xs text-zinc-400"
+                  <dd>
+                    <.chip_overflow
+                      id={"mapping-runners-#{mapping.id}"}
+                      items={mapping_scope_tag_items(mapping)}
+                      expanded?={MapSet.member?(@expanded_scopes, "runners:#{mapping.id}")}
+                      toggle="toggle_scope_expand"
+                      toggle_value={"runners:#{mapping.id}"}
+                      label="runner scopes"
                     >
-                      {mapping_runner_reach_phrase(mapping.runner_access_mode)}
-                    </span>
-                    <.identity_tag
-                      :for={group <- mapping.runner_scope_groups}
-                      category="group"
-                      value={group}
-                    />
-                    <%!-- The full runner id rides the tag's title; the value half names the
-                       live runner, and falls back to the shared removed-runner label when
-                       the id no longer resolves. --%>
-                    <.identity_tag
-                      :for={runner_id <- mapping.runner_scope_runner_ids}
-                      category="runner"
-                      title={runner_id}
-                    >
-                      <% runner = Map.get(@runners_by_id, runner_id) %>
-                      <span :if={runner}>{runner.name}</span>
-                      <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
-                    </.identity_tag>
+                      <:lead :if={mapping_runner_reach_phrase(mapping.runner_access_mode)}>
+                        {mapping_runner_reach_phrase(mapping.runner_access_mode)}
+                      </:lead>
+                      <:item :let={scope_tag}>
+                        <%= case scope_tag do %>
+                          <% {:group, group} -> %>
+                            <.identity_tag category="group" value={group} />
+                          <% {:runner, runner_id} -> %>
+                            <%!-- The full runner id rides the tag's title; the value half
+                             names the live runner, and falls back to the shared
+                             removed-runner label when the id no longer resolves. --%>
+                            <.identity_tag category="runner" title={runner_id}>
+                              <% runner = Map.get(@runners_by_id, runner_id) %>
+                              <span :if={runner}>{runner.name}</span>
+                              <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
+                            </.identity_tag>
+                        <% end %>
+                      </:item>
+                    </.chip_overflow>
                   </dd>
                   <dt
                     :if={mapping.runner_access_mode != :none}
@@ -3328,9 +3332,9 @@ defmodule EmisarWeb.SSOSettingsLive do
                     <.chip_overflow
                       id={"mapping-packs-#{mapping.id}"}
                       items={mapping.pack_scope_pack_ids}
-                      expanded?={MapSet.member?(@expanded_scopes, mapping.id)}
+                      expanded?={MapSet.member?(@expanded_scopes, "packs:#{mapping.id}")}
                       toggle="toggle_scope_expand"
-                      toggle_value={mapping.id}
+                      toggle_value={"packs:#{mapping.id}"}
                       label="packs"
                     >
                       <:lead :if={mapping_pack_reach_phrase(mapping.pack_access_mode)}>
@@ -3872,6 +3876,12 @@ defmodule EmisarWeb.SSOSettingsLive do
     if MapSet.member?(expanded, id),
       do: MapSet.delete(expanded, id),
       else: MapSet.put(expanded, id)
+  end
+
+  # Groups lead — a group is the wider grant, so the visible tags start there.
+  defp mapping_scope_tag_items(mapping) do
+    Enum.map(mapping.runner_scope_groups, &{:group, &1}) ++
+      Enum.map(mapping.runner_scope_runner_ids, &{:runner, &1})
   end
 
   defp pack_access_mode_label(:all), do: "All packs"

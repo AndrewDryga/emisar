@@ -610,6 +610,11 @@ defmodule EmisarWeb.TeamLive do
       else: MapSet.put(expanded, id)
   end
 
+  # Groups lead — a group is the wider grant, so the visible tags start there.
+  defp scope_tag_items(%Accounts.RunnerAccess{} = access) do
+    Enum.map(access.groups, &{:group, &1}) ++ Enum.map(access.runner_ids, &{:runner, &1})
+  end
+
   defp find_member_facts(socket, id),
     do: Enum.find(socket.assigns.member_facts, &(&1.membership.id == id))
 
@@ -2111,27 +2116,37 @@ defmodule EmisarWeb.TeamLive do
                           <dt class="text-[10px] uppercase tracking-wider text-zinc-400">
                             runners:
                           </dt>
-                          <dd class="flex min-w-0 flex-wrap items-center gap-1">
-                            <span :if={runner_reach_phrase(access)} class="text-xs text-zinc-400">
-                              {runner_reach_phrase(access)}
-                            </span>
-                            <.identity_tag
-                              :for={group <- access.groups}
-                              category="group"
-                              value={group}
-                            />
-                            <%!-- The full runner id rides the tag's title; the value half
-                             names the live runner, and falls back to the shared
-                             removed-runner label when the id no longer resolves. --%>
-                            <.identity_tag
-                              :for={runner_id <- access.runner_ids}
-                              category="runner"
-                              title={runner_id}
+                          <dd>
+                            <.chip_overflow
+                              id={"member-runners-#{membership.id}"}
+                              items={scope_tag_items(access)}
+                              expanded?={MapSet.member?(@expanded_scopes, "runners:#{membership.id}")}
+                              toggle="toggle_scope_expand"
+                              toggle_value={"runners:#{membership.id}"}
+                              label="runner scopes"
                             >
-                              <% runner = Map.get(@runners_by_id, runner_id) %>
-                              <span :if={runner}>{runner.name}</span>
-                              <.removed_runner :if={is_nil(runner)} runner_id={runner_id} />
-                            </.identity_tag>
+                              <:lead :if={runner_reach_phrase(access)}>
+                                {runner_reach_phrase(access)}
+                              </:lead>
+                              <:item :let={scope_tag}>
+                                <%= case scope_tag do %>
+                                  <% {:group, group} -> %>
+                                    <.identity_tag category="group" value={group} />
+                                  <% {:runner, runner_id} -> %>
+                                    <%!-- The full runner id rides the tag's title; the value
+                                     half names the live runner, and falls back to the shared
+                                     removed-runner label when the id no longer resolves. --%>
+                                    <.identity_tag category="runner" title={runner_id}>
+                                      <% runner = Map.get(@runners_by_id, runner_id) %>
+                                      <span :if={runner}>{runner.name}</span>
+                                      <.removed_runner
+                                        :if={is_nil(runner)}
+                                        runner_id={runner_id}
+                                      />
+                                    </.identity_tag>
+                                <% end %>
+                              </:item>
+                            </.chip_overflow>
                           </dd>
 
                           <%!-- No reach means no pack half to state at all. --%>
@@ -2145,9 +2160,9 @@ defmodule EmisarWeb.TeamLive do
                             <.chip_overflow
                               id={"member-packs-#{membership.id}"}
                               items={access.pack_ids}
-                              expanded?={MapSet.member?(@expanded_scopes, membership.id)}
+                              expanded?={MapSet.member?(@expanded_scopes, "packs:#{membership.id}")}
                               toggle="toggle_scope_expand"
-                              toggle_value={membership.id}
+                              toggle_value={"packs:#{membership.id}"}
                               label="packs"
                             >
                               <:lead :if={pack_reach_phrase(access)}>

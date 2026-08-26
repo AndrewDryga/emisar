@@ -1734,6 +1734,49 @@ defmodule EmisarWeb.TeamLiveTest do
       assert expanded =~ "Show fewer"
     end
 
+    test "a long runner scope clips to three tags and expands independently of packs",
+         %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      member = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        )
+
+      groups = ~w[alpha-fleet bravo-fleet charlie-fleet delta-fleet echo-fleet]
+      packs = ~w[consul nginx postgres redis vault]
+
+      {:ok, restricted} =
+        Emisar.Accounts.RunnerAccess.new(:restricted, groups, [], :restricted, packs)
+
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert html =~ "alpha-fleet"
+      assert html =~ "charlie-fleet"
+      refute html =~ "delta-fleet"
+      refute html =~ "echo-fleet"
+      assert has_element?(lv, "#member-runners-#{membership.id} button", "+2")
+
+      expanded =
+        lv
+        |> element("#member-runners-#{membership.id} button")
+        |> render_click()
+
+      assert expanded =~ "delta-fleet"
+      assert expanded =~ "echo-fleet"
+
+      # The packs half of the same row stays collapsed — the two dimensions
+      # expand independently.
+      refute expanded =~ "redis"
+      refute expanded =~ "vault"
+      assert has_element?(lv, "#member-packs-#{membership.id} button", "+2")
+    end
+
     test "a short allowlist renders every pack with no toggle", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
       member = Fixtures.Users.create_user()
