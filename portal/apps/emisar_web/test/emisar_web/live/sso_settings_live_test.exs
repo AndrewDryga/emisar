@@ -92,7 +92,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
     test "Add a connection is its own page with the per-provider setup guide",
          %{conn: conn, account: account} do
-      {:ok, _lv, new_html} = live(conn, ~p"/app/#{account}/settings/sso/new")
+      {:ok, lv, new_html} = live(conn, ~p"/app/#{account}/settings/sso/new")
       assert new_html =~ "Add connection"
       refute new_html =~ "Add an identity provider"
       assert new_html =~ "Member provisioning"
@@ -101,6 +101,16 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert new_html =~ "Check issuer"
       assert new_html =~ "stay disabled until you save them and verify a real sign-in"
       refute new_html =~ ~s(name="provider[enabled]")
+
+      assert has_element?(
+               lv,
+               "#create-provider[phx-hook='PendingButton'][phx-disable-with='Saving...']"
+             )
+
+      assert has_element?(
+               lv,
+               "#test-provider[phx-hook='PendingButton'][phx-disable-with='Testing…']"
+             )
     end
 
     test "creates a connection through the form, then lands on its detail", %{
@@ -330,11 +340,16 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       # The dedicated edit page must never render the stored, write-only
       # client_secret back — the field is blank ("leave to keep").
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
 
       assert html =~ "edit-provider-#{provider.id}"
       assert html =~ "Leave blank to keep current"
       refute html =~ "super-secret-value-xyz"
+
+      assert has_element?(
+               lv,
+               "#save-provider-#{provider.id}[phx-hook='PendingButton'][phx-disable-with='Saving...']"
+             )
     end
 
     test "the edit page shows provider type read-only — it's create-only", %{
@@ -659,6 +674,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       dialog = "delete-provider-#{provider.id}"
 
+      assert has_element?(
+               lv,
+               "##{dialog}-confirm[phx-disable-with='Deleting…']"
+             )
+
       # Empty token → Confirm disabled.
       assert_raise ArgumentError, ~r/disabled/, fn ->
         confirm_dialog(lv, dialog, "Delete connection")
@@ -831,6 +851,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
                "Verify sign-in"
              )
 
+      assert has_element?(
+               lv,
+               "#verify-provider-sign-in-#{provider.id}[phx-hook='PendingButton'][phx-disable-with='Verifying…']"
+             )
+
       assert Repo.reload!(provider).enabled == false
     end
 
@@ -880,6 +905,16 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "hover:bg-zinc-800"
       refute html =~ ">Cancel<"
 
+      assert has_element?(
+               lv,
+               "#provider-oidc-step-continue[class~='min-w-28'][phx-hook='PendingButton'][phx-disable-with='Confirming...']"
+             )
+
+      assert has_element?(
+               lv,
+               "#provider-oidc-step-resend[phx-hook='PendingButton'][phx-disable-with='Sending…']"
+             )
+
       lv |> element("#provider-oidc-step-resend") |> render_click()
       assert_received {:email, _replacement_email}
       assert render(lv) =~ "We sent a new code"
@@ -916,6 +951,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       assert has_element?(verified_lv, "#enable-verified-provider-#{verified.id}")
       assert has_element?(verified_lv, "button", "Enable for members")
+
+      assert has_element?(
+               verified_lv,
+               "#enable-verified-provider-#{verified.id}-confirm[phx-disable-with='Enabling…']"
+             )
 
       enabled =
         render_click(verified_lv, "enable_verified_provider", %{
@@ -1223,6 +1263,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       refute sign_in_only =~ "Members and groups stay in sync"
 
+      assert has_element?(
+               lv,
+               "#enable-scim-#{provider.id}[phx-hook='PendingButton'][phx-disable-with='Enabling…']"
+             )
+
       html = render_click(lv, "enable_scim", %{"id" => provider.id})
 
       assert html =~ "Directory sync enabled."
@@ -1238,6 +1283,17 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       sync_controls = lv |> element("#directory-sync-#{provider.id}") |> render()
       assert has_element?(lv, "#rotate-scim-#{provider.id}")
       assert has_element?(lv, "#disable-scim-#{provider.id}")
+
+      assert has_element?(
+               lv,
+               "#rotate-scim-#{provider.id}-confirm[phx-disable-with='Rotating…']"
+             )
+
+      assert has_element?(
+               lv,
+               "#disable-scim-#{provider.id}-confirm[phx-disable-with='Disabling…']"
+             )
+
       assert sync_controls =~ "Rotate token"
       assert sync_controls =~ "Disable"
       assert sync_controls =~ "first-child]:mb-0"
@@ -1269,6 +1325,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "Disable directory sync"
       refute html =~ "Turn off directory sync"
       assert has_element?(lv, "#disable-scim-#{provider.id}")
+
+      assert has_element?(
+               lv,
+               "#disable-scim-#{provider.id}-confirm[phx-disable-with='Disabling…']"
+             )
 
       disabled = render_click(lv, "disable_scim", %{"id" => provider.id})
       assert disabled =~ "Directory sync disabled."
@@ -1439,9 +1500,23 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "Dana Sync"
       refute Emisar.Accounts.Membership.disabled?(membership)
 
+      assert has_element?(
+               lv,
+               "#suspend-scim-#{membership.id}-confirm[phx-disable-with='Suspending…']"
+             )
+
       render_click(lv, "suspend_member", %{"membership_id" => membership.id})
 
       assert Emisar.Accounts.Membership.disabled?(Repo.reload!(membership))
+
+      assert has_element?(
+               lv,
+               "#reactivate-scim-#{membership.id}[phx-hook='PendingButton'][phx-disable-with='Reactivating…']"
+             )
+
+      render_click(lv, "reinstate_member", %{"membership_id" => membership.id})
+
+      refute Emisar.Accounts.Membership.disabled?(Repo.reload!(membership))
     end
 
     test "an IdP-deactivated member keeps a disabled Reactivate action with its remedy", %{
@@ -1570,6 +1645,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       render_click(lv, "add_mapping_form", %{})
       assert has_element?(lv, "#create-mapping-#{provider.id}")
 
+      assert has_element?(
+               lv,
+               "#create-mapping-#{provider.id}-submit[phx-hook='PendingButton'][phx-disable-with='Adding...']"
+             )
+
       html =
         lv
         |> form("#create-mapping-#{provider.id}", %{
@@ -1587,6 +1667,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "00g-admins"
 
       {:ok, [mapping], _meta} = SSO.list_group_mappings(provider, owner)
+
+      assert has_element?(
+               lv,
+               "#delete-mapping-#{mapping.id}-confirm[phx-disable-with='Deleting…']"
+             )
 
       # Delete it — the gated event removes the row.
       deleted = render_click(lv, "delete_mapping", %{"id" => mapping.id})
@@ -1732,6 +1817,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # The synced group is immutable mapping identity. Only the role is editable.
       _ = render_click(lv, "start_edit_mapping", %{"id" => mapping.id})
 
+      assert has_element?(
+               lv,
+               "#save-mapping-#{mapping.id}[class~='min-w-20'][phx-hook='PendingButton'][phx-disable-with='Saving...']"
+             )
+
       html =
         lv
         |> form("#edit-mapping-#{mapping.id}", %{
@@ -1775,6 +1865,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       refute html =~ "No runners registered yet"
       render_click(lv, "add_runner_access_mapping_form", %{})
+
+      assert has_element?(
+               lv,
+               "#create-runner-access-mapping-#{provider.id}-submit[phx-hook='PendingButton'][phx-disable-with='Adding...']"
+             )
 
       changed =
         lv
@@ -1830,6 +1925,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       render_click(lv, "start_edit_runner_access_mapping", %{"id" => mapping.id})
 
+      assert has_element?(
+               lv,
+               "#save-runner-access-mapping-#{mapping.id}[class~='min-w-20'][phx-hook='PendingButton'][phx-disable-with='Saving...']"
+             )
+
       updated =
         lv
         |> form("#edit-runner-access-mapping-#{mapping.id}", %{
@@ -1844,6 +1944,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       assert {:ok, [%{runner_access_mode: :all}], _meta} =
                SSO.list_group_runner_access_mappings(provider, owner)
+
+      assert has_element?(
+               lv,
+               "#delete-runner-access-mapping-#{mapping.id}-confirm[phx-disable-with='Deleting…']"
+             )
 
       deleted = render_click(lv, "delete_runner_access_mapping", %{"id" => mapping.id})
       assert deleted =~ "Group runner access deleted."

@@ -168,14 +168,23 @@ defmodule EmisarWeb.AuthComponents do
             <.error :if={@step.factor == :mfa && @error}>{@error}</.error>
             <input :if={@handoff} type="hidden" name="handoff" value={@handoff} />
             <:actions>
-              <.button phx-disable-with="Confirming...">Continue</.button>
+              <.button
+                id={"#{@id}-continue"}
+                class="min-w-28"
+                phx-hook="PendingButton"
+                phx-disable-with="Confirming..."
+              >
+                Continue
+              </.button>
               <.button
                 :if={@step.factor == :email}
                 id={"#{@id}-resend"}
                 type="button"
                 variant={:secondary}
-                class="hover:bg-zinc-800"
+                class="min-w-24 hover:bg-zinc-800"
+                phx-hook="PendingButton"
                 phx-click="resend_oidc_step_up"
+                phx-disable-with="Sending…"
               >
                 Resend
               </.button>

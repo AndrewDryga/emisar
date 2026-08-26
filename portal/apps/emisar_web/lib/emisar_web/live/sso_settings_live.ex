@@ -1627,12 +1627,20 @@ defmodule EmisarWeb.SSOSettingsLive do
               />
               <.test_result :if={@test_result} result={@test_result} />
               <:actions>
-                <.button phx-disable-with="Saving...">Add connection</.button>
+                <.button
+                  id="create-provider"
+                  phx-hook="PendingButton"
+                  phx-disable-with="Saving..."
+                >
+                  Add connection
+                </.button>
                 <%!-- This only checks issuer discovery. type="button" keeps the
                      probe separate from saving the provider. --%>
                 <.button
+                  id="test-provider"
                   type="button"
                   variant={:secondary}
+                  phx-hook="PendingButton"
                   phx-click="test_connection"
                   phx-disable-with="Testing…"
                 >
@@ -1692,7 +1700,9 @@ defmodule EmisarWeb.SSOSettingsLive do
                 <%!-- Emerald once edited, quiet outlined while clean (house
                      pattern — the button is the unsaved-changes signal). --%>
                 <.button
+                  id={"save-provider-#{provider.id}"}
                   variant={if @edit_form.source.changes == %{}, do: :secondary, else: :primary}
+                  phx-hook="PendingButton"
                   phx-disable-with="Saving..."
                 >
                   Save changes
@@ -1824,6 +1834,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                       id={"enable-verified-provider-#{provider.id}"}
                       title={"Enable #{provider.name} for members?"}
                       confirm_label="Enable connection"
+                      pending_label="Enabling…"
                       size={:md}
                       on_confirm={
                         JS.push("enable_verified_provider", value: %{provider_id: provider.id})
@@ -1841,8 +1852,11 @@ defmodule EmisarWeb.SSOSettingsLive do
                       type="button"
                       variant={:secondary}
                       size={:md}
+                      class="min-w-32"
+                      phx-hook="PendingButton"
                       phx-click="start_provider_sign_in_verification"
                       phx-value-provider_id={provider.id}
+                      phx-disable-with="Verifying…"
                     >
                       {if(@sign_in_verification && @sign_in_verification.status == :verified,
                         do: "Verify again",
@@ -2052,6 +2066,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               id={"delete-provider-#{provider.id}"}
               title="Delete connection"
               confirm_label="Delete connection"
+              pending_label="Deleting…"
               confirm_token={provider.name}
               typed={@typed}
               on_confirm={
@@ -2109,6 +2124,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           id={"disable-scim-#{@provider.id}"}
           title="Disable directory sync"
           confirm_label="Disable sync"
+          pending_label="Disabling…"
           on_confirm={
             JS.push("disable_scim", value: %{id: @provider.id})
             |> hide_confirm_dialog("disable-scim-#{@provider.id}")
@@ -2137,6 +2153,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         id={"delete-provider-#{@provider.id}"}
         title="Delete connection"
         confirm_label="Delete connection"
+        pending_label="Deleting…"
         confirm_token={@provider.name}
         typed={@typed}
         on_confirm={
@@ -2862,10 +2879,14 @@ defmodule EmisarWeb.SSOSettingsLive do
             <div class="ml-auto flex items-center gap-2">
               <.button
                 :if={not @provider.scim_enabled}
+                id={"enable-scim-#{@provider.id}"}
                 variant={:secondary}
                 size={:sm}
+                class="min-w-24"
+                phx-hook="PendingButton"
                 phx-click="enable_scim"
                 phx-value-id={@provider.id}
+                phx-disable-with="Enabling…"
               >
                 Enable
               </.button>
@@ -2874,6 +2895,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 id={"rotate-scim-#{@provider.id}"}
                 title="Rotate the SCIM token?"
                 confirm_label="Rotate token"
+                pending_label="Rotating…"
                 variant={:secondary}
                 tone={:neutral}
                 size={:sm}
@@ -2887,6 +2909,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 id={"disable-scim-#{@provider.id}"}
                 title="Disable directory sync?"
                 confirm_label="Disable sync"
+                pending_label="Disabling…"
                 variant={:secondary}
                 tone={:rose}
                 size={:sm}
@@ -3066,6 +3089,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 id={"delete-mapping-#{mapping.id}"}
                 title="Delete this role mapping?"
                 confirm_label="Delete mapping"
+                pending_label="Deleting…"
                 variant={:secondary}
                 tone={:rose}
                 size={:sm}
@@ -3096,7 +3120,14 @@ defmodule EmisarWeb.SSOSettingsLive do
                 options={@mapping_role_options}
               />
               <:actions>
-                <.button phx-disable-with="Saving...">Save</.button>
+                <.button
+                  id={"save-mapping-#{mapping.id}"}
+                  class="min-w-20"
+                  phx-hook="PendingButton"
+                  phx-disable-with="Saving..."
+                >
+                  Save
+                </.button>
                 <.button variant={:ghost} type="button" phx-click="cancel_edit_mapping">
                   Cancel
                 </.button>
@@ -3177,7 +3208,13 @@ defmodule EmisarWeb.SSOSettingsLive do
             />
           </div>
           <:actions>
-            <.button phx-disable-with="Adding...">Add mapping</.button>
+            <.button
+              id={"create-mapping-#{@provider.id}-submit"}
+              phx-hook="PendingButton"
+              phx-disable-with="Adding..."
+            >
+              Add mapping
+            </.button>
             <.button variant={:ghost} type="button" phx-click="cancel_add_mapping">
               Cancel
             </.button>
@@ -3306,6 +3343,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                   id={"delete-runner-access-mapping-#{mapping.id}"}
                   title="Delete this runner-access mapping?"
                   confirm_label="Delete mapping"
+                  pending_label="Deleting…"
                   variant={:secondary}
                   tone={:rose}
                   size={:sm}
@@ -3337,7 +3375,14 @@ defmodule EmisarWeb.SSOSettingsLive do
                   editing?
                 />
                 <:actions>
-                  <.button phx-disable-with="Saving...">Save</.button>
+                  <.button
+                    id={"save-runner-access-mapping-#{mapping.id}"}
+                    class="min-w-20"
+                    phx-hook="PendingButton"
+                    phx-disable-with="Saving..."
+                  >
+                    Save
+                  </.button>
                   <.button
                     variant={:ghost}
                     type="button"
@@ -3411,7 +3456,13 @@ defmodule EmisarWeb.SSOSettingsLive do
               pack_access_restricted?={@pack_access_restricted?}
             />
             <:actions>
-              <.button phx-disable-with="Adding...">Add runner access</.button>
+              <.button
+                id={"create-runner-access-mapping-#{@provider.id}-submit"}
+                phx-hook="PendingButton"
+                phx-disable-with="Adding..."
+              >
+                Add runner access
+              </.button>
               <.button
                 variant={:ghost}
                 type="button"
@@ -3698,6 +3749,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 id={"suspend-scim-#{member.membership.id}"}
                 title="Suspend this member?"
                 confirm_label="Suspend member"
+                pending_label="Suspending…"
                 variant={:secondary}
                 tone={:neutral}
                 size={:sm}
@@ -3710,11 +3762,15 @@ defmodule EmisarWeb.SSOSettingsLive do
               </.confirm_button>
               <.button
                 :if={Accounts.membership_disabled?(member.membership) and member.identity.scim_active}
+                id={"reactivate-scim-#{member.membership.id}"}
                 variant={:secondary}
                 tone={:neutral}
                 size={:sm}
+                class="min-w-28"
+                phx-hook="PendingButton"
                 phx-click="reinstate_member"
                 phx-value-membership_id={member.membership.id}
+                phx-disable-with="Reactivating…"
               >
                 Reactivate
               </.button>

@@ -414,6 +414,11 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "signs you into every workspace this profile can access"
       assert has_element?(lv, "#oidc-identity-#{provider.id}", "Workforce Okta")
       assert has_element?(lv, "#link-oidc-#{provider.id}", "Link")
+
+      assert has_element?(
+               lv,
+               "#link-oidc-#{provider.id}[phx-hook='PendingButton'][phx-disable-with='Linking…']"
+             )
     end
 
     test "keeps a wrong local proof inline and arms only a valid handoff", %{
@@ -445,6 +450,28 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert confirmed =~ ~s(name="handoff")
     end
 
+    test "a provider-linked identity labels its verification pending state", %{
+      conn: conn,
+      account: account,
+      provider: provider,
+      user: user
+    } do
+      Fixtures.SSO.create_user_identity(%{
+        account_id: account.id,
+        provider_id: provider.id,
+        user_id: user.id
+      })
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      assert has_element?(lv, "#link-oidc-#{provider.id}", "Verify")
+
+      assert has_element?(
+               lv,
+               "#link-oidc-#{provider.id}[phx-hook='PendingButton'][phx-disable-with='Verifying…']"
+             )
+    end
+
     test "resends visibly and closes the link dialog through server state", %{
       conn: conn,
       account: account,
@@ -460,6 +487,16 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ ~s(id="profile-oidc-step-resend")
       assert html =~ "hover:bg-zinc-800"
       refute html =~ ">Cancel<"
+
+      assert has_element?(
+               lv,
+               "#profile-oidc-step-continue[class~='min-w-28'][phx-hook='PendingButton'][phx-disable-with='Confirming...']"
+             )
+
+      assert has_element?(
+               lv,
+               "#profile-oidc-step-resend[phx-hook='PendingButton'][phx-disable-with='Sending…']"
+             )
 
       lv |> element("#profile-oidc-step-resend") |> render_click()
       assert_received {:email, _replacement_email}
@@ -489,6 +526,11 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "Linked and verified by you"
       assert has_element?(lv, "#remove-oidc-#{provider.id}", "Remove")
       assert has_element?(lv, "#remove-oidc-dialog-#{provider.id}", "Type Workforce Okta")
+
+      assert has_element?(
+               lv,
+               "#remove-oidc-dialog-#{provider.id}-confirm[phx-disable-with='Starting…']"
+             )
 
       render_click(lv, "start_oidc_unlink", %{"identity_id" => identity.id})
       assert_received {:email, email}

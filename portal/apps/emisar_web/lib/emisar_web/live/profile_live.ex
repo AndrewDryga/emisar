@@ -1137,8 +1137,11 @@ defmodule EmisarWeb.ProfileLive do
                   type="button"
                   variant={:secondary}
                   size={:sm}
+                  class="min-w-20"
+                  phx-hook="PendingButton"
                   phx-click="start_oidc_link"
                   phx-value-provider_id={identity.provider_id}
+                  phx-disable-with={if(identity.linked?, do: "Verifying…", else: "Linking…")}
                 >
                   {if(identity.linked?, do: "Verify", else: "Link")}
                 </.button>
@@ -1158,6 +1161,7 @@ defmodule EmisarWeb.ProfileLive do
                   id={"remove-oidc-dialog-#{identity.provider_id}"}
                   title={"Remove #{identity.provider_name}?"}
                   confirm_label="Continue to confirmation"
+                  pending_label="Starting…"
                   confirm_token={identity.provider_name}
                   typed={@typed}
                   on_confirm={

@@ -4341,6 +4341,11 @@ defmodule EmisarWeb.CoreComponents do
   attr :confirm_token, :string, default: nil, doc: "when set, the string the operator must type"
   attr :typed, :string, default: "", doc: "the live-typed value held by the page (@typed)"
   attr :disabled, :boolean, default: false, doc: "an additional caller-owned confirmation gate"
+
+  attr :pending_label, :string,
+    default: nil,
+    doc: "action-specific label shown while the confirmation event is in flight"
+
   attr :on_confirm, :any, required: true, doc: "JS/event the enabled Confirm dispatches"
   # `:rose` (default) is a DESTRUCTIVE confirm; `:amber` a caution-approve one
   # (trusting a pack's new code fleet-wide) where rose would over-read as danger.
@@ -4461,6 +4466,7 @@ defmodule EmisarWeb.CoreComponents do
                  token stays disabled (a page-level dialog with no target selected
                  yet — packs' reject). A real token enables only once typed matches. --%>
             <.button
+              id={"#{@id}-confirm"}
               variant={:secondary}
               tone={@tone}
               size={:md}
@@ -4470,7 +4476,10 @@ defmodule EmisarWeb.CoreComponents do
                 @disabled or @confirm_token == "" or
                   (not is_nil(@confirm_token) and @typed != @confirm_token)
               }
+              phx-hook={if @pending_label, do: "PendingButton"}
               phx-click={if is_nil(@confirm_token), do: @on_confirm}
+              phx-disable-with={@pending_label}
+              data-restore-focus={if @pending_label, do: "false"}
             >
               {@confirm_label}
             </.button>
@@ -4552,6 +4561,10 @@ defmodule EmisarWeb.CoreComponents do
   attr :icon, :string, default: nil
   attr :class, :any, default: nil
 
+  attr :pending_label, :string,
+    default: nil,
+    doc: "action-specific label shown on the dialog's Confirm button while pending"
+
   attr :rest, :global,
     include: ~w(disabled),
     doc: "trigger passthrough — phx-disable-with, aria-label, disabled, :if"
@@ -4579,6 +4592,7 @@ defmodule EmisarWeb.CoreComponents do
       id={@id}
       title={@title}
       confirm_label={@confirm_label}
+      pending_label={@pending_label}
       tone={@modal_tone}
       on_confirm={@on_confirm |> close_confirm(@id)}
     >

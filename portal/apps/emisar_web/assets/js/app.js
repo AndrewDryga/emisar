@@ -570,6 +570,58 @@ const DialogFocus = {
   }
 }
 
+// LiveView's `phx-disable-with` correctly prevents duplicate pushes, but a
+// natively-disabled button loses keyboard focus until the server replies. Lock
+// its measured width while the label changes, then keep the operator's place
+// when that same control survives the patch (typically an inline error or a
+// retryable action). Successful actions that remove the control destroy the
+// hook and deliberately do not move focus elsewhere. A closing confirmation
+// dialog opts out because DialogFocus returns to its opener instead.
+const PendingButton = {
+  mounted() {
+    this.shouldRestore = false
+    this.onClick = () => {
+      const idleWidth = this.el.getBoundingClientRect().width
+      const clone = this.el.cloneNode(true)
+      clone.removeAttribute("id")
+      clone.removeAttribute("phx-hook")
+      clone.textContent = this.el.getAttribute("phx-disable-with") || this.el.textContent
+      Object.assign(clone.style, {
+        position: "absolute",
+        visibility: "hidden",
+        width: "max-content",
+        minWidth: "0",
+        maxWidth: "none",
+        pointerEvents: "none"
+      })
+      this.el.insertAdjacentElement("afterend", clone)
+      this.pendingWidth = Math.max(idleWidth, clone.getBoundingClientRect().width)
+      clone.remove()
+      this.el.style.width = `${this.pendingWidth}px`
+      this.shouldRestore =
+        this.el.dataset.restoreFocus !== "false" && document.activeElement === this.el
+    }
+    this.el.addEventListener("click", this.onClick)
+    this.observer = new MutationObserver(() => this.restore())
+    this.observer.observe(this.el, {attributes: true, attributeFilter: ["disabled"]})
+  },
+  updated() { this.restore() },
+  reconnected() { this.restore() },
+  destroyed() {
+    this.el.removeEventListener("click", this.onClick)
+    this.observer.disconnect()
+  },
+  restore() {
+    if (!this.el.isConnected || this.el.disabled) return
+    if (this.shouldRestore && document.activeElement === document.body) {
+      this.el.focus({preventScroll: true})
+    }
+    if (this.pendingWidth) this.el.style.width = ""
+    this.pendingWidth = null
+    this.shouldRestore = false
+  }
+}
+
 // "Close this tab" on the device-grant approval page. That tab was opened by
 // the terminal (`open` / `xdg-open`), not by a script, so window.close() is
 // honored only where the tab has no history of its own — and refused SILENTLY
@@ -598,7 +650,7 @@ let liveSocket = new LiveSocket("/live", Socket, {
   // neutral recovery notice should still acknowledge the interruption.
   disconnectedTimeout: 100,
   params: {_csrf_token: csrfToken},
-  hooks: { LocalTime, Combobox, FilterableList, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, DialogFocus, CloseTab }
+  hooks: { LocalTime, Combobox, FilterableList, ExpiryCountdown, CollapsibleSection, ResendCooldown, MagicCodeExpiry, CodeInput, FlashAutoClose, Tooltip, DialogFocus, PendingButton, CloseTab }
 })
 
 // Show progress bar on live navigation and form submits

@@ -219,6 +219,28 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
     refute confirm_tag =~ "form="
   end
 
+  test "an action-specific pending label is wired to the actual Confirm control" do
+    assigns = %{}
+
+    html =
+      rendered_to_string(~H"""
+      <CoreComponents.confirm_dialog
+        id="disable-sync"
+        title="Disable directory sync?"
+        confirm_label="Disable sync"
+        pending_label="Disabling…"
+        on_confirm="disable"
+      >
+        <:body>The directory token stops working.</:body>
+      </CoreComponents.confirm_dialog>
+      """)
+
+    assert html =~ ~s(id="disable-sync-confirm")
+    assert html =~ ~s(phx-hook="PendingButton")
+    assert html =~ ~s(phx-disable-with="Disabling…")
+    assert html =~ ~s(data-restore-focus="false")
+  end
+
   test "the token and title render escaped (IL-16 — operator/runner data)" do
     assigns = %{}
 
@@ -288,6 +310,27 @@ defmodule EmisarWeb.Components.ConfirmDialogTest do
       # never look identical to the neutral Cancel beside it.
       [confirm_tag] = Regex.run(~r/<button[^>]*>\s*Suspend member/, html)
       assert confirm_tag =~ "text-rose-200"
+    end
+
+    test "forwards an action-specific pending label into its modal" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.confirm_button
+          id="rotate-token"
+          title="Rotate this token?"
+          confirm_label="Rotate token"
+          pending_label="Rotating…"
+          on_confirm={Phoenix.LiveView.JS.push("rotate")}
+        >
+          <:body>The old token stops working.</:body>
+          Rotate
+        </CoreComponents.confirm_button>
+        """)
+
+      assert html =~ ~s(id="rotate-token-confirm")
+      assert html =~ ~s(phx-disable-with="Rotating…")
     end
   end
 
