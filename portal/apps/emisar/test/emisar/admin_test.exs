@@ -4,6 +4,10 @@ defmodule Emisar.AdminTest do
   alias Emisar.{Admin, Audit, Billing, Fixtures}
 
   describe "job_modules/0" do
+    test "includes runner quantity reconciliation in the runtime inventory" do
+      assert Emisar.Billing.Jobs.SyncRunnerQuantities in Admin.job_modules()
+    end
+
     test "every recurrent job is disabled in the test environment" do
       enabled = Enum.filter(Admin.job_modules(), &job_enabled?/1)
 

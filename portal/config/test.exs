@@ -69,6 +69,7 @@ config :emisar, Emisar.Catalog.Jobs.PackVersionRetention, enabled: false
 config :emisar, Emisar.Runners.Jobs.InactiveRunnerRetention, enabled: false
 config :emisar, Emisar.Runs.Jobs.FleetObservability, enabled: false
 config :emisar, Emisar.Billing.Jobs.SyncPaddleCustomers, enabled: false
+config :emisar, Emisar.Billing.Jobs.SyncRunnerQuantities, enabled: false
 config :emisar, Emisar.Billing.Jobs.SyncSubscriptions, enabled: false
 config :emisar, Emisar.OAuth.Jobs.Cleanup, enabled: false
 config :emisar, Emisar.MCPOperations.Jobs.ReplayRetention, enabled: false

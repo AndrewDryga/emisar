@@ -20,6 +20,7 @@ defmodule Emisar.Billing.PaddleClient do
   @callback create_billing_portal_session(map()) :: {:ok, map()} | {:error, term()}
   @callback retrieve_transaction(String.t()) :: {:ok, map()} | {:error, term()}
   @callback retrieve_subscription(String.t()) :: {:ok, map()} | {:error, term()}
+  @callback update_subscription(String.t(), map()) :: {:ok, map()} | {:error, term()}
   @callback list_subscriptions(keyword()) ::
               {:ok, %{subscriptions: [map()], next_after: String.t() | nil}} | {:error, term()}
   @callback cancel_subscription(String.t()) :: {:ok, map()} | {:error, term()}
@@ -39,6 +40,7 @@ defmodule Emisar.Billing.PaddleClient do
   def create_billing_portal_session(attrs), do: client().create_billing_portal_session(attrs)
   def retrieve_transaction(id), do: client().retrieve_transaction(id)
   def retrieve_subscription(id), do: client().retrieve_subscription(id)
+  def update_subscription(id, attrs), do: client().update_subscription(id, attrs)
   def list_subscriptions(attrs), do: client().list_subscriptions(attrs)
   def cancel_subscription(id), do: client().cancel_subscription(id)
   def list_products, do: client().list_products()

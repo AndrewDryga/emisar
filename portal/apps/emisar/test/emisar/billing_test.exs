@@ -33,6 +33,9 @@ defmodule Emisar.BillingTest.ErrorPaddleClient do
   def retrieve_subscription(_id), do: {:error, :paddle_unavailable}
 
   @impl true
+  def update_subscription(_id, _attrs), do: {:error, :paddle_unavailable}
+
+  @impl true
   def retrieve_transaction(_id), do: {:error, :paddle_unavailable}
   @impl true
   def list_subscriptions(_attrs), do: {:error, :paddle_unavailable}
@@ -82,6 +85,9 @@ defmodule Emisar.BillingTest.ConflictingCustomerPaddleClient do
   def create_billing_portal_session(_attrs), do: {:error, :unused}
   @impl true
   def retrieve_subscription(_id), do: {:error, :unused}
+
+  @impl true
+  def update_subscription(_id, _attrs), do: {:error, :unused}
 
   @impl true
   def retrieve_transaction(_id), do: {:error, :unused}
@@ -505,7 +511,7 @@ defmodule Emisar.BillingTest do
 
       assert {:ok,
               %Subscription{
-                plan: "enterprise",
+                plan: "team",
                 status: "active",
                 paddle_price_id: "pri_stub_team_month",
                 quantity: 2
@@ -1603,7 +1609,13 @@ defmodule Emisar.BillingTest do
             "starts_at" => "2026-08-01T00:00:00Z",
             "ends_at" => "2026-09-01T00:00:00Z"
           },
-          "items" => [%{"price" => %{"id" => "pri_team_01"}, "quantity" => 5}]
+          "items" => [
+            %{
+              "product" => %{"name" => "Team", "custom_data" => %{"plan" => "team"}},
+              "price" => %{"id" => "pri_team_01"},
+              "quantity" => 5
+            }
+          ]
         }
       }
 
@@ -2044,8 +2056,9 @@ defmodule Emisar.BillingTest do
 
       assert {:ok, %Subscription{}} = Billing.apply_webhook_event(updated)
 
-      # Plan held at team (the account's current plan); price mirrors the new id.
-      assert %Subscription{plan: "team", paddle_price_id: "pri_not_in_map"} =
+      # Plan and price both stay on the last identified plan item. A lean or
+      # reordered add-on payload cannot replace the billable Team line.
+      assert %Subscription{plan: "team", paddle_price_id: "pri_team_01"} =
                Subscription.Query.all()
                |> Subscription.Query.by_account_id(account.id)
                |> Repo.one()
@@ -2696,6 +2709,7 @@ defmodule Emisar.BillingTest do
         "items" => [
           %{
             "quantity" => 2,
+            "product" => %{"name" => "Team", "custom_data" => %{"plan" => "team"}},
             "price" => %{
               "id" => "pri_valid",
               "billing_cycle" => "invalid",
@@ -3138,6 +3152,9 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
 
   @impl true
   def retrieve_subscription(_id), do: {:error, :unused}
+
+  @impl true
+  def update_subscription(_id, _attrs), do: {:error, :unused}
 
   @impl true
   def retrieve_transaction(_id), do: {:error, :unused}

@@ -104,6 +104,8 @@ defmodule Emisar.Billing.PaddleClient.Stub do
      %{
        "id" => id,
        "status" => "active",
+       "collection_mode" => "automatic",
+       "scheduled_change" => nil,
        "updated_at" => DateTime.to_iso8601(now),
        "next_billed_at" =>
          now
@@ -112,6 +114,39 @@ defmodule Emisar.Billing.PaddleClient.Stub do
        "items" => [
          %{
            "quantity" => 2,
+           "product" => %{
+             "name" => "Team",
+             "custom_data" => %{"plan" => "team"}
+           },
+           "price" => %{
+             "id" => "pri_stub_team_month",
+             "billing_cycle" => %{"interval" => "month", "frequency" => 1},
+             "unit_price" => %{"amount" => "2000", "currency_code" => "USD"}
+           }
+         }
+       ]
+     }}
+  end
+
+  @impl true
+  def update_subscription(id, attrs) do
+    quantity = attrs["items"] |> List.first() |> Map.fetch!("quantity")
+    now = DateTime.utc_now()
+
+    {:ok,
+     %{
+       "id" => id,
+       "status" => "active",
+       "collection_mode" => "automatic",
+       "scheduled_change" => nil,
+       "updated_at" => DateTime.to_iso8601(now),
+       "items" => [
+         %{
+           "quantity" => quantity,
+           "product" => %{
+             "name" => "Team",
+             "custom_data" => %{"plan" => "team"}
+           },
            "price" => %{
              "id" => "pri_stub_team_month",
              "billing_cycle" => %{"interval" => "month", "frequency" => 1},

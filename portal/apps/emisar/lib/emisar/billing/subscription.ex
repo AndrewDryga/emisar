@@ -55,6 +55,9 @@ defmodule Emisar.Billing.Subscription do
     # separate from the subscription object's own updated_at, which the hourly
     # retrieve sweep uses to avoid rewinding newer provider state.
     field :paddle_event_occurred_at, :utc_datetime_usec
+    # Durable outbox marker for reconciling the absolute billable-runner count
+    # to Paddle. Runner rows remain authoritative; no desired count is cached.
+    field :runner_quantity_sync_requested_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
 

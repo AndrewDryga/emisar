@@ -755,15 +755,23 @@ defmodule Emisar.Runners do
              subject,
              Authorizer.manage_runners_permission()
            ) do
-      Runner.Query.not_deleted()
-      |> Runner.Query.by_id(runner.id)
-      |> scope_to_subject_membership(subject)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(Runner.Query,
-        with: &Runner.Changeset.disable/1,
-        audit: &Audit.Events.runner_disabled(subject, &1),
-        after_commit: &broadcast_runner_disabled/1
-      )
+      Multi.new()
+      |> Multi.run(:runner, fn _repo, _changes ->
+        Runner.Query.not_deleted()
+        |> Runner.Query.by_id(runner.id)
+        |> scope_to_subject_membership(subject)
+        |> Authorizer.for_subject(subject)
+        |> Repo.fetch_and_update(Runner.Query, with: &Runner.Changeset.disable/1)
+      end)
+      |> Multi.insert(:audit, fn %{runner: disabled} ->
+        Audit.Events.runner_disabled(subject, disabled)
+      end)
+      |> request_runner_quantity_sync()
+      |> Repo.commit_multi(after_commit: &broadcast_runner_disabled(&1.runner))
+      |> case do
+        {:ok, %{runner: disabled}} -> {:ok, disabled}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -811,6 +819,7 @@ defmodule Emisar.Runners do
       |> Multi.insert(:audit, fn %{runner: enabled} ->
         Audit.Events.runner_enabled(subject, enabled)
       end)
+      |> request_runner_quantity_sync()
       |> Repo.commit_multi()
       |> case do
         {:ok, %{runner: enabled}} -> {:ok, enabled}
@@ -831,15 +840,23 @@ defmodule Emisar.Runners do
              subject,
              Authorizer.manage_runners_permission()
            ) do
-      Runner.Query.not_deleted()
-      |> Runner.Query.by_id(runner.id)
-      |> scope_to_subject_membership(subject)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch_and_update(Runner.Query,
-        with: &Runner.Changeset.delete/1,
-        audit: &Audit.Events.runner_deleted(subject, &1),
-        after_commit: &broadcast_runner_revoked/1
-      )
+      Multi.new()
+      |> Multi.run(:runner, fn _repo, _changes ->
+        Runner.Query.not_deleted()
+        |> Runner.Query.by_id(runner.id)
+        |> scope_to_subject_membership(subject)
+        |> Authorizer.for_subject(subject)
+        |> Repo.fetch_and_update(Runner.Query, with: &Runner.Changeset.delete/1)
+      end)
+      |> Multi.insert(:audit, fn %{runner: deleted} ->
+        Audit.Events.runner_deleted(subject, deleted)
+      end)
+      |> request_runner_quantity_sync()
+      |> Repo.commit_multi(after_commit: &broadcast_runner_revoked(&1.runner))
+      |> case do
+        {:ok, %{runner: deleted}} -> {:ok, deleted}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -979,6 +996,11 @@ defmodule Emisar.Runners do
     end)
     |> Multi.run(:audit, fn repo, %{runners: runners} ->
       record_inactivity_sweep(repo, runners, hours, subject)
+    end)
+    |> Multi.run(:quantity_sync, fn repo, %{deleted: deleted} ->
+      if deleted > 0,
+        do: Billing.request_runner_quantity_sync(account_id, repo: repo),
+        else: {:ok, :not_requested}
     end)
     |> Repo.commit_multi()
     |> case do
@@ -2366,6 +2388,11 @@ defmodule Emisar.Runners do
       register_or_reuse_runner(repo, key, attrs, external_id)
     end)
     |> maybe_audit_runner_registered(key, context)
+    |> Multi.run(:quantity_sync, fn repo, %{registration: {_runner, fresh?}} ->
+      if fresh?,
+        do: Billing.request_runner_quantity_sync(key.account_id, repo: repo),
+        else: {:ok, :not_requested}
+    end)
     |> Multi.delete_all(:unused_tokens, fn %{registration: {runner, _fresh?}} ->
       Token.Query.all()
       |> Token.Query.by_runner_id(runner.id)
@@ -2418,6 +2445,12 @@ defmodule Emisar.Runners do
       if fresh?,
         do: repo.insert(Audit.Events.runner_registered(runner, key, context)),
         else: {:ok, nil}
+    end)
+  end
+
+  defp request_runner_quantity_sync(multi) do
+    Multi.run(multi, :quantity_sync, fn repo, %{runner: runner} ->
+      Billing.request_runner_quantity_sync(runner.account_id, repo: repo)
     end)
   end
 

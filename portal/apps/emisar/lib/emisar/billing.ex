@@ -90,6 +90,7 @@ defmodule Emisar.Billing do
   def init(_opts) do
     children = [
       job_module("SyncPaddleCustomers"),
+      job_module("SyncRunnerQuantities"),
       job_module("SyncSubscriptions")
     ]
 
@@ -643,13 +644,328 @@ defmodule Emisar.Billing do
   defp mirror_version(%Subscription{id: id, updated_at: updated_at}), do: {id, updated_at}
 
   defp write_subscription(repo, nil, account_id, attrs, writer) do
+    attrs = request_initial_runner_quantity_sync(nil, attrs)
+
     apply(Subscription.Changeset, writer, [Map.put(attrs, :account_id, account_id)])
     |> repo.insert()
   end
 
   defp write_subscription(repo, %Subscription{} = subscription, _account_id, attrs, writer) do
+    attrs = request_initial_runner_quantity_sync(subscription, attrs)
+
     apply(Subscription.Changeset, writer, [subscription, attrs])
     |> repo.update()
+  end
+
+  defp request_initial_runner_quantity_sync(existing, attrs) do
+    paddle_id = attrs[:paddle_subscription_id] || attrs["paddle_subscription_id"]
+    status = attrs[:status] || attrs["status"]
+    existing_paddle_id = existing && existing.paddle_subscription_id
+
+    if is_binary(paddle_id) and paddle_id != existing_paddle_id and
+         status not in ["canceled", "paused"] do
+      Map.put(attrs, :runner_quantity_sync_requested_at, DateTime.utc_now())
+    else
+      attrs
+    end
+  end
+
+  @doc false
+  def request_runner_quantity_sync(account_id, opts) when is_binary(account_id) do
+    repo = Keyword.fetch!(opts, :repo)
+    now = DateTime.utc_now()
+
+    Subscription.Query.all()
+    |> Subscription.Query.by_account_id(account_id)
+    |> Subscription.Query.paddle_managed()
+    |> Subscription.Query.quantity_syncable()
+    |> repo.update_all(set: [runner_quantity_sync_requested_at: now])
+
+    {:ok, :requested}
+  end
+
+  @doc false
+  def reconcile_runner_quantity(subscription_id) when is_binary(subscription_id) do
+    Multi.new()
+    |> Multi.run(:subscription, fn repo, _changes ->
+      subscription =
+        Subscription.Query.all()
+        |> Subscription.Query.by_id(subscription_id)
+        |> Subscription.Query.lock_for_update()
+        |> repo.peek()
+
+      {:ok, subscription}
+    end)
+    |> Multi.run(:quantity_sync, fn repo, %{subscription: subscription} ->
+      reconcile_locked_runner_quantity(repo, subscription)
+    end)
+    # A converging update makes one GET and at most one PATCH. Paddle's update
+    # response may wait on an immediate final-period charge, so leave headroom
+    # above the two eight-second HTTP receive timeouts while holding the row.
+    |> Repo.commit_multi(timeout: 25_000)
+    |> case do
+      {:ok, %{quantity_sync: result}} -> {:ok, result}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp reconcile_locked_runner_quantity(_repo, nil), do: {:ok, :missing}
+
+  defp reconcile_locked_runner_quantity(_repo, %Subscription{paddle_subscription_id: nil}),
+    do: {:ok, :not_paddle_managed}
+
+  defp reconcile_locked_runner_quantity(repo, %Subscription{} = subscription) do
+    with {:ok, _account} <-
+           Accounts.fetch_account_by_id_or_slug_including_disabled(subscription.account_id),
+         {:ok, subscription_data} <-
+           PaddleClient.retrieve_subscription(subscription.paddle_subscription_id),
+         {:ok, action} <- runner_quantity_action(subscription_data) do
+      apply_runner_quantity_action(repo, subscription, subscription_data, action)
+    else
+      {:error, :not_found} -> {:ok, :account_closed}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp runner_quantity_action(%{"status" => status} = subscription_data) do
+    scheduled_change = subscription_data["scheduled_change"]
+    scheduled_action = is_map(scheduled_change) && scheduled_change["action"]
+
+    scheduled_effective_at =
+      is_map(scheduled_change) && parse_optional_iso8601(scheduled_change["effective_at"])
+
+    scheduled_final_period? =
+      scheduled_action in ["cancel", "pause"] and
+        match?(%DateTime{}, scheduled_effective_at) and
+        DateTime.compare(scheduled_effective_at, DateTime.utc_now()) == :gt
+
+    cond do
+      status == "canceled" ->
+        {:ok, :stop}
+
+      status in ["past_due", "paused"] ->
+        {:ok, :defer}
+
+      status == "trialing" ->
+        {:ok, {:update, "do_not_bill"}}
+
+      status == "active" and scheduled_final_period? ->
+        {:ok, {:update, "prorated_immediately"}}
+
+      status == "active" and is_nil(scheduled_change) ->
+        {:ok, {:update, "prorated_next_billing_period"}}
+
+      true ->
+        {:ok, :defer}
+    end
+  end
+
+  defp runner_quantity_action(_subscription_data), do: {:error, :malformed_subscription}
+
+  defp apply_runner_quantity_action(repo, subscription, subscription_data, :stop) do
+    persist_runner_quantity_convergence(
+      repo,
+      subscription,
+      subscription_data,
+      subscription.quantity
+    )
+    |> then(fn
+      {:ok, _subscription} -> {:ok, :stopped}
+      {:error, reason} -> {:error, reason}
+    end)
+  end
+
+  defp apply_runner_quantity_action(repo, subscription, _subscription_data, :defer) do
+    request_deferred_runner_quantity_sync(repo, subscription)
+    {:ok, :deferred}
+  end
+
+  defp apply_runner_quantity_action(
+         repo,
+         %Subscription{} = subscription,
+         subscription_data,
+         {:update, proration_mode}
+       ) do
+    desired_quantity = max(Runners.count_billable_runners(subscription.account_id), 1)
+
+    with {:ok, items, _target_price_id, remote_quantity} <-
+           runner_quantity_items(subscription_data, desired_quantity) do
+      if remote_quantity == desired_quantity do
+        persist_runner_quantity_convergence(
+          repo,
+          subscription,
+          subscription_data,
+          desired_quantity
+        )
+        |> then(fn
+          {:ok, _subscription} -> {:ok, :converged}
+          {:error, reason} -> {:error, reason}
+        end)
+      else
+        attrs = %{
+          "items" => items,
+          "proration_billing_mode" => proration_mode,
+          "on_payment_failure" => "prevent_change"
+        }
+
+        with {:ok, updated} <-
+               PaddleClient.update_subscription(subscription.paddle_subscription_id, attrs),
+             :ok <- verify_runner_quantity_update(updated, items),
+             {:ok, _subscription} <-
+               persist_runner_quantity_convergence(
+                 repo,
+                 subscription,
+                 updated,
+                 desired_quantity
+               ) do
+          {:ok, :updated}
+        end
+      end
+    end
+  end
+
+  defp request_deferred_runner_quantity_sync(repo, subscription) do
+    Subscription.Query.all()
+    |> Subscription.Query.by_id(subscription.id)
+    |> Subscription.Query.runner_quantity_sync_not_requested()
+    |> repo.update_all(set: [runner_quantity_sync_requested_at: DateTime.utc_now()])
+  end
+
+  defp persist_runner_quantity_convergence(repo, subscription, subscription_data, quantity) do
+    case extract_paddle_updated_at(subscription_data) do
+      %DateTime{} = paddle_updated_at ->
+        result =
+          subscription
+          |> Subscription.Changeset.upsert(%{
+            quantity: quantity,
+            paddle_updated_at: paddle_updated_at,
+            runner_quantity_sync_requested_at: nil
+          })
+          |> repo.update()
+
+        case result do
+          {:ok,
+           %Subscription{
+             quantity: ^quantity,
+             paddle_updated_at: ^paddle_updated_at,
+             runner_quantity_sync_requested_at: nil
+           } = updated} ->
+            {:ok, updated}
+
+          {:ok, %Subscription{}} ->
+            {:error, :stale_subscription_snapshot}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      nil ->
+        {:error, :missing_subscription_updated_at}
+    end
+  end
+
+  defp runner_quantity_items(%{"items" => items}, desired_quantity)
+       when is_list(items) do
+    with {:ok, normalized} <- normalize_subscription_items(items),
+         {:ok, target_price_id, remote_quantity} <- select_runner_quantity_item(normalized) do
+      patched =
+        Enum.map(normalized, fn
+          %{price_id: ^target_price_id} ->
+            %{"price_id" => target_price_id, "quantity" => desired_quantity}
+
+          %{price_id: price_id, quantity: quantity} ->
+            %{"price_id" => price_id, "quantity" => quantity}
+        end)
+
+      {:ok, patched, target_price_id, remote_quantity}
+    end
+  end
+
+  defp runner_quantity_items(_subscription_data, _desired_quantity),
+    do: {:error, :malformed_subscription_items}
+
+  defp normalize_subscription_items(items) do
+    items
+    |> Enum.reduce_while({:ok, []}, fn
+      %{
+        "price" => %{"id" => price_id},
+        "product" => product,
+        "quantity" => quantity
+      },
+      {:ok, acc}
+      when is_binary(price_id) and price_id != "" and is_map(product) and is_integer(quantity) and
+             quantity > 0 ->
+        item = %{
+          price_id: price_id,
+          quantity: quantity,
+          plan: Entitlements.plan_identity_of_product(product)
+        }
+
+        {:cont, {:ok, [item | acc]}}
+
+      _item, _acc ->
+        {:halt, {:error, :malformed_subscription_items}}
+    end)
+    |> case do
+      {:ok, []} ->
+        {:error, :malformed_subscription_items}
+
+      {:ok, normalized} ->
+        normalized = Enum.reverse(normalized)
+
+        if unique_price_ids?(normalized) do
+          {:ok, normalized}
+        else
+          {:error, :ambiguous_subscription_items}
+        end
+
+      error ->
+        error
+    end
+  end
+
+  defp select_runner_quantity_item(items) do
+    case Enum.filter(items, &is_binary(&1.plan)) do
+      [%{plan: "team", price_id: price_id, quantity: quantity}] ->
+        {:ok, price_id, quantity}
+
+      _ambiguous ->
+        {:error, :ambiguous_subscription_items}
+    end
+  end
+
+  defp verify_runner_quantity_update(subscription_data, requested_items) do
+    with {:ok, normalized} <-
+           normalize_subscription_items(Map.get(subscription_data, "items", [])),
+         actual <- Map.new(normalized, &{&1.price_id, &1.quantity}),
+         {:ok, requested} <- requested_price_quantities(requested_items),
+         true <- actual == requested do
+      :ok
+    else
+      _mismatch -> {:error, :quantity_update_not_applied}
+    end
+  end
+
+  defp requested_price_quantities(items) when is_list(items) do
+    items
+    |> Enum.reduce_while({:ok, %{}}, fn
+      %{"price_id" => price_id, "quantity" => quantity}, {:ok, acc}
+      when is_binary(price_id) and price_id != "" and is_integer(quantity) and quantity > 0 ->
+        if Map.has_key?(acc, price_id) do
+          {:halt, {:error, :ambiguous_subscription_items}}
+        else
+          {:cont, {:ok, Map.put(acc, price_id, quantity)}}
+        end
+
+      _item, _acc ->
+        {:halt, {:error, :malformed_subscription_items}}
+    end)
+  end
+
+  defp unique_price_ids?(items) do
+    items
+    |> Enum.map(& &1.price_id)
+    |> then(&(Enum.uniq(&1) == &1))
   end
 
   defp entitlement_snapshot(subscription) do
@@ -801,8 +1117,7 @@ defmodule Emisar.Billing do
   # A catalog product identifies its plan by the custom_data `plan` slug,
   # falling back to its normalized display name when that matches a plan we
   # sell (the dashboard products are literally named "team"/"enterprise").
-  defp product_plan_slug(product),
-    do: Entitlements.plan_slug_of_product(product) || known_plan_from_name(product["name"])
+  defp product_plan_slug(product), do: Entitlements.plan_identity_of_product(product)
 
   defp known_plan_from_name(name) when is_binary(name) do
     slug = name |> String.trim() |> String.downcase()
@@ -1589,7 +1904,27 @@ defmodule Emisar.Billing do
     |> put_present(:paddle_updated_at, extract_paddle_updated_at(subscription_data))
     |> put_present(:paddle_event_occurred_at, Keyword.get(opts, :event_occurred_at))
     |> put_scheduled_change(subscription_data)
+    |> request_ambiguous_runner_quantity_sync(subscription_data)
+    |> clear_canceled_runner_quantity_sync(subscription_data)
   end
+
+  defp clear_canceled_runner_quantity_sync(attrs, %{"status" => "canceled"}),
+    do: Map.put(attrs, :runner_quantity_sync_requested_at, nil)
+
+  defp clear_canceled_runner_quantity_sync(attrs, _subscription_data), do: attrs
+
+  defp request_ambiguous_runner_quantity_sync(attrs, %{"items" => items} = subscription_data)
+       when is_list(items) do
+    status = subscription_data["status"]
+
+    if is_nil(Entitlements.plan_item(subscription_data)) and status not in ["canceled", "paused"] do
+      Map.put(attrs, :runner_quantity_sync_requested_at, DateTime.utc_now())
+    else
+      attrs
+    end
+  end
+
+  defp request_ambiguous_runner_quantity_sync(attrs, _subscription_data), do: attrs
 
   defp put_scheduled_change(attrs, subscription_data) do
     if Map.has_key?(subscription_data, "scheduled_change") do
@@ -1616,8 +1951,14 @@ defmodule Emisar.Billing do
   # Paddle bills one recurring line item. Keep all price-derived mirror fields
   # together so webhooks and the reconciliation sweep cannot drift. Invalid or
   # absent vendor values are omitted, preserving the last known-good mirror.
-  def subscription_item_attrs(%{"items" => [%{"price" => price} = item | _]})
-      when is_map(price) do
+  def subscription_item_attrs(subscription_data) do
+    case Entitlements.plan_item(subscription_data) do
+      %{"price" => price} = item when is_map(price) -> subscription_item_attrs(price, item)
+      _missing_or_ambiguous -> %{}
+    end
+  end
+
+  defp subscription_item_attrs(price, item) do
     cycle = map_or_empty(price["billing_cycle"])
     unit_price = map_or_empty(price["unit_price"])
 
@@ -1629,8 +1970,6 @@ defmodule Emisar.Billing do
     |> put_present(:currency_code, currency_code(unit_price["currency_code"]))
     |> put_present(:quantity, positive_integer(item["quantity"]))
   end
-
-  def subscription_item_attrs(_subscription_data), do: %{}
 
   defp map_or_empty(value) when is_map(value), do: value
   defp map_or_empty(_value), do: %{}

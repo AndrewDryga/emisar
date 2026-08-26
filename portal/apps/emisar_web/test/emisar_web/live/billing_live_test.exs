@@ -24,6 +24,8 @@ defmodule EmisarWeb.BillingLiveTest.InvoicesDownPaddleClient do
   @impl true
   defdelegate retrieve_subscription(id), to: Stub
   @impl true
+  defdelegate update_subscription(id, attrs), to: Stub
+  @impl true
   defdelegate retrieve_transaction(id), to: Stub
   @impl true
   defdelegate list_subscriptions(attrs), to: Stub

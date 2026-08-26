@@ -1134,6 +1134,26 @@ defmodule Emisar.RunnersTest do
 
       assert Runners.disable_runner(runner_a, owner_b) == {:error, :not_found}
     end
+
+    test "marks the locked runner's subscription even when the caller struct forges account_id",
+         %{
+           account: account,
+           subject: subject
+         } do
+      other_account = Fixtures.Accounts.create_account()
+      ours = quantity_subscription(account, "sub_disable_ours")
+      theirs = quantity_subscription(other_account, "sub_disable_theirs")
+      old = ~U[2026-08-26 00:00:00.000000Z]
+      ours = set_quantity_request(ours, old)
+      theirs = set_quantity_request(theirs, old)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      assert {:ok, %Runner{disabled_at: %DateTime{}}} =
+               Runners.disable_runner(%{runner | account_id: other_account.id}, subject)
+
+      assert DateTime.after?(Repo.reload!(ours).runner_quantity_sync_requested_at, old)
+      assert Repo.reload!(theirs).runner_quantity_sync_requested_at == old
+    end
   end
 
   describe "enable_runner/2" do
@@ -1180,6 +1200,20 @@ defmodule Emisar.RunnersTest do
 
       assert Runners.enable_runner(disabled, subject) === {:error, :over_limit, "free", 3}
     end
+
+    test "marks quantity dirty when a parked runner becomes billable", %{
+      account: account,
+      subject: subject
+    } do
+      subscription = quantity_subscription(account, "sub_enable")
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      {:ok, disabled} = Runners.disable_runner(runner, subject)
+      old = ~U[2026-08-26 00:00:00.000000Z]
+      subscription = set_quantity_request(subscription, old)
+
+      assert {:ok, %Runner{disabled_at: nil}} = Runners.enable_runner(disabled, subject)
+      assert DateTime.after?(Repo.reload!(subscription).runner_quantity_sync_requested_at, old)
+    end
   end
 
   describe "delete_runner/2" do
@@ -1213,6 +1247,19 @@ defmodule Emisar.RunnersTest do
       runner_a = Fixtures.Runners.create_runner(account_id: account_a.id)
 
       assert Runners.delete_runner(runner_a, owner_b) == {:error, :not_found}
+    end
+
+    test "marks quantity dirty when a billable runner is deleted", %{
+      account: account,
+      subject: subject
+    } do
+      subscription = quantity_subscription(account, "sub_delete")
+      old = ~U[2026-08-26 00:00:00.000000Z]
+      subscription = set_quantity_request(subscription, old)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+      assert {:ok, %Runner{deleted_at: %DateTime{}}} = Runners.delete_runner(runner, subject)
+      assert DateTime.after?(Repo.reload!(subscription).runner_quantity_sync_requested_at, old)
     end
   end
 
@@ -1542,6 +1589,21 @@ defmodule Emisar.RunnersTest do
     test "returns 0 and writes no marker when nothing matches", %{account: account} do
       assert Runners.delete_inactive_runners(account.id, 720) === {:ok, 0}
       assert retention_markers(account.id) == []
+    end
+
+    test "marks quantity only when the retention sweep removes billable runners", %{
+      account: account
+    } do
+      subscription = quantity_subscription(account, "sub_retention_quantity")
+      old = ~U[2026-08-26 00:00:00.000000Z]
+      subscription = set_quantity_request(subscription, old)
+
+      assert Runners.delete_inactive_runners(account.id, 720) == {:ok, 0}
+      assert Repo.reload!(subscription).runner_quantity_sync_requested_at == old
+
+      _runner = offline_runner(account, 960)
+      assert Runners.delete_inactive_runners(account.id, 720) == {:ok, 1}
+      assert DateTime.after?(Repo.reload!(subscription).runner_quantity_sync_requested_at, old)
     end
   end
 
@@ -3863,6 +3925,36 @@ defmodule Emisar.RunnersTest do
       assert id1 == id2
     end
 
+    test "marks a fresh seat dirty but a reconnect leaves the marker unchanged" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user()
+      subscription = quantity_subscription(account, "sub_registration")
+
+      {raw, _key} =
+        Fixtures.Runners.create_enrollment_key(
+          account_id: account.id,
+          created_by_id: user.id,
+          reusable: true
+        )
+
+      attrs = %{hostname: "seat-host", group: "prod", external_id: "seat-external-id"}
+      old = ~U[2026-08-26 00:00:00.000000Z]
+      subscription = set_quantity_request(subscription, old)
+
+      assert {:ok, %Runner{}, %Token{}, _raw_token} =
+               Runners.register_via_enrollment_key(raw, attrs)
+
+      assert DateTime.after?(Repo.reload!(subscription).runner_quantity_sync_requested_at, old)
+
+      reconnect_marker = ~U[2026-08-26 00:01:00.000000Z]
+      subscription = set_quantity_request(subscription, reconnect_marker)
+
+      assert {:ok, %Runner{}, %Token{}, _raw_token} =
+               Runners.register_via_enrollment_key(raw, attrs)
+
+      assert Repo.reload!(subscription).runner_quantity_sync_requested_at == reconnect_marker
+    end
+
     test "an exhausted single-use key retries only its original runner identity" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
@@ -4384,5 +4476,28 @@ defmodule Emisar.RunnersTest do
       )
 
     Fixtures.Subjects.subject_for(user, account, role: :owner)
+  end
+
+  defp quantity_subscription(account, paddle_id) do
+    {:ok, subscription} =
+      Billing.upsert_subscription(account.id, %{
+        paddle_subscription_id: paddle_id,
+        paddle_price_id: "pri_team",
+        plan: "team",
+        status: "active",
+        collection_mode: "automatic"
+      })
+
+    subscription
+  end
+
+  defp set_quantity_request(subscription, requested_at) do
+    {:ok, updated} =
+      Billing.upsert_subscription(subscription.account_id, %{
+        paddle_subscription_id: subscription.paddle_subscription_id,
+        runner_quantity_sync_requested_at: requested_at
+      })
+
+    updated
   end
 end

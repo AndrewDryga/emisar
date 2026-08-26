@@ -100,6 +100,20 @@ defmodule Emisar.Billing.PaddleClient.Live do
   end
 
   @impl true
+  def update_subscription(id, attrs) when is_binary(id) and is_map(attrs) do
+    case request_json(build_update_subscription_request(id, attrs)) do
+      {:ok, %{"data" => subscription}} -> {:ok, subscription}
+      other -> other
+    end
+  end
+
+  @doc false
+  def build_update_subscription_request(id, attrs) when is_binary(id) and is_map(attrs) do
+    body = Jason.encode!(attrs)
+    Finch.build(:patch, base() <> "/subscriptions/#{id}", headers(), body)
+  end
+
+  @impl true
   def list_subscriptions(attrs) do
     query =
       %{
@@ -304,6 +318,7 @@ defmodule Emisar.Billing.PaddleClient.Live do
   defp headers do
     [
       {"authorization", "Bearer " <> api_key()},
+      {"paddle-version", "1"},
       {"content-type", "application/json"},
       {"accept", "application/json"}
     ]

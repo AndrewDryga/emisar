@@ -21,6 +21,7 @@ defmodule Emisar.Billing.Entitlements do
 
   @limit_keys ~w[runners_limit members_limit audit_retention_days]
   @feature_keys ~w[features_sso_enabled? features_scim_enabled? features_audit_export_enabled?]
+  @known_plan_slugs ~w[team enterprise]
 
   # Postgres timestamps cap around year 294276, so an absurd
   # audit_retention_days must not survive into retention arithmetic.
@@ -52,6 +53,13 @@ defmodule Emisar.Billing.Entitlements do
     do: validate_slug(String.trim(slug))
 
   def plan_slug_of_product(_product), do: nil
+
+  @doc false
+  def plan_identity_of_product(product) when is_map(product) do
+    plan_slug_of_product(product) || known_plan_from_name(product["name"])
+  end
+
+  def plan_identity_of_product(_product), do: nil
 
   @doc "The embedded product's display name, or `nil` when the payload carries no product."
   def product_name(subscription_data) do
@@ -89,9 +97,10 @@ defmodule Emisar.Billing.Entitlements do
     end
   end
 
-  # The webhook embeds the full product per item and we bill a single line
-  # item. `nil` (no product object — e.g. a lean API shape) is distinct from a
-  # product whose custom_data is empty/null, which normalizes to %{}.
+  # The webhook embeds the full product per item. Exactly one product must own
+  # the plan identity; add-ons do not. `nil` (no unambiguous plan product) is
+  # distinct from a product whose custom_data is empty/null, which normalizes
+  # to %{}.
   defp product_custom_data(subscription_data) do
     case product(subscription_data) do
       nil -> nil
@@ -99,8 +108,39 @@ defmodule Emisar.Billing.Entitlements do
     end
   end
 
-  defp product(%{"items" => [%{"product" => %{} = product} | _]}), do: product
-  defp product(_subscription_data), do: nil
+  @doc false
+  def plan_item(%{"items" => items}) when is_list(items) do
+    product_items = Enum.filter(items, &match?(%{"product" => %{}}, &1))
+
+    identified =
+      Enum.filter(product_items, fn item ->
+        case plan_identity_of_product(item["product"]) do
+          plan when is_binary(plan) and plan != "" -> true
+          _ -> false
+        end
+      end)
+
+    case identified do
+      [item] -> item
+      _ambiguous -> nil
+    end
+  end
+
+  def plan_item(_subscription_data), do: nil
+
+  defp product(subscription_data) do
+    case plan_item(subscription_data) do
+      %{"product" => product} -> product
+      nil -> nil
+    end
+  end
+
+  defp known_plan_from_name(name) when is_binary(name) do
+    slug = name |> String.trim() |> String.downcase()
+    if slug in @known_plan_slugs, do: slug
+  end
+
+  defp known_plan_from_name(_name), do: nil
 
   defp normalized_entry({key, raw}) when key in @limit_keys do
     case parse_limit(raw) do

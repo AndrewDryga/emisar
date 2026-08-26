@@ -7,6 +7,7 @@ defmodule Emisar.Billing.Subscription.Changeset do
     unit_price_amount currency_code billing_frequency entitlements quantity
     current_period_start current_period_end cancel_at_period_end scheduled_change_action
     scheduled_change_effective_at trial_end paddle_updated_at paddle_event_occurred_at
+    runner_quantity_sync_requested_at
   ]a
 
   @doc """

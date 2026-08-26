@@ -113,5 +113,9 @@ defmodule Emisar.Billing.EntitlementsTest do
   end
 
   defp product_data(custom_data),
-    do: %{"items" => [%{"product" => %{"id" => "pro_1", "custom_data" => custom_data}}]}
+    do: %{
+      "items" => [
+        %{"product" => %{"id" => "pro_1", "name" => "Team", "custom_data" => custom_data}}
+      ]
+    }
 end

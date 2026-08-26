@@ -71,8 +71,8 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
         case Billing.reconcile_subscription_data(subscription_data,
                expected_subscription: subscription
              ) do
-          {:ok, _subscription} ->
-            :ok
+          {:ok, synced_subscription} ->
+            sync_runner_quantity_safely(synced_subscription)
 
           :ok ->
             Logger.warning("billing_sync.subscription_unmatched",
@@ -96,6 +96,20 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptions do
         )
 
         :ok
+    end
+  end
+
+  defp sync_runner_quantity_safely(%Billing.Subscription{} = subscription) do
+    case Billing.reconcile_runner_quantity(subscription.id) do
+      {:ok, _result} ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("billing_sync.runner_quantity_failed",
+          paddle_subscription_id: subscription.paddle_subscription_id,
+          account_id: subscription.account_id,
+          error: inspect(Billing.redacted_paddle_error(reason))
+        )
     end
   end
 

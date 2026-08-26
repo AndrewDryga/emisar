@@ -14,8 +14,8 @@ resource "google_logging_metric" "recurrent_job_failures" {
 
 resource "google_logging_metric" "billing_sync_failures" {
   name        = "emisar/billing_sync_failures"
-  description = "Paddle subscription retrieval or persistence failures."
-  filter      = "resource.type=\"gce_instance\" AND (jsonPayload.message=\"billing_sync.retrieve_failed\" OR jsonPayload.message=\"billing_sync.upsert_failed\")"
+  description = "Paddle lifecycle or billable-runner quantity reconciliation failures."
+  filter      = "resource.type=\"gce_instance\" AND (jsonPayload.message=\"billing_sync.retrieve_failed\" OR jsonPayload.message=\"billing_sync.upsert_failed\" OR jsonPayload.message=\"billing_sync.runner_quantity_failed\" OR jsonPayload.message=\"billing_runner_quantity_sync.failed\" OR jsonPayload.message=\"billing_runner_quantity_sync.crashed\")"
 
   metric_descriptor {
     metric_kind = "DELTA"
@@ -77,7 +77,7 @@ resource "google_monitoring_alert_policy" "billing_sync_failures" {
   combiner     = "OR"
 
   documentation {
-    content   = "A Paddle reconciliation failed (`billing_sync.retrieve_failed` / `billing_sync.upsert_failed`), so a subscription or entitlement change from Paddle may not have persisted and an account's plan gating can read stale. Check the log's error, the Paddle webhook delivery and signature, and whether the affected account's subscription row matches Paddle; replay the webhook if the failure was transient."
+    content   = "A Paddle lifecycle or billable-runner quantity reconciliation failed. Lifecycle failures can leave plan gating stale; quantity failures can leave the customer under- or overbilled. Check the log message and error, compare the affected subscription row and runner count with Paddle, and verify the API key still has subscription write authority before retrying the reconciliation."
     mime_type = "text/markdown"
   }
 

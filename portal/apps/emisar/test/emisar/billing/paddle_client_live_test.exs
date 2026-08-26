@@ -106,6 +106,30 @@ defmodule Emisar.Billing.PaddleClientLiveTest do
     end
   end
 
+  describe "build_update_subscription_request/2" do
+    test "builds the versioned PATCH with the complete caller-supplied item set" do
+      Emisar.Config.put_override(:emisar, :paddle_api_key, "pdl_sdbx_test")
+
+      attrs = %{
+        "items" => [
+          %{"price_id" => "pri_team", "quantity" => 3},
+          %{"price_id" => "pri_addon", "quantity" => 1}
+        ],
+        "proration_billing_mode" => "prorated_next_billing_period",
+        "on_payment_failure" => "prevent_change"
+      }
+
+      request = Live.build_update_subscription_request("sub_team", attrs)
+
+      assert request.method == "PATCH"
+      assert request.scheme == :https
+      assert request.host == "sandbox-api.paddle.com"
+      assert request.path == "/subscriptions/sub_team"
+      assert {"paddle-version", "1"} in request.headers
+      assert Jason.decode!(request.body) == attrs
+    end
+  end
+
   defp signature_for(payload, timestamp, secret) do
     signed_payload = "#{timestamp}:#{payload}"
     digest = :crypto.mac(:hmac, :sha256, secret, signed_payload)

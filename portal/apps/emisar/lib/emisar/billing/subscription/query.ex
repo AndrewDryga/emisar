@@ -9,6 +9,9 @@ defmodule Emisar.Billing.Subscription.Query do
   def by_account_id(queryable, account_id),
     do: where(queryable, [subscriptions: s], s.account_id == ^account_id)
 
+  def by_id(queryable, id),
+    do: where(queryable, [subscriptions: s], s.id == ^id)
+
   def by_paddle_subscription_id(queryable, paddle_subscription_id),
     do: where(queryable, [subscriptions: s], s.paddle_subscription_id == ^paddle_subscription_id)
 
@@ -20,6 +23,18 @@ defmodule Emisar.Billing.Subscription.Query do
 
   def limit_to(queryable, n) when is_integer(n) and n > 0,
     do: limit(queryable, ^n)
+
+  def paddle_managed(queryable),
+    do: where(queryable, [subscriptions: s], not is_nil(s.paddle_subscription_id))
+
+  def runner_quantity_sync_requested(queryable),
+    do: where(queryable, [subscriptions: s], not is_nil(s.runner_quantity_sync_requested_at))
+
+  def runner_quantity_sync_not_requested(queryable),
+    do: where(queryable, [subscriptions: s], is_nil(s.runner_quantity_sync_requested_at))
+
+  def quantity_syncable(queryable),
+    do: where(queryable, [subscriptions: s], s.status != "canceled")
 
   def complimentary(queryable \\ all()) do
     where(

@@ -26,6 +26,9 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest.ControlledPaddleClient do
   end
 
   @impl true
+  def update_subscription(_id, _attrs), do: {:error, :unused}
+
+  @impl true
   def list_subscriptions(attrs) do
     page = Config.get_env(:emisar, :billing_sync_test_discovery_page)
 
@@ -127,7 +130,9 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest do
     assert synced.paddle_price_id == "pri_stub_team_month"
     assert synced.billing_interval == "month"
     assert synced.billing_frequency == 1
-    assert synced.quantity == 2
+    # The same hourly sweep repairs quantity after mirroring. This account has
+    # no runners, so the commercial floor is one rather than Paddle's stale two.
+    assert synced.quantity == 1
     assert synced.unit_price_amount == 2_000
     assert synced.currency_code == "USD"
   end
@@ -449,6 +454,9 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsUnknownStatusTest.UnknownStatusPa
     do: {:ok, %{"id" => id, "status" => "some_new_paddle_status"}}
 
   @impl true
+  def update_subscription(_id, _attrs), do: {:error, :unused}
+
+  @impl true
   def list_subscriptions(_attrs), do: {:ok, %{subscriptions: [], next_after: nil}}
 
   @impl true
@@ -531,6 +539,8 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest.NoPeriodPaddleClient
   @impl true
   def retrieve_subscription(id), do: {:ok, %{"id" => id, "status" => "active"}}
   @impl true
+  def update_subscription(_id, _attrs), do: {:error, :unused}
+  @impl true
   def list_subscriptions(_attrs), do: {:ok, %{subscriptions: [], next_after: nil}}
   @impl true
   def retrieve_transaction(_id), do: {:error, :unused}
@@ -611,6 +621,9 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsRedactionTest.HttpErrorPaddleClie
   @impl true
   def retrieve_subscription(_id),
     do: {:error, {:http, 500, ~s({"customer_id":"ctm_secret"})}}
+
+  @impl true
+  def update_subscription(_id, _attrs), do: {:error, :unused}
 
   @impl true
   def list_subscriptions(_attrs), do: {:ok, %{subscriptions: [], next_after: nil}}
