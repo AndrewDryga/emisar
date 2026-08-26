@@ -2025,7 +2025,12 @@ defmodule EmisarWeb.CoreComponents do
       <ul class="scrollbar-subtle max-h-[60vh] overflow-y-auto py-1">
         <li>
           <div class="flex items-center gap-2 px-3 py-2 text-sm">
-            <.icon name="state.selected" class="h-4 w-4 shrink-0 text-brand-400" />
+            <.avatar
+              name={@current_account.name}
+              shape={:square}
+              size={:xs}
+              tone={:brand}
+            />
             <span class="truncate font-medium">{@current_account.name}</span>
           </div>
         </li>
@@ -2486,37 +2491,50 @@ defmodule EmisarWeb.CoreComponents do
   Initial-letter avatar — the ONE identity disc (design-console-ux §1): a person or
   workspace rendered as the first letter of its name. `:circle` for people
   (the shell user block, the team roster), `:square` for workspaces (the
-  account switcher rows).
+  account switcher rows). A selected workspace keeps that square identity and
+  changes to the `:brand` tone instead of changing silhouette.
 
       <.avatar name={Accounts.user_display_name(@current_user)} size={:sm} />
       <.avatar name={account.name} shape={:square} size={:xs} />
+      <.avatar name={account.name} shape={:square} size={:xs} tone={:brand} />
   """
   attr :name, :string, required: true
   attr :size, :atom, default: :md, values: [:xs, :sm, :md]
   attr :shape, :atom, default: :circle, values: [:circle, :square]
+  attr :tone, :atom, default: :neutral, values: [:neutral, :brand]
   attr :class, :string, default: nil
 
   def avatar(assigns) do
     ~H"""
     <span class={[
-      "grid shrink-0 place-items-center bg-zinc-800 font-semibold uppercase",
+      "inline-flex shrink-0 items-center justify-center font-semibold uppercase",
       avatar_size(@size),
       avatar_shape(@shape),
+      avatar_tone(@tone, @size),
       @class
     ]}>
-      {String.first(@name || "?")}
+      <span class="h-[1cap] translate-y-[0.05em] leading-[1cap] text-center">
+        {String.first(@name || "?")}
+      </span>
     </span>
     """
   end
 
-  # :sm carries no text color on purpose — the shell user block inherits its
-  # link's foreground so the avatar dims/brightens with the hover state.
-  defp avatar_size(:xs), do: "h-4 w-4 text-[10px] text-zinc-400"
+  defp avatar_size(:xs), do: "h-4 w-4 text-[10px]"
   defp avatar_size(:sm), do: "h-8 w-8 text-xs"
-  defp avatar_size(:md), do: "h-10 w-10 text-sm text-zinc-300"
+  defp avatar_size(:md), do: "h-10 w-10 text-sm"
 
   defp avatar_shape(:circle), do: "rounded-full"
   defp avatar_shape(:square), do: "rounded-sm"
+
+  defp avatar_tone(:neutral, :xs), do: "bg-zinc-800 text-zinc-400"
+
+  # :sm carries no text color on purpose — the shell user block inherits its
+  # link's foreground so the avatar dims/brightens with the hover state.
+  defp avatar_tone(:neutral, :sm), do: "bg-zinc-800"
+
+  defp avatar_tone(:neutral, :md), do: "bg-zinc-800 text-zinc-300"
+  defp avatar_tone(:brand, _size), do: "bg-brand-500 text-zinc-950"
 
   @doc "Run/runner status — a tone dot + the plain word (no pill). String or Ecto.Enum atom."
   attr :status, :any, required: true

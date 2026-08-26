@@ -959,6 +959,13 @@ the commit button, where the operator can reach the action before reading what i
     the same explicit spacing; a conditional row owns its margin so hiding it removes the gap too.
     Keep stronger separation from the identity heading outside the stack. Sweep: card metadata
     blocks where one child has `mt-*` while an adjacent conditional child relies only on line-height.
+83. **A workspace identity keeps one square silhouette through selection.** Account-switcher rows
+    use the same square initial avatar for current and alternate workspaces; selection changes its
+    tone, never its shape or semantic identity. Center the capital's cap-height box inside the fixed
+    tile, then apply only a proportional optical correction for the visible glyph; centering the
+    font's full ascent/descent line box or nudging every size by a fixed pixel offset is not enough.
+    Sweep: circular selected-workspace checks beside square account avatars, and initial-only tiles
+    centered by their line box instead of their visible capital.
 
 ## 8. The kit is the contract
 

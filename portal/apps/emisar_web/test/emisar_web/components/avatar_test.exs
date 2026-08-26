@@ -19,6 +19,8 @@ defmodule EmisarWeb.Components.AvatarTest do
       assert html =~ "rounded-full"
       assert html =~ "h-10 w-10"
       assert html =~ "uppercase"
+      assert html =~ "inline-flex shrink-0 items-center justify-center"
+      assert html =~ "h-[1cap] translate-y-[0.05em] leading-[1cap] text-center"
     end
 
     test "square xs is the workspace-switcher shape" do
@@ -30,6 +32,21 @@ defmodule EmisarWeb.Components.AvatarTest do
       assert html =~ ~r{>\s*a\s*</span>}
       assert html =~ "rounded-sm"
       assert html =~ "h-4 w-4"
+    end
+
+    test "brand xs keeps the selected workspace square" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(
+          ~H|<CoreComponents.avatar name="Both Connected Co" shape={:square} size={:xs} tone={:brand} />|
+        )
+
+      assert html =~ ~r{>\s*B\s*</span>}
+      assert html =~ "rounded-sm"
+      assert html =~ "bg-brand-500 text-zinc-950"
+      refute html =~ "rounded-full"
+      refute html =~ "text-zinc-400"
     end
 
     test "a nil name degrades to the placeholder initial" do
