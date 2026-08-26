@@ -73,6 +73,132 @@ defmodule EmisarWeb.AuthComponents do
   end
 
   @doc """
+  Focused step-up dialog shared by profile identity linking and an
+  administrator's real provider sign-in verification. Visibility is owned by
+  the LiveView's `step` assign, so patches cannot strand an inline form under a
+  provider list or snap a browser-owned overlay closed.
+  """
+  attr :id, :string, required: true
+  attr :form, :map, required: true
+  attr :step, :map, required: true
+  attr :purpose, :atom, required: true, values: [:link, :unlink, :verify]
+  attr :email, :string, required: true
+  attr :error, :string, default: nil
+  attr :handoff, :string, default: nil
+  attr :trigger_submit, :boolean, default: false
+  attr :action, :string, required: true
+
+  def oidc_step_dialog(assigns) do
+    assigns =
+      assign(assigns,
+        title: oidc_step_title(assigns.purpose, assigns.step.provider_name),
+        explanation: oidc_step_explanation(assigns.purpose, assigns.step.provider_name),
+        close: Phoenix.LiveView.JS.push("cancel_oidc_step_up")
+      )
+
+    ~H"""
+    <div
+      id={@id}
+      class="relative z-50"
+      role="dialog"
+      aria-modal="true"
+      aria-label={@title}
+      phx-hook="DialogFocus"
+      phx-window-keydown={@close}
+      phx-key="escape"
+      data-shot="oidc-step-dialog"
+    >
+      <div
+        class="fixed inset-0 bg-black/70 backdrop-blur-sm"
+        phx-click={@close}
+        aria-hidden="true"
+      >
+      </div>
+      <div class="fixed inset-0 flex items-center justify-center p-4">
+        <.focus_wrap
+          id={"#{@id}-wrap"}
+          class="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-xl bg-zinc-900 p-6 shadow-2xl ring-1 ring-white/10"
+        >
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <h2 class="text-lg font-semibold text-zinc-100">{@title}</h2>
+              <p class="mt-1 text-sm leading-relaxed text-zinc-400">{@explanation}</p>
+            </div>
+            <.icon_button
+              icon="action.close"
+              label="Close"
+              size={:compact}
+              phx-click={@close}
+            />
+          </div>
+
+          <.simple_form
+            for={@form}
+            id={"#{@id}-form"}
+            class="mt-6"
+            phx-submit="confirm_oidc_step_up"
+            phx-trigger-action={@trigger_submit}
+            action={@action}
+            method="post"
+          >
+            <p class="text-sm text-zinc-300">
+              <%= if @step.factor == :email do %>
+                Enter the 6-digit code sent to {@email}.
+              <% else %>
+                Enter an authenticator code or one recovery code.
+              <% end %>
+            </p>
+            <.code_input
+              :if={@step.factor == :email}
+              id={"#{@id}-code"}
+              name="oidc_step[code]"
+              numeric
+              label="Confirmation code"
+              error={@error}
+            />
+            <.input
+              :if={@step.factor == :mfa}
+              field={@form[:code]}
+              type="text"
+              label="Authenticator or recovery code"
+              autocomplete="one-time-code"
+              required
+            />
+            <.error :if={@step.factor == :mfa && @error}>{@error}</.error>
+            <input :if={@handoff} type="hidden" name="handoff" value={@handoff} />
+            <:actions>
+              <.button phx-disable-with="Confirming...">Continue</.button>
+              <.button
+                :if={@step.factor == :email}
+                type="button"
+                variant={:secondary}
+                phx-click="resend_oidc_step_up"
+              >
+                Resend
+              </.button>
+              <.button type="button" variant={:ghost} phx-click={@close}>Cancel</.button>
+            </:actions>
+          </.simple_form>
+        </.focus_wrap>
+      </div>
+    </div>
+    """
+  end
+
+  defp oidc_step_title(:link, provider_name), do: "Link #{provider_name}"
+  defp oidc_step_title(:unlink, provider_name), do: "Remove #{provider_name}"
+  defp oidc_step_title(:verify, _provider_name), do: "Verify sign-in"
+
+  defp oidc_step_explanation(:link, provider_name),
+    do: "Confirm your current emisar profile before signing in with #{provider_name}."
+
+  defp oidc_step_explanation(:unlink, _provider_name),
+    do: "Confirm your current emisar profile before removing this sign-in method."
+
+  defp oidc_step_explanation(:verify, provider_name),
+    do: "Confirm your current emisar profile before opening #{provider_name} sign-in."
+
+  @doc """
   Two-column auth-flow layout: marketing copy on the left, form on the
   right. Used by sign in / sign up / magic link / password reset.
   """

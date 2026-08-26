@@ -6744,6 +6744,20 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "count_pending_link_requests/1" do
+    test "counts only reviewable requests in the subject's account" do
+      {_owner, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, provisioner: :manual)
+      _first = capture_request(provider, %{"sub" => "okta|count-a", "email" => "a@acme.test"})
+      _second = capture_request(provider, %{"sub" => "okta|count-b", "email" => "b@acme.test"})
+      {_other_owner, _other_account, other_subject} = enterprise_owner()
+
+      assert SSO.count_pending_link_requests(subject) == 2
+      assert SSO.count_pending_link_requests(viewer_in(account)) == 0
+      assert SSO.count_pending_link_requests(other_subject) == 0
+    end
+  end
+
   # -- fetch_pending_link_request/1 -----------------------------------
 
   describe "fetch_pending_link_request/1" do
@@ -6847,6 +6861,27 @@ defmodule Emisar.SSOTest do
       {_owner, account, subject} = enterprise_owner()
       provider = provider_fixture(account, provisioner: :manual, default_role: :operator)
       %{account: account, subject: subject, provider: provider}
+    end
+
+    test "an unmatched request cannot become a manual member once directory sync is enabled", %{
+      subject: subject,
+      provider: provider
+    } do
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|not-in-directory",
+          "email" => "not-in-directory@acme.test",
+          "email_verified" => true
+        })
+
+      assert {:ok, _provider, _token} = SSO.enable_scim(provider, subject)
+
+      assert SSO.approve_link_request(request, RunnerAccess.none(), subject) ==
+               {:error, :scim_identity_unmatched}
+
+      assert {:ok, still_pending} = SSO.fetch_pending_link_request(request.id)
+      assert still_pending.id == request.id
+      refute Repo.one(SSO.UserIdentity)
     end
 
     test "an admin can't link an identity onto an owner", %{
@@ -8097,6 +8132,26 @@ defmodule Emisar.SSOTest do
 
       assert_receive {:sso_link_request, :dismissed, %{id: id}}
       assert id == request.id
+    end
+  end
+
+  describe "subscribe_account_link_requests/1" do
+    test "the subscriber receives pending and resolved count changes" do
+      {_user, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, provisioner: :manual)
+      :ok = SSO.subscribe_account_link_requests(account.id)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|account-topic",
+          "email" => "account-topic@acme.test"
+        })
+
+      assert_receive {:sso_link_requests_changed, account_id}
+      assert account_id == account.id
+
+      assert {:ok, _request} = SSO.dismiss_link_request(request, subject)
+      assert_receive {:sso_link_requests_changed, ^account_id}
     end
   end
 

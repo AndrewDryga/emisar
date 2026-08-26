@@ -945,6 +945,7 @@ defmodule EmisarWeb.ProfileLive do
       current_subject={@current_subject}
       current_membership={@current_membership}
       pending_approvals_count={@pending_approvals_count}
+      pending_access_requests_count={@pending_access_requests_count}
       pending_packs_count={@pending_packs_count}
       fleet_all_offline?={@fleet_all_offline?}
       no_agents?={@no_agents?}
@@ -1172,54 +1173,18 @@ defmodule EmisarWeb.ProfileLive do
             </li>
           </ul>
 
-          <.simple_form
+          <.oidc_step_dialog
             :if={@oidc_step}
-            for={@oidc_step_form}
-            id="oidc_step_form"
-            class="mt-5 max-w-md"
-            phx-submit="confirm_oidc_step_up"
-            phx-trigger-action={@oidc_trigger_submit}
+            id="profile-oidc-step"
+            form={@oidc_step_form}
+            step={@oidc_step}
+            purpose={@oidc_step.purpose}
+            email={@current_user.email}
+            error={@oidc_step_error}
+            handoff={@oidc_handoff}
+            trigger_submit={@oidc_trigger_submit}
             action={~p"/app/#{@current_account}/settings/sso/identity/link"}
-            method="post"
-          >
-            <p class="text-sm text-zinc-300">
-              <%= if @oidc_step.purpose == :unlink do %>
-                Confirm removing {@oidc_step.provider_name} from your profile.
-              <% else %>
-                Confirm your current emisar profile before signing in with {@oidc_step.provider_name}.
-              <% end %>
-            </p>
-            <p class="text-xs text-zinc-400">
-              <%= if @oidc_step.factor == :email do %>
-                Enter the 6-digit code sent to {@current_user.email}.
-              <% else %>
-                Enter an authenticator code or one recovery code.
-              <% end %>
-            </p>
-            <.input
-              field={@oidc_step_form[:code]}
-              type="text"
-              label="Confirmation code"
-              autocomplete="one-time-code"
-              required
-            />
-            <input :if={@oidc_handoff} type="hidden" name="handoff" value={@oidc_handoff} />
-            <.error :if={@oidc_step_error}>{@oidc_step_error}</.error>
-            <:actions>
-              <.button phx-disable-with="Confirming...">Confirm</.button>
-              <.button
-                :if={@oidc_step.factor == :email}
-                type="button"
-                variant={:secondary}
-                phx-click="resend_oidc_step_up"
-              >
-                Resend code
-              </.button>
-              <.button type="button" variant={:ghost} phx-click="cancel_oidc_step_up">
-                Cancel
-              </.button>
-            </:actions>
-          </.simple_form>
+          />
         </section>
 
         <section>

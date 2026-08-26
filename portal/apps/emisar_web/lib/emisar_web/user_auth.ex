@@ -8,7 +8,7 @@ defmodule EmisarWeb.UserAuth do
   use EmisarWeb, :verified_routes
   import Plug.Conn
   import Phoenix.Controller
-  alias Emisar.{Accounts, ApiKeys, Approvals, Auth, Catalog, Marketing, Runners}
+  alias Emisar.{Accounts, ApiKeys, Approvals, Auth, Catalog, Marketing, Runners, SSO}
   alias Emisar.Auth.Subject
   alias EmisarWeb.{Analytics, MarketingAttribution}
   alias EmisarWeb.RequestContext
@@ -566,14 +566,14 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
-  # Tracks the account's pending-approval count, pending-pack-trust count, AND
-  # the fleet-offline alert so all three nav cues stay live across every
+  # Tracks the account's approval, SSO-access, and pack-trust counts, plus the
+  # fleet-offline alert, so all four nav cues stay live across every
   # authenticated LV without each one re-implementing the subscribe/handle_info
   # dance.
   #
-  # First connect computes them + subscribes to the account's approvals, packs,
-  # and runner-connections topics; `attach_hook`s then refresh whenever a request
-  # is created/decided, a pack flips pending/resolved, or a runner connects/
+  # First connect computes them + subscribes to the account's approvals, SSO,
+  # packs, and runner-connections topics; `attach_hook`s then refresh whenever a
+  # request is created/decided, a pack flips pending/resolved, or a runner connects/
   # disconnects. The approvals hook returns `{:cont, ...}` so the host LV's own
   # `handle_info/2` (e.g. reload the approvals table) still runs; the packs hook
   # `{:halt}`s — no host LV needs that message; the fleet hook forwards
@@ -593,10 +593,17 @@ defmodule EmisarWeb.UserAuth do
       if subject && Runners.subject_can_view_runners?(subject),
         do: Runners.subscribe_connections(account_id)
 
+      if subject && SSO.subject_can_manage_sso?(subject),
+        do: SSO.subscribe_account_link_requests(account_id)
+
       {:cont,
        socket
        |> Phoenix.Component.assign(navigation_facts_for(subject))
        |> Phoenix.Component.assign(:pending_approvals_count, approval_count_for(subject))
+       |> Phoenix.Component.assign(
+         :pending_access_requests_count,
+         access_request_count_for(subject)
+       )
        |> Phoenix.Component.assign(:pending_packs_count, pack_pending_count_for(subject))
        |> Phoenix.LiveView.attach_hook(
          :refresh_pending_approvals,
@@ -607,6 +614,11 @@ defmodule EmisarWeb.UserAuth do
          :refresh_pending_packs,
          :handle_info,
          &refresh_pending_packs/2
+       )
+       |> Phoenix.LiveView.attach_hook(
+         :refresh_pending_access_requests,
+         :handle_info,
+         &refresh_pending_access_requests/2
        )
        |> Phoenix.LiveView.attach_hook(
          :refresh_fleet_offline,
@@ -621,6 +633,7 @@ defmodule EmisarWeb.UserAuth do
        socket
        |> Phoenix.Component.assign(navigation_facts_for(nil))
        |> Phoenix.Component.assign(:pending_approvals_count, 0)
+       |> Phoenix.Component.assign(:pending_access_requests_count, 0)
        |> Phoenix.Component.assign(:pending_packs_count, 0)}
     end
   end
@@ -702,6 +715,17 @@ defmodule EmisarWeb.UserAuth do
 
   defp refresh_pending_approvals(_msg, socket), do: {:cont, socket}
 
+  defp refresh_pending_access_requests({:sso_link_requests_changed, _account_id}, socket) do
+    {:cont,
+     Phoenix.Component.assign(
+       socket,
+       :pending_access_requests_count,
+       access_request_count_for(socket.assigns[:current_subject])
+     )}
+  end
+
+  defp refresh_pending_access_requests(_msg, socket), do: {:cont, socket}
+
   # Pack-trust badge counterpart. The count drives both the sidebar badge
   # and the dashboard banner (both read `@pending_packs_count`), so the
   # hook owns the refresh end-to-end and HALTS: no host LV needs the
@@ -773,6 +797,9 @@ defmodule EmisarWeb.UserAuth do
 
   defp approval_count_for(nil), do: 0
   defp approval_count_for(subject), do: Approvals.count_pending_approval_requests(subject)
+
+  defp access_request_count_for(nil), do: 0
+  defp access_request_count_for(subject), do: SSO.count_pending_link_requests(subject)
 
   # Pack-decision badge counterpart: computed at connected mount and kept live
   # by `refresh_pending_packs` on the account's packs topic. Counts every

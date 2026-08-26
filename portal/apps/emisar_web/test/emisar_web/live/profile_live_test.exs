@@ -425,7 +425,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       lv |> element("#link-oidc-#{provider.id}") |> render_click()
       assert_received {:email, email}
-      assert has_element?(lv, "#oidc_step_form")
+      assert has_element?(lv, "#profile-oidc-step-form")
 
       wrong =
         render_hook(lv, "confirm_oidc_step_up", %{

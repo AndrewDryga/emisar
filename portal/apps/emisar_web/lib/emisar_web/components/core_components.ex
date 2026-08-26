@@ -1758,6 +1758,7 @@ defmodule EmisarWeb.CoreComponents do
       "content column width: :table (7xl — every operate/list page incl. dashboard/runs/audit), :detail (6xl), :form (3xl), :settings (4xl)"
 
   attr :pending_approvals_count, :integer, default: 0
+  attr :pending_access_requests_count, :integer, default: 0
   attr :pending_packs_count, :integer, default: 0
   attr :fleet_all_offline?, :boolean, default: false
   attr :no_agents?, :boolean, default: false
@@ -1787,6 +1788,7 @@ defmodule EmisarWeb.CoreComponents do
           current_subject={@current_subject}
           section={@section}
           pending_approvals_count={@pending_approvals_count}
+          pending_access_requests_count={@pending_access_requests_count}
           pending_packs_count={@pending_packs_count}
           fleet_all_offline?={@fleet_all_offline?}
           no_agents?={@no_agents?}
@@ -1838,6 +1840,7 @@ defmodule EmisarWeb.CoreComponents do
             current_subject={@current_subject}
             section={@section}
             pending_approvals_count={@pending_approvals_count}
+            pending_access_requests_count={@pending_access_requests_count}
             pending_packs_count={@pending_packs_count}
             fleet_all_offline?={@fleet_all_offline?}
             no_agents?={@no_agents?}
@@ -2059,6 +2062,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :section, :atom, required: true
   attr :current_subject, :map, required: true
   attr :pending_approvals_count, :integer, default: 0
+  attr :pending_access_requests_count, :integer, default: 0
   attr :pending_packs_count, :integer, default: 0
   attr :fleet_all_offline?, :boolean, default: false
   attr :no_agents?, :boolean, default: false
@@ -2207,6 +2211,7 @@ defmodule EmisarWeb.CoreComponents do
         to={~p"/app/#{@current_account}/settings/team"}
         active={@section == :team}
         icon="product.team"
+        badge={@pending_access_requests_count}
       >
         Team
       </.nav_link>

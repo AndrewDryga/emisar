@@ -344,7 +344,7 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
     end)
   end
 
-  test "an unmatched link approval queues account and provider before its approver membership" do
+  test "an unmatched link approval queues account and provider before failing closed" do
     unboxed_scim(fn context ->
       attrs = scim_attrs(context, "approval-order")
 
@@ -399,7 +399,14 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
             send(blocker.pid, :release)
             assert {:ok, %Membership{}} = Task.await(blocker, 30_000)
             assert {:ok, %{membership: %Membership{role: :owner}}} = Task.await(mutation, 30_000)
-            assert {:ok, %{identity: %UserIdentity{}}} = Task.await(approval, 30_000)
+
+            assert Task.await(approval, 30_000) ==
+                     {:error, :scim_identity_unmatched}
+
+            assert {:ok, %LinkRequest{id: request_id}} =
+                     SSO.fetch_pending_link_request(request.id)
+
+            assert request_id == request.id
           after
             stop_tasks([approval])
           end

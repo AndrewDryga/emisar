@@ -248,6 +248,47 @@ defmodule EmisarWeb.TeamLiveTest do
       assert Emisar.Repo.reload(request) == nil
     end
 
+    test "directory-unmatched requests light Team navigation and cannot be approved", %{
+      conn: conn
+    } do
+      {conn, _owner, account} = register_and_log_in(conn)
+      Fixtures.Accounts.create_subscription(account, "enterprise")
+
+      provider =
+        Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Directory Okta")
+        |> Fixtures.SSO.enable_scim()
+
+      request =
+        Fixtures.SSO.create_link_request(
+          provider: provider,
+          email: "unmatched@corp.test",
+          full_name: "Unmatched Directory User"
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      badge = "a[href='/app/#{account.slug}/settings/team'] span.tabular-nums"
+      row = "#pending-access-request-#{request.id}"
+
+      assert has_element?(lv, badge, "1")
+      assert has_element?(lv, "#{row} button[disabled]", "Approve")
+      assert has_element?(lv, row, "Fix the externalId to OIDC sub or Entra oid mapping")
+      refute has_element?(lv, "#approve-request-dialog-#{request.id}")
+
+      render_click(lv, "approve_request", %{"id" => request.id})
+      assert Emisar.Repo.reload(request)
+
+      second =
+        Fixtures.SSO.create_link_request(
+          provider: provider,
+          email: "second-unmatched@corp.test",
+          full_name: "Second Directory User"
+        )
+
+      send(lv.pid, {:sso_link_requests_changed, account.id})
+      assert has_element?(lv, badge, "2")
+      assert has_element?(lv, "#pending-access-request-#{second.id}")
+    end
+
     test "an existing-account request keeps the risk marker in the row and its consequence in the modal",
          %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
@@ -286,6 +327,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert has_element?(lv, row, "Existing account")
       assert has_element?(lv, row, "Okta workforce")
+      assert has_element?(lv, row, "Link account")
       refute has_element?(lv, row, "Approving lets this connection")
       refute has_element?(lv, "#{row} select")
       refute has_element?(lv, "#{dialog} form")
@@ -294,7 +336,7 @@ defmodule EmisarWeb.TeamLiveTest do
       assert has_element?(
                lv,
                dialog,
-               "The member's current role, runner access, and pack access stay unchanged."
+               "Their current role, runner access, and pack access stay unchanged."
              )
 
       render_click(lv, "approve_request", %{

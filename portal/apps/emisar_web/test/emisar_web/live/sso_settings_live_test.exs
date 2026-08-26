@@ -817,17 +817,13 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      assert has_element?(lv, "#sign-in-verification", "Sign-in verification")
-      assert has_element?(lv, "#sign-in-verification", "client ID")
-      assert has_element?(lv, "#sign-in-verification", "client secret")
-      assert has_element?(lv, "#sign-in-verification", "callback")
-      assert html =~ "It does not enable this connection."
-      assert html =~ "No administrator has completed a real sign-in"
+      assert has_element?(lv, "#sign-in-verification", "Sign-in not verified")
+      assert html =~ "No administrator has completed a real provider sign-in"
 
       assert has_element?(
                lv,
                "#verify-provider-sign-in-#{provider.id}",
-               "Verify sign-in and link my profile"
+               "Verify sign-in"
              )
 
       assert Repo.reload!(provider).enabled == false
@@ -842,7 +838,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       lv |> element("#verify-provider-sign-in-#{provider.id}") |> render_click()
       assert_received {:email, email}
-      assert has_element?(lv, "#provider_oidc_step_form")
+      assert has_element?(lv, "#provider-oidc-step-form")
 
       wrong =
         render_hook(lv, "confirm_oidc_step_up", %{
@@ -887,8 +883,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       {:ok, verified_lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{verified.id}")
 
-      assert html =~ "You completed a real sign-in"
-      assert html =~ "Members still cannot use it"
+      assert html =~ "A real provider sign-in passed"
 
       assert has_element?(verified_lv, "#enable-verified-provider-#{verified.id}")
       assert has_element?(verified_lv, "button", "Enable for members")
@@ -953,7 +948,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           "provider_id" => provider.id
         })
 
-      refute html =~ "provider_oidc_step_form"
+      refute html =~ "provider-oidc-step-form"
       refute_received {:email, _email}
     end
   end

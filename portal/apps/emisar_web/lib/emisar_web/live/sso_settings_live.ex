@@ -1488,6 +1488,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       current_subject={@current_subject}
       current_membership={@current_membership}
       pending_approvals_count={@pending_approvals_count}
+      pending_access_requests_count={@pending_access_requests_count}
       pending_packs_count={@pending_packs_count}
       fleet_all_offline?={@fleet_all_offline?}
       no_agents?={@no_agents?}
@@ -1780,64 +1781,37 @@ defmodule EmisarWeb.SSOSettingsLive do
                 </div>
               </dl>
 
-              <div id="sign-in-verification" class="xl:col-span-2">
-                <.section_header title="Sign-in verification">
-                  <:subtitle>
-                    Sign in through this provider to check the client ID, client secret, redirect,
-                    and callback. A successful check also links your provider identity to your
-                    emisar profile. It does not enable this connection.
-                  </:subtitle>
-                </.section_header>
+              <div
+                id="sign-in-verification"
+                class="flex flex-col gap-4 border-t border-zinc-800/70 pt-4 sm:flex-row sm:items-center sm:justify-between xl:col-span-2"
+              >
+                <div class="flex min-w-0 items-start gap-2.5">
+                  <.status_dot
+                    tone={sign_in_verification_tone(@sign_in_verification)}
+                    class="mt-1.5"
+                  />
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium text-zinc-100">
+                      {sign_in_verification_label(@sign_in_verification)}
+                    </p>
+                    <p class="mt-0.5 text-xs leading-relaxed text-zinc-400">
+                      {sign_in_verification_copy(@sign_in_verification, provider)}
+                      <span :if={
+                        @sign_in_verification &&
+                          @sign_in_verification.status == :verified &&
+                          @sign_in_verification.verified_at
+                      }>
+                        <.local_time
+                          id={"provider-sign-in-verified-#{provider.id}"}
+                          value={@sign_in_verification.verified_at}
+                          mode={:relative}
+                        />.
+                      </span>
+                    </p>
+                  </div>
+                </div>
 
-                <.event_block
-                  :if={@sign_in_verification && @sign_in_verification.status == :verified}
-                  icon="state.success"
-                  tone={:brand}
-                  title="Sign-in verified"
-                >
-                  <:body>
-                    <%= if @sign_in_verification.verified_by_current_user? do %>
-                      You completed a real sign-in
-                    <% else %>
-                      An administrator completed a real sign-in
-                    <% end %>
-                    <span :if={@sign_in_verification.verified_at}> <.local_time
-                      id={"provider-sign-in-verified-#{provider.id}"}
-                      value={@sign_in_verification.verified_at}
-                      mode={:relative}
-                    /></span>.
-                    <%= if provider.enabled do %>
-                      Members can use this connection. Your profile is linked to it.
-                    <% else %>
-                      Your profile is linked to it. Members still cannot use it.
-                    <% end %>
-                  </:body>
-                </.event_block>
-
-                <.event_block
-                  :if={@sign_in_verification && @sign_in_verification.status == :stale}
-                  icon="state.warning"
-                  tone={:amber}
-                  title="Sign-in needs another check"
-                >
-                  <:body>
-                    The login settings changed after the last successful check. Verify again before
-                    relying on this connection.
-                  </:body>
-                </.event_block>
-
-                <.event_block
-                  :if={is_nil(@sign_in_verification) or @sign_in_verification.status == :unverified}
-                  icon="state.warning"
-                  tone={:amber}
-                  title="Not verified"
-                >
-                  <:body>
-                    No administrator has completed a real sign-in through this connection yet.
-                  </:body>
-                </.event_block>
-
-                <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <div class="flex shrink-0 flex-wrap gap-2 sm:justify-end">
                   <.confirm_button
                     :if={
                       (@sign_in_verification && @sign_in_verification.status == :verified) and
@@ -1868,56 +1842,24 @@ defmodule EmisarWeb.SSOSettingsLive do
                   >
                     {if(@sign_in_verification && @sign_in_verification.status == :verified,
                       do: "Verify again",
-                      else: "Verify sign-in and link my profile"
+                      else: "Verify sign-in"
                     )}
                   </.button>
                 </div>
-
-                <.simple_form
-                  :if={@oidc_step && @oidc_step.provider_id == provider.id}
-                  for={@oidc_step_form}
-                  id="provider_oidc_step_form"
-                  class="mt-5 max-w-md"
-                  phx-submit="confirm_oidc_step_up"
-                  phx-trigger-action={@oidc_trigger_submit}
-                  action={~p"/app/#{@current_account}/settings/sso/identity/link"}
-                  method="post"
-                >
-                  <p class="text-sm text-zinc-300">
-                    Confirm your current emisar profile before opening {provider.name} sign-in.
-                  </p>
-                  <p class="text-xs text-zinc-400">
-                    <%= if @oidc_step.factor == :email do %>
-                      Enter the 6-digit code sent to {@current_user.email}.
-                    <% else %>
-                      Enter an authenticator code or one recovery code.
-                    <% end %>
-                  </p>
-                  <.input
-                    field={@oidc_step_form[:code]}
-                    type="text"
-                    label="Confirmation code"
-                    autocomplete="one-time-code"
-                    required
-                  />
-                  <input :if={@oidc_handoff} type="hidden" name="handoff" value={@oidc_handoff} />
-                  <.error :if={@oidc_step_error}>{@oidc_step_error}</.error>
-                  <:actions>
-                    <.button phx-disable-with="Confirming...">Confirm</.button>
-                    <.button
-                      :if={@oidc_step.factor == :email}
-                      type="button"
-                      variant={:secondary}
-                      phx-click="resend_oidc_step_up"
-                    >
-                      Resend code
-                    </.button>
-                    <.button type="button" variant={:ghost} phx-click="cancel_oidc_step_up">
-                      Cancel
-                    </.button>
-                  </:actions>
-                </.simple_form>
               </div>
+
+              <.oidc_step_dialog
+                :if={@oidc_step && @oidc_step.provider_id == provider.id}
+                id="provider-oidc-step"
+                form={@oidc_step_form}
+                step={@oidc_step}
+                purpose={:verify}
+                email={@current_user.email}
+                error={@oidc_step_error}
+                handoff={@oidc_handoff}
+                trigger_submit={@oidc_trigger_submit}
+                action={~p"/app/#{@current_account}/settings/sso/identity/link"}
+              />
 
               <div id="connection-settings">
                 <.section_header title="Connection settings" />
@@ -3855,4 +3797,21 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp provisioner_label(:jit), do: "Auto-provision"
   defp provisioner_label(:manual), do: "Manual approval"
+
+  defp sign_in_verification_tone(%{status: :verified}), do: :brand
+  defp sign_in_verification_tone(_verification), do: :amber
+
+  defp sign_in_verification_label(%{status: :verified}), do: "Sign-in verified"
+  defp sign_in_verification_label(%{status: :stale}), do: "Sign-in needs another check"
+  defp sign_in_verification_label(_verification), do: "Sign-in not verified"
+
+  defp sign_in_verification_copy(%{status: :verified}, _provider),
+    do: "A real provider sign-in passed "
+
+  defp sign_in_verification_copy(%{status: :stale}, _provider),
+    do: "Login settings changed after the last check. Verify again before relying on it."
+
+  defp sign_in_verification_copy(_verification, _provider) do
+    "No administrator has completed a real provider sign-in. Verification also links the verifying administrator's profile."
+  end
 end

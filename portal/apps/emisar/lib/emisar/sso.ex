@@ -1972,6 +1972,10 @@ defmodule Emisar.SSO do
     end)
     |> Repo.commit_multi()
     |> case do
+      {:ok, %{auth_result: {:pending, request} = result}} ->
+        broadcast_link_request_pending(request)
+        result
+
       {:ok, %{auth_result: result}} ->
         result
 
@@ -2230,9 +2234,18 @@ defmodule Emisar.SSO do
     end)
     |> Repo.commit_multi()
     |> case do
-      {:ok, %{auth_result: result}} -> result
-      {:error, %Ecto.Changeset{data: %LinkRequest{}}} -> {:error, :email_taken}
-      {:error, reason} -> {:error, reason}
+      {:ok, %{auth_result: {:pending, request} = result}} ->
+        broadcast_link_request_pending(request)
+        result
+
+      {:ok, %{auth_result: result}} ->
+        result
+
+      {:error, %Ecto.Changeset{data: %LinkRequest{}}} ->
+        {:error, :email_taken}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -3142,6 +3155,23 @@ defmodule Emisar.SSO do
     end
   end
 
+  @doc """
+  Cheap account-scoped count for the Team navigation badge. It uses the same
+  `manage_sso` gate as the pending-request queue and returns `0` when the
+  caller cannot review it, so the navigation does not disclose hidden work.
+  """
+  def count_pending_link_requests(%Subject{} = subject) do
+    case ensure_can_manage_sso(subject) do
+      :ok ->
+        LinkRequest.Query.all()
+        |> Authorizer.for_subject(subject)
+        |> Repo.aggregate(:count)
+
+      _error ->
+        0
+    end
+  end
+
   defp list_pending_link_requests_with_provider(%Subject{} = subject, opts) do
     LinkRequest.Query.all()
     |> LinkRequest.Query.with_preloaded_provider()
@@ -3320,21 +3350,44 @@ defmodule Emisar.SSO do
   def subscribe_link_request(id) when is_binary(id),
     do: Emisar.PubSub.subscribe(link_request_topic(id))
 
+  @doc "Internal — authenticated navigation subscribes to its account's pending SSO work."
+  def subscribe_account_link_requests(account_id) when is_binary(account_id),
+    do: Emisar.PubSub.subscribe(account_link_requests_topic(account_id))
+
+  defp broadcast_link_request_pending(%LinkRequest{} = request) do
+    broadcast_account_link_requests_changed(request.account_id)
+  end
+
   defp broadcast_link_request_approved(%LinkRequest{} = request) do
-    Emisar.PubSub.broadcast(
-      link_request_topic(request.id),
-      {:sso_link_request, :approved, %{id: request.id, provider_id: request.provider_id}}
-    )
+    :ok =
+      Emisar.PubSub.broadcast(
+        link_request_topic(request.id),
+        {:sso_link_request, :approved, %{id: request.id, provider_id: request.provider_id}}
+      )
+
+    broadcast_account_link_requests_changed(request.account_id)
   end
 
   defp broadcast_link_request_dismissed(%LinkRequest{} = request) do
-    Emisar.PubSub.broadcast(
-      link_request_topic(request.id),
-      {:sso_link_request, :dismissed, %{id: request.id}}
-    )
+    :ok =
+      Emisar.PubSub.broadcast(
+        link_request_topic(request.id),
+        {:sso_link_request, :dismissed, %{id: request.id}}
+      )
+
+    broadcast_account_link_requests_changed(request.account_id)
   end
 
   defp link_request_topic(id), do: "sso_link_request:#{id}"
+
+  defp broadcast_account_link_requests_changed(account_id) do
+    Emisar.PubSub.broadcast(
+      account_link_requests_topic(account_id),
+      {:sso_link_requests_changed, account_id}
+    )
+  end
+
+  defp account_link_requests_topic(account_id), do: "sso_link_requests:#{account_id}"
 
   # No existing user matched → provision a fresh user (the original flow).
   defp approve_link_request_multi(
@@ -3351,27 +3404,31 @@ defmodule Emisar.SSO do
     |> put_active_account_lock(provider.account_id)
     |> put_enabled_provider_lock(provider)
     |> Multi.merge(fn %{locked_provider: locked_provider} ->
-      case ensure_request_matches_current_namespace(locked_provider, request) do
-        :ok ->
-          Multi.new()
-          |> Multi.run(:approver, fn repo, _changes ->
-            ensure_approver_still_holds_authority(locked_provider, subject, repo)
-          end)
-          |> Multi.append(
-            build_provision_writes(
-              locked_provider,
-              request.provider_identifier,
-              request.claims,
-              created_by: :admin,
-              provisioned_via: :manual,
-              runner_access: access,
-              audit: &Audit.Events.sso_link_request_approved(subject, &1, locked_provider)
+      if locked_provider.scim_enabled do
+        Multi.error(Multi.new(), :link_request, :scim_identity_unmatched)
+      else
+        case ensure_request_matches_current_namespace(locked_provider, request) do
+          :ok ->
+            Multi.new()
+            |> Multi.run(:approver, fn repo, _changes ->
+              ensure_approver_still_holds_authority(locked_provider, subject, repo)
+            end)
+            |> Multi.append(
+              build_provision_writes(
+                locked_provider,
+                request.provider_identifier,
+                request.claims,
+                created_by: :admin,
+                provisioned_via: :manual,
+                runner_access: access,
+                audit: &Audit.Events.sso_link_request_approved(subject, &1, locked_provider)
+              )
             )
-          )
-          |> Multi.delete(:link_request, request)
+            |> Multi.delete(:link_request, request)
 
-        {:error, reason} ->
-          Multi.error(Multi.new(), :request_namespace, reason)
+          {:error, reason} ->
+            Multi.error(Multi.new(), :request_namespace, reason)
+        end
       end
     end)
   end

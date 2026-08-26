@@ -246,6 +246,7 @@ defmodule EmisarWeb.RunbookImportLive do
       current_subject={@current_subject}
       current_membership={@current_membership}
       pending_approvals_count={@pending_approvals_count}
+      pending_access_requests_count={@pending_access_requests_count}
       pending_packs_count={@pending_packs_count}
       fleet_all_offline?={@fleet_all_offline?}
       no_agents?={@no_agents?}

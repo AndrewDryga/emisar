@@ -105,6 +105,12 @@ defmodule EmisarWeb.TeamLive do
   def handle_info({:list_changed, :team, _event_type, _id}, socket),
     do: {:noreply, reload(socket)}
 
+  def handle_info(
+        {:sso_link_requests_changed, account_id},
+        %{assigns: %{current_account: %{id: account_id}, live_action: :index}} = socket
+      ),
+      do: {:noreply, assign_sso_state(socket)}
+
   def handle_info(_, socket), do: {:noreply, socket}
 
   defp reload(socket), do: load(socket, socket.assigns[:filter_params] || %{})
@@ -1175,7 +1181,16 @@ defmodule EmisarWeb.TeamLive do
       {:ok, _result} ->
         {:noreply,
          socket
-         |> put_flash(:info, "#{request_label(request)} approved — they can sign in now.")
+         |> put_flash(:info, approval_success_message(request))
+         |> assign_sso_state()}
+
+      {:error, :scim_identity_unmatched} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :error,
+           "This sign-in does not match a directory member. Fix the provider identity mapping, then have the user sign in again."
+         )
          |> assign_sso_state()}
 
       {:error, _reason} ->
@@ -1231,7 +1246,38 @@ defmodule EmisarWeb.TeamLive do
     do: "Approve access for #{request_label(request)}?"
 
   defp approval_title(%{request: %{matched_user_id: _id}}),
-    do: "Approve this existing-account link?"
+    do: "Link this identity to the existing member?"
+
+  defp approval_action_label(%{request: %{matched_user_id: matched_user_id}})
+       when not is_nil(matched_user_id),
+       do: "Link account"
+
+  defp approval_action_label(_request_facts), do: "Approve"
+
+  defp approval_success_message(%{matched_user_id: matched_user_id} = request)
+       when not is_nil(matched_user_id),
+       do: "#{request_label(request)} linked — they can sign in now."
+
+  defp approval_success_message(request),
+    do: "#{request_label(request)} approved — they can sign in now."
+
+  defp approval_confirm_label(%{request: %{matched_user_id: matched_user_id}})
+       when not is_nil(matched_user_id),
+       do: "Link identity"
+
+  defp approval_confirm_label(_request_facts), do: "Approve access"
+
+  defp unmatched_directory_request?(%{
+         request: %{matched_user_id: nil},
+         provider: %{directory_sync?: true}
+       }),
+       do: true
+
+  defp unmatched_directory_request?(_request_facts), do: false
+
+  defp unmatched_directory_request_help(request_facts) do
+    "No directory member matches this sign-in. Fix the externalId to OIDC sub or Entra oid mapping in #{request_facts.provider.name}, then have the user sign in again."
+  end
 
   defp approval_disabled?(%{request: %{matched_user_id: matched_user_id}}, _assigns)
        when not is_nil(matched_user_id),
@@ -1301,6 +1347,7 @@ defmodule EmisarWeb.TeamLive do
       current_subject={@current_subject}
       current_membership={@current_membership}
       pending_approvals_count={@pending_approvals_count}
+      pending_access_requests_count={@pending_access_requests_count}
       pending_packs_count={@pending_packs_count}
       fleet_all_offline?={@fleet_all_offline?}
       no_agents?={@no_agents?}
@@ -1708,7 +1755,23 @@ defmodule EmisarWeb.TeamLive do
                   <span>{request_facts.provider.name}</span>
                 </:meta>
                 <:actions>
+                  <.tooltip
+                    :if={unmatched_directory_request?(request_facts)}
+                    id={"unmatched-directory-request-#{request_facts.request.id}"}
+                    text={unmatched_directory_request_help(request_facts)}
+                  >
+                    <.button
+                      type="button"
+                      variant={:secondary}
+                      tone={:amber}
+                      size={:sm}
+                      disabled
+                    >
+                      Approve
+                    </.button>
+                  </.tooltip>
                   <.button
+                    :if={not unmatched_directory_request?(request_facts)}
                     id={"review-access-request-#{request_facts.request.id}"}
                     type="button"
                     variant={:secondary}
@@ -1718,7 +1781,7 @@ defmodule EmisarWeb.TeamLive do
                     aria-controls={"approve-request-dialog-#{request_facts.request.id}"}
                     phx-click={open_confirm("approve-request-dialog-#{request_facts.request.id}")}
                   >
-                    Approve
+                    {approval_action_label(request_facts)}
                   </.button>
                   <.confirm_button
                     id={"dismiss-request-#{request_facts.request.id}"}
@@ -1740,9 +1803,10 @@ defmodule EmisarWeb.TeamLive do
               <% request = request_facts.request %>
               <% approval_dialog_id = "approve-request-dialog-#{request.id}" %>
               <.confirm_dialog
+                :if={not unmatched_directory_request?(request_facts)}
                 id={approval_dialog_id}
                 title={approval_title(request_facts)}
-                confirm_label="Approve access"
+                confirm_label={approval_confirm_label(request_facts)}
                 tone={:amber}
                 disabled={approval_disabled?(request_facts, assigns)}
                 on_confirm={
@@ -1818,8 +1882,9 @@ defmodule EmisarWeb.TeamLive do
                 <:body>
                   <p class="text-sm leading-relaxed text-zinc-300">
                     <%= if request.matched_user_id do %>
-                      This SSO identity will sign in as the existing account above. The member's
-                      current role, runner access, and pack access stay unchanged.
+                      This replaces the member's sign-in identifier while keeping their directory
+                      lifecycle linked through the provider external ID. Their current role, runner
+                      access, and pack access stay unchanged.
                     <% else %>
                       This creates a member with the {Emisar.Auth.role_label(
                         request_facts.default_role
