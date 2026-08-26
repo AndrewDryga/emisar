@@ -3,9 +3,9 @@ name: Release - Runner
 run-name: Release ${{ github.ref_name }}
 
 # The tag-selected workflow is deliberately only a trigger. The reusable
-# workflow owns the release policy and every authority-bearing job. This local
-# reference is the extraction step; the hardening change pins it to the exact
-# prerequisite commit once that SHA exists.
+# workflow owns the release policy and every authority-bearing job. The full
+# commit SHA is also the GCP `job_workflow_sha` trust anchor; rotate the workflow
+# and federation condition together in a later reviewed change.
 
 on:
   push:
@@ -26,4 +26,4 @@ jobs:
       contents: write
       id-token: write
       packages: write
-    uses: ./.github/workflows/runner-release-trusted.yml
+    uses: AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml@e20ae8f8e98931868b369b7c1d58892a28ad219d

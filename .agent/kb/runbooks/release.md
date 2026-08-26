@@ -73,20 +73,22 @@ To stop this recurring, set it once: `git config --local tag.gpgsign true`.
 
 The signing key (`user.signingkey`) is already the one that signs commits, so it's
 registered on the GitHub account and the tagger email matches — signed tags verify
-immediately on push. A *lightweight* tag can't be signed; if you ever need to fix
-one, recreate it as `git tag -s -f` (preserve the original message and tagger date
-via `GIT_COMMITTER_DATE`).
+immediately on push. A *lightweight* tag can't be signed; before its first push,
+recreate it locally as `git tag -s -f` (preserve the original message and tagger
+date via `GIT_COMMITTER_DATE`). A pushed release tag is immutable and is never
+recreated.
 
 **This applies to the per-component release tags too**, not just the product tags.
 `runner-v*` / `mcp-v*` trigger the binary release workflows
 (`runner-release.yml` / `mcp-release.yml` fire on the tag push). The tag is
-created and verified locally first; an unsigned tag is rejected. Cut component
-tags with `-s` as well:
+created and verified locally first; an unsigned tag is rejected. Only the named
+release tagger may create these refs, and the immutable-tag ruleset lets nobody
+move or delete them. Cut component tags with `-s` as well:
 
 ```sh
 git tag -s runner-vX.Y.Z <commit> -m "runner vX.Y.Z"
 git tag -v runner-vX.Y.Z          # "Good signature"
-git push origin runner-vX.Y.Z     # release workflow builds + publishes
+git push origin runner-vX.Y.Z     # independent reviewer approves the release jobs
 ```
 
 `git config --local tag.gpgsign true` (above) covers these too. Release workflows
@@ -94,10 +96,16 @@ also verify GitHub's signature result and require the tag to target current
 `main` every time source verification executes. After that job succeeds, recover
 a downstream failure with **Re-run failed jobs** so GitHub preserves the green
 verification; never use **Re-run all jobs** after `main` advances, and never move
-or recreate the tag. The workflow attests the archives, uploads
-the immutable files and manifest below `https://emisar.dev/releases/`, advances
-`latest.json`, verifies the public bytes, and finally publishes GitHub Releases
-as the secondary mirror.
+or recreate the tag. The thin tag workflow calls a no-input reusable workflow
+at an exact commit SHA; release WIF accepts only that called workflow path and
+SHA. Rotating the trusted workflow requires landing it first, then changing the
+caller pin and Terraform condition together. The workflow attests the archives,
+uploads the immutable files and manifest below `https://emisar.dev/releases/`,
+advances `latest.json`, verifies the public bytes, and finally publishes GitHub
+Releases as the secondary mirror. GitHub's native workflow token is not
+independently gated by GCP WIF, so verify mirror artifacts against the exact
+reusable workflow and signer digest; do not treat their presence in a GitHub
+Release or GHCR alone as publication authority.
 
 ## GitHub release notes
 

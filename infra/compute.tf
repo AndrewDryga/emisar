@@ -9,7 +9,8 @@ locals {
   #
   #   gh attestation verify emisar-<version>-linux-amd64.tar.gz \
   #     --repo andrewdryga/emisar \
-  #     --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release.yml
+  #     --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release.yml \
+  #     --signer-digest e616b4c8d8dcd828c9c86724676c711126e25e77
   #
   # (the owner casing is the certificate's, not the lowercase repo spelling).
   # That is what makes the pin a reviewed decision rather than a checksum

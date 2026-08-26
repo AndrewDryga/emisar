@@ -601,9 +601,11 @@ migration.
 
 ### Official runner container image
 
-**What it is.** Every `runner-v*` release publishes
+**What it is.** The hardened runner release process publishes
 `ghcr.io/andrewdryga/emisar-runner:<version>` (linux/amd64 + linux/arm64,
-signed provenance + SBOM), built by `runner-release.yml` from
+signed provenance + SBOM), built by the exact-SHA
+`runner-release-trusted.yml` reusable workflow (triggered by
+`runner-release.yml`) from
 `runner/release/Dockerfile` around the exact tested release binary. Its
 operator-facing contract is the image name and version-tag scheme (no `latest`
 tag is published), the `EMISAR_ENROLLMENT_KEY` / `EMISAR_URL` /

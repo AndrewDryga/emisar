@@ -34,24 +34,22 @@ a configuration.
 
 ## GitHub environments
 
-Configure these environments with deployment branches restricted to `main`:
+Configure these environments with the ref policies shown below:
 
 | Environment | Approval | Secret | Required scope |
 |---|---|---|---|
 | `portal-production-plan` | Protected `main` only (no reviewer) | `TFC_PLAN_TOKEN` | Uploads the reviewed configuration and creates the saved production plan. Workspace auto-apply stays disabled and apply remains manual — the HCP Confirm & Apply is the human gate, so a second GitHub approval here would be redundant. |
 | `pack-registry-approval` | Required reviewer + protected `main` | None | Cancellable approval-only gate. This is the single human release decision for a pack publication; a newer selected pack release supersedes an older waiting approval. |
 | `pack-registry-production` | Protected `main` only (no reviewer) | None | Non-cancellable serialized publication through short-lived, environment-bound GCP WIF credentials. The release decision lives on `pack-registry-approval`; a bare rerun of an old publication job is refused by the workflow's superseded-release check when a newer release has since published. |
-| `public-releases` | `runner-v*` and `mcp-v*` tag policies (no reviewer) | None | Signed runner and MCP bridge builds plus GCS publication through short-lived, environment-bound WIF credentials. The signed annotated tag targeting current main is the release decision; the tag patterns and WIF condition bind attestation and artifact publication to the two release workflows. After source verification passes, recover a downstream failure with **Re-run failed jobs**; source verification always requires current main and a full rerun after main advances fails closed. |
+| `public-releases` | Independent required reviewer; prevent self-review; block admin bypass; `runner-v*` and `mcp-v*` tag policies | None | Signed runner and MCP bridge builds plus GCS publication through short-lived WIF credentials bound to the called workflow's exact path and SHA. The tag creator and environment reviewer must be different people. After source verification passes, recover a downstream failure with **Re-run failed jobs**; source verification always requires current main and a full rerun after main advances fails closed. |
 | `mcp-registry-publication` | `v*` and `main` recovery policies (no reviewer) | `MCP_PRIVATE_KEY` | Publishes the hosted server listing. The workflow verifies the signed tag, its green Required - CI, and the live publisher-key proof before the secret is used. `main` is allowed only so the current hardened publisher can recover an existing immutable product release. |
 
-The single reviewer-gated environment is `pack-registry-approval` — one human
-decision per pack publication. Everywhere else the signed tag (or, for the
-portal, HCP's Confirm & Apply) is the human act, so a GitHub reviewer would
-only re-approve it; this holds while the repository has a single maintainer.
-**When a second collaborator gains write access, re-add required reviewers to
-`public-releases`, `mcp-registry-publication`, and `pack-registry-production`**
-— at that point a tag push or job rerun is no longer necessarily the
-maintainer's own decision.
+`pack-registry-approval` is the pack publication decision. `public-releases`
+deliberately adds a second person after the signed component tag: its reviewer
+must have repository read access, must not be the tag creator, and cannot
+bypass the wait as an administrator. Do not cut another runner or MCP release
+until this independent reviewer exists. HCP's Confirm & Apply remains the
+portal deployment decision.
 
 Run `./run check pack-environment` and retain the green output before
 enabling pack publication — it confirms the publisher's WIF credentials stay bound
@@ -82,24 +80,41 @@ credentials.
 
 Protect `main` with pull requests and the single required check `Required - CI`.
 Require signed commits, linear history, resolved conversations, and include
-administrators. Force pushes and branch deletion stay disabled. Set the PR
-approval count to match the number of people who can review — zero while a
-single maintainer owns the repository;
-raise it to one and require approval of the latest push when a second maintainer
-is added. Do not require area-specific jobs: unchanged areas intentionally
-report `skipped`, while `Required - CI` is stable and always reports a
-conclusion.
+administrators. Force pushes and branch deletion stay disabled. Require one
+approval of the latest push from the second maintainer used for independent
+release review. Do not require area-specific jobs: unchanged areas
+intentionally report `skipped`, while `Required - CI` is stable and always
+reports a conclusion.
 
 ## Release tags
 
 Runner, MCP bridge, and product releases accept only exact SemVer signed
 annotated tags targeting current `main`. Their workflows verify GitHub's
-signature result and the tag's commit before building or publishing. Once that
-verification succeeds, a runner or MCP bridge recovery after `main` advances
-uses **Re-run failed jobs**, preserving the successful verifier and the original
-tag/source SHA; a full rerun deliberately fails instead of weakening the
-current-main check. Product `v*` tags publish only the hosted
-MCP Registry listing; infrastructure deploys only from reviewed `main` plans.
+signature result and the tag's commit before building or publishing. The thin
+tag workflows call component-specific, no-input reusable workflows at one exact
+commit SHA; the release WIF provider and service-account binding admit only
+those called workflow identities. Rotate the pin only by first landing the new
+called workflows, then updating both callers and Terraform in one reviewed
+plan. Once verification succeeds, a runner or MCP bridge recovery after `main`
+advances uses **Re-run failed jobs**, preserving the successful verifier and
+the original tag/source SHA; a full rerun deliberately fails instead of
+weakening the current-main check. Product `v*` tags publish only the hosted MCP
+Registry listing; infrastructure deploys only from reviewed `main` plans.
+
+Use two release-tag rulesets. The creation-only ruleset matches `runner-v*` and
+`mcp-v*` and grants bypass only to the named release tagger (user or dedicated
+App), never the administrator role. The immutable-tag ruleset denies updates
+and deletion with no bypass actors. Keeping these separate lets the release
+tagger create a new tag without gaining authority to move or delete one.
+
+The exact-workflow WIF and environment controls protect GCS publication and the
+Sigstore identity. They do not remove a workflow's ability to request the
+repository's native `GITHUB_TOKEN` with `contents: write` or `packages: write`.
+GitHub Releases and GHCR therefore remain secondary mirrors: trust a binary or
+image only after its provenance verifies against the exact reusable workflow
+path and digest. Fully independent GitHub publication requires a separate
+repository and publisher credential unavailable to workflows in this source
+repository.
 
 | Workflow | Tag | Publishes |
 |---|---|---|

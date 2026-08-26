@@ -178,7 +178,7 @@ variable "disable_billing" {
 
 variable "github_repository" {
   type        = string
-  description = "Repository whose main CD workflow may assume the pack-publisher identity."
+  description = "Repository whose protected CD and exact-SHA reusable release workflows may assume artifact-publisher identities."
   default     = "AndrewDryga/emisar"
 }
 
