@@ -63,9 +63,9 @@ execution: {}
 # runner runs a dispatch ONLY if it carries a valid attestation whose Ed25519 or
 # ECDSA P-256 leaf key is vouched for by a still-valid, in-scope certificate
 # from one of the trusted CAs below, is inside the freshness window, and uses a
-# nonce it hasn't seen. The cloud can RELAY a customer-authorized bridge's signed action
-# but can never originate one. The runner advertises enforcement to the cloud,
-# which then disables its own (operator/runbook) dispatch here.
+# nonce it hasn't seen. The cloud can RELAY a customer-authorized bridge's
+# signed action but can never originate one. The runner advertises enforcement
+# to the cloud, which then disables its own (operator/runbook) dispatch here.
 #
 # The trust boundary is the CA: the runner trusts a few offline CA public keys,
 # not every leaf key, so onboarding an operator is one signature and zero
