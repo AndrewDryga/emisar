@@ -751,18 +751,18 @@ defmodule Emisar.Mailers.UserNotifier do
     actor = one_line(Map.get(event, :actor_label) || "An owner or admin")
 
     {
-      "#{actor} used an emergency override.",
-      {:status, "#{actor} used an ", "emergency override",
-       " after #{count} of #{quorum} approvals.", :warning}
+      "#{actor} approved the request using an override.",
+      {:status, "#{actor} ", "approved",
+       " the request using an override after #{count} of #{quorum} approvals.", :warning}
     }
   end
 
   defp requester_decision_copy(:approved, count, quorum, :overridden, _actor_label) do
     {
-      "Approval override used",
-      "An owner or admin used an emergency override.",
-      {:status, "An owner or admin used an ", "emergency override",
-       " after #{count} of #{quorum} approvals.", :warning}
+      "Approved using an override",
+      "An owner or admin approved your request using an override.",
+      {:status, "Your approval request was ", "approved",
+       " using an override after #{count} of #{quorum} approvals.", :warning}
     }
   end
 

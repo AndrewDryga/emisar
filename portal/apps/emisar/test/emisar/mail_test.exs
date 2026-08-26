@@ -691,7 +691,7 @@ defmodule Emisar.MailTest do
         {:denied, 1, "approval request was denied by Alex Operator with 1 of 3", "#fda4af"},
         {:expired, 2, "approval request expired with 2 of 3", "#fcd34d"},
         {:cancelled, 1, "approval request was cancelled with 1 of 3", "#fcd34d"},
-        {:overridden, 1, "used an emergency override after 1 of 3", "#fcd34d"}
+        {:overridden, 1, "approved the request using an override after 1 of 3", "#fcd34d"}
       ]
 
       Enum.each(cases, fn {kind, count, expected, color} ->
@@ -910,7 +910,7 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    test "distinguishes a break-glass override from ordinary approval", %{
+    test "distinguishes approval using an override from ordinary approval", %{
       requester: requester
     } do
       request = %{
@@ -926,8 +926,8 @@ defmodule Emisar.MailTest do
       UserNotifier.deliver_approval_decision(requester, request, 1, :overridden)
 
       assert_email_sent(fn email ->
-        assert email.subject == "Approval override used · postgres.restore"
-        assert email.text_body =~ "emergency override after 1 of 3 approvals"
+        assert email.subject == "Approved using an override · postgres.restore"
+        assert email.text_body =~ "approved using an override after 1 of 3 approvals"
         assert email.html_body =~ "color:#fcd34d;"
         refute email.text_body =~ "remaining review requirement was waived"
         true

@@ -2805,8 +2805,8 @@ defmodule Emisar.ApprovalsTest do
 
       assert Enum.any?(emails, fn email ->
                Enum.map(email.to, &elem(&1, 1)) == [requester_subject.actor.email] &&
-                 email.subject == "Approval override used · linux.uptime" &&
-                 email.text_body =~ "emergency override after 1 of 3 approvals"
+                 email.subject == "Approved using an override · linux.uptime" &&
+                 email.text_body =~ "approved using an override after 1 of 3 approvals"
              end)
     end
 

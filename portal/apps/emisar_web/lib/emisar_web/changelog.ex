@@ -80,7 +80,7 @@ defmodule EmisarWeb.Changelog do
         {"Console and docs",
          [
            "Approval decision history is consolidated, every signer appears in the verdict, and a loaded choice stays visible while the form is edited.",
-           "Owners and administrators can use an audited break-glass override when the configured approval quorum cannot be reached. Pricing cards, comparison cells, FAQs, and structured offers now read the same Billing plan contract.",
+           "Owners and administrators can approve a request using an override when the configured approval quorum cannot be reached. The override is audited. Pricing cards, comparison cells, FAQs, and structured offers now read the same Billing plan contract.",
            "The console now uses one semantic icon system, keeps destructive MFA actions visually and verbally distinct, and makes session inventory and revocation state truthful.",
            "The docs shell switches examples by operating system, the AI agent pages are split per client, and the quickstart, runner, and client-connection pages were rewritten in plain language."
          ]}
