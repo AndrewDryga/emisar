@@ -702,6 +702,9 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert rail_html =~ ~r/class="text-xs font-medium text-zinc-200">\s*In effect/
       assert length(Regex.scan(~r/the requester may approve their own request/, html)) == 1
 
+      warning_html = lv |> element("#policy-single-reviewer-warning-account") |> render()
+      assert warning_html =~ ~s(class="border-t border-zinc-800/70 pt-4")
+
       {catalog_position, _length} = :binary.match(rail_html, "Catalog by risk")
       {warning_position, _length} = :binary.match(rail_html, "the requester may approve")
       assert catalog_position < warning_position
@@ -733,6 +736,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
         refute safe_html =~ "the requester may approve their own request"
         refute safe_html =~ "add independent review"
       end
+
+      refute has_element?(lv, "#policy-single-reviewer-warning-account")
     end
 
     test "a healthy four-eyes gate shows no verdict callout", %{conn: conn} do
@@ -1352,6 +1357,11 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert rail_html =~ "the requester may approve their own request"
       assert rail_html =~ "add independent review"
       assert length(Regex.scan(~r/the requester may approve their own request/, html)) == 1
+
+      warning_html =
+        lv |> element("#policy-single-reviewer-warning-#{scoped.id}") |> render()
+
+      assert warning_html =~ ~s(class="border-t border-zinc-800/70 pt-4")
     end
 
     test "a scoped ruleset at least as strict as the default shows no warning", %{

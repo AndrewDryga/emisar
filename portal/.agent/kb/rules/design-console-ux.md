@@ -941,6 +941,10 @@ the commit button, where the operator can reach the action before reading what i
     destination. The controls already expose the configured posture; repeating the same title and
     remedy in both places makes the page compete with itself. Sweep: identical warning copy rendered
     in both a form and its adjacent preview.
+81. **A conditional section owns its separator.** Put the divider and its padding on the same
+    conditionally rendered wrapper as the content it introduces, so hiding the content removes the
+    line and the space with it. Sweep: always-present borders or empty divider wrappers immediately
+    before conditional warnings, errors, or detail sections.
 
 ## 8. The kit is the contract
 

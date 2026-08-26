@@ -954,7 +954,13 @@ defmodule EmisarWeb.PoliciesLive do
         </dl>
       </div>
 
-      <.single_reviewer_warning :if={@single_reviewer?} />
+      <div
+        :if={@single_reviewer?}
+        id={"policy-single-reviewer-warning-#{@editor_id}"}
+        class="border-t border-zinc-800/70 pt-4"
+      >
+        <.single_reviewer_warning />
+      </div>
     </div>
     """
   end
