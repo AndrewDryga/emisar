@@ -17,6 +17,36 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-08-25],
+      slug: "sso-and-directory-access-end-to-end",
+      title: "SSO and directory access, end to end",
+      tag: "v0.43.0",
+      summary:
+        "Directory groups now grant access through the exact group resource emisar received, even when the provider sends no external ID. Renaming a group keeps its role and runner grants; deleting it removes them, and recreating a group with the same name does not bring old access back. The Okta, Microsoft Entra ID, JumpCloud, Google Workspace, and Keycloak guides now match current provider screens and say exactly which OIDC and SCIM paths were live-tested. Team, SSO, approval, and transactional email flows are also cleaner across desktop and mobile.",
+      details: [
+        {"Security",
+         [
+           "Role and runner-access mappings bind to emisar's immutable SCIM group ID. Optional provider external IDs remain correlation data, and two groups with the same name stay distinct.",
+           "Okta groups without an external ID can be mapped directly. OIDC convergence for Okta and Entra accepts only an exact active SCIM identity under the provider's configured identifier claim; an explicit unverified email claim is still denied.",
+           "Directory group changes serialize with mapping writes, so rename keeps the selected grants while membership removal and deletion revoke them before another authorization decision can use stale state."
+         ]},
+        {"Console",
+         [
+           "Pending access requests stay compact until a decision needs runner choices or an existing-account warning, then open a focused dialog. Team controls stack cleanly on smaller screens, and SSO connection details read as one stable record.",
+           "Directory role and runner-access selectors use the actual synced group resource instead of a free-form external ID. Approval override asks for the audited reason once, then states the skipped approval count and the checks that still apply."
+         ]},
+        {"Website",
+         [
+           "Provider guides were walked through against fresh Okta, Entra, JumpCloud, Google Workspace, and Keycloak setups. Screenshots were recaptured from current provider screens, de-identified, and reviewed at the width customers see.",
+           "Each guide now distinguishes live-tested OIDC and SCIM lanes from capabilities the provider's standard application does not offer, instead of implying every provider uses the same directory-sync path."
+         ]},
+        {"Also",
+         [
+           "Transactional emails put the next action first, link the account context when it exists, express approval state in words as well as color, and keep the HTML and plain-text versions aligned."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-08-24],
       slug: "signed-dispatch-uses-your-own-pki",
       title: "Signed dispatch uses your own PKI",
