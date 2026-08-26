@@ -1562,6 +1562,7 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :icon, :string, required: true
   attr :tone, :atom, default: :amber, values: [:amber, :rose, :brand, :neutral]
+  attr :size, :atom, default: :default, values: [:default, :compact]
   attr :title, :string, default: nil
   attr :class, :string, default: nil
   attr :rest, :global
@@ -1576,8 +1577,8 @@ defmodule EmisarWeb.CoreComponents do
         <div class={["mt-3 w-0.5 flex-1 rounded-full", event_block_spine_class(@tone)]}></div>
       </div>
       <div class="min-w-0 flex-1">
-        <div :if={@title} class="text-sm font-medium text-zinc-200">{@title}</div>
-        <div class={[@title && "mt-1", "text-sm leading-relaxed text-zinc-400"]}>
+        <div :if={@title} class={event_block_title_class(@size)}>{@title}</div>
+        <div class={[@title && "mt-1", event_block_text_size(@size), "leading-relaxed text-zinc-400"]}>
           {render_slot(@body)}
         </div>
         {render_slot(@inner_block)}
@@ -1590,6 +1591,12 @@ defmodule EmisarWeb.CoreComponents do
   defp event_block_spine_class(:rose), do: "bg-rose-400/40"
   defp event_block_spine_class(:brand), do: "bg-brand-400/40"
   defp event_block_spine_class(:neutral), do: "bg-zinc-700"
+
+  defp event_block_text_size(:default), do: "text-sm"
+  defp event_block_text_size(:compact), do: "text-xs"
+
+  defp event_block_title_class(size),
+    do: [event_block_text_size(size), "font-medium text-zinc-200"]
 
   @doc """
   Renders one meaning from the semantic icon registry (`EmisarWeb.Icons`).

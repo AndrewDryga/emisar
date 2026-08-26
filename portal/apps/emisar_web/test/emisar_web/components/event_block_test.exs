@@ -62,6 +62,20 @@ defmodule EmisarWeb.Components.EventBlockTest do
       assert html =~ ~s(id="runner-alert")
     end
 
+    test "compact size uses the supporting text tier" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.event_block icon="security.posture_warning" size={:compact} title="Review">
+          <:body>Supporting guidance.</:body>
+        </CoreComponents.event_block>
+        """)
+
+      assert html =~ "text-xs"
+      refute html =~ "text-sm"
+    end
+
     test "rejects an unregistered icon instead of rendering a spine without a glyph" do
       assigns = %{}
 

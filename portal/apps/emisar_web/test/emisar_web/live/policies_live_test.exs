@@ -7,7 +7,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
   expected v2 JSON shape `Emisar.Policies.evaluate/2` consumes.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.Policies
+  alias Emisar.{Fixtures, Policies}
 
   describe "GET /app/policies" do
     test "redirects anonymous users", %{conn: conn} do
@@ -675,6 +675,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
     } do
       {conn, user, account} = register_and_log_in(conn)
       subject = Fixtures.Subjects.subject_for(user, account)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, risk: "high")
 
       {:ok, _} =
         Policies.save_rules(
@@ -699,6 +701,13 @@ defmodule EmisarWeb.PoliciesLiveTest do
         assert warning_html =~
                  "Choose a different operator, or raise the count, to add independent review"
       end
+
+      assert form_html =~ ~r/class="text-sm font-medium text-zinc-200">\s*In effect/
+      assert rail_html =~ ~r/class="text-xs font-medium text-zinc-200">\s*In effect/
+
+      {catalog_position, _length} = :binary.match(rail_html, "Catalog by risk")
+      {warning_position, _length} = :binary.match(rail_html, "the requester may approve")
+      assert catalog_position < warning_position
 
       refute html =~ "Self-approval is allowed and only one approval is required"
     end

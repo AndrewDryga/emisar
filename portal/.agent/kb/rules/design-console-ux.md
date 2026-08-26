@@ -931,6 +931,11 @@ the commit button, where the operator can reach the action before reading what i
     first status or field from its heading. Keep the shared header default for ordinary document flow;
     only the composite wrapper replaces it with its row gap. Sweep: a `section_header` inside a grid
     row followed by another grid row where both `mb-*` and `gap-y-*` separate the same two blocks.
+79. **An effective-state rail shows evidence before interpretation.** Put the catalog, counts, or
+    other supporting breakdown ahead of the warning it qualifies, so the operator reads the state
+    before its consequence. Render that warning in the rail's compact supporting type tier; the same
+    warning beside editable controls may keep the default event-block hierarchy. Sweep: preview-rail
+    alerts that interrupt a summary before its evidence or visually overpower the facts around them.
 
 ## 8. The kit is the contract
 

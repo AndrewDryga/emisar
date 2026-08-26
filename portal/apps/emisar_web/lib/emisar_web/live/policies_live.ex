@@ -925,8 +925,6 @@ defmodule EmisarWeb.PoliciesLive do
         <.outcome_row tone={:rose} label="Denied" stat={@outcome["deny"]} />
       </div>
 
-      <.single_reviewer_warning :if={@single_reviewer?} />
-
       <%!-- The catalog's danger profile — the counts the tier decisions above act
            on. Compact: pill + count, most-severe first. "View all" opens the full
            action catalog (Packs) in a new tab, so an in-flight edit is untouched. --%>
@@ -955,11 +953,14 @@ defmodule EmisarWeb.PoliciesLive do
           </div>
         </dl>
       </div>
+
+      <.single_reviewer_warning :if={@single_reviewer?} size={:compact} />
     </div>
     """
   end
 
   attr :class, :string, default: nil
+  attr :size, :atom, default: :default, values: [:default, :compact]
 
   # One source for the effective approval warning rendered beside the controls
   # and in their live preview, so the two security reads cannot drift.
@@ -969,6 +970,7 @@ defmodule EmisarWeb.PoliciesLive do
       tone={:amber}
       icon="security.posture_warning"
       title="In effect — a single approval is enough, and the requester may approve their own request"
+      size={@size}
       class={@class}
     >
       <:body>Choose a different operator, or raise the count, to add independent review.</:body>
