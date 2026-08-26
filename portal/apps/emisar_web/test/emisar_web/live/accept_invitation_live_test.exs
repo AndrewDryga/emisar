@@ -2,10 +2,6 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Accounts
 
-  defp register_team_owner(conn) do
-    register_and_log_in(conn, %{account: %{plan: "team"}})
-  end
-
   # Mints a pending invitation and returns its token. The invitee is a
   # brand-new email (anonymous-accept flow), so the accept page renders
   # the name-only join form (passwordless — a sign-in link is emailed on accept).
@@ -52,7 +48,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
     end
 
     test "an expired invitation names the state and asks for a fresh one", %{conn: conn} do
-      {_conn, owner, account} = register_team_owner(conn)
+      {_conn, owner, account} = register_and_log_in(conn)
       token = invitation_token(account, owner)
 
       {:ok, membership} = Accounts.fetch_invitation_by_token(token)
@@ -73,7 +69,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
   describe "anonymous accept" do
     test "renders the join offer and accepts with a valid registration", %{conn: conn} do
-      {_conn, owner, account} = register_team_owner(conn)
+      {_conn, owner, account} = register_and_log_in(conn)
       token = invitation_token(account, owner)
 
       {:ok, lv, html} = live(build_conn(), ~p"/accept_invitation/#{token}")
@@ -105,7 +101,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
     test "an accept that lost the race to a second link-holder lands on the terminal state", %{
       conn: conn
     } do
-      {_conn, owner, account} = register_team_owner(conn)
+      {_conn, owner, account} = register_and_log_in(conn)
       token = invitation_token(account, owner)
 
       {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
@@ -131,7 +127,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
     end
 
     test "a mounted old link cannot accept after an administrator resends", %{conn: conn} do
-      {_conn, owner, account} = register_team_owner(conn)
+      {_conn, owner, account} = register_and_log_in(conn)
       subject = owner_subject(owner, account)
 
       {:ok, %{membership: membership, invitation_token: old_token}} =
@@ -168,7 +164,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
     end
 
     test "an old-address link neither resolves nor reveals the current address", %{conn: conn} do
-      {_conn, owner, account} = register_team_owner(conn)
+      {_conn, owner, account} = register_and_log_in(conn)
       original_email = "old-link-#{System.unique_integer([:positive])}@example.com"
       current_email = "current-#{System.unique_integer([:positive])}@example.com"
 
@@ -203,7 +199,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       # full_name (never `user[email]`), so a client that rewrites the hidden value
       # can't redirect the invitation onto a different address: the
       # registered/confirmed user still carries the membership's invited email.
-      {_conn, owner, account} = register_team_owner(conn)
+      {_conn, owner, account} = register_and_log_in(conn)
       token = invitation_token(account, owner)
 
       {:ok, invited} = Accounts.fetch_invitation_by_token(token, preload: [:user])
@@ -232,7 +228,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
   describe "signed-in accept" do
     setup %{conn: conn} do
-      {_conn, owner, account} = register_team_owner(conn)
+      {_conn, owner, account} = register_and_log_in(conn)
       %{owner: owner, account: account}
     end
 

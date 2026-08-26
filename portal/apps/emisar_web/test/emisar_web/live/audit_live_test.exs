@@ -14,68 +14,6 @@ defmodule EmisarWeb.AuditLiveTest do
       assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/audit")
     end
 
-    test "a Free owner sees the one-time CSV separately from locked SIEM export", %{conn: conn} do
-      {conn, _owner, account} = register_and_log_in(conn)
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
-
-      assert html =~ "owners can create one CSV on any plan"
-      assert html =~ "used when the file is prepared, before browser transfer"
-
-      assert has_element?(
-               lv,
-               "form[action='/app/#{account.slug}/audit/download'][method='post'] button",
-               "Download one-time CSV"
-             )
-
-      assert has_element?(
-               lv,
-               "form[action='/app/#{account.slug}/audit/download'] input[name='_csrf_token'][value]"
-             )
-
-      assert has_element?(lv, "button[disabled]", "SIEM export")
-      refute has_element?(lv, "a[href='/app/#{account.slug}/audit/export']")
-    end
-
-    test "a consumed Free CSV becomes a clear repeated-export upgrade state", %{conn: conn} do
-      {conn, owner, account} = register_and_log_in(conn)
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
-      assert {:ok, access} = Audit.start_csv_export(subject)
-      assert {:ok, _account} = Audit.finish_csv_export(subject, access, [filter: []], 1)
-
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
-
-      assert html =~ "The one-time CSV was created — Team allows repeated exports"
-      assert has_element?(lv, "button[disabled]", "Export CSV")
-      refute has_element?(lv, "form[action='/app/#{account.slug}/audit/download']")
-    end
-
-    test "the mounted page replaces the one-time action when completion broadcasts", %{conn: conn} do
-      {conn, owner, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
-      assert {:ok, access} = Audit.start_csv_export(subject)
-
-      assert {:ok, _account} = Audit.finish_csv_export(subject, access, [filter: []], 1)
-
-      assert has_element?(lv, "button[disabled]", "Export CSV")
-      refute has_element?(lv, "form[action='/app/#{account.slug}/audit/download']")
-    end
-
-    test "an entitled account keeps repeated CSV and SIEM actions distinct", %{conn: conn} do
-      {conn, _owner, account} = register_and_log_in(conn)
-      Fixtures.Accounts.create_subscription(account, "team")
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
-
-      assert has_element?(
-               lv,
-               "form[action='/app/#{account.slug}/audit/download'][method='post'] button",
-               "Export CSV"
-             )
-
-      assert has_element?(lv, "a[href='/app/#{account.slug}/audit/export']", "SIEM export")
-      refute has_element?(lv, "a", "Download one-time CSV")
-    end
-
     test "renders rows as one-line events — label, meta with IP, detail link", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
 

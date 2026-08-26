@@ -85,14 +85,6 @@ defmodule Emisar.CompatTest do
       assert Compat.mcp_status("0.1.0") == :unsupported
       assert Compat.mcp_status(nil) == :unknown
     end
-
-    test "accepts cert_chain peers and rejects the legacy cert generation" do
-      put_policy(mcp_minimum: ">= 0.10.0", mcp_recommended: ">= 0.10.1")
-
-      assert Compat.mcp_status("0.10.1") == :supported
-      assert Compat.mcp_status("0.10.0") == :outdated
-      assert Compat.mcp_status("0.9.0") == :unsupported
-    end
   end
 
   describe "enforce_runners?/0 and enforce_mcp?/0" do

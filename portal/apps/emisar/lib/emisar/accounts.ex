@@ -16,8 +16,6 @@ defmodule Emisar.Accounts do
   alias Emisar.{ApiKeys, Audit, Auth, Billing, Crypto, Mail, Repo, Slug, SSO, Users}
   alias Emisar.Auth.Subject
 
-  @one_time_audit_csv_reservation_seconds 30 * 60
-
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
   end
@@ -682,10 +680,6 @@ defmodule Emisar.Accounts do
 
   defp put_owner_membership(%Multi{} = multi, user_key) do
     multi
-    |> put_membership_capacity(
-      & &1.account.id,
-      &Map.fetch!(&1, user_key).id
-    )
     |> Multi.run(:membership, fn repo, %{account: account} = changes ->
       user = Map.fetch!(changes, user_key)
 
@@ -774,130 +768,6 @@ defmodule Emisar.Accounts do
   def change_account(%Account{} = account, attrs \\ %{}) do
     Account.Changeset.update(account, attrs)
   end
-
-  @doc """
-  Internal — Audit reserves an account owner's one-time CSV while its bounded
-  temporary artifact is prepared. The account row and the actor's active
-  membership are locked before the current owner role is accepted, so a stale
-  owner Subject cannot spend the scarce right after demotion or removal. A
-  reservation may be replaced after 30 minutes so a killed request cannot block
-  recovery forever; the matching-id completion fence runs before response bytes
-  leave, so a replaced request cannot deliver a second artifact.
-  """
-  def reserve_one_time_audit_csv_export(account_id, %Subject{} = subject) do
-    if Repo.valid_uuid?(account_id) and Subject.in_account?(subject, account_id) do
-      queryable =
-        Account.Query.active()
-        |> Account.Query.by_id(account_id)
-
-      Repo.fetch_and_update(queryable, Account.Query,
-        with: &reserve_one_time_audit_csv_export_changeset(&1, subject)
-      )
-    else
-      {:error, :not_found}
-    end
-  end
-
-  @doc """
-  Internal — release the matching reservation after artifact preparation
-  fails. A stale request cannot clear a newer request's reservation.
-  """
-  def release_one_time_audit_csv_export(account_id, reservation_id) do
-    if Repo.valid_uuid?(account_id) and Repo.valid_uuid?(reservation_id) do
-      Account.Query.active()
-      |> Account.Query.by_id(account_id)
-      |> Repo.fetch_and_update(Account.Query,
-        with: &release_one_time_audit_csv_export_changeset(&1, reservation_id)
-      )
-    else
-      {:error, :not_found}
-    end
-  end
-
-  @doc """
-  Internal — mark a fully prepared one-time CSV complete and insert its
-  `audit.exported` receipt in the same transaction, before response bytes leave.
-  A failed audit insert rolls the completion back, leaving the reservation
-  retryable after its lease.
-  """
-  def complete_one_time_audit_csv_export(
-        account_id,
-        reservation_id,
-        %Subject{} = subject,
-        opts,
-        count
-      )
-      when is_list(opts) and is_integer(count) and count > 0 do
-    if Repo.valid_uuid?(account_id) and Repo.valid_uuid?(reservation_id) and
-         Subject.in_account?(subject, account_id) do
-      Account.Query.active()
-      |> Account.Query.by_id(account_id)
-      |> Repo.fetch_and_update(Account.Query,
-        with: &complete_one_time_audit_csv_export_changeset(&1, reservation_id),
-        audit: fn _updated -> Audit.Events.audit_exported(subject, opts, count) end
-      )
-    else
-      {:error, :not_found}
-    end
-  end
-
-  defp reserve_one_time_audit_csv_export_changeset(%Account{} = account, %Subject{} = subject) do
-    with {:ok, membership} <-
-           fetch_and_lock_membership(account.id, subject.membership_id, repo: Repo),
-         :ok <- ensure_current_owner(membership, subject),
-         :ok <- ensure_one_time_audit_csv_available(account) do
-      Account.Changeset.reserve_one_time_audit_csv_export(account, Ecto.UUID.generate())
-    else
-      {:error, reason} -> reason
-    end
-  end
-
-  defp ensure_current_owner(%Membership{role: :owner, user_id: user_id}, %Subject{} = subject) do
-    if user_id == Subject.user_id(subject), do: :ok, else: {:error, :unauthorized}
-  end
-
-  defp ensure_current_owner(%Membership{}, %Subject{}), do: {:error, :unauthorized}
-
-  defp ensure_one_time_audit_csv_available(%Account{
-         one_time_audit_csv_exported_at: %DateTime{}
-       }),
-       do: {:error, :already_exported}
-
-  defp ensure_one_time_audit_csv_available(%Account{
-         one_time_audit_csv_export_reserved_at: %DateTime{} = reserved_at
-       }) do
-    cutoff = DateTime.add(DateTime.utc_now(), -@one_time_audit_csv_reservation_seconds, :second)
-
-    if DateTime.compare(reserved_at, cutoff) == :gt,
-      do: {:error, :export_in_progress},
-      else: :ok
-  end
-
-  defp ensure_one_time_audit_csv_available(%Account{}), do: :ok
-
-  defp release_one_time_audit_csv_export_changeset(
-         %Account{
-           one_time_audit_csv_exported_at: nil,
-           one_time_audit_csv_export_reservation_id: reservation_id
-         } = account,
-         reservation_id
-       ),
-       do: Account.Changeset.release_one_time_audit_csv_export(account)
-
-  defp release_one_time_audit_csv_export_changeset(%Account{}, _reservation_id),
-    do: :reservation_mismatch
-
-  defp complete_one_time_audit_csv_export_changeset(
-         %Account{
-           one_time_audit_csv_exported_at: nil,
-           one_time_audit_csv_export_reservation_id: reservation_id
-         } = account,
-         reservation_id
-       ),
-       do: Account.Changeset.complete_one_time_audit_csv_export(account)
-
-  defp complete_one_time_audit_csv_export_changeset(%Account{}, _reservation_id),
-    do: :reservation_mismatch
 
   @doc """
   Internal — Catalog owns the pack-cleanup contract (permission, tenancy, and
@@ -1739,12 +1609,9 @@ defmodule Emisar.Accounts do
 
   @doc """
   Internal — compose SSO/SCIM membership creation into a caller's transaction.
-  The account row serializes the plan-capacity decision with every other
-  membership creator; an existing membership returns `:already_member`, while
-  a full plan returns `{:over_limit, plan, limit}`. Active creation includes the
-  cross-account binding consequence; a directory row born suspended has granted
-  no access and deliberately skips it. The caller owns the outer commit and
-  `after_membership_activation_committed/1`.
+  Active creation includes the cross-account binding consequence; a directory
+  row born suspended has granted no access and deliberately skips it. The
+  caller owns the outer commit and `after_membership_activation_committed/1`.
   """
   # Defense in depth: `:owner` is never assignable via sync (the provider
   # changeset rejects it as a default_role too) — owner is a deliberate human
@@ -1799,7 +1666,6 @@ defmodule Emisar.Accounts do
     }
 
     multi
-    |> put_membership_capacity(account_id, user_id)
     |> Multi.insert(:membership, sso_membership_changeset(attrs, active?))
     |> Multi.run(:runner_access, fn repo, %{membership: membership} ->
       replace_runner_access_rows(repo, membership.id, access)
@@ -1827,60 +1693,6 @@ defmodule Emisar.Accounts do
     do: version
 
   defp directory_provider_version(_provider, _managed?), do: 0
-
-  # The account row is the predicate lock for a plan's member count: every path
-  # that can insert a membership takes it before counting. Postgres row locks
-  # cannot protect the absence of the next membership row, but this shared parent
-  # row can serialize that decision without raising the transaction isolation
-  # level. Keeping the duplicate check inside the same fence preserves the more
-  # useful `:already_member` answer even when the plan is otherwise full.
-  defp put_membership_capacity(%Multi{} = multi, account_id, user_id) do
-    multi
-    |> put_membership_account_lock(account_id)
-    |> put_membership_capacity_check(user_id)
-  end
-
-  defp put_membership_account_lock(%Multi{} = multi, account_id) do
-    Multi.run(multi, :membership_account, fn repo, changes ->
-      account_id = resolve_membership_value(account_id, changes)
-      fetch_and_lock_account(account_id, repo: repo)
-    end)
-  end
-
-  defp put_membership_capacity_check(%Multi{} = multi, user_id) do
-    Multi.run(multi, :membership_capacity, fn repo, changes ->
-      user_id = resolve_membership_value(user_id, changes)
-      account = Map.fetch!(changes, :membership_account)
-
-      membership_exists? =
-        if is_nil(user_id) do
-          false
-        else
-          queryable =
-            Membership.Query.not_deleted()
-            |> Membership.Query.by_account_and_user(account.id, user_id)
-
-          repo.exists?(queryable)
-        end
-
-      if membership_exists? do
-        {:error, :already_member}
-      else
-        case Billing.check_limit(account, :members) do
-          :ok -> {:ok, :available}
-          {:error, :over_limit, plan, limit} -> {:error, {:over_limit, plan, limit}}
-        end
-      end
-    end)
-  end
-
-  defp resolve_membership_value(value, changes) when is_function(value, 1), do: value.(changes)
-  defp resolve_membership_value(value, _changes), do: value
-
-  defp membership_limit_error({:over_limit, plan, limit}),
-    do: {:error, :over_limit, plan, limit}
-
-  defp membership_limit_error(reason), do: {:error, reason}
 
   @doc """
   Canonical runner access for a picker's explicit mode plus the raw
@@ -4082,18 +3894,20 @@ defmodule Emisar.Accounts do
   `{:ok, %{membership: m, user: u, invitation_token: token}}` on success,
   `{:error, %Ecto.Changeset{}}` when the submission is invalid, or
   `{:error, :already_member | :unauthorized | :insufficient_privileges |
-  :runner_access_exceeds_subject}` or
-  `{:error, :over_limit, plan, limit}` when the account has no free member slot.
+  :runner_access_exceeds_subject}`.
 
-  The account and selected runner rows are locked before the placeholder user,
-  membership, audit row, or delivery. This serializes concurrent member creators
-  and keeps a runner soft-delete from slipping into the grant.
+  The submission is revalidated against the account's live runner rows as the
+  transaction's first step — before the placeholder user, the membership, the
+  audit row, or any delivery — so a runner soft-deleted while the operator was
+  composing cannot slip into the grant.
 
   The caller is responsible for sending the invitation email; this
   context only persists the records and mints the token.
   """
   def invite_user_to_account(attrs, %Subject{account: %Account{id: account_id}} = subject)
       when is_map(attrs) do
+    # Membership is not plan-metered: collaboration is a deliberate growth
+    # lever, while runner capacity remains the paid quantity.
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -4102,14 +3916,12 @@ defmodule Emisar.Accounts do
       {token, token_digest} = Crypto.user_invite_token()
 
       Multi.new()
-      |> put_membership_account_lock(account_id)
       |> Multi.run(:invitation, fn repo, _changes ->
         validate_invitation(repo, attrs, subject)
       end)
       |> Multi.run(:user, fn repo, %{invitation: invitation} ->
         Users.fetch_or_create_and_lock_user_by_email(invitation.email, repo)
       end)
-      |> put_membership_capacity_check(fn %{user: user} -> user.id end)
       |> Multi.insert(:membership, fn %{user: user, invitation: invitation} ->
         Membership.Changeset.create(%{
           account_id: account_id,
@@ -4151,7 +3963,7 @@ defmodule Emisar.Accounts do
             else: {:error, changeset}
 
         {:error, reason} ->
-          membership_limit_error(reason)
+          {:error, reason}
       end
     end
   end

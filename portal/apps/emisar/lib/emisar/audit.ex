@@ -27,10 +27,10 @@ defmodule Emisar.Audit do
   engine origin) carries no request metadata, by construction.
   """
   use Supervisor
-  alias Emisar.{Accounts, Billing, Crypto, Repo, RequestContext, Runs}
   alias Emisar.Audit.{Authorizer, Event, Events}
   alias Emisar.Auth
   alias Emisar.Auth.Subject
+  alias Emisar.{Billing, Crypto, Repo, RequestContext, Runs}
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -565,15 +565,15 @@ defmodule Emisar.Audit do
     * `:limit` — page size, default #{100}, hard-capped at #{1_000}
 
   Returns `{:ok, events}` — a plain list of `%Audit.Event{}` rows in
-  ascending order, or `{:error, :unauthorized | :audit_export_not_available}`.
-  The continuous SIEM feed is paid; the controller projects the authorized
-  rows to NDJSON.
+  ascending order, or `{:error, :unauthorized | :audit_export_not_available}`
+  (export is the paid surface — see `list_events_for_export/2`). The
+  controller projects to NDJSON; the context just hands back rows.
   """
   @default_export_limit 100
   @max_export_limit 1_000
 
   def list_for_export(%Subject{} = subject, opts \\ []) do
-    with :ok <- ensure_can_continuously_export_audit(subject) do
+    with :ok <- ensure_can_export_audit(subject) do
       types = Keyword.get(opts, :event_types, [])
       limit = clamp_export_limit(Keyword.get(opts, :limit, @default_export_limit))
 
@@ -587,6 +587,19 @@ defmodule Emisar.Audit do
         |> Repo.all()
 
       {:ok, events}
+    end
+  end
+
+  @doc """
+  The CSV-download read — the operator's current filtered view, in the same
+  paginated shape as `list_events/2`, but gated on the paid audit-export
+  entitlement: the in-console trail stays on every plan, taking the data OUT
+  is Team+. Returns `{:ok, [event], %Paginator.Metadata{}}` or
+  `{:error, :unauthorized | :audit_export_not_available}`.
+  """
+  def list_events_for_export(%Subject{} = subject, opts \\ []) do
+    with :ok <- ensure_can_export_audit(subject) do
+      list_events(subject, opts)
     end
   end
 
@@ -931,69 +944,12 @@ defmodule Emisar.Audit do
   end
 
   @doc """
-  True when the subject may reach the audit export controls. The CSV and SIEM
-  paths apply their separate role, plan, and one-time-claim gates afterward.
+  True when the subject may take the record OUT of the product — the gate behind
+  the CSV and SIEM export controls. The plan entitlement is a separate,
+  account-level check; `ensure_can_export_audit/1` is authoritative for both.
   """
   def subject_can_export_audit?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.view_audit_permission())
-
-  @doc """
-  The operator-facing CSV state: `:repeatable` for an entitled full-trail role,
-  `:one_time` or `:used` for an owner without that entitlement, `:unavailable`
-  for another full-trail role, and `:unauthorized` without full audit access.
-  """
-  def csv_export_access(%Subject{} = subject) do
-    case Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
-      :ok -> csv_export_access_for_authorized(subject)
-      {:error, :unauthorized} -> :unauthorized
-    end
-  end
-
-  @doc """
-  Authorize one CSV response and reserve the owner-only fallback while its
-  bounded artifact is prepared. Returns
-  `{:ok, :repeatable | {:one_time, reservation_id}}` or
-  `{:error, :unauthorized | :audit_csv_export_not_available |
-  :audit_csv_export_already_used | :audit_csv_export_in_progress | :not_found}`.
-  """
-  def start_csv_export(%Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
-      start_authorized_csv_export(subject, csv_export_access_for_authorized(subject))
-    end
-  end
-
-  @doc """
-  Record a fully prepared CSV before response bytes leave. Repeatable exports
-  write the ordinary receipt; a one-time reservation completes its account
-  stamp and receipt atomically.
-  """
-  def finish_csv_export(%Subject{} = subject, access, opts, count)
-      when is_list(opts) and is_integer(count) and count > 0 do
-    case access do
-      :repeatable ->
-        record_export(subject, opts, count)
-
-      {:one_time, reservation_id} ->
-        Accounts.complete_one_time_audit_csv_export(
-          subject.account.id,
-          reservation_id,
-          subject,
-          opts,
-          count
-        )
-    end
-  end
-
-  @doc "Release a failed one-time CSV reservation; repeatable exports need no cleanup."
-  def cancel_csv_export(%Subject{}, :repeatable), do: :ok
-
-  def cancel_csv_export(%Subject{account: account}, {:one_time, reservation_id}) do
-    case Accounts.release_one_time_audit_csv_export(account.id, reservation_id) do
-      {:ok, _account} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
-  end
 
   # Either audit permission opens a read — how MUCH of the trail comes back is
   # `Authorizer.for_subject/2`'s call, not this gate's.
@@ -1004,56 +960,17 @@ defmodule Emisar.Audit do
     )
   end
 
-  # Continuous export stays paid and full-trail. A dedicated audit-export key
-  # reaches this gate for SIEM; the owner-only one-time CSV never does.
-  defp ensure_can_continuously_export_audit(%Subject{account: account} = subject) do
+  # Export (the SIEM sweep and the CSV download alike) is the paid surface —
+  # the in-console trail stays on every plan. The web's plan checks are
+  # courtesy navigation/copy; this gate is authoritative for both export reads.
+  # Deliberately the FULL-trail permission: taking the record out of the product
+  # is an owner/admin/SIEM act, not part of the finance seat's read.
+  defp ensure_can_export_audit(%Subject{account: account} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.view_audit_permission()) do
-      if Billing.continuous_audit_export_available?(account),
+      if Billing.audit_export_available?(account),
         do: :ok,
         else: {:error, :audit_export_not_available}
     end
   end
-
-  defp csv_export_access_for_authorized(%Subject{account: account} = subject) do
-    if Billing.continuous_audit_export_available?(account),
-      do: :repeatable,
-      else: one_time_csv_export_access(subject)
-  end
-
-  defp one_time_csv_export_access(%Subject{
-         role: :owner,
-         account: %Accounts.Account{one_time_audit_csv_exported_at: nil}
-       }),
-       do: :one_time
-
-  defp one_time_csv_export_access(%Subject{role: :owner}), do: :used
-  defp one_time_csv_export_access(%Subject{}), do: :unavailable
-
-  defp start_authorized_csv_export(%Subject{}, :repeatable), do: {:ok, :repeatable}
-
-  defp start_authorized_csv_export(%Subject{account: account} = subject, :one_time) do
-    case Accounts.reserve_one_time_audit_csv_export(account.id, subject) do
-      {:ok, reserved_account} ->
-        {:ok, {:one_time, reserved_account.one_time_audit_csv_export_reservation_id}}
-
-      {:error, :already_exported} ->
-        {:error, :audit_csv_export_already_used}
-
-      {:error, :export_in_progress} ->
-        {:error, :audit_csv_export_in_progress}
-
-      {:error, :unauthorized} ->
-        {:error, :unauthorized}
-
-      {:error, :not_found} ->
-        {:error, :not_found}
-    end
-  end
-
-  defp start_authorized_csv_export(%Subject{}, :used),
-    do: {:error, :audit_csv_export_already_used}
-
-  defp start_authorized_csv_export(%Subject{}, :unavailable),
-    do: {:error, :audit_csv_export_not_available}
 end

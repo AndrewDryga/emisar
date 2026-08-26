@@ -387,24 +387,24 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "continuous_audit_export_available?/1" do
+  describe "audit_export_available?/1" do
     setup do
       %{account: Fixtures.Accounts.create_account()}
     end
 
     test "true on Team and Enterprise (CSV download + SIEM API)", %{account: account} do
       Fixtures.Accounts.create_subscription(account, "team")
-      assert Billing.continuous_audit_export_available?(account)
+      assert Billing.audit_export_available?(account)
 
       enterprise = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(enterprise, "enterprise")
-      assert Billing.continuous_audit_export_available?(enterprise)
+      assert Billing.audit_export_available?(enterprise)
     end
 
     test "false on Free — the in-console trail stays; taking data out is paid", %{
       account: account
     } do
-      refute Billing.continuous_audit_export_available?(account)
+      refute Billing.audit_export_available?(account)
     end
 
     test "an audit-export entitlement overrides the plan gate", %{account: account} do
@@ -412,7 +412,7 @@ defmodule Emisar.BillingTest do
         entitlements: %{"features_audit_export_enabled?" => false}
       )
 
-      refute Billing.continuous_audit_export_available?(account)
+      refute Billing.audit_export_available?(account)
 
       granted = Fixtures.Accounts.create_account()
 
@@ -420,17 +420,17 @@ defmodule Emisar.BillingTest do
         entitlements: %{"features_audit_export_enabled?" => true}
       )
 
-      assert Billing.continuous_audit_export_available?(granted)
+      assert Billing.audit_export_available?(granted)
     end
   end
 
-  describe "continuous_audit_export_available_for_account_id?/2" do
+  describe "audit_export_available_for_account_id?/2" do
     test "withdraws repeated export when the subscription expires" do
       account = Fixtures.Accounts.create_account(plan: "team")
-      assert Billing.continuous_audit_export_available_for_account_id?(account.id, [])
+      assert Billing.audit_export_available_for_account_id?(account.id, [])
 
       Fixtures.Accounts.create_subscription(account, "team", status: "paused")
-      refute Billing.continuous_audit_export_available_for_account_id?(account.id, [])
+      refute Billing.audit_export_available_for_account_id?(account.id, [])
     end
   end
 
@@ -808,23 +808,6 @@ defmodule Emisar.BillingTest do
   end
 
   describe "check_limit/2 — entitlements override the compiled plan limits" do
-    test "Free's compiled member limit is one" do
-      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
-
-      assert Billing.check_limit(account, :members) ==
-               {:error, :over_limit, "free", 1}
-    end
-
-    test "Team's compiled member limit is unlimited" do
-      {_owner, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
-
-      for _ <- 1..12 do
-        Fixtures.Memberships.create_membership(account_id: account.id)
-      end
-
-      assert Billing.check_limit(account, :members) == :ok
-    end
-
     test "a lower runners_limit entitlement blocks before the plan default would" do
       account = Fixtures.Accounts.create_account()
 
@@ -2853,7 +2836,6 @@ defmodule Emisar.BillingTest do
       assert summary.plan == "pro"
       assert summary.plan_name == "Pro"
       assert summary.runner_limit == 50
-      # Free-floor fallback for the fields no entitlement covers…
       assert summary.member_limit == 1
       # …and nil pricing (custom), never the free plan's $0.
       refute summary.monthly_per_runner_cents

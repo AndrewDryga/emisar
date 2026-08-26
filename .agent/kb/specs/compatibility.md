@@ -98,10 +98,9 @@ message. `cloud_shutdown`, `runner_disabled`, and `account_disabled` reconnect.
 `runner_revoked` persists a terminal shutdown and requires re-enrollment;
 `runner_version_unsupported` persists one and requires a supported binary.
 The runner's wire golden captures every known frame. CI rejects a changed frame
-until the golden is deliberately regenerated, and the update command refuses
-non-additive regeneration at the same `protocol_version`; a rename, removal,
-retype, list mutation, or rewrite of a captured enum, status, or other scalar
-must bump the protocol version. There are no permanent same-version waivers.
+until the golden is deliberately regenerated, and refuses non-additive
+regeneration at the same `protocol_version`; a rename, removal, or retype must
+bump the protocol version.
 
 ### Pack, action, catalog, and trusted-manifest schemas
 
@@ -223,9 +222,8 @@ revision); the negotiated `MCP-Protocol-Version` must be sent on later
 requests, and an unsupported header is rejected with HTTP 400 (`-32022`).
 Tool names and descriptor field sets are compiled and fixture-checked. Tool
 inputs are strict: unknown or renamed fields are rejected. The bridge
-identifies itself as `emisar-mcp/<version>`. MCP `0.10.0` introduced the
-`cert_chain` envelope accepted by the current Portal, so the current bridge
-threshold is `mcp_minimum >= 0.10.0`, still warn-only in production today.
+identifies itself as `emisar-mcp/<version>` and the current bridge
+threshold is `mcp_minimum >= 0.3.0`, also warn-only in production today.
 
 **What happens on skew.** An older client calling a renamed or removed tool
 gets JSON-RPC `method-not-found`. A stray or renamed input field is rejected;
@@ -349,12 +347,10 @@ deprecation path, and already-issued `ems-` tokens must keep authenticating.
 (`application/x-ndjson`, one event object per line) for SIEM collectors,
 authenticated by a bearer `emk-` API key of the dedicated `audit_export`
 kind. The console also serves a CSV download of the same trail.
-An account owner may create one downloadable, filtered CSV on any plan; the
-continuous-export entitlement allows repeated CSV downloads and the SIEM API.
-The one-time allowance is consumed when the bounded artifact and its
-`audit.exported` receipt are committed, before browser transfer begins. A
-console CSV is bounded to 100,000 events or 256 MiB, whichever comes first; an
-empty or oversized attempt does not consume the owner's one-time export.
+The console CSV is bounded to 100,000 events or 256 MiB, whichever comes
+first. It is prepared before download headers are sent; an empty, changed,
+failed, or oversized attempt sends no CSV, and a complete prepared export is
+available through Support.
 
 **How it is versioned today.** There is no path version; the contract is the
 parameter and field names. Query parameters are `since` (ISO 8601 inclusive

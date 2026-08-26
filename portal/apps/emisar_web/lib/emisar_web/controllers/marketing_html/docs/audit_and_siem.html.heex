@@ -66,12 +66,13 @@
         so one filter answers what the agent did last night and why.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        An account owner can create one downloadable CSV on any plan. Team and Enterprise let every
-        role with full audit access repeat CSV downloads. The one-time allowance is used as soon as
-        the file is ready, before your browser starts saving it. A download covers at most
-        <span class="whitespace-nowrap">100,000 events</span>
-        or 256 MiB, whichever comes first; an empty or oversized attempt does not consume the
-        owner's one-time download.
+        A download covers at most <span class="whitespace-nowrap">100,000 events</span>
+        or <span class="whitespace-nowrap">256 MiB</span>
+        — past either bound, narrow the filters.
+        For a complete prepared export, email <a
+          href={EmisarWeb.MailTo.support()}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >support@emisar.dev</a>. <.plan_note tier={:team} />
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Runner and pack scope limit what a member can run, not what they can see here: the
@@ -81,8 +82,6 @@
 
       <.docs_h2 id="token">1. Mint an export token</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Continuous SIEM export is separate from the one-time CSV and is available on Team and
-        Enterprise. It does not consume the owner's CSV download.
         Mint a read-only audit-export token from <a
           href={~p"/app/audit/export"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -238,19 +237,17 @@ done</.docs_code>
       </p>
       <.docs_callout kind={:warn} title="Your collector shows up in its own feed.">
         <p>
-          Every non-empty SIEM page and every prepared CSV is itself recorded as
+          Every non-empty export is itself recorded as
           <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit.exported</code>
-          before its response completes, so an unfiltered collector sees its own earlier exports
-          on a later poll. The event payload names the
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">csv</code>
-          or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">siem</code>
-          transport. That is deliberate — exports are part of the trail — and it has two consequences.
+          after the page is read, so an unfiltered collector sees its own earlier exports on a
+          later poll. That is deliberate — exports are part of the trail — and it has two
+          consequences.
         </p>
         <p class="mt-3">
           Never treat <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">audit.exported</code>
-          as ordinary workspace activity: it shows the exporter ran, and only that. Exclude it
-          from activity dashboards and keep it for export monitoring, where an unexpected actor,
-          address, time, or transport is the real signal.
+          as operator activity: it shows the exporter ran, and only that. Exclude it from
+          activity dashboards and keep it for credential monitoring, where an export from an
+          unexpected address or time is the real signal.
         </p>
         <p class="mt-3">
           Never poll until a page comes back empty, because each read can create the event the

@@ -192,14 +192,7 @@ func (selection *Selection) include(file string) {
 		"runner/internal/signing/",
 		"runner/internal/attest/",
 		"mcp/internal/attest/",
-	) || member(
-		file,
-		"docker-compose.yml",
-		"tools/internal/devtool/e2e.go",
-		"mcp/sign.go",
-		"mcp/main.go",
-		"portal/apps/emisar/lib/emisar/runs/attestation.ex",
-	) {
+	) || member(file, "docker-compose.yml", "tools/internal/devtool/e2e.go", "mcp/sign.go", "mcp/main.go") {
 		selection.SigningE2E = true
 	}
 	if hasAnyPrefix(

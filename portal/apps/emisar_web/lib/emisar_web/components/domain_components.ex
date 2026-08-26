@@ -127,7 +127,7 @@ defmodule EmisarWeb.DomainComponents do
       tone: :rose,
       title: "Billing status unavailable",
       body:
-        "Paid features are temporarily unavailable while billing status is verified. Billing, recovery, an unused one-time audit CSV allowance, and cleanup remain available.",
+        "Paid features are temporarily unavailable while billing status is verified. Billing, recovery, and cleanup remain available.",
       show_effective_at: false
     }
 

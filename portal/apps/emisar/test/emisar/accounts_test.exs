@@ -979,7 +979,7 @@ defmodule Emisar.AccountsTest do
                  Fixtures.Accounts.account_attrs()
                )
 
-      {_inviter, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_inviter, _account, subject} = Fixtures.Subjects.owner_subject()
 
       assert {:ok, %{user: invited_user}} =
                Accounts.invite_user_to_account(
@@ -1543,140 +1543,6 @@ defmodule Emisar.AccountsTest do
       assert changeset = Accounts.change_account(account, %{name: ""})
       refute changeset.valid?
       assert "can't be blank" in errors_on(changeset).name
-    end
-  end
-
-  describe "reserve_one_time_audit_csv_export/2" do
-    test "a current owner gets one durable reservation and a concurrent start is refused" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-
-      assert {:ok, reserved} = Accounts.reserve_one_time_audit_csv_export(account.id, subject)
-      assert reserved.one_time_audit_csv_export_reservation_id
-      assert reserved.one_time_audit_csv_export_reserved_at
-      refute reserved.one_time_audit_csv_exported_at
-
-      assert Accounts.reserve_one_time_audit_csv_export(account.id, subject) ==
-               {:error, :export_in_progress}
-    end
-
-    test "a stale owner Subject is refused after its membership is demoted" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-
-      Accounts.Membership
-      |> Repo.get!(subject.membership_id)
-      |> Ecto.Changeset.change(role: :admin)
-      |> Repo.update!()
-
-      assert Accounts.reserve_one_time_audit_csv_export(account.id, subject) ==
-               {:error, :unauthorized}
-    end
-
-    test "an expired reservation is replaced and fenced before the old request can complete" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      {:ok, first} = Accounts.reserve_one_time_audit_csv_export(account.id, subject)
-      first_id = first.one_time_audit_csv_export_reservation_id
-
-      first
-      |> Ecto.Changeset.change(
-        one_time_audit_csv_export_reserved_at: DateTime.add(DateTime.utc_now(), -31 * 60, :second)
-      )
-      |> Repo.update!()
-
-      assert {:ok, replacement} =
-               Accounts.reserve_one_time_audit_csv_export(account.id, subject)
-
-      replacement_id = replacement.one_time_audit_csv_export_reservation_id
-      refute replacement_id == first_id
-
-      assert Accounts.complete_one_time_audit_csv_export(
-               account.id,
-               first_id,
-               subject,
-               [filter: []],
-               1
-             ) == {:error, :reservation_mismatch}
-
-      refute Repo.reload!(account).one_time_audit_csv_exported_at
-
-      assert {:ok, completed} =
-               Accounts.complete_one_time_audit_csv_export(
-                 account.id,
-                 replacement_id,
-                 subject,
-                 [filter: []],
-                 1
-               )
-
-      assert completed.one_time_audit_csv_exported_at
-    end
-
-    test "an absent, malformed, or foreign account id is not found" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-
-      assert Accounts.reserve_one_time_audit_csv_export(Ecto.UUID.generate(), subject) ==
-               {:error, :not_found}
-
-      assert Accounts.reserve_one_time_audit_csv_export("not-an-account-id", subject) ==
-               {:error, :not_found}
-
-      foreign_account = Fixtures.Accounts.create_account()
-
-      assert Accounts.reserve_one_time_audit_csv_export(foreign_account.id, subject) ==
-               {:error, :not_found}
-    end
-  end
-
-  describe "release_one_time_audit_csv_export/2" do
-    test "only the matching reservation can be released" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      {:ok, reserved} = Accounts.reserve_one_time_audit_csv_export(account.id, subject)
-
-      assert Accounts.release_one_time_audit_csv_export(account.id, Ecto.UUID.generate()) ==
-               {:error, :reservation_mismatch}
-
-      assert {:ok, released} =
-               Accounts.release_one_time_audit_csv_export(
-                 account.id,
-                 reserved.one_time_audit_csv_export_reservation_id
-               )
-
-      refute released.one_time_audit_csv_export_reservation_id
-      refute released.one_time_audit_csv_export_reserved_at
-    end
-  end
-
-  describe "complete_one_time_audit_csv_export/5" do
-    test "completion stamps the account and its audit receipt atomically" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      {:ok, reserved} = Accounts.reserve_one_time_audit_csv_export(account.id, subject)
-      reservation_id = reserved.one_time_audit_csv_export_reservation_id
-
-      assert {:ok, completed} =
-               Accounts.complete_one_time_audit_csv_export(
-                 account.id,
-                 reservation_id,
-                 subject,
-                 [filter: []],
-                 7
-               )
-
-      assert completed.one_time_audit_csv_exported_at
-      refute completed.one_time_audit_csv_export_reservation_id
-
-      exported =
-        AuditEvent
-        |> Repo.all()
-        |> Enum.find(&(&1.account_id == account.id and &1.event_type == "audit.exported"))
-
-      assert %AuditEvent{payload: %{"count" => 7}} = exported
-
-      assert Accounts.complete_one_time_audit_csv_export(
-               account.id,
-               reservation_id,
-               subject,
-               [filter: []],
-               7
-             ) == {:error, :reservation_mismatch}
     end
   end
 
@@ -3113,22 +2979,6 @@ defmodule Emisar.AccountsTest do
                {:error, :owner_not_assignable}
 
       # Nothing was written — the user has no membership in the account.
-      assert is_nil(Fixtures.Memberships.fetch_membership(account.id, user.id))
-    end
-
-    test "Free refuses a JIT, SCIM, or admin-provisioned second member" do
-      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
-      user = Fixtures.Users.create_user()
-
-      assert commit_sso_membership(
-               account.id,
-               user.id,
-               :operator,
-               Accounts.RunnerAccess.none(),
-               directory_managed?: true
-             ) == {:error, {:over_limit, "free", 1}}
-
-      assert Accounts.count_memberships(account.id) == 1
       assert is_nil(Fixtures.Memberships.fetch_membership(account.id, user.id))
     end
   end
@@ -5368,7 +5218,7 @@ defmodule Emisar.AccountsTest do
       {actor, [recovery_code | _remaining_codes]} =
         Fixtures.Users.enable_mfa!(mfa_reset_secret(), actor_subject)
 
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
 
       assert {:ok, %{membership: pending_membership}} =
                Accounts.invite_user_to_account(
@@ -5861,11 +5711,6 @@ defmodule Emisar.AccountsTest do
 
     test "a removed member can be re-invited (tombstone doesn't hold the seat)" do
       account = Fixtures.Accounts.create_account()
-
-      Fixtures.Accounts.create_subscription(account, "team",
-        entitlements: %{"members_limit" => 2}
-      )
-
       owner = Fixtures.Users.create_user()
 
       Fixtures.Memberships.create_membership(
@@ -6010,7 +5855,7 @@ defmodule Emisar.AccountsTest do
   describe "invite_user_to_account/2" do
     test "creates a placeholder user for an unknown email" do
       inviter = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account(%{plan: "team"})
+      account = Fixtures.Accounts.create_account()
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
@@ -6043,7 +5888,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "persists selected pack access on the invited membership" do
-      {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
 
       attrs =
@@ -6089,7 +5934,7 @@ defmodule Emisar.AccountsTest do
     test "reuses the existing user when one is already registered" do
       inviter = Fixtures.Users.create_user()
       existing = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account(%{plan: "team"})
+      account = Fixtures.Accounts.create_account()
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
@@ -6110,22 +5955,6 @@ defmodule Emisar.AccountsTest do
                )
 
       assert id == existing.id
-    end
-
-    test "Free refuses a second member without leaving a placeholder or audit" do
-      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
-      email = "free-cap-#{System.unique_integer([:positive])}@example.test"
-
-      assert Accounts.invite_user_to_account(
-               Fixtures.Accounts.invitation_attrs(email: email, role: "viewer"),
-               subject
-             ) == {:error, :over_limit, "free", 1}
-
-      assert Accounts.count_memberships(account.id) == 1
-      assert Users.fetch_user_by_email(email) == {:error, :not_found}
-
-      assert {:ok, [], _meta} =
-               Audit.list_events(subject, filter: [event_type: ["user.invited"]])
     end
 
     test "refuses duplicate memberships" do
@@ -6178,9 +6007,9 @@ defmodule Emisar.AccountsTest do
                {:error, :insufficient_privileges}
     end
 
-    test "Team seats are uncapped — inviting a large roster succeeds" do
+    test "member allowance is not enforced — a Free account can invite a large roster" do
       inviter = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account(%{plan: "team"})
+      account = Fixtures.Accounts.create_account()
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
@@ -6190,8 +6019,8 @@ defmodule Emisar.AccountsTest do
 
       subject = Fixtures.Subjects.subject_for(inviter, account, role: :owner)
 
-      # Team's contract is unlimited members, so a large batch all lands even
-      # though every insert still passes through the same capacity boundary.
+      # Free is advertised for one user, but invitation is deliberately not a
+      # billing-enforcement boundary, so a large batch of invites all lands.
       for n <- 1..12 do
         email = "seat-#{n}-#{System.unique_integer([:positive])}@example.test"
 
@@ -6212,7 +6041,7 @@ defmodule Emisar.AccountsTest do
 
     test "an invite always lands in the SUBJECT's account — B's owner can't seed account A" do
       account_a = Fixtures.Accounts.create_account()
-      account_b = Fixtures.Accounts.create_account(%{plan: "team"})
+      account_b = Fixtures.Accounts.create_account()
       subject_b = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_b)
 
       email = "cross-#{System.unique_integer([:positive])}@example.test"
@@ -6234,7 +6063,7 @@ defmodule Emisar.AccountsTest do
 
   describe "invite_user_to_account_and_deliver/3" do
     test "emails the join link and reports it sent, without handing back the token" do
-      {owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
       email = "deliver-#{System.unique_integer([:positive])}@example.test"
 
       assert {:ok, result} =
@@ -6260,7 +6089,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "a suppressed address still gets the invitation, but no email is sent" do
-      {owner, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
       email = "bounced-#{System.unique_integer([:positive])}@example.test"
       {:ok, _} = Mail.suppress(email, :hard_bounce, "bounce")
 
@@ -6278,7 +6107,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "a mailer failure is reported while the invitation stays persisted" do
-      {owner, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
       email = "mailer-down-#{System.unique_integer([:positive])}@example.test"
       Emisar.Config.put_override(:emisar, :mailer_deliver_error, {:error, {:failed, :boom}})
 
@@ -6325,7 +6154,7 @@ defmodule Emisar.AccountsTest do
 
   describe "resend_account_invitation/2" do
     test "refreshes the pending invite token and validity window" do
-      {_owner, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       email = "resend-#{System.unique_integer([:positive])}@example.test"
 
       {:ok, %{membership: membership, user: user, invitation_token: old_token}} =
@@ -6394,11 +6223,8 @@ defmodule Emisar.AccountsTest do
     end
 
     test "an owner of another account cannot resend this account's invitation" do
-      {_owner_a, _account_a, subject_a} =
-        Fixtures.Subjects.owner_subject(%{plan: "team"})
-
-      {_owner_b, _account_b, subject_b} =
-        Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
@@ -6417,7 +6243,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "an accepted invitation is no longer resendable" do
-      {_owner, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, %{membership: membership, user: user, invitation_token: token}} =
         Accounts.invite_user_to_account(
@@ -6463,7 +6289,7 @@ defmodule Emisar.AccountsTest do
 
   describe "resend_account_invitation_and_deliver/3" do
     test "rotates the token, emails the refreshed link, and hands back no token" do
-      {owner, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
       email = "resend-deliver-#{System.unique_integer([:positive])}@example.test"
 
       {:ok, %{membership: membership}} =
@@ -6487,7 +6313,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "reports a suppressed resend after rotating the invitation" do
-      {owner, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
       email = "suppressed-resend-#{System.unique_integer([:positive])}@example.test"
 
       {:ok, %{membership: membership}} =
@@ -6511,11 +6337,8 @@ defmodule Emisar.AccountsTest do
     end
 
     test "an owner of another account cannot resend, and nothing is emailed" do
-      {_owner_a, _account_a, subject_a} =
-        Fixtures.Subjects.owner_subject(%{plan: "team"})
-
-      {owner_b, _account_b, subject_b} =
-        Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
@@ -6539,7 +6362,7 @@ defmodule Emisar.AccountsTest do
 
   describe "fetch_invitation_by_token/2" do
     test "resolves a pending invitation by its raw token" do
-      {_owner, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, %{membership: membership, invitation_token: token}} =
         Accounts.invite_user_to_account(
@@ -6556,7 +6379,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "honors the :preload option for the accept page's render" do
-      {_owner, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, %{invitation_token: token}} =
         Accounts.invite_user_to_account(
@@ -6573,7 +6396,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "does not resolve an invitation for a disabled account" do
-      {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, %{invitation_token: token}} =
         Accounts.invite_user_to_account(
@@ -6603,7 +6426,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "an accepted invitation no longer resolves (pending-only)" do
-      {_owner, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, %{membership: membership, user: user, invitation_token: token}} =
         Accounts.invite_user_to_account(
@@ -6624,7 +6447,7 @@ defmodule Emisar.AccountsTest do
   describe "mark_invitation_accepted/3" do
     test "stamps invitation_accepted_at + clears the token without touching the user" do
       inviter = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account(%{plan: "team"})
+      account = Fixtures.Accounts.create_account()
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
@@ -6660,7 +6483,7 @@ defmodule Emisar.AccountsTest do
 
     test "a different signed-in user can't accept (burn) someone else's invite" do
       inviter = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account(%{plan: "team"})
+      account = Fixtures.Accounts.create_account()
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
@@ -6693,7 +6516,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "a stale invitation cannot be accepted after the account is disabled" do
-      {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, %{membership: membership, user: user, invitation_token: token}} =
         Accounts.invite_user_to_account(
@@ -6724,7 +6547,7 @@ defmodule Emisar.AccountsTest do
 
   describe "accept_invitation/3" do
     test "sets the invitee's name + password, confirms them, and clears the token" do
-      {_owner, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, %{membership: membership, user: invitee, invitation_token: token}} =
         Accounts.invite_user_to_account(
@@ -6754,7 +6577,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "the first acceptor wins — a second accept on the burnt token is :not_found" do
-      {_owner, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, %{membership: membership, invitation_token: token}} =
         Accounts.invite_user_to_account(
@@ -6785,7 +6608,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "a stale invitation cannot provision a user after the account is disabled" do
-      {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, %{membership: membership, user: invitee, invitation_token: token}} =
         Accounts.invite_user_to_account(

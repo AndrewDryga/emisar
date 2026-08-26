@@ -278,7 +278,6 @@ defmodule EmisarWeb.SSOController do
   defp failure_reason(:account_disabled), do: "account_disabled"
   defp failure_reason(:email_domain_not_allowed), do: "email_domain_not_allowed"
   defp failure_reason(:email_taken), do: "email_already_bound"
-  defp failure_reason({:over_limit, _plan, _limit}), do: "member_limit_reached"
   defp failure_reason(:identity_pending_approval), do: "identity_pending_approval"
   defp failure_reason(:identity_namespace_changed), do: "provider_config_changed"
   defp failure_reason(:identity_already_linked), do: "identity_conflict"
@@ -563,10 +562,6 @@ defmodule EmisarWeb.SSOController do
 
   defp callback_error_message(:email_domain_not_allowed) do
     "Your email domain isn't permitted for this single sign-on connection. Contact your team admin."
-  end
-
-  defp callback_error_message({:over_limit, _plan, _limit}) do
-    "This workspace has reached its member limit. Ask an admin to upgrade its plan."
   end
 
   defp callback_error_message(_other),

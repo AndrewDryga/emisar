@@ -186,7 +186,7 @@ defmodule Emisar.BillingManagerRoleTest do
     test "cannot export the trail", %{subject: subject} do
       refute Audit.subject_can_export_audit?(subject)
       assert Audit.list_for_export(subject) == {:error, :unauthorized}
-      assert Audit.start_csv_export(subject) == {:error, :unauthorized}
+      assert Audit.list_events_for_export(subject) == {:error, :unauthorized}
     end
   end
 
@@ -236,7 +236,6 @@ defmodule Emisar.BillingManagerRoleTest do
   # operations — role first, access first, directory sync — that leaves one.
   describe "no runner or pack scope, by any route" do
     setup %{account: account} do
-      Fixtures.Accounts.create_subscription(account, "team")
       owner = Fixtures.Users.create_user()
 
       Fixtures.Memberships.create_membership(
@@ -350,7 +349,6 @@ defmodule Emisar.BillingManagerRoleTest do
     test "an admin assigns it too — admins hold the manage_billing it grants", %{
       account: account
     } do
-      Fixtures.Accounts.create_subscription(account, "team")
       admin = Fixtures.Users.create_user()
 
       Fixtures.Memberships.create_membership(

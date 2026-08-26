@@ -17,9 +17,8 @@
     >
       <.docs_header current="billing">
         <:dek>
-          Your plan sets this account's hard limits — how many runners connect, how many people you
-          can invite, how long the audit log is kept, and which features are on. Billing runs on
-          Paddle; manage it on the
+          Your plan sets this account's runner capacity, included users, audit retention, and
+          available features. Billing runs on Paddle; manage it on the
           <a
             href={~p"/app/billing"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -30,8 +29,7 @@
 
       <.docs_h2 id="plans">Plans and limits</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        emisar has three plans; a new account starts on Free. Each plan sets three hard
-        limits.
+        emisar has three plans; a new account starts on Free.
       </p>
       <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-900">
         <table class="w-full min-w-[520px] text-left text-sm">
@@ -94,13 +92,7 @@
               <td class="px-4 py-3 align-top whitespace-nowrap">Team and Enterprise</td>
             </tr>
             <tr>
-              <td class="px-4 py-3 align-top text-zinc-300">One-time audit CSV for the owner</td>
-              <td class="px-4 py-3 align-top whitespace-nowrap">Every plan</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3 align-top text-zinc-300">
-                Repeated audit CSV + continuous SIEM export
-              </td>
+              <td class="px-4 py-3 align-top text-zinc-300">Audit export (CSV + SIEM)</td>
               <td class="px-4 py-3 align-top whitespace-nowrap">Team and Enterprise</td>
             </tr>
             <tr>
@@ -125,8 +117,8 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Audit export.</strong>
-            Every plan gives an owner one filtered audit CSV. Team and Enterprise add repeated
-            CSV downloads and the continuous NDJSON API. See <.link
+            Every plan keeps the full trail in the console; taking it out — the CSV download
+            and the NDJSON API — is what the plan gates. See <.link
               navigate={~p"/docs/audit-and-siem"}
               class="text-brand-400 hover:text-brand-300"
             >audit &amp; SIEM</.link>.
@@ -145,9 +137,9 @@
 
       <.docs_h2 id="usage-and-limits">When you reach a limit</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The runner and member caps are enforced when you add the next one, not retroactively
-        — a plan never silently disables something you already have. The Billing page shows
-        live usage against each cap.
+        Runner caps are enforced when you add the next one, not retroactively — a plan never
+        silently disables a runner you already have. The Billing page shows live runner and
+        member usage.
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -156,14 +148,6 @@
             <strong class="text-zinc-200">Runners.</strong>
             Enrolling a runner past the cap is refused — the registration fails with an
             over-limit error, and existing runners keep working.
-          </span>
-        </li>
-        <li class="flex items-start gap-2.5">
-          <span class="flex-none text-zinc-500">—</span>
-          <span>
-            <strong class="text-zinc-200">Team members.</strong>
-            Inviting a member past the cap is refused the same way (Free allows one, so the second
-            person needs Team); people already in the account keep their access.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -216,8 +200,7 @@
           Cancelling does not cut access immediately: the plan and its limits stay active
           until the cancellation date Paddle schedules, and Billing shows that date. At that
           deadline the account moves to Free limits. Paid integrations become dormant, but their
-          configuration is kept so an owner can resubscribe, use an unused one-time audit CSV
-          allowance, or clean up.
+          configuration is kept so an owner can resubscribe or clean up.
         </p>
       </.docs_callout>
       <.docs_callout kind={:note} title="Payment recovery keeps Team access available">

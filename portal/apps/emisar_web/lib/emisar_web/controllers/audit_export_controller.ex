@@ -254,11 +254,12 @@ defmodule EmisarWeb.AuditExportController do
     end
   end
 
-  # The continuous SIEM feed is Team+. Every plan's separate owner-only CSV
-  # fallback never authenticates with an export token and cannot reach here.
-  # Courtesy copy — `Audit.list_for_export/2` enforces the same gate.
+  # Audit export (SIEM API + CSV download alike) is a Team+ feature — the
+  # in-console trail is on every plan; taking the data out is paid. 403 with
+  # an upgrade pointer, mirroring the scope error's shape. Courtesy copy —
+  # `Audit.list_for_export/2` enforces the same gate authoritatively.
   defp require_export_plan(conn, _opts) do
-    if Billing.continuous_audit_export_available?(conn.assigns.current_subject.account) do
+    if Billing.audit_export_available?(conn.assigns.current_subject.account) do
       conn
     else
       conn |> plan_required() |> halt()
@@ -271,7 +272,7 @@ defmodule EmisarWeb.AuditExportController do
     |> json(%{
       error: "plan_required",
       required: "team",
-      message: "Continuous SIEM export is available on Team. Upgrade in Settings → Billing."
+      message: "Audit export is available on the Team plan. Upgrade in Settings → Billing."
     })
   end
 

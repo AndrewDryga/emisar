@@ -279,16 +279,7 @@ defmodule EmisarWeb.MarketingTest do
     pricing = conn |> get(~p"/pricing") |> html_response(200)
     pricing_document = LazyHTML.from_document(pricing)
 
-    assert pricing_comparison_row_text(pricing_document, "audit-csv") ==
-             "One-time audit CSV for the owner"
-
-    assert pricing_comparison_row_text(pricing_document, "audit-export") ==
-             "Repeated audit CSV + continuous SIEM export —"
-
-    assert pricing_document
-           |> LazyHTML.query(~s([data-feature="audit-csv"] [data-icon="state.included"]))
-           |> LazyHTML.attribute("data-icon")
-           |> length() == 3
+    assert pricing_comparison_row_text(pricing_document, "audit-export") == "SIEM export —"
 
     assert pricing_document
            |> LazyHTML.query(~s([data-feature="audit-export"] [data-icon="state.included"]))
@@ -782,7 +773,6 @@ defmodule EmisarWeb.MarketingTest do
       team_features = plans["team"].features
 
       for {row, feature} <- [
-            {"audit-csv", :audit_csv},
             {"audit-export", :audit_export},
             {"sso", :sso},
             {"scim", :scim}
@@ -2104,6 +2094,12 @@ defmodule EmisarWeb.MarketingTest do
       assert billing =~ "365 days"
       assert billing =~ ~s(href="/docs/audit-and-siem#retention")
       assert billing =~ "Paddle"
+      assert billing =~ ~r/>Free<\/td> <td[^>]*>3<\/td> <td[^>]*>1<\/td> <td[^>]*>7 days<\/td>/
+
+      assert billing =~
+               ~r/>Team<\/td> <td[^>]*>100<\/td> <td[^>]*>Unlimited<\/td> <td[^>]*>90 days<\/td>/
+
+      refute billing =~ "how many people you can invite"
     end
 
     test "the CSI data-loss use case renders its incident narrative and CTAs", %{conn: conn} do
@@ -2775,6 +2771,9 @@ defmodule EmisarWeb.MarketingTest do
       # The CSV cap mirrors AuditDownloadController's audit_download_max_rows
       # default; the plan gate renders through the shared plan_note.
       assert html =~ "100,000 events"
+      assert html =~ "256 MiB"
+      assert html =~ "complete prepared export"
+      assert html =~ "mailto:support@emisar.dev"
     end
 
     test "audit & SIEM says plainly that emisar does not push", %{conn: conn} do
@@ -2826,13 +2825,12 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s(href="/docs/credentials#audit-tokens")
     end
 
-    test "audit & SIEM distinguishes export receipts from workspace activity", %{conn: conn} do
+    test "audit & SIEM explains its own exports without calling them activity", %{conn: conn} do
       html = conn |> get(~p"/docs/audit-and-siem") |> html_response(200) |> squish()
 
       assert html =~ ~s(id="health")
       assert html =~ "audit.exported"
-      assert html =~ "as ordinary workspace activity"
-      assert html =~ "unexpected actor, address, time, or transport"
+      assert html =~ "as operator activity"
 
       # Each read can create the event the next read finds, so "drain until
       # empty" is a loop that feeds itself.
@@ -3176,6 +3174,7 @@ defmodule EmisarWeb.MarketingTest do
       terms = conn |> get(~p"/terms") |> html_response(200)
       refund = conn |> get(~p"/refund-policy") |> html_response(200)
       dpa = conn |> get(~p"/dpa") |> html_response(200)
+      terms_text = squish(terms)
 
       # Privacy: support (data requests) + security (disclosure).
       assert privacy =~ "mailto:support@emisar.dev"
@@ -3186,6 +3185,15 @@ defmodule EmisarWeb.MarketingTest do
       assert refund =~ "mailto:support@emisar.dev"
       assert refund =~ "mailto:sales@emisar.dev"
       assert dpa =~ "mailto:support@emisar.dev"
+
+      assert privacy =~ "full account snapshot"
+      assert privacy =~ "we'll prepare and"
+      assert privacy =~ "send it to you"
+      assert terms_text =~ "Team and Enterprise accounts can download the standard audit export"
+      assert terms_text =~ "On any plan"
+      assert terms_text =~ "complete prepared copy"
+      assert dpa =~ "On any plan"
+      assert dpa =~ "we will prepare the delivery"
     end
 
     test "the DPA separates minimum measures from customer-controlled runner controls", %{
@@ -3212,28 +3220,6 @@ defmodule EmisarWeb.MarketingTest do
 
       refute text =~
                "Signed dispatch and local admission control — a compromised control plane cannot forge an action"
-    end
-
-    test "privacy and the DPA distinguish one-time audit CSV from continuous export", %{
-      conn: conn
-    } do
-      privacy = conn |> get(~p"/privacy") |> html_response(200) |> squish()
-      dpa = conn |> get(~p"/dpa") |> html_response(200) |> squish()
-
-      for text <- [privacy, dpa] do
-        assert text =~ "account owner can create one downloadable"
-        assert text =~ "audit-log"
-        assert text =~ "allowance is used as soon as the file is ready"
-        assert text =~ "before your browser starts saving it"
-        assert text =~ "Team and Enterprise add repeated CSV downloads"
-        assert text =~ "/api/audit"
-        assert text =~ "full account snapshot"
-      end
-
-      assert privacy =~ "up to 100,000 events"
-      assert privacy =~ "256 MiB"
-      assert privacy =~ "not a full account archive"
-      refute privacy =~ "working on a one-click export"
     end
 
     test "the privacy, trust, and DPA pages name only the real subprocessors", %{conn: conn} do

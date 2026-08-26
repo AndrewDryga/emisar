@@ -121,7 +121,6 @@ defmodule Emisar.Runs.AttestationTest do
     test "rejects unknown, missing, and malformed envelope fields" do
       malformed = [
         Map.put(envelope(), "extra", true),
-        envelope() |> Map.delete("cert_chain") |> Map.put("cert", %{"legacy" => true}),
         Map.delete(envelope(), "nonce"),
         Map.put(envelope(), "runner_refs", Enum.reverse(@runner_refs)),
         Map.put(envelope(), "runner_refs", @runner_refs ++ @runner_refs),

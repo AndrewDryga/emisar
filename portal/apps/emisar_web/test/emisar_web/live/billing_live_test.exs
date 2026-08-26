@@ -805,7 +805,7 @@ defmodule EmisarWeb.BillingLiveTest do
 
       assert html =~ "Billing status unavailable"
       assert html =~ "Paid features are temporarily unavailable"
-      assert html =~ "an unused one-time audit CSV allowance"
+      assert html =~ "Billing, recovery, and cleanup remain available"
       assert html =~ "Current plan"
     end
 

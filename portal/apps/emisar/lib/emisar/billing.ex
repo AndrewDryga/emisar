@@ -33,7 +33,6 @@ defmodule Emisar.Billing do
         runners: "3 runners",
         members: "1 user",
         audit_retention: "7-day audit retention",
-        audit_csv: "One-time audit CSV for the owner",
         support: "Community support"
       ]
     },
@@ -50,8 +49,7 @@ defmodule Emisar.Billing do
         members: "Unlimited users",
         sso: "Single sign-on (OIDC)",
         audit_retention: "90-day audit retention",
-        audit_csv: "One-time audit CSV for the owner",
-        audit_export: "Repeated audit CSV + continuous SIEM export",
+        audit_export: "Audit export (CSV + SIEM)",
         support: "Email support"
       ]
     },
@@ -338,14 +336,13 @@ defmodule Emisar.Billing do
     )
   end
 
-  @doc "True when the account's plan includes repeated audit CSV downloads and the continuous SIEM/NDJSON API (a `features_audit_export_enabled?` entitlement, else Team and Enterprise). Every plan separately gives an owner one CSV export."
-  def continuous_audit_export_available?(%Accounts.Account{} = account) do
-    continuous_audit_export_available_for_account_id?(account.id)
+  @doc "True when the account's plan includes audit-log export — the CSV download AND the SIEM/NDJSON API (a `features_audit_export_enabled?` entitlement, else Team and Enterprise). Free keeps the in-console trail; taking the data OUT is the paid surface."
+  def audit_export_available?(%Accounts.Account{} = account) do
+    audit_export_available_for_account_id?(account.id)
   end
 
   @doc false
-  def continuous_audit_export_available_for_account_id?(account_id, opts \\ [])
-      when is_binary(account_id) do
+  def audit_export_available_for_account_id?(account_id, opts \\ []) when is_binary(account_id) do
     posture = account_id |> subscription_for_account(opts) |> effective_plan()
 
     entitled_feature(
@@ -998,11 +995,15 @@ defmodule Emisar.Billing do
     )
   end
 
-  @doc "Internal — returns :ok when the account is within its plan limit, otherwise an over-limit error."
-  # Called by runner bootstrap before any Subject exists, by Accounts inside the
-  # locked membership-creation transaction, and by Catalog/admin flows that
-  # already authorized upstream. The check itself is account-scoped (the owning
-  # context's row count), not subject-scoped.
+  @doc """
+  Internal — returns :ok if the account is within plan limits for `resource`.
+  Returns `{:error, :over_limit, plan, limit}` otherwise.
+
+  Called by `Runners.register_via_enrollment_key/2` on the bootstrap path
+  before any Subject exists, and by `Catalog`/admin flows that already
+  authorized upstream. The check itself is account-scoped (the runner
+  counting), not subject-scoped.
+  """
   def check_limit(%Accounts.Account{} = account, resource) do
     posture =
       account.id
@@ -1020,7 +1021,6 @@ defmodule Emisar.Billing do
   end
 
   defp limit_key(:runners), do: :runners_limit
-  defp limit_key(:members), do: :members_limit
 
   # The owning contexts count their own rows — billing only owns the
   # limit semantics.

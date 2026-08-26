@@ -1555,7 +1555,7 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "csv_export_access/1" do
+  describe "list_events_for_export/2 (the CSV download read)" do
     setup do
       account = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(account, "team")
@@ -1563,18 +1563,28 @@ defmodule Emisar.AuditTest do
       %{account: account, subject: subject}
     end
 
-    test "a paid full-trail role has repeatable access", %{subject: subject} do
-      assert Audit.csv_export_access(subject) == :repeatable
+    test "returns the same filtered page shape as list_events/2", %{
+      account: account,
+      subject: subject
+    } do
+      {:ok, event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
+      {:ok, _denied} = Audit.log(account.id, "approval.denied", actor_kind: "user")
+      event_id = event.id
+
+      assert {:ok, [%Audit.Event{id: ^event_id}], _meta} =
+               Audit.list_events_for_export(subject, filter: [event_type: ["user.signed_in"]])
     end
 
-    test "a Free owner has one-time access until the durable claim is used" do
+    test "a free account is refused while its in-console trail stays readable" do
       account = Fixtures.Accounts.create_account()
       subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
+      {:ok, _event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
 
-      assert Audit.csv_export_access(subject) == :one_time
+      assert Audit.list_events_for_export(subject) == {:error, :audit_export_not_available}
+      assert {:ok, [_event], _meta} = Audit.list_events(subject)
     end
 
-    test "a withdrawn paid entitlement falls back to the owner's one-time CSV", %{
+    test "a withdrawn entitlement is refused even on Team", %{
       account: account,
       subject: subject
     } do
@@ -1582,122 +1592,31 @@ defmodule Emisar.AuditTest do
         entitlements: %{"features_audit_export_enabled?" => false}
       )
 
-      assert Audit.csv_export_access(subject) == :one_time
+      assert Audit.list_events_for_export(subject) == {:error, :audit_export_not_available}
     end
 
-    test "a Free admin cannot consume the owner-only CSV" do
-      account = Fixtures.Accounts.create_account()
-      admin = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
-
-      assert Audit.csv_export_access(subject) == :unavailable
-    end
-
-    test "a no-view_audit role is unauthorized before the plan is consulted", %{
+    test "a no-view_audit role is :unauthorized before the plan is consulted", %{
       account: account
     } do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
 
-      assert Audit.csv_export_access(subject) == :unauthorized
-    end
-  end
-
-  describe "start_csv_export/1" do
-    test "a paid full-trail role can start repeated CSV exports" do
-      account = Fixtures.Accounts.create_account()
-      Fixtures.Accounts.create_subscription(account, "team")
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
-
-      assert Audit.start_csv_export(subject) == {:ok, :repeatable}
-      assert Audit.start_csv_export(subject) == {:ok, :repeatable}
+      assert Audit.list_events_for_export(Subject.for_runner(runner, account)) ==
+               {:error, :unauthorized}
     end
 
-    test "a Free owner gets one reservation and a concurrent start is held off" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    test "an owner of account B never exports account A's events (cross-account)", %{
+      account: account_a
+    } do
+      {:ok, _event} = Audit.log(account_a.id, "user.signed_in", actor_kind: "user")
 
-      assert {:ok, {:one_time, reservation_id}} = Audit.start_csv_export(subject)
-      assert Ecto.UUID.cast(reservation_id) == {:ok, reservation_id}
+      account_b = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account_b, "team")
 
-      assert Audit.start_csv_export(subject) ==
-               {:error, :audit_csv_export_in_progress}
+      subject_b =
+        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_b, role: :owner)
 
-      refute Emisar.Repo.reload!(account).one_time_audit_csv_exported_at
-    end
-
-    test "a withdrawn paid entitlement falls back to the owner's one-time CSV" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
-
-      Fixtures.Accounts.create_subscription(account, "team",
-        entitlements: %{"features_audit_export_enabled?" => false}
-      )
-
-      assert {:ok, {:one_time, _reservation_id}} = Audit.start_csv_export(subject)
-    end
-
-    test "a Free admin cannot consume the owner-only CSV" do
-      account = Fixtures.Accounts.create_account()
-      admin = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
-
-      assert Audit.start_csv_export(subject) == {:error, :audit_csv_export_not_available}
-      refute Emisar.Repo.reload!(account).one_time_audit_csv_exported_at
-    end
-
-    test "a no-view_audit role is unauthorized before the plan is consulted" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
-
-      assert Audit.start_csv_export(subject) == {:error, :unauthorized}
-    end
-  end
-
-  describe "finish_csv_export/4" do
-    test "a fully prepared one-time export completes the claim and atomic receipt" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      {:ok, access} = Audit.start_csv_export(subject)
-
-      assert {:ok, completed} = Audit.finish_csv_export(subject, access, [filter: []], 3)
-      assert completed.one_time_audit_csv_exported_at
-
-      assert Audit.start_csv_export(subject) ==
-               {:error, :audit_csv_export_already_used}
-
-      exported =
-        Audit.Event
-        |> Emisar.Repo.all()
-        |> Enum.find(&(&1.account_id == account.id and &1.event_type == "audit.exported"))
-
-      assert %Audit.Event{payload: %{"count" => 3}} = exported
-    end
-
-    test "a repeatable export records its receipt without consuming the fallback" do
-      account = Fixtures.Accounts.create_account()
-      Fixtures.Accounts.create_subscription(account, "team")
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
-
-      assert {:ok, event} = Audit.finish_csv_export(subject, :repeatable, [filter: []], 2)
-      assert event.event_type == "audit.exported"
-      refute Emisar.Repo.reload!(account).one_time_audit_csv_exported_at
-    end
-  end
-
-  describe "cancel_csv_export/2" do
-    test "a failed preparation releases its exact one-time reservation for retry" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
-      {:ok, first_access} = Audit.start_csv_export(subject)
-
-      assert Audit.cancel_csv_export(subject, first_access) == :ok
-      assert {:ok, {:one_time, second_id}} = Audit.start_csv_export(subject)
-      refute second_id == elem(first_access, 1)
-    end
-
-    test "a repeatable export has no reservation to release" do
-      account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :owner)
-
-      assert Audit.cancel_csv_export(subject, :repeatable) == :ok
+      assert {:ok, [], _meta} =
+               Audit.list_events_for_export(subject_b, filter: [event_type: ["user.signed_in"]])
     end
   end
 

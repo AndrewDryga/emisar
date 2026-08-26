@@ -37,7 +37,7 @@ defmodule EmisarWeb.BillingLive do
     %{
       sso: Billing.sso_available?(account),
       scim: Billing.directory_sync_available?(account),
-      continuous_audit_export: Billing.continuous_audit_export_available?(account)
+      audit_export: Billing.audit_export_available?(account)
     }
   end
 
@@ -820,11 +820,7 @@ defmodule EmisarWeb.BillingLive do
               <ul class="mt-4 space-y-2 text-sm">
                 <.feature_line enabled={@features.sso} label="Single sign-on (OIDC)" />
                 <.feature_line enabled={@features.scim} label="SCIM directory sync" />
-                <.feature_line enabled={true} label="One-time audit CSV for the owner" />
-                <.feature_line
-                  enabled={@features.continuous_audit_export}
-                  label="Repeated audit CSV + continuous SIEM export"
-                />
+                <.feature_line enabled={@features.audit_export} label="Audit export (CSV + SIEM)" />
               </ul>
             </div>
             <div>

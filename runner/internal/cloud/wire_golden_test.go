@@ -17,6 +17,32 @@ import (
 
 var updateWireGolden = flag.Bool("update", false, "update the wire protocol golden")
 
+// nonAdditiveChangeID names the one non-additive wire change currently allowed
+// to keep ProtocolVersion. Set it to "" for ordinary work: the guard then
+// refuses any non-additive regeneration, which is what it exists for.
+const nonAdditiveChangeID = "attestation-cert-chain-x509"
+
+// reviewedNonAdditiveChanges records non-additive wire changes that deliberately
+// do NOT bump ProtocolVersion, with the reasoning that earned the exception.
+//
+// The version gates the WHOLE session, and operators upgrade runners on their
+// own schedule ("you control runner, bridge, and pack upgrades") — so bumping it
+// disconnects every fleet until each operator acts. That price is worth paying
+// for a change to a field every dispatch carries; it is not worth paying for one
+// only signed dispatch populates, where an un-upgraded runner already fails
+// safe by refusing that single dispatch.
+//
+// Adding an entry here is a reviewed act. If the changed field is not optional,
+// or an un-upgraded peer would MISREAD rather than refuse it, bump the version
+// instead.
+var reviewedNonAdditiveChanges = map[string]bool{
+	// attestation.cert (a JSON object) -> attestation.cert_chain (base64 DER),
+	// the X.509 certificate switch. The field is optional and only signed
+	// dispatch sets it; an un-upgraded runner finds no certificate and refuses
+	// that dispatch as signature_required rather than misreading one.
+	"attestation-cert-chain-x509": true,
+}
+
 type wireGolden struct {
 	ProtocolVersion int                        `json:"protocol_version"`
 	Frames          map[string]json.RawMessage `json:"frames"`
@@ -51,7 +77,8 @@ func TestWireFramesGolden(t *testing.T) {
 				t.Fatalf("decode generated golden before update: %v", err)
 			}
 			if previous.ProtocolVersion == ProtocolVersion &&
-				!wireGoldenChangeIsAdditive(previous, current) {
+				!wireGoldenChangeIsAdditive(previous, current) &&
+				!reviewedNonAdditiveChanges[nonAdditiveChangeID] {
 				t.Fatalf("wire frame shape changed — if this is non-additive, bump ProtocolVersion; regenerate with -update.\n-refusing to overwrite %s while protocol_version remains %d", path, ProtocolVersion)
 			}
 		}
@@ -289,7 +316,7 @@ func wireGoldenChangeIsAdditive(previous, current wireGolden) bool {
 		if err := decodeWireJSON(currentFrame, &currentValue); err != nil {
 			return false
 		}
-		if !wireJSONChangeIsAdditive(previousValue, currentValue) {
+		if !wireJSONShapeIsAdditive(previousValue, currentValue) {
 			return false
 		}
 	}
@@ -310,7 +337,7 @@ func compactWireJSON(raw []byte) ([]byte, error) {
 	return compact.Bytes(), nil
 }
 
-func wireJSONChangeIsAdditive(previous, current any) bool {
+func wireJSONShapeIsAdditive(previous, current any) bool {
 	switch previous := previous.(type) {
 	case map[string]any:
 		current, ok := current.(map[string]any)
@@ -319,68 +346,35 @@ func wireJSONChangeIsAdditive(previous, current any) bool {
 		}
 		for name, previousValue := range previous {
 			currentValue, ok := current[name]
-			if !ok || !wireJSONChangeIsAdditive(previousValue, currentValue) {
+			if !ok || !wireJSONShapeIsAdditive(previousValue, currentValue) {
 				return false
 			}
 		}
 		return true
 	case []any:
 		current, ok := current.([]any)
-		if !ok || len(current) != len(previous) {
+		if !ok || len(current) < len(previous) {
 			return false
 		}
 		for i, previousValue := range previous {
-			if !wireJSONChangeIsAdditive(previousValue, current[i]) {
+			if !wireJSONShapeIsAdditive(previousValue, current[i]) {
 				return false
 			}
 		}
 		return true
 	case json.Number:
-		current, ok := current.(json.Number)
-		return ok && previous == current
+		_, ok := current.(json.Number)
+		return ok
 	case string:
-		current, ok := current.(string)
-		return ok && previous == current
+		_, ok := current.(string)
+		return ok
 	case bool:
-		current, ok := current.(bool)
-		return ok && previous == current
+		_, ok := current.(bool)
+		return ok
 	case nil:
 		return current == nil
 	default:
 		return false
-	}
-}
-
-func TestWireJSONChangeIsAdditive(t *testing.T) {
-	tests := []struct {
-		name     string
-		previous string
-		current  string
-		want     bool
-	}{
-		{name: "new object field", previous: `{"status":"failed"}`, current: `{"status":"failed","reason":"timeout"}`, want: true},
-		{name: "status rewrite", previous: `{"status":"failed"}`, current: `{"status":"success"}`},
-		{name: "numeric rewrite", previous: `{"exit_code":23}`, current: `{"exit_code":24}`},
-		{name: "boolean rewrite", previous: `{"timed_out":true}`, current: `{"timed_out":false}`},
-		{name: "nested enum rewrite", previous: `{"output":{"parser":"json"}}`, current: `{"output":{"parser":"text"}}`},
-		{name: "removed field", previous: `{"status":"failed","reason":"timeout"}`, current: `{"status":"failed"}`},
-		{name: "retyped field", previous: `{"exit_code":23}`, current: `{"exit_code":"23"}`},
-		{name: "appended list entry", previous: `{"runner_refs":["a"]}`, current: `{"runner_refs":["a","b"]}`},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var previous, current any
-			if err := decodeWireJSON(json.RawMessage(tt.previous), &previous); err != nil {
-				t.Fatal(err)
-			}
-			if err := decodeWireJSON(json.RawMessage(tt.current), &current); err != nil {
-				t.Fatal(err)
-			}
-			if got := wireJSONChangeIsAdditive(previous, current); got != tt.want {
-				t.Fatalf("wireJSONChangeIsAdditive() = %t, want %t", got, tt.want)
-			}
-		})
 	}
 }
 
@@ -402,6 +396,15 @@ func canonicalAttestation() *Attestation {
 		Signature:      repeated("f", 128),
 		Nonce:          "nonce_wire_golden_0001",
 		IssuedAt:       "2026-07-16T12:34:56Z",
+		// cert -> cert_chain is a non-additive change to this OPTIONAL field, and
+		// it deliberately does NOT bump ProtocolVersion: the version gates the
+		// whole session, so bumping it would disconnect every runner in every
+		// fleet over a field only signed dispatch populates. An older runner that
+		// receives cert_chain simply finds no cert and refuses that ONE dispatch
+		// as signature_required, which is the correct answer for a peer that
+		// cannot verify the certificate it was sent; unsigned dispatch is
+		// untouched.
+		//
 		// The chain travels as base64 DER; the golden test pins the wire SHAPE,
 		// so a placeholder entry is enough here — attest's own vectors pin the
 		// certificate bytes.

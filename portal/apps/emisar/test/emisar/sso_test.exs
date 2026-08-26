@@ -2555,27 +2555,6 @@ defmodule Emisar.SSOTest do
              }
     end
 
-    test "JIT cannot provision past the account's member entitlement" do
-      {_owner, account, _subject} = enterprise_owner()
-
-      Fixtures.Accounts.create_subscription(account, "enterprise",
-        entitlements: %{"members_limit" => 1}
-      )
-
-      provider = provider_fixture(account, provisioner: :jit)
-      email = "jit-at-cap-#{System.unique_integer([:positive])}@acme.test"
-
-      assert SSO.complete_auth(
-               provider,
-               callback(%{"sub" => "jit-at-cap", "email" => email, "email_verified" => true}),
-               %{}
-             ) == {:error, {:over_limit, "enterprise", 1}}
-
-      assert Users.fetch_user_by_email(email) == {:error, :not_found}
-      assert Accounts.count_memberships(account.id) == 1
-      refute Repo.exists?(UserIdentity.Query.not_deleted())
-    end
-
     test "an existing same-email user is NEVER matched — a colliding email fails :email_taken" do
       {_user, account, _subject} = enterprise_owner()
       provider = provider_fixture(account)
@@ -3394,27 +3373,6 @@ defmodule Emisar.SSOTest do
   describe "scim_provision_user/2" do
     setup do
       scim_provider()
-    end
-
-    test "SCIM cannot provision past the account's member entitlement", %{
-      account: account,
-      provider: provider
-    } do
-      Fixtures.Accounts.create_subscription(account, "enterprise",
-        entitlements: %{"members_limit" => 1}
-      )
-
-      email = "scim-at-cap-#{System.unique_integer([:positive])}@acme.test"
-
-      assert SSO.scim_provision_user(provider, %{
-               external_id: "scim-at-cap",
-               email: email,
-               full_name: "At Capacity"
-             }) == {:error, {:over_limit, "enterprise", 1}}
-
-      assert Users.fetch_user_by_email(email) == {:error, :not_found}
-      assert Accounts.count_memberships(account.id) == 1
-      refute Repo.exists?(UserIdentity.Query.not_deleted())
     end
 
     test "a provider authenticated before cancellation cannot write afterward", %{
@@ -7002,32 +6960,6 @@ defmodule Emisar.SSOTest do
       %{account: account, subject: subject, provider: provider}
     end
 
-    test "an approval cannot provision past the account's member entitlement", %{
-      account: account,
-      provider: provider,
-      subject: subject
-    } do
-      request =
-        capture_request(provider, %{
-          "sub" => "approval-at-cap",
-          "email" => "approval-at-cap@acme.test",
-          "email_verified" => true
-        })
-
-      Fixtures.Accounts.create_subscription(account, "enterprise",
-        entitlements: %{"members_limit" => 1}
-      )
-
-      assert SSO.approve_link_request(request, RunnerAccess.none(), subject) ==
-               {:error, {:over_limit, "enterprise", 1}}
-
-      assert {:ok, still_pending} = SSO.fetch_pending_link_request(request.id)
-      assert still_pending.id == request.id
-      assert Users.fetch_user_by_email("approval-at-cap@acme.test") == {:error, :not_found}
-      assert Accounts.count_memberships(account.id) == 1
-      refute Repo.exists?(UserIdentity.Query.not_deleted())
-    end
-
     test "an unmatched request cannot become a manual member once directory sync is enabled", %{
       subject: subject,
       provider: provider
@@ -7202,7 +7134,7 @@ defmodule Emisar.SSOTest do
       refute Repo.reload!(identity).deleted_at
 
       # Someone else's account now invites them.
-      elsewhere = Fixtures.Accounts.create_account(%{plan: "team"})
+      elsewhere = Fixtures.Accounts.create_account()
 
       other_subject =
         Fixtures.Subjects.membership_subject(
@@ -7538,7 +7470,7 @@ defmodule Emisar.SSOTest do
 
       unrelated_session = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
 
-      elsewhere = Fixtures.Accounts.create_account(%{plan: "team"})
+      elsewhere = Fixtures.Accounts.create_account()
 
       other_subject =
         Fixtures.Subjects.membership_subject(
@@ -7644,8 +7576,7 @@ defmodule Emisar.SSOTest do
       assert {:ok, %{identity: rebound}} =
                SSO.approve_link_request(request, RunnerAccess.none(), subject)
 
-      {_other_owner, other_account, other_subject} =
-        Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert {:ok, %{membership: _membership}} =
                Accounts.invite_user_to_account(

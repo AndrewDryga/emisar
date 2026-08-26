@@ -5,14 +5,12 @@ defmodule EmisarWeb.AuditDownloadController do
   for SIEM collectors). Accepts the same query params as the audit LiveView,
   so the Export button hands over whatever the operator is looking at.
 
-  An account owner may create one downloadable CSV on any plan. The one-time
-  allowance is consumed after the bounded file and its audit receipt are
-  prepared, before the browser transfer begins. The paid continuous-export
-  entitlement allows repeated CSV downloads for every full-trail role; it also
-  governs the separate SIEM API.
+  Plan-gated: audit export (this download and the SIEM API alike) is a Team+
+  feature — the in-console trail stays on every plan; taking the data OUT is
+  the paid surface.
   """
   use EmisarWeb, :controller
-  alias Emisar.Audit
+  alias Emisar.{Audit, Billing}
   alias EmisarWeb.AuditDownloadLimiter
   alias EmisarWeb.{LiveTable, TimeHelpers}
   require Logger
@@ -25,10 +23,9 @@ defmodule EmisarWeb.AuditDownloadController do
   plug EmisarWeb.Plugs.EnsureAccountCompliance
 
   # Build the bounded file completely BEFORE committing response headers. A
-  # later page/read failure must not look like a valid, cleanly terminated CSV,
-  # and a replaced one-time lease must lose at the atomic completion fence
-  # before either request can send bytes. The byte cap also keeps an adversarial
-  # set of maximum-sized audit rows from filling the node's temporary volume.
+  # later page/read failure must not look like a valid, cleanly terminated CSV.
+  # The byte cap also keeps an adversarial set of maximum-sized audit rows from
+  # filling the node's temporary volume.
   @page_limit 100
   @default_max_bytes 256 * 1024 * 1024
   @filter_params ~w[
@@ -43,36 +40,26 @@ defmodule EmisarWeb.AuditDownloadController do
 
   defp max_pages, do: div(max_rows() + @page_limit - 1, @page_limit)
 
-  def method_not_allowed(conn, _params) do
-    conn
-    |> put_resp_header("allow", "POST")
-    |> send_resp(405, "Method Not Allowed")
-  end
-
   def download(conn, params) do
     subject = conn.assigns.current_subject
     account = conn.assigns.current_account
 
-    case Audit.csv_export_access(subject) do
-      :unauthorized ->
+    cond do
+      not Audit.subject_can_view_audit?(subject) ->
         conn
         |> put_flash(:error, "You don't have permission to export the audit log.")
         |> redirect(to: ~p"/app/#{account}")
 
-      :used ->
-        csv_already_used(conn, account)
-
-      :unavailable ->
+      # Courtesy navigation — `Audit.list_events_for_export/2` enforces the
+      # same gate authoritatively; this branch just lands on the upgrade page.
+      not Billing.audit_export_available?(account) ->
         conn
-        |> put_flash(
-          :info,
-          "Repeated CSV export is available on Team. Ask an account owner for the one-time CSV."
-        )
+        |> put_flash(:info, "Audit export is available on the Team plan.")
         |> redirect(to: ~p"/app/#{account}/settings/billing")
 
-      access when access in [:repeatable, :one_time] ->
+      true ->
         case AuditDownloadLimiter.run(account.id, fn ->
-               start_download(conn, subject, account, params, access)
+               start_download(conn, subject, account, params)
              end) do
           {:error, :audit_download_saturated} ->
             conn
@@ -88,24 +75,23 @@ defmodule EmisarWeb.AuditDownloadController do
     end
   end
 
-  # ONE up-front count decides honestly: within bounds → write it all;
-  # over → refuse with the right tool named (the SIEM API is cursor-resumable
-  # NDJSON, built for full-history extracts), never a truncated file.
-  defp start_download(conn, subject, account, params, access) do
+  # ONE exact up-front count decides honestly: within bounds → write it all;
+  # over → refuse and name the Support path, never a truncated file.
+  defp start_download(conn, subject, account, params) do
     filter_params = audit_filter_params(params)
     opts = list_opts(filter_params, subject)
-
     probe_opts = opts |> Keyword.put(:page, limit: 1) |> Keyword.put(:count, true)
 
-    case Audit.list_events(subject, probe_opts) do
+    case Audit.list_events_for_export(subject, probe_opts) do
       {:ok, _probe, %{count: count}} when count > 0 ->
         if count <= max_rows() do
-          begin_csv_download(conn, subject, account, opts, filter_params)
+          prepare_csv(conn, subject, account, opts, filter_params, count)
         else
           conn
           |> put_flash(
             :error,
-            oversized_export_message(count, access)
+            "This view has #{count} events — the CSV download caps at #{max_rows()}. " <>
+              "Narrow the filters, or contact Support and we'll prepare the complete export."
           )
           |> redirect(to: ~p"/app/#{account}/audit?#{filter_params}")
         end
@@ -124,57 +110,10 @@ defmodule EmisarWeb.AuditDownloadController do
     end
   end
 
-  defp begin_csv_download(conn, subject, account, opts, filter_params) do
-    case Audit.start_csv_export(subject) do
-      {:ok, access} ->
-        prepare_csv(conn, subject, account, opts, filter_params, access)
-
-      {:error, :audit_csv_export_already_used} ->
-        csv_already_used(conn, account)
-
-      {:error, :audit_csv_export_in_progress} ->
-        conn
-        |> put_flash(
-          :info,
-          "A one-time audit CSV is already being prepared. Try again after 30 minutes if it did not finish."
-        )
-        |> redirect(to: ~p"/app/#{account}/audit")
-
-      {:error, :audit_csv_export_not_available} ->
-        conn
-        |> put_flash(:info, "Repeated CSV export is available on the Team plan.")
-        |> redirect(to: ~p"/app/#{account}/settings/billing")
-
-      {:error, _reason} ->
-        conn
-        |> put_flash(:error, "You don't have permission to export the audit log.")
-        |> redirect(to: ~p"/app/#{account}")
-    end
-  end
-
-  defp csv_already_used(conn, account) do
-    conn
-    |> put_flash(
-      :error,
-      "The one-time audit CSV was already created. Upgrade to Team for repeated exports."
-    )
-    |> redirect(to: ~p"/app/#{account}/audit")
-  end
-
-  defp oversized_export_message(count, :repeatable) do
-    "This view has #{count} events — the CSV download caps at #{max_rows()}. " <>
-      "Narrow the filters, or pull the full trail through the SIEM export API."
-  end
-
-  defp oversized_export_message(count, :one_time) do
-    "This view has #{count} events — the CSV download caps at #{max_rows()}. " <>
-      "Narrow the filters and try again; this did not use the one-time download."
-  end
-
   # The path is System.tmp_dir! plus a server-generated UUID; no request value
   # reaches send_download or cleanup. Sobelow cannot follow that construction.
   # sobelow_skip ["Traversal.FileModule", "Traversal.SendDownload"]
-  defp prepare_csv(conn, subject, account, opts, filter_params, access) do
+  defp prepare_csv(conn, subject, account, opts, filter_params, expected_count) do
     filename =
       "audit-#{account.slug}-#{Calendar.strftime(DateTime.utc_now(), "%Y%m%d%H%M%S")}.csv"
 
@@ -182,23 +121,19 @@ defmodule EmisarWeb.AuditDownloadController do
 
     try do
       with {:ok, count} <- write_csv(path, subject, opts),
-           {:ok, _receipt} <- Audit.finish_csv_export(subject, access, opts, count) do
+           :ok <- ensure_snapshot_count(count, expected_count),
+           {:ok, _receipt} <- Audit.record_export(subject, opts, count) do
         send_download(conn, {:file, path}, filename: filename, content_type: "text/csv")
       else
         {:error, reason} ->
-          csv_preparation_failed(conn, subject, account, access, filter_params, reason)
+          csv_preparation_failed(conn, account, filter_params, reason)
       end
-    rescue
-      exception ->
-        _ = Audit.cancel_csv_export(subject, access)
-        reraise exception, __STACKTRACE__
     after
       _ = File.rm(path)
     end
   end
 
-  defp csv_preparation_failed(conn, subject, account, access, filter_params, reason) do
-    _ = Audit.cancel_csv_export(subject, access)
+  defp csv_preparation_failed(conn, account, filter_params, reason) do
     log_csv_preparation_failure(reason)
 
     conn
@@ -206,33 +141,23 @@ defmodule EmisarWeb.AuditDownloadController do
     |> redirect(to: ~p"/app/#{account}/audit?#{filter_params}")
   end
 
-  defp csv_preparation_error(:row_cap_exceeded) do
-    "The audit log changed while the CSV was being prepared and is now too large. " <>
-      "Narrow the filters and try again."
+  defp csv_preparation_error(reason) when reason in [:row_cap_exceeded, :byte_cap_exceeded] do
+    "This CSV is too large to prepare safely. Narrow the filters, or contact Support and " <>
+      "we'll prepare the complete export."
   end
-
-  defp csv_preparation_error(:byte_cap_exceeded),
-    do: "This CSV is too large to prepare safely. Narrow the filters and try again."
 
   defp csv_preparation_error(:snapshot_changed) do
     "The audit log changed while the CSV was being prepared. Review the filters and try again."
   end
 
-  defp csv_preparation_error(:reservation_mismatch) do
-    "Another one-time CSV request replaced this one before it finished. " <>
-      "Wait for that request to complete."
-  end
-
   defp csv_preparation_error(_reason),
     do: "The CSV could not be prepared. Nothing was downloaded; try again."
 
+  defp ensure_snapshot_count(count, count), do: :ok
+  defp ensure_snapshot_count(_count, _expected_count), do: {:error, :snapshot_changed}
+
   defp log_csv_preparation_failure(reason)
-       when reason in [
-              :row_cap_exceeded,
-              :byte_cap_exceeded,
-              :snapshot_changed,
-              :reservation_mismatch
-            ],
+       when reason in [:row_cap_exceeded, :byte_cap_exceeded, :snapshot_changed],
        do: :ok
 
   defp log_csv_preparation_failure(reason) do
@@ -286,7 +211,7 @@ defmodule EmisarWeb.AuditDownloadController do
     # (the up-front probe already counted once).
     page_opts = opts |> Keyword.put(:page, page(cursor)) |> Keyword.put(:count, false)
 
-    case Audit.list_events(subject, page_opts) do
+    case Audit.list_events_for_export(subject, page_opts) do
       {:ok, [], _meta} when count == 0 ->
         {:error, :snapshot_changed}
 

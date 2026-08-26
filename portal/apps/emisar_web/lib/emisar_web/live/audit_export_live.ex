@@ -33,7 +33,7 @@ defmodule EmisarWeb.AuditExportLive do
      |> assign(:page_title, "SIEM export")
      |> assign(
        :continuous_export_available?,
-       Billing.continuous_audit_export_available?(socket.assigns.current_account)
+       Billing.audit_export_available?(socket.assigns.current_account)
      )
      |> assign(:export_secret, nil)
      |> assign(:base_audit_url, UrlHelpers.derive_base_url(socket) <> "/api/audit")
@@ -87,7 +87,7 @@ defmodule EmisarWeb.AuditExportLive do
           {:error, :audit_export_not_available} ->
             {:noreply,
              s
-             |> put_flash(:info, "Continuous SIEM export is available on Team.")
+             |> put_flash(:info, "Audit export is available on the Team plan.")
              |> push_navigate(to: ~p"/app/#{s.assigns.current_account}/settings/billing")}
 
           {:error, _} ->
@@ -167,8 +167,8 @@ defmodule EmisarWeb.AuditExportLive do
           title="Continuous export is paused"
           class="mb-6"
         >
-          Existing tokens no longer read audit events. You can revoke them here, use the owner's
-          one-time CSV from the audit log, or restore a paid plan from Billing.
+          Existing tokens no longer read audit events. You can revoke them here or restore a paid
+          plan from Billing.
         </.callout>
         <.section_header title="Export tokens">
           <:subtitle>

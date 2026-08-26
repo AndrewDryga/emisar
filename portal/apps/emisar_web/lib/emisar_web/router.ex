@@ -437,8 +437,7 @@ defmodule EmisarWeb.Router do
         live "/audit", AuditLive, :index
         # Before /audit/:id so "export"/"download" aren't captured as event ids.
         live "/audit/export", AuditExportLive, :index
-        get "/audit/download", AuditDownloadController, :method_not_allowed
-        post "/audit/download", AuditDownloadController, :download
+        get "/audit/download", AuditDownloadController, :download
         live "/audit/:id", AuditDetailLive, :show
 
         live "/agents", AgentsLive, :index

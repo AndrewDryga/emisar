@@ -338,24 +338,8 @@
                 <.icon name="state.included" class="h-5 w-5 text-brand-400" />
               </td>
             </tr>
-            <tr data-feature="audit-csv">
-              <td class="px-6 py-4 font-medium text-zinc-100">
-                One-time audit CSV for the owner
-              </td>
-              <td data-plan="free" class="px-6 py-4 text-zinc-400">
-                <.plan_feature_availability included={true} />
-              </td>
-              <td data-plan="team" class="px-6 py-4 text-zinc-400">
-                <.plan_feature_availability included={true} />
-              </td>
-              <td data-plan="enterprise" class="px-6 py-4 text-zinc-400">
-                <.plan_feature_availability included={true} />
-              </td>
-            </tr>
             <tr data-feature="audit-export">
-              <td class="px-6 py-4 font-medium text-zinc-100">
-                Repeated audit CSV + continuous SIEM export
-              </td>
+              <td class="px-6 py-4 font-medium text-zinc-100">SIEM export</td>
               <td data-plan="free" class="px-6 py-4 text-zinc-500">
                 <.plan_feature_availability included={@comparison["free"].audit_export} />
               </td>

@@ -7,8 +7,17 @@ defmodule Emisar.Compat do
   on.
 
   The policy is deployment config — the emisar operator's call, not a
-  tenant setting — read at call time. `config/config.exs` owns the shipped
-  defaults; this module does not repeat that version inventory.
+  tenant setting — read at call time:
+
+      config :emisar, Emisar.Compat,
+        runner_minimum: ">= 0.10.0",
+        runner_recommended: ">= 0.19.0",
+        runner_current: "0.19.0",
+        runner_enforce: false,
+        mcp_minimum: ">= 0.3.0",
+        mcp_recommended: ">= 0.7.0",
+        mcp_current: "0.7.0",
+        mcp_enforce: false
 
   `*_minimum` / `*_recommended` are Elixir `Version` requirement strings
   (`>= 0.10.0`, `~> 0.15`); a malformed one raises rather than silently
@@ -17,8 +26,8 @@ defmodule Emisar.Compat do
   `:unknown` (missing / unparseable) version — only `:unsupported`.
 
   `*_current` is the plain version the released binaries carry, and exists
-  only so an update hint can name the release the operator would get instead
-  of reciting the requirement string that decided it.
+  only so an update hint can name what the operator would get ("0.19.0 is
+  available") instead of reciting the requirement string that decided it.
   It is bumped with the thresholds when a `runner-v*` / `mcp-v*` tag ships;
   when unset, hints fall back to naming the requirement.
   """

@@ -65,31 +65,6 @@ defmodule Emisar.Accounts.Account.Changeset do
   def mark_report_sent(%Account{} = account),
     do: change(account, last_report_sent_at: DateTime.utc_now())
 
-  @doc "Internal — reserve the account owner's one-time audit CSV while it is prepared."
-  def reserve_one_time_audit_csv_export(%Account{} = account, reservation_id) do
-    change(account,
-      one_time_audit_csv_export_reservation_id: reservation_id,
-      one_time_audit_csv_export_reserved_at: DateTime.utc_now()
-    )
-  end
-
-  @doc "Internal — release a failed one-time audit CSV preparation for a safe retry."
-  def release_one_time_audit_csv_export(%Account{} = account) do
-    change(account,
-      one_time_audit_csv_export_reservation_id: nil,
-      one_time_audit_csv_export_reserved_at: nil
-    )
-  end
-
-  @doc "Internal — complete the account owner's fully prepared one-time audit CSV."
-  def complete_one_time_audit_csv_export(%Account{} = account) do
-    change(account,
-      one_time_audit_csv_exported_at: DateTime.utc_now(),
-      one_time_audit_csv_export_reservation_id: nil,
-      one_time_audit_csv_export_reserved_at: nil
-    )
-  end
-
   def disable(%Account{} = account, %DateTime{} = disabled_at),
     do: change(account, disabled_at: disabled_at)
 

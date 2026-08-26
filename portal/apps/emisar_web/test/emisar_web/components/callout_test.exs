@@ -230,7 +230,7 @@ defmodule EmisarWeb.Components.CalloutTest do
         )
 
       assert unresolved =~ "Billing status unavailable"
-      assert unresolved =~ "an unused one-time audit CSV allowance"
+      assert unresolved =~ "Billing, recovery, and cleanup remain available"
     end
   end
 end

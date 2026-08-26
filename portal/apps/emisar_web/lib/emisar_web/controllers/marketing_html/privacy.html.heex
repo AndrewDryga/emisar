@@ -4,7 +4,7 @@
 <.legal_page
   title="Privacy Policy"
   updated="August 26, 2026"
-  summary="The plain version: we collect what's needed to run the service, we don't sell your data or train AI on it, and account owners can take an audit-log CSV on every plan or request a full snapshot or deletion."
+  summary="The plain version: we collect what's needed to run the service, we don't sell your data or train AI on it, and you can request a complete copy or deletion at any time."
   toc={[
     {"collect", "1. What we collect"},
     {"use", "2. How we use it"},
@@ -118,15 +118,13 @@
 
   <h2 id="rights">5. Your rights</h2>
   <p>
-    An account owner can create one downloadable CSV of the account's filtered audit log on any
-    plan, at any time. The one-time allowance is used as soon as the file is ready, before your
-    browser starts saving it. Each CSV can contain up to 100,000 events or 256 MiB, whichever
-    comes first. Team and Enterprise add repeated CSV downloads and the read-only
-    <code>/api/audit</code>
-    NDJSON feed for continuous SIEM collection. This is an
-    audit-log export, not a full account archive. For a full account snapshot (audit + packs +
-    configuration), email <a href={EmisarWeb.MailTo.support()}>support@emisar.dev</a>
-    and we'll generate it for you.
+    Team and Enterprise accounts can download a filtered audit CSV or pull audit events from the
+    read-only <code>/api/audit</code>
+    NDJSON endpoint. If the data you need does not fit the
+    standard CSV, or you need a full account snapshot (audit + packs + configuration), email
+    <a href={EmisarWeb.MailTo.support()}>support@emisar.dev</a>
+    at any time and we'll prepare and
+    send it to you.
   </p>
   <p>
     You can delete your account at any time. Email

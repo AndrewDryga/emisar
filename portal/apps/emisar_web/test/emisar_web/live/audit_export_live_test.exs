@@ -335,7 +335,6 @@ defmodule EmisarWeb.AuditExportLiveTest do
       assert {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit/export")
 
       assert html =~ "Continuous export is paused"
-      assert html =~ "one-time CSV"
       refute has_element?(lv, "button[phx-click='create_export_key']")
     end
 

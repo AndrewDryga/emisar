@@ -12,9 +12,6 @@ defmodule Emisar.Accounts.Account do
     field :paddle_customer_id, :string
     field :paddle_customer_synced_at, :utc_datetime_usec
     field :last_report_sent_at, :utc_datetime_usec
-    field :one_time_audit_csv_exported_at, :utc_datetime_usec
-    field :one_time_audit_csv_export_reservation_id, Ecto.UUID
-    field :one_time_audit_csv_export_reserved_at, :utc_datetime_usec
     field :disabled_at, :utc_datetime_usec
     field :deleted_at, :utc_datetime_usec
 

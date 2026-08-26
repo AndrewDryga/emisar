@@ -46,17 +46,14 @@ config :emisar,
 # that implement this portal's wire contracts. Publish both artifacts before
 # deploying a portal with newer targets. Enforcement remains warn-only until
 # deliberately flipped on.
-runner_current = "0.22.1"
-mcp_current = "0.10.1"
-
 config :emisar, Emisar.Compat,
   runner_minimum: ">= 0.10.0",
-  runner_recommended: ">= " <> runner_current,
-  runner_current: runner_current,
+  runner_recommended: ">= 0.19.0",
+  runner_current: "0.19.0",
   runner_enforce: false,
-  mcp_minimum: ">= 0.10.0",
-  mcp_recommended: ">= " <> mcp_current,
-  mcp_current: mcp_current,
+  mcp_minimum: ">= 0.3.0",
+  mcp_recommended: ">= 0.7.0",
+  mcp_current: "0.7.0",
   mcp_enforce: false
 
 # Configures the mailer

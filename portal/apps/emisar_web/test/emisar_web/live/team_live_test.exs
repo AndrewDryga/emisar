@@ -13,12 +13,6 @@ defmodule EmisarWeb.TeamLiveTest do
     assert Emisar.Accounts.subscribe_account_team(account.id) == :ok
   end
 
-  defp register_team_and_log_in(conn, attrs \\ %{}) do
-    {conn, user, account} = register_and_log_in(conn, attrs)
-    Fixtures.Accounts.create_subscription(account, "team")
-    {conn, user, account}
-  end
-
   defp assert_team_broadcast(lv, event, user_id) do
     assert_receive {:list_changed, :team, ^event, ^user_id}
     render(lv)
@@ -252,37 +246,6 @@ defmodule EmisarWeb.TeamLiveTest do
 
       refute render(lv) =~ "Pending access requests"
       assert Emisar.Repo.reload(request) == nil
-    end
-
-    test "a finite paid member limit explains why an access request cannot be approved", %{
-      conn: conn
-    } do
-      {conn, _owner, account} = register_and_log_in(conn)
-
-      Fixtures.Accounts.create_subscription(account, "enterprise",
-        entitlements: %{"members_limit" => 1}
-      )
-
-      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-
-      request =
-        Fixtures.SSO.create_link_request(
-          provider: provider,
-          full_name: "Capacity Limited",
-          email: "capacity-limited@corp.test"
-        )
-
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
-      html = render_click(lv, "approve_request", %{"id" => request.id})
-
-      assert html =~
-               "This account&#39;s plan allows 1 member. Increase its member limit before approving another."
-
-      assert Emisar.Repo.reload(request)
-      assert Emisar.Accounts.count_memberships(account.id) == 1
-
-      assert Emisar.Users.fetch_user_by_email("capacity-limited@corp.test") ==
-               {:error, :not_found}
     end
 
     test "directory-unmatched requests light Team navigation and cannot be approved", %{
@@ -644,7 +607,6 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "a successful invite lands on the success step with next actions", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      Fixtures.Accounts.create_subscription(account, "team")
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
 
       html =
@@ -673,29 +635,10 @@ defmodule EmisarWeb.TeamLiveTest do
       refute reset =~ "Invitation sent"
     end
 
-    test "Free explains its one-user cap without creating an invitation", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      email = "free-cap-#{System.unique_integer([:positive])}@example.com"
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
-
-      html =
-        lv
-        |> form("#invite_form", %{
-          "invite" => %{"email" => email, "role" => "operator"}
-        })
-        |> render_submit()
-
-      assert html =~ "Free includes one user. Upgrade to Team before inviting another."
-      refute html =~ "Invitation sent"
-      assert Emisar.Accounts.count_memberships(account.id) == 1
-      assert Emisar.Users.fetch_user_by_email(email) == {:error, :not_found}
-    end
-
     test "the completion receipt reports the persisted selected runner and pack access", %{
       conn: conn
     } do
       {conn, _user, account} = register_and_log_in(conn)
-      Fixtures.Accounts.create_subscription(account, "team")
 
       runner =
         Fixtures.Runners.create_runner(account_id: account.id, name: "db-primary", group: "db")
@@ -763,7 +706,6 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "selected runner access is required and persisted with the invitation", %{conn: conn} do
       {conn, _user, account} = register_and_log_in(conn)
-      Fixtures.Accounts.create_subscription(account, "team")
       _db = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       _web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
@@ -1287,7 +1229,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "a billing manager is offered no Set access verb, and the event is refused anyway", %{
       conn: conn
     } do
-      {conn, owner, account} = register_team_and_log_in(conn, %{account: %{name: "FinanceOrg"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "FinanceOrg"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       finance =
@@ -1322,7 +1264,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "owner can save a group + an individual runner (in another group)", %{conn: conn} do
-      {conn, owner, account} = register_team_and_log_in(conn, %{account: %{name: "ScopeOrg"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg"}})
 
       # An invited admin we'll scope.
       email = "scoped-#{System.unique_integer([:positive])}@example.com"
@@ -1369,7 +1311,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "an emptied pack selection is named at the picker, not in a flash", %{conn: conn} do
-      {conn, owner, account} = register_team_and_log_in(conn, %{account: %{name: "PackErrOrg"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "PackErrOrg"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       email = "packerr-#{System.unique_integer([:positive])}@example.com"
@@ -1431,7 +1373,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "the scope editor narrows the same grant to selected packs", %{conn: conn} do
-      {conn, owner, account} = register_team_and_log_in(conn, %{account: %{name: "PackScopeOrg"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "PackScopeOrg"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       email = "packscope-#{System.unique_integer([:positive])}@example.com"
@@ -1513,7 +1455,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "picking a group disables its runners live, so they can't be double-scoped", %{
       conn: conn
     } do
-      {conn, owner, account} = register_team_and_log_in(conn, %{account: %{name: "ScopeOrg3"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg3"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       email = "scoped3-#{System.unique_integer([:positive])}@example.com"
@@ -1551,7 +1493,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "clearing the last runner scope keeps it cleared", %{conn: conn} do
-      {conn, owner, account} = register_team_and_log_in(conn, %{account: %{name: "ScopeOrg5"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg5"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
       email = "scoped5-#{System.unique_integer([:positive])}@example.com"
 
@@ -1585,7 +1527,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "a runner past the first page can still be granted", %{conn: conn} do
-      {conn, owner, account} = register_team_and_log_in(conn, %{account: %{name: "ScopePaged"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopePaged"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       email = "scoped-paged-#{System.unique_integer([:positive])}@example.com"
@@ -1630,7 +1572,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "the scope picker pre-selects the member's existing scopes", %{conn: conn} do
-      {conn, owner, account} = register_team_and_log_in(conn, %{account: %{name: "ScopeOrg2"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg2"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       email = "scoped2-#{System.unique_integer([:positive])}@example.com"
@@ -1664,7 +1606,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "a malformed scope submission is rejected without widening existing access", %{
       conn: conn
     } do
-      {conn, owner, account} = register_team_and_log_in(conn, %{account: %{name: "ScopeOrg4"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg4"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       email = "scoped4-#{System.unique_integer([:positive])}@example.com"
@@ -1699,7 +1641,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "a scoped runner chip names the runner and carries its full id", %{conn: conn} do
-      {conn, owner, account} = register_team_and_log_in(conn, %{account: %{name: "ScopeOrg5"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg5"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       email = "scoped5-#{System.unique_integer([:positive])}@example.com"
@@ -1725,7 +1667,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "a scoped runner that no longer resolves reads as a removed runner", %{conn: conn} do
-      {conn, owner, account} = register_team_and_log_in(conn, %{account: %{name: "ScopeOrg6"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg6"}})
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       email = "scoped6-#{System.unique_integer([:positive])}@example.com"
@@ -1758,7 +1700,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "member administration" do
     setup %{conn: conn} do
-      {conn, owner, account} = register_team_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       member = Fixtures.Users.create_user()
 
       membership =

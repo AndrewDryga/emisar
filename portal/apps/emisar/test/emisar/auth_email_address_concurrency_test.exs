@@ -546,7 +546,6 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
           user
         )
 
-      _subscription = Fixtures.Accounts.create_subscription(account, "team")
       subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       try do
