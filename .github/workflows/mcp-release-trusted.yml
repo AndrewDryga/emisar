@@ -1,0 +1,413 @@
+name: Trusted - MCP Bridge Release
+
+# Called only by mcp-release.yml after an `mcp-vMAJOR.MINOR.PATCH` tag push.
+# This file owns every verification, build, attestation, and publication job;
+# the caller supplies no release inputs. It builds the standalone `emisar-mcp`
+# stdio bridge for darwin + linux (amd64 + arm64) and Windows (amd64 + arm64),
+# signs build provenance via Sigstore, publishes to the Emisar release tree,
+# then mirrors the files to GitHub Releases. The first
+# attempt requires current main; Actions UI reruns preserve the original
+# SHA/ref and require only that the signed tag remains on main.
+#
+# A non-release caller cannot reach release authority: the verify job accepts
+# only an exact signed MCP release tag, every authority-bearing job depends on
+# it, and the `public-releases` environment's tag patterns bound which refs may
+# mint attestations. Today the signed annotated tag targeting current main is
+# the human release decision; the environment has no required reviewer while
+# the repository has a single maintainer (DEPLOYMENT.md). The thin caller
+# grants the maximum permissions this file may use, and individual jobs below
+# narrow them to the scopes they need.
+#
+# Asset naming:
+#
+#   tag      : mcp-v0.1.0
+#   version  : 0.1.0
+#   tarball  : emisar-mcp-0.1.0-<OS>-<ARCH>.tar.gz
+#   zip      : emisar-mcp-0.1.0-windows-<ARCH>.zip
+#   checksum : SHA256SUMS-MCP
+#
+# `install-mcp.sh` reads `https://emisar.dev/releases/mcp/latest.json` and
+# downloads the selected archive + `SHA256SUMS-MCP` from that GCS-backed tree.
+# GitHub Releases receives the identical files as a secondary mirror and
+# provenance record.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify release source
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: local
+      RELEASE_TAG: ${{ github.ref_name }}
+      RUN_ATTEMPT: ${{ github.run_attempt }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: mcp/go.mod
+          cache: true
+          cache-dependency-path: mcp/go.*
+
+      - name: Verify exact signed annotated tag
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^mcp-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::tag must exactly match mcp-vMAJOR.MINOR.PATCH"; exit 1; }
+          ref=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")
+          test "$(jq -r '.object.type' <<< "$ref")" = tag || {
+            echo "::error::release tags must be signed annotated tags"; exit 1; }
+          tag=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$(jq -r '.object.sha' <<< "$ref")")
+          test "$(jq -r '.verification.verified' <<< "$tag")" = true || {
+            echo "::error::GitHub could not verify the release tag signature"; exit 1; }
+          test "$(jq -r '.object.sha' <<< "$tag")" = "$(git rev-parse HEAD)" || {
+            echo "::error::tag target does not match the checked-out commit"; exit 1; }
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "::error::release tag target is not on main"; exit 1; }
+          if [ "$RUN_ATTEMPT" = 1 ]; then
+            test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || {
+              echo "::error::new release tags must target current main"; exit 1; }
+          else
+            echo "Recovery attempt ${RUN_ATTEMPT}: signed tag target remains on main; current-tip equality is intentionally relaxed."
+          fi
+
+      - name: Require successful CI for tagged commit
+        # The release process tags only after the commit's Required - CI
+        # aggregate reports green; this enforces it. Content-stable checks
+        # (vet, staticcheck, race tests, installer lint) were enforced by CI
+        # when this exact tree last changed — force pushes to main are
+        # disabled, so a green check cannot be rewritten out from under the
+        # tag.
+        run: |
+          set -euo pipefail
+          # Under the job's 20-minute timeout, with room for checkout and setup
+          # first: at 1500s the job was killed before this loop could report WHY
+          # it gave up, so a CI run that never finished looked like an
+          # infrastructure timeout instead of a named wait.
+          deadline=$((SECONDS + 900))
+          while true; do
+            result=$(gh api \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/${GITHUB_REPOSITORY}/commits/$(git rev-parse HEAD)/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select((.name == "Required - CI" or .name == "CI / Required - CI") and .app.id == 15368)] | sort_by(.id) | last | [(.status // "missing"), (.conclusion // "pending")] | @tsv')
+            IFS=$'\t' read -r status conclusion <<< "$result"
+
+            if [ "$status" = completed ]; then
+              test "$conclusion" = success || {
+                echo "::error::tagged commit's Required - CI check ended '$conclusion'"
+                exit 1
+              }
+              break
+            fi
+
+            if ((SECONDS >= deadline)); then
+              echo "::error::timed out waiting for the tagged commit's Required - CI check (last status '$status')"
+              exit 1
+            fi
+
+            echo "Required - CI is ${status}; checking again in 15 seconds"
+            sleep 15
+          done
+
+      - name: Scan current advisories
+        # The one release-time re-check: govulncheck consults today's
+        # vulnerability database, which moves independently of the source —
+        # a tag can land on a tree whose last Go change predates a fresh
+        # advisory. Everything content-stable already rode Required - CI.
+        working-directory: mcp
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          govulncheck ./...
+
+  build:
+    name: Build ${{ matrix.os }}/${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [verify]
+    # `public-releases` environment gate at BUILD so the Sigstore OIDC token
+    # used to sign the attestation is minted only for a ref the environment's
+    # tag patterns admit — an arbitrary branch can never produce an
+    # attested-by-our-workflow artefact. The human decision is the signed
+    # tag; re-add required reviewers here the moment a second collaborator
+    # gains write access.
+    environment:
+      name: public-releases
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            binary: emisar-mcp
+            archive: tar.gz
+          - os: linux
+            arch: arm64
+            binary: emisar-mcp
+            archive: tar.gz
+          - os: darwin
+            arch: amd64
+            binary: emisar-mcp
+            archive: tar.gz
+          - os: darwin
+            arch: arm64
+            binary: emisar-mcp
+            archive: tar.gz
+          - os: windows
+            arch: amd64
+            binary: emisar-mcp.exe
+            archive: zip
+          - os: windows
+            arch: arm64
+            binary: emisar-mcp.exe
+            archive: zip
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      GOTOOLCHAIN: local
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: mcp/go.mod
+          cache: true
+          cache-dependency-path: mcp/go.*
+
+      - name: Derive version
+        id: ver
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^mcp-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag $RELEASE_TAG doesn't match mcp-vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          version="${RELEASE_TAG#mcp-v}"
+          echo "tag=${RELEASE_TAG}"   >> "$GITHUB_OUTPUT"
+          echo "version=${version}"   >> "$GITHUB_OUTPUT"
+
+      - name: Build deterministic archive
+        id: archive
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: "0"
+          VERSION: ${{ steps.ver.outputs.version }}
+          BINARY: ${{ matrix.binary }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          (cd mcp && go build -trimpath \
+            -ldflags "-buildid= -s -w -X main.Version=${VERSION}" \
+            -o "../dist/${BINARY}" .)
+          # The MCP bridge ships as a tiny archive — just the binary,
+          # LICENSE, and a short README. No installer script: the
+          # binary is a single CLI that operators drop into PATH.
+          name="emisar-mcp-${VERSION}-${GOOS}-${GOARCH}"
+          mkdir -p "dist/${name}"
+          cp "dist/${BINARY}" "dist/${name}/${BINARY}"
+          # mcp/LICENSE (Apache-2.0 — the license of the shipped binary)
+          # is a repo invariant; missing it is a malformed release, fail
+          # loudly rather than silently shipping without one.
+          cp mcp/LICENSE "dist/${name}/LICENSE"
+          # Self-documenting README so a maintainer looking at the
+          # extracted tarball months later remembers what it is.
+          # Heredoc is quoted ('EOF') so shell + actions expressions
+          # are NOT expanded — we want the README to keep ${VERSION}
+          # etc. as literal placeholders if any sneak in. Substitute
+          # afterwards.
+          cat > "dist/${name}/README.md" <<'EOF'
+          # emisar-mcp __VERSION__ (__GOOS__/__GOARCH__)
+
+          MCP stdio↔HTTP bridge for emisar. Configured by an
+          MCP-aware client (Claude Desktop, Cursor, Claude Code,
+          Gemini CLI, Codex CLI, ...) via stdin/stdout.
+
+          Extract the archive and put the binary on PATH. Then point your MCP
+          client at the binary path and set `EMISAR_URL` + `EMISAR_API_KEY` in
+          the launcher's env block. The portal at
+          https://emisar.dev/app/agents generates a copy-pasteable snippet per
+          client.
+          EOF
+          sed -i "s/__VERSION__/${VERSION}/g; s/__GOOS__/${GOOS}/g; s/__GOARCH__/${GOARCH}/g" \
+            "dist/${name}/README.md"
+          if [ "$ARCHIVE" = zip ]; then
+            find "dist/${name}" -exec touch -t 198001010000 {} +
+            (cd dist && zip -X -q -r "${name}.zip" "${name}")
+          else
+            tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+              -C dist -czf "dist/${name}.tar.gz" "${name}"
+          fi
+          archive="dist/${name}.${ARCHIVE}"
+          shasum -a 256 "$archive" | awk '{print $1}' > "${archive}.sha256"
+          echo "path=${archive}" >> "$GITHUB_OUTPUT"
+          ls -la dist/
+
+      - name: Verify release archive
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          BINARY: ${{ matrix.binary }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          set -euo pipefail
+          name="emisar-mcp-${VERSION}-${GOOS}-${GOARCH}"
+          mkdir -p /tmp/release-check
+          if [ "$ARCHIVE" = zip ]; then
+            unzip -q "dist/${name}.zip" -d /tmp/release-check
+          else
+            tar -xzf "dist/${name}.tar.gz" -C /tmp/release-check
+            test -x "/tmp/release-check/${name}/${BINARY}"
+          fi
+          test -f "/tmp/release-check/${name}/${BINARY}"
+          test -f "/tmp/release-check/${name}/LICENSE"
+          test -f "/tmp/release-check/${name}/README.md"
+          go version -m "/tmp/release-check/${name}/${BINARY}"
+          if [ "$GOOS/$GOARCH" = linux/amd64 ]; then
+            test "$("/tmp/release-check/${name}/${BINARY}" --version)" = "emisar-mcp ${VERSION}"
+          fi
+
+      - name: Attest build provenance
+        # GitHub's attestation API rejects user-owned private repos
+        # (free-tier feature gate). Skip on private; the step kicks
+        # back in automatically once the repo is public. See
+        # runner-release.yml for the same guard + rationale.
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+        with:
+          subject-path: ${{ steps.archive.outputs.path }}
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: emisar-mcp-${{ steps.ver.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            ${{ steps.archive.outputs.path }}
+            ${{ steps.archive.outputs.path }}.sha256
+          retention-days: 7
+          overwrite: true
+
+  publish:
+    name: Publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build]
+    # Reuse the signed-tag environment for the GCS credential. The WIF provider
+    # additionally pins this exact workflow path and mcp-v tag prefix.
+    environment:
+      name: public-releases
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      GOTOOLCHAIN: local
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.sum
+
+      - name: Download release archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: artefacts/
+
+      - name: Assemble release assets
+        run: |
+          mkdir -p release
+          find artefacts/ -name "emisar-mcp-*.tar.gz" -exec cp {} release/ \;
+          find artefacts/ -name "emisar-mcp-*.zip" -exec cp {} release/ \;
+          find artefacts/ -name "emisar-mcp-*.tar.gz.sha256" -exec cp {} release/ \;
+          find artefacts/ -name "emisar-mcp-*.zip.sha256" -exec cp {} release/ \;
+          # Suffix the combined checksum file with -MCP so it can't
+          # collide with the runner's SHA256SUMS on the same release.
+          # (In practice the two streams use separate releases, but
+          # the rename costs nothing and is unambiguous.)
+          ( cd release && shasum -a 256 emisar-mcp-*.tar.gz emisar-mcp-*.zip > SHA256SUMS-MCP )
+          ls -la release/
+
+      - name: Derive version
+        id: ver
+        run: |
+          [[ "$RELEASE_TAG" =~ ^mcp-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          version="${RELEASE_TAG#mcp-v}"
+          echo "tag=${RELEASE_TAG}"   >> "$GITHUB_OUTPUT"
+          echo "version=${version}"   >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: emisar-release-publisher@emisar.iam.gserviceaccount.com
+          token_format: access_token
+
+      - name: Publish primary Emisar release
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          go -C tools run ./cmd/releasepublish \
+            --dir ../release \
+            --bucket emisar-pack-registry \
+            --component mcp \
+            --tag "${RELEASE_TAG}" \
+            --source-revision "${GITHUB_SHA}"
+
+      - name: Verify primary Emisar release
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          base="https://emisar.dev/releases/mcp/${RELEASE_TAG}"
+          curl -fsS --retry 4 --retry-delay 2 "${base}/SHA256SUMS-MCP" -o /tmp/published-SHA256SUMS-MCP
+          cmp release/SHA256SUMS-MCP /tmp/published-SHA256SUMS-MCP
+          archive="emisar-mcp-${VERSION}-linux-amd64.tar.gz"
+          curl -fsS --retry 4 --retry-delay 2 "${base}/${archive}" -o "/tmp/${archive}"
+          cmp "release/${archive}" "/tmp/${archive}"
+          for arch in amd64 arm64; do
+            windows_archive="emisar-mcp-${VERSION}-windows-${arch}.zip"
+            curl -fsS --retry 4 --retry-delay 2 "${base}/${windows_archive}" -o "/tmp/${windows_archive}"
+            cmp "release/${windows_archive}" "/tmp/${windows_archive}"
+          done
+
+      - name: Publish GitHub release mirror
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: "MCP Bridge v${{ steps.ver.outputs.version }}"
+          # NOT marked as latest — the runner owns the Latest pointer
+          # so `curl emisar.dev/install.sh | bash` always gets the
+          # runner install path, not the MCP bridge.
+          make_latest: "false"
+          generate_release_notes: true
+          files: |
+            release/emisar-mcp-*.tar.gz
+            release/emisar-mcp-*.tar.gz.sha256
+            release/emisar-mcp-*.zip
+            release/emisar-mcp-*.zip.sha256
+            release/SHA256SUMS-MCP
+          fail_on_unmatched_files: true

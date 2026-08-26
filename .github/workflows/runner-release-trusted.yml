@@ -1,0 +1,549 @@
+name: Trusted - Runner Release
+
+# Called only by runner-release.yml after a `runner-vMAJOR.MINOR.PATCH` tag
+# push. This file owns every verification, build, attestation, image, and
+# publication job; the caller supplies no release inputs. The first attempt
+# requires current main, while a failed-job rerun preserves the original
+# SHA/ref and therefore needs only the signed tag's continuing ancestry on main.
+#
+# A non-release caller cannot reach release authority:
+#
+#   * The verify job accepts only an exact signed runner release tag and every
+#     authority-bearing job depends on it.
+#   * The build step gates on `environment: public-releases`, whose tag
+#     patterns (`runner-v*`, `mcp-v*`) bound which refs may reach it. Today the
+#     signed annotated tag targeting current main IS the human release
+#     decision — the environment carries no required reviewer while the
+#     repository has a single maintainer (see DEPLOYMENT.md).
+#   * The thin caller grants the maximum permissions the called workflow may
+#     use; individual jobs below narrow them to the scopes they need.
+#
+# Asset naming:
+#
+#   tag      : runner-v0.3.0
+#   version  : 0.3.0   (tag with `runner-v` prefix stripped)
+#   tarball  : emisar-0.3.0-<OS>-<ARCH>.tar.gz
+#   checksum : SHA256SUMS (one combined file for all four arches)
+#
+# `install.sh` reads `https://emisar.dev/releases/runner/latest.json` and
+# downloads the selected archive + `SHA256SUMS` from the same GCS-backed tree.
+# GitHub Releases receives the identical files as a secondary mirror and
+# provenance record.
+#
+# The release also publishes the official container image
+# `ghcr.io/<owner>/emisar-runner:<version>` (linux/amd64 + linux/arm64),
+# assembled from the exact tested linux tarball binaries — see the
+# `image` job and runner/release/Dockerfile.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify release source
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: local
+      RELEASE_TAG: ${{ github.ref_name }}
+      RUN_ATTEMPT: ${{ github.run_attempt }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: runner/go.mod
+          cache: true
+          cache-dependency-path: runner/go.sum
+
+      - name: Verify exact signed annotated tag
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::tag must exactly match runner-vMAJOR.MINOR.PATCH"; exit 1; }
+          ref=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")
+          test "$(jq -r '.object.type' <<< "$ref")" = tag || {
+            echo "::error::release tags must be signed annotated tags"; exit 1; }
+          tag=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$(jq -r '.object.sha' <<< "$ref")")
+          test "$(jq -r '.verification.verified' <<< "$tag")" = true || {
+            echo "::error::GitHub could not verify the release tag signature"; exit 1; }
+          test "$(jq -r '.object.sha' <<< "$tag")" = "$(git rev-parse HEAD)" || {
+            echo "::error::tag target does not match the checked-out commit"; exit 1; }
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "::error::release tag target is not on main"; exit 1; }
+          if [ "$RUN_ATTEMPT" = 1 ]; then
+            test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || {
+              echo "::error::new release tags must target current main"; exit 1; }
+          else
+            echo "Recovery attempt ${RUN_ATTEMPT}: signed tag target remains on main; current-tip equality is intentionally relaxed."
+          fi
+
+      - name: Require successful CI for tagged commit
+        # The release process tags only after the commit's Required - CI
+        # aggregate reports green; this enforces it. Content-stable checks
+        # (vet, staticcheck, race tests, pack validation, installer lint)
+        # were enforced by CI when this exact tree last changed — force
+        # pushes to main are disabled, so the history is append-only and a
+        # green check cannot be rewritten out from under the tag.
+        run: |
+          set -euo pipefail
+          # Under the job's 20-minute timeout, with room for checkout and setup
+          # first: at 1500s the job was killed before this loop could report WHY
+          # it gave up, so a CI run that never finished looked like an
+          # infrastructure timeout instead of a named wait.
+          deadline=$((SECONDS + 900))
+          while true; do
+            result=$(gh api \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/${GITHUB_REPOSITORY}/commits/$(git rev-parse HEAD)/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select((.name == "Required - CI" or .name == "CI / Required - CI") and .app.id == 15368)] | sort_by(.id) | last | [(.status // "missing"), (.conclusion // "pending")] | @tsv')
+            IFS=$'\t' read -r status conclusion <<< "$result"
+
+            if [ "$status" = completed ]; then
+              test "$conclusion" = success || {
+                echo "::error::tagged commit's Required - CI check ended '$conclusion'"
+                exit 1
+              }
+              break
+            fi
+
+            if ((SECONDS >= deadline)); then
+              echo "::error::timed out waiting for the tagged commit's Required - CI check (last status '$status')"
+              exit 1
+            fi
+
+            echo "Required - CI is ${status}; checking again in 15 seconds"
+            sleep 15
+          done
+
+      - name: Scan current advisories
+        # The one release-time re-check: govulncheck consults today's
+        # vulnerability database, which moves independently of the source —
+        # a tag can land on a tree whose last Go change predates a fresh
+        # advisory. Everything content-stable already rode Required - CI.
+        working-directory: runner
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          govulncheck ./...
+
+  build:
+    name: Build ${{ matrix.os }}/${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [verify]
+    # `public-releases` environment gate at BUILD (not just publish) so the
+    # Sigstore OIDC token used for attestation is minted only for a ref the
+    # environment's tag patterns admit (`runner-v*`/`mcp-v*`) — an arbitrary
+    # branch can never produce an attested-by-our-workflow artefact. The
+    # human decision is the signed tag itself; re-add required reviewers
+    # here the moment a second collaborator gains write access.
+    environment:
+      name: public-releases
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+    # Attestations need id-token write at the build job (where the
+    # SLSA provenance subject is computed) so the runner can request
+    # an OIDC token bound to this workflow run.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      GOTOOLCHAIN: local
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: runner/go.mod
+          cache: true
+          cache-dependency-path: runner/go.sum
+
+      - name: Derive version
+        id: ver
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag $RELEASE_TAG doesn't match runner-vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          version="${RELEASE_TAG#runner-v}"
+          echo "tag=${RELEASE_TAG}"   >> "$GITHUB_OUTPUT"
+          echo "version=${version}"   >> "$GITHUB_OUTPUT"
+
+      - name: Build deterministic archive
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: "0"
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          mkdir -p dist
+          (cd runner && go build -trimpath \
+            -ldflags "-buildid= -s -w -X main.Version=${VERSION}" \
+            -o "../dist/emisar" .)
+          # Bundle runner binary + install.sh + sample packs + README
+          # into the tarball install.sh expects. Tarball internals
+          # keep the flat shape (packs/ at the root) so the
+          # script's hard-coded paths work after extraction.
+          name="emisar-${VERSION}-${GOOS}-${GOARCH}"
+          mkdir -p "dist/${name}"
+          cp dist/emisar "dist/${name}/emisar"
+          cp README.md "dist/${name}/"
+          # runner/LICENSE (Apache-2.0 — the license of the shipped
+          # binary + packs) and install.sh are repo invariants; missing
+          # either is a malformed release, so copy unconditionally (no
+          # `[ -f X ] && ... || true` swallows). Customer documentation
+          # is served at https://emisar.dev/docs and is not shipped.
+          cp runner/LICENSE "dist/${name}/LICENSE"
+          cp install.sh "dist/${name}/install.sh"
+          chmod +x "dist/${name}/install.sh"
+          # Bundle only a SMALL curated default set so install.sh can set
+          # up host-appropriate starter packs offline. The full catalog
+          # (~93 packs) is fetched on demand via `emisar pack install
+          # <name>` from the registry — we do NOT ship all of them.
+          mkdir -p "dist/${name}/packs"
+          while IFS= read -r pack; do
+            test -n "$pack" || continue
+            if [ -d "packs/${pack}" ]; then
+              cp -R "packs/${pack}" "dist/${name}/packs/${pack}"
+            else
+              echo "::error::bundled default pack ${pack} not found"
+              exit 1
+            fi
+          done < runner/release/bundled-packs.txt
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+            -C dist -czf "dist/${name}.tar.gz" "${name}"
+          shasum -a 256 "dist/${name}.tar.gz" | awk '{print $1}' > "dist/${name}.tar.gz.sha256"
+          ls -la dist/
+
+      - name: Verify release archive
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          name="emisar-${VERSION}-${GOOS}-${GOARCH}"
+          mkdir -p /tmp/release-check
+          tar -xzf "dist/${name}.tar.gz" -C /tmp/release-check
+          test -x "/tmp/release-check/${name}/emisar"
+          test -x "/tmp/release-check/${name}/install.sh"
+          test -f "/tmp/release-check/${name}/LICENSE"
+          test -f "/tmp/release-check/${name}/README.md"
+          expected_packs=$(grep -cve '^[[:space:]]*$' runner/release/bundled-packs.txt)
+          test "$(find "/tmp/release-check/${name}/packs" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq "$expected_packs"
+          go version -m "/tmp/release-check/${name}/emisar"
+          if [ "$GOOS/$GOARCH" = linux/amd64 ]; then
+            test "$("/tmp/release-check/${name}/emisar" --version)" = "emisar version ${VERSION}"
+          fi
+
+      - name: Attest build provenance
+        # Generates a SLSA Build Level 2 provenance attestation for the tarball.
+        # The attestation is signed by Sigstore using a workflow-bound
+        # ambient OIDC identity (no long-lived keys). Verifiable later
+        # with `gh attestation verify <tarball> --owner andrewdryga`.
+        #
+        # GitHub's attestation API rejects user-owned private repos
+        # (free-tier feature gate). Skip on private; the step kicks
+        # back in automatically once the repo is public. Without this
+        # guard, the release would never publish (build job fails →
+        # publish skips) on a private repo.
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+        with:
+          subject-path: |
+            dist/emisar-${{ steps.ver.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: emisar-runner-${{ steps.ver.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          retention-days: 7
+          overwrite: true
+
+  image:
+    name: Publish container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [build]
+    # Same ref-bounding environment as build: the GHCR push credential and
+    # the Sigstore OIDC token are minted only for refs the environment's
+    # tag patterns admit.
+    environment:
+      name: public-releases
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    outputs:
+      image: ${{ steps.name.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - name: Derive version
+        id: ver
+        run: |
+          [[ "$RELEASE_TAG" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          version="${RELEASE_TAG#runner-v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Derive image name
+        id: name
+        # GHCR requires a lowercase namespace; the repository owner isn't.
+        run: |
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/emisar-runner" >> "$GITHUB_OUTPUT"
+
+      - name: Download release archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: emisar-runner-${{ steps.ver.outputs.version }}-linux-*
+          path: artefacts/
+
+      - name: Stage the exact tested binaries
+        # The image ships the binaries the build job produced, verified,
+        # and attested — never a rebuild. Re-check each tarball against its
+        # recorded checksum before extracting the binary into the `dist`
+        # build context the Dockerfile consumes.
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            name="emisar-${VERSION}-linux-${arch}"
+            tarball=$(find artefacts/ -name "${name}.tar.gz")
+            checksum=$(find artefacts/ -name "${name}.tar.gz.sha256")
+            test -n "$tarball" && test -n "$checksum"
+            echo "$(cat "$checksum")  ${tarball}" | sha256sum -c -
+            mkdir -p "dist/image/linux-${arch}"
+            tar -xzf "$tarball" -C "dist/image/linux-${arch}" --strip-components=1 "${name}/emisar"
+            test -x "dist/image/linux-${arch}/emisar"
+          done
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push multi-arch image by digest
+        id: push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: runner/release/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          # Push UNTAGGED (by digest): the version tag appears only after the
+          # smoke and attestation below pass, so a failed release never
+          # leaves a pullable public tag pointing at unverified bytes.
+          outputs: type=image,name=${{ steps.name.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          build-contexts: |
+            dist=dist/image
+          provenance: mode=max
+          sbom: true
+          labels: |
+            org.opencontainers.image.title=emisar-runner
+            org.opencontainers.image.description=Official emisar runner base image
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.ver.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Smoke-test the pushed digest
+        # By digest, per platform, AFTER the push — the checked bytes are the
+        # published bytes, matching the tarballs' exact-tested-artifact bar.
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          runner/release/verify-image.sh "${IMAGE}@${DIGEST}" "$VERSION" linux/amd64
+          # Docker caches the selected child manifest under the parent digest
+          # ref and refuses to replace it with the other platform. The first
+          # smoke has stopped every container, so discard that local record
+          # before resolving the same published digest for arm64.
+          docker image rm "${IMAGE}@${DIGEST}"
+          runner/release/verify-image.sh "${IMAGE}@${DIGEST}" "$VERSION" linux/arm64
+
+      - name: Attest image provenance
+        # Same Sigstore workflow-bound provenance as the tarballs, pushed to
+        # the registry so `gh attestation verify oci://...` works. Skipped on
+        # a private repo for the same free-tier gate as the build job.
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+        with:
+          subject-name: ${{ steps.name.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Promote the smoked digest to the version tag
+        # The version tag is the immutable public reference; no `latest` is
+        # published — pinning an image that IS a capability boundary should
+        # be an explicit act. An existing version tag is never moved to a
+        # different digest, so a rerun can only ever republish the same bytes.
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          if existing=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --format '{{.Manifest.Digest}}' 2>/dev/null); then
+            if [ "$existing" != "$DIGEST" ]; then
+              echo "::error::${IMAGE}:${VERSION} already exists at ${existing}; refusing to move it to ${DIGEST}"
+              exit 1
+            fi
+            echo "${IMAGE}:${VERSION} already points at the smoked digest — nothing to promote."
+          else
+            docker buildx imagetools create --tag "${IMAGE}:${VERSION}" "${IMAGE}@${DIGEST}"
+          fi
+
+  publish:
+    name: Publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build, image]
+    # Reuse the signed-tag environment for the GCS credential. The WIF provider
+    # additionally pins this exact workflow path and runner-v tag prefix.
+    environment:
+      name: public-releases
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      GOTOOLCHAIN: local
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.sum
+
+      - name: Download release archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: artefacts/
+
+      - name: Assemble release assets
+        id: assets
+        run: |
+          mkdir -p release
+          find artefacts/ -name "emisar-*.tar.gz" -exec cp {} release/ \;
+          find artefacts/ -name "emisar-*.tar.gz.sha256" -exec cp {} release/ \;
+          # One combined checksum file is friendlier for `sha256sum -c`.
+          ( cd release && shasum -a 256 emisar-*.tar.gz > SHA256SUMS )
+          ls -la release/
+
+      - name: Derive version
+        id: ver
+        run: |
+          [[ "$RELEASE_TAG" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          version="${RELEASE_TAG#runner-v}"
+          echo "tag=${RELEASE_TAG}"   >> "$GITHUB_OUTPUT"
+          echo "version=${version}"   >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/65212203604/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: emisar-release-publisher@emisar.iam.gserviceaccount.com
+          token_format: access_token
+
+      - name: Publish primary Emisar release
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          go -C tools run ./cmd/releasepublish \
+            --dir ../release \
+            --bucket emisar-pack-registry \
+            --component runner \
+            --tag "${RELEASE_TAG}" \
+            --source-revision "${GITHUB_SHA}"
+
+      - name: Verify primary Emisar release
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          base="https://emisar.dev/releases/runner/${RELEASE_TAG}"
+          curl -fsS --retry 4 --retry-delay 2 "${base}/SHA256SUMS" -o /tmp/published-SHA256SUMS
+          cmp release/SHA256SUMS /tmp/published-SHA256SUMS
+          archive="emisar-${VERSION}-linux-amd64.tar.gz"
+          curl -fsS --retry 4 --retry-delay 2 "${base}/${archive}" -o "/tmp/${archive}"
+          cmp "release/${archive}" "/tmp/${archive}"
+
+      - name: Publish GitHub release mirror
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: "Runner v${{ steps.ver.outputs.version }}"
+          # `make_latest: legacy` — only this release is marked Latest
+          # on GitHub if it's the newest by semver. The MCP bridge has
+          # its own release stream (mcp-v*) and shouldn't compete for
+          # the Latest pointer; we keep the runner as Latest because
+          # that's what most install pipelines (`curl | bash`) hit.
+          make_latest: legacy
+          generate_release_notes: true
+          # The digest is the immutable reference to the exact smoke-tested
+          # multi-arch image; the notes are where operators pin from.
+          append_body: true
+          # The provenance steps skip on a private repo (GitHub's attestation API
+          # rejects user-owned private repos), so this line has to skip with
+          # them. Left unconditional it promised an attestation reviewers were
+          # told to verify with `gh attestation verify` and that did not exist.
+          body: |
+            **Container image** (linux/amd64, linux/arm64${{ !github.event.repository.private && ' — signed provenance + SBOM' || '' }}):
+
+            ```
+            ${{ needs.image.outputs.image }}:${{ steps.ver.outputs.version }}@${{ needs.image.outputs.digest }}
+            ```
+          files: |
+            release/emisar-*.tar.gz
+            release/emisar-*.tar.gz.sha256
+            release/SHA256SUMS
+          fail_on_unmatched_files: true
