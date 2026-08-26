@@ -32,6 +32,7 @@ defmodule EmisarWeb.TeamLive do
        socket.assigns.current_membership.pack_access_mode == :restricted
      )
      |> assign(:roles, @roles)
+     |> assign(:expanded_scopes, MapSet.new())
      |> assign(:editing_id, nil)
      |> assign(:edit_form, nil)
      |> assign(:scope_editing_id, nil)
@@ -151,6 +152,13 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("cancel_edit", _params, socket) do
     {:noreply, socket |> assign(:editing_id, nil) |> assign(:edit_form, nil)}
+  end
+
+  # Pure view: expand or collapse a roster row's clipped scope chip list. Held
+  # per membership id so a re-render (a member mutation, a filter) can't
+  # re-collapse a row the operator opened to audit.
+  def handle_event("toggle_scope_expand", %{"id" => id}, socket) do
+    {:noreply, update(socket, :expanded_scopes, &toggle_scope(&1, id))}
   end
 
   # Re-reads the member rather than trusting the roster this page rendered: a
@@ -595,6 +603,12 @@ defmodule EmisarWeb.TeamLive do
   # the `:email_confirmation` on_mount hook (UserAuth) — the same hook
   # that powers the portal-wide verify-email banner — so there's no
   # per-LV handler here.
+
+  defp toggle_scope(expanded, id) do
+    if MapSet.member?(expanded, id),
+      do: MapSet.delete(expanded, id),
+      else: MapSet.put(expanded, id)
+  end
 
   defp find_member_facts(socket, id),
     do: Enum.find(socket.assigns.member_facts, &(&1.membership.id == id))
@@ -2127,14 +2141,22 @@ defmodule EmisarWeb.TeamLive do
                           >
                             packs:
                           </dt>
-                          <dd
-                            :if={access.mode != :none}
-                            class="flex min-w-0 flex-wrap items-center gap-1"
-                          >
-                            <span :if={pack_reach_phrase(access)} class="text-xs text-zinc-400">
-                              {pack_reach_phrase(access)}
-                            </span>
-                            <.chip :for={pack_id <- access.pack_ids} mono>{pack_id}</.chip>
+                          <dd :if={access.mode != :none}>
+                            <.chip_overflow
+                              id={"member-packs-#{membership.id}"}
+                              items={access.pack_ids}
+                              expanded?={MapSet.member?(@expanded_scopes, membership.id)}
+                              toggle="toggle_scope_expand"
+                              toggle_value={membership.id}
+                              label="packs"
+                            >
+                              <:lead :if={pack_reach_phrase(access)}>
+                                {pack_reach_phrase(access)}
+                              </:lead>
+                              <:item :let={pack_id}>
+                                <.chip mono>{pack_id}</.chip>
+                              </:item>
+                            </.chip_overflow>
                           </dd>
                         </dl>
                         <%!-- No "managed by identity provider" note here: the sync badge

@@ -98,6 +98,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       # The add-mapping form is behind an "Add mapping" button, not always open.
       |> assign(:adding_mapping, false)
       |> assign(:runner_access_mappings, %{})
+      |> assign(:expanded_scopes, MapSet.new())
       |> assign(:runner_access_mapping_metadata, %{})
       |> assign(:runner_access_mapping_errors, %{})
       |> assign(:runner_access_mapping_forms, %{})
@@ -488,6 +489,12 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   def handle_event("cancel_oidc_step_up", _params, socket),
     do: {:noreply, reset_oidc_step_up(socket)}
+
+  # Pure view: expand or collapse a mapping row's clipped pack chip list. Held
+  # per mapping id so a re-render can't re-collapse a row opened to audit.
+  def handle_event("toggle_scope_expand", %{"id" => id}, socket) do
+    {:noreply, update(socket, :expanded_scopes, &toggle_scope(&1, id))}
+  end
 
   def handle_event("validate_edit", %{"provider_id" => id, "provider" => params} = event, socket) do
     case find_provider(socket, id) do
@@ -1996,6 +2003,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               runners={@runners}
               pack_advertisements={@pack_advertisements}
               pack_access_restricted?={@pack_access_restricted?}
+              expanded_scopes={@expanded_scopes}
             />
 
             <.synced_groups_section
@@ -3243,6 +3251,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :runners, :list, required: true
   attr :pack_advertisements, :map, required: true
   attr :pack_access_restricted?, :boolean, required: true
+  attr :expanded_scopes, :any, required: true
 
   defp group_runner_access_mapping_section(assigns) do
     assigns = assign(assigns, :runners_by_id, Map.new(assigns.runners, &{&1.id, &1}))
@@ -3315,17 +3324,22 @@ defmodule EmisarWeb.SSOSettingsLive do
                   >
                     packs:
                   </dt>
-                  <dd
-                    :if={mapping.runner_access_mode != :none}
-                    class="flex min-w-0 flex-wrap items-center gap-1"
-                  >
-                    <span
-                      :if={mapping_pack_reach_phrase(mapping.pack_access_mode)}
-                      class="text-xs text-zinc-400"
+                  <dd :if={mapping.runner_access_mode != :none}>
+                    <.chip_overflow
+                      id={"mapping-packs-#{mapping.id}"}
+                      items={mapping.pack_scope_pack_ids}
+                      expanded?={MapSet.member?(@expanded_scopes, mapping.id)}
+                      toggle="toggle_scope_expand"
+                      toggle_value={mapping.id}
+                      label="packs"
                     >
-                      {mapping_pack_reach_phrase(mapping.pack_access_mode)}
-                    </span>
-                    <.chip :for={pack_id <- mapping.pack_scope_pack_ids} mono>{pack_id}</.chip>
+                      <:lead :if={mapping_pack_reach_phrase(mapping.pack_access_mode)}>
+                        {mapping_pack_reach_phrase(mapping.pack_access_mode)}
+                      </:lead>
+                      <:item :let={pack_id}>
+                        <.chip mono>{pack_id}</.chip>
+                      </:item>
+                    </.chip_overflow>
                   </dd>
                 </dl>
               </div>
@@ -3853,6 +3867,12 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp mapping_pack_reach_phrase(:all), do: "All"
   defp mapping_pack_reach_phrase(:restricted), do: nil
+
+  defp toggle_scope(expanded, id) do
+    if MapSet.member?(expanded, id),
+      do: MapSet.delete(expanded, id),
+      else: MapSet.put(expanded, id)
+  end
 
   defp pack_access_mode_label(:all), do: "All packs"
   defp pack_access_mode_label(:restricted), do: "Selected packs"

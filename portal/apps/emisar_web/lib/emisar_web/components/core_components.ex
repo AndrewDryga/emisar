@@ -3899,6 +3899,90 @@ defmodule EmisarWeb.CoreComponents do
   defp chip_class(:rose), do: "bg-rose-500/15 text-rose-200 ring-1 ring-rose-500/30"
   defp chip_class(:neutral), do: "bg-zinc-800/80 text-zinc-300"
 
+  @doc ~S"""
+  A wrapping list of chip-shaped items that clips to the first `limit` and hides
+  the rest behind a `+N` toggle chip. For a scope allowlist (a member's packs, a
+  mapping's runners) long enough to dominate a roster row: three names the
+  operator recognises, then the true size, expandable in place. A list at
+  `limit + 1` renders whole — a `+1` control would take the slot the one hidden
+  chip needs.
+
+  Stateless — the caller owns `expanded?` (a per-row boolean, so a streamed or
+  patched re-render can't silently re-collapse a row the operator opened) and
+  handles `toggle` by flipping that state. The `+N` control carries an accessible
+  name stating the full count.
+
+      <.chip_overflow
+        id={"member-packs-#{membership.id}"}
+        items={access.pack_ids}
+        expanded?={MapSet.member?(@expanded_scopes, membership.id)}
+        toggle="toggle_scope_expand"
+        toggle_value={membership.id}
+        label="packs"
+      >
+        <:lead :if={pack_reach_phrase(access)}>{pack_reach_phrase(access)}</:lead>
+        <:item :let={pack_id}><.chip mono>{pack_id}</.chip></:item>
+      </.chip_overflow>
+  """
+  attr :id, :string, required: true
+  attr :items, :list, required: true
+  attr :expanded?, :boolean, default: false
+  attr :limit, :integer, default: 3, doc: "chips shown before the +N toggle"
+  attr :toggle, :string, required: true, doc: "phx-click event that flips expanded?"
+  attr :toggle_value, :any, required: true, doc: "phx-value-id sent with the toggle"
+
+  attr :label, :string,
+    required: true,
+    doc: ~s(plural noun for the accessible toggle name, e.g. "packs")
+
+  slot :item, required: true, doc: "renders one item; receives the item via :let"
+  slot :lead, doc: "optional lead-in content (a reach phrase) before the items"
+
+  def chip_overflow(assigns) do
+    # Clip only when the toggle earns its slot: at exactly limit + 1 items a
+    # "+1" control would occupy the very space the one hidden chip needs, so
+    # the row just shows all of them.
+    hidden = length(assigns.items) - assigns.limit
+    clip? = hidden > 1
+
+    assigns =
+      assigns
+      |> assign(:clip?, clip?)
+      |> assign(
+        :shown,
+        if(clip? and not assigns.expanded?,
+          do: Enum.take(assigns.items, assigns.limit),
+          else: assigns.items
+        )
+      )
+      |> assign(:hidden, hidden)
+
+    ~H"""
+    <div id={@id} class="flex min-w-0 flex-wrap items-center gap-1">
+      <span :for={lead <- @lead} class="text-xs text-zinc-400">{render_slot(lead)}</span>
+      <%= for item <- @shown do %>
+        {render_slot(@item, item)}
+      <% end %>
+      <button
+        :if={@clip?}
+        type="button"
+        phx-click={@toggle}
+        phx-value-id={@toggle_value}
+        aria-expanded={to_string(@expanded?)}
+        aria-controls={@id}
+        aria-label={
+          if @expanded?,
+            do: "Show fewer #{@label}",
+            else: "Show all #{length(@items)} #{@label}"
+        }
+        class="whitespace-nowrap rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400 transition-colors hover:bg-zinc-700/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-zinc-600"
+      >
+        {if @expanded?, do: "Show fewer", else: "+#{@hidden}"}
+      </button>
+    </div>
+    """
+  end
+
   @doc """
   Wraps a trigger element with a styled hover/focus tooltip — a dark bubble
   carrying `text`, for the "why" a control is locked/disabled/limited. The reveal

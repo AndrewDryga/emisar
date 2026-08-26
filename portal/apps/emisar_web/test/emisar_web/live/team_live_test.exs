@@ -1698,6 +1698,65 @@ defmodule EmisarWeb.TeamLiveTest do
     end
   end
 
+  describe "roster scope chip overflow" do
+    test "a long pack allowlist clips to three chips and a +N toggle that expands in place",
+         %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      member = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        )
+
+      packs = ~w[alpha bravo charlie delta echo]
+
+      {:ok, restricted} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, packs)
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert html =~ "alpha"
+      assert html =~ "charlie"
+      refute html =~ "delta"
+      refute html =~ "echo"
+      assert html =~ "+2"
+
+      expanded =
+        lv
+        |> element("#member-packs-#{membership.id} button")
+        |> render_click()
+
+      assert expanded =~ "delta"
+      assert expanded =~ "echo"
+      assert expanded =~ "Show fewer"
+    end
+
+    test "a short allowlist renders every pack with no toggle", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      member = Fixtures.Users.create_user()
+
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "operator"
+        )
+
+      {:ok, restricted} =
+        Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ~w[alpha bravo])
+
+      Fixtures.Memberships.force_runner_access(membership, restricted)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      assert has_element?(lv, "#member-packs-#{membership.id}")
+      refute has_element?(lv, "#member-packs-#{membership.id} button")
+    end
+  end
+
   describe "member administration" do
     setup %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)
