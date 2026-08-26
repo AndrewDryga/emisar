@@ -1730,6 +1730,10 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "require_approval"
       assert html =~ "24 hours"
       assert html =~ "Standing grants"
+      assert html =~ "reason; it is recorded with the decision"
+      assert html =~ "creates no standing grant"
+      assert html =~ "gets its own audit record"
+      refute html =~ "type a confirmation"
     end
 
     test "the runbooks page names the LLM tools it exposes", %{conn: conn} do
