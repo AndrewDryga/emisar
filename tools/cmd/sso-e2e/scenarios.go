@@ -36,7 +36,7 @@ func (d *driver) rpc(expr string) string {
 }
 
 // roleOf reads a member's CURRENT role in the demo account — the thing a
-// group→role mapping is for.
+// directory role mapping is for.
 func (d *driver) roleOf(externalID string) string {
 	return d.rpc(`
 	  alias Emisar.{Accounts, Repo, SSO}
@@ -47,6 +47,22 @@ func (d *driver) roleOf(externalID string) string {
 	  case identity && Accounts.peek_sync_membership(identity.account_id, identity.user_id) do
 	    nil -> IO.puts("none")
 	    membership -> IO.puts(to_string(membership.role))
+	  end`)
+}
+
+// runnerAccessModeOf reads the other authorization dimension recomputed from
+// directory mappings. The mapped case below grants :all, so its mode alone is
+// the complete result rather than a partial view of a restricted scope.
+func (d *driver) runnerAccessModeOf(externalID string) string {
+	return d.rpc(`
+	  alias Emisar.{Accounts, Repo, SSO}
+	  identity =
+	    SSO.UserIdentity.Query.not_deleted()
+	    |> SSO.UserIdentity.Query.by_provider_and_scim_external_id("` + d.providerID + `", "` + externalID + `")
+	    |> Repo.peek()
+	  case identity && Accounts.peek_sync_membership(identity.account_id, identity.user_id) do
+	    nil -> IO.puts("none")
+	    membership -> IO.puts(to_string(membership.runner_access_mode))
 	  end`)
 }
 
@@ -346,54 +362,134 @@ func (d *driver) testGroupLifecycle() {
 }
 
 func (d *driver) testRoleMapping() {
-	logf("mapping: a directory group grants a role …")
+	logf("mapping: an externalId-less group grants role and runner access …")
 
-	// Map the group to :admin the way the console does, then push alice into it.
-	d.rpc(`
-	  alias Emisar.{Repo, SSO}
-	  provider = Repo.peek(SSO.IdentityProvider.Query.by_id(SSO.IdentityProvider.Query.all(), "` + d.providerID + `"))
-	  {:ok, _} =
-	    SSO.GroupRoleMapping.Changeset.create(provider.account_id, provider.id, %{
-	      external_group_id: "e2e-privileged",
-	      role: :admin
-	    })
-	    |> Repo.insert(on_conflict: :nothing)
-	  IO.puts("mapped")`)
-
-	before := d.roleOf(d.aliceKCID)
-	logf("mapping: alice starts as %s", before)
-
-	push := map[string]any{
+	group := map[string]any{
 		"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:Group"},
-		"externalId":  "e2e-privileged",
-		"displayName": "E2E Privileged",
-		"members":     []map[string]any{{"value": d.aliceResourceID}},
-	}
-	status, resp := d.scim(http.MethodPost, "/scim/v2/Groups", push)
-	if status != 201 && status != 200 {
-		fail("privileged group push: %d %v", status, resp)
-	}
-	privilegedID := resourceID("privileged group", resp)
-	if role := d.roleOf(d.aliceKCID); role != "admin" {
-		fail("a mapped group must grant its role, alice is %q", role)
-	}
-	logf("mapping: the push promoted alice to admin ✓")
-
-	// Taking her out returns her to the connection default — the demotion an
-	// offboard-from-a-group is supposed to produce.
-	empty := map[string]any{
-		"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:Group"},
-		"externalId":  "e2e-privileged",
 		"displayName": "E2E Privileged",
 		"members":     []any{},
 	}
-	if status, resp := d.scim(http.MethodPut, "/scim/v2/Groups/"+privilegedID, empty); status != 200 {
-		fail("emptying the privileged group: %d %v", status, resp)
+	status, resp := d.scim(http.MethodPost, "/scim/v2/Groups", group)
+	if status != 201 && status != 200 {
+		fail("privileged group create: %d %v", status, resp)
+	}
+	privilegedID := resourceID("privileged group", resp)
+	if _, sent := resp["externalId"]; sent {
+		fail("an externalId-less group must remain externalId-less: %v", resp)
+	}
+
+	// Set up the operator's mapping through the same subject-gated context used
+	// by the console. It binds to the exact server-owned group resource, never
+	// its optional externalId; SCIM then drives the lifecycle over HTTP.
+	d.rpc(`
+	  alias Emisar.{Accounts, Auth, Repo, SSO}
+	  provider = Repo.peek(SSO.IdentityProvider.Query.by_id(SSO.IdentityProvider.Query.all(), "` + d.providerID + `"))
+	  group =
+	    SSO.DirectoryGroup.Query.not_deleted()
+	    |> SSO.DirectoryGroup.Query.by_account_id(provider.account_id)
+	    |> SSO.DirectoryGroup.Query.by_provider_id(provider.id)
+	    |> SSO.DirectoryGroup.Query.by_id("` + privilegedID + `")
+	    |> Repo.peek()
+	  membership =
+	    Accounts.Membership.Query.not_deleted()
+	    |> Accounts.Membership.Query.not_disabled()
+	    |> Accounts.Membership.Query.by_account_id(provider.account_id)
+	    |> Accounts.Membership.Query.by_role(:owner)
+	    |> Accounts.Membership.Query.with_preloaded_account()
+	    |> Accounts.Membership.Query.with_preloaded_user()
+	    |> Accounts.Membership.Query.oldest()
+	    |> Repo.peek()
+	  subject = Auth.Subject.for_user(membership.user, membership.account, membership)
+	  {:ok, _} =
+	    SSO.create_group_mapping(
+	      provider,
+	      %{directory_group_id: group.id, role: :admin},
+	      subject
+	    )
+	  {:ok, _} =
+	    SSO.create_group_runner_access_mapping(
+	      provider,
+	      %{directory_group_id: group.id, runner_access_mode: :all},
+	      subject
+	    )
+	  IO.puts("mapped")`)
+
+	beforeRole := d.roleOf(d.aliceKCID)
+	beforeAccess := d.runnerAccessModeOf(d.aliceKCID)
+	logf("mapping: alice starts with role=%s runner_access=%s", beforeRole, beforeAccess)
+
+	push := map[string]any{
+		"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:Group"},
+		"displayName": "E2E Privileged",
+		"members":     []map[string]any{{"value": d.aliceResourceID}},
+	}
+	status, resp = d.scim(http.MethodPut, "/scim/v2/Groups/"+privilegedID, push)
+	if status != 200 {
+		fail("privileged group push: %d %v", status, resp)
+	}
+	if _, sent := resp["externalId"]; sent {
+		fail("group replacement must not synthesize externalId: %v", resp)
+	}
+	if role := d.roleOf(d.aliceKCID); role != "admin" {
+		fail("a mapped group must grant its role, alice is %q", role)
+	}
+	if access := d.runnerAccessModeOf(d.aliceKCID); access != "all" {
+		fail("a mapped group must grant all-runner access, alice has %q", access)
+	}
+	logf("mapping: the push granted admin and all-runner access ✓")
+
+	rename := map[string]any{
+		"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
+		"Operations": []map[string]any{
+			{"op": "replace", "path": "displayName", "value": "E2E Renamed Privileged"},
+		},
+	}
+	status, resp = d.scim(http.MethodPatch, "/scim/v2/Groups/"+privilegedID, rename)
+	if status != 200 || resp["displayName"] != "E2E Renamed Privileged" {
+		fail("renaming the mapped group: %d %v", status, resp)
+	}
+	if role := d.roleOf(d.aliceKCID); role != "admin" {
+		fail("renaming the mapped resource must preserve its role grant, alice is %q", role)
+	}
+	if access := d.runnerAccessModeOf(d.aliceKCID); access != "all" {
+		fail("renaming the mapped resource must preserve runner access, alice has %q", access)
+	}
+	logf("mapping: rename preserved both grants on the immutable resource ✓")
+
+	if status, resp := d.scim(http.MethodDelete, "/scim/v2/Groups/"+privilegedID, nil); status != 204 {
+		fail("deleting the mapped group: %d %v", status, resp)
 	}
 	if role := d.roleOf(d.aliceKCID); role != "operator" {
-		fail("leaving the group must reset to the connection default, alice is %q", role)
+		fail("deleting the group must reset to the connection role, alice is %q", role)
 	}
-	logf("mapping: leaving the group demoted her to the default ✓")
+	if access := d.runnerAccessModeOf(d.aliceKCID); access != "none" {
+		fail("deleting the group must revoke runner access, alice has %q", access)
+	}
+	logf("mapping: delete revoked both grants ✓")
+
+	recreated := map[string]any{
+		"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:Group"},
+		"displayName": "E2E Renamed Privileged",
+		"members":     []map[string]any{{"value": d.aliceResourceID}},
+	}
+	status, resp = d.scim(http.MethodPost, "/scim/v2/Groups", recreated)
+	if status != 201 {
+		fail("recreating the mapped group's name: %d %v", status, resp)
+	}
+	recreatedID := resourceID("recreated privileged group", resp)
+	if recreatedID == privilegedID {
+		fail("a recreated group must receive a new server id")
+	}
+	if _, sent := resp["externalId"]; sent {
+		fail("recreated externalId-less group must remain externalId-less: %v", resp)
+	}
+	if role := d.roleOf(d.aliceKCID); role != "operator" {
+		fail("a same-name recreated group must not inherit the old role, alice is %q", role)
+	}
+	if access := d.runnerAccessModeOf(d.aliceKCID); access != "none" {
+		fail("a same-name recreated group must not inherit runner access, alice has %q", access)
+	}
+	logf("mapping: delete/recreate isolation kept the replacement unprivileged ✓")
 }
 
 func (d *driver) testUserOrdering() {
