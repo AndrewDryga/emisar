@@ -954,24 +954,21 @@ defmodule EmisarWeb.PoliciesLive do
         </dl>
       </div>
 
-      <.single_reviewer_warning :if={@single_reviewer?} size={:compact} />
+      <.single_reviewer_warning :if={@single_reviewer?} />
     </div>
     """
   end
 
-  attr :class, :string, default: nil
-  attr :size, :atom, default: :default, values: [:default, :compact]
-
-  # One source for the effective approval warning rendered beside the controls
-  # and in their live preview, so the two security reads cannot drift.
+  # The effective-state rail is the warning's one home. The approval controls
+  # already show the selected posture; repeating the consequence there makes
+  # the same warning compete with itself on the page.
   defp single_reviewer_warning(assigns) do
     ~H"""
     <.event_block
       tone={:amber}
       icon="security.posture_warning"
       title="In effect — a single approval is enough, and the requester may approve their own request"
-      size={@size}
-      class={@class}
+      size={:compact}
     >
       <:body>Choose a different operator, or raise the count, to add independent review.</:body>
     </.event_block>
@@ -1317,15 +1314,6 @@ defmodule EmisarWeb.PoliciesLive do
             </span>
           </div>
         </div>
-
-        <%!-- The verdict earns its space only as a WARNING — when self-approval plus a
-             single approval lets the requester sign off on their own request. A healthy
-             gate shows nothing: the cards + count already say what it does, and a green
-             "all good" note is just noise that trains operators to ignore it. It reads
-             in the calm icon-caps-a-spine grammar (`event_block`), not a wash box — the
-             amber icon carries the severity. The remedy is descriptive, so it shows for
-             everyone (a viewer still learns how the gate could be tightened). --%>
-        <.single_reviewer_warning :if={@single_reviewer?} class="mt-6" />
 
         <%!-- A scoped ruleset REPLACES the default wholesale, so an override
              seeded from a pre-gate template can silently weaken the approval

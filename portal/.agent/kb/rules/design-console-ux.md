@@ -936,6 +936,11 @@ the commit button, where the operator can reach the action before reading what i
     before its consequence. Render that warning in the rail's compact supporting type tier; the same
     warning beside editable controls may keep the default event-block hierarchy. Sweep: preview-rail
     alerts that interrupt a summary before its evidence or visually overpower the facts around them.
+80. **Relocating a warning replaces its old instance.** When a warning moves from editable controls
+    into their paired effective-state rail, remove the original and keep one complete instance in the
+    destination. The controls already expose the configured posture; repeating the same title and
+    remedy in both places makes the page compete with itself. Sweep: identical warning copy rendered
+    in both a form and its adjacent preview.
 
 ## 8. The kit is the contract
 
