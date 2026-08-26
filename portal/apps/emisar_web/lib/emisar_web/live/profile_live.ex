@@ -1041,8 +1041,8 @@ defmodule EmisarWeb.ProfileLive do
                   Confirm changing your email to <span class="font-medium text-zinc-100">{@pending_new_email}</span>.
                 </p>
                 <p :if={step == :code} class="text-xs text-zinc-400">
-                  We emailed a 6-digit code to your current address ({@current_user.email}). Entering
-                  it confirms it's really you — an open session alone can't change your email.
+                  We emailed a 6-digit code to your current address ({@current_user.email}). Enter it
+                  to confirm you control that mailbox — an open session alone can't change your email.
                 </p>
                 <p :if={step == :totp} class="text-xs text-zinc-400">
                   Enter the code from your authenticator app — your second factor confirms the change.

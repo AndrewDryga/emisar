@@ -73,6 +73,8 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       assert html =~ "emailed a confirmation code"
       assert html =~ "Confirm change"
+      assert html =~ "confirm you control that mailbox"
+      refute html =~ "really you"
       assert Emisar.Repo.reload!(user).email == user.email
 
       # A wrong code is refused and the email stays put. The code boxes are
