@@ -906,8 +906,11 @@ the commit button, where the operator can reach the action before reading what i
     the next shared row. A rail aligned with a page status strip or section title falsely reads as
     commentary on that heading and leaves the actual table or editor unpaired. Do not approximate the
     relationship with a fixed padding offset; encode it in the grid so wrapped headings and responsive
-    layouts cannot drift. Sweep: a detail Docs rail beginning beside status facts instead of the
-    settings table, or section help beginning beside a title instead of the rows beneath it.
+    layouts cannot drift. A status/action row beneath the summary stays inside the primary content
+    column; empty rail space beside it is intentional, and the row never spans beneath or through the
+    rail. Sweep: a detail Docs rail beginning beside status facts instead of the settings table,
+    section help beginning beside a title instead of the rows beneath it, or a primary-column status
+    row carrying `col-span-2` across a help rail.
 75. **The product name is lowercase `emisar` in customer-facing prose and generated fallback labels.**
     Capitalized `Emisar` is a code/module namespace, not display copy. Preserve capitalization only
     where grammar forces it at the start of a sentence; prefer rewriting the sentence when that keeps

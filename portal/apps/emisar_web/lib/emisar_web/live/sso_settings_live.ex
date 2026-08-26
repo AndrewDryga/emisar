@@ -1782,86 +1782,91 @@ defmodule EmisarWeb.SSOSettingsLive do
               </dl>
 
               <div
-                id="sign-in-verification"
-                class="flex flex-col gap-4 border-t border-zinc-800/70 pt-4 sm:flex-row sm:items-center sm:justify-between xl:col-span-2"
+                id="sign-in-verification-column"
+                class="min-w-0 xl:col-start-1 xl:row-start-2"
               >
-                <div class="flex min-w-0 items-start gap-2.5">
-                  <.status_dot
-                    tone={sign_in_verification_tone(@sign_in_verification)}
-                    class="mt-1.5"
-                  />
-                  <div class="min-w-0">
-                    <p class="text-sm font-medium text-zinc-100">
-                      {sign_in_verification_label(@sign_in_verification)}
-                    </p>
-                    <p class="mt-0.5 text-xs leading-relaxed text-zinc-400">
-                      {sign_in_verification_copy(@sign_in_verification, provider)}
-                      <span :if={
-                        @sign_in_verification &&
-                          @sign_in_verification.status == :verified &&
-                          @sign_in_verification.verified_at
-                      }>
-                        <.local_time
-                          id={"provider-sign-in-verified-#{provider.id}"}
-                          value={@sign_in_verification.verified_at}
-                          mode={:relative}
-                        />.
-                      </span>
-                    </p>
+                <div
+                  id="sign-in-verification"
+                  class="flex flex-col gap-4 border-t border-zinc-800/70 pt-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div class="flex min-w-0 items-start gap-2.5">
+                    <.status_dot
+                      tone={sign_in_verification_tone(@sign_in_verification)}
+                      class="mt-1.5"
+                    />
+                    <div class="min-w-0">
+                      <p class="text-sm font-medium text-zinc-100">
+                        {sign_in_verification_label(@sign_in_verification)}
+                      </p>
+                      <p class="mt-0.5 text-xs leading-relaxed text-zinc-400">
+                        {sign_in_verification_copy(@sign_in_verification, provider)}
+                        <span :if={
+                          @sign_in_verification &&
+                            @sign_in_verification.status == :verified &&
+                            @sign_in_verification.verified_at
+                        }>
+                          <.local_time
+                            id={"provider-sign-in-verified-#{provider.id}"}
+                            value={@sign_in_verification.verified_at}
+                            mode={:relative}
+                          />.
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+                    <.confirm_button
+                      :if={
+                        (@sign_in_verification && @sign_in_verification.status == :verified) and
+                          not provider.enabled
+                      }
+                      id={"enable-verified-provider-#{provider.id}"}
+                      title={"Enable #{provider.name} for members?"}
+                      confirm_label="Enable connection"
+                      size={:md}
+                      on_confirm={
+                        JS.push("enable_verified_provider", value: %{provider_id: provider.id})
+                      }
+                    >
+                      <:body>
+                        Members can start signing in through this connection. Magic-link sign-in
+                        remains available until you separately require SSO for the team.
+                      </:body>
+                      Enable for members
+                    </.confirm_button>
+
+                    <.button
+                      id={"verify-provider-sign-in-#{provider.id}"}
+                      type="button"
+                      variant={:secondary}
+                      size={:md}
+                      phx-click="start_provider_sign_in_verification"
+                      phx-value-provider_id={provider.id}
+                    >
+                      {if(@sign_in_verification && @sign_in_verification.status == :verified,
+                        do: "Verify again",
+                        else: "Verify sign-in"
+                      )}
+                    </.button>
                   </div>
                 </div>
 
-                <div class="flex shrink-0 flex-wrap gap-2 sm:justify-end">
-                  <.confirm_button
-                    :if={
-                      (@sign_in_verification && @sign_in_verification.status == :verified) and
-                        not provider.enabled
-                    }
-                    id={"enable-verified-provider-#{provider.id}"}
-                    title={"Enable #{provider.name} for members?"}
-                    confirm_label="Enable connection"
-                    size={:md}
-                    on_confirm={
-                      JS.push("enable_verified_provider", value: %{provider_id: provider.id})
-                    }
-                  >
-                    <:body>
-                      Members can start signing in through this connection. Magic-link sign-in
-                      remains available until you separately require SSO for the team.
-                    </:body>
-                    Enable for members
-                  </.confirm_button>
-
-                  <.button
-                    id={"verify-provider-sign-in-#{provider.id}"}
-                    type="button"
-                    variant={:secondary}
-                    size={:md}
-                    phx-click="start_provider_sign_in_verification"
-                    phx-value-provider_id={provider.id}
-                  >
-                    {if(@sign_in_verification && @sign_in_verification.status == :verified,
-                      do: "Verify again",
-                      else: "Verify sign-in"
-                    )}
-                  </.button>
-                </div>
+                <.oidc_step_dialog
+                  :if={@oidc_step && @oidc_step.provider_id == provider.id}
+                  id="provider-oidc-step"
+                  form={@oidc_step_form}
+                  step={@oidc_step}
+                  purpose={:verify}
+                  email={@current_user.email}
+                  error={@oidc_step_error}
+                  handoff={@oidc_handoff}
+                  trigger_submit={@oidc_trigger_submit}
+                  action={~p"/app/#{@current_account}/settings/sso/identity/link"}
+                />
               </div>
 
-              <.oidc_step_dialog
-                :if={@oidc_step && @oidc_step.provider_id == provider.id}
-                id="provider-oidc-step"
-                form={@oidc_step_form}
-                step={@oidc_step}
-                purpose={:verify}
-                email={@current_user.email}
-                error={@oidc_step_error}
-                handoff={@oidc_handoff}
-                trigger_submit={@oidc_trigger_submit}
-                action={~p"/app/#{@current_account}/settings/sso/identity/link"}
-              />
-
-              <div id="connection-settings">
+              <div id="connection-settings" class="xl:col-start-1 xl:row-start-3">
                 <.section_header title="Connection settings" />
                 <dl class="divide-y divide-zinc-800/70 border-y border-zinc-800/70">
                   <div class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
@@ -1906,7 +1911,10 @@ defmodule EmisarWeb.SSOSettingsLive do
                 </dl>
               </div>
 
-              <aside id="connection-docs" class="text-sm leading-relaxed xl:pt-1">
+              <aside
+                id="connection-docs"
+                class="text-sm leading-relaxed xl:col-start-2 xl:row-start-3 xl:pt-1"
+              >
                 <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Docs</p>
                 <ul class="mt-3 space-y-2">
                   <li>

@@ -792,8 +792,13 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert has_element?(lv, "#connection-summary dd", "Enabled")
       assert has_element?(lv, "#connection-summary dt", "Provider")
       assert has_element?(lv, "#connection-summary", "Connection settings")
+      assert has_element?(lv, "#connection-summary > #sign-in-verification-column")
       assert has_element?(lv, "#connection-summary > #connection-settings")
       assert has_element?(lv, "#connection-summary > #connection-docs", "Setting up")
+      assert lv |> element("#sign-in-verification-column") |> render() =~ "xl:col-start-1"
+      refute lv |> element("#sign-in-verification") |> render() =~ "xl:col-span-2"
+      assert lv |> element("#connection-settings") |> render() =~ "xl:row-start-3"
+      assert lv |> element("#connection-docs") |> render() =~ "xl:row-start-3"
       assert has_element?(lv, "header #view-provider-activity-#{shown.id}", "View activity")
       assert has_element?(lv, "header #edit-provider-#{shown.id}", "Edit")
       refute has_element?(lv, "#connection-summary #view-provider-activity-#{shown.id}")
