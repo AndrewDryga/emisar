@@ -46,6 +46,13 @@ defmodule Emisar.Fixtures.Approvals do
     end
   end
 
+  @doc "Marks a request approved as setup state for concurrent-flow tests."
+  def approve_request(%Approvals.Request{} = request, decided_by_id) do
+    request
+    |> change(status: :approved, decided_at: DateTime.utc_now(), decided_by_id: decided_by_id)
+    |> Repo.update!()
+  end
+
   @doc "Persists one pending whole-execution request for approval UI tests."
   def create_execution_request(account, requested_by, attrs \\ %{}) do
     attrs = Map.new(attrs)

@@ -129,6 +129,21 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ "Other Employee"
   end
 
+  test "a withdrawn request explains that the action did not run", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+    run = Runs.peek_run_by_id(request.run_id)
+
+    assert {:ok, _cancelled} =
+             Runs.cancel_run(run, owner_subject(user, account), "approval request withdrawn")
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "This request was withdrawn before a decision, so the action did not run."
+    assert has_element?(lv, ~s([data-shot="approval-verdict"]), "cancelled")
+    refute has_element?(lv, "button", "Approve and send")
+  end
+
   test "approving a runbook follows the explicit non-ActionRun result branch", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_execution_request(account, user)

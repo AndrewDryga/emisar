@@ -292,6 +292,7 @@ defmodule EmisarWeb.RunDetailLive do
         </.detail_header>
       </:title>
       <:actions>
+        <% withdraw_approval? = @run.status == :pending_approval %>
         <%!-- The run id, copyable for a ticket or a log grep — the full UUID
              without cluttering the meta strip (which deliberately dropped it). --%>
         <%!-- A design-system BUTTON like its row neighbors — the copy behavior
@@ -303,7 +304,9 @@ defmodule EmisarWeb.RunDetailLive do
           data-copy-text={@run.id}
           data-copy-label-copied="Copied id"
         >
-          <.icon name="action.copy" class="-ml-0.5 h-3.5 w-3.5" /> Copy id
+          <.icon name="action.copy" class="-ml-0.5 h-3.5 w-3.5" />
+          <span class="sm:hidden">Copy</span>
+          <span class="hidden sm:inline">Copy id</span>
         </.button>
         <%!-- Close the loop: the dispatch's slice of the audit trail. request_id
              groups the run's transitions, its grant use, and its cancel request
@@ -317,26 +320,35 @@ defmodule EmisarWeb.RunDetailLive do
           variant={:secondary}
           size={:md}
         >
-          View activity
+          <span class="sm:hidden">Activity</span>
+          <span class="hidden sm:inline">View activity</span>
         </.button>
         <.confirm_button
           :if={
-            @run.status in [:sent, :running, :pending] and
+            @run.status in [:sent, :running, :pending, :pending_approval] and
               Runs.subject_can_cancel_run?(@current_subject)
           }
           id="cancel-run"
-          title="Cancel this run?"
-          confirm_label="Cancel run"
+          title={if(withdraw_approval?, do: "Withdraw this request?", else: "Cancel this run?")}
+          confirm_label={if(withdraw_approval?, do: "Withdraw request", else: "Cancel run")}
           on_confirm={JS.push("cancel")}
         >
           <:body>
-            <%= if @run.status == :pending do %>
-              This queued run has not reached the runner and will be cancelled immediately.
-            <% else %>
-              The runner is signalled SIGTERM, then SIGKILL if it doesn't stop.
+            <%= cond do %>
+              <% withdraw_approval? -> %>
+                This run has not reached a runner. Its approval request will be withdrawn and the run cancelled immediately.
+              <% @run.status == :pending -> %>
+                This queued run has not reached the runner and will be cancelled immediately.
+              <% true -> %>
+                The runner is signalled SIGTERM, then SIGKILL if it doesn't stop.
             <% end %>
           </:body>
-          Cancel run
+          <%= if withdraw_approval? do %>
+            <span class="sm:hidden">Withdraw</span>
+            <span class="hidden sm:inline">Withdraw request</span>
+          <% else %>
+            Cancel run
+          <% end %>
         </.confirm_button>
       </:actions>
 

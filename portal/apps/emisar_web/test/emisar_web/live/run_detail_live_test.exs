@@ -5,7 +5,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   reason — for every run, not just the ones waiting on approval.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Audit, Repo, Runs}
+  alias Emisar.{Approvals, Audit, Repo, Runs}
   alias Emisar.Runs.RunEvent
 
   defp run_with(account, attrs) do
@@ -216,7 +216,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   test "a denied run surfaces the denial + reason, not a bare cancellation", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
 
-    run = run_with(account, %{status: :pending_approval})
+    run = run_with(account, %{status: :pending_approval, requires_approval: true})
     {:ok, request} = Emisar.Approvals.create_request(run, user.id, "deploy")
 
     {:ok, _} =
@@ -768,6 +768,50 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert Repo.reload!(run).status == :cancelling
   end
 
+  test "an approval hold can be withdrawn before it reaches the runner", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: :pending_approval})
+    {:ok, request} = Approvals.create_request(run, user.id, "please review")
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert has_element?(lv, "#cancel-run", "Withdraw request")
+    refute html =~ "The runner is signalled SIGTERM"
+
+    html = render_click(lv, "cancel", %{})
+
+    assert html =~ "Cancellation accepted."
+
+    assert %Emisar.Runs.ActionRun{status: :cancelled, reason_text: "operator cancelled"} =
+             Repo.reload!(run)
+
+    assert %Emisar.Approvals.Request{status: :cancelled} = Repo.reload!(request)
+
+    # Settle the post-commit run/approval broadcasts before the sandbox owner exits.
+    render(lv)
+  end
+
+  test "a stale held-run page reports a current in-flight cancellation truthfully", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: :pending_approval})
+    {:ok, request} = Approvals.create_request(run, user.id, "please review")
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    Fixtures.Approvals.approve_request(request, user.id)
+    Fixtures.Runs.put_status(run, :sent)
+
+    html = render_click(lv, "cancel", %{})
+
+    assert html =~ "Cancellation accepted."
+
+    assert %Emisar.Runs.ActionRun{status: :cancelling, reason_text: "operator cancelled"} =
+             Repo.reload!(run)
+
+    assert %Emisar.Approvals.Request{status: :approved} = Repo.reload!(request)
+    render(lv)
+  end
+
   # when cancel_run returns a non-:ok (here the run row
   # vanished between render and the cancel click), the handler flashes "Unable
   # to cancel." instead of crashing.
@@ -800,6 +844,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     {:ok, lv, _html} =
       build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runs/#{run.id}")
+
+    refute has_element?(lv, "#cancel-run")
 
     html = render_click(lv, "cancel", %{})
     assert html =~ "You don&#39;t have permission to do that."
@@ -962,6 +1008,15 @@ defmodule EmisarWeb.RunDetailLiveTest do
     # Regression: the button's `status in [...]` guard compared the Ecto.Enum
     # atom against strings, so it never rendered.
     assert html =~ "Cancel run"
+  end
+
+  test "a terminal run has no cancellation control", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    run = run_with(account, %{status: "success"})
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    refute has_element?(lv, "#cancel-run")
   end
 
   test "an in-flight run whose runner is offline shows the disconnected banner", %{conn: conn} do
