@@ -83,7 +83,6 @@ locals {
     admin_runner_gcloud_script = local.admin_runner_gcloud
     admin_runner_beam_script   = local.admin_runner_beam
     admin_runner_pack_files    = local.admin_runner_pack_files
-    container_image            = local.common.container_image
     cloud_sql_proxy_image      = local.common.cloud_sql_proxy_image
     database_connection_name   = local.common.database_connection_name
     app_port                   = local.common.app_port
