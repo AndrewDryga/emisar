@@ -115,17 +115,6 @@ defmodule Emisar.Auth.Subject do
     }
   end
 
-  @doc "Build a subject for the runner WebSocket caller."
-  def for_runner(runner, %Accounts.Account{} = account, context \\ %RequestContext{}) do
-    %__MODULE__{
-      account: account,
-      actor: runner,
-      role: :runner,
-      permissions: Emisar.Auth.Permissions.for_role(:runner),
-      context: context
-    }
-  end
-
   # Coerce a membership's role into a known role atom. Unknown values
   # fall back to the least-privileged role (default-deny posture).
   defp role_atom(role) do

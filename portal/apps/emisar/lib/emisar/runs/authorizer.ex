@@ -12,7 +12,6 @@ defmodule Emisar.Runs.Authorizer do
   permission for them.
   """
   use Emisar.Auth.Authorizer
-  alias Emisar.Runners
   alias Emisar.Runs.ActionRun
 
   def dispatch_run_permission, do: build(ActionRun, :dispatch)
@@ -36,21 +35,9 @@ defmodule Emisar.Runs.Authorizer do
   def list_permissions_for_role(:api_client),
     do: [dispatch_run_permission(), view_runs_permission()]
 
-  def list_permissions_for_role(:runner),
-    do: [view_runs_permission()]
-
   def list_permissions_for_role(_), do: []
 
   @impl Emisar.Auth.Authorizer
-  # Runner socket only sees its own runs — even within the account.
-  def for_subject(queryable, %Subject{actor: %Runners.Runner{id: runner_id}}) do
-    case query_source(queryable) do
-      :action_runs -> ActionRun.Query.by_runner_id(queryable, runner_id)
-      # A source with no clause here gets nothing — `none/1` is binding-free.
-      _ -> ActionRun.Query.none(queryable)
-    end
-  end
-
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: ActionRun.Query.by_account_id(queryable, account_id)
 

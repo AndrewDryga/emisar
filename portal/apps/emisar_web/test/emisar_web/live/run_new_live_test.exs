@@ -6,7 +6,6 @@ defmodule EmisarWeb.RunNewLiveTest do
   """
   use EmisarWeb.ConnCase, async: true
   import ExUnit.CaptureLog
-  alias Emisar.Auth.Subject
   alias Emisar.{Catalog, Repo, Runners, Runs}
 
   defp action_with_required_arg(account) do
@@ -849,17 +848,14 @@ defmodule EmisarWeb.RunNewLiveTest do
              Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
-  # `dispatch_run_permission` is owner/admin/operator/api_client;
-  # a `:runner` subject (the runner socket's identity) holds only view_runs, so it
-  # can never dispatch. The form only ever builds a user subject, so this asserts
-  # the underlying capability predicate the gate relies on.
-  test "a :runner subject is excluded from the dispatch permission", %{conn: conn} do
+  # `dispatch_run_permission` is owner/admin/operator/api_client; a subject
+  # stripped of every permission can never dispatch. The form only ever builds
+  # a user subject, so this asserts the underlying capability predicate the
+  # gate relies on.
+  test "a subject without dispatch permission is excluded", %{conn: conn} do
     {_conn, _user, account} = register_and_log_in(conn)
-    runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-    runner_subject = Subject.for_runner(runner, account)
-
-    refute Runs.subject_can_dispatch_run?(runner_subject)
+    refute Runs.subject_can_dispatch_run?(Fixtures.Subjects.permissionless_subject(account))
   end
 
   test "renders closed values and scalar bounds as real controls", %{conn: conn} do

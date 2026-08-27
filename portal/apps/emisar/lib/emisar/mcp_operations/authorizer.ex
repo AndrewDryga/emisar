@@ -19,7 +19,7 @@ defmodule Emisar.MCPOperations.Authorizer do
   # an owner reads what a model DID through the audit trail and the run record.
   # Pinned as a sanctioned exception in `Emisar.Auth.RoleGrantsTest`.
   def list_permissions_for_role(role)
-      when role in [:owner, :admin, :operator, :viewer, :runner],
+      when role in [:owner, :admin, :operator, :viewer],
       do: []
 
   def list_permissions_for_role(_), do: []

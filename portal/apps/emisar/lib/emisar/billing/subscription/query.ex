@@ -36,14 +36,6 @@ defmodule Emisar.Billing.Subscription.Query do
   def quantity_syncable(queryable),
     do: where(queryable, [subscriptions: s], s.status != "canceled")
 
-  def complimentary(queryable \\ all()) do
-    where(
-      queryable,
-      [subscriptions: s],
-      s.status == "complimentary" and is_nil(s.paddle_subscription_id)
-    )
-  end
-
   @doc """
   Internal — subscriptions whose account is still live. The hourly reconcile
   starts from `all/0`, so without this it kept pulling a closed account's plan

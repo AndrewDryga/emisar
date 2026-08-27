@@ -3,7 +3,6 @@ defmodule Emisar.ApprovalsTest do
   alias Ecto.Multi
   alias Emisar.{Accounts, Approvals, Audit, Catalog, Repo, Runbooks, Runs}
   alias Emisar.Approvals.{Decision, Grant, Request}
-  alias Emisar.Auth.Subject
   alias Emisar.Fixtures
   alias Emisar.Runs.ActionRun
 
@@ -437,8 +436,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "rejects a subject without view permission" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+      subject = Fixtures.Subjects.permissionless_subject(account)
 
       assert Approvals.list_pending_approval_requests(subject) == {:error, :unauthorized}
     end
@@ -1015,8 +1013,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "denies a subject without view permission, including for an empty list" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+      subject = Fixtures.Subjects.permissionless_subject(account)
 
       assert Approvals.risk_by_request_ids([], subject) == {:error, :unauthorized}
 

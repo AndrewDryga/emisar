@@ -1,7 +1,6 @@
 defmodule Emisar.AuditTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Approvals, Audit, RequestContext, Runs, SSO}
-  alias Emisar.Auth.Subject
   alias Emisar.Fixtures
 
   describe "log/3 with a %RequestContext{}" do
@@ -971,8 +970,7 @@ defmodule Emisar.AuditTest do
 
     test "a runner subject (no view_audit) is denied" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+      subject = Fixtures.Subjects.permissionless_subject(account)
 
       assert Audit.list_events(subject) == {:error, :unauthorized}
     end
@@ -1180,8 +1178,7 @@ defmodule Emisar.AuditTest do
 
     test "denies a subject without audit-view permission", %{request: request} do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      runner_subject = Subject.for_runner(runner, account)
+      runner_subject = Fixtures.Subjects.permissionless_subject(account)
 
       assert Audit.approval_event_refs([request.id], runner_subject) ==
                {:error, :unauthorized}
@@ -1298,23 +1295,18 @@ defmodule Emisar.AuditTest do
     # touch; a runner (websocket) subject — no view_audit — is denied.
     test "a runner subject is denied" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+      subject = Fixtures.Subjects.permissionless_subject(account)
 
       assert Audit.list_actor_options("user", subject) == {:error, :unauthorized}
     end
   end
 
   describe "list_target_options/2 (the dynamic subject picker)" do
-    # the picker read enforces view_audit BEFORE any DB
-    # touch; a runner subject (the websocket caller — no view_audit) is denied,
-    # never handed options. A real `Subject.for_runner` carries the runner role's
-    # empty audit permission (a user `:runner` string would degrade to :viewer,
-    # which CAN view — so the websocket subject is the genuine no-permission one).
-    test "a runner subject (no view_audit) is denied (no DB touch)" do
+    # the picker read enforces view_audit BEFORE any DB touch; a subject
+    # stripped of every permission is denied, never handed options.
+    test "a subject without view_audit is denied (no DB touch)" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+      subject = Fixtures.Subjects.permissionless_subject(account)
 
       assert Audit.list_target_options("user", subject) == {:error, :unauthorized}
     end
@@ -1546,10 +1538,9 @@ defmodule Emisar.AuditTest do
     # carry it and is gated by per-key scope at the controller instead.
     test "a no-view_audit role is denied, not a 500" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
       _ = seed_export_events(account, 2)
 
-      runner_subject = Subject.for_runner(runner, account)
+      runner_subject = Fixtures.Subjects.permissionless_subject(account)
 
       assert Audit.list_for_export(runner_subject) == {:error, :unauthorized}
     end
@@ -1598,9 +1589,7 @@ defmodule Emisar.AuditTest do
     test "a no-view_audit role is :unauthorized before the plan is consulted", %{
       account: account
     } do
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-
-      assert Audit.list_events_for_export(Subject.for_runner(runner, account)) ==
+      assert Audit.list_events_for_export(Fixtures.Subjects.permissionless_subject(account)) ==
                {:error, :unauthorized}
     end
 
@@ -1672,8 +1661,7 @@ defmodule Emisar.AuditTest do
 
     test "rejects a subject without view_audit permission" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+      subject = Fixtures.Subjects.permissionless_subject(account)
       {:ok, event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
 
       assert Audit.fetch_event_by_id(event.id, subject) == {:error, :unauthorized}

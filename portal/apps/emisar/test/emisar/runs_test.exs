@@ -5922,25 +5922,6 @@ defmodule Emisar.RunsTest do
   end
 
   describe "Authorizer.for_subject runner-scoping" do
-    test "a runner subject's run reads are scoped to that runner, not account-wide" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      peer = Fixtures.Runners.create_runner(account_id: account.id)
-      {:ok, mine} = Runs.create_run(base_attrs(account.id, runner.id))
-      {:ok, _theirs} = Runs.create_run(base_attrs(account.id, peer.id))
-
-      runner_subject = Emisar.Auth.Subject.for_runner(runner, account)
-
-      ids =
-        ActionRun.Query.all()
-        |> Runs.Authorizer.for_subject(runner_subject)
-        |> Repo.all()
-        |> Enum.map(& &1.id)
-
-      # A runner socket sees only its own runs, even within the account.
-      assert ids == [mine.id]
-    end
-
     test "an account-less / actor-less subject gets zero rows (fail-closed fallback)" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)

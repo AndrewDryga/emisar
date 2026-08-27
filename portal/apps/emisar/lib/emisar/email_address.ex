@@ -26,8 +26,4 @@ defmodule Emisar.EmailAddress do
     |> validate_format(field, @format, message: @message)
     |> validate_length(field, max: @max_length, count: :bytes)
   end
-
-  @doc "The maximum accepted length, for callers that must size a field."
-  @spec max_length() :: pos_integer()
-  def max_length, do: @max_length
 end

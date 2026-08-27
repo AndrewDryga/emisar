@@ -212,9 +212,8 @@ defmodule Emisar.RunbooksTest do
 
     test "denies a principal without view permission" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert Runbooks.list_runbooks(Subject.for_runner(runner, account)) ==
+      assert Runbooks.list_runbooks(Fixtures.Subjects.permissionless_subject(account)) ==
                {:error, :unauthorized}
     end
   end
@@ -299,8 +298,7 @@ defmodule Emisar.RunbooksTest do
 
     test "denies a principal without view permission, including for an empty list" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+      subject = Fixtures.Subjects.permissionless_subject(account)
       {_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(other_subject)
 
@@ -375,9 +373,10 @@ defmodule Emisar.RunbooksTest do
 
     test "denies a principal without view permission" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert Runbooks.list_model_visible_runbooks(Subject.for_runner(runner, account)) ==
+      assert Runbooks.list_model_visible_runbooks(
+               Fixtures.Subjects.permissionless_subject(account)
+             ) ==
                {:error, :unauthorized}
     end
   end
@@ -419,9 +418,8 @@ defmodule Emisar.RunbooksTest do
 
     test "denies a principal without view permission" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert Runbooks.list_model_draft_runbooks(Subject.for_runner(runner, account)) ==
+      assert Runbooks.list_model_draft_runbooks(Fixtures.Subjects.permissionless_subject(account)) ==
                {:error, :unauthorized}
     end
   end
@@ -468,9 +466,11 @@ defmodule Emisar.RunbooksTest do
 
     test "denies a principal without view permission" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert Runbooks.fetch_model_visible_runbook("any", Subject.for_runner(runner, account)) ==
+      assert Runbooks.fetch_model_visible_runbook(
+               "any",
+               Fixtures.Subjects.permissionless_subject(account)
+             ) ==
                {:error, :unauthorized}
     end
   end
@@ -505,9 +505,11 @@ defmodule Emisar.RunbooksTest do
 
     test "denies a principal without view permission" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert Runbooks.fetch_model_runbook_draft("any", Subject.for_runner(runner, account)) ==
+      assert Runbooks.fetch_model_runbook_draft(
+               "any",
+               Fixtures.Subjects.permissionless_subject(account)
+             ) ==
                {:error, :unauthorized}
     end
   end
@@ -585,7 +587,7 @@ defmodule Emisar.RunbooksTest do
 
     test "denies a principal without visibility and isolates another account" do
       fixture = mcp_execution_fixture()
-      runner_subject = Subject.for_runner(fixture.runner, fixture.account)
+      runner_subject = Fixtures.Subjects.permissionless_subject(fixture.account)
 
       assert Runbooks.fetch_execution_recovery_identity(
                fixture.execution_id,
@@ -618,7 +620,7 @@ defmodule Emisar.RunbooksTest do
 
     test "denies and isolates the result before projecting attempts" do
       fixture = mcp_execution_fixture()
-      runner_subject = Subject.for_runner(fixture.runner, fixture.account)
+      runner_subject = Fixtures.Subjects.permissionless_subject(fixture.account)
 
       assert Runbooks.fetch_execution_result(fixture.execution_id, runner_subject) ==
                {:error, :unauthorized}
@@ -963,9 +965,8 @@ defmodule Emisar.RunbooksTest do
 
     test "denies a principal without runbook visibility" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-      assert Runbooks.list_recent_executions(Subject.for_runner(runner, account), 5) ==
+      assert Runbooks.list_recent_executions(Fixtures.Subjects.permissionless_subject(account), 5) ==
                {:error, :unauthorized}
     end
   end
@@ -1159,11 +1160,10 @@ defmodule Emisar.RunbooksTest do
 
     test "denies a principal without draft permission" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       assert Runbooks.create_runbook(
                runbook_attrs(),
-               Subject.for_runner(runner, account)
+               Fixtures.Subjects.permissionless_subject(account)
              ) == {:error, :unauthorized}
     end
 
@@ -1232,12 +1232,11 @@ defmodule Emisar.RunbooksTest do
 
     test "denies a principal without draft permission" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       assert Runbooks.import_runbook(
                "Denied import",
                Jason.encode!(definition()),
-               Subject.for_runner(runner, account)
+               Fixtures.Subjects.permissionless_subject(account)
              ) == {:error, :unauthorized}
     end
   end
@@ -3082,10 +3081,12 @@ defmodule Emisar.RunbooksTest do
   describe "subject_can_view_runbooks?/1" do
     test "reflects the subject's permissions" do
       {_user, account, owner} = Fixtures.Subjects.owner_subject()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       assert Runbooks.subject_can_view_runbooks?(owner)
-      refute Runbooks.subject_can_view_runbooks?(Subject.for_runner(runner, account))
+
+      refute Runbooks.subject_can_view_runbooks?(
+               Fixtures.Subjects.permissionless_subject(account)
+             )
     end
   end
 

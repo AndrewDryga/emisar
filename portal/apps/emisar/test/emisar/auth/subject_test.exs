@@ -247,18 +247,6 @@ defmodule Emisar.Auth.SubjectTest do
   end
 
   describe "for_runner/3" do
-    test "carries the runner role and defaults to an empty request context" do
-      account = %Account{id: "acct-1"}
-      runner = %Runner{id: "runner-1"}
-
-      subject = Subject.for_runner(runner, account)
-
-      assert subject.role == :runner
-      assert subject.actor == runner
-      assert subject.account == account
-      assert subject.context == %RequestContext{}
-      assert subject.permissions == Emisar.Auth.Permissions.for_role(:runner)
-    end
   end
 
   describe "actor_kind/1 + actor_id/1" do

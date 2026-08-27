@@ -20,9 +20,6 @@ defmodule Emisar.Catalog.Authorizer do
   def list_permissions_for_role(:api_client),
     do: [view_catalog_permission()]
 
-  def list_permissions_for_role(:runner),
-    do: [view_catalog_permission()]
-
   def list_permissions_for_role(_), do: []
 
   @impl Emisar.Auth.Authorizer

@@ -78,11 +78,10 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a runner subject (no view_api_keys permission) is refused with :unauthorized" do
-      # Operators + viewers both hold view_api_keys, so the genuine
-      # no-permission caller is the runner (websocket) subject.
+      # Every membership role holds view_api_keys, so the refusal branch
+      # needs a subject stripped of the permission entirely.
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+      subject = Fixtures.Subjects.permissionless_subject(account)
 
       assert ApiKeys.list_api_keys_for_account(subject) == {:error, :unauthorized}
     end
@@ -133,10 +132,9 @@ defmodule Emisar.ApiKeysTest do
       assert ApiKeys.list_key_owner_options(subject_b) == {:ok, []}
     end
 
-    test "a runner subject without view_api_keys permission is refused" do
+    test "a subject without view_api_keys permission is refused" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+      subject = Fixtures.Subjects.permissionless_subject(account)
 
       assert ApiKeys.list_key_owner_options(subject) == {:error, :unauthorized}
     end
@@ -184,10 +182,9 @@ defmodule Emisar.ApiKeysTest do
       assert {:ok, [{_id, "mine"}]} = ApiKeys.list_key_options(viewer_subject)
     end
 
-    test "a runner subject without view_api_keys permission is refused" do
+    test "a subject without view_api_keys permission is refused" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+      subject = Fixtures.Subjects.permissionless_subject(account)
 
       assert ApiKeys.list_key_options(subject) == {:error, :unauthorized}
     end
@@ -219,10 +216,9 @@ defmodule Emisar.ApiKeysTest do
       assert agent_id == agent_key.id
     end
 
-    test "a runner subject without view_api_keys permission is refused" do
+    test "a subject without view_api_keys permission is refused" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+      subject = Fixtures.Subjects.permissionless_subject(account)
 
       assert ApiKeys.list_key_usage_timestamps([], subject) == {:error, :unauthorized}
     end
@@ -252,8 +248,7 @@ defmodule Emisar.ApiKeysTest do
 
     test "a runner subject (no view_api_keys permission) is refused with :unauthorized" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+      subject = Fixtures.Subjects.permissionless_subject(account)
 
       assert ApiKeys.list_audit_export_keys_for_account(subject) == {:error, :unauthorized}
     end
@@ -316,8 +311,7 @@ defmodule Emisar.ApiKeysTest do
 
     test "rejects a subject without view_api_keys permission" do
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+      subject = Fixtures.Subjects.permissionless_subject(account)
       {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
 
       assert ApiKeys.fetch_api_key_by_id(key.id, subject) == {:error, :unauthorized}
@@ -2392,8 +2386,7 @@ defmodule Emisar.ApiKeysTest do
       # nudge is suppressed (false) rather than leaking an existence signal —
       # even though this account genuinely has no agents.
       account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+      subject = Fixtures.Subjects.permissionless_subject(account)
 
       refute ApiKeys.no_agents?(subject)
     end

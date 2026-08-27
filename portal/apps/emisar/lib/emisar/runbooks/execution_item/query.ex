@@ -13,9 +13,6 @@ defmodule Emisar.Runbooks.ExecutionItem.Query do
   def by_stage_id(queryable \\ all(), stage_id),
     do: where(queryable, [runbook_execution_items: i], i.runbook_execution_stage_id == ^stage_id)
 
-  def select_runner_ids(queryable),
-    do: select(queryable, [runbook_execution_items: i], i.runner_id)
-
   def select_approval_targets(queryable) do
     select(queryable, [runbook_execution_items: i], %{
       runner_id: i.runner_id,

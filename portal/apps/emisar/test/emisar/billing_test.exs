@@ -1014,9 +1014,8 @@ defmodule Emisar.BillingTest do
       assert Billing.list_recent_invoices(account, subject_b) == {:error, :unauthorized}
     end
 
-    test "a runner subject without view_billing permission is refused", %{account: account} do
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+    test "a subject without view_billing permission is refused", %{account: account} do
+      subject = Fixtures.Subjects.permissionless_subject(account)
       account = %{account | paddle_customer_id: "ctm_invoices_01"}
 
       assert Billing.list_recent_invoices(account, subject) == {:error, :unauthorized}
@@ -1088,9 +1087,8 @@ defmodule Emisar.BillingTest do
       assert Billing.invoice_pdf_url(account, "txn_stub_1", subject_b) == {:error, :unauthorized}
     end
 
-    test "a runner subject without view_billing permission is refused", %{account: account} do
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Subject.for_runner(runner, account)
+    test "a subject without view_billing permission is refused", %{account: account} do
+      subject = Fixtures.Subjects.permissionless_subject(account)
 
       assert Billing.invoice_pdf_url(account, "txn_stub_1", subject) == {:error, :unauthorized}
     end
@@ -2888,8 +2886,7 @@ defmodule Emisar.BillingTest do
       api_subject = Subject.for_api_key(api_key, account)
       assert Billing.billing_summary(account, api_subject) == {:error, :unauthorized}
 
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      runner_subject = Subject.for_runner(runner, account)
+      runner_subject = Fixtures.Subjects.permissionless_subject(account)
       assert Billing.billing_summary(account, runner_subject) == {:error, :unauthorized}
     end
   end

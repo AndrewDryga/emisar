@@ -189,7 +189,7 @@ defmodule Emisar.WebBoundaryChecksTest do
         alias Emisar.Auth.Subject
 
         def build(user, account), do: Subject.for_user(user, account, :password, [])
-        def runner(runner), do: Emisar.Auth.Subject.for_runner(runner, nil, [])
+        def rebuild(user, account), do: Emisar.Auth.Subject.for_user(user, account, nil)
       end
       """
 

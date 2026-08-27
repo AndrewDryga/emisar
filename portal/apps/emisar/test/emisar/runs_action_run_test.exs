@@ -64,15 +64,6 @@ defmodule Emisar.Runs.ActionRunTest do
       refute ActionRun.terminal?(nil)
       refute ActionRun.terminal?("nonsense")
     end
-
-    test "failure predicates classify every terminal non-success" do
-      failures = @terminal -- [:success]
-
-      assert Enum.sort(ActionRun.failure_statuses()) == Enum.sort(failures)
-      assert Enum.all?(failures, &ActionRun.failure?/1)
-      refute ActionRun.failure?(:success)
-      refute ActionRun.failure?(:pending)
-    end
   end
 
   describe "Query.filters/0" do

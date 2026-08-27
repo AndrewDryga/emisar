@@ -121,20 +121,13 @@ defmodule Emisar.Auth.RoleGrantsTest do
     {Emisar.Runs.ActionRun, :view}
   ]
 
-  # The runner reads its own catalog and its own runs. Nothing else.
-  @runner [
-    {Emisar.Catalog.RunnerAction, :view},
-    {Emisar.Runs.ActionRun, :view}
-  ]
-
   @goldens %{
     owner: @owner,
     admin: @admin,
     billing_manager: @billing_manager,
     operator: @operator,
     viewer: @viewer,
-    api_client: @api_client,
-    runner: @runner
+    api_client: @api_client
   }
 
   # The three permissions a machine credential holds that no human role does.
@@ -184,7 +177,7 @@ defmodule Emisar.Auth.RoleGrantsTest do
   # A role added to Emisar.Auth.Role without a golden would otherwise ship
   # unpinned, which is the gap these goldens exist to close.
   test "every membership role is pinned above" do
-    assert Enum.sort(Role.all()) == Enum.sort(Map.keys(@goldens) -- [:api_client, :runner])
+    assert Enum.sort(Role.all()) == Enum.sort(Map.keys(@goldens) -- [:api_client])
   end
 
   # The durable half of the goldens: a permission added to ONE narrow role has
@@ -210,10 +203,6 @@ defmodule Emisar.Auth.RoleGrantsTest do
   describe "the privilege ordering the escalation guards rely on" do
     test "viewer holds no permission an operator lacks" do
       assert MapSet.subset?(Permissions.for_role(:viewer), Permissions.for_role(:operator))
-    end
-
-    test "the runner credential holds strictly less than any human role" do
-      assert MapSet.subset?(Permissions.for_role(:runner), Permissions.for_role(:viewer))
     end
   end
 end

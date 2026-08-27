@@ -43,6 +43,16 @@ defmodule Emisar.Fixtures.Subjects do
     Subject.for_user(user, account, membership)
   end
 
+  @doc """
+  Subject carrying no permissions at all — the denial-test caller for
+  surfaces where every real membership role holds the permission being
+  checked. No production constructor builds such a subject; the struct is
+  assembled directly so the refusal branch stays exercised.
+  """
+  def permissionless_subject(account) do
+    build_subject(account: account, role: :viewer, permissions: MapSet.new())
+  end
+
   @doc "Builds a bare `%Subject{}` from keyword fields — `:user` sets the `actor`, other keys map straight onto the struct."
   def build_subject(fields \\ []) do
     fields =

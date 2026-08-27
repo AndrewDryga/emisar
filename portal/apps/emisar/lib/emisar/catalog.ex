@@ -1242,9 +1242,12 @@ defmodule Emisar.Catalog do
   # -- Dispatch gate ---------------------------------------------------
 
   @doc """
-  Internal — `Runs.dispatch_run` calls this before queueing a run.
-  Returns `:ok` if the action's `(pack_id, pack_version)` is trusted,
-  `{:error, :pack_untrusted, info}` otherwise.
+  Internal inspection surface with no production caller — kept by decision
+  (`@intended_api_surface` in `test/emisar/context_coverage_test.exs`) because
+  its trust-matrix tests are the coverage of this classification. The live
+  dispatch gate is `fetch_dispatch_contract/5`. Returns `:ok` if the action's
+  `(pack_id, pack_version)` is trusted, `{:error, :pack_untrusted, info}`
+  otherwise.
 
   The action carries `pack_version` populated by `observe_action`
   based on the runner's last-reported `runner_state.packs` payload.

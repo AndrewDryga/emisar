@@ -34,24 +34,11 @@ defmodule Emisar.Runners.Authorizer do
   def list_permissions_for_role(:api_client),
     do: [view_runners_permission()]
 
-  def list_permissions_for_role(:runner), do: []
-
   def list_permissions_for_role(_), do: []
 
   # -- Subject scoping -------------------------------------------------
 
   @impl Emisar.Auth.Authorizer
-  # Runner socket — narrow to the calling runner's own rows. Cross-runner
-  # visibility within an account is intentionally impossible.
-  def for_subject(queryable, %Subject{actor: %Runner{id: runner_id}}) do
-    case query_source(queryable) do
-      :runners -> Runner.Query.by_id(queryable, runner_id)
-      :runner_tokens -> Token.Query.by_runner_id(queryable, runner_id)
-      # A source with no clause here gets nothing — `none/1` is binding-free.
-      _ -> Runner.Query.none(queryable)
-    end
-  end
-
   def for_subject(queryable, %Subject{account: %{id: account_id}}) do
     case query_source(queryable) do
       :runners -> Runner.Query.by_account_id(queryable, account_id)

@@ -27,8 +27,6 @@ defmodule Emisar.Audit.Authorizer do
   def list_permissions_for_role(:api_client),
     do: [view_audit_permission(), view_billing_audit_permission()]
 
-  def list_permissions_for_role(:runner), do: []
-
   def list_permissions_for_role(_), do: []
 
   @doc """

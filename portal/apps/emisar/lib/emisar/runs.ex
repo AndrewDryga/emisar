@@ -349,7 +349,7 @@ defmodule Emisar.Runs do
   # RESULTS (success + failure); denied / cancelled / in-flight are excluded.
   # `:denied`/`:cancelled` + this list together cover every terminal status
   # (see `ActionRun.terminal?/1`), so in-flight is the counted remainder.
-  @failure_statuses [
+  @attempt_failure_statuses [
     :failed,
     :error,
     :timed_out,
@@ -393,7 +393,7 @@ defmodule Emisar.Runs do
   """
   def summarize_runs(runs) when is_list(runs) do
     success = Enum.count(runs, &(&1.status == :success))
-    failed = Enum.count(runs, &(&1.status in @failure_statuses))
+    failed = Enum.count(runs, &(&1.status in @attempt_failure_statuses))
     results = success + failed
 
     %{
@@ -419,7 +419,7 @@ defmodule Emisar.Runs do
       |> ActionRun.Query.inserted_after(from)
       |> ActionRun.Query.inserted_before(to)
 
-    totals = window |> ActionRun.Query.outcome_totals(@failure_statuses) |> Repo.one()
+    totals = window |> ActionRun.Query.outcome_totals(@attempt_failure_statuses) |> Repo.one()
     distinct_runners = window |> ActionRun.Query.distinct_dispatched_runner_count() |> Repo.one()
 
     Map.put(totals, :distinct_runners, distinct_runners)
