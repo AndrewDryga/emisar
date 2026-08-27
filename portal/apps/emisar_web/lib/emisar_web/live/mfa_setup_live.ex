@@ -11,10 +11,8 @@ defmodule EmisarWeb.MfaSetupLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Auth}
-  alias EmisarWeb.{MfaErrors, MfaQr}
+  alias EmisarWeb.{MfaEnrollment, MfaErrors}
 
-  @mfa_rate_limit_error "Too many attempts. Wait a few minutes, then try again."
-  @email_issue_rate_limit_error "Too many code requests. Wait up to 15 minutes, then try again."
   @email_unavailable_error "Your identity provider did not supply an email address. Ask your administrator to update it, then sign in again."
   @email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up MFA."
   @email_delivery_error "We could not deliver the verification code. Try again. If it keeps failing, contact support."
@@ -64,7 +62,11 @@ defmodule EmisarWeb.MfaSetupLive do
      |> assign(:mfa_challenge_mode, :totp)
      |> assign(:mfa_challenge_error, nil)
      |> assign(:mfa_recovery_form, to_form(%{"code" => ""}))
-     |> reset_mfa_enrollment()}
+     |> MfaEnrollment.reset()
+     |> assign(:mfa_start_error, nil)
+     |> assign(:codes_saved?, false)
+     |> assign_mfa_enrollment_email_form()
+     |> assign_mfa_form()}
   end
 
   def render(assigns) do
@@ -222,7 +224,7 @@ defmodule EmisarWeb.MfaSetupLive do
         {:noreply, assign(socket, :mfa_start_error, @email_suppressed_error)}
 
       {:error, :rate_limited} ->
-        {:noreply, assign(socket, :mfa_start_error, @email_issue_rate_limit_error)}
+        {:noreply, assign(socket, :mfa_start_error, MfaErrors.message(:email_rate_limited))}
 
       {:error, :email_unavailable} ->
         {:noreply, assign(socket, :mfa_start_error, @email_unavailable_error)}
@@ -246,7 +248,7 @@ defmodule EmisarWeb.MfaSetupLive do
              socket.assigns.current_subject
            ) do
         {:ok, proof} ->
-          {:noreply, prepare_mfa_authenticator(socket, proof)}
+          {:noreply, socket |> MfaEnrollment.prepare_authenticator(proof) |> assign_mfa_form()}
 
         {:error, :invalid} ->
           {:noreply,
@@ -257,12 +259,17 @@ defmodule EmisarWeb.MfaSetupLive do
            )}
 
         {:error, :rate_limited} ->
-          {:noreply, assign(socket, :mfa_enrollment_email_error, @mfa_rate_limit_error)}
+          {:noreply,
+           assign(socket, :mfa_enrollment_email_error, MfaErrors.message(:rate_limited))}
 
         {:error, :email_unavailable} ->
           {:noreply,
            socket
-           |> reset_mfa_enrollment()
+           |> MfaEnrollment.reset()
+           |> assign(:mfa_start_error, nil)
+           |> assign(:codes_saved?, false)
+           |> assign_mfa_enrollment_email_form()
+           |> assign_mfa_form()
            |> assign(:mfa_start_error, @email_unavailable_error)}
 
         {:error, :mfa_already_enabled} ->
@@ -287,7 +294,8 @@ defmodule EmisarWeb.MfaSetupLive do
           {:noreply, assign(socket, :mfa_enrollment_email_error, @email_suppressed_error)}
 
         {:error, :rate_limited} ->
-          {:noreply, assign(socket, :mfa_enrollment_email_error, @email_issue_rate_limit_error)}
+          {:noreply,
+           assign(socket, :mfa_enrollment_email_error, MfaErrors.message(:email_rate_limited))}
 
         {:error, :mfa_already_enabled} ->
           {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
@@ -317,10 +325,14 @@ defmodule EmisarWeb.MfaSetupLive do
           {:noreply,
            socket
            |> assign(:current_user, updated)
-           |> assign_current_mfa_proof(updated)
+           |> MfaEnrollment.assign_current_proof(updated)
            |> assign(:mfa_recovery_codes, recovery_codes)
            |> assign(:codes_saved?, false)
-           |> reset_mfa_enrollment()}
+           |> MfaEnrollment.reset()
+           |> assign(:mfa_start_error, nil)
+           |> assign(:codes_saved?, false)
+           |> assign_mfa_enrollment_email_form()
+           |> assign_mfa_form()}
 
         {:error, :invalid_otp} ->
           {:noreply, assign(socket, :mfa_error, MfaErrors.message(:invalid_otp))}
@@ -328,7 +340,11 @@ defmodule EmisarWeb.MfaSetupLive do
         {:error, :mfa_enrollment_proof_stale} ->
           {:noreply,
            socket
-           |> reset_mfa_enrollment()
+           |> MfaEnrollment.reset()
+           |> assign(:mfa_start_error, nil)
+           |> assign(:codes_saved?, false)
+           |> assign_mfa_enrollment_email_form()
+           |> assign_mfa_form()
            |> assign(:mfa_start_error, MfaErrors.message(:mfa_enrollment_proof_stale))}
 
         {:error, :mfa_already_enabled} ->
@@ -377,7 +393,7 @@ defmodule EmisarWeb.MfaSetupLive do
       {:noreply, push_navigate(socket, to: ~p"/app")}
     else
       {:error, :rate_limited} ->
-        {:noreply, assign(socket, :mfa_challenge_error, @mfa_rate_limit_error)}
+        {:noreply, assign(socket, :mfa_challenge_error, MfaErrors.message(:rate_limited))}
 
       {:error, :session_not_found} ->
         {:noreply,
@@ -407,24 +423,6 @@ defmodule EmisarWeb.MfaSetupLive do
   defp challenge_error(:recovery),
     do: "That recovery code didn't match or has already been used."
 
-  defp assign_current_mfa_proof(socket, user) do
-    subject = %{
-      socket.assigns.current_subject
-      | actor: user,
-        mfa: true,
-        mfa_enrollment_verified_at: user.mfa_enabled_at
-    }
-
-    auth = %{
-      socket.assigns.current_auth
-      | mfa_enrollment_verified_at: user.mfa_enabled_at
-    }
-
-    socket
-    |> assign(:current_subject, subject)
-    |> assign(:current_auth, auth)
-  end
-
   attr :event, :string, required: true
   attr :lead, :string, required: true
   slot :inner_block, required: true
@@ -450,34 +448,5 @@ defmodule EmisarWeb.MfaSetupLive do
 
   defp assign_mfa_enrollment_email_form(socket) do
     assign(socket, :mfa_enrollment_email_form, to_form(%{"code" => ""}, as: "mfa_enrollment"))
-  end
-
-  defp prepare_mfa_authenticator(socket, proof) do
-    secret = Auth.generate_mfa_secret()
-    uri = MfaQr.provisioning_uri(socket.assigns.current_user.email, secret)
-
-    socket
-    |> assign(:mfa_enrollment_step, :totp)
-    |> assign(:mfa_enrollment_proof, proof)
-    |> assign(:mfa_secret, secret)
-    |> assign(:mfa_uri, uri)
-    |> assign(:mfa_qr_svg, MfaQr.svg(uri))
-    |> assign(:mfa_error, nil)
-    |> assign_mfa_form()
-  end
-
-  defp reset_mfa_enrollment(socket) do
-    socket
-    |> assign(:mfa_enrollment_step, :idle)
-    |> assign(:mfa_enrollment_proof, nil)
-    |> assign(:mfa_enrollment_email_error, nil)
-    |> assign(:mfa_start_error, nil)
-    |> assign(:mfa_secret, nil)
-    |> assign(:mfa_uri, nil)
-    |> assign(:mfa_qr_svg, nil)
-    |> assign(:mfa_error, nil)
-    |> assign(:codes_saved?, false)
-    |> assign_mfa_enrollment_email_form()
-    |> assign_mfa_form()
   end
 end
