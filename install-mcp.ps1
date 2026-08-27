@@ -497,7 +497,7 @@ if ($Yes -and -not $ConnectAll) {
     Write-Host "Manual client snippets: $($script:PortalOrigin)/app/agents/connect"
 } else {
     $connectArguments = @("connect", "--url", $script:PortalOrigin)
-    if ($ConnectAll) { $connectArguments += @("--all", "--yes") }
+    if ($ConnectAll) { $connectArguments += @("--all") }
     & {
         $ErrorActionPreference = "Continue"
         & $executable @connectArguments

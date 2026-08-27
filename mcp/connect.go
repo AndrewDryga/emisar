@@ -65,6 +65,11 @@ func parseConnectArgs(args []string, disconnect bool) (parsedConnectArgs, error)
 		case "--all":
 			parsed.all = true
 		case "--yes":
+			// Connect never consulted the flag — --all is the no-prompt path — so
+			// it is disconnect-only rather than a documented no-op.
+			if !disconnect {
+				return parsed, fmt.Errorf("unknown option %q", argument)
+			}
 			parsed.assumeYes = true
 		case "--auto-permit":
 			if disconnect {
@@ -402,7 +407,7 @@ func selectClients(
 	// Asked once, after the per-client questions and before anything is written.
 	// Emisar decides every call server-side, so a client's own prompt adds
 	// nothing for OUR tools — but it is the operator's setting in the operator's
-	// file, so it stays opt-in and is never implied by --all or --yes.
+	// file, so it stays opt-in and is never implied by --all.
 	if !options.autoPermit {
 		var labels []string
 		for _, client := range selection.clients {
@@ -578,7 +583,7 @@ func sortedClientIDs() string {
 }
 
 const connectUsageText = `usage:
-  emisar-mcp connect [--url <origin>] [--all | --client <id>] [--yes] [--auto-permit]`
+  emisar-mcp connect [--url <origin>] [--all | --client <id>] [--auto-permit]`
 
 const disconnectUsageText = `usage:
   emisar-mcp disconnect [--all | --client <id>] [--yes] [--forget]`
@@ -586,7 +591,7 @@ const disconnectUsageText = `usage:
 var connectHelpText = `emisar-mcp connect - authenticate this machine and configure LLM clients
 
 USAGE
-  emisar-mcp connect [--url <origin>] [--all | --client <id>] [--yes] [--auto-permit]
+  emisar-mcp connect [--url <origin>] [--all | --client <id>] [--auto-permit]
 
 WHAT IT DOES
   Detects the supported LLM clients installed for your user, runs one browser
@@ -604,9 +609,6 @@ FLAGS
 
   --client <id>
     Connect or refresh one client by id; repeatable. Ids: ` + sortedClientIDs() + `
-
-  --yes
-    Do not ask for confirmation.
 
   --auto-permit
     Also silence the client's own "allow this tool?" prompt, for the emisar

@@ -619,7 +619,7 @@ func mcpConnectCommand(h *harness) error {
 	defer server.close()
 	environment := map[string]string{"HOME": home, "USERPROFILE": home, "APPDATA": appConfig}
 	if _, err := h.successful(h.root, environment, bridge,
-		"connect", "--all", "--yes", "--url", server.server.URL); err != nil {
+		"connect", "--all", "--url", server.server.URL); err != nil {
 		return err
 	}
 
