@@ -1,6 +1,6 @@
 defmodule EmisarWeb.MfaSetupLive do
   @moduledoc """
-  Enforced-MFA interstitial. When an account requires 2FA and this session has
+  Enforced-MFA interstitial. When an account requires MFA and this session has
   not proved the current factor, `UserAuth.on_mount(:ensure_account_compliant)`
   forwards every /app mount here. A fresh member enrolls; an already-enrolled
   member verifies TOTP or a recovery code for this browser.
@@ -16,7 +16,7 @@ defmodule EmisarWeb.MfaSetupLive do
   @mfa_rate_limit_error "Too many attempts. Wait a few minutes, then try again."
   @email_issue_rate_limit_error "Too many code requests. Wait up to 15 minutes, then try again."
   @email_unavailable_error "Your identity provider did not supply an email address. Ask your administrator to update it, then sign in again."
-  @email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up 2FA."
+  @email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up MFA."
   @email_delivery_error "We could not deliver the verification code. Try again. If it keeps failing, contact support."
 
   def mount(_params, session, socket) do
@@ -52,8 +52,8 @@ defmodule EmisarWeb.MfaSetupLive do
 
     title =
       if mode == :enrollment,
-        do: "Set up two-factor authentication",
-        else: "Verify two-factor authentication"
+        do: "Set up multi-factor authentication",
+        else: "Verify multi-factor authentication"
 
     {:ok,
      socket
@@ -69,10 +69,10 @@ defmodule EmisarWeb.MfaSetupLive do
 
   def render(assigns) do
     ~H"""
-    <.auth_layout title="Two-factor authentication required">
+    <.auth_layout title="Multi-factor authentication required">
       <p class="mb-6 text-sm text-zinc-400">
         <span class="font-semibold text-zinc-200">{@current_account.name}</span>
-        requires two-factor authentication for every member.
+        requires multi-factor authentication for every member.
         <%= if @mfa_mode == :enrollment do %>
           Set it up now to continue to your dashboard.
         <% else %>
@@ -337,7 +337,7 @@ defmodule EmisarWeb.MfaSetupLive do
         {:error, :session_not_found} ->
           {:noreply,
            socket
-           |> put_flash(:error, "Your session changed. Sign in again before enabling 2FA.")
+           |> put_flash(:error, "Your session changed. Sign in again before enabling MFA.")
            |> redirect(to: ~p"/sign_in/magic")}
 
         {:error, _changeset} ->
@@ -388,7 +388,7 @@ defmodule EmisarWeb.MfaSetupLive do
       {:error, :mfa_proof_stale} ->
         {:noreply,
          socket
-         |> put_flash(:error, "Your 2FA settings changed. Verify the current factor again.")
+         |> put_flash(:error, "Your MFA settings changed. Verify the current factor again.")
          |> push_navigate(to: ~p"/app/mfa_setup")}
 
       {:error, _reason} ->

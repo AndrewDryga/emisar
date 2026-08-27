@@ -240,8 +240,8 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       conn = post(conn, ~p"/oauth/authorize", params)
 
       html = html_response(conn, 400)
-      assert html =~ "two-factor authentication"
-      assert html =~ "set up or verify 2FA for this browser"
+      assert html =~ "multi-factor authentication"
+      assert html =~ "set up or verify MFA for this browser"
       refute Repo.one(Emisar.ApiKeys.ApiKey)
       refute Repo.one(OAuth.AuthorizationCode)
     end

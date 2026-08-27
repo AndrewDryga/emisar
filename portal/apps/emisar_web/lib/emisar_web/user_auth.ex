@@ -249,10 +249,10 @@ defmodule EmisarWeb.UserAuth do
   defp admin_denial_message(:not_admin), do: "Not authorized."
 
   defp admin_denial_message(:mfa_unenrolled),
-    do: "Admin access requires two-factor authentication. Set it up to continue."
+    do: "Admin access requires multi-factor authentication. Set it up to continue."
 
   defp admin_denial_message(:mfa_unverified),
-    do: "Admin access requires two-factor authentication. Sign in again to continue."
+    do: "Admin access requires multi-factor authentication. Sign in again to continue."
 
   defp admin_denial_path(:mfa_unenrolled), do: ~p"/app/mfa_setup"
   defp admin_denial_path(_reason), do: ~p"/app"

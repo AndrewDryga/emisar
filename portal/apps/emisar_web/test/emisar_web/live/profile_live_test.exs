@@ -889,7 +889,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       html = submit_mfa_enrollment(lv, secret)
 
-      assert html =~ "2FA enabled."
+      assert html =~ "MFA enabled."
       assert html =~ "recovery codes"
       assert Emisar.Repo.reload!(user).mfa_enabled_at
 
@@ -1211,12 +1211,12 @@ defmodule EmisarWeb.ProfileLiveTest do
       html =
         render_submit(lv, "disable_mfa", %{"mfa_disable" => %{"code" => recovery_code}})
 
-      # The disable drops this socket too, so it reconnects and the "2FA
+      # The disable drops this socket too, so it reconnects and the "MFA
       # disabled." flash may not survive the remount. What the operator is
       # actually owed is the durable outcome: the factor is gone and the card
       # offers setup again.
-      assert html =~ "Set up 2FA"
-      refute html =~ "Disable 2FA"
+      assert html =~ "Set up MFA"
+      refute html =~ "Disable MFA"
       refute Emisar.Repo.reload!(user).mfa_enabled_at
     end
 
@@ -1269,7 +1269,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert has_element?(lv, "#mfa_disable_form")
 
       assert has_element?(lv, "#mfa_disable_form button", "Confirm and disable")
-      refute has_element?(lv, "#mfa_disable_form button", "Disable 2FA")
+      refute has_element?(lv, "#mfa_disable_form button", "Disable MFA")
 
       disable_submit =
         lv |> element("#mfa_disable_form button", "Confirm and disable") |> render()
@@ -1389,11 +1389,11 @@ defmodule EmisarWeb.ProfileLiveTest do
         })
 
       assert html =~ "That code did not match. Try again."
-      refute html =~ "Could not disable 2FA."
+      refute html =~ "Could not disable MFA."
       assert %DateTime{} = Emisar.Repo.reload!(user).mfa_enabled_at
     end
 
-    test "an exhausted MFA window refuses the disable inline and leaves 2FA on", %{
+    test "an exhausted MFA window refuses the disable inline and leaves MFA on", %{
       conn: conn,
       user: user,
       account: account
@@ -1460,7 +1460,7 @@ defmodule EmisarWeb.ProfileLiveTest do
     html =
       render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}})
 
-    if html =~ "2FA enabled." do
+    if html =~ "MFA enabled." do
       html
     else
       render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}})

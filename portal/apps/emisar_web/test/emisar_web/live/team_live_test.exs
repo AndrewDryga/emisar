@@ -1204,7 +1204,7 @@ defmodule EmisarWeb.TeamLiveTest do
       assert {:error, {:live_redirect, %{to: to}}} =
                live(
                  conn,
-                 ~p"/app/#{account}/settings/team/#{target_membership.id}/reset_2fa"
+                 ~p"/app/#{account}/settings/team/#{target_membership.id}/reset_mfa"
                )
 
       assert to == ~p"/app/#{account}/settings/team"
@@ -2437,7 +2437,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
   end
 
-  describe "reset a member's 2FA" do
+  describe "reset a member's MFA" do
     setup %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
@@ -2453,20 +2453,20 @@ defmodule EmisarWeb.TeamLiveTest do
       %{conn: conn, owner: owner, account: account, member: member, membership: membership}
     end
 
-    test "the Reset 2FA action is offered only when the member is enrolled", %{
+    test "the Reset MFA action is offered only when the member is enrolled", %{
       conn: conn,
       account: account,
       member: member,
       membership: membership
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
-      path = ~p"/app/#{account}/settings/team/#{membership.id}/reset_2fa"
-      refute has_element?(lv, ~s|a[href="#{path}"]|, "Reset 2FA")
+      path = ~p"/app/#{account}/settings/team/#{membership.id}/reset_mfa"
+      refute has_element?(lv, ~s|a[href="#{path}"]|, "Reset MFA")
 
       enroll_mfa(member)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert has_element?(lv, ~s|a[href="#{path}"]|, "Reset 2FA")
+      assert has_element?(lv, ~s|a[href="#{path}"]|, "Reset MFA")
 
       invited = Fixtures.Users.create_user() |> enroll_mfa()
 
@@ -2478,8 +2478,8 @@ defmodule EmisarWeb.TeamLiveTest do
         )
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
-      pending_path = ~p"/app/#{account}/settings/team/#{pending.id}/reset_2fa"
-      refute has_element?(lv, ~s|a[href="#{pending_path}"]|, "Reset 2FA")
+      pending_path = ~p"/app/#{account}/settings/team/#{pending.id}/reset_mfa"
+      refute has_element?(lv, ~s|a[href="#{pending_path}"]|, "Reset MFA")
     end
 
     test "an owner must prove their own current TOTP before the member is reset", %{
@@ -2501,7 +2501,7 @@ defmodule EmisarWeb.TeamLiveTest do
       enroll_mfa(member)
 
       {:ok, lv, html} =
-        live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_2fa")
+        live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_mfa")
 
       assert html =~ "This removes their current factor"
 
@@ -2534,7 +2534,7 @@ defmodule EmisarWeb.TeamLiveTest do
       enroll_mfa(member)
 
       {:ok, lv, _html} =
-        live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_2fa")
+        live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_mfa")
 
       render_click(lv, "use_reset_recovery")
 
@@ -2555,7 +2555,7 @@ defmodule EmisarWeb.TeamLiveTest do
       enroll_mfa(member)
 
       {:ok, lv, html} =
-        live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_2fa")
+        live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_mfa")
 
       assert html =~ "A second factor is required"
       refute has_element?(lv, "#member-mfa-reset-totp")
@@ -2594,9 +2594,9 @@ defmodule EmisarWeb.TeamLiveTest do
       conn = put_session(conn, :user_token, session)
 
       {:ok, lv, html} =
-        live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_2fa")
+        live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_mfa")
 
-      path = ~p"/app/#{account}/settings/team/#{membership.id}/reset_2fa/sso"
+      path = ~p"/app/#{account}/settings/team/#{membership.id}/reset_mfa/sso"
       assert html =~ "Reauthenticate with your identity provider"
       assert html =~ "Verify with Acme SSO"
       refute has_element?(lv, "#member-mfa-reset-totp")
@@ -2621,7 +2621,7 @@ defmodule EmisarWeb.TeamLiveTest do
       )
 
       enroll_mfa(member)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_2fa")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_mfa")
 
       wrong_code =
         secret
@@ -2648,13 +2648,13 @@ defmodule EmisarWeb.TeamLiveTest do
     test "an owner without MFA hits the lockout guard", %{conn: conn, account: account} do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert has_element?(lv, "button[disabled]", "Enforce 2FA")
+      assert has_element?(lv, "button[disabled]", "Enforce MFA")
       assert html =~ "state.locked"
       assert html =~ "lock yourself out"
 
       html = render_click(lv, "toggle_require_mfa", %{})
 
-      assert html =~ "Enable 2FA on your own profile first"
+      assert html =~ "Enable MFA on your own profile first"
     end
 
     test "an owner with MFA enforces it account-wide", %{
@@ -2672,7 +2672,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      refute has_element?(lv, "button[disabled]", "Enforce 2FA")
+      refute has_element?(lv, "button[disabled]", "Enforce MFA")
       assert render_click(lv, "toggle_require_mfa", %{}) =~ "Account-wide MFA enforced."
       assert Emisar.Repo.reload!(account).settings.require_mfa
     end
@@ -2698,7 +2698,7 @@ defmodule EmisarWeb.TeamLiveTest do
       refute Emisar.Repo.reload!(account).settings.require_mfa
     end
 
-    test "enforcing 2FA is a confirm-modal button (our modal) that fires the handler",
+    test "enforcing MFA is a confirm-modal button (our modal) that fires the handler",
          %{conn: conn, owner: owner, account: account} do
       Fixtures.Users.enable_mfa!(
         Emisar.Auth.generate_mfa_secret(),
@@ -2706,9 +2706,9 @@ defmodule EmisarWeb.TeamLiveTest do
         session_token: get_session(conn, :user_token)
       )
 
-      # Off: the trigger reads "Enforce 2FA" and opens our confirm dialog.
+      # Off: the trigger reads "Enforce MFA" and opens our confirm dialog.
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      assert html =~ "Enforce 2FA"
+      assert html =~ "Enforce MFA"
       assert has_element?(lv, "#enforce-mfa")
 
       # Confirming fires the (server-authz-gated) handler.
@@ -2717,7 +2717,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       # On: the trigger flips to the turn-off action.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      assert html =~ "Stop enforcing 2FA"
+      assert html =~ "Stop enforcing MFA"
     end
   end
 
@@ -2763,7 +2763,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
   end
 
-  describe "2FA enrollment stat" do
+  describe "MFA enrollment stat" do
     test "keeps the zero count neutral while the status dot carries attention", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
 
@@ -2789,7 +2789,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       # Owner (unenrolled) + the enrolled member → 1 of 2. The counts come from
       # Accounts.team_mfa_stats (account-wide), not @memberships.
-      assert html =~ "2FA enrolled:"
+      assert html =~ "MFA enrolled:"
       assert html =~ "1 of 2"
     end
   end
@@ -2932,7 +2932,7 @@ defmodule EmisarWeb.TeamLiveTest do
       send(lv.pid, {:some_unrelated_event, :payload})
 
       # The process survived and still renders — render/1 raises if the socket died.
-      assert render(lv) =~ "Two-factor"
+      assert render(lv) =~ "Multi-factor"
     end
 
     test "the disconnected (dead) render shows the loading state, never the roster", %{conn: conn} do

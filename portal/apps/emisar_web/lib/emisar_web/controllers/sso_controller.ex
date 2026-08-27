@@ -454,7 +454,7 @@ defmodule EmisarWeb.SSOController do
            ) do
       conn
       |> delete_session(@member_mfa_reset_stash_key)
-      |> put_flash(:info, "2FA reset. They can set up a new authenticator after signing in.")
+      |> put_flash(:info, "MFA reset. They can set up a new authenticator after signing in.")
       |> redirect(to: ~p"/app/#{subject.account}/settings/team")
     else
       reason ->

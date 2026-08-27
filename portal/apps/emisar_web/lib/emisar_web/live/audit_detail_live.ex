@@ -465,8 +465,8 @@ defmodule EmisarWeb.AuditDetailLive do
         <dt :if={@auth_method} class={entity_fact_label_class()}>Sign-in</dt>
         <dd :if={@auth_method} class={entity_fact_centered_value_class()}>
           <span>{auth_method_label(@auth_method)}</span>
-          <.chip :if={@mfa == true} tone={:brand}>2FA</.chip>
-          <.chip :if={@mfa == false}>no 2FA</.chip>
+          <.chip :if={@mfa == true} tone={:brand}>MFA</.chip>
+          <.chip :if={@mfa == false}>no MFA</.chip>
         </dd>
 
         <dt :if={@mcp_client_label != ""} class={entity_fact_label_class()}>MCP client</dt>

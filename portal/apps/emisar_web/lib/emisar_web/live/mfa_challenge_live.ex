@@ -17,7 +17,7 @@ defmodule EmisarWeb.MfaChallengeLive do
       {:ok, user} ->
         {:ok,
          socket
-         |> assign(:page_title, "Two-factor authentication")
+         |> assign(:page_title, "Multi-factor authentication")
          |> assign(:user, user)
          |> assign(:mode, :totp)
          |> assign(:error, nil)
@@ -96,7 +96,7 @@ defmodule EmisarWeb.MfaChallengeLive do
 
   def render(assigns) do
     ~H"""
-    <.auth_layout title="Two-factor authentication">
+    <.auth_layout title="Multi-factor authentication">
       <%= if @mode == :totp do %>
         <p class="mb-6 text-sm text-zinc-400">
           Enter the 6-digit code from your authenticator app to finish signing in.
@@ -117,7 +117,7 @@ defmodule EmisarWeb.MfaChallengeLive do
       <% else %>
         <p class="mb-6 text-sm text-zinc-400">
           Enter one of the <span class="whitespace-nowrap">recovery codes</span>
-          you saved when you set up two-factor authentication. Each code works once.
+          you saved when you set up multi-factor authentication. Each code works once.
         </p>
 
         <.simple_form for={@recovery_form} phx-submit="verify_recovery">

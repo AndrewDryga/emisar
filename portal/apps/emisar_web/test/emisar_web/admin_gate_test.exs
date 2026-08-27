@@ -76,7 +76,7 @@ defmodule EmisarWeb.AdminGateTest do
       assert redirected_to(conn) == ~p"/app/mfa_setup"
 
       assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
-               "Admin access requires two-factor authentication. Set it up to continue."
+               "Admin access requires multi-factor authentication. Set it up to continue."
     end
 
     test "an admin whose session never proved the second factor is signed out", %{conn: conn} do
@@ -94,7 +94,7 @@ defmodule EmisarWeb.AdminGateTest do
       assert get_session(conn, :user_token) == nil
 
       assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
-               "Admin access requires two-factor authentication. Sign in again to continue."
+               "Admin access requires multi-factor authentication. Sign in again to continue."
     end
 
     test "an authenticated non-admin is denied with a flash + redirect to /app", %{conn: conn} do
@@ -204,7 +204,7 @@ defmodule EmisarWeb.AdminGateTest do
       assert get_session(conn, :user_token) == nil
 
       assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
-               "Admin access requires two-factor authentication. Sign in again to continue."
+               "Admin access requires multi-factor authentication. Sign in again to continue."
     end
   end
 
@@ -241,7 +241,7 @@ defmodule EmisarWeb.AdminGateTest do
       assert get_session(conn, :user_token) == nil
 
       assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
-               "Admin access requires two-factor authentication. Sign in again to continue."
+               "Admin access requires multi-factor authentication. Sign in again to continue."
     end
 
     test "the account detail route rides the same gate", %{conn: conn} do
@@ -296,7 +296,7 @@ defmodule EmisarWeb.AdminGateTest do
       assert to == ~p"/app"
 
       assert Phoenix.Flash.get(socket.assigns.flash, :error) ==
-               "Admin access requires two-factor authentication. Sign in again to continue."
+               "Admin access requires multi-factor authentication. Sign in again to continue."
     end
 
     test "an admin who turned MFA off mid-session is halted to MFA setup" do
@@ -314,7 +314,7 @@ defmodule EmisarWeb.AdminGateTest do
       assert to == ~p"/app/mfa_setup"
 
       assert Phoenix.Flash.get(socket.assigns.flash, :error) ==
-               "Admin access requires two-factor authentication. Set it up to continue."
+               "Admin access requires multi-factor authentication. Set it up to continue."
     end
 
     test "a non-admin is halted to /app" do

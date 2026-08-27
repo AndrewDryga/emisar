@@ -1,6 +1,6 @@
 defmodule EmisarWeb.MfaDisableDisconnectTest do
   @moduledoc """
-  Turning your own 2FA off must tear down the open LiveViews, without signing you
+  Turning your own MFA off must tear down the open LiveViews, without signing you
   out.
 
   Sessions deliberately survive a self-service disable, so the cookie is not what
@@ -18,7 +18,7 @@ defmodule EmisarWeb.MfaDisableDisconnectTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Auth, Fixtures}
 
-  test "disabling 2FA disconnects the user's live sockets but keeps their session" do
+  test "disabling MFA disconnects the user's live sockets but keeps their session" do
     {user, _account, subject} = Fixtures.Subjects.owner_subject()
     {_user, [recovery_code | _]} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
 

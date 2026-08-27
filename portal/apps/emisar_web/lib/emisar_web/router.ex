@@ -445,9 +445,9 @@ defmodule EmisarWeb.Router do
         live "/activate", ActivateLive, :show
         live "/settings/team", TeamLive, :index
         live "/settings/team/invite", TeamLive, :new
-        live "/settings/team/:membership_id/reset_2fa", TeamLive, :reset_mfa
+        live "/settings/team/:membership_id/reset_mfa", TeamLive, :reset_mfa
 
-        post "/settings/team/:membership_id/reset_2fa/sso",
+        post "/settings/team/:membership_id/reset_mfa/sso",
              SSOController,
              :begin_member_mfa_reset
 

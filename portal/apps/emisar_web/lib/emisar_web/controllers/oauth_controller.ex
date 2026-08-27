@@ -161,8 +161,8 @@ defmodule EmisarWeb.OAuthController do
       {:error, :mfa_required} ->
         render_invalid(
           conn,
-          "This team requires two-factor authentication. Open its console and set up or " <>
-            "verify 2FA for this browser before connecting an MCP client."
+          "This team requires multi-factor authentication. Open its console and set up or " <>
+            "verify MFA for this browser before connecting an MCP client."
         )
 
       {:error, :invalid_redirect_uri} ->

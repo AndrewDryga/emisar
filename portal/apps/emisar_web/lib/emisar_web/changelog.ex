@@ -503,7 +503,7 @@ defmodule EmisarWeb.Changelog do
       details: [
         {"Security",
          [
-           "Disabling two-factor authentication now demands a fresh step-up challenge.",
+           "Disabling multi-factor authentication now demands a fresh step-up challenge.",
            "Production session cookies always carry the Secure flag."
          ]},
         {"Packs",
@@ -692,7 +692,7 @@ defmodule EmisarWeb.Changelog do
       title: "Annual billing, Team-owned SSO, and safer input handling",
       tag: "v0.22.0",
       summary:
-        "Billing now supports monthly or annual checkout, shows recent invoices, and lets operators download invoice PDFs from the console. SSO moved into Team, where pending access requests, connection status, sign-in links, 2FA enforcement, and Require SSO live next to the roster.",
+        "Billing now supports monthly or annual checkout, shows recent invoices, and lets operators download invoice PDFs from the console. SSO moved into Team, where pending access requests, connection status, sign-in links, MFA enforcement, and Require SSO live next to the roster.",
       details: [
         {"Security",
          [
@@ -732,10 +732,10 @@ defmodule EmisarWeb.Changelog do
     %{
       date: ~D[2026-07-02],
       slug: "billing-checkout-mfa-and-shared-components",
-      title: "Checkout, 2FA sign-in, and cleaner account forms",
+      title: "Checkout, MFA sign-in, and cleaner account forms",
       tag: "v0.19.0",
       summary:
-        "Checkout now follows the selected plan, and billing-manager seats can manage billing without receiving broader admin powers. Accounts that require 2FA can challenge after a magic-link sign-in with TOTP or a recovery code.",
+        "Checkout now follows the selected plan, and billing-manager seats can manage billing without receiving broader admin powers. Accounts that require MFA can challenge after a magic-link sign-in with TOTP or a recovery code.",
       details: [
         {"Console",
          [

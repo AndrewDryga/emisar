@@ -835,7 +835,7 @@ defmodule Emisar.Audit.Event.Query do
       {false, false, true, "An inbox-proved signup created a workspace and owner membership."},
     "account.updated" => {true, true, true, "An admin changed the workspace's name or slug."},
     "account.require_mfa_set" =>
-      {true, true, true, "An admin toggled the workspace-wide two-factor requirement."},
+      {true, true, true, "An admin toggled the workspace-wide multi-factor requirement."},
     "account.require_sso_set" =>
       {true, true, true, "An admin toggled the workspace-wide single sign-on requirement."},
     "account.max_grant_lifetime_set" =>

@@ -42,7 +42,7 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/sign_in/mfa")
 
       assert html =~ "authenticator app"
-      assert html =~ "Two-factor authentication"
+      assert html =~ "Multi-factor authentication"
     end
   end
 

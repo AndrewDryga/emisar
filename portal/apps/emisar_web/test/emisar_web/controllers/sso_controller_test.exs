@@ -380,14 +380,14 @@ defmodule EmisarWeb.SSOControllerTest do
     end
   end
 
-  describe "POST /app/:account/settings/team/:membership/reset_2fa/sso" do
+  describe "POST /app/:account/settings/team/:membership/reset_mfa/sso" do
     test "an authenticated SSO owner begins a dedicated reset reauthentication", %{conn: conn} do
       reset = member_mfa_reset_controller_fixture(conn)
 
       conn =
         post(
           reset.conn,
-          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_2fa/sso"
+          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_mfa/sso"
         )
 
       assert redirected_to(conn) == "https://idp.test/auth"
@@ -415,7 +415,7 @@ defmodule EmisarWeb.SSOControllerTest do
       reset = member_mfa_reset_controller_fixture(conn)
 
       path =
-        ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_2fa/sso"
+        ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_mfa/sso"
 
       assert get(reset.conn, path).status == 404
 
@@ -444,7 +444,7 @@ defmodule EmisarWeb.SSOControllerTest do
       begun =
         post(
           reset.conn,
-          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_2fa/sso"
+          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_mfa/sso"
         )
 
       before_tokens =
@@ -489,7 +489,7 @@ defmodule EmisarWeb.SSOControllerTest do
         begun =
           post(
             reset.conn,
-            ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_2fa/sso"
+            ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_mfa/sso"
           )
 
         if revoke_trust? do
@@ -532,7 +532,7 @@ defmodule EmisarWeb.SSOControllerTest do
       begun =
         post(
           reset.conn,
-          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_2fa/sso"
+          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_mfa/sso"
         )
 
       new_epoch = DateTime.add(reset.target.mfa_enabled_at, 1, :second)
@@ -569,7 +569,7 @@ defmodule EmisarWeb.SSOControllerTest do
       begun =
         post(
           reset.conn,
-          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_2fa/sso"
+          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_mfa/sso"
         )
 
       :ok = Emisar.Auth.delete_session_token(reset.session_token)

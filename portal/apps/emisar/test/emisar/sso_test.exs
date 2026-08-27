@@ -1080,7 +1080,7 @@ defmodule Emisar.SSOTest do
 
       # Trusting the provider's MFA is a claim the operator makes deliberately.
       # It used to default ON, so a password-only OIDC server silently satisfied
-      # the account's 2FA requirement.
+      # the account's MFA requirement.
       refute provider.satisfies_mfa
 
       assert {:ok, [event], _meta} =

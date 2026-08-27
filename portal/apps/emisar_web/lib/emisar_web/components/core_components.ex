@@ -2821,7 +2821,7 @@ defmodule EmisarWeb.CoreComponents do
 
   A CONSEQUENTIAL toggle never gates itself with the native `data-confirm` —
   its `phx-click` opens the shared `<.confirm_dialog>` instead (the
-  require-2FA switch in Team is the model).
+  require-MFA switch in Team is the model).
   """
   attr :on, :boolean, required: true
   attr :on_label, :string, required: true, doc: "shown while ON — the turn-off action"

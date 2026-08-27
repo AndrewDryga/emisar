@@ -1276,7 +1276,7 @@ defmodule Emisar.Accounts do
   defp sole_owner?(_repo, %Membership{}), do: false
 
   @doc """
-  The account's security posture for the team rail, read from CURRENT state: 2FA
+  The account's security posture for the team rail, read from CURRENT state: MFA
   enrollment across every member, how many of them can manage the team, whether
   enforcement is on (and whether the caller could turn it on without locking
   themselves out), and whether SSO is required.

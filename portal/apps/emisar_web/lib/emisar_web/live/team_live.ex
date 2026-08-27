@@ -88,7 +88,7 @@ defmodule EmisarWeb.TeamLive do
         else
           {:noreply,
            socket
-           |> assign(:page_title, "Reset member 2FA")
+           |> assign(:page_title, "Reset member MFA")
            |> assign(:loading?, true)}
         end
 
@@ -287,7 +287,7 @@ defmodule EmisarWeb.TeamLive do
             {:noreply, put_flash(socket, :error, error_message(:mfa_enrollment_required))}
 
           {:error, _} ->
-            {:noreply, put_flash(socket, :error, "Could not update 2FA setting.")}
+            {:noreply, put_flash(socket, :error, "Could not update MFA setting.")}
         end
     end
   end
@@ -793,7 +793,7 @@ defmodule EmisarWeb.TeamLive do
             end
 
           socket
-          |> assign(:page_title, "Reset member 2FA")
+          |> assign(:page_title, "Reset member MFA")
           |> assign(:loading?, false)
           |> assign(:mfa_reset_target, facts.membership)
           |> assign(:mfa_reset_sso_facts, sso_facts)
@@ -801,7 +801,7 @@ defmodule EmisarWeb.TeamLive do
 
         {:ok, _facts} ->
           socket
-          |> put_flash(:error, "That member no longer has 2FA to reset.")
+          |> put_flash(:error, "That member no longer has MFA to reset.")
           |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")
 
         {:error, _reason} ->
@@ -810,7 +810,7 @@ defmodule EmisarWeb.TeamLive do
     else
       false ->
         socket
-        |> put_flash(:error, "Only owners and admins can reset a member's 2FA.")
+        |> put_flash(:error, "Only owners and admins can reset a member's MFA.")
         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")
     end
   end
@@ -841,7 +841,7 @@ defmodule EmisarWeb.TeamLive do
            ) do
       {:noreply,
        socket
-       |> put_flash(:info, "2FA reset. They can set up a new authenticator after signing in.")
+       |> put_flash(:info, "MFA reset. They can set up a new authenticator after signing in.")
        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")}
     else
       {:error, :rate_limited} ->
@@ -874,7 +874,7 @@ defmodule EmisarWeb.TeamLive do
          socket
          |> put_flash(
            :error,
-           "The member or 2FA settings changed. Review the current team state."
+           "The member or MFA settings changed. Review the current team state."
          )
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")}
 
@@ -1387,7 +1387,7 @@ defmodule EmisarWeb.TeamLive do
             Invite a member
           <% :reset_mfa -> %>
             <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
-            Reset member 2FA
+            Reset member MFA
           <% _ -> %>
             Team
         <% end %>
@@ -1588,18 +1588,18 @@ defmodule EmisarWeb.TeamLive do
                   />
                   <:actions>
                     <.button variant={:secondary} tone={:rose} phx-disable-with="Verifying…">
-                      Verify and reset 2FA
+                      Verify and reset MFA
                     </.button>
                     <.button
                       :if={@mfa_reset_sso_facts}
                       href={
-                        ~p"/app/#{@current_account}/settings/team/#{@mfa_reset_target.id}/reset_2fa/sso"
+                        ~p"/app/#{@current_account}/settings/team/#{@mfa_reset_target.id}/reset_mfa/sso"
                       }
                       method="post"
                       variant={:secondary}
                       tone={:rose}
                     >
-                      Verify with {@mfa_reset_sso_facts.provider_name} and reset 2FA
+                      Verify with {@mfa_reset_sso_facts.provider_name} and reset MFA
                     </.button>
                     <.button
                       navigate={~p"/app/#{@current_account}/settings/team"}
@@ -1633,7 +1633,7 @@ defmodule EmisarWeb.TeamLive do
                   <.error :if={@mfa_reset_error}>{@mfa_reset_error}</.error>
                   <:actions>
                     <.button variant={:secondary} tone={:rose} phx-disable-with="Verifying…">
-                      Verify and reset 2FA
+                      Verify and reset MFA
                     </.button>
                     <.button
                       navigate={~p"/app/#{@current_account}/settings/team"}
@@ -1660,13 +1660,13 @@ defmodule EmisarWeb.TeamLive do
                 <div class="mt-5 flex flex-wrap gap-3">
                   <.button
                     href={
-                      ~p"/app/#{@current_account}/settings/team/#{@mfa_reset_target.id}/reset_2fa/sso"
+                      ~p"/app/#{@current_account}/settings/team/#{@mfa_reset_target.id}/reset_mfa/sso"
                     }
                     method="post"
                     variant={:secondary}
                     tone={:rose}
                   >
-                    Verify with {@mfa_reset_sso_facts.provider_name} and reset 2FA
+                    Verify with {@mfa_reset_sso_facts.provider_name} and reset MFA
                   </.button>
                   <.button
                     navigate={~p"/app/#{@current_account}/settings/team"}
@@ -1682,7 +1682,7 @@ defmodule EmisarWeb.TeamLive do
                   icon="state.locked"
                   title="A second factor is required"
                 >
-                  Set up 2FA in your profile, then return here to reset this member's factor.
+                  Set up MFA in your profile, then return here to reset this member's factor.
                   <div class="mt-4">
                     <.button
                       navigate={~p"/app/#{@current_account}/settings/profile"}
@@ -1716,7 +1716,7 @@ defmodule EmisarWeb.TeamLive do
            opens directly under the row instead of in a bolted-on
            extra table column. --%>
       <%!-- Roster leads the main column; the Security stance rides the SIDE
-           PANEL beside it — 2FA and SSO each own one boxed control. SSO
+           PANEL beside it — MFA and SSO each own one boxed control. SSO
            enforcement is a subsection of its connection setup, not a competing
            card. --%>
       <%!-- The house rail track: a FIXED 22rem that splits off at xl, never a
@@ -1970,7 +1970,7 @@ defmodule EmisarWeb.TeamLive do
 
                       <div class="min-w-0 flex-1">
                         <%!-- Keep the identity line about identity. Persistent
-                         identity markers (2FA, directory source, self) may sit
+                         identity markers (MFA, directory source, self) may sit
                          beside the name; caution states stack below instead of
                          piling amber boxes around it (§7.62). --%>
                         <div class="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -1999,7 +1999,7 @@ defmodule EmisarWeb.TeamLive do
                           <%!-- MFA status. Three states worth distinguishing:
                          (1) enrolled — quiet brand check, the happy
                          default; (2) not enrolled, account doesn't
-                         enforce — neutral grey "No 2FA" hint; (3) not
+                         enforce — neutral grey "No MFA" hint; (3) not
                          enrolled AND the account requires MFA — LOUD
                          rose, because that user can't sign in right
                          now and an admin should chase them. --%>
@@ -2438,7 +2438,7 @@ defmodule EmisarWeb.TeamLive do
           </section>
         </div>
 
-        <%!-- ===== Security side panel ===== 2FA and SSO are the two account
+        <%!-- ===== Security side panel ===== MFA and SSO are the two account
              security concerns; the SSO card contains its enforcement and
              sign-in-link subsections in operator order. --%>
         <%!-- Below xl this rail becomes a BAND under the roster: its cards turn
@@ -2450,13 +2450,13 @@ defmodule EmisarWeb.TeamLive do
           <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Security</h3>
 
           <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-            <%!-- ── Two-factor authentication ── --%>
+            <%!-- ── Multi-factor authentication ── --%>
             <% unenrolled = @security_facts.mfa_missing %>
             <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
             <div class="rounded-xl border border-zinc-800/80 p-4">
-              <h4 class="text-sm font-medium text-zinc-100">Two-factor authentication</h4>
+              <h4 class="text-sm font-medium text-zinc-100">Multi-factor authentication</h4>
               <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-                When enforced, members without 2FA are funneled to their profile to set it up before
+                When enforced, members without MFA are funneled to their profile to set it up before
                 they can use the rest of the app. You can't enable this until you've enrolled
                 yourself — prevents lock-outs.
               </p>
@@ -2464,7 +2464,7 @@ defmodule EmisarWeb.TeamLive do
                 <span class="flex items-center gap-1.5">
                   <.status_dot :if={unenrolled > 0} tone={:amber} size={:sm} />
                   <span class="text-zinc-400">
-                    2FA enrolled:
+                    MFA enrolled:
                     <span id="mfa-enrolled-count" class="font-medium tabular-nums text-zinc-200">
                       {@security_facts.mfa_enrolled}
                     </span>
@@ -2487,7 +2487,7 @@ defmodule EmisarWeb.TeamLive do
               >
                 <%= if @security_facts.mfa_enforcement == :actor_not_enrolled do %>
                   <.tooltip
-                    text="Enable 2FA on your own profile first — otherwise you'd lock yourself out."
+                    text="Enable MFA on your own profile first — otherwise you'd lock yourself out."
                     placement={:bottom}
                     class="shrink-0"
                   >
@@ -2841,9 +2841,9 @@ defmodule EmisarWeb.TeamLive do
     <.chip
       tone={:brand}
       icon="identity.authentication"
-      title="Two-factor authentication is enrolled."
+      title="Multi-factor authentication is enrolled."
     >
-      2FA
+      MFA
     </.chip>
     """
   end
@@ -2853,15 +2853,15 @@ defmodule EmisarWeb.TeamLive do
     <.chip
       tone={:rose}
       icon="security.posture_warning"
-      title="Account requires 2FA but this user hasn't enrolled. They can't sign in until they do."
+      title="Account requires MFA but this user hasn't enrolled. They can't sign in until they do."
     >
-      2FA required
+      MFA required
     </.chip>
     """
   end
 
-  # Not enrolled and the account doesn't enforce: render NOTHING — the 2FA
-  # card already aggregates the count, and a "No 2FA" chip on every row of an
+  # Not enrolled and the account doesn't enforce: render NOTHING — the MFA
+  # card already aggregates the count, and a "No MFA" chip on every row of an
   # unenforced account carries zero discrimination (default ≠ signal).
   defp mfa_badge(assigns), do: ~H""
 
@@ -3011,7 +3011,7 @@ defmodule EmisarWeb.TeamLive do
           >
             Resend invite
           </.menu_item>
-          <%!-- Only offered when the member actually has 2FA enrolled —
+          <%!-- Only offered when the member actually has MFA enrolled —
                the recovery path for someone locked out of both their
                authenticator and their recovery codes. It's an
                MFA-BYPASS action (it lets them enroll a NEW factor), so
@@ -3020,9 +3020,9 @@ defmodule EmisarWeb.TeamLive do
           <.menu_item
             :if={@member.reset_mfa?}
             tone={:amber}
-            navigate={~p"/app/#{@current_account}/settings/team/#{@membership.id}/reset_2fa"}
+            navigate={~p"/app/#{@current_account}/settings/team/#{@membership.id}/reset_mfa"}
           >
-            Reset 2FA
+            Reset MFA
           </.menu_item>
           <.menu_item phx-click={open_confirm("end-sessions-#{@membership.id}")}>
             End all sessions
@@ -3104,22 +3104,22 @@ defmodule EmisarWeb.TeamLive do
       disabled={@disabled}
       title={
         if @require_mfa,
-          do: "Stop enforcing 2FA account-wide?",
-          else: "Enforce 2FA for everyone on this account?"
+          do: "Stop enforcing MFA account-wide?",
+          else: "Enforce MFA for everyone on this account?"
       }
-      confirm_label={if @require_mfa, do: "Stop enforcing", else: "Enforce 2FA"}
+      confirm_label={if @require_mfa, do: "Stop enforcing", else: "Enforce MFA"}
       on_confirm={JS.push("toggle_require_mfa")}
     >
       <:body>
         <%= if @require_mfa do %>
-          Members will be able to use the account without 2FA again.
+          Members will be able to use the account without MFA again.
         <% else %>
           {@unenrolled} of {@total} members aren't enrolled yet — they'll be funneled to set it up
           before they can use the account again. You can't enable this until you've enrolled
           yourself.
         <% end %>
       </:body>
-      {if @require_mfa, do: "Stop enforcing 2FA", else: "Enforce 2FA"}
+      {if @require_mfa, do: "Stop enforcing MFA", else: "Enforce MFA"}
     </.confirm_button>
     """
   end

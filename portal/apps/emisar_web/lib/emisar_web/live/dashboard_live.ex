@@ -1073,7 +1073,7 @@ defmodule EmisarWeb.DashboardLive do
   # state: a solo account (just the owner) reports its honest count and pitches
   # inviting the team; once a team exists, it pitches SSO — federated sign-in
   # for everyone; once SSO is LIVE, the forward action is managing the
-  # providers, not enabling what's already on. Per-member 2FA posture lives on
+  # providers, not enabling what's already on. Per-member MFA posture lives on
   # the Team settings roster, where it's actionable, not as a dashboard stat.
   # A viewer who can't manage SSO gets NO action line — the whole tile already
   # navigates to Team, and pitching a verb their role can't perform is a dead

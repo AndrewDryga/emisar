@@ -55,7 +55,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     {:ok, lv, html} = live(conn, ~p"/app/mfa_setup")
 
     assert html =~ account.name
-    assert html =~ "requires two-factor authentication"
+    assert html =~ "requires multi-factor authentication"
 
     html = begin_mfa_enrollment(lv)
 

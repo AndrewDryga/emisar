@@ -1915,7 +1915,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                     </dd>
                   </div>
                   <div class="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
-                    <dt class="text-xs font-medium text-zinc-400">Two-factor authentication</dt>
+                    <dt class="text-xs font-medium text-zinc-400">Multi-factor authentication</dt>
                     <dd class="text-sm text-zinc-300">
                       {if(provider.satisfies_mfa,
                         do: "Satisfied by this provider",
@@ -2504,7 +2504,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         <.section_header title="Security & activation">
           <:subtitle>
             <%= if @editing? do %>
-              Whether this provider satisfies 2FA, and whether members can use it yet.
+              Whether this provider satisfies MFA, and whether members can use it yet.
             <% else %>
               New connections stay disabled until you save them and verify a real sign-in.
             <% end %>
@@ -2515,11 +2515,11 @@ defmodule EmisarWeb.SSOSettingsLive do
             <.input
               field={@form[:satisfies_mfa]}
               type="checkbox"
-              label="Sign-in through this provider satisfies the account's 2FA requirement"
+              label="Sign-in through this provider satisfies the account's MFA requirement"
             />
             <%!-- The caption tracks the box: OFF (the default) it's a calm fact
                  about what turning it on means; ON it's the amber consequence,
-                 because that's the state that can actually weaken 2FA. A warning
+                 because that's the state that can actually weaken MFA. A warning
                  shown at the safe default would just argue with itself. --%>
             <p
               :if={not checkbox_on?(@form[:satisfies_mfa])}
@@ -2533,7 +2533,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               class="mt-1 text-[11px] leading-relaxed text-amber-300/80"
             >
               This provider must enforce MFA itself — otherwise members who sign in through it
-              bypass your 2FA requirement.
+              bypass your MFA requirement.
             </p>
           </div>
           <.input

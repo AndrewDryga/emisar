@@ -5,12 +5,12 @@ defmodule EmisarWeb.ProfileLive do
   alias Phoenix.LiveView.JS
 
   # Both step-ups on this page — the email-change authenticator branch and
-  # disabling 2FA — spend the same per-user MFA attempt window, so they report
+  # disabling MFA — spend the same per-user MFA attempt window, so they report
   # its exhaustion in the same words.
   @mfa_rate_limit_error "Too many attempts. Wait a few minutes, then try again."
   @email_issue_rate_limit_error "Too many code requests. Wait up to 15 minutes, then try again."
   @mfa_enrollment_email_unavailable_error "Your identity provider did not supply an email address. Ask your administrator to update it, then sign in again."
-  @mfa_enrollment_email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up 2FA."
+  @mfa_enrollment_email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up MFA."
   @mfa_enrollment_email_delivery_error "We could not deliver the verification code. Try again. If it keeps failing, contact support."
 
   def mount(_params, session, socket) do
@@ -478,7 +478,7 @@ defmodule EmisarWeb.ProfileLive do
            socket
            |> put_flash(
              :info,
-             "2FA enabled. Copy your recovery codes below — they'll only be shown once."
+             "MFA enabled. Copy your recovery codes below — they'll only be shown once."
            )
            |> assign(:current_user, updated)
            |> assign_current_mfa_proof(updated)
@@ -498,14 +498,14 @@ defmodule EmisarWeb.ProfileLive do
         {:error, :session_not_found} ->
           {:noreply,
            socket
-           |> put_flash(:error, "Your session changed. Sign in again before enabling 2FA.")
+           |> put_flash(:error, "Your session changed. Sign in again before enabling MFA.")
            |> push_navigate(to: ~p"/sign_in/magic")}
 
         {:error, :mfa_already_enabled} ->
           {:noreply, refresh_after_mfa_enabled(socket)}
 
         {:error, _changeset} ->
-          {:noreply, assign(socket, :mfa_error, "Could not enable 2FA. Try again.")}
+          {:noreply, assign(socket, :mfa_error, "Could not enable MFA. Try again.")}
       end
     end
   end
@@ -570,7 +570,7 @@ defmodule EmisarWeb.ProfileLive do
       {:ok, updated} ->
         {:noreply,
          socket
-         |> put_flash(:info, "2FA disabled.")
+         |> put_flash(:info, "MFA disabled.")
          |> assign(:current_user, updated)
          |> assign_mfa_facts(updated)
          |> assign(:mfa_recovery_codes, nil)
@@ -600,7 +600,7 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply,
          socket
          |> assign(:mfa_disable_step, :code)
-         |> assign(:mfa_disable_error, "Could not disable 2FA. Try again.")}
+         |> assign(:mfa_disable_error, "Could not disable MFA. Try again.")}
     end
   end
 
@@ -639,7 +639,7 @@ defmodule EmisarWeb.ProfileLive do
       {:error, :mfa_not_enabled} ->
         {:noreply,
          socket
-         |> put_flash(:error, "Enable 2FA first.")
+         |> put_flash(:error, "Enable MFA first.")
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/profile")}
 
       {:error, _reason} ->
@@ -1192,9 +1192,9 @@ defmodule EmisarWeb.ProfileLive do
         </section>
 
         <section>
-          <%!-- No On/off badge: the sole action ("Set up 2FA" / "Disable 2FA")
+          <%!-- No On/off badge: the sole action ("Set up MFA" / "Disable MFA")
                already states the current state unambiguously. --%>
-          <.section_header title="Two-factor authentication">
+          <.section_header title="Multi-factor authentication">
             <:subtitle>
               Adds a TOTP code at sign-in, so a leaked sign-in link alone can't get in.
             </:subtitle>
@@ -1258,16 +1258,16 @@ defmodule EmisarWeb.ProfileLive do
                   Regenerate recovery codes
                 </.button>
                 <.confirm_button
-                  id="disable-2fa"
-                  title="Disable 2FA on your account?"
-                  confirm_label="Disable 2FA"
+                  id="disable-mfa"
+                  title="Disable MFA on your account?"
+                  confirm_label="Disable MFA"
                   variant={:secondary}
                   tone={:rose}
                   size={:md}
                   on_confirm={JS.push("start_disable_mfa")}
                 >
                   <:body>A leaked sign-in link alone will then be enough to sign in.</:body>
-                  Disable 2FA
+                  Disable MFA
                 </.confirm_button>
               </div>
               <.simple_form
@@ -1382,7 +1382,7 @@ defmodule EmisarWeb.ProfileLive do
               <%!-- Secondary like every profile island action — this page has
                    no single primary (ONE emerald fill per viewport). --%>
               <.button variant={:secondary} phx-click="start_mfa" size={:md} class="mt-4">
-                Set up 2FA
+                Set up MFA
               </.button>
           <% end %>
         </section>

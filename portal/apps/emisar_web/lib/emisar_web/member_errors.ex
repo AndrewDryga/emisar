@@ -31,7 +31,7 @@ defmodule EmisarWeb.MemberErrors do
     member_runner_access_exceeds_subject:
       "That member's runner access is wider than yours. Narrow their access first, then change their role.",
     mfa_enrollment_required:
-      "Enable 2FA on your own profile first — otherwise you'd lock yourself out.",
+      "Enable MFA on your own profile first — otherwise you'd lock yourself out.",
     deactivated_in_idp:
       "That member is deactivated in your identity provider — reactivate them there first."
   }

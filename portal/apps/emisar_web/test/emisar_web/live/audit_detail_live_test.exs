@@ -178,7 +178,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
     assert facts =~ "leading-5"
   end
 
-  test "the actor card surfaces the sign-in method + 2FA state (provenance, not JSON)", %{
+  test "the actor card surfaces the sign-in method + MFA state (provenance, not JSON)", %{
     conn: conn
   } do
     {conn, user, account} = register_and_log_in(conn)
@@ -190,10 +190,10 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
 
-    # Sign-in method with a 2FA badge — answerable at a glance, not buried in JSON.
+    # Sign-in method with a MFA badge — answerable at a glance, not buried in JSON.
     assert html =~ "Sign-in"
     assert html =~ "SSO"
-    assert html =~ "2FA"
+    assert html =~ "MFA"
   end
 
   test ~S(a runner_version of "-" renders as no version, not a dangling dash), %{conn: conn} do
