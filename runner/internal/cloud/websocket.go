@@ -331,7 +331,7 @@ func (d *WebsocketDialer) readToken() (runnerToken, error) {
 	// exposed (bad umask, manual edit, tampering), so reject it — the caller
 	// fails the dial rather than registering over rejected cache state. We
 	// always write 0600, so a clean install never trips.
-	f, err := openTokenFile(d.TokenPath)
+	f, err := openSecureLocalFile(d.TokenPath)
 	if err != nil {
 		return runnerToken{}, err
 	}
@@ -340,6 +340,9 @@ func (d *WebsocketDialer) readToken() (runnerToken, error) {
 	info, err := f.Stat()
 	if err != nil {
 		return runnerToken{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return runnerToken{}, fmt.Errorf("token file %s is not a regular file", d.TokenPath)
 	}
 	if perm := info.Mode().Perm(); perm&0o077 != 0 {
 		return runnerToken{}, fmt.Errorf("insecure perms %#o (want 0600); chmod 600 %s", perm, d.TokenPath)

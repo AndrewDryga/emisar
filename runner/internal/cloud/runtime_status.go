@@ -120,7 +120,7 @@ func ReadRuntimeStatus(path string) (*RuntimeStatus, error) {
 	if path == "" {
 		return nil, nil
 	}
-	file, err := openRuntimeStatusFile(path)
+	file, err := openSecureLocalFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}

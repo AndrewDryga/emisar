@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -325,6 +326,31 @@ func TestReadTokenRejectsSymlinkAndLoosePerms(t *testing.T) {
 	}
 	if _, err := (&WebsocketDialer{TokenPath: link}).readToken(); err == nil {
 		t.Error("symlinked token path should be refused")
+	}
+
+	// A FIFO at the token path → refused, and refused WITHOUT blocking. Opening
+	// a FIFO for reading parks in open(2) until a writer arrives, so the guard
+	// has to be the O_NONBLOCK open flag; an fstat check alone never runs. The
+	// deadline is what makes this a real assertion — a regression hangs here
+	// rather than failing.
+	fifo := filepath.Join(dir, "fifo.json")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := (&WebsocketDialer{TokenPath: fifo}).readToken()
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+			t.Errorf("fifo token path error = %v, want not-a-regular-file", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("reading a FIFO token path blocked — O_NONBLOCK is missing from the open")
 	}
 }
 
