@@ -399,10 +399,15 @@ defmodule EmisarWeb.BillingLive do
              and a help/support aside on the right — the create-page helper-rail
              grammar, so "what you have / what you're using / who to ask" read in
              one row. --%>
-        <%!-- The house rail track: a FIXED 22rem that only splits off at xl, never
-             a squeezed fraction. A quarter of the lg canvas left the rail ~168px,
-             which broke "22 / Unlimited" across two lines under its own label. --%>
-        <section class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+        <%!-- The house rail track — a FIXED 22rem, never a squeezed fraction: a
+             quarter of the lg canvas left the rail ~168px, which broke
+             "22 / Unlimited" across two lines under its own label. It splits at
+             2xl rather than the usual xl because this main column carries the
+             three-across plan grid, whose cards have a floor the roster and list
+             columns elsewhere don't: at xl the rail would leave them ~176px and
+             wrap "Contact support to switch" onto three lines. The rail waits
+             until the column can hold both. --%>
+        <section class="grid grid-cols-1 gap-x-10 gap-y-8 2xl:grid-cols-[minmax(0,1fr)_22rem] 2xl:items-start">
           <div class="min-w-0 space-y-8">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div>
