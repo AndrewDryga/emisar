@@ -33,9 +33,6 @@ on:
     branches: [main]
   workflow_call:
     outputs:
-      portal_release:
-        description: Whether CD must publish the tested portal image.
-        value: ${{ jobs.changes.outputs.portal_release }}
       packs_release:
         description: Whether CD must publish the pack registry.
         value: ${{ jobs.changes.outputs.packs_release }}
@@ -62,7 +59,6 @@ jobs:
       packs: ${{ steps.detect.outputs.packs }}
       infra: ${{ steps.detect.outputs.infra }}
       deps: ${{ steps.detect.outputs.deps }}
-      workflows: ${{ steps.detect.outputs.workflows }}
       mcp_listing: ${{ steps.detect.outputs.mcp_listing }}
       go_modules: ${{ steps.detect.outputs.go_modules }}
       portal_release: ${{ steps.detect.outputs.portal_release }}

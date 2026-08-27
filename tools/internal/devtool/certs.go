@@ -499,10 +499,7 @@ func (a *App) certsCommand(ctx context.Context, args []string) error {
 		return a.refreshServicesForCertificate(ctx)
 	}
 	switch args[0] {
-	// `./run help` documents `rotate`, and every sibling subcommand is a bare
-	// word — `--rotate` was the only flag-shaped one in the whole surface, so
-	// the documented spelling errored out. Keep the flag for saved commands.
-	case "rotate", "--rotate":
+	case "rotate":
 		return a.rotateCertificates(ctx)
 	case "trust":
 		return a.trustCertificate(ctx)

@@ -159,7 +159,7 @@ On macOS, opt into browser trust once per workspace and remove it explicitly:
 
 Trust is limited to SSL for `localhost` in the user keychain and removal targets
 the exact CA fingerprint, so parallel workspaces do not remove each other's
-certificates. `./run certs --rotate` removes the old fingerprint and restores
+certificates. `./run certs rotate` removes the old fingerprint and restores
 trust only when it was already enabled. The automated browser uses an exception
 for the exact leaf certificate SPKI, never a blanket TLS bypass. `./run doctor`
 verifies services, browser trust on macOS, the exact OIDC issuer, and that
