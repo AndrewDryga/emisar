@@ -56,7 +56,7 @@ func writeSetup(w io.Writer, style styler, p *packspec.Pack, inheritEnv []string
 	s := p.Setup
 	fmt.Fprintf(w, "\n  %s\n", style.bold("Setup"))
 
-	if s.Summary == "" && len(s.Env) == 0 && len(s.Notes) == 0 && s.Verify == "" {
+	if s.Summary == "" && len(s.Env) == 0 && len(s.Notes) == 0 && len(s.HostAccess) == 0 && s.Verify == "" {
 		fmt.Fprintf(w, "    No credentials needed — operates on the local runner host.\n")
 		return
 	}
@@ -85,6 +85,38 @@ func writeSetup(w io.Writer, style styler, p *packspec.Pack, inheritEnv []string
 			warning := fmt.Sprintf("! Required vars not in this config's inherit_env: %s", strings.Join(missing, ", "))
 			fmt.Fprintf(w, "\n    %s\n", style.warn(warning))
 			fmt.Fprintf(w, "      Add them under execution.inherit_env or the pack can't authenticate.\n")
+		}
+	}
+
+	if len(s.HostAccess) > 0 {
+		fmt.Fprintf(w, "\n    %s\n", style.bold("Host access:"))
+		for _, line := range wrapText("Run these commands yourself on the runner host; Emisar never runs setup recipes.", 66) {
+			fmt.Fprintf(w, "      %s\n", line)
+		}
+		for _, access := range s.HostAccess {
+			requirement, requirementLinks := setupProse(collapseSpace(access.Requirement))
+			fmt.Fprintf(w, "\n      %s\n", style.bold(requirement))
+			writeLinks(w, "        ", requirementLinks)
+			for _, line := range wrapText("Actions: "+strings.Join(access.Actions, ", "), 62) {
+				fmt.Fprintf(w, "        %s\n", line)
+			}
+			for _, recipe := range access.Recipes {
+				name, nameLinks := setupProse(collapseSpace(recipe.Name))
+				fmt.Fprintf(w, "\n        %s\n", style.bold(name))
+				writeLinks(w, "          ", nameLinks)
+				for _, command := range recipe.Commands {
+					fmt.Fprintf(w, "          %s\n", command)
+				}
+				fmt.Fprintf(w, "          Verify:\n")
+				for _, command := range recipe.Verify {
+					fmt.Fprintf(w, "            %s\n", command)
+				}
+				impact, impactLinks := setupProse(collapseSpace(recipe.Impact))
+				for _, line := range wrapText("Impact: "+impact, 60) {
+					fmt.Fprintf(w, "          %s\n", line)
+				}
+				writeLinks(w, "            ", impactLinks)
+			}
 		}
 	}
 

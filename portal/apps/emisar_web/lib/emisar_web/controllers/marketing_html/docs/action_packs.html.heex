@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="action-packs"
-      updated="August 4, 2026"
+      updated="August 26, 2026"
       toc={[
         {"layout", "Layout"},
         {"pack-yaml", "pack.yaml"},
@@ -79,6 +79,24 @@ actions:
         <code>verify</code>
         action.
       </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        When an action needs protected host access, add a <code>host_access</code>
+        group. It names the exact actions, the resource they need, complete persistent grant
+        and verification commands, and the authority the grant gives the runner identity.
+        Emisar displays these commands; it never runs them.
+      </p>
+      <.docs_code phx-no-format label="yaml">setup:
+  host_access:
+    - actions: [my.journal_tail]
+      requirement: Read the system journal.
+      recipes:
+        - name: systemd Linux — default emisar service user
+          commands:
+            - sudo usermod -aG systemd-journal emisar
+            - sudo systemctl restart emisar
+          verify:
+            - sudo -u emisar journalctl -n 1 --no-pager
+          impact: The emisar service identity can read the complete system journal.</.docs_code>
 
       <.docs_h2 id="action-yaml">An action YAML</.docs_h2>
       <.docs_code phx-no-format label="yaml">schema_version: 1

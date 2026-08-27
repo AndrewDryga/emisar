@@ -459,6 +459,41 @@ func TestWriteSetup_PrintsAnAuthoredURLOnOneUnwrappedLine(t *testing.T) {
 	}
 }
 
+func TestWriteSetup_PrintsHostAccessRecipesWithoutChangingCommands(t *testing.T) {
+	command := "  sudo install -m 0640 /var/log/service.log /run/emisar/service.log  "
+	var out strings.Builder
+	writeSetup(&out, newStyler(&out), &packspec.Pack{
+		Setup: packspec.Setup{
+			HostAccess: []packspec.HostAccess{{
+				Actions:     []string{"service.logs", "service.status"},
+				Requirement: "Read the service log.",
+				Recipes: []packspec.HostAccessRecipe{{
+					Name:     "Debian and Ubuntu",
+					Commands: []string{command},
+					Verify:   []string{"sudo -u emisar test -r /run/emisar/service.log"},
+					Impact:   "Lets both listed actions read the log.",
+				}},
+			}},
+		},
+	}, nil, false)
+
+	printed := out.String()
+	for _, want := range []string{
+		"Host access:",
+		"Emisar never runs",
+		"setup recipes.",
+		"Actions: service.logs, service.status",
+		"Debian and Ubuntu",
+		command,
+		"Verify:",
+		"Impact: Lets both listed actions read the log.",
+	} {
+		if !strings.Contains(printed, want) {
+			t.Errorf("host-access output missing %q:\n%s", want, printed)
+		}
+	}
+}
+
 // The runner never DERIVES a pack page URL — a self-hosted registry's packs do
 // not live on our site — so the link comes from the pack's own homepage field,
 // and a pack that declares none gets no Docs line at all.

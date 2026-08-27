@@ -2,7 +2,7 @@ schema_version: 1
 
 id: fail2ban
 name: fail2ban
-version: 0.1.9
+version: 0.1.10
 description: >
   fail2ban inventory + per-jail banned-IP listings plus operator mutators
   for incident response: ban an IP into a jail, unban a false positive,
@@ -24,8 +24,45 @@ detect:
 setup:
   summary: >
     Operates on the local runner host — no credentials needed.
-  notes:
-    - "The fail2ban-client actions talk to the local daemon socket and need write access through its owner, group, or ACL. f2b.log_tail instead needs read access to /var/log/fail2ban.log. Grant only the access the actions you enable require; sudo cannot elevate an action because the runner enforces no_new_privs."
+  host_access:
+    - actions:
+        - f2b.status
+        - f2b.version
+        - f2b.jail_status
+        - f2b.banned_ips
+        - f2b.unban_ip
+        - f2b.banip
+        - f2b.reload
+      requirement: Connect to the Fail2ban control socket.
+      recipes:
+        - name: Debian and Ubuntu — default emisar service user
+          commands:
+            - "sudo apt-get install -y acl"
+            - "sudo install -d -m 0755 /etc/systemd/system/fail2ban.service.d"
+            - "printf '%s\\n' '[Service]' \"ExecStartPost=-/usr/bin/timeout 10 /bin/sh -c 'until [ -S /run/fail2ban/fail2ban.sock ]; do sleep 0.1; done; exec /usr/bin/setfacl -m u:emisar:rw /run/fail2ban/fail2ban.sock'\" | sudo tee /etc/systemd/system/fail2ban.service.d/emisar-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart fail2ban"
+          verify:
+            - "sudo -u emisar fail2ban-client status"
+          impact: >
+            Any process running as emisar can control Fail2ban through its socket. Every
+            listed read and mutating action gains that authority. The bounded systemd hook
+            reapplies the ACL whenever Fail2ban recreates the socket; the verification command
+            reports a failed grant without taking Fail2ban down.
+    - actions:
+        - f2b.log_tail
+      requirement: Read /var/log/fail2ban.log.
+      recipes:
+        - name: Debian and Ubuntu — default emisar service user
+          commands:
+            - "sudo usermod -aG adm emisar"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "sudo -u emisar test -r /var/log/fail2ban.log"
+          impact: >
+            The emisar service identity can read every host log granted to the adm group,
+            not only Fail2ban. The group membership survives Fail2ban log rotation and host
+            restarts.
   verify: f2b.status
 
 actions:

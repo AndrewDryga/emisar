@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // SchemaVersion is the currently supported pack schema version.
@@ -140,12 +142,36 @@ type Setup struct {
 	// also be added to the runner's inherit_env to reach the process.
 	Env []EnvVar `yaml:"env,omitempty" json:"env,omitempty"`
 	// Notes are extra setup caveats (file-based auth alternatives,
-	// required privileges, group membership, …) as scannable bullets.
+	// provider limitations, …) as scannable bullets. Host permissions live
+	// in HostAccess so each grant is tied to the actions it authorizes.
 	Notes []string `yaml:"notes,omitempty" json:"notes,omitempty"`
+	// HostAccess documents exact, operator-run host permission recipes for
+	// actions that cannot run under the runner's default service identity.
+	// It is display-only metadata: Emisar never executes these commands.
+	HostAccess []HostAccess `yaml:"host_access,omitempty" json:"host_access,omitempty"`
 	// Verify is the id of a low-risk read action an operator can run to
 	// confirm the pack can reach and authenticate to its target. Checked
 	// at load time to be one of the pack's own actions.
 	Verify string `yaml:"verify,omitempty" json:"verify,omitempty"`
+}
+
+// HostAccess groups actions that need the same host authority. Recipes may
+// vary by operating system or service layout, but each must grant and verify
+// the same requirement.
+type HostAccess struct {
+	Actions     []string           `yaml:"actions" json:"actions"`
+	Requirement string             `yaml:"requirement" json:"requirement"`
+	Recipes     []HostAccessRecipe `yaml:"recipes" json:"recipes"`
+}
+
+// HostAccessRecipe is a named, copyable setup path. Commands and Verify are
+// preserved byte-for-byte through catalog publication; consumers render them
+// as code and never interpolate or execute them.
+type HostAccessRecipe struct {
+	Name     string   `yaml:"name" json:"name"`
+	Commands []string `yaml:"commands" json:"commands"`
+	Verify   []string `yaml:"verify" json:"verify"`
+	Impact   string   `yaml:"impact" json:"impact"`
 }
 
 // EnvVar documents one environment variable a pack's tool reads to find or
@@ -170,6 +196,76 @@ func (s Setup) Validate(packID string) error {
 			return fmt.Errorf("pack %s: duplicate setup.env var %q", packID, e.Name)
 		}
 		seen[e.Name] = struct{}{}
+	}
+
+	actions := make(map[string]struct{})
+	for groupIndex, access := range s.HostAccess {
+		field := fmt.Sprintf("setup.host_access[%d]", groupIndex)
+		if len(access.Actions) == 0 {
+			return fmt.Errorf("pack %s: %s.actions must not be empty", packID, field)
+		}
+		for _, actionID := range access.Actions {
+			if err := validateSetupText(field+".actions", actionID, false); err != nil {
+				return fmt.Errorf("pack %s: %w", packID, err)
+			}
+			if _, duplicate := actions[actionID]; duplicate {
+				return fmt.Errorf("pack %s: duplicate setup.host_access action %q", packID, actionID)
+			}
+			actions[actionID] = struct{}{}
+		}
+		if err := validateSetupText(field+".requirement", access.Requirement, true); err != nil {
+			return fmt.Errorf("pack %s: %w", packID, err)
+		}
+		if len(access.Recipes) == 0 {
+			return fmt.Errorf("pack %s: %s.recipes must not be empty", packID, field)
+		}
+		recipeNames := make(map[string]struct{}, len(access.Recipes))
+		for recipeIndex, recipe := range access.Recipes {
+			recipeField := fmt.Sprintf("%s.recipes[%d]", field, recipeIndex)
+			if err := validateSetupText(recipeField+".name", recipe.Name, true); err != nil {
+				return fmt.Errorf("pack %s: %w", packID, err)
+			}
+			normalizedName := strings.Join(strings.Fields(recipe.Name), " ")
+			if _, duplicate := recipeNames[normalizedName]; duplicate {
+				return fmt.Errorf("pack %s: %s has duplicate recipe name %q", packID, field, recipe.Name)
+			}
+			recipeNames[normalizedName] = struct{}{}
+			if len(recipe.Commands) == 0 {
+				return fmt.Errorf("pack %s: %s.commands must not be empty", packID, recipeField)
+			}
+			for _, command := range recipe.Commands {
+				if err := validateSetupText(recipeField+".commands", command, false); err != nil {
+					return fmt.Errorf("pack %s: %w", packID, err)
+				}
+			}
+			if len(recipe.Verify) == 0 {
+				return fmt.Errorf("pack %s: %s.verify must not be empty", packID, recipeField)
+			}
+			for _, command := range recipe.Verify {
+				if err := validateSetupText(recipeField+".verify", command, false); err != nil {
+					return fmt.Errorf("pack %s: %w", packID, err)
+				}
+			}
+			if err := validateSetupText(recipeField+".impact", recipe.Impact, true); err != nil {
+				return fmt.Errorf("pack %s: %w", packID, err)
+			}
+		}
+	}
+	return nil
+}
+
+func validateSetupText(field, value string, prose bool) error {
+	if strings.TrimSpace(value) == "" {
+		return fmt.Errorf("%s must not be empty", field)
+	}
+	if !utf8.ValidString(value) {
+		return fmt.Errorf("%s must be valid UTF-8", field)
+	}
+	for _, r := range value {
+		allowedProseWhitespace := prose && (r == '\n' || r == '\r' || r == '\t')
+		if !allowedProseWhitespace && (unicode.IsControl(r) || unicode.In(r, unicode.Cf)) {
+			return fmt.Errorf("%s contains unsafe control character U+%04X", field, r)
+		}
 	}
 	return nil
 }

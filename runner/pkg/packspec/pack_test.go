@@ -74,7 +74,19 @@ func TestPack_Validate(t *testing.T) {
 }
 
 func TestSetup_Validate(t *testing.T) {
-	good := Setup{Env: []EnvVar{{Name: "PGHOST", Required: true}, {Name: "PGPORT"}}}
+	good := Setup{
+		Env: []EnvVar{{Name: "PGHOST", Required: true}, {Name: "PGPORT"}},
+		HostAccess: []HostAccess{{
+			Actions:     []string{"p.status", "p.logs"},
+			Requirement: "Read the service log.",
+			Recipes: []HostAccessRecipe{{
+				Name:     "systemd",
+				Commands: []string{"sudo install -m 0640 file /etc/service.conf"},
+				Verify:   []string{"sudo -u emisar test -r /etc/service.conf"},
+				Impact:   "Lets the runner read this service configuration.",
+			}},
+		}},
+	}
 	if err := good.Validate("p"); err != nil {
 		t.Fatalf("good setup should validate: %v", err)
 	}
@@ -91,6 +103,25 @@ func TestSetup_Validate(t *testing.T) {
 		{"leading digit", Setup{Env: []EnvVar{{Name: "1ABC"}}}},
 		{"space in name", Setup{Env: []EnvVar{{Name: "A B"}}}},
 		{"duplicate var", Setup{Env: []EnvVar{{Name: "X"}, {Name: "X"}}}},
+		{"missing actions", setupWithHostAccess(func(access *HostAccess) { access.Actions = nil })},
+		{"duplicate action", setupWithHostAccess(func(access *HostAccess) { access.Actions = []string{"p.status", "p.status"} })},
+		{"missing requirement", setupWithHostAccess(func(access *HostAccess) { access.Requirement = " " })},
+		{"missing recipes", setupWithHostAccess(func(access *HostAccess) { access.Recipes = nil })},
+		{"missing recipe name", setupWithHostAccess(func(access *HostAccess) { access.Recipes[0].Name = "" })},
+		{"duplicate recipe name", setupWithHostAccess(func(access *HostAccess) { access.Recipes = append(access.Recipes, access.Recipes[0]) })},
+		{"normalized duplicate recipe name", setupWithHostAccess(func(access *HostAccess) {
+			copy := access.Recipes[0]
+			copy.Name = "systemd\n"
+			access.Recipes = append(access.Recipes, copy)
+		})},
+		{"missing commands", setupWithHostAccess(func(access *HostAccess) { access.Recipes[0].Commands = nil })},
+		{"missing verify", setupWithHostAccess(func(access *HostAccess) { access.Recipes[0].Verify = nil })},
+		{"missing impact", setupWithHostAccess(func(access *HostAccess) { access.Recipes[0].Impact = "" })},
+		{"escape in command", setupWithHostAccess(func(access *HostAccess) { access.Recipes[0].Commands[0] = "echo\x1b[2J" })},
+		{"newline in command", setupWithHostAccess(func(access *HostAccess) { access.Recipes[0].Commands[0] = "echo ok\necho hidden" })},
+		{"bidi override", setupWithHostAccess(func(access *HostAccess) { access.Recipes[0].Impact = "safe\u202eevil" })},
+		{"zero width format control", setupWithHostAccess(func(access *HostAccess) { access.Recipes[0].Impact = "safe\u200bevil" })},
+		{"invalid utf8", setupWithHostAccess(func(access *HostAccess) { access.Recipes[0].Name = string([]byte{0xff}) })},
 	}
 	for _, c := range bad {
 		t.Run(c.name, func(t *testing.T) {
@@ -99,6 +130,21 @@ func TestSetup_Validate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func setupWithHostAccess(mutate func(*HostAccess)) Setup {
+	access := HostAccess{
+		Actions:     []string{"p.status"},
+		Requirement: "Reach the service socket.",
+		Recipes: []HostAccessRecipe{{
+			Name:     "systemd",
+			Commands: []string{"sudo systemctl edit service"},
+			Verify:   []string{"sudo -u emisar test -r /run/service.sock"},
+			Impact:   "Lets the runner control the service.",
+		}},
+	}
+	mutate(&access)
+	return Setup{HostAccess: []HostAccess{access}}
 }
 
 func TestRequirements_MatchesHost(t *testing.T) {

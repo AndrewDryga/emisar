@@ -37,6 +37,24 @@ defmodule EmisarWeb.CopyButtonTest do
     refute html =~ "onclick"
   end
 
+  test "pack setup copies exact command bytes rather than formatted DOM text" do
+    body = "  HISTCONTROL=ignorespace command  \nprintf '%s\\n' done"
+    assigns = %{commands: String.split(body, "\n")}
+
+    html =
+      rendered_to_string(~H"""
+      <EmisarWeb.MarketingHTML.setup_command_block
+        id="recipe"
+        label="Commands"
+        commands={@commands}
+      />
+      """)
+
+    escaped = body |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
+    assert html =~ ~s(data-copy-text="#{escaped}")
+    refute html =~ ~s(data-copy="#recipe")
+  end
+
   test "renders a custom Copied label via :label_copied" do
     assigns = %{}
 

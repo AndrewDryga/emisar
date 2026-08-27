@@ -130,6 +130,25 @@ defmodule EmisarWeb.PacksTest do
       assert html =~ "sentry.list_organizations"
     end
 
+    test "the setup section maps exact actions to copyable host-access recipes", %{conn: conn} do
+      html = conn |> get(~p"/packs/fail2ban") |> html_response(200)
+
+      assert html =~ "Host access"
+      assert html =~ "Emisar shows and copies setup"
+      assert html =~ "it never runs them."
+      assert html =~ "Connect to the Fail2ban control socket."
+      assert html =~ "f2b.status"
+      assert html =~ "f2b.reload"
+      assert html =~ "Read /var/log/fail2ban.log."
+      assert html =~ "f2b.log_tail"
+      assert html =~ "/usr/bin/setfacl -m u:emisar:rw /run/fail2ban/fail2ban.sock"
+      assert html =~ "sudo -u emisar fail2ban-client status"
+      assert html =~ "The bounded systemd hook"
+      assert html =~ "reports a failed grant without taking Fail2ban down"
+      assert html =~ "copy-host-access-fail2ban-0-0-commands"
+      refute html =~ "sudo cannot elevate an action"
+    end
+
     test "a pack that needs no credentials says so instead of showing an empty section",
          %{conn: conn} do
       local = Enum.find(PublishedRegistry.list(), &(&1.setup.env == [] and &1.setup.notes != []))

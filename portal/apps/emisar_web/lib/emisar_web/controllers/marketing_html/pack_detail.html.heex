@@ -118,8 +118,7 @@
       </section>
 
       <%!-- Setup — the pack's OWN authored block, carried through catalog.json,
-           so this page and `emisar pack info` on the host cannot disagree.
-           35 packs act only on the local host and honestly say so. --%>
+           so this page and `emisar pack info` on the host cannot disagree. --%>
       <section class="mt-12">
         <h2 class="text-xl font-semibold text-zinc-50">Setup</h2>
 
@@ -130,7 +129,10 @@
           <.setup_text text={@pack.setup.summary} />
         </p>
         <p
-          :if={is_nil(@pack.setup.summary) and @pack.setup.env == []}
+          :if={
+            is_nil(@pack.setup.summary) and @pack.setup.env == [] and
+              @pack.setup.host_access == []
+          }
           class="mt-2 max-w-prose text-sm leading-relaxed text-zinc-400"
         >
           No credentials needed — this pack acts on the runner host itself.
@@ -174,6 +176,56 @@
               </p>
             </li>
           </ul>
+        </div>
+
+        <div :if={@pack.setup.host_access != []} class="mt-6">
+          <h3 class="text-sm font-semibold text-zinc-200">Host access</h3>
+          <p class="mt-1 max-w-prose text-sm leading-relaxed text-zinc-400">
+            Run these commands yourself on the runner host. Emisar shows and copies setup
+            recipes; it never runs them.
+          </p>
+
+          <div class="mt-3 space-y-4">
+            <article
+              :for={{access, access_index} <- Enum.with_index(@pack.setup.host_access)}
+              class="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/40"
+            >
+              <div class="px-5 py-4">
+                <p class="max-w-prose text-sm font-medium leading-relaxed text-zinc-200">
+                  <.setup_text text={access.requirement} />
+                </p>
+                <div class="mt-2 flex flex-wrap gap-1.5">
+                  <code
+                    :for={action_id <- access.actions}
+                    class="rounded-md border border-zinc-800 bg-zinc-900/70 px-2 py-1 font-mono text-[11px] text-zinc-300"
+                  >{action_id}</code>
+                </div>
+              </div>
+
+              <div
+                :for={{recipe, recipe_index} <- Enum.with_index(access.recipes)}
+                class="space-y-3 border-t border-zinc-800 px-5 py-4"
+              >
+                <h4 class="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  <.setup_text text={recipe.name} />
+                </h4>
+                <.setup_command_block
+                  id={"host-access-#{@pack.id}-#{access_index}-#{recipe_index}-commands"}
+                  label="Grant access"
+                  commands={recipe.commands}
+                />
+                <.setup_command_block
+                  id={"host-access-#{@pack.id}-#{access_index}-#{recipe_index}-verify"}
+                  label="Verify access"
+                  commands={recipe.verify}
+                />
+                <p class="text-xs leading-relaxed text-zinc-400">
+                  <span class="font-medium text-zinc-300">Impact:</span>
+                  <.setup_text text={recipe.impact} />
+                </p>
+              </div>
+            </article>
+          </div>
         </div>
 
         <div :if={@pack.setup.notes != []} class="mt-5">

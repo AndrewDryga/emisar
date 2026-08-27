@@ -157,6 +157,48 @@ actions:
 	})
 }
 
+func TestLoad_SetupHostAccessActions(t *testing.T) {
+	packWithAccess := func(actions string) string {
+		return `schema_version: 1
+id: access
+name: t
+version: 0.0.1
+description: t
+setup:
+  host_access:
+    - actions: [` + actions + `]
+      requirement: Reach the service socket.
+      recipes:
+        - name: systemd
+          commands: ["sudo systemctl edit service"]
+          verify: ["sudo -u emisar test -r /run/service.sock"]
+          impact: Lets the runner control the service.
+actions:
+  - actions/a.yaml
+`
+	}
+
+	t.Run("actions in this pack resolve", func(t *testing.T) {
+		root := writePack(t, t.TempDir(), "p", map[string]string{
+			"pack.yaml":      packWithAccess("access.a"),
+			"actions/a.yaml": actionYAML("access.a"),
+		})
+		if _, err := LoadOne(root, LoadOptions{}); err != nil {
+			t.Fatalf("valid host-access action should load: %v", err)
+		}
+	})
+
+	t.Run("unknown action fails", func(t *testing.T) {
+		root := writePack(t, t.TempDir(), "p", map[string]string{
+			"pack.yaml":      packWithAccess("access.missing"),
+			"actions/a.yaml": actionYAML("access.a"),
+		})
+		if _, err := LoadOne(root, LoadOptions{}); err == nil || !strings.Contains(err.Error(), "is not an action in this pack") {
+			t.Fatalf("unknown host-access action should fail to load, got %v", err)
+		}
+	})
+}
+
 func TestLoad_ValidPack(t *testing.T) {
 	tmp := t.TempDir()
 	root := writePack(t, tmp, "p", map[string]string{

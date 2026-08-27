@@ -493,10 +493,11 @@ func normalizeDescription(s string) string { return strings.Join(strings.Fields(
 // distinguish an absent list from an empty one.
 func normalizeSetup(s packspec.Setup) packspec.Setup {
 	out := packspec.Setup{
-		Summary: normalizeDescription(s.Summary),
-		Env:     make([]packspec.EnvVar, 0, len(s.Env)),
-		Notes:   make([]string, 0, len(s.Notes)),
-		Verify:  s.Verify,
+		Summary:    normalizeDescription(s.Summary),
+		Env:        make([]packspec.EnvVar, 0, len(s.Env)),
+		Notes:      make([]string, 0, len(s.Notes)),
+		HostAccess: make([]packspec.HostAccess, 0, len(s.HostAccess)),
+		Verify:     s.Verify,
 	}
 	for _, e := range s.Env {
 		e.Description = normalizeDescription(e.Description)
@@ -504,6 +505,22 @@ func normalizeSetup(s packspec.Setup) packspec.Setup {
 	}
 	for _, n := range s.Notes {
 		out.Notes = append(out.Notes, normalizeDescription(n))
+	}
+	for _, access := range s.HostAccess {
+		normalized := packspec.HostAccess{
+			Actions:     append([]string{}, access.Actions...),
+			Requirement: normalizeDescription(access.Requirement),
+			Recipes:     make([]packspec.HostAccessRecipe, 0, len(access.Recipes)),
+		}
+		for _, recipe := range access.Recipes {
+			normalized.Recipes = append(normalized.Recipes, packspec.HostAccessRecipe{
+				Name:     normalizeDescription(recipe.Name),
+				Commands: append([]string{}, recipe.Commands...),
+				Verify:   append([]string{}, recipe.Verify...),
+				Impact:   normalizeDescription(recipe.Impact),
+			})
+		}
+		out.HostAccess = append(out.HostAccess, normalized)
 	}
 	return out
 }

@@ -314,6 +314,20 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
             %{"name" => "REDIS_TLS", "default" => "off"}
           ],
           "notes" => ["Reads need no privilege."],
+          "host_access" => [
+            %{
+              "actions" => ["redis.info"],
+              "requirement" => "Read the Redis socket.",
+              "recipes" => [
+                %{
+                  "name" => "Debian and Ubuntu",
+                  "commands" => ["  sudo install -m 0640 source target  "],
+                  "verify" => ["sudo -u emisar test -r target"],
+                  "impact" => "Lets redis.info read the socket."
+                }
+              ]
+            }
+          ],
           "verify" => "redis.info"
         })
 
@@ -323,6 +337,21 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
       assert redis.setup.summary == "Authenticates with REDIS_URL."
       assert redis.setup.notes == ["Reads need no privilege."]
       assert redis.setup.verify == "redis.info"
+
+      assert redis.setup.host_access == [
+               %{
+                 actions: ["redis.info"],
+                 requirement: "Read the Redis socket.",
+                 recipes: [
+                   %{
+                     name: "Debian and Ubuntu",
+                     commands: ["  sudo install -m 0640 source target  "],
+                     verify: ["sudo -u emisar test -r target"],
+                     impact: "Lets redis.info read the socket."
+                   }
+                 ]
+               }
+             ]
 
       assert redis.setup.env == [
                %{
@@ -349,7 +378,7 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
 
       assert {:ok, %{packs: packs}} = Catalog.parse(catalog)
       redis = Enum.find(packs, &(&1.id == "redis"))
-      assert redis.setup == %{summary: nil, env: [], notes: [], verify: nil}
+      assert redis.setup == %{summary: nil, env: [], notes: [], host_access: [], verify: nil}
     end
 
     test "rejects a setup env entry with no name" do
@@ -364,6 +393,66 @@ defmodule Emisar.Catalog.PublishedRegistry.CatalogTest do
 
       assert {:error, message} = Catalog.parse(catalog)
       assert message =~ "malformed setup"
+    end
+
+    test "rejects setup host access for an unknown action" do
+      host_access = [
+        %{
+          "actions" => ["redis.missing"],
+          "requirement" => "Read the Redis socket.",
+          "recipes" => [
+            %{
+              "name" => "systemd",
+              "commands" => ["sudo systemctl edit redis"],
+              "verify" => ["sudo -u emisar test -r /run/redis.sock"],
+              "impact" => "Lets the runner reach Redis."
+            }
+          ]
+        }
+      ]
+
+      catalog = put_in_pack(valid_catalog(), 0, "setup", %{"host_access" => host_access})
+      assert {:error, message} = Catalog.parse(catalog)
+      assert message =~ "unknown action"
+    end
+
+    test "rejects duplicate or control-bearing setup host access" do
+      group = %{
+        "actions" => ["redis.info", "redis.info"],
+        "requirement" => "Read the Redis socket.",
+        "recipes" => [
+          %{
+            "name" => "systemd",
+            "commands" => ["sudo systemctl edit redis"],
+            "verify" => ["sudo -u emisar test -r /run/redis.sock"],
+            "impact" => "Lets the runner reach Redis."
+          }
+        ]
+      }
+
+      duplicate = put_in_pack(valid_catalog(), 0, "setup", %{"host_access" => [group]})
+      assert {:error, duplicate_message} = Catalog.parse(duplicate)
+      assert duplicate_message =~ "repeats setup host_access action"
+
+      unsafe =
+        group
+        |> Map.put("actions", ["redis.info"])
+        |> put_in(["recipes", Access.at(0), "commands"], ["echo ok\nfalse"])
+
+      control = put_in_pack(valid_catalog(), 0, "setup", %{"host_access" => [unsafe]})
+      assert {:error, control_message} = Catalog.parse(control)
+      assert control_message =~ "malformed setup host_access commands"
+
+      invisible =
+        group
+        |> Map.put("actions", ["redis.info"])
+        |> put_in(["recipes", Access.at(0), "impact"], "safe\u200Bhidden")
+
+      format_control =
+        put_in_pack(valid_catalog(), 0, "setup", %{"host_access" => [invisible]})
+
+      assert {:error, format_message} = Catalog.parse(format_control)
+      assert format_message =~ "malformed setup host_access recipe prose"
     end
 
     test "rejects an invalid action risk tier" do

@@ -606,7 +606,17 @@ func TestNormalizeSetup_FlattensProseAndFillsLists(t *testing.T) {
 			Required:    true,
 			Description: "Org auth token,\nscoped to the projects\nyou enable.",
 		}},
-		Notes:  []string{"Scopes by family:\nevent:read for issues."},
+		Notes: []string{"Scopes by family:\nevent:read for issues."},
+		HostAccess: []packspec.HostAccess{{
+			Actions:     []string{"sentry.logs"},
+			Requirement: "Read the service\nlog.",
+			Recipes: []packspec.HostAccessRecipe{{
+				Name:     "Debian and\nUbuntu",
+				Commands: []string{"  sudo install -m 0640 source target  "},
+				Verify:   []string{"sudo -u emisar test -r target"},
+				Impact:   "Lets the runner\nread the log.",
+			}},
+		}},
 		Verify: "sentry.list_organizations",
 	})
 
@@ -625,9 +635,19 @@ func TestNormalizeSetup_FlattensProseAndFillsLists(t *testing.T) {
 	if got.Verify != "sentry.list_organizations" {
 		t.Errorf("Verify = %q, want it carried verbatim", got.Verify)
 	}
+	access := got.HostAccess[0]
+	if access.Requirement != "Read the service log." || access.Recipes[0].Name != "Debian and Ubuntu" || access.Recipes[0].Impact != "Lets the runner read the log." {
+		t.Errorf("host-access prose was not normalized: %#v", access)
+	}
+	if want := "  sudo install -m 0640 source target  "; access.Recipes[0].Commands[0] != want {
+		t.Errorf("host-access command = %q, want exact %q", access.Recipes[0].Commands[0], want)
+	}
+	if access.Recipes[0].Verify[0] != "sudo -u emisar test -r target" {
+		t.Errorf("host-access verify command changed: %#v", access.Recipes[0].Verify)
+	}
 
 	empty := normalizeSetup(packspec.Setup{})
-	if empty.Env == nil || empty.Notes == nil {
-		t.Errorf("empty setup must carry [] not null, got Env=%v Notes=%v", empty.Env, empty.Notes)
+	if empty.Env == nil || empty.Notes == nil || empty.HostAccess == nil {
+		t.Errorf("empty setup must carry [] not null, got Env=%v Notes=%v HostAccess=%v", empty.Env, empty.Notes, empty.HostAccess)
 	}
 }

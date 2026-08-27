@@ -4,19 +4,19 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="use-a-published-pack"
-      updated="August 18, 2026"
+      updated="August 26, 2026"
       toc={[
         {"choose", "Choose a pack"},
         {"inspect", "See what you are adding"},
         {"install", "Install a fixed version"},
-        {"configure", "Configure credentials"},
+        {"configure", "Configure host access and credentials"},
         {"verify", "Verify the pack"}
       ]}
     >
       <.docs_header current="use-a-published-pack">
         <:dek>
           Add a published pack to one runner: review its actions first, install a fixed
-          version, give it credentials, and verify one action.
+          version, grant only the access its actions need, and verify one action.
         </:dek>
       </.docs_header>
 
@@ -54,8 +54,8 @@
   --hash sha256:&lt;full-reviewed-hash&gt;</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The command validates the pack, reloads a running runner, and ends by probing the
-        pack's declared verify action — a wrong or missing credential shows up now, at the
-        terminal, and the next step fixes it. A public catalog hash becomes
+        pack's declared verify action. If that action lacks its required host access or credentials,
+        the failure shows up now, at the terminal, and the next step fixes it. A public catalog hash becomes
         trusted automatically. A custom hash stays pending on <a
           href={~p"/app/packs"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -69,24 +69,29 @@
         >Host your own registry</.link>.
       </p>
 
-      <.docs_h2 id="configure">4. Configure credentials</.docs_h2>
+      <.docs_h2 id="configure">4. Configure host access and credentials</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Each pack ships its own setup guide — which credentials it needs and how to create
-        them (the github-cli pack, for example, links the exact token page with the right scopes
-        preselected). It appears on the pack's catalog page under <strong class="text-zinc-200">Setup</strong>, and on the host:
+        Each pack ships its own setup guide. When its actions need protected files, sockets, or
+        service controls, the guide maps that access to exact actions. Credentials are listed
+        separately. It appears on the pack's catalog page under <strong class="text-zinc-200">Setup</strong>, and on the host:
       </p>
       <.docs_code phx-no-format label="shell">sudo emisar pack info redis</.docs_code>
       <ol class="mt-5 list-decimal space-y-3 pl-6 text-base text-zinc-400">
         <li>Install every missing program named by the pack.</li>
-        <li>Put each credential value in <code>/etc/emisar/runner.env</code>.</li>
+        <li>
+          If <strong class="text-zinc-200">Host access</strong>
+          is shown, run only the recipe for actions you intend to enable. Emisar displays these
+          commands; it never runs them.
+        </li>
+        <li>Put each required credential value in <code>/etc/emisar/runner.env</code>.</li>
         <li>
           Add each required variable name to <code>execution.inherit_env</code>
           in <code>/etc/emisar/config.yaml</code>.
         </li>
-        <li>Restart the service with <code>sudo systemctl restart emisar</code>.</li>
+        <li>Restart the service after changing its environment, user, or groups.</li>
         <li>
           Run <code>sudo emisar pack verify redis</code> — the probe that failed before the
-          credentials were in place passes now.
+          required access was in place passes now.
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">

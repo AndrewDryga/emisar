@@ -207,6 +207,17 @@ func loadPackInto(reg *Registry, root string, opts LoadOptions) (err error) {
 			return fmt.Errorf("packs: pack %s setup.verify %q is not an action in this pack", pack.ID, v)
 		}
 	}
+	// Host-access recipes grant real authority on the runner host. Refuse a
+	// typo or cross-pack reference instead of presenting a plausible grant for
+	// an action it does not actually authorize.
+	for _, access := range pack.Setup.HostAccess {
+		for _, actionID := range access.Actions {
+			act, ok := reg.actions[actionID]
+			if !ok || act.PackID != pack.ID {
+				return fmt.Errorf("packs: pack %s setup.host_access action %q is not an action in this pack", pack.ID, actionID)
+			}
+		}
+	}
 	reg.packHashes[pack.ID] = computePackHash(reg.packHashInputs[pack.ID])
 	return nil
 }

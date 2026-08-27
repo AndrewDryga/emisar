@@ -56,12 +56,13 @@ defmodule Emisar.Catalog.PublishedRegistry.Pack do
     # are never promoted into evidence. An all-empty pack is not suggested.
     detect: %{binaries: [], processes: [], ports: []},
     # setup is the pack's own authored install guidance, carried verbatim from
-    # its manifest: the credentials it reads, host caveats, and the low-risk
-    # read action that proves it works. It is what the public pack page renders
-    # and what `emisar pack info` prints on the host, so the two cannot drift.
+    # its manifest: the credentials it reads, exact host-access recipes, host
+    # caveats, and the low-risk read action that proves it works. It is what the
+    # public pack page renders and what `emisar pack info` prints on the host,
+    # so the two cannot drift.
     # Empty on a pack that needs no credentials and on a catalog published
     # before the field existed.
-    setup: %{summary: nil, env: [], notes: [], verify: nil},
+    setup: %{summary: nil, env: [], notes: [], host_access: [], verify: nil},
     actions: []
   ]
 
@@ -98,6 +99,20 @@ defmodule Emisar.Catalog.PublishedRegistry.Pack do
               }
             ],
             notes: [String.t()],
+            host_access: [
+              %{
+                actions: [String.t()],
+                requirement: String.t(),
+                recipes: [
+                  %{
+                    name: String.t(),
+                    commands: [String.t()],
+                    verify: [String.t()],
+                    impact: String.t()
+                  }
+                ]
+              }
+            ],
             verify: String.t() | nil
           },
           actions: [Emisar.Catalog.PublishedRegistry.Action.t()]

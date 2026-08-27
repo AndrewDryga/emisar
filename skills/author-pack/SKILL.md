@@ -63,6 +63,12 @@ validator, installed help, or a public reference can confirm it.
   args `sensitive: true`.
 - Pack bytes are public to the fleet: hashed, advertised, and shown in the
   console. Nothing secret goes in a pack directory.
+- If an action needs protected local files, sockets, groups, service control,
+  or root, map it in `setup.host_access`. Name the exact actions, provide a
+  persistent operator-run grant plus a verification command, and state the
+  authority granted to the runner identity. Emisar displays these commands;
+  it never runs them. Do not suggest action-time `sudo`: action children run
+  with `no_new_privs` and cannot elevate that way.
 - Keep publisher credentials off fleet hosts. `packctl` runs on a workstation
   or CI job; runners only ever fetch and verify.
 - Pin installs with `--hash` everywhere past the first authoring host. Never
@@ -149,9 +155,21 @@ description: Short one-line summary shown on the runner and console.
 vendor: acme
 requires:
   os: [linux]
-  binaries: [my-cli]
+  binaries: [journalctl]
+setup:
+  host_access:
+    - actions: [my.journal_tail]
+      requirement: Read the system journal.
+      recipes:
+        - name: systemd Linux — default emisar service user
+          commands:
+            - sudo usermod -aG systemd-journal emisar
+            - sudo systemctl restart emisar
+          verify:
+            - sudo -u emisar journalctl -n 1 --no-pager
+          impact: The emisar service identity can read the complete system journal.
 actions:
-  - actions/tail_log.yaml
+  - actions/journal_tail.yaml
 ```
 
 Each action file is the full contract — this example shows the load-bearing
@@ -159,38 +177,32 @@ fields; the complete schema is in the YAML reference and the validator:
 
 ```yaml
 schema_version: 1
-id: my.tail_log
-title: Tail the myapp log
+id: my.journal_tail
+title: Read recent system journal entries
 kind: exec
 risk: low
 description: >
-  Tail the last lines of a myapp log file under /var/log/myapp.
+  Show the most recent system journal entries.
 side_effects:
-  - Reads /var/log/myapp/*.
+  - Reads the system journal.
   - Touches nothing.
 args:
-  - name: file
-    type: path
-    required: true
-    validation:
-      allowed_prefixes: ["/var/log/myapp/"]
-      max_length: 128
   - name: lines
     type: integer
     default: 100
     validation: { min: 1, max: 1000 }
 execution:
   command:
-    binary: tail
-    argv: ["-n", "{{ args.lines }}", "{{ args.file }}"]
+    binary: journalctl
+    argv: ["--no-pager", "-n", "{{ args.lines }}"]
   timeout: 10s
 output:
   parser: text
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
 examples:
-  - title: Tail myapp's error log
-    args: { file: /var/log/myapp/error.log }
+  - title: Read the last 100 entries
+    args: { lines: 100 }
 ```
 
 Write every action this deliberately: designed bounds from step 2, honest

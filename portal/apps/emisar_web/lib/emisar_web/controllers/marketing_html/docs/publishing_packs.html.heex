@@ -97,25 +97,33 @@ homepage: https://github.acme.internal/sre/my-pack   # your repo; optional
 
 requires:
   os: [linux]
-  binaries: [my-cli]      # optional — a missing one fails at run time
+  binaries: [journalctl]  # optional — a missing one fails at run time
 
 setup:                    # optional — powers pack info, verify, and the install probe
   summary: >
-    How the pack authenticates and what it targets.
-  env:
-    - name: MY_CLI_TOKEN
-      description: Token my-cli reads. Allowlist it in execution.inherit_env too.
-  verify: my.do_other_thing  # a no-argument, low-risk connectivity check
+    Reads the local system journal.
+  host_access:
+    - actions: [my.journal_tail]
+      requirement: Read the system journal.
+      recipes:
+        - name: systemd Linux — default emisar service user
+          commands:
+            - sudo usermod -aG systemd-journal emisar
+            - sudo systemctl restart emisar
+          verify:
+            - sudo -u emisar journalctl -n 1 --no-pager
+          impact: The emisar service identity can read the complete system journal.
+  verify: my.journal_tail  # a no-argument, low-risk connectivity check
 
 actions:
-  - actions/do_thing.yaml
-  - actions/do_other_thing.yaml</.docs_code>
+  - actions/journal_tail.yaml</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The <code>setup</code>
         block is what <code>emisar pack info</code>
         prints and what <code>pack verify</code>
-        and the install probe run: declare the env your tool reads, and name one low-risk
-        read as <code>verify</code>.
+        and the install probe run. Declare the env your tool reads, map each protected host
+        resource to the exact actions that need it, and name one low-risk read as <code>verify</code>. Host-access recipes are instructions for the operator; Emisar
+        displays and copies their commands but never runs them.
       </p>
 
       <.docs_h2 id="declare">3. Declare each action</.docs_h2>
@@ -131,30 +139,30 @@ actions:
         for all action fields.
       </p>
       <.docs_code phx-no-format label="yaml">schema_version: 1
-id: my.do_thing
-title: Do the thing
+id: my.journal_tail
+title: Read recent system journal entries
 kind: exec
 risk: low
 
 description: >
-  One-paragraph human description. Shown verbatim to the LLM —
-  write it like a doc string, not a comment.
+  Show the most recent system journal entries.
 
 side_effects:
-  - Reads /var/log/myapp/*.
+  - Reads the system journal.
   - Touches nothing.
 
 args:
-  - name: file
-    type: path
-    required: true
+  - name: lines
+    type: integer
+    default: 100
     validation:
-      allowed_prefixes: ["/var/log/myapp/"]
+      min: 1
+      max: 1000
 
 execution:
   command:
-    binary: cat              # bare name — resolved via PATH on the host
-    argv: ["&#123;&#123; args.file &#125;&#125;"]
+    binary: journalctl       # bare name — resolved via PATH on the host
+    argv: ["--no-pager", "-n", "&#123;&#123; args.lines &#125;&#125;"]
   timeout: 10s
 
 output:
@@ -165,9 +173,9 @@ output:
 # Optional. Renders on the dispatch form so operators (and LLMs)
 # see a real invocation before they fill in args.
 examples:
-  - title: Tail myapp's error log
+  - title: Read the last 100 entries
     args:
-      file: /var/log/myapp/error.log</.docs_code>
+      lines: 100</.docs_code>
 
       <.docs_h2 id="install">4. Validate, install, and trust it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">

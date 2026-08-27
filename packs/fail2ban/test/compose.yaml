@@ -1,0 +1,41 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/fail2ban/test
+      dockerfile: Dockerfile
+      target: tools
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
+    image: emisar-packtest-fail2ban-tools:latest
+    pid: "service:fail2ban"
+    volumes:
+      - runstate:/run
+
+  fail2ban:
+    build:
+      context: ${EMISAR_ROOT}/packs/fail2ban/test
+      dockerfile: Dockerfile
+      target: sut
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
+    image: emisar-packtest-fail2ban-sut:latest
+    privileged: true
+    cgroup: host
+    command: ["/lib/systemd/systemd"]
+    stop_signal: SIGRTMIN+3
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - runstate:/run
+    healthcheck:
+      test: ["CMD-SHELL", "systemctl is-active fail2ban.service"]
+      interval: 2s
+      start_period: 30s
+      start_interval: 1s
+      retries: 40
+
+volumes:
+  runstate:

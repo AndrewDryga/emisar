@@ -43,6 +43,35 @@ defmodule EmisarWeb.MarketingHTML do
     """
   end
 
+  attr :id, :string, required: true
+  attr :label, :string, required: true
+  attr :commands, :list, required: true
+
+  @doc """
+  Renders pack-authored setup commands as escaped, copyable text.
+
+  This component is deliberately display-only. The strings come from the
+  published pack catalog and are never interpreted or executed by the Portal.
+  """
+  def setup_command_block(assigns) do
+    assigns = assign(assigns, :body, Enum.join(assigns.commands, "\n"))
+
+    ~H"""
+    <div class="overflow-hidden rounded-lg border border-zinc-800 bg-black/60">
+      <div class="flex items-center justify-between gap-2 border-b border-zinc-800 px-4 py-2">
+        <span class="text-[11px] font-medium text-zinc-400">{@label}</span>
+        <EmisarWeb.CoreComponents.copy_button id={"copy-#{@id}"} text={@body}>
+          Copy
+        </EmisarWeb.CoreComponents.copy_button>
+      </div>
+      <pre
+        id={@id}
+        class="overflow-x-auto p-4 font-mono text-xs leading-relaxed text-zinc-200"
+      ><%= @body %></pre>
+    </div>
+    """
+  end
+
   attr :included, :boolean, required: true
 
   def plan_feature_availability(assigns) do
