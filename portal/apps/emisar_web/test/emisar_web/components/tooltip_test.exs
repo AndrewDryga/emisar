@@ -67,6 +67,30 @@ defmodule EmisarWeb.Components.TooltipTest do
       assert html =~ ~s(role="tooltip")
     end
 
+    # The hook owns Escape-dismiss (WCAG 1.4.13) and the flip-to-the-side-with-room
+    # geometry, so losing it is a silent accessibility regression rather than a
+    # visible break. It used to drop off exactly this shape — an icon-only trigger
+    # with no command and no explicit id — because the id that the hook needs was
+    # computed from whether the bubble wanted an aria-describedby pairing.
+    test "every tooltip mounts the dismiss hook, icon-only ones included" do
+      assigns = %{}
+
+      html =
+        rendered_to_string(~H"""
+        <CoreComponents.tooltip text="Dispatched via MCP" aria_label="Dispatched via MCP">
+          <span aria-hidden="true">icon</span>
+        </CoreComponents.tooltip>
+        """)
+
+      assert html =~ ~s(phx-hook="Tooltip")
+      # LiveView refuses to mount a hook on an element with no id.
+      assert [_, wrapper_id] = Regex.run(~r/id="([^"]+)"[^>]*phx-hook="Tooltip"/s, html)
+      assert wrapper_id != ""
+      # The bubble still carries no id here: the trigger's accessible name
+      # already says what the bubble says, so pairing them repeats it.
+      refute html =~ "aria-describedby"
+    end
+
     test "a command rides the shared copyable row inside the described bubble" do
       assigns = %{}
 

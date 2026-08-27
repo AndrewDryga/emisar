@@ -3937,26 +3937,33 @@ defmodule EmisarWeb.CoreComponents do
   slot :inner_block, required: true
 
   def tooltip(assigns) do
-    tooltip_id =
+    # The hook is what makes a tooltip dismissable (Escape) and what flips it to
+    # the side with room, so EVERY tooltip mounts it — an icon-only trigger needs
+    # both exactly as much as any other. LiveView will not mount a hook on an
+    # element with no id, so the wrapper always carries one.
+    hook_id = assigns.id || "tooltip-#{:erlang.phash2(assigns.text)}"
+
+    # The bubble's own id is a separate question: it exists to be pointed at by
+    # aria-describedby, and an icon-only trigger already carries the same words
+    # in its accessible name, so pairing them would just say it twice. A command
+    # is the exception — it lives ONLY in the bubble.
+    described_id =
       cond do
         assigns.id -> assigns.id
-        # An icon-only trigger needs no ids — its accessible name already says
-        # everything the bubble does. A command is the exception: it lives ONLY
-        # in the bubble, so that bubble must stay described and identifiable.
         assigns.aria_label && is_nil(assigns.command) -> nil
-        true -> "tooltip-#{:erlang.phash2(assigns.text)}"
+        true -> hook_id
       end
 
-    assigns = assign(assigns, :tooltip_id, tooltip_id)
+    assigns = assigns |> assign(:tooltip_id, hook_id) |> assign(:described_id, described_id)
 
     ~H"""
     <span
-      id={@tooltip_id && "#{@tooltip_id}-tt"}
+      id={"#{@tooltip_id}-tt"}
       class={["group/tooltip relative inline-flex", @class]}
       tabindex="0"
       aria-label={@aria_label}
-      aria-describedby={@tooltip_id}
-      phx-hook={@tooltip_id && "Tooltip"}
+      aria-describedby={@described_id}
+      phx-hook="Tooltip"
     >
       {render_slot(@inner_block)}
       <%!-- Revealed, the bubble is pointer-interactive and a transparent `before`
@@ -3967,7 +3974,7 @@ defmodule EmisarWeb.CoreComponents do
            behind on the far side, it would break hoverable on exactly the triggers
            that needed the flip. --%>
       <span
-        id={@tooltip_id}
+        id={@described_id}
         role="tooltip"
         data-tooltip-bubble
         data-side={if(@placement == :bottom, do: "below", else: "above")}
