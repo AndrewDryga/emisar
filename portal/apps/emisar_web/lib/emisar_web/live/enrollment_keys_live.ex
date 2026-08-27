@@ -96,7 +96,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
   def handle_event("revoke", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
-      Runners.subject_can_manage_enrollment_keys?(socket.assigns.current_subject),
+      Runners.subject_can_revoke_enrollment_keys?(socket.assigns.current_subject),
       &do_revoke(&1, id)
     )
   end
@@ -487,11 +487,11 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                      runners keep their tokens) and is undone by issuing a fresh
                      key, so it doesn't earn a type-to-confirm. The button only
                      OPENS the dialog; `revoke` still fires from Confirm and stays
-                     server-authz-gated (subject_can_manage_enrollment_keys?). --%>
+                     server-authz-gated (subject_can_revoke_enrollment_keys?). --%>
                 <.button
                   :if={
                     is_nil(key.revoked_at) and
-                      Runners.subject_can_manage_enrollment_keys?(@current_subject)
+                      Runners.subject_can_revoke_enrollment_keys?(@current_subject)
                   }
                   variant={:secondary}
                   tone={:rose}
@@ -502,7 +502,10 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                   Revoke
                 </.button>
                 <.confirm_dialog
-                  :if={is_nil(key.revoked_at)}
+                  :if={
+                    is_nil(key.revoked_at) and
+                      Runners.subject_can_revoke_enrollment_keys?(@current_subject)
+                  }
                   id={"revoke-key-#{key.id}"}
                   title="Revoke enrollment key"
                   confirm_label="Revoke key"

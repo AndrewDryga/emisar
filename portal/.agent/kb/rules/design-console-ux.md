@@ -970,6 +970,12 @@ the commit button, where the operator can reach the action before reading what i
     current settings remain in document flow at every width. Below the two-column split, stack them
     after the primary table or list and hide only optional explanatory content. Sweep: a
     breakpoint-hidden rail wrapper containing a form, gated setting, or current account value.
+85. **Destroy access never exceeds create access for the same entity and scope.** A subject who
+    cannot create an entity in an account does not get Delete, Remove, or Revoke for that entity
+    there. Read/audit access may remain broader, but the destructive control is absent and the
+    server-side mutation independently enforces the same cap. Treat an exception as an explicit
+    product/security decision, never as an incidental permission split. Sweep: lifecycle surfaces
+    where create/add/invite is gated by a narrower predicate than delete/remove/revoke.
 
 ## 8. The kit is the contract
 

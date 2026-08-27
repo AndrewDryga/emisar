@@ -3384,6 +3384,19 @@ defmodule Emisar.RunnersTest do
                {:error, :unauthorized}
     end
 
+    test "an admin without whole-fleet access is refused", %{account: account, subject: owner} do
+      {:ok, _raw, key} = Runners.create_enrollment_key(%{reusable: true}, owner)
+      {:ok, production} = RunnerAccess.restricted(["production"], [])
+
+      restricted =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(production)
+        |> Fixtures.Subjects.membership_subject()
+
+      assert Runners.revoke_enrollment_key(key, restricted) == {:error, :unauthorized}
+      assert is_nil(Repo.reload!(key).revoked_at)
+    end
+
     test "won't touch an enrollment key in another account (cross-account → :not_found)" do
       {_account_a, _ua, owner_a} = account_with_owner_subject()
       {_account_b, _ub, owner_b} = account_with_owner_subject()
@@ -3802,8 +3815,8 @@ defmodule Emisar.RunnersTest do
       refute Runners.subject_can_manage_enrollment_keys?(viewer_subject_for(account))
     end
 
-    # Listing and revoking NARROW what the fleet accepts, so a runner-scoped
-    # admin keeps both — only creation is taken away.
+    # Listing stays available for audit, while lifecycle mutations require the
+    # same whole-fleet reach.
     test "true for an admin whose runner access is restricted" do
       account = Fixtures.Accounts.create_account()
       {:ok, production} = RunnerAccess.restricted(["production"], [])
@@ -3815,6 +3828,7 @@ defmodule Emisar.RunnersTest do
 
       assert Runners.subject_can_manage_enrollment_keys?(restricted)
       refute Runners.subject_can_create_enrollment_keys?(restricted)
+      refute Runners.subject_can_revoke_enrollment_keys?(restricted)
     end
   end
 
@@ -3846,6 +3860,15 @@ defmodule Emisar.RunnersTest do
         |> Fixtures.Subjects.membership_subject()
 
       refute Runners.subject_can_create_enrollment_keys?(restricted)
+    end
+  end
+
+  describe "subject_can_revoke_enrollment_keys?/1" do
+    test "matches create access" do
+      {account, _user, owner} = account_with_owner_subject()
+
+      assert Runners.subject_can_revoke_enrollment_keys?(owner)
+      refute Runners.subject_can_revoke_enrollment_keys?(viewer_subject_for(account))
     end
   end
 

@@ -2046,6 +2046,7 @@ defmodule Emisar.Runners do
              subject,
              Authorizer.manage_enrollment_keys_permission()
            ),
+         :ok <- ensure_full_runner_access(subject),
          :ok <- Subject.ensure_in_account(subject, key.account_id) do
       {:ok, key}
     end
@@ -2056,7 +2057,8 @@ defmodule Emisar.Runners do
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_enrollment_keys_permission()
-           ) do
+           ),
+         :ok <- ensure_full_runner_access(subject) do
       by_user_id = Subject.actor_id(subject)
 
       EnrollmentKey.Query.not_deleted()
@@ -2302,7 +2304,7 @@ defmodule Emisar.Runners do
       full_runner_access?(subject)
   end
 
-  @doc "Whether `subject` may manage runner enrollment keys — list and revoke (admin+)."
+  @doc "Whether `subject` may list runner enrollment keys (admin+)."
   def subject_can_manage_enrollment_keys?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_enrollment_keys_permission())
 
@@ -2311,12 +2313,16 @@ defmodule Emisar.Runners do
   plus the same unrestricted runner access `subject_can_install_runners?/1`
   requires, and for the same reason.
 
-  Deliberately narrower than `subject_can_manage_enrollment_keys?/1`: listing and
-  revoking stay open to a runner-restricted admin, because both NARROW what the
-  fleet accepts. Only minting widens it.
+  Deliberately narrower than `subject_can_manage_enrollment_keys?/1`: listing
+  stays open to a runner-restricted admin for audit, while lifecycle mutations
+  require the same fleet reach.
   """
   def subject_can_create_enrollment_keys?(%Subject{} = subject),
     do: subject_can_manage_enrollment_keys?(subject) and full_runner_access?(subject)
+
+  @doc "Whether `subject` may revoke an enrollment key — the same access required to create one."
+  def subject_can_revoke_enrollment_keys?(%Subject{} = subject),
+    do: subject_can_create_enrollment_keys?(subject)
 
   @doc """
   Whether `subject` may change the account-wide inactivity window (the runners

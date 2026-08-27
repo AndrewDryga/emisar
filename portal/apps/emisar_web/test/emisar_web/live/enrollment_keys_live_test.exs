@@ -418,12 +418,15 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert flash["info"] == "Enrollment keys need an owner or admin role."
   end
 
-  # A runner-scoped admin keeps the page — listing and revoking NARROW what the
-  # fleet accepts — but loses creation, because an enrolling host names its own
-  # group and a key would let them widen their own reach. The refusal is
-  # explained in place rather than shown as a dead button.
-  test "a runner-restricted admin sees a locked New key, and the form refuses", %{conn: conn} do
-    {_owner_conn, _owner, account} = register_and_log_in(conn)
+  # A runner-scoped admin keeps the list for audit but loses both lifecycle
+  # mutations. The create refusal is explained in place; Revoke is absent.
+  test "a runner-restricted admin can audit keys but cannot create or revoke", %{conn: conn} do
+    {_owner_conn, owner, account} = register_and_log_in(conn)
+    owner_subject = Fixtures.Subjects.subject_for(owner, account)
+
+    {:ok, _raw, key} =
+      Runners.create_enrollment_key(%{description: "existing-key"}, owner_subject)
+
     {:ok, production} = Emisar.Accounts.RunnerAccess.restricted(["production"], [])
 
     membership =
@@ -434,10 +437,12 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
 
     {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/runners/keys")
 
-    # The list still loads — this admin audits and revokes here.
+    # The list still loads for audit, but lifecycle controls are unavailable.
     assert html =~ "Enrollment keys"
+    assert html =~ "existing-key"
     assert has_element?(lv, "button[disabled]", "New key")
     refute has_element?(lv, ~s(a[href="/app/#{account.slug}/runners/keys/new"]))
+    refute has_element?(lv, ~s([phx-click*="revoke-key-#{key.id}"]))
     assert html =~ "needs access to all runners"
 
     # The issue route refuses rather than routing them into a form that cannot
@@ -468,6 +473,28 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
 
     assert html =~ "have permission to do that."
     refute html =~ "crafted"
+  end
+
+  test "a runner-restricted admin crafting a revoke event is refused", %{conn: conn} do
+    {_owner_conn, owner, account} = register_and_log_in(conn)
+    owner_subject = Fixtures.Subjects.subject_for(owner, account)
+
+    {:ok, _raw, key} =
+      Runners.create_enrollment_key(%{description: "existing-key"}, owner_subject)
+
+    {:ok, production} = Emisar.Accounts.RunnerAccess.restricted(["production"], [])
+
+    membership =
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      |> Fixtures.Memberships.force_runner_access(production)
+
+    admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+    {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/runners/keys")
+
+    html = render_click(lv, "revoke", %{"id" => key.id})
+
+    assert html =~ "have permission to do that."
+    assert is_nil(Emisar.Repo.reload!(key).revoked_at)
   end
 
   # the list is account-scoped (A's admin sees
