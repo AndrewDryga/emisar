@@ -29,8 +29,10 @@ defmodule EmisarWeb.BillingIntentControllerTest do
     html = html_response(chooser, 200)
 
     assert html =~ "Choose a workspace"
-    assert html =~ "Monthly billing"
-    assert html =~ "Review Team for #{account.name}"
+    assert html =~ "Selected plan"
+    assert html =~ "Monthly"
+    assert html =~ account.name
+    refute html =~ "checkout"
     refute account.paddle_customer_id
   end
 
@@ -49,8 +51,9 @@ defmodule EmisarWeb.BillingIntentControllerTest do
     chooser = get(recycle(captured), ~p"/app/billing/start")
     html = html_response(chooser, 200)
 
-    assert html =~ "Review Team for #{account_a.name}"
-    assert html =~ "Review Team for Billing Target"
+    assert html =~ account_a.name
+    assert html =~ "Billing Target"
+    assert html =~ "Annual"
 
     selected =
       chooser
@@ -80,7 +83,7 @@ defmodule EmisarWeb.BillingIntentControllerTest do
 
     chooser = get(recycle(captured), ~p"/app/billing/start")
     html = html_response(chooser, 200)
-    assert html =~ "Review Team for #{account_a.name}"
+    assert html =~ account_a.name
     refute html =~ "Review Team for Viewer Space"
 
     denied =

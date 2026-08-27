@@ -31,13 +31,9 @@ defmodule EmisarWeb.UserSignUpLive do
       <p :if={is_nil(@billing_choice)} class="mb-6 text-sm text-zinc-400">
         Free plan: 3 runners, 7-day audit retention, 1 seat. No credit card.
       </p>
-      <p :if={@billing_choice} class="mb-6 text-sm leading-relaxed text-zinc-400">
-        <span class="font-medium text-zinc-200">
-          Team checkout · {cycle_label(@billing_choice.cycle)}.
-        </span>
-        Create your workspace and verify your email, then review Team billing before checkout.
-        Nothing is charged now.
-      </p>
+      <.selected_plan :if={@billing_choice} cycle={@billing_choice.cycle} class="mb-6">
+        Create your workspace and verify your email. Review the price before you pay.
+      </.selected_plan>
 
       <%!-- On a successful save we flip `trigger_submit` and the form POSTs its
            email to the magic-link request, so the new owner gets a sign-in
@@ -244,7 +240,4 @@ defmodule EmisarWeb.UserSignUpLive do
       {:error, :invalid} -> {nil, nil}
     end
   end
-
-  defp cycle_label(:month), do: "Monthly billing"
-  defp cycle_label(:year), do: "Annual billing"
 end

@@ -90,7 +90,7 @@ defmodule EmisarWeb.BillingIntentController do
     conn
     |> put_flash(
       :error,
-      "Only an owner, admin, or billing manager for that workspace can continue to checkout."
+      "Only an owner, admin, or billing manager for that workspace can review the Team upgrade."
     )
     |> show(%{})
   end
@@ -107,7 +107,7 @@ defmodule EmisarWeb.BillingIntentController do
   defp invalid_intent(conn) do
     conn
     |> delete_session(:billing_intent)
-    |> put_flash(:error, "That Team checkout choice expired. Choose a plan again.")
+    |> put_flash(:error, "That Team plan choice expired. Choose a plan again.")
     |> redirect(to: ~p"/pricing")
   end
 

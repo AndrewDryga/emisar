@@ -4,10 +4,9 @@ defmodule EmisarWeb.BillingIntentHTML do
   def show(assigns) do
     ~H"""
     <.auth_layout title="Choose a workspace">
-      <p class="mb-6 text-sm leading-relaxed text-zinc-400">
-        Team checkout · {cycle_label(@intent.cycle)}. Choose the workspace you want to review.
-        Nothing is charged until you confirm checkout.
-      </p>
+      <.selected_plan cycle={@intent.cycle} class="mb-7">
+        Choose the workspace to upgrade. Review the price before you pay.
+      </.selected_plan>
 
       <div class="space-y-3">
         <form :for={account <- @accounts} action={~p"/app/billing/start"} method="post">
@@ -15,7 +14,7 @@ defmodule EmisarWeb.BillingIntentHTML do
           <input type="hidden" name="account_id" value={account.id} />
           <.button type="submit" variant={:secondary} class="w-full justify-between">
             <span class="min-w-0 text-left">
-              <span class="block truncate">Review Team for {account.name}</span>
+              <span class="block truncate">{account.name}</span>
               <span class="block truncate font-mono text-xs font-normal text-zinc-500">
                 app/{account.slug}
               </span>
@@ -31,7 +30,7 @@ defmodule EmisarWeb.BillingIntentHTML do
         icon="product.billing"
         title="Create a workspace first"
       >
-        Your workspace starts on Free. Team billing is reviewed next.
+        Create a workspace on Free, then review the Team upgrade.
       </.empty_state>
 
       <div class="mt-6 space-y-3">
@@ -55,7 +54,4 @@ defmodule EmisarWeb.BillingIntentHTML do
     </.auth_layout>
     """
   end
-
-  defp cycle_label(:month), do: "Monthly billing"
-  defp cycle_label(:year), do: "Annual billing"
 end

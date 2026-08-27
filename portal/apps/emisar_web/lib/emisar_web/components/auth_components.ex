@@ -292,6 +292,40 @@ defmodule EmisarWeb.AuthComponents do
     """
   end
 
+  @doc "Compact selected-plan summary for the pricing-to-account auth flow."
+  attr :cycle, :atom, required: true, values: [:month, :year]
+  attr :class, :any, default: nil
+  slot :inner_block, required: true
+
+  def selected_plan(assigns) do
+    ~H"""
+    <div class={@class} data-shot="selected-plan">
+      <dl class="grid grid-cols-2 border-y border-zinc-800/70 py-4">
+        <div class="pr-5">
+          <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+            Selected plan
+          </dt>
+          <dd class="mt-1.5 text-lg font-semibold tracking-tight text-zinc-100">Team</dd>
+        </div>
+        <div class="border-l border-zinc-800/70 pl-5">
+          <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+            Billing
+          </dt>
+          <dd class="mt-1.5 text-lg font-semibold tracking-tight text-zinc-100">
+            {billing_cycle_label(@cycle)}
+          </dd>
+        </div>
+      </dl>
+      <p class="mt-4 text-pretty text-sm leading-relaxed text-zinc-400">
+        {render_slot(@inner_block)}
+      </p>
+    </div>
+    """
+  end
+
+  defp billing_cycle_label(:month), do: "Monthly"
+  defp billing_cycle_label(:year), do: "Annual"
+
   @doc """
   The auth pages' footer switch-line — one muted centered paragraph with a
   brand link ("New to emisar? Create an account"). One shape for the whole

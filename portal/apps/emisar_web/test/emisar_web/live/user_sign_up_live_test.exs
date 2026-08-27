@@ -44,9 +44,9 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     token = BillingIntent.sign("team", :year)
     {:ok, lv, html} = live(conn, ~p"/sign_up?billing_intent=#{token}")
 
-    assert html =~ "Team checkout"
-    assert html =~ "Annual billing"
-    assert html =~ "Nothing is charged now"
+    assert html =~ "Selected plan"
+    assert html =~ "Annual"
+    assert html =~ "Review the price before you pay"
     refute html =~ "Free plan:"
     assert has_element?(lv, ~s(input[name="billing_intent"][value="#{token}"]))
   end
@@ -55,7 +55,7 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     {:ok, lv, html} = live(conn, ~p"/sign_up?billing_intent=forged")
 
     assert html =~ "Free plan: 3 runners"
-    refute html =~ "Team checkout"
+    refute html =~ "Selected plan"
     refute has_element?(lv, ~s(input[name="billing_intent"]), "forged")
   end
 

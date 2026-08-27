@@ -186,8 +186,9 @@ defmodule EmisarWeb.OnboardingLiveTest do
         |> Plug.Conn.put_session(:billing_intent, token)
 
       {:ok, lv, html} = live(conn, ~p"/onboarding")
-      assert html =~ "Team checkout · Annual billing"
-      assert html =~ "Create this workspace on Free, then review Team billing"
+      assert html =~ "Selected plan"
+      assert html =~ "Annual"
+      assert html =~ "Create this workspace on Free, then review the Team upgrade"
       assert html =~ ~s(name="billing_intent" value="#{token}")
 
       submitted =
@@ -226,7 +227,7 @@ defmodule EmisarWeb.OnboardingLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/onboarding")
 
       assert html =~ "Starts on the Free plan"
-      refute html =~ "Team checkout"
+      refute html =~ "Selected plan"
       refute html =~ ~s(name="billing_intent")
     end
   end

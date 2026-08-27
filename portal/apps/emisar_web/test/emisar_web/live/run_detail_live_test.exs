@@ -768,14 +768,16 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert Repo.reload!(run).status == :cancelling
   end
 
-  test "an approval hold can be withdrawn before it reaches the runner", %{conn: conn} do
+  test "an approval hold can be cancelled before it reaches the runner", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     run = run_with(account, %{status: :pending_approval})
     {:ok, request} = Approvals.create_request(run, user.id, "please review")
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    assert has_element?(lv, "#cancel-run", "Withdraw request")
+    assert has_element?(lv, "#cancel-run", "Cancel run")
+    assert html =~ "Cancel this run?"
+    refute html =~ "Withdraw request"
     refute html =~ "The runner is signalled SIGTERM"
 
     html = render_click(lv, "cancel", %{})

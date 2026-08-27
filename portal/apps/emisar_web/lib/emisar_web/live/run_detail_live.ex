@@ -292,7 +292,6 @@ defmodule EmisarWeb.RunDetailLive do
         </.detail_header>
       </:title>
       <:actions>
-        <% withdraw_approval? = @run.status == :pending_approval %>
         <%!-- The run id, copyable for a ticket or a log grep — the full UUID
              without cluttering the meta strip (which deliberately dropped it). --%>
         <%!-- A design-system BUTTON like its row neighbors — the copy behavior
@@ -329,26 +328,21 @@ defmodule EmisarWeb.RunDetailLive do
               Runs.subject_can_cancel_run?(@current_subject)
           }
           id="cancel-run"
-          title={if(withdraw_approval?, do: "Withdraw this request?", else: "Cancel this run?")}
-          confirm_label={if(withdraw_approval?, do: "Withdraw request", else: "Cancel run")}
+          title="Cancel this run?"
+          confirm_label="Cancel run"
           on_confirm={JS.push("cancel")}
         >
           <:body>
             <%= cond do %>
-              <% withdraw_approval? -> %>
-                This run has not reached a runner. Its approval request will be withdrawn and the run cancelled immediately.
+              <% @run.status == :pending_approval -> %>
+                This run is waiting for approval and has not reached a runner. Cancelling it also closes the approval request.
               <% @run.status == :pending -> %>
                 This queued run has not reached the runner and will be cancelled immediately.
               <% true -> %>
                 The runner is signalled SIGTERM, then SIGKILL if it doesn't stop.
             <% end %>
           </:body>
-          <%= if withdraw_approval? do %>
-            <span class="sm:hidden">Withdraw</span>
-            <span class="hidden sm:inline">Withdraw request</span>
-          <% else %>
-            Cancel run
-          <% end %>
+          Cancel run
         </.confirm_button>
       </:actions>
 

@@ -45,12 +45,9 @@ defmodule EmisarWeb.OnboardingLive do
       <p :if={is_nil(@billing_choice)} class="mb-6 text-sm text-zinc-400">
         One quick step. You'll invite members and connect runners next.
       </p>
-      <p :if={@billing_choice} class="mb-6 text-sm leading-relaxed text-zinc-400">
-        <span class="font-medium text-zinc-200">
-          Team checkout · {cycle_label(@billing_choice.cycle)}.
-        </span>
-        Create this workspace on Free, then review Team billing. Nothing is charged now.
-      </p>
+      <.selected_plan :if={@billing_choice} cycle={@billing_choice.cycle} class="mb-6">
+        Create this workspace on Free, then review the Team upgrade. Nothing is charged now.
+      </.selected_plan>
 
       <.simple_form
         for={@form}
@@ -139,7 +136,4 @@ defmodule EmisarWeb.OnboardingLive do
       {:error, :invalid} -> {nil, nil}
     end
   end
-
-  defp cycle_label(:month), do: "Monthly billing"
-  defp cycle_label(:year), do: "Annual billing"
 end
