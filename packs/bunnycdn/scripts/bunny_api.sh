@@ -57,7 +57,7 @@ request() {
   shift 2
 
   response=$(printf 'AccessKey: %s\n' "$BUNNY_API_KEY" |
-    curl --globoff --proto "$(curl_protocols)" -fsS -X "$method" -H @- "$@" "$url") || status=$?
+    curl -q --globoff --proto "$(curl_protocols)" -fsS -X "$method" -H @- "$@" "$url") || status=$?
   ((status == 0)) || fail "bunny.net API request failed"
   ((${#response} <= max_response_bytes)) || fail "bunny.net API response exceeded 16 MiB"
   printf '%s' "$response"

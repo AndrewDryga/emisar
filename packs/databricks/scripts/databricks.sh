@@ -38,7 +38,7 @@ api_protocols() {
 # Plain --fail would throw the body away. Needs curl 7.76 or newer.
 api_get() {
   printf 'Authorization: Bearer %s\n' "${DATABRICKS_TOKEN:-}" |
-    curl --globoff --proto "$(api_protocols)" --fail-with-body -sS -H @- "$(api_base)$1"
+    curl -q --globoff --proto "$(api_protocols)" --fail-with-body -sS -H @- "$(api_base)$1"
 }
 
 # -G folds --data-urlencode pairs into the query string, which is the only
@@ -47,7 +47,7 @@ api_get_q() {
   local path=$1
   shift
   printf 'Authorization: Bearer %s\n' "${DATABRICKS_TOKEN:-}" |
-    curl --globoff --proto "$(api_protocols)" --fail-with-body -sS -G -H @- \
+    curl -q --globoff --proto "$(api_protocols)" --fail-with-body -sS -G -H @- \
       "$@" "$(api_base)$path"
 }
 
@@ -56,7 +56,7 @@ api_post() {
   shift
   (($# == 0)) || set -- --data "$1"
   printf 'Authorization: Bearer %s\n' "${DATABRICKS_TOKEN:-}" |
-    curl --globoff --proto "$(api_protocols)" --fail-with-body -sS -X POST -H @- \
+    curl -q --globoff --proto "$(api_protocols)" --fail-with-body -sS -X POST -H @- \
       -H 'Content-Type: application/json' \
       "$@" "$(api_base)$path"
 }

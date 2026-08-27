@@ -76,7 +76,7 @@ trap 'rm -f "$body_file"' EXIT INT TERM
 # inspect the code and fail loudly — while still surfacing the Redfish error
 # body so the operator sees the iDRAC message.
 code=$(printf 'Authorization: Basic %s\nAccept: application/json\n' "$auth" |
-	curl "$@" -o "$body_file" -w '%{http_code}')
+	curl -q "$@" -o "$body_file" -w '%{http_code}')
 rc=$?
 [ -s "$body_file" ] && cat "$body_file"
 

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: databricks
 name: Databricks
-version: 0.1.3
+version: 0.1.4
 description: >
   Look up data and run day-2 operations in a Databricks workspace over its REST
   API: run a bounded read-only SQL statement on a SQL warehouse, browse Unity

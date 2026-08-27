@@ -2,7 +2,7 @@ schema_version: 1
 
 id: hcp-terraform
 name: HCP Terraform run review and gating
-version: 0.8.4
+version: 0.8.5
 description: >
   Review HCP Terraform (formerly Terraform Cloud) and Terraform Enterprise runs
   and gate what happens next: list workspaces and runs, project a run's plan

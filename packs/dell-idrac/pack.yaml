@@ -2,7 +2,7 @@ schema_version: 1
 
 id: dell-idrac
 name: Dell iDRAC (Redfish)
-version: 0.2.5
+version: 0.2.6
 # Older versions could send runner-held credentials to a caller-chosen target;
 # 0.1.0 also skipped TLS verification by default.
 retired_below: 0.2.5

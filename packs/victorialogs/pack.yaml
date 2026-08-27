@@ -2,7 +2,7 @@ schema_version: 1
 
 id: victorialogs
 name: VictoriaLogs queries
-version: 0.1.9
+version: 0.1.10
 # Older versions allowed low-risk queries to scan unbounded log history.
 retired_below: 0.1.9
 description: >

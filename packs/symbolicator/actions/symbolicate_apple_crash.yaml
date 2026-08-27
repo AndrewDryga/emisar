@@ -41,7 +41,7 @@ execution:
     argv:
       - "-c"
       - >-
-        exec curl -fsS --globoff --proto "=http,https" --max-time 300
+        exec curl -q -fsS --globoff --proto "=http,https" --max-time 300
         -F "apple_crash_report=@$1"
         "${SYMBOLICATOR_URL:-http://127.0.0.1:3021}/applecrashreport"
       - "emisar"

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: prometheus
 name: Prometheus operations
-version: 0.1.16
+version: 0.1.17
 # Older versions allowed low-risk range queries with unbounded evaluation cost.
 retired_below: 0.1.16
 description: >

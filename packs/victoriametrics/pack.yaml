@@ -2,7 +2,7 @@ schema_version: 1
 
 id: victoriametrics
 name: VictoriaMetrics queries
-version: 0.1.10
+version: 0.1.11
 # Older versions allowed low-risk range queries with unbounded evaluation cost.
 retired_below: 0.1.10
 description: >

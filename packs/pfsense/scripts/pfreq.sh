@@ -41,7 +41,7 @@ esac
 
 if [ -n "${PFSENSE_API_KEY:-}" ]; then
 	printf 'X-API-Key: %s\n' "$PFSENSE_API_KEY" |
-		curl --globoff --proto '=http,https' -fsS -H @- -X "$method" "$@" "$PFSENSE_URL$path"
+		curl -q --globoff --proto '=http,https' -fsS -H @- -X "$method" "$@" "$PFSENSE_URL$path"
 else
-	curl --globoff --proto '=http,https' -fsS -X "$method" "$@" "$PFSENSE_URL$path"
+	curl -q --globoff --proto '=http,https' -fsS -X "$method" "$@" "$PFSENSE_URL$path"
 fi

@@ -33,7 +33,7 @@ base_url=$TRAEFIK_URL
 
 if [ -n "${TRAEFIK_BASICAUTH:-}" ]; then
 	printf 'Authorization: Basic %s\n' "$(printf '%s' "$TRAEFIK_BASICAUTH" | base64 | tr -d '\n')" |
-		curl --globoff --proto '=http,https' -fsS $K -H @- "$@" "$base_url$path"
+		curl -q --globoff --proto '=http,https' -fsS $K -H @- "$@" "$base_url$path"
 else
-	curl --globoff --proto '=http,https' -fsS $K "$@" "$base_url$path"
+	curl -q --globoff --proto '=http,https' -fsS $K "$@" "$base_url$path"
 fi

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: symbolicator
 name: Symbolicator native symbolication
-version: 0.2.3
+version: 0.2.4
 description: >
   Debug native crashes with Symbolicator and keep the host it runs on healthy.
   Symbolicate a stack trace, a minidump, or an Apple crash report against the

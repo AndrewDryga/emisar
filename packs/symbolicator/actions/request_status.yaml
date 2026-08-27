@@ -36,7 +36,7 @@ execution:
     argv:
       - "-c"
       - >-
-        exec curl -fsS --globoff --proto "=http,https" --max-time 90
+        exec curl -q -fsS --globoff --proto "=http,https" --max-time 90
         "${SYMBOLICATOR_URL:-http://127.0.0.1:3021}/requests/$1?timeout=$2"
       - "emisar"
       - "{{ args.request_id }}"

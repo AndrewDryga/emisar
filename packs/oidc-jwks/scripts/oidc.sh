@@ -41,7 +41,7 @@ fetch_json() {
   if ! metadata=$(
     (
       ulimit -f "$blocks"
-      curl --fail "${curl_args[@]}" "$url"
+      curl -q --fail "${curl_args[@]}" "$url"
     )
   ); then
     fail "OIDC HTTPS request failed"

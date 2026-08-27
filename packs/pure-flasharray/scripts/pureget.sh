@@ -27,12 +27,12 @@ path=$1
 shift
 
 # Negotiate the highest REST 2.x version the array supports (no auth needed).
-ver=$(curl --globoff --proto '=http,https' -fsS $K "$PURE_URL/api/api_version" | grep -oE '2\.[0-9]+' | sort -t. -k2 -n | tail -1)
+ver=$(curl -q --globoff --proto '=http,https' -fsS $K "$PURE_URL/api/api_version" | grep -oE '2\.[0-9]+' | sort -t. -k2 -n | tail -1)
 [ -n "$ver" ] || ver=2.2
 
 # Exchange the API token for a session token (api-token in -> x-auth-token out).
 sess=$(printf 'api-token: %s\n' "${PURE_API_TOKEN:-}" |
-	curl --globoff --proto '=http,https' -fsS $K -D - -o /dev/null -X POST -H @- "$PURE_URL/api/$ver/login" |
+	curl -q --globoff --proto '=http,https' -fsS $K -D - -o /dev/null -X POST -H @- "$PURE_URL/api/$ver/login" |
 	tr -d '\r' | awk -F': ' 'tolower($1)=="x-auth-token"{print $2}')
 if [ -z "$sess" ]; then
 	echo "pure-flasharray: login failed or returned no session token" >&2
@@ -40,4 +40,4 @@ if [ -z "$sess" ]; then
 fi
 
 # Read call — session token over stdin; -G folds any --data-urlencode into the query.
-printf 'x-auth-token: %s\n' "$sess" | curl --globoff --proto '=http,https' -fsS $K -G -H @- "$@" "$PURE_URL/api/$ver$path"
+printf 'x-auth-token: %s\n' "$sess" | curl -q --globoff --proto '=http,https' -fsS $K -G -H @- "$@" "$PURE_URL/api/$ver$path"

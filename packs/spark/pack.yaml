@@ -2,7 +2,7 @@ schema_version: 1
 
 id: spark
 name: Apache Spark
-version: 0.1.2
+version: 0.1.3
 description: >
   Governed Apache Spark operations over the HTTP surfaces a cluster already
   exposes: the monitoring REST API (/api/v1) on a live driver UI and on the

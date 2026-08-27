@@ -17,7 +17,7 @@ execution:
     argv:
       - "-c"
       - >-
-        exec curl -fsS --globoff --proto "=http,https" --max-time 10
+        exec curl -q -fsS --globoff --proto "=http,https" --max-time 10
         "${SYMBOLICATOR_URL:-http://127.0.0.1:3021}/healthcheck"
   timeout: 15s
 output:

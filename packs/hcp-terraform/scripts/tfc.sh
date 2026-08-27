@@ -48,7 +48,7 @@ api_protocols() {
 # Plain --fail would throw the body away. Needs curl 7.76 or newer.
 api_get() {
   printf 'Authorization: Bearer %s\n' "${TFE_TOKEN:-}" |
-    curl --globoff --proto "$(api_protocols)" --fail-with-body -sS -H @- "$(api_base)$1"
+    curl -q --globoff --proto "$(api_protocols)" --fail-with-body -sS -H @- "$(api_base)$1"
 }
 
 # The json-output endpoint answers with a one-minute redirect to blob storage.
@@ -56,7 +56,7 @@ api_get() {
 # is what we want: the redirect target is already presigned.
 api_get_following_redirect() {
   printf 'Authorization: Bearer %s\n' "${TFE_TOKEN:-}" |
-    curl --globoff --proto "$(api_protocols)" --proto-redir "$(api_protocols)" \
+    curl -q --globoff --proto "$(api_protocols)" --proto-redir "$(api_protocols)" \
       --fail-with-body -sSL -H @- "$(api_base)$1"
 }
 
@@ -70,7 +70,7 @@ api_post() {
   shift
   (($# == 0)) || set -- --data "$1"
   printf 'Authorization: Bearer %s\n' "${TFE_TOKEN:-}" |
-    curl --globoff --proto "$(api_protocols)" --fail-with-body -sS -X POST -H @- \
+    curl -q --globoff --proto "$(api_protocols)" --fail-with-body -sS -X POST -H @- \
       -H 'Content-Type: application/vnd.api+json' \
       "$@" "$(api_base)$path"
 }
@@ -395,7 +395,7 @@ fetch_log_tail() {
     return
   fi
   tail_text=$(printf 'url = "%s"\n' "$url" |
-    curl --globoff --proto '=http,https' -q --fail -s \
+    curl -q --globoff --proto '=http,https' --fail -s \
       --connect-timeout 10 --max-time 90 -K - |
     tail -c "$max_log_fetch_bytes" |
     sanitize_log |

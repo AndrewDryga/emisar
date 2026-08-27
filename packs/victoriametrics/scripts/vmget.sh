@@ -71,7 +71,7 @@ path=$1
 shift
 
 if [ -n "${VM_BEARER_TOKEN:-}" ]; then
-	printf 'Authorization: Bearer %s\n' "$VM_BEARER_TOKEN" | curl --globoff --proto '=http,https' -fsS -G -H @- "$@" "$VM_URL$path"
+	printf 'Authorization: Bearer %s\n' "$VM_BEARER_TOKEN" | curl -q --globoff --proto '=http,https' -fsS -G -H @- "$@" "$VM_URL$path"
 else
-	curl --globoff --proto '=http,https' -fsS -G "$@" "$VM_URL$path"
+	curl -q --globoff --proto '=http,https' -fsS -G "$@" "$VM_URL$path"
 fi

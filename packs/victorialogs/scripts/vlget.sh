@@ -80,7 +80,7 @@ if [ -n "${VL_BEARER_TOKEN:-}${VL_ACCOUNT_ID:-}${VL_PROJECT_ID:-}" ]; then
 		[ -n "${VL_BEARER_TOKEN:-}" ] && printf 'Authorization: Bearer %s\n' "$VL_BEARER_TOKEN"
 		[ -n "${VL_ACCOUNT_ID:-}" ] && printf 'AccountID: %s\n' "$VL_ACCOUNT_ID"
 		[ -n "${VL_PROJECT_ID:-}" ] && printf 'ProjectID: %s\n' "$VL_PROJECT_ID"
-	} | curl --globoff --proto '=http,https' -fsS -G -H @- "$@" "$VL_URL$path"
+	} | curl -q --globoff --proto '=http,https' -fsS -G -H @- "$@" "$VL_URL$path"
 else
-	curl --globoff --proto '=http,https' -fsS -G "$@" "$VL_URL$path"
+	curl -q --globoff --proto '=http,https' -fsS -G "$@" "$VL_URL$path"
 fi

@@ -51,7 +51,7 @@ resolve_token() {
   [[ -n ${AIRFLOW_USERNAME:-} && -n ${AIRFLOW_PASSWORD:-} ]] || return 0
   local response
   response=$(jq -nc '{username: env.AIRFLOW_USERNAME, password: env.AIRFLOW_PASSWORD}' |
-    curl --globoff --proto '=http,https' -fsS -X POST \
+    curl -q --globoff --proto '=http,https' -fsS -X POST \
       -H 'Content-Type: application/json' --data @- \
       --connect-timeout "$connect_timeout" --max-time "$max_time" \
       "$base/auth/token") ||
@@ -70,7 +70,7 @@ auth_header() {
 request() {
   local method=$1 url=$2 status=0 response
   shift 2
-  response=$(auth_header | curl --globoff --proto '=http,https' -fsS -H @- \
+  response=$(auth_header | curl -q --globoff --proto '=http,https' -fsS -H @- \
     -X "$method" --connect-timeout "$connect_timeout" --max-time "$max_time" \
     "$@" "$url") || status=$?
   ((status == 0)) || fail "Airflow API request failed with transfer status $status: $method ${url#"$base"}"

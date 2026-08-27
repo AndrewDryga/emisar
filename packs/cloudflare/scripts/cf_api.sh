@@ -51,7 +51,7 @@ request() {
   shift 2
 
   response=$(printf 'Authorization: Bearer %s\n' "$CF_API_TOKEN" |
-    curl --globoff --proto "$(curl_protocols)" -fsS -X "$method" -H @- "$@" "$url") || status=$?
+    curl -q --globoff --proto "$(curl_protocols)" -fsS -X "$method" -H @- "$@" "$url") || status=$?
   ((status == 0)) || fail "Cloudflare API request failed"
   ((${#response} <= max_response_bytes)) || fail "Cloudflare API response exceeded 16 MiB"
   printf '%s' "$response"

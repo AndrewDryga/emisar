@@ -58,7 +58,7 @@ request() {
   local method=$1 url=$2 status=0 response
   shift 2
   validate_url "$url"
-  response=$(auth_header | curl --globoff --proto '=http,https' -fsS -H @- \
+  response=$(auth_header | curl -q --globoff --proto '=http,https' -fsS -H @- \
     -X "$method" --connect-timeout "$connect_timeout" --max-time "$max_time" \
     "$@" "$url") || status=$?
   ((status == 0)) || fail "Spark request failed with transfer status $status: $method $url"

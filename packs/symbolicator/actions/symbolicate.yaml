@@ -42,7 +42,7 @@ execution:
         body=$(printf '%s' "$1" | jq -c '{options: (.options // {dif_candidates: true}),
         modules: (.modules // []), stacktraces: (.stacktraces // [])}') || {
         printf 'payload must be a JSON object with modules and stacktraces\n' >&2; exit 2; };
-        printf '%s' "$body" | curl -fsS --globoff --proto "=http,https" --max-time 180
+        printf '%s' "$body" | curl -q -fsS --globoff --proto "=http,https" --max-time 180
         -H 'content-type: application/json' --data-binary @-
         "${SYMBOLICATOR_URL:-http://127.0.0.1:3021}/symbolicate"
       - "emisar"
