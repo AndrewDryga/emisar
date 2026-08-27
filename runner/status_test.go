@@ -125,12 +125,15 @@ func TestReportStatusIsCompactAndPlainOffTerminal(t *testing.T) {
 		t.Fatalf("fails = %d", fails)
 	}
 	text := out.String()
-	for _, want := range []string{"emisar status", "connection", "catalog", "process", "runs", "2 local readiness checks passed"} {
+	if !strings.HasPrefix(text, "  ✓  connection") {
+		t.Errorf("output must start with the first health row:\n%s", text)
+	}
+	for _, want := range []string{"connection", "catalog", "process", "runs", "2 local readiness checks passed"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("output missing %q:\n%s", want, text)
 		}
 	}
-	if strings.Contains(text, "token present") || strings.Contains(text, "\x1b[") {
+	if strings.Contains(text, "emisar status") || strings.Contains(text, "token present") || strings.Contains(text, "\x1b[") {
 		t.Fatalf("healthy local detail or ANSI leaked into compact output:\n%q", text)
 	}
 }

@@ -210,8 +210,6 @@ func compactDuration(duration time.Duration) string {
 
 func reportStatus(w io.Writer, checks []checkResult, runtimeChecks int) int {
 	style := newStyler(w)
-	fmt.Fprintln(w, "emisar status")
-	fmt.Fprintln(w)
 
 	var fails, warns int
 	for _, check := range checks {
