@@ -31,26 +31,13 @@ func TestPortalTestDatabaseKeyMirrorsTestConfigResolution(t *testing.T) {
 			want: "db:5432/emisar_test",
 		},
 		{
-			name: "the service URL supplies the port when PGPORT is absent",
-			env:  map[string]string{"COOP_SERVICE_DB_URL": "postgres://postgres@localhost:31372/x"},
-			want: "localhost:31372/emisar_test",
-		},
-		{
-			name: "PGPORT beats the service URL, as config reads it first",
-			env: map[string]string{
-				"PGPORT":              "25201",
-				"COOP_SERVICE_DB_URL": "postgres://postgres@localhost:31372/x",
-			},
-			want: "localhost:25201/emisar_test",
-		},
-		{
 			name: "a partition names a different database, so it takes its own lock",
 			env:  map[string]string{"PGPORT": "31372", "MIX_TEST_PARTITION": "2"},
 			want: "localhost:31372/emisar_test2",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			for _, name := range []string{"PGHOST", "PGPORT", "COOP_SERVICE_DB_URL", "MIX_TEST_PARTITION"} {
+			for _, name := range []string{"PGHOST", "PGPORT", "MIX_TEST_PARTITION"} {
 				t.Setenv(name, "")
 			}
 			if got := portalTestDatabaseKey(test.env); got != test.want {

@@ -104,8 +104,7 @@ defmodule Emisar.MixProject do
       "ecto.seed": ["run #{__DIR__}/priv/repo/seeds.exs"],
       # Architecture budget: compile cycles make unrelated contexts recompile
       # together. Fail when any cycle appears so context coupling stays acyclic.
-      "xref.cycles": ["xref graph --format cycles --label compile --fail-above 0"],
-      "test.ci": ["ecto.create --quiet", "ecto.migrate --quiet", "test", "xref.cycles"]
+      "xref.cycles": ["xref graph --format cycles --label compile --fail-above 0"]
     ]
   end
 end

@@ -6,14 +6,12 @@ import Config
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
 #
-# Coop project policy exports direct service values in a box. Older Coop
-# versions may only inject the service URL, so retain that compatibility path
-# before falling back to the conventional host port.
+# Coop project policy exports direct service values (PGHOST/PGPORT) in a box;
+# outside one, the conventional host port applies.
 db_port =
-  cond do
-    port = System.get_env("PGPORT") -> String.to_integer(port)
-    url = System.get_env("COOP_SERVICE_DB_URL") -> URI.parse(url).port
-    true -> 5432
+  case System.get_env("PGPORT") do
+    nil -> 5432
+    port -> String.to_integer(port)
   end
 
 config :emisar, Emisar.Repo,

@@ -1,8 +1,11 @@
 defmodule Emisar.Release do
   @moduledoc """
   Release-time tasks. Mix isn't available in a release, so anything
-  that needs to run inside the running release (migrations, seeds,
-  rollback) lives here and gets invoked via `bin/emisar eval`.
+  that needs to run inside the running release (migrations, seeds)
+  lives here and gets invoked via `bin/emisar eval`. There is no
+  rollback task on purpose: committed migrations are frozen and an
+  application rollback redeploys a prior image without reversing DB
+  changes (.github/DEPLOYMENT.md).
   """
 
   @app :emisar
@@ -13,11 +16,6 @@ defmodule Emisar.Release do
     for repo <- repos() do
       {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :up, all: true))
     end
-  end
-
-  def rollback(repo, version) do
-    load_app()
-    {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :down, to: version))
   end
 
   def seed do

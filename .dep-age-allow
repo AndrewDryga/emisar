@@ -19,6 +19,4 @@
 #
 # Example (delete once real entries exist):
 #   hex plug 1.99.1 GHSA-xxxx-yyyy-zzzz — RCE in Plug.Conn, patched only in 1.99.1, actively exploited
-hex phoenix_live_view 1.2.9 EEF-CVE-2026-64941 / CVE-2026-64941 / GHSA-36m4-rm57-3prf — open redirect in Phoenix.LiveView.validate_local_url!/2; the advisory makes mix hex.audit fail every CI run on 1.2.7, so the patch cannot wait out its window; remove after 2026-08-17
-hex phoenix 1.8.10 pulled by the EEF-CVE-2026-64941 remediation (the phoenix_live_view 1.2.9 update moved its sibling); hash-pinned upstream patch release; remove after 2026-08-17
 hex bandit 1.12.5 EEF-CVE-2026-74836 / EEF-CVE-2026-75484 — bounds blocked HTTP/2 sends and rejects CR/LF/NUL header values; both advisories fail mix hex.audit on 1.12.4, so the patch cannot wait out its window; remove after 2026-08-27

@@ -3,7 +3,6 @@ package devtool
 import (
 	"crypto/sha256"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 )
@@ -76,13 +75,6 @@ func portalTestDatabaseKey(env map[string]string) string {
 		host = "localhost"
 	}
 	port := lookup("PGPORT")
-	if port == "" {
-		if raw := lookup("COOP_SERVICE_DB_URL"); raw != "" {
-			if parsed, err := url.Parse(raw); err == nil {
-				port = parsed.Port()
-			}
-		}
-	}
 	if port == "" {
 		port = "5432"
 	}
