@@ -11,7 +11,7 @@ defmodule EmisarWeb.MfaSetupLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Auth}
-  alias EmisarWeb.MfaQr
+  alias EmisarWeb.{MfaErrors, MfaQr}
 
   @mfa_rate_limit_error "Too many attempts. Wait a few minutes, then try again."
   @email_issue_rate_limit_error "Too many code requests. Wait up to 15 minutes, then try again."
@@ -273,7 +273,7 @@ defmodule EmisarWeb.MfaSetupLive do
            assign(socket, :mfa_enrollment_email_error, "Could not verify that code. Try again.")}
       end
     else
-      {:noreply, put_flash(socket, :error, "Email a verification code first.")}
+      {:noreply, put_flash(socket, :error, MfaErrors.message(:email_verification_required))}
     end
   end
 
@@ -296,7 +296,7 @@ defmodule EmisarWeb.MfaSetupLive do
           {:noreply, assign(socket, :mfa_enrollment_email_error, @email_delivery_error)}
       end
     else
-      {:noreply, put_flash(socket, :error, "Email a verification code first.")}
+      {:noreply, put_flash(socket, :error, MfaErrors.message(:email_verification_required))}
     end
   end
 
@@ -323,13 +323,13 @@ defmodule EmisarWeb.MfaSetupLive do
            |> reset_mfa_enrollment()}
 
         {:error, :invalid_otp} ->
-          {:noreply, assign(socket, :mfa_error, "That code didn't match — try the next one.")}
+          {:noreply, assign(socket, :mfa_error, MfaErrors.message(:invalid_otp))}
 
         {:error, :mfa_enrollment_proof_stale} ->
           {:noreply,
            socket
            |> reset_mfa_enrollment()
-           |> assign(:mfa_start_error, "Your account changed. Verify your current email again.")}
+           |> assign(:mfa_start_error, MfaErrors.message(:mfa_enrollment_proof_stale))}
 
         {:error, :mfa_already_enabled} ->
           {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
@@ -337,11 +337,11 @@ defmodule EmisarWeb.MfaSetupLive do
         {:error, :session_not_found} ->
           {:noreply,
            socket
-           |> put_flash(:error, "Your session changed. Sign in again before enabling MFA.")
+           |> put_flash(:error, MfaErrors.message(:session_not_found))
            |> redirect(to: ~p"/sign_in/magic")}
 
         {:error, _changeset} ->
-          {:noreply, assign(socket, :mfa_error, "Could not enable MFA.")}
+          {:noreply, assign(socket, :mfa_error, MfaErrors.message(:enable_failed))}
       end
     end
   end
@@ -350,7 +350,7 @@ defmodule EmisarWeb.MfaSetupLive do
     if socket.assigns.mfa_recovery_codes && socket.assigns.codes_saved? do
       {:noreply, push_navigate(socket, to: ~p"/app")}
     else
-      {:noreply, put_flash(socket, :error, "Save your recovery codes before continuing.")}
+      {:noreply, put_flash(socket, :error, MfaErrors.message(:recovery_codes_unsaved))}
     end
   end
 

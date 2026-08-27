@@ -1027,7 +1027,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       # The rejection renders inside the enrollment form (not a transient flash),
       # and the QR stays up so the operator can retry with the next code.
-      assert lv |> element("#mfa_form") |> render() =~ "Invalid code"
+      assert lv |> element("#mfa_form") |> render() =~ "That code didn&#39;t match"
       assert has_element?(lv, "#mfa-otp")
       refute Emisar.Repo.reload!(user).mfa_enabled_at
     end
@@ -1085,7 +1085,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       html = render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => "abc123"}})
 
-      assert html =~ "Invalid code"
+      assert html =~ "That code didn&#39;t match"
       refute Emisar.Repo.reload!(user).mfa_enabled_at
     end
 
@@ -1107,7 +1107,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       html = render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => stale_otp}})
 
-      assert html =~ "Invalid code"
+      assert html =~ "That code didn&#39;t match"
       refute Emisar.Repo.reload!(user).mfa_enabled_at
     end
 

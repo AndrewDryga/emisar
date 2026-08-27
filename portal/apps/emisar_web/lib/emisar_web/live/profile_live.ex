@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ProfileLive do
   use EmisarWeb, :live_view
   alias Emisar.{Auth, SSO, Users}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, OIDCIdentityHandoff, UserAgent}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MfaErrors, OIDCIdentityHandoff, UserAgent}
   alias Phoenix.LiveView.JS
 
   # Both step-ups on this page — the email-change authenticator branch and
@@ -487,25 +487,25 @@ defmodule EmisarWeb.ProfileLive do
            |> reset_mfa_enrollment()}
 
         {:error, :invalid_otp} ->
-          {:noreply, assign(socket, :mfa_error, "Invalid code — try the next one.")}
+          {:noreply, assign(socket, :mfa_error, MfaErrors.message(:invalid_otp))}
 
         {:error, :mfa_enrollment_proof_stale} ->
           {:noreply,
            socket
-           |> put_flash(:error, "Your account changed. Verify your current email again.")
+           |> put_flash(:error, MfaErrors.message(:mfa_enrollment_proof_stale))
            |> reset_mfa_enrollment()}
 
         {:error, :session_not_found} ->
           {:noreply,
            socket
-           |> put_flash(:error, "Your session changed. Sign in again before enabling MFA.")
+           |> put_flash(:error, MfaErrors.message(:session_not_found))
            |> push_navigate(to: ~p"/sign_in/magic")}
 
         {:error, :mfa_already_enabled} ->
           {:noreply, refresh_after_mfa_enabled(socket)}
 
         {:error, _changeset} ->
-          {:noreply, assign(socket, :mfa_error, "Could not enable MFA. Try again.")}
+          {:noreply, assign(socket, :mfa_error, MfaErrors.message(:enable_failed))}
       end
     end
   end
