@@ -431,8 +431,8 @@ if ($env:OS -ne "Windows_NT") { Stop-Install "this installer requires Windows" }
 $releaseArchitecture = Get-WindowsReleaseArchitecture
 if (-not (Test-SafePortalOrigin $script:PortalOrigin)) { Stop-Install "EMISAR_URL must be an HTTPS origin without credentials, path, query, or fragment" }
 
-$appDataDirectory = if ($env:EMISAR_MCP_TEST_APPDATA) { $env:EMISAR_MCP_TEST_APPDATA } else { $env:APPDATA }
-$localAppDataDirectory = if ($env:EMISAR_MCP_TEST_LOCALAPPDATA) { $env:EMISAR_MCP_TEST_LOCALAPPDATA } else { $env:LOCALAPPDATA }
+$appDataDirectory = $env:APPDATA
+$localAppDataDirectory = $env:LOCALAPPDATA
 if (-not $InstallDir) { $InstallDir = Join-Path $localAppDataDirectory "Programs\Emisar\bin" }
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 $executable = Join-Path $InstallDir "emisar-mcp.exe"

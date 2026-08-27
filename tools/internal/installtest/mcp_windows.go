@@ -237,17 +237,18 @@ func testWindowsMCPInstaller(root, shell string) error {
 			return err
 		}
 	}
+	// The installer reads the real Windows directory variables, so the harness
+	// sets those rather than a parallel test-only spelling — the same shape the
+	// Unix installers' harness already uses. EMISAR_MCP_TEST_BASE_URL has no
+	// real-variable equivalent and stays; the installer accepts it only for a
+	// loopback origin with EMISAR_ALLOW_INSECURE=1.
 	env := map[string]string{
-		"APPDATA":                      appData,
-		"LOCALAPPDATA":                 localAppData,
-		"USERPROFILE":                  home,
-		"HOME":                         home,
-		"EMISAR_ALLOW_INSECURE":        "1",
-		"EMISAR_MCP_TEST_APPDATA":      appData,
-		"EMISAR_MCP_TEST_BASE_URL":     server.URL,
-		"EMISAR_MCP_TEST_HOME":         home,
-		"EMISAR_MCP_TEST_LOCALAPPDATA": localAppData,
-		"EMISAR_MCP_TEST_NO_BROWSER":   "1",
+		"APPDATA":                  appData,
+		"LOCALAPPDATA":             localAppData,
+		"USERPROFILE":              home,
+		"HOME":                     home,
+		"EMISAR_ALLOW_INSECURE":    "1",
+		"EMISAR_MCP_TEST_BASE_URL": server.URL,
 	}
 	installer := filepath.Join(root, "install-mcp.ps1")
 	output, err := runPowerShellInstaller(

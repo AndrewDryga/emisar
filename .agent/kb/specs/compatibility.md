@@ -578,7 +578,15 @@ were left in place when the bridge predates it, rather than reporting a
 removal that did not happen.
 
 `install-mcp.ps1` accepts `-Version`, `-InstallDir`,
-`-PortalOrigin`, `-Uninstall`, `-Yes`, and `-ConnectAll`. It installs the native
+`-PortalOrigin`, `-Uninstall`, `-Yes`, and `-ConnectAll`. Its environment is
+`EMISAR_URL`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`,
+`EMISAR_ATTESTATION_WORKFLOW`, `EMISAR_ALLOW_INSECURE`, and
+`EMISAR_MCP_TEST_BASE_URL`. The last is the one test-only read in any shipped
+installer, kept because the release origin has no operator-facing equivalent,
+and accepted only for a loopback origin with `EMISAR_ALLOW_INSECURE=1`. Install
+locations are never redirected by a test variable: the installer reads the real
+`APPDATA` and `LOCALAPPDATA`, so its harness sets those the way the Unix
+harness sets real variables and PATH shims. It installs the native
 `windows-amd64` or `windows-arm64` zip per user, verifies `SHA256SUMS-MCP`, and
 checks Sigstore provenance when an authenticated GitHub CLI is available. It
 uses protected Windows DACLs for the binary directory and direct-CLI
