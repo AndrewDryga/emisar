@@ -586,10 +586,28 @@ defmodule EmisarWeb.RunbookEditorComponents do
               :if={not @read_only?}
               icon="action.delete"
               label="Remove input"
-              phx-click="remove_input"
-              phx-value-index={index}
-              data-confirm={if populated_input?(input), do: "Remove this populated input?"}
+              phx-click={
+                if populated_input?(input),
+                  do: open_confirm("remove-input-#{index}-confirm"),
+                  else: JS.push("remove_input", value: %{index: index})
+              }
             />
+            <.confirm_dialog
+              :if={not @read_only? and populated_input?(input)}
+              id={"remove-input-#{index}-confirm"}
+              title="Remove this input?"
+              confirm_label="Remove input"
+              on_confirm={
+                JS.push("remove_input", value: %{index: index})
+                |> close_confirm("remove-input-#{index}-confirm")
+              }
+            >
+              <:body>
+                Removes
+                <span class="font-medium text-zinc-200">{input_card_title(input, index)}</span>
+                — everything entered on it is discarded.
+              </:body>
+            </.confirm_dialog>
           </div>
 
           <div class="mt-6 space-y-6">

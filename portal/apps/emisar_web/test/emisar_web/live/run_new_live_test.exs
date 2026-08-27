@@ -425,8 +425,10 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
-    assert has_element?(lv, "button[data-confirm]")
-    assert render(lv) =~ "runs on the host immediately"
+    # The shared confirm dialog, never the native data-confirm popup.
+    refute has_element?(lv, "button[data-confirm]")
+    assert has_element?(lv, "#confirm-dispatch")
+    assert render(lv) =~ "immediately."
   end
 
   test "a high-risk confirm folds in the entered args (the blast radius)", %{conn: conn} do
@@ -474,6 +476,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     # The button names the TARGET — the last glance binds action + host.
     assert has_element?(lv, "button", "Dispatch to #{runner.name}")
     refute has_element?(lv, "button[data-confirm]")
+    refute has_element?(lv, "#confirm-dispatch")
   end
 
   test "a never-connected runner warns the run will queue and still offers Dispatch", %{

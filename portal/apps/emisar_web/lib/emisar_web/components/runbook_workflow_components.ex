@@ -358,11 +358,28 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           <.icon_button
             icon="action.delete"
             label="Remove stage"
-            phx-click="remove_stage"
-            phx-value-index={@stage_index}
+            phx-click={
+              if populated_stage?(@stage),
+                do: open_confirm("remove-stage-#{@stage_index}-confirm"),
+                else: JS.push("remove_stage", value: %{index: @stage_index})
+            }
             disabled={@read_only?}
-            data-confirm={if populated_stage?(@stage), do: "Remove this populated stage?"}
           />
+          <.confirm_dialog
+            :if={not @read_only? and populated_stage?(@stage)}
+            id={"remove-stage-#{@stage_index}-confirm"}
+            title="Remove this stage?"
+            confirm_label="Remove stage"
+            on_confirm={
+              JS.push("remove_stage", value: %{index: @stage_index})
+              |> close_confirm("remove-stage-#{@stage_index}-confirm")
+            }
+          >
+            <:body>
+              Removes stage {@stage_index + 1} with every step in it — everything
+              entered on them is discarded.
+            </:body>
+          </.confirm_dialog>
         </div>
       </div>
 
@@ -546,12 +563,28 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           <.icon_button
             icon="action.delete"
             label="Remove step"
-            phx-click="remove_step"
-            phx-value-stage={@stage_index}
-            phx-value-step={@step_index}
+            phx-click={
+              if populated_step?(@step),
+                do: open_confirm("remove-step-#{@stage_index}-#{@step_index}-confirm"),
+                else: JS.push("remove_step", value: %{stage: @stage_index, step: @step_index})
+            }
             disabled={@read_only?}
-            data-confirm={if populated_step?(@step), do: "Remove this populated step?"}
           />
+          <.confirm_dialog
+            :if={not @read_only? and populated_step?(@step)}
+            id={"remove-step-#{@stage_index}-#{@step_index}-confirm"}
+            title="Remove this step?"
+            confirm_label="Remove step"
+            on_confirm={
+              JS.push("remove_step", value: %{stage: @stage_index, step: @step_index})
+              |> close_confirm("remove-step-#{@stage_index}-#{@step_index}-confirm")
+            }
+          >
+            <:body>
+              Removes step {@step_index + 1} of stage {@stage_index + 1} —
+              everything entered on it is discarded.
+            </:body>
+          </.confirm_dialog>
         </div>
       </div>
 

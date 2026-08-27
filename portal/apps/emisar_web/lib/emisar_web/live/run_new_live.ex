@@ -82,28 +82,13 @@ defmodule EmisarWeb.RunNewLive do
 
   defp portal_dispatchable?(_readiness), do: false
 
-  # High/critical dispatches confirm and echo the action + target + the args
-  # the operator entered, so a mis-aimed click on a destructive action is
-  # caught AND they see the blast radius (which container/signal/path), not
-  # just the action name. Low/medium dispatch behind just the disable-with
-  # spinner (nil omits the data-confirm attr). `risk` is an Ecto.Enum atom.
-  defp dispatch_confirm(%{risk: risk} = action, runner, runner_id, args_schema, form)
-       when risk in [:high, :critical] do
-    target = (runner && runner.name) || runner_id
+  # High/critical dispatches restate the action + target + the entered args in
+  # the confirm dialog, so a mis-aimed click on a destructive action is caught
+  # AND the operator sees the blast radius (which container/signal/path), not
+  # just the action name. Low/medium dispatches directly behind the
+  # disable-with spinner. `risk` is an Ecto.Enum atom.
+  defp dispatch_confirm_required?(%{risk: risk}), do: risk in [:high, :critical]
 
-    base =
-      "Dispatch #{action.action_id} (#{risk} risk) to #{target} now? It runs on the host immediately."
-
-    case args_blast_radius(args_schema, form.params) do
-      "" -> base
-      summary -> base <> "\n\n" <> summary
-    end
-  end
-
-  defp dispatch_confirm(_action, _runner, _runner_id, _args_schema, _form), do: nil
-
-  # The entered args in schema order, empties dropped, each value clipped so a
-  # long path can't blow up the native confirm dialog.
   defp args_blast_radius(args_schema, params) do
     lines =
       Enum.flat_map(args_schema, fn arg ->
@@ -493,15 +478,38 @@ defmodule EmisarWeb.RunNewLive do
 
             <:actions>
               <%!-- The last glance binds action + host: the button names the
-                   TARGET, so a mis-aimed dispatch is caught at the click. --%>
+                   TARGET, so a mis-aimed dispatch is caught at the click.
+                   High/critical risk first restates the blast radius in the
+                   shared confirm dialog (never a native data-confirm popup),
+                   then submits this same form via the hidden submit. --%>
               <.button
-                :if={@can_dispatch? and portal_dispatchable?(@readiness)}
+                :if={
+                  @can_dispatch? and portal_dispatchable?(@readiness) and
+                    not dispatch_confirm_required?(@action)
+                }
                 phx-disable-with="Dispatching..."
-                data-confirm={dispatch_confirm(@action, @runner, @runner_id, @args_schema, @form)}
               >
                 Dispatch to {(@runner && @runner.name) || "runner"}
                 <span aria-hidden="true">→</span>
               </.button>
+              <.button
+                :if={
+                  @can_dispatch? and portal_dispatchable?(@readiness) and
+                    dispatch_confirm_required?(@action)
+                }
+                type="button"
+                phx-click={open_confirm("confirm-dispatch")}
+              >
+                Dispatch to {(@runner && @runner.name) || "runner"}
+                <span aria-hidden="true">→</span>
+              </.button>
+              <button
+                type="submit"
+                id="dispatch-form-submit"
+                class="hidden"
+                tabindex="-1"
+                aria-hidden="true"
+              ></button>
               <%!-- Signed-only runner — the run would be refused, so there's no
                    Dispatch button; the quiet fact points at the MCP client. --%>
               <p
@@ -525,6 +533,31 @@ defmodule EmisarWeb.RunNewLive do
               </p>
             </:actions>
           </.simple_form>
+
+          <.confirm_dialog
+            :if={@action && dispatch_confirm_required?(@action)}
+            id="confirm-dispatch"
+            title="Dispatch this action now?"
+            confirm_label="Dispatch"
+            pending_label="Dispatching…"
+            on_confirm={
+              JS.dispatch("click", to: "#dispatch-form-submit")
+              |> close_confirm("confirm-dispatch")
+            }
+          >
+            <:body>
+              <span class="font-medium text-zinc-200">{@action.action_id}</span>
+              ({@action.risk} risk) runs on
+              <span class="font-medium text-zinc-200">{(@runner && @runner.name) || @runner_id}</span>
+              immediately.
+              <span
+                :if={args_blast_radius(@args_schema, @form.params) != ""}
+                class="mt-2 block whitespace-pre-line"
+              >
+                {args_blast_radius(@args_schema, @form.params)}
+              </span>
+            </:body>
+          </.confirm_dialog>
         </section>
       </div>
     </.console_shell>

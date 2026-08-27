@@ -2812,13 +2812,16 @@ defmodule EmisarWeb.CoreComponents do
   attrs, `phx-click` and the state-dependent `data-confirm`.
 
       <.switch
-        on={@current_account.settings.require_mfa}
-        on_label="Stop enforcing 2FA"
-        off_label="Enforce 2FA"
-        aria-label="Enforce 2FA account-wide"
-        phx-click="toggle_require_mfa"
-        data-confirm={...}
+        on={not @current_account.settings.monthly_report_opt_out}
+        on_label="Turn off"
+        off_label="Turn back on"
+        aria-label="Monthly account-health report email"
+        phx-click="toggle_monthly_report"
       />
+
+  A CONSEQUENTIAL toggle never gates itself with the native `data-confirm` —
+  its `phx-click` opens the shared `<.confirm_dialog>` instead (the
+  require-2FA switch in Team is the model).
   """
   attr :on, :boolean, required: true
   attr :on_label, :string, required: true, doc: "shown while ON — the turn-off action"
