@@ -463,14 +463,8 @@ func (d *dedupRing) reserve(requestID, digest string) (reservationDecision, Acti
 		return reservationNew, ActionResultMsg{}, fmt.Errorf("cloud: invalid dispatch digest")
 	}
 
-	if existing, ok := d.records[requestID]; ok {
-		if existing.DispatchSHA256 != digest {
-			return reservationConflict, ActionResultMsg{}, nil
-		}
-		if existing.State == dispatchCompleted || existing.State == dispatchAcknowledged {
-			return reservationReplay, existing.Result, nil
-		}
-		return reservationPending, ActionResultMsg{}, nil
+	if decision, result, known := d.classifyLocked(requestID, digest); known {
+		return decision, result, nil
 	}
 
 	oldKeys := append([]string(nil), d.keys...)
@@ -502,17 +496,30 @@ func (d *dedupRing) inspect(requestID, digest string) (reservationDecision, Acti
 	if !validDispatchDigest(digest) {
 		return reservationNew, ActionResultMsg{}, fmt.Errorf("cloud: invalid dispatch digest")
 	}
+	decision, result, _ := d.classifyLocked(requestID, digest)
+	return decision, result, nil
+}
+
+// classifyLocked decides what an ALREADY-KNOWN request id means. reserve and
+// inspect asked this same question in two hand-written copies, which is the
+// shape that lets a hardening land on one path and miss the other — on the
+// at-most-once boundary, where that divergence is the whole failure mode.
+//
+// `known` is false when the id has never been seen, which is the only case the
+// two callers treat differently: reserve goes on to create the reservation,
+// inspect reports it as new and writes nothing.
+func (d *dedupRing) classifyLocked(requestID, digest string) (reservationDecision, ActionResultMsg, bool) {
 	existing, ok := d.records[requestID]
 	if !ok {
-		return reservationNew, ActionResultMsg{}, nil
+		return reservationNew, ActionResultMsg{}, false
 	}
 	if existing.DispatchSHA256 != digest {
-		return reservationConflict, ActionResultMsg{}, nil
+		return reservationConflict, ActionResultMsg{}, true
 	}
 	if existing.State == dispatchCompleted || existing.State == dispatchAcknowledged {
-		return reservationReplay, existing.Result, nil
+		return reservationReplay, existing.Result, true
 	}
-	return reservationPending, ActionResultMsg{}, nil
+	return reservationPending, ActionResultMsg{}, true
 }
 
 func validDispatchDigest(digest string) bool {

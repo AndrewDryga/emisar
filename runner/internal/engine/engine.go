@@ -280,6 +280,30 @@ func (e *Engine) recordPreExecutionEvent(ctx context.Context, req Request, event
 	return e.journal(ctx, ev)
 }
 
+// refuse journals a prepared refusal event and turns it into the Result that
+// ends the run. The event is built by the CALLER on purpose: the refusals
+// raised before an action is resolved and validated deliberately carry no
+// PackID, Metadata or Request, because their argument values are still
+// untrusted and must never reach the journal. Folding that decision in here
+// would quietly widen what gets persisted, so this helper owns only the part
+// that is genuinely identical — the journal call and the shape of the Result.
+func (e *Engine) refuse(
+	ctx context.Context,
+	ev audit.Event,
+	status Status,
+	actionID string,
+	reason string,
+) *Result {
+	journaled := e.journal(ctx, ev)
+	return &Result{
+		Status:           status,
+		EventID:          journaled.EventID,
+		LocalAuditFailed: journaled.EventID == "",
+		ActionID:         actionID,
+		Reason:           reason,
+	}
+}
+
 // Run executes one action call end to end.
 func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 	now := time.Now().UTC()
@@ -290,14 +314,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		ev := e.baseEvent(req, audit.EventValidationFailed, now)
 		ev.ActionID = req.ActionID
 		ev.Error = "reason required"
-		journaled := e.journal(ctx, ev)
-		return &Result{
-			Status:           StatusValidationFailed,
-			EventID:          journaled.EventID,
-			LocalAuditFailed: journaled.EventID == "",
-			ActionID:         req.ActionID,
-			Reason:           "reason required",
-		}, nil
+		return e.refuse(ctx, ev, StatusValidationFailed, req.ActionID, "reason required"), nil
 	}
 
 	// Admission check — defense in depth. The control plane already
@@ -309,14 +326,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		ev := e.baseEvent(req, audit.EventActionBlockedByAdmission, now)
 		ev.ActionID = req.ActionID
 		ev.Error = reason
-		journaled := e.journal(ctx, ev)
-		return &Result{
-			Status:           StatusBlockedByAdmission,
-			EventID:          journaled.EventID,
-			LocalAuditFailed: journaled.EventID == "",
-			ActionID:         req.ActionID,
-			Reason:           reason,
-		}, nil
+		return e.refuse(ctx, ev, StatusBlockedByAdmission, req.ActionID, reason), nil
 	}
 
 	reg := req.RegistrySnapshot
@@ -328,14 +338,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		ev := e.baseEvent(req, audit.EventValidationFailed, now)
 		ev.ActionID = req.ActionID
 		ev.Error = "unknown action"
-		journaled := e.journal(ctx, ev)
-		return &Result{
-			Status:           StatusUnknownAction,
-			EventID:          journaled.EventID,
-			LocalAuditFailed: journaled.EventID == "",
-			ActionID:         req.ActionID,
-			Reason:           "unknown action",
-		}, nil
+		return e.refuse(ctx, ev, StatusUnknownAction, req.ActionID, "unknown action"), nil
 	}
 
 	// Risk-ceiling admission — defense in depth on the advertised catalog
@@ -349,14 +352,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		ev.Metadata = metaFor(act)
 		ev.Request = &audit.RequestInfo{Reason: req.Reason}
 		ev.Error = reason
-		journaled := e.journal(ctx, ev)
-		return &Result{
-			Status:           StatusBlockedByAdmission,
-			EventID:          journaled.EventID,
-			LocalAuditFailed: journaled.EventID == "",
-			ActionID:         act.ID,
-			Reason:           reason,
-		}, nil
+		return e.refuse(ctx, ev, StatusBlockedByAdmission, act.ID, reason), nil
 	}
 
 	cleanArgs, err := validation.Validate(act.Args, req.Args, e.ProtectedPaths)
@@ -368,14 +364,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		ev.Metadata = metaFor(act)
 		ev.Request = &audit.RequestInfo{Reason: req.Reason}
 		ev.Error = detail
-		journaled := e.journal(ctx, ev)
-		return &Result{
-			Status:           StatusValidationFailed,
-			EventID:          journaled.EventID,
-			LocalAuditFailed: journaled.EventID == "",
-			ActionID:         act.ID,
-			Reason:           detail,
-		}, nil
+		return e.refuse(ctx, ev, StatusValidationFailed, act.ID, detail), nil
 	}
 
 	// Render argv/env templates against validated args.
