@@ -474,7 +474,12 @@ defmodule EmisarWeb.RunnerDetailLive do
           :if={not @loading?}
           class="grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-3 lg:items-start"
         >
-          <section class="lg:col-span-2 lg:col-start-1 lg:row-start-1">
+          <%!-- Bound inside the guard: the dead render has neither list yet. --%>
+          <% paired_placeholders? = actions_placeholder?(assigns) and runs_placeholder?(assigns) %>
+          <section class={[
+            "lg:col-span-2 lg:col-start-1 lg:row-start-1 lg:flex lg:flex-col",
+            paired_placeholders? && "lg:self-stretch"
+          ]}>
             <.section_header title="Advertised actions" count={@actions_metadata.count}>
               <:subtitle :if={@pack_access_restricted?}>
                 Your pack access limits this list to actions from packs you can use.
@@ -646,7 +651,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                       tone={:danger}
                       icon="state.warning"
                       title="Couldn't load this runner's actions"
-                      class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
+                      class={placeholder_box()}
                     >
                       This is a load error, not an empty catalog — the host is not the thing to
                       check. Refresh the page to try again.
@@ -656,14 +661,17 @@ defmodule EmisarWeb.RunnerDetailLive do
                   <% true -> %>
                     <.empty_catalog_state
                       online?={@runner.online?}
-                      class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
+                      class={placeholder_box()}
                     />
                 <% end %>
               </:empty>
             </LiveTable.live_table>
           </section>
 
-          <section class="lg:col-start-3 lg:row-start-1">
+          <section class={[
+            "lg:col-start-3 lg:row-start-1 lg:flex lg:flex-col",
+            paired_placeholders? && "lg:self-stretch"
+          ]}>
             <.section_header title="Recent runs">
               <:actions :if={@recent_runs != []}>
                 <.link
@@ -681,7 +689,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                   tone={:danger}
                   icon="state.warning"
                   title="Couldn't load recent runs"
-                  class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
+                  class={placeholder_box()}
                 >
                   This is a load error, not an empty history — runs may well exist. Refresh the
                   page to try again.
@@ -696,7 +704,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                 <.empty_state
                   icon="product.run"
                   title="No runs yet."
-                  class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
+                  class={placeholder_box()}
                 >
                   Nothing dispatched to this runner yet — runs land here as they happen.
                 </.empty_state>
@@ -806,6 +814,24 @@ defmodule EmisarWeb.RunnerDetailLive do
     do: labels |> Enum.sort_by(fn {k, _} -> k end)
 
   defp runner_labels(_), do: []
+
+  # The two side-by-side placeholders read as one pair, so they share a bottom
+  # edge: `lg:flex-1` fills whatever height their columns settle at. The floor
+  # still applies when only ONE column is empty and the grid's `items-start`
+  # leaves it content-sized beside a populated table.
+  defp placeholder_box,
+    do: "lg:flex lg:min-h-[16rem] lg:flex-1 lg:flex-col lg:items-center lg:justify-center"
+
+  # A column shows the boxed placeholder for an empty list AND for a failed read;
+  # only an over-filtered catalog degrades to a bare one-liner, which has no box
+  # to line up.
+  defp actions_placeholder?(assigns) do
+    assigns.actions_error? or
+      (assigns.actions == [] and
+         not LiveTable.has_active_filters?(assigns.filter_params, assigns.action_filters))
+  end
+
+  defp runs_placeholder?(assigns), do: assigns.recent_runs_error? or assigns.recent_runs == []
 
   attr :online?, :boolean, required: true
   attr :class, :string, default: nil
