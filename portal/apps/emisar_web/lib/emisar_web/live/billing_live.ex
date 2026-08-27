@@ -649,7 +649,10 @@ defmodule EmisarWeb.BillingLive do
                 <.feature_line enabled={@features.audit_export} label="Audit export (CSV + SIEM)" />
               </ul>
             </div>
-            <div>
+            <%!-- Third of three, so it is the one left alone on a row when the
+                 band is two-up — take the whole row there and let the prose use
+                 it, rather than sit half-width beside nothing. --%>
+            <div class="sm:col-span-2 md:col-span-1">
               <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Need help?
               </h3>

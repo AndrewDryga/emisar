@@ -2441,255 +2441,252 @@ defmodule EmisarWeb.TeamLive do
         <%!-- ===== Security side panel ===== MFA and SSO are the two account
              security concerns; the SSO card contains its enforcement and
              sign-in-link subsections in operator order. --%>
-        <%!-- Below xl this rail becomes a BAND under the roster: its cards turn
-             two-up so each keeps roughly the 22rem measure it was written for,
-             instead of one stretching wide enough to strand a provider name from
-             its chevron — or a capped column leaving half the row empty. Each
-             group's heading spans its own band. --%>
+        <%!-- One column at every width: a 22rem rail at xl, and below it the same
+             cards full width under the roster. SSO carries a provider list and
+             two settings sections, so pairing it with a short card only left one
+             of them stretched down its height. --%>
         <aside class="space-y-4">
           <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Security</h3>
 
-          <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-            <%!-- ── Multi-factor authentication ── --%>
-            <% unenrolled = @security_facts.mfa_missing %>
-            <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
-            <div class="rounded-xl border border-zinc-800/80 p-4">
-              <h4 class="text-sm font-medium text-zinc-100">Multi-factor authentication</h4>
-              <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-                When enforced, members without MFA are funneled to their profile to set it up before
-                they can use the rest of the app. You can't enable this until you've enrolled
-                yourself — prevents lock-outs.
-              </p>
-              <p class="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                <span class="flex items-center gap-1.5">
-                  <.status_dot :if={unenrolled > 0} tone={:amber} size={:sm} />
-                  <span class="text-zinc-400">
-                    MFA enrolled:
-                    <span id="mfa-enrolled-count" class="font-medium tabular-nums text-zinc-200">
-                      {@security_facts.mfa_enrolled}
-                    </span>
-                    of
-                    <span class="font-medium tabular-nums text-zinc-200">
-                      {@security_facts.mfa_total}
-                    </span>
+          <%!-- ── Multi-factor authentication ── --%>
+          <% unenrolled = @security_facts.mfa_missing %>
+          <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
+          <div class="rounded-xl border border-zinc-800/80 p-4">
+            <h4 class="text-sm font-medium text-zinc-100">Multi-factor authentication</h4>
+            <p class="mt-1 text-xs leading-relaxed text-zinc-400">
+              When enforced, members without MFA are funneled to their profile to set it up before
+              they can use the rest of the app. You can't enable this until you've enrolled
+              yourself — prevents lock-outs.
+            </p>
+            <p class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <span class="flex items-center gap-1.5">
+                <.status_dot :if={unenrolled > 0} tone={:amber} size={:sm} />
+                <span class="text-zinc-400">
+                  MFA enrolled:
+                  <span id="mfa-enrolled-count" class="font-medium tabular-nums text-zinc-200">
+                    {@security_facts.mfa_enrolled}
+                  </span>
+                  of
+                  <span class="font-medium tabular-nums text-zinc-200">
+                    {@security_facts.mfa_total}
                   </span>
                 </span>
-              </p>
-              <%!-- No "Enforced" chip on the facts line above: the button's own verb
+              </span>
+            </p>
+            <%!-- No "Enforced" chip on the facts line above: the button's own verb
                  says it for a member who can change it, and the locked value says it
                  for one who can't — a chip as well would state it twice. --%>
-              <.gated_setting
-                id="require-mfa"
-                can_change?={Accounts.subject_can_manage_account_security?(@current_subject)}
-                value={mfa_enforcement_value_label(@security_facts.mfa_enforcement)}
-                who_can_change="Only owners and admins can change this."
-                class="mt-4"
-              >
-                <%= if @security_facts.mfa_enforcement == :actor_not_enrolled do %>
-                  <.tooltip
-                    text="Enable MFA on your own profile first — otherwise you'd lock yourself out."
-                    placement={:bottom}
-                    class="shrink-0"
-                  >
-                    <.mfa_confirm_button
-                      require_mfa={false}
-                      total={@security_facts.mfa_total}
-                      unenrolled={unenrolled}
-                      disabled={true}
-                    />
-                  </.tooltip>
-                <% else %>
+            <.gated_setting
+              id="require-mfa"
+              can_change?={Accounts.subject_can_manage_account_security?(@current_subject)}
+              value={mfa_enforcement_value_label(@security_facts.mfa_enforcement)}
+              who_can_change="Only owners and admins can change this."
+              class="mt-4"
+            >
+              <%= if @security_facts.mfa_enforcement == :actor_not_enrolled do %>
+                <.tooltip
+                  text="Enable MFA on your own profile first — otherwise you'd lock yourself out."
+                  placement={:bottom}
+                  class="shrink-0"
+                >
                   <.mfa_confirm_button
-                    require_mfa={@security_facts.mfa_enforcement == :enforced}
+                    require_mfa={false}
                     total={@security_facts.mfa_total}
                     unenrolled={unenrolled}
-                    disabled={false}
+                    disabled={true}
                   />
-                <% end %>
-              </.gated_setting>
-            </div>
+                </.tooltip>
+              <% else %>
+                <.mfa_confirm_button
+                  require_mfa={@security_facts.mfa_enforcement == :enforced}
+                  total={@security_facts.mfa_total}
+                  unenrolled={unenrolled}
+                  disabled={false}
+                />
+              <% end %>
+            </.gated_setting>
+          </div>
 
-            <%!-- ── Single sign-on connections ── --%>
-            <%!-- The id is a documented deep-link target: /settings/sso lands here
+          <%!-- ── Single sign-on connections ── --%>
+          <%!-- The id is a documented deep-link target: /settings/sso lands here
                via its anchored redirect, and /docs/sso points operators at it. --%>
-            <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
-            <div id="single-sign-on" class="rounded-xl border border-zinc-800/80 p-4">
-              <h4 class="text-sm font-medium text-zinc-100">Single sign-on</h4>
-              <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-                Connect your organization's identity provider so members sign in through it. New
-                users are provisioned on first sign-in; you choose the role they land with.
-              </p>
-              <%!-- The whole list fits: a connection is unique per provider kind
+          <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — a self-contained security control, boxed per the screenshot --%>
+          <div id="single-sign-on" class="rounded-xl border border-zinc-800/80 p-4">
+            <h4 class="text-sm font-medium text-zinc-100">Single sign-on</h4>
+            <p class="mt-1 text-xs leading-relaxed text-zinc-400">
+              Connect your organization's identity provider so members sign in through it. New
+              users are provisioned on first sign-in; you choose the role they land with.
+            </p>
+            <%!-- The whole list fits: a connection is unique per provider kind
                  (one Okta, one Google, …), so there are at most a handful. --%>
-              <ul :if={@provider_facts != []} class="mt-3 space-y-0.5">
-                <li :for={provider <- @provider_facts}>
-                  <.link
-                    id={"sso-provider-#{provider.id}"}
-                    navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
-                    class="group -mx-2 flex items-center gap-2.5 rounded-md px-2 py-2 transition-colors hover:bg-white/[0.04]"
-                  >
-                    <div class="min-w-0 flex-1">
-                      <span class="flex items-center gap-2 text-sm leading-tight text-zinc-200">
-                        <span class="truncate">{provider.name}</span>
-                        <span :if={not provider.enabled?} class="shrink-0 text-[10px] text-zinc-400">
-                          Disabled
-                        </span>
+            <ul :if={@provider_facts != []} class="mt-3 space-y-0.5">
+              <li :for={provider <- @provider_facts}>
+                <.link
+                  id={"sso-provider-#{provider.id}"}
+                  navigate={~p"/app/#{@current_account}/settings/sso/#{provider.id}"}
+                  class="group -mx-2 flex items-center gap-2.5 rounded-md px-2 py-2 transition-colors hover:bg-white/[0.04]"
+                >
+                  <div class="min-w-0 flex-1">
+                    <span class="flex items-center gap-2 text-sm leading-tight text-zinc-200">
+                      <span class="truncate">{provider.name}</span>
+                      <span :if={not provider.enabled?} class="shrink-0 text-[10px] text-zinc-400">
+                        Disabled
                       </span>
-                      <%!-- Directory-sync status, one quiet line pulled up snug under
+                    </span>
+                    <%!-- Directory-sync status, one quiet line pulled up snug under
                          the name: how much the sync has pulled in (users + distinct
                          groups) and how fresh it is. Only for a SCIM connection; JIT
                          provisions on sign-in and has nothing to show here. --%>
-                      <span
-                        :if={provider.directory_sync?}
-                        class="mt-0.5 block text-[11px] leading-tight text-zinc-400"
-                      >
-                        <%!-- Zeroes from a failed stats read would report a live sync
+                    <span
+                      :if={provider.directory_sync?}
+                      class="mt-0.5 block text-[11px] leading-tight text-zinc-400"
+                    >
+                      <%!-- Zeroes from a failed stats read would report a live sync
                            as pulling nothing in. --%>
-                        <span :if={@sync_stats_error?}>Sync counts unavailable</span>
-                        <% stats = Map.get(@sync_stats, provider.id, %{users: 0, groups: 0}) %>
-                        <span :if={not @sync_stats_error?}>
-                          {sync_count(stats.users, "user")} · {sync_count(stats.groups, "group")}
-                        </span>
-                        <span :if={provider.last_synced_at} class="text-brand-300/90">
-                          · synced
-                          <.local_time
-                            id={"provider-synced-#{provider.id}"}
-                            value={provider.last_synced_at}
-                            mode={:relative}
-                          />
-                        </span>
-                        <span :if={is_nil(provider.last_synced_at)} class="text-amber-300/90">
-                          · never synced
-                        </span>
+                      <span :if={@sync_stats_error?}>Sync counts unavailable</span>
+                      <% stats = Map.get(@sync_stats, provider.id, %{users: 0, groups: 0}) %>
+                      <span :if={not @sync_stats_error?}>
+                        {sync_count(stats.users, "user")} · {sync_count(stats.groups, "group")}
                       </span>
-                    </div>
-                    <.icon
-                      name="breadcrumb.separator"
-                      class="h-3.5 w-3.5 shrink-0 text-zinc-500 group-hover:text-zinc-400"
-                    />
-                  </.link>
-                </li>
-              </ul>
-              <%!-- "Not configured" is a claim about how this account signs in, so
+                      <span :if={provider.last_synced_at} class="text-brand-300/90">
+                        · synced
+                        <.local_time
+                          id={"provider-synced-#{provider.id}"}
+                          value={provider.last_synced_at}
+                          mode={:relative}
+                        />
+                      </span>
+                      <span :if={is_nil(provider.last_synced_at)} class="text-amber-300/90">
+                        · never synced
+                      </span>
+                    </span>
+                  </div>
+                  <.icon
+                    name="breadcrumb.separator"
+                    class="h-3.5 w-3.5 shrink-0 text-zinc-500 group-hover:text-zinc-400"
+                  />
+                </.link>
+              </li>
+            </ul>
+            <%!-- "Not configured" is a claim about how this account signs in, so
                  it is never made from a read that failed. --%>
-              <.empty_state
-                :if={@sso_load_error?}
-                variant={:hint}
-                tone={:danger}
-                icon="state.warning"
-                title="Couldn't load single sign-on"
-                class="mt-3"
-              >
-                This is a load error, not a sign-in posture — connections may well be configured
-                and enforced. Refresh the page to try again.
-              </.empty_state>
-              <%!-- With no list to show, the card still has to say where SSO
+            <.empty_state
+              :if={@sso_load_error?}
+              variant={:hint}
+              tone={:danger}
+              icon="state.warning"
+              title="Couldn't load single sign-on"
+              class="mt-3"
+            >
+              This is a load error, not a sign-in posture — connections may well be configured
+              and enforced. Refresh the page to try again.
+            </.empty_state>
+            <%!-- With no list to show, the card still has to say where SSO
                  STANDS — through the same shape as every other setting (§7.59).
                  An SSO admin only lands here when nothing is connected, so
                  their arm keeps the sign-in consequence; a member who can't
                  manage connections gets that state as the locked value, not a
                  sentence about who outranks them. --%>
+            <.gated_setting
+              :if={not @sso_load_error? and @provider_facts == []}
+              id="sso-connections"
+              can_change?={SSO.subject_can_manage_sso?(@current_subject)}
+              value={sso_connections_value_label(@enabled_sso_provider_count)}
+              who_can_change="Only owners and admins can change this."
+              class="mt-3"
+            >
+              <p class="text-xs text-zinc-400">
+                Not configured — members sign in with a magic link.
+              </p>
+            </.gated_setting>
+            <div class="mt-4">
+              <%= cond do %>
+                <% SSO.subject_can_configure_sso?(@current_subject) -> %>
+                  <.button
+                    navigate={~p"/app/#{@current_account}/settings/sso/new"}
+                    variant={:secondary}
+                    size={:sm}
+                    icon="action.add"
+                  >
+                    Add provider
+                  </.button>
+                <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
+                  <span class="text-[11px] text-zinc-400">
+                    Available on the Team and Enterprise plans
+                  </span>
+                <% true -> %>
+              <% end %>
+            </div>
+            <%!-- Enforcement qualifies the connections above, so it stays in
+                 their card. Match the quiet sign-in-link subsection grammar;
+                 keep the lockout consequence and confirm action intact. --%>
+            <div
+              data-role="require-sso-section"
+              class="mt-4 border-t border-zinc-800/70 pt-3"
+            >
+              <p class="text-[11px] font-medium text-zinc-300">Require single sign-on</p>
+              <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+                Members sign in through this account's identity provider. Magic-link sign-ins are
+                redirected to SSO. Needs an enabled connection.
+              </p>
+              <%!-- The "Required" tag that rode the title line is gone: the button's
+                   verb states it for a member who can change it, the locked value for
+                   one who can't, and neither said it when SSO was NOT required. --%>
               <.gated_setting
-                :if={not @sso_load_error? and @provider_facts == []}
-                id="sso-connections"
-                can_change?={SSO.subject_can_manage_sso?(@current_subject)}
-                value={sso_connections_value_label(@enabled_sso_provider_count)}
+                id="require-sso"
+                can_change?={Accounts.subject_can_manage_account_security?(@current_subject)}
+                value={sso_required_value_label(@security_facts.sso_required?)}
                 who_can_change="Only owners and admins can change this."
                 class="mt-3"
               >
-                <p class="text-xs text-zinc-400">
-                  Not configured — members sign in with a magic link.
-                </p>
-              </.gated_setting>
-              <div class="mt-4">
                 <%= cond do %>
-                  <% SSO.subject_can_configure_sso?(@current_subject) -> %>
-                    <.button
-                      navigate={~p"/app/#{@current_account}/settings/sso/new"}
+                  <% @security_facts.sso_required? -> %>
+                    <.confirm_button
+                      id="require-sso"
                       variant={:secondary}
+                      tone={:neutral}
                       size={:sm}
-                      icon="action.add"
+                      title="Stop requiring single sign-on?"
+                      confirm_label="Stop requiring"
+                      on_confirm={JS.push("toggle_require_sso")}
                     >
-                      Add provider
-                    </.button>
-                  <% Accounts.subject_can_manage_account_security?(@current_subject) -> %>
-                    <span class="text-[11px] text-zinc-400">
-                      Available on the Team and Enterprise plans
-                    </span>
+                      <:body>Members will be able to sign in with a magic link again.</:body>
+                      Stop requiring SSO
+                    </.confirm_button>
+                  <% @require_sso_available? -> %>
+                    <.confirm_button
+                      id="require-sso"
+                      variant={:secondary}
+                      tone={:neutral}
+                      size={:sm}
+                      title="Require single sign-on for everyone?"
+                      confirm_label="Require SSO"
+                      on_confirm={JS.push("toggle_require_sso")}
+                    >
+                      <:body>
+                        Members who signed in another way are stopped the next time they navigate and
+                        have to sign in again through your provider — if it's misconfigured, they're
+                        locked out. Confirm SSO works first.
+                      </:body>
+                      Require SSO
+                    </.confirm_button>
                   <% true -> %>
+                    <span class="text-[11px] text-zinc-400">Add an enabled connection first</span>
                 <% end %>
-              </div>
-              <%!-- Enforcement qualifies the connections above, so it stays in
-                 their card. Match the quiet sign-in-link subsection grammar;
-                 keep the lockout consequence and confirm action intact. --%>
-              <div
-                data-role="require-sso-section"
-                class="mt-4 border-t border-zinc-800/70 pt-3"
-              >
-                <p class="text-[11px] font-medium text-zinc-300">Require single sign-on</p>
-                <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
-                  Members sign in through this account's identity provider. Magic-link sign-ins are
-                  redirected to SSO. Needs an enabled connection.
-                </p>
-                <%!-- The "Required" tag that rode the title line is gone: the button's
-                   verb states it for a member who can change it, the locked value for
-                   one who can't, and neither said it when SSO was NOT required. --%>
-                <.gated_setting
-                  id="require-sso"
-                  can_change?={Accounts.subject_can_manage_account_security?(@current_subject)}
-                  value={sso_required_value_label(@security_facts.sso_required?)}
-                  who_can_change="Only owners and admins can change this."
-                  class="mt-3"
-                >
-                  <%= cond do %>
-                    <% @security_facts.sso_required? -> %>
-                      <.confirm_button
-                        id="require-sso"
-                        variant={:secondary}
-                        tone={:neutral}
-                        size={:sm}
-                        title="Stop requiring single sign-on?"
-                        confirm_label="Stop requiring"
-                        on_confirm={JS.push("toggle_require_sso")}
-                      >
-                        <:body>Members will be able to sign in with a magic link again.</:body>
-                        Stop requiring SSO
-                      </.confirm_button>
-                    <% @require_sso_available? -> %>
-                      <.confirm_button
-                        id="require-sso"
-                        variant={:secondary}
-                        tone={:neutral}
-                        size={:sm}
-                        title="Require single sign-on for everyone?"
-                        confirm_label="Require SSO"
-                        on_confirm={JS.push("toggle_require_sso")}
-                      >
-                        <:body>
-                          Members who signed in another way are stopped the next time they navigate and
-                          have to sign in again through your provider — if it's misconfigured, they're
-                          locked out. Confirm SSO works first.
-                        </:body>
-                        Require SSO
-                      </.confirm_button>
-                    <% true -> %>
-                      <span class="text-[11px] text-zinc-400">Add an enabled connection first</span>
-                  <% end %>
-                </.gated_setting>
-              </div>
-              <%!-- The branded sign-in link to hand to members — only once there's a
+              </.gated_setting>
+            </div>
+            <%!-- The branded sign-in link to hand to members — only once there's a
                  connection to sign in through. --%>
-              <div
-                :if={@provider_facts != []}
-                data-role="team-sign-in-section"
-                class="mt-4 border-t border-zinc-800/70 pt-3"
-              >
-                <p class="text-[11px] font-medium text-zinc-300">Team sign-in link</p>
-                <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
-                  Share this — it opens this team's sign-in page with your SSO connections.
-                </p>
-                <.code_line id="team-sso-sign-in-link" value={@sign_in_url} class="mt-2" />
-              </div>
+            <div
+              :if={@provider_facts != []}
+              data-role="team-sign-in-section"
+              class="mt-4 border-t border-zinc-800/70 pt-3"
+            >
+              <p class="text-[11px] font-medium text-zinc-300">Team sign-in link</p>
+              <p class="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+                Share this — it opens this team's sign-in page with your SSO connections.
+              </p>
+              <.code_line id="team-sso-sign-in-link" value={@sign_in_url} class="mt-2" />
             </div>
           </div>
 
