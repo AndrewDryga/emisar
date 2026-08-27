@@ -1223,51 +1223,6 @@ defmodule EmisarWeb.CoreComponents do
   defp checkbox_tone(:neutral), do: "text-zinc-500 focus:ring-zinc-500/40"
 
   @doc """
-  Flat multi-pick as a visible checkbox list in a bordered scroll box —
-  the replacement for a native `<select multiple>` (OS-white selection
-  highlight, an unteachable ⌘-click contract, hostile on touch). Same
-  form semantics: checked values POST under `name`. Composes the shared
-  `<.checkbox>` row; `RunnerScope.runner_scope_select` is this shape's
-  nested group/runner sibling.
-
-      <.checkbox_list name="selector_values[]" options={@options} />
-  """
-  attr :id, :any, default: nil
-  attr :name, :any, required: true, doc: ~s(checkbox field name — use the "field[]" form)
-
-  attr :options, :list,
-    required: true,
-    doc: "option maps: %{value:, label:, disabled:, selected:}"
-
-  attr :class, :any, default: nil
-
-  def checkbox_list(assigns) do
-    ~H"""
-    <div
-      id={@id}
-      class={[
-        "max-h-44 divide-y divide-zinc-800/70 overflow-y-auto overscroll-contain rounded-lg bg-zinc-900 shadow-xl shadow-black/60 ring-1 ring-white/10",
-        @class
-      ]}
-    >
-      <.checkbox
-        :for={opt <- @options}
-        name={@name}
-        value={opt.value}
-        checked={opt.selected}
-        disabled={opt.disabled}
-        class={"flex items-center gap-2.5 px-3 py-2 text-xs #{checkbox_row_state(opt.disabled)}"}
-      >
-        <span class="min-w-0 flex-1 truncate text-zinc-200">{opt.label}</span>
-      </.checkbox>
-    </div>
-    """
-  end
-
-  defp checkbox_row_state(true), do: "cursor-not-allowed opacity-50"
-  defp checkbox_row_state(false), do: "cursor-pointer hover:bg-zinc-900/60"
-
-  @doc """
   Dashed add-row — the composer-standard affordance at the END of a
   repeating list ("+ Add step"), so the control stays where the new row appears.
 
@@ -3411,59 +3366,6 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
-  A card whose body collapses behind a clickable header. Built on `<details>`,
-  so it's keyboard-accessible and toggles with no JS; the `CollapsibleSection`
-  hook then persists the open/closed choice per `id` in `localStorage`, so it
-  sticks across navigations and reloads. Collapsed by default — pass
-  `open={true}` to default-expand. The `:summary` slot renders on the right of
-  the header and stays visible when collapsed — use it for an at-a-glance
-  current value (a `<.chip>`), so a collapsed section still tells you its state.
-
-      <.collapsible_section id="approvals-grant-cap" title="Maximum grant lifetime">
-        <:summary><.chip>No cap</.chip></:summary>
-        … controls …
-      </.collapsible_section>
-  """
-  attr :id, :string, required: true
-  attr :title, :string, required: true
-  attr :open, :boolean, default: false
-  attr :class, :string, default: nil
-  slot :summary
-  slot :inner_block, required: true
-
-  def collapsible_section(assigns) do
-    ~H"""
-    <details
-      id={@id}
-      phx-hook="CollapsibleSection"
-      data-collapse-key={@id}
-      open={@open}
-      class={["group/sect border-t border-zinc-800/70", @class]}
-    >
-      <%!-- CONTENT ON CANVAS: a disclosure LINE on a hairline, not a boxed
-           card (the audit Filters-line grammar). The whole row is the toggle;
-           the chevron rotates for state; the summary slot rides just left of
-           the chevron. --%>
-      <summary class="flex cursor-pointer list-none items-center gap-3 py-3.5 transition-colors [&::-webkit-details-marker]:hidden">
-        <.icon
-          name="action.disclose"
-          class="h-3 w-3 shrink-0 -rotate-90 text-zinc-500 transition duration-200 group-hover/sect:text-zinc-300 group-open/sect:rotate-0"
-        />
-        <h2 class="min-w-0 flex-1 truncate text-sm font-medium text-zinc-300 transition group-hover/sect:text-zinc-100">
-          {@title}
-        </h2>
-        <div class="flex shrink-0 items-center gap-2.5">
-          {render_slot(@summary)}
-        </div>
-      </summary>
-      <div class="pb-5 pl-5 pt-1">
-        {render_slot(@inner_block)}
-      </div>
-    </details>
-    """
-  end
-
-  @doc """
   The intro line that sits directly under an index page's title — one place so
   every list page opens the same way (a `<.console_shell>` `:title` carries
   the page name; this carries the explanation under it). The default slot is the
@@ -3775,7 +3677,6 @@ defmodule EmisarWeb.CoreComponents do
   `chips` slot renders inline pills next to the title.
   """
   attr :icon, :string, default: nil
-  attr :icon_tone, :atom, default: :neutral, values: [:neutral, :brand, :amber, :rose]
   attr :id, :string, default: nil
   attr :class, :string, default: nil
   # Island rows keep the px-5 gutter; a CONTENT-ON-CANVAS list passes its own
@@ -3805,7 +3706,7 @@ defmodule EmisarWeb.CoreComponents do
         <div :if={@leading != []} class="shrink-0">{render_slot(@leading)}</div>
         <span
           :if={@leading == [] && @icon}
-          class={["grid h-9 w-9 shrink-0 place-items-center rounded-lg", row_icon_class(@icon_tone)]}
+          class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-zinc-900 text-zinc-400"
         >
           <.icon name={@icon} class="h-4 w-4" />
         </span>
@@ -3841,11 +3742,6 @@ defmodule EmisarWeb.CoreComponents do
     </li>
     """
   end
-
-  defp row_icon_class(:brand), do: "bg-brand-500/15 text-brand-300"
-  defp row_icon_class(:amber), do: "bg-amber-500/15 text-amber-300"
-  defp row_icon_class(:rose), do: "bg-rose-500/15 text-rose-300"
-  defp row_icon_class(:neutral), do: "bg-zinc-900 text-zinc-400"
 
   @doc """
   Small inline chip — the rounded label that sits next to a row title

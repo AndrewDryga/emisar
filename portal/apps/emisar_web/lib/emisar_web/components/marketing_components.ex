@@ -27,33 +27,13 @@ defmodule EmisarWeb.MarketingComponents do
   just the icon. Both SVGs bake the dark-theme white + emerald palette,
   so they render correctly on any zinc-950 background without tinting.
   """
-  attr :size, :atom, default: :md, values: [:sm, :md, :lg]
-  attr :wordmark, :boolean, default: true
   attr :class, :string, default: nil
 
   def brand(assigns) do
     ~H"""
-    <img
-      src={
-        if @wordmark, do: ~p"/images/brand/emisar-logo.svg", else: ~p"/images/brand/emisar-icon.svg"
-      }
-      alt="emisar"
-      class={[brand_mark_class(@size, @wordmark), @class]}
-    />
+    <img src={~p"/images/brand/emisar-logo.svg"} alt="emisar" class={["h-9 w-auto", @class]} />
     """
   end
-
-  defp brand_mark_class(:sm, true), do: "h-7 w-auto"
-
-  defp brand_mark_class(:md, true), do: "h-9 w-auto"
-
-  defp brand_mark_class(:lg, true), do: "h-11 w-auto"
-
-  defp brand_mark_class(:sm, false), do: "h-7 w-7"
-
-  defp brand_mark_class(:md, false), do: "h-9 w-9"
-
-  defp brand_mark_class(:lg, false), do: "h-11 w-11"
 
   @doc """
   The trailing "→" of a forward CTA (link or button), sliding right when its
@@ -139,7 +119,7 @@ defmodule EmisarWeb.MarketingComponents do
     ]}>
       <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-8">
         <.link href={~p"/"}>
-          <.brand size={:md} />
+          <.brand />
         </.link>
 
         <%!-- Desktop nav: visible md+. Five items — use cases (proof),
@@ -211,12 +191,12 @@ defmodule EmisarWeb.MarketingComponents do
     >
       <div class="flex h-full flex-col">
         <%!-- Top bar — mirrors the page nav (same border-b + bg-zinc-950/80 backdrop-blur,
-             same px-6 py-5 + <.brand size={:md}/>), so the menu reads as the same chrome and
+             same px-6 py-5 + <.brand/>), so the menu reads as the same chrome and
              the checkered body below it lines up with the hero's grid (both sit below an
              equal-height nav). --%>
         <div class="flex shrink-0 items-center justify-between border-b border-zinc-900/80 bg-zinc-950/80 px-6 py-5 backdrop-blur">
           <.link href={~p"/"}>
-            <.brand size={:md} />
+            <.brand />
           </.link>
           <button
             type="button"
@@ -740,7 +720,7 @@ defmodule EmisarWeb.MarketingComponents do
         <div class="grid grid-cols-1 gap-12 lg:grid-cols-4">
           <div>
             <.link href={~p"/"}>
-              <.brand size={:md} />
+              <.brand />
             </.link>
             <p class="mt-4 max-w-xs text-sm text-zinc-400">
               The best way to give your AI agents access to production.

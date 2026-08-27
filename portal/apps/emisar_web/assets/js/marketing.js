@@ -38,7 +38,6 @@ import {initPricingCycle} from "./pricing_cycle.js"
 import {initReveal} from "./reveal.js"
 import {initScrollFocusable} from "./scroll_focusable.js"
 import {initSubscribeGuard} from "./subscribe_guard.js"
-import {initTerminalCasts} from "./terminal_cast.js"
 import {initTooltips} from "./tooltip.js"
 
 setupCopyToClipboardDelegation()
@@ -64,5 +63,4 @@ initPricingCycle()
 initReveal()
 initScrollFocusable()
 initSubscribeGuard()
-initTerminalCasts()
 initTooltips()

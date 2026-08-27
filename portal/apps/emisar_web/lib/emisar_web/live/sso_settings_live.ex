@@ -114,12 +114,6 @@ defmodule EmisarWeb.SSOSettingsLive do
       # The fixed OIDC redirect URI the operator registers in their IdP — shown
       # in the per-provider setup guide so they paste the exact value.
       |> assign(:callback_url, "#{Emisar.PublicUrl.base()}/sign_in/sso/callback")
-      # The branded sign-in URL to hand to members — absolute, slug-based (the
-      # canonical UI form), so the admin can copy it straight into onboarding docs.
-      |> assign(
-        :sign_in_url,
-        Emisar.PublicUrl.base() <> ~p"/app/#{socket.assigns.current_account}/sign_in"
-      )
       # The freshly-minted SCIM token, shown ONCE: `%{provider_id, token}` or
       # nil. Never re-rendered from a stored value — write-only, like every
       # emisar secret.

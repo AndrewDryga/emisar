@@ -81,7 +81,7 @@ defmodule EmisarWeb.ErrorHTML do
       <body class="flex min-h-screen items-center justify-center bg-zinc-950 antialiased">
         <main class="mx-auto w-full max-w-md px-6 py-12 text-center">
           <a href="/" class="inline-block">
-            <.brand size={:md} />
+            <.brand />
           </a>
 
           <p class="mt-10 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">

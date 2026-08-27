@@ -28,8 +28,8 @@ defmodule EmisarWeb.RunbookDraft do
     }
   end
 
-  @doc "The definition an editor opens: the unpublished change, else the live release."
-  def editing_definition(runbook), do: runbook.draft_definition || runbook.definition
+  # The definition an editor opens: the unpublished change, else the live release.
+  defp editing_definition(runbook), do: runbook.draft_definition || runbook.definition
 
   @doc "The digest `Emisar.Runbooks.save_draft/4` compares this editor's next save against."
   def base_sha(runbook), do: runbook |> editing_definition() |> Runbooks.definition_digest()

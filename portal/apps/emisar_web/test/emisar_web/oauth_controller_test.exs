@@ -1158,6 +1158,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     # with the product's self-approval stance) and the code is issued.
     test "approve redirects back to the client with a code", %{
       conn: conn,
+      account: account,
       user: user,
       client: client,
       challenge: challenge
@@ -1174,6 +1175,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
           "resource" => @resource,
+          "account_id" => account.id,
           "decision" => "approve"
         })
 
@@ -1186,6 +1188,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     test "Cursor consent names and redirects to the exact native callback", %{
       conn: conn,
       user: user,
+      account: account,
       challenge: challenge
     } do
       redirect_uri = "cursor://anysphere.cursor-mcp/oauth/callback"
@@ -1217,6 +1220,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           ~p"/oauth/authorize",
           params
           |> Map.new(fn {key, value} -> {to_string(key), value} end)
+          |> Map.put("account_id", account.id)
           |> Map.put("decision", "approve")
         )
         |> redirected_to(302)
@@ -1239,6 +1243,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     test "approve and deny redirects both carry the RFC 9207 iss", %{
       conn: conn,
       user: user,
+      account: account,
       client: client,
       challenge: challenge
     } do
@@ -1256,7 +1261,10 @@ defmodule EmisarWeb.OAuthControllerTest do
       approve_query =
         conn
         |> log_in_user(user)
-        |> post(~p"/oauth/authorize", Map.put(params, "decision", "approve"))
+        |> post(
+          ~p"/oauth/authorize",
+          params |> Map.put("account_id", account.id) |> Map.put("decision", "approve")
+        )
         |> redirected_to(302)
         |> URI.parse()
         |> Map.fetch!(:query)
@@ -1352,6 +1360,62 @@ defmodule EmisarWeb.OAuthControllerTest do
       refute Repo.one(OAuth.AuthorizationCode)
     end
 
+    # The rendered consent form always posts an account_id; a submit without
+    # one is a stale or handcrafted form and must not silently mint into the
+    # session's current account.
+    test "approve without an account_id mints nothing", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      conn =
+        conn
+        |> log_in_user(user)
+        |> post(~p"/oauth/authorize", %{
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "scope" => "mcp offline_access",
+          "state" => "xyz",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => @resource,
+          "decision" => "approve"
+        })
+
+      assert html_response(conn, 400) =~ "available to your user"
+      refute Repo.one(Emisar.ApiKeys.ApiKey)
+      refute Repo.one(OAuth.AuthorizationCode)
+    end
+
+    test "approve with a blank account_id mints nothing", %{
+      conn: conn,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      conn =
+        conn
+        |> log_in_user(user)
+        |> post(~p"/oauth/authorize", %{
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "scope" => "mcp offline_access",
+          "state" => "xyz",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => @resource,
+          "account_id" => "",
+          "decision" => "approve"
+        })
+
+      assert html_response(conn, 400) =~ "available to your user"
+      refute Repo.one(Emisar.ApiKeys.ApiKey)
+      refute Repo.one(OAuth.AuthorizationCode)
+    end
+
     test "approve authorizes against the CHOSEN account's role", %{
       conn: conn,
       user: user,
@@ -1393,6 +1457,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
     test "approve rejects an unexpected protected resource without minting credentials", %{
       conn: conn,
+      account: account,
       user: user,
       client: client,
       challenge: challenge
@@ -1412,6 +1477,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
           "resource" => "https://other.example/mcp",
+          "account_id" => account.id,
           "decision" => "approve"
         })
 
@@ -1484,6 +1550,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     # never diverges from what the operator saw, and never blank.
     test "approve with an empty scope narrows to mcp only", %{
       conn: conn,
+      account: account,
       user: user,
       client: client,
       challenge: challenge
@@ -1500,6 +1567,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
           "resource" => @resource,
+          "account_id" => account.id,
           "decision" => "approve"
         })
 
@@ -1516,6 +1584,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     # the GET: an unknown client_id is an error page, never a redirect.
     test "an unknown client at POST shows an error page", %{
       conn: conn,
+      account: account,
       user: user,
       challenge: challenge
     } do
@@ -1531,6 +1600,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
           "resource" => @resource,
+          "account_id" => account.id,
           "decision" => "approve"
         })
 
@@ -1545,6 +1615,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     # plug raises InvalidCSRFTokenError (plug_status 403).
     test "the consent POST is CSRF-protected", %{
       conn: conn,
+      account: account,
       user: user,
       client: client,
       challenge: challenge
@@ -1562,6 +1633,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
           "resource" => @resource,
+          "account_id" => account.id,
           "decision" => "approve"
         })
       end)
@@ -1572,6 +1644,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     # the clear code.
     test "the code is delivered via redirect and stored hashed at rest", %{
       conn: conn,
+      account: account,
       user: user,
       client: client,
       challenge: challenge
@@ -1588,6 +1661,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
           "resource" => @resource,
+          "account_id" => account.id,
           "decision" => "approve"
         })
 
@@ -1610,6 +1684,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     # briefly exchangeable.
     test "the approved code carries a 60s TTL", %{
       conn: conn,
+      account: account,
       user: user,
       client: client,
       challenge: challenge
@@ -1628,6 +1703,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
           "resource" => @resource,
+          "account_id" => account.id,
           "decision" => "approve"
         })
 
@@ -1648,6 +1724,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     # origin (even on approve).
     test "an unregistered redirect_uri at POST shows an error page, not a redirect", %{
       conn: conn,
+      account: account,
       user: user,
       client: client,
       challenge: challenge
@@ -1663,6 +1740,7 @@ defmodule EmisarWeb.OAuthControllerTest do
           "state" => "xyz",
           "code_challenge" => challenge,
           "code_challenge_method" => "S256",
+          "account_id" => account.id,
           "decision" => "approve"
         })
 

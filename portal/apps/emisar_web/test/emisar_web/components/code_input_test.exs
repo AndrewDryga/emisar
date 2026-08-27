@@ -50,12 +50,6 @@ defmodule EmisarWeb.Components.CodeInputTest do
       refute html =~ "uppercase"
     end
 
-    test "length sets the box count" do
-      html = render_code_input(%{id: "c", name: "code", label: "Code", length: 4})
-
-      assert count(html, ~r/data-box/) == 4
-    end
-
     test "only the first box advertises one-time-code autocomplete" do
       html = render_code_input(%{id: "c", name: "code", label: "Code"})
 

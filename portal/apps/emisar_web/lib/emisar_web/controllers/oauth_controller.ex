@@ -181,13 +181,14 @@ defmodule EmisarWeb.OAuthController do
   # The consent form posts which account the operator chose to grant. The
   # backing key is minted under a membership THEY hold in that account —
   # resolved fresh against their non-suspended memberships, never trusted from
-  # the form. An absent param (a consent page rendered before the picker
-  # existed) falls back to the session's current account, the prior behavior.
+  # the form. The rendered form always posts an explicit account_id (select or
+  # hidden field), so a request without one is a stale or handcrafted form —
+  # it must not silently mint into the session's account.
   defp consent_subject(conn, %{"account_id" => account_id})
        when is_binary(account_id) and account_id != "",
        do: UserAuth.subject_for_account(conn, account_id)
 
-  defp consent_subject(conn, _params), do: {:ok, conn.assigns.current_subject}
+  defp consent_subject(_conn, _params), do: {:error, :not_found}
 
   # -- Token endpoint -------------------------------------------------
 

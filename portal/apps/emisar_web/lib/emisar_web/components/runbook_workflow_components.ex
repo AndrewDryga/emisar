@@ -128,19 +128,17 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
 
   attr :arguments, :map, required: true
   attr :class, :string, default: nil
-  attr :show_empty?, :boolean, default: false
 
   @doc "Renders visible frozen arguments as a compact decision-ready list."
   def argument_list(assigns) do
     assigns = assign(assigns, :rows, Enum.sort_by(assigns.arguments, &elem(&1, 0)))
 
     ~H"""
-    <div :if={@rows != [] or @show_empty?} class={@class}>
+    <div :if={@rows != []} class={@class}>
       <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
         Arguments
       </p>
-      <p :if={@rows == []} class="mt-1 text-xs text-zinc-500">None</p>
-      <dl :if={@rows != []} class="mt-1 divide-y divide-zinc-800/60">
+      <dl class="mt-1 divide-y divide-zinc-800/60">
         <div
           :for={{name, value} <- @rows}
           class="grid gap-1 py-1.5 text-xs sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3"

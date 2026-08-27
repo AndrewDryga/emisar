@@ -32,7 +32,6 @@ defmodule EmisarWeb.AuthComponents do
   attr :id, :string, required: true
   attr :name, :string, required: true, doc: "the hidden field the aggregate posts as"
   attr :label, :string, required: true
-  attr :length, :integer, default: 6
   attr :numeric, :boolean, default: false
   attr :error, :string, default: nil, doc: "a validation error, rendered inline below the boxes"
 
@@ -48,7 +47,7 @@ defmodule EmisarWeb.AuthComponents do
              still shrink (never grow) below the group's own 338px. --%>
         <div class="mt-2 flex gap-2 sm:gap-2.5">
           <input
-            :for={i <- 1..@length}
+            :for={i <- 1..6}
             id={"#{@id}-#{i}"}
             data-box
             type="text"
@@ -56,7 +55,7 @@ defmodule EmisarWeb.AuthComponents do
             autocapitalize={if @numeric, do: "off", else: "characters"}
             autocomplete={i == 1 && "one-time-code"}
             maxlength="1"
-            aria-label={"Character #{i} of #{@length}"}
+            aria-label={"Character #{i} of 6"}
             class={[
               "h-14 w-12 min-w-0 rounded-lg border border-zinc-700 bg-zinc-950 text-center",
               "text-xl font-semibold tracking-widest text-zinc-100 shadow-sm outline-none transition",
@@ -221,7 +220,7 @@ defmodule EmisarWeb.AuthComponents do
     <div class="grid min-h-screen grid-cols-1 lg:grid-cols-2">
       <div class="hidden bg-gradient-to-br from-brand-950 via-zinc-950 to-zinc-950 p-12 lg:flex lg:flex-col">
         <a href="/" class="text-zinc-100">
-          <.brand size={:md} />
+          <.brand />
         </a>
 
         <div class="flex flex-1 items-center">
@@ -252,13 +251,13 @@ defmodule EmisarWeb.AuthComponents do
              centering area is vertically symmetric and its optical center
              matches the form column's (which hides its logo at lg). --%>
         <div class="invisible" aria-hidden="true">
-          <.brand size={:md} />
+          <.brand />
         </div>
       </div>
 
       <div class="flex flex-col p-6 lg:p-12">
         <.link href={~p"/"} class="mb-10 inline-block lg:hidden">
-          <.brand size={:md} />
+          <.brand />
         </.link>
 
         <%!-- Mobile anchors to a consistent top (centering short content

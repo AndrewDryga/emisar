@@ -93,12 +93,6 @@ defmodule EmisarWeb.LiveTable do
     doc:
       "`:cards` only. `fn row -> group_label end`. When set, rows are scanned in order and a group-header `<li>` is inserted before the first row of each new label. The `:group_header` slot renders the divider; falls back to a plain text header"
 
-  attr :row_id, :any, default: nil, doc: "fn row -> dom id end"
-
-  attr :row_click, :any,
-    default: nil,
-    doc: "fn row -> JS command end — applied to <tr> in :table mode, <li> in :cards mode"
-
   attr :class, :string, default: nil
 
   slot :col, doc: "`:table` layout column. Required when `layout == :table`." do
@@ -258,12 +252,7 @@ defmodule EmisarWeb.LiveTable do
               </tr>
             </thead>
             <tbody id={"#{@id}-rows"} class="divide-y divide-zinc-800/70 text-zinc-200">
-              <tr
-                :for={row <- @rows}
-                id={@row_id && @row_id.(row)}
-                phx-click={@row_click && @row_click.(row)}
-                class={["hover:bg-white/[0.04]", @row_click && "cursor-pointer"]}
-              >
+              <tr :for={row <- @rows} class="hover:bg-white/[0.04]">
                 <td
                   :for={col <- @col}
                   class={["px-3 py-2 align-middle first:pl-0 last:pr-0", col[:class]]}
@@ -287,13 +276,7 @@ defmodule EmisarWeb.LiveTable do
         <ul :if={@responsive} id={"#{@id}-cards"} class="divide-y divide-zinc-800/70 sm:hidden">
           <li
             :for={row <- @rows}
-            id={@row_id && "#{@row_id.(row)}-card"}
-            phx-click={@row_click && @row_click.(row)}
-            class={[
-              "border-l-2 py-3 pl-3",
-              card_spine_class(@card_accent && @card_accent.(row)),
-              @row_click && "cursor-pointer hover:bg-white/[0.04]"
-            ]}
+            class={["border-l-2 py-3 pl-3", card_spine_class(@card_accent && @card_accent.(row))]}
           >
             {render_slot(@card, row)}
             <div :if={@action != []} class="flex justify-end gap-2 pt-2">
@@ -424,7 +407,6 @@ defmodule EmisarWeb.LiveTable do
 
   attr :filter, :any, required: true
   attr :value, :any, default: nil
-  attr :disabled, :boolean, default: false
 
   # Searchable combobox for a large {:list, _} filter (`%Filter{search: true}` —
   # the audit Type picker's ~90 grouped options). Server renders the full option
@@ -452,7 +434,6 @@ defmodule EmisarWeb.LiveTable do
         selected_label={combobox_selected_label(@groups, @selected)}
         groups={@combobox_groups}
         blank_label="All"
-        disabled={@disabled}
         active?={@active?}
         size={:sm}
         aria_label={@filter.title}
@@ -473,7 +454,6 @@ defmodule EmisarWeb.LiveTable do
       <span class="mb-1">{@filter.title}</span>
       <CoreComponents.select
         name={to_string(@filter.name)}
-        disabled={@disabled}
         size={:filter}
         active?={@active?}
         prompt="All"
@@ -499,7 +479,6 @@ defmodule EmisarWeb.LiveTable do
           name={@filter.name}
           value="true"
           checked={@value == "true"}
-          disabled={@disabled}
           class="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-brand-500 focus:ring-brand-500 disabled:cursor-not-allowed"
         />
         {@filter.title}
@@ -522,7 +501,6 @@ defmodule EmisarWeb.LiveTable do
         name={@filter.name}
         value={@value}
         phx-debounce="blur"
-        disabled={@disabled}
         class={[
           "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark] disabled:cursor-not-allowed",
           filter_control_class(@active?)
@@ -543,7 +521,6 @@ defmodule EmisarWeb.LiveTable do
         name={@filter.name}
         value={@value}
         phx-debounce="300"
-        disabled={@disabled}
         class={[
           "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 disabled:cursor-not-allowed",
           filter_control_class(@active?)
