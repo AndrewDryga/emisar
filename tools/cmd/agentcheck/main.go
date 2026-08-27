@@ -774,6 +774,51 @@ func (c *checker) checkCommandSurface() {
 	}
 }
 
+// installerEnvPattern matches the operator-input namespace of the shipped
+// installers. Those scripts keep their own working state unprefixed
+// (URL_EXPLICIT, PACKS_EXPLICIT, INSTALL_DIR_EXPLICIT), so inside them an
+// EMISAR_ name is always something an operator can set.
+var installerEnvPattern = regexp.MustCompile(`EMISAR_[A-Z0-9_]+`)
+
+// checkFrozenInstallerEnv asserts compatibility.md names every environment
+// variable the shipped installers read.
+//
+// The installers freeze at 1.0, and their environment freezes with them whether
+// or not anyone wrote it down — so a variable this inventory omits is a variable
+// nobody reviews before it becomes permanent. Six were missing when this check
+// was written, including EMISAR_ATTESTATION_WORKFLOW, which selects the workflow
+// identity Sigstore provenance is matched against.
+func (c *checker) checkFrozenInstallerEnv() {
+	spec := ".agent/kb/specs/compatibility.md"
+	inventory, err := os.ReadFile(c.path(spec))
+	if err != nil {
+		c.fail("reading %s: %v", spec, err)
+		return
+	}
+	for _, installer := range []string{"install.sh", "install-mcp.sh", "install-mcp.ps1"} {
+		script, err := os.ReadFile(c.path(installer))
+		if err != nil {
+			c.fail("reading %s: %v", installer, err)
+			continue
+		}
+		seen := map[string]bool{}
+		for _, name := range installerEnvPattern.FindAllString(string(script), -1) {
+			// Labels are a family, documented and matched by their <KEY> form;
+			// the bare prefix and the help text's ROLE example are the same var.
+			if strings.HasPrefix(name, "EMISAR_RUNNER_LABEL_") {
+				name = "EMISAR_RUNNER_LABEL_<KEY>"
+			}
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			if !bytes.Contains(inventory, []byte("`"+name+"`")) {
+				c.fail("%s reads %s, which %s does not name; document it or remove the read", installer, name, spec)
+			}
+		}
+	}
+}
+
 func (c *checker) skillMetadata(path string) map[string]any {
 	data, err := os.ReadFile(c.path(path))
 	if err != nil {
@@ -1037,6 +1082,7 @@ func (c *checker) run(requireCoop bool) int {
 	c.group("no project-global Stop hook or retired sweep sentinel", c.checkNoGlobalStopHook)
 	c.group("the commit-msg hook verifies a Coop-Task line parses as a trailer", c.checkCommitMessageHook)
 	c.group("every kb rule is indexed by its owning AGENTS.md", c.checkRulesAreIndexed)
+	c.group("the compatibility spec names every environment variable the installers read", c.checkFrozenInstallerEnv)
 	if len(c.failures) > 0 {
 		fmt.Fprintf(c.errOut, "\nAgent setup audit failed: %d issue(s)\n", len(c.failures))
 		return 1

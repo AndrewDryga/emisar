@@ -68,7 +68,7 @@ ASSUME_YES="${ASSUME_YES:-0}"
 # warning on a re-install compares against the config on disk, and must not fire
 # for a value this line invented — a self-hosted host re-running the installer
 # never asked to be pointed at emisar.dev.
-EMISAR_URL_EXPLICIT=0; [ -n "${EMISAR_URL:-}" ] && EMISAR_URL_EXPLICIT=1
+URL_EXPLICIT=0; [ -n "${EMISAR_URL:-}" ] && URL_EXPLICIT=1
 EMISAR_URL="${EMISAR_URL:-https://emisar.dev}"
 # Pack selection. EMISAR_PACKS being *present in the environment* — even
 # empty — means the operator is managing packs explicitly: install exactly
@@ -1197,7 +1197,7 @@ drop_config_skeleton() {
     # paths), telling the operator their URL was rejected and inviting them to
     # move a working config aside.
     configured_url=""
-    [ "${EMISAR_URL_EXPLICIT}" = "1" ] && configured_url="${EMISAR_URL}"
+    [ "${URL_EXPLICIT}" = "1" ] && configured_url="${EMISAR_URL}"
     case "${configured_url}" in
       https://*) configured_url="wss://${configured_url#https://}";;
       http://*)  configured_url="ws://${configured_url#http://}";;

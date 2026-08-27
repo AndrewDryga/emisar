@@ -550,9 +550,19 @@ redirects.
 environment-based, not protocol-negotiated. `install.sh` accepts runner tags
 in `runner-vX.Y.Z`, `vX.Y.Z`, or `X.Y.Z` form and flags including `--yes`,
 `--uninstall`, `--purge`, `--no-start`, `--no-service`,
-`--bin-dir`, `--etc-dir`, `--data-dir`, `--log-dir`, `--user`, and `--packs`. Its environment
-includes `VERSION`, the directory and service settings, `EMISAR_PACKS`,
-`EMISAR_URL`, and `EMISAR_ENROLLMENT_KEY`.
+`--bin-dir`, `--etc-dir`, `--data-dir`, `--log-dir`, `--user`, and `--packs`. Its
+environment is `VERSION`, `BIN_DIR`, `ETC_DIR`, `DATA_DIR`, `LOG_DIR`,
+`SERVICE_USER`, `SERVICE_GROUP`, `ASSUME_YES`, `NO_START`, `NO_SERVICE`,
+`EMISAR_PACKS`, `EMISAR_URL`, `EMISAR_ENROLLMENT_KEY`, `EMISAR_REPO`,
+`EMISAR_GITHUB_TOKEN`, `EMISAR_GROUP`, `EMISAR_RUNNER_ID`,
+`EMISAR_RUNNER_LABEL_<KEY>`, `EMISAR_ATTESTATION_WORKFLOW`, and
+`QUARANTINE_DISPATCH_LOG`. Every one is named rather than summarized, because a
+variable this inventory does not name is a variable nobody reviews before it
+freezes. `EMISAR_ATTESTATION_WORKFLOW` is the supply-chain-relevant one: it
+selects the workflow identity Sigstore provenance is matched against, and a fork
+or mirror must set it or fall back to the checksum alone.
+`QUARANTINE_DISPATCH_LOG` is advertised in the installer's own output, not its
+`--help`, and is frozen on the same footing.
 An unattended runner install requires `--yes` plus an explicit
 `--packs`/`EMISAR_PACKS` value; an explicitly empty value installs no new packs
 and preserves existing ones. A caller without a controlling terminal is refused
@@ -562,6 +572,7 @@ host-matched recommendations.
 `install-mcp.sh` accepts `--version`, `--install-dir`, `--uninstall`, and
 `--yes`. It accepts
 `VERSION`, `INSTALL_DIR`, `EMISAR_REPO`, `EMISAR_GITHUB_TOKEN`, `ASSUME_YES`,
+`EMISAR_ATTESTATION_WORKFLOW`,
 and `EMISAR_URL` (the portal the connection phase talks to and writes into
 configs; default `https://emisar.dev`). The bridge installer also requires the
 selected GitHub release to be marked immutable. The current release tags are
