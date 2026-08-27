@@ -1431,7 +1431,7 @@ defmodule EmisarWeb.DomainComponents do
         @class
       ]}
     ><span :if={is_binary(@command)}><span class="select-none text-zinc-500">$ </span>{@command}<span :if={@command_truncated?} class="text-zinc-500"> …</span>
-    </span><span :if={@output_truncated?} class="text-zinc-500">… earlier output omitted …
+    </span><span :if={@output_truncated?} class="text-zinc-400">… earlier output omitted …
     </span><span :for={row <- @rows} class={row.stream == "stderr" && "text-rose-300"}>{row.chunk}</span></pre>
     """
   end

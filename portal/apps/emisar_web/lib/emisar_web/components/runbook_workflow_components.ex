@@ -46,7 +46,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     </.empty_state>
     <p
       :if={not @load_error? and @visible_executions == []}
-      class="text-sm leading-6 text-zinc-500"
+      class="text-sm leading-6 text-zinc-400"
     >
       No runs yet.
     </p>
@@ -72,7 +72,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             </span>
             <.status_badge status={execution.status} class="shrink-0" />
           </div>
-          <span class="mt-1 block truncate text-[11px] text-zinc-500">
+          <span class="mt-1 block truncate text-[11px] text-zinc-400">
             <.local_time value={execution.inserted_at} mode={:relative} />
             <span :if={attribution}>· {attribution}</span>
           </span>
@@ -198,7 +198,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
                     in the editor: a later step binds to `<id>.<output>`, so it is
                     identity, not addressing. --%>
               <span :if={item["step_id"]} class="text-zinc-500">·</span>
-              <span :if={item["step_id"]} class="font-mono text-xs text-zinc-500">
+              <span :if={item["step_id"]} class="font-mono text-xs text-zinc-400">
                 {item["step_id"]}
               </span>
               <.risk_pill
@@ -211,7 +211,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
                   name says what it is, so an arrow would label nothing. --%>
             <p class="mt-1 text-xs text-zinc-300">
               {runner_name(item["runner_ref"])}
-              <span :if={item["target_group"]} class="text-zinc-500">
+              <span :if={item["target_group"]} class="text-zinc-400">
                 · selected from {item["target_group"]}
               </span>
             </p>
@@ -334,7 +334,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           <h3 class="truncate font-mono text-sm font-medium text-zinc-200">
             {stage_card_title(@stage, @stage_index)}
           </h3>
-          <p class="mt-1 text-xs text-zinc-500">
+          <p class="mt-1 text-xs text-zinc-400">
             Stage {@stage_index + 1} · {stage_mode_phrase(@stage)}
           </p>
         </div>
@@ -525,7 +525,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             <p class="truncate font-mono text-sm font-medium text-zinc-200">
               {step_card_title(@step, @step_index)}
             </p>
-            <p class="mt-1 text-xs text-zinc-500">Step {@step_index + 1}</p>
+            <p class="mt-1 text-xs text-zinc-400">Step {@step_index + 1}</p>
           </div>
         </div>
         <div class="flex items-center gap-1 sm:justify-end">
@@ -711,12 +711,12 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         <span :if={@step["action"] != ""} class="font-mono text-sm text-zinc-100">
           {@step["action"]}
         </span>
-        <span :if={@step["action"] == ""} class="text-sm text-zinc-500">No action chosen</span>
+        <span :if={@step["action"] == ""} class="text-sm text-zinc-400">No action chosen</span>
         <%!-- The step's own name rides with the action it runs — a later step
               binds to `<id>.<output>`, so it is identity, not addressing. The
               separator keeps two mono identifiers from reading as one. --%>
         <span :if={@step["id"] != ""} class="text-zinc-500">·</span>
-        <span :if={@step["id"] != ""} class="font-mono text-xs text-zinc-500">{@step["id"]}</span>
+        <span :if={@step["id"] != ""} class="font-mono text-xs text-zinc-400">{@step["id"]}</span>
         <.risk_pill
           :if={@risk}
           id={"runbook-stage-#{@stage_index}-step-#{@step_index}-risk"}
@@ -775,7 +775,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             an operator has to track back from. --%>
       <dl class="mt-3 grid grid-cols-[max-content,minmax(0,1fr)] gap-x-6 gap-y-1 text-xs">
         <.summary_group :if={@arguments != [] or @arguments_note} label="Arguments">
-          <p :if={@arguments == []} class="text-zinc-500">{@arguments_note}</p>
+          <p :if={@arguments == []} class="text-zinc-400">{@arguments_note}</p>
           <.summary_pairs rows={@arguments} />
         </.summary_group>
 
@@ -1422,11 +1422,11 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
     >
       <p class="text-xs font-semibold text-zinc-200">Arguments</p>
 
-      <p :if={@step["action"] == ""} class="mt-3 text-xs text-zinc-500">
+      <p :if={@step["action"] == ""} class="mt-3 text-xs text-zinc-400">
         Choose an action to configure its arguments.
       </p>
 
-      <p :if={@step["action"] != "" and @step["args"] == []} class="mt-3 text-xs text-zinc-500">
+      <p :if={@step["action"] != "" and @step["args"] == []} class="mt-3 text-xs text-zinc-400">
         This action has no arguments.
       </p>
 
@@ -1437,7 +1437,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         >
           <div>
             <h4 class="font-mono text-sm font-medium text-zinc-200">{argument["name"]}</h4>
-            <p class="mt-1 text-xs text-zinc-500">{argument_summary(argument)}</p>
+            <p class="mt-1 text-xs text-zinc-400">{argument_summary(argument)}</p>
           </div>
 
           <input
@@ -1598,7 +1598,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         </p>
       </div>
 
-      <p :if={@step["outputs"] == []} class="mt-3 text-xs text-zinc-500">
+      <p :if={@step["outputs"] == []} class="mt-3 text-xs text-zinc-400">
         No extracted outputs.
       </p>
 
@@ -1738,10 +1738,10 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         </p>
       </div>
 
-      <p :if={@step["outputs"] == []} class="mt-3 text-xs text-zinc-500">
+      <p :if={@step["outputs"] == []} class="mt-3 text-xs text-zinc-400">
         Add an extracted output before adding a success condition.
       </p>
-      <p :if={@step["outputs"] != [] and @step["success"] == []} class="mt-3 text-xs text-zinc-500">
+      <p :if={@step["outputs"] != [] and @step["success"] == []} class="mt-3 text-xs text-zinc-400">
         No extra success conditions. A successful action exit is enough.
       </p>
 
@@ -1930,7 +1930,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         }
       />
       <span>{@label}</span>
-      <span :if={@hint} class="ml-auto font-normal text-zinc-500">{@hint}</span>
+      <span :if={@hint} class="ml-auto font-normal text-zinc-400">{@hint}</span>
     </button>
     """
   end

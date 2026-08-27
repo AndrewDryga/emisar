@@ -965,7 +965,7 @@ defmodule EmisarWeb.DashboardLive do
       navigate={~p"/app/#{@current_account}/runners"}
     >
       <:value>
-        {@connected}<span class="text-2xl text-zinc-500"> / {@total} connected</span>
+        {@connected}<span class="text-2xl text-zinc-400"> / {@total} connected</span>
       </:value>
       <:status>{runners_status(@connected, @total)}</:status>
     </.pillar>
@@ -1025,7 +1025,7 @@ defmodule EmisarWeb.DashboardLive do
            grammar. Keep the display suffix to one word; the status line carries
            the exact recency. --%>
       <:value>
-        {@agents.active_today}<span class="text-2xl text-zinc-500"> / {@agents.total} active</span>
+        {@agents.active_today}<span class="text-2xl text-zinc-400"> / {@agents.total} active</span>
       </:value>
       <:status>
         <%= if @agents.last_call_at do %>
@@ -1102,7 +1102,7 @@ defmodule EmisarWeb.DashboardLive do
       tone={:neutral}
       navigate={~p"/app/#{@current_account}/settings/team/invite"}
     >
-      <:value>1<span class="text-2xl text-zinc-500"> member</span></:value>
+      <:value>1<span class="text-2xl text-zinc-400"> member</span></:value>
       <:action>Invite team members</:action>
     </.pillar>
     """
@@ -1120,7 +1120,7 @@ defmodule EmisarWeb.DashboardLive do
       tone={:neutral}
       navigate={~p"/app/#{@current_account}/settings/team"}
     >
-      <:value>{@team_security.mfa_total}<span class="text-2xl text-zinc-500"> members</span></:value>
+      <:value>{@team_security.mfa_total}<span class="text-2xl text-zinc-400"> members</span></:value>
       <:status>{team_managers_status(@team_security.team_managers)}</:status>
     </.pillar>
     """
@@ -1137,7 +1137,7 @@ defmodule EmisarWeb.DashboardLive do
       tone={:neutral}
       navigate={~p"/app/#{@current_account}/settings/team"}
     >
-      <:value>{@team_security.mfa_total}<span class="text-2xl text-zinc-500"> members</span></:value>
+      <:value>{@team_security.mfa_total}<span class="text-2xl text-zinc-400"> members</span></:value>
       <:action>Enable SSO</:action>
     </.pillar>
     """
@@ -1150,7 +1150,7 @@ defmodule EmisarWeb.DashboardLive do
       tone={:neutral}
       navigate={~p"/app/#{@current_account}/settings/team"}
     >
-      <:value>{@team_security.mfa_total}<span class="text-2xl text-zinc-500"> members</span></:value>
+      <:value>{@team_security.mfa_total}<span class="text-2xl text-zinc-400"> members</span></:value>
       <:action>Manage SSO providers</:action>
     </.pillar>
     """

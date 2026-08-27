@@ -728,7 +728,7 @@ defmodule EmisarWeb.CoreComponents do
     <li :for={group <- @groups} data-combobox-section>
       <span
         :if={group[:label]}
-        class="block px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+        class="block px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400"
       >
         {group.label}
       </span>

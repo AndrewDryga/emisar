@@ -601,7 +601,7 @@ defmodule EmisarWeb.RunnersLive do
               </div>
 
               <div class="max-w-md xl:mt-6 xl:max-w-none">
-                <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                   Housekeeping
                 </h3>
                 <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — self-contained control card, the team-security rail grammar --%>

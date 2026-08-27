@@ -621,7 +621,7 @@ defmodule EmisarWeb.PacksLive do
         ]}>
           {action.action_id}
         </span>
-        <span :if={action.title} class="truncate text-zinc-500">{action.title}</span>
+        <span :if={action.title} class="truncate text-zinc-400">{action.title}</span>
       </li>
     </ul>
     """
@@ -648,7 +648,7 @@ defmodule EmisarWeb.PacksLive do
 
     ~H"""
     <div class="mt-2 pl-8">
-      <p data-role="pack-version-facts" class="text-[11px] text-zinc-500">
+      <p data-role="pack-version-facts" class="text-[11px] text-zinc-400">
         first seen
         <.local_time
           id={"pack-version-first-#{@version.id}"}
@@ -659,12 +659,12 @@ defmodule EmisarWeb.PacksLive do
         <span class="text-zinc-700">·</span>
         <span class="break-all font-mono">{@version.hash || @version.pending_hash}</span>
       </p>
-      <p :if={is_nil(@inspected)} class="mt-2 text-[11px] text-zinc-500">Loading…</p>
+      <p :if={is_nil(@inspected)} class="mt-2 text-[11px] text-zinc-400">Loading…</p>
       <p :if={@inspected == :error} class="mt-2 text-[11px] text-rose-300">
         Couldn't load this version's actions — a read error, not an empty pack. Refresh before
         deciding on its trust.
       </p>
-      <p :if={@inspected == []} class="mt-2 text-[11px] text-zinc-500">
+      <p :if={@inspected == []} class="mt-2 text-[11px] text-zinc-400">
         No actions advertised for this version right now.
       </p>
       <p
@@ -811,7 +811,7 @@ defmodule EmisarWeb.PacksLive do
     </.event_block>
     <p
       :if={@fact.retired? and @fact.override}
-      class="mt-2 flex flex-wrap items-center gap-1.5 pl-8 text-[11px] text-zinc-500"
+      class="mt-2 flex flex-wrap items-center gap-1.5 pl-8 text-[11px] text-zinc-400"
     >
       <.icon name="trust.declared" class="h-3.5 w-3.5 text-zinc-500" />
       Retired by a newer release — overridden by {@fact.override.actor_label || "an admin"}
@@ -1023,7 +1023,7 @@ defmodule EmisarWeb.PacksLive do
           </li>
           <li
             :for={r <- @fact.action_changes.removed}
-            class="flex items-center gap-2 text-[11px] text-zinc-500"
+            class="flex items-center gap-2 text-[11px] text-zinc-400"
           >
             <span class="w-12 flex-none font-semibold uppercase tracking-wide">
               − removed
@@ -1325,7 +1325,7 @@ defmodule EmisarWeb.PacksLive do
               @pack_count == 0 and (@name_filter != "" or @risk_filter != "") and
                 not @load_error? and not @loading?
             }
-            class="mt-6 text-sm text-zinc-500"
+            class="mt-6 text-sm text-zinc-400"
           >
             {no_match_copy(@name_filter, @risk_filter)}
           </p>
@@ -1344,7 +1344,7 @@ defmodule EmisarWeb.PacksLive do
             <li :for={{dom_id, pack} <- @streams.packs} id={dom_id}>
               <header class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 border-b border-zinc-800/70 pb-2.5">
                 <h2 class="font-mono text-base font-semibold text-zinc-100">{pack.id}</h2>
-                <span class="text-[11px] text-zinc-500">{version_count_label(pack.versions)}</span>
+                <span class="text-[11px] text-zinc-400">{version_count_label(pack.versions)}</span>
                 <.registry_link pack_id={pack.id} />
                 <%!-- No pack-level status here: each version row carries its own
                      trust state, so a rolled-up "pending" on the header just
@@ -1418,7 +1418,7 @@ defmodule EmisarWeb.PacksLive do
                     <%!-- The hash said nothing at browse altitude — the full hash
                          lives in the contents expansion; last-seen trails like
                          timestamps everywhere else in the console. --%>
-                    <span class="text-[11px] text-zinc-500">
+                    <span class="text-[11px] text-zinc-400">
                       last seen
                       <.local_time
                         id={"pack-version-last-#{v.id}"}
@@ -1576,7 +1576,7 @@ defmodule EmisarWeb.PacksLive do
                        fix-admin-mistake path. --%>
                   <p
                     :if={@version_facts[v.id].trust_state == :rejected}
-                    class="mt-1.5 pl-8 text-xs text-zinc-500"
+                    class="mt-1.5 pl-8 text-xs text-zinc-400"
                   >
                     Rejected — dispatch refuses this version until you trust it again.
                   </p>
@@ -1655,7 +1655,7 @@ defmodule EmisarWeb.PacksLive do
           </.docs_rail>
 
           <div>
-            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
               Housekeeping
             </h3>
             <%!-- credo:disable-for-next-line Emisar.Checks.NoIslandContainers — self-contained control card, the team-security rail grammar --%>
@@ -1778,7 +1778,7 @@ defmodule EmisarWeb.PacksLive do
       href={@url}
       target="_blank"
       rel="noopener"
-      class="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
+      class="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-zinc-400 transition-colors hover:text-zinc-300"
       title="Published in emisar's public pack registry — opens in a new tab"
     >
       Registry <.icon name="action.external_link" class="h-3 w-3" />

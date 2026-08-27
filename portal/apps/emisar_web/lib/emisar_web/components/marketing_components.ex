@@ -329,7 +329,7 @@ defmodule EmisarWeb.MarketingComponents do
         </p>
         <div class="mt-3 overflow-hidden rounded-lg border border-zinc-900 bg-black/40">
           <div class="flex items-center justify-between gap-3 border-b border-zinc-900 bg-zinc-950/80 px-3.5 py-1.5">
-            <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+            <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-400">
               paste into your agent
             </span>
             <button
@@ -345,7 +345,7 @@ defmodule EmisarWeb.MarketingComponents do
             class="whitespace-pre-wrap p-3.5 font-mono text-xs leading-5 text-zinc-300"
           >{@prompt}</pre>
         </div>
-        <p class="mt-2.5 text-xs text-zinc-500">
+        <p class="mt-2.5 text-xs text-zinc-400">
           Works in Claude Code, Codex, or any agent that reads Markdown skills — <.external_link
             href={"https://github.com/andrewdryga/emisar/tree/main/skills/" <> @skill}
             class="font-medium text-brand-300/90 hover:text-brand-200"

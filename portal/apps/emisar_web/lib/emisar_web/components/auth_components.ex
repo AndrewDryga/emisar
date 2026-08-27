@@ -377,7 +377,7 @@ defmodule EmisarWeb.AuthComponents do
         <div class="w-full border-t border-zinc-800/70"></div>
       </div>
       <div class="relative flex justify-center">
-        <span class="bg-zinc-950 px-3 text-xs lowercase text-zinc-500">{@label}</span>
+        <span class="bg-zinc-950 px-3 text-xs lowercase text-zinc-400">{@label}</span>
       </div>
     </div>
     """
@@ -418,7 +418,7 @@ defmodule EmisarWeb.AuthComponents do
         <div class="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/60 shadow-xl">
           {render_slot(@inner_block)}
           <div :if={@footer != []} class="border-t border-zinc-800 px-6 py-3">
-            <p class="text-center text-xs text-zinc-500">{render_slot(@footer)}</p>
+            <p class="text-center text-xs text-zinc-400">{render_slot(@footer)}</p>
           </div>
         </div>
       </div>
@@ -437,7 +437,7 @@ defmodule EmisarWeb.AuthComponents do
   def consent_note(assigns) do
     ~H"""
     <div class={["rounded-lg border border-zinc-800 bg-black/40 px-4 py-3", @class]}>
-      <p class="text-xs leading-relaxed text-zinc-500">{render_slot(@inner_block)}</p>
+      <p class="text-xs leading-relaxed text-zinc-400">{render_slot(@inner_block)}</p>
     </div>
     """
   end

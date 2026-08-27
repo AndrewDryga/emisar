@@ -429,7 +429,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             <div class="space-y-3">
               <p :for={degraded <- @readiness.degradation.packs}>
                 <span class="font-mono text-zinc-200">{degraded["pack"]}</span>
-                <span class="text-zinc-500">— {degraded["reason"]}</span>
+                <span class="text-zinc-400">— {degraded["reason"]}</span>
               </p>
               <p>
                 Reinstall the pack on the host (<.inline_code surface={:quiet} size={:xs}>emisar pack install &lt;name&gt;</.inline_code>) or re-run the installer; the runner

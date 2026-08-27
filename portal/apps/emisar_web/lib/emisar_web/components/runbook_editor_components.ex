@@ -453,7 +453,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
           <span class="whitespace-pre">{diff_line(line)}</span>
         </div>
       </div>
-      <p :if={@diff.truncated?} class="mt-2 text-xs text-zinc-500">
+      <p :if={@diff.truncated?} class="mt-2 text-xs text-zinc-400">
         Diff truncated. Open the definition to read the rest.
       </p>
     </div>
@@ -563,7 +563,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
         </:subtitle>
       </.section_header>
 
-      <p :if={@draft["inputs"] == []} class="mb-3 text-xs leading-relaxed text-zinc-500">
+      <p :if={@draft["inputs"] == []} class="mb-3 text-xs leading-relaxed text-zinc-400">
         No run-time inputs. Add one for a value that should be supplied for each execution.
       </p>
 
@@ -578,7 +578,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
               <h3 class="truncate font-mono text-sm font-medium text-zinc-200">
                 {input_card_title(input, index)}
               </h3>
-              <p class="mt-1 text-xs text-zinc-500">
+              <p class="mt-1 text-xs text-zinc-400">
                 Input {index + 1} · {input_type_label(input["type"])}
               </p>
             </div>
@@ -1005,7 +1005,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
       <summary class="cursor-pointer text-xs font-medium text-zinc-300 hover:text-zinc-100">
         Canonical JSON
       </summary>
-      <p class="mt-2 text-xs leading-relaxed text-zinc-500">
+      <p class="mt-2 text-xs leading-relaxed text-zinc-400">
         The exact JSON definition saved and exposed to MCP.
       </p>
       <.code_panel

@@ -210,7 +210,7 @@ defmodule EmisarWeb.ActivateLive do
                 Go to Agents
               </.button>
             </div>
-            <p id="activate-close-note" class="mt-3 hidden text-center text-xs text-zinc-500">
+            <p id="activate-close-note" class="mt-3 hidden text-center text-xs text-zinc-400">
               Your browser blocked that — close the tab yourself.
             </p>
           </div>
@@ -239,7 +239,7 @@ defmodule EmisarWeb.ActivateLive do
                 {@grant.requester_ip || "an unknown address"}
               </span>
             </p>
-            <p class="mt-2 text-xs text-zinc-500">
+            <p class="mt-2 text-xs text-zinc-400">
               code
               <span class="font-mono text-[0.92em] text-zinc-400">
                 {@code |> String.trim() |> String.upcase()}
@@ -249,7 +249,7 @@ defmodule EmisarWeb.ActivateLive do
           </div>
 
           <div class="px-6 py-5">
-            <p class="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            <p class="text-xs font-medium uppercase tracking-wide text-zinc-400">
               Approving this will
             </p>
             <ul class="mt-3 space-y-3">

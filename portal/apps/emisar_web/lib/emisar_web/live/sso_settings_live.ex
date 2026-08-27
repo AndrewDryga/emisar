@@ -1760,7 +1760,7 @@ defmodule EmisarWeb.SSOSettingsLive do
             >
               <dl class="grid min-w-0 grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-4 xl:col-span-2">
                 <div>
-                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                     Status
                   </dt>
                   <dd class="mt-1 flex items-center gap-2 text-sm font-medium">
@@ -1771,13 +1771,13 @@ defmodule EmisarWeb.SSOSettingsLive do
                   </dd>
                 </div>
                 <div>
-                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                     Provider
                   </dt>
                   <dd class="mt-1 text-sm text-zinc-300">{kind_label(provider.kind)}</dd>
                 </div>
                 <div>
-                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                     New members
                   </dt>
                   <dd class="mt-1 text-sm text-zinc-300">
@@ -1785,7 +1785,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                   </dd>
                 </div>
                 <div>
-                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <dt class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                     Default role
                   </dt>
                   <dd class="mt-1 text-sm text-zinc-300">{role_label(provider.default_role)}</dd>

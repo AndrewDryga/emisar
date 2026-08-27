@@ -323,7 +323,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       # A solo account (just the owner) reports its honest member count and
       # nudges an invite — never the premature "Enable SSO"
       # SSO pitch, which waits for a team to exist.
-      assert html =~ "1<span class=\"text-2xl text-zinc-500\"> member</span>"
+      assert html =~ "1<span class=\"text-2xl text-zinc-400\"> member</span>"
 
       assert has_element?(
                lv,
@@ -407,7 +407,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
-      assert html =~ "2<span class=\"text-2xl text-zinc-500\"> members</span>"
+      assert html =~ "2<span class=\"text-2xl text-zinc-400\"> members</span>"
       assert html =~ "Enable SSO"
 
       assert has_element?(
@@ -485,7 +485,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       # The tile still reports where the team stands and still navigates to
       # Team; what it must not do is pitch a verb this role cannot perform.
-      assert html =~ "2<span class=\"text-2xl text-zinc-500\"> members</span>"
+      assert html =~ "2<span class=\"text-2xl text-zinc-400\"> members</span>"
       refute html =~ "Manage SSO providers"
       refute html =~ "Enable SSO"
 
@@ -516,7 +516,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, _lv, html} =
         build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}")
 
-      assert html =~ "4<span class=\"text-2xl text-zinc-500\"> members</span>"
+      assert html =~ "4<span class=\"text-2xl text-zinc-400\"> members</span>"
       assert html =~ "2 owners and admins"
     end
 
