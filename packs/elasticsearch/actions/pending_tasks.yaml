@@ -1,7 +1,7 @@
 schema_version: 1
 id: es.pending_tasks
 title: GET /_cluster/pending_tasks
-kind: exec
+kind: script
 risk: low
 description: List pending master tasks. A growing queue here means the master can't keep up.
 side_effects:
@@ -9,11 +9,8 @@ side_effects:
   - Read-only.
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -q -fsS --globoff --proto =http,https -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/_cluster/pending_tasks\""
+  script: {path: scripts/es_api.sh, interpreter: /bin/bash}
+  argv: [pending-tasks]
   timeout: 15s
 output:
   parser: json

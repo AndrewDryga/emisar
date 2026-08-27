@@ -1,7 +1,7 @@
 schema_version: 1
 id: es.cat_segments
 title: GET /_cat/segments
-kind: exec
+kind: script
 risk: low
 description: Show per-segment doc + bytes counts. Use to plan a force_merge.
 side_effects:
@@ -9,11 +9,8 @@ side_effects:
   - Read-only.
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -q -fsS --globoff --proto =http,https -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/_cat/segments?v\""
+  script: {path: scripts/es_api.sh, interpreter: /bin/bash}
+  argv: [cat-segments]
   timeout: 30s
 output:
   parser: text

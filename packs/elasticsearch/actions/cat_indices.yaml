@@ -1,7 +1,7 @@
 schema_version: 1
 id: es.cat_indices
 title: GET /_cat/indices
-kind: exec
+kind: script
 risk: low
 description: List every index with its primary count, doc count, store size. Sorted by size descending.
 side_effects:
@@ -9,11 +9,8 @@ side_effects:
   - Read-only.
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -q -fsS --globoff --proto =http,https -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/_cat/indices?v&s=store.size:desc\""
+  script: {path: scripts/es_api.sh, interpreter: /bin/bash}
+  argv: [cat-indices]
   timeout: 30s
 output:
   parser: text

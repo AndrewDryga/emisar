@@ -1,7 +1,7 @@
 schema_version: 1
 id: es.flush
 title: POST /<index>/_flush (flush index)
-kind: exec
+kind: script
 risk: medium
 description: >
   Flush the index — forces a Lucene commit so the translog is cleared, which
@@ -17,13 +17,8 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -q -fsS --globoff --proto =http,https -H @- -XPOST \"${ELASTIC_URL:-http://127.0.0.1:9200}/${1}/_flush?pretty\""
-      - "emisar"
-      - "{{ args.index }}"
+  script: {path: scripts/es_api.sh, interpreter: /bin/bash}
+  argv: [flush, "{{ args.index }}"]
   timeout: 5m
 output:
   parser: json

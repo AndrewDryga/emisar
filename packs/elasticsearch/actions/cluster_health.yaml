@@ -1,7 +1,7 @@
 schema_version: 1
 id: es.cluster_health
 title: GET /_cluster/health
-kind: exec
+kind: script
 risk: low
 description: Show cluster status (green/yellow/red), node count, shard counts. Read-only.
 side_effects:
@@ -9,11 +9,8 @@ side_effects:
   - Read-only.
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -q -fsS --globoff --proto =http,https -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/_cluster/health?pretty\""
+  script: {path: scripts/es_api.sh, interpreter: /bin/bash}
+  argv: [cluster-health]
   timeout: 15s
 output:
   parser: json

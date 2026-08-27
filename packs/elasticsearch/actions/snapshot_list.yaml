@@ -1,7 +1,7 @@
 schema_version: 1
 id: es.snapshot_list
 title: GET /_snapshot/<repo>/_all
-kind: exec
+kind: script
 risk: low
 description: List snapshots in one repository.
 side_effects:
@@ -15,13 +15,8 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -q -fsS --globoff --proto =http,https -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/_snapshot/${1}/_all?pretty\""
-      - "emisar"
-      - "{{ args.repository }}"
+  script: {path: scripts/es_api.sh, interpreter: /bin/bash}
+  argv: [snapshot-list, "{{ args.repository }}"]
   timeout: 30s
 output:
   parser: json

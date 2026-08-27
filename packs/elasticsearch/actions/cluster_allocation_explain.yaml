@@ -1,7 +1,7 @@
 schema_version: 1
 id: es.cluster_allocation_explain
 title: POST /_cluster/allocation/explain
-kind: exec
+kind: script
 risk: low
 description: 'Explain why an unassigned shard hasn''t been placed. The canonical "why is my cluster yellow?" answer.'
 side_effects:
@@ -9,11 +9,8 @@ side_effects:
   - Read-only.
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -q -fsS --globoff --proto =http,https -H @- -XGET \"${ELASTIC_URL:-http://127.0.0.1:9200}/_cluster/allocation/explain?pretty\""
+  script: {path: scripts/es_api.sh, interpreter: /bin/bash}
+  argv: [cluster-allocation-explain]
   timeout: 30s
 output:
   parser: json

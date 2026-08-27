@@ -1,7 +1,7 @@
 schema_version: 1
 id: es.snapshot_status
 title: GET /_snapshot/<repo>/<snap>/_status
-kind: exec
+kind: script
 risk: low
 description: Return the in-progress (or completed) status of one snapshot.
 side_effects:
@@ -21,14 +21,8 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -q -fsS --globoff --proto =http,https -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/_snapshot/${1}/${2}/_status?pretty\""
-      - "emisar"
-      - "{{ args.repository }}"
-      - "{{ args.snapshot }}"
+  script: {path: scripts/es_api.sh, interpreter: /bin/bash}
+  argv: [snapshot-status, "{{ args.repository }}", "{{ args.snapshot }}"]
   timeout: 30s
 output:
   parser: json

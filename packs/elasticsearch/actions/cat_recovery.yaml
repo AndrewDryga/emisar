@@ -1,7 +1,7 @@
 schema_version: 1
 id: es.cat_recovery
 title: GET /_cat/recovery
-kind: exec
+kind: script
 risk: low
 description: List active shard recoveries (peer, snapshot). Use to monitor rebalance progress.
 side_effects:
@@ -9,11 +9,8 @@ side_effects:
   - Read-only.
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -q -fsS --globoff --proto =http,https -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/_cat/recovery?active_only=true&v\""
+  script: {path: scripts/es_api.sh, interpreter: /bin/bash}
+  argv: [cat-recovery]
   timeout: 30s
 output:
   parser: text

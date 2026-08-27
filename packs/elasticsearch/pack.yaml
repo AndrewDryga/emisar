@@ -2,7 +2,7 @@ schema_version: 1
 
 id: elasticsearch
 name: Elasticsearch / OpenSearch ops
-version: 0.1.18
+version: 0.1.19
 description: >
   Cluster + index introspection plus narrow mutators (cache_clear,
   force_merge, flush, close_index). Auth via ELASTIC_USER +
@@ -16,6 +16,7 @@ requires:
     - linux
   binaries:
     - curl
+    - bash
 
 # `emisar pack suggest` detection: Elasticsearch runs inside the JVM (the
 # process is just `java`, too generic to match), so detect by its HTTP port.

@@ -1,7 +1,7 @@
 schema_version: 1
 id: es.force_merge
 title: POST /<index>/_forcemerge
-kind: exec
+kind: script
 risk: high
 description: >
   Merge segments down to `max_num_segments`. Expensive — heavy disk + CPU for the duration. Use on read-only indices (e.g., yesterday's logs) only.
@@ -24,13 +24,8 @@ args:
       min: 1
       max: 100
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -q -fsS --globoff --proto =http,https -H @- -XPOST \"${ELASTIC_URL:-http://127.0.0.1:9200}/${1}/_forcemerge?max_num_segments={{ args.max_segments }}&pretty\""
-      - "emisar"
-      - "{{ args.index }}"
+  script: {path: scripts/es_api.sh, interpreter: /bin/bash}
+  argv: [force-merge, "{{ args.index }}", "{{ args.max_segments }}"]
   timeout: 1h
 output:
   parser: json

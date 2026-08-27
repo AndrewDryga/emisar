@@ -1,7 +1,7 @@
 schema_version: 1
 id: es.index_stats
 title: GET /<index>/_stats
-kind: exec
+kind: script
 risk: low
 description: Show index-level stats — docs, store, indexing/search rates, fielddata.
 side_effects:
@@ -15,13 +15,8 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -q -fsS --globoff --proto =http,https -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/${1}/_stats?pretty\""
-      - "emisar"
-      - "{{ args.index }}"
+  script: {path: scripts/es_api.sh, interpreter: /bin/bash}
+  argv: [index-stats, "{{ args.index }}"]
   timeout: 30s
 output:
   parser: json

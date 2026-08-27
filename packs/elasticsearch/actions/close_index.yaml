@@ -1,7 +1,7 @@
 schema_version: 1
 id: es.close_index
 title: POST /<index>/_close
-kind: exec
+kind: script
 risk: critical
 description: >
   Close one index — it becomes unsearchable and unwritable, but stays on disk. Use to "archive" old logs without deleting. Reverse with /_open. **Closed indices count against shard limits in some versions.**
@@ -17,13 +17,8 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -q -fsS --globoff --proto =http,https -H @- -XPOST \"${ELASTIC_URL:-http://127.0.0.1:9200}/${1}/_close?pretty\""
-      - "emisar"
-      - "{{ args.index }}"
+  script: {path: scripts/es_api.sh, interpreter: /bin/bash}
+  argv: [close-index, "{{ args.index }}"]
   timeout: 30s
 output:
   parser: json

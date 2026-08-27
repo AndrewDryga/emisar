@@ -1,7 +1,7 @@
 schema_version: 1
 id: es.cat_thread_pool
 title: GET /_cat/thread_pool
-kind: exec
+kind: script
 risk: low
 description: Show per-node thread pool queue + rejection counts. Use to spot search/write thread saturation.
 side_effects:
@@ -9,11 +9,8 @@ side_effects:
   - Read-only.
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "{ printf 'Authorization: Basic '; printf '%s:%s' \"$ELASTIC_USER\" \"$ELASTIC_PASSWORD\" | base64 | tr -d '\\n'; printf '\\n'; } | curl -q -fsS --globoff --proto =http,https -H @- \"${ELASTIC_URL:-http://127.0.0.1:9200}/_cat/thread_pool?v\""
+  script: {path: scripts/es_api.sh, interpreter: /bin/bash}
+  argv: [cat-thread-pool]
   timeout: 15s
 output:
   parser: text
