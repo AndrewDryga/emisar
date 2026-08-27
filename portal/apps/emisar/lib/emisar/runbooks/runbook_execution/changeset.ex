@@ -5,7 +5,7 @@ defmodule Emisar.Runbooks.RunbookExecution.Changeset do
   @fields ~w[
     id account_id runbook_id runbook_version initiating_membership_id requested_by_id api_key_id
     operation_id mcp_operation_record_id reason frozen_plan inputs_raw inputs_sha256
-    definition definition_sha256 sensitive_input_names kind status
+    definition definition_sha256 kind status
   ]a
 
   def create(attrs) do
@@ -52,7 +52,6 @@ defmodule Emisar.Runbooks.RunbookExecution.Changeset do
   def halt(%RunbookExecution{} = execution, code, message, now) do
     change(execution,
       status: :halted,
-      halted_at: now,
       completed_at: now,
       terminal_code: code,
       terminal_message: message
@@ -64,7 +63,6 @@ defmodule Emisar.Runbooks.RunbookExecution.Changeset do
   def cancel(%RunbookExecution{} = execution, now) do
     change(execution,
       status: :cancelled,
-      halted_at: now,
       completed_at: now,
       terminal_code: "cancelled",
       terminal_message: "Execution was cancelled."

@@ -1205,7 +1205,6 @@ backdate_execution.(seeded_execution_ids.halted, halted_at)
 RunbookExecution.Query.by_id(seeded_execution_ids.halted)
 |> Repo.update_all(
   set: [
-    halted_at: halted_finished_at,
     completed_at: halted_finished_at,
     updated_at: halted_finished_at
   ]

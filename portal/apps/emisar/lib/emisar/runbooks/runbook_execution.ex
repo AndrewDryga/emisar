@@ -16,7 +16,6 @@ defmodule Emisar.Runbooks.RunbookExecution do
       values: [:pending_approval, :active, :succeeded, :halted, :cancelled],
       default: :active
 
-    field :halted_at, :utc_datetime_usec
     field :completed_at, :utc_datetime_usec
     field :last_advanced_at, :utc_datetime_usec
     field :terminal_code, :string
@@ -30,7 +29,6 @@ defmodule Emisar.Runbooks.RunbookExecution do
     field :definition_sha256, :string
     # The release this ran, null for a draft test.
     field :runbook_version, :integer
-    field :sensitive_input_names, {:array, :string}, default: []
 
     field :api_key_id, Ecto.UUID
     field :operation_id, :string

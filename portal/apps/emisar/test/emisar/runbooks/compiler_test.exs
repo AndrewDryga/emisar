@@ -25,7 +25,9 @@ defmodule Emisar.Runbooks.CompilerTest do
 
     assert {:ok, compiled} = compile(definition, %{"token" => "secret"}, subject)
     assert Jason.decode!(compiled.inputs_raw) == %{"token" => "secret"}
-    assert compiled.sensitive_input_names == ["token"]
+    # The masked names ride the frozen plan, which reaches approvers with the
+    # redacted inputs they explain. The execution row no longer keeps a third copy.
+    assert compiled.plan["sensitive_input_names"] == ["token"]
 
     assert %{
              "inputs" => %{"token" => "[REDACTED]"},

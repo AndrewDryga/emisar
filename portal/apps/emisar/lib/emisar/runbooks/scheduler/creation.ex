@@ -81,7 +81,6 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
       # What ran, not what the runbook row says now — publishing moves that row.
       definition: compiled.definition,
       definition_sha256: Definition.digest(compiled.definition),
-      sensitive_input_names: compiled.sensitive_input_names,
       status: if(approval, do: :pending_approval, else: :active)
     }
 

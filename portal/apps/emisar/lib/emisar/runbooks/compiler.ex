@@ -41,8 +41,7 @@ defmodule Emisar.Runbooks.Compiler do
          plan: plan,
          items: items,
          inputs_raw: inputs.raw,
-         inputs_sha256: inputs.sha256,
-         sensitive_input_names: inputs.sensitive_names
+         inputs_sha256: inputs.sha256
        }}
     end
   end
