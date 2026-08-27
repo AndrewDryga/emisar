@@ -251,11 +251,35 @@ func TestCheckDistributionLayoutUsesGitIgnorePolicy(t *testing.T) {
 	}
 	writeTestFile(t, check.root, ".gitignore", "/dist/*\n!/dist/cursor-plugin/\n")
 	writeTestFile(t, check.root, "dist/cursor-plugin/README.md", "# Cursor\n")
+	for _, skill := range []string{"author-pack", "install-emisar", "respond-to-production-incidents"} {
+		writeTestFile(t, check.root, "skills/"+skill+"/SKILL.md", "# "+skill+"\n")
+		writeTestFile(t, check.root, "dist/cursor-plugin/skills/"+skill+"/SKILL.md", "# "+skill+"\n")
+	}
 
 	check.checkDistributionLayout()
 
 	if len(check.failures) != 0 {
 		t.Fatalf("failures = %#v", check.failures)
+	}
+
+	// A drifted mirror is the exact bug this check exists for.
+	writeTestFile(t, check.root, "dist/cursor-plugin/skills/author-pack/SKILL.md", "# stale\n")
+	check = &checker{root: check.root, out: io.Discard, errOut: io.Discard}
+	check.checkDistributionLayout()
+	if !hasFailure(check, "dist/cursor-plugin/skills/author-pack/SKILL.md differs") {
+		t.Fatalf("drifted mirror not reported: %#v", check.failures)
+	}
+	writeTestFile(t, check.root, "dist/cursor-plugin/skills/author-pack/SKILL.md", "# author-pack\n")
+
+	// Customer-facing guidance must never recommend an unpinned install.
+	writeTestFile(t, check.root, "skills/author-pack/extras.md", "go install example/packctl@latest\n")
+	check = &checker{root: check.root, out: io.Discard, errOut: io.Discard}
+	check.checkDistributionLayout()
+	if !hasFailure(check, "packctl@latest") {
+		t.Fatalf("packctl@latest guidance not reported: %#v", check.failures)
+	}
+	if err := os.Remove(filepath.Join(check.root, "skills", "author-pack", "extras.md")); err != nil {
+		t.Fatal(err)
 	}
 
 	writeTestFile(t, check.root, ".gitignore", "/dist/\n")

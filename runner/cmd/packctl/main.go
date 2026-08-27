@@ -43,7 +43,12 @@ carry publish code or publisher credentials. It shares the runner's module so
 the published pack content hash is computed by the same loader the runner
 enforces at load time, matching 'emisar pack validate' byte-for-byte.
 
-Install it: go install github.com/andrewdryga/emisar/runner/cmd/packctl@latest`,
+Build it from the signed release tag your runners run — 'go install …@latest'
+pins nothing:
+
+  git clone --depth 1 --branch runner-v<version> \
+    https://github.com/andrewdryga/emisar.git emisar-src
+  cd emisar-src/runner && go build -o ~/.local/bin/packctl ./cmd/packctl`,
 		Example: `  # Build a registry for your own host, preserving published history
   packctl catalog build --packs ./packs --out ./dist \
     --base-url https://packs.acme.internal --previous ./current-catalog.json

@@ -75,11 +75,20 @@
         <code>emisar pack validate</code>
         byte-for-byte.
       </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Build it from the same signed release tag your runners were installed
+        from, so the tool that hashes a pack is the one whose loader will
+        enforce that hash — an unpinned
+        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">go install …@latest</code>
+        builds whatever the default branch holds that minute.
+      </p>
       <.docs_code
         phx-no-format
         label="shell"
-        copy_text="go install github.com/andrewdryga/emisar/runner/cmd/packctl@latest"
-      >go install github.com/andrewdryga/emisar/runner/cmd/packctl@latest</.docs_code>
+        copy_text="git clone --depth 1 --branch runner-v<version> https://github.com/andrewdryga/emisar.git emisar-src\ncd emisar-src/runner && go build -o ~/.local/bin/packctl ./cmd/packctl"
+      >git clone --depth 1 --branch runner-v&lt;version&gt; \\
+  https://github.com/andrewdryga/emisar.git emisar-src
+cd emisar-src/runner && go build -o ~/.local/bin/packctl ./cmd/packctl</.docs_code>
 
       <.docs_h2 id="build">2. Build the registry tree</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">

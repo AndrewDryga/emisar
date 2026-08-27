@@ -44,7 +44,7 @@ Then run a low-risk action such as `linux.uptime`. You are done when the result
 returns to Cursor and the run appears in the emisar audit trail.
 
 The complete setup and troubleshooting guide is at
-[emisar.dev/docs/connect-an-llm](https://emisar.dev/docs/connect-an-llm).
+[emisar.dev/docs/connect-cli-agent](https://emisar.dev/docs/connect-cli-agent).
 
 ## What Cursor receives
 
@@ -81,7 +81,7 @@ validation.
 ## Security boundary
 
 The plugin stores no static credential. OAuth tokens are issued through emisar
-and can be revoked from **LLM agents** in the dashboard or from Cursor's MCP
+and can be revoked from **LLM agents** in the console or from Cursor's MCP
 settings.
 
 The runner is outbound-only and executes only actions declared in locally
@@ -107,7 +107,7 @@ Cursor files.
 ## Links
 
 - [emisar](https://emisar.dev) and [quickstart](https://emisar.dev/docs/quickstart)
-- [Connect an LLM](https://emisar.dev/docs/connect-an-llm)
+- [Connect a CLI agent](https://emisar.dev/docs/connect-cli-agent)
 - [MCP reference](https://emisar.dev/docs/mcp-reference)
 - [Trust center](https://emisar.dev/trust), [privacy](https://emisar.dev/privacy), and [terms](https://emisar.dev/terms)
 - Support: <support@emisar.dev>; security: <security@emisar.dev>

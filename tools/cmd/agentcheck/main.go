@@ -709,6 +709,50 @@ func (c *checker) checkDistributionLayout() {
 			c.fail("ignore policy for %s is %t, expected %t", test.path, ignored, test.ignored)
 		}
 	}
+
+	// The Cursor package ships VERBATIM copies of the public skills. A
+	// hand-copied snapshot once drifted three weeks behind and shipped
+	// security guidance the live skill forbids, so equality is enforced
+	// rather than assumed.
+	for _, skill := range []string{"author-pack", "install-emisar", "respond-to-production-incidents"} {
+		source, err := os.ReadFile(c.path("skills/" + skill + "/SKILL.md"))
+		if err != nil {
+			c.fail("reading skills/%s/SKILL.md: %v", skill, err)
+			continue
+		}
+		mirrored, err := os.ReadFile(c.path("dist/cursor-plugin/skills/" + skill + "/SKILL.md"))
+		if err != nil {
+			c.fail("reading dist/cursor-plugin/skills/%s/SKILL.md: %v", skill, err)
+			continue
+		}
+		if !bytes.Equal(source, mirrored) {
+			c.fail("dist/cursor-plugin/skills/%s/SKILL.md differs from skills/%s/SKILL.md; copy the source verbatim", skill, skill)
+		}
+	}
+
+	// `go install …@latest` pins nothing and builds whatever the default
+	// branch holds; customer-facing guidance must build packctl from the
+	// signed release tag instead.
+	for _, root := range []string{
+		"skills",
+		"dist/cursor-plugin",
+		"portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html",
+		"runner/cmd/packctl",
+	} {
+		_ = filepath.WalkDir(c.path(root), func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+			if bytes.Contains(data, []byte("packctl@latest")) {
+				c.fail("%s recommends packctl@latest; customer-facing guidance must use the signed release tag", path)
+			}
+			return nil
+		})
+	}
 }
 
 func (c *checker) checkCommandSurface() {
