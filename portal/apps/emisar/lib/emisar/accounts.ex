@@ -2725,8 +2725,8 @@ defmodule Emisar.Accounts do
         loaded =
           Membership.Query.not_deleted()
           |> Membership.Query.by_id(membership.id)
-          |> Authorizer.for_subject(subject)
           |> Membership.Query.lock_for_update()
+          |> Authorizer.for_subject(subject)
           |> repo.peek()
 
         case loaded do

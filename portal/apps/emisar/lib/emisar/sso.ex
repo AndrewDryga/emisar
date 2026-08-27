@@ -915,8 +915,8 @@ defmodule Emisar.SSO do
         queryable =
           IdentityProvider.Query.not_deleted()
           |> IdentityProvider.Query.by_id(id)
-          |> Authorizer.for_subject(subject)
           |> IdentityProvider.Query.lock_for_update()
+          |> Authorizer.for_subject(subject)
 
         with {:ok, loaded_provider} <- repo.fetch(queryable, IdentityProvider.Query),
              %Ecto.Changeset{} = changeset <-
@@ -1005,8 +1005,8 @@ defmodule Emisar.SSO do
         queryable =
           IdentityProvider.Query.not_deleted()
           |> IdentityProvider.Query.by_id(id)
-          |> Authorizer.for_subject(subject)
           |> IdentityProvider.Query.lock_for_update()
+          |> Authorizer.for_subject(subject)
 
         with {:ok, loaded_provider} <- repo.fetch(queryable, IdentityProvider.Query),
              false <- removing_last_required_provider?(loaded_provider) do
@@ -2594,8 +2594,8 @@ defmodule Emisar.SSO do
         queryable =
           IdentityProvider.Query.not_deleted()
           |> IdentityProvider.Query.by_id(id)
-          |> Authorizer.for_subject(subject)
           |> IdentityProvider.Query.lock_for_update()
+          |> Authorizer.for_subject(subject)
 
         with {:ok, loaded_provider} <- repo.fetch(queryable, IdentityProvider.Query),
              true <- ProviderKind.supports_scim?(loaded_provider.kind) do

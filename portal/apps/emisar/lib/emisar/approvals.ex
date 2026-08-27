@@ -1236,15 +1236,14 @@ defmodule Emisar.Approvals do
           lock_approval_target(repo, request)
         end)
         |> Multi.run(:locked, fn repo, _changes ->
-          locked =
+          query =
             Request.Query.all()
             |> Request.Query.by_id(request.id)
             |> Request.Query.by_account_id(subject.account.id)
-            |> Authorizer.for_subject(subject)
             |> Request.Query.lock_for_update()
-            |> repo.one()
+            |> Authorizer.for_subject(subject)
 
-          with %Request{} = locked <- locked,
+          with {:ok, locked} <- repo.fetch(query, Request.Query),
                true <- request_visible_to_subject?(repo, locked.id, subject) do
             {:ok, locked}
           else
