@@ -1,5 +1,5 @@
 defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
-  use ExUnit.Case, async: false
+  use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
   alias Emisar.{Accounts, Approvals, Catalog, Fixtures, Repo, Runbooks, Runners, Runs}
