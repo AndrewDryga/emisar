@@ -1,16 +1,13 @@
-// Scroll-spy for the docs pages' "On this page" table of contents. A no-op
-// anywhere without `[data-toc-link]`. Highlights the TOC entry for the section
-// currently near the top of the viewport by toggling `data-active` (styled via
-// the `[data-toc-link][data-active]` rule in app.css) and `aria-current`.
+// Scroll-spy for every "On this page" table of contents — the docs shell and
+// the legal pages share the `[data-toc-link]` contract and this one active
+// mechanism: `data-active` (styled by the `[data-toc-link][data-active]` rule
+// in app.css) plus `aria-current`. A no-op anywhere without `[data-toc-link]`.
 //
-// Plain DOM + IntersectionObserver, no deps, CSP-safe. The docs shell and the
-// legal pages share the `[data-toc-link]` contract but use different active
-// mechanisms, so marketing.js runs exactly one of the two per page.
-export function initDocsToc() {
+// Plain DOM + IntersectionObserver, no deps, CSP-safe.
+export function initTocScrollSpy() {
   const links = Array.from(document.querySelectorAll("[data-toc-link]"))
   if (!links.length) return
 
-  const byId = new Map(links.map(a => [a.getAttribute("data-toc-link"), a]))
   const headings = links
     .map(a => document.getElementById(a.getAttribute("data-toc-link")))
     .filter(Boolean)
@@ -39,10 +36,11 @@ export function initDocsToc() {
         else visible.delete(e.target.id)
       }
       const active = headings.find(h => visible.has(h.id))
-      if (active && byId.has(active.id)) setActive(active.id)
+      if (active) setActive(active.id)
     },
     {rootMargin: "-80px 0px -66% 0px", threshold: 0}
   )
 
   headings.forEach(h => observer.observe(h))
+  setActive(headings[0].id)
 }

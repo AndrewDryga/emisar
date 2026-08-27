@@ -26,11 +26,10 @@ import {initConsoleCasts} from "./console_cast.js"
 import {initDocsFilter} from "./docs_filter.js"
 import {initDocsLightbox} from "./docs_lightbox.js"
 import {initDocsNavScroll} from "./docs_nav_scroll.js"
-import {initDocsToc} from "./docs-toc.js"
+import {initTocScrollSpy} from "./docs-toc.js"
 import {initDropdowns} from "./dropdown.js"
 import {initEmisarDemo} from "./emisar_demo.js"
 import {initStaticFlashes} from "./flash.js"
-import {initLegalToc} from "./legal_toc.js"
 import {initMobileNav} from "./mobile_nav.js"
 import {initOsTabs} from "./os_tabs.js"
 import {initPackSearch} from "./pack_search.js"
@@ -44,14 +43,10 @@ setupCopyToClipboardDelegation()
 initStaticFlashes()
 initConsoleCasts()
 initEmisarDemo()
-// The docs shell and the legal pages share the [data-toc-link] TOC contract but
-// drive the active state differently, so run exactly one scroll-spy per page —
-// the docs sidebar (nav[aria-label="Docs"]) exists only on /docs/* pages.
+initTocScrollSpy()
+// The docs sidebar (nav[aria-label="Docs"]) exists only on /docs/* pages.
 if (document.querySelector('nav[aria-label="Docs"]')) {
-  initDocsToc()
   initDocsNavScroll()
-} else {
-  initLegalToc()
 }
 initDocsFilter()
 initDocsLightbox()
