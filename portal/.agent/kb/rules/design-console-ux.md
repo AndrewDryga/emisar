@@ -567,20 +567,24 @@ the commit button, where the operator can reach the action before reading what i
     mark a connection done while rendering a next step with no available actions behind it.
 46. **Page-level attention has one slot, one surface, and one spine grammar per issue.** On list
     pages, render actionable notices together immediately after the intro and before summary
-    counters, filters, and data. Operational alerts use the shared icon-capped vertical
-    spine, never a tinted or dashed box; the shell-wide `:strip` is the one banner
-    exception. **Row-level operational alerts obey the same grammar** — a version's
-    retired/pending notice, a row's blocked state — render through `<.event_block>`, never a
-    hand-tinted wash box under the row (the packs page's rose/amber boxes were the
-    correction). A notice that prescribes a command or other next-step artifact owns that
-    payload inside the same spine, never in a sibling box. Multiple notices keep 24px
-    between them, while the attention stack leaves a larger 40px exit gutter after whichever
-    notice renders last; do not put the same margin on every notice and accidentally make
-    inter-alert and post-alert rhythm identical. The same remedy uses the same tone across
-    pages; reserve a stronger tone for a different operational consequence, not merely a
-    stricter version label. Sweep: boxed/dashed amber or rose alert markup, alert copy
-    separated from its code or action, and page-level notice groups without distinct
-    internal and exit spacing.
+    counters, filters, and data. On a posture overview whose first content is the stat row —
+    the dashboard's pillars/onboarding checklist — the numbers LEAD and the attention stack
+    follows them: an alert wedged between the page title and the numbers reads as the page's
+    content and demotes orientation to an afterthought (founder call; the dashboard's billing
+    lifecycle, plan-limit, and packs-pending banners all sit below the pillar row now).
+    Operational alerts use the shared icon-capped vertical spine, never a tinted or dashed
+    box; the shell-wide `:strip` is the one banner exception. **Row-level operational alerts
+    obey the same grammar** — a version's retired/pending notice, a row's blocked state —
+    render through `<.event_block>`, never a hand-tinted wash box under the row (the packs
+    page's rose/amber boxes were the correction). A notice that prescribes a command or other
+    next-step artifact owns that payload inside the same spine, never in a sibling box.
+    Multiple notices keep 24px between them, while the attention stack leaves a larger 40px
+    exit gutter after whichever notice renders last; do not put the same margin on every
+    notice and accidentally make inter-alert and post-alert rhythm identical. The same remedy
+    uses the same tone across pages; reserve a stronger tone for a different operational
+    consequence, not merely a stricter version label. Sweep: boxed/dashed amber or rose alert
+    markup, alert copy separated from its code or action, and page-level notice groups
+    without distinct internal and exit spacing.
 47. **Per-row admin verbs: 1-2 = small bordered buttons; 3+ = the Actions menu. Visible buttons
     always wear a bordered face.** One or two rare verbs render as `size={:sm}` bordered
     `:secondary` buttons opening per-row plain `<.confirm_dialog>`s (the LLM-agents/packs

@@ -776,6 +776,22 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert html =~ "You&#39;re at your runner limit (3 of 3)."
     end
 
+    # The stat row is the dashboard's identity, so orientation leads and
+    # attention follows it — an alert between the page title and the numbers
+    # read as the page's own content.
+    test "the attention stack renders below the pillar stat row", %{
+      conn: conn,
+      account: account
+    } do
+      [runner | _rest] = for _ <- 1..3, do: Fixtures.Runners.create_runner(account_id: account.id)
+      first_run(account, runner)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
+
+      assert [before_banner, _after_banner] = String.split(html, "at your runner limit", parts: 2)
+      assert before_banner =~ "/ 3 connected"
+    end
+
     # (the near-limit half) — one slot short of the cap shows
     # the softer amber "one slot left" variant, not the at-limit rose one.
     test "near the runner limit, the amber 'one slot left' banner renders", %{

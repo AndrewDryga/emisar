@@ -328,12 +328,16 @@ defmodule EmisarWeb.DashboardLive do
   # (the three main jobs: connect hosts, connect agents, onboard people) — then
   # the escape hatch when it fires, then activity:
   #
-  #   1. Banners (plan-at-limit, all-runners-offline) — only when bad
-  #   2. The three pillar cards — ALWAYS. Each carries live state for the
-  #      operator who has it set up, and becomes the guided create/onboard CTA
-  #      at zero. The onboarding checklist IS the pillars' zero states — a new
-  #      account reads its three next steps off the same surface a veteran
-  #      reads fleet posture from, and cards graduate one by one as steps land.
+  #   1. The three pillar cards — ALWAYS, and FIRST. Each carries live state
+  #      for the operator who has it set up, and becomes the guided
+  #      create/onboard CTA at zero. The onboarding checklist IS the pillars'
+  #      zero states — a new account reads its three next steps off the same
+  #      surface a veteran reads fleet posture from, and cards graduate one by
+  #      one as steps land.
+  #   2. Banners (billing lifecycle, plan-at-limit, packs pending) — only when
+  #      bad, and AFTER the numbers: the stat row is the dashboard's identity,
+  #      so orientation leads and attention follows (founder call — an alert
+  #      wedged between the title and the numbers read as the page's content).
   #   3. Pending approvals (amber) — only when a decision actually waits.
   #      Approvals is the escape hatch, not the centerpiece: most actions are
   #      read-only and never gate, so this surface earns space only when live.
@@ -369,33 +373,6 @@ defmodule EmisarWeb.DashboardLive do
 
   defp live_dashboard(assigns) do
     ~H"""
-    <.subscription_banner
-      entitlement_state={@billing.entitlement_state}
-      status={@billing.subscription_status}
-      scheduled_action={@billing.scheduled_change_action}
-      scheduled_effective_at={@billing.scheduled_change_effective_at || @billing.current_period_end}
-    >
-      <:cta :if={@can_manage_billing}>
-        <.button
-          variant={:secondary}
-          size={:sm}
-          navigate={~p"/app/#{@current_account}/settings/billing"}
-        >
-          Manage billing
-        </.button>
-      </:cta>
-    </.subscription_banner>
-    <.plan_limit_banner
-      :if={runner_headroom_warn?(@billing)}
-      billing={@billing}
-      current_account={@current_account}
-    />
-    <.packs_pending_banner
-      :if={@pending_packs_count > 0}
-      count={@pending_packs_count}
-      current_account={@current_account}
-    />
-
     <%!-- FIRST-RUN: three equal side-by-side CTAs implied three parallel jobs,
          but the product does nothing until a runner AND an agent are connected
          — team is genuinely optional. The zero state is an ordered checklist
@@ -436,6 +413,34 @@ defmodule EmisarWeb.DashboardLive do
         current_account={@current_account}
       />
     </div>
+
+    <.subscription_banner
+      entitlement_state={@billing.entitlement_state}
+      status={@billing.subscription_status}
+      scheduled_action={@billing.scheduled_change_action}
+      scheduled_effective_at={@billing.scheduled_change_effective_at || @billing.current_period_end}
+      class="mt-10"
+    >
+      <:cta :if={@can_manage_billing}>
+        <.button
+          variant={:secondary}
+          size={:sm}
+          navigate={~p"/app/#{@current_account}/settings/billing"}
+        >
+          Manage billing
+        </.button>
+      </:cta>
+    </.subscription_banner>
+    <.plan_limit_banner
+      :if={runner_headroom_warn?(@billing)}
+      billing={@billing}
+      current_account={@current_account}
+    />
+    <.packs_pending_banner
+      :if={@pending_packs_count > 0}
+      count={@pending_packs_count}
+      current_account={@current_account}
+    />
 
     <%!-- A failed approvals read would otherwise be indistinguishable from the
          zero state below, hiding held actions entirely — so it keeps the
@@ -1048,7 +1053,7 @@ defmodule EmisarWeb.DashboardLive do
       icon="trust.untrusted"
       title={"#{@count} pack version#{if @count == 1, do: "", else: "s"} need#{if @count == 1, do: "s", else: ""} a decision"}
       navigate={~p"/app/#{@current_account}/packs"}
-      class="mb-10"
+      class="mt-10"
     >
       Dispatch is blocked against these until an admin reviews the advertised hash or
       resolves the retired version.
@@ -1300,7 +1305,7 @@ defmodule EmisarWeb.DashboardLive do
         tone={:rose}
         icon="state.warning"
         title={"You're at your runner limit (#{@billing.runner_count} of #{@billing.runner_limit})."}
-        class="mb-10"
+        class="mt-10"
       >
         The next runner that tries to register will get a 402 response and fail to come
         online. Upgrade the plan to add more, or remove an unused runner first.
@@ -1320,7 +1325,7 @@ defmodule EmisarWeb.DashboardLive do
         tone={:amber}
         icon="state.warning"
         title={"One runner slot left on the #{String.capitalize(@billing.plan)} plan (#{@billing.runner_count} of #{@billing.runner_limit})."}
-        class="mb-10"
+        class="mt-10"
       >
         Heads up — your next install will use the last slot. Upgrade now if you expect to
         add more. <.doc_link href={~p"/docs/limits"}>Plan limits docs</.doc_link>
