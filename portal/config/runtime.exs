@@ -31,9 +31,7 @@ import Config
 #   DATABASE_NAME          — database for passwordless proxy connections
 #   DATABASE_PORT          — proxy port (default 5432)
 #   DATABASE_ROLE          — PostgreSQL role assumed at connection startup
-#   POSTMARK_API_TOKEN     — mailer adapter (Postmark)
-#   MAILGUN_API_KEY        — mailer adapter (Mailgun); requires MAILGUN_DOMAIN
-#   SMTP_HOST              — mailer adapter (SMTP); use SMTP_USERNAME/PASSWORD/PORT
+#   POSTMARK_API_TOKEN     — mailer adapter (Postmark); unset logs mail instead
 #   MAILER_FROM_EMAIL      — override the "From" address (default no-reply@emisar.dev)
 #   MAILER_FROM_NAME       — override the "From" display name (default emisar)
 #   SENTRY_DSN             — enables error uploads when set
@@ -249,23 +247,6 @@ if config_env() == :prod do
         api_key: System.fetch_env!("POSTMARK_API_TOKEN")
 
       config :swoosh, api_client: Swoosh.ApiClient.Finch, finch_name: Emisar.Finch
-
-    System.get_env("MAILGUN_API_KEY") ->
-      config :emisar, Emisar.Mailer,
-        adapter: Swoosh.Adapters.Mailgun,
-        api_key: System.fetch_env!("MAILGUN_API_KEY"),
-        domain: System.fetch_env!("MAILGUN_DOMAIN")
-
-      config :swoosh, api_client: Swoosh.ApiClient.Finch, finch_name: Emisar.Finch
-
-    System.get_env("SMTP_HOST") ->
-      config :emisar, Emisar.Mailer,
-        adapter: Swoosh.Adapters.SMTP,
-        relay: System.fetch_env!("SMTP_HOST"),
-        port: String.to_integer(System.get_env("SMTP_PORT") || "587"),
-        username: System.get_env("SMTP_USERNAME"),
-        password: System.get_env("SMTP_PASSWORD"),
-        tls: :always
 
     true ->
       # No mail provider configured — log every send instead of crashing

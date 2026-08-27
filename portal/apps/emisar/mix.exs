@@ -78,7 +78,6 @@ defmodule Emisar.MixProject do
       # SNI and certificate verification. Finch exposes no per-request hook for
       # that, and a fetch that resolves twice is a rebinding window.
       {:mint, "~> 1.9"},
-      {:gen_smtp, "~> 1.3"},
       # OAuth 1.0a request signing for the X Ads Conversion API.
       {:oauther, "~> 1.3"},
 
