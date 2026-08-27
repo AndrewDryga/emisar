@@ -20,7 +20,7 @@ var updateWireGolden = flag.Bool("update", false, "update the wire protocol gold
 // nonAdditiveChangeID names the one non-additive wire change currently allowed
 // to keep ProtocolVersion. Set it to "" for ordinary work: the guard then
 // refuses any non-additive regeneration, which is what it exists for.
-const nonAdditiveChangeID = "attestation-cert-chain-x509"
+const nonAdditiveChangeID = "heartbeat-drop-unread-time"
 
 // reviewedNonAdditiveChanges records non-additive wire changes that deliberately
 // do NOT bump ProtocolVersion, with the reasoning that earned the exception.
@@ -41,6 +41,12 @@ var reviewedNonAdditiveChanges = map[string]bool{
 	// dispatch sets it; an un-upgraded runner finds no certificate and refuses
 	// that dispatch as signature_required rather than misreading one.
 	"attestation-cert-chain-x509": true,
+	// heartbeat.time was runner-stamped decoration the portal never read: it
+	// stamps last_heartbeat_at server-side on receipt (the honest clock) and
+	// consumes action_load alone. Dropping an unread, runner-supplied field
+	// cannot be misread by an un-upgraded portal — decoding tolerates absence
+	// and no consumer exists.
+	"heartbeat-drop-unread-time": true,
 }
 
 type wireGolden struct {
@@ -265,7 +271,6 @@ func canonicalWireFrames() []wireFrameCase {
 			marshal: func() ([]byte, error) {
 				return json.Marshal(HeartbeatMsg{
 					Envelope:   envelope(MsgHeartbeat, "req_wire_heartbeat"),
-					Time:       "2026-07-16T12:34:56Z",
 					ActionLoad: 4,
 				})
 			},

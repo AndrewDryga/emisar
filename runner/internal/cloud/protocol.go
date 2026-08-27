@@ -487,8 +487,7 @@ type RedactionSummary struct {
 // HeartbeatMsg lets cloud detect stuck runners. Sent every cloud.heartbeat_every.
 type HeartbeatMsg struct {
 	Envelope
-	Time       string `json:"time"`
-	ActionLoad int    `json:"action_load"`
+	ActionLoad int `json:"action_load"`
 }
 
 // ErrorMsg is a generic session error. Runner-originated errors do not abort

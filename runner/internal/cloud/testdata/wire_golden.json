@@ -81,7 +81,6 @@
       "type": "heartbeat",
       "protocol_version": 1,
       "request_id": "req_wire_heartbeat",
-      "time": "2026-07-16T12:34:56Z",
       "action_load": 4
     },
     "run_action": {

@@ -1387,7 +1387,6 @@ func (c *Client) heartbeatLoop(ctx context.Context, sessionCancel context.Cancel
 			now := time.Now().UTC()
 			err := conn.Send(ctx, HeartbeatMsg{
 				Envelope:   Envelope{Type: MsgHeartbeat, ProtocolVersion: ProtocolVersion},
-				Time:       now.Format(time.RFC3339),
 				ActionLoad: load,
 			})
 			if err != nil {

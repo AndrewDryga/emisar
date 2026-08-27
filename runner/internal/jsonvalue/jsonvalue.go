@@ -72,16 +72,6 @@ func DecodeObject(raw []byte, limits Limits) (map[string]any, error) {
 	return value, nil
 }
 
-// CheckValue verifies that an already-decoded value is JSON-encodable and
-// obeys the same encoded and structural limits.
-func CheckValue(value any, limits Limits) error {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Errorf("encode JSON value: %w", err)
-	}
-	return Validate(raw, limits)
-}
-
 func consumeUniqueValue(decoder *json.Decoder, depth int, nodes *int, limits Limits) error {
 	if limits.MaxDepth > 0 && depth > limits.MaxDepth {
 		return ErrTooDeep

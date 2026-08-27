@@ -58,8 +58,6 @@ type Error struct {
 	Message string
 }
 
-func (e *Error) Error() string { return e.Message }
-
 // Compile validates one declared contract and compiles the schema once at pack
 // load time. It returns the normalized schema the caller must advertise. A nil
 // validator means the action did not opt into structured results.
