@@ -375,7 +375,7 @@ func runProgramMode(args []string, stdin io.Reader, stdout, stderr io.Writer, in
 		}
 	}
 	if len(args) > 0 && args[0] == "auth" {
-		return runAuthCommand(account, args[1:], stdin, stdout, stderr)
+		return runAuthCommand(account, args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "accounts" {
 		if account != "" {
@@ -1789,14 +1789,10 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 	return nil
 }
 
-// buildUserAgent stamps every cloud request with structured client +
+// buildUserAgentWithDefault stamps every cloud request with structured client +
 // host + os posture. The portal's audit pipeline extracts these from the
 // User-Agent header so each audit row carries "client=claude-desktop;
 // host=…; os=darwin" instead of "some MCP call from <IP>".
-func buildUserAgent() string {
-	return buildUserAgentWithDefault("unknown")
-}
-
 func buildUserAgentWithDefault(defaultClient string) string {
 	client := os.Getenv("EMISAR_CLIENT")
 	if client == "" {

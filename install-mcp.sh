@@ -781,15 +781,6 @@ hdr() {
   fi
 }
 
-# The success moment — bold green on a terminal, plain otherwise.
-ok() {
-  if [ -t 1 ]; then
-    printf '\033[1;32m%s\033[0m\n' "$*"
-  else
-    printf '%s\n' "$*"
-  fi
-}
-
 # Secondary/reference lines (the verify/uninstall footer) — faint on a
 # terminal, plain otherwise.
 dim() {

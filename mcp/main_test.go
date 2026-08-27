@@ -836,7 +836,7 @@ func TestReadFrameLine_BudgetsJSONBodyWithoutLineDelimiter(t *testing.T) {
 
 func TestBuildUserAgent_ContainsBridgeAndClient(t *testing.T) {
 	t.Setenv("EMISAR_CLIENT", "claude-desktop")
-	ua := buildUserAgent()
+	ua := buildUserAgentWithDefault("unknown")
 	if !strings.HasPrefix(ua, bridgeName+"/") {
 		t.Errorf("UA should start with %q, got %q", bridgeName+"/", ua)
 	}
@@ -853,7 +853,7 @@ func TestBuildUserAgent_ContainsBridgeAndClient(t *testing.T) {
 
 func TestBuildUserAgent_DefaultsClientWhenEnvUnset(t *testing.T) {
 	t.Setenv("EMISAR_CLIENT", "")
-	ua := buildUserAgent()
+	ua := buildUserAgentWithDefault("unknown")
 	if !strings.Contains(ua, "client=unknown") {
 		t.Errorf("blank EMISAR_CLIENT should map to client=unknown, got %q", ua)
 	}

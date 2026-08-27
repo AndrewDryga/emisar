@@ -100,10 +100,6 @@ func cliToolCallUsage(toolName string, exact bool) string {
 	return "emisar-mcp <tool> [JSON | -] [--json]"
 }
 
-func (b *bridge) runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	return b.runCLIContext(context.Background(), args, stdin, stdout, stderr)
-}
-
 func (b *bridge) runCLIContext(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	b.directCLI = true
 	b.diagnostics = stderr
@@ -468,16 +464,6 @@ func writeCLIOutput(w io.Writer, raw []byte, exactJSON bool) error {
 		return writePrettyJSON(w, raw)
 	}
 	return writeHumanJSON(w, raw)
-}
-
-func writeCLIToolOutput(
-	w io.Writer,
-	toolName string,
-	arguments, raw []byte,
-	account string,
-	exactJSON, successful bool,
-) error {
-	return writeCLIToolOutputWithSchema(w, toolName, arguments, raw, nil, account, exactJSON, successful)
 }
 
 func writeCLIToolOutputWithSchema(

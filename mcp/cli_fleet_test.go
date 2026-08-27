@@ -47,11 +47,12 @@ const cliFleetRunnersResult = `{
 
 func TestCLIListRunnersUsesFleetFormatting(t *testing.T) {
 	var stdout bytes.Buffer
-	err := writeCLIToolOutput(
+	err := writeCLIToolOutputWithSchema(
 		&stdout,
 		listRunnersToolName,
 		json.RawMessage(`{"limit":2}`),
 		json.RawMessage(cliFleetRunnersResult),
+		nil,
 		"",
 		false,
 		true,
@@ -112,7 +113,7 @@ func TestCLIListPacksSummarizesInsteadOfDumpingActions(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	if err := writeCLIToolOutput(&stdout, listPacksToolName, json.RawMessage(`{}`), raw, "", false, true); err != nil {
+	if err := writeCLIToolOutputWithSchema(&stdout, listPacksToolName, json.RawMessage(`{}`), raw, nil, "", false, true); err != nil {
 		t.Fatal(err)
 	}
 	want := "1 pack\n\npostgres 1.2.3 — executable\n  119 executable actions\n  Pack ref  postgres@1.2.3/sha256:abc\n" +
@@ -165,7 +166,7 @@ func TestCLIListPacksExplainsEmptyHumanViews(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var stdout bytes.Buffer
-			if err := writeCLIToolOutput(&stdout, listPacksToolName, test.arguments, raw, test.account, false, true); err != nil {
+			if err := writeCLIToolOutputWithSchema(&stdout, listPacksToolName, test.arguments, raw, nil, test.account, false, true); err != nil {
 				t.Fatal(err)
 			}
 			if stdout.String() != test.want {
@@ -194,11 +195,12 @@ func TestCLIFindActionsUsesActionPreviewsAndAnInspectCommand(t *testing.T) {
 		"observed_at":"2026-08-21T02:45:31Z"
 	}`)
 	var stdout bytes.Buffer
-	if err := writeCLIToolOutput(
+	if err := writeCLIToolOutputWithSchema(
 		&stdout,
 		findActionsToolName,
 		json.RawMessage(`{"query":"postgres replication"}`),
 		raw,
+		nil,
 		"",
 		false,
 		true,
@@ -236,7 +238,7 @@ func TestCLIFleetFormattingCannotEmitTerminalControls(t *testing.T) {
 		"next_cursor":null
 	}`)
 	var stdout bytes.Buffer
-	if err := writeCLIToolOutput(&stdout, listRunnersToolName, json.RawMessage(`{}`), raw, "", false, true); err != nil {
+	if err := writeCLIToolOutputWithSchema(&stdout, listRunnersToolName, json.RawMessage(`{}`), raw, nil, "", false, true); err != nil {
 		t.Fatal(err)
 	}
 	body := strings.TrimSuffix(stdout.String(), "\n")
@@ -301,11 +303,12 @@ func TestCLIFleetRejectsMismatchedContinuationArguments(t *testing.T) {
 
 func TestCLIFleetJSONOutputStaysExact(t *testing.T) {
 	var stdout bytes.Buffer
-	if err := writeCLIToolOutput(
+	if err := writeCLIToolOutputWithSchema(
 		&stdout,
 		listRunnersToolName,
 		json.RawMessage(`{}`),
 		json.RawMessage(cliFleetRunnersResult),
+		nil,
 		"",
 		true,
 		true,

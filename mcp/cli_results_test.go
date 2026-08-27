@@ -102,7 +102,7 @@ func TestCLIFixedToolsHavePurposeBuiltHumanOutput(t *testing.T) {
 				arguments = `{}`
 			}
 			var stdout bytes.Buffer
-			if err := writeCLIToolOutput(&stdout, test.tool, []byte(arguments), []byte(test.result), "", false, true); err != nil {
+			if err := writeCLIToolOutputWithSchema(&stdout, test.tool, []byte(arguments), []byte(test.result), nil, "", false, true); err != nil {
 				t.Fatal(err)
 			}
 			output := stdout.String()
@@ -191,7 +191,7 @@ func TestCLIProcessRendersArrayBackedActionSideEffects(t *testing.T) {
 func TestCLIActionRunTemplatePreservesAccount(t *testing.T) {
 	raw := []byte(`{"ok":true,"action":{"action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc","title":"Postgres status","risk":"low","side_effects":[],"args_schema":{"type":"object"},"examples":[{"title":"Inspect primary database","args":{"threshold":9007199254740993}}]},"compatible_runners":[{"runner_ref":"db-1~abc","name":"db-1","status":"connected"}],"more_compatible_runners":false}`)
 	var stdout bytes.Buffer
-	if err := writeCLIToolOutput(&stdout, getActionToolName, json.RawMessage(`{}`), raw, "immersive", false, true); err != nil {
+	if err := writeCLIToolOutputWithSchema(&stdout, getActionToolName, json.RawMessage(`{}`), raw, nil, "immersive", false, true); err != nil {
 		t.Fatal(err)
 	}
 
@@ -272,7 +272,7 @@ func TestCLIRunbookInspectCommandPreservesAccountAndRejectsUnsafeIdentity(t *tes
 func TestCLIGetRunbookDraftUsesExactEditableExecutionTemplate(t *testing.T) {
 	raw := []byte(`{"ok":true,"runbook":{"slug":"database-check","draft_id":"draft-1","status":"draft","definition_sha256":"abc123","title":"Database check","description":"Inspect database health.","summary":{"input_count":1,"stage_count":1,"step_count":1},"definition":{"schema_version":1,"inputs":[{"id":"target","name":"Target","type":"string","required":true}],"stages":[]},"live_ref":"database-check@3"}}`)
 	var stdout bytes.Buffer
-	if err := writeCLIToolOutput(&stdout, getRunbookToolName, json.RawMessage(`{}`), raw, "immersive", false, true); err != nil {
+	if err := writeCLIToolOutputWithSchema(&stdout, getRunbookToolName, json.RawMessage(`{}`), raw, nil, "immersive", false, true); err != nil {
 		t.Fatal(err)
 	}
 	want := `emisar-mcp --account immersive execute_runbook '{"slug":"database-check","allow_draft":true,"definition_sha256":"abc123","reason":"<reason>","input_values":<input-values-json>}'`
@@ -393,7 +393,7 @@ func TestCLIHumanSuccessfulActionStatusExitsZero(t *testing.T) {
 func TestCLIToolErrorsExplainFailureAndSafeRecovery(t *testing.T) {
 	raw := []byte(`{"ok":false,"dispatch_started":true,"error":{"code":"target_contract_changed","message":"The selected contract changed.","retryable":true,"next":{"tool":"get_action","arguments":{"action_id":"postgres.status","pack_ref":"postgres@1/sha256:abc"}}}}`)
 	var stdout bytes.Buffer
-	if err := writeCLIToolOutput(&stdout, runActionToolName, nil, raw, "immersive", false, false); err != nil {
+	if err := writeCLIToolOutputWithSchema(&stdout, runActionToolName, nil, raw, nil, "immersive", false, false); err != nil {
 		t.Fatal(err)
 	}
 	output := stdout.String()
@@ -440,7 +440,7 @@ func TestCLIToolValidationErrorsExplainFieldsWithoutEchoingValues(t *testing.T) 
 	}
 
 	stdout.Reset()
-	if err := writeCLIToolOutput(&stdout, executeRunbookToolName, arguments, raw, "immersive", true, false); err != nil {
+	if err := writeCLIToolOutputWithSchema(&stdout, executeRunbookToolName, arguments, raw, nil, "immersive", true, false); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stdout.String(), `"path": "$.reason"`) || !strings.Contains(stdout.String(), `"code": "min"`) {
@@ -543,7 +543,7 @@ func TestCLIToolErrorIssuesAreBoundedAndTerminalSafe(t *testing.T) {
 func TestCLIPurposeBuiltOutputSanitizesHostileTerminalText(t *testing.T) {
 	raw := []byte(`{"ok":true,"runs":[{"run_id":"run-1","runner_ref":"safe\u001b[31m\u202evil","status":"failed","error_message":"bad\nnews\u0007"}],"next_cursor":null}`)
 	var stdout bytes.Buffer
-	if err := writeCLIToolOutput(&stdout, recentRunsToolName, nil, raw, "", false, true); err != nil {
+	if err := writeCLIToolOutputWithSchema(&stdout, recentRunsToolName, nil, raw, nil, "", false, true); err != nil {
 		t.Fatal(err)
 	}
 	for _, unsafe := range []string{"\x1b", "\a", "\u202e"} {

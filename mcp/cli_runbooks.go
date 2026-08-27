@@ -42,7 +42,6 @@ type cliRunbookSummary struct {
 type cliRunbookDetail struct {
 	RunbookRef       string          `json:"runbook_ref"`
 	Slug             string          `json:"slug"`
-	DraftID          string          `json:"draft_id"`
 	Status           string          `json:"status"`
 	DefinitionSHA256 string          `json:"definition_sha256"`
 	DraftSHA256      string          `json:"draft_definition_sha256"`
@@ -103,18 +102,13 @@ type cliRunbookExecution struct {
 	Blocking           *cliRunbookBlocking     `json:"blocking"`
 	Stages             []cliRunbookStageResult `json:"stages"`
 	Approval           *cliApprovalResult      `json:"approval"`
-	WaitUntil          string                  `json:"wait_until"`
 	RunsNext           cliToolResultNext       `json:"runs_next"`
 	Next               cliToolResultNext       `json:"next"`
 	OutputsNext        cliToolResultNext       `json:"outputs_next"`
 }
 
 type cliRunbookBlocking struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	StageID   string `json:"stage_id"`
-	StepID    string `json:"step_id"`
-	RunnerRef string `json:"runner_ref"`
+	Message string `json:"message"`
 }
 
 type cliRunbookStageResult struct {
@@ -142,21 +136,16 @@ type cliRunbookItemResult struct {
 		Message string `json:"message"`
 	} `json:"error"`
 	LatestAttempt *struct {
-		RunID         string `json:"run_id"`
-		AttemptNumber int    `json:"attempt_number"`
-		Status        string `json:"status"`
-		DurationMS    *int64 `json:"duration_ms"`
+		RunID  string `json:"run_id"`
+		Status string `json:"status"`
 	} `json:"latest_attempt"`
 }
 
 type cliRunbookOutputResult struct {
 	OutputID  string          `json:"output_id"`
-	ItemID    string          `json:"item_id"`
-	StageID   string          `json:"stage_id"`
 	StepID    string          `json:"step_id"`
 	RunnerRef string          `json:"runner_ref"`
 	Source    string          `json:"source"`
-	Sensitive bool            `json:"sensitive"`
 	Status    string          `json:"status"`
 	Value     json.RawMessage `json:"value"`
 }

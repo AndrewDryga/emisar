@@ -15,7 +15,6 @@ import (
 )
 
 const (
-	maxCredentialImportBytes  = 16 << 10
 	maxAccountNameRunes       = 80
 	maxAccountSlugBytes       = 64
 	defaultCLIEndpointOrigin  = "https://emisar.dev"
@@ -43,14 +42,13 @@ type accountListEntry struct {
 	Endpoint string `json:"endpoint"`
 }
 
-func runAuthCommand(account string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	return runAuthCommandWithDeviceAuth(account, args, stdin, stdout, stderr, newDeviceAuthenticator())
+func runAuthCommand(account string, args []string, stdout, stderr io.Writer) int {
+	return runAuthCommandWithDeviceAuth(account, args, stdout, stderr, newDeviceAuthenticator())
 }
 
 func runAuthCommandWithDeviceAuth(
 	account string,
 	args []string,
-	stdin io.Reader,
 	stdout, stderr io.Writer,
 	authenticator deviceAuthenticator,
 ) int {
@@ -76,14 +74,6 @@ func runAuthCommandWithDeviceAuth(
 			return 0
 		}
 		return showCLIAuthStatus(account, args[1], stdout, stderr)
-	case len(args) == 1 && args[0] == "import":
-		return importCLIAuth("", stdin, stdout, stderr)
-	case len(args) == 2 && args[0] == "import":
-		if args[1] == "-h" || args[1] == "--help" {
-			fmt.Fprint(stdout, authHelpText)
-			return 0
-		}
-		return importCLIAuth(args[1], stdin, stdout, stderr)
 	case len(args) == 1 && (args[0] == "-h" || args[0] == "--help"):
 		fmt.Fprint(stdout, authHelpText)
 		return 0
@@ -237,54 +227,6 @@ func showCLIAuthStatus(account, expectedOrigin string, stdout, stderr io.Writer)
 		warnAuthEnvironmentOverride(stderr)
 	}
 	return 0
-}
-
-func importCLIAuth(rawOrigin string, stdin io.Reader, stdout, stderr io.Writer) int {
-	origin, err := resolveCLIAuthOrigin("", rawOrigin)
-	if err != nil {
-		return cliCommandError(
-			stderr,
-			"Could not choose an Emisar server",
-			[]string{err.Error()},
-			"Pass an origin such as `emisar-mcp auth import https://emisar.dev`.",
-		)
-	}
-	data, err := io.ReadAll(io.LimitReader(stdin, maxCredentialImportBytes+1))
-	if err != nil {
-		return cliCommandError(
-			stderr,
-			"Could not read the browser approval from stdin",
-			[]string{err.Error()},
-			"Run `emisar-mcp auth` for normal browser authentication.",
-		)
-	}
-	if len(data) > maxCredentialImportBytes {
-		return cliCommandError(
-			stderr,
-			"The browser approval response is too large",
-			[]string{fmt.Sprintf("Expected at most %d bytes.", maxCredentialImportBytes)},
-			"Run `emisar-mcp auth` for normal browser authentication.",
-		)
-	}
-	var response deviceTokenResponse
-	if err := decodeJSON(data, &response); err != nil {
-		return cliCommandError(
-			stderr,
-			"The browser approval response is invalid",
-			[]string{"Stdin must contain one JSON approval response."},
-			"Run `emisar-mcp auth` for normal browser authentication.",
-		)
-	}
-	credential, err := response.cliCredential()
-	if err != nil {
-		return cliCommandError(
-			stderr,
-			"The browser approval response is incomplete",
-			[]string{"It does not contain a valid CLI credential and account identity."},
-			"Run `emisar-mcp auth` for normal browser authentication.",
-		)
-	}
-	return storeCLIAccountCredential(origin, credential, stdout, stderr)
 }
 
 func decodeStrictJSON(data []byte, target any) error {
@@ -798,7 +740,6 @@ func accountAuthHint(account string) string {
 const authUsageText = `usage:
   emisar-mcp auth [login [URL]]
   emisar-mcp [--account <slug-or-id>] auth status [URL]
-  emisar-mcp auth import [URL]
 `
 
 const authHelpText = `emisar-mcp auth - authenticate the direct CLI
@@ -807,7 +748,6 @@ USAGE
   emisar-mcp auth
   emisar-mcp auth login [URL]
   emisar-mcp [--account <slug-or-id>] auth status [URL]
-  emisar-mcp auth import [URL]
 
 DESCRIPTION
   With no subcommand, open the browser. Choose an account there, approve the
@@ -816,10 +756,6 @@ DESCRIPTION
 
   Status shows the current or --account credential without printing its key.
   Add URL to require an exact endpoint match. This checks the local file only.
-
-  Import is used by install-mcp.sh and install-mcp.ps1. It reads the browser
-  approval response from stdin and stores only the CLI credential. Use browser
-  authentication yourself.
 
   Stdio MCP clients do not use these credentials. Their client configuration
   still provides EMISAR_URL and EMISAR_API_KEY.

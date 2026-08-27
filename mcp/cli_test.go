@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1083,7 +1084,7 @@ func TestMainCLIDefaultsClientAttributionWithoutChangingStdIO(t *testing.T) {
 	}
 
 	t.Setenv("EMISAR_CLIENT", "")
-	if got := buildUserAgent(); !strings.Contains(got, "client=unknown") {
+	if got := buildUserAgentWithDefault("unknown"); !strings.Contains(got, "client=unknown") {
 		t.Fatalf("stdio User-Agent default changed: %q", got)
 	}
 }
@@ -1232,7 +1233,7 @@ func TestCLIToolHelpFallsBackForUnresolvableSchema(t *testing.T) {
 func runCLITest(b *bridge, args []string, stdin string) (stdout, stderr string, code int) {
 	var out, errOut bytes.Buffer
 	b.diagnostics = &errOut
-	code = b.runCLI(args, strings.NewReader(stdin), &out, &errOut)
+	code = b.runCLIContext(context.Background(), args, strings.NewReader(stdin), &out, &errOut)
 	return out.String(), errOut.String(), code
 }
 

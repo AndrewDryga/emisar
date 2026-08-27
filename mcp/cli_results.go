@@ -32,7 +32,6 @@ type cliToolResultNext struct {
 }
 
 type cliApprovalResult struct {
-	RequestID string `json:"request_id"`
 	URL       string `json:"url"`
 	ExpiresAt string `json:"expires_at"`
 }
@@ -46,8 +45,6 @@ type cliRunResult struct {
 	RunbookExecutionID string             `json:"runbook_execution_id"`
 	StepID             string             `json:"step_id"`
 	Status             string             `json:"status"`
-	CreatedAt          string             `json:"created_at"`
-	FinishedAt         string             `json:"finished_at"`
 	ExitCode           *int               `json:"exit_code"`
 	DurationMS         *int64             `json:"duration_ms"`
 	ErrorMessage       string             `json:"error_message"`
@@ -63,7 +60,6 @@ type cliRunResult struct {
 	StructuredOmitted  bool               `json:"structured_output_omitted"`
 	LocalAuditFailed   bool               `json:"local_audit_failed"`
 	Approval           *cliApprovalResult `json:"approval"`
-	WaitUntil          string             `json:"wait_until"`
 	RunURL             string             `json:"run_url"`
 	Next               cliToolResultNext  `json:"next"`
 	localOutputClipped bool
@@ -124,12 +120,11 @@ func writeCLIToolError(w io.Writer, toolName string, arguments, raw, inputSchema
 		OK              bool `json:"ok"`
 		DispatchStarted bool `json:"dispatch_started"`
 		Error           struct {
-			Code      string            `json:"code"`
-			Message   string            `json:"message"`
-			Retryable bool              `json:"retryable"`
-			Path      string            `json:"path"`
-			Details   json.RawMessage   `json:"details"`
-			Next      cliToolResultNext `json:"next"`
+			Code    string            `json:"code"`
+			Message string            `json:"message"`
+			Path    string            `json:"path"`
+			Details json.RawMessage   `json:"details"`
+			Next    cliToolResultNext `json:"next"`
 		} `json:"error"`
 	}
 	if json.Unmarshal(raw, &result) != nil || result.OK || result.Error.Message == "" {

@@ -430,8 +430,7 @@ the `--registry` flag select a pack registry.
 
 With no command, the MCP bridge keeps its stdio behavior. Its direct CLI surface
 has a local `auth` / `auth login [URL]` browser device flow, local
-`auth status [URL]`, an installer-facing `auth import [URL]`, `accounts list
-[--json]`, `accounts use <slug-or-id>`, `connect [--all | --client <id>]`, and
+`auth status [URL]`, `accounts list [--json]`, `accounts use <slug-or-id>`, `connect [--all | --client <id>]`, and
 `disconnect [--all | --client <id>] [--forget]`, then a descriptor-driven tool
 surface: `list_tools [--json]` lists the live server catalog, `help <tool>
 [--json]` and, for non-conflicting names, `<tool> --help` document one live

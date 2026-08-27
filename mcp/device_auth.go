@@ -104,7 +104,6 @@ func loginCLIAuth(
 				stderr,
 				"Browser sign-in is not available",
 				[]string{"The server at " + origin + " does not provide browser sign-in directly to the CLI."},
-				"Rerun the interactive MCP installer to authenticate this CLI on an older server.",
 				"For a self-hosted server, upgrade it and make sure `/api/mcp/device_authorization` is routed.",
 				"Or set EMISAR_URL and EMISAR_API_KEY together for direct commands.",
 			)

@@ -532,7 +532,7 @@ sudo() {
 }
 first_bin="$CLI_BIN"
 secret='emk-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq'
-printf '%s\n' "$secret" | run_cli_as_invoking_user auth import https://control.example
+printf '%s\n' "$secret" | run_cli_as_invoking_user auth status https://control.example
 `, map[string]string{
 		"CLI_BIN":       bin,
 		"CLI_TRACE":     trace,
@@ -544,11 +544,11 @@ printf '%s\n' "$secret" | run_cli_as_invoking_user auth import https://control.e
 		return err
 	}
 	if err := exactFile(sudoTrace, strings.Join([]string{
-		"-H", "-u", "alice", bin, "auth", "import", "https://control.example", "",
+		"-H", "-u", "alice", bin, "auth", "status", "https://control.example", "",
 	}, "\n")); err != nil {
 		return err
 	}
-	return exactFile(trace, "HOME="+invokingHome+"\nARGS=auth import https://control.example\nKEY=emk-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq\n")
+	return exactFile(trace, "HOME="+invokingHome+"\nARGS=auth status https://control.example\nKEY=emk-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq\n")
 }
 
 // buildBridge compiles the bridge from THIS checkout into dir. The connect and
