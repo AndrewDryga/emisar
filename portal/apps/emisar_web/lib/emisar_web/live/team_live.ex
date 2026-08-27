@@ -1716,14 +1716,18 @@ defmodule EmisarWeb.TeamLive do
            opens directly under the row instead of in a bolted-on
            extra table column. --%>
       <%!-- Roster leads the main column; the Security stance rides the SIDE
-           PANEL beside it (stacks below on a phone) — 2FA and SSO each own one
-           boxed control. SSO enforcement is a subsection of its connection
-           setup, not a competing card. --%>
+           PANEL beside it — 2FA and SSO each own one boxed control. SSO
+           enforcement is a subsection of its connection setup, not a competing
+           card. --%>
+      <%!-- The house rail track: a FIXED 22rem that splits off at xl, never a
+           squeezed fraction. A third of the lg canvas gave the rail ~220px, so
+           it truncated its own provider names while the roster beside it clipped
+           every member email; below the split both get the full width. --%>
       <div
         :if={@live_action == :index and not @loading?}
-        class="grid grid-cols-1 gap-x-10 gap-y-8 lg:grid-cols-3 lg:items-start"
+        class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start"
       >
-        <div id="team-primary-column" class="space-y-8 lg:col-span-2">
+        <div id="team-primary-column" class="min-w-0 space-y-8">
           <%!-- The queue belongs to the roster column: these requests become
                members, while Security keeps its stable side rail. --%>
           <section :if={@pending_requests_error?} id="pending-access-requests">
@@ -2437,7 +2441,11 @@ defmodule EmisarWeb.TeamLive do
         <%!-- ===== Security side panel ===== 2FA and SSO are the two account
              security concerns; the SSO card contains its enforcement and
              sign-in-link subsections in operator order. --%>
-        <aside class="space-y-4 lg:col-span-1">
+        <%!-- Holds the rail's own measure once it stacks below xl: every card
+             here puts a name and its control at opposite edges (provider row and
+             chevron, sign-in link and Copy), so a full-canvas panel strands them
+             a screen apart. --%>
+        <aside class="max-w-[22rem] space-y-4">
           <h3 class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Security</h3>
 
           <%!-- ── Two-factor authentication ── --%>
