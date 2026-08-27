@@ -68,11 +68,11 @@ type checkResult struct {
 // human report renders, with string statuses and counts so fleet tooling can
 // branch on the verdict instead of parsing glyphs and banners.
 type doctorReport struct {
-	Status   string        `json:"status"`
-	Passed   int           `json:"passed"`
-	Warnings int           `json:"warnings"`
-	Failed   int           `json:"failed"`
-	Checks   []doctorCheck `json:"checks"`
+	Status string        `json:"status"`
+	Passed int           `json:"passed"`
+	Warned int           `json:"warned"`
+	Failed int           `json:"failed"`
+	Checks []doctorCheck `json:"checks"`
 }
 
 // doctorCheck is one check in the JSON report. Detail carries the same
@@ -92,7 +92,7 @@ func newDoctorReport(results []checkResult) doctorReport {
 		case checkFail:
 			report.Failed++
 		case checkWarn:
-			report.Warnings++
+			report.Warned++
 		default:
 			report.Passed++
 		}
@@ -105,7 +105,7 @@ func newDoctorReport(results []checkResult) doctorReport {
 	switch {
 	case report.Failed > 0:
 		report.Status = checkFail.String()
-	case report.Warnings > 0:
+	case report.Warned > 0:
 		report.Status = checkWarn.String()
 	}
 	return report

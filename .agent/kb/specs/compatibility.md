@@ -418,6 +418,28 @@ can no longer fall outside the compatibility review unnoticed. The structured ou
 flags: after 1.0 they change only additively. That includes the complete
 `status --json` report and its embedded `runtime` object.
 
+The golden records commands and flags, not payload shape, so the emitted keys
+are pinned separately by `TestJSONPayloadKeysAreFrozen`, which asserts the exact
+top-level key set of each payload from a fully-populated value:
+
+- `version` — `version`, `go`, `os`, `arch`, and the VCS fields `commit`,
+  `built_at`, `dirty`. The VCS fields appear only when the toolchain stamped
+  them. `dirty` is deliberately tri-state: present `false` means the build was
+  clean, and an absent key means the build carried no VCS stamp at all, so a
+  fleet asking whether any host runs a modified binary can tell "no" from
+  "cannot say".
+- `doctor` and `status` — `status`, `passed`, `warned`, `failed`, `checks`, plus
+  `status`'s optional embedded `runtime`. The counts are named for the outcomes
+  they count and share one grammar; each entry of `checks` is `name`, `status`,
+  `detail`.
+- `audit verify` — `path`, `intact`, and `error`, which is present only when a
+  file's chain is broken.
+- `runtime` (also the on-disk `runtime-status.json`) — `schema_version`, `pid`,
+  `state`, `started_at`, `updated_at`, `heartbeat_every_seconds`, `packs`,
+  `actions`, `unavailable_actions`, `degraded_packs`, `advertisement_pending`,
+  `inflight_runs`, `connection_attempts`, and the optional `connected_at` and
+  `last_heartbeat_sent_at`, which are absent until each first happens.
+
 The runner also writes `<paths.data_dir>/runtime-status.json` with exact
 `schema_version: 1`. It is an owner-only, advisory operational snapshot for
 `emisar status`: the reader must correlate it with the held runner lock, live

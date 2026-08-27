@@ -143,7 +143,7 @@ func TestNewStatusReportMatchesDoctorVocabulary(t *testing.T) {
 		{"connection", checkOK, "connected"},
 		{"catalog", checkWarn, "one unavailable"},
 	})
-	if report.Status != "warn" || report.Passed != 1 || report.Warnings != 1 || report.Failed != 0 {
+	if report.Status != "warn" || report.Passed != 1 || report.Warned != 1 || report.Failed != 0 {
 		t.Fatalf("report = %+v", report)
 	}
 	body, err := json.Marshal(report)

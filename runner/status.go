@@ -16,12 +16,12 @@ import (
 const runtimeStatusMinFreshness = 30 * time.Second
 
 type statusReport struct {
-	Status   string               `json:"status"`
-	Passed   int                  `json:"passed"`
-	Warnings int                  `json:"warnings"`
-	Failed   int                  `json:"failed"`
-	Runtime  *cloud.RuntimeStatus `json:"runtime,omitempty"`
-	Checks   []doctorCheck        `json:"checks"`
+	Status  string               `json:"status"`
+	Passed  int                  `json:"passed"`
+	Warned  int                  `json:"warned"`
+	Failed  int                  `json:"failed"`
+	Runtime *cloud.RuntimeStatus `json:"runtime,omitempty"`
+	Checks  []doctorCheck        `json:"checks"`
 }
 
 func statusCmd() *cobra.Command {
@@ -59,7 +59,7 @@ for detailed connection errors.`,
 func newStatusReport(runtime *cloud.RuntimeStatus, checks []checkResult) statusReport {
 	doctor := newDoctorReport(checks)
 	return statusReport{
-		Status: doctor.Status, Passed: doctor.Passed, Warnings: doctor.Warnings,
+		Status: doctor.Status, Passed: doctor.Passed, Warned: doctor.Warned,
 		Failed: doctor.Failed, Runtime: runtime, Checks: doctor.Checks,
 	}
 }

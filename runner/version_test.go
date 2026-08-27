@@ -86,9 +86,10 @@ func TestVersionCmd_JSON(t *testing.T) {
 // fields are set.
 func TestWriteVersion_RendersOptionalVCSLines(t *testing.T) {
 	var buf bytes.Buffer
+	dirty := true
 	writeVersion(&buf, versionInfo{
 		Version: "1.2.3", Go: "go1.26.5", OS: "linux", Arch: "amd64",
-		Commit: "abc123", BuiltAt: "2026-07-31T10:00:00Z", Dirty: true,
+		Commit: "abc123", BuiltAt: "2026-07-31T10:00:00Z", Dirty: &dirty,
 	})
 	want := "emisar 1.2.3\n" +
 		"  go: go1.26.5 linux/amd64\n" +

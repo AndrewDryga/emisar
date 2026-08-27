@@ -17,6 +17,13 @@ import (
 // The VCS fields are populated by the Go toolchain only when building from a
 // git checkout — useful for spotting "is this binary built from a tagged
 // release or from someone's local branch?" — and are omitted otherwise.
+//
+// Dirty is a pointer because it answers a question with three answers, and this
+// payload freezes at 1.0. A plain bool with omitempty drops false, so a clean
+// build and a build the toolchain reported nothing about are the same absent
+// key — and a fleet script asking "is any host running a modified binary?"
+// cannot tell "no" from "cannot say". Present false means clean; absent means
+// the build carried no VCS stamp.
 type versionInfo struct {
 	Version string `json:"version"`
 	Go      string `json:"go"`
@@ -24,7 +31,7 @@ type versionInfo struct {
 	Arch    string `json:"arch"`
 	Commit  string `json:"commit,omitempty"`
 	BuiltAt string `json:"built_at,omitempty"`
-	Dirty   bool   `json:"dirty,omitempty"`
+	Dirty   *bool  `json:"dirty,omitempty"`
 }
 
 // versionCmd prints build and runtime metadata. Useful in deployment
@@ -64,7 +71,8 @@ func gatherVersionInfo() versionInfo {
 		case "vcs.time":
 			info.BuiltAt = s.Value
 		case "vcs.modified":
-			info.Dirty = s.Value == "true"
+			dirty := s.Value == "true"
+			info.Dirty = &dirty
 		}
 	}
 	return info
@@ -79,7 +87,7 @@ func writeVersion(w io.Writer, info versionInfo) {
 	if info.BuiltAt != "" {
 		fmt.Fprintf(w, "  built: %s\n", info.BuiltAt)
 	}
-	if info.Dirty {
+	if info.Dirty != nil && *info.Dirty {
 		fmt.Fprintf(w, "  vcs: dirty (uncommitted changes)\n")
 	}
 }

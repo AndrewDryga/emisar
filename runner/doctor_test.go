@@ -663,12 +663,12 @@ func TestNewDoctorReport(t *testing.T) {
 		{
 			name:    "a warning downgrades the verdict",
 			results: []checkResult{{"config", checkOK, "loaded"}, {"action tools", checkWarn, "redis-cli missing"}},
-			want:    doctorReport{Status: "warn", Passed: 1, Warnings: 1},
+			want:    doctorReport{Status: "warn", Passed: 1, Warned: 1},
 		},
 		{
 			name:    "a failure outranks a warning",
 			results: []checkResult{{"credential", checkFail, "no token"}, {"action tools", checkWarn, "missing"}},
-			want:    doctorReport{Status: "fail", Warnings: 1, Failed: 1},
+			want:    doctorReport{Status: "fail", Warned: 1, Failed: 1},
 		},
 	}
 	for _, tc := range tests {
@@ -677,9 +677,9 @@ func TestNewDoctorReport(t *testing.T) {
 			if got.Status != tc.want.Status {
 				t.Errorf("status = %q, want %q", got.Status, tc.want.Status)
 			}
-			if got.Passed != tc.want.Passed || got.Warnings != tc.want.Warnings || got.Failed != tc.want.Failed {
+			if got.Passed != tc.want.Passed || got.Warned != tc.want.Warned || got.Failed != tc.want.Failed {
 				t.Errorf("counts = %d/%d/%d, want %d/%d/%d (passed/warnings/failed)",
-					got.Passed, got.Warnings, got.Failed, tc.want.Passed, tc.want.Warnings, tc.want.Failed)
+					got.Passed, got.Warned, got.Failed, tc.want.Passed, tc.want.Warned, tc.want.Failed)
 			}
 			if len(got.Checks) != len(tc.results) {
 				t.Fatalf("checks = %d, want one per result (%d)", len(got.Checks), len(tc.results))
@@ -788,7 +788,7 @@ func TestDoctorCmd_JSONAllPass(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &report); err != nil {
 		t.Fatalf("doctor --json must emit a JSON object: %v\n%s", err, out)
 	}
-	if report.Status != "ok" || report.Failed != 0 || report.Warnings != 0 {
+	if report.Status != "ok" || report.Failed != 0 || report.Warned != 0 {
 		t.Errorf("report = %+v, want an all-clear verdict", report)
 	}
 	if report.Passed != len(report.Checks) {
