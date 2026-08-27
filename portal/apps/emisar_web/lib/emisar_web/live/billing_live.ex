@@ -334,17 +334,11 @@ defmodule EmisarWeb.BillingLive do
   def render(assigns) do
     ~H"""
     <.console_shell
-      current_subject={@current_subject}
+      chrome={@shell_chrome}
       current_membership={@current_membership}
-      pending_approvals_count={@pending_approvals_count}
-      pending_access_requests_count={@pending_access_requests_count}
-      pending_packs_count={@pending_packs_count}
-      fleet_all_offline?={@fleet_all_offline?}
-      no_agents?={@no_agents?}
-      onboarding_incomplete?={@onboarding_incomplete?}
+      current_subject={@current_subject}
       current_user={@current_user}
       current_account={@current_account}
-      switchable_accounts={@switchable_accounts}
       section={:billing}
       width={:table}
     >

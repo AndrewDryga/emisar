@@ -1703,7 +1703,11 @@ defmodule EmisarWeb.CoreComponents do
   # depending on which surface you looked at. Defaults to nil so a unit test
   # rendering the shell without the on_mount hook still works.
   attr :current_membership, :map, default: nil
-  attr :switchable_accounts, :list, default: nil
+
+  attr :chrome, EmisarWeb.ShellChrome,
+    default: %EmisarWeb.ShellChrome{},
+    doc: "the shell's own nav cues and account facts, seeded by the UserAuth hooks"
+
   attr :section, :atom, default: :dashboard
 
   attr :width, :atom,
@@ -1712,12 +1716,6 @@ defmodule EmisarWeb.CoreComponents do
     doc:
       "content column width: :table (7xl — every operate/list page incl. dashboard/runs/audit), :detail (6xl), :form (3xl), :settings (4xl)"
 
-  attr :pending_approvals_count, :integer, default: 0
-  attr :pending_access_requests_count, :integer, default: 0
-  attr :pending_packs_count, :integer, default: 0
-  attr :fleet_all_offline?, :boolean, default: false
-  attr :no_agents?, :boolean, default: false
-  attr :onboarding_incomplete?, :boolean, default: false
   slot :inner_block, required: true
   slot :title, required: true
   slot :actions
@@ -1735,19 +1733,19 @@ defmodule EmisarWeb.CoreComponents do
       <aside class="hidden w-64 flex-shrink-0 flex-col border-r border-zinc-800/70 bg-black lg:sticky lg:top-0 lg:flex lg:h-screen">
         <.shell_brand
           current_account={@current_account}
-          switchable_accounts={@switchable_accounts || [@current_account]}
+          switchable_accounts={@chrome.switchable_accounts}
         />
         <.shell_nav
           current_account={@current_account}
           current_user={@current_user}
           current_subject={@current_subject}
           section={@section}
-          pending_approvals_count={@pending_approvals_count}
-          pending_access_requests_count={@pending_access_requests_count}
-          pending_packs_count={@pending_packs_count}
-          fleet_all_offline?={@fleet_all_offline?}
-          no_agents?={@no_agents?}
-          onboarding_incomplete?={@onboarding_incomplete?}
+          pending_approvals_count={@chrome.pending_approvals_count}
+          pending_access_requests_count={@chrome.pending_access_requests_count}
+          pending_packs_count={@chrome.pending_packs_count}
+          fleet_all_offline?={@chrome.fleet_all_offline?}
+          no_agents?={@chrome.no_agents?}
+          onboarding_incomplete?={@chrome.onboarding_incomplete?}
         />
         <.shell_user
           current_user={@current_user}
@@ -1778,7 +1776,7 @@ defmodule EmisarWeb.CoreComponents do
           <div class="flex items-center justify-between border-b border-zinc-800/70 px-4 py-3">
             <.shell_brand
               current_account={@current_account}
-              switchable_accounts={@switchable_accounts || [@current_account]}
+              switchable_accounts={@chrome.switchable_accounts}
             />
             <button
               type="button"
@@ -1794,12 +1792,12 @@ defmodule EmisarWeb.CoreComponents do
             current_user={@current_user}
             current_subject={@current_subject}
             section={@section}
-            pending_approvals_count={@pending_approvals_count}
-            pending_access_requests_count={@pending_access_requests_count}
-            pending_packs_count={@pending_packs_count}
-            fleet_all_offline?={@fleet_all_offline?}
-            no_agents?={@no_agents?}
-            onboarding_incomplete?={@onboarding_incomplete?}
+            pending_approvals_count={@chrome.pending_approvals_count}
+            pending_access_requests_count={@chrome.pending_access_requests_count}
+            pending_packs_count={@chrome.pending_packs_count}
+            fleet_all_offline?={@chrome.fleet_all_offline?}
+            no_agents?={@chrome.no_agents?}
+            onboarding_incomplete?={@chrome.onboarding_incomplete?}
           />
           <.shell_user
             current_user={@current_user}

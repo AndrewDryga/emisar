@@ -10,7 +10,7 @@ defmodule EmisarWeb.UserAuth do
   import Phoenix.Controller
   alias Emisar.{Accounts, ApiKeys, Approvals, Auth, Catalog, Marketing, Runners, SSO}
   alias Emisar.Auth.Subject
-  alias EmisarWeb.{Analytics, BillingIntent, MarketingAttribution}
+  alias EmisarWeb.{Analytics, BillingIntent, MarketingAttribution, ShellChrome}
   alias EmisarWeb.RequestContext
 
   # Session provenance for an unauthenticated request — no method, no factor, no
@@ -525,9 +525,9 @@ defmodule EmisarWeb.UserAuth do
       {:cont,
        socket
        |> Phoenix.Component.assign(:current_account, membership.account)
-       |> Phoenix.Component.assign(:current_membership, membership)
        |> Phoenix.Component.assign(:current_subject, subject)
-       |> Phoenix.Component.assign(:switchable_accounts, switchable_accounts)
+       |> Phoenix.Component.assign(:current_membership, membership)
+       |> ShellChrome.put(switchable_accounts: switchable_accounts)
        |> Phoenix.LiveView.attach_hook(
          :ensure_slug_unchanged,
          :handle_params,
@@ -619,13 +619,12 @@ defmodule EmisarWeb.UserAuth do
 
       {:cont,
        socket
-       |> Phoenix.Component.assign(navigation_facts_for(subject))
-       |> Phoenix.Component.assign(:pending_approvals_count, approval_count_for(subject))
-       |> Phoenix.Component.assign(
-         :pending_access_requests_count,
-         access_request_count_for(subject)
+       |> ShellChrome.put(navigation_facts_for(subject))
+       |> ShellChrome.put(
+         pending_approvals_count: approval_count_for(subject),
+         pending_access_requests_count: access_request_count_for(subject),
+         pending_packs_count: pack_pending_count_for(subject)
        )
-       |> Phoenix.Component.assign(:pending_packs_count, pack_pending_count_for(subject))
        |> Phoenix.LiveView.attach_hook(
          :refresh_pending_approvals,
          :handle_info,
@@ -652,10 +651,7 @@ defmodule EmisarWeb.UserAuth do
       # so these four reads run once per live socket, not on the dead render too.
       {:cont,
        socket
-       |> Phoenix.Component.assign(navigation_facts_for(nil))
-       |> Phoenix.Component.assign(:pending_approvals_count, 0)
-       |> Phoenix.Component.assign(:pending_access_requests_count, 0)
-       |> Phoenix.Component.assign(:pending_packs_count, 0)}
+       |> ShellChrome.put(navigation_facts_for(nil))}
     end
   end
 
@@ -727,10 +723,8 @@ defmodule EmisarWeb.UserAuth do
 
   defp refresh_pending_approvals({:approval_updated, _}, socket) do
     {:cont,
-     Phoenix.Component.assign(
-       socket,
-       :pending_approvals_count,
-       approval_count_for(socket.assigns[:current_subject])
+     ShellChrome.put(socket,
+       pending_approvals_count: approval_count_for(socket.assigns[:current_subject])
      )}
   end
 
@@ -738,10 +732,8 @@ defmodule EmisarWeb.UserAuth do
 
   defp refresh_pending_access_requests({:sso_link_requests_changed, _account_id}, socket) do
     {:cont,
-     Phoenix.Component.assign(
-       socket,
-       :pending_access_requests_count,
-       access_request_count_for(socket.assigns[:current_subject])
+     ShellChrome.put(socket,
+       pending_access_requests_count: access_request_count_for(socket.assigns[:current_subject])
      )}
   end
 
@@ -754,10 +746,8 @@ defmodule EmisarWeb.UserAuth do
   # pages whose `handle_info/2` doesn't expect it.
   defp refresh_pending_packs({:pack_trust_changed, _account_id}, socket) do
     {:halt,
-     Phoenix.Component.assign(
-       socket,
-       :pending_packs_count,
-       pack_pending_count_for(socket.assigns[:current_subject])
+     ShellChrome.put(socket,
+       pending_packs_count: pack_pending_count_for(socket.assigns[:current_subject])
      )}
   end
 
@@ -781,7 +771,7 @@ defmodule EmisarWeb.UserAuth do
 
     {:halt,
      socket
-     |> Phoenix.Component.assign(navigation_facts_for(subject))
+     |> ShellChrome.put(navigation_facts_for(subject))
      |> Phoenix.Component.assign(:fleet_recompute_scheduled?, false)}
   end
 

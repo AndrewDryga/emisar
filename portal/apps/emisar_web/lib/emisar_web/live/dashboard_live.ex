@@ -271,17 +271,11 @@ defmodule EmisarWeb.DashboardLive do
   def render(assigns) do
     ~H"""
     <.console_shell
-      current_subject={@current_subject}
+      chrome={@shell_chrome}
       current_membership={@current_membership}
-      pending_approvals_count={@pending_approvals_count}
-      pending_access_requests_count={@pending_access_requests_count}
-      pending_packs_count={@pending_packs_count}
-      fleet_all_offline?={@fleet_all_offline?}
-      no_agents?={@no_agents?}
-      onboarding_incomplete?={@onboarding_incomplete?}
+      current_subject={@current_subject}
       current_user={@current_user}
       current_account={@current_account}
-      switchable_accounts={@switchable_accounts}
       section={:dashboard}
       width={:table}
     >
@@ -291,12 +285,13 @@ defmodule EmisarWeb.DashboardLive do
 
       <.live_dashboard
         :if={not @loading?}
+        pending_approvals_count={@shell_chrome.pending_approvals_count}
+        pending_packs_count={@shell_chrome.pending_packs_count}
         runners_total={@runners_total}
         runners_connected={@runners_connected}
         runners_error?={@runners_error?}
         actions_advertised?={@actions_advertised?}
         pending_approvals={@pending_approvals}
-        pending_approvals_count={@pending_approvals_count}
         pending_approvals_error?={@pending_approvals_error?}
         recent_runs={@recent_runs}
         recent_runs_error?={@recent_runs_error?}
@@ -307,7 +302,6 @@ defmodule EmisarWeb.DashboardLive do
         team_security={@team_security}
         sso_enabled?={@sso_enabled?}
         can_manage_sso?={SSO.subject_can_manage_sso?(@current_subject)}
-        pending_packs_count={@pending_packs_count}
         current_account={@current_account}
         can_view_runners?={@can_view_runners?}
         has_runner_access?={@has_runner_access?}
