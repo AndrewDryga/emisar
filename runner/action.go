@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -90,7 +89,7 @@ func actionRunCmd() *cobra.Command {
 		Use:   "run <action-id>",
 		Short: "Run an action locally (bypasses cloud — for debugging packs)",
 		Args:  requireOne("<action-id>"),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			rt, err := boot()
 			if err != nil {
 				return err
@@ -124,7 +123,7 @@ func actionRunCmd() *cobra.Command {
 					}
 				}
 			}
-			res, err := rt.engine.Run(context.Background(), req)
+			res, err := rt.engine.Run(cmd.Context(), req)
 			if err != nil {
 				return err
 			}

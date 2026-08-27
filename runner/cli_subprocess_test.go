@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -1083,5 +1085,132 @@ func TestCLI_AuditVerifyJSONReportsABrokenChain(t *testing.T) {
 	}
 	if !strings.Contains(report[0].Error, "chain break at line 2") {
 		t.Fatalf("error = %q, want the chain-break reason", report[0].Error)
+	}
+}
+
+// --- interrupt: a local action's process group dies with the runner --------
+
+// writeSleepingConfig wires a pack whose single action records its own PID and
+// then sleeps, so a test can interrupt the runner and prove the exact action
+// process died with it.
+func writeSleepingConfig(t *testing.T, dir, pidFile string) string {
+	t.Helper()
+	packRoot := filepath.Join(dir, "packs")
+	packDir := filepath.Join(packRoot, "linux")
+	if err := os.MkdirAll(filepath.Join(packDir, "actions"), 0o755); err != nil {
+		t.Fatalf("mkdir pack: %v", err)
+	}
+	manifest := "schema_version: 1\nid: linux\nname: linux\nversion: 0.0.1\ndescription: d\nactions:\n  - actions/nap.yaml\n"
+	action := "schema_version: 1\nid: linux.nap\ntitle: Nap\nkind: exec\nrisk: low\ndescription: d\nside_effects: [none]\n" +
+		"execution:\n  command:\n    binary: /bin/sh\n    argv: [\"-c\", \"echo $$ > " + pidFile + " && exec sleep 60\"]\n  timeout: 90s\n  timeout_min: 1s\n  timeout_max: 120s\n" +
+		"output:\n  parser: text\n  max_stdout_bytes: 1024\n  max_stderr_bytes: 1024\n"
+	if err := os.WriteFile(filepath.Join(packDir, "pack.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write pack.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(packDir, "actions", "nap.yaml"), []byte(action), 0o644); err != nil {
+		t.Fatalf("write action: %v", err)
+	}
+	cfgPath := filepath.Join(dir, "config.yaml")
+	cfg := "schema_version: 1\n" +
+		"runner:\n  group: test\n" +
+		"paths:\n  packs:\n    - " + packRoot + "\n  data_dir: " + filepath.Join(dir, "data") + "\n" +
+		"events:\n  jsonl_path: " + filepath.Join(dir, "events.jsonl") + "\n"
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	return cfgPath
+}
+
+func awaitPIDFile(t *testing.T, path string, timeout time.Duration) int {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if data, err := os.ReadFile(path); err == nil {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && pid > 0 {
+				return pid
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("the action never wrote its pid — did it start?")
+	return 0
+}
+
+// `action run` executes the action in its own process group. Without a
+// process-lifetime signal context an interrupt killed only the runner; Linux's
+// Pdeathsig then reaped the children, but Darwin has no such net, so the
+// action tree kept running unsupervised. main's NotifyContext now cancels the
+// engine context, which terminates the group through the executor's
+// SIGTERM-then-SIGKILL grace path before the runner exits — on every OS.
+func TestCLI_InterruptTerminatesLocalActionProcessGroup(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "action.pid")
+	cfgPath := writeSleepingConfig(t, dir, pidFile)
+
+	cmd := exec.Command(os.Args[0], "action", "run", "linux.nap", "--reason", "interrupt-test")
+	cmd.Env = []string{
+		runMainSentinel + "=1",
+		"EMISAR_CONFIG=" + cfgPath,
+		"HOME=" + t.TempDir(),
+		"PATH=" + os.Getenv("PATH"),
+		"GOCOVERDIR=" + t.TempDir(),
+	}
+	// The child leads its own process group so the interrupt below reaches
+	// only the runner under test, never the test process's group.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+	}()
+
+	actionPID := awaitPIDFile(t, pidFile, 15*time.Second)
+
+	if err := cmd.Process.Signal(os.Interrupt); err != nil {
+		t.Fatalf("interrupt runner: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatalf("runner did not exit after SIGINT; output:\n%s", out.String())
+	}
+	// -1 means killed BY the signal: the runner never handled the interrupt.
+	if cmd.ProcessState.ExitCode() == -1 {
+		t.Fatalf("runner was killed by the signal instead of handling it; output:\n%s", out.String())
+	}
+
+	// The action process (sh exec'd into sleep, same PID) must be gone —
+	// signal 0 probes existence without delivering anything.
+	deadline := time.Now().Add(10 * time.Second)
+	survived := true
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(actionPID, 0); err != nil {
+			survived = false
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if survived {
+		_ = syscall.Kill(actionPID, syscall.SIGKILL)
+		t.Fatalf("action process %d survived the runner's interrupt; output:\n%s", actionPID, out.String())
+	}
+
+	// The journal closed cleanly: every line is complete JSON, no torn tail.
+	data, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+	if err != nil {
+		t.Fatalf("read journal: %v", err)
+	}
+	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+		if !json.Valid([]byte(line)) {
+			t.Fatalf("torn journal line %q", line)
+		}
 	}
 }

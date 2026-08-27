@@ -8,8 +8,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -38,6 +41,22 @@ func emitsJSON(cmd *cobra.Command) *cobra.Command {
 var Version = "dev"
 
 func main() {
+	// One process-lifetime signal context: Ctrl-C / SIGTERM cancel every
+	// command's cmd.Context(), so a long local action's process group is
+	// terminated through the engine's grace path instead of being orphaned
+	// (Darwin has no Pdeathsig safety net). connect layers SIGHUP on top.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := newRootCmd().ExecuteContext(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+}
+
+// newRootCmd builds the full command tree. Split from main so tests can walk
+// the real surface (the CLI-surface golden) without re-exec.
+func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "emisar",
 		Short: "Local enforcement runner for AI-safe infrastructure actions",
@@ -113,10 +132,7 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 		}
 	})
 
-	if err := root.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
-	}
+	return root
 }
 
 // showHelp is the RunE every command group carries. Cobra short-circuits a

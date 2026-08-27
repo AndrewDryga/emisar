@@ -136,8 +136,9 @@ env var can be unset after the first successful connect.`,
 			// re-advertises on the next Readvertise — one source of truth.
 			builder.GetVerifier = client.Verifier
 
-			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer cancel()
+			// Interrupt/termination cancellation comes from main's process-wide
+			// signal context via cmd.Context(); SIGHUP stays connect-local below.
+			ctx := cmd.Context()
 
 			// SIGHUP: reload packs and rebuild the signature verifier from the
 			// (possibly edited) config, then re-send runner_state on the active
