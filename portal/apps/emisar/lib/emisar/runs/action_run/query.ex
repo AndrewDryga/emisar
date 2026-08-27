@@ -221,7 +221,11 @@ defmodule Emisar.Runs.ActionRun.Query do
         :left,
         [runs: r],
         api_key in ^ApiKeys.ApiKey.Query.not_deleted(),
-        on: r.api_key_id == api_key.id,
+        # Tenancy rides the join condition, matching the runbook-execution join.
+        # A run's key is always in the run's account, so this changes nothing on
+        # correct data — and on incorrect data it resolves to no key rather than
+        # naming another tenant's owner in an attribution line.
+        on: r.api_key_id == api_key.id and api_key.account_id == r.account_id,
         as: ^binding
       )
     end)
