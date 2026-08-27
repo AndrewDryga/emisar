@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -611,60 +612,24 @@ func (d *dedupRing) writeStore() error {
 	if d.storePath == "" {
 		return nil
 	}
-	if err := fsutil.SecureMkdirAll(filepath.Dir(d.storePath), 0o750); err != nil {
-		return err
-	}
-	// CreateTemp, not a fixed "<path>.tmp" opened O_CREATE|O_TRUNC: the fixed
-	// name follows a symlink planted at that path, so anything able to write in
-	// data_dir could redirect this truncate. Every other durable writer in the
-	// runner (nonce store, token file, terminal shutdown) already does this.
-	f, err := os.CreateTemp(filepath.Dir(d.storePath), "."+filepath.Base(d.storePath)+".tmp-")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	if err := f.Chmod(0o600); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	removeTemp := func() {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-	}
-	w := bufio.NewWriter(f)
-	for _, key := range d.keys {
-		line, err := json.Marshal(d.records[key])
-		if err != nil {
-			removeTemp()
-			return err
+	// fsutil.ReplaceFile uses CreateTemp, not a fixed "<path>.tmp" opened
+	// O_CREATE|O_TRUNC: the fixed name follows a symlink planted at that path,
+	// so anything able to write in data_dir could redirect the truncate.
+	return fsutil.ReplaceFile(d.storePath, func(w io.Writer) error {
+		for _, key := range d.keys {
+			line, err := json.Marshal(d.records[key])
+			if err != nil {
+				return err
+			}
+			if _, err := w.Write(line); err != nil {
+				return err
+			}
+			if _, err := w.Write([]byte("\n")); err != nil {
+				return err
+			}
 		}
-		if _, err := w.Write(line); err != nil {
-			removeTemp()
-			return err
-		}
-		if err := w.WriteByte('\n'); err != nil {
-			removeTemp()
-			return err
-		}
-	}
-	if err := w.Flush(); err != nil {
-		removeTemp()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		removeTemp()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := os.Rename(tmp, d.storePath); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return fsutil.SyncDirectory(filepath.Dir(d.storePath))
+		return nil
+	})
 }
 
 func (d *dedupRing) unacknowledgedResults() []ActionResultMsg {

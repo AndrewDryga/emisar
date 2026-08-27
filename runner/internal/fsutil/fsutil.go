@@ -2,8 +2,12 @@
 package fsutil
 
 import (
+	"bufio"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 )
 
 // SecureMkdirAll creates dir (and any parents) with perm and — unlike a bare
@@ -55,4 +59,54 @@ func (l *FileLock) WriteRecord(data []byte) error {
 		return err
 	}
 	return l.file.Sync()
+}
+
+// ReplaceFile durably replaces path with whatever write produces: a
+// dot-prefixed CreateTemp sibling (a fixed temp name could be a symlink
+// planted by anything able to write in the directory), 0600, a buffered
+// writer handed to the callback, fsync, close, rename, then a directory
+// sync. The temp file never survives an error. Serialization, size caps,
+// and caller vocabulary stay with the caller; this owns only the replace
+// mechanics, so the runner's durable secrets and state share one reviewed
+// implementation.
+func ReplaceFile(path string, write func(io.Writer) error) error {
+	dir := filepath.Dir(path)
+	if err := SecureMkdirAll(dir, 0o750); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-")
+	if err != nil {
+		return fmt.Errorf("create temp for %s: %w", filepath.Base(path), err)
+	}
+	tmp := f.Name()
+	discard := func(err error) error {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		return discard(fmt.Errorf("secure temp for %s: %w", filepath.Base(path), err))
+	}
+	buffered := bufio.NewWriter(f)
+	if err := write(buffered); err != nil {
+		return discard(err)
+	}
+	if err := buffered.Flush(); err != nil {
+		return discard(fmt.Errorf("write temp for %s: %w", filepath.Base(path), err))
+	}
+	if err := f.Sync(); err != nil {
+		return discard(fmt.Errorf("sync temp for %s: %w", filepath.Base(path), err))
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("close temp for %s: %w", filepath.Base(path), err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("activate %s: %w", filepath.Base(path), err)
+	}
+	if err := SyncDirectory(dir); err != nil {
+		return fmt.Errorf("sync directory of %s: %w", filepath.Base(path), err)
+	}
+	return nil
 }

@@ -398,44 +398,11 @@ func (s *NonceStore) rewriteLocked() error {
 		return fmt.Errorf("signing: compacted nonce journal is %d bytes, limit %d", data.Len(), s.maxBytes)
 	}
 
-	dir := filepath.Dir(s.path)
-	temp, err := os.CreateTemp(dir, "."+filepath.Base(s.path)+".tmp-")
-	if err != nil {
-		return fmt.Errorf("signing: create nonce-journal temp file: %w", err)
-	}
-	tempPath := temp.Name()
-	removeTemp := true
-	defer func() {
-		if removeTemp {
-			_ = os.Remove(tempPath)
-		}
-	}()
-	if err := temp.Chmod(0o600); err != nil {
-		_ = temp.Close()
-		return fmt.Errorf("signing: chmod nonce-journal temp file: %w", err)
-	}
-	written, err := temp.Write(data.Bytes())
-	if err != nil {
-		_ = temp.Close()
-		return fmt.Errorf("signing: write nonce-journal temp file: %w", err)
-	}
-	if written != data.Len() {
-		_ = temp.Close()
-		return fmt.Errorf("signing: write nonce-journal temp file: %w", io.ErrShortWrite)
-	}
-	if err := temp.Sync(); err != nil {
-		_ = temp.Close()
-		return fmt.Errorf("signing: sync nonce-journal temp file: %w", err)
-	}
-	if err := temp.Close(); err != nil {
-		return fmt.Errorf("signing: close nonce-journal temp file: %w", err)
-	}
-	if err := os.Rename(tempPath, s.path); err != nil {
-		return fmt.Errorf("signing: replace nonce journal: %w", err)
-	}
-	removeTemp = false
-	if err := fsutil.SyncDirectory(dir); err != nil {
-		return fmt.Errorf("signing: sync nonce-journal directory: %w", err)
+	if err := fsutil.ReplaceFile(s.path, func(w io.Writer) error {
+		_, err := w.Write(data.Bytes())
+		return err
+	}); err != nil {
+		return fmt.Errorf("signing: persist nonce journal: %w", err)
 	}
 	s.fileSize = int64(data.Len())
 	s.obsolete = 0

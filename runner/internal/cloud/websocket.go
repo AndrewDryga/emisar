@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -378,11 +377,6 @@ func (d *WebsocketDialer) writeToken(t runnerToken) error {
 		return errors.New("token path is empty")
 	}
 
-	dir := filepath.Dir(d.TokenPath)
-	if err := fsutil.SecureMkdirAll(dir, 0o750); err != nil {
-		return err
-	}
-
 	body, err := json.Marshal(struct {
 		Token        string `json:"token"`
 		KeyFP        string `json:"key_fp,omitempty"`
@@ -392,37 +386,11 @@ func (d *WebsocketDialer) writeToken(t runnerToken) error {
 		return err
 	}
 
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(d.TokenPath)+".tmp-")
-	if err != nil {
-		return fmt.Errorf("create temporary token: %w", err)
-	}
-	tmpPath := tmp.Name()
-	cleanup := func() {
-		_ = tmp.Close()
-		_ = os.Remove(tmpPath)
-	}
-	if err := tmp.Chmod(0o600); err != nil {
-		cleanup()
-		return fmt.Errorf("secure temporary token: %w", err)
-	}
-	if _, err := tmp.Write(body); err != nil {
-		cleanup()
-		return fmt.Errorf("write temporary token: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		cleanup()
-		return fmt.Errorf("sync temporary token: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("close temporary token: %w", err)
-	}
-	if err := os.Rename(tmpPath, d.TokenPath); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("activate runner token: %w", err)
-	}
-	if err := fsutil.SyncDirectory(dir); err != nil {
-		return fmt.Errorf("sync token directory: %w", err)
+	if err := fsutil.ReplaceFile(d.TokenPath, func(w io.Writer) error {
+		_, err := w.Write(body)
+		return err
+	}); err != nil {
+		return fmt.Errorf("persist runner token: %w", err)
 	}
 	return nil
 }

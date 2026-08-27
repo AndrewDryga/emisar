@@ -1,6 +1,8 @@
 package fsutil
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -128,5 +130,84 @@ func TestProbeFileLock(t *testing.T) {
 
 	if held, err := ProbeFileLock(path); err != nil || held {
 		t.Errorf("probe of a released lock: held=%v err=%v, want false, nil", held, err)
+	}
+}
+
+func TestReplaceFileWritesDurablyWithOwnerOnlyMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state", "token.json")
+	if err := ReplaceFile(path, func(w io.Writer) error {
+		_, err := io.WriteString(w, "first")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplaceFile(path, func(w io.Writer) error {
+		_, err := io.WriteString(w, "second")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "second" {
+		t.Fatalf("content = %q, err = %v", data, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %v, err = %v", info.Mode(), err)
+	}
+	leftovers, err := filepath.Glob(filepath.Join(filepath.Dir(path), ".*tmp-*"))
+	if err != nil || len(leftovers) != 0 {
+		t.Fatalf("temp leftovers = %v, err = %v", leftovers, err)
+	}
+}
+
+func TestReplaceFileFailedWriteKeepsOriginalAndRemovesTemp(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	if err := os.WriteFile(path, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	callbackErr := errors.New("serialization exploded")
+	err := ReplaceFile(path, func(io.Writer) error { return callbackErr })
+	if !errors.Is(err, callbackErr) {
+		t.Fatalf("err = %v, want the callback's own error", err)
+	}
+	data, err2 := os.ReadFile(path)
+	if err2 != nil || string(data) != "original" {
+		t.Fatalf("original clobbered: %q, %v", data, err2)
+	}
+	leftovers, err2 := filepath.Glob(filepath.Join(dir, ".*tmp-*"))
+	if err2 != nil || len(leftovers) != 0 {
+		t.Fatalf("temp leftovers = %v, err = %v", leftovers, err2)
+	}
+}
+
+// A symlink planted AT the destination is replaced by the rename — the write
+// lands at path itself, never through the link at a redirected target.
+func TestReplaceFileDoesNotFollowDestinationSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	if err := os.WriteFile(target, []byte("leave me"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "state.json")
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplaceFile(path, func(w io.Writer) error {
+		_, err := io.WriteString(w, "new state")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(target); err != nil || string(data) != "leave me" {
+		t.Fatalf("symlink target changed: %q, %v", data, err)
+	}
+	if info, err := os.Lstat(path); err != nil || info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("path is still a symlink: %v, %v", info, err)
+	}
+	if data, err := os.ReadFile(path); err != nil || string(data) != "new state" {
+		t.Fatalf("replacement content = %q, %v", data, err)
 	}
 }

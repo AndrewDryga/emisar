@@ -63,47 +63,11 @@ func WriteTerminalShutdown(path, reason, message string) error {
 		return fmt.Errorf("cloud: terminal shutdown state exceeds %d bytes", maxTerminalShutdownStateBytes)
 	}
 
-	dir := filepath.Dir(path)
-	if err := fsutil.SecureMkdirAll(dir, 0o750); err != nil {
-		return fmt.Errorf("cloud: create terminal shutdown state directory: %w", err)
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-")
-	if err != nil {
-		return fmt.Errorf("cloud: create terminal shutdown state: %w", err)
-	}
-	tmpPath := tmp.Name()
-	removeTemp := true
-	defer func() {
-		if removeTemp {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("cloud: secure terminal shutdown state: %w", err)
-	}
-	written, err := tmp.Write(body)
-	if err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("cloud: write terminal shutdown state: %w", err)
-	}
-	if written != len(body) {
-		_ = tmp.Close()
-		return fmt.Errorf("cloud: write terminal shutdown state: %w", io.ErrShortWrite)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("cloud: sync terminal shutdown state: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("cloud: close terminal shutdown state: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("cloud: activate terminal shutdown state: %w", err)
-	}
-	removeTemp = false
-	if err := fsutil.SyncDirectory(dir); err != nil {
-		return fmt.Errorf("cloud: sync terminal shutdown state directory: %w", err)
+	if err := fsutil.ReplaceFile(path, func(w io.Writer) error {
+		_, err := w.Write(body)
+		return err
+	}); err != nil {
+		return fmt.Errorf("cloud: persist terminal shutdown state: %w", err)
 	}
 	return nil
 }
