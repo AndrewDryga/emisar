@@ -22,7 +22,6 @@ type Result struct {
 	Status       Status    `json:"status"`
 	Binary       string    `json:"binary"`
 	Argv         []string  `json:"argv"`
-	ArgvSHA256   string    `json:"argv_sha256"`
 	CWD          string    `json:"cwd,omitempty"`
 	EnvKeys      []string  `json:"env_keys,omitempty"`
 	Stdout       string    `json:"stdout"`

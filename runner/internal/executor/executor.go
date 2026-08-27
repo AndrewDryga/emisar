@@ -158,7 +158,6 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 		res.ExitCode = -1
 		res.DurationMS = time.Since(start).Milliseconds()
 		res.TimedOut = errors.Is(contextErr, context.DeadlineExceeded)
-		res.ArgvSHA256 = sha256Hex(strings.Join(append([]string{p.Binary}, p.Argv...), "\x00"))
 		if res.TimedOut {
 			res.Status = StatusTimeout
 		} else {
@@ -175,7 +174,6 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 		res.ExitCode = -1
 		res.StartError = err.Error()
 		res.DurationMS = time.Since(start).Milliseconds()
-		res.ArgvSHA256 = sha256Hex(strings.Join(append([]string{p.Binary}, p.Argv...), "\x00"))
 		return res, nil
 	}
 	lifecycle := &processLifecycle{pid: cmd.Process.Pid}
@@ -230,7 +228,6 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 	res.Truncated = Truncated{Stdout: outResult.truncated, Stderr: errResult.truncated}
 	res.DurationMS = elapsed.Milliseconds()
 	res.TimedOut = timedOut
-	res.ArgvSHA256 = sha256Hex(strings.Join(append([]string{p.Binary}, p.Argv...), "\x00"))
 
 	switch {
 	case outErr != nil || errErr != nil:
@@ -307,11 +304,6 @@ func envKeys(env []string) []string {
 		}
 	}
 	return out
-}
-
-func sha256Hex(s string) string {
-	h := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(h[:])
 }
 
 // streamResult is the per-stream summary returned to Execute.
