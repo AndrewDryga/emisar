@@ -9,6 +9,8 @@ side_effects:
   - Read-only.
 args: []
 execution:
+  env:
+    HOME: /var/lib/rabbitmq
   command:
     binary: rabbitmqctl
     argv:

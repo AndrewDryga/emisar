@@ -11,6 +11,8 @@ side_effects:
   - Queues and exchanges from disk become available.
 args: []
 execution:
+  env:
+    HOME: /var/lib/rabbitmq
   command:
     binary: rabbitmqctl
     argv: ["start_app"]

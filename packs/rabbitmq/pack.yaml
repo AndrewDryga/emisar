@@ -2,7 +2,7 @@ schema_version: 1
 
 id: rabbitmq
 name: RabbitMQ operations
-version: 0.1.14
+version: 0.1.15
 retired_below: 0.1.9
 description: >
   Cluster, queue, exchange, binding, connection, channel, and consumer
@@ -32,8 +32,42 @@ setup:
     host and authenticate with the Erlang cookie, not a username or URL. No
     connection env vars — provisioning is about running as the right user.
   notes:
-    - "Run the runner as a user that can read the node's Erlang cookie (`~/.erlang.cookie`, mode 0400) — typically the rabbitmq service user or root. A mismatched or unreadable cookie fails with a node-down/auth error even when RabbitMQ is healthy."
     - "These tools target the local node only. To manage a remote node you would need -n <node>, which these actions do not set."
+  host_access:
+    - actions:
+        - rmq.cluster_status
+        - rmq.node_health_check
+        - rmq.list_nodes
+        - rmq.list_vhosts
+        - rmq.list_users
+        - rmq.list_policies
+        - rmq.list_parameters
+        - rmq.list_queues
+        - rmq.list_exchanges
+        - rmq.list_bindings
+        - rmq.list_connections
+        - rmq.list_channels
+        - rmq.list_consumers
+        - rmq.purge_queue
+        - rmq.close_connection
+        - rmq.sync_queue
+        - rmq.start_app
+        - rmq.stop_app
+      requirement: Read RabbitMQ's Erlang cookie and act as a local node administrator.
+      recipes:
+        - name: Run the Emisar service as root with RabbitMQ's live cookie
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-rabbitmq-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+            - "sudo env HOME=/var/lib/rabbitmq rabbitmq-diagnostics -q ping"
+          impact: >
+            Every Emisar action on this runner executes as root. Root can use the live Erlang
+            cookie selected by the pack to administer the local node, including operations
+            outside this pack.
   verify: rmq.node_health_check
 
 actions:

@@ -16,12 +16,13 @@ cases:
     expect:
       stdout_contains: [Status]
 
-  - name: socket-grant-survives-two-fail2ban-restarts
+  - name: socket-grant-survives-daemon-and-runner-restarts
     action: f2b.status
     runner_user: root
     runner_reason: Restarts the disposable systemd-owned Fail2ban service before probing the unprivileged identity.
     arrange:
       - argv: [systemctl, restart, fail2ban.service]
+      - argv: [systemctl, restart, emisar.service]
       - argv: [systemctl, restart, fail2ban.service]
     expect:
       stdout_contains: [Status]
@@ -30,3 +31,7 @@ cases:
         argv: [setpriv, --reuid=65532, --regid=65532, --clear-groups, fail2ban-client, status]
         expect:
           stdout_contains: [Status]
+      - name: the runner service restarted successfully
+        argv: [systemctl, is-active, emisar.service]
+        expect:
+          stdout_contains: [active]

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: frr
 name: FRRouting (FRR)
-version: 0.1.5
+version: 0.1.6
 description: >
   Query the local FRRouting daemons via vtysh — BGP summary + neighbors,
   BFD peers, IP route summary, and interface state — plus one gated mutation:
@@ -30,8 +30,27 @@ setup:
     vtysh needs root or membership in the frrvty group to reach the
     daemon vty sockets.
   notes:
-    - "Reads need vty socket access: prefer the frrvty group over root — `usermod -aG frrvty emisar` (add `frr` too if your build has no separate vty group), then `systemctl restart emisar` (restart, not reload). The bgp_neighbor_shutdown drain writes the running config, which needs write access to the vty — the `frr` group (or root); the read-only frrvty group is not enough for it."
     - "The `show` actions are read-only; an unconfigured protocol (no BGP, no BFD) returns an empty / 'no process' result rather than failing. bgp_neighbor_shutdown is the one mutation — risk: high, policy-gated, and reversible (`no neighbor <peer> shutdown`)."
+  host_access:
+    - actions:
+        - frr.bgp_summary
+        - frr.bgp_neighbors
+        - frr.bfd_peers
+        - frr.route_summary
+        - frr.interfaces
+        - frr.bgp_neighbor_shutdown
+      requirement: Reach FRR's VTY sockets. The operating-system boundary does not distinguish show from configuration commands.
+      recipes:
+        - name: Add the Emisar service user to frrvty
+          commands:
+            - "sudo usermod -aG frrvty emisar"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx frrvty"
+            - "sudo -u emisar vtysh -c 'show version' >/dev/null"
+          impact: >
+            Every process running as emisar can use VTYSH configuration commands and change
+            FRR's full running configuration, not only the mutation exposed by this pack.
   verify: frr.bgp_summary
 
 actions:

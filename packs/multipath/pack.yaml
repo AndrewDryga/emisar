@@ -2,7 +2,7 @@ schema_version: 1
 
 id: multipath
 name: Device-mapper multipath
-version: 0.1.3
+version: 0.1.4
 description: >
   Inspect device-mapper multipath: the multipath topology (multipath -ll),
   the effective config (multipath -t), and live path + map state queried
@@ -30,8 +30,26 @@ setup:
     multipathd — no credentials needed. multipath and multipathd both
     need root (device-mapper + the daemon control socket).
   notes:
-    - "multipath and multipathd need real root — device-mapper ioctls and multipathd's root-only control socket, with no group or capability that delegates them. The actions exec the binaries directly and the runner has no privilege escalation, so run the runner as root on multipath hosts (a `systemctl edit emisar` drop-in with `[Service]` / `User=root` / `Group=root`, then daemon-reload + restart)."
     - "The `multipathd show ...` actions query the running daemon over its control socket; if multipathd isn't running they return an error."
+  host_access:
+    - actions:
+        - multipath.topology
+        - multipath.config
+        - multipath.daemon_paths
+        - multipath.daemon_maps
+      requirement: Read device-mapper state and the multipathd control socket as root.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-multipath-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root and can reach host block
+            devices and the multipath daemon, including actions from other installed packs.
   verify: multipath.topology
 
 actions:

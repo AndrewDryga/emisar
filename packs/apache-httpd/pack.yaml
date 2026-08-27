@@ -2,7 +2,7 @@ schema_version: 1
 
 id: apache-httpd
 name: Apache HTTPD operations
-version: 0.1.13
+version: 0.1.14
 description: >
   Apache version, modules, mod_status snapshot, config syntax check,
   vhost dump, error/access log tails, plus narrow mutators (graceful
@@ -41,8 +41,43 @@ setup:
       default: /var/log/apache2/access.log
   notes:
     - "Any of `HTTPD_STATUS_URL` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
-    - "graceful_reload and graceful_stop invoke apachectl directly and typically require root-level service authority to validate the config and control the server. Prefer a narrow systemd/polkit service-control boundary when the runner itself is unprivileged; sudo cannot elevate an action because the runner enforces no_new_privs."
     - "On RHEL-family installs the logs live under `/var/log/httpd` — set `HTTPD_ERROR_LOG` / `HTTPD_ACCESS_LOG` accordingly."
+  host_access:
+    - actions:
+        - httpd.modules
+        - httpd.vhosts
+        - httpd.test_config
+        - httpd.graceful_reload
+        - httpd.graceful_stop
+      requirement: Read protected Apache configuration or signal the root-owned master process.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-apache-httpd-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. Apache actions can read
+            private configuration and can stop or reload the web server.
+    - actions:
+        - httpd.error_tail
+        - httpd.access_top_clients
+        - httpd.access_top_urls
+      requirement: Read Apache logs through the Debian or Ubuntu system log-reader group.
+      recipes:
+        - name: Add the Emisar service user to adm
+          commands:
+            - "sudo usermod -aG adm emisar"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx adm"
+            - "sudo -u emisar test -r /var/log/apache2/error.log"
+          impact: >
+            Every process running as emisar can read every host log granted to adm, not only
+            Apache logs. RHEL-family paths need an equivalent persistent log-reader grant.
   verify: httpd.version
 
 actions:

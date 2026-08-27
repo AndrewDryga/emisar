@@ -2,7 +2,7 @@ schema_version: 1
 
 id: podman
 name: Podman containers
-version: 0.1.9
+version: 0.1.10
 retired_below: 0.1.8
 description: >
   Read-only inventory + per-container introspection plus narrow mutators
@@ -23,7 +23,34 @@ setup:
     Drives the local podman CLI on the runner host — no credentials
     needed.
   notes:
-    - "Rootless by default: the runner sees only the containers owned by the uid it runs as, so it must run as the user that owns the target containers (or as root for rootful / system-wide containers)."
+    - "Rootless containers require a dedicated runner installed as their owner. The setup recipe cannot name that deployment-specific identity safely."
+  host_access:
+    - actions:
+        - podman.info
+        - podman.ps
+        - podman.inspect
+        - podman.logs
+        - podman.stats
+        - podman.images
+        - podman.system_df
+        - podman.restart
+        - podman.stop
+        - podman.kill
+        - podman.system_prune
+      requirement: Reach rootful or system-wide Podman containers as root.
+      recipes:
+        - name: Run the Emisar service as root for rootful Podman
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-podman-root.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+            - "sudo podman info >/dev/null"
+          impact: >
+            Every Emisar action on this runner executes as root and can read or change all
+            rootful containers and the host resources they can mount.
   verify: podman.ps
 
 actions:

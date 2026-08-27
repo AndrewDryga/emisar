@@ -32,4 +32,4 @@ output:
 examples:
   - title: Inspect a backup
     args:
-      path: "/var/backups/consul-pre-migration.snap"
+      path: "/var/backups/emisar-consul/pre-migration.snap"

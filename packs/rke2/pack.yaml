@@ -2,7 +2,7 @@ schema_version: 1
 
 id: rke2
 name: RKE2 cluster (host-level)
-version: 0.2.2
+version: 0.2.3
 description: >
   RKE2-specific host introspection that kubectl can't give you — embedded-etcd
   live health (etcdctl endpoint health/status) and snapshot history, node
@@ -35,8 +35,29 @@ setup:
     containerd socket via CRI_CONFIG_FILE.
   notes:
     - "Binary-path exception: RKE2 does not add `/var/lib/rancher/rke2/bin` to PATH, so crictl is invoked by its absolute path inside a /bin/sh command (the same absolute-path-in-a-shell-pipeline pattern other read actions use). rke2 itself installs to `/usr/local/bin` and is invoked bare."
-    - "Run the runner as root (or grant it the equivalent) on the server node — every action needs it. On an agent-only node there is no etcd and no rke2 server cert set, so etcd_health / etcd_snapshot_list / certificate_check will not return server data."
+    - "On an agent-only node there is no etcd and no rke2 server cert set, so etcd_health / etcd_snapshot_list / certificate_check will not return server data."
     - "etcd_health: RKE2 ships no etcdctl on the host PATH, so the action runs the etcdctl already inside the running etcd static-pod container (resolved via crictl), authenticating to https://127.0.0.1:2379 with this node's own etcd CA + server-client cert under /var/lib/rancher/rke2/server/tls/etcd/. Cert filenames verified against a live RKE2 v1.35.x server (server-ca.crt + server-client.crt/.key) and the kube-apiserver's own --etcd-* flags. Pair with etcd_snapshot_list (backups current?) and kubernetes.control_plane_health (/readyz)."
+  host_access:
+    - actions:
+        - rke2.etcd_health
+        - rke2.etcd_snapshot_list
+        - rke2.certificate_check
+        - rke2.crictl_ps
+        - rke2.crictl_pods
+        - rke2.crictl_images
+      requirement: Read RKE2 server credentials, containerd, and embedded etcd state as root.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-rke2-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. These actions can read the
+            RKE2 server's client keys and control its container runtime despite being read-only.
   verify: rke2.certificate_check
 
 actions:

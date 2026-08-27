@@ -2,14 +2,14 @@ schema_version: 1
 
 id: postfix
 name: Postfix mail server
-version: 0.1.15
+version: 0.1.16
 retired_below: 0.1.11
 description: >
   Queue inspection, config dump, log tailing, plus narrow operator
   actions (flush, requeue, delete-by-queue-id). These mutators are high-
   or critical-risk; the reversible hold/release pause is medium. All are
-  audited. Postfix uid must own the runner OR runner must be in the
-  postdrop group.
+  audited. Queue inspection and mutation run as root because the runner's
+  no-new-privileges boundary prevents Postfix helpers from elevating.
 vendor: emisar
 homepage: https://emisar.dev/packs/postfix
 
@@ -30,8 +30,48 @@ setup:
     credentials needed. Uses the standard binaries (postqueue, postconf,
     mailq, postsuper) and reads the queue under `/var/spool/postfix`.
   notes:
-    - "The runner user must own the Postfix queue or be in the postdrop group to read it; the postsuper_* hold/release/requeue actions and `reload` need root."
     - "maillog actions read `/var/log/mail.log`, falling back to `/var/log/maillog` (RHEL-family)."
+  host_access:
+    - actions:
+        - postfix.mailq
+        - postfix.qshape
+        - postfix.queue_counts
+        - postfix.postcat_qid
+        - postfix.flush_queue
+        - postfix.delete_qid
+        - postfix.check_config
+        - postfix.reload
+        - postfix.postsuper_hold
+        - postfix.postsuper_release
+        - postfix.postsuper_requeue
+      requirement: Read protected queue files and mail logs, or validate and mutate Postfix state, as root.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-postfix-root.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. Postfix actions can remove,
+            inspect, flush, requeue, hold, or release messages and reload the mail service.
+    - actions:
+        - postfix.maillog_tail
+        - postfix.maillog_grep
+      requirement: Read Postfix logs through the Debian or Ubuntu system log-reader group.
+      recipes:
+        - name: Add the default Emisar service user to adm
+          commands:
+            - "sudo usermod -aG adm emisar"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx adm"
+            - "sudo -u emisar test -r /var/log/mail.log"
+          impact: >
+            Every process running as emisar can read every host log granted to adm, not only
+            Postfix logs. RHEL-family paths need an equivalent persistent log-reader grant.
   verify: postfix.mailq
 
 actions:

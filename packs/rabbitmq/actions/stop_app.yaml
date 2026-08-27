@@ -13,6 +13,8 @@ side_effects:
   - Producers fail; consumers reconnect when start_app runs.
 args: []
 execution:
+  env:
+    HOME: /var/lib/rabbitmq
   command:
     binary: rabbitmqctl
     argv: ["stop_app"]

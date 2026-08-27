@@ -2,7 +2,7 @@ schema_version: 1
 
 id: git-local
 name: Host-side git
-version: 0.1.9
+version: 0.1.10
 retired_below: 0.1.4
 description: >
   Read-only git operations against a checkout living on the runner host
@@ -28,7 +28,7 @@ setup:
       description: Absolute path to the git checkout on the runner host that every action operates in. Add it to the runner's `inherit_env`.
       example: /opt/myapp
   notes:
-    - "The runner uid must be able to read the repo directory; for repos owned by another user, add the path to git's safe.directory or run as that user."
+    - "The runner uid must own the repository or receive read/traverse access through its group or a persistent ACL. Git's safe.directory only accepts different ownership; it does not grant filesystem access. For another user's private checkout, install a dedicated runner as that owner."
   verify: git.status
 
 actions:

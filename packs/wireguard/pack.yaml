@@ -2,7 +2,7 @@ schema_version: 1
 
 id: wireguard
 name: WireGuard VPN
-version: 0.1.8
+version: 0.1.9
 retired_below: 0.1.7
 description: >
   WireGuard state — interfaces, peers, transfer counts, last
@@ -23,8 +23,44 @@ setup:
     Reads and manages WireGuard interfaces on the local runner host — no
     credentials needed.
   notes:
-    - "wg show / showconf read interface and peer state via netlink, which needs root (CAP_NET_ADMIN); showconf's PrivateKey/PresharedKey lines are masked at the source before output leaves the host."
-    - "Mutators (wg-quick up/down, removing a peer) also need root."
+    - "showconf's PrivateKey/PresharedKey lines are masked at the source before output leaves the host."
+  host_access:
+    - actions:
+        - wg.show
+        - wg.show_transfer
+        - wg.show_latest_handshakes
+        - wg.show_endpoints
+        - wg.showconf
+        - wg.set_peer_remove
+      requirement: Read or change WireGuard interface state with CAP_NET_ADMIN.
+      recipes:
+        - name: Grant CAP_NET_ADMIN to the Emisar service
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'AmbientCapabilities=CAP_NET_ADMIN' | sudo tee /etc/systemd/system/emisar.service.d/10-wireguard-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "systemctl show emisar --property=AmbientCapabilities --value | grep -Fwi cap_net_admin"
+          impact: >
+            Every Emisar action on this runner inherits CAP_NET_ADMIN and can change network
+            interfaces, routes, firewall rules, and WireGuard peers outside this pack.
+    - actions:
+        - wg.quick_up
+        - wg.quick_down
+      requirement: Run wg-quick, including its host networking and configured hook commands, as root.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-wireguard-root.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. wg-quick also executes every
+            PreUp, PostUp, PreDown, and PostDown command authored in the interface configuration.
   verify: wg.show
 
 actions:

@@ -10,11 +10,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends acl dbus fail2ban systemd systemd-sysv \
     && useradd --uid 65532 --user-group --no-create-home --shell /usr/sbin/nologin emisar \
+    && printf '%s\n' '[Unit]' 'After=network.target' '[Service]' 'Type=simple' 'User=emisar' 'Group=emisar' 'ExecStart=/bin/sleep infinity' '[Install]' 'WantedBy=multi-user.target' \
+        > /etc/systemd/system/emisar.service \
     && install -d -m 0755 /etc/systemd/system/fail2ban.service.d \
     && printf '%s\n' '[Service]' \
         "ExecStartPost=-/usr/bin/timeout 10 /bin/sh -c 'until [ -S /run/fail2ban/fail2ban.sock ]; do sleep 0.1; done; exec /usr/bin/setfacl -m u:emisar:rw /run/fail2ban/fail2ban.sock'" \
         > /etc/systemd/system/fail2ban.service.d/emisar-access.conf \
-    && systemctl enable fail2ban.service \
+    && systemctl enable emisar.service fail2ban.service \
     && rm -rf /var/lib/apt/lists/*
 
 FROM ${PACKTEST_RUNNER_IMAGE} AS tools

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nfs
 name: NFS server + client
-version: 0.1.8
+version: 0.1.9
 description: >
   Inspect a host's NFS exports, mounted shares, RPC state, active client
   connections. Plus two narrow operator actions: exportfs -r (re-export) and
@@ -27,7 +27,25 @@ setup:
     Inspects the local runner host's NFS server/client state — no
     credentials needed.
   notes:
-    - "exportfs (including the -r re-export and unexport) needs root; showmount/nfsstat/rpcinfo reads work as any user."
+    - "showmount, nfsstat, rpcinfo, the kernel mount inventory, and the exported-table file read work without elevated host access."
+  host_access:
+    - actions:
+        - nfs.exportfs_v
+        - nfs.exportfs_r
+        - nfs.exportfs_unexport_path
+      requirement: Read and change the kernel NFS export table as root.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-nfs-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. Export actions can expose or
+            withdraw host filesystems from NFS clients.
   verify: nfs.exportfs_v
 
 actions:

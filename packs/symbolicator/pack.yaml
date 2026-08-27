@@ -2,7 +2,7 @@ schema_version: 1
 
 id: symbolicator
 name: Symbolicator native symbolication
-version: 0.2.2
+version: 0.2.3
 description: >
   Debug native crashes with Symbolicator and keep the host it runs on healthy.
   Symbolicate a stack trace, a minidump, or an Apple crash report against the
@@ -53,8 +53,28 @@ setup:
         cache_dir. Falls back to /data, the image and self-hosted default.
   notes:
     - "Any of these you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so a variable present on the host but not allowlisted is silently dropped and the action falls back to its default."
-    - The CLI actions read and write the caches as the runner's own identity, so that identity needs read access to the cache root — and write access for symbolicator.cleanup.
     - Symbolicator's API is unauthenticated by design; it expects to be reachable only from Sentry's own network. These actions do not add authentication, they inherit whatever the host allows.
+  host_access:
+    - actions:
+        - symbolicator.symbolicate_minidump
+        - symbolicator.symbolicate_apple_crash
+        - symbolicator.cache_usage
+        - symbolicator.cleanup_preview
+        - symbolicator.cleanup
+        - symbolicator.config_show
+      requirement: Read protected crash inputs, configuration, and cache, and delete expired cache entries.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-symbolicator-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. The configuration may contain
+            source credentials, and cleanup can delete every cache entry Symbolicator deems expired.
   verify: symbolicator.health
 
 actions:

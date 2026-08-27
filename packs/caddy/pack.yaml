@@ -2,7 +2,7 @@ schema_version: 1
 
 id: caddy
 name: Caddy web server
-version: 0.1.21
+version: 0.1.22
 retired_below: 0.1.16
 description: >
   Caddy v2 ops via its admin API (default http://127.0.0.1:2019) and CLI.
@@ -39,7 +39,26 @@ setup:
       default: /var/log/caddy/access.log
   notes:
     - "`CADDY_ADMIN` and `CADDY_ACCESS_LOG` only reach an action when the runner allowlists them in `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default. Unset, both fall back to their defaults above, so a non-default admin endpoint or log path silently reads the local one instead of yours."
-    - "reload_config and stop change runtime state and need permission to talk to the admin socket and signal the process — run the runner as root or as the caddy service user."
+  host_access:
+    - actions:
+        - caddy.access_log_tail
+        - caddy.adapt_caddyfile
+        - caddy.validate_config
+        - caddy.reload_config
+      requirement: >
+        Read Caddy's protected log and configuration files. Reload also requires the
+        separately configured admin endpoint to accept the request.
+      recipes:
+        - name: Add the Emisar service user to caddy
+          commands:
+            - "sudo usermod -aG caddy emisar"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx caddy"
+            - "sudo -u emisar test -r /etc/caddy/Caddyfile"
+          impact: >
+            Every process running as emisar can read files exposed to the caddy group. Reload
+            can replace the live server configuration when the admin endpoint also permits it.
   verify: caddy.version
 
 actions:

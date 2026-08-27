@@ -160,14 +160,13 @@ defmodule EmisarWeb.PacksTest do
       refute html =~ "Environment"
     end
 
-    test "an authored backtick in a setup note renders as code, not a literal tick",
+    test "an authored backtick in a setup note renders as inline code",
          %{conn: conn} do
-      # 31 notes across 22 packs write inline code with markdown backticks;
-      # printing the ticks verbatim is what this page used to do.
+      # Setup notes use inline code with markdown backticks; printing the ticks
+      # verbatim is what this page used to do.
       html = conn |> get(~p"/packs/frr") |> html_response(200)
 
-      assert html =~ ~r{<code[^>]*>usermod -aG frrvty emisar</code>}
-      refute html =~ "`usermod"
+      assert html =~ ~r{<code[^>]*>no neighbor &lt;peer&gt; shutdown</code>}
     end
 
     test "the pack reference footer link carries the brand CTA affordance", %{conn: conn} do

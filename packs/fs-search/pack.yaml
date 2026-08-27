@@ -2,7 +2,7 @@ schema_version: 1
 
 id: fs-search
 name: Filesystem search and inspection
-version: 0.1.12
+version: 0.1.13
 # 0.1.11 and below let a low-risk, no-approval read reach the runner process
 # environment and other secret-bearing proc/device endpoints. 0.1.8 and below
 # additionally allowed the runner's own configuration and state directories.
@@ -25,10 +25,39 @@ setup:
     friends) — no credentials needed; paths and patterns are passed as
     arguments.
   notes:
-    - "The runner sees only what its uid can read; reaching root-owned or otherwise restricted paths requires running as root."
     - "The runner refuses any path inside its own configuration and state directories (`/etc/emisar` and `/var/lib/emisar` by default, or wherever --etc-dir/--data-dir put them) for every action, whatever a pack declares. Those hold the enrollment key, the pack credentials you exported, and this runner's bearer token."
     - "The content-returning reads — `fs.head_file`, `fs.tail_file`, `fs.grep_file`, `fs.grep_recursive` — stay low risk for ordinary diagnostics but refuse `/dev`, `/proc/kcore`, and raw per-process `environ`, `mem`, and `fd` endpoints after canonical path validation. An `fd` link that resolves to an ordinary file receives the same final-target policy as a direct path. Useful `/proc` and `/sys` diagnostics such as memory, pressure, process status, and limits remain available."
     - "A fleet that wants a human in the loop for every other file adds a policy override (`action: fs.*_file` or `action: fs.grep_*`, `decision: require_approval`) instead of changing the tier for everyone."
+  host_access:
+    - actions:
+        - fs.find_by_name
+        - fs.find_recent_modified
+        - fs.find_world_writable
+        - fs.find_setuid
+        - fs.find_large_files
+        - fs.du_top
+        - fs.ls_long
+        - fs.stat_path
+        - fs.sha256_file
+        - fs.head_file
+        - fs.tail_file
+        - fs.grep_file
+        - fs.grep_recursive
+        - fs.count_lines
+        - fs.file_type
+      requirement: Read root-owned or otherwise restricted target paths when those paths are intentionally in scope.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-fs-search-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root and can read nearly every host
+            path allowed by the runner's hard path policy, including credentials and private data.
   verify: fs.stat_path
 
 actions:

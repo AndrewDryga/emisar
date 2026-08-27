@@ -2,7 +2,7 @@ schema_version: 1
 
 id: systemd-deep
 name: Systemd deep introspection pack
-version: 0.1.17
+version: 0.1.18
 retired_below: 0.1.14
 description: >
   Deeper systemd state than linux-core: failed units, list-units,
@@ -24,7 +24,45 @@ setup:
     Operates on the local runner host — no credentials needed.
   notes:
     - "Most introspection (failed_units, list_units, timers, cgroup_tree, analyze_*, unit_show) is read-only and needs no privilege."
-    - "Mutators (daemon_reload, unit_start/stop/restart/reload/kill/mask/unmask, reset_failed) need a matching polkit rule or a runner service identity with direct authority. vacuum_journal needs direct journal-management authority. sudo cannot elevate an action because the runner enforces no_new_privs."
+  host_access:
+    - actions:
+        - systemd.boot_errors
+      requirement: Read the complete system journal.
+      recipes:
+        - name: Add the Emisar service user to systemd-journal
+          commands:
+            - "sudo usermod -aG systemd-journal emisar"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx systemd-journal"
+            - "sudo -u emisar journalctl -b -n 1 --no-pager >/dev/null"
+          impact: >
+            Every process running as emisar can read the full system journal, which may
+            contain application output, usernames, addresses, and secrets written by services.
+    - actions:
+        - systemd.vacuum_journal
+        - systemd.daemon_reload
+        - systemd.unit_start
+        - systemd.unit_stop
+        - systemd.unit_restart
+        - systemd.unit_reload
+        - systemd.unit_kill
+        - systemd.unit_mask
+        - systemd.unit_unmask
+        - systemd.reset_failed
+      requirement: Change arbitrary systemd units and journal retention as root.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-systemd-deep-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. These actions can stop,
+            mask, kill, or reconfigure any systemd unit and permanently delete journal history.
   verify: systemd.failed_units
 
 actions:

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: iscsi
 name: iSCSI initiator
-version: 0.1.5
+version: 0.1.6
 description: >
   Inspect the host's iSCSI initiator (open-iscsi): active sessions,
   per-session detail (targets, connections, negotiated parameters),
@@ -29,8 +29,26 @@ setup:
     credentials needed. iscsiadm needs root (it reads `/sys` and the
     initiator DB).
   notes:
-    - "iscsiadm needs real root (netlink, `/sys`, the initiator DB) — no group or capability delegates it, and the -P 3 session detail especially. The actions exec iscsiadm directly and the runner has no privilege escalation, so the runner must run as root on iSCSI hosts. Set it with a drop-in: `systemctl edit emisar` adding `[Service]` / `User=root` / `Group=root`, then `systemctl daemon-reload && systemctl restart emisar`."
     - "Running as root applies to every action on that host, not just these; on a dedicated storage host that's expected, and the cloud policy + approval gates still govern what runs."
+  host_access:
+    - actions:
+        - iscsi.sessions
+        - iscsi.session_detail
+        - iscsi.nodes
+        - iscsi.ifaces
+      requirement: Read iSCSI netlink, sysfs, and the initiator database as root.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-iscsi-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root, including actions from
+            other installed packs. iscsiadm receives full initiator and device authority.
   verify: iscsi.sessions
 
 actions:

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: debugging
 name: Linux debugging toolkit
-version: 0.2.18
+version: 0.2.19
 retired_below: 0.2.14
 description: >
   General-purpose Linux diagnostics + low-level remediation: process
@@ -24,9 +24,43 @@ setup:
   summary: >
     Operates on the local runner host — no credentials needed.
   notes:
-    - "Basic diagnostics (tops, vmstat, loadavg, dmesg, ping) work unprivileged but only see the runner user's own processes."
-    - "Deep inspection — pid_stack, pid_environ/pid_fds/pid_io and socket-to-PID mapping for other users — needs root or CAP_SYS_PTRACE for full visibility."
-    - "Mutators (drop_caches, kill_pid for other users, sysctl_set) need root."
+    - "Basic diagnostics such as vmstat, loadavg, ping, and host-permitted process reads work unprivileged. Protected process and kernel state is mapped below."
+  host_access:
+    - actions:
+        - debugging.netstat_listen
+        - debugging.lsof_port
+        - debugging.top_open_files
+        - debugging.pid_context
+        - debugging.pid_env_keys
+        - debugging.pid_connections
+        - debugging.pid_argv
+        - debugging.pid_environ
+        - debugging.pid_cwd
+        - debugging.pid_fds
+        - debugging.pid_status
+        - debugging.pid_stack
+        - debugging.pid_threads
+        - debugging.pid_limits
+        - debugging.pid_io
+        - debugging.dmesg_tail
+        - debugging.dmesg_oom
+        - debugging.slabtop
+        - debugging.drop_caches
+        - debugging.kill_pid
+        - debugging.sysctl_set
+      requirement: Inspect other users' processes and protected kernel state, or change host process and kernel state.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-debugging-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. Debug actions can read other
+            processes' arguments and environments, kill processes, and change kernel settings.
   verify: debugging.loadavg
 
 actions:

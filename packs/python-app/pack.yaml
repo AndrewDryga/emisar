@@ -2,7 +2,7 @@ schema_version: 1
 
 id: python-app
 name: Python application runtime
-version: 0.1.10
+version: 0.1.11
 description: >
   Inspect a Python deployment — interpreter + venv state, pip
   inventory + freeze, dependency conflicts, outdated packages, sys.path.
@@ -24,7 +24,31 @@ setup:
       description: Path to the application's virtualenv; the venv-scoped actions run its bin/python and bin/pip. Optional; defaults to `/opt/app/venv`. Add it to the runner's `inherit_env` if you override it.
       default: "/opt/app/venv"
   notes:
-    - "The runner uid must be able to read the venv and the interpreter it points at; system actions use `/usr/bin/python3`."
+    - "System actions use `/usr/bin/python3`; venv actions use `PY_VENV`."
+  host_access:
+    - actions:
+        - py.venv_python_version
+        - py.pip_list
+        - py.pip_freeze
+        - py.pip_show
+        - py.pip_check
+        - py.pip_outdated
+        - py.sys_path
+        - py.site_packages_du
+        - py.pip_cache_info
+      requirement: Read a virtual environment owned by another operating-system user.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-python-app-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root and can read application code,
+            installed packages, and any credentials stored beside the virtual environment.
   verify: py.python_version_system
 
 actions:

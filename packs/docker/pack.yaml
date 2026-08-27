@@ -2,7 +2,7 @@ schema_version: 1
 
 id: docker
 name: Docker operations pack
-version: 0.2.19
+version: 0.2.20
 retired_below: 0.2.14
 description: >
   Operator pack for Docker hosts: read-only inventory and per-container
@@ -29,8 +29,49 @@ setup:
     Talks to the local Docker daemon on the runner host via its Unix
     socket — no credentials needed.
   notes:
-    - "The runner uid must be in the docker group (or be root) to reach `/var/run/docker.sock`; this pack does not escalate."
     - "Membership in the docker group is effectively root-equivalent on the host, since a container can mount and write the host filesystem."
+    - "Compose actions also need ordinary read access to their selected project files. docker.compose_config needs only that file access, so no universal host-access recipe can name it."
+  host_access:
+    - actions:
+        - docker.ps
+        - docker.info
+        - docker.version
+        - docker.events_tail
+        - docker.container_top
+        - docker.stats
+        - docker.images
+        - docker.image_inspect
+        - docker.image_history
+        - docker.pull_image
+        - docker.inspect
+        - docker.logs
+        - docker.volume_ls
+        - docker.volume_inspect
+        - docker.volume_prune
+        - docker.network_ls
+        - docker.network_inspect
+        - docker.compose_ps
+        - docker.compose_logs
+        - docker.compose_restart
+        - docker.compose_ls
+        - docker.compose_images
+        - docker.system_df
+        - docker.system_prune
+        - docker.restart
+        - docker.stop
+        - docker.kill
+      requirement: Connect to the Docker daemon socket.
+      recipes:
+        - name: Add the Emisar service user to the docker group
+          commands:
+            - "sudo usermod -aG docker emisar"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx docker"
+            - "sudo -u emisar docker info >/dev/null"
+          impact: >
+            Every process running as emisar can control Docker. Docker socket access is
+            effectively root-equivalent because containers can mount and write the host.
   verify: docker.ps
 
 actions:

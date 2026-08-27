@@ -2,7 +2,7 @@ schema_version: 1
 
 id: haproxy
 name: HAProxy operations
-version: 0.1.12
+version: 0.1.13
 description: >
   Stats, server state, frontends/backends, session inventory, plus narrow
   mutators to enable/disable backend servers. Talks to the HAProxy admin
@@ -34,7 +34,33 @@ setup:
   notes:
     - "`HAPROXY_SOCK` only reaches an action when the runner allowlists it in `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default. Unset, the actions fall back to the conventional socket path, so a non-default runtime socket reads the wrong one or is simply absent."
     - "The socket must be declared with `level admin` in haproxy.cfg for the enable/disable/set mutators to work."
-    - "The runner user needs read/write access to the socket (it is often owned by root with mode 0600) — run the runner as root or grant access via the socket's group/mode."
+  host_access:
+    - actions:
+        - haproxy.show_info
+        - haproxy.show_stat
+        - haproxy.show_servers_state
+        - haproxy.show_pools
+        - haproxy.show_errors
+        - haproxy.show_sess
+        - haproxy.show_map
+        - haproxy.show_backend
+        - haproxy.show_frontend
+        - haproxy.enable_server
+        - haproxy.disable_server
+        - haproxy.set_maxconn
+      requirement: Read and write the configured HAProxy admin socket.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-haproxy-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. An HAProxy admin-level socket
+            can change backend availability and runtime limits beyond the actions in this pack.
   verify: haproxy.show_info
 
 actions:

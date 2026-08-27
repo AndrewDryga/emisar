@@ -2,12 +2,12 @@ schema_version: 1
 
 id: java-jvm
 name: JVM introspection
-version: 0.1.16
+version: 0.1.17
 retired_below: 0.1.14
 description: >
   JVM diagnostics via jcmd/jstack/jmap/jstat/JFR. Requires runner uid
-  to match the JVM process owner (or CAP_SYS_PTRACE) — actions return
-  a permission error cleanly when uid doesn't match.
+  and gid to match the JVM process owner — actions return a permission
+  error cleanly when the identity doesn't match.
 vendor: emisar
 homepage: https://emisar.dev/packs/java-jvm
 
@@ -28,7 +28,7 @@ setup:
     tools (jcmd/jstack/jmap/jstat/JFR) — no credentials needed; the
     target JVM's pid is passed as an argument.
   notes:
-    - "The attach API requires the runner to run as the same uid as the target JVM (or as root, or with CAP_SYS_PTRACE); otherwise actions fail cleanly with a permission error."
+    - "The attach API requires the runner to run as the same uid as the target JVM; root and CAP_SYS_PTRACE do not replace HotSpot's effective-user and group check. Install a dedicated runner as the target JVM owner."
   verify: jvm.vm_uptime
 
 actions:

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cassandra
 name: Cassandra operations
-version: 0.6.3
+version: 0.6.4
 retired_below: 0.4.10
 description: >
   Deep Cassandra ops via nodetool + cqlsh: topology (status, ring,
@@ -57,6 +57,24 @@ setup:
     - "cqlsh credentials belong in `~/.cassandra/cqlshrc` (with a [authentication] username/password) on the runner host — read from disk, so it needs no `inherit_env` entry; the actions pass no -u/-p."
     - Lifecycle and maintenance mutators (repair, drain, decommission, assassinate, removenode, cleanup, compact) are cluster-affecting; run the read actions first.
     - The runtime limit actions change one node and take effect at once, but a restart returns it to cassandra.yaml — after any node restart, read the limits back and set them again.
+  host_access:
+    - actions:
+        - cassandra.analyze_disk_pressure
+      requirement: Traverse Cassandra's service-owned data and commitlog directories.
+      recipes:
+        - name: Add the Emisar service user to cassandra
+          commands:
+            - "sudo usermod -aG cassandra emisar"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx cassandra"
+            - "sudo -u emisar test -r /var/lib/cassandra/data"
+            - "sudo -u emisar test -x /var/lib/cassandra/data"
+            - "sudo -u emisar test -r /var/lib/cassandra/commitlog"
+            - "sudo -u emisar test -x /var/lib/cassandra/commitlog"
+          impact: >
+            Every process running as emisar can traverse files exposed to the cassandra group,
+            including raw database and commitlog storage outside this aggregate size action.
   verify: cassandra.nodetool_status
 
 actions:

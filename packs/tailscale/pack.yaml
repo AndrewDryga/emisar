@@ -2,7 +2,7 @@ schema_version: 1
 
 id: tailscale
 name: Tailscale
-version: 0.1.6
+version: 0.1.7
 retired_below: 0.1.4
 description: >
   Inspect the host's Tailscale node via the tailscale CLI: tailnet
@@ -31,11 +31,11 @@ detect:
 setup:
   summary: >
     Reads the local host's Tailscale state via the tailscale CLI — no
-    credentials needed. The CLI talks to tailscaled's LocalAPI over a
-    local unix socket, so the runner needs permission to that socket.
+    credentials needed. On standard Linux installs, tailscaled authorizes
+    these read-only LocalAPI calls for ordinary local users.
   notes:
     - "Every action in this pack is read-only — it only reads tailnet/node state and never changes configuration, routes, or the exit node."
-    - "The tailscale CLI talks to tailscaled's LocalAPI over a local unix socket (mode 0600). The runner must therefore run as root or as the configured tailscale operator user (set via `tailscale set --operator=<user>`), otherwise commands fail with a permission error. Set the runner's user with a drop-in: `systemctl edit emisar` adding `[Service]` / `User=root` / `Group=root`, then `systemctl daemon-reload && systemctl restart emisar`."
+    - "On standard Linux tailscaled accepts read-only CLI requests from ordinary local users; do not set `--operator` for this pack because that grants configuration authority these actions do not need."
     - "TLS cert expiry is intentionally NOT in this pack: `tailscale cert` issues/renews a certificate (a mutator), so it would not be read-only. To check a cert's expiry read-only, use emisar's `ssl-local` or `network-tls` pack instead."
   verify: tailscale.version
 

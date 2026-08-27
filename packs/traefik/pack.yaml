@@ -2,7 +2,7 @@ schema_version: 1
 
 id: traefik
 name: Traefik ingress / reverse proxy
-version: 0.1.19
+version: 0.1.20
 description: >
   Read-only visibility into a Traefik (v2/v3) edge router over its HTTP API:
   the overview, entrypoints, and the full HTTP/TCP/UDP router + service +
@@ -78,9 +78,28 @@ setup:
     - "Enable the API to use this pack: --api=true (production, behind a router + auth) or --api.insecure=true (exposes it unauthenticated on the :8080 traefik entrypoint — dev only)."
     - "Every API action is a read-only GET. The OSS Traefik API has no write endpoints; config changes only happen through providers (file/docker/k8s), never the API."
     - "Per-router health: each router/service object carries status (enabled | warning | disabled) and an error[] list. Filter for status != enabled to find broken routing. Services also expose serverStatus (per-backend UP/DOWN)."
-    - "ACME certificate material lives only in the acme.json storage file (mode 0600), never the API. The acme_* actions read it locally; the runner user must be able to read that file."
+    - "ACME certificate material lives only in the acme.json storage file, never the API."
     - "/ping defaults to `TRAEFIK_URL` but is often moved to a dedicated entrypoint; set `TRAEFIK_PING_URL` without disturbing the API actions."
     - "Logs outside `/var/log/traefik`: set `TRAEFIK_ACCESS_LOG` (and allowlist it in the runner's `execution.inherit_env`). The log_path argument stays contained to `/var/log/traefik` because a caller — including an LLM — supplies it; the environment is host-administrator state, and anyone who can set it can already read the file. If Traefik logs to stdout instead (no accessLog.filePath), no file exists to read at any path: query whichever store collects it, e.g. the victorialogs pack. For unrestricted `/var/log` access, install linux-core, whose name says so."
+  host_access:
+    - actions:
+        - traefik.acme_domains
+        - traefik.acme_cert_expiry
+        - traefik.log_grep_4xx
+        - traefik.log_grep_5xx
+      requirement: Read Traefik's mode-0600 ACME storage and protected access log.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-traefik-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. The ACME file contains private
+            keys and account material even though these actions project only certificate metadata.
   verify: traefik.version
 
 actions:

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: ssl-local
 name: Local SSL/TLS cert inspection
-version: 0.1.12
+version: 0.1.13
 retired_below: 0.1.7
 description: >
   Inspect TLS certificates and keys on the local filesystem — find PEMs
@@ -23,8 +23,28 @@ setup:
     Inspects certificate and key files on the local runner host's
     filesystem at the paths you pass as action arguments — no credentials
     needed.
-  notes:
-    - "The runner process needs read access to the cert/key files it inspects; private keys and PKCS#12 stores are often root- or owner-only, so run as a user that can read them."
+  host_access:
+    - actions:
+        - ssl.find_certs
+        - ssl.cert_text
+        - ssl.cert_expiry
+        - ssl.cert_fingerprint
+        - ssl.key_modulus
+        - ssl.verify_chain
+        - ssl.pkcs12_info
+      requirement: Read root-owned or otherwise restricted certificate, key, and PKCS#12 files.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-ssl-local-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. These reads can reach private
+            keys and PKCS#12 bundles even though pack output never intentionally prints key bytes.
   verify: ssl.cert_expiry
 
 actions:

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nginx
 name: Nginx operations pack
-version: 0.2.21
+version: 0.2.22
 retired_below: 0.2.15
 description: >
   Operator pack for nginx — read-only status + access-log analysis,
@@ -46,9 +46,50 @@ setup:
       description: Where this host's nginx error log lives, for error_tail. Same reasoning as `NGINX_ACCESS_LOG`.
       example: /data/logs/nginx/error.log
   notes:
-    - "reload, quit_graceful, and stop_immediate signal the master process. The runner service identity must already be allowed to signal it (for example by sharing its UID or holding CAP_KILL/root authority); sudo cannot elevate an action because the runner enforces no_new_privs."
     - "Status actions require `stub_status on;` in a location reachable from 127.0.0.1; the `url` arg is loopback-only (127.0.0.1/localhost/[::1]) — pass a non-default port/path, not an off-host target."
     - "Logs outside `/var/log/nginx`: set `NGINX_ACCESS_LOG` / `NGINX_ERROR_LOG` (and allowlist them in the runner's `execution.inherit_env`). The log_path argument stays contained to `/var/log/nginx` because a caller — including an LLM — supplies it; the environment is host-administrator state, and anyone who can set it can already read the file. The official container image symlinks access.log to stdout, in which case no file exists to read at any path and the host's log collector owns it. For unrestricted `/var/log` access, install linux-core, whose name says so."
+  host_access:
+    - actions:
+        - nginx.config_dump
+        - nginx.vhost_list
+        - nginx.upstream_list
+        - nginx.test_config
+        - nginx.reload
+        - nginx.quit_graceful
+        - nginx.stop_immediate
+      requirement: Read protected Nginx configuration or signal its root-owned master.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-nginx-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. Nginx actions can expose
+            private configuration and can stop or reload the web server.
+    - actions:
+        - nginx.access_top_urls
+        - nginx.access_top_clients
+        - nginx.log_grep_5xx
+        - nginx.log_grep_4xx
+        - nginx.slow_requests
+        - nginx.bytes_by_url
+        - nginx.error_tail
+      requirement: Read Nginx logs through the Debian or Ubuntu system log-reader group.
+      recipes:
+        - name: Add the Emisar service user to adm
+          commands:
+            - "sudo usermod -aG adm emisar"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx adm"
+            - "sudo -u emisar test -r /var/log/nginx/error.log"
+          impact: >
+            Every process running as emisar can read every host log granted to adm, not only
+            Nginx logs. RHEL-family paths need an equivalent persistent log-reader grant.
   verify: nginx.active_version
 
 actions:

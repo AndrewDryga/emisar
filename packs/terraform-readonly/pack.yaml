@@ -2,7 +2,7 @@ schema_version: 1
 
 id: terraform-readonly
 name: Terraform / OpenTofu read-only ops
-version: 0.7.6
+version: 0.7.7
 description: >
   Read-only Terraform or OpenTofu CLI actions for inspecting a workspace.
   NO apply, NO destroy, NO state mutation — those should happen in CI, not
@@ -56,6 +56,51 @@ setup:
     - "plan_summary needs a workspace that plans ON THIS HOST. What decides that is the HCP Terraform / Terraform Enterprise workspace's execution mode, not the backend: a `cloud` block with execution mode `local` works fine, while `remote` and `agent` stream the run's human output instead of machine-readable messages. The action fails closed there rather than reporting an empty plan; use the hcp-terraform pack for those workspaces. plan_no_save still works everywhere, and the state-reading actions are unaffected."
     - "`state pull` may upgrade state to the local CLI's readable format; terraform_version in projected metadata can therefore reflect the runner's CLI rather than the writer of the remote snapshot."
     - "`TF_BIN` only reaches the action when the runner's `inherit_env` allowlists it, exactly like `TF_DIR` — an unset `TF_BIN` runs `terraform`."
+  host_access:
+    - actions:
+        - tf.version
+        - tf.providers
+        - tf.state_list
+        - tf.state_show
+        - tf.show_json
+        - tf.output
+        - tf.validate
+        - tf.plan_file_summary
+        - tf.state_metadata
+        - tf.state_file_metadata
+        - tf.state_compare_metadata
+      requirement: Read the documented /srv/infra workspace, saved plans, candidate states, and Terraform metadata.
+      recipes:
+        - name: Grant persistent read access to the documented /srv/infra layout on Debian or Ubuntu
+          commands:
+            - "sudo apt-get install -y acl"
+            - "sudo setfacl -R -m u:emisar:rX /srv/infra"
+            - "sudo find /srv/infra -type d -exec setfacl -m d:u:emisar:rX {} +"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "sudo -u emisar test -r /srv/infra/prod"
+            - "sudo -u emisar test -x /srv/infra/prod"
+          impact: >
+            Every process running as emisar can read all Terraform configuration, saved plans,
+            candidate states, and local state under /srv/infra, including embedded secrets.
+    - actions:
+        - tf.plan_no_save
+        - tf.plan_summary
+      requirement: Read the documented /srv/infra/prod workspace and create local lock or working files while planning.
+      recipes:
+        - name: Grant persistent plan-workspace access on Debian or Ubuntu
+          commands:
+            - "sudo apt-get install -y acl"
+            - "sudo setfacl -R -m u:emisar:rwX /srv/infra/prod"
+            - "sudo find /srv/infra/prod -type d -exec setfacl -m d:u:emisar:rwX {} +"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "sudo -u emisar test -r /srv/infra/prod"
+            - "sudo -u emisar test -w /srv/infra/prod"
+            - "sudo -u emisar test -x /srv/infra/prod"
+          impact: >
+            Every process running as emisar can read and modify the Terraform workspace under
+            /srv/infra/prod. Policy still limits which Terraform commands Emisar exposes.
   verify: tf.version
 
 actions:

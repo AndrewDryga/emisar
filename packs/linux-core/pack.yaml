@@ -2,7 +2,7 @@ schema_version: 1
 
 id: linux-core
 name: Linux core operations pack
-version: 0.4.3
+version: 0.4.4
 retired_below: 0.3.22
 description: >
   Read-only Linux diagnostics plus narrow service control. Disk, mem,
@@ -20,10 +20,56 @@ setup:
   summary: >
     Operates on the local runner host — no credentials needed.
   notes:
-    - "Read-only diagnostics (disk, memory, logs, network, users) need no privilege."
+    - "Most read-only diagnostics need no privilege. Journal, protected-log, storage, policy, service-control, and reboot actions are mapped below."
     - "linux.last_logins requires the `last` command. On Debian 13 install `wtmpdb`; install `libpam-wtmpdb` as well so PAM records login history in wtmpdb."
-    - "systemctl start/stop/restart/reload/enable/disable and reboot_host need root — run the runner as root, or grant the runner user the matching polkit rule. Actions cannot elevate through sudo: the runner blocks setuid programs."
-    - "Some reads (sudoers_dump, certain journalctl/auth paths) only return full output when run as root."
+  host_access:
+    - actions:
+        - linux.disk_smart
+        - linux.lvm_status
+        - linux.mdadm_status
+        - linux.hardware_summary
+        - linux.sudoers_dump
+        - linux.crontab_all
+        - linux.systemctl_start
+        - linux.systemctl_stop
+        - linux.systemctl_restart
+        - linux.systemctl_reload
+        - linux.systemctl_enable
+        - linux.systemctl_disable
+        - linux.reboot_host
+      requirement: Read protected storage and policy state, control arbitrary services, or reboot the host.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-linux-core-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. The listed actions can read
+            sensitive host policy, control any systemd unit, and reboot the machine.
+    - actions:
+        - linux.journalctl
+        - linux.journalctl_grep
+        - linux.grep_log
+        - linux.tail_log
+        - linux.failed_logins
+        - linux.cron_recent
+      requirement: Read systemd journal entries and protected logs on Debian or Ubuntu.
+      recipes:
+        - name: Add the Emisar service user to system log-reader groups
+          commands:
+            - "sudo usermod -aG adm,systemd-journal emisar"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx adm"
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx systemd-journal"
+            - "sudo -u emisar journalctl --no-pager -n 1 >/dev/null"
+          impact: >
+            Every process running as emisar can read the system journal and every host log
+            granted to adm, including logs unrelated to the selected actions.
   verify: linux.uptime
 
 actions:

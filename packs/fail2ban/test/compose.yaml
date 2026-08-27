@@ -31,7 +31,7 @@ services:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
       - runstate:/run
     healthcheck:
-      test: ["CMD-SHELL", "systemctl is-active fail2ban.service"]
+      test: ["CMD-SHELL", "systemctl is-active fail2ban.service && systemctl is-active emisar.service"]
       interval: 2s
       start_period: 30s
       start_interval: 1s

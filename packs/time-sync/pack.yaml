@@ -2,7 +2,7 @@ schema_version: 1
 
 id: time-sync
 name: Chrony time sync diagnostics
-version: 0.1.10
+version: 0.1.11
 description: >
   Clock-sync state for Chrony hosts: tracking, sources, current time, drift
   estimate, timezone, plus fix actions (chronyc makestep, enable/disable NTP).
@@ -27,7 +27,23 @@ setup:
   notes:
     - "Read actions (timedatectl, chronyc tracking/sources, date) need no privileges."
     - "For ntpd hosts, install the separate time-sync-ntpsec pack."
-    - "Fix actions (chronyc makestep, enabling/disabling NTP via timedatectl) need root/local admin."
+  host_access:
+    - actions:
+        - time.chronyc_makestep
+        - time.timedatectl_set_ntp
+      requirement: Step the system clock or change the host NTP setting as root.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-time-sync-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. These actions can abruptly
+            step wall-clock time or change which daemon controls synchronization.
   verify: time.timedatectl
 
 actions:

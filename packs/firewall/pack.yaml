@@ -2,7 +2,7 @@ schema_version: 1
 
 id: firewall
 name: Firewall and netfilter
-version: 0.1.14
+version: 0.1.15
 description: >
   iptables, nftables, conntrack, and traffic-control inspection plus
   narrow operator actions for incident response (block IP, unblock IP,
@@ -22,8 +22,32 @@ requires:
 setup:
   summary: >
     Operates on the local runner host — no credentials needed.
-  notes:
-    - "Needs CAP_NET_ADMIN for essentially everything — even listing rulesets and conntrack queries require it. The runner service must already hold that capability (for example through systemd AmbientCapabilities) or root authority; sudo cannot add it because actions run with no_new_privs."
+  host_access:
+    - actions:
+        - fw.iptables_filter
+        - fw.iptables_nat
+        - fw.iptables_mangle
+        - fw.nft_list_ruleset
+        - fw.conntrack_count
+        - fw.conntrack_list
+        - fw.iptables_block_ip
+        - fw.iptables_unblock_ip
+        - fw.iptables_flush_chain
+        - fw.nft_list_chain
+        - fw.nft_port_rules
+      requirement: Inspect and change the host network namespace with CAP_NET_ADMIN.
+      recipes:
+        - name: Grant CAP_NET_ADMIN to the Emisar service
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'AmbientCapabilities=CAP_NET_ADMIN' | sudo tee /etc/systemd/system/emisar.service.d/10-firewall-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "systemctl show emisar --property=AmbientCapabilities --value | grep -Fwi cap_net_admin"
+          impact: >
+            Every Emisar action on this runner inherits CAP_NET_ADMIN and can change routes,
+            firewall rules, traffic control, and other network state in the host namespace.
   verify: fw.conntrack_count
 
 actions:

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cloud-init
 name: cloud-init operations
-version: 0.1.13
+version: 0.1.14
 retired_below: 0.1.11
 description: >
   cloud-init introspection + boot diagnostics + stage re-runs. Use when
@@ -25,8 +25,39 @@ setup:
     Reads the local runner host's cloud-init status, logs, and results —
     no credentials needed.
   notes:
-    - "Most reads work as any user, but cloud-init logs and result files are often root-only; run as root for full visibility."
-    - "Mutators (re-running modules / init stages, clean) need root."
+    - "Status, version, schema validation, and instance-id reads work without elevated host access."
+  host_access:
+    - actions:
+        - cloud-init.analyze_show
+        - cloud-init.analyze_blame
+        - cloud-init.analyze_dump
+        - cloud-init.userdata_dump
+        - cloud-init.cloud_config_dump
+        - cloud-init.vendor_data_dump
+        - cloud-init.log_tail
+        - cloud-init.output_log_tail
+        - cloud-init.journal_tail
+        - cloud-init.collect_logs
+        - cloud-init.modules_config
+        - cloud-init.modules_final
+        - cloud-init.single_module
+        - cloud-init.init_local
+        - cloud-init.init
+        - cloud-init.clean_logs
+        - cloud-init.clean
+      requirement: Read protected cloud-init state and logs, or rerun and clean boot stages, as root.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-cloud-init-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. Cloud-init reads may expose
+            raw user-data secrets, and mutators can reapply provisioning or erase instance state.
   verify: cloud-init.status
 
 actions:

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: php-fpm
 name: PHP-FPM
-version: 0.1.9
+version: 0.1.10
 description: >
   PHP runtime + FPM pool introspection — version, modules, ini, pool
   status (via fpm_status endpoint), error + slow logs, OPcache state,
@@ -28,9 +28,53 @@ setup:
     - name: PHP_FPM_STATUS_URL
       description: URL of the FPM pool status page, used by the fpm_status/fpm_status_full/fpm_ping actions. Optional; defaults to http://127.0.0.1/fpm-status. Add it to the runner's `inherit_env` if you override it.
       default: "http://127.0.0.1/fpm-status"
+    - name: PHP_FPM_ERROR_LOG
+      description: Path to the PHP-FPM error log. Add it to the runner's `inherit_env` if you override it.
+      default: /var/log/php-fpm/error.log
+    - name: PHP_FPM_SLOW_LOG
+      description: Path to the PHP-FPM slow-request log. Add it to the runner's `inherit_env` if you override it.
+      default: /var/log/php-fpm/slow.log
+    - name: COMPOSER_DIR
+      description: Composer project directory inspected by composer_show. Add it to the runner's `inherit_env` if you override it.
+      default: /var/www/html
   notes:
     - "The status page must be enabled in the pool config (pm.status_path) and reachable from the runner host for the fpm_status actions to return data."
-    - "Reading php-fpm's error/slow logs requires the runner uid to have read access to those log files (often root-owned)."
+    - "Debian/Ubuntu log paths vary by installed PHP version. Set and allowlist `PHP_FPM_ERROR_LOG` and `PHP_FPM_SLOW_LOG`, then grant persistent read access through that deployment's log group or rotation policy."
+  host_access:
+    - actions:
+        - phpfpm.error_log_tail
+        - phpfpm.slow_log_tail
+      requirement: Read PHP-FPM's protected error and slow logs at their default RHEL-family paths.
+      recipes:
+        - name: Grant persistent ACLs on the PHP-FPM log directory on RHEL-family hosts
+          commands:
+            - "sudo dnf install -y acl"
+            - "sudo setfacl -m u:emisar:rx /var/log/php-fpm"
+            - "sudo setfacl -m d:u:emisar:rX /var/log/php-fpm"
+            - "sudo find /var/log/php-fpm -maxdepth 1 -type f -exec setfacl -m u:emisar:r {} +"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "sudo -u emisar test -r /var/log/php-fpm/error.log"
+            - "sudo -u emisar test -r /var/log/php-fpm/slow.log"
+          impact: >
+            Every process running as emisar can read PHP-FPM logs, including request details
+            and stack traces. Application-owned Composer projects need separate deployment access.
+    - actions:
+        - phpfpm.composer_show
+      requirement: Read the default Composer project tree and keep access when files are replaced.
+      recipes:
+        - name: Grant persistent read access to /var/www/html on RHEL-family hosts
+          commands:
+            - "sudo dnf install -y acl"
+            - "sudo setfacl -R -m u:emisar:rX /var/www/html"
+            - "sudo find /var/www/html -type d -exec setfacl -m d:u:emisar:rX {} +"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "sudo -u emisar test -r /var/www/html/composer.lock"
+            - "sudo -u emisar test -x /var/www/html"
+          impact: >
+            Every process running as emisar can read the application tree under /var/www/html,
+            including source, configuration, and secrets stored beside composer.lock.
   verify: phpfpm.version
 
 actions:

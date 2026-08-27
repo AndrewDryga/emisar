@@ -1,7 +1,7 @@
 schema_version: 1
 id: zfs
 name: ZFS pool + dataset operations
-version: 0.1.12
+version: 0.1.13
 retired_below: 0.1.9
 description: >
   Pool status, dataset inventory, snapshot listing, scrub status, ARC
@@ -21,7 +21,27 @@ setup:
     needed.
   notes:
     - "Status/list/iostat reads work as any user that can run zpool/zfs."
-    - "Mutators (scrub start/stop, clear errors, snapshot create/destroy, rollback) need root, or a non-root user holding the matching ZFS delegated permissions (zfs allow)."
+  host_access:
+    - actions:
+        - zfs.start_scrub
+        - zfs.take_snapshot
+        - zfs.scrub_stop
+        - zfs.clear_pool_errors
+        - zfs.snapshot_destroy
+        - zfs.dataset_rollback
+      requirement: Change ZFS pool and dataset state as root.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-zfs-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. ZFS mutations can destroy
+            snapshots, roll datasets back, or change pool recovery state.
   verify: zfs.pool_list
 
 actions:

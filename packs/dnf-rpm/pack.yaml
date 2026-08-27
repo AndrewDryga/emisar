@@ -2,7 +2,7 @@ schema_version: 1
 
 id: dnf-rpm
 name: RHEL/Fedora package ops
-version: 0.1.11
+version: 0.1.12
 description: >
   Counterpart to the `debian` pack for RHEL/CentOS/Fedora/Alma/Rocky:
   rpm inventory, dnf check-update, narrow install/remove actions for a
@@ -21,8 +21,29 @@ setup:
   summary: >
     Operates on the local runner host — no credentials needed.
   notes:
-    - "Read-only inventory (rpm_qa, rpm_qi, rpm_ql, rpm_verify, dnf_check_update, dnf_history, dnf_repolist) needs no privilege."
-    - "Mutators (dnf_install, dnf_remove, dnf_clean_metadata, upgrade_pkg, reinstall_pkg, autoremove) require the runner service itself to have root authority; sudo cannot elevate an action because the runner enforces no_new_privs."
+    - "Read-only inventory (rpm_qa, rpm_qi, rpm_ql, dnf_check_update, dnf_history, dnf_repolist) needs no privilege. rpm_verify needs root to hash every installed file, including root-only files."
+  host_access:
+    - actions:
+        - rpm.rpm_verify
+        - rpm.dnf_install
+        - rpm.dnf_remove
+        - rpm.dnf_clean_metadata
+        - dnf.upgrade_pkg
+        - dnf.reinstall_pkg
+        - dnf.autoremove
+      requirement: Verify root-only packaged files or change DNF package state as root.
+      recipes:
+        - name: Run the Emisar service as root
+          commands:
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-dnf-rpm-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+          impact: >
+            Every Emisar action on this runner executes as root. Verification can read every
+            packaged file; package actions can run maintainer scripts and change any host state.
   verify: rpm.rpm_qa
 
 actions:

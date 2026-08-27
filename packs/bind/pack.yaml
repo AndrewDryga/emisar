@@ -2,7 +2,7 @@ schema_version: 1
 
 id: bind
 name: BIND DNS server
-version: 0.1.14
+version: 0.1.15
 # Unchanged: rndc_stats moving low -> medium corrects the tier for a file
 # rewrite, but the shipped default auto-runs both, so no approval was skipped
 # and no earlier version is unsafe to keep running.
@@ -31,9 +31,41 @@ setup:
     credentials needed. rndc controls named via its key file; dig queries
     127.0.0.1.
   notes:
-    - "rndc needs its key readable by the runner user (`/etc/rndc.key` or the key in `/etc/rndc.conf`) and the named controls channel reachable on 127.0.0.1."
-    - "rndc_reload, rndc_freeze, rndc_thaw, and rndc_flush change server state and need root (or a key with the matching rndc permissions)."
     - "zone_dump (AXFR) requires named's allow-transfer to include 127.0.0.1."
+  host_access:
+    - actions:
+        - bind.rndc_status
+        - bind.rndc_stats
+        - bind.named_checkconf
+        - bind.named_checkzone
+        - bind.rndc_reload
+        - bind.rndc_freeze
+        - bind.rndc_thaw
+        - bind.rndc_flush
+      requirement: Read BIND's protected configuration and RNDC key and control the local named process.
+      recipes:
+        - name: Add the default Emisar service user to bind on Debian or Ubuntu
+          commands:
+            - "sudo usermod -aG bind emisar"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx bind"
+            - "sudo -u emisar rndc status >/dev/null"
+            - "sudo -u emisar named-checkconf"
+          impact: >
+            Every process running as emisar can read files exposed to the bind group and use
+            the RNDC key to mutate named beyond the actions exposed by this pack.
+        - name: Add the default Emisar service user to named on RHEL-family hosts
+          commands:
+            - "sudo usermod -aG named emisar"
+            - "sudo systemctl restart emisar"
+          verify:
+            - "id -nG emisar | tr ' ' '\\n' | grep -Fx named"
+            - "sudo -u emisar rndc status >/dev/null"
+            - "sudo -u emisar named-checkconf"
+          impact: >
+            Every process running as emisar can read files exposed to the named group and use
+            the RNDC key to mutate named beyond the actions exposed by this pack.
   verify: bind.rndc_status
 
 actions:
