@@ -104,6 +104,13 @@ defmodule Emisar.Runbooks.Scheduler.Recovery do
     end
   end
 
+  # Deliberately does NOT mark the execution advanced, unlike the same-named
+  # helpers in Scheduler and Settlement. Those two lock an execution that is
+  # about to make progress, and `last_advanced_at` is what orders `recover_due`
+  # so a stalled execution is picked up before a busy one. This one is reached
+  # only from scrub_terminal_execution/1, which walks TERMINAL rows: there is no
+  # progress to record, and touching the clock would reorder the starvation
+  # queue on rows that have already finished. Unify the three at your peril.
   defp lock_execution(repo, _changes, execution_id) do
     execution =
       RunbookExecution.Query.by_id(execution_id)
