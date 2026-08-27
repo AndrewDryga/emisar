@@ -399,8 +399,11 @@ defmodule EmisarWeb.BillingLive do
              and a help/support aside on the right — the create-page helper-rail
              grammar, so "what you have / what you're using / who to ask" read in
              one row. --%>
-        <section class="grid grid-cols-1 gap-8 lg:grid-cols-4 lg:items-start">
-          <div class="space-y-8 lg:col-span-3">
+        <%!-- The house rail track: a FIXED 22rem that only splits off at xl, never
+             a squeezed fraction. A quarter of the lg canvas left the rail ~168px,
+             which broke "22 / Unlimited" across two lines under its own label. --%>
+        <section class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+          <div class="min-w-0 space-y-8">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -789,7 +792,11 @@ defmodule EmisarWeb.BillingLive do
               <%!-- The summary limits are entitlement-aware (Paddle product
                  custom_data overrides the compiled plan defaults) — never
                  re-derive them from the plans map by name. --%>
-              <div class="mt-4 space-y-4">
+              <%!-- Keeps the rail's own measure once the rail stacks below xl:
+                   these rows put the label and its value at opposite edges, so a
+                   full-canvas block strands the count a screen away from its name
+                   (prose siblings reflow fine and stay uncapped). --%>
+              <div class="mt-4 max-w-[22rem] space-y-4">
                 <.usage_meter
                   label="Runners"
                   count={@summary.runner_count}
