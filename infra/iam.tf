@@ -171,7 +171,7 @@ resource "google_project_iam_member" "vm_cloudsql" {
   condition {
     title       = "emisar_database_only"
     description = "The portal VM may connect and use IAM login only on the emisar instance."
-    expression  = "resource.name == 'projects/${var.project_id}/instances/emisar' && resource.type == 'sqladmin.googleapis.com/Instance'"
+    expression  = "resource.name == 'projects/${var.project_id}/instances/${google_sql_database_instance.emisar.name}' && resource.type == 'sqladmin.googleapis.com/Instance'"
   }
 }
 
@@ -188,7 +188,7 @@ resource "google_project_iam_member" "livebook_cloudsql" {
   condition {
     title       = "emisar_livebook_database_only"
     description = "The Livebook VM may connect and use IAM login only on the emisar instance."
-    expression  = "resource.name == 'projects/${var.project_id}/instances/emisar' && resource.type == 'sqladmin.googleapis.com/Instance'"
+    expression  = "resource.name == 'projects/${var.project_id}/instances/${google_sql_database_instance.emisar.name}' && resource.type == 'sqladmin.googleapis.com/Instance'"
   }
 }
 
@@ -272,7 +272,7 @@ resource "google_project_iam_member" "database_operator_cloudsql" {
   condition {
     title       = "emisar_database_operator_only"
     description = "This binding permits database operator login only on the emisar instance."
-    expression  = "resource.name == 'projects/${var.project_id}/instances/emisar' && resource.type == 'sqladmin.googleapis.com/Instance'"
+    expression  = "resource.name == 'projects/${var.project_id}/instances/${google_sql_database_instance.emisar.name}' && resource.type == 'sqladmin.googleapis.com/Instance'"
   }
 }
 
@@ -293,7 +293,7 @@ resource "google_project_iam_member" "database_operator_studio" {
   condition {
     title       = "emisar_database_only"
     description = "The database operator may open Studio only on the emisar instance."
-    expression  = "resource.name == 'projects/${var.project_id}/instances/emisar' && resource.type == 'sqladmin.googleapis.com/Instance'"
+    expression  = "resource.name == 'projects/${var.project_id}/instances/${google_sql_database_instance.emisar.name}' && resource.type == 'sqladmin.googleapis.com/Instance'"
   }
 }
 

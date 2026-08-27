@@ -2,6 +2,17 @@
 # publishers. Portal delivery remains a reviewed HCP Terraform plan from this
 # single workspace. Pack CD and component releases use separate providers
 # because only reusable-workflow jobs carry `job_workflow_*` claims.
+locals {
+  # The reviewed commit the release workflows must run from. It is asserted here
+  # AND used to build the pack-registry publisher's principalSet in
+  # pack_registry.tf, so a rotation that updates only some of the four spellings
+  # does not fail a plan — it silently stops matching, and the publisher loses
+  # authority (or, worse, an unreviewed commit keeps it). One definition makes
+  # the rotation a single edit. See the rotation note on
+  # google_iam_workload_identity_pool_provider.github_releases below.
+  trusted_job_workflow_sha = "8bc034250767a3d3d8f4c84c9f6e1d693a624a23"
+}
+
 resource "google_iam_workload_identity_pool" "github" {
   project                   = var.project_id
   workload_identity_pool_id = "github-actions"
@@ -71,10 +82,10 @@ resource "google_iam_workload_identity_pool_provider" "github_releases" {
     "assertion.repository == \"${var.github_repository}\"",
     "assertion.repository_id == \"${var.github_repository_id}\"",
     "assertion.environment == \"public-releases\"",
-    "assertion.job_workflow_sha == \"8bc034250767a3d3d8f4c84c9f6e1d693a624a23\"",
+    "assertion.job_workflow_sha == \"${local.trusted_job_workflow_sha}\"",
     "(${join(" || ", [
-      "(assertion.ref.startsWith(\"refs/tags/runner-v\") && assertion.job_workflow_ref == \"${var.github_repository}/.github/workflows/runner-release-trusted.yml@8bc034250767a3d3d8f4c84c9f6e1d693a624a23\")",
-      "(assertion.ref.startsWith(\"refs/tags/mcp-v\") && assertion.job_workflow_ref == \"${var.github_repository}/.github/workflows/mcp-release-trusted.yml@8bc034250767a3d3d8f4c84c9f6e1d693a624a23\")",
+      "(assertion.ref.startsWith(\"refs/tags/runner-v\") && assertion.job_workflow_ref == \"${var.github_repository}/.github/workflows/runner-release-trusted.yml@${local.trusted_job_workflow_sha}\")",
+      "(assertion.ref.startsWith(\"refs/tags/mcp-v\") && assertion.job_workflow_ref == \"${var.github_repository}/.github/workflows/mcp-release-trusted.yml@${local.trusted_job_workflow_sha}\")",
     ])})",
   ])
 }
