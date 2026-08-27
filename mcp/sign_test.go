@@ -299,6 +299,21 @@ func TestSignFrameProducesExactRunnerVerifiableClaim(t *testing.T) {
 	}
 }
 
+// verifyClaimSig spells out Ed25519 over attest.SigningBytes, standing in for
+// the retired attest.Verify wrapper.
+func verifyClaimSig(t testing.TB, pub ed25519.PublicKey, c attest.Claim, sigHex string) bool {
+	t.Helper()
+	msg, err := attest.SigningBytes(c)
+	if err != nil {
+		t.Fatalf("SigningBytes: %v", err)
+	}
+	sig, err := hex.DecodeString(sigHex)
+	if err != nil {
+		t.Fatalf("decode signature: %v", err)
+	}
+	return ed25519.Verify(pub, msg, sig)
+}
+
 func TestSignFrameBindsExactRawArguments(t *testing.T) {
 	signer, publicKey := testSigner(t)
 	args := `{ "job_id":9007199254740993,"amount":1.000e+3 }`
@@ -319,8 +334,8 @@ func TestSignFrameBindsExactRawArguments(t *testing.T) {
 		IssuedAt:     envelope.IssuedAt,
 	}
 	base.ArgsRaw = json.RawMessage(args)
-	if valid, err := attest.Verify(publicKey, base, envelope.Signature); err != nil || !valid {
-		t.Fatalf("exact args did not verify: valid=%v err=%v", valid, err)
+	if !verifyClaimSig(t, publicKey, base, envelope.Signature) {
+		t.Fatal("exact args did not verify")
 	}
 	for _, changed := range []string{
 		`{"job_id":9007199254740993,"amount":1.000e+3}`,
@@ -328,8 +343,8 @@ func TestSignFrameBindsExactRawArguments(t *testing.T) {
 		`{ "job_id":9007199254740993,"amount":1000 }`,
 	} {
 		base.ArgsRaw = json.RawMessage(changed)
-		if valid, err := attest.Verify(publicKey, base, envelope.Signature); err != nil || valid {
-			t.Errorf("changed args verified: %s (valid=%v err=%v)", changed, valid, err)
+		if verifyClaimSig(t, publicKey, base, envelope.Signature) {
+			t.Errorf("changed args verified: %s", changed)
 		}
 	}
 }
@@ -719,8 +734,8 @@ func TestSignFrameBindsTheApproverNarrative(t *testing.T) {
 		Nonce:        envelope.Nonce,
 		IssuedAt:     envelope.IssuedAt,
 	}
-	if valid, err := attest.Verify(publicKey, claim, envelope.Signature); err != nil || !valid {
-		t.Fatalf("the signed narrative did not verify: valid=%v err=%v", valid, err)
+	if !verifyClaimSig(t, publicKey, claim, envelope.Signature) {
+		t.Fatal("the signed narrative did not verify")
 	}
 
 	// A rewritten narrative breaks the signature. This is the whole point.
@@ -729,7 +744,7 @@ func TestSignFrameBindsTheApproverNarrative(t *testing.T) {
 		func() attest.Claim { c := claim; c.Expected = "no impact at all"; return c }(),
 		func() attest.Claim { c := claim; c.Evidence = ""; return c }(),
 	} {
-		if valid, _ := attest.Verify(publicKey, altered, envelope.Signature); valid {
+		if verifyClaimSig(t, publicKey, altered, envelope.Signature) {
 			t.Error("a rewritten approver narrative still verified")
 		}
 	}
@@ -755,7 +770,7 @@ func TestSignFrameBindsAnAbsentNarrative(t *testing.T) {
 		OperationID: envelope.OperationID, PortalOrigin: envelope.PortalOrigin,
 		Nonce: envelope.Nonce, IssuedAt: envelope.IssuedAt,
 	}
-	if valid, _ := attest.Verify(publicKey, invented, envelope.Signature); valid {
+	if verifyClaimSig(t, publicKey, invented, envelope.Signature) {
 		t.Error("evidence invented for an unjustified call still verified")
 	}
 }

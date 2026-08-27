@@ -122,6 +122,17 @@ func attestationFor(t *testing.T, cli *Client, priv ed25519.PrivateKey, actionID
 // attestationCertifiedBy signs the dispatch with priv and attaches a cert that
 // caPriv vouches for leafPubHex under — so a test can mint a dispatch certified
 // by a specific CA (e.g. one the runner was just rotated to trust).
+// signTestClaim spells out Ed25519 over attest.SigningBytes, standing in for
+// the retired attest.Sign wrapper.
+func signTestClaim(t testing.TB, priv ed25519.PrivateKey, c attest.Claim) string {
+	t.Helper()
+	msg, err := attest.SigningBytes(c)
+	if err != nil {
+		t.Fatalf("SigningBytes: %v", err)
+	}
+	return hex.EncodeToString(ed25519.Sign(priv, msg))
+}
+
 func attestationCertifiedBy(t *testing.T, cli *Client, priv, caPriv ed25519.PrivateKey, caID, nonce, actionID string, args map[string]any) *Attestation {
 	t.Helper()
 	nonceDigest := sha256.Sum256([]byte(nonce))
@@ -145,10 +156,7 @@ func attestationCertifiedBy(t *testing.T, cli *Client, priv, caPriv ed25519.Priv
 		Reason: reason, OperationID: operationID, PortalOrigin: sigTestOrigin,
 		Nonce: nonce, IssuedAt: issuedAt,
 	}
-	sig, err := attest.Sign(priv, claim)
-	if err != nil {
-		t.Fatalf("Sign: %v", err)
-	}
+	sig := signTestClaim(t, priv, claim)
 	argsDigest, err := attest.ArgsSHA256(argsRaw)
 	if err != nil {
 		t.Fatalf("ArgsSHA256: %v", err)

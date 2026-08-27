@@ -97,20 +97,41 @@ func TestSigningBytesVectors(t *testing.T) {
 	}
 }
 
+// signVector and verifyVector spell out Ed25519 over SigningBytes — the
+// retired public Sign/Verify wrappers — so the cross-impl vectors stay
+// byte-stable against the canonical encoding alone. Ed25519 is deterministic
+// (RFC 8032), so a given (key, claim) always yields the same signature.
+func signVector(t *testing.T, priv ed25519.PrivateKey, c Claim) string {
+	t.Helper()
+	msg, err := SigningBytes(c)
+	if err != nil {
+		t.Fatalf("SigningBytes: %v", err)
+	}
+	return hex.EncodeToString(ed25519.Sign(priv, msg))
+}
+
+func verifyVector(t *testing.T, pub ed25519.PublicKey, c Claim, sigHex string) bool {
+	t.Helper()
+	msg, err := SigningBytes(c)
+	if err != nil {
+		t.Fatalf("SigningBytes: %v", err)
+	}
+	sig, err := hex.DecodeString(sigHex)
+	if err != nil {
+		t.Fatalf("decode signature: %v", err)
+	}
+	return ed25519.Verify(pub, msg, sig)
+}
+
 func TestSignVectors(t *testing.T) {
 	priv, pub := vectorKey(t)
 	for _, vector := range vectorClaims() {
 		t.Run(vector.name, func(t *testing.T) {
-			got, err := Sign(priv, vector.claim)
-			if err != nil {
-				t.Fatalf("Sign: %v", err)
-			}
-			if got != vector.sig {
+			if got := signVector(t, priv, vector.claim); got != vector.sig {
 				t.Fatalf("signature drifted:\n got %s\nwant %s", got, vector.sig)
 			}
-			ok, err := Verify(pub, vector.claim, vector.sig)
-			if err != nil || !ok {
-				t.Fatalf("Verify = %v, %v; want true", ok, err)
+			if !verifyVector(t, pub, vector.claim, vector.sig) {
+				t.Fatal("vector signature did not verify")
 			}
 		})
 	}
@@ -119,10 +140,7 @@ func TestSignVectors(t *testing.T) {
 func TestSigningBytesBindsEveryIntentField(t *testing.T) {
 	priv, pub := vectorKey(t)
 	base := vectorClaims()[1].claim
-	sig, err := Sign(priv, base)
-	if err != nil {
-		t.Fatalf("Sign: %v", err)
-	}
+	sig := signVector(t, priv, base)
 
 	tampered := map[string]Claim{}
 	add := func(name string, mutate func(*Claim)) {
@@ -144,11 +162,7 @@ func TestSigningBytesBindsEveryIntentField(t *testing.T) {
 
 	for name, claim := range tampered {
 		t.Run(name, func(t *testing.T) {
-			ok, err := Verify(pub, claim, sig)
-			if err != nil {
-				t.Fatalf("Verify: %v", err)
-			}
-			if ok {
+			if verifyVector(t, pub, claim, sig) {
 				t.Fatal("tampered claim verified")
 			}
 		})
@@ -222,14 +236,6 @@ func TestCanonicalRunnerRefs(t *testing.T) {
 		if _, err := CanonicalRunnerRefs(refs); err == nil {
 			t.Fatalf("CanonicalRunnerRefs(%v) unexpectedly succeeded", refs)
 		}
-	}
-}
-
-func TestVerifyRejectsMalformedSignature(t *testing.T) {
-	_, pub := vectorKey(t)
-	ok, err := Verify(pub, vectorClaims()[0].claim, "not-hex")
-	if err == nil || ok {
-		t.Fatalf("Verify = %v, %v; want false, error", ok, err)
 	}
 }
 

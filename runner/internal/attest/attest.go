@@ -227,32 +227,6 @@ func CanonicalRunnerRefs(refs []string) ([]string, error) {
 	return canonical, nil
 }
 
-// Sign returns the hex-encoded Ed25519 signature over the claim. Ed25519 is
-// deterministic (RFC 8032), so a given (key, claim) always yields the same
-// signature — which is what makes the cross-impl vectors stable.
-func Sign(priv ed25519.PrivateKey, c Claim) (string, error) {
-	msg, err := SigningBytes(c)
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(ed25519.Sign(priv, msg)), nil
-}
-
-// Verify reports whether sigHex is a valid Ed25519 signature over the claim
-// under pub. A malformed signature or args is a (false, error); a
-// cryptographically invalid one is (false, nil).
-func Verify(pub ed25519.PublicKey, c Claim, sigHex string) (bool, error) {
-	msg, err := SigningBytes(c)
-	if err != nil {
-		return false, err
-	}
-	sig, err := hex.DecodeString(sigHex)
-	if err != nil {
-		return false, fmt.Errorf("attest: decode signature: %w", err)
-	}
-	return ed25519.Verify(pub, msg, sig), nil
-}
-
 // CertProfile names the X.509 profile a dispatch certificate must satisfy. It
 // is documentation, not a wire field: the profile is enforced structurally by
 // VerifyChain, so there is no version string an issuer could get wrong.

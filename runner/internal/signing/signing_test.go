@@ -189,6 +189,17 @@ func signForTargets(t *testing.T, priv ed25519.PrivateKey, actionID string, args
 // signWithNarrative signs a dispatch that carries the approver-facing evidence
 // and expectation. The bridge binds them by digest and never relays the text, so
 // the envelope carries only the digests — exactly what a runner sees.
+// signTestClaim spells out Ed25519 over attest.SigningBytes, standing in for
+// the retired attest.Sign wrapper.
+func signTestClaim(t testing.TB, priv ed25519.PrivateKey, c attest.Claim) string {
+	t.Helper()
+	msg, err := attest.SigningBytes(c)
+	if err != nil {
+		t.Fatalf("SigningBytes: %v", err)
+	}
+	return hex.EncodeToString(ed25519.Sign(priv, msg))
+}
+
 func signWithNarrative(t *testing.T, priv ed25519.PrivateKey, actionID string, args map[string]any, nonce, issuedAt, evidence, expected string) *Attestation {
 	t.Helper()
 	att := signForTargets(t, priv, actionID, args, []string{testRunnerRef(t)}, nonce, issuedAt)
@@ -203,10 +214,7 @@ func signWithNarrative(t *testing.T, priv ed25519.PrivateKey, actionID string, a
 		Evidence: evidence, Expected: expected,
 		PortalOrigin: testOrigin, Nonce: testNonce(nonce), IssuedAt: issuedAt,
 	}
-	sig, err := attest.Sign(priv, claim)
-	if err != nil {
-		t.Fatalf("Sign: %v", err)
-	}
+	sig := signTestClaim(t, priv, claim)
 	att.Signature = sig
 	att.EvidenceSHA256 = attest.TextSHA256(evidence)
 	att.ExpectedSHA256 = attest.TextSHA256(expected)
@@ -224,10 +232,7 @@ func signedAttestation(t testing.TB, priv ed25519.PrivateKey, dispatch Dispatch,
 		RunnerRefs: runnerRefs, Reason: dispatch.Reason, OperationID: dispatch.OperationID,
 		PortalOrigin: testOrigin, Nonce: nonce, IssuedAt: issuedAt,
 	}
-	sig, err := attest.Sign(priv, claim)
-	if err != nil {
-		t.Fatalf("Sign: %v", err)
-	}
+	sig := signTestClaim(t, priv, claim)
 	argsDigest, err := attest.ArgsSHA256(dispatch.ArgsRaw)
 	if err != nil {
 		t.Fatalf("ArgsSHA256: %v", err)
