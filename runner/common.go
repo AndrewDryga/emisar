@@ -124,8 +124,8 @@ func bootWithConfig(cfg *config.Config) (*runtime, error) {
 		return nil, err
 	}
 	journal := audit.New(audit.Defaults{
-		AgentID: externalID,
-		Group:   cfg.Runner.Group,
+		RunnerID: externalID,
+		Group:    cfg.Runner.Group,
 	}, jsonlSink)
 	globalRules, err := redact.CompileAll(redact.DefaultRules(), cfg.Redaction.Rules)
 	if err != nil {

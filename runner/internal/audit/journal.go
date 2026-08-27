@@ -15,8 +15,8 @@ type Sink interface {
 // Defaults stamp runner-level fields onto every event if not otherwise
 // supplied by the caller.
 type Defaults struct {
-	AgentID string
-	Group   string
+	RunnerID string
+	Group    string
 }
 
 type Journal struct {
@@ -47,8 +47,8 @@ func (j *Journal) Record(ctx context.Context, ev Event) (Event, error) {
 	if ev.Group == "" {
 		ev.Group = j.defaults.Group
 	}
-	if ev.AgentID == "" {
-		ev.AgentID = j.defaults.AgentID
+	if ev.RunnerID == "" {
+		ev.RunnerID = j.defaults.RunnerID
 	}
 
 	if err := j.sink.Write(ctx, ev); err != nil {

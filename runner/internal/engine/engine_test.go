@@ -90,7 +90,7 @@ actions:
 	must(err)
 	sink, err := audit.OpenJSONL(filepath.Join(root, "events.jsonl"), audit.JSONLOptions{})
 	must(err)
-	j := audit.New(audit.Defaults{AgentID: "test", Group: "test"}, sink)
+	j := audit.New(audit.Defaults{RunnerID: "test", Group: "test"}, sink)
 	e := New(Config{
 		Registry:     reg,
 		Executor:     executor.New(),
@@ -1030,7 +1030,7 @@ actions:
 	must(err)
 	sink, err := audit.OpenJSONL(filepath.Join(root, "events.jsonl"), audit.JSONLOptions{})
 	must(err)
-	j := audit.New(audit.Defaults{AgentID: "test", Group: "test"}, sink)
+	j := audit.New(audit.Defaults{RunnerID: "test", Group: "test"}, sink)
 	e := New(Config{
 		Registry:     reg,
 		Executor:     executor.New(),

@@ -18,7 +18,7 @@ func writeN(t *testing.T, path string, n int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := New(Defaults{AgentID: "a"}, s)
+	j := New(Defaults{RunnerID: "a"}, s)
 	for i := 0; i < n; i++ {
 		if _, err := j.Record(context.Background(), Event{
 			Type:     EventExecutionCompleted,
@@ -130,7 +130,7 @@ func TestChain_ContinuesAcrossReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := New(Defaults{AgentID: "a"}, s)
+	j := New(Defaults{RunnerID: "a"}, s)
 	for i := 0; i < 2; i++ {
 		if _, err := j.Record(context.Background(), Event{
 			Type:     EventExecutionCompleted,
@@ -162,7 +162,7 @@ func TestChain_RotationProducesSelfContainedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := New(Defaults{AgentID: "a"}, s)
+	j := New(Defaults{RunnerID: "a"}, s)
 	for i := 0; i < 30; i++ {
 		if _, err := j.Record(context.Background(), Event{
 			Type:     EventExecutionCompleted,

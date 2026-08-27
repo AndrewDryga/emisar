@@ -17,7 +17,7 @@ func TestJSONLSink_AppendsOnePerLine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := New(Defaults{AgentID: "a", Group: "g"}, s)
+	j := New(Defaults{RunnerID: "a", Group: "g"}, s)
 	for i := 0; i < 3; i++ {
 		if _, err := j.Record(context.Background(), Event{
 			Type:     EventExecutionCompleted,
@@ -62,7 +62,7 @@ func TestJSONLSink_RotatesAtThreshold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := New(Defaults{AgentID: "a", Group: "g"}, s)
+	j := New(Defaults{RunnerID: "a", Group: "g"}, s)
 	for i := 0; i < 30; i++ {
 		if _, err := j.Record(context.Background(), Event{
 			Type: EventExecutionCompleted, ActionID: "x.do",
@@ -92,7 +92,7 @@ func TestJSONLSink_BackupRotationFailureKeepsActiveChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := New(Defaults{AgentID: "a"}, s)
+	j := New(Defaults{RunnerID: "a"}, s)
 	if _, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.first"}); err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestJSONLSink_BackupRotationFailureKeepsActiveChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j = New(Defaults{AgentID: "a"}, s)
+	j = New(Defaults{RunnerID: "a"}, s)
 	if _, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.retry"}); err != nil {
 		t.Fatalf("restart after clearing obstruction: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestJSONLSink_ActiveRotationFailureKeepsActiveChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := New(Defaults{AgentID: "a"}, s)
+	j := New(Defaults{RunnerID: "a"}, s)
 	if _, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.first"}); err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +216,7 @@ func TestJSONLSink_ActiveRotationFailureKeepsActiveChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j = New(Defaults{AgentID: "a"}, s)
+	j = New(Defaults{RunnerID: "a"}, s)
 	if _, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted, ActionID: "x.retry"}); err != nil {
 		t.Fatalf("restart after clearing obstruction: %v", err)
 	}
@@ -234,13 +234,13 @@ func TestJournal_DefaultsStamped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := New(Defaults{AgentID: "agt", Group: "g1"}, s)
+	j := New(Defaults{RunnerID: "agt", Group: "g1"}, s)
 	defer j.Close()
 	ev, err := j.Record(context.Background(), Event{Type: EventExecutionCompleted})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ev.AgentID != "agt" || ev.Group != "g1" {
-		t.Fatalf("defaults not stamped: runner=%q group=%q", ev.AgentID, ev.Group)
+	if ev.RunnerID != "agt" || ev.Group != "g1" {
+		t.Fatalf("defaults not stamped: runner=%q group=%q", ev.RunnerID, ev.Group)
 	}
 }

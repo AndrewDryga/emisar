@@ -207,7 +207,7 @@ func TestWriteTokenLeavesTargetUntouchedWhenActivationFails(t *testing.T) {
 	}
 
 	d := &WebsocketDialer{TokenPath: path}
-	if err := d.writeToken(agentToken{Raw: "new", KeyFP: "new-fingerprint"}); err == nil {
+	if err := d.writeToken(runnerToken{Raw: "new", KeyFP: "new-fingerprint"}); err == nil {
 		t.Fatal("writeToken replaced a directory target")
 	}
 	got, err := os.ReadFile(originalPath)
@@ -881,7 +881,7 @@ func TestRegisterURLNormalizesScheme(t *testing.T) {
 // ship before expiry is enforced: a broken refresh degrades to "keep using the
 // credential that already works", never to a failed connect.
 func TestMaybeRefreshTokenNeverBlocksAConnect(t *testing.T) {
-	current := agentToken{Raw: "rnrtok-current", KeyFP: "fp"}
+	current := runnerToken{Raw: "rnrtok-current", KeyFP: "fp"}
 
 	cases := []struct {
 		name    string
@@ -957,7 +957,7 @@ func TestRefreshDue(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			token := agentToken{Raw: "rnrtok-x", RefreshAfter: c.refreshAfter}
+			token := runnerToken{Raw: "rnrtok-x", RefreshAfter: c.refreshAfter}
 			if got := token.refreshDue(now); got != c.want {
 				t.Errorf("refreshDue(%q) = %v, want %v", c.refreshAfter, got, c.want)
 			}
@@ -981,7 +981,7 @@ func TestMaybeRefreshTokenKeepsTheOldTokenWhenPersistFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	current := agentToken{Raw: "rnrtok-current", KeyFP: "fp"}
+	current := runnerToken{Raw: "rnrtok-current", KeyFP: "fp"}
 	d := &WebsocketDialer{URL: srv.URL, TokenPath: filepath.Join(stateDir, "token.json")}
 
 	if got := d.maybeRefreshToken(context.Background(), current); got != current {
@@ -1002,7 +1002,7 @@ func TestMaybeRefreshTokenAdoptsAPersistedSuccessor(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "token.json")
 	d := &WebsocketDialer{URL: srv.URL, TokenPath: path}
 
-	got := d.maybeRefreshToken(context.Background(), agentToken{Raw: "rnrtok-current", KeyFP: "fp"})
+	got := d.maybeRefreshToken(context.Background(), runnerToken{Raw: "rnrtok-current", KeyFP: "fp"})
 	if got.Raw != "rnrtok-successor" || got.KeyFP != "fp" {
 		t.Fatalf("successor not adopted: %+v", got)
 	}

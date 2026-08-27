@@ -95,7 +95,7 @@ type Event struct {
 	Time       time.Time          `json:"time"`
 	Type       EventType          `json:"event_type"`
 	Group      string             `json:"group,omitempty"`
-	AgentID    string             `json:"runner_id,omitempty"`
+	RunnerID   string             `json:"runner_id,omitempty"`
 	Caller     CallerRef          `json:"caller,omitempty"`
 	PackID     string             `json:"pack_id,omitempty"`
 	ActionID   string             `json:"action_id,omitempty"`

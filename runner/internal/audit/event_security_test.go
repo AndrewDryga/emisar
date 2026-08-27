@@ -27,7 +27,7 @@ func TestJSONLSink_PermsNeverDowngraded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := New(Defaults{AgentID: "a"}, s)
+	j := New(Defaults{RunnerID: "a"}, s)
 	for i := 0; i < 30; i++ {
 		if _, err := j.Record(context.Background(), Event{
 			Type: EventExecutionCompleted, ActionID: "x.do",
@@ -86,7 +86,7 @@ func TestEvent_AllTypesSerializeAndVerify(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j := New(Defaults{AgentID: "a", Group: "g"}, s)
+	j := New(Defaults{RunnerID: "a", Group: "g"}, s)
 	for _, et := range types {
 		if _, err := j.Record(context.Background(), Event{Type: et, ActionID: "x.do"}); err != nil {
 			t.Fatalf("record %q: %v", et, err)

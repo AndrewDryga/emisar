@@ -167,7 +167,7 @@ func (d *WebsocketDialer) Dial(ctx context.Context) (Conn, error) {
 
 // -- Token persistence ----------------------------------------------
 
-type agentToken struct {
+type runnerToken struct {
 	Raw string
 	// KeyFP fingerprints the enrollment key that minted this token, so a later
 	// boot can tell when the operator swapped the key under it.
@@ -190,7 +190,7 @@ type agentToken struct {
 //
 // An unparseable value still means no — that is a corrupt store, not a
 // migration, and retrying it every connect would be a hot loop.
-func (t agentToken) refreshDue(now time.Time) bool {
+func (t runnerToken) refreshDue(now time.Time) bool {
 	if t.RefreshAfter == "" {
 		return true
 	}
@@ -201,7 +201,7 @@ func (t agentToken) refreshDue(now time.Time) bool {
 	return !now.Before(at)
 }
 
-func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (agentToken, error) {
+func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (runnerToken, error) {
 	existing, err := d.readToken()
 	switch {
 	case err == nil:
@@ -223,21 +223,21 @@ func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (agentToken, erro
 		// unreadable contents) is a host problem, never a reason to mint a
 		// fresh token over it: re-registering would overwrite the evidence and
 		// silently reward whoever tampered with the cache.
-		return agentToken{}, fmt.Errorf("cached runner token %s is unusable: %w", d.TokenPath, err)
+		return runnerToken{}, fmt.Errorf("cached runner token %s is unusable: %w", d.TokenPath, err)
 	}
 
 	if d.EnrollmentKey == "" {
-		return agentToken{}, fmt.Errorf("%w: no token cached and no enrollment key provided", ErrUnauthorized)
+		return runnerToken{}, fmt.Errorf("%w: no token cached and no enrollment key provided", ErrUnauthorized)
 	}
 
 	token, err := d.register(ctx)
 	if err != nil {
-		return agentToken{}, err
+		return runnerToken{}, err
 	}
 	token.KeyFP = keyFingerprint(d.EnrollmentKey)
 
 	if err := d.writeToken(token); err != nil {
-		return agentToken{}, fmt.Errorf("persist runner token: %w", err)
+		return runnerToken{}, fmt.Errorf("persist runner token: %w", err)
 	}
 
 	return token, nil
@@ -254,7 +254,7 @@ func (d *WebsocketDialer) loadOrMintToken(ctx context.Context) (agentToken, erro
 // connect. The outgoing token stays valid for a grace window after its
 // successor is minted, so even a successful refresh that fails to persist
 // leaves a runner that can reconnect and try again.
-func (d *WebsocketDialer) maybeRefreshToken(ctx context.Context, current agentToken) agentToken {
+func (d *WebsocketDialer) maybeRefreshToken(ctx context.Context, current runnerToken) runnerToken {
 	refreshURL, err := httpURL(d.URL, "/runner/token/refresh")
 	if err != nil {
 		return current
@@ -299,7 +299,7 @@ func (d *WebsocketDialer) maybeRefreshToken(ctx context.Context, current agentTo
 		return current
 	}
 
-	successor := agentToken{Raw: parsed.Token, KeyFP: current.KeyFP, RefreshAfter: parsed.RefreshAfter}
+	successor := runnerToken{Raw: parsed.Token, KeyFP: current.KeyFP, RefreshAfter: parsed.RefreshAfter}
 	if err := d.writeToken(successor); err != nil {
 		// The successor exists server-side but is not on disk. Keep using the
 		// outgoing token, which the grace window keeps alive precisely for this.
@@ -322,9 +322,9 @@ func ValidateTokenFile(path string) error {
 	return err
 }
 
-func (d *WebsocketDialer) readToken() (agentToken, error) {
+func (d *WebsocketDialer) readToken() (runnerToken, error) {
 	if d.TokenPath == "" {
-		return agentToken{}, errors.New("no token path")
+		return runnerToken{}, errors.New("no token path")
 	}
 
 	// The token is a bearer secret, so treat its path as hostile. The platform
@@ -334,21 +334,21 @@ func (d *WebsocketDialer) readToken() (agentToken, error) {
 	// always write 0600, so a clean install never trips.
 	f, err := openTokenFile(d.TokenPath)
 	if err != nil {
-		return agentToken{}, err
+		return runnerToken{}, err
 	}
 	defer f.Close()
 
 	info, err := f.Stat()
 	if err != nil {
-		return agentToken{}, err
+		return runnerToken{}, err
 	}
 	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		return agentToken{}, fmt.Errorf("insecure perms %#o (want 0600); chmod 600 %s", perm, d.TokenPath)
+		return runnerToken{}, fmt.Errorf("insecure perms %#o (want 0600); chmod 600 %s", perm, d.TokenPath)
 	}
 
 	contents, err := io.ReadAll(f)
 	if err != nil {
-		return agentToken{}, err
+		return runnerToken{}, err
 	}
 
 	var stored struct {
@@ -362,18 +362,18 @@ func (d *WebsocketDialer) readToken() (agentToken, error) {
 	decoder := json.NewDecoder(bytes.NewReader(contents))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&stored); err != nil {
-		return agentToken{}, fmt.Errorf("decode token file: %w", err)
+		return runnerToken{}, fmt.Errorf("decode token file: %w", err)
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return agentToken{}, errors.New("decode token file: trailing JSON value")
+		return runnerToken{}, errors.New("decode token file: trailing JSON value")
 	}
 	if stored.Token == "" {
-		return agentToken{}, errors.New("token file has empty token")
+		return runnerToken{}, errors.New("token file has empty token")
 	}
-	return agentToken{Raw: stored.Token, KeyFP: stored.KeyFP, RefreshAfter: stored.RefreshAfter}, nil
+	return runnerToken{Raw: stored.Token, KeyFP: stored.KeyFP, RefreshAfter: stored.RefreshAfter}, nil
 }
 
-func (d *WebsocketDialer) writeToken(t agentToken) error {
+func (d *WebsocketDialer) writeToken(t runnerToken) error {
 	if d.TokenPath == "" {
 		return errors.New("token path is empty")
 	}
@@ -461,18 +461,18 @@ func serverErrorMessage(body io.Reader) string {
 	return ""
 }
 
-func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
+func (d *WebsocketDialer) register(ctx context.Context) (runnerToken, error) {
 	externalID := strings.TrimSpace(d.ExternalID)
 	if externalID == "" || externalID != d.ExternalID || !utf8.ValidString(externalID) ||
 		utf8.RuneCountInString(externalID) > 255 {
-		return agentToken{}, errors.New("cloud: external id must be 1-255 characters without surrounding whitespace")
+		return runnerToken{}, errors.New("cloud: external id must be 1-255 characters without surrounding whitespace")
 	}
 
 	client := d.portalHTTPClient()
 
 	registerURL, err := httpURL(d.URL, "/runner/register")
 	if err != nil {
-		return agentToken{}, err
+		return runnerToken{}, err
 	}
 
 	payload := map[string]any{
@@ -484,41 +484,41 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return agentToken{}, err
+		return runnerToken{}, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, registerURL, strings.NewReader(string(body)))
 	if err != nil {
-		return agentToken{}, err
+		return runnerToken{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+d.EnrollmentKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return agentToken{}, fmt.Errorf("cloud: register http: %w", err)
+		return runnerToken{}, fmt.Errorf("cloud: register http: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return agentToken{}, fmt.Errorf("%w: /runner/register returned %d", ErrUnauthorized, resp.StatusCode)
+		return runnerToken{}, fmt.Errorf("%w: /runner/register returned %d", ErrUnauthorized, resp.StatusCode)
 	}
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		// Surface the server's message (e.g. a name conflict the operator
 		// must resolve) instead of just the status code.
 		if msg := serverErrorMessage(resp.Body); msg != "" {
-			return agentToken{}, fmt.Errorf("cloud: register returned %d: %s", resp.StatusCode, msg)
+			return runnerToken{}, fmt.Errorf("cloud: register returned %d: %s", resp.StatusCode, msg)
 		}
-		return agentToken{}, fmt.Errorf("cloud: register returned %d", resp.StatusCode)
+		return runnerToken{}, fmt.Errorf("cloud: register returned %d", resp.StatusCode)
 	}
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxRegistrationResponseBytes+1))
 	if err != nil {
-		return agentToken{}, fmt.Errorf("cloud: register response read: %w", err)
+		return runnerToken{}, fmt.Errorf("cloud: register response read: %w", err)
 	}
 	if len(raw) > maxRegistrationResponseBytes {
-		return agentToken{}, fmt.Errorf("cloud: register response exceeds %d bytes", maxRegistrationResponseBytes)
+		return runnerToken{}, fmt.Errorf("cloud: register response exceeds %d bytes", maxRegistrationResponseBytes)
 	}
 
 	var parsed struct {
@@ -530,17 +530,17 @@ func (d *WebsocketDialer) register(ctx context.Context) (agentToken, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&parsed); err != nil {
-		return agentToken{}, fmt.Errorf("cloud: register response decode: %w", err)
+		return runnerToken{}, fmt.Errorf("cloud: register response decode: %w", err)
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return agentToken{}, errors.New("cloud: register response has trailing JSON")
+		return runnerToken{}, errors.New("cloud: register response has trailing JSON")
 	}
 	if parsed.Token == "" || parsed.Token != strings.TrimSpace(parsed.Token) ||
 		!utf8.ValidString(parsed.Token) || len(parsed.Token) > maxRunnerTokenBytes {
-		return agentToken{}, errors.New("cloud: register returned an invalid token")
+		return runnerToken{}, errors.New("cloud: register returned an invalid token")
 	}
 
-	return agentToken{Raw: parsed.Token, RefreshAfter: parsed.RefreshAfter}, nil
+	return runnerToken{Raw: parsed.Token, RefreshAfter: parsed.RefreshAfter}, nil
 }
 
 // -- URL derivation --------------------------------------------------
