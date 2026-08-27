@@ -4636,6 +4636,12 @@ defmodule EmisarWeb.CoreComponents do
         <:cta navigate={~p"/app/\#{@current_account}/runners/keys"}>New enrollment key</:cta>
       </.empty_state>
 
+      <.empty_state icon="product.runner" title="No actions yet.">
+        Actions come from packs, and this host has none installed yet.
+        <:command id="empty-catalog" label="Run on the host" value="emisar pack suggest" />
+        <:cta href={~p"/packs"}>Browse the pack catalog</:cta>
+      </.empty_state>
+
       <.empty_state variant={:hint}>No overrides. The tier defaults decide.</.empty_state>
   """
   attr :icon, :string, default: nil

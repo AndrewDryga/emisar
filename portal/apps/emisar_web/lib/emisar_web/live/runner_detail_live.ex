@@ -819,7 +819,7 @@ defmodule EmisarWeb.RunnerDetailLive do
     <.empty_state icon="product.runner" title="No actions yet." class={@class}>
       Actions come from packs, and this host has none installed yet. Install one and its actions
       land here. <.doc_link href={~p"/packs"}>Browse the pack catalog</.doc_link>
-      <:command id="empty-catalog-suggest" label="On the runner" value="emisar pack suggest" />
+      <:command id="empty-catalog-suggest" label="Run on the host" value="emisar pack suggest" />
     </.empty_state>
     """
   end
@@ -830,7 +830,7 @@ defmodule EmisarWeb.RunnerDetailLive do
       A runner reports its actions when it connects, and this one is not connected. Check the
       daemon on the host.
       <.doc_link href={~p"/docs/troubleshooting"}>Runner troubleshooting</.doc_link>
-      <:command id="empty-catalog-status" label="On the host" value="emisar status" />
+      <:command id="empty-catalog-status" label="Run on the host" value="emisar status" />
     </.empty_state>
     """
   end

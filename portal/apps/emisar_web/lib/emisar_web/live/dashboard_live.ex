@@ -752,7 +752,7 @@ defmodule EmisarWeb.DashboardLive do
               </p>
               <.code_line
                 id="onboarding-suggest-packs"
-                label="On the runner"
+                label="Run on the host"
                 value="emisar pack suggest"
                 prompt
                 class="mt-3 sm:max-w-prose"
