@@ -28,7 +28,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     else
       {:ok,
        socket
-       |> put_flash(:info, "Enrollment keys need an owner or admin role.")
+       |> put_flash(:error, "Enrollment keys need an owner or admin role.")
        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}
     end
   end
@@ -162,6 +162,22 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     filters = Runners.enrollment_key_filters()
     opts = LiveTable.params_to_opts(params, filters)
 
+    # Both predicates read the member's current runner access from the database,
+    # so they are resolved once per load — never from the template, where the
+    # row slot would re-run them for every key on the page. Every navigation and
+    # every list change lands here, and the domain re-authorizes at the mutation
+    # anyway, so the rendered affordance still tracks a scope narrowed mid-session.
+    socket =
+      socket
+      |> assign(
+        :can_create_keys?,
+        Runners.subject_can_create_enrollment_keys?(socket.assigns.current_subject)
+      )
+      |> assign(
+        :can_revoke_keys?,
+        Runners.subject_can_revoke_enrollment_keys?(socket.assigns.current_subject)
+      )
+
     case Runners.list_enrollment_keys(
            socket.assigns.current_subject,
            Keyword.put(opts, :preload, [:created_by])
@@ -231,7 +247,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
         <% end %>
       </:title>
       <:actions :if={@live_action == :index}>
-        <%= if Runners.subject_can_create_enrollment_keys?(@current_subject) do %>
+        <%= if @can_create_keys? do %>
           <.button
             navigate={~p"/app/#{@current_account}/runners/keys/new"}
             size={:md}
@@ -491,7 +507,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                 <.button
                   :if={
                     is_nil(key.revoked_at) and
-                      Runners.subject_can_revoke_enrollment_keys?(@current_subject)
+                      @can_revoke_keys?
                   }
                   variant={:secondary}
                   tone={:rose}
@@ -504,7 +520,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                 <.confirm_dialog
                   :if={
                     is_nil(key.revoked_at) and
-                      Runners.subject_can_revoke_enrollment_keys?(@current_subject)
+                      @can_revoke_keys?
                   }
                   id={"revoke-key-#{key.id}"}
                   title="Revoke enrollment key"
@@ -547,7 +563,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
               reusable one for image bakes and cloud-init fleets. The install
               wizard's one-time keys appear here too, revocable until used.
               <.button
-                :if={Runners.subject_can_create_enrollment_keys?(@current_subject)}
+                :if={@can_create_keys?}
                 navigate={~p"/app/#{@current_account}/runners/keys/new"}
                 variant={:secondary}
                 size={:sm}
@@ -557,7 +573,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                 New enrollment key
               </.button>
               <p
-                :if={not Runners.subject_can_create_enrollment_keys?(@current_subject)}
+                :if={not @can_create_keys?}
                 class="mt-4 text-xs text-zinc-400"
               >
                 {issue_key_lock_text()}

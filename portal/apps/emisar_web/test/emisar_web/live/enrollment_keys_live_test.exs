@@ -279,7 +279,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
              live(viewer_conn, ~p"/app/#{account}/runners/keys")
 
-    assert flash["info"] == "Enrollment keys need an owner or admin role."
+    assert flash["error"] == "Enrollment keys need an owner or admin role."
 
     assert {:error, {:live_redirect, %{to: ^dest}}} =
              live(viewer_conn, ~p"/app/#{account}/runners/keys/new")
@@ -415,7 +415,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
              |> log_in_user(operator)
              |> live(~p"/app/#{account}/runners/keys")
 
-    assert flash["info"] == "Enrollment keys need an owner or admin role."
+    assert flash["error"] == "Enrollment keys need an owner or admin role."
   end
 
   # A runner-scoped admin keeps the list for audit but loses both lifecycle

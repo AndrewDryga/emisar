@@ -23,7 +23,7 @@ defmodule EmisarWeb.RunbookRunLive do
     else
       {:ok,
        socket
-       |> put_flash(:info, "Running a runbook needs an operator role or above.")
+       |> put_flash(:error, "Running a runbook needs an operator role or above.")
        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runbooks")}
     end
   end

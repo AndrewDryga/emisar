@@ -355,7 +355,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
                build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/audit/export")
 
       assert to == ~p"/app/#{account}/audit"
-      assert %{"info" => "Managing export tokens needs an admin role."} = flash
+      assert %{"error" => "Managing export tokens needs an admin role."} = flash
     end
 
     test "another account's export tokens never appear in this account's SIEM list",

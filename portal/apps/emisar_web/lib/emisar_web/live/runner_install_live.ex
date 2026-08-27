@@ -36,7 +36,7 @@ defmodule EmisarWeb.RunnerInstallLive do
       {:ok,
        socket
        |> put_flash(
-         :info,
+         :error,
          "Connecting a runner needs an operator role or above, with access to all runners."
        )
        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners")}

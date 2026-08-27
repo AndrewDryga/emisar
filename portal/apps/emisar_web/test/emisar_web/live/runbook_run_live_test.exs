@@ -238,7 +238,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
                |> log_in_user(viewer)
                |> live(~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
-      assert flash["info"] == "Running a runbook needs an operator role or above."
+      assert flash["error"] == "Running a runbook needs an operator role or above."
       assert user.id != viewer.id
     end
 

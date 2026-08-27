@@ -16,7 +16,7 @@ defmodule EmisarWeb.AuditExportLive do
     else
       {:ok,
        socket
-       |> put_flash(:info, "Managing export tokens needs an admin role.")
+       |> put_flash(:error, "Managing export tokens needs an admin role.")
        |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/audit")}
     end
   end

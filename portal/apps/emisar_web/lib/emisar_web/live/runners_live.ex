@@ -192,6 +192,8 @@ defmodule EmisarWeb.RunnersLive do
     |> assign(:show_wizard?, false)
     |> assign(:has_runner_access?, false)
     |> assign(:has_full_runner_access?, false)
+    |> assign(:can_install_runners?, false)
+    |> assign(:can_manage_retention?, false)
     |> assign(:filter_params, params)
     |> assign(:filters, Runners.runner_filters())
     |> assign(:groups, [])
@@ -204,6 +206,15 @@ defmodule EmisarWeb.RunnersLive do
     filters = Runners.runner_filters()
     opts = LiveTable.params_to_opts(params, filters)
     runner_access = Runners.runner_access_facts_for_subject(socket.assigns.current_subject)
+
+    # Both predicates read the member's current runner access from the database.
+    # Resolve them here rather than in the template, which re-runs on every
+    # render, and let the domain keep composing them — the web must never
+    # rebuild "permission AND full access" out of the facts above.
+    can_install_runners? = Runners.subject_can_install_runners?(socket.assigns.current_subject)
+
+    can_manage_retention? =
+      Runners.subject_can_manage_inactive_retention?(socket.assigns.current_subject)
 
     # Runners derives current access from the subject, so the URL cannot select
     # a broader membership. Rows, group summaries, and fleet posture all use the
@@ -241,13 +252,13 @@ defmodule EmisarWeb.RunnersLive do
             not LiveTable.has_active_filters?(params, filters)
 
         socket
-        |> maybe_mint_install(
-          show_wizard? and Runners.subject_can_install_runners?(socket.assigns.current_subject)
-        )
+        |> maybe_mint_install(show_wizard? and can_install_runners?)
         |> assign(:runners, runners)
         |> assign(:metadata, meta)
         |> assign(:show_wizard?, show_wizard?)
         |> assign(:has_runner_access?, runner_access.has_access?)
+        |> assign(:can_install_runners?, can_install_runners?)
+        |> assign(:can_manage_retention?, can_manage_retention?)
         |> assign(:has_full_runner_access?, runner_access.full_access?)
         |> assign(:filter_params, params)
         |> assign(:filters, filters)
@@ -341,7 +352,7 @@ defmodule EmisarWeb.RunnersLive do
              dashboard onboarding step, and the parallel of "Connect an agent".
              One verb for getting a host online, not a stray "Add". --%>
         <.button
-          :if={Runners.subject_can_install_runners?(@current_subject)}
+          :if={@can_install_runners?}
           navigate={~p"/app/#{@current_account}/runners/install"}
           size={:md}
           icon="action.add"
@@ -365,7 +376,7 @@ defmodule EmisarWeb.RunnersLive do
             This is a load error, not an empty fleet — a host may well be connected. Refresh the
             page; if it persists, your access to this account may have changed.
           </.empty_state>
-        <% @show_wizard? and not Runners.subject_can_install_runners?(@current_subject) -> %>
+        <% @show_wizard? and not @can_install_runners? -> %>
           <%!-- Zero fleet, no install permission: the pitch without a wizard
                whose mint can only fail. --%>
           <.empty_state icon="product.runner" title="No runners yet.">
@@ -614,7 +625,7 @@ defmodule EmisarWeb.RunnersLive do
                   </p>
                   <.gated_setting
                     id="runner-retention"
-                    can_change?={Runners.subject_can_manage_inactive_retention?(@current_subject)}
+                    can_change?={@can_manage_retention?}
                     value={retention_value_label(@retention_hours)}
                     who_can_change="Only owners and admins can change this."
                     class="mt-3"
