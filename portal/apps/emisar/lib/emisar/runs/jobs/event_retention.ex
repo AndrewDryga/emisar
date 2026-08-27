@@ -10,7 +10,7 @@ defmodule Emisar.Runs.Jobs.EventRetention do
     initial_delay: :timer.minutes(5),
     executor: Emisar.Jobs.Executors.GloballyUnique
 
-  alias Emisar.{Accounts, Billing, Repo, Runs}
+  alias Emisar.{Accounts, Billing, Jobs, Repo, Runs}
 
   @accounts_per_page 100
   @batch_size 5_000
@@ -19,23 +19,7 @@ defmodule Emisar.Runs.Jobs.EventRetention do
   def execute(config) do
     config
     |> Keyword.get(:limit, @accounts_per_page)
-    |> sweep_page(nil)
-  end
-
-  defp sweep_page(limit, after_account_id) do
-    accounts =
-      Accounts.list_accounts_for_system_sweep(
-        limit: limit,
-        after_account_id: after_account_id
-      )
-
-    Enum.each(accounts, &sweep_account/1)
-
-    if length(accounts) == limit do
-      sweep_page(limit, List.last(accounts).id)
-    else
-      :ok
-    end
+    |> Jobs.Sweep.each_row(&list_accounts/2, &sweep_account/1)
   end
 
   defp sweep_account(%Accounts.Account{} = account) do
@@ -55,4 +39,7 @@ defmodule Emisar.Runs.Jobs.EventRetention do
       :ok
     end
   end
+
+  defp list_accounts(limit, cursor),
+    do: Accounts.list_accounts_for_system_sweep(limit: limit, after_account_id: cursor)
 end

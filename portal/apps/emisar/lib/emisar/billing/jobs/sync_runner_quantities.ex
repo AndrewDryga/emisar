@@ -11,7 +11,7 @@ defmodule Emisar.Billing.Jobs.SyncRunnerQuantities do
     initial_delay: :timer.minutes(4),
     executor: Emisar.Jobs.Executors.GloballyUnique
 
-  alias Emisar.{Billing, Repo}
+  alias Emisar.{Billing, Jobs, Repo}
   require Logger
 
   @subscriptions_per_page 100
@@ -19,27 +19,7 @@ defmodule Emisar.Billing.Jobs.SyncRunnerQuantities do
   @impl Emisar.Jobs.Executors.GloballyUnique
   def execute(config) do
     limit = Keyword.get(config, :limit, @subscriptions_per_page)
-    sweep_page(limit, nil)
-  end
-
-  defp sweep_page(limit, after_subscription_id) do
-    subscriptions =
-      Billing.Subscription.Query.all()
-      |> Billing.Subscription.Query.with_live_account()
-      |> Billing.Subscription.Query.paddle_managed()
-      |> Billing.Subscription.Query.runner_quantity_sync_requested()
-      |> after_subscription(after_subscription_id)
-      |> Billing.Subscription.Query.ordered_by_id()
-      |> Billing.Subscription.Query.limit_to(limit)
-      |> Repo.all()
-
-    Enum.each(subscriptions, &sync_safely/1)
-
-    if length(subscriptions) == limit do
-      sweep_page(limit, List.last(subscriptions).id)
-    else
-      :ok
-    end
+    Jobs.Sweep.each_row(limit, &list_subscriptions/2, &sync_safely/1)
   end
 
   defp after_subscription(queryable, id) when is_binary(id),
@@ -68,5 +48,16 @@ defmodule Emisar.Billing.Jobs.SyncRunnerQuantities do
       )
 
       :ok
+  end
+
+  defp list_subscriptions(limit, cursor) do
+    Billing.Subscription.Query.all()
+    |> Billing.Subscription.Query.with_live_account()
+    |> Billing.Subscription.Query.paddle_managed()
+    |> Billing.Subscription.Query.runner_quantity_sync_requested()
+    |> after_subscription(cursor)
+    |> Billing.Subscription.Query.ordered_by_id()
+    |> Billing.Subscription.Query.limit_to(limit)
+    |> Repo.all()
   end
 end

@@ -8,7 +8,7 @@ defmodule Emisar.Runbooks.Jobs.ExecutionRetention do
     initial_delay: :timer.minutes(8),
     executor: Emisar.Jobs.Executors.GloballyUnique
 
-  alias Emisar.{Accounts, Billing, Repo, Runbooks}
+  alias Emisar.{Accounts, Billing, Jobs, Repo, Runbooks}
   require Logger
 
   @accounts_per_page 100
@@ -19,29 +19,13 @@ defmodule Emisar.Runbooks.Jobs.ExecutionRetention do
     deleted_count =
       config
       |> Keyword.get(:limit, @accounts_per_page)
-      |> sweep_page(nil, 0)
+      |> Jobs.Sweep.reduce_pages(0, &list_accounts/2, &sweep_account/2)
 
     if deleted_count > 0 do
       Logger.info("runbook_execution_retention.swept", count: deleted_count)
     end
 
     :ok
-  end
-
-  defp sweep_page(limit, after_account_id, deleted_total) do
-    accounts =
-      Accounts.list_accounts_for_system_sweep(
-        limit: limit,
-        after_account_id: after_account_id
-      )
-
-    deleted_total = Enum.reduce(accounts, deleted_total, &sweep_account/2)
-
-    if length(accounts) == limit do
-      sweep_page(limit, List.last(accounts).id, deleted_total)
-    else
-      deleted_total
-    end
   end
 
   defp sweep_account(%Accounts.Account{} = account, deleted_total) do
@@ -66,4 +50,7 @@ defmodule Emisar.Runbooks.Jobs.ExecutionRetention do
       deleted_total
     end
   end
+
+  defp list_accounts(limit, cursor),
+    do: Accounts.list_accounts_for_system_sweep(limit: limit, after_account_id: cursor)
 end

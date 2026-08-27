@@ -21,7 +21,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReports do
     initial_delay: :timer.minutes(6),
     executor: Emisar.Jobs.Executors.GloballyUnique
 
-  alias Emisar.{Accounts, Approvals, CalendarMonth, Mail, Runners, Runs}
+  alias Emisar.{Accounts, Approvals, CalendarMonth, Jobs, Mail, Runners, Runs}
   alias Emisar.Accounts.Account
   require Logger
 
@@ -34,24 +34,15 @@ defmodule Emisar.Accounts.Jobs.MonthlyReports do
     {period_start, period_end} = CalendarMonth.previous_month(now)
     limit = Keyword.get(config, :limit, @accounts_per_page)
 
-    sweep_page(limit, cutoff, period_start, period_end, nil)
+    Jobs.Sweep.each_row(
+      limit,
+      &list_accounts(cutoff, &1, &2),
+      &report_account(&1, cutoff, period_start, period_end)
+    )
   end
 
-  defp sweep_page(limit, cutoff, period_start, period_end, after_account_id) do
-    accounts =
-      Accounts.list_accounts_due_for_report(cutoff,
-        limit: limit,
-        after_account_id: after_account_id
-      )
-
-    Enum.each(accounts, &report_account(&1, cutoff, period_start, period_end))
-
-    if length(accounts) == limit do
-      sweep_page(limit, cutoff, period_start, period_end, List.last(accounts).id)
-    else
-      :ok
-    end
-  end
+  defp list_accounts(cutoff, limit, cursor),
+    do: Accounts.list_accounts_due_for_report(cutoff, limit: limit, after_account_id: cursor)
 
   # One bad account or delivery failure is logged and never stops the sweep.
   defp report_account(%Account{} = account, cutoff, period_start, period_end) do

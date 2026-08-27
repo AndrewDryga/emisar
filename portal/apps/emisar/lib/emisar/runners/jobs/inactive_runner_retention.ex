@@ -11,7 +11,7 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetention do
     initial_delay: :timer.minutes(10),
     executor: Emisar.Jobs.Executors.GloballyUnique
 
-  alias Emisar.{Accounts, Runners}
+  alias Emisar.{Accounts, Jobs, Runners}
   require Logger
 
   @accounts_per_page 100
@@ -21,29 +21,13 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetention do
     deleted_count =
       config
       |> Keyword.get(:limit, @accounts_per_page)
-      |> sweep_page(nil, 0)
+      |> Jobs.Sweep.reduce_pages(0, &list_accounts/2, &sweep_account/2)
 
     if deleted_count > 0 do
       Logger.info("inactive_runner_retention.swept", count: deleted_count)
     end
 
     :ok
-  end
-
-  defp sweep_page(limit, after_account_id, deleted_total) do
-    accounts =
-      Accounts.list_accounts_for_system_sweep(
-        limit: limit,
-        after_account_id: after_account_id
-      )
-
-    deleted_total = Enum.reduce(accounts, deleted_total, &sweep_account/2)
-
-    if length(accounts) == limit do
-      sweep_page(limit, List.last(accounts).id, deleted_total)
-    else
-      deleted_total
-    end
   end
 
   defp sweep_account(%Accounts.Account{} = account, deleted_total) do
@@ -54,4 +38,7 @@ defmodule Emisar.Runners.Jobs.InactiveRunnerRetention do
       {:error, _reason} -> deleted_total
     end
   end
+
+  defp list_accounts(limit, cursor),
+    do: Accounts.list_accounts_for_system_sweep(limit: limit, after_account_id: cursor)
 end
