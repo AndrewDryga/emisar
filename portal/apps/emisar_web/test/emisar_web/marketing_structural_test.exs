@@ -17,83 +17,9 @@ defmodule EmisarWeb.MarketingStructuralTest do
   # Mirrors `marketing_test.exs` @routes. Each is controller-rendered, so
   # each must load the lean bundle, carry a self-canonical, ignore junk
   # query params, and emit a complete <title>/OG head.
-  @indexable_routes ~w(
-    /
-    /pricing
-    /security
-    /docs
-    /docs/quickstart
-    /docs/use-a-published-pack
-    /docs/action-packs
-    /docs/security-model
-    /docs/signed-dispatch
-    /docs/connect-claude-ai
-    /docs/connect-chatgpt
-    /docs/connect-cli-agent
-    /docs/connect-multiple-accounts
-    /docs/publishing-packs
-    /docs/pack-registry
-    /docs/run-an-action
-    /docs/policies-and-approvals
-    /docs/runbooks
-    /docs/authentication
-    /docs/teams-and-access
-    /docs/sso
-    /docs/integrations/okta
-    /docs/integrations/entra
-    /docs/integrations/jumpcloud
-    /docs/integrations/keycloak
-    /docs/integrations/google-workspace
-    /docs/scim
-    /docs/runner-fleet
-    /docs/production
-    /docs/audit-and-siem
-    /docs/host-install
-    /docs/containers
-    /docs/kubernetes
-    /docs/nomad
-    /docs/autoscaling-fleets
-    /docs/runs
-    /docs/agents-and-keys
-    /docs/runner-cli
-    /docs/billing
-    /docs/limits
-    /docs/runner-upgrades
-    /docs/bridge-upgrades
-    /docs/credentials
-    /docs/runner-credentials
-    /docs/pack-updates
-    /docs/network-requirements
-    /docs/troubleshooting
-    /docs/security-incidents
-    /docs/architecture
-    /docs/compatibility
-    /changelog
-    /about
-    /support
-    /privacy
-    /terms
-    /refund-policy
-    /packs
-    /packs/postgres
-    /packs/cassandra
-    /use-cases
-    /use-cases/cassandra-migration
-    /use-cases/csi-data-loss
-    /use-cases/ingress-502
-    /compare/raw-ssh-for-ai
-    /compare/custom-mcp-server
-    /compare/copy-paste-ai-ops
-    /zero-trust
-    /how-it-works
-    /trust
-    /dpa
-    /docs/mcp-reference
-    /guides
-    /guides/how-emisar-works
-    /guides/give-ai-agents-safe-production-access
-    /guides/prompt-injection-for-ops-teams
-  )
+  # Derived from the router (plus pinned dynamic representatives) — a page
+  # added there joins the structural + breadcrumb battery automatically.
+  @indexable_routes EmisarWeb.MarketingRoutes.battery_paths()
 
   # The pages that emit a BreadcrumbList block. Home and /pricing carry
   # bespoke JSON-LD graphs (Organization / Product / FAQPage) with NO
@@ -102,36 +28,6 @@ defmodule EmisarWeb.MarketingStructuralTest do
   # the use-cases hub + the packs + changelog pages) derives a
   # Home → [Docs →] page breadcrumb from its path.
   @breadcrumb_routes @indexable_routes -- ~w(/ /pricing)
-
-  describe "route coverage parity (no marketing page drifts out of the battery)" do
-    # The structural battery only protects pages listed in @indexable_routes, and
-    # that list is hand-synced with the router — so a page added to the router
-    # without being added here would silently escape every check (exactly how
-    # /dpa, /trust, /how-it-works, /docs/mcp-reference, /guides slipped through
-    # until Phase-6 discovery). This guard fails the moment it happens again.
-    # The router derivation (and its feed exclusions) lives in
-    # EmisarWeb.MarketingRoutes so this guard and MarketingTest's can't drift.
-    test "every static marketing page is in @indexable_routes" do
-      missing =
-        MapSet.difference(
-          EmisarWeb.MarketingRoutes.static_html_paths(),
-          MapSet.new(@indexable_routes)
-        )
-
-      assert MapSet.size(missing) == 0,
-             "marketing pages live in the router but are missing from @indexable_routes — add " <>
-               "them so the structural + breadcrumb battery covers them: " <>
-               inspect(Enum.sort(MapSet.to_list(missing)))
-    end
-
-    test "each dynamic marketing page family has a concrete representative covered" do
-      for family <- ["/guides/", "/packs/"] do
-        assert Enum.any?(@indexable_routes, &String.starts_with?(&1, family)),
-               "no concrete #{family}:slug page in @indexable_routes — the structural battery " <>
-                 "never exercises an individual #{family} page"
-      end
-    end
-  end
 
   describe "UX & accessibility baseline on every marketing page" do
     # A visitor, a screen reader, and a crawler all need: exactly one h1 (heading

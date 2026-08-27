@@ -1,107 +1,14 @@
 defmodule EmisarWeb.MarketingTest do
   use EmisarWeb.ConnCase, async: true
 
-  @routes ~w(
-    /
-    /pricing
-    /security
-    /docs
-    /docs/quickstart
-    /docs/use-a-published-pack
-    /docs/action-packs
-    /docs/security-model
-    /docs/signed-dispatch
-    /docs/connect-claude-ai
-    /docs/connect-chatgpt
-    /docs/connect-cli-agent
-    /docs/connect-multiple-accounts
-    /docs/publishing-packs
-    /docs/pack-registry
-    /docs/run-an-action
-    /docs/policies-and-approvals
-    /docs/runbooks
-    /docs/authentication
-    /docs/teams-and-access
-    /docs/sso
-    /docs/integrations/okta
-    /docs/integrations/entra
-    /docs/integrations/jumpcloud
-    /docs/integrations/keycloak
-    /docs/integrations/google-workspace
-    /docs/scim
-    /docs/runner-fleet
-    /docs/production
-    /docs/audit-and-siem
-    /docs/host-install
-    /docs/containers
-    /docs/kubernetes
-    /docs/nomad
-    /docs/autoscaling-fleets
-    /docs/runs
-    /docs/agents-and-keys
-    /docs/runner-cli
-    /docs/billing
-    /docs/limits
-    /docs/runner-upgrades
-    /docs/bridge-upgrades
-    /docs/credentials
-    /docs/runner-credentials
-    /docs/pack-updates
-    /docs/network-requirements
-    /docs/troubleshooting
-    /docs/security-incidents
-    /docs/architecture
-    /docs/compatibility
-    /changelog
-    /about
-    /support
-    /privacy
-    /terms
-    /refund-policy
-    /packs
-    /packs/postgres
-    /packs/cassandra
-    /use-cases
-    /use-cases/cassandra-migration
-    /use-cases/csi-data-loss
-    /use-cases/ingress-502
-    /compare/raw-ssh-for-ai
-    /compare/custom-mcp-server
-    /compare/copy-paste-ai-ops
-    /zero-trust
-    /how-it-works
-    /trust
-    /dpa
-    /docs/mcp-reference
-    /guides
-    /guides/how-emisar-works
-    /guides/give-ai-agents-safe-production-access
-    /guides/prompt-injection-for-ops-teams
-  )
+  # Derived from the router (plus pinned dynamic representatives) — a page
+  # added there joins the render + CSP + indexability battery automatically.
+  @routes EmisarWeb.MarketingRoutes.battery_paths()
 
   for route <- @routes do
     test "GET #{route} renders 200", %{conn: conn} do
       conn = get(conn, unquote(route))
       assert html_response(conn, 200)
-    end
-  end
-
-  describe "route coverage parity (no marketing page skips the battery)" do
-    # @routes is hand-maintained, so a page added to the router without being
-    # added here skips the render-200 + CSP-nonce + indexability battery
-    # silently — exactly how 9 docs pages (host-install, kubernetes, nomad,
-    # autoscaling-fleets, limits, runs, keys, runner-cli, billing) drifted out
-    # of it until the 2026-07-23 ship review. The router derivation is shared
-    # with MarketingStructuralTest's guard (EmisarWeb.MarketingRoutes) so the
-    # two can't disagree about what the public surface is.
-    test "every static marketing page is in @routes" do
-      missing =
-        MapSet.difference(EmisarWeb.MarketingRoutes.static_html_paths(), MapSet.new(@routes))
-
-      assert MapSet.size(missing) == 0,
-             "marketing pages live in the router but are missing from @routes — add them so " <>
-               "the render + CSP + indexability battery covers them: " <>
-               inspect(Enum.sort(MapSet.to_list(missing)))
     end
   end
 
