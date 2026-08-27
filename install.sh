@@ -1125,7 +1125,7 @@ ensure_dirs() {
   chown "${etc_owner}" "${ETC_DIR}"
   chmod 750 "${ETC_DIR}"
 
-  for d in "${DATA_DIR}" "${LOG_DIR}" "${DATA_DIR}/work"; do
+  for d in "${DATA_DIR}" "${LOG_DIR}"; do
     if [ ! -d "$d" ]; then
       log "mkdir $d"
       mkdir -p "$d"
