@@ -194,9 +194,10 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     assert has_element?(lv, "span.text-brand-300", "connected")
   end
 
-  # a runner that has reported no catalog renders the
-  # "No actions yet" empty state in the advertised-actions card.
-  test "a runner with no advertised actions shows the empty catalog state", %{
+  # An empty catalog names the step that fills it, and which step that is
+  # depends on whether the runner can advertise at all. setup's runner is
+  # offline, so packs are not the question yet.
+  test "an offline runner with no actions points at the daemon, not at packs", %{
     conn: conn,
     account: account,
     runner: runner
@@ -204,7 +205,25 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
     assert html =~ "No actions yet."
-    assert html =~ "hasn&#39;t reported a catalog yet"
+    assert html =~ "is not connected"
+    assert html =~ "emisar status"
+    assert html =~ "/docs/troubleshooting"
+    refute html =~ "emisar pack suggest"
+  end
+
+  test "a connected runner with no actions points at installing a pack", %{
+    conn: conn,
+    account: account
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    assert html =~ "No actions yet."
+    assert html =~ "Actions come from packs"
+    assert html =~ "emisar pack suggest"
+    assert html =~ "Browse the pack catalog"
+    refute html =~ "emisar status"
   end
 
   # a runner never dispatched to renders the "No runs yet"

@@ -654,13 +654,10 @@ defmodule EmisarWeb.RunnerDetailLive do
                   <% LiveTable.has_active_filters?(@filter_params, @action_filters) -> %>
                     <span class="text-zinc-400">No actions match these filters.</span>
                   <% true -> %>
-                    <.empty_state
-                      icon="product.runner"
-                      title="No actions yet."
+                    <.empty_catalog_state
+                      online?={@runner.online?}
                       class="lg:flex lg:min-h-[16rem] lg:flex-col lg:items-center lg:justify-center"
-                    >
-                      This runner hasn't reported a catalog yet. Check the runner logs on the host.
-                    </.empty_state>
+                    />
                 <% end %>
               </:empty>
             </LiveTable.live_table>
@@ -809,6 +806,34 @@ defmodule EmisarWeb.RunnerDetailLive do
     do: labels |> Enum.sort_by(fn {k, _} -> k end)
 
   defp runner_labels(_), do: []
+
+  attr :online?, :boolean, required: true
+  attr :class, :string, default: nil
+
+  # An empty catalog has two different next steps, and the runner's own
+  # connection state already says which one. A connected host is simply missing
+  # packs — the same step the dashboard's onboarding names, in the same words. A
+  # disconnected one cannot advertise at all, so packs are not the question yet.
+  defp empty_catalog_state(%{online?: true} = assigns) do
+    ~H"""
+    <.empty_state icon="product.runner" title="No actions yet." class={@class}>
+      Actions come from packs, and this host has none installed yet. Install one and its actions
+      land here. <.doc_link href={~p"/packs"}>Browse the pack catalog</.doc_link>
+      <:command id="empty-catalog-suggest" label="On the runner" value="emisar pack suggest" />
+    </.empty_state>
+    """
+  end
+
+  defp empty_catalog_state(assigns) do
+    ~H"""
+    <.empty_state icon="product.runner" title="No actions yet." class={@class}>
+      A runner reports its actions when it connects, and this one is not connected. Check the
+      daemon on the host.
+      <.doc_link href={~p"/docs/troubleshooting"}>Runner troubleshooting</.doc_link>
+      <:command id="empty-catalog-status" label="On the host" value="emisar status" />
+    </.empty_state>
+    """
+  end
 
   # Socket termination values are diagnostic data, not customer copy. Keep the
   # same stable wording as the audit list; raw reasons remain in diagnostics.

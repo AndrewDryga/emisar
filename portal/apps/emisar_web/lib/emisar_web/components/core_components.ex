@@ -4650,12 +4650,29 @@ defmodule EmisarWeb.CoreComponents do
     attr :href, :string
   end
 
+  slot :command, doc: "the command that resolves this empty state, as a copyable row" do
+    attr :id, :string, required: true
+    attr :label, :string
+    attr :value, :string, required: true
+  end
+
   def empty_state(assigns) do
     ~H"""
     <div class={[empty_state_wrapper(@variant), @class]}>
       <.icon :if={@icon} name={@icon} class={empty_state_icon(@variant, @tone)} />
       <h2 :if={@title} class={empty_state_title(@variant, @tone)}>{@title}</h2>
       <p class={empty_state_body(@variant)}>{render_slot(@inner_block)}</p>
+      <%!-- A command is a value the operator copies, never prose in the sentence
+           above — so it keeps its own left-aligned row inside this centered box,
+           at a measure that fits one command rather than the body's width. --%>
+      <.code_line
+        :for={command <- @command}
+        id={command.id}
+        label={command[:label]}
+        value={command.value}
+        prompt
+        class="mx-auto mt-4 max-w-xs text-left"
+      />
 
       <%= for cta <- @cta do %>
         <.link navigate={cta[:navigate]} href={cta[:href]} class={empty_state_cta(@variant)}>
