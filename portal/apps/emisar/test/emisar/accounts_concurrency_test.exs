@@ -1,5 +1,5 @@
 defmodule Emisar.AccountsConcurrencyTest do
-  use ExUnit.Case, async: false
+  use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
   alias Emisar.{Accounts, Auth, Config, Crypto, Fixtures, Repo, Users}
@@ -523,53 +523,5 @@ defmodule Emisar.AccountsConcurrencyTest do
     |> AuditEvent.Query.by_account_id(account_id)
     |> AuditEvent.Query.by_event_type("user.mfa_reset_by_admin")
     |> Repo.aggregate(:count)
-  end
-
-  # Each contender needs its own connection, so it drops the sandbox owner it
-  # inherited through `$callers` and checks one out unboxed.
-  defp unboxed_task(fun) do
-    Task.async(fn ->
-      Process.delete(:"$callers")
-      :ok = Sandbox.checkout(Repo, sandbox: false)
-
-      try do
-        fun.()
-      after
-        :ok = Sandbox.checkin(Repo)
-      end
-    end)
-  end
-
-  defp backend_pid do
-    %{rows: [[pid]]} = Repo.query!("SELECT pg_backend_pid()")
-    pid
-  end
-
-  defp stop_tasks(tasks) do
-    Enum.each(tasks, fn task ->
-      if Process.alive?(task.pid), do: Task.shutdown(task, :brutal_kill)
-    end)
-  end
-
-  # Proof that one transaction is queued on the exact other transaction rather
-  # than merely slow or waiting on an unrelated lock. Each poll is a round trip,
-  # so the loop paces itself without asserting on timing.
-  defp await_blocked_by(
-         blocked_backend,
-         blocking_backend,
-         deadline \\ System.monotonic_time(:millisecond) + 10_000
-       ) do
-    query = "SELECT $2::integer = ANY(pg_blocking_pids($1::integer))"
-
-    cond do
-      Repo.query!(query, [blocked_backend, blocking_backend]).rows == [[true]] ->
-        :ok
-
-      System.monotonic_time(:millisecond) > deadline ->
-        flunk("backend #{blocked_backend} was never blocked by backend #{blocking_backend}")
-
-      true ->
-        await_blocked_by(blocked_backend, blocking_backend, deadline)
-    end
   end
 end

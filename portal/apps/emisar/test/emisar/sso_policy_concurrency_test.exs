@@ -1,5 +1,5 @@
 defmodule Emisar.SSOPolicyConcurrencyTest do
-  use ExUnit.Case, async: false
+  use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
   alias Emisar.{Accounts, Auth, Config, Crypto, Fixtures, Repo, RequestContext, SSO}
@@ -939,48 +939,5 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
         )
       end
     end)
-  end
-
-  defp unboxed_task(fun) do
-    Task.async(fn ->
-      Process.delete(:"$callers")
-      :ok = Sandbox.checkout(Repo, sandbox: false)
-
-      try do
-        fun.()
-      after
-        :ok = Sandbox.checkin(Repo)
-      end
-    end)
-  end
-
-  defp backend_pid do
-    %{rows: [[pid]]} = Repo.query!("SELECT pg_backend_pid()")
-    pid
-  end
-
-  defp stop_tasks(tasks) do
-    Enum.each(tasks, fn task ->
-      if Process.alive?(task.pid), do: Task.shutdown(task, :brutal_kill)
-    end)
-  end
-
-  defp await_blocked_by(
-         blocked_backend,
-         blocking_backend,
-         deadline \\ System.monotonic_time(:millisecond) + 10_000
-       ) do
-    query = "SELECT $2::integer = ANY(pg_blocking_pids($1::integer))"
-
-    cond do
-      Repo.query!(query, [blocked_backend, blocking_backend]).rows == [[true]] ->
-        :ok
-
-      System.monotonic_time(:millisecond) > deadline ->
-        flunk("backend #{blocked_backend} was never blocked by backend #{blocking_backend}")
-
-      true ->
-        await_blocked_by(blocked_backend, blocking_backend, deadline)
-    end
   end
 end

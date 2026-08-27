@@ -1,5 +1,5 @@
 defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
-  use ExUnit.Case, async: false
+  use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
   alias Emisar.{Accounts, Audit, Auth, Fixtures, Repo}
@@ -305,28 +305,6 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
     end)
   end
 
-  # Every contender drops the inherited sandbox owner and checks out a real,
-  # independent connection. Otherwise Task workers can serialize through their
-  # parent's connection and the test never exercises PostgreSQL contention.
-  defp unboxed_task(fun) do
-    Task.async(fn ->
-      Process.delete(:"$callers")
-      :ok = Sandbox.checkout(Repo, sandbox: false)
-      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
-
-      try do
-        fun.()
-      after
-        :ok = Sandbox.checkin(Repo)
-      end
-    end)
-  end
-
-  defp backend_pid do
-    %{rows: [[pid]]} = Repo.query!("SELECT pg_backend_pid()")
-    pid
-  end
-
   defp database_now do
     %{rows: [[now]]} = Repo.query!("SELECT clock_timestamp()")
     now
@@ -345,33 +323,6 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
       inserted_at: expired,
       updated_at: expired
     }
-  end
-
-  defp stop_tasks(tasks) do
-    Enum.each(tasks, fn task ->
-      if Process.alive?(task.pid), do: Task.shutdown(task, :brutal_kill)
-    end)
-  end
-
-  # Prove that the contender is queued on the exact transaction we control,
-  # rather than merely slow or waiting on an unrelated database resource.
-  defp await_blocked_by(
-         blocked_backend,
-         blocking_backend,
-         deadline \\ System.monotonic_time(:millisecond) + 10_000
-       ) do
-    query = "SELECT $2::integer = ANY(pg_blocking_pids($1::integer))"
-
-    cond do
-      Repo.query!(query, [blocked_backend, blocking_backend]).rows == [[true]] ->
-        :ok
-
-      System.monotonic_time(:millisecond) > deadline ->
-        flunk("backend #{blocked_backend} was never blocked by backend #{blocking_backend}")
-
-      true ->
-        await_blocked_by(blocked_backend, blocking_backend, deadline)
-    end
   end
 
   defp await_any_blocked_by(

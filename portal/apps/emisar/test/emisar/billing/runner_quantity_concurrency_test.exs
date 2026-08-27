@@ -70,7 +70,7 @@ defmodule Emisar.Billing.RunnerQuantityConcurrencyTest.PaddleClient do
 end
 
 defmodule Emisar.Billing.RunnerQuantityConcurrencyTest do
-  use ExUnit.Case, async: false
+  use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
   alias Emisar.Accounts.Account
@@ -223,44 +223,5 @@ defmodule Emisar.Billing.RunnerQuantityConcurrencyTest do
         }
       ]
     }
-  end
-
-  defp unboxed_task(fun) do
-    Task.async(fn ->
-      Process.delete(:"$callers")
-      :ok = Sandbox.checkout(Repo, sandbox: false)
-
-      try do
-        fun.()
-      after
-        :ok = Sandbox.checkin(Repo)
-      end
-    end)
-  end
-
-  defp backend_pid do
-    %{rows: [[pid]]} = Repo.query!("SELECT pg_backend_pid()")
-    pid
-  end
-
-  defp await_blocked(backend, deadline \\ System.monotonic_time(:millisecond) + 10_000) do
-    query = "SELECT cardinality(pg_blocking_pids($1::integer)) > 0"
-
-    cond do
-      Repo.query!(query, [backend]).rows == [[true]] ->
-        :ok
-
-      System.monotonic_time(:millisecond) > deadline ->
-        flunk("backend #{backend} never blocked")
-
-      true ->
-        await_blocked(backend, deadline)
-    end
-  end
-
-  defp stop_tasks(tasks) do
-    Enum.each(tasks, fn task ->
-      if Process.alive?(task.pid), do: Task.shutdown(task, :brutal_kill)
-    end)
   end
 end
