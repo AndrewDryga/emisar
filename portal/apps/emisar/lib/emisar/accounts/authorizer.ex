@@ -6,7 +6,6 @@ defmodule Emisar.Accounts.Authorizer do
   """
   use Emisar.Auth.Authorizer
   alias Emisar.Accounts.{Account, Membership}
-  alias Emisar.Users
 
   # -- Catalogue -------------------------------------------------------
 
@@ -17,7 +16,6 @@ defmodule Emisar.Accounts.Authorizer do
   # itself. Admins hold manage_team but not this.
   def manage_owners_permission, do: build(Membership, :manage_owners)
   def invite_member_permission, do: build(Membership, :invite)
-  def edit_own_profile_permission, do: build(Users.User, :edit_self)
   # Held by owners and admins — required to flip account-wide security knobs.
   def manage_security_settings_permission, do: build(Account, :manage_security)
 
@@ -29,8 +27,7 @@ defmodule Emisar.Accounts.Authorizer do
       manage_team_permission(),
       manage_owners_permission(),
       invite_member_permission(),
-      manage_security_settings_permission(),
-      edit_own_profile_permission()
+      manage_security_settings_permission()
     ]
 
   def list_permissions_for_role(:admin),
@@ -39,15 +36,16 @@ defmodule Emisar.Accounts.Authorizer do
       view_own_account_permission(),
       manage_team_permission(),
       invite_member_permission(),
-      manage_security_settings_permission(),
-      edit_own_profile_permission()
+      manage_security_settings_permission()
     ]
 
   # billing_manager gets the same account floor as operator/viewer — enough
-  # to sign in, see the account, and edit their own profile; team management
-  # and security settings stay owner/admin.
+  # to sign in and see the account; team management and security settings
+  # stay owner/admin. Editing your own profile is not permission-gated at
+  # all: self-service authorization is the `%Subject{actor: ...}` identity
+  # match, so no role carries a permission for it.
   def list_permissions_for_role(role) when role in [:billing_manager, :operator, :viewer],
-    do: [view_own_account_permission(), edit_own_profile_permission()]
+    do: [view_own_account_permission()]
 
   def list_permissions_for_role(:api_client),
     do: [view_own_account_permission()]

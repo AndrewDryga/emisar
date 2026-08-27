@@ -51,8 +51,7 @@ defmodule Emisar.Auth.RoleGrantsTest do
     {Emisar.Runs.ActionRun, :dispatch},
     {Emisar.Runs.ActionRun, :view},
     {Emisar.SSO.IdentityProvider, :manage},
-    {Emisar.SSO.IdentityProvider, :view_posture},
-    {Emisar.Users.User, :edit_self}
+    {Emisar.SSO.IdentityProvider, :view_posture}
   ]
 
   # admin is owner minus the one owner-only grant.
@@ -64,8 +63,7 @@ defmodule Emisar.Auth.RoleGrantsTest do
     {Emisar.Billing.Subscription, :manage},
     {Emisar.Billing.Subscription, :view},
     {Emisar.Billing.Subscription, :view_invoices},
-    {Emisar.SSO.IdentityProvider, :view_posture},
-    {Emisar.Users.User, :edit_self}
+    {Emisar.SSO.IdentityProvider, :view_posture}
   ]
 
   @operator [
@@ -86,8 +84,7 @@ defmodule Emisar.Auth.RoleGrantsTest do
     {Emisar.Runs.ActionRun, :cancel},
     {Emisar.Runs.ActionRun, :dispatch},
     {Emisar.Runs.ActionRun, :view},
-    {Emisar.SSO.IdentityProvider, :view_posture},
-    {Emisar.Users.User, :edit_self}
+    {Emisar.SSO.IdentityProvider, :view_posture}
   ]
 
   @viewer [
@@ -102,8 +99,7 @@ defmodule Emisar.Auth.RoleGrantsTest do
     {Emisar.Runbooks.Runbook, :view},
     {Emisar.Runners.Runner, :view},
     {Emisar.Runs.ActionRun, :view},
-    {Emisar.SSO.IdentityProvider, :view_posture},
-    {Emisar.Users.User, :edit_self}
+    {Emisar.SSO.IdentityProvider, :view_posture}
   ]
 
   # Not a membership role: the credential an LLM client authenticates with.
