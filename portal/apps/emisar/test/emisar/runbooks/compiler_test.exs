@@ -467,6 +467,7 @@ defmodule Emisar.Runbooks.CompilerTest do
     Fixtures.Catalog.create_action(
       runner: runner,
       action_id: "linux.#{prefix}_#{position}",
+      pack_id: "linux-core",
       pack_version: "1.4.2",
       pack_hash: @pack_hash
     )

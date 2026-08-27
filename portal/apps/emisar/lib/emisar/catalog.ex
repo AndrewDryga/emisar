@@ -1252,10 +1252,13 @@ defmodule Emisar.Catalog do
   The action carries `pack_version` populated by `observe_action`
   based on the runner's last-reported `runner_state.packs` payload.
 
-  A pack-less action (no `pack_id`), or one whose `pack_version` the runner
-  hasn't reported yet, has no version to pin and passes. For a fully versioned
-  pack (both `pack_id` and `pack_version`), trust is fail-CLOSED: only an
-  explicit `:trusted` pin allows dispatch. A MISSING pin row (the old design
+  A pack-less action (no `pack_id`) is the legacy row-authoritative shape and
+  passes with nothing to pin. An action that NAMES a pack but carries no
+  resolved `pack_version` refuses (`:unresolved_pack_version`): ingestion no
+  longer persists that shape, so a surviving row is stale hostile input, not a
+  not-yet-reported version. For a fully versioned pack (both `pack_id` and
+  `pack_version`), trust is fail-CLOSED: only an explicit `:trusted` pin
+  allows dispatch. A MISSING pin row (the old design
   DELETED it on reject), `:pending`, or `:rejected` all refuse — `runner_actions`
   reference the version by string with no FK, so a missing row must never read
   as trusted.
@@ -1266,7 +1269,9 @@ defmodule Emisar.Catalog do
   operator action differs (update the pack vs. review a hash).
   """
   def check_pack_trusted(%RunnerAction{pack_id: nil}), do: {:ok, nil}
-  def check_pack_trusted(%RunnerAction{pack_version: nil}), do: {:ok, nil}
+
+  def check_pack_trusted(%RunnerAction{pack_version: nil}),
+    do: {:error, :pack_untrusted, :unresolved_pack_version}
 
   def check_pack_trusted(%RunnerAction{} = action) do
     case peek_pack_version_for_action(action) do
@@ -1293,8 +1298,11 @@ defmodule Emisar.Catalog do
   operator reviewed, and a drifted advertisement fails closed as
   `:action_contract_changed`.
 
-  Unversioned legacy actions have no pack manifest to lock and retain their
-  row-authoritative dispatch semantics.
+  Pack-less legacy actions (no `pack_id`) have no pack manifest to lock and
+  retain their row-authoritative dispatch semantics. An action that names a
+  pack without a resolved version is NOT legacy — it fails closed as
+  `:action_contract_changed` instead of re-entering the row-authoritative
+  path.
   """
   def fetch_dispatch_contract(repo, account_id, runner_id, action_id, pack_ref) do
     case fetch_action_for_account(action_id, runner_id, account_id) do
@@ -1304,9 +1312,9 @@ defmodule Emisar.Catalog do
   end
 
   defp fetch_dispatch_contract_for_action(repo, %RunnerAction{} = observed, nil)
-       when is_nil(observed.pack_id) or is_nil(observed.pack_version) do
+       when is_nil(observed.pack_id) do
     with {:ok, action} <- lock_runner_action(repo, observed),
-         true <- is_nil(action.pack_id) or is_nil(action.pack_version),
+         true <- is_nil(action.pack_id),
          {:ok, descriptor} <- runner_action_descriptor(action) do
       {:ok, %{action: action, descriptor: descriptor, pack_hash: nil}}
     else
@@ -1561,9 +1569,6 @@ defmodule Emisar.Catalog do
        when is_map(descriptor) do
     pack_id = descriptor["pack_id"]
 
-    {primary_executable_available, missing_executable} =
-      primary_executable_availability(descriptor)
-
     # `packs` is untrusted runner-advertised state: a descriptor can name a
     # pack_id that isn't in the packs map, or map to a non-map. Pull the
     # version defensively so one malformed descriptor doesn't abort the whole
@@ -1574,6 +1579,29 @@ defmodule Emisar.Catalog do
         %{"version" => version} -> {version, nil}
         _ -> {nil, nil}
       end
+
+    # A descriptor naming a pack_id its own packs map doesn't resolve never
+    # comes from a healthy runner (loading stamps every action's pack id and
+    # version from one registry) — it is hostile or corrupt input. Persisting
+    # it with pack_version nil used to hand it the unversioned
+    # row-authoritative dispatch path at the trusted-manifest boundary, so it
+    # is rejected here instead; the batch prune then retires any stale row a
+    # previous advertisement left behind.
+    if is_binary(pack_id) and is_nil(pack_version) do
+      nil
+    else
+      observe_action_attrs(runner, descriptor, pack_id, pack_version, pack_hash, now)
+    end
+  end
+
+  # A runner can advertise a malformed (non-map) action descriptor; skip it
+  # (the caller rejects nils) rather than letting `descriptor["id"]` raise and
+  # abort the whole batch's action upsert.
+  defp observe_action(_runner, _descriptor, _packs, _now), do: nil
+
+  defp observe_action_attrs(runner, descriptor, pack_id, pack_version, pack_hash, now) do
+    {primary_executable_available, missing_executable} =
+      primary_executable_availability(descriptor)
 
     attrs = %{
       account_id: runner.account_id,
@@ -1606,11 +1634,6 @@ defmodule Emisar.Catalog do
 
     RunnerAction.Changeset.upsert(attrs)
   end
-
-  # A runner can advertise a malformed (non-map) action descriptor; skip it
-  # (the caller rejects nils) rather than letting `descriptor["id"]` raise and
-  # abort the whole batch's action upsert.
-  defp observe_action(_runner, _descriptor, _packs, _now), do: nil
 
   # The field is additive: absence means an older runner and stays unknown.
   # Malformed present values fail closed. The executable is diagnostic only,

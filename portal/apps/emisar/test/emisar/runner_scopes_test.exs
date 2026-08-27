@@ -927,11 +927,35 @@ defmodule Emisar.RunnerAccessTest do
       {account, owner, owner_subject} = account_with_owner()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
 
-      Fixtures.Catalog.create_action(
-        runner: runner,
-        action_id: "linux.uptime",
-        pack_id: "linux-core"
-      )
+      # The action must be dispatch-healthy (versioned + trusted) so the ONLY
+      # refusal under test is the member's pack scope.
+      payload = %{
+        "hostname" => "h",
+        "version" => "0.1",
+        "labels" => %{},
+        "packs" => %{
+          "linux-core" => %{
+            "version" => "1.2.3",
+            "hash" => Fixtures.Catalog.pack_hash("SCOPE_TRUSTED")
+          }
+        },
+        "actions" => [
+          %{
+            "id" => "linux.uptime",
+            "pack_id" => "linux-core",
+            "title" => "Uptime",
+            "kind" => "exec",
+            "risk" => "low",
+            "description" => "d",
+            "side_effects" => [],
+            "args" => []
+          }
+        ]
+      }
+
+      assert {:ok, _} = Emisar.Catalog.observe_state(runner, payload)
+      {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(owner_subject)
+      assert {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, owner_subject)
 
       {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
       {:ok, other_packs} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])

@@ -11,7 +11,13 @@ defmodule Emisar.CatalogTest do
       "hostname" => Keyword.get(opts, :hostname, "host-1"),
       "version" => Keyword.get(opts, :version, "0.1.0"),
       "labels" => Keyword.get(opts, :labels, %{"env" => "test"}),
-      "packs" => opts |> Keyword.get(:packs, %{}) |> canonical_pack_hashes(),
+      # A healthy runner's packs map resolves every advertised action's
+      # pack_id (ingestion rejects the unresolvable shape), so the default
+      # covers `action/2`'s default "demo" pack.
+      "packs" =>
+        opts
+        |> Keyword.get(:packs, %{"demo" => %{"version" => "0.0.1"}})
+        |> canonical_pack_hashes(),
       "actions" => Keyword.get(opts, :actions, [])
     }
   end
@@ -589,10 +595,10 @@ defmodule Emisar.CatalogTest do
       assert reloaded.labels == %{"env" => "prod"}
     end
 
-    # a descriptor naming a pack_id NOT in the packs map
-    # gets pack_version: nil defensively (vs. raising), and the row still upserts
-    # so one missing pack reference doesn't drop the action from the catalog.
-    test "an action referencing an unknown pack_id upserts with pack_version nil", %{
+    # A descriptor naming a pack_id its own packs map doesn't resolve never
+    # comes from a healthy runner — persisting it with pack_version nil used
+    # to hand hostile input the unversioned row-authoritative dispatch path.
+    test "an action referencing an unknown pack_id is rejected, not persisted", %{
       runner: runner,
       subject: subject
     } do
@@ -601,7 +607,33 @@ defmodule Emisar.CatalogTest do
 
       assert {:ok, _runner} = Catalog.observe_state(runner, payload)
 
-      assert {:ok, [%RunnerAction{action_id: "orphan.do", pack_version: nil}], _} =
+      assert {:ok, [], _} = Catalog.list_actions_for_runner(runner.id, subject)
+    end
+
+    test "a stale unresolvable row is pruned by the next healthy advertisement", %{
+      runner: runner,
+      subject: subject
+    } do
+      # Seed the pre-fix shape directly: a persisted row that names a pack
+      # without a resolved version (what an old advertisement left behind).
+      stale =
+        Fixtures.Catalog.create_action(
+          runner: runner,
+          action_id: "orphan.do",
+          pack_id: "absent"
+        )
+
+      assert is_nil(stale.pack_version)
+
+      payload =
+        state_payload(
+          packs: %{"linux" => %{"version" => "1.0"}},
+          actions: [action("linux.uptime", pack_id: "linux")]
+        )
+
+      assert {:ok, _runner} = Catalog.observe_state(runner, payload)
+
+      assert {:ok, [%RunnerAction{action_id: "linux.uptime"}], _} =
                Catalog.list_actions_for_runner(runner.id, subject)
     end
   end
@@ -2749,10 +2781,12 @@ defmodule Emisar.CatalogTest do
       assert Catalog.check_pack_trusted(action) == {:error, :pack_untrusted, :no_pin}
     end
 
-    test "action without pack_version (not yet pinnable) → {:ok, nil} (no hash to snapshot)" do
+    test "an action naming a pack without a resolved version refuses" do
       runner = Fixtures.Runners.create_runner()
       act = %RunnerAction{pack_id: "p", pack_version: nil, account_id: runner.account_id}
-      assert Catalog.check_pack_trusted(act) == {:ok, nil}
+
+      assert Catalog.check_pack_trusted(act) ==
+               {:error, :pack_untrusted, :unresolved_pack_version}
     end
 
     test "a pack-less action (no pack_id) → {:ok, nil}" do
@@ -2792,6 +2826,42 @@ defmodule Emisar.CatalogTest do
       assert {:ok, trusted} = Catalog.trust_pack_version(pack_version.id, subject)
 
       %{account: account, runner: runner, trusted: trusted}
+    end
+
+    test "an action naming a pack without a resolved version is refused, not row-authoritative",
+         %{
+           account: account,
+           runner: runner
+         } do
+      # The pre-fix persisted shape: a row that names a pack ingestion could
+      # not resolve. It must not fall back to the unversioned legacy path.
+      Fixtures.Catalog.create_action(
+        runner: runner,
+        action_id: "absent.probe",
+        pack_id: "absent"
+      )
+
+      assert Catalog.fetch_dispatch_contract(Repo, account.id, runner.id, "absent.probe", nil) ==
+               {:error, :action_contract_changed}
+    end
+
+    test "a pack-less legacy action keeps its row-authoritative dispatch contract", %{
+      account: account,
+      runner: runner
+    } do
+      payload =
+        state_payload(
+          packs: %{},
+          actions: [Map.delete(action("legacy.probe"), "pack_id")]
+        )
+
+      assert {:ok, _runner} = Catalog.observe_state(runner, payload)
+
+      assert {:ok, contract} =
+               Catalog.fetch_dispatch_contract(Repo, account.id, runner.id, "legacy.probe", nil)
+
+      assert contract.pack_hash == nil
+      assert contract.action.pack_id == nil
     end
 
     test "returns the persisted trusted descriptor and locked deployment row", %{

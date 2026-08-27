@@ -30,7 +30,11 @@ defmodule Emisar.Fixtures.Catalog do
       account_id: runner.account_id,
       runner_id: runner.id,
       action_id: attrs[:action_id] || "linux.uptime",
-      pack_id: attrs[:pack_id] || "linux-core",
+      # The default fixture action is the PACK-LESS legacy shape: dispatch
+      # stays row-authoritative with nothing to pin. Naming a pack without a
+      # version is the unresolvable shape ingestion rejects and dispatch
+      # refuses — a test seeds it only deliberately, by passing pack_id.
+      pack_id: Map.get(attrs, :pack_id),
       pack_version: attrs[:pack_version],
       pack_hash: if(attrs[:pack_hash], do: pack_hash(attrs[:pack_hash])),
       title: attrs[:title] || "Uptime",
