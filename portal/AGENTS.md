@@ -261,7 +261,7 @@ Project skills live in **`../.claude/skills/`** (repo root, so they're found fro
 | `/workflow-spec` | Designing a change that spans more than one file/context/project. Produces an opinionated, boring-by-default plan mapped to the touched project's gate. |
 | `/workflow-work` | Executing an approved plan step-by-step with the touched project's format/compile/test gate between steps. |
 | `/review-ship` | Reviewing a diff before merge through the product hats **and** the Iron Laws, in parallel. The proportional product review alongside `/elixir-iron-review` (laws). |
-| `/review-board` | The full pre-merge review — convenes a panel of expert hats (staff eng, domain, security, UX, UI, PM, marketing, sales) as parallel subagents, then synthesizes one ranked verdict + a prioritized fix plan (queueable into `.agent/tasks/00_todo/` for `/workflow-sweep`). Use it when correctness, security, and product risks span multiple surfaces. |
+| `/review-board` | The full pre-merge review — convenes a panel of expert hats (staff eng, domain, security, UX, UI, PM, marketing, sales) as parallel subagents, then synthesizes one ranked verdict + a prioritized fix plan (queueable into `.agent/tasks/00_todo/` with `coop tasks add`). Use it when correctness, security, and product risks span multiple surfaces. |
 | `/elixir-new-context` | Scaffolding a whole new context (context + authorizer + schema + query + changeset + tests) in the standard shape. |
 | `/elixir-context-fn` | Adding one read or write function to an existing context the canonical way. |
 | `/elixir-iron-review` | Checking a diff (or the working tree) against IL-1…IL-20. The judgment-side complement to the Credo checks. |

@@ -228,7 +228,7 @@ retaining to `artifacts/` first. All three directories are git-ignored, so they 
   finalizes its lifecycle fields and removes only disposable `tmp/`. A state write or cleanup
   failure fails completion loudly and an already-done retry finishes the work.
 - Pruning the archive is a manual, human step: `coop tasks rm --all-done` (or
-  `coop tasks rm <id>` for one). The loop and `/workflow-sweep` never do this.
+  `coop tasks rm <id>` for one). The loop never does this.
 - A todo task must NOT carry a `decision.md` (that means it's blocked); a blocked one MUST.
 - Never add a `status:` field — the directory IS the status. `coop tasks lint` checks this.
 - Counts / subtask progress / the blocked list are DERIVED — `coop tasks`,

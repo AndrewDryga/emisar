@@ -87,7 +87,7 @@ A task moves to `99_done/` (via `coop tasks done`) only when **all** of these ho
 
 No changelog file — `git log` is the changelog.
 
-### The work loop (what `/workflow-sweep`, `/goal`, `/loop`, `/workflow-work` all follow)
+### The work loop (what `/goal`, `/loop`, `/workflow-work` all follow)
 
 Work the first todo task in `.agent/tasks/` (`coop tasks ls`), then the next, until none remain (in a box, read the queue directories directly and move folders by hand — see above):
 
@@ -231,6 +231,6 @@ Two kinds:
 - **Generic hats** — `/product-manager`, `/design-ux`, `/security-engineer`, `/content-seo`, `/workflow-spec`, `/workflow-work` — apply repo-wide regardless of language. Wear one when a change leans hard on its domain.
 - **Per-product engineering skills** — language-specific. The Elixir set (`/elixir-context-fn`, `/elixir-new-context`, `/elixir-iron-review`, `/elixir-recurrent-jobs`, `/elixir-performance`, `/elixir-testing`, …) is **portal-only**. Go work in `runner/`/`mcp/` uses the Go engineering skill plus that project's `AGENTS.md`.
 
-For a thorough pre-merge review, **`/review-board`** convenes the relevant hats above as parallel review subagents and synthesizes one ranked verdict + a prioritized fix plan. Use `/review-ship` for a lighter proportional review; the fix plan can be queued straight into `.agent/tasks/00_todo/` for `/workflow-sweep`.
+For a thorough pre-merge review, **`/review-board`** convenes the relevant hats above as parallel review subagents and synthesizes one ranked verdict + a prioritized fix plan. Use `/review-ship` for a lighter proportional review; the fix plan can be queued straight into `.agent/tasks/00_todo/` with `coop tasks add`.
 
 Contributor skills are thin entry points — the durable rules they apply live in `AGENTS.md` and `.agent/kb/rules/`. Both tools share those internal skill files: Claude via `.claude/skills/`, Codex via the `.codex/skills` → `../.claude/skills` symlink (auto-discovered when Codex runs in the repo). Customer-distributed skills are a separate public product surface under `skills/`; see `skills/README.md`.

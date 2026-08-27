@@ -85,7 +85,7 @@ staff: … · domain: … · security: … · ux: … · pm: … · sales: …
 
 Keep it honest and short. If it's clean: **"SHIP — nothing blocking"** + the few suggestions worth the reader's time. Never manufacture findings to look thorough, never bury a real blocker in nits.
 
-**Then offer to queue it:** the BLOCKER/MAJOR items become tasks in the touched project's `.agent/tasks/00_todo/` (via `coop tasks add`), so `/workflow-sweep` can drain the fixes to a ship-ready bar. Queue on the user's go — never silently.
+**Then offer to queue it:** the BLOCKER/MAJOR items become tasks in the touched project's `.agent/tasks/00_todo/` (via `coop tasks add`), so `coop loop` can drain the fixes to a ship-ready bar. Queue on the user's go — never silently.
 
 ## Relationship to the focused reviews
-`/review-board` convenes them all; the single-lens tools are its building blocks and stay for fast, focused runs: `/elixir-iron-review` (laws), `/security-engineer`, `/debug-investigate` (failures), `/design-ux`, etc. `/review-ship` is the lighter, proportional *in-loop* self-review `/workflow-sweep` runs per item; `/review-board` is the heavyweight on-demand whole-PR review that ends in a plan.
+`/review-board` convenes them all; the single-lens tools are its building blocks and stay for fast, focused runs: `/elixir-iron-review` (laws), `/security-engineer`, `/debug-investigate` (failures), `/design-ux`, etc. `/review-ship` is the lighter, proportional *in-loop* self-review to run per item; `/review-board` is the heavyweight on-demand whole-PR review that ends in a plan.

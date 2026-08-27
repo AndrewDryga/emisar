@@ -1,7 +1,7 @@
 // Command agentcheck verifies the repository's shared agent configuration:
 // canonical instruction links, Coop task conventions, contributor/customer
-// skill metadata, KB ownership, public MCP tool references, and scoped
-// workflow hooks.
+// skill metadata, KB ownership, public MCP tool references, and the absence of
+// project-global Stop hooks.
 package main
 
 import (
@@ -962,17 +962,16 @@ func (c *checker) checkCommitMessageHook() {
 	}
 }
 
-func (c *checker) checkSweepGuard() {
-	if _, err := os.Stat(c.path(".claude/skills/workflow-sweep/queue-guard.sh")); err != nil {
-		c.fail("the scoped sweep queue-guard.sh is missing")
-	}
-	skill, err := os.ReadFile(c.path(".claude/skills/workflow-sweep/SKILL.md"))
-	if err != nil || !bytes.Contains(skill, []byte("queue-guard.sh")) {
-		c.fail("workflow-sweep frontmatter no longer declares its scoped Stop hook")
-	}
+// A Stop hook decides whether a session may end, so a broken one fails OPEN and
+// stays silent about it: the queue-guard this repo used to ship could `cd ""` on
+// an unset CLAUDE_PROJECT_DIR, read some other tree, and report an empty queue.
+// The sweep skill it belonged to is gone; these assertions keep any replacement
+// from arriving as a project-global hook, which is the shape that could end a
+// session for reasons the session never sees.
+func (c *checker) checkNoGlobalStopHook() {
 	for _, path := range []string{".claude/hooks/stop-guard.sh", ".claude/.sweep-active"} {
 		if _, err := os.Lstat(c.path(path)); err == nil {
-			c.fail("retired %s is back; the sweep guard must remain skill-scoped", path)
+			c.fail("retired %s is back; a Stop guard must never be project-global", path)
 		}
 	}
 	// Both files, not just the tracked one: Claude merges settings.local.json
@@ -990,7 +989,7 @@ func (c *checker) checkSweepGuard() {
 		if err := json.Unmarshal(settings, &value); err != nil {
 			c.fail("parsing %s: %v", name, err)
 		} else if hasJSONKey(value, "Stop") {
-			c.fail("%s carries a project-global Stop hook; the sweep guard must remain skill-scoped", name)
+			c.fail("%s carries a project-global Stop hook; a Stop guard must never be project-global", name)
 		}
 	}
 }
@@ -1035,7 +1034,7 @@ func (c *checker) run(requireCoop bool) int {
 	c.group("skill frontmatter has matching name/description/effort/allowed-tools and domain prefixes", c.checkSkills)
 	c.group("public skills have portable metadata and remain separate from contributor skills", c.checkPublicSkills)
 	c.group("public skill MCP tool names exist in the portal-owned API schema", c.checkPublicSkillMCPTools)
-	c.group("sweep Stop guard is skill-scoped; no retired global guard/sentinel", c.checkSweepGuard)
+	c.group("no project-global Stop hook or retired sweep sentinel", c.checkNoGlobalStopHook)
 	c.group("the commit-msg hook verifies a Coop-Task line parses as a trailer", c.checkCommitMessageHook)
 	c.group("every kb rule is indexed by its owning AGENTS.md", c.checkRulesAreIndexed)
 	if len(c.failures) > 0 {
