@@ -25,6 +25,18 @@ defmodule EmisarWeb.MCP.TransportTest do
     test ~s(the opaque "null" origin is rejected) do
       refute Transport.allowed_origin?(["null"], "https://emisar.dev")
     end
+
+    test "a duplicated Origin header is rejected, even with identical values" do
+      refute Transport.allowed_origin?(
+               ["https://emisar.dev", "https://emisar.dev"],
+               "https://emisar.dev"
+             )
+
+      refute Transport.allowed_origin?(
+               ["https://emisar.dev", "https://evil.example.com"],
+               "https://emisar.dev"
+             )
+    end
   end
 
   describe "json_content_type?/1" do
@@ -43,6 +55,10 @@ defmodule EmisarWeb.MCP.TransportTest do
       refute Transport.json_content_type?(["application/json-rpc"])
       refute Transport.json_content_type?(["multipart/form-data"])
     end
+
+    test "rejects a duplicated Content-Type header" do
+      refute Transport.json_content_type?(["application/json", "application/json"])
+    end
   end
 
   describe "accepts_json?/1" do
@@ -56,17 +72,25 @@ defmodule EmisarWeb.MCP.TransportTest do
       assert Transport.accepts_json?(["application/*"])
       assert Transport.accepts_json?(["*/*"])
       assert Transport.accepts_json?(["text/html, application/json;q=0.9"])
+      # Accept is legitimately repeatable: repeated lines are one comma-joined
+      # list, so a JSON-accepting second line satisfies the check.
+      assert Transport.accepts_json?(["text/event-stream", "application/json"])
     end
 
     test "an SSE-only Accept can't be served by this JSON endpoint" do
       refute Transport.accepts_json?(["text/event-stream"])
       refute Transport.accepts_json?(["text/plain"])
+      refute Transport.accepts_json?(["text/event-stream", "text/plain"])
     end
   end
 
   describe "acceptable_protocol_version?/2" do
     test "an absent header is tolerated (the spec assumes a default)" do
       assert Transport.acceptable_protocol_version?([], @supported)
+    end
+
+    test "rejects a duplicated header, even when both copies are supported" do
+      refute Transport.acceptable_protocol_version?(["2026-07-28", "2026-07-28"], @supported)
     end
 
     test "a supported version is accepted" do
@@ -94,6 +118,12 @@ defmodule EmisarWeb.MCP.TransportTest do
 
       non_binary = %{"_meta" => %{"io.modelcontextprotocol/protocolVersion" => 20_260_728}}
       assert Transport.meta_protocol_version(non_binary) == nil
+    end
+  end
+
+  describe "mcp_name_matches?/2 (duplicates)" do
+    test "a duplicated Mcp-Name header never matches" do
+      refute Transport.mcp_name_matches?(["restart", "restart"], "restart")
     end
   end
 

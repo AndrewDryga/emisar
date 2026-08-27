@@ -3,6 +3,11 @@ defmodule EmisarWeb.MCP.ClientMetadataTest do
   alias EmisarWeb.MCP.ClientMetadata
 
   describe "parse/1" do
+    test "a duplicated Emisar-Client-Metadata header is rejected, even when identical" do
+      assert {:error, message} = ClientMetadata.parse([~s({"a":"b"}), ~s({"a":"b"})])
+      assert message =~ "duplicate"
+    end
+
     test "absent or blank header yields an empty map" do
       assert ClientMetadata.parse([]) == {:ok, %{}}
       assert ClientMetadata.parse(nil) == {:ok, %{}}
@@ -11,8 +16,8 @@ defmodule EmisarWeb.MCP.ClientMetadataTest do
       assert ClientMetadata.parse("{}") == {:ok, %{}}
     end
 
-    test "reads the first header value from a list" do
-      assert ClientMetadata.parse([~s({"asset_tag":"LT-4417"}), "ignored"]) ==
+    test "reads a single header value from a list" do
+      assert ClientMetadata.parse([~s({"asset_tag":"LT-4417"})]) ==
                {:ok, %{"asset_tag" => "LT-4417"}}
     end
 

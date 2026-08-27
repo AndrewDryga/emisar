@@ -157,6 +157,22 @@ defmodule EmisarWeb.MCPRpcController do
   end
 
   defp request_era(conn, method, params) do
+    case duplicated_routing_header(conn) do
+      nil -> request_era_for(conn, method, params)
+      name -> {:reject, :bad_request, -32_020, "Header mismatch: duplicate #{name} header.", nil}
+    end
+  end
+
+  # Mcp-Method / Mcp-Name are singletons the modern era routes on; a duplicate
+  # is ambiguous (intermediaries may pick different copies), so it fails closed
+  # here the way duplicate Authorization already does at this boundary. The
+  # protocol-version header's own duplicate rejection lives in
+  # `Transport.acceptable_protocol_version?/2`.
+  defp duplicated_routing_header(conn) do
+    Enum.find(~w(mcp-method mcp-name), &match?([_, _ | _], get_req_header(conn, &1)))
+  end
+
+  defp request_era_for(conn, method, params) do
     header_version = List.first(get_req_header(conn, "mcp-protocol-version"))
 
     case Transport.meta_protocol_version(params) do

@@ -28,7 +28,8 @@ defmodule EmisarWeb.MCP.ClientMetadata do
   value type, or exceeded limit.
   """
   def parse([]), do: {:ok, %{}}
-  def parse([raw | _]), do: parse(raw)
+  def parse([raw]), do: parse(raw)
+  def parse(values) when is_list(values), do: {:error, "duplicate Emisar-Client-Metadata header"}
   def parse(nil), do: {:ok, %{}}
 
   def parse(raw) when is_binary(raw) do

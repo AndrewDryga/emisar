@@ -20,10 +20,13 @@ defmodule EmisarWeb.MCP.Transport do
   @doc """
   True when the request's `Origin` is allowed: absent (server-to-server MCP
   clients, the stdio bridge, curl — none send a browser `Origin`) or exactly the
-  server's own origin. A present cross-origin value is rejected.
+  server's own origin. A present cross-origin value is rejected, and so is a
+  duplicated header: different intermediaries pick different copies, so an
+  ambiguous singleton fails closed instead of trusting whichever came first.
   """
   def allowed_origin?([], _allowed), do: true
-  def allowed_origin?([origin | _], allowed), do: origin == allowed
+  def allowed_origin?([origin], allowed), do: origin == allowed
+  def allowed_origin?(_values, _allowed), do: false
 
   @doc """
   True when the POST body is JSON. The `Content-Type` may carry parameters
@@ -32,16 +35,19 @@ defmodule EmisarWeb.MCP.Transport do
   rejects as an invalid request.
   """
   def json_content_type?([]), do: true
-  def json_content_type?([content_type | _]), do: media_type(content_type) == "application/json"
+  def json_content_type?([content_type]), do: media_type(content_type) == "application/json"
+  def json_content_type?(_values), do: false
 
   @doc """
   True when the client accepts a JSON response — absent `Accept` (treated as
   `*/*`), `*/*`, `application/*`, or an explicit `application/json`. A client
   that accepts only `text/event-stream` (an SSE-only request) can't be served by
-  this JSON-only endpoint.
+  this JSON-only endpoint. `Accept` is a legitimately repeatable header, so
+  every field value counts — HTTP treats repeated lines as one comma-joined
+  list, unlike the singleton headers above.
   """
   def accepts_json?([]), do: true
-  def accepts_json?([accept | _]), do: accepts_json_value?(accept)
+  def accepts_json?(accepts), do: Enum.any?(accepts, &accepts_json_value?/1)
 
   @doc """
   True when the `MCP-Protocol-Version` header is acceptable on a post-initialize
@@ -50,7 +56,8 @@ defmodule EmisarWeb.MCP.Transport do
   version in its JSON body, so its header is not validated here.
   """
   def acceptable_protocol_version?([], _supported), do: true
-  def acceptable_protocol_version?([version | _], supported), do: version in supported
+  def acceptable_protocol_version?([version], supported), do: version in supported
+  def acceptable_protocol_version?(_values, _supported), do: false
 
   @doc """
   The protocol version a 2026-07-28 request declares per-request in its
@@ -69,7 +76,7 @@ defmodule EmisarWeb.MCP.Transport do
   wrapped in the spec's `=?base64?…?=` sentinel and is decoded before the
   comparison; an absent or undecodable header never matches.
   """
-  def mcp_name_matches?([value | _], name) when is_binary(name),
+  def mcp_name_matches?([value], name) when is_binary(name),
     do: decode_header_value(value) == name
 
   def mcp_name_matches?(_values, _name), do: false

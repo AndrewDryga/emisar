@@ -961,6 +961,49 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert mismatched["error"]["code"] == -32_020
     end
 
+    test "modern requests reject duplicated routing headers, even with identical values", %{
+      raw: raw
+    } do
+      meta = %{"io.modelcontextprotocol/protocolVersion" => "2026-07-28"}
+      body = %{jsonrpc: "2.0", id: 1, method: "tools/list", params: %{"_meta" => meta}}
+
+      duplicated_method =
+        build_conn()
+        |> authorize(raw)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("mcp-protocol-version", "2026-07-28")
+        |> put_req_header("mcp-method", "tools/list")
+        |> add_req_header("mcp-method", "tools/list")
+        |> post(~p"/api/mcp/rpc", Jason.encode!(body))
+        |> json_response(400)
+
+      assert duplicated_method["error"]["code"] == -32_020
+      assert duplicated_method["error"]["message"] =~ "duplicate mcp-method"
+
+      duplicated_version =
+        build_conn()
+        |> authorize(raw)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("mcp-protocol-version", "2026-07-28")
+        |> add_req_header("mcp-protocol-version", "2026-07-28")
+        |> put_req_header("mcp-method", "tools/list")
+        |> post(~p"/api/mcp/rpc", Jason.encode!(body))
+        |> json_response(400)
+
+      assert duplicated_version["error"]["code"] == -32_022
+    end
+
+    test "a duplicated Origin header is rejected before auth", %{conn: conn} do
+      duplicated =
+        conn
+        |> put_req_header("origin", EmisarWeb.Endpoint.url())
+        |> add_req_header("origin", EmisarWeb.Endpoint.url())
+        |> rpc("initialize")
+        |> json_response(403)
+
+      assert duplicated["error"]["message"] =~ "Cross-origin"
+    end
+
     test "modern requests reject a missing or mismatched Mcp-Method header", %{raw: raw} do
       meta = %{"io.modelcontextprotocol/protocolVersion" => "2026-07-28"}
       body = %{jsonrpc: "2.0", id: 1, method: "tools/list", params: %{"_meta" => meta}}
@@ -1070,6 +1113,12 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   end
 
   defp authorize(conn, raw), do: put_req_header(conn, "authorization", "Bearer " <> raw)
+
+  # Appends without replacing — put_req_header/3 deduplicates, and the
+  # duplicate-singleton tests need the two-copy shape an intermediary can
+  # produce.
+  defp add_req_header(%Plug.Conn{req_headers: headers} = conn, name, value),
+    do: %{conn | req_headers: headers ++ [{name, value}]}
 
   defp modern_rpc(conn, method, params \\ %{}, extra_headers \\ []) do
     meta = %{"io.modelcontextprotocol/protocolVersion" => "2026-07-28"}
