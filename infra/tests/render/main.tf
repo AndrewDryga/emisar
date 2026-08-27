@@ -38,30 +38,13 @@ locals {
 
   admin_runner_start = templatefile("${path.module}/../../runtime/admin-runner/start.sh", {
     project_id                = local.common.project_id
-    runner_version            = "0.20.1"
+    runner_version            = trimspace(file("${path.module}/../../runtime/admin-runner/runner-version.txt"))
     enrollment_secret_version = "1"
     tfe_secret_version        = "2"
     sentry_secret_version     = "3"
     pinned_packs = join("\n", [
-      "cloud-init=0.1.12|sha256:d1225d74b75cf2bffb6ff61cb832a3086c3f23f66776b4d7138aa37776171222",
-      "debugging=0.2.17|sha256:cfc2f6aa83108c16bb2256f79dd01cbd03c068c686f5d6ca8749882084b19775",
-      "docker=0.2.17|sha256:f09ebfe9b5da673ecbfadd4d2d8a77b1ad2ec9af951c8c58ebeaaca21bdc0852",
-      "elixir-beam=0.1.4|sha256:d47cc9856e3585b20564a245d0d508237f2f5378684e7ba190db43473ebd6acd",
-      "gcp-certificates=0.1.0|sha256:da73325336f2d11cdff984948bf6f53fe34f43f1bce873c6e01e6a6fc38f792b",
-      "gcp-cloudsql=0.3.0|sha256:45cbc52c0088f28a747d80cb2c71879232cb97e95aab65e15efcdd4840c30b32",
-      "gcp-compute=0.2.0|sha256:8df5c0c0c759c0a491435e39bb00f91371f2711d54334a3114c097ad21c2c2b2",
-      "gcp-dns=0.2.0|sha256:4163dda5066fe4553d38a94d9b1f8eca62595cf7246ee3ef7900de57251ad99b",
-      "gcp-iam=0.1.0|sha256:c8bc2db792a56ae123ea865287e029a0ecf6e95e5790722dcae3ff01449d480b",
-      "gcp-load-balancing=0.1.0|sha256:d43b24b0767cb62752eb368314fec257755880f6ea860c453a76bf8c3ca5820b",
-      "gcp-monitoring=0.3.0|sha256:943bca4673613766ba4ccb593673ffda5d33a91a925aca6d1c02fc1232886c48",
-      "gcp-networking=0.1.0|sha256:8aeca131aa12cc7ee244a1c5bb7663a7434919e7f8a8406cd9206d0b9b02062f",
-      "gcp-storage=0.1.0|sha256:976ede94963f134ef0cca63eedd4bdb2dedde67d8e820feceac5a5a9c79a306b",
-      "hcp-terraform=0.8.0|sha256:5d753dced1595977ce9ec640dea0b26057ce95d38a6dfbcc27b3a0f4e4fc2592",
-      "linux-core=0.4.1|sha256:a5852885bec7b265c98bc897b6c45448d88c3cc92b098cd3d221b4c98e20edd4",
-      "nic=0.1.1|sha256:fe4e1d8a7e8633d57d95197103c8260d7b1273106595bae24c70efcacf65956d",
-      "sentry=0.1.0|sha256:8a33af4a63e08318ed0aad6afefbd3f5a1c84f9636e7a0de1f6a1ad902ef18ee",
-      "systemd-deep=0.1.15|sha256:a39bcb7a8172275a5870bf1e69ee4c13b7289f36312a66778d231368e9afdfcd",
-      "time-sync=0.1.9|sha256:717e790d5496ff76f9f5dad8fdb05aa08b476147d8e52a9a18579e14cf27f9b3",
+      for line in split("\n", trimspace(file("${path.module}/../../runtime/admin-runner/pack-pins.txt"))) :
+      line if line != "" && !startswith(line, "#")
     ])
   })
 
