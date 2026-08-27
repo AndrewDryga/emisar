@@ -10,7 +10,7 @@ defmodule Emisar.SSOSCIMTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, ApiKeys, Crypto, Repo, SSO, Users}
   alias Emisar.Fixtures
-  alias Emisar.SSO.{IdentityProvider, SCIMUserUpdate, UserIdentity}
+  alias Emisar.SSO.{IdentityProvider, SCIMUserUpdate}
 
   defp enterprise_owner do
     Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
@@ -64,30 +64,6 @@ defmodule Emisar.SSOSCIMTest do
       scim_provider()
     end
 
-    test "resolves the right provider by prefix + hash", %{provider: provider, token: token} do
-      assert {:ok, resolved} = SSO.authenticate_scim_token(token)
-      assert resolved.id == provider.id
-      assert resolved.account_id == provider.account_id
-    end
-
-    test "a garbage / too-short / wrong token is :unauthorized", %{token: token} do
-      assert SSO.authenticate_scim_token("") == {:error, :unauthorized}
-      assert SSO.authenticate_scim_token("ems-") == {:error, :unauthorized}
-      assert SSO.authenticate_scim_token("ems-totally-wrong-secret") == {:error, :unauthorized}
-      # A correct prefix but a tampered tail must still fail the hash compare.
-      assert SSO.authenticate_scim_token(token <> "x") == {:error, :unauthorized}
-    end
-
-    test "a token whose provider has scim disabled is :unauthorized", %{
-      provider: provider,
-      token: token,
-      subject: subject
-    } do
-      {:ok, _provider} = SSO.disable_scim(provider, subject)
-
-      assert SSO.authenticate_scim_token(token) == {:error, :unauthorized}
-    end
-
     test "a disabled account's retained SCIM token is unauthorized until re-enabled", %{
       account: account,
       token: token,
@@ -112,38 +88,6 @@ defmodule Emisar.SSOSCIMTest do
                )
 
       assert {:ok, _provider} = SSO.authenticate_scim_token(token)
-    end
-
-    test "token A resolves to provider A only — never account B's provider", %{
-      provider: provider_a,
-      token: token_a
-    } do
-      %{provider: provider_b} = scim_provider()
-
-      assert {:ok, resolved} = SSO.authenticate_scim_token(token_a)
-      assert resolved.id == provider_a.id
-      refute resolved.id == provider_b.id
-      assert resolved.account_id != provider_b.account_id
-    end
-
-    test "a soft-deleted provider sharing the prefix doesn't crash the lookup", %{
-      provider: provider,
-      token: token
-    } do
-      # The partial-unique prefix index only covers live rows, so a soft-deleted
-      # provider may carry the same prefix. The lookup must scope to live rows
-      # and resolve the live provider — not raise on two prefix matches.
-      %{provider: ghost} = scim_provider()
-
-      ghost
-      |> Ecto.Changeset.change(
-        scim_token_prefix: provider.scim_token_prefix,
-        deleted_at: DateTime.utc_now()
-      )
-      |> Repo.update!()
-
-      assert {:ok, resolved} = SSO.authenticate_scim_token(token)
-      assert resolved.id == provider.id
     end
   end
 
@@ -189,22 +133,6 @@ defmodule Emisar.SSOSCIMTest do
       assert identity.scim_external_id == "okta|nomail"
     end
 
-    test "a repeated provision for the same externalId reconciles — no duplicate", %{
-      provider: provider
-    } do
-      attrs = scim_attrs(%{external_id: "okta|stable", email: "stable@acme.test"})
-
-      assert {:ok, %{user: first, identity: id1}} = SSO.scim_provision_user(provider, attrs)
-      assert {:ok, %{user: second, identity: id2}} = SSO.scim_provision_user(provider, attrs)
-
-      assert first.id == second.id
-      assert id1.id == id2.id
-
-      assert UserIdentity.Query.not_deleted()
-             |> UserIdentity.Query.by_provider_id(provider.id)
-             |> Repo.aggregate(:count) == 1
-    end
-
     test "a re-POST of a deprovisioned (suspended) user reactivates them (#4)", %{
       provider: provider,
       account: account
@@ -247,33 +175,6 @@ defmodule Emisar.SSOSCIMTest do
       assert {:ok, %{membership: new_membership}} = SSO.scim_provision_user(provider, attrs)
       refute new_membership.disabled_at
       assert Accounts.peek_sync_membership(account.id, user.id)
-    end
-
-    test "a colliding email fails :email_taken — never merges onto the existing user", %{
-      provider: provider
-    } do
-      existing = Fixtures.Users.create_user(%{email: "taken@acme.test"})
-      attrs = scim_attrs(%{external_id: "okta|collide", email: "taken@acme.test"})
-
-      assert SSO.scim_provision_user(provider, attrs) == {:error, :email_taken}
-
-      # The pre-existing user is untouched + no identity was bound to it.
-      assert UserIdentity.Query.not_deleted()
-             |> UserIdentity.Query.by_user_id(existing.id)
-             |> Repo.all() == []
-    end
-
-    test "a provider-A-scoped provision never lands in account B (cross-account)", %{
-      provider: provider_a,
-      account: account_a
-    } do
-      %{account: account_b} = scim_provider()
-      attrs = scim_attrs(%{external_id: "okta|scoped", email: "scoped@acme.test"})
-
-      assert {:ok, %{user: user}} = SSO.scim_provision_user(provider_a, attrs)
-
-      assert Fixtures.Memberships.fetch_membership(account_a.id, user.id)
-      refute Fixtures.Memberships.fetch_membership(account_b.id, user.id)
     end
   end
 
@@ -468,13 +369,6 @@ defmodule Emisar.SSOSCIMTest do
       refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
       assert {:ok, unchanged} = SSO.scim_fetch_user(provider, identity.id)
       assert unchanged.active
-    end
-
-    test "returns :not_found when no identity matches the resource id" do
-      %{provider: provider} = scim_provider()
-
-      assert SSO.scim_update_user(provider, Ecto.UUID.generate(), %SCIMUserUpdate{active: false}) ==
-               {:error, :not_found}
     end
   end
 

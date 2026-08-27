@@ -6546,7 +6546,7 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "accept_invitation/3" do
-    test "sets the invitee's name + password, confirms them, and clears the token" do
+    test "sets the invitee's name, confirms them, and clears the token" do
       {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, %{membership: membership, user: invitee, invitation_token: token}} =
@@ -6559,13 +6559,12 @@ defmodule Emisar.AccountsTest do
           subject
         )
 
-      # The placeholder user is unconfirmed with no password until acceptance.
+      # The placeholder user is unconfirmed until acceptance proves the address.
       refute invitee.confirmed_at
 
       assert {:ok, %{user: %User{} = user, membership: %Membership{} = accepted}} =
                Accounts.accept_invitation(membership, token, %{
-                 "full_name" => "Accepted Member",
-                 "password" => "a-very-strong-password"
+                 "full_name" => "Accepted Member"
                })
 
       assert user.full_name == "Accepted Member"
