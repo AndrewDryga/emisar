@@ -1,6 +1,6 @@
 // Auto-advancing console screencasts (the /security approval-loop section) —
-// a "watch the console work" without a video file or a player library, same
-// reasoning as terminal_cast.js. Marketing pages are controller-rendered with
+// a "watch the console work" without a video file or a player library.
+// Marketing pages are controller-rendered with
 // no LiveSocket, so this is a plain DOM module. CSP-safe: bundled in
 // marketing.js (script-src 'self'), never inline, no innerHTML; the only
 // inline styles are CSSOM positions/transitions, which style-src does not
