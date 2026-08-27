@@ -855,6 +855,12 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true, "An operator removed a runner from the fleet (audit history is kept)."},
     "runner.error" =>
       {true, false, false, "A runner reported an internal error over its socket."},
+    "runner.version_rejected" =>
+      {true, false, false,
+       "A runner was refused because its version is below the enforced minimum."},
+    "runner.retention_swept" =>
+      {false, false, true,
+       "Runner retention removed runners no socket reached within the account's window."},
     "enrollment_key.created" =>
       {true, true, true, "An operator minted a runner bootstrap/enrollment key."},
     "enrollment_key.revoked" =>
@@ -873,6 +879,10 @@ defmodule Emisar.Audit.Event.Query do
     "api_key.retired_by_rotation" =>
       {true, false, true,
        "A rotated key's successor was used for the first time — the key it replaces was revoked automatically."},
+    "api_key.device_grant_approved" =>
+      {true, true, true, "An operator approved an agent's connect request and issued its key."},
+    "api_key.device_grant_denied" =>
+      {true, true, true, "An operator denied an agent's connect request — no key was issued."},
     "oauth.consent_granted" =>
       {true, true, true, "A user authorized an OAuth client to act on their behalf."},
     "oauth.refresh_token_reused" =>
@@ -980,6 +990,9 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true, "An admin changed which runners a member may target."},
     "policy.updated" =>
       {true, true, true, "An admin changed the action policy (tier defaults or overrides)."},
+    "policy.scope_deleted" =>
+      {true, true, true,
+       "An admin removed a runner or group override — that scope falls back to the account default."},
     "runbook.created" => {true, true, true, "An operator created a runbook draft."},
     "runbook.updated" => {true, true, true, "An operator edited a runbook (new version)."},
     "runbook.published" =>
@@ -1015,6 +1028,9 @@ defmodule Emisar.Audit.Event.Query do
     "approval.denied" => {true, true, true, "An approver denied a held action."},
     "approval.expired" =>
       {false, false, true, "A held approval request lapsed without a decision (system sweep)."},
+    "approval.decision_recorded" =>
+      {true, true, true,
+       "An approver cast a vote on a held action — the release itself is a separate event."},
     "approval.grant_used" =>
       {true, false, true, "A standing grant auto-approved a matching action."},
     "approval.grant_revoked" => {true, true, true, "An operator revoked a standing grant."},

@@ -684,6 +684,19 @@ defmodule Emisar.AuditTest do
       end
     end
 
+    # A type with no metadata entry falls to the default silently: its Type-picker
+    # hover pane renders blank, and applicable_filters/3 reads it as supporting
+    # neither Request ID nor Sign-in method, so selecting it HIDES facets the event
+    # actually populates. Six types had drifted this way.
+    test "every selectable event type carries a description" do
+      undescribed =
+        Audit.Event.Query.known_event_type_values()
+        |> Enum.map(&elem(&1, 0))
+        |> Enum.filter(&(Audit.Event.Query.event_type_description(&1) == ""))
+
+      assert undescribed == []
+    end
+
     test "the request_id filter matches an anchored prefix, with wildcards escaped", %{
       account: account,
       subject: subject
