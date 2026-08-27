@@ -148,20 +148,5 @@ func descriptorFor(a *actionspec.Action) ActionDescriptor {
 		PackID:                     a.PackID,
 		PrimaryExecutableAvailable: primaryExecutableAvailable,
 		MissingExecutable:          missingExecutable,
-		Limits: DescriptorLimits{
-			DefaultTimeout: a.Execution.Timeout,
-			TimeoutMin:     a.Execution.TimeoutMin,
-			TimeoutMax:     a.Execution.TimeoutMax,
-		},
-		Output: DescriptorOutput{
-			Parser:            a.Output.Parser,
-			ParserRequired:    a.Output.ParserRequired,
-			MaxStdoutBytes:    a.Output.MaxStdoutBytes,
-			MaxStdoutBytesMin: a.Output.MaxStdoutBytesMin,
-			MaxStdoutBytesMax: a.Output.MaxStdoutBytesMax,
-			MaxStderrBytes:    a.Output.MaxStderrBytes,
-			MaxStderrBytesMin: a.Output.MaxStderrBytesMin,
-			MaxStderrBytesMax: a.Output.MaxStderrBytesMax,
-		},
 	}
 }

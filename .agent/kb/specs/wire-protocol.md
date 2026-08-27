@@ -160,9 +160,7 @@ portal ignores the field, and an older runner never sends it.
       "description": "Runs nodetool status and returns the bounded result.",
       "side_effects": [],
       "args": [],
-      "primary_executable_available": true,
-      "limits": {"default_timeout": 60000000000},
-      "output": {"parser": "text", "max_stdout_bytes": 16384, "max_stderr_bytes": 16384}
+      "primary_executable_available": true
     }
   ]
 }
@@ -172,8 +170,9 @@ Runner advertisements prove deployment only. MCP model-facing descriptors come
 from the trusted manifest for the exact pack hash — the manifest the account
 currently trusts, whether that trust was auto-pinned from the configured
 published catalog or decided by an operator. A mismatch excludes that
-runner/action from execution. Descriptor timeout fields are integer
-nanoseconds, matching Go's `time.Duration` wire representation.
+runner/action from execution. Timeout and output-cap limits are not
+advertised: the runner enforces them locally from the loaded pack YAML, and
+the trusted manifest owns every execution semantic the portal reasons about.
 
 ## `run_action`
 
@@ -306,10 +305,10 @@ load-bearing: `concurrency_cap_reached` means the runner is already at
 run rather than failing it. Treat it as a contract, not a diagnostic — the wire
 golden pins it. The portal finalizes it idempotently. It carries terminal status, exit code,
 duration, emitted stream hashes/counts, total and dropped progress-chunk counts,
-truncation flags, redaction counts, masked executed command, reason, and the
-local audit event ID. The portal does not currently persist `redactions`: those
-per-rule hit counts exist in the runner's local journal only, so "was anything
-masked in this run, and by which rule" is an on-host question today. A successful action with an opted-in `output.schema` also
+truncation flags, masked executed command, reason, and the
+local audit event ID. Per-rule redaction hit counts exist in the runner's
+local journal only — they are not on the wire — so "was anything masked in
+this run, and by which rule" is an on-host question. A successful action with an opted-in `output.schema` also
 carries `structured_output`: one JSON object, validated after runner-side
 redaction and bounded to 8 KiB, 16 nesting levels, and 1,024 values. It is
 omitted for every non-success result and every action without an output schema.
