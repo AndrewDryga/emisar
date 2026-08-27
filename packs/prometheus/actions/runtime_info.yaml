@@ -13,7 +13,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -fsS --globoff --proto =http,https \"${PROM_URL:-http://127.0.0.1:9090}/api/v1/status/runtimeinfo\""
+      - "curl -q -fsS --globoff --proto =http,https \"${PROM_URL:-http://127.0.0.1:9090}/api/v1/status/runtimeinfo\""
   timeout: 15s
 output:
   parser: json

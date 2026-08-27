@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -fsS --globoff --proto =http,https \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/listeners\""
+      - "curl -q -fsS --globoff --proto =http,https \"${ENVOY_ADMIN:-http://127.0.0.1:9901}/listeners\""
   timeout: 15s
 output:
   parser: text

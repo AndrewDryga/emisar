@@ -2,6 +2,9 @@ services:
   runner-tools:
     volumes:
       - ${EMISAR_ROOT}/packs/prometheus/test/fixtures/curl-spy.sh:/usr/local/bin/curl:ro
+      # A snapshot's only observable effect is a directory under the TSDB path,
+      # so the probe has to see the same storage the SUT writes.
+      - prometheus-data:/prometheus:ro
 
   prometheus:
     image: prom/prometheus:${PACKTEST_VERSION:-v3.13.1}${PACKTEST_DIGEST-}
@@ -9,11 +12,19 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --web.enable-lifecycle
       - --web.enable-admin-api
+      # Overriding command: drops the image's own default, and Prometheus then
+      # falls back to a path relative to its working directory. State it so the
+      # snapshot probe reads the same directory the SUT writes.
+      - --storage.tsdb.path=/prometheus
     volumes:
       - ${EMISAR_ROOT}/packs/prometheus/test/fixtures/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- 'http://localhost:9090/api/v1/query?query=up' | grep -q '\"job\":\"prometheus\"'"]
       interval: 2s
       start_period: 30s
       start_interval: 1s
       retries: 30
+
+volumes:
+  prometheus-data:

@@ -21,7 +21,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "curl -fsS --globoff --proto =http,https -X POST \"${VECTOR_API:-http://127.0.0.1:8686}/graphql\" -H 'Content-Type: application/json' --data '{\"query\":\"query { sources { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } } } } } transforms { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } } } } } sinks { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } sentBytesTotal { sentBytesTotal } } } } } }\"}'"
+      - "curl -q -fsS --globoff --proto =http,https -X POST \"${VECTOR_API:-http://127.0.0.1:8686}/graphql\" -H 'Content-Type: application/json' --data '{\"query\":\"query { sources { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } } } } } transforms { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } } } } } sinks { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } sentBytesTotal { sentBytesTotal } } } } } }\"}'"
   timeout: 20s
 output:
   parser: json

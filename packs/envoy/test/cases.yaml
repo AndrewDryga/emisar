@@ -1,7 +1,4 @@
 services: [envoy]
-risk_accountability:
-  exceptions:
-    envoy.drain_listeners: requires_external_service
 versions:
   - version: v1.39.0
     digest: "@sha256:d59f7f5fa10cff6d5892b6c5e7df5c9297ddfb2c3683e33fbfb82da24de4fa66"
@@ -61,3 +58,33 @@ cases:
     args: {filter: server}
     expect:
       stdout_contains: [server.]
+
+  # Both branches of the drain argv run: they are separate curl invocations, so
+  # one case can only ever prove one of them. The data-plane port is the state
+  # each drains — it serves "pack-test ok" until the listener stops accepting.
+  - action: envoy.drain_listeners
+    args: {admin: "http://envoy:9901"}
+    expect:
+      stdout_contains: [OK]
+    probes:
+      - name: the data-plane listener stops accepting connections
+        argv: [/bin/sh, -c, "curl -s -m 5 http://envoy:10000/ || echo listener-drained"]
+        retry_for: 30s
+        retry_every: 2s
+        expect:
+          stdout_contains: [listener-drained]
+          stdout_not_contains: ["pack-test ok"]
+
+  - name: envoy.drain-listeners-inbound-only
+    action: envoy.drain_listeners
+    args: {admin: "http://envoy:9901", inboundonly: true}
+    expect:
+      stdout_contains: [OK]
+    probes:
+      - name: the inbound listener stops accepting connections
+        argv: [/bin/sh, -c, "curl -s -m 5 http://envoy:10000/ || echo listener-drained"]
+        retry_for: 30s
+        retry_every: 2s
+        expect:
+          stdout_contains: [listener-drained]
+          stdout_not_contains: ["pack-test ok"]
