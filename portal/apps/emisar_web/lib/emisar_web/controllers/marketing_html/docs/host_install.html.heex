@@ -163,9 +163,9 @@
             <%= for {name, meaning} <- [
               {"EMISAR_URL", "The control plane to enroll against, baked into config.yaml. Defaults to https://emisar.dev; set it only for a test or evaluation portal."},
               {"EMISAR_ENROLLMENT_KEY", "The emkey-enroll-… key the runner exchanges for its own token on first connect."},
-              {"RUNNER_GROUP", "How the console groups runners, written to runner.group. Defaults to the host's short hostname."},
-              {"RUNNER_ID", "Registers the runner under a declared name and identity, written to runner.id. Defaults to the hostname — declare one for containers and hosts with colliding hostnames."},
-              {"RUNNER_LABEL_<KEY>", "Bake a free-form runner label into config.yaml. For example, use RUNNER_LABEL_ROLE=web or RUNNER_LABEL_ENVIRONMENT=prod. The console filters and searches these labels."},
+              {"EMISAR_GROUP", "How the console groups runners, written to runner.group. Defaults to the host's short hostname."},
+              {"EMISAR_RUNNER_ID", "Registers the runner under a declared name and identity, written to runner.id. Defaults to the hostname — declare one for containers and hosts with colliding hostnames."},
+              {"EMISAR_RUNNER_LABEL_<KEY>", "Bake a free-form runner label into config.yaml. For example, use EMISAR_RUNNER_LABEL_ROLE=web or EMISAR_RUNNER_LABEL_ENVIRONMENT=prod. The console filters and searches these labels."},
               {"--packs LIST", "Install named packs during setup. For example, use --packs linux-core,docker."},
               {"-y / --yes", "Skip the confirmation prompts for unattended installs. Requires an explicit --packs LIST or EMISAR_PACKS (an empty value installs none)."},
               {"--version TAG", "Pin a specific release instead of latest."},

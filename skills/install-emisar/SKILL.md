@@ -40,7 +40,7 @@ Verify commands before running them:
   expired, or revoked; a `409` means another runner already holds this name,
   which a rebuilt host or a restored image produces — a runner's name defaults
   to its hostname and cannot be renamed, so the operator deletes the existing
-  runner or sets `runner.id` (`RUNNER_ID` at install) to register under a
+  runner or sets `runner.id` (`EMISAR_RUNNER_ID` at install) to register under a
   declared name; a `402` means
   the account is at its plan's runner limit. `https://emisar.dev/docs/troubleshooting`
   covers each symptom and its check.
@@ -173,9 +173,9 @@ bash "$installer" --help
 sudo env \
   EMISAR_URL="$EMISAR_URL" \
   EMISAR_ENROLLMENT_KEY="$EMISAR_ENROLLMENT_KEY" \
-  RUNNER_GROUP="$RUNNER_GROUP" \
-  RUNNER_LABEL_ROLE="$RUNNER_ROLE" \
-  RUNNER_LABEL_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+  EMISAR_GROUP="$EMISAR_GROUP" \
+  EMISAR_RUNNER_LABEL_ROLE="$RUNNER_ROLE" \
+  EMISAR_RUNNER_LABEL_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
   EMISAR_PACKS='' \
   bash "$installer" --yes --version "$RUNNER_VERSION"
 unset EMISAR_ENROLLMENT_KEY

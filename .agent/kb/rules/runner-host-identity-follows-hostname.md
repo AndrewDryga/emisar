@@ -12,7 +12,7 @@ updated: 2026-08-22
 
 When `runner.id` is unset, the runner presents the current hostname as its
 external identity, and the control plane names it after that hostname. A
-declared `runner.id` (or `RUNNER_ID` at install) is the operator's ONE handle:
+declared `runner.id` (or `EMISAR_RUNNER_ID` at install) is the operator's ONE handle:
 it becomes both the identity and the console name, while the reported hostname
 stays the truthful OS fact — never overridden, so the fleet page always shows
 the real machine. Never mint or persist a separate GENERATED identity for the

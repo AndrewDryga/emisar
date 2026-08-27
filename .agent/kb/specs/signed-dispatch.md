@@ -131,7 +131,7 @@ param  = "group=" value / "label." key "=" value
 Keys and values are percent-encoded on the same terms: anything outside RFC 3986
 `unreserved` is encoded, with uppercase hex and minimal encoding. Keys are
 encoded too because a runner label key is free-form operator input —
-`runner.labels` is a bare YAML map plus `RUNNER_LABEL_<KEY>` env, with no
+`runner.labels` is a bare YAML map plus `EMISAR_RUNNER_LABEL_<KEY>` env, with no
 charset the config layer enforces. No query at all means the empty scope: valid
 on any runner that trusts the anchor.
 

@@ -109,6 +109,68 @@ func TestRunVerifiesReleaseAndHandsItToInstaller(t *testing.T) {
 	}
 }
 
+// A runner's group, id and labels decide where dispatch reaches it. They are
+// install-time inputs, so an ambient value in root's environment must not
+// silently re-target the host on `sudo emisar update` — the update re-runs the
+// installer, which would bake whatever it inherits into config.yaml.
+func TestRunStripsIdentityOverridesFromTheInstallerHandoff(t *testing.T) {
+	root := t.TempDir()
+	executable := writeReceiptFixture(t, root, officialRepository)
+	name := fmt.Sprintf("emisar-0.19.0-%s-%s", runtime.GOOS, runtime.GOARCH)
+	archive := releaseArchive(t, name, map[string]archiveEntry{
+		name + "/emisar":     {body: "runner-binary", mode: 0o755},
+		name + "/install.sh": {body: "#!/usr/bin/env bash\n", mode: 0o755},
+	})
+	digest := sha256.Sum256(archive)
+	archiveName := name + ".tar.gz"
+	checksums := hex.EncodeToString(digest[:]) + "  " + archiveName + "\n"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/latest.json":
+			fmt.Fprint(w, `{"schema_version":1,"component":"runner","tag":"runner-v0.19.0","version":"0.19.0","source_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)
+		case strings.HasSuffix(r.URL.Path, "/"+archiveName):
+			w.Write(archive)
+		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
+			fmt.Fprint(w, checksums)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("EMISAR_GROUP", "hijacked-group")
+	t.Setenv("EMISAR_RUNNER_ID", "hijacked-id")
+	t.Setenv("EMISAR_RUNNER_LABEL_ROLE", "hijacked-label")
+
+	var commandEnv []string
+	deps := testDependencies(executable)
+	deps.releaseBase = server.URL
+	deps.apiBase = server.URL
+	deps.downloadBase = server.URL
+	deps.httpClient = server.Client()
+	deps.tempRoot = root
+	deps.runCommand = func(_ context.Context, _ string, _, env []string, _, _ io.Writer) error {
+		commandEnv = append([]string(nil), env...)
+		return nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run(context.Background(), Options{
+		CurrentVersion: "0.18.0",
+		Stdout:         &stdout,
+		Stderr:         &stderr,
+	}, deps)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	for _, item := range commandEnv {
+		if strings.Contains(item, "hijacked-") {
+			t.Errorf("identity override reached the installer handoff: %q", item)
+		}
+	}
+}
+
 func TestRunFallsBackToImmutableGitHubMirrorWhenEmisarDownloadFails(t *testing.T) {
 	root := t.TempDir()
 	executable := writeReceiptFixture(t, root, officialRepository)

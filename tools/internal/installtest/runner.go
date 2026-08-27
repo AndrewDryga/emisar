@@ -508,8 +508,8 @@ func runnerInstallRollback(h *harness) error {
 		return err
 	}
 	failureEnv := map[string]string{
-		"EMISAR_PACKS":      "",
-		"RUNNER_LABEL_ROLE": "invalid label",
+		"EMISAR_PACKS":             "",
+		"EMISAR_RUNNER_LABEL_ROLE": "invalid label",
 	}
 	failure := h.command(h.root, failureEnv, "bash",
 		h.repoPath("install.sh"), "--yes", "--no-service", "--version", "runner-v"+version,
@@ -888,7 +888,7 @@ rollback_service
 	return nil
 }
 
-// runnerIDOverride proves RUNNER_ID lands as runner.id in the generated
+// runnerIDOverride proves EMISAR_RUNNER_ID lands as runner.id in the generated
 // config — the runner's declared name and identity — and that an unset
 // variable emits no id line at all.
 func runnerIDOverride(h *harness) error {
@@ -899,7 +899,7 @@ func runnerIDOverride(h *harness) error {
 		"EMISAR_URL": "", "EMISAR_ENROLLMENT_KEY": "",
 	}
 
-	withOverride := map[string]string{"RUNNER_ID": "web-01"}
+	withOverride := map[string]string{"EMISAR_RUNNER_ID": "web-01"}
 	for k, v := range base {
 		withOverride[k] = v
 	}
@@ -910,7 +910,7 @@ func runnerIDOverride(h *harness) error {
 		return err
 	}
 	if !strings.Contains(string(output), "id: web-01") {
-		return fmt.Errorf("RUNNER_ID did not land in the config skeleton:\n%s", output)
+		return fmt.Errorf("EMISAR_RUNNER_ID did not land in the config skeleton:\n%s", output)
 	}
 
 	result = h.functions(h.repoPath("install.sh"), []string{"config_skeleton", "safe_config_value"},
@@ -920,7 +920,7 @@ func runnerIDOverride(h *harness) error {
 		return err
 	}
 	if strings.Contains(string(output), "\n  id:") {
-		return fmt.Errorf("unset RUNNER_ID still emitted an id line:\n%s", output)
+		return fmt.Errorf("unset EMISAR_RUNNER_ID still emitted an id line:\n%s", output)
 	}
 	return nil
 }
@@ -931,7 +931,7 @@ func runnerIDOverride(h *harness) error {
 // Labels, the runner group and the cloud URL all land inside YAML scalars. A
 // quote does not corrupt the file, it ADDS to it — and a newline injects whole
 // config KEYS: cloud.url, paths.packs, admission. Cloud-init rendering an
-// instance tag into RUNNER_LABEL_* is the realistic source, so this is not a
+// instance tag into EMISAR_RUNNER_LABEL_* is the realistic source, so this is not a
 // hypothetical hostile operator.
 func runnerConfigValueValidation(h *harness) error {
 	accepted := []string{"web", "us-east-1", "prod_2", "wss://emisar.dev", "host.example.net"}

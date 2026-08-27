@@ -290,7 +290,7 @@ type Scope struct {
 // Canonical means one spelling per scope: parameters sorted bytewise, and
 // every key and value percent-encoded minimally with uppercase hex. Keys are
 // encoded on the same terms as values because a runner label key is free-form
-// operator input — `runner.labels` is a bare YAML map and RUNNER_LABEL_<KEY>
+// operator input — `runner.labels` is a bare YAML map and EMISAR_RUNNER_LABEL_<KEY>
 // env, with no charset the config layer enforces.
 func EncodeScopeURI(s Scope) (string, error) {
 	params := make([]string, 0, len(s.Labels)+1)

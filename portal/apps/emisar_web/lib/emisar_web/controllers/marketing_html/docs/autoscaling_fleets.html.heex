@@ -62,7 +62,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Set
-        <.docs_inline_code>RUNNER_GROUP</.docs_inline_code>
+        <.docs_inline_code>EMISAR_GROUP</.docs_inline_code>
         in the boot
         script to set the instance's fleet tier. Runbooks and runner scopes then target the fleet
         instead of one host.
@@ -130,13 +130,13 @@
         phx-no-format
         label="emisar-boot.sh"
         copy_text="export EMISAR_ENROLLMENT_KEY=&quot;$(your-secret-tool read emisar/enrollment-key)&quot;
-curl -fsSL https://emisar.dev/install.sh | sudo -E env RUNNER_GROUP=web bash -s -- --yes --packs linux-core"
+curl -fsSL https://emisar.dev/install.sh | sudo -E env EMISAR_GROUP=web bash -s -- --yes --packs linux-core"
       ><span class="text-zinc-500">#!/usr/bin/env bash</span>
 <span class="text-zinc-500"># the key reaches the environment, never argv</span>
 export EMISAR_ENROLLMENT_KEY="<span class="text-brand-300">$(your-secret-tool read emisar/enrollment-key)</span>"
 
 curl -fsSL https://emisar.dev/install.sh \
-  | sudo -E env RUNNER_GROUP=<span class="text-brand-300">web</span> \
+  | sudo -E env EMISAR_GROUP=<span class="text-brand-300">web</span> \
       bash -s -- --yes --packs linux-core</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The command line then does not carry the secret, and only root can read the key. The
@@ -162,20 +162,20 @@ curl -fsSL https://emisar.dev/install.sh \
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
-          <span><.docs_inline_code>RUNNER_GROUP</.docs_inline_code>
+          <span><.docs_inline_code>EMISAR_GROUP</.docs_inline_code>
           sets which fleet the runner joins.</span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>RUNNER_LABEL_*</.docs_inline_code>
-            variables add free-form labels — <.docs_inline_code>RUNNER_LABEL_ROLE=web</.docs_inline_code>.
+            <.docs_inline_code>EMISAR_RUNNER_LABEL_*</.docs_inline_code>
+            variables add free-form labels — <.docs_inline_code>EMISAR_RUNNER_LABEL_ROLE=web</.docs_inline_code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>RUNNER_ID</.docs_inline_code>
+            <.docs_inline_code>EMISAR_RUNNER_ID</.docs_inline_code>
             sets the name and identity the runner registers under, when the image's own
             hostnames are generated or repeat.
           </span>

@@ -121,17 +121,19 @@ Flags:
 Env vars accepted: VERSION, BIN_DIR, ETC_DIR, DATA_DIR, LOG_DIR,
 SERVICE_USER, SERVICE_GROUP, ASSUME_YES, EMISAR_PACKS, NO_START,
 NO_SERVICE, EMISAR_REPO, EMISAR_GITHUB_TOKEN, EMISAR_URL,
-EMISAR_ENROLLMENT_KEY, RUNNER_GROUP, RUNNER_ID, RUNNER_LABEL_<KEY>.
+EMISAR_ENROLLMENT_KEY, EMISAR_GROUP, EMISAR_RUNNER_ID, EMISAR_RUNNER_LABEL_<KEY>.
 
 EMISAR_URL + EMISAR_ENROLLMENT_KEY are baked into config.yaml + runner.env
 at install time so the runner boots without a follow-up edit. EMISAR_URL
 defaults to https://emisar.dev — the hosted control plane is the supported
 product, and the variable exists for test and evaluation portals.
-RUNNER_GROUP defaults to `hostname -s`. RUNNER_ID registers the runner
+EMISAR_GROUP defaults to `hostname -s`. EMISAR_RUNNER_ID registers the runner
 under a declared name and identity instead of the hostname — for
-containers and hosts with colliding hostnames. Each RUNNER_LABEL_<KEY>=<value>
-(e.g. RUNNER_LABEL_ROLE=web) is baked in as a runner label the console
-filters on; set as many as you like.
+containers and hosts with colliding hostnames. Each EMISAR_RUNNER_LABEL_<KEY>=<value>
+(e.g. EMISAR_RUNNER_LABEL_ROLE=web) is baked in as a runner label the console
+filters on; set as many as you like. EMISAR_GROUP and EMISAR_RUNNER_ID are the
+same names the runner itself reads at boot, so one spelling works whether you
+install on a host or set it on a container.
 
 Setting EMISAR_PACKS (the env form of --packs), even to an empty string,
 makes the pack list explicit: the installer installs exactly those packs
@@ -262,7 +264,7 @@ die()   { printf '\033[1;31m[install]\033[0m %s\n' "$*" >&2; exit 1; }
 # These land inside YAML scalars. A value carrying a quote does not corrupt the
 # file — it ADDS to it, and a newline injects whole config KEYS: `cloud.url`,
 # `paths.packs`, `admission`. Cloud-init rendering an instance tag straight into
-# RUNNER_LABEL_* is the realistic source, so this is not a hypothetical hostile
+# EMISAR_RUNNER_LABEL_* is the realistic source, so this is not a hypothetical hostile
 # operator. Failing here also beats the alternative, which was a runner that
 # installs cleanly and then refuses to parse its own config on first boot.
 safe_config_value() {
@@ -627,11 +629,11 @@ config_skeleton() {
   # images where neither `hostname -s` nor `/etc/hostname` is populated.
   local default_group
   default_group="$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo emisar-runner)"
-  local group="${RUNNER_GROUP:-${default_group}}"
+  local group="${EMISAR_GROUP:-${default_group}}"
   safe_config_value "${group}" ||
     die "runner group has characters that cannot be written to config.yaml: ${group}"
-  [ -z "${RUNNER_ID:-}" ] || safe_config_value "${RUNNER_ID}" ||
-    die "RUNNER_ID has characters that cannot be written to config.yaml: ${RUNNER_ID}"
+  [ -z "${EMISAR_RUNNER_ID:-}" ] || safe_config_value "${EMISAR_RUNNER_ID}" ||
+    die "EMISAR_RUNNER_ID has characters that cannot be written to config.yaml: ${EMISAR_RUNNER_ID}"
   [ -z "${cloud_url}" ] || safe_config_value "${cloud_url}" ||
     die "EMISAR_URL has characters that cannot be written to config.yaml: ${EMISAR_URL:-}"
   cat <<EOF
@@ -640,26 +642,26 @@ schema_version: 1
 runner:
   # group is the console's auto-grouping key. Defaults to the host's
   # short hostname; override by editing this line or by passing
-  # RUNNER_GROUP=... to install.sh next time.
+  # EMISAR_GROUP=... to install.sh next time.
   group: ${group}
 EOF
-  if [ -n "${RUNNER_ID:-}" ]; then
+  if [ -n "${EMISAR_RUNNER_ID:-}" ]; then
     cat <<EOF
   # id is this runner's declared name + identity in the console; it
   # defaults to the hostname when unset.
-  id: ${RUNNER_ID}
+  id: ${EMISAR_RUNNER_ID}
 EOF
   fi
   cat <<EOF
   labels:
     # Free-form tags. The console uses these for filtering / search.
-    # Set RUNNER_LABEL_<KEY>=<value> at install time to bake them in
-    # (e.g. RUNNER_LABEL_ROLE=web), or uncomment + edit below.
+    # Set EMISAR_RUNNER_LABEL_<KEY>=<value> at install time to bake them in
+    # (e.g. EMISAR_RUNNER_LABEL_ROLE=web), or uncomment + edit below.
 EOF
   local label_var label_key wrote_label=0
-  for label_var in "${!RUNNER_LABEL_@}"; do
+  for label_var in "${!EMISAR_RUNNER_LABEL_@}"; do
     [ -n "${!label_var}" ] || continue
-    label_key="$(printf '%s' "${label_var#RUNNER_LABEL_}" | tr '[:upper:]' '[:lower:]')"
+    label_key="$(printf '%s' "${label_var#EMISAR_RUNNER_LABEL_}" | tr '[:upper:]' '[:lower:]')"
     [ -n "$label_key" ] || continue
     safe_config_value "${label_key}" ||
       die "${label_var}: label name has characters that cannot be written to config.yaml"
@@ -1166,21 +1168,21 @@ drop_config_skeleton() {
     NEEDS_CONFIGURATION="${needs}"
   else
     # Config exists — preserve the operator's file. But an explicitly
-    # passed RUNNER_GROUP is a deliberate provisioning instruction, so
+    # passed EMISAR_GROUP is a deliberate provisioning instruction, so
     # honor it by rewriting only the runner.group line; nothing else is
     # touched. EMISAR_URL still applies only on a fresh install; an explicitly
     # supplied enrollment key is handled separately below.
-    if [ -n "${RUNNER_GROUP:-}" ] && \
-       printf '%s' "${RUNNER_GROUP}" | grep -qE '^[A-Za-z0-9._-]+$'; then
+    if [ -n "${EMISAR_GROUP:-}" ] && \
+       printf '%s' "${EMISAR_GROUP}" | grep -qE '^[A-Za-z0-9._-]+$'; then
       if grep -qE '^[[:space:]]*group:[[:space:]]' "${cfg}"; then
-        sed -i.bak "s|^\([[:space:]]*\)group:[[:space:]].*|\1group: ${RUNNER_GROUP}|" "${cfg}"
+        sed -i.bak "s|^\([[:space:]]*\)group:[[:space:]].*|\1group: ${EMISAR_GROUP}|" "${cfg}"
         rm -f "${cfg}.bak"
-        log "config exists at ${cfg}; set runner.group=${RUNNER_GROUP} (rest untouched)"
+        log "config exists at ${cfg}; set runner.group=${EMISAR_GROUP} (rest untouched)"
       else
         warn "config at ${cfg} has no 'group:' line; set runner.group by hand"
       fi
-    elif [ -n "${RUNNER_GROUP:-}" ]; then
-      warn "RUNNER_GROUP='${RUNNER_GROUP}' has unexpected characters; not editing ${cfg}"
+    elif [ -n "${EMISAR_GROUP:-}" ]; then
+      warn "EMISAR_GROUP='${EMISAR_GROUP}' has unexpected characters; not editing ${cfg}"
     else
       log "config exists at ${cfg}; leaving untouched"
     fi

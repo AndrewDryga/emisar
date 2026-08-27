@@ -643,7 +643,8 @@ func installerInvocation(bundle, tag string, receipt receipt) ([]string, []strin
 	env := make([]string, 0, len(os.Environ())+8)
 	for _, item := range os.Environ() {
 		key, _, _ := strings.Cut(item, "=")
-		if blocked[key] || strings.HasPrefix(key, "RUNNER_LABEL_") || key == "RUNNER_GROUP" {
+		if blocked[key] || strings.HasPrefix(key, "EMISAR_RUNNER_LABEL_") ||
+			key == "EMISAR_GROUP" || key == "EMISAR_RUNNER_ID" {
 			continue
 		}
 		env = append(env, item)
