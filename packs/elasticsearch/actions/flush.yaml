@@ -1,13 +1,12 @@
 schema_version: 1
-id: es.flush_synced
+id: es.flush
 title: POST /<index>/_flush (flush index)
 kind: exec
 risk: medium
 description: >
   Flush the index — forces a Lucene commit so the translog is cleared, which
-  speeds recovery if a shard later restarts. Plain flush; the synced-flush API
-  (/_flush/synced, sync IDs) was deprecated in 7.6 and removed in ES 8.0 — a
-  normal flush gives the same recovery benefit there.
+  speeds recovery if a shard later restarts. (Looking for synced flush? That
+  API was removed in ES 8.0; a normal flush gives the same recovery benefit.)
 side_effects:
   - Brief pause to write segments to disk.
 args:

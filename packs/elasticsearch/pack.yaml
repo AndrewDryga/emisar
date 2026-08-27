@@ -2,10 +2,10 @@ schema_version: 1
 
 id: elasticsearch
 name: Elasticsearch / OpenSearch ops
-version: 0.1.16
+version: 0.1.17
 description: >
   Cluster + index introspection plus narrow mutators (cache_clear,
-  force_merge, flush_synced, close_index). Auth via ELASTIC_USER +
+  force_merge, flush, close_index). Auth via ELASTIC_USER +
   ELASTIC_PASSWORD env vars on the runner host. Does NOT include
   delete_index — too easy to misuse.
 vendor: emisar
@@ -48,7 +48,7 @@ setup:
     - "Create the user in Kibana under Stack Management → Security → Users, or with bin/elasticsearch-users useradd on a self-managed node. The reads need the monitor cluster privilege plus read on the target indices."
     - curl does not read these on its own; the actions build the -u credential and the URL from them, so all three must be allowlisted in `inherit_env`.
     - For a cluster without security enabled, point `ELASTIC_URL` at the HTTP endpoint and set `ELASTIC_USER` / `ELASTIC_PASSWORD` to any non-empty placeholder — the basic-auth header is sent unconditionally.
-    - Mutators (cache_clear, force_merge, flush_synced, close_index) need a role with manage privileges on the target indices.
+    - Mutators (cache_clear, force_merge, flush, close_index) need a role with manage privileges on the target indices.
   verify: es.cluster_health
 
 actions:
@@ -76,5 +76,5 @@ actions:
   # Mutators
   - actions/cache_clear.yaml
   - actions/force_merge.yaml
-  - actions/flush_synced.yaml
+  - actions/flush.yaml
   - actions/close_index.yaml
