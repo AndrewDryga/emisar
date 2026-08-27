@@ -36,8 +36,9 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A policy can define per-action overrides. It walks the ordered list of action ID
         patterns — for example,
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">nomad.job_*</code>
-        requires approval, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">*.delete_*</code>
+        <.docs_inline_code>nomad.job_*</.docs_inline_code>
+        requires approval,
+        <.docs_inline_code>*.delete_*</.docs_inline_code>
         denies. The first match wins, so put the most specific patterns first.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -70,7 +71,7 @@
         </li>
         <li>
           Deny anything you never want an agent to touch
-          (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">*.purge_*</code>
+          (<.docs_inline_code>*.purge_*</.docs_inline_code>
           → <code class="text-red-400">deny</code>) — a written rule beats everyone
           remembering.
         </li>
@@ -143,7 +144,7 @@
         <p>
           Give the <strong class="text-zinc-200">staging</strong>
           group a ruleset that sets every tier to
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs text-brand-300">allow</code>
+          <.docs_inline_code class="text-brand-300">allow</.docs_inline_code>
           with no approvals. An agent can reproduce a bug, test a fix, and verify the result
           without waiting — and the production change it hands you is still held for approval
           by your stricter default.
@@ -194,7 +195,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             An LLM waiting on an approval long-polls
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
+            <.docs_inline_code>wait_for_run</.docs_inline_code>
             and picks the result up the moment a human decides.
           </span>
         </li>
@@ -210,7 +211,7 @@
       <.docs_h2 id="standing-grants">Standing grants</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Approving the same
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">nomad job revert</code>
+        <.docs_inline_code>nomad job revert</.docs_inline_code>
         for each of 20 allocations helps nobody. When you approve, choose a duration —
         <strong class="text-zinc-200">once</strong>
         for this run only, or a standing grant for
@@ -242,16 +243,16 @@
 
       <.docs_h2 id="reason">The reason requirement</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Every dispatch — console or MCP — must include a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>.
+        Every dispatch — console or MCP — must include a <.docs_inline_code>reason</.docs_inline_code>.
         Approvers see it, and the run and audit event keep it. For an agent, the reason says
-        why it ran <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">nomad job revert</code>;
+        why it ran <.docs_inline_code>nomad job revert</.docs_inline_code>;
         the action name only says what.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         An MCP caller can also send
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">evidence</code>
+        <.docs_inline_code>evidence</.docs_inline_code>
         — prior findings or run IDs that informed the call — and
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">expected</code>
+        <.docs_inline_code>expected</.docs_inline_code>
         — the outcome that confirms success. Together with the reason, they preserve what the
         agent saw, why it acted, and what it expected. Operator and runbook dispatches leave
         both empty.

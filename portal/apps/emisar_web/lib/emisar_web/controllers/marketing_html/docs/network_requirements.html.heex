@@ -26,7 +26,7 @@
       <.docs_h2 id="table">What has to be reachable</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Use these rows to build outbound rules for runner hosts and workstations. "Your emisar
-        origin" is the control plane you connect to — on the hosted control plane, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://emisar.dev</code>.
+        origin" is the control plane you connect to — on the hosted control plane, <.docs_inline_code>https://emisar.dev</.docs_inline_code>.
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
         <table class="w-full min-w-[1120px] text-left text-sm">
@@ -125,8 +125,8 @@
       <.docs_h2 id="control-plane">The runner's control connection</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A runner opens one long-lived outbound connection. On first connect it exchanges its
-        enrollment key for a token (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">POST /runner/register</code>), then upgrades to a
-        WebSocket at <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/runner/socket/websocket</code>, sending the token as a bearer
+        enrollment key for a token (<.docs_inline_code>POST /runner/register</.docs_inline_code>), then upgrades to a
+        WebSocket at <.docs_inline_code>/runner/socket/websocket</.docs_inline_code>, sending the token as a bearer
         during the upgrade. Every dispatch, result, and heartbeat rides that one connection.
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
@@ -136,7 +136,7 @@
             <strong class="text-zinc-200">TLS 1.2 or newer, validated against the host trust store.</strong>
             Loopback HTTP is accepted without a flag. The runner rejects cleartext HTTP and
             WebSocket connections to non-loopback hosts unless
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cloud.allow_insecure</code>
+            <.docs_inline_code>cloud.allow_insecure</.docs_inline_code>
             is set — that sends runner credentials without TLS, so use it only on an isolated
             development network.
           </span>
@@ -146,7 +146,7 @@
           <span>
             <strong class="text-zinc-200">Redirects are not followed.</strong>
             Registration and the socket upgrade both stop at a
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">3xx</code>
+            <.docs_inline_code>3xx</.docs_inline_code>
             rather than chase the bearer token to whatever host answered. A captive portal or a
             proxy that answers with a redirect therefore fails closed instead of leaking a
             credential.
@@ -158,7 +158,7 @@
             <strong class="text-zinc-200">The runner reconnects on its own.</strong>
             After a drop it retries with backoff and advertises again. A connection timeout often
             means outbound port 443 is filtered — use
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar doctor</code>
+            <.docs_inline_code>emisar doctor</.docs_inline_code>
             to check that the control plane is reachable.
           </span>
         </li>
@@ -166,38 +166,40 @@
 
       <.docs_h2 id="installers">Installing and upgrading binaries</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Allow outbound HTTPS to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar.dev:443</code>. Both installers download releases from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://emisar.dev/releases</code>.
+        Allow outbound HTTPS to <.docs_inline_code>emisar.dev:443</.docs_inline_code>. Both installers download releases from <.docs_inline_code>https://emisar.dev/releases</.docs_inline_code>.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        To permit the optional GitHub release fallback, also allow outbound HTTPS to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">api.github.com:443</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">github.com:443</code>, and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">release-assets.githubusercontent.com:443</code>.
+        To permit the optional GitHub release fallback, also allow outbound HTTPS to <.docs_inline_code>api.github.com:443</.docs_inline_code>, <.docs_inline_code>github.com:443</.docs_inline_code>, and <.docs_inline_code>release-assets.githubusercontent.com:443</.docs_inline_code>.
         A malformed primary manifest or checksum failure stops the install instead of switching
         sources.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A custom <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_REPO</code>
+        A custom
+        <.docs_inline_code>EMISAR_REPO</.docs_inline_code>
         uses GitHub directly. For a host with neither release path, download the tarball and
         checksum elsewhere and install the binary manually — the
         <.link
           navigate={~p"/docs/host-install"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Linux host</.link>
         page covers the surrounding setup, and
         <.link
           navigate={~p"/docs/runner-upgrades"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Upgrade runners</.link>
         the upgrade path.
       </p>
 
       <.docs_h2 id="registry">The pack registry</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack install</code>
-        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack update</code>
+        <.docs_inline_code>emisar pack install</.docs_inline_code>
+        and
+        <.docs_inline_code>emisar pack update</.docs_inline_code>
         fetch from the registry configured by
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--registry</code>
-        or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_PACKS_REGISTRY</code>,
-        defaulting to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://emisar.dev</code>.
-        By default, a pack fetch redirects to the immutable tarball on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">registry.emisar.dev</code>. The runner
+        <.docs_inline_code>--registry</.docs_inline_code>
+        or <.docs_inline_code>EMISAR_PACKS_REGISTRY</.docs_inline_code>,
+        defaulting to <.docs_inline_code>https://emisar.dev</.docs_inline_code>.
+        By default, a pack fetch redirects to the immutable tarball on <.docs_inline_code>registry.emisar.dev</.docs_inline_code>. The runner
         follows only HTTPS redirects and rejects a cleartext downgrade. Allowlist both hosts.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -206,7 +208,7 @@
         has a different layout — install from its exact immutable tarball URL instead of passing
         that host to <code>--registry</code>. Running one is covered in <.link
           navigate={~p"/docs/pack-registry"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Host your own registry</.link>.
       </p>
 
@@ -214,8 +216,9 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The LLM client starts the bridge as a child process and talks to it over stdin and
         stdout — no port, no socket. The bridge sends one HTTPS
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">POST</code>
-        to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/api/mcp/rpc</code>
+        <.docs_inline_code>POST</.docs_inline_code>
+        to
+        <.docs_inline_code>/api/mcp/rpc</.docs_inline_code>
         per JSON-RPC frame, with no server-sent events, WebSocket, or open network session.
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
@@ -234,7 +237,7 @@
           <span>
             <strong class="text-zinc-200">It refuses to put your key on the wire in the clear.</strong>
             Loopback HTTP is accepted without an override; a cleartext
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">http://</code>
+            <.docs_inline_code>http://</.docs_inline_code>
             URL to any other host is rejected unless insecure transport is explicitly enabled —
             that sends the key without TLS and is only for an isolated development network.
             Redirects are refused for the same reason.
@@ -255,7 +258,7 @@
         A pack action runs a real command on the host, and that command talks to its own systems
         — Nomad, a database, a cloud API — directly. The traffic never passes through emisar, so
         build each pack's allowlist from the pack itself:
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack info &lt;id&gt;</code>
+        <.docs_inline_code>emisar pack info &lt;id&gt;</.docs_inline_code>
         lists the binaries it needs and the environment variables it authenticates with, and
         their values carry the endpoints.
       </p>
@@ -270,9 +273,9 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Proxy variables come from the process environment.</strong>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">HTTP_PROXY</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">HTTPS_PROXY</code>, and
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">NO_PROXY</code>
-            apply. On a systemd host, put them in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/runner.env</code>. For the bridge,
+            <.docs_inline_code>HTTP_PROXY</.docs_inline_code>, <.docs_inline_code>HTTPS_PROXY</.docs_inline_code>, and
+            <.docs_inline_code>NO_PROXY</.docs_inline_code>
+            apply. On a systemd host, put them in <.docs_inline_code>/etc/emisar/runner.env</.docs_inline_code>. For the bridge,
             define them in the LLM client environment.
           </span>
         </li>
@@ -281,7 +284,7 @@
           <span>
             <strong class="text-zinc-200">Every intermediary must pass the Upgrade header and keep the connection open.</strong>
             The runner uses a long-lived WebSocket. An appliance that strips the
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Upgrade</code>
+            <.docs_inline_code>Upgrade</.docs_inline_code>
             header, buffers frames, or closes idle connections makes the runner reconnect over
             and over — often with no clear error to find.
           </span>
@@ -308,7 +311,7 @@
         Keep the clock synchronized. TLS judges certificate validity against the host clock, and
         <.link
           navigate={~p"/docs/signed-dispatch"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >signed dispatch</.link>
         checks signature freshness against it too — so one skewed host can refuse actions while
         the rest of the fleet works.
@@ -331,7 +334,7 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar doctor</code>
+            <.docs_inline_code>emisar doctor</.docs_inline_code>
             passes — the host side works. The runner appears <.status_badge status={:online} />
             in the console — the WebSocket connection made it through.
           </span>
@@ -354,7 +357,7 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp --version</code>
+            <.docs_inline_code>emisar-mcp --version</.docs_inline_code>
             works on the workstation — the binary is installed. One LLM discovery call lists
             runners or finds an action — the bridge can reach the control plane.
           </span>

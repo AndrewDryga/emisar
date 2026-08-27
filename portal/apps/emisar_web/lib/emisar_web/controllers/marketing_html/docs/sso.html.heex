@@ -25,7 +25,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Provisioning and removal from your directory is a separate layer on top of sign-in: <.link
           navigate={~p"/docs/scim"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >directory sync (SCIM)</.link>.
         Both are managed from <a
           href={~p"/app/sso"}
@@ -51,7 +51,7 @@
         <li>
           At the provider, create a
           <strong class="text-zinc-200">confidential web application</strong>
-          — one with a client secret. Paste emisar's redirect URI into it unchanged; it ends in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>.
+          — one with a client secret. Paste emisar's redirect URI into it unchanged; it ends in <.docs_inline_code>/sign_in/sso/callback</.docs_inline_code>.
         </li>
         <li>
           Back in emisar, enter the issuer URL, client ID, and client secret. Press <strong class="text-zinc-200">Test connection</strong>, then tick
@@ -60,7 +60,7 @@
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The <a href="#providers" class="text-brand-300 hover:text-brand-200">provider guides</a>
+        The <a href="#providers" class="text-brand-400 hover:text-brand-300">provider guides</a>
         below walk each of these screens with screenshots.
       </p>
 
@@ -87,15 +87,18 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The <strong class="text-zinc-200">identifier claim</strong>
         is the field emisar stores as a person's permanent id:
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
-        for most providers, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+        <.docs_inline_code>sub</.docs_inline_code>
+        for most providers,
+        <.docs_inline_code>oid</.docs_inline_code>
         for Microsoft Entra. Leave it unchanged — <a
           href="#subject-not-email"
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >emisar
         recognises a returning member by this value</a>, so it locks permanently at the first
         sign-in. Your directory must send the same value as SCIM
-        <.link navigate={~p"/docs/scim"} class="text-brand-300 hover:text-brand-200"><code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code></.link>
+        <.link navigate={~p"/docs/scim"} class="text-brand-400 hover:text-brand-300"><.docs_inline_code>
+          externalId
+        </.docs_inline_code></.link>
         so sign-in and directory sync identify one person.
       </p>
 
@@ -118,7 +121,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Turning on
-        <.link navigate={~p"/docs/scim"} class="text-brand-300 hover:text-brand-200">
+        <.link navigate={~p"/docs/scim"} class="text-brand-400 hover:text-brand-300">
           directory sync
         </.link>
         overrides this setting: the directory decides who exists, and a sign-in from an
@@ -130,7 +133,7 @@
         — that stays a deliberate human grant, so no provider misconfiguration can grant this
         role. If you configure Role mapping, the mapped role wins and this is only the fallback
         for someone in no mapped group. See
-        <.link navigate={~p"/docs/teams-and-access"} class="text-brand-300 hover:text-brand-200">roles</.link>
+        <.link navigate={~p"/docs/teams-and-access"} class="text-brand-400 hover:text-brand-300">roles</.link>
         for the list of roles and their permissions.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -146,10 +149,11 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Allowed email domain</strong>
         is optional. Set it to allow sign-ins from one domain only. For Google Workspace,
-        emisar checks the <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">hd</code>
+        emisar checks the
+        <.docs_inline_code>hd</.docs_inline_code>
         claim to confirm the Workspace tenant. For other providers, the ID token must include
-        an email address from that domain and mark it with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">email_verified: true</code>. The
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">hd</code>
+        an email address from that domain and mark it with <.docs_inline_code>email_verified: true</.docs_inline_code>. The
+        <.docs_inline_code>hd</.docs_inline_code>
         claim does not confirm the email address, so emisar cannot use it to store an address or
         recognise a member. Leave this field blank to accept every identity returned by the
         provider.
@@ -170,7 +174,7 @@
         really enforces MFA — otherwise it becomes a way around the account's requirement,
         which is described in <.link
           navigate={~p"/docs/authentication" <> "#enforcement"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Enforce
         account sign-in</.link>.
       </p>
@@ -186,7 +190,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         On the sign-in page, members select
         <strong class="text-zinc-200">“Continue with single sign-on”</strong>
-        (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso</code>), enter the
+        (<.docs_inline_code>/sign_in/sso</.docs_inline_code>), enter the
         team's address, choose the provider, authenticate there, and return signed in.
       </p>
 
@@ -246,7 +250,7 @@
         Require SSO gates browser access and new OAuth consent for every member, including
         owners. What it covers — and the bearer credentials it leaves untouched — is in <.link
           navigate={~p"/docs/authentication" <> "#enforcement"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >what Require SSO covers</.link>.
       </p>
 
@@ -255,12 +259,12 @@
         The client secret is a credential like any other — the rotation steps, including the
         write-only field and the sign-in check before you delete the old secret, are in <.link
           navigate={~p"/docs/credentials" <> "#idp"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Rotate and revoke credentials</.link>. If you suspect a leak,
         follow
         <.link
           navigate={~p"/docs/security-incidents" <> "#idp"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Security incidents</.link>
         instead.
       </p>
@@ -311,7 +315,7 @@
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >Microsoft Entra</.link>
             — an app registration with the
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+            <.docs_inline_code>oid</.docs_inline_code>
             claim, and an enterprise application for provisioning.
           </span>
         </li>
@@ -360,13 +364,15 @@
       </p>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The <a href="#sso-login" class="text-brand-300 hover:text-brand-200">setup steps</a>
+        The <a href="#sso-login" class="text-brand-400 hover:text-brand-300">setup steps</a>
         above are the same here. Two extra requirements apply to a provider with no preset: its
-        issuer must serve <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/.well-known/openid-configuration</code>, and it must
-        advertise <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">client_secret_post</code>
-        or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">client_secret_basic</code>
+        issuer must serve <.docs_inline_code>/.well-known/openid-configuration</.docs_inline_code>, and it must
+        advertise
+        <.docs_inline_code>client_secret_post</.docs_inline_code>
+        or
+        <.docs_inline_code>client_secret_basic</.docs_inline_code>
         for client authentication. The
-        <a href="#oidc-contract" class="text-brand-300 hover:text-brand-200">contract
+        <a href="#oidc-contract" class="text-brand-400 hover:text-brand-300">contract
         below</a>
         is the full list emisar checks.
       </p>
@@ -445,7 +451,7 @@
         Use these checks for common sign-in symptoms. If the symptom is somewhere else in the
         product, start from <.link
           navigate={~p"/docs/troubleshooting"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >troubleshooting</.link>, which routes each one to its owner page.
       </p>
       <div class="mt-5 overflow-hidden rounded-xl border border-zinc-800">
@@ -502,7 +508,7 @@
                 Use the owner session you kept open to turn off Require SSO, then complete a real
                 provider sign-in before enabling it again. If no owner session remains, contact <a
                   href={EmisarWeb.MailTo.support()}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >support</a>.
               </td>
             </tr>
@@ -515,7 +521,7 @@
                 equal the OIDC identifier claim — the convergence contract and per-provider
                 claims are in <.link
                   navigate={~p"/docs/scim" <> "#troubleshooting"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >Directory sync</.link>.
               </td>
             </tr>
@@ -528,7 +534,7 @@
         Every SSO sign-in lands in the
         <.link
           navigate={~p"/docs/audit-and-siem"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >audit log</.link>
         with its authentication method.
       </p>

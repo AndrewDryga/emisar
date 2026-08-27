@@ -89,7 +89,8 @@
           href={~p"/app/runbooks/import"}
           class="text-brand-400 hover:text-brand-300"
         >Import runbook</.link>.
-        Drop or select a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">.json</code>
+        Drop or select a
+        <.docs_inline_code>.json</.docs_inline_code>
         file, or paste the document. An import always becomes an editable draft. It never publishes
         or runs automatically.
       </p>
@@ -108,7 +109,7 @@
         number, boolean, or enum. Make it required, constrain its range or length, or give it a
         same-type default. An integer is a whole number, and a number can contain a decimal.
         Sensitive inputs have no stored default and show as
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">[REDACTED]</code>
+        <.docs_inline_code>[REDACTED]</.docs_inline_code>
         in plans, approvals, and results.
       </p>
       <.docs_screenshot
@@ -137,7 +138,8 @@
           <span>
             <strong class="text-zinc-200">Parallel</strong>
             makes all stage items eligible together. Maximum concurrency limits the number of
-            active attempts. Use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">1</code>
+            active attempts. Use
+            <.docs_inline_code>1</.docs_inline_code>
             for one-host-at-a-time maintenance.
           </span>
         </li>
@@ -277,7 +279,7 @@
         passes.
       </p>
       <p class="mt-5 text-base text-zinc-400">
-        Publish shows exactly what changes from the live definition, then mints the next release: <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">slug@1</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">slug@2</code>, and so on.
+        Publish shows exactly what changes from the live definition, then mints the next release: <.docs_inline_code>slug@1</.docs_inline_code>, <.docs_inline_code>slug@2</.docs_inline_code>, and so on.
         Only the live release runs. Editing later does not change what runs until you publish again. The edit
         remains the runbook's one unpublished change. Every execution keeps the exact definition
         and plan it started with. If runners, actions, or packs later drift, a new execution is
@@ -369,7 +371,7 @@
       <p class="mt-5 text-base text-zinc-400">
         JSON is the only interchange format. The structured editor, import flow, persistence layer,
         and MCP use the same strict
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">schema_version: 1</code>
+        <.docs_inline_code>schema_version: 1</.docs_inline_code>
         object. Unknown fields are rejected. This is a smaller version of the edge rollout used
         throughout this guide:
       </p>
@@ -471,31 +473,31 @@
       <.docs_h2 id="agents">LLMs and MCP</.docs_h2>
       <p class="mt-5 text-base text-zinc-400">
         An agent reads runbooks with
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">list_runbooks</code>
-        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_runbook</code>. By default
+        <.docs_inline_code>list_runbooks</.docs_inline_code>
+        and <.docs_inline_code>get_runbook</.docs_inline_code>. By default
         it sees the live release; asking with
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">status: "draft"</code>
+        <.docs_inline_code>status: "draft"</.docs_inline_code>
         shows the unpublished change instead.
       </p>
       <p class="mt-5 text-base text-zinc-400">
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">create_runbook_draft</code>
+        <.docs_inline_code>create_runbook_draft</.docs_inline_code>
         starts a new runbook.
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">update_runbook_draft</code>
+        <.docs_inline_code>update_runbook_draft</.docs_inline_code>
         replaces the one unpublished change, and it must send the
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">definition_sha256</code>
+        <.docs_inline_code>definition_sha256</.docs_inline_code>
         it read — if someone else edited the draft in the meantime, the update is refused
         instead of overwriting their work. Publishing stays a human step in the console.
       </p>
       <p class="mt-5 text-base text-zinc-400">
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execute_runbook</code>
+        <.docs_inline_code>execute_runbook</.docs_inline_code>
         runs the live release. To test draft content, the agent must ask for it clearly —
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">allow_draft: true</code>
+        <.docs_inline_code>allow_draft: true</.docs_inline_code>
         plus the draft's hash — and the test goes through the same policy and approvals as any
         run without publishing anything. Asking for an older release answers
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">not_live</code>
+        <.docs_inline_code>not_live</.docs_inline_code>
         instead of quietly running the current one. While work or an approval remains, the
         response shows what is still blocking and returns an exact
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
+        <.docs_inline_code>wait_for_run</.docs_inline_code>
         continuation.
       </p>
       <p class="mt-5 text-base text-zinc-400">

@@ -37,12 +37,12 @@
 
       <.docs_h2 id="groups-labels">Groups and labels</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Every runner declares one group string and free-form labels in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>.
+        Every runner declares one group string and free-form labels in <.docs_inline_code>/etc/emisar/config.yaml</.docs_inline_code>.
         Group examples include
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra-prod</code>
-        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">web</code>. Label examples include
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">role=db</code>
-        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">region=us-east-1</code>. Groups do real
+        <.docs_inline_code>cassandra-prod</.docs_inline_code>
+        and <.docs_inline_code>web</.docs_inline_code>. Label examples include
+        <.docs_inline_code>role=db</.docs_inline_code>
+        and <.docs_inline_code>region=us-east-1</.docs_inline_code>. Groups do real
         work: runbook steps target them, per-member runner scopes follow them, and an agent can
         address every runner in one group at once. Name a group after a fleet tier. The installer
         defaults the group to the hostname, which works for one host — change it when you add a
@@ -50,13 +50,13 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Install packs generously. Give each group every pack that matches what runs there — the
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">postgres</code>
+        <.docs_inline_code>postgres</.docs_inline_code>
         pack on the database tier,
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">nginx</code>
+        <.docs_inline_code>nginx</.docs_inline_code>
         on the web tier — and the observation packs everywhere. The more actions an agent can
         reach, the more it can do for you, and breadth is safe: policy decides what actually
         runs, so reads run at once while risky work waits for a person.
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar pack suggest</code>
+        <.docs_inline_code>sudo emisar pack suggest</.docs_inline_code>
         lists the published packs that match a host.
       </p>
 
@@ -66,7 +66,8 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Two key models.</strong>
-            An <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emkey-enroll-…</code>
+            An
+            <.docs_inline_code>emkey-enroll-…</.docs_inline_code>
             key is <strong class="text-zinc-200">single-use</strong>
             by default: its first registration spends it, and concurrent attempts with the same
             key cannot both succeed — right for connecting one host. Mark it
@@ -80,11 +81,12 @@
           <span>
             <strong class="text-zinc-200">Shown once, exchanged for a token.</strong>
             The raw key appears once, at creation. On first connect the runner exchanges it for
-            its own <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">rnrtok-…</code>
+            its own
+            <.docs_inline_code>rnrtok-…</.docs_inline_code>
             token, which handles every reconnect from then on.
             <.link
               navigate={~p"/docs/runner-credentials"}
-              class="text-brand-300 hover:text-brand-200"
+              class="text-brand-400 hover:text-brand-300"
             >Runner credentials</.link>
             covers the token's lifetime, refresh, and recovery.
           </span>
@@ -104,7 +106,7 @@
               href={~p"/app/runners/keys"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
             >Runners → Enrollment keys</a>
-            and inject it as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>.
+            and inject it as <.docs_inline_code>EMISAR_ENROLLMENT_KEY</.docs_inline_code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -115,20 +117,20 @@
             own tokens. To take a runner itself offline — disable (reversible) or delete
             (terminal) — see <.link
               navigate={~p"/docs/runner-credentials"}
-              class="text-brand-300 hover:text-brand-200"
+              class="text-brand-400 hover:text-brand-300"
             >Runner credentials</.link>.
           </span>
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         To change the key a host carries, reinstall with the new
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_ENROLLMENT_KEY</code>
+        <.docs_inline_code>EMISAR_ENROLLMENT_KEY</.docs_inline_code>
         — the runner re-registers under its
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
+        <.docs_inline_code>runner.id</.docs_inline_code>
         or current hostname;
         <.link
           navigate={~p"/docs/runner-credentials"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Runner credentials</.link>
         has the step-by-step. A replacement host with a new hostname simply enrolls as a new
         runner.
@@ -152,12 +154,12 @@ execution:
     - NOMAD_TOKEN</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Only allowlisted names reach an action's process, in addition to the
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">PATH</code>
+        <.docs_inline_code>PATH</.docs_inline_code>
         and locale baseline. The runner's own environment and token never reach it. Restart the
         service after editing. Run
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack info &lt;id&gt;</code>
+        <.docs_inline_code>emisar pack info &lt;id&gt;</.docs_inline_code>
         to see what each pack needs, and
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar pack verify</code>
+        <.docs_inline_code>sudo emisar pack verify</.docs_inline_code>
         to make sure the wiring works — it probes every installed pack's verify action and prints ok,
         failed, or skipped per pack.
       </p>
@@ -202,9 +204,9 @@ execution:
 <span class="text-zinc-500">$</span> sudo emisar events tail -f        <span class="text-zinc-500"># the local JSONL journal, live</span>
 <span class="text-zinc-500">$</span> sudo emisar audit verify --all    <span class="text-zinc-500"># verify the journal's hash chain</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The CLI defaults to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--config /etc/emisar/config.yaml</code>,
+        The CLI defaults to <.docs_inline_code>--config /etc/emisar/config.yaml</.docs_inline_code>,
         so these commands work on an installed host. The runner runs as its own unprivileged
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+        <.docs_inline_code>emisar</.docs_inline_code>
         user; granting an action root — a scoped polkit rule, or running the service as root —
         is covered on the <.link
           navigate={~p"/docs/host-install" <> "#user"}
@@ -227,9 +229,9 @@ execution:
           href={~p"/app/runners"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runners</a>. Its run history and audit events stay.
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--purge</code>
+        <.docs_inline_code>--purge</.docs_inline_code>
         also deletes the local journal, configuration, and
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.env</code>
+        <.docs_inline_code>runner.env</.docs_inline_code>
         secrets. Export the journal first if you want to keep it.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -262,7 +264,7 @@ execution:
           <tbody class="divide-y divide-zinc-900 text-zinc-300">
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>
+                <.docs_inline_code>401</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 The enrollment key was spent, expired, out of uses, or revoked.
@@ -273,20 +275,21 @@ execution:
             </tr>
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">400 invalid_external_id</code>
+                <.docs_inline_code>400 invalid_external_id</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                The host offered no usable identity — the runner uses its configured <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>, or its
+                The host offered no usable identity — the runner uses its configured <.docs_inline_code>runner.id</.docs_inline_code>, or its
                 hostname when none is set.
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Set a valid <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
+                Set a valid
+                <.docs_inline_code>runner.id</.docs_inline_code>
                 — at least one nonblank character, at most 255 — and restart the service.
               </td>
             </tr>
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">409 runner_name_taken</code>
+                <.docs_inline_code>409 runner_name_taken</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Another runner in this account already holds this name, online or not — a rebuilt
@@ -299,13 +302,13 @@ execution:
                   class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
                 >Runners</a>
                 to free the name, or set
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
+                <.docs_inline_code>runner.id</.docs_inline_code>
                 in this host's config.
               </td>
             </tr>
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">402 runner_limit_exceeded</code>
+                <.docs_inline_code>402 runner_limit_exceeded</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 The account is at its plan's runner cap — the response shows the plan and the
@@ -315,7 +318,7 @@ execution:
                 Delete a runner the account no longer uses, or move to a plan with more —
                 <.link
                   navigate={~p"/docs/billing"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >Billing and plans</.link>
                 has the numbers.
               </td>
@@ -326,11 +329,13 @@ execution:
       <p class="mt-5 text-base leading-7 text-zinc-400">
         On the name conflict: a runner's name is unique in the account — by default it is the
         hostname of the host it runs on, and it cannot be renamed after the runner is created.
-        Set <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
-        in the config (or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_ID</code>
+        Set
+        <.docs_inline_code>runner.id</.docs_inline_code>
+        in the config (or
+        <.docs_inline_code>RUNNER_ID</.docs_inline_code>
         at install) to register under a declared name and identity instead of the hostname.
         A deleted runner cannot be restored — the host enrolls again as a new one, and
-        <a href="#removing" class="text-brand-300 hover:text-brand-200">Removing a runner</a>
+        <a href="#removing" class="text-brand-400 hover:text-brand-300">Removing a runner</a>
         covers the difference from disabling.
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
@@ -341,7 +346,7 @@ execution:
             A hang is a blocked path, not a bad credential. The runner needs outbound TLS to
             your emisar origin and nothing inbound — the exact hosts and ports are in <.link
               navigate={~p"/docs/network-requirements"}
-              class="text-brand-300 hover:text-brand-200"
+              class="text-brand-400 hover:text-brand-300"
             >Network requirements</.link>.
           </span>
         </li>
@@ -349,9 +354,9 @@ execution:
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Contact support</strong>
-            when a freshly minted, unused key still returns <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>, or registration
+            when a freshly minted, unused key still returns <.docs_inline_code>401</.docs_inline_code>, or registration
             returns a status the log cannot explain. For enrollment keys and their caps, see
-            <a href="#enrollment-keys" class="text-brand-300 hover:text-brand-200">Enrollment keys</a>
+            <a href="#enrollment-keys" class="text-brand-400 hover:text-brand-300">Enrollment keys</a>
             above.
           </span>
         </li>
@@ -368,9 +373,9 @@ execution:
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">First, look at the host.</strong>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemctl status emisar</code>
+            <.docs_inline_code>systemctl status emisar</.docs_inline_code>
             shows whether the process is running.
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar doctor</code>
+            <.docs_inline_code>sudo emisar doctor</.docs_inline_code>
             checks config, credentials, packs, action binaries, service state, and
             reachability, all without a session to the control plane.
           </span>
@@ -380,10 +385,10 @@ execution:
           <span>
             <strong class="text-zinc-200">Then check the identity, not the host.</strong>
             A disabled runner gets a
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">403</code>
+            <.docs_inline_code>403</.docs_inline_code>
             and retries with its existing token, so enabling it brings the host back without
             shell access — a disabled account behaves the same way for every runner in it. A
-            deleted runner cannot be restored: it gets a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>, discards its cached
+            deleted runner cannot be restored: it gets a <.docs_inline_code>401</.docs_inline_code>, discards its cached
             token, stops retrying, and that host must enroll again.
           </span>
         </li>
@@ -392,7 +397,7 @@ execution:
           <span>
             <strong class="text-zinc-200">Contact support</strong>
             when the service is up, the runner is enabled,
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>
+            <.docs_inline_code>doctor</.docs_inline_code>
             passes including reachability, and the fleet still shows it offline after several
             reconnect attempts.
           </span>
@@ -401,7 +406,7 @@ execution:
 
       <.docs_h3 id="crash-loop">The service failed or is crash-looping</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        systemd reports <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">failed</code>. After five starts in
+        systemd reports <.docs_inline_code>failed</.docs_inline_code>. After five starts in
         five minutes the service stops retrying on purpose, so a revoked credential cannot hammer
         the control plane. Fix what the log shows, then re-arm the service — starting without
         resetting the failure counter does nothing:
@@ -414,7 +419,7 @@ execution:
             <strong class="text-zinc-200">Then check for a second process.</strong>
             A runner locks its data directory at boot — only one process can own the dispatch
             and replay state. A stray manual
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar connect</code>
+            <.docs_inline_code>emisar connect</.docs_inline_code>
             beside the service is the usual cause.
           </span>
         </li>
@@ -422,11 +427,12 @@ execution:
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Contact support</strong>
-            when <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>
+            when
+            <.docs_inline_code>doctor</.docs_inline_code>
             reports every check green and the service still exits. For the install layout, the
             service unit, and the paths it writes, see <.link
               navigate={~p"/docs/host-install"}
-              class="text-brand-300 hover:text-brand-200"
+              class="text-brand-400 hover:text-brand-300"
             >Install on a host</.link>.
           </span>
         </li>

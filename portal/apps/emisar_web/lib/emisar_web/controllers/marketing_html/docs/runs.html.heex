@@ -54,9 +54,11 @@
           <span>
             <strong class="text-zinc-200">Action.</strong>
             A substring match on the action id. Typing
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">postgres</code>
-            finds <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">postgres.vacuum</code>
-            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">postgres.uptime</code>
+            <.docs_inline_code>postgres</.docs_inline_code>
+            finds
+            <.docs_inline_code>postgres.vacuum</.docs_inline_code>
+            and
+            <.docs_inline_code>postgres.uptime</.docs_inline_code>
             — and
             it is case-insensitive.
           </span>
@@ -143,7 +145,7 @@
         shows the accountable person first. An operator run shows the team member who ran
         it, an agent run shows the human who owns the agent key — with the client as
         secondary context:
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">jordan@example.com via Claude Code</code>
+        <.docs_inline_code>jordan@example.com via Claude Code</.docs_inline_code>
         — and a runbook run shows the runbook. This is the same human-first
         attribution the audit trail uses, so "who ran this, and through what" is answered on the row
         itself.
@@ -151,7 +153,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A <strong>Why</strong>
         section carries the justification. Every dispatch includes a
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reason</code>
+        <.docs_inline_code>reason</.docs_inline_code>
         from the operator or agent. An agent can also include evidence and expected outcome:
         evidence records what it observed, and expected records the outcome that confirms
         success. When
@@ -161,7 +163,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Below that, <strong>Arguments</strong>
         shows the values passed to the action, with a
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sha256</code>
+        <.docs_inline_code>sha256</.docs_inline_code>
         fingerprint of the exact bytes. The control plane stores the exact arguments and uses
         them for authorization, approval, dispatch, and hashing. UI and API views mask fields
         the action marks as sensitive, and secrets in unmarked fields remain in the stored
@@ -200,7 +202,7 @@
         Every run carries a durable output budget that holds across runner reconnects. A run
         that reaches it stops accepting further chunks, visibly. The numbers are in <.link
           navigate={~p"/docs/limits"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Limits</.link>.
       </p>
       <.docs_callout
@@ -288,7 +290,7 @@
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Read the status first —
-        <a href="#statuses" class="text-brand-300 hover:text-brand-200">Run statuses</a>
+        <a href="#statuses" class="text-brand-400 hover:text-brand-300">Run statuses</a>
         above lists them all, and three are easy to confuse:
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
@@ -332,7 +334,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">A run that ends with
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execution_outcome_unknown</code>
+            <.docs_inline_code>execution_outcome_unknown</.docs_inline_code>
             can have completed its work.</strong>
             The runner reports this when its process or host dies after execution starts,
             before the terminal result was durable. emisar never runs that dispatch again
@@ -344,7 +346,7 @@
           <span>
             <strong class="text-zinc-200">Output stopped but the run is still running.</strong>
             Output is bounded per action and truncation is reported, so a quiet run is more often a
-            quiet command than a lost stream. Check the host with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar events tail -f</code>,
+            quiet command than a lost stream. Check the host with <.docs_inline_code>sudo emisar events tail -f</.docs_inline_code>,
             which shows the local journal live.
           </span>
         </li>
@@ -353,7 +355,7 @@
           <span>
             <strong class="text-zinc-200">Contact support</strong>
             when the same dispatch reports
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execution_outcome_unknown</code>
+            <.docs_inline_code>execution_outcome_unknown</.docs_inline_code>
             repeatedly, or a run stays <.status_badge status={:running} />
             with no progress while its runner is connected and idle.
           </span>

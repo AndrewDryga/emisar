@@ -235,7 +235,7 @@ nomad job run \
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Give packs their credentials through environment variables on the runner's
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">inherit_env</code>
+        <.docs_inline_code>inherit_env</.docs_inline_code>
         allowlist, never through action arguments. A Nomad template can read the values from
         Nomad Variables or Vault. The allowlist is covered in <.link
           navigate={~p"/docs/runner-fleet" <> "#pack-credentials"}

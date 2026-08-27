@@ -92,7 +92,7 @@
               On <strong class="text-zinc-200">Audience</strong>, the user type must be <strong class="text-zinc-200">Internal</strong>. That restricts sign-in to your own
               Workspace domain and skips Google's verification review entirely. External allows any
               Google account. Do not use it for emisar. Google rejects outside accounts with
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">org_internal</code>
+              <.docs_inline_code>org_internal</.docs_inline_code>
               before the request reaches emisar.
             </p>
             <.docs_screenshot
@@ -162,9 +162,10 @@
               origins</strong>
               sits directly above it and is not part of this flow. Google matches the URI
               exactly, so a trailing slash or
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">http</code>
-              instead of <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https</code>
-              is rejected at sign-in with a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">redirect_uri_mismatch</code>, not
+              <.docs_inline_code>http</.docs_inline_code>
+              instead of
+              <.docs_inline_code>https</.docs_inline_code>
+              is rejected at sign-in with a <.docs_inline_code>redirect_uri_mismatch</.docs_inline_code>, not
               at save time.
             </p>
             <.docs_screenshot
@@ -208,9 +209,9 @@
               as the provider type and paste the client ID and secret. The
               <strong class="text-zinc-200">Issuer URL</strong>
               is already filled in and locked —
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://accounts.google.com</code>
+              <.docs_inline_code>https://accounts.google.com</.docs_inline_code>
               for every Google customer — so it is one less thing to get wrong. Leave the identifier
-              claim on <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>.
+              claim on <.docs_inline_code>sub</.docs_inline_code>.
             </p>
 
             <.docs_screenshot

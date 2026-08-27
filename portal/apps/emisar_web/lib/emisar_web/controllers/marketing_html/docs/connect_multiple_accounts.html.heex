@@ -30,7 +30,8 @@
 
       <.docs_h2 id="binding">One connection, one account</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        An <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
+        An
+        <.docs_inline_code>emk-</.docs_inline_code>
         key belongs to the account that minted it, and a cloud connector's authorization is
         granted for one account you choose in the browser. A connection does not switch
         accounts mid-conversation — the account is decided when you wire it up, which is what
@@ -40,7 +41,7 @@
       <.docs_h2 id="servers">One MCP server entry per account</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         For a client that runs the
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
+        <.docs_inline_code>emisar-mcp</.docs_inline_code>
         bridge — Claude Code, Cursor, and the other local clients — mint a key in each
         account's <strong>AI agents</strong>
         page, then add one server entry per account.
@@ -73,14 +74,15 @@
         >Connect a CLI agent</.link>
         — the console generates a ready snippet per client, and a
         client registered with
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">claude mcp add</code>
+        <.docs_inline_code>claude mcp add</.docs_inline_code>
         takes a second registration under the other name.
       </p>
 
       <.docs_h2 id="cli">The CLI: stored accounts</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The bridge is also a shell CLI, and it holds credentials for several accounts at once.
-        Run <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp auth</code>
+        Run
+        <.docs_inline_code>emisar-mcp auth</.docs_inline_code>
         once per account — it opens the browser, you choose the account, and the credential is
         stored locally. Then:
       </p>
@@ -96,13 +98,15 @@
 <span class="text-zinc-500">Using Acme Logistics (acme) at https://emisar.dev</span></.docs_code>
       <.docs_code phx-no-format label="shell">emisar-mcp --account demo recent_runs</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--account</code>
+        <.docs_inline_code>--account</.docs_inline_code>
         is how an agent works across accounts from one shell: tell it which account each
         command targets, and the audit trail in each account shows exactly what ran there.
-        When <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_URL</code>
-        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_API_KEY</code>
+        When
+        <.docs_inline_code>EMISAR_URL</.docs_inline_code>
+        and
+        <.docs_inline_code>EMISAR_API_KEY</.docs_inline_code>
         are both set, that pair wins — direct commands use it, and
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--account</code>
+        <.docs_inline_code>--account</.docs_inline_code>
         is refused until you unset both. The complete command surface is in <.link
           navigate={~p"/docs/mcp-reference"}
           class="text-brand-400 hover:text-brand-300"

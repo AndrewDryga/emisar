@@ -31,9 +31,9 @@
       </p>
       <.docs_callout kind={:note} title="Provision the person before testing sign-in.">
         <p>
-          Entra's v2 ID token does not include <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">email_verified</code>.
+          Entra's v2 ID token does not include <.docs_inline_code>email_verified</.docs_inline_code>.
           emisar accepts that omission only when the token's
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+          <.docs_inline_code>oid</.docs_inline_code>
           matches an active member provisioned by this Entra connection. Complete directory sync
           below before testing the first sign-in.
         </p>
@@ -152,13 +152,14 @@
               https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0
             </.docs_value>
             <p class="mt-4">
-              The trailing <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/v2.0</code>
+              The trailing
+              <.docs_inline_code>/v2.0</.docs_inline_code>
               selects Entra's v2.0 endpoint. Without it, Entra returns v1.0 tokens. The identifier
-              claim is already <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>.
+              claim is already <.docs_inline_code>oid</.docs_inline_code>.
               Entra assigns a different
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+              <.docs_inline_code>sub</.docs_inline_code>
               to each application. The
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+              <.docs_inline_code>oid</.docs_inline_code>
               claim also matches the value directory sync sends. Save the connection. After
               directory sync below has provisioned the same person, select <strong class="text-zinc-200">Enabled</strong>, save again, and sign in.
             </p>
@@ -176,7 +177,8 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Directory sync makes Entra responsible for the member lifecycle, provisioning people and
         removing their access after offboarding. It also supplies the active identity record used
-        to join Entra's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
+        to join Entra's
+        <.docs_inline_code>oid</.docs_inline_code>
         claim to sign-in. <.plan_note tier={:enterprise} />
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -199,7 +201,7 @@
             <p class="font-semibold text-zinc-100">Create the enterprise application.</p>
             <p class="mt-1.5">
               Provisioning needs a separate object from the sign-in app registration. Go to <strong class="text-zinc-200">Enterprise applications → New application → Create your own application</strong>.
-              Name it <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>. Choose <strong class="text-zinc-200">Integrate any other application you do not find in the gallery</strong>.
+              Name it <.docs_inline_code>emisar</.docs_inline_code>. Choose <strong class="text-zinc-200">Integrate any other application you do not find in the gallery</strong>.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/entra-create-enterprise-app.webp"
@@ -255,9 +257,10 @@
             <p class="mt-1.5">
               Open <strong class="text-zinc-200">Manage → Attribute mapping</strong>
               and change the source attribute feeding
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-              from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>
-              to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">objectId</code>. On a tenant
+              <.docs_inline_code>externalId</.docs_inline_code>
+              from
+              <.docs_inline_code>mailNickname</.docs_inline_code>
+              to <.docs_inline_code>objectId</.docs_inline_code>. On a tenant
               still using Entra's older provisioning screens, the same setting lives under <strong class="text-zinc-200">Mappings → Provision Microsoft Entra ID Users</strong>.
             </p>
 
@@ -275,15 +278,15 @@
               alt="Entra's Edit Attribute Mapping pane with the Source attribute row outlined in green and set to objectId, alongside Mapping type Direct, Target attribute externalId, and Apply this mapping set to Always."
             />
             <p class="mt-4">
-              Entra defaults to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>.
+              Entra defaults to <.docs_inline_code>mailNickname</.docs_inline_code>.
               This value can be missing, duplicated, or changed. It also differs from the identifier
               used by the sign-in connection. If SSO uses
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>
-              while SCIM uses <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>, one person
+              <.docs_inline_code>oid</.docs_inline_code>
+              while SCIM uses <.docs_inline_code>mailNickname</.docs_inline_code>, one person
               becomes two identities. The directory provisions one, and sign-in creates another.
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">objectId</code>
+              <.docs_inline_code>objectId</.docs_inline_code>
               is the same
-              immutable value as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>, so
+              immutable value as <.docs_inline_code>oid</.docs_inline_code>, so
               both flows identify one person.
             </p>
           </div>

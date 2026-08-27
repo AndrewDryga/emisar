@@ -61,7 +61,9 @@
         host.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Set <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_GROUP</code> in the boot
+        Set
+        <.docs_inline_code>RUNNER_GROUP</.docs_inline_code>
+        in the boot
         script to set the instance's fleet tier. Runbooks and runner scopes then target the fleet
         instead of one host.
       </p>
@@ -94,7 +96,8 @@
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emkey-enroll-…</code>
+        The
+        <.docs_inline_code>emkey-enroll-…</.docs_inline_code>
         secret appears once. Store it in the secret manager, and let the boot script read it at
         start. Never bake the key into an image.
       </p>
@@ -104,7 +107,7 @@
           account policy still apply, but treat it like the credential it is. Rotating and
           revoking it, and what each step reaches, is covered in <.link
             navigate={~p"/docs/runner-credentials"}
-            class="text-brand-300 hover:text-brand-200"
+            class="text-brand-400 hover:text-brand-300"
           >Runner credentials</.link>.
         </p>
       </.docs_callout>
@@ -112,16 +115,16 @@
       <.docs_h2 id="boot">The boot install</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The boot script runs the same installer as a normal host install, plus two flags:
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--yes</code>
-        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--packs</code>. Without both, the installer stops to ask questions no one is
+        <.docs_inline_code>--yes</.docs_inline_code>
+        and <.docs_inline_code>--packs</.docs_inline_code>. Without both, the installer stops to ask questions no one is
         there to answer.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Keep the enrollment key off the command line. Every user on the host can read any
         process's command line; only the process owner can read its environment. So the script
         exports the key first, then uses
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo -E</code>
-        to keep it in the environment through <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>:
+        <.docs_inline_code>sudo -E</.docs_inline_code>
+        to keep it in the environment through <.docs_inline_code>sudo</.docs_inline_code>:
       </p>
       <.docs_code
         phx-no-format
@@ -146,33 +149,33 @@ curl -fsSL https://emisar.dev/install.sh \
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
-          <span><code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--yes</code>
+          <span><.docs_inline_code>--yes</.docs_inline_code>
           skips the prompts.</span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--packs</code>
-            lists the packs to install, and is required with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--yes</code>. An empty
+            <.docs_inline_code>--packs</.docs_inline_code>
+            lists the packs to install, and is required with <.docs_inline_code>--yes</.docs_inline_code>. An empty
             value installs none; you can add packs later.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
-          <span><code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_GROUP</code>
+          <span><.docs_inline_code>RUNNER_GROUP</.docs_inline_code>
           sets which fleet the runner joins.</span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_LABEL_*</code>
-            variables add free-form labels — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_LABEL_ROLE=web</code>.
+            <.docs_inline_code>RUNNER_LABEL_*</.docs_inline_code>
+            variables add free-form labels — <.docs_inline_code>RUNNER_LABEL_ROLE=web</.docs_inline_code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">RUNNER_ID</code>
+            <.docs_inline_code>RUNNER_ID</.docs_inline_code>
             sets the name and identity the runner registers under, when the image's own
             hostnames are generated or repeat.
           </span>
@@ -191,7 +194,7 @@ curl -fsSL https://emisar.dev/install.sh \
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The install line is identical on every cloud. All that changes is where the launch template
         runs a boot script — save the command above as
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-boot.sh</code>
+        <.docs_inline_code>emisar-boot.sh</.docs_inline_code>
         and wire it in:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
@@ -199,7 +202,7 @@ curl -fsSL https://emisar.dev/install.sh \
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">GCP Managed Instance Group.</strong>
-            Add it to the instance template as startup-script metadata — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">gcloud compute instance-templates create … --metadata-from-file=startup-script=emisar-boot.sh</code>.
+            Add it to the instance template as startup-script metadata — <.docs_inline_code>gcloud compute instance-templates create … --metadata-from-file=startup-script=emisar-boot.sh</.docs_inline_code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -207,28 +210,28 @@ curl -fsSL https://emisar.dev/install.sh \
           <span>
             <strong class="text-zinc-200">AWS Auto Scaling group.</strong>
             Put it in the launch template's user data (base64-encoded) — the
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">UserData</code>
-            field of <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">aws ec2 create-launch-template --launch-template-data</code>.
+            <.docs_inline_code>UserData</.docs_inline_code>
+            field of <.docs_inline_code>aws ec2 create-launch-template --launch-template-data</.docs_inline_code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Azure Virtual Machine Scale Set.</strong>
-            Pass it as cloud-init custom data — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">az vmss create … --custom-data emisar-boot.sh</code>.
+            Pass it as cloud-init custom data — <.docs_inline_code>az vmss create … --custom-data emisar-boot.sh</.docs_inline_code>.
           </span>
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Each cloud runs the script as root during first boot; the runner enrolls and appears in
         the fleet within seconds. For faster boots, bake the binary into a custom image with
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-start</code>
+        <.docs_inline_code>--no-start</.docs_inline_code>
         and let the boot script start and enroll it.
       </p>
 
       <.docs_h2 id="identity">A new runner each boot</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A runner uses its hostname as its identity unless you set <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>. A new scale-out
+        A runner uses its hostname as its identity unless you set <.docs_inline_code>runner.id</.docs_inline_code>. A new scale-out
         instance receives a generated hostname and registers as a new runner. A reboot keeps the
         hostname and reconnects the same runner, so scaling out by ten creates ten runners — the
         expected shape of an ephemeral fleet. Two rules follow:
@@ -238,9 +241,9 @@ curl -fsSL https://emisar.dev/install.sh \
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Never bake a credential into an image.</strong>
-            At first connect, the runner stores its token in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/lib/emisar</code>. A snapshot
+            At first connect, the runner stores its token in <.docs_inline_code>/var/lib/emisar</.docs_inline_code>. A snapshot
             taken after enrollment copies one runner token into every instance built from that
-            image. Build the image with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-start</code>. Let each instance
+            image. Build the image with <.docs_inline_code>--no-start</.docs_inline_code>. Let each instance
             enroll during its own boot.
           </span>
         </li>
@@ -249,7 +252,7 @@ curl -fsSL https://emisar.dev/install.sh \
           <span>
             <strong class="text-zinc-200">Use a stable runner ID when the hostname is unsuitable.</strong>
             If the group recycles hostnames, set
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
+            <.docs_inline_code>runner.id</.docs_inline_code>
             from the instance
             metadata in the boot script. A cloud instance ID is a natural unique runner ID.
           </span>

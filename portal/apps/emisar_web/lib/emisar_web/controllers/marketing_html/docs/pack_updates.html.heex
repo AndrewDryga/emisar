@@ -29,7 +29,7 @@
         <:item>Admin or owner, to review and trust a pack version for the account.</:item>
         <:item>
           Root or sudo on each runner host. Packs live under
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/packs</code>
+          <.docs_inline_code>/etc/emisar/packs</.docs_inline_code>
           and root owns the tree.
         </:item>
         <:item>One non-critical runner to update first.</:item>
@@ -60,7 +60,7 @@
 <span class="text-zinc-500">Review a change before applying: emisar pack diff &lt;id&gt;</span>
 <span class="text-zinc-500">Run without --dry-run to apply.</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--dry-run</code>
+        <.docs_inline_code>--dry-run</.docs_inline_code>
         reports the plan and does not change anything. A pack the registry does not carry
         — like one you authored — is reported and left as-is.
       </p>
@@ -101,7 +101,7 @@
 <span class="text-zinc-500">$</span> sudo emisar pack diff redis --to 0.2.4
 <span class="text-zinc-500">$</span> sudo emisar pack diff redis --stat</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The diff covers the files behind the pack's content hash: <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">pack.yaml</code>, the action
+        The diff covers the files behind the pack's content hash: <.docs_inline_code>pack.yaml</.docs_inline_code>, the action
         declarations, and the scripts. The command fetches and verifies the new version
         the same way an update does, and it does not write to the packs dir or reload the
         runner.
@@ -112,7 +112,8 @@
         callers can send.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">!</code>
+        The
+        <.docs_inline_code>!</.docs_inline_code>
         callouts above the diff show changes that give the host more power:
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
@@ -141,12 +142,12 @@
         The
         <.link
           navigate={~p"/docs/action-packs"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Pack reference</.link>
         explains the full action schema and each field. The pack's page on
         <.link
           navigate={~p"/packs"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >the registry</.link>
         lists its declared actions and versions.
       </p>
@@ -255,10 +256,10 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Group and label mechanics are in <.link
           navigate={~p"/docs/runner-fleet"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Manage the runner fleet</.link>. Batch sizing for a production fleet is in <.link
           navigate={~p"/docs/production"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Go to production</.link>.
       </p>
 
@@ -276,7 +277,8 @@
 
 <span class="text-zinc-500">Reloaded the runner — it re-reads packs and re-advertises to the control plane.</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--hash</code>
+        The
+        <.docs_inline_code>--hash</.docs_inline_code>
         pin makes this exact: the install aborts when the computed hash does not match.
         Each version carries its own trust decision, so a version you trusted before
         resumes dispatch without another review, and a catalog hash does not need one
@@ -286,7 +288,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Go back per runner, in the same bounded groups you rolled forward in, and repeat
         the same checks. Remove an unwanted pack with
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar pack uninstall</code>
+        <.docs_inline_code>emisar pack uninstall</.docs_inline_code>
         — the command reloads the runner and removes those actions from its catalog.
       </p>
 
@@ -332,8 +334,8 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         If you maintain the pack yourself, publishing, versioning, and declaring a retirement floor
         are in
-        <.link navigate={~p"/docs/publishing-packs"} class="text-brand-300 hover:text-brand-200">Author your own pack</.link>
-        and <.link navigate={~p"/docs/pack-registry"} class="text-brand-300 hover:text-brand-200">Host your own registry</.link>.
+        <.link navigate={~p"/docs/publishing-packs"} class="text-brand-400 hover:text-brand-300">Author your own pack</.link>
+        and <.link navigate={~p"/docs/pack-registry"} class="text-brand-400 hover:text-brand-300">Host your own registry</.link>.
       </p>
 
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
@@ -361,7 +363,7 @@
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Validate locally (below) — the output shows the file and rule. Set
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">allow_symlinks</code>
+                <.docs_inline_code>allow_symlinks</.docs_inline_code>
                 when a pack really needs them.
               </td>
             </tr>
@@ -396,12 +398,12 @@
                 One action is gone from a healthy pack
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Its program does not resolve on the service's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">PATH</code>, or a local
+                Its program does not resolve on the service's <.docs_inline_code>PATH</.docs_inline_code>, or a local
                 admission rule hides it — a rule in the host's config always wins.
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Install the missing binary or fix the service's
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">PATH</code>
+                <.docs_inline_code>PATH</.docs_inline_code>
                 — the runner
                 refreshes on its own.
               </td>
@@ -419,7 +421,7 @@
         when the host hash matches the trusted hash and dispatch still refuses.
         <.link
           navigate={~p"/docs/action-packs"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Pack reference</.link>
         contains the YAML contract.
       </p>

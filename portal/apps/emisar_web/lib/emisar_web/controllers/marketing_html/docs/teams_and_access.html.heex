@@ -115,7 +115,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             A <strong class="text-zinc-200">group scope</strong>
-            follows a runner group, such as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">group: cassandra-prod</code>. New
+            follows a runner group, such as <.docs_inline_code>group: cassandra-prod</.docs_inline_code>. New
             runners in that group enter scope automatically.
           </span>
         </li>
@@ -130,9 +130,9 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Each grant also carries a pack scope — all packs by default, or an explicit list.
         This is what lets a DBA run
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">postgres.*</code>
+        <.docs_inline_code>postgres.*</.docs_inline_code>
         on database hosts without gaining
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">shell</code>
+        <.docs_inline_code>shell</.docs_inline_code>
         access; a runner group alone cannot express that, because restricted packs exist on
         most hosts. The two dimensions combine: a member reaches only runners in their runner
         scope, and on those runners only packs in their pack scope.
@@ -142,7 +142,7 @@
         disappear from fleet, catalog, and dispatch surfaces. History is different — runs and
         audit events stay account-wide, and can name runners a member can no longer reach.
         An API key inherits its owner's scope, so narrowing a member to
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cassandra-*</code>
+        <.docs_inline_code>cassandra-*</.docs_inline_code>
         narrows their agent with it, with no per-key settings to update. Every scope change is
         audited.
       </p>
@@ -159,7 +159,7 @@
         account. Members without TOTP enroll; other unproved sessions enter an authenticator or
         recovery code. Factor setup and the SSO exemption are in <.link
           navigate={~p"/docs/authentication" <> "#enforcement"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Enforce account sign-in</.link>.
       </p>
 
@@ -169,10 +169,10 @@
         revokes the API keys minted from their membership. Sign-in mechanics and session
         self-service are in <.link
           navigate={~p"/docs/authentication"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Authentication</.link>. Key lifecycle and revocation are in <.link
           navigate={~p"/docs/agents-and-keys"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Manage agents &amp; keys</.link>.
       </p>
     </.docs_layout>

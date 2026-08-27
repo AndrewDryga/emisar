@@ -18,7 +18,7 @@
       <.docs_header current="connect-cli-agent">
         <:dek>
           Connect a local AI client to your action catalog through direct HTTPS or the
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
+          <.docs_inline_code>emisar-mcp</.docs_inline_code>
           stdio bridge.
         </:dek>
       </.docs_header>
@@ -59,7 +59,7 @@
 
         <p class="mt-4 text-base text-zinc-400">
           Most local clients speak stdio. The
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
+          <.docs_inline_code>emisar-mcp</.docs_inline_code>
           bridge is a small binary that sits in between the agent and emisar control plane. Your
           client starts it, and it passes each call to your account. Install it once per machine —
           every client uses the same one.
@@ -68,12 +68,13 @@
         <.docs_h3 id="install-bridge">Install</.docs_h3>
         <p class="mt-2 text-base text-zinc-300">
           The installer resolves the latest
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mcp-v*</code>
+          <.docs_inline_code>mcp-v*</.docs_inline_code>
           release, verifies its checksum, and installs
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp</code>
-          into <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin</code>
+          <.docs_inline_code>emisar-mcp</.docs_inline_code>
+          into
+          <.docs_inline_code>/usr/local/bin</.docs_inline_code>
           on macOS and Linux, and
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">%LOCALAPPDATA%\Programs\Emisar\bin</code>
+          <.docs_inline_code>%LOCALAPPDATA%\Programs\Emisar\bin</.docs_inline_code>
           on 64-bit Windows:
         </p>
         <.os_docs_code phx-no-format detected={@detected_os}>
@@ -115,16 +116,17 @@
               navigate={~p"/docs/signed-dispatch"}
               class="text-brand-400 hover:text-brand-300"
             >signed dispatch</.link>, the bridge needs
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
-            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
+            <.docs_inline_code>EMISAR_SIGNING_KEY</.docs_inline_code>
+            and
+            <.docs_inline_code>EMISAR_SIGNING_CERT</.docs_inline_code>
             in its environment. Put them wherever your client passes environment to the bridge: the
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">env</code>
+            <.docs_inline_code>env</.docs_inline_code>
             block in its config file, or another
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">-e</code>
+            <.docs_inline_code>-e</.docs_inline_code>
             flag if you registered it with
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">claude mcp add</code>
-            or <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">grok mcp add</code>.
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing init</code>
+            <.docs_inline_code>claude mcp add</.docs_inline_code>
+            or <.docs_inline_code>grok mcp add</.docs_inline_code>.
+            <.docs_inline_code>emisar signing init</.docs_inline_code>
             prints both values. The bridge signs each action dispatch. Keep both values secret and
             off the portal.
           </p>
@@ -134,7 +136,7 @@
       <section>
         <.docs_h2 id="connect-later">Connect a client you install later</.docs_h2>
         <p class="mt-4 text-base text-zinc-400">
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp connect</code>
+          <.docs_inline_code>emisar-mcp connect</.docs_inline_code>
           is an ordinary command, so a client you install next month does not need a reinstall.
           Run it with no arguments to be asked about each client it finds, or name one directly.
           A client that already carries an emisar entry is left alone:
@@ -164,8 +166,8 @@ Waiting for approval (Ctrl-C to cancel)…
 Restart any client you just connected so it picks up the new server.</.docs_code>
         <p class="mt-5 text-base leading-7 text-zinc-400">
           A rerun keeps the stored credential until the control plane rejects it. The rest of
-          the command surface — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--all</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">disconnect</code>,
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--auto-permit</code>
+          the command surface — <.docs_inline_code>--all</.docs_inline_code>, <.docs_inline_code>disconnect</.docs_inline_code>,
+          <.docs_inline_code>--auto-permit</.docs_inline_code>
           — is in <.link
             navigate={~p"/docs/mcp-reference#cli-clients"}
             class="text-brand-400 hover:text-brand-300"
@@ -286,21 +288,21 @@ Restart any client you just connected so it picks up the new server.</.docs_code
             first call. A secret is shown only once and cannot be viewed again, so a failing
             client always needs a fresh one — rotating or minting is the fix, never a lookup. A
             revoked key cannot be restored. If the client never worked at all, check which token was
-            copied: an audit-export token starts <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-export-</code>, and the
+            copied: an audit-export token starts <.docs_inline_code>emk-export-</.docs_inline_code>, and the
             MCP endpoint refuses it as the wrong kind. Mint or rotate a key in
             <a
               href={~p"/app/agents"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
             >AI agents</a>
             and put the new secret in the client config. For a client the bridge configured,
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp connect --client &lt;id&gt;</code>
+            <.docs_inline_code>emisar-mcp connect --client &lt;id&gt;</.docs_inline_code>
             does both steps in one go.
             <.link
               navigate={~p"/docs/agents-and-keys"}
-              class="text-brand-300 hover:text-brand-200"
+              class="text-brand-400 hover:text-brand-300"
             >Manage agents & keys</.link>
             covers scope and expiry.
-            <.link navigate={~p"/docs/credentials"} class="text-brand-300 hover:text-brand-200">Rotate and revoke credentials</.link>
+            <.link navigate={~p"/docs/credentials"} class="text-brand-400 hover:text-brand-300">Rotate and revoke credentials</.link>
             covers the cutover.
           </span>
         </li>
@@ -314,11 +316,11 @@ Restart any client you just connected so it picks up the new server.</.docs_code
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
             >AI agents</a>
             page shows the version each key last reported, and
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp --version</code>
+            <.docs_inline_code>emisar-mcp --version</.docs_inline_code>
             shows what is installed. A running client keeps the binary it already loaded, so
             restart the client after installing. See <.link
               navigate={~p"/docs/bridge-upgrades"}
-              class="text-brand-300 hover:text-brand-200"
+              class="text-brand-400 hover:text-brand-300"
             >Upgrade the MCP bridge</.link>.
           </span>
         </li>
@@ -326,11 +328,11 @@ Restart any client you just connected so it picks up the new server.</.docs_code
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">A tool call comes back with an error code.</strong>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">invalid_args</code>
+            <.docs_inline_code>invalid_args</.docs_inline_code>
             returns the exact paths to correct, so fix those rather than retrying the same call.
             The complete code list, with the one action each implies, is in <.link
               navigate={~p"/docs/mcp-reference"}
-              class="text-brand-300 hover:text-brand-200"
+              class="text-brand-400 hover:text-brand-300"
             >MCP CLI &amp; reference</.link>.
           </span>
         </li>
@@ -338,7 +340,7 @@ Restart any client you just connected so it picks up the new server.</.docs_code
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The response was lost after a mutation.</strong>
-            Recover by operation ID with <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_operation</code>,
+            Recover by operation ID with <.docs_inline_code>get_operation</.docs_inline_code>,
             using the same key that made the call — after a rotation, its successor counts. Never
             repeat the mutation. Cancelling only stops the bridge's wait and closing the client
             lets requests already in flight finish, so a cancelled call, closed client, or

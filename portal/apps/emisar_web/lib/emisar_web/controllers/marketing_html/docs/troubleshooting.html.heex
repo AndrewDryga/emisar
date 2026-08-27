@@ -52,7 +52,7 @@
                   {symptom}
                 </td>
                 <td class="px-4 py-3 align-top leading-6">
-                  <.link navigate={owner_path} class="text-brand-300 hover:text-brand-200">
+                  <.link navigate={owner_path} class="text-brand-400 hover:text-brand-300">
                     {owner}
                   </.link>
                 </td>
@@ -106,7 +106,7 @@
                 <td class="px-4 py-3 align-top font-semibold text-zinc-100">{seen}</td>
                 <td class="px-4 py-3 align-top leading-6">{cause}</td>
                 <td class="px-4 py-3 align-top leading-6">
-                  <.link navigate={owner_path} class="text-brand-300 hover:text-brand-200">
+                  <.link navigate={owner_path} class="text-brand-400 hover:text-brand-300">
                     {owner}
                   </.link>
                 </td>
@@ -117,11 +117,11 @@
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Over MCP, a stale or hidden target comes back as
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">target_contract_changed</code>
+        <.docs_inline_code>target_contract_changed</.docs_inline_code>
         with the exact refresh call — follow that refresh once, then retry once.
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">signature_required</code>
+        <.docs_inline_code>signature_required</.docs_inline_code>
         lists the runners that require client signing, and
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">not_allowed</code>
+        <.docs_inline_code>not_allowed</.docs_inline_code>
         means the current scope does not permit the request — it is not permission to probe.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -141,9 +141,9 @@
           <span>
             <strong class="text-zinc-200">Versions of every component involved</strong>
             — the runner
-            (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar --version</code>), the
+            (<.docs_inline_code>emisar --version</.docs_inline_code>), the
             bridge
-            (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar-mcp --version</code>),
+            (<.docs_inline_code>emisar-mcp --version</.docs_inline_code>),
             and the LLM client.
           </span>
         </li>
@@ -176,7 +176,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar doctor</code>
+              <.docs_inline_code>sudo emisar doctor</.docs_inline_code>
               output
             </strong>
             from the affected host, whole rather than the one line you think matters.
@@ -187,12 +187,12 @@
           <span>
             <strong class="text-zinc-200">A bounded slice of the logs</strong>
             around the window —
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
+            <.docs_inline_code>
               sudo journalctl -u emisar -n 200
-            </code>
-            and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">
+            </.docs_inline_code>
+            and <.docs_inline_code>
               sudo emisar events tail --lines 100
-            </code>. A whole journal is harder to read, not more complete.
+            </.docs_inline_code>. A whole journal is harder to read, not more complete.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -211,7 +211,7 @@
           attaching it and mask anything that looks like a credential. If a secret is already
           exposed, treat it as an incident, not a support request. Go to <.link
             navigate={~p"/docs/security-incidents"}
-            class="text-brand-300 hover:text-brand-200"
+            class="text-brand-400 hover:text-brand-300"
           >Security incidents</.link>.
         </p>
       </.docs_callout>
@@ -223,7 +223,7 @@
           <span>
             <strong class="text-zinc-200">A product problem</strong>
             goes to
-            <.link navigate={~p"/support"} class="text-brand-300 hover:text-brand-200">Support</.link>
+            <.link navigate={~p"/support"} class="text-brand-400 hover:text-brand-300">Support</.link>
             with the evidence above. This includes anything broken, unclear, or slower than
             expected.
           </span>
@@ -234,12 +234,12 @@
             <strong class="text-zinc-200">A suspected compromise or a vulnerability</strong>
             goes to <a
               href={EmisarWeb.MailTo.security()}
-              class="text-brand-300 hover:text-brand-200"
+              class="text-brand-400 hover:text-brand-300"
             >security@emisar.dev</a>. Examples include a leaked credential, an unexplained action,
             or an unexpected content hash.
             <.link
               navigate={~p"/docs/security-incidents"}
-              class="text-brand-300 hover:text-brand-200"
+              class="text-brand-400 hover:text-brand-300"
             >Security incidents</.link>
             lists the containment steps. Contain first. Send the report within the hour.
           </span>

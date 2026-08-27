@@ -37,7 +37,7 @@
         </:item>
         <:item>
           Root or sudo on each runner host. The installer writes to
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/usr/local/bin</code>
+          <.docs_inline_code>/usr/local/bin</.docs_inline_code>
           and the service unit.
         </:item>
         <:item>One non-critical runner to go first.</:item>
@@ -66,7 +66,7 @@
               <td class="px-4 py-3">
                 Nothing for you to run. Shipped changes land in the <.link
                   navigate={~p"/changelog"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >changelog</.link>.
               </td>
             </tr>
@@ -74,7 +74,7 @@
               <td class="px-4 py-3 font-semibold text-zinc-100">Runner binary</td>
               <td class="px-4 py-3">You, per host</td>
               <td class="px-4 py-3">
-                Run <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar update</code>. It stops and restarts the service.
+                Run <.docs_inline_code>sudo emisar update</.docs_inline_code>. It stops and restarts the service.
               </td>
             </tr>
             <tr>
@@ -83,7 +83,7 @@
               <td class="px-4 py-3">
                 Re-run the installer — <.link
                   navigate={~p"/docs/bridge-upgrades"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >Upgrade the MCP bridge</.link>. Cloud OAuth clients run no bridge.
               </td>
             </tr>
@@ -93,7 +93,7 @@
               <td class="px-4 py-3">
                 Updated separately, with their own trust decision — <.link
                   navigate={~p"/docs/pack-updates"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >Roll out and roll back packs</.link>.
               </td>
             </tr>
@@ -170,7 +170,7 @@
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
         <li>
           Read the
-          <.link navigate={~p"/changelog"} class="text-brand-300 hover:text-brand-200">changelog</.link>
+          <.link navigate={~p"/changelog"} class="text-brand-400 hover:text-brand-300">changelog</.link>
           for the releases between your current version and the target.
         </li>
         <li>
@@ -200,16 +200,16 @@
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># on the canary host</span>
 <span class="text-zinc-500">$</span> sudo emisar update --version &lt;target-version&gt;</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        This command works only for a runner installed by <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install.sh</code>, which records the paths it owns in a root-owned receipt. A copied
+        This command works only for a runner installed by <.docs_inline_code>install.sh</.docs_inline_code>, which records the paths it owns in a root-owned receipt. A copied
         binary, container image, or infrastructure-managed runner is refused — update that
         deployment at its source instead of letting the host drift from it.
       </p>
       <.docs_verify_download tarball="emisar-<version>-linux-amd64.tar.gz" checksums="SHA256SUMS" />
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The update touches only the binary: <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">config.yaml</code>, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.env</code>, the cached token, installed packs, the dispatch log, and the local
+        The update touches only the binary: <.docs_inline_code>config.yaml</.docs_inline_code>, <.docs_inline_code>runner.env</.docs_inline_code>, the cached token, installed packs, the dispatch log, and the local
         audit journal all stay as they are. Before the service stops, it verifies the release and
         archive checksum (an authenticated
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">gh</code>
+        <.docs_inline_code>gh</.docs_inline_code>
         CLI also checks the build attestation), stages the binary, checks its version, and
         confirms the new binary can read the current dispatch state.
       </p>
@@ -221,7 +221,7 @@
         </p>
       </.docs_callout>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        If any later step fails, the installer restores the previous binary, <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.env</code>, and cached
+        If any later step fails, the installer restores the previous binary, <.docs_inline_code>runner.env</.docs_inline_code>, and cached
         token, restarts the service if it was running before, and exits nonzero. Packs installed
         during the attempt stay installed.
       </p>
@@ -250,7 +250,7 @@
           href={~p"/app/audit"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Audit</a>. The audit row is what completes the check —
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">doctor</code>
+        <.docs_inline_code>doctor</.docs_inline_code>
         covers the host, and only a real run shows the whole path works.
       </p>
 
@@ -270,7 +270,7 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar doctor</code>
+            <.docs_inline_code>emisar doctor</.docs_inline_code>
             reports a failed check, or the runner does not come back online within its usual
             reconnect window.
           </span>
@@ -287,11 +287,11 @@
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <.link navigate={~p"/docs/production"} class="text-brand-300 hover:text-brand-200">Go to production</.link>
+        <.link navigate={~p"/docs/production"} class="text-brand-400 hover:text-brand-300">Go to production</.link>
         owns fleet shape and batch sizing.
         <.link
           navigate={~p"/docs/runner-fleet"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Manage the runner fleet</.link>
         owns groups, labels, and host-side removal.
       </p>
@@ -314,7 +314,7 @@
         An upgrade or rollback never touches packs. If the problem is an action's
         behavior rather than the runner, the version to change is the pack's. See <.link
           navigate={~p"/docs/pack-updates"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Roll out and roll back packs</.link>.
       </p>
     </.docs_layout>

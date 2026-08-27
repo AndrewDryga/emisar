@@ -86,9 +86,9 @@
       <.docs_h2 id="what-is-a-key">What an agent key is</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         An agent key is the credential an AI agent presents to reach emisar's tool API. It rides as
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Authorization: Bearer emk-…</code>
+        <.docs_inline_code>Authorization: Bearer emk-…</.docs_inline_code>
         on every call to the MCP endpoint. Keys start with
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
+        <.docs_inline_code>emk-</.docs_inline_code>
         followed by a short public identifier.
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
@@ -140,7 +140,7 @@
             <strong class="text-zinc-200">What it can run there.</strong>
             Your account's policies and the approvals they require — the same gate a human dispatch
             passes. A key authenticates as a fixed
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">api_client</code>
+            <.docs_inline_code>api_client</.docs_inline_code>
             role. It can discover the catalog, dispatch actions, and read run state. It cannot
             approve its own requests or edit policy. The member role does not transfer. Owner and
             operator keys have the same capability.
@@ -225,7 +225,7 @@
             <strong class="text-zinc-200">An OAuth-backed key does not rotate.</strong>
             OAuth consent creates a non-expiring key for a Claude.ai or ChatGPT connection, and
             OAuth manages its life through the refresh token. The client never receives a new
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-</code>
+            <.docs_inline_code>emk-</.docs_inline_code>
             secret. Reconnect the client to replace that key, or revoke it to end access.
           </span>
         </li>
@@ -262,7 +262,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A key that suddenly returns
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>
+        <.docs_inline_code>401</.docs_inline_code>
         has expired, been revoked, or been retired by a successor —
         <.link
           navigate={~p"/docs/connect-cli-agent" <> "#troubleshooting"}

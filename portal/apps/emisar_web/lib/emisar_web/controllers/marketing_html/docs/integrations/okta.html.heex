@@ -91,12 +91,12 @@
             </p>
             <.docs_settings>
               <:setting label="Application name">
-                Use <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>, or another
+                Use <.docs_inline_code>emisar</.docs_inline_code>, or another
                 name your administrators will recognize.
               </:setting>
               <:setting label="Sign-in redirect URIs">
                 Copy the callback from the Add provider page. It ends with
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/sign_in/sso/callback</code>
+                <.docs_inline_code>/sign_in/sso/callback</.docs_inline_code>
                 on your emisar host. Keep it as the only entry.
               </:setting>
               <:setting label="Allow wildcard *">
@@ -154,8 +154,9 @@
               Back on the connection you opened in step 1, paste the client ID and secret. For the
               issuer use your <strong class="text-zinc-200">org</strong>
               authorization server — that is your Okta org URL itself
-              (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://your-org.okta.com</code>,
-              with no <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/oauth2/…</code>
+              (<.docs_inline_code>https://your-org.okta.com</.docs_inline_code>,
+              with no
+              <.docs_inline_code>/oauth2/…</.docs_inline_code>
               path). Then tick <strong class="text-zinc-200">Enabled</strong>, save, and sign in.
             </p>
             <.docs_screenshot
@@ -185,10 +186,10 @@
           A <strong class="text-zinc-200">custom authorization server</strong>
           lets an Okta
           administrator rewrite the subject claim. Its tokens can use an email as
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+          <.docs_inline_code>sub</.docs_inline_code>
           instead of the Okta user
           ID. The organization server keeps
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+          <.docs_inline_code>sub</.docs_inline_code>
           equal to the Okta user ID.
           <.link navigate={~p"/docs/scim"} class="text-brand-400 hover:text-brand-300">directory sync</.link>
           uses the same value, so login and provisioning identify one person.
@@ -262,9 +263,11 @@
               and enable API
               integration. Enter the SCIM base URL as <strong class="text-zinc-200">Base URL</strong>. Enter the bearer as <strong class="text-zinc-200">API Token</strong>. Paste the token exactly as emisar
               showed it. Okta sends it in the
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Authorization</code>
-              header without a <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Bearer</code>
-              keyword. The <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">ems-</code>
+              <.docs_inline_code>Authorization</.docs_inline_code>
+              header without a
+              <.docs_inline_code>Bearer</.docs_inline_code>
+              keyword. The
+              <.docs_inline_code>ems-</.docs_inline_code>
               prefix lets emisar accept it unambiguously. Select
               <strong class="text-zinc-200">Test API Credentials</strong>
               before saving.
@@ -278,7 +281,7 @@
             <p class="mt-4">
               A failed test means the token or URL is wrong. Check for a truncated token and a base
               URL missing its
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/scim/v2</code>
+              <.docs_inline_code>/scim/v2</.docs_inline_code>
               suffix. For a bad token, emisar returns <em>“The SCIM bearer token is missing,
               malformed, or not authorized.”</em>
               Okta shows this message. Rotate the token in
@@ -374,12 +377,12 @@
 
       <.docs_callout kind={:note} title="Okta lines up on identity by default.">
         <p>
-          Okta sends the user ID as SCIM <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>. ID tokens from the
-          organization authorization server use the same value as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>. Sign-in and directory sync
+          Okta sends the user ID as SCIM <.docs_inline_code>externalId</.docs_inline_code>. ID tokens from the
+          organization authorization server use the same value as <.docs_inline_code>sub</.docs_inline_code>. Sign-in and directory sync
           therefore identify one emisar member. Two
           things break that: a <strong class="text-zinc-200">custom</strong>
           authorization server, whose subject claim an admin can rewrite, and access tokens, whose
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+          <.docs_inline_code>sub</.docs_inline_code>
           is often an email. Use the org authorization server, and check one real user before you
           roll out.
         </p>

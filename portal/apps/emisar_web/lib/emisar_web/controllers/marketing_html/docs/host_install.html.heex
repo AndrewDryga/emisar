@@ -105,9 +105,9 @@
 
       <.docs_h2 id="config">The config file</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>
+        <.docs_inline_code>/etc/emisar/config.yaml</.docs_inline_code>
         is the configuration file, and you can edit it. It does not contain secrets — they live
-        in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.env</code>. The fields
+        in <.docs_inline_code>runner.env</.docs_inline_code>. The fields
         you will set:
       </p>
       <.docs_code phx-no-format label="/etc/emisar/config.yaml"><span class="text-sky-300">schema_version</span>: <span class="text-amber-300">1</span>
@@ -127,15 +127,15 @@
 <span class="text-zinc-600"># admission:               # optional local defense-in-depth — see the security model</span>
 <span class="text-zinc-600"># signing:                 # optional signed-dispatch enforcement — see signed dispatch</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Restart the service after editing (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo systemctl restart emisar</code>,
+        Restart the service after editing (<.docs_inline_code>sudo systemctl restart emisar</.docs_inline_code>,
         or SIGHUP to reload packs without dropping runs).
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">admission</code>
+        <.docs_inline_code>admission</.docs_inline_code>
         sets a local allowlist, denylist, and risk ceiling that the control plane cannot override
         — see the <.link
           navigate={~p"/docs/security-model"}
           class="text-brand-400 hover:text-brand-300"
         >security model</.link>.
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">signing</code>
+        <.docs_inline_code>signing</.docs_inline_code>
         makes the runner refuse any dispatch not signed with your key — see <.link
           navigate={~p"/docs/signed-dispatch"}
           class="text-brand-400 hover:text-brand-300"
@@ -144,7 +144,7 @@
 
       <.docs_h2 id="flags">Flags and environment</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Flags go after <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">bash -s --</code>; environment variables go before <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">bash</code>. The common options are below. For the complete installer argument list, see
+        Flags go after <.docs_inline_code>bash -s --</.docs_inline_code>; environment variables go before <.docs_inline_code>bash</.docs_inline_code>. The common options are below. For the complete installer argument list, see
         <.link
           navigate={~p"/docs/runner-cli#lifecycle"}
           class="text-brand-400 hover:text-brand-300"
@@ -181,22 +181,23 @@
         </table>
       </div>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        Run <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">install.sh --help</code>
+        Run
+        <.docs_inline_code>install.sh --help</.docs_inline_code>
         for path overrides and a custom service user. Set
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_GITHUB_TOKEN</code>
+        <.docs_inline_code>EMISAR_GITHUB_TOKEN</.docs_inline_code>
         only if you use the optional GitHub release fallback and hit its rate limits.
       </p>
 
       <.docs_h2 id="user">The runner's user and privileged actions</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The service runs as its own
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+        <.docs_inline_code>emisar</.docs_inline_code>
         user, not root, and every action runs as that user. By default an action can do what any
         user on the host can: read logs, list processes, check service status. The runner also
         blocks every action from gaining privileges through
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>
+        <.docs_inline_code>sudo</.docs_inline_code>
         or any other setuid program — a sudoers grant for the
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+        <.docs_inline_code>emisar</.docs_inline_code>
         user does nothing. When a pack action needs root, there are two ways in.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -214,11 +215,11 @@ polkit.addRule(function(action, subject) &#123;
 &#125;);</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The action then calls
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">systemctl restart nginx</code>
+        <.docs_inline_code>systemctl restart nginx</.docs_inline_code>
         and polkit allows exactly that call. For packs that need more than systemd verbs, run the
         service as root instead and let policy, approvals, and the local admission list bound what
         runs. An action that declares a
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">user:</code>
+        <.docs_inline_code>user:</.docs_inline_code>
         drops to that user before it runs, even when the runner account is broader. The rest of
         the host protections — the setuid block, the user drop, local admission, systemd hardening
         — are in the <.link

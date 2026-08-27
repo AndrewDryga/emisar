@@ -63,7 +63,7 @@
         and failed attempts appear in the audit log. To connect an identity provider,
         continue with <.link
           navigate={~p"/docs/sso"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Single sign-on</.link>.
       </p>
 
@@ -152,11 +152,11 @@
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <.link navigate={~p"/docs/teams-and-access"} class="text-brand-300 hover:text-brand-200">
+        <.link navigate={~p"/docs/teams-and-access"} class="text-brand-400 hover:text-brand-300">
           Teams &amp; access
         </.link>
         owns roles, runner scopes, invitations, and manual suspension. The
-        <.link navigate={~p"/docs/scim"} class="text-brand-300 hover:text-brand-200">
+        <.link navigate={~p"/docs/scim"} class="text-brand-400 hover:text-brand-300">
           SCIM guide
         </.link>
         owns the directory lifecycle and protocol contract.
@@ -176,7 +176,7 @@
               <td class="px-4 py-3">
                 <.link
                   navigate={~p"/docs/integrations/okta"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >
                   Okta
                 </.link>
@@ -187,7 +187,7 @@
               <td class="px-4 py-3">
                 <.link
                   navigate={~p"/docs/integrations/entra"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >
                   Microsoft Entra
                 </.link>
@@ -198,7 +198,7 @@
               <td class="px-4 py-3">
                 <.link
                   navigate={~p"/docs/integrations/jumpcloud"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >JumpCloud</.link>
               </td>
               <td class="px-4 py-3">Same custom application</td>
@@ -207,7 +207,7 @@
               <td class="px-4 py-3">
                 <.link
                   navigate={~p"/docs/integrations/google-workspace"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >Google Workspace</.link>
               </td>
               <td class="px-4 py-3">No outbound SCIM for a custom app</td>
@@ -216,7 +216,7 @@
               <td class="px-4 py-3">
                 <.link
                   navigate={~p"/docs/integrations/keycloak"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >Keycloak</.link>
               </td>
               <td class="px-4 py-3">Needs a third-party outbound SCIM client</td>
@@ -225,7 +225,7 @@
               <td class="px-4 py-3">
                 <.link
                   navigate={~p"/docs/sso#generic-oidc"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >
                   Generic OpenID Connect
                 </.link>
@@ -253,7 +253,7 @@
             Disabling or deleting an SSO connection ends the sessions it authenticated — the
             connection lifecycle is in <.link
               navigate={~p"/docs/sso" <> "#disable-provider"}
-              class="text-brand-300 hover:text-brand-200"
+              class="text-brand-400 hover:text-brand-300"
             >Single sign-on</.link>.
           </span>
         </li>
@@ -262,7 +262,7 @@
           <span>
             SCIM offboarding preserves the person: deactivation suspends access, while DELETE also retires the directory resource. The full lifecycle is in <.link
               navigate={~p"/docs/scim"}
-              class="text-brand-300 hover:text-brand-200"
+              class="text-brand-400 hover:text-brand-300"
             >Directory sync</.link>.
           </span>
         </li>
@@ -285,19 +285,19 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         When sign-in fails, start with the symptom table in <.link
           navigate={~p"/docs/sso#troubleshooting"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >SSO troubleshooting</.link>; when provisioning or group access is stale, use
         <.link
           navigate={~p"/docs/scim#troubleshooting"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >SCIM troubleshooting</.link>
         and check the connection's <strong class="text-zinc-200">Last sync</strong>
         first. If you are not sure identity is the cause, start at <.link
           navigate={~p"/docs/troubleshooting"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Troubleshooting</.link>. For a lockout with no working owner session, email <a
           href={EmisarWeb.MailTo.support()}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >support</a>.
       </p>
     </.docs_layout>

@@ -31,7 +31,7 @@
         <:item>
           A rough picture of the product from <.link
             navigate={~p"/how-it-works"}
-            class="text-brand-300 hover:text-brand-200"
+            class="text-brand-400 hover:text-brand-300"
           >How it works</.link>, if this is
           your first page.
         </:item>
@@ -42,7 +42,7 @@
         each limit beside the behavior it limits.
         <.link
           navigate={~p"/docs/security-model"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Security model</.link>
         covers threats and guarantees; this page covers topology, state, and failure.
       </p>
@@ -86,7 +86,7 @@
         open, with no listener on the host and nothing to expose. The ports and hosts a
         runner needs are in <.link
           navigate={~p"/docs/network-requirements"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Network requirements</.link>. Cloud LLM clients reach the control plane directly over
         OAuth and run no bridge at all.
       </p>
@@ -222,7 +222,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Residency, retention windows, and what we deliberately never store are in <.link
           navigate={~p"/docs/security-model"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Security model</.link>.
       </p>
 
@@ -275,21 +275,21 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <.link
           navigate={~p"/docs/runner-upgrades"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Upgrade runners</.link>
         explains upgrade interruptions and recovery.
         <.link
           navigate={~p"/docs/compatibility"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Compatibility and deprecation</.link>
         defines the API contracts and current limits.
         <.link
           navigate={~p"/docs/runs"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Runs &amp; History</.link>
         explains each status; when something is broken and you are not sure where, start at <.link
           navigate={~p"/docs/troubleshooting"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Troubleshooting</.link>.
       </p>
 
@@ -304,7 +304,7 @@
         Messages are delivered idempotently, but exactly-once delivery is not guaranteed. A
         runner host can die after starting a process but before recording its outcome; when
         that happens, emisar reports
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">execution_outcome_unknown</code>
+        <.docs_inline_code>execution_outcome_unknown</.docs_inline_code>
         and refuses to guess by re-running it.
       </p>
 
@@ -345,7 +345,7 @@
             was created with, and a slow approval can outlive it — the freshness and validity
             windows are <.link
               navigate={~p"/docs/signed-dispatch"}
-              class="text-brand-300 hover:text-brand-200"
+              class="text-brand-400 hover:text-brand-300"
             >Signed dispatch</.link>'s subject.
           </span>
         </li>
@@ -355,7 +355,7 @@
         is the decision that stands, and what is rechecked is whether it can still be carried out
         as approved. Approval rules, expiry, and standing grants are owned by <.link
           navigate={~p"/docs/policies-and-approvals"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Policies &amp; Approvals</.link>.
       </p>
 
@@ -363,7 +363,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         We host and maintain the control plane. Shipped changes land in the <.link
           navigate={~p"/changelog"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >changelog</.link>. You control runner, bridge, and pack upgrades, so those components move
         on your schedule. The repository contains deployable
         control-plane code for evaluation. Supported self-hosted and air-gapped deployments are
@@ -374,7 +374,7 @@
         only the dispatch and the redacted result cross the boundary. The threat model behind
         it, including what it deliberately does not defend against, is in <.link
           navigate={~p"/docs/security-model"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Security model</.link>.
       </p>
     </.docs_layout>

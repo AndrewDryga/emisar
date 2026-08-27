@@ -72,7 +72,8 @@
                 <span class="flex-none text-zinc-500">—</span>
                 <span>
                   the <strong class="text-zinc-200">SCIM base URL</strong>
-                  — <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/scim/v2</code>
+                  —
+                  <.docs_inline_code>/scim/v2</.docs_inline_code>
                   on your emisar host (copy button beside it)
                 </span>
               </li>
@@ -99,7 +100,7 @@
             <p class="mt-1.5">
               Set the SCIM endpoint to the base URL, paste the token as the API token (emisar
               reads it from the
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Authorization</code>
+              <.docs_inline_code>Authorization</.docs_inline_code>
               header), and enable Create, Update, and Deactivate. Okta and Entra need a
               separate provisioning application — their OIDC login applications cannot
               provision through SCIM — while JumpCloud carries sign-in and provisioning in
@@ -117,7 +118,8 @@
               Match the SCIM externalId to the OIDC subject.
             </p>
             <p class="mt-1.5">
-              Configure <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
+              Configure
+              <.docs_inline_code>externalId</.docs_inline_code>
               to carry the same stable value as the connection's identifier claim, so the SSO
               login and the synced record resolve to one emisar identity. Matching never uses
               email, so identifiers that differ cannot be reconciled.
@@ -127,9 +129,9 @@
                 <span class="flex-none text-zinc-500">—</span>
                 <span>
                   <strong class="text-zinc-200">Okta</strong>
-                  usually needs no changes: it puts the Okta user ID in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>, and
+                  usually needs no changes: it puts the Okta user ID in <.docs_inline_code>externalId</.docs_inline_code>, and
                   its organization authorization server sends the same value as
-                  <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+                  <.docs_inline_code>sub</.docs_inline_code>
                   — though Okta shows that in examples rather than guaranteeing it, and a
                   custom authorization server can rewrite the subject claim.
                 </span>
@@ -139,11 +141,13 @@
                 <span>
                   <strong class="text-zinc-200">Entra</strong>
                   needs changes on both sides: map
-                  <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-                  from <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">mailNickname</code>
-                  to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">objectId</code>, and
-                  set the connection's identifier claim to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">oid</code>. Entra sends
-                  a different <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+                  <.docs_inline_code>externalId</.docs_inline_code>
+                  from
+                  <.docs_inline_code>mailNickname</.docs_inline_code>
+                  to <.docs_inline_code>objectId</.docs_inline_code>, and
+                  set the connection's identifier claim to <.docs_inline_code>oid</.docs_inline_code>. Entra sends
+                  a different
+                  <.docs_inline_code>sub</.docs_inline_code>
                   per application, so without both changes the login and provisioning
                   applications identify different people.
                 </span>
@@ -201,10 +205,10 @@
         paste — you should plan for that gap. The rotation sequence, and how a SCIM
         bearer compares with every other credential emisar issues, is in <.link
           navigate={~p"/docs/credentials" <> "#idp"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >rotate and revoke credentials</.link>. If you believe the bearer has leaked, see <.link
           navigate={~p"/docs/security-incidents" <> "#idp"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >security incidents</.link>.
       </p>
 
@@ -384,8 +388,8 @@
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >Microsoft Entra</.link>
             — a separate enterprise application, with
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>
-            remapped to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">objectId</code>.
+            <.docs_inline_code>externalId</.docs_inline_code>
+            remapped to <.docs_inline_code>objectId</.docs_inline_code>.
           </span>
         </li>
         <li id="jumpcloud" class="flex gap-3">
@@ -468,7 +472,7 @@
         Use these checks for directory-side symptoms. If you are not sure the problem is
         provisioning, start from <.link
           navigate={~p"/docs/troubleshooting"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Troubleshooting</.link>. It routes each symptom to the page that owns it.
       </p>
       <div class="mt-5 overflow-hidden rounded-xl border border-zinc-800">
@@ -556,7 +560,7 @@
           <span>
             Each directory-sync action records its authentication method in the <.link
               navigate={~p"/docs/audit-and-siem"}
-              class="text-brand-300 hover:text-brand-200"
+              class="text-brand-400 hover:text-brand-300"
             >
               audit log
             </.link>. This shows whether the directory, rather than a person, suspended an offboarded

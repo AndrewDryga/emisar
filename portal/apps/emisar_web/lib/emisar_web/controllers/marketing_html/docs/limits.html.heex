@@ -32,7 +32,7 @@
               <td class="px-4 py-3 align-top font-medium text-zinc-200">
                 <.link
                   navigate={~p"/docs/action-packs"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >Action output</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">
@@ -46,7 +46,7 @@
             </tr>
             <tr>
               <td class="px-4 py-3 align-top font-medium text-zinc-200">
-                <.link navigate={~p"/docs/runs"} class="text-brand-300 hover:text-brand-200">Live output in the console</.link>
+                <.link navigate={~p"/docs/runs"} class="text-brand-400 hover:text-brand-300">Live output in the console</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">The most recent 500 progress lines</td>
               <td class="px-4 py-3 align-top leading-6">
@@ -60,14 +60,14 @@
               <td class="px-4 py-3 align-top font-medium text-zinc-200">
                 <.link
                   navigate={~p"/docs/mcp-reference"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >MCP list pages</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 15 per page by default, with a maximum of 50.
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">recent_runs</code>
+                <.docs_inline_code>recent_runs</.docs_inline_code>
                 supports up to 100.
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">find_actions</code>
+                <.docs_inline_code>find_actions</.docs_inline_code>
                 supports up to 15.
               </td>
               <td class="px-4 py-3 align-top leading-6">
@@ -79,13 +79,14 @@
               <td class="px-4 py-3 align-top font-medium text-zinc-200">
                 <.link
                   navigate={~p"/docs/mcp-reference"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >MCP long-poll wait</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">Up to 60 seconds per call</td>
               <td class="px-4 py-3 align-top leading-6">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">run_action</code>
-                and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
+                <.docs_inline_code>run_action</.docs_inline_code>
+                and
+                <.docs_inline_code>wait_for_run</.docs_inline_code>
                 return the current state at the deadline. One credential can hold 8 concurrent waits
                 per node. Every other tool answers immediately.
               </td>
@@ -94,7 +95,7 @@
               <td class="px-4 py-3 align-top font-medium text-zinc-200">
                 <.link
                   navigate={~p"/docs/mcp-reference"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >MCP structured output</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">
@@ -102,7 +103,7 @@
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 A run whose parsed output is larger is dropped from the response and replaced with a
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">wait_for_run</code>
+                <.docs_inline_code>wait_for_run</.docs_inline_code>
                 continuation that fetches it on its own.
               </td>
             </tr>
@@ -110,20 +111,20 @@
               <td class="px-4 py-3 align-top font-medium text-zinc-200">
                 <.link
                   navigate={~p"/docs/mcp-reference"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >MCP response size</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">512 KiB per tool result</td>
               <td class="px-4 py-3 align-top leading-6">
                 Tools shrink themselves first — fewer rows, shorter output tails. A result that
                 still does not fit returns a transport error carrying a
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">get_operation</code>
+                <.docs_inline_code>get_operation</.docs_inline_code>
                 continuation.
               </td>
             </tr>
             <tr>
               <td class="px-4 py-3 align-top font-medium text-zinc-200">
-                <.link navigate={~p"/docs/runbooks"} class="text-brand-300 hover:text-brand-200">Runbooks</.link>
+                <.link navigate={~p"/docs/runbooks"} class="text-brand-400 hover:text-brand-300">Runbooks</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 64 KiB definition. 32 inputs, 16 stages, 16 target refs per step, and 256 resolved
@@ -139,7 +140,7 @@
             </tr>
             <tr>
               <td class="px-4 py-3 align-top font-medium text-zinc-200">
-                <.link navigate={~p"/docs/runbooks"} class="text-brand-300 hover:text-brand-200">Runbook execution</.link>
+                <.link navigate={~p"/docs/runbooks"} class="text-brand-400 hover:text-brand-300">Runbook execution</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 1 MiB frozen plan. 24 hours end to end, waits included
@@ -153,15 +154,15 @@
               <td class="px-4 py-3 align-top font-medium text-zinc-200">
                 <.link
                   navigate={~p"/docs/audit-and-siem"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >Audit export</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">100 events per page, 1,000 maximum</td>
               <td class="px-4 py-3 align-top leading-6">
                 A full page carries
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">Link: rel="next"</code>
+                <.docs_inline_code>Link: rel="next"</.docs_inline_code>
                 and means more may be waiting — keep paging from
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">X-Next-Cursor</code>
+                <.docs_inline_code>X-Next-Cursor</.docs_inline_code>
                 until it disappears.
               </td>
             </tr>
@@ -169,12 +170,12 @@
               <td class="px-4 py-3 align-top font-medium text-zinc-200">
                 <.link
                   navigate={~p"/docs/audit-and-siem"}
-                  class="text-brand-300 hover:text-brand-200"
+                  class="text-brand-400 hover:text-brand-300"
                 >Audit export requests</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">60 requests a minute per token</td>
               <td class="px-4 py-3 align-top leading-6">
-                Further requests answer <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">429</code>. A poller must hold
+                Further requests answer <.docs_inline_code>429</.docs_inline_code>. A poller must hold
                 its cursor and retry rather than treat the failure as an empty page.
               </td>
             </tr>

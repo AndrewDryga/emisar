@@ -126,7 +126,7 @@
             <p class="mt-1.5">
               <strong class="text-zinc-200">Display Label</strong>
               is what your people see in the JumpCloud User Portal —
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+              <.docs_inline_code>emisar</.docs_inline_code>
               is the obvious choice. Everything else on this step is cosmetic.
             </p>
 
@@ -182,7 +182,7 @@
               as the grant type. Either <strong class="text-zinc-200">Client Secret POST</strong>
               or <strong class="text-zinc-200">Client Secret Basic</strong>
               works — emisar accepts both. Set <strong class="text-zinc-200">Login URL</strong>
-              to <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">https://emisar.dev</code>.
+              to <.docs_inline_code>https://emisar.dev</.docs_inline_code>.
             </p>
             <.docs_screenshot
               src="/images/docs/sso/jumpcloud-sso-oidc-config.webp"
@@ -194,8 +194,9 @@
               Under <strong class="text-zinc-200">Attribute Mapping → Standard Scopes</strong>,
               select <strong class="text-zinc-200">Email</strong>
               and <strong class="text-zinc-200">Profile</strong>. Email adds the
-              <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">email</code>
-              and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">email_verified</code>
+              <.docs_inline_code>email</.docs_inline_code>
+              and
+              <.docs_inline_code>email_verified</.docs_inline_code>
               claims emisar checks before joining sign-in to a synced user. Profile supplies the
               display-name claims. Then press <strong class="text-zinc-200">Activate</strong>.
             </p>
@@ -291,7 +292,7 @@
               Press <strong class="text-zinc-200">Test Connection</strong>, then <strong class="text-zinc-200">Activate</strong>. Activation creates, renames, and
               deletes a probe group. It also provisions and removes the test user from your live
               emisar account. Do not press Save. JumpCloud discards the configuration and makes you
-              start over. The probe group can omit <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>. emisar returns
+              start over. The probe group can omit <.docs_inline_code>externalId</.docs_inline_code>. emisar returns
               the id used for the rename and delete.
             </p>
             <.docs_screenshot
@@ -313,11 +314,11 @@
 
       <.docs_h3 id="one-person-one-member">When sign-in and the directory disagree</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        emisar binds a synced member to the directory <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">externalId</code>, or to
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">userName</code>
+        emisar binds a synced member to the directory <.docs_inline_code>externalId</.docs_inline_code>, or to
+        <.docs_inline_code>userName</.docs_inline_code>
         when externalId is
         missing. A sign-in binds to the
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sub</code>
+        <.docs_inline_code>sub</.docs_inline_code>
         claim. When those values differ, emisar cannot prove both records belong to one person. It
         holds the sign-in for an administrator instead of guessing.
       </p>

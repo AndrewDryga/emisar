@@ -56,10 +56,10 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         This page starts from packs you already authored — the format is in <.link
           navigate={~p"/docs/publishing-packs"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Author your own pack</.link>, and every field is in <.link
           navigate={~p"/docs/action-packs"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >the Pack reference</.link>.
       </p>
 
@@ -79,7 +79,7 @@
         Build it from the same signed release tag your runners were installed
         from, so the tool that hashes a pack is the one whose loader will
         enforce that hash — an unpinned
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">go install …@latest</code>
+        <.docs_inline_code>go install …@latest</.docs_inline_code>
         builds whatever the default branch holds that minute.
       </p>
       <.docs_code
@@ -200,7 +200,7 @@ packctl catalog build --packs ./packs --out ./dist \
 
       <%!-- Next steps --%>
       <div class="mt-16 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-8 text-sm">
-        <.link navigate={~p"/docs/publishing-packs"} class="text-brand-300 hover:text-brand-200">
+        <.link navigate={~p"/docs/publishing-packs"} class="text-brand-400 hover:text-brand-300">
           Author your own pack
         </.link>
         <div class="flex items-center gap-4">

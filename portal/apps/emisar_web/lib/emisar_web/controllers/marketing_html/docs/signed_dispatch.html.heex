@@ -40,7 +40,7 @@
       <ol class="mt-4 space-y-3 text-base text-zinc-300 list-decimal pl-6">
         <li>
           <strong>The MCP bridge signs.</strong>
-          For <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">run_action</code>,
+          For <.docs_inline_code>run_action</.docs_inline_code>,
           the bridge signs the origin, action, exact pack, exact arguments, exact runner set,
           reason, operation, nonce, and time — plus digests of the evidence and expected result
           an approver sees. After the bridge signs, nothing can be added to the claim.
@@ -68,9 +68,9 @@
         short-lived certificates that vouch for an operator's key and, optionally, a scope — a
         group or labels the runner checks against its own config. Every signature also names
         its exact targets as
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">name~sha256-prefix</code>
+        <.docs_inline_code>name~sha256-prefix</.docs_inline_code>
         refs derived from each runner's identity (its hostname, or the
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">runner.id</code>
+        <.docs_inline_code>runner.id</.docs_inline_code>
         you declared): a replacement host that keeps the identity keeps the ref, and a new
         identity makes a new ref.
       </.docs_callout>
@@ -85,9 +85,9 @@
       <p class="mt-6 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">1. Install the CLI on an operator machine.</strong>
         The signing commands are part of the
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar</code>
+        <.docs_inline_code>emisar</.docs_inline_code>
         binary. Install it binary-only:
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">--no-service</code>
+        <.docs_inline_code>--no-service</.docs_inline_code>
         skips the service and needs no enrollment key, so this machine does not become a
         runner.
       </p>
@@ -99,11 +99,11 @@
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">2. Mint the CA, key, and certificate.</strong>
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">signing init</code>
+        <.docs_inline_code>signing init</.docs_inline_code>
         mints the CA + leaf + cert in one shot. (Already have a CA? Use
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing new-ca</code>
+        <.docs_inline_code>emisar signing new-ca</.docs_inline_code>
         once, then
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing new-cert</code>
+        <.docs_inline_code>emisar signing new-cert</.docs_inline_code>
         per operator.)
       </p>
       <.docs_code
@@ -114,7 +114,8 @@
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">3. Install the CA certificate</strong>
-        in <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/etc/emisar/config.yaml</code>
+        in
+        <.docs_inline_code>/etc/emisar/config.yaml</.docs_inline_code>
         on every runner. It is safe to commit — ship it the way you ship the rest of your
         config.
       </p>
@@ -147,7 +148,7 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
         the runner. It opens the durable replay journal at startup and then advertises that it
         verifies signatures. A reload cannot make that first switch. A runner that booted un-enforcing
         holds an in-memory replay store, so
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">reload</code>
+        <.docs_inline_code>reload</.docs_inline_code>
         leaves enforcement off and unsigned calls keep flowing. (Later CA rotations and trusted-key
         swaps on an <em>already-enforcing</em>
         runner do apply live with a reload, no dropped runs.)
@@ -177,7 +178,7 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
           <span>
             <strong class="text-zinc-200">The CA public key is config, not a secret.</strong>
             Ship it the way you already ship
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">config.yaml</code>
+            <.docs_inline_code>config.yaml</.docs_inline_code>
             — cloud-init, Packer, Ansible, a golden image, or your infrastructure repository.
             Operator certificates then change without editing a runner.
           </span>
@@ -199,9 +200,9 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
               Scope each cert to match how you operate.
             </strong>
             Scope is a per-cert decision. A cert scoped
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">group=prod</code>
+            <.docs_inline_code>group=prod</.docs_inline_code>
             runs only on prod runners, a label scope
-            (<code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">env=prod,region=us</code>)
+            (<.docs_inline_code>env=prod,region=us</.docs_inline_code>)
             narrows it further, and an empty scope is valid on any runner that trusts the CA.
             The runner checks scope against its own local group and labels.
           </span>
@@ -213,7 +214,7 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
             Whoever holds it can sign a certificate that every runner trusting the CA accepts.
             Keep it offline in a secrets store, and never let it reach a runner, the portal, or
             git. The signing key in
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
+            <.docs_inline_code>EMISAR_SIGNING_KEY</.docs_inline_code>
             is still a secret, but its reach is bounded by its cert's scope and short TTL.
           </span>
         </li>
@@ -227,7 +228,7 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
       <.docs_h2 id="profile">Issue from your own PKI</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A runner accepts a certificate when it chains to one of its trusted CAs and matches
-        this profile. Anything else is refused as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_profile</code>.
+        this profile. Anything else is refused as <.docs_inline_code>cert_profile</.docs_inline_code>.
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
         <table class="w-full min-w-[720px] text-left text-sm">
@@ -241,7 +242,7 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
             <tr>
               <td class="px-4 py-3 align-top leading-6">
                 Exactly one URI in the subject alternative name, starting
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar://dispatch/v1</code>
+                <.docs_inline_code>emisar://dispatch/v1</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 This is what marks a certificate as issued for emisar. A TLS server certificate
@@ -286,16 +287,16 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         No extended key usage is required: we do not own an OID for it, and reusing
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">serverAuth</code>
+        <.docs_inline_code>serverAuth</.docs_inline_code>
         would accept the TLS certificates the scope URI exists to keep out. If you want a
         second belt, name-constrain the issuing CA to
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar://</code>
+        <.docs_inline_code>emisar://</.docs_inline_code>
         URIs — then even a shared root cannot issue anything else that a runner would accept.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The scope rides in that URI's query, and there is one spelling per scope: parameters
         sorted, and anything outside letters, digits, and
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">-._~</code>
+        <.docs_inline_code>-._~</.docs_inline_code>
         percent-encoded with uppercase hex. A certificate spelled another way is refused
         rather than corrected, so your issuer and the runner can never disagree about what was
         authorized.
@@ -310,11 +311,12 @@ emisar://dispatch/v1?group=prod
 emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         In Vault PKI that is a role with
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">allowed_uri_sans</code>
+        <.docs_inline_code>allowed_uri_sans</.docs_inline_code>
         set to the scopes you issue; in step-ca it is a certificate template with the same URI.
         Give the bridge the key and certificate through
-        <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
-        and <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
+        <.docs_inline_code>EMISAR_SIGNING_KEY</.docs_inline_code>
+        and
+        <.docs_inline_code>EMISAR_SIGNING_CERT</.docs_inline_code>
         — a base64 PKCS#8 private key and a base64 PEM chain, each on one line.
       </p>
 
@@ -325,9 +327,10 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
       </p>
       <ol class="mt-4 space-y-3 text-base text-zinc-300 list-decimal pl-6">
         <li>
-          Set <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">CA_KEY</code>
+          Set
+          <.docs_inline_code>CA_KEY</.docs_inline_code>
           to the saved private key and
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">CA_CERT</code>
+          <.docs_inline_code>CA_CERT</.docs_inline_code>
           to its PEM certificate, then mint the replacement: <.docs_code
             phx-no-format
             label="shell"
@@ -346,7 +349,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
         </li>
         <li>
           Keep the cert TTL above
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
+          <.docs_inline_code>max_attestation_age</.docs_inline_code>
           plus your approval turnaround, so a run that waited on approval is still inside both
           windows when it dispatches.
         </li>
@@ -371,7 +374,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
           <span>
             <strong class="text-zinc-200">The CA is the immediate lever.</strong>
             To revoke before a cert expires, rotate the CA:
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_cas</code>
+            <.docs_inline_code>trusted_cas</.docs_inline_code>
             is a list, so add the new CA beside the old, re-issue operator certs under it, then
             remove the old CA and reload every runner. Each reload applies live without
             dropping a run. Done means every runner reloaded — the control plane cannot do the
@@ -387,7 +390,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
           <span>
             <strong class="text-zinc-200">Short cert TTLs, scoped to the target.</strong>
             A 24h cert scoped
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">group=prod</code>
+            <.docs_inline_code>group=prod</.docs_inline_code>
             bounds both <em>where</em>
             a leak can run and <em>how long</em>. Reserve long TTLs for
             solo / break-glass and write down that you did.
@@ -397,7 +400,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Keep the CA public key in your infra repo.</strong>
-            Let config management own it next to the host's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">config.yaml</code>. Never
+            Let config management own it next to the host's <.docs_inline_code>config.yaml</.docs_inline_code>. Never
             hand-copy it to one box at a time. A diff and a deploy is your CA-rotation record. Keep
             the CA private key offline in your secrets store.
           </span>
@@ -406,7 +409,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Set
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
+            <.docs_inline_code>max_attestation_age</.docs_inline_code>
             above your approval turnaround.</strong>
             A run that waited on approval dispatches with its <em>original</em>
             signature, so a window shorter than your approvals refuses slow ones as stale. A
@@ -454,7 +457,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
             Every accepted nonce is written and synced before dispatch, in a journal that
             outlives the process. When the journal is full — 100,000 entries or 16 MiB — it
             refuses new work rather than dropping a fresh nonce, and raising
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
+            <.docs_inline_code>max_attestation_age</.docs_inline_code>
             above what the journal was opened with is refused.
           </span>
         </li>
@@ -463,7 +466,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
           <span>
             <strong class="text-zinc-200">Queued while offline.</strong>
             A dispatch that sits queued longer than
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
+            <.docs_inline_code>max_attestation_age</.docs_inline_code>
             (runner offline, or a slow approval) is refused as stale and must be re-issued.
           </span>
         </li>
@@ -485,22 +488,22 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
           <tbody class="divide-y divide-zinc-900 text-zinc-300">
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">signature_required</code>
+                <.docs_inline_code>signature_required</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 The dispatch carried no signed certificate — it came from the portal, a runbook, an API key, or a bridge that does not sign.
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Use a bridge with
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_KEY</code>
+                <.docs_inline_code>EMISAR_SIGNING_KEY</.docs_inline_code>
                 and
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">EMISAR_SIGNING_CERT</code>
+                <.docs_inline_code>EMISAR_SIGNING_CERT</.docs_inline_code>
                 set.
               </td>
             </tr>
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">target_mismatch</code>
+                <.docs_inline_code>target_mismatch</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 This runner is absent from the signed target set, or appears in it twice.
@@ -511,11 +514,11 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
             </tr>
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_profile</code>
+                <.docs_inline_code>cert_profile</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 The certificate does not match the profile below — most often it carries no
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar://</code>
+                <.docs_inline_code>emisar://</.docs_inline_code>
                 scope, so it was not issued for signing dispatches.
               </td>
               <td class="px-4 py-3 align-top leading-6">
@@ -524,10 +527,10 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
             </tr>
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_untrusted</code>
+                <.docs_inline_code>cert_untrusted</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                The certificate does not chain to any CA in this runner's <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">trusted_cas</code>.
+                The certificate does not chain to any CA in this runner's <.docs_inline_code>trusted_cas</.docs_inline_code>.
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Add the CA certificate and reload, or re-issue from a CA the runner trusts.
@@ -535,20 +538,20 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
             </tr>
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_expired</code>
+                <.docs_inline_code>cert_expired</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 The certificate is outside its validity window — there is no skew tolerance.
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Mint a fresh certificate with
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emisar signing new-cert</code>
+                <.docs_inline_code>emisar signing new-cert</.docs_inline_code>
                 and check the signing host's clock against NTP.
               </td>
             </tr>
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">cert_scope</code>
+                <.docs_inline_code>cert_scope</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 The cert is scoped to a group or labels this runner does not have.
@@ -559,20 +562,20 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
             </tr>
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">stale</code>
+                <.docs_inline_code>stale</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 The timestamp is outside the freshness window — clock skew, a long queue, or a slow approval.
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Re-issue the run and check host clocks. Raising
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">max_attestation_age</code>
+                <.docs_inline_code>max_attestation_age</.docs_inline_code>
                 above the window the replay journal was created with needs a CA rotation, a stop, a replay reset, and a restart.
               </td>
             </tr>
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">bad_signature</code>
+                <.docs_inline_code>bad_signature</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 The signature does not verify — the key is wrong, or the client and runner disagree about the signed value.
@@ -583,7 +586,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
             </tr>
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">replayed</code>
+                <.docs_inline_code>replayed</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 This nonce was already used — the client double-sent.
@@ -592,7 +595,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
             </tr>
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">intent_mismatch</code>
+                <.docs_inline_code>intent_mismatch</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 A delivered field differs from the signed one, or the call carried execution-limit overrides, which are never part of the claim.
@@ -601,7 +604,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
             </tr>
             <tr>
               <td class="whitespace-nowrap px-4 py-3 align-top font-semibold text-zinc-100">
-                <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">nonce_store_unavailable</code>
+                <.docs_inline_code>nonce_store_unavailable</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 The runner could not record the nonce, so it refused rather than risk a replay. The failure latches until restart.

@@ -90,7 +90,7 @@
         Routine rotation follows the same shape at a calmer pace, with an overlap window where one
         exists — that is <.link
           navigate={~p"/docs/credentials"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Rotate and revoke credentials</.link>. The
         difference here is that you cut first and accept the interruption.
       </p>
@@ -108,7 +108,7 @@
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
             >Audit export</a>
             and keep it with the incident —
-            <.link navigate={~p"/docs/audit-and-siem"} class="text-brand-300 hover:text-brand-200">Audit &amp; SIEM</.link>
+            <.link navigate={~p"/docs/audit-and-siem"} class="text-brand-400 hover:text-brand-300">Audit &amp; SIEM</.link>
             owns the export.
           </span>
         </li>
@@ -117,9 +117,9 @@
           <span>
             <strong class="text-zinc-200">The local journal on each affected host.</strong>
             Copy
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">/var/log/emisar/events.jsonl</code>
+            <.docs_inline_code>/var/log/emisar/events.jsonl</.docs_inline_code>
             and its rotated siblings off the host. Before any other change, run
-            <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo emisar audit verify --all</code>
+            <.docs_inline_code>sudo emisar audit verify --all</.docs_inline_code>
             to re-derive the hash chain and print the first break. Verification covers only the
             retained journal or retained suffix. It cannot prove that a privileged host operator
             did not replace or truncate the entire local journal. That limit makes the cloud
@@ -192,14 +192,14 @@
         </li>
         <li>
           Confirm the old key returns
-          <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>
+          <.docs_inline_code>401</.docs_inline_code>
           on its next call. If its scope was too wide, narrow the replacement's runner or pack scope.
         </li>
       </ol>
 
       <.docs_h2 id="audit-token">A leaked audit-export token</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        An audit-export token starts <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">emk-export-</code>, reads your
+        An audit-export token starts <.docs_inline_code>emk-export-</.docs_inline_code>, reads your
         account event history, and does nothing else. It is
         a different credential kind from an agent key — the MCP endpoint rejects it as the
         wrong kind, so it cannot list a runner or dispatch an action. The exposure reveals
@@ -227,7 +227,7 @@
           cutover.
         </li>
         <li>
-          Confirm the old token returns <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">401</code>.
+          Confirm the old token returns <.docs_inline_code>401</.docs_inline_code>.
         </li>
       </ol>
 
@@ -354,7 +354,7 @@
           Reinstall the exact prior version and hash on the affected hosts, and trust that hash
           deliberately. The rollout and rollback mechanics are in <.link
             navigate={~p"/docs/pack-updates"}
-            class="text-brand-300 hover:text-brand-200"
+            class="text-brand-400 hover:text-brand-300"
           >Roll out and roll back packs</.link>.
         </li>
         <li>
@@ -362,7 +362,7 @@
           its contents before another install. See
           <.link
             navigate={~p"/docs/pack-registry"}
-            class="text-brand-300 hover:text-brand-200"
+            class="text-brand-400 hover:text-brand-300"
           >Host your own registry</.link>
           for the hosting steps.
         </li>
@@ -427,7 +427,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The CA model, the certificate scopes, and the reload mechanics are owned by <.link
           navigate={~p"/docs/signed-dispatch"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Signed dispatch</.link>.
       </p>
 
@@ -468,11 +468,11 @@
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The provider-side steps live in
-        <.link navigate={~p"/docs/sso"} class="text-brand-300 hover:text-brand-200">Single sign-on</.link>
-        and <.link navigate={~p"/docs/scim"} class="text-brand-300 hover:text-brand-200">Directory sync</.link>.
+        <.link navigate={~p"/docs/sso"} class="text-brand-400 hover:text-brand-300">Single sign-on</.link>
+        and <.link navigate={~p"/docs/scim"} class="text-brand-400 hover:text-brand-300">Directory sync</.link>.
         <.link
           navigate={~p"/docs/authentication"}
-          class="text-brand-300 hover:text-brand-200"
+          class="text-brand-400 hover:text-brand-300"
         >Authentication</.link>
         covers offboarding a person instead of a credential.
       </p>

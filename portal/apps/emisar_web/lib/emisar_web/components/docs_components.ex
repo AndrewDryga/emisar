@@ -74,7 +74,7 @@ defmodule EmisarWeb.DocsComponents do
           aria-label="On this page"
           class="sticky top-8 hidden max-h-[calc(100vh-4rem)] overflow-y-auto px-2 pb-10 xl:block"
         >
-          <p class="font-mono text-xs font-semibold uppercase tracking-widest text-zinc-500">
+          <p class="font-mono text-xs font-semibold uppercase tracking-widest text-zinc-400">
             On this page
           </p>
           <ul class="mt-3 space-y-1.5 border-l border-zinc-900">
@@ -154,7 +154,7 @@ defmodule EmisarWeb.DocsComponents do
         <.docs_nav_group_pages group={group} current={@current} />
       </details>
       <div :if={!@collapsible}>
-        <p class="font-mono text-xs font-semibold uppercase tracking-widest text-zinc-500">
+        <p class="font-mono text-xs font-semibold uppercase tracking-widest text-zinc-400">
           {group.label}
         </p>
         <.docs_nav_group_pages group={group} current={@current} />
@@ -299,7 +299,7 @@ defmodule EmisarWeb.DocsComponents do
         :if={@label}
         class="flex items-center justify-between border-b border-zinc-900 bg-zinc-950/80 px-4 py-2"
       >
-        <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">{@label}</span>
+        <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-400">{@label}</span>
         <button
           :if={@copy_text || @copy_id}
           type="button"
@@ -399,7 +399,7 @@ defmodule EmisarWeb.DocsComponents do
   def docs_value(assigns) do
     ~H"""
     <div class="mt-4">
-      <p class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">{@label}</p>
+      <p class="font-mono text-[10px] uppercase tracking-widest text-zinc-400">{@label}</p>
       <div class="mt-1.5 flex min-h-9 items-center gap-3 rounded-lg border border-zinc-900 bg-black/40 py-1 pl-3 pr-1.5">
         <code class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap bg-transparent p-0 font-mono text-xs leading-6 text-zinc-300">{render_slot(
           @inner_block
@@ -564,11 +564,11 @@ defmodule EmisarWeb.DocsComponents do
       </summary>
       <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
         <p class="text-sm leading-7 text-zinc-400">
-          The installer checks the checksums for you. emisar also publishes a signed attestation for every release, so you can prove the binary came from our source before it runs as <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">sudo</code>.
+          The installer checks the checksums for you. emisar also publishes a signed attestation for every release, so you can prove the binary came from our source before it runs as <.docs_inline_code>sudo</.docs_inline_code>.
           Download the release and run both checks — the attestation names our source repository and the release workflow that built it.
         </p>
         <.docs_code phx-no-format label="shell">{@commands}</.docs_code>
-        <p class="mt-3 text-xs leading-5 text-zinc-500">
+        <p class="mt-3 text-xs leading-5 text-zinc-400">
           More on the signing pipeline: <.link
             href="/trust#release-integrity"
             class="text-brand-400 hover:text-brand-300"
@@ -594,7 +594,7 @@ defmodule EmisarWeb.DocsComponents do
 
   def docs_step_venue(assigns) do
     ~H"""
-    <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+    <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
       In {render_slot(@inner_block)}
     </p>
     """
@@ -699,7 +699,7 @@ defmodule EmisarWeb.DocsComponents do
           />
         </div>
       </div>
-      <figcaption :if={@caption} class="mt-2.5 text-sm leading-6 text-zinc-500">
+      <figcaption :if={@caption} class="mt-2.5 text-sm leading-6 text-zinc-400">
         {@caption}
       </figcaption>
     </figure>
@@ -773,6 +773,23 @@ defmodule EmisarWeb.DocsComponents do
   defp docs_callout_icon(:tip), do: "state.tip"
   defp docs_callout_icon(:warn), do: "state.warning"
 
+  @doc """
+  Inline code chip for docs prose — THE one owner of the docs `<code>`
+  treatment, so 500 hand-rolled copies can't drift. `class` carries the rare
+  tonal accent (e.g. `text-brand-300` on a policy verb).
+  """
+  attr :class, :any, default: nil
+  attr :rest, :global
+  slot :inner_block, required: true
+
+  def docs_inline_code(assigns) do
+    ~H"""
+    <code class={["rounded bg-zinc-900 px-1 py-0.5 text-xs", @class]} {@rest}>{render_slot(
+      @inner_block
+    )}</code>
+    """
+  end
+
   defp docs_callout_tint(:note), do: "text-zinc-400"
   defp docs_callout_tint(:tip), do: "text-brand-400"
   defp docs_callout_tint(:warn), do: "text-amber-400"
@@ -844,9 +861,9 @@ defmodule EmisarWeb.DocsComponents do
             role="tab"
             data-cast-step={index}
             aria-selected={to_string(index == 0)}
-            class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs text-zinc-500 transition hover:text-zinc-300 aria-selected:bg-zinc-800/80 aria-selected:text-zinc-100"
+            class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-xs text-zinc-400 transition hover:text-zinc-300 aria-selected:bg-zinc-800/80 aria-selected:text-zinc-100"
           >
-            <span class="text-zinc-500">{index + 1}</span>{frame.label}
+            <span class="text-zinc-400">{index + 1}</span>{frame.label}
           </button>
         </span>
       </figcaption>
@@ -858,7 +875,7 @@ defmodule EmisarWeb.DocsComponents do
         >
           <p
             data-cast-frame-label
-            class="mb-2 font-mono text-xs font-semibold uppercase tracking-wider text-zinc-500"
+            class="mb-2 font-mono text-xs font-semibold uppercase tracking-wider text-zinc-400"
           >
             Step {index + 1} · {frame.label}
           </p>
@@ -948,7 +965,7 @@ defmodule EmisarWeb.DocsComponents do
         </span>
       </div>
       <figcaption class="flex items-center justify-between gap-3 border-t border-zinc-800/80 bg-zinc-950/60 px-4 py-2">
-        <p class="text-[11px] text-zinc-500">
+        <p class="text-[11px] text-zinc-400">
           Demo uses real screenshots of the product.
         </p>
         <button
@@ -981,7 +998,7 @@ defmodule EmisarWeb.DocsComponents do
         href={@prev.path}
         class="group rounded-xl border border-zinc-900 p-4 transition-colors hover:border-brand-500/40"
       >
-        <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-500">← Previous</p>
+        <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">← Previous</p>
         <p class="mt-1 text-sm font-semibold text-zinc-50 group-hover:text-brand-300">
           {@prev.title}
         </p>
@@ -994,7 +1011,7 @@ defmodule EmisarWeb.DocsComponents do
           is_nil(@prev) && "sm:col-start-2"
         ]}
       >
-        <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Next →</p>
+        <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Next →</p>
         <p class="mt-1 text-sm font-semibold text-zinc-50 group-hover:text-brand-300">
           {@next.title}
         </p>
