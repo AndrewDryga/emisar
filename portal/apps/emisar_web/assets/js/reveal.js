@@ -5,12 +5,14 @@
 // crawlers always see every element. Reduced motion (and missing
 // IntersectionObserver) reveal everything immediately. Each element reveals
 // once, then is unobserved.
+import {reducedMotion} from "./lib/browser.js"
+
 export function initReveal() {
   const els = document.querySelectorAll("[data-reveal]")
   if (!els.length) return
 
   const reduce =
-    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    reducedMotion()
   const hasIO = "IntersectionObserver" in window
 
   // Pre-reveal anything already in view, BEFORE engaging the hiding class, so

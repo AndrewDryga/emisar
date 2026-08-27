@@ -14,6 +14,8 @@
 //   [data-docs-subgroup]  a section inside a group (labelled or not)
 //   [data-docs-page]      a page row; attr = its lowercased search terms
 //   #docs-filter-empty    the "no matches" message
+import {toggleDisplay} from "./lib/browser.js"
+
 export function initDocsFilter() {
   const input = document.getElementById("docs-filter")
   if (!input) return
@@ -21,12 +23,7 @@ export function initDocsFilter() {
   const groups = Array.from(document.querySelectorAll("[data-docs-group]"))
   const empty = document.getElementById("docs-filter-empty")
 
-  // Toggle inline `display`, not the `hidden` attribute: the rows carry
-  // Tailwind `flex`/`grid` classes whose `display` beats `[hidden]`, so only
-  // an inline style reliably hides them.
-  const show = (el, on) => {
-    el.style.display = on ? "" : "none"
-  }
+  const show = toggleDisplay
 
   const apply = () => {
     const q = input.value.trim().toLowerCase()

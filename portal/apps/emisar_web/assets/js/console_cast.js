@@ -23,6 +23,8 @@
 // swaps and pans, tabs still work, spotlights still shown.
 
 // The rhythm per spotlight: in → read → out; then travel → click → swap.
+import {onFirstVisible, reducedMotion} from "./lib/browser.js"
+
 const SPOT_IN_MS = 450
 const SPOT_HOLD_MS = 2400
 const SPOT_OUT_MS = 350
@@ -67,7 +69,7 @@ function setupCast(root) {
   if (!stage || frames.length < 2) return
 
   const reduceMotion =
-    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    reducedMotion()
 
   // Storyboard → stacked stage: every frame shares one grid cell; the active
   // one is opaque. The per-frame "Step N" headings duplicate the tabs, so
@@ -338,18 +340,5 @@ function setupCast(root) {
     hideSpots(true)
     run()
   }
-  if (!("IntersectionObserver" in window)) {
-    start()
-    return
-  }
-  const io = new IntersectionObserver(
-    (entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        io.disconnect()
-        start()
-      }
-    },
-    {threshold: 0.35}
-  )
-  io.observe(root)
+  onFirstVisible(root, start, {threshold: 0.35})
 }

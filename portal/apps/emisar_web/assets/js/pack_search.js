@@ -9,6 +9,8 @@
 //   [data-pack-count]             the count span in a category heading
 //   [data-pack-nav]               a jump-nav pill; attr = the category slug
 //   #pack-search-empty            the "no matches" message
+import {toggleDisplay} from "./lib/browser.js"
+
 export function initPackSearch() {
   const input = document.getElementById("pack-search")
   if (!input) return
@@ -21,12 +23,7 @@ export function initPackSearch() {
   const initial = new URLSearchParams(window.location.search).get("q")
   if (initial) input.value = initial
 
-  // Toggle inline `display`, not the `hidden` attribute: the cards/pills carry
-  // Tailwind `flex`/`inline-flex` classes whose `display` beats `[hidden]`, so
-  // only an inline style reliably hides them.
-  const show = (el, on) => {
-    el.style.display = on ? "" : "none"
-  }
+  const show = toggleDisplay
 
   const apply = () => {
     const q = input.value.trim().toLowerCase()

@@ -14,6 +14,8 @@
 // Code session (thinking spinners, ⏺/⎿ tool calls, the approval beat) on the
 // LLM tab. Honors prefers-reduced-motion (static render; tabs still work).
 
+import {onFirstVisible, reducedMotion} from "./lib/browser.js"
+
 const CHAR_MS = 14
 
 // A tab hop needs real time: first hold on the current pane so the viewer
@@ -73,7 +75,7 @@ export function initEmisarDemo() {
   let playing = false
 
   const reduceMotion =
-    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    reducedMotion()
 
   function seqOf(el) { return parseInt(el.dataset.seq || "0", 10) }
   function isSpinner(el) { return SPINNER.has(el.dataset.kind) }
@@ -239,22 +241,5 @@ export function initEmisarDemo() {
 
   // Static until scrolled into view, then play once.
   showTab(firstTab())
-  if (!("IntersectionObserver" in window)) {
-    play()
-    return
-  }
-  let started = false
-  const io = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((e) => {
-        if (e.isIntersecting && !started) {
-          started = true
-          io.disconnect()
-          play()
-        }
-      })
-    },
-    { threshold: 0.3 }
-  )
-  io.observe(root)
+  onFirstVisible(root, play, {threshold: 0.3})
 }

@@ -1,9 +1,11 @@
+import {reducedMotion} from "./lib/browser.js"
+
 function createAutoClose(el, dismiss) {
   const duration = parseInt(el.dataset.closeMs, 10)
   if (!duration) return null
 
   const bar = el.querySelector("[data-flash-bar]")
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  const reduce = reducedMotion()
   if (reduce && bar) bar.style.display = "none"
 
   let animationFrame = null
