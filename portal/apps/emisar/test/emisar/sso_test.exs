@@ -387,7 +387,7 @@ defmodule Emisar.SSOTest do
       refute second.enabled?
 
       assert Map.keys(first) |> Enum.sort() ==
-               ~w[directory_sync? enabled? id last_synced_at name]a
+               ~w[directory_sync? enabled? id identifier_claim last_synced_at name]a
     end
 
     test "a viewer (no manage_sso) is denied" do
@@ -419,6 +419,7 @@ defmodule Emisar.SSOTest do
       assert facts.enabled?
       assert facts.directory_sync?
       assert facts.last_synced_at == provider.scim_last_seen_at
+      assert facts.identifier_claim == :sub
     end
 
     test "an OIDC-only connection reports no directory sync" do

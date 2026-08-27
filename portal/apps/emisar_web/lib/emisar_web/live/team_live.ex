@@ -1294,8 +1294,11 @@ defmodule EmisarWeb.TeamLive do
 
   defp unmatched_directory_request?(_request_facts), do: false
 
+  # The connection knows which claim its sign-ins match on, so the help names
+  # that one instead of hedging "sub or oid" and leaving the operator to work
+  # out which applies to their provider.
   defp unmatched_directory_request_help(request_facts) do
-    "No directory member matches this sign-in. Fix the externalId to OIDC sub or Entra oid mapping in #{request_facts.provider.name}, then have the user sign in again."
+    "No directory member matches this sign-in. Fix the externalId mapping in #{request_facts.provider.name} so it sends the same value as the #{request_facts.provider.identifier_claim} claim, then have the user sign in again."
   end
 
   defp approval_disabled?(%{request: %{matched_user_id: matched_user_id}}, _assigns)

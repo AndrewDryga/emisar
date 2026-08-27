@@ -254,39 +254,59 @@ defmodule EmisarWeb.TeamLiveTest do
       {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "enterprise")
 
-      provider =
+      okta_provider =
         Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Directory Okta")
         |> Fixtures.SSO.enable_scim()
 
-      request =
+      okta_request =
         Fixtures.SSO.create_link_request(
-          provider: provider,
+          provider: okta_provider,
           email: "unmatched@corp.test",
           full_name: "Unmatched Directory User"
         )
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
       badge = "a[href='/app/#{account.slug}/settings/team'] span.tabular-nums"
-      row = "#pending-access-request-#{request.id}"
+      okta_row = "#pending-access-request-#{okta_request.id}"
 
       assert has_element?(lv, badge, "1")
-      assert has_element?(lv, "#{row} button[disabled]", "Approve")
-      assert has_element?(lv, row, "Fix the externalId to OIDC sub or Entra oid mapping")
-      refute has_element?(lv, "#approve-request-dialog-#{request.id}")
+      assert has_element?(lv, "#{okta_row} button[disabled]", "Approve")
 
-      render_click(lv, "approve_request", %{"id" => request.id})
-      assert Emisar.Repo.reload(request)
+      assert has_element?(
+               lv,
+               okta_row,
+               "Fix the externalId mapping in Directory Okta so it sends the same value as the sub claim"
+             )
 
-      second =
+      refute has_element?(lv, "#approve-request-dialog-#{okta_request.id}")
+
+      render_click(lv, "approve_request", %{"id" => okta_request.id})
+      assert Emisar.Repo.reload(okta_request)
+
+      entra_provider =
+        Fixtures.SSO.create_identity_provider(
+          account_id: account.id,
+          name: "Directory Entra",
+          kind: :entra,
+          identifier_claim: :oid
+        )
+        |> Fixtures.SSO.enable_scim()
+
+      entra_request =
         Fixtures.SSO.create_link_request(
-          provider: provider,
-          email: "second-unmatched@corp.test",
-          full_name: "Second Directory User"
+          provider: entra_provider,
+          email: "entra-unmatched@corp.test",
+          full_name: "Entra Directory User"
         )
 
       send(lv.pid, {:sso_link_requests_changed, account.id})
       assert has_element?(lv, badge, "2")
-      assert has_element?(lv, "#pending-access-request-#{second.id}")
+
+      assert has_element?(
+               lv,
+               "#pending-access-request-#{entra_request.id}",
+               "Fix the externalId mapping in Directory Entra so it sends the same value as the oid claim"
+             )
     end
 
     test "an existing-account request keeps the risk marker in the row and its consequence in the modal",

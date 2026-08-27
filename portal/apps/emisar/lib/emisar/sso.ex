@@ -59,9 +59,11 @@ defmodule Emisar.SSO do
 
   @doc """
   One connection's presentation facts — its identity, whether it is enabled,
-  whether it runs directory sync, and when that sync last ran. Pure: the raw
-  provider carries a client secret, a SCIM token hash, and the claim/default
-  configuration, none of which a rendering caller has any business reading.
+  whether it runs directory sync, when that sync last ran, and the identifier
+  claim its sign-ins match on (the unmatched-request help names the exact claim
+  to fix). Pure: the raw provider carries a client secret, a SCIM token hash,
+  and the default configuration, none of which a rendering caller has any
+  business reading.
   """
   def provider_facts(%IdentityProvider{} = provider) do
     %{
@@ -69,7 +71,8 @@ defmodule Emisar.SSO do
       name: provider.name,
       enabled?: provider.enabled,
       directory_sync?: provider.scim_enabled,
-      last_synced_at: provider.scim_last_seen_at
+      last_synced_at: provider.scim_last_seen_at,
+      identifier_claim: provider.identifier_claim
     }
   end
 
