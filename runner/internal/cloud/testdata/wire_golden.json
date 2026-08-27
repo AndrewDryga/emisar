@@ -30,13 +30,6 @@
       "dropped_progress_chunks": 2,
       "truncated_stdout": true,
       "truncated_stderr": true,
-      "redactions": [
-        {
-          "name": "database-password",
-          "type": "named",
-          "count": 3
-        }
-      ],
       "reason": "command returned a non-zero exit status",
       "error": "replica is not ready",
       "event_id": "evt_wire_result_0001",
@@ -218,22 +211,7 @@
             "type": "object"
           },
           "pack_id": "database",
-          "primary_executable_available": true,
-          "limits": {
-            "default_timeout": 15000000000,
-            "timeout_min": 5000000000,
-            "timeout_max": 120000000000
-          },
-          "output": {
-            "parser": "json",
-            "parser_required": true,
-            "max_stdout_bytes": 65536,
-            "max_stdout_bytes_min": 1024,
-            "max_stdout_bytes_max": 131072,
-            "max_stderr_bytes": 16384,
-            "max_stderr_bytes_min": 512,
-            "max_stderr_bytes_max": 32768
-          }
+          "primary_executable_available": true
         }
       ],
       "enforce_signatures": true,

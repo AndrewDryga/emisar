@@ -292,6 +292,71 @@ func TestDedupRing_MigratesLegacyEntriesInPlace(t *testing.T) {
 	}
 }
 
+// A pre-0.23 runner persisted result.redactions with every redacting run; the
+// wire message no longer carries the field. Exactly that key is stripped and
+// the store rewritten — any other unknown field still fails closed.
+func TestDedupRing_StripsPersistedResultRedactions(t *testing.T) {
+	digest := testDispatchDigest("req-redacted")
+	line := `{"request_id":"req-redacted","dispatch_sha256":"` + digest + `","state":"acknowledged","result":` +
+		`{"type":"action_result","protocol_version":1,"request_id":"req-redacted","status":"success",` +
+		`"exit_code":0,"duration_ms":5,"emitted_stdout_bytes":0,"emitted_stderr_bytes":0,"progress_chunks":0,` +
+		`"event_id":"evt_req_redacted",` +
+		`"redactions":[{"name":"database-password","type":"named","count":3}]}}`
+
+	path := filepath.Join(t.TempDir(), "dispatches.jsonl")
+	if err := os.WriteFile(path, []byte(line+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := newDedupRing(4, path, "", nil)
+	if d.loadErr != nil {
+		t.Fatalf("entry with persisted redactions failed to load: %v", d.loadErr)
+	}
+	if _, ok := d.records["req-redacted"]; !ok {
+		t.Fatal("entry missing after load")
+	}
+
+	// The strip persisted: the rewritten file no longer carries the key and a
+	// restart loads it through the pure strict path.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte(`"redactions"`)) {
+		t.Fatalf("store still carries the stripped key: %s", data)
+	}
+	restarted := newDedupRing(4, path, "", nil)
+	if restarted.loadErr != nil {
+		t.Fatalf("rewritten store failed to reload: %v", restarted.loadErr)
+	}
+}
+
+// The redactions strip is surgical: an entry whose result carries any OTHER
+// unknown field keeps failing closed, with or without redactions beside it.
+func TestDedupRing_StripToleranceRejectsOtherUnknownResultFields(t *testing.T) {
+	digest := testDispatchDigest("req-odd")
+	for name, resultExtra := range map[string]string{
+		"other unknown field":       `"surprise":true`,
+		"unknown beside redactions": `"redactions":[],"surprise":true`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			line := `{"request_id":"req-odd","dispatch_sha256":"` + digest + `","state":"acknowledged","result":` +
+				`{"type":"action_result","protocol_version":1,"request_id":"req-odd","status":"success",` +
+				`"exit_code":0,"duration_ms":5,"emitted_stdout_bytes":0,"emitted_stderr_bytes":0,"progress_chunks":0,` +
+				`"event_id":"evt_req_odd",` +
+				resultExtra + `}}`
+			path := filepath.Join(t.TempDir(), "dispatches.jsonl")
+			if err := os.WriteFile(path, []byte(line+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			d := newDedupRing(4, path, "", nil)
+			if d.loadErr == nil {
+				t.Fatal("an unrelated unknown result field loaded; the tolerance must cover only redactions")
+			}
+		})
+	}
+}
+
 // A host upgrading straight from ≤v0.11 has its dispatch log at the old
 // dedup.jsonl location. First boot without a current log adopts it — state is
 // migrated forward, never silently abandoned.

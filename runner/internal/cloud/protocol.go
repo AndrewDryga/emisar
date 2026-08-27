@@ -386,30 +386,9 @@ type PackInfo struct {
 // and runbook authoring data come from that manifest, never this advertisement.
 type ActionDescriptor struct {
 	actionspec.ModelDescriptor
-	PackID                     string           `json:"pack_id,omitempty"`
-	PrimaryExecutableAvailable bool             `json:"primary_executable_available"`
-	MissingExecutable          string           `json:"missing_executable,omitempty"`
-	Limits                     DescriptorLimits `json:"limits"`
-	Output                     DescriptorOutput `json:"output"`
-}
-
-// DescriptorLimits is the timeout envelope cloud sees.
-type DescriptorLimits struct {
-	DefaultTimeout actionspec.Duration `json:"default_timeout"`
-	TimeoutMin     actionspec.Duration `json:"timeout_min,omitempty"`
-	TimeoutMax     actionspec.Duration `json:"timeout_max,omitempty"`
-}
-
-// DescriptorOutput is the output-shape cloud sees.
-type DescriptorOutput struct {
-	Parser            actionspec.Parser `json:"parser,omitempty"`
-	ParserRequired    bool              `json:"parser_required,omitempty"`
-	MaxStdoutBytes    int               `json:"max_stdout_bytes"`
-	MaxStdoutBytesMin int               `json:"max_stdout_bytes_min,omitempty"`
-	MaxStdoutBytesMax int               `json:"max_stdout_bytes_max,omitempty"`
-	MaxStderrBytes    int               `json:"max_stderr_bytes"`
-	MaxStderrBytesMin int               `json:"max_stderr_bytes_min,omitempty"`
-	MaxStderrBytesMax int               `json:"max_stderr_bytes_max,omitempty"`
+	PackID                     string `json:"pack_id,omitempty"`
+	PrimaryExecutableAvailable bool   `json:"primary_executable_available"`
+	MissingExecutable          string `json:"missing_executable,omitempty"`
 }
 
 // ActionStartedMsg confirms that the runner passed its signature and pack trust
@@ -435,24 +414,23 @@ type ActionProgressMsg struct {
 // durably received.
 type ActionResultMsg struct {
 	Envelope
-	Status                string             `json:"status"`
-	ExitCode              int                `json:"exit_code"`
-	DurationMS            int64              `json:"duration_ms"`
-	TimedOut              bool               `json:"timed_out,omitempty"`
-	EmittedStdoutSHA256   string             `json:"emitted_stdout_sha256,omitempty"`
-	EmittedStderrSHA256   string             `json:"emitted_stderr_sha256,omitempty"`
-	EmittedStdoutBytes    int                `json:"emitted_stdout_bytes"`
-	EmittedStderrBytes    int                `json:"emitted_stderr_bytes"`
-	ProgressChunks        int                `json:"progress_chunks"`
-	DroppedProgressChunks int                `json:"dropped_progress_chunks,omitempty"`
-	TruncatedOut          bool               `json:"truncated_stdout,omitempty"`
-	TruncatedErr          bool               `json:"truncated_stderr,omitempty"`
-	Redactions            []RedactionSummary `json:"redactions,omitempty"`
-	Reason                string             `json:"reason,omitempty"`
-	Error                 string             `json:"error,omitempty"`
-	StructuredOutput      json.RawMessage    `json:"structured_output,omitempty"`
-	EventID               string             `json:"event_id,omitempty"`
-	LocalAuditFailed      bool               `json:"local_audit_failed,omitempty"`
+	Status                string          `json:"status"`
+	ExitCode              int             `json:"exit_code"`
+	DurationMS            int64           `json:"duration_ms"`
+	TimedOut              bool            `json:"timed_out,omitempty"`
+	EmittedStdoutSHA256   string          `json:"emitted_stdout_sha256,omitempty"`
+	EmittedStderrSHA256   string          `json:"emitted_stderr_sha256,omitempty"`
+	EmittedStdoutBytes    int             `json:"emitted_stdout_bytes"`
+	EmittedStderrBytes    int             `json:"emitted_stderr_bytes"`
+	ProgressChunks        int             `json:"progress_chunks"`
+	DroppedProgressChunks int             `json:"dropped_progress_chunks,omitempty"`
+	TruncatedOut          bool            `json:"truncated_stdout,omitempty"`
+	TruncatedErr          bool            `json:"truncated_stderr,omitempty"`
+	Reason                string          `json:"reason,omitempty"`
+	Error                 string          `json:"error,omitempty"`
+	StructuredOutput      json.RawMessage `json:"structured_output,omitempty"`
+	EventID               string          `json:"event_id,omitempty"`
+	LocalAuditFailed      bool            `json:"local_audit_failed,omitempty"`
 	// ExecutedCommand is the bounded command the runner ran, shell-quoted,
 	// with sensitive arg values masked runner-side. The local audit keeps the
 	// full masked command when this wire representation is truncated.
@@ -475,13 +453,6 @@ func boundExecutedCommand(command string) (string, bool) {
 		end--
 	}
 	return command[:end], true
-}
-
-// RedactionSummary is the per-rule hit count on this action call.
-type RedactionSummary struct {
-	Name  string `json:"name"`
-	Type  string `json:"type,omitempty"`
-	Count int    `json:"count"`
 }
 
 // HeartbeatMsg lets cloud detect stuck runners. Sent every cloud.heartbeat_every.

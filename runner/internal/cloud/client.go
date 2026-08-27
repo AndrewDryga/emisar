@@ -16,7 +16,6 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/engine"
 	"github.com/andrewdryga/emisar/runner/internal/executor"
 	"github.com/andrewdryga/emisar/runner/internal/packs"
-	"github.com/andrewdryga/emisar/runner/internal/redact"
 	"github.com/andrewdryga/emisar/runner/internal/signing"
 )
 
@@ -928,7 +927,6 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 			DroppedProgressChunks:    dropped,
 			TruncatedOut:             res.TruncatedOut,
 			TruncatedErr:             res.TruncatedErr,
-			Redactions:               toProtocolRedactions(res.Redactions),
 			Reason:                   res.Reason,
 			Error:                    res.Error,
 			StructuredOutput:         res.StructuredOutput,
@@ -1572,15 +1570,4 @@ func (c *Client) shutdown(reason error) error {
 	}
 	c.handlerWG.Wait()
 	return reason
-}
-
-func toProtocolRedactions(hits []redact.Hit) []RedactionSummary {
-	if len(hits) == 0 {
-		return nil
-	}
-	out := make([]RedactionSummary, 0, len(hits))
-	for _, h := range hits {
-		out = append(out, RedactionSummary{Name: h.Name, Type: h.Type, Count: h.Count})
-	}
-	return out
 }

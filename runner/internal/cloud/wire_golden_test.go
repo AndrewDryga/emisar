@@ -20,7 +20,7 @@ var updateWireGolden = flag.Bool("update", false, "update the wire protocol gold
 // nonAdditiveChangeID names the one non-additive wire change currently allowed
 // to keep ProtocolVersion. Set it to "" for ordinary work: the guard then
 // refuses any non-additive regeneration, which is what it exists for.
-const nonAdditiveChangeID = "heartbeat-drop-unread-time"
+const nonAdditiveChangeID = "runner-state-drop-unadvertised-limits"
 
 // reviewedNonAdditiveChanges records non-additive wire changes that deliberately
 // do NOT bump ProtocolVersion, with the reasoning that earned the exception.
@@ -47,6 +47,19 @@ var reviewedNonAdditiveChanges = map[string]bool{
 	// cannot be misread by an un-upgraded portal — decoding tolerates absence
 	// and no consumer exists.
 	"heartbeat-drop-unread-time": true,
+	// action_result.redactions duplicated the local journal's per-rule hit
+	// counts on the wire; the portal never persisted or read them, and the
+	// owned contract keeps redaction detail on the host. Dropping a field the
+	// receiver never read cannot be misread; the on-host dispatch log carries
+	// a one-shot strip for old persisted lines.
+	"action-result-drop-unread-redactions": true,
+	// runner_state descriptor limits/output duplicated the engine's own
+	// clamps on every advertised action (nine fields x the whole catalog per
+	// connect against the 2 MiB frame cap); the portal never read them and
+	// the trusted manifest owns execution semantics. `emisar state` stops
+	// printing the advertisement copy; the enforced values remain in each
+	// pack's YAML. Dropping receiver-unread fields cannot be misread.
+	"runner-state-drop-unadvertised-limits": true,
 }
 
 type wireGolden struct {
@@ -242,7 +255,6 @@ func canonicalWireFrames() []wireFrameCase {
 					DroppedProgressChunks:    2,
 					TruncatedOut:             true,
 					TruncatedErr:             true,
-					Redactions:               []RedactionSummary{{Name: "database-password", Type: "named", Count: 3}},
 					Reason:                   "command returned a non-zero exit status",
 					Error:                    "replica is not ready",
 					EventID:                  "evt_wire_result_0001",
@@ -468,21 +480,6 @@ func canonicalActionDescriptor() ActionDescriptor {
 		},
 		PackID:                     "database",
 		PrimaryExecutableAvailable: true,
-		Limits: DescriptorLimits{
-			DefaultTimeout: actionspec.Duration(15 * time.Second),
-			TimeoutMin:     actionspec.Duration(5 * time.Second),
-			TimeoutMax:     actionspec.Duration(2 * time.Minute),
-		},
-		Output: DescriptorOutput{
-			Parser:            actionspec.ParserJSON,
-			ParserRequired:    true,
-			MaxStdoutBytes:    65536,
-			MaxStdoutBytesMin: 1024,
-			MaxStdoutBytesMax: 131072,
-			MaxStderrBytes:    16384,
-			MaxStderrBytesMin: 512,
-			MaxStderrBytesMax: 32768,
-		},
 	}
 }
 

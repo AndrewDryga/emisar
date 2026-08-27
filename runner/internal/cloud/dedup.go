@@ -236,7 +236,24 @@ func decodeDedupEntry(line []byte) (dedupEntry, bool, error) {
 		var entry dedupEntry
 		decoder := json.NewDecoder(bytes.NewReader(line))
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&entry); err != nil || !validDedupEntry(entry) {
+		if err := decoder.Decode(&entry); err != nil {
+			// One-shot tolerance for exactly result.redactions — the field
+			// pre-0.23 runners persisted with every redacting run and the wire
+			// message no longer carries. The line is treated as legacy so the
+			// loader rewrites the store without it; every OTHER unknown field
+			// still fails the strict decode above.
+			cleaned, stripped := stripLegacyResultRedactions(line)
+			if !stripped {
+				return dedupEntry{}, false, fmt.Errorf("decode dispatch log entry")
+			}
+			retry := json.NewDecoder(bytes.NewReader(cleaned))
+			retry.DisallowUnknownFields()
+			if err := retry.Decode(&entry); err != nil || !validDedupEntry(entry) {
+				return dedupEntry{}, false, fmt.Errorf("decode dispatch log entry")
+			}
+			return entry, true, nil
+		}
+		if !validDedupEntry(entry) {
 			return dedupEntry{}, false, fmt.Errorf("decode dispatch log entry")
 		}
 		return entry, false, nil
@@ -246,6 +263,39 @@ func decodeDedupEntry(line []byte) (dedupEntry, bool, error) {
 		return dedupEntry{}, false, err
 	}
 	return entry, true, nil
+}
+
+// stripLegacyResultRedactions removes exactly result.redactions from a raw
+// current-format entry and reports whether the key was present. It exists so
+// a store written by a pre-0.23 runner keeps loading after the wire message
+// dropped the field; anything else unknown still fails the strict decode.
+func stripLegacyResultRedactions(line []byte) ([]byte, bool) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(line, &fields); err != nil || fields == nil {
+		return nil, false
+	}
+	resultRaw, ok := fields["result"]
+	if !ok {
+		return nil, false
+	}
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(resultRaw, &result); err != nil || result == nil {
+		return nil, false
+	}
+	if _, ok := result["redactions"]; !ok {
+		return nil, false
+	}
+	delete(result, "redactions")
+	cleanedResult, err := json.Marshal(result)
+	if err != nil {
+		return nil, false
+	}
+	fields["result"] = cleanedResult
+	cleaned, err := json.Marshal(fields)
+	if err != nil {
+		return nil, false
+	}
+	return cleaned, true
 }
 
 // decodeLegacyDedupEntry migrates one pre-v0.10 line — {"request_id", "result"}
