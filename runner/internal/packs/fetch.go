@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -78,20 +77,7 @@ func Fetch(ctx context.Context, srcURL string, client *http.Client) (dir string,
 }
 
 func secureFetchClient(base *http.Client) *http.Client {
-	client := *httpsecurity.ClientWithTLS12(base)
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 10 {
-			return errors.New("packs: stopped after 10 redirects")
-		}
-		if err := config.CheckEndpointScheme(req.URL.String(), false); err != nil {
-			return fmt.Errorf("packs: redirect refused: %w", err)
-		}
-		if len(via) > 0 && via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
-			return errors.New("packs: redirect refused HTTPS downgrade")
-		}
-		return nil
-	}
-	return &client
+	return httpsecurity.RefuseDowngradeRedirects(httpsecurity.ClientWithTLS12(base))
 }
 
 // extractTarGz unpacks a gzip-compressed tar stream into dest. It is the

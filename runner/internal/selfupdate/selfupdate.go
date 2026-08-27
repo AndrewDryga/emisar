@@ -86,7 +86,9 @@ type semver struct {
 // Run verifies an immutable release and delegates the actual replacement to
 // the installer bundled inside it.
 func Run(ctx context.Context, opts Options) error {
-	client := httpsecurity.ClientWithTLS12(&http.Client{Timeout: 5 * time.Minute})
+	client := httpsecurity.RefuseDowngradeRedirects(
+		httpsecurity.ClientWithTLS12(&http.Client{Timeout: 5 * time.Minute}),
+	)
 	return run(ctx, opts, dependencies{
 		executable:   os.Executable,
 		effectiveID:  effectiveUID,

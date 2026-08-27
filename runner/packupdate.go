@@ -398,18 +398,6 @@ func fetchPackIndex(ctx context.Context, registry string) (map[string]registryPa
 }
 
 func packRegistryHTTPClient() *http.Client {
-	client := httpsecurity.ClientWithTLS12(&http.Client{Timeout: 15 * time.Second})
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 10 {
-			return fmt.Errorf("stopped after 10 redirects")
-		}
-		if err := config.CheckEndpointScheme(req.URL.String(), false); err != nil {
-			return fmt.Errorf("redirect refused: %w", err)
-		}
-		if len(via) > 0 && via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
-			return fmt.Errorf("redirect refused HTTPS downgrade")
-		}
-		return nil
-	}
-	return client
+	base := httpsecurity.ClientWithTLS12(&http.Client{Timeout: 15 * time.Second})
+	return httpsecurity.RefuseDowngradeRedirects(base)
 }

@@ -194,7 +194,9 @@ func runDoctorChecks(ctx context.Context, probe, includeCloud bool) []checkResul
 	}
 
 	if includeCloud {
-		client := httpsecurity.ClientWithTLS12(&http.Client{Timeout: cloudProbeTimeout})
+		client := httpsecurity.RefuseDowngradeRedirects(
+			httpsecurity.ClientWithTLS12(&http.Client{Timeout: cloudProbeTimeout}),
+		)
 		results = append(results, checkCloud(ctx, cfg, client))
 	}
 
