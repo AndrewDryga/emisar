@@ -101,10 +101,12 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     opts = Oidcc.callback_token_options(provider(), stashed())
 
     assert opts.request_opts.timeout == 15_000
-    assert opts.request_opts.httpc_profile == Emisar.SSO.OIDC.Guard.profile()
+
+    assert opts.request_opts.http_adapter ==
+             {Emisar.SSO.OIDC.BoundedHTTPAdapter, %{profile: Emisar.SSO.OIDC.Guard.profile()}}
   end
 
-  describe "the pinned oidcc HTTP adapter" do
+  describe "the bounded HTTP adapter" do
     test "does not schedule a Retry-After request after returning" do
       profile = start_httpc_profile(:emisar_oidcc_no_retry_test)
       url = start_http_policy_probe(:retry)
@@ -114,7 +116,10 @@ defmodule Emisar.SSO.OIDC.OidccTest do
                  :get,
                  {url, []},
                  %{topic: [:emisar, :oidcc_retry_test]},
-                 %{timeout: 50, httpc_profile: profile}
+                 %{
+                   timeout: 50,
+                   http_adapter: {Emisar.SSO.OIDC.BoundedHTTPAdapter, %{profile: profile}}
+                 }
                )
 
       assert_receive {:adapter_request, "/"}
@@ -130,7 +135,10 @@ defmodule Emisar.SSO.OIDC.OidccTest do
                  :get,
                  {url, []},
                  %{topic: [:emisar, :oidcc_redirect_test]},
-                 %{timeout: 50, httpc_profile: profile}
+                 %{
+                   timeout: 50,
+                   http_adapter: {Emisar.SSO.OIDC.BoundedHTTPAdapter, %{profile: profile}}
+                 }
                )
 
       assert_receive {:adapter_request, "/"}

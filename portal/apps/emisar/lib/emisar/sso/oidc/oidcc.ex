@@ -304,13 +304,11 @@ defmodule Emisar.SSO.OIDC.Oidcc do
 
   defp request_options do
     %{
-      # The guard's profile, not the default one. This puts every request oidcc
-      # makes behind the SSRF policy.
-      httpc_profile: Guard.profile(),
-      # oidcc otherwise lets httpc spend one minute buffering one untrusted IdP
-      # response. The pinned adapter disables httpc's automatic redirects and
-      # Retry-After retries, so no detached request can outlive this caller. The
-      # Guard independently bounds each CONNECT tunnel.
+      # The bounded adapter delegates to httpc on the guard's profile — every
+      # request oidcc makes sits behind the SSRF policy — with automatic
+      # redirects and Retry-After retries disabled, so no detached request can
+      # outlive this caller. The Guard independently bounds each CONNECT tunnel.
+      http_adapter: {Emisar.SSO.OIDC.BoundedHTTPAdapter, %{profile: Guard.profile()}},
       timeout: @request_timeout,
       ssl: [
         verify: :verify_peer,

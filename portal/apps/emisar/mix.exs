@@ -64,7 +64,7 @@ defmodule Emisar.MixProject do
       # detached Retry-After/redirect work, which can outlive our request cap;
       # the exact-version compile patch fails closed if upstream bytes drift.
       # /security-deps-audit cleared 2026-06-15.
-      {:oidcc, "~> 3.7", compile: "elixir ../../patches/oidcc_3_7_bounded_http.exs"},
+      {:oidcc, "~> 3.8"},
       # Pure-Elixir QR encoder — used to render scannable TOTP QRs
       # server-side as SVG so the profile MFA setup doesn't need a
       # third-party JS lib or an external image service.
