@@ -34,11 +34,6 @@ output "mig_name" {
   value       = google_compute_region_instance_group_manager.emisar.name
 }
 
-output "db_private_ip" {
-  description = "Cloud SQL private IP used by the local IAM-auth proxy."
-  value       = google_sql_database_instance.emisar.private_ip_address
-}
-
 output "nameservers" {
   description = "Authoritative Cloud DNS nameservers configured at the registrar."
   value       = google_dns_managed_zone.emisar.name_servers
@@ -59,19 +54,9 @@ output "pack_registry_bucket" {
   value       = google_storage_bucket.pack_registry.name
 }
 
-output "release_base_url" {
-  description = "Canonical public HTTPS base URL for runner and MCP release artifacts."
-  value       = "https://${var.domain}/releases"
-}
-
 output "pack_registry_base_url" {
   description = "Canonical public HTTPS base URL for pack artifacts — install snippets and the portal catalog loader join paths onto this (e.g. <base>/v1/catalog.json)."
   value       = "https://registry.${var.domain}"
-}
-
-output "pack_registry_backing_url" {
-  description = "Direct GCS backing URL for storage administration; customer-facing catalogs and installers use pack_registry_base_url."
-  value       = "https://storage.googleapis.com/${google_storage_bucket.pack_registry.name}"
 }
 
 output "status_page_url" {
