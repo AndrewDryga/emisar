@@ -97,13 +97,18 @@ func forbidText(label, text string, needles ...string) error {
 	return nil
 }
 
+// Presence is tracked separately from content: an entry that writes an EMPTY
+// file at the path is still an entry, and folding the two into one string
+// sentinel made a truncated write read as an absent one ("cloud-init does not
+// write %s") while also slipping past the write-once guard.
 func requireWriteFile(document cloudInitDocument, path, permissions string) (string, error) {
 	var content string
+	found := false
 	for _, entry := range document.WriteFiles {
 		if entry.Path != path {
 			continue
 		}
-		if content != "" {
+		if found {
 			return "", fmt.Errorf("cloud-init writes %s more than once", path)
 		}
 		if entry.Permissions != permissions || entry.Encoding != "" {
@@ -113,8 +118,9 @@ func requireWriteFile(document cloudInitDocument, path, permissions string) (str
 			)
 		}
 		content = entry.Content
+		found = true
 	}
-	if content == "" {
+	if !found {
 		return "", fmt.Errorf("cloud-init does not write %s", path)
 	}
 	return content, nil

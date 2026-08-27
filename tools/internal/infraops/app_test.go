@@ -125,6 +125,54 @@ func TestExtractWriteFilesNaming(t *testing.T) {
 	}
 }
 
+// An empty write is still a write. Reporting it as "does not write" sends the
+// reader hunting for a missing entry that is right there, and the same conflated
+// sentinel let two empty writes past the write-once guard.
+func TestRequireWriteFileSeparatesAbsenceFromEmptiness(t *testing.T) {
+	entry := func(path, content string) struct {
+		Path        string `yaml:"path"`
+		Permissions string `yaml:"permissions"`
+		Encoding    string `yaml:"encoding"`
+		Content     string `yaml:"content"`
+	} {
+		return struct {
+			Path        string `yaml:"path"`
+			Permissions string `yaml:"permissions"`
+			Encoding    string `yaml:"encoding"`
+			Content     string `yaml:"content"`
+		}{Path: path, Permissions: "0644", Content: content}
+	}
+
+	t.Run("an empty write is found", func(t *testing.T) {
+		document := cloudInitDocument{}
+		document.WriteFiles = append(document.WriteFiles, entry("/opt/emisar/env", ""))
+		content, err := requireWriteFile(document, "/opt/emisar/env", "0644")
+		if err != nil {
+			t.Fatalf("an empty write should be found, got %v", err)
+		}
+		if content != "" {
+			t.Fatalf("content = %q, want empty", content)
+		}
+	})
+
+	t.Run("two empty writes still trip the write-once guard", func(t *testing.T) {
+		document := cloudInitDocument{}
+		document.WriteFiles = append(document.WriteFiles,
+			entry("/opt/emisar/env", ""), entry("/opt/emisar/env", ""))
+		if _, err := requireWriteFile(document, "/opt/emisar/env", "0644"); err == nil ||
+			!strings.Contains(err.Error(), "more than once") {
+			t.Fatalf("duplicate empty writes error = %v, want more-than-once", err)
+		}
+	})
+
+	t.Run("a genuinely absent path is still absent", func(t *testing.T) {
+		if _, err := requireWriteFile(cloudInitDocument{}, "/opt/emisar/env", "0644"); err == nil ||
+			!strings.Contains(err.Error(), "does not write") {
+			t.Fatalf("absent path error = %v, want does-not-write", err)
+		}
+	})
+}
+
 func TestTerraformImageRequiresAnImmutableDigest(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "images.tf")
 	if err := os.WriteFile(path, []byte(`
