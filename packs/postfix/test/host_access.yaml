@@ -1,0 +1,16 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: postfix.mailq
+    prepare: ["true"]
+    probe: test "$(id -u)" = 0
+  - access: 1
+    recipe: 0
+    fixture: debian
+    action: postfix.maillog_tail
+    prepare:
+      - install -o root -g adm -m 0640 /dev/null /var/log/mail.log
+    recreate:
+      - rm -f /var/log/mail.log && install -o root -g adm -m 0640 /dev/null /var/log/mail.log
+    probe: test -r /var/log/mail.log

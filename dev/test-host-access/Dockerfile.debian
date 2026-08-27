@@ -1,0 +1,43 @@
+FROM debian:13-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd
+
+ENV DEBIAN_FRONTEND=noninteractive container=docker
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        acl \
+        dbus \
+        fail2ban \
+        iproute2 \
+        libcap2-bin \
+        sudo \
+        systemd \
+        systemd-sysv \
+        util-linux \
+    && useradd --uid 65532 --user-group --no-create-home --shell /usr/sbin/nologin emisar \
+    && for group in bind caddy cassandra docker frrvty; do getent group "$group" >/dev/null || groupadd "$group"; done \
+    && printf '%s\n' \
+        '[Unit]' \
+        'After=network.target' \
+        '[Service]' \
+        'Type=simple' \
+        'User=emisar' \
+        'Group=emisar' \
+        'ExecStart=/bin/sleep infinity' \
+        '[Install]' \
+        'WantedBy=multi-user.target' \
+        > /etc/systemd/system/emisar.service \
+    && systemctl enable emisar.service fail2ban.service \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN printf '%s\n' '#!/bin/sh' 'test -r /run/named/control' > /usr/local/bin/rndc \
+    && printf '%s\n' '#!/bin/sh' 'test -r /etc/bind/named.conf' > /usr/local/bin/named-checkconf \
+    && printf '%s\n' '#!/bin/sh' 'test -r /var/run/docker.sock && test -w /var/run/docker.sock' > /usr/local/bin/docker \
+    && printf '%s\n' '#!/bin/sh' 'test -r /run/frr/vtysh.sock && test -w /run/frr/vtysh.sock' > /usr/local/bin/vtysh \
+    && printf '%s\n' '#!/bin/sh' 'test "${HOME:-}" = /var/lib/rabbitmq && test -r /var/lib/rabbitmq/.erlang.cookie' > /usr/local/bin/rabbitmq-diagnostics \
+    && chmod 0755 /usr/local/bin/rndc /usr/local/bin/named-checkconf /usr/local/bin/docker /usr/local/bin/vtysh /usr/local/bin/rabbitmq-diagnostics
+
+COPY emisar-service-probe /usr/local/bin/emisar-service-probe
+RUN chmod 0755 /usr/local/bin/emisar-service-probe
+
+STOPSIGNAL SIGRTMIN+3
+CMD ["/lib/systemd/systemd"]

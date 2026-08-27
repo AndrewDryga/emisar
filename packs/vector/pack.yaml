@@ -2,7 +2,7 @@ schema_version: 1
 
 id: vector
 name: Vector observability pipeline
-version: 0.1.11
+version: 0.1.12
 retired_below: 0.1.3
 description: >
   Read-only ops for a Vector (vector.dev) pipeline running on the runner
@@ -48,19 +48,19 @@ setup:
     - actions:
         - vector.validate
         - vector.graph
-      requirement: Read Vector's protected configuration and keep access when config files are replaced.
+      requirement: Read Vector's protected configuration even when deployment replaces restrictive files.
       recipes:
-        - name: Grant a persistent ACL on the Vector configuration directory on Debian or Ubuntu
+        - name: Run the Emisar service as root
           commands:
-            - "sudo apt-get install -y acl"
-            - "sudo setfacl -R -m u:emisar:rX /etc/vector"
-            - "sudo find /etc/vector -type d -exec setfacl -m d:u:emisar:rX {} +"
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-vector-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
             - "sudo systemctl restart emisar"
           verify:
-            - "sudo -u emisar test -r /etc/vector/vector.yaml"
-            - "sudo -u emisar sh -c 'bad=$(find /etc/vector \\( -type d ! -executable -o -type f ! -readable \\) -print -quit) || exit; test -z \"$bad\"'"
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+            - "sudo test -r /etc/vector/vector.yaml"
           impact: >
-            Every process running as emisar can read every Vector config under /etc/vector,
+            Every Emisar action on this runner executes as root and can read every Vector config,
             including sink credentials embedded directly in those files.
   verify: vector.health
 

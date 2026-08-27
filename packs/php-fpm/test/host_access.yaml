@@ -1,0 +1,8 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: fedora
+    action: phpfpm.error_log_tail
+    prepare:
+      - install -d -o root -g root -m 0700 /var/log/php-fpm /var/www/html && install -o root -g root -m 0600 /dev/null /var/log/php-fpm/error.log && install -o root -g root -m 0600 /dev/null /var/log/php-fpm/slow.log && install -o root -g root -m 0600 /dev/null /var/www/html/composer.lock
+    probe: test "$(id -u)" = 0

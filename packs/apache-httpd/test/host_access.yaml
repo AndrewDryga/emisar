@@ -1,0 +1,16 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: httpd.modules
+    prepare: ["true"]
+    probe: test "$(id -u)" = 0
+  - access: 1
+    recipe: 0
+    fixture: debian
+    action: httpd.error_tail
+    prepare:
+      - install -d -o root -g adm -m 0750 /var/log/apache2 && install -o root -g adm -m 0640 /dev/null /var/log/apache2/error.log
+    recreate:
+      - rm -f /var/log/apache2/error.log && install -o root -g adm -m 0640 /dev/null /var/log/apache2/error.log
+    probe: test -r /var/log/apache2/error.log

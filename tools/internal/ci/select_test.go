@@ -282,6 +282,24 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
+	t.Run("host access harness selects packs validation", func(t *testing.T) {
+		for _, file := range []string{
+			"dev/test-host-access/Dockerfile.debian",
+			"tools/internal/hostaccess/hostaccess.go",
+		} {
+			writeFixture(t, root, file, "changed\n")
+			commitAll(t, root, "host access harness")
+			selection, err := Select(context.Background(), root, "pull_request", base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !selection.Packs || !selection.Tools {
+				t.Fatalf("%s selection = %+v", file, selection)
+			}
+			resetHard(t, root, base)
+		}
+	})
+
 	t.Run("e2e paths select their scenario", func(t *testing.T) {
 		writeFixture(t, root, "tools/cmd/signing-e2e/main.go", "package main\n")
 		commitAll(t, root, "signing")

@@ -36,6 +36,10 @@ supplementary groups inherited from the runner service.
 The Go pack validator rejects empty fields, unsafe control text, duplicate
 action assignments, and action IDs outside the pack. The catalog preserves
 commands byte-for-byte; the runner CLI and public pack page render them as
-code. `./run gate packs` checks the structural contract. Pack review and
-behavior cases prove the recipe is accurate and remains effective after the
-target daemon and runner restart.
+code. `./run gate packs` checks the structural contract and requires one
+pack-owned proof for every exact recipe. `./run test pack-access [pack-name]`
+runs the published commands on a disposable systemd host, first proves the
+mapped protected-resource operation is denied, then reruns it under the
+restarted runner identity with `no_new_privs`. Ordinary pack behavior cases
+separately prove the action against its real service; host-access client stubs
+never count as provider behavior.

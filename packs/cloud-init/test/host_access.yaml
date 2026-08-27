@@ -1,0 +1,7 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: cloud-init.analyze_show
+    prepare: ["true"]
+    probe: test "$(id -u)" = 0

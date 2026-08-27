@@ -1,0 +1,7 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: fw.iptables_filter
+    prepare: ["true"]
+    probe: ip link add emisar-proof type dummy && ip link delete emisar-proof

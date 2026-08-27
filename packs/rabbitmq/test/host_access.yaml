@@ -1,0 +1,8 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: rmq.node_health_check
+    prepare:
+      - install -d -o root -g root -m 0700 /var/lib/rabbitmq && printf cookie > /var/lib/rabbitmq/.erlang.cookie && chmod 0400 /var/lib/rabbitmq/.erlang.cookie
+    probe: test "$(id -u)" = 0 && HOME=/var/lib/rabbitmq rabbitmq-diagnostics -q ping

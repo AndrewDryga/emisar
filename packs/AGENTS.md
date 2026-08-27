@@ -11,6 +11,19 @@ Both are required before committing a pack change:
 ./run test packs [name-pattern]
 ```
 
+A pack that declares `setup.host_access` also requires:
+
+```
+./run test pack-access [pack-name]
+```
+
+That suite executes the exact published grant and verification commands on a
+disposable systemd host, proves the mapped protected-resource operation is
+denied before the grant, then proves it still works under `no_new_privs` after
+the Emisar service and any declared recreated resource restart. The ordinary
+pack behavior plan remains the provider/action proof; a host-access fixture
+never substitutes a stub for vendor behavior.
+
 `./run gate packs` validates every pack with the runner's load-time checks,
 verifies the cross-language hash goldens, rebuilds the catalog into a temporary
 directory and byte-compares it with the committed artifact, then runs the

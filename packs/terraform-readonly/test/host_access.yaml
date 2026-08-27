@@ -1,0 +1,8 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: tf.plan_no_save
+    prepare:
+      - install -d -o root -g root -m 0700 /srv/infra/prod && install -o root -g root -m 0600 /dev/null /srv/infra/prod/terraform.tfstate
+    probe: test "$(id -u)" = 0 && test -r /srv/infra/prod/terraform.tfstate && test -w /srv/infra/prod

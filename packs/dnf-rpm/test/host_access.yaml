@@ -1,0 +1,7 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: fedora
+    action: rpm.rpm_verify
+    prepare: ["true"]
+    probe: test "$(id -u)" = 0

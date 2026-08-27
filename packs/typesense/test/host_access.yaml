@@ -1,0 +1,8 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: typesense.slow_requests
+    prepare:
+      - install -d -o root -g root -m 0700 /var/log/typesense && install -o root -g root -m 0600 /dev/null /var/log/typesense/typesense.log
+    probe: test "$(id -u)" = 0 && test -r /var/log/typesense/typesense.log

@@ -166,6 +166,9 @@ func (selection *Selection) include(file string) {
 	if packFile || hasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {
 		selection.Packs = true
 	}
+	if hasAnyPrefix(file, "dev/test-host-access/", "tools/internal/hostaccess/") {
+		selection.Packs = true
+	}
 	if packRuntimeSource || hasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {
 		selection.PacksRelease = true
 	}

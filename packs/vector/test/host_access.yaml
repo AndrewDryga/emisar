@@ -1,0 +1,8 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: vector.validate
+    prepare:
+      - install -d -o root -g root -m 0700 /etc/vector/pipelines && install -o root -g root -m 0600 /dev/null /etc/vector/vector.yaml && install -o root -g root -m 0600 /dev/null /etc/vector/pipelines/app.yaml
+    probe: test "$(id -u)" = 0 && test -r /etc/vector/vector.yaml && test -r /etc/vector/pipelines/app.yaml

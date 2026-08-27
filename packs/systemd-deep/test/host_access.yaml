@@ -1,0 +1,14 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: systemd.boot_errors
+    prepare:
+      - journalctl --no-pager -n 1 >/dev/null
+    probe: journalctl --no-pager -n 1 >/dev/null
+  - access: 1
+    recipe: 0
+    fixture: debian
+    action: systemd.daemon_reload
+    prepare: ["true"]
+    probe: test "$(id -u)" = 0

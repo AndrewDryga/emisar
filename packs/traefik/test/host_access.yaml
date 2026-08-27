@@ -1,0 +1,7 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: traefik.acme_domains
+    prepare: ["true"]
+    probe: test "$(id -u)" = 0

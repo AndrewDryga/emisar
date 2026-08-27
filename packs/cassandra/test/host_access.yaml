@@ -1,0 +1,10 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: cassandra.analyze_disk_pressure
+    prepare:
+      - install -d -o root -g cassandra -m 0750 /var/lib/cassandra/data /var/lib/cassandra/commitlog
+    recreate:
+      - rm -rf /var/lib/cassandra/data/proof && install -d -o root -g cassandra -m 0750 /var/lib/cassandra/data/proof
+    probe: test -r /var/lib/cassandra/data/proof && test -x /var/lib/cassandra/data/proof && test -r /var/lib/cassandra/commitlog && test -x /var/lib/cassandra/commitlog

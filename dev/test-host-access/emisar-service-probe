@@ -1,0 +1,23 @@
+#!/bin/bash
+set -euo pipefail
+
+if [ "$#" -ne 1 ]; then
+  echo "usage: emisar-service-probe <shell-command>" >&2
+  exit 2
+fi
+
+user=$(systemctl show emisar.service --property=User --value)
+group=$(systemctl show emisar.service --property=Group --value)
+capabilities=$(systemctl show emisar.service --property=AmbientCapabilities --value)
+args=(--quiet --wait --pipe --collect --service-type=exec --property=NoNewPrivileges=yes)
+if [ -n "$user" ]; then
+  args+=(--uid="$user")
+fi
+if [ -n "$group" ]; then
+  args+=(--gid="$group")
+fi
+if [ -n "$capabilities" ]; then
+  args+=(--property="AmbientCapabilities=$capabilities")
+fi
+
+exec systemd-run "${args[@]}" /bin/bash -c "$1"

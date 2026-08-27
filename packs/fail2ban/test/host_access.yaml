@@ -1,0 +1,19 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: f2b.status
+    prepare:
+      - systemctl restart fail2ban.service
+    recreate:
+      - systemctl restart fail2ban.service
+    probe: fail2ban-client status
+  - access: 1
+    recipe: 0
+    fixture: debian
+    action: f2b.log_tail
+    prepare:
+      - install -o root -g adm -m 0640 /dev/null /var/log/fail2ban.log
+    recreate:
+      - rm -f /var/log/fail2ban.log && install -o root -g adm -m 0640 /dev/null /var/log/fail2ban.log
+    probe: test -r /var/log/fail2ban.log

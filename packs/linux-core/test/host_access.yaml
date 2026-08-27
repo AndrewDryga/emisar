@@ -1,0 +1,14 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: linux.hardware_summary
+    prepare: ["true"]
+    probe: test "$(id -u)" = 0
+  - access: 1
+    recipe: 0
+    fixture: debian
+    action: linux.journalctl
+    prepare:
+      - journalctl --no-pager -n 1 >/dev/null
+    probe: journalctl --no-pager -n 1 >/dev/null

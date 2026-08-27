@@ -1,0 +1,19 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: bind.rndc_status
+    prepare:
+      - install -d -o root -g bind -m 0750 /run/named /etc/bind && install -o root -g bind -m 0660 /dev/null /run/named/control && install -o root -g bind -m 0640 /dev/null /etc/bind/named.conf
+    recreate:
+      - rm -f /run/named/control && install -o root -g bind -m 0660 /dev/null /run/named/control
+    probe: rndc status
+  - access: 0
+    recipe: 1
+    fixture: fedora
+    action: bind.rndc_status
+    prepare:
+      - install -d -o root -g named -m 0750 /run/named && install -o root -g named -m 0660 /dev/null /run/named/control && install -o root -g named -m 0640 /dev/null /etc/named.conf
+    recreate:
+      - rm -f /run/named/control && install -o root -g named -m 0660 /dev/null /run/named/control
+    probe: rndc status

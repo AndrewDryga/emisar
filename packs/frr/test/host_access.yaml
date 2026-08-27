@@ -1,0 +1,10 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: frr.bgp_summary
+    prepare:
+      - install -d -o root -g frrvty -m 0750 /run/frr && install -o root -g frrvty -m 0660 /dev/null /run/frr/vtysh.sock
+    recreate:
+      - rm -f /run/frr/vtysh.sock && install -o root -g frrvty -m 0660 /dev/null /run/frr/vtysh.sock
+    probe: vtysh -c 'show version'

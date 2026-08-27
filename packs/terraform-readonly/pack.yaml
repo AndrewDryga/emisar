@@ -2,7 +2,7 @@ schema_version: 1
 
 id: terraform-readonly
 name: Terraform / OpenTofu read-only ops
-version: 0.7.7
+version: 0.7.8
 description: >
   Read-only Terraform or OpenTofu CLI actions for inspecting a workspace.
   NO apply, NO destroy, NO state mutation — those should happen in CI, not
@@ -69,38 +69,23 @@ setup:
         - tf.state_metadata
         - tf.state_file_metadata
         - tf.state_compare_metadata
-      requirement: Read the documented /srv/infra workspace, saved plans, candidate states, and Terraform metadata.
-      recipes:
-        - name: Grant persistent read access to the documented /srv/infra layout on Debian or Ubuntu
-          commands:
-            - "sudo apt-get install -y acl"
-            - "sudo setfacl -R -m u:emisar:rX /srv/infra"
-            - "sudo find /srv/infra -type d -exec setfacl -m d:u:emisar:rX {} +"
-            - "sudo systemctl restart emisar"
-          verify:
-            - "sudo -u emisar test -r /srv/infra/prod"
-            - "sudo -u emisar test -x /srv/infra/prod"
-          impact: >
-            Every process running as emisar can read all Terraform configuration, saved plans,
-            candidate states, and local state under /srv/infra, including embedded secrets.
-    - actions:
         - tf.plan_no_save
         - tf.plan_summary
-      requirement: Read the documented /srv/infra/prod workspace and create local lock or working files while planning.
+      requirement: Read the Terraform workspace and create its local lock or working files while planning.
       recipes:
-        - name: Grant persistent plan-workspace access on Debian or Ubuntu
+        - name: Run the Emisar service as root
           commands:
-            - "sudo apt-get install -y acl"
-            - "sudo setfacl -R -m u:emisar:rwX /srv/infra/prod"
-            - "sudo find /srv/infra/prod -type d -exec setfacl -m d:u:emisar:rwX {} +"
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-terraform-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
             - "sudo systemctl restart emisar"
           verify:
-            - "sudo -u emisar test -r /srv/infra/prod"
-            - "sudo -u emisar test -w /srv/infra/prod"
-            - "sudo -u emisar test -x /srv/infra/prod"
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+            - "sudo test -r /srv/infra/prod"
+            - "sudo test -w /srv/infra/prod"
           impact: >
-            Every process running as emisar can read and modify the Terraform workspace under
-            /srv/infra/prod. Policy still limits which Terraform commands Emisar exposes.
+            Every Emisar action on this runner executes as root and can read or modify local
+            Terraform files, including state and embedded secrets. Pack policy still limits commands.
   verify: tf.version
 
 actions:

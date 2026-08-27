@@ -1,0 +1,31 @@
+FROM fedora:43@sha256:a651ddf48ea28a06ed4e1e6519f51c9f47e7a5a138722ade87369b8fbb7e5b42
+
+ENV container=docker
+
+RUN dnf install -y --setopt=install_weak_deps=False \
+        acl fuse-overlayfs iproute iputils libcap podman shadow-utils sudo systemd util-linux \
+    && dnf clean all \
+    && useradd --uid 65532 --user-group --no-create-home --shell /sbin/nologin emisar \
+    && for group in named; do getent group "$group" >/dev/null || groupadd "$group"; done \
+    && printf '%s\n' \
+        '[Unit]' \
+        'After=network.target' \
+        '[Service]' \
+        'Type=simple' \
+        'User=emisar' \
+        'Group=emisar' \
+        'ExecStart=/usr/bin/sleep infinity' \
+        '[Install]' \
+        'WantedBy=multi-user.target' \
+        > /etc/systemd/system/emisar.service \
+    && systemctl enable emisar.service
+
+RUN printf '%s\n' '#!/bin/sh' 'test -r /run/named/control' > /usr/local/bin/rndc \
+    && printf '%s\n' '#!/bin/sh' 'test -r /etc/named.conf' > /usr/local/bin/named-checkconf \
+    && chmod 0755 /usr/local/bin/rndc /usr/local/bin/named-checkconf
+
+COPY emisar-service-probe /usr/local/bin/emisar-service-probe
+RUN chmod 0755 /usr/local/bin/emisar-service-probe
+
+STOPSIGNAL SIGRTMIN+3
+CMD ["/usr/lib/systemd/systemd"]

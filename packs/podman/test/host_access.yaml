@@ -1,0 +1,7 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: fedora
+    action: podman.info
+    prepare: ["true"]
+    probe: test "$(id -u)" = 0

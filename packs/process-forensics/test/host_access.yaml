@@ -1,0 +1,7 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: forensics.strace_pid_short
+    prepare: ["true"]
+    probe: awk '$1 == "CapAmb:" { exit !($2 != "0000000000000000") }' /proc/self/status

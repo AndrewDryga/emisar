@@ -1,0 +1,16 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: nginx.config_dump
+    prepare: ["true"]
+    probe: test "$(id -u)" = 0
+  - access: 1
+    recipe: 0
+    fixture: debian
+    action: nginx.error_tail
+    prepare:
+      - install -d -o root -g adm -m 0750 /var/log/nginx && install -o root -g adm -m 0640 /dev/null /var/log/nginx/error.log
+    recreate:
+      - rm -f /var/log/nginx/error.log && install -o root -g adm -m 0640 /dev/null /var/log/nginx/error.log
+    probe: test -r /var/log/nginx/error.log

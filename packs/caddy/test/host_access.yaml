@@ -1,0 +1,10 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: caddy.validate_config
+    prepare:
+      - install -d -o root -g caddy -m 0750 /etc/caddy && install -o root -g caddy -m 0640 /dev/null /etc/caddy/Caddyfile
+    recreate:
+      - rm -f /etc/caddy/Caddyfile && install -o root -g caddy -m 0640 /dev/null /etc/caddy/Caddyfile
+    probe: test -r /etc/caddy/Caddyfile

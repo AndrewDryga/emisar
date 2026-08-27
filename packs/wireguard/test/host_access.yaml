@@ -1,0 +1,13 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: wg.show
+    prepare: ["true"]
+    probe: ip link add emisar-proof type dummy && ip link delete emisar-proof
+  - access: 1
+    recipe: 0
+    fixture: debian
+    action: wg.quick_up
+    prepare: ["true"]
+    probe: test "$(id -u)" = 0

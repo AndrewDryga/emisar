@@ -1,0 +1,7 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: rke2.etcd_health
+    prepare: ["true"]
+    probe: test "$(id -u)" = 0

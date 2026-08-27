@@ -1,0 +1,10 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: consul.snapshot_save
+    prepare:
+      - install -d -o root -g root -m 0700 /var/backups/emisar-consul
+    recreate:
+      - rm -f /var/backups/emisar-consul/proof && sudo -u emisar touch /var/backups/emisar-consul/proof
+    probe: test -r /var/backups/emisar-consul && test -w /var/backups/emisar-consul

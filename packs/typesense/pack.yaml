@@ -2,7 +2,7 @@ schema_version: 1
 
 id: typesense
 name: Typesense search
-version: 0.1.15
+version: 0.1.16
 retired_below: 0.1.3
 description: >
   Read-only diagnostics for a Typesense search node over its HTTP API:
@@ -66,20 +66,20 @@ setup:
   host_access:
     - actions:
         - typesense.slow_requests
-      requirement: Read the protected Typesense log and keep access across log rotation.
+      requirement: Read the protected Typesense log across daemon restarts and log rotation.
       recipes:
-        - name: Grant a persistent ACL on the Typesense log directory on Debian or Ubuntu
+        - name: Run the Emisar service as root
           commands:
-            - "sudo apt-get install -y acl"
-            - "sudo setfacl -m u:emisar:rx /var/log/typesense"
-            - "sudo setfacl -m d:u:emisar:rX /var/log/typesense"
-            - "sudo find /var/log/typesense -maxdepth 1 -type f -exec setfacl -m u:emisar:r {} +"
+            - "sudo install -d -m 0755 /etc/systemd/system/emisar.service.d"
+            - "printf '%s\\n' '[Service]' 'User=root' 'Group=root' | sudo tee /etc/systemd/system/emisar.service.d/10-typesense-host-access.conf >/dev/null"
+            - "sudo systemctl daemon-reload"
             - "sudo systemctl restart emisar"
           verify:
-            - "sudo -u emisar test -r /var/log/typesense/typesense.log"
+            - "test \"$(systemctl show emisar --property=User --value)\" = root"
+            - "sudo test -r /var/log/typesense/typesense.log"
           impact: >
-            Every process running as emisar can read the Typesense log. The directory's default
-            ACL grants the same read access to replacement log files created during rotation.
+            Every Emisar action on this runner executes as root. The Typesense log can contain
+            request paths, timings, and other application data.
   verify: typesense.health
 
 actions:

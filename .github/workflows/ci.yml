@@ -626,7 +626,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.packs == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       # Same toolchain pin as the go job (see its comment).
       GOTOOLCHAIN: local
@@ -647,6 +647,9 @@ jobs:
 
       - name: Validate packs and cross-language hashes
         run: ./run check packs
+
+      - name: Prove every published host-access recipe
+        run: ./run test pack-access
 
   pack-tools:
     name: Packs - Behavior client image

@@ -1,0 +1,10 @@
+recipes:
+  - access: 0
+    recipe: 0
+    fixture: debian
+    action: docker.info
+    prepare:
+      - install -d -m 0755 /var/run && install -o root -g docker -m 0660 /dev/null /var/run/docker.sock
+    recreate:
+      - rm -f /var/run/docker.sock && install -o root -g docker -m 0660 /dev/null /var/run/docker.sock
+    probe: docker info

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/andrewdryga/emisar/tools/internal/ci"
+	"github.com/andrewdryga/emisar/tools/internal/hostaccess"
 	"github.com/andrewdryga/emisar/tools/internal/packhash"
 	"github.com/andrewdryga/emisar/tools/internal/packtest"
 )
@@ -76,6 +77,7 @@ const (
                              run one declared shard of a slow pack's cases
   packs [name] --hostile    add one-CPU, 1536-MiB, and PID limits per SUT
   packs --names a,b          run an exact set of pack behavior plans
+  pack-access [names...]     prove exact host-access recipes on systemd hosts
   install <runner|mcp>       exercise a public installer in an isolated harness
 `
 	gateUsage = `usage: ./run gate <target> [--coverage FILE]
@@ -187,6 +189,12 @@ func (a *App) test(ctx context.Context, args []string) error {
 			pattern = rest[0]
 		}
 		return a.packTest(ctx, pattern, nil, "", "", hostile)
+	case "pack-access":
+		rows, err := hostaccess.Discover(filepath.Join(a.Root, "packs"), rest...)
+		if err != nil {
+			return err
+		}
+		return hostaccess.Run(ctx, a.Root, rows, a.Out)
 	case "install":
 		if len(rest) != 1 || rest[0] != "runner" && rest[0] != "mcp" {
 			return usage("usage: ./run test install <runner|mcp>")
@@ -533,6 +541,9 @@ func (a *App) validatePacks(ctx context.Context) error {
 	// their risk exceptions still have to be judged.
 	if err := packtest.ValidateDeclarations(filepath.Join(a.Root, "packs")); err != nil {
 		return fmt.Errorf("pack risk accountability: %w", err)
+	}
+	if _, err := hostaccess.Discover(filepath.Join(a.Root, "packs")); err != nil {
+		return fmt.Errorf("pack host-access proof authoring: %w", err)
 	}
 	if _, err := packtest.Mirrors(
 		filepath.Join(a.Root, "packs"),
