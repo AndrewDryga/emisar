@@ -1,0 +1,38 @@
+emisar --config --json --packs-dir
+emisar action
+emisar action describe
+emisar action list
+emisar action run --arg --reason --stream --timeout
+emisar audit
+emisar audit verify --all
+emisar completion
+emisar completion bash --no-descriptions
+emisar completion fish --no-descriptions
+emisar completion powershell --no-descriptions
+emisar completion zsh --no-descriptions
+emisar connect
+emisar doctor --probe
+emisar events
+emisar events cat
+emisar events grep --action --caller --event
+emisar events tail --follow --lines
+emisar help
+emisar pack
+emisar pack diff --registry --stat --to
+emisar pack info
+emisar pack install --dest --force --hash --no-verify --registry
+emisar pack list
+emisar pack suggest --catalog --names-only --registry
+emisar pack uninstall --dest
+emisar pack update --dry-run --registry
+emisar pack validate
+emisar pack verify --arg
+emisar signing
+emisar signing init --ca-name --key --scope --ttl
+emisar signing new-ca --ca-name --key --ttl
+emisar signing new-cert --ca-cert --ca-key --key --key-name --scope --ttl
+emisar state
+emisar state check-dispatch-log --data-dir
+emisar status
+emisar update --version
+emisar version

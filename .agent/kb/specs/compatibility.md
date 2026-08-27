@@ -383,7 +383,7 @@ current top-level verbs are:
 ```text
 connect
 action list|describe|run
-pack install|suggest|update|list|info|uninstall|validate
+pack install|suggest|update|diff|list|info|verify|uninstall|validate
 audit verify
 doctor
 status
@@ -402,13 +402,18 @@ above is frozen with its command** — the list is deliberately not enumerated
 here, because an enumeration drifts silently as verbs gain flags and then reads
 as permission to rename the ones it forgot. `action run --arg/--reason/
 --timeout/--stream`, `pack install --hash/--dest/--force`, `pack suggest
---catalog/--names-only`, `pack update --dry-run`, `audit verify --all`, `events
+--catalog/--names-only`, `pack update --dry-run`, `pack diff
+--to/--stat/--registry`, `pack verify --arg`, `audit verify --all`, `events
 tail --lines/-f`, `events grep --action/--caller/--event`, `state
 check-dispatch-log --data-dir`, `signing init --ca-name/--scope/--ttl/--key`,
 `signing new-ca --ca-name/--ttl/--key`, and `signing new-cert
 --ca-key/--ca-cert/--key-name/--scope/--ttl/--key` are all inside the freeze.
 These command names and flags, including the documented aliases, are public
-inputs. The structured output
+inputs. The complete tree is pinned mechanically:
+`runner/testdata/cli_surface.golden` (checked by `TestCLISurfaceGolden` inside
+the runner gate) fails on any added, renamed, or removed verb or flag until
+the golden and this inventory move in the same change, so a shipped command
+can no longer fall outside the compatibility review unnoticed. The structured output
 `--json` emits exists to be parsed by scripts, so those shapes freeze with the
 flags: after 1.0 they change only additively. That includes the complete
 `status --json` report and its embedded `runtime` object.
@@ -473,8 +478,15 @@ absent; an explicit pair overrides it, while a partial pair fails rather than
 mixing sources. In both modes it sends the user agent `emisar-mcp/<version>`.
 The attestation identifier `emisar-attestation-v5` and the dispatch certificate
 profile `emisar-x509-profile-v1` are also frozen security formats.
-`packctl` is a maintainer-only build tool, not a customer CLI compatibility
-surface.
+`packctl` is mostly maintainer tooling, with one customer-facing subset the
+private-registry feature requires and 1.0 therefore freezes: `packctl catalog
+build` (`--packs`, `--out`, `--base-url`, `--previous`), `packctl catalog
+publish` (`--dir`, `--bucket`, `--dry-run`), the global `--json`, and the
+static `v1/` artifact tree `build` emits (the registry layout below).
+Customers run these in their own CI to host private registries — the
+private-registry guide documents exactly this flow — so this subset follows
+the same deprecation path as the runner CLI. Every other `packctl` verb and
+flag stays maintainer-internal and free to change.
 
 **What happens on skew.** Adding a flag, config key, or environment variable
 is additive when the old binary can ignore it. Removing or renaming one fails
