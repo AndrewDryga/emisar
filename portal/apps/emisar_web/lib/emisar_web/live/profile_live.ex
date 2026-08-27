@@ -1207,7 +1207,6 @@ defmodule EmisarWeb.ProfileLive do
                    "I saved them" before the user can close. --%>
               <.secret_reveal
                 id="mfa-recovery-codes"
-                variant={:card}
                 title="Save your recovery codes"
                 codes={@mfa_recovery_codes}
                 download_name="emisar-recovery-codes.txt"

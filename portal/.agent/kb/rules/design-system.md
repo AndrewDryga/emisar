@@ -583,9 +583,10 @@ after being taught, so every one is checked EVERY time, mechanically:
    the install/use command), on canvas, then the next-step buttons. The old
    "boxed `secret_reveal` banner on a create page" carve-out is DEAD for single
    secrets. `secret_reveal` survives ONLY for the recovery-**codes** grid (a
-   distinct save-these-N-codes artifact: MFA enroll + profile). Remaining boxed
-   single-secret holdouts pending migration to the naked grammar: audit-export
-   SIEM token, SSO SCIM token (BACKLOG). Never two grammars for one event on one
+   distinct save-these-N-codes artifact: MFA enroll + profile). The last boxed
+   single-secret holdouts (audit-export SIEM token, SSO SCIM token) migrated to
+   the naked grammar on 2026-08-27; `secret_reveal` now renders only code
+   grids. Never two grammars for one event on one
    surface. Both grammars are COMPONENTS —
    never hand-roll them: `<.status_note icon= tone= title= primary>` is the
    naked note (a step inside the operator's own flow stays a bare note);

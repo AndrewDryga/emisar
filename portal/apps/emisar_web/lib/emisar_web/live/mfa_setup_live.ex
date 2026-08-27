@@ -131,7 +131,6 @@ defmodule EmisarWeb.MfaSetupLive do
           <div class="space-y-4">
             <.secret_reveal
               id="mfa-recovery-codes"
-              variant={:card}
               title="Save your recovery codes"
               codes={@mfa_recovery_codes}
               download_name="emisar-recovery-codes.txt"

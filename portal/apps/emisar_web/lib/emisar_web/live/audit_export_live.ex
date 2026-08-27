@@ -189,21 +189,42 @@ defmodule EmisarWeb.AuditExportLive do
           </:actions>
         </.section_header>
 
-        <%!-- One-shot reveal via the shared <.secret_reveal> — the single
-             reviewed shown-once surface (same as SCIM + MFA). The raw
-             secret only ever exists in the socket assigns; a refresh hides it
-             for good. --%>
-        <.secret_reveal
-          :if={@export_secret}
-          title="Copy this token now — we won't show it again"
-          secret={@export_secret}
-          on_dismiss="dismiss_export_secret"
-        >
-          A read-only token for shipping audit events to a SIEM.
-          <:install_command label="Use with">
-            curl -H "Authorization: Bearer {@export_secret}" {@base_audit_url}
-          </:install_command>
-        </.secret_reveal>
+        <%!-- One-shot reveal in the shared naked single-secret grammar. The
+             raw secret only ever exists in the socket assigns; a refresh
+             hides it for good. --%>
+        <div :if={@export_secret}>
+          <.event_block
+            icon="identity.credential"
+            tone={:amber}
+            title="Copy this token now — we won't show it again."
+          >
+            <:body>
+              A read-only token for shipping audit events to a SIEM.
+            </:body>
+
+            <.code_panel
+              id="export-secret"
+              label="Audit export token"
+              copy
+              copy_label="Copy token"
+              code={@export_secret}
+              class="mt-6"
+            />
+
+            <.code_panel
+              id="export-secret-use"
+              label="Use with"
+              annotation="contains your token"
+              copy
+              code={"curl -H \"Authorization: Bearer #{@export_secret}\" #{@base_audit_url}"}
+              class="mt-6"
+            />
+
+            <div class="mt-6">
+              <.button phx-click="dismiss_export_secret" variant={:secondary}>Done</.button>
+            </div>
+          </.event_block>
+        </div>
 
         <%!-- Existing export tokens — listed with revoke. The agents page
              filters these out so SIEM-export tokens live here exclusively. --%>

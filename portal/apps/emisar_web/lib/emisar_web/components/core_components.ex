@@ -4723,32 +4723,16 @@ defmodule EmisarWeb.CoreComponents do
   def event_chunk(_), do: ""
 
   @doc """
-  The ONE "reveal once" amber box for freshly-minted credentials — SIEM
-  export tokens, SCIM bearers, MFA recovery codes. Warns the
-  operator the value won't be shown again. Pass exactly one of `secret`
-  (a single value with its copy button) or `codes` (a list rendered as
-  per-code copy cells + "Copy all" + an optional "Download .txt" when
-  `download_name` is set). `variant={:banner}` is the standalone
-  top-of-page box; `:card` sits inside a page section. `on_dismiss` adds
-  the X; an acknowledgement control ("I've saved them") rides the
-  `:actions` slot instead.
-
-      <.secret_reveal
-        :if={@export_secret}
-        title="Copy this token now — we won't show it again"
-        secret={@export_secret}
-        on_dismiss="dismiss_export_secret"
-      >
-        A read-only token for shipping audit events to a SIEM.
-
-        <:install_command label="Use with">
-          curl -H "Authorization: Bearer {@export_secret}" {@base_audit_url}
-        </:install_command>
-      </.secret_reveal>
+  The reveal-once grid for freshly-minted recovery CODES (MFA enroll +
+  profile regenerate) — a distinct save-these-N-codes artifact. Warns the
+  operator the set won't be shown again; each cell copies one code, "Copy
+  all" carries the joined set, and `download_name` offers a .txt. An
+  acknowledgement control ("I've saved them") rides the `:actions` slot.
+  A SINGLE secret never uses this box — that's the naked grammar
+  (`<.event_block>` + `<.code_panel>`), the design-system §single-secret rule.
 
       <.secret_reveal
         id="mfa-recovery-codes"
-        variant={:card}
         title="Save your recovery codes"
         codes={@mfa_recovery_codes}
         download_name="emisar-recovery-codes.txt"
@@ -4763,134 +4747,63 @@ defmodule EmisarWeb.CoreComponents do
   """
   attr :id, :string, default: "reveal-secret"
   attr :title, :string, required: true
-  attr :secret, :string, default: nil
-  attr :codes, :list, default: nil, doc: "reveal-once code list (alternative to :secret)"
-  attr :download_name, :string, default: nil, doc: "codes mode: offer the set as a .txt file"
-  attr :on_dismiss, :string, default: nil
-  attr :variant, :atom, default: :banner, values: [:banner, :card]
+  attr :codes, :list, required: true, doc: "the reveal-once code list"
+  attr :download_name, :string, default: nil, doc: "offer the set as a .txt file"
   slot :inner_block, required: true
   slot :actions, doc: "acknowledgement controls, rendered in the copy-button row"
 
-  slot :install_command do
-    attr :label, :string
-  end
-
   def secret_reveal(assigns) do
     ~H"""
-    <div id={@id} class={secret_reveal_box(@variant)}>
-      <div class="flex items-start justify-between gap-4">
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <.icon name="identity.credential" class="h-4 w-4 shrink-0 text-amber-300" />
-            <h2 :if={@variant == :banner} class="text-sm font-semibold text-amber-100">{@title}</h2>
-            <h3 :if={@variant == :card} class="text-sm font-semibold text-amber-100">{@title}</h3>
-          </div>
-          <p class="mt-1.5 text-sm leading-relaxed text-zinc-400">{render_slot(@inner_block)}</p>
+    <div
+      id={@id}
+      class="rounded-xl bg-zinc-900/60 p-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-amber-500/40"
+    >
+      <div class="flex items-center gap-2">
+        <.icon name="identity.credential" class="h-4 w-4 shrink-0 text-amber-300" />
+        <h3 class="text-sm font-semibold text-amber-100">{@title}</h3>
+      </div>
+      <p class="mt-1.5 text-sm leading-relaxed text-zinc-400">{render_slot(@inner_block)}</p>
 
-          <%!-- Same copy pattern as the dashboard install reveal:
-               grab text from the visible `<pre>` instead of
-               interpolating into a JS string literal (safer + escape-
-               proof), and flip the label to "Copied" for 1.5s as
-               visible click feedback. --%>
-          <div
-            :if={@secret}
-            class="mt-4 flex items-center gap-2 rounded-lg bg-black/60 p-3 ring-1 ring-zinc-800"
+      <%!-- Each cell IS a copy button, so one code can be grabbed without
+           selecting text; "Copy all" carries the joined set as a
+           data-copy-text literal (no hidden blob element). --%>
+      <ul class="mt-3 space-y-1.5">
+        <li :for={code <- @codes}>
+          <button
+            type="button"
+            data-copy-text={code}
+            data-copy-label-copied="Copied!"
+            title="Click to copy this code"
+            class="block w-full select-all rounded-md border border-zinc-700 bg-black/60 px-3 py-2 text-left font-mono text-sm tracking-wide text-zinc-100 hover:border-zinc-600 hover:bg-black/80"
           >
-            <pre
-              id={"#{@id}-secret"}
-              class="flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-100"
-            >{@secret}</pre>
-            <.copy_button
-              target={"##{@id}-secret"}
-              class="bg-brand-500/20 px-2 text-brand-200 hover:bg-brand-500/30 font-semibold"
-            >
-              Copy
-            </.copy_button>
-          </div>
+            {code}
+          </button>
+        </li>
+      </ul>
 
-          <%!-- Each cell IS a copy button, so one code can be grabbed
-               without selecting text; "Copy all" carries the joined set
-               as a data-copy-text literal (no hidden blob element). --%>
-          <ul :if={@codes} class="mt-3 space-y-1.5">
-            <li :for={code <- @codes}>
-              <button
-                type="button"
-                data-copy-text={code}
-                data-copy-label-copied="Copied!"
-                title="Click to copy this code"
-                class="block w-full select-all rounded-md border border-zinc-700 bg-black/60 px-3 py-2 text-left font-mono text-sm tracking-wide text-zinc-100 hover:border-zinc-600 hover:bg-black/80"
-              >
-                {code}
-              </button>
-            </li>
-          </ul>
-
-          <%= for {cmd, idx} <- Enum.with_index(@install_command) do %>
-            <div class="mt-4">
-              <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                {cmd[:label] || "Install on a host"}
-              </h3>
-              <div class="mt-2 flex items-start gap-2 rounded-lg bg-black/60 p-3 ring-1 ring-zinc-800">
-                <pre
-                  id={"#{@id}-install-#{idx}"}
-                  class="flex-1 whitespace-pre-wrap break-all font-mono text-xs text-zinc-300"
-                >{render_slot(cmd)}</pre>
-                <.copy_button
-                  target={"##{@id}-install-#{idx}"}
-                  class="shrink-0 self-start bg-brand-500/20 px-2 text-brand-200 hover:bg-brand-500/30 font-semibold"
-                >
-                  Copy
-                </.copy_button>
-              </div>
-            </div>
-          <% end %>
-
-          <div :if={@codes || @actions != []} class="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              :if={@codes}
-              type="button"
-              data-copy-text={Enum.join(@codes, "\n")}
-              data-copy-label-copied="Copied!"
-              class="rounded-lg bg-brand-500/20 px-3 py-1.5 text-xs font-semibold text-brand-200 hover:bg-brand-500/30"
-            >
-              Copy all
-            </button>
-            <%!-- A real file beats the volatile clipboard for a credential
-                 the operator must keep — clipboards get overwritten. --%>
-            <a
-              :if={@codes && @download_name}
-              href={"data:text/plain;charset=utf-8," <> URI.encode(Enum.join(@codes, "\n"))}
-              download={@download_name}
-              class="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-zinc-700"
-            >
-              Download .txt
-            </a>
-            {render_slot(@actions)}
-          </div>
-        </div>
-
+      <div class="mt-4 flex flex-wrap items-center gap-3">
         <button
-          :if={@on_dismiss}
-          phx-click={@on_dismiss}
-          class="rounded-lg p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-          aria-label="Dismiss"
+          type="button"
+          data-copy-text={Enum.join(@codes, "\n")}
+          data-copy-label-copied="Copied!"
+          class="rounded-lg bg-brand-500/20 px-3 py-1.5 text-xs font-semibold text-brand-200 hover:bg-brand-500/30"
         >
-          <.icon name="action.close" class="h-5 w-5" />
+          Copy all
         </button>
+        <%!-- A real file beats the volatile clipboard for a credential
+             the operator must keep — clipboards get overwritten. --%>
+        <a
+          :if={@download_name}
+          href={"data:text/plain;charset=utf-8," <> URI.encode(Enum.join(@codes, "\n"))}
+          download={@download_name}
+          class="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-zinc-700"
+        >
+          Download .txt
+        </a>
+        {render_slot(@actions)}
       </div>
     </div>
     """
-  end
-
-  # Neutral surface with an amber border + key-icon title as the "ephemeral,
-  # copy it now" accent — not a full amber wash, which read as a heavy amber
-  # block of nested dark boxes (esp. inside a neutral panel like SIEM export).
-  defp secret_reveal_box(:banner) do
-    "mb-6 rounded-xl bg-zinc-900/60 p-6 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-amber-500/40"
-  end
-
-  defp secret_reveal_box(:card) do
-    "rounded-xl bg-zinc-900/60 p-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] ring-1 ring-amber-500/40"
   end
 
   @doc """

@@ -2953,17 +2953,31 @@ defmodule EmisarWeb.SSOSettingsLive do
 
         <%!-- The one-time token reveal — only for the provider whose token was
              just minted. Dismissing it (or any reload) drops it for good. --%>
-        <.secret_reveal
-          :if={@revealed_token}
-          id={"scim-token-#{@provider.id}"}
-          variant={:card}
-          title="Copy this SCIM token now — it's shown only once."
-          secret={@revealed_token}
-          on_dismiss="dismiss_scim_token"
-        >
-          If you lose it, <span class="font-semibold">Rotate token</span>
-          above mints a fresh one — the old token stops working.
-        </.secret_reveal>
+        <div :if={@revealed_token} id={"scim-token-#{@provider.id}"}>
+          <.event_block
+            icon="identity.credential"
+            tone={:amber}
+            title="Copy this SCIM token now — it's shown only once."
+          >
+            <:body>
+              If you lose it, <span class="font-semibold">Rotate token</span>
+              above mints a fresh one — the old token stops working.
+            </:body>
+
+            <.code_panel
+              id={"scim-token-#{@provider.id}-value"}
+              label="SCIM bearer token"
+              copy
+              copy_label="Copy token"
+              code={@revealed_token}
+              class="mt-6"
+            />
+
+            <div class="mt-6">
+              <.button phx-click="dismiss_scim_token" variant={:secondary}>Done</.button>
+            </div>
+          </.event_block>
+        </div>
 
         <%!-- IdP-side SCIM setup — a light disclosure (no heavy box); auto-opens
              right after the token's minted (mid-setup). Hidden once the directory has
