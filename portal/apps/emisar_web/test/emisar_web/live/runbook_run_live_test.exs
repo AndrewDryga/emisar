@@ -317,7 +317,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       {:ok, lv, html} =
         live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution_id}")
 
-      assert html =~ "Draft test · #{runbook.title}"
+      assert lv |> element("h1") |> render() =~ "Draft test"
+      assert has_element?(lv, "h1 a", "Runbooks")
+      assert has_element?(lv, "h1 a", runbook.title)
       assert html =~ "Validate the unpublished change"
       refute has_element?(lv, "a", "Run again")
       refute has_element?(lv, "button", "Start execution")
@@ -349,6 +351,10 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       assert html =~ "One-time incident token"
       assert html =~ ~s(type="password")
+
+      assert lv |> element("h1") |> render() =~ "Run"
+      assert has_element?(lv, "h1 a", "Runbooks")
+      assert has_element?(lv, "h1 a", runbook.title)
 
       assert has_element?(
                lv,

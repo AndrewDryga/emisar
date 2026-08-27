@@ -631,10 +631,11 @@ defmodule EmisarWeb.RunbookRunLive do
 
   defp execution_page_title(%{runbook: runbook}), do: "Run #{runbook.title}"
 
-  defp header_title(%{result: %{execution: %{kind: :draft_test}}, runbook: runbook}),
-    do: "Draft test · #{runbook.title}"
-
-  defp header_title(%{runbook: runbook}) when not is_nil(runbook), do: runbook.title
+  # The runbook is the crumb before this heading, so the heading names what the
+  # page itself is — repeating the title read as "X / X".
+  defp header_title(%{result: %{execution: %{kind: :draft_test}}}), do: "Draft test"
+  defp header_title(%{result: %{execution: _execution}}), do: "Execution"
+  defp header_title(%{runbook: %Runbooks.Runbook{}}), do: "Run"
   defp header_title(_assigns), do: "Runbook"
 
   # An item's terminal message counts as detail only when it says something the
@@ -684,9 +685,13 @@ defmodule EmisarWeb.RunbookRunLive do
       width={:table}
     >
       <:title>
-        <%!-- A dispatch form or execution detail belongs to ONE runbook, so
-              back climbs to it — never two levels up to the list. Before the
-              connected mount resolves the runbook, degrade to the list. --%>
+        <%!-- A dispatch form or execution detail belongs to ONE runbook, so the
+              trail climbs through it: Runbooks / <runbook> / this page. Before
+              the connected mount resolves the runbook the middle crumb is
+              unknown, so the list carries the trail alone. --%>
+        <.back_link :if={@runbook} navigate={~p"/app/#{@current_account}/runbooks"}>
+          Runbooks
+        </.back_link>
         <.detail_header
           back={if(@runbook, do: @runbook.title, else: "Runbooks")}
           navigate={
