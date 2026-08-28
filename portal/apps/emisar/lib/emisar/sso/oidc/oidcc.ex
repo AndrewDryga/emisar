@@ -1,6 +1,6 @@
 defmodule Emisar.SSO.OIDC.Oidcc do
   @moduledoc """
-  Real `oidcc`-backed implementation of the `Emisar.SSO.OIDC` seam (oidcc 3.7).
+  Real `oidcc`-backed implementation of the `Emisar.SSO.OIDC` seam (oidcc 3.8).
 
   **We fetch; oidcc parses.** There is no discovery worker. Each sign-in loads
   the discovery document, judges every endpoint it names, and only then loads the

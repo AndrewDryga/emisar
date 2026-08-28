@@ -6,8 +6,9 @@ defmodule Emisar.SSO.OIDC.Guard do
   ## Why a proxy
 
   Inspecting the discovery document is not enough, and neither is fetching it
-  ourselves. `oidcc` passes a custom httpc profile through every request, and a
-  pinned adapter patch disables automatic redirects and Retry-After retries.
+  ourselves. `oidcc` passes a custom httpc profile through every request, and
+  `Emisar.SSO.OIDC.BoundedHTTPAdapter` disables automatic redirects and
+  Retry-After retries.
   The proxy remains the network boundary for every first-party endpoint: a URL
   that escaped validation, including an HTTPS→HTTP downgrade, still cannot dial
   around the address policy.

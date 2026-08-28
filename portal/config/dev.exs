@@ -33,6 +33,9 @@ listen_ip =
   case System.get_env("EMISAR_LISTEN_IP", "127.0.0.1") do
     "0.0.0.0" -> {0, 0, 0, 0}
     "127.0.0.1" -> {127, 0, 0, 1}
+    # A third value used to be a MatchError at config load — a stack trace
+    # instead of a sentence, before the app has started, for a typo.
+    other -> raise "EMISAR_LISTEN_IP must be 127.0.0.1 or 0.0.0.0, got #{inspect(other)}"
   end
 
 if ca_bundle = System.get_env("EMISAR_DEV_CA_BUNDLE") do

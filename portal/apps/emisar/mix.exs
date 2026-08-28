@@ -61,8 +61,12 @@ defmodule Emisar.MixProject do
       # OIDC relying-party (SSO). OpenID-certified Erlang lib (EEF
       # Security WG); wrapped behind `Emisar.SSO.OIDC` (IL-19). Brings
       # `jose` (JWT/JWKS) transitively. Its adapter otherwise enables httpc's
-      # detached Retry-After/redirect work, which can outlive our request cap;
-      # the exact-version compile patch fails closed if upstream bytes drift.
+      # detached Retry-After/redirect work, which can outlive our request cap —
+      # `Emisar.SSO.OIDC.BoundedHTTPAdapter` is what bounds that now. (This used
+      # to cite an "exact-version compile patch"; that patch is gone, and the
+      # requirement was never exact-version anyway — mix.exs is the first thing
+      # a dependency audit reads, and it was sending the reader after a deleted
+      # integrity check.)
       # /security-deps-audit cleared 2026-06-15.
       {:oidcc, "~> 3.8"},
       # Pure-Elixir QR encoder — used to render scannable TOTP QRs

@@ -23,9 +23,11 @@ import Config
 #                            published host port); only applies when FORCE_SSL=false
 #   FORCE_SSL              — "false" disables HTTPS redirect + secure cookies (default true)
 #   POOL_SIZE              — Ecto pool size (default 10)
-#   DATABASE_SSL           — "1" / "true" to require TLS to Postgres
 #   DATABASE_SSL_CACERTFILE — PEM file to verify the server cert against
-#                            (Cloud SQL / private-CA Postgres); implies TLS
+#                            (Cloud SQL / private-CA Postgres); implies TLS.
+#                            For plain TLS with the system trust store, put
+#                            `?ssl=true` in DATABASE_URL — Ecto parses it and it
+#                            overrides the default here.
 #   DATABASE_HOST          — host for passwordless proxy connections
 #   DATABASE_USER          — user for passwordless proxy connections
 #   DATABASE_NAME          — database for passwordless proxy connections
@@ -41,6 +43,17 @@ import Config
 #   MIXPANEL_TOKEN         — enables server-side product analytics (off if unset)
 #   MIXPANEL_API_HOST      — Mixpanel host (default api.mixpanel.com; EU: api-eu.mixpanel.com)
 #   MIXPANEL_GROUPS        — "1"/"true" to also write Mixpanel Group profiles (paid add-on)
+#   POSTMARK_WEBHOOK_SECRET — shared secret Postmark's bounce/complaint webhook
+#                            must present; unset rejects every delivery
+#   EMISAR_CLUSTER_PROJECT — GCP project for GCE peer discovery; ALSO what makes
+#                            clustering happen at all, and the Cloud Logging
+#                            project id. Set by the instance template.
+#   EMISAR_CLUSTER_VALUE   — the GCE tag peers are discovered by
+#   EMISAR_PACK_CATALOG_URL — published catalog to refresh auto-trust from;
+#                            empty pins the bundled snapshot
+#   EMISAR_SSO_ALLOWED_IDP_HOSTS — extra IdP hosts the SSRF guard permits
+#   EMISAR_DISABLE_BILLING — "1" to run without Paddle (CI smoke, self-host)
+#   EMISAR_DEV_ROUTES      — build-time; exposes dev-only routes. Never prod.
 #   X_ADS_CONVERSIONS_JSON — enables server-side X signup conversion reporting;
 #                            JSON with consumer_key, consumer_secret, access_token,
 #                            access_token_secret, pixel_id, and event_id
@@ -49,11 +62,13 @@ if config_env() == :prod do
   # Google Cloud's structured payload recognizes severity, request context,
   # source locations, traces, and Error Reporting events. The project ID is
   # injected by the GCE instance template as EMISAR_CLUSTER_PROJECT.
-  gcp_project_id =
-    System.get_env("GOOGLE_CLOUD_PROJECT") ||
-      System.get_env("GOOGLE_PROJECT_ID") ||
-      System.get_env("GCLOUD_PROJECT") ||
-      System.get_env("EMISAR_CLUSTER_PROJECT")
+  # EMISAR_CLUSTER_PROJECT only. The three GOOGLE_*/GCLOUD_* spellings that used
+  # to precede it are auto-injected by Cloud Run and App Engine, which this is
+  # not — it runs on GCE instances whose template sets EMISAR_CLUSTER_PROJECT
+  # (infra/runtime/portal/start.sh). Nothing ever set them, so they were three
+  # ways to be surprised by an inherited value rather than three ways to
+  # configure it.
+  gcp_project_id = System.get_env("EMISAR_CLUSTER_PROJECT")
 
   # Keep application metadata queryable, but never serialize the request and
   # socket structs. GoogleCloud handles :crash_reason separately so caught
@@ -87,10 +102,14 @@ if config_env() == :prod do
   # skipped deliberately — the cert names "<project>:<instance>", never the
   # private IP we dial, so it could never match and adds nothing on top of
   # the pinned chain.
+  # No DATABASE_SSL boolean: Ecto already parses `?ssl=true` out of DATABASE_URL
+  # and merges it OVER this config, so the env var was a second, untested
+  # spelling of something the URL says in the standard way. What the URL cannot
+  # express is a private CA, which is the only reason this stays.
   database_ssl =
     case System.get_env("DATABASE_SSL_CACERTFILE") do
       nil ->
-        System.get_env("DATABASE_SSL") in ~w(true 1)
+        false
 
       cacertfile ->
         [
