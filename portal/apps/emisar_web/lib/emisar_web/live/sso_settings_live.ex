@@ -412,18 +412,30 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("create", %{"provider" => params}, socket) do
-    Permissions.gated(socket, socket.assigns.can_configure?, &do_create(&1, params))
+    Permissions.gated(
+      socket,
+      SSO.subject_can_configure_sso?(socket.assigns.current_subject),
+      &do_create(&1, params)
+    )
   end
 
   # Probe only the discovery document for the issuer currently in the form. This
   # intentionally does not claim the client credentials or callback work; that
   # proof needs a saved provider and the real sign-in verification on its detail.
   def handle_event("test_connection", _params, socket) do
-    Permissions.gated(socket, socket.assigns.can_configure?, &do_test_connection/1)
+    Permissions.gated(
+      socket,
+      SSO.subject_can_configure_sso?(socket.assigns.current_subject),
+      &do_test_connection/1
+    )
   end
 
   def handle_event("start_provider_sign_in_verification", %{"provider_id" => id}, socket) do
-    Permissions.gated(socket, socket.assigns.can_configure?, &start_provider_verification(&1, id))
+    Permissions.gated(
+      socket,
+      SSO.subject_can_configure_sso?(socket.assigns.current_subject),
+      &start_provider_verification(&1, id)
+    )
   end
 
   def handle_event("confirm_oidc_step_up", %{"oidc_step" => %{"code" => code}}, socket) do
@@ -498,15 +510,27 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   def handle_event("update", %{"provider_id" => id, "provider" => params}, socket) do
-    Permissions.gated(socket, socket.assigns.can_configure?, &do_update(&1, id, params))
+    Permissions.gated(
+      socket,
+      SSO.subject_can_configure_sso?(socket.assigns.current_subject),
+      &do_update(&1, id, params)
+    )
   end
 
   def handle_event("enable_verified_provider", %{"provider_id" => id}, socket) do
-    Permissions.gated(socket, socket.assigns.can_configure?, &do_enable_verified_provider(&1, id))
+    Permissions.gated(
+      socket,
+      SSO.subject_can_configure_sso?(socket.assigns.current_subject),
+      &do_enable_verified_provider(&1, id)
+    )
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
-    Permissions.gated(socket, socket.assigns.has_sso_permission?, &do_delete(&1, id))
+    Permissions.gated(
+      socket,
+      SSO.subject_can_manage_sso?(socket.assigns.current_subject),
+      &do_delete(&1, id)
+    )
   end
 
   # -- Directory sync (SCIM) ------------------------------------------
@@ -514,7 +538,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("enable_scim", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
-      socket.assigns.can_configure_directory_sync?,
+      SSO.subject_can_configure_directory_sync?(socket.assigns.current_subject),
       &do_enable_scim(&1, id)
     )
   end
@@ -522,7 +546,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("rotate_scim", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
-      socket.assigns.can_configure_directory_sync?,
+      SSO.subject_can_configure_directory_sync?(socket.assigns.current_subject),
       &do_rotate_scim(&1, id)
     )
   end
@@ -530,7 +554,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("disable_scim", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
-      socket.assigns.has_sso_permission?,
+      SSO.subject_can_manage_sso?(socket.assigns.current_subject),
       &do_disable_scim(&1, id)
     )
   end
@@ -559,7 +583,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("create_mapping", %{"provider_id" => id, "mapping" => params}, socket) do
     Permissions.gated(
       socket,
-      socket.assigns.can_configure_directory_sync?,
+      SSO.subject_can_configure_directory_sync?(socket.assigns.current_subject),
       &do_create_mapping(&1, id, params)
     )
   end
@@ -609,7 +633,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("update_mapping", %{"mapping_id" => id, "mapping" => params}, socket) do
     Permissions.gated(
       socket,
-      socket.assigns.can_configure_directory_sync?,
+      SSO.subject_can_configure_directory_sync?(socket.assigns.current_subject),
       &do_update_mapping(&1, id, params)
     )
   end
@@ -617,7 +641,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("delete_mapping", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
-      socket.assigns.can_configure_directory_sync?,
+      SSO.subject_can_configure_directory_sync?(socket.assigns.current_subject),
       &do_delete_mapping(&1, id)
     )
   end
@@ -656,7 +680,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       ) do
     Permissions.gated(
       socket,
-      socket.assigns.can_configure_directory_sync?,
+      SSO.subject_can_configure_directory_sync?(socket.assigns.current_subject),
       &do_create_runner_access_mapping(&1, id, params)
     )
   end
@@ -715,7 +739,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       ) do
     Permissions.gated(
       socket,
-      socket.assigns.can_configure_directory_sync?,
+      SSO.subject_can_configure_directory_sync?(socket.assigns.current_subject),
       &do_update_runner_access_mapping(&1, id, params)
     )
   end
@@ -723,7 +747,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("delete_runner_access_mapping", %{"id" => id}, socket) do
     Permissions.gated(
       socket,
-      socket.assigns.can_configure_directory_sync?,
+      SSO.subject_can_configure_directory_sync?(socket.assigns.current_subject),
       &do_delete_runner_access_mapping(&1, id)
     )
   end
@@ -743,17 +767,25 @@ defmodule EmisarWeb.SSOSettingsLive do
   def handle_event("change_member_role", %{"membership_id" => id, "role" => role}, socket) do
     Permissions.gated(
       socket,
-      socket.assigns.can_manage_team?,
+      Accounts.subject_can_manage_team?(socket.assigns.current_subject),
       &do_change_member_role(&1, id, role)
     )
   end
 
   def handle_event("suspend_member", %{"membership_id" => id}, socket) do
-    Permissions.gated(socket, socket.assigns.can_manage_team?, &do_suspend_member(&1, id))
+    Permissions.gated(
+      socket,
+      Accounts.subject_can_manage_team?(socket.assigns.current_subject),
+      &do_suspend_member(&1, id)
+    )
   end
 
   def handle_event("reinstate_member", %{"membership_id" => id}, socket) do
-    Permissions.gated(socket, socket.assigns.can_manage_team?, &do_reinstate_member(&1, id))
+    Permissions.gated(
+      socket,
+      Accounts.subject_can_manage_team?(socket.assigns.current_subject),
+      &do_reinstate_member(&1, id)
+    )
   end
 
   # No-op for the on_mount badge/fleet hooks' broadcasts (approvals, packs,

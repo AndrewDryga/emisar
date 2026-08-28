@@ -580,10 +580,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: conn,
       account: account
     } do
-      # Mount on Enterprise (can_configure? is true, cached at mount), then drop
-      # the account to the free tier by removing its subscription — exactly the
-      # mid-form downgrade the row describes. The cached gate lets the event
-      # through to the context, which re-checks the live plan and rejects it.
+      # Mount on Enterprise, then drop the account to the free tier — exactly
+      # the mid-form downgrade the row describes. The handler's predicate
+      # re-checks the live plan (`Permissions.gated` takes a fresh context
+      # call, like every gated handler), so the event is refused at the gate;
+      # the context re-checks anyway and would refuse the same way.
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
@@ -602,7 +603,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         })
         |> render_submit()
 
-      assert html =~ "Single sign-on requires a Team or Enterprise plan."
+      assert html =~ "You don&#39;t have permission to do that."
 
       refute IdentityProvider.Query.not_deleted()
              |> Repo.all()
