@@ -146,24 +146,8 @@ func settle(ctx context.Context, env map[string]string) error {
 	return fmt.Errorf("never reached the admin center")
 }
 
-// waitForText polls the rendered text for a marker of the screen we expect. The
-// URL never changes across these steps, so text is the only honest signal that
-// the SPA actually advanced.
 func waitForText(ctx context.Context, want string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		var body string
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
-			return err
-		}
-		if strings.Contains(body, want) {
-			return nil
-		}
-		if err := chromedp.Run(ctx, chromedp.Sleep(time.Second)); err != nil {
-			return err
-		}
-	}
-	return fmt.Errorf("timed out waiting for %q", want)
+	return capture.RequireText(ctx, want, timeout)
 }
 
 // submitTOTP answers the authenticator prompt. The code is computed in-process
@@ -194,26 +178,8 @@ func submitTOTP(ctx context.Context, env map[string]string) error {
 	)
 }
 
-// describePage dumps what the SPA is actually showing, so a failed step is
-// diagnosed from the real screen rather than a guess about it.
 func describePage(ctx context.Context) error {
-	const script = `(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  return JSON.stringify({
-    url: location.href,
-    text: document.body.innerText.slice(0, 900),
-    fields: [...document.querySelectorAll('input,textarea,select')].filter(visible)
-      .map(el => [el.tagName, el.type || '', 'name=' + (el.name || '-'),
-                  'ph=' + (el.placeholder || '-')].join(' ')),
-  }, null, 1);
-})()`
-	var listing string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &listing)); err != nil {
-		return err
-	}
-	fmt.Println("--- page ---")
-	fmt.Println(listing)
-	return nil
+	return capture.DescribePage(ctx, nil)
 }
 
 // appRegistrationFlow captures the sign-in half of the Entra walkthrough: the
@@ -518,35 +484,8 @@ func clickTextAtCentre(ctx context.Context, label string) error {
 	return chromedp.Run(ctx, chromedp.MouseClickXY(point.X, point.Y))
 }
 
-// highlight outlines the control a step tells the reader to use, so the
-// screenshot shows WHERE to click. See
-// .agent/kb/rules/content-provider-walkthroughs-show-every-screen.md.
 func highlight(ctx context.Context, label string) error {
-	script := fmt.Sprintf(`(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const matches = [...document.querySelectorAll('a,button,label,span,div,input,td')]
-    .filter(el => visible(el) && (el.textContent || '').includes(%q));
-  if (!matches.length) return false;
-  matches.sort((a, b) => a.textContent.length - b.textContent.length);
-  const target = matches[0].closest('label,a,button,tr,li') || matches[0];
-  target.style.outline = '3px solid #10b981';
-  target.style.outlineOffset = '3px';
-  target.style.borderRadius = '6px';
-  target.scrollIntoView({block: 'center'});
-  return true;
-})()`, label)
-	var marked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
-	}
-	if !marked {
-		// FAIL, don't warn: a highlight that matched nothing ships a screenshot
-		// with no outline, which is a broken instruction rather than a cosmetic
-		// miss. One reached the docs that way.
-		return fmt.Errorf("nothing matching %q to highlight", label)
-	}
-	fmt.Printf("  highlighted %q\n", label)
-	return chromedp.Run(ctx, chromedp.Sleep(700*time.Millisecond))
+	return capture.Highlight(ctx, label, 700*time.Millisecond)
 }
 
 // fillField types into the input whose label, placeholder or aria-label matches.

@@ -1682,20 +1682,7 @@ func deidentify(ctx context.Context, env map[string]string) error {
 }
 
 func waitForText(ctx context.Context, wanted string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		var body string
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body ? document.body.innerText : ""`, &body)); err != nil {
-			return err
-		}
-		if strings.Contains(body, wanted) {
-			return nil
-		}
-		if err := chromedp.Run(ctx, chromedp.Sleep(time.Second)); err != nil {
-			return err
-		}
-	}
-	return fmt.Errorf("timed out waiting for %q", wanted)
+	return capturekit.RequireText(ctx, wanted, timeout)
 }
 
 func clickExactText(ctx context.Context, label string) error {
@@ -1927,24 +1914,7 @@ func totpField(ctx context.Context) (string, error) {
 }
 
 func describePage(ctx context.Context, env map[string]string) error {
-	const script = `(() => JSON.stringify({
-  url: location.origin + location.pathname,
-  text: (document.body ? document.body.innerText : '').slice(0, 1800),
-  fields: [...document.querySelectorAll('input,textarea,select')]
-    .filter(el => el.offsetWidth > 0 || el.offsetHeight > 0)
-    .map(el => [el.tagName, el.type || '', el.name || '', el.placeholder || '', el.getAttribute('aria-label') || ''].join(' | ')),
-  controls: [...document.querySelectorAll('a,button,[role=button],[role=tab],[role=radio]')]
-    .filter(el => el.offsetWidth > 0 || el.offsetHeight > 0)
-    .map(el => (el.textContent || '').trim()).filter(Boolean).slice(0, 80)
-}, null, 1))()`
-	var description string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &description)); err != nil {
-		return err
-	}
-	description = redactGoogleText(description, env)
-	fmt.Println("--- page ---")
-	fmt.Println(description)
-	return nil
+	return capturekit.DescribePage(ctx, env)
 }
 
 func redactGoogleText(value string, env map[string]string) string {

@@ -116,18 +116,7 @@ func focusField(ctx context.Context, hint string) error {
 }
 
 func clickText(ctx context.Context, label string) (bool, error) {
-	script := fmt.Sprintf(`(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const target = [...document.querySelectorAll('a,button,input[type=submit],[role=button]')]
-    .find(el => visible(el) && ((el.textContent || el.value || '').trim() === %q));
-  if (!target) return false;
-  target.scrollIntoView({block: 'center'});
-  target.click();
-  return true;
-})()`, label)
-	var clicked bool
-	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
-	return clicked, err
+	return capturekit.ClickText(ctx, label)
 }
 
 // dismissDialogContaining closes a known transient announcement without
@@ -186,23 +175,8 @@ func clickDeep(ctx context.Context, label string) (bool, error) {
 	return clicked, err
 }
 
-// clickContaining clicks the smallest visible element whose text contains the
-// label — list rows bundle status and column text alongside the name, so an
-// exact match misses them.
 func clickContaining(ctx context.Context, label string) (bool, error) {
-	script := fmt.Sprintf(`(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const matches = [...document.querySelectorAll('a,button,li,tr,td,div,span,[role=button]')]
-    .filter(el => visible(el) && (el.textContent || '').includes(%q));
-  if (!matches.length) return false;
-  matches.sort((a, b) => a.textContent.length - b.textContent.length);
-  matches[0].scrollIntoView({block: 'center'});
-  matches[0].click();
-  return true;
-})()`, label)
-	var clicked bool
-	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
-	return clicked, err
+	return capturekit.ClickContaining(ctx, label)
 }
 
 // deidentifyHost rewrites the tunnel hostname to the product host for the
@@ -2125,60 +2099,12 @@ func clickInDialog(ctx context.Context, label string) (bool, error) {
 	return clicked, err
 }
 
-// describePage dumps the visible copy and controls so a missed selector is
-// diagnosable from the log rather than by squinting at a screenshot.
 func describePage(ctx context.Context) error {
-	const script = `(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const controls = [...document.querySelectorAll('a,button,input[type=submit],[role=button]')]
-    .filter(visible).map(el => (el.textContent || el.value || '').trim()).filter(Boolean);
-  return JSON.stringify({
-    text: document.body.innerText.replace(/\n{2,}/g, "\n").slice(0, 900),
-    controls: [...new Set(controls)].slice(0, 40)
-  });
-})()`
-	var payload string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &payload)); err != nil {
-		return err
-	}
-	fmt.Println("--- page ---")
-	fmt.Println(payload)
-	return nil
+	return capturekit.DescribePage(ctx, nil)
 }
 
-// highlight outlines the smallest visible element carrying the label, so a
-// screenshot shows WHERE to click rather than leaving the reader to hunt. The
-// docs are step-by-step; an unmarked full console screen is not a step.
 func highlight(ctx context.Context, label string) error {
-	script := fmt.Sprintf(`(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const roots = [document];
-  for (let index = 0; index < roots.length; index++) {
-    for (const el of roots[index].querySelectorAll('*')) if (el.shadowRoot) roots.push(el.shadowRoot);
-  }
-  const matches = roots.flatMap(root => [...root.querySelectorAll('a,button,li,div,span,td,label,[role=option]')])
-    .filter(el => visible(el) && (el.textContent || '').includes(%q));
-  if (!matches.length) return false;
-  matches.sort((a, b) => a.textContent.length - b.textContent.length);
-  const target = matches[0].closest('li,tr,[role=option],a,button') || matches[0];
-  target.style.outline = '3px solid #10b981';
-  target.style.outlineOffset = '3px';
-  target.style.borderRadius = '6px';
-  target.scrollIntoView({block: 'center'});
-  return true;
-})()`, label)
-	var marked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
-	}
-	if !marked {
-		// FAIL, don't warn: a highlight that matched nothing ships a screenshot
-		// with no outline, which is a broken instruction rather than a cosmetic
-		// miss. One reached the docs that way.
-		return fmt.Errorf("nothing matching %q to highlight", label)
-	}
-	fmt.Printf("  highlighted %q\n", label)
-	return chromedp.Run(ctx, chromedp.Sleep(800*time.Millisecond))
+	return capturekit.Highlight(ctx, label, 800*time.Millisecond)
 }
 
 // highlightGroup frames the complete labelled unit instead of one word inside

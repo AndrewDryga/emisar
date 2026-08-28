@@ -505,64 +505,19 @@ func run(env map[string]string, outDir, only string, headless, inventory, cleanu
 	return captureFlow(ctx, env, outDir, only, configureSCIM)
 }
 
-// clickText clicks the first visible control whose trimmed label matches, and
-// reports whether it found one. Okta's console markup has few stable hooks, so
-// the visible label is the most durable selector we have.
+// clickText: shared implementation — the four rigs' copies had drifted.
 func clickText(ctx context.Context, label string) (bool, error) {
-	script := fmt.Sprintf(`(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const target = [...document.querySelectorAll('a,button,input[type=submit],input[type=button],[role=button]')]
-    .find(el => visible(el) && ((el.textContent || el.value || '').trim() === %q));
-  if (!target) return false;
-  target.scrollIntoView({block: 'center'});
-  target.click();
-  return true;
-})()`, label)
-	var clicked bool
-	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
-	return clicked, err
+	return capture.ClickText(ctx, label)
 }
 
-// waitForText polls the rendered page until `needle` shows up, so a step waits
-// on the thing it needs rather than on a guessed number of seconds. Reports
-// whether it appeared instead of erroring, leaving the caller to say what was
-// missing — a bare timeout reads as a selector bug and sends the next reader
-// hunting the wrong thing.
+// waitForText keeps this rig's attempts convention (one attempt ≈ 2s) over the
+// shared poller.
 func waitForText(ctx context.Context, needle string, attempts int) (bool, error) {
-	for range attempts {
-		var body string
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.body.innerText`, &body)); err != nil {
-			return false, err
-		}
-		if strings.Contains(body, needle) {
-			return true, nil
-		}
-		if err := chromedp.Run(ctx, chromedp.Sleep(2*time.Second)); err != nil {
-			return false, err
-		}
-	}
-	return false, nil
+	return capture.WaitForText(ctx, needle, time.Duration(attempts)*2*time.Second)
 }
 
-// clickContaining clicks the SMALLEST visible element whose text contains the
-// label. Typeahead rows and cards bundle a subtitle into the same clickable
-// node ("…(Header Auth)SWA, SCIM, SAML"), so exact matching misses them;
-// smallest-first avoids clicking a whole container.
 func clickContaining(ctx context.Context, label string) (bool, error) {
-	script := fmt.Sprintf(`(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const candidates = [...document.querySelectorAll('a,button,li,div,span,td,[role=option],[role=button],[role=menuitem]')]
-    .filter(el => visible(el) && (el.textContent || '').includes(%q));
-  if (!candidates.length) return false;
-  candidates.sort((a, b) => a.textContent.length - b.textContent.length);
-  const target = candidates[0];
-  target.scrollIntoView({block: 'center'});
-  target.click();
-  return true;
-})()`, label)
-	var clicked bool
-	err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
-	return clicked, err
+	return capture.ClickContaining(ctx, label)
 }
 
 // typeInto sets a field found by placeholder, name, id, or preceding label.
@@ -1814,32 +1769,8 @@ func clearOtherURIFields(ctx context.Context, keepPrefix string) error {
 	return nil
 }
 
-// highlight rings the element a step is about, so a reader's eye lands on the
-// right row instead of scanning a vendor console. Emerald is emisar's accent, so
-// the marker reads as ours rather than as part of the vendor UI.
 func highlight(ctx context.Context, label string) error {
-	script := fmt.Sprintf(`(() => {
-  const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
-  const matches = [...document.querySelectorAll('a,button,li,div,span,td,label,[role=option]')]
-    .filter(el => visible(el) && (el.textContent || '').includes(%q));
-  if (!matches.length) return false;
-  matches.sort((a, b) => a.textContent.length - b.textContent.length);
-  const target = matches[0].closest('li,tr,[role=option],a,button') || matches[0];
-  target.style.outline = '3px solid #10b981';
-  target.style.outlineOffset = '3px';
-  target.style.borderRadius = '6px';
-  target.scrollIntoView({block: 'center'});
-  return true;
-})()`, label)
-	var marked bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &marked)); err != nil {
-		return err
-	}
-	if !marked {
-		return fmt.Errorf("nothing matching %q to highlight", label)
-	}
-	fmt.Printf("  highlighted %q\n", label)
-	return chromedp.Run(ctx, chromedp.Sleep(1200*time.Millisecond))
+	return capture.Highlight(ctx, label, 1200*time.Millisecond)
 }
 
 // highlightLowest disambiguates repeated labels by choosing the lowest
