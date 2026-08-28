@@ -1,38 +1,38 @@
-emisar --config --json --packs-dir
+emisar --config:string --help/-h:bool --json:bool --packs-dir:stringSlice --version/-v:bool
 emisar action
-emisar action describe
-emisar action list
-emisar action run --arg --reason --stream --timeout
+emisar action describe [+json]
+emisar action list [+json]
+emisar action run --arg:stringArray --reason:string --stream:bool --timeout:duration
 emisar audit
-emisar audit verify --all
+emisar audit verify --all:bool [+json]
 emisar completion
-emisar completion bash --no-descriptions
-emisar completion fish --no-descriptions
-emisar completion powershell --no-descriptions
-emisar completion zsh --no-descriptions
+emisar completion bash --no-descriptions:bool
+emisar completion fish --no-descriptions:bool
+emisar completion powershell --no-descriptions:bool
+emisar completion zsh --no-descriptions:bool
 emisar connect
-emisar doctor --probe
-emisar events
-emisar events cat
-emisar events grep --action --event-id --request-id --type
-emisar events tail --follow --lines
+emisar doctor --probe:bool [+json]
+emisar events [+json]
+emisar events cat [+json]
+emisar events grep --action:string --event-id:string --request-id:string --type:string [+json]
+emisar events tail --follow/-f:bool --lines:int [+json]
 emisar help
 emisar pack
-emisar pack diff --registry --stat --to
-emisar pack info
-emisar pack install --dest --force --hash --no-verify --registry
-emisar pack list
-emisar pack suggest --catalog --names-only --registry
-emisar pack uninstall --dest --yes
-emisar pack update --dry-run --registry
-emisar pack validate
-emisar pack verify --arg
+emisar pack diff --registry:string --stat:bool --to:string [+json]
+emisar pack info [+json]
+emisar pack install --dest:string --force:bool --hash:string --no-verify:bool --registry:string
+emisar pack list [+json]
+emisar pack suggest --catalog:string --names-only:bool --registry:string [+json]
+emisar pack uninstall --dest:string --yes/-y:bool
+emisar pack update --dry-run:bool --registry:string [+json]
+emisar pack validate [+json]
+emisar pack verify --arg:stringArray [+json]
 emisar signing
-emisar signing init --ca-name --key --scope --ttl
-emisar signing new-ca --ca-name --key --ttl
-emisar signing new-cert --ca-cert --ca-key --key --key-name --scope --ttl
-emisar state
-emisar state check-dispatch-log --data-dir
-emisar status
-emisar update --version
-emisar version
+emisar signing init --ca-name:string --key:string --scope:string --ttl:string [+json]
+emisar signing new-ca --ca-name:string --key:string --ttl:string [+json]
+emisar signing new-cert --ca-cert:string --ca-key:string --key:string --key-name:string --scope:string --ttl:string [+json]
+emisar state [+json]
+emisar state check-dispatch-log --data-dir:string
+emisar status [+json]
+emisar update --version:string
+emisar version [+json]

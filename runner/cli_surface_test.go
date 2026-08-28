@@ -29,6 +29,11 @@ func TestCLISurfaceGolden(t *testing.T) {
 	// added explicitly so the golden carries the complete public surface.
 	root.InitDefaultHelpCmd()
 	root.InitDefaultCompletionCmd()
+	// Cobra adds these during Execute, so walking the tree directly missed
+	// them — and compatibility.md freezes `-v/--version` explicitly, so the
+	// golden was silent about a flag the spec promises.
+	root.InitDefaultHelpFlag()
+	root.InitDefaultVersionFlag()
 
 	var b strings.Builder
 	var walk func(c *cobra.Command)
@@ -37,12 +42,29 @@ func TestCLISurfaceGolden(t *testing.T) {
 			return
 		}
 		line := c.CommandPath()
+		// The SHORTHAND is part of the promise too: compatibility.md freezes
+		// `events tail -f` and `-v/--version` by name, and recording only the
+		// long form meant losing a shorthand was invisible here. Same for the
+		// flag's TYPE — a string that becomes a bool is a silent break for
+		// every caller passing a value.
 		c.LocalFlags().VisitAll(func(f *pflag.Flag) {
 			if f.Hidden {
 				return
 			}
 			line += " --" + f.Name
+			if f.Shorthand != "" {
+				line += "/-" + f.Shorthand
+			}
+			line += ":" + f.Value.Type()
 		})
+		// Whether the command honours --json. compatibility.md freezes
+		// `status --json` BY NAME, and dropping its emitsJSON() annotation
+		// would have turned that into "does not emit JSON" with this golden
+		// still green — the one hole most likely to be stepped in, since the
+		// annotation looks like decoration.
+		if _, ok := c.Annotations[jsonOutputAnnotation]; ok {
+			line += " [+json]"
+		}
 		b.WriteString(line + "\n")
 		for _, sub := range c.Commands() {
 			walk(sub)

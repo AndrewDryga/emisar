@@ -422,6 +422,24 @@ completion
 help
 ```
 
+`completion` and `help` are cobra's, not ours: their subcommands, flags and
+output text come from the CLI library. The verb NAMES are frozen — an operator's
+shell profile calls `emisar completion zsh` — but their internals are explicitly
+OUTSIDE this freeze, because a cobra upgrade would otherwise turn a dependency
+bump into a compatibility event for a promise nobody made. `completion
+--no-descriptions` is cobra's flag and is recorded in the surface golden as a
+fact about the current library, not as a contract.
+
+The runner BINARY reads exactly `EMISAR_CONFIG` (selects the config file),
+`EMISAR_URL`, `EMISAR_GROUP`, `EMISAR_RUNNER_ID`, `EMISAR_PACKS_REGISTRY`, and
+`EMISAR_GITHUB_TOKEN`, which `emisar update` sends with its release lookups.
+That last one is credential-bearing and was listed only under install-mcp.sh,
+though the runner reads it directly. `EMISAR_REPO` and
+`EMISAR_ATTESTATION_WORKFLOW` reach the runner's update path only by being
+inherited by the installer it re-runs, so they are install.sh's contract rather
+than the binary's. The surface golden covers flags, not environment, so this
+list is the only review any of them get.
+
 The runner reads per-user config from the platform's own config directory —
 `os.UserConfigDir()`, which honours `$XDG_CONFIG_HOME` on Unix and is
 `~/Library/Application Support` on macOS, the same function `emisar-mcp` uses —
@@ -457,7 +475,15 @@ inputs. The complete tree is pinned mechanically:
 `runner/testdata/cli_surface.golden` (checked by `TestCLISurfaceGolden` inside
 the runner gate) fails on any added, renamed, or removed verb or flag until
 the golden and this inventory move in the same change, so a shipped command
-can no longer fall outside the compatibility review unnoticed. The structured output
+can no longer fall outside the compatibility review unnoticed.
+
+It records each flag's SHORTHAND and TYPE, whether the command honours
+`--json`, and the `-h/--help` and `-v/--version` flags cobra installs at
+execute time. It previously recorded only long flag names, which left holes
+exactly where this section makes promises: `events tail -f` and `-v/--version`
+are frozen by name and were unrecorded, a string flag becoming a boolean was
+invisible, and dropping a command's `--json` annotation — which turns a frozen
+`status --json` into "does not emit JSON" — left the golden green. The structured output
 `--json` emits exists to be parsed by scripts, so those shapes freeze with the
 flags: after 1.0 they change only additively. That includes the complete
 `status --json` report and its embedded `runtime` object.
