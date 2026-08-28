@@ -198,6 +198,11 @@ func execute(cfg runConfig) (report, error) {
 		agent.Stderr = ""
 	}
 	calls := relay.recorder.snapshot()
+	scored := scoreReport(item, calls, agent)
+	// Scoring above read every candidate; the artifact carries a bounded list.
+	// Trimming here rather than at collection is what keeps the two from
+	// disagreeing: recall used to be judged on the trimmed view.
+	boundReportedCandidates(calls)
 	return report{
 		Version: 3, Provider: cfg.Provider,
 		ClientVersion: clientVersion, BridgeVersion: bridgeVersion,
@@ -205,8 +210,19 @@ func execute(cfg runConfig) (report, error) {
 		PartitionID: file.PartitionID, Scenario: item.ID,
 		StartedAt: started.UTC().Format(time.RFC3339Nano), DurationMS: time.Since(started).Milliseconds(),
 		Usage: usage, Agent: agent, ToolCalls: calls,
-		Score: scoreReport(item, calls, agent),
+		Score: scored,
 	}, nil
+}
+
+// boundReportedCandidates trims each call's candidate list for the public CI
+// artifact, in place. SearchCandidateTotal already records the full count, so a
+// reader can see what was dropped.
+func boundReportedCandidates(calls []callRecord) {
+	for i := range calls {
+		if len(calls[i].SearchCandidates) > reportedSearchCandidates {
+			calls[i].SearchCandidates = calls[i].SearchCandidates[:reportedSearchCandidates]
+		}
+	}
 }
 
 func summarize(result report) string {

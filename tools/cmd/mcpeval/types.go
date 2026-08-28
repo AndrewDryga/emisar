@@ -54,15 +54,21 @@ type callRecord struct {
 	// action+pack earlier in the session (a find_actions candidate or a
 	// get_action contract) — the recorded evidence that admits a run_action
 	// outside the scenario allowlist as an adjacent read.
-	ActionRisk           string            `json:"action_risk,omitempty"`
-	RunnerCount          int               `json:"runner_count,omitempty"`
-	ReasonPlaceholder    bool              `json:"reason_placeholder,omitempty"`
-	EvidencePresent      bool              `json:"evidence_present,omitempty"`
-	ExpectedPresent      bool              `json:"expected_present,omitempty"`
-	BlockedByPolicy      bool              `json:"blocked_by_policy,omitempty"`
-	ResponseError        bool              `json:"response_error"`
-	ResponseCode         string            `json:"response_code,omitempty"`
+	ActionRisk        string `json:"action_risk,omitempty"`
+	RunnerCount       int    `json:"runner_count,omitempty"`
+	ReasonPlaceholder bool   `json:"reason_placeholder,omitempty"`
+	EvidencePresent   bool   `json:"evidence_present,omitempty"`
+	ExpectedPresent   bool   `json:"expected_present,omitempty"`
+	BlockedByPolicy   bool   `json:"blocked_by_policy,omitempty"`
+	ResponseError     bool   `json:"response_error"`
+	ResponseCode      string `json:"response_code,omitempty"`
+	// Every candidate the response carried. Scoring reads all of them — recall
+	// judged on a truncated view scored a required action the search really did
+	// surface at position sixteen as never found. `boundReportedCandidates`
+	// trims this for the public artifact just before it is written, and
+	// SearchCandidateTotal records what the trim dropped.
 	SearchCandidates     []searchCandidate `json:"search_candidates,omitempty"`
+	SearchCandidateTotal int               `json:"search_candidate_total,omitempty"`
 	RunStates            []runState        `json:"run_states,omitempty"`
 	ResponseBytes        int               `json:"response_bytes"`
 	StartedAt            string            `json:"started_at"`

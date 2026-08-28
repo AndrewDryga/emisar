@@ -318,9 +318,27 @@ func TestRecorderKeepsTheCompleteBoundedSearchResponse(t *testing.T) {
 	  {"action_id":"a13","pack_ref":"p@1/h"},{"action_id":"a14","pack_ref":"p@1/h"},
 	  {"action_id":"a15","pack_ref":"p@1/h"},{"action_id":"a16","pack_ref":"p@1/h"}
 	]}}}`), 200)
-	candidates := r.snapshot()[0].SearchCandidates
-	if len(candidates) != 15 || candidates[0].ActionID != "a1" || candidates[14].ActionID != "a15" {
-		t.Fatalf("search candidates = %#v", candidates)
+	// The recorder keeps EVERY candidate, because scoring measures recall
+	// against a required action that may sit past the reporting bound — judging
+	// it on the first fifteen scored a16 as never found when the search really
+	// did surface it.
+	call := r.snapshot()[0]
+	if len(call.SearchCandidates) != 16 || call.SearchCandidates[15].ActionID != "a16" {
+		t.Fatalf("recorder dropped candidates: %#v", call.SearchCandidates)
+	}
+	if call.SearchCandidateTotal != 16 {
+		t.Errorf("SearchCandidateTotal = %d, want 16", call.SearchCandidateTotal)
+	}
+
+	// The public artifact is what gets bounded, and the total says what it lost.
+	calls := r.snapshot()
+	boundReportedCandidates(calls)
+	if len(calls[0].SearchCandidates) != reportedSearchCandidates ||
+		calls[0].SearchCandidates[14].ActionID != "a15" {
+		t.Fatalf("reported candidates = %#v", calls[0].SearchCandidates)
+	}
+	if calls[0].SearchCandidateTotal != 16 {
+		t.Errorf("the trim lost the total: %d", calls[0].SearchCandidateTotal)
 	}
 }
 
@@ -394,5 +412,35 @@ func TestPlaceholderReasonFlagsFillerAndAcceptsHonestSentences(t *testing.T) {
 		if got := placeholderReason(reason, "linux.uptime"); got != placeholder {
 			t.Errorf("placeholderReason(%q) = %t, want %t", reason, got, placeholder)
 		}
+	}
+}
+
+// A JSON-RPC response carries exactly one of result or error. A 200 whose body
+// did not decode, or that carried neither, used to score as a SUCCESSFUL call —
+// so a discovery read the client could not parse was recorded as having worked,
+// and `required_search_actions` recall was measured against nothing.
+func TestRecorderTreatsAnUnreadable200AsAnError(t *testing.T) {
+	for name, body := range map[string]string{
+		"not JSON at all":        `<html>502 upstream</html>`,
+		"truncated JSON":         `{"id":1,"result":{"structuredContent":`,
+		"neither result nor err": `{"id":1,"jsonrpc":"2.0"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newRecorder(scenario{AllowedTools: []string{"find_actions"}})
+			request := r.request([]byte(`{"id":1,"method":"tools/call","params":{"name":"find_actions","arguments":{"query":"disk"}}}`))
+			r.response(request, []byte(body), 200)
+
+			if !r.snapshot()[0].ResponseError {
+				t.Errorf("a 200 the client cannot read was scored as a successful call")
+			}
+		})
+	}
+
+	// A well-formed 200 must still be a success, or the fix would fail every run.
+	r := newRecorder(scenario{AllowedTools: []string{"find_actions"}})
+	request := r.request([]byte(`{"id":1,"method":"tools/call","params":{"name":"find_actions","arguments":{"query":"disk"}}}`))
+	r.response(request, []byte(`{"id":1,"result":{"structuredContent":{"ok":true,"candidates":[]}}}`), 200)
+	if r.snapshot()[0].ResponseError {
+		t.Error("a well-formed response was scored as an error")
 	}
 }

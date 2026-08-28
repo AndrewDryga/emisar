@@ -383,8 +383,8 @@ func (r *recorder) response(metadata requestMetadata, body []byte, statusCode in
 	if metadata.call == 0 {
 		return
 	}
-	payload := decodeMCPPayload(body)
-	result, _ := payload["result"].(map[string]any)
+	payload, decoded := decodeMCPPayload(body)
+	result, hasResult := payload["result"].(map[string]any)
 	structured := structuredContent(result)
 
 	r.mu.Lock()
@@ -396,10 +396,17 @@ func (r *recorder) response(metadata requestMetadata, body []byte, statusCode in
 	call := &r.calls[index]
 	call.ResponseBytes = len(body)
 	call.CompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
-	call.ResponseError = statusCode >= 400 || boolValue(result["isError"]) || payload["error"] != nil
+	// A JSON-RPC response carries exactly one of result or error. A 200 whose
+	// body did not decode, or that carried neither, used to score as a
+	// SUCCESSFUL call — so a discovery read the client could not parse was
+	// recorded as having worked.
+	call.ResponseError = statusCode >= 400 || boolValue(result["isError"]) ||
+		payload["error"] != nil || !decoded || (!hasResult && payload["error"] == nil)
 	call.ResponseCode = nestedString(structured, "error", "code")
 	if call.Tool == "find_actions" && !call.ResponseError {
-		call.SearchCandidates = collectSearchCandidates(structured)
+		candidates, total := collectSearchCandidates(structured)
+		call.SearchCandidates = candidates
+		call.SearchCandidateTotal = total
 		for _, value := range sliceValue(structured["candidates"]) {
 			if object, ok := value.(map[string]any); ok {
 				r.recordAdvertisedRisk(stringValue(object["action_id"]), stringValue(object["pack_ref"]), stringValue(object["risk"]))
@@ -432,9 +439,15 @@ func (r *recorder) recordAdvertisedRisk(actionID, packRef, risk string) {
 	r.advertisedRisk[actionID+"\x00"+packRef] = risk
 }
 
-func collectSearchCandidates(structured map[string]any) []searchCandidate {
+// reportedSearchCandidates bounds what the PUBLIC CI artifact carries. Scoring
+// reads every candidate: bounded recall used to be judged on this truncated
+// view, so a required action the search really did surface at position 16 was
+// scored as never found.
+const reportedSearchCandidates = 15
+
+func collectSearchCandidates(structured map[string]any) ([]searchCandidate, int) {
 	values := sliceValue(structured["candidates"])
-	candidates := make([]searchCandidate, 0, min(len(values), 15))
+	candidates := make([]searchCandidate, 0, len(values))
 	for _, value := range values {
 		object, ok := value.(map[string]any)
 		if !ok {
@@ -444,11 +457,8 @@ func collectSearchCandidates(structured map[string]any) []searchCandidate {
 			ActionID: stringValue(object["action_id"]),
 			PackRef:  stringValue(object["pack_ref"]),
 		})
-		if len(candidates) == 15 {
-			break
-		}
 	}
-	return candidates
+	return candidates, len(candidates)
 }
 
 func (r *recorder) transportError(metadata requestMetadata) {
@@ -473,17 +483,20 @@ func (r *recorder) snapshot() []callRecord {
 	return calls
 }
 
-func decodeMCPPayload(body []byte) map[string]any {
+// decodeMCPPayload reports whether the body decoded at all, separately from
+// what it decoded to. Collapsing the two let an unparseable 200 read as an
+// empty-but-valid response.
+func decodeMCPPayload(body []byte) (map[string]any, bool) {
 	var payload map[string]any
 	if json.Unmarshal(body, &payload) == nil {
-		return payload
+		return payload, true
 	}
 	for _, line := range strings.Split(string(body), "\n") {
 		if strings.HasPrefix(line, "data:") && json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(line, "data:"))), &payload) == nil {
-			return payload
+			return payload, true
 		}
 	}
-	return map[string]any{}
+	return map[string]any{}, false
 }
 
 func structuredContent(result map[string]any) map[string]any {

@@ -2,14 +2,29 @@ schema_version: 1
 id: cockroach.cluster_settings
 title: Show cluster settings
 kind: exec
-risk: low
+risk: medium
 description: >
   Show all cluster settings with their current value, type, and description
   (SHOW CLUSTER SETTINGS). Use to confirm a setting's value during an
-  investigation. Read-only — this pack does not change settings.
+  investigation. Read-only — this pack does not change settings. Credential
+  values are masked in the output; the setting name stays visible so you can
+  see it is set.
 side_effects:
   - One read-only SHOW CLUSTER SETTINGS query.
-  - Read-only.
+  - Read-only, but it returns the WHOLE cluster configuration.
+  - CockroachDB does not mask these itself. On v26.2.4, SHOW CLUSTER SETTINGS
+    prints server.oidc_authentication.client_secret in cleartext, and the
+    runner's default rules do not match the TSV shape — measured, not assumed.
+  - CockroachDB owns this key space, so its credential settings are enumerable
+    rather than guessed at. Three of the 406 settings on v26.2.4 carry a secret
+    value — server.oidc_authentication.client_secret,
+    server.ldap_authentication.client.tls_key, and enterprise.license.
+  - Every one of those ends in a suffix the redaction rule matches. The rule
+    also masks server.oidc_authentication.claim_json_key, which is a claim NAME
+    rather than a secret — an accepted over-mask, since a suffix match survives
+    a vendor rename where an enumerated allowlist does not.
+  - That established coverage is why this is medium rather than high, and why it
+    is not low — a value reaching the model without approval must not be secret.
 args: []
 execution:
   command:
@@ -22,6 +37,18 @@ output:
   parser: text
   max_stdout_bytes: 262144
   max_stderr_bytes: 8192
+  redact:
+    # SHOW CLUSTER SETTINGS prints TSV: name<TAB>value<TAB>type<TAB>description.
+    # Mask the VALUE of a credential-named setting, keeping the name and the
+    # description so the operator still sees the setting exists and what it is.
+    #
+    # `[^\t\n]+` rather than `*` on purpose: an unset setting has an empty
+    # value, and printing [REDACTED] there would report a secret that is not
+    # configured.
+    - name: cockroach-secret-setting-value
+      type: regex
+      pattern: '(?im)^([a-z][a-z0-9_.]*(secret|password|passwd|[._]key|license))\t[^\t\n]+'
+      replacement: "${1}\t[REDACTED]"
 examples:
   - title: All cluster settings
     args: {}

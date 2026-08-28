@@ -23,9 +23,20 @@ cases:
   - action: cockroach.cluster_sessions
     expect:
       stdout_contains: [session_id, root]
+  # Proves the redaction, not just the read: arrange a real OIDC client secret,
+  # then assert the placeholder is present AND the secret's own bytes are gone.
+  # Without the rule the value prints in cleartext — CockroachDB does not mask
+  # it and the runner's defaults do not match the TSV shape.
   - action: cockroach.cluster_settings
+    arrange:
+      - argv: [cockroach, sql, --url, "postgresql://root@cockroach:26257/defaultdb?sslmode=disable", -e,
+               "SET CLUSTER SETTING server.oidc_authentication.client_secret = 'packtest-oidc-secret'"]
+    cleanup:
+      - argv: [cockroach, sql, --url, "postgresql://root@cockroach:26257/defaultdb?sslmode=disable", -e,
+               "RESET CLUSTER SETTING server.oidc_authentication.client_secret"]
     expect:
-      stdout_contains: [version, setting]
+      stdout_contains: [version, setting, "server.oidc_authentication.client_secret\t[REDACTED]"]
+      stdout_not_contains: ["packtest-oidc-secret"]
   - action: cockroach.databases
     expect:
       stdout_contains: [defaultdb]
