@@ -1,9 +1,4 @@
 services: [elasticsearch]
-risk_accountability:
-  exceptions:
-    es.close_index: requires_external_service
-    es.force_merge: requires_external_service
-    es.cache_clear: requires_external_service
 versions:
   - version: "9.4.4"
     digest: "@sha256:a3545404e436e348721786bed638042a81f2181ebe2e2636501bb43940677747"
@@ -94,3 +89,48 @@ cases:
   - action: es.pending_tasks
     expect:
       stdout_contains: ['"tasks"']
+
+  # The three actions below spent their lives excused as requires_external_service
+  # while a live Elasticsearch SUT ran the other thirteen cases in this file.
+  # B-1 proved that class hides broken high/critical actions from the only gate
+  # that executes them — so they execute now.
+  - action: es.close_index
+    args: {index: packtest-close}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -H "Content-Type: application/json" -X PUT "$ELASTIC_URL/packtest-close/_doc/1?refresh=true" -d "{\"status\":\"ready\"}" >/dev/null']
+    expect:
+      stdout_contains: ['"acknowledged"', "true"]
+    probes:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" "$ELASTIC_URL/_cat/indices/packtest-close?h=status"']
+        expect:
+          stdout_contains: [close]
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -X DELETE "$ELASTIC_URL/packtest-close" >/dev/null']
+
+  - action: es.force_merge
+    args: {index: packtest-merge, max_segments: 1}
+    arrange:
+      # Two refreshes make two segments, so merging to one is observable.
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -H "Content-Type: application/json" -X PUT "$ELASTIC_URL/packtest-merge/_doc/1?refresh=true" -d "{\"n\":1}" >/dev/null && curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -H "Content-Type: application/json" -X PUT "$ELASTIC_URL/packtest-merge/_doc/2?refresh=true" -d "{\"n\":2}" >/dev/null']
+    expect:
+      stdout_contains: ['"successful"']
+    probes:
+      - argv: [/bin/sh, -c, 'echo "segments=$(curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" "$ELASTIC_URL/_cat/segments/packtest-merge?h=segment" | grep -c .)"']
+        expect:
+          stdout_contains: ["segments=1"]
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -X DELETE "$ELASTIC_URL/packtest-merge" >/dev/null']
+
+  - action: es.cache_clear
+    args: {index: packtest-cache}
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -H "Content-Type: application/json" -X PUT "$ELASTIC_URL/packtest-cache/_doc/1?refresh=true" -d "{\"status\":\"ready\"}" >/dev/null']
+    expect:
+      stdout_contains: ['"successful"', '"failed" : 0']
+    probes:
+      # The observable state: the index answers queries after its caches drop.
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" "$ELASTIC_URL/packtest-cache/_count"']
+        expect:
+          stdout_contains: ['"count":1']
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$ELASTIC_USER:$ELASTIC_PASSWORD" -X DELETE "$ELASTIC_URL/packtest-cache" >/dev/null']

@@ -3,7 +3,6 @@ risk_accountability:
   exceptions:
     mongo.drop_index: requires_dynamic_fixture
     mongo.kill_op: requires_concurrent_session
-    mongo.compact_collection: requires_external_service
     # rs.stepDown() hands PRIMARY to another member. A standalone mongod is not
     # a replica set at all, so the call has nothing to step down to.
     mongo.replset_stepdown: requires_cluster
@@ -97,3 +96,15 @@ cases:
   - action: mongo.wiredtiger_cache
     expect:
       stdout_contains: [maximum, bytes]
+
+  # Excused for its whole life as requires_external_service while the mongod it
+  # compacts ran the rest of this file. compact works on a standalone mongod;
+  # the seeded packtest.orders collection is its target.
+  - action: mongo.compact_collection
+    args: {db_name: packtest, collection: orders}
+    expect:
+      stdout_contains: ["ok: 1"]
+    probes:
+      - argv: [/bin/sh, -c, 'mongosh --nodb --quiet --eval "db=new Mongo(process.env.MONGO_URI).getDB(\"packtest\");print(JSON.stringify(db.orders.countDocuments()))"']
+        expect:
+          stdout_contains: ["3"]
