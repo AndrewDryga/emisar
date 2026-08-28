@@ -39,6 +39,16 @@ defmodule Emisar.Approvals.Request.Query do
   def by_target_access(queryable, %Emisar.Accounts.RunnerAccess{mode: :none}),
     do: where(queryable, [requests: _], false)
 
+  # Long on purpose — do not "simplify to the Grant sibling's 4 lines". A grant
+  # targets ONE runner and one pack_ref, so its filter decomposes trivially. A
+  # request targets one of TWO shapes, and the second is the hard one: a
+  # runbook-execution request is visible only when the execution HAS items and
+  # NO item falls outside the caller's reach — the exists/not-exists pair below
+  # is that all-items check, written as a double negation because SQL has no
+  # FORALL. The four near-twin `case access` blocks cannot be extracted either:
+  # dynamic/2 binds names literally (scope_runner vs scope_item_runner), and
+  # parameterizing a binding name takes a macro, which costs more than the
+  # repetition. Reviewed and kept, round 5 (2026-08-28).
   def by_target_access(
         queryable,
         %Emisar.Accounts.RunnerAccess{} = access
