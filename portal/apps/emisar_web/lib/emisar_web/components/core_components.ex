@@ -2384,22 +2384,24 @@ defmodule EmisarWeb.CoreComponents do
   The ONE status dot — the colored circle every live-state indicator composes
   (design-console-ux §1): posture-line stats, the status badge, connection dots,
   audit outcome dots, SCIM sync health, wait-room pings. Tones are the house
-  hue atoms; `pulse` is the gentle in-progress fade (a running run), `ping`
-  the radiating "live/waiting" ring (a connected runner, a wait-room). Extra
-  attributes (e.g. `title`) ride `@rest`.
+  hue atoms; `animate: :pulse` is the gentle in-progress fade (a running run),
+  `animate: :ping` the radiating "live/waiting" ring (a connected runner, a
+  wait-room). One enum, because the animations are mutually exclusive — as two
+  booleans, setting both silently dropped the pulse, while the component's
+  other dimensions already validated their values. Extra attributes (e.g.
+  `title`) ride `@rest`.
 
       <.status_dot tone={:brand} />
-      <.status_dot tone={:brand} ping size={:md} title="Connected" />
-      <.status_dot tone={:amber} pulse />
+      <.status_dot tone={:brand} animate={:ping} size={:md} title="Connected" />
+      <.status_dot tone={:amber} animate={:pulse} />
   """
   attr :tone, :atom, default: :neutral, values: [:neutral, :brand, :amber, :rose]
-  attr :pulse, :boolean, default: false
-  attr :ping, :boolean, default: false
+  attr :animate, :atom, default: :none, values: [:none, :pulse, :ping]
   attr :size, :atom, default: :sm, values: [:sm, :md, :lg]
   attr :class, :any, default: nil
   attr :rest, :global
 
-  def status_dot(%{ping: true} = assigns) do
+  def status_dot(%{animate: :ping} = assigns) do
     ~H"""
     <span
       class={["relative flex shrink-0", status_dot_size(@size), @class]}
@@ -2422,7 +2424,7 @@ defmodule EmisarWeb.CoreComponents do
         "inline-block shrink-0 rounded-full",
         status_dot_size(@size),
         status_dot_bg(@tone),
-        @pulse && "animate-pulse",
+        @animate == :pulse && "animate-pulse",
         @class
       ]}
       aria-hidden="true"
@@ -2520,7 +2522,7 @@ defmodule EmisarWeb.CoreComponents do
       (@tone && tone_text_class(@tone)) || status_word_class(@status),
       @class
     ]}>
-      <.status_dot tone={@dot_tone} pulse={@dot_pulse?} />
+      <.status_dot tone={@dot_tone} animate={if @dot_pulse?, do: :pulse, else: :none} />
       {format_status(@status)}
     </span>
     """

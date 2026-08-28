@@ -1146,7 +1146,7 @@ defmodule EmisarWeb.AgentsLive do
                 <.status_dot
                   tone={if @active_count > 0, do: :brand, else: :neutral}
                   size={:sm}
-                  ping={@active_count > 0}
+                  animate={if @active_count > 0, do: :ping, else: :none}
                 />
                 <span class="tabular-nums text-zinc-400">{@active_count} active now</span>
               </span>
@@ -1533,7 +1533,11 @@ defmodule EmisarWeb.AgentsLive do
       "inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium",
       status_word_class(@status)
     ]}>
-      <.status_dot tone={status_dot_tone(@status)} size={:sm} ping={@status == :active} />
+      <.status_dot
+        tone={status_dot_tone(@status)}
+        size={:sm}
+        animate={if @status == :active, do: :ping, else: :none}
+      />
       {status_label(@status)}
     </span>
     """
@@ -1837,7 +1841,7 @@ defmodule EmisarWeb.AgentsLive do
             <div class="flex items-start gap-3">
               <%!-- mt-[6px]: optically centers the 10px dot on the first
                    text line (text-sm/relaxed ≈ 23px line box). --%>
-              <.status_dot tone={:brand} ping size={:lg} class="mt-[6px]" />
+              <.status_dot tone={:brand} animate={:ping} size={:lg} class="mt-[6px]" />
               <p class="text-sm leading-relaxed text-zinc-400">
                 <span class="font-medium text-zinc-300">Waiting for your agent's first call</span>
                 — this updates on its own; you can leave, and the agent will show in the

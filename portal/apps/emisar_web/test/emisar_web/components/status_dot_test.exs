@@ -3,7 +3,7 @@ defmodule EmisarWeb.Components.StatusDotTest do
   Renders `EmisarWeb.CoreComponents.status_dot/1` — the ONE colored dot every
   live-state indicator composes (summary stats, status badges, connection
   dots, audit outcome dots, wait-room pings). Asserts the tone ramp, sizes,
-  the pulse/ping animations, and attribute passthrough.
+  the animate enum, and attribute passthrough.
   """
   use ExUnit.Case, async: true
   import Phoenix.Component
@@ -40,13 +40,20 @@ defmodule EmisarWeb.Components.StatusDotTest do
     test "pulse fades in place; ping radiates a live ring" do
       assigns = %{}
 
-      pulse = rendered_to_string(~H"<CoreComponents.status_dot tone={:amber} pulse />")
+      pulse =
+        rendered_to_string(~H"<CoreComponents.status_dot tone={:amber} animate={:pulse} />")
+
       assert pulse =~ "animate-pulse"
       refute pulse =~ "animate-ping"
 
-      ping = rendered_to_string(~H"<CoreComponents.status_dot tone={:brand} ping />")
+      ping = rendered_to_string(~H"<CoreComponents.status_dot tone={:brand} animate={:ping} />")
       assert ping =~ "animate-ping"
       assert ping =~ "relative flex"
+
+      # One enum, because the animations are mutually exclusive — the old
+      # boolean pair accepted both and silently dropped the pulse.
+      still = rendered_to_string(~H"<CoreComponents.status_dot tone={:brand} />")
+      refute still =~ "animate-"
     end
 
     test "extra attributes ride through (title tooltip)" do

@@ -49,7 +49,7 @@ defmodule EmisarWeb.SSOPendingLive do
         <%!-- Naked dot-led wait line (the install wizard's wait grammar) — a
              box around a status line is the island §8.1 bans. --%>
         <div class="flex items-center gap-3">
-          <.status_dot tone={:brand} ping size={:lg} />
+          <.status_dot tone={:brand} animate={:ping} size={:lg} />
           <p class="text-sm text-zinc-300">
             Waiting for an administrator at
             <span class="font-medium text-zinc-100">{@request.account.name}</span>

@@ -882,7 +882,7 @@ defmodule EmisarWeb.DomainComponents do
                   <div class="flex items-start gap-3">
                     <%!-- mt-[6px]: optically centers the 10px dot on the first
                          text line (text-sm/relaxed ≈ 23px line box). --%>
-                    <.status_dot tone={:amber} ping size={:lg} class="mt-[6px]" />
+                    <.status_dot tone={:amber} animate={:ping} size={:lg} class="mt-[6px]" />
                     <p class="text-sm leading-relaxed text-zinc-400">
                       <span class="font-medium text-zinc-300">Waiting for a runner to connect</span>
                       — this page advances on its own; you can leave, and the runner will appear in
