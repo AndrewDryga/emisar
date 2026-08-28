@@ -23,7 +23,12 @@ runs:
       with:
         go-version-file: ${{ inputs.module }}/go.mod
         cache: true
-        cache-dependency-path: ${{ inputs.module }}/go.sum
+        # go.* not go.sum: the mcp module is stdlib-only and ships no go.sum (the
+        # runner gate asserts it never gains one), so ${module}/go.sum resolved to
+        # nothing and setup-go failed the mcp verify job before the signed-tag
+        # check ran. go.* matches go.mod in both modules and adds go.sum where it
+        # exists (runner).
+        cache-dependency-path: ${{ inputs.module }}/go.*
 
     - name: Verify exact signed annotated tag
       shell: bash
