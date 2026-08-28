@@ -229,7 +229,7 @@
         "pack_id": {"$ref": "#/$defs/pack_id"},
         "pack_ref": {"$ref": "#/$defs/pack_ref"},
         "runner_refs": {"$ref": "#/$defs/runner_refs"},
-        "availability": {"type": "string", "enum": ["executable", "all"], "default": "executable"},
+        "include": {"type": "string", "enum": ["executable", "unavailable", "all"], "default": "executable"},
         "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 15},
         "cursor": {"$ref": "#/$defs/cursor"}
       },
@@ -1134,6 +1134,7 @@
               "observed_at": {"$ref": "#/$defs/timestamp"},
               "summary": {
                 "type": "object",
+                "description": "`matched` is the total; status keys may not sum to it.",
                 "required": ["matched", "connected", "disconnected", "pending", "disabled"],
                 "additionalProperties": false,
                 "properties": {

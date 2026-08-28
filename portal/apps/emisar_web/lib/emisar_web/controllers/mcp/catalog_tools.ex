@@ -20,7 +20,13 @@ defmodule EmisarWeb.MCP.CatalogTools do
     defstruct pack_id: nil,
               pack_ref: nil,
               runner_refs: [],
-              availability: "executable",
+              # `include` is the caller's FILTER MODE. It is deliberately not
+              # called `availability`, which is the STATE each returned pack and
+              # action carries: one name with two disjoint value spaces meant a
+              # model could read `unavailable` from a response and not pass it
+              # back, and there was no way to ask for only the broken ones —
+              # the diagnostic query operators actually have.
+              include: "executable",
               limit: 15,
               cursor: nil
   end
@@ -232,7 +238,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
             do: "executable",
             else: "unavailable"
 
-        if args.availability == "all" or action_availability == "executable" do
+        if include_deployment?(args.include, action_availability) do
           %{
             action_id: action["action_id"],
             title: action["title"],
@@ -249,7 +255,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
         do: "executable",
         else: "unavailable"
 
-    if args.availability == "all" or pack_availability == "executable" do
+    if include_deployment?(args.include, pack_availability) do
       %{
         pack_ref: pack.pack_ref,
         availability: pack_availability,
@@ -319,7 +325,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
       packs: dispatchable_pack_ids(runner, packs),
       packs_next: %{
         tool: "list_packs",
-        arguments: %{runner_refs: [runner.runner_ref], availability: "all", limit: @default_limit}
+        arguments: %{runner_refs: [runner.runner_ref], include: "all", limit: @default_limit}
       },
       issues: runner.issues
     })
@@ -342,15 +348,37 @@ defmodule EmisarWeb.MCP.CatalogTools do
     |> Enum.sort()
   end
 
+  # `matched` is the total; the four status keys are a breakdown of it. The
+  # schema is `additionalProperties: false` with exactly those five required
+  # keys and it freezes at 1.0, so a fifth runner status cannot be added here —
+  # and compatibility.md already names `runner_revoked` as a distinct terminal
+  # state. This used to be `Map.update!`, which RAISES on a key that is not in
+  # the map: the day a fifth status exists, `list_runners` would stop answering
+  # at all for every account that had one. A status outside the breakdown is
+  # now simply absent from it, still counted in `matched`, so the tool keeps
+  # working and the total stays honest.
+  #
+  # Which means a client must not assume the four sum to `matched`. The schema
+  # says so; adding that description was additive.
+  @summary_statuses ~w(connected disconnected pending disabled)
+
   defp runner_summary(runners) do
-    Enum.reduce(
-      runners,
-      %{matched: length(runners), connected: 0, disconnected: 0, pending: 0, disabled: 0},
-      fn runner, acc ->
-        Map.update!(acc, String.to_existing_atom(runner.status), &(&1 + 1))
-      end
+    counted =
+      Enum.reduce(runners, %{}, fn runner, acc ->
+        if runner.status in @summary_statuses,
+          do: Map.update(acc, runner.status, 1, &(&1 + 1)),
+          else: acc
+      end)
+
+    Map.new(
+      [{"matched", length(runners)} | Enum.map(@summary_statuses, &{&1, counted[&1] || 0})],
+      fn {key, value} -> {String.to_existing_atom(key), value} end
     )
   end
+
+  # "all" keeps everything; otherwise the mode names the exact state to keep.
+  defp include_deployment?("all", _availability), do: true
+  defp include_deployment?(mode, availability), do: mode == availability
 
   defp paginate_candidates(candidates, scope, args) do
     paginate(
@@ -816,7 +844,7 @@ defmodule EmisarWeb.MCP.CatalogTools do
       pack_id: args["pack_id"],
       pack_ref: args["pack_ref"],
       runner_refs: args["runner_refs"] || [],
-      availability: args["availability"] || "executable",
+      include: args["include"] || "executable",
       limit: args["limit"] || @default_limit,
       cursor: args["cursor"]
     }

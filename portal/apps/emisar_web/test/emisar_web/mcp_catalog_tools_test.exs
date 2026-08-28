@@ -140,12 +140,18 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     assert %{"path" => "$.statuses", "code" => "enum"} in statuses["error"]["details"]["issues"]
 
-    availability = call(conn, "list_packs", %{"availability" => "everything"})
-    assert availability["error"]["details"]["kind"] == "enum"
+    include = call(conn, "list_packs", %{"include" => "everything"})
+    assert include["error"]["details"]["kind"] == "enum"
 
-    assert availability["error"]["details"]["issues"] == [
-             %{"path" => "$.availability", "code" => "enum"}
+    assert include["error"]["details"]["issues"] == [
+             %{"path" => "$.include", "code" => "enum"}
            ]
+
+    # The old spelling is gone, not quietly tolerated: `availability` is the
+    # response STATE, and accepting it as a request argument is what let one
+    # name carry two disjoint value spaces.
+    stale = call(conn, "list_packs", %{"availability" => "all"})
+    assert stale["error"]["details"]["kind"] == "unknown"
 
     assert call(conn, "list_runners", %{"query" => String.duplicate("界", 256)})["ok"]
   end
@@ -194,14 +200,14 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     observe!(runner, packs, actions)
     trust_all!(subject)
 
-    first = call(conn, "list_packs", %{"availability" => "all"})
+    first = call(conn, "list_packs", %{"include" => "all"})
     assert first["ok"]
     assert length(first["packs"]) == 15
     assert is_binary(first["next_cursor"])
 
     second =
       call(conn, "list_packs", %{
-        "availability" => "all",
+        "include" => "all",
         "cursor" => first["next_cursor"]
       })
 
@@ -210,7 +216,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     wrong_query =
       call(conn, "list_packs", %{
-        "availability" => "executable",
+        "include" => "executable",
         "cursor" => first["next_cursor"]
       })
 
@@ -247,7 +253,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     observe!(runner, packs, hostile)
 
-    all = call(conn, "list_packs", %{"pack_ref" => pack_ref, "availability" => "all"})
+    all = call(conn, "list_packs", %{"pack_ref" => pack_ref, "include" => "all"})
     encoded = Jason.encode!(all)
     assert encoded =~ "Safe action 7"
     refute encoded =~ "IGNORE POLICY"
@@ -425,7 +431,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     trust_all!(subject)
 
     [%{"pack_ref" => pack_ref} = pack] =
-      call(conn, "list_packs", %{"availability" => "all"})["packs"]
+      call(conn, "list_packs", %{"include" => "all"})["packs"]
 
     assert pack["availability"] == "executable"
     assert Enum.any?(pack["issues"], &(&1["code"] == "primary_executable_missing"))
@@ -607,7 +613,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     runners = call(conn, "list_runners", %{})
     assert Enum.map(runners["runners"], & &1["name"]) == ["allowed"]
 
-    packs = call(conn, "list_packs", %{"availability" => "all"})
+    packs = call(conn, "list_packs", %{"include" => "all"})
 
     assert Enum.map(packs["packs"], & &1["pack_ref"])
            |> Enum.all?(&String.starts_with?(&1, "visible@"))
@@ -619,7 +625,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
       action("foreign.secret", "foreign")
     ])
 
-    refute Jason.encode!(call(conn, "list_packs", %{"availability" => "all"})) =~ "foreign"
+    refute Jason.encode!(call(conn, "list_packs", %{"include" => "all"})) =~ "foreign"
     assert call(conn, "find_actions", %{"action_id" => "foreign.secret"})["candidates"] == []
   end
 
@@ -642,7 +648,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
     trust_all!(subject)
 
-    first = call(conn, "list_packs", %{"availability" => "all", "limit" => 1})
+    first = call(conn, "list_packs", %{"include" => "all", "limit" => 1})
     assert length(first["packs"]) == 1
     assert is_binary(first["next_cursor"])
 
@@ -652,13 +658,13 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     Fixtures.Memberships.force_runner_access(membership, visible_only)
 
     assert [%{"pack_ref" => "visible@" <> _rest}] =
-             call(conn, "list_packs", %{"availability" => "all"})["packs"]
+             call(conn, "list_packs", %{"include" => "all"})["packs"]
 
     assert call(conn, "find_actions", %{"action_id" => "hidden.read"})["candidates"] == []
 
     stale_page =
       call(conn, "list_packs", %{
-        "availability" => "all",
+        "include" => "all",
         "limit" => 1,
         "cursor" => first["next_cursor"]
       })
@@ -695,7 +701,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert {:ok, console} = Emisar.Catalog.list_console_packs(%{}, console_subject)
     assert console.out_of_scope_pack_ids == ["hidden"]
 
-    packs = call(conn, "list_packs", %{"availability" => "all"})["packs"]
+    packs = call(conn, "list_packs", %{"include" => "all"})["packs"]
 
     assert [%{"pack_ref" => "visible@1.0.0/" <> _digest}] = packs
     refute inspect(packs) =~ "hidden"
@@ -717,6 +723,37 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert result["summary"]["matched"] == 0
   end
 
+  # The four status keys are a breakdown of `matched`. The builder used to be a
+  # Map.update! over a fixed five-key map, which RAISES on a key that is not
+  # there — so the day a fifth runner status exists (compatibility.md already
+  # names runner_revoked), list_runners would have stopped answering at all for
+  # every account that had one. It now leaves an unnamed status out of the
+  # breakdown and still counts it in `matched`, which is why the schema says
+  # the four are not guaranteed to sum.
+  test "list_runners counts each runner state without crashing on any of them", %{
+    conn: conn,
+    account: account
+  } do
+    _connected = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+    _offline = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+
+    [account_id: account.id, connected?: true]
+    |> Fixtures.Runners.create_runner()
+    |> Fixtures.Runners.disable_runner()
+
+    result = call(conn, "list_runners", %{})
+
+    assert result["ok"]
+    summary = result["summary"]
+    assert summary["matched"] == 3
+    assert summary["disabled"] == 1
+    assert summary["connected"] + summary["disconnected"] + summary["pending"] == 2
+
+    # Every key the frozen schema requires is present, even at zero.
+    assert Enum.sort(Map.keys(summary)) ==
+             ~w(connected disabled disconnected matched pending)
+  end
+
   test "MCP discovery and dispatch hide packs without current trust", %{
     conn: conn,
     account: account,
@@ -730,7 +767,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
       action("suspect.read", "suspect")
     ])
 
-    assert call(conn, "list_packs", %{"availability" => "all"})["packs"] == []
+    assert call(conn, "list_packs", %{"include" => "all"})["packs"] == []
     assert call(conn, "find_actions", %{"action_id" => "suspect.read"})["candidates"] == []
 
     assert call(conn, "get_action", %{
@@ -747,14 +784,14 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     assert {:ok, _trusted} = Catalog.trust_pack_version(pending.id, subject)
 
     assert [%{"pack_ref" => ^pack_ref}] =
-             call(conn, "list_packs", %{"availability" => "all"})["packs"]
+             call(conn, "list_packs", %{"include" => "all"})["packs"]
 
     assert [%{"action_id" => "suspect.read", "pack_ref" => ^pack_ref}] =
              call(conn, "find_actions", %{"action_id" => "suspect.read"})["candidates"]
 
     assert {:ok, _revoked} = Catalog.revoke_pack_version_trust(pending.id, subject)
 
-    assert call(conn, "list_packs", %{"availability" => "all"})["packs"] == []
+    assert call(conn, "list_packs", %{"include" => "all"})["packs"] == []
     assert call(conn, "find_actions", %{"action_id" => "suspect.read"})["candidates"] == []
     assert call(conn, "list_runners", %{"pack_ref" => pack_ref})["runners"] == []
 
