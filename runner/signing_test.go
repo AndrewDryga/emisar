@@ -121,6 +121,11 @@ func TestParseTTL(t *testing.T) {
 		{"24h", 24 * time.Hour, false},
 		{"90m", 90 * time.Minute, false},
 		{"30d", 30 * 24 * time.Hour, false},
+		// `2w` is valid in the runner config and in pack action YAML, and was
+		// rejected here: two duration parsers that happened to support
+		// different units. They share one now, so an operator who learned a
+		// spelling in one place can use it in the other.
+		{"2w", 14 * 24 * time.Hour, false},
 		{"1y", 365 * 24 * time.Hour, false},
 		{"", 0, true},
 		{"0s", 0, true},

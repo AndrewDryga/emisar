@@ -265,7 +265,7 @@ func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
 		*d = 0
 		return nil
 	}
-	parsed, err := parseExtendedDuration(s)
+	parsed, err := ParseExtendedDuration(s)
 	if err != nil {
 		return fmt.Errorf("invalid duration %q: %w", s, err)
 	}
@@ -273,11 +273,16 @@ func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
-// parseExtendedDuration parses Go's standard duration syntax, extended with
+// ParseExtendedDuration parses Go's standard duration syntax, extended with
 // "d" and "w" suffixes applied to the whole value (e.g., "7d", "2w"). Mixed
 // units like "1d12h" are not supported in this small extension — operators
 // who need mixed durations can use stdlib units ("36h").
-func parseExtendedDuration(s string) (time.Duration, error) {
+//
+// Exported so the CLI's own duration flags share it. They did not, and drifted:
+// `cancel_grace: 2w` was valid config while `signing --ttl 2w` was rejected,
+// because the two spellings were parsed by two functions that happened to
+// support different units.
+func ParseExtendedDuration(s string) (time.Duration, error) {
 	if n := len(s); n > 0 {
 		var unit time.Duration
 		switch s[n-1] {

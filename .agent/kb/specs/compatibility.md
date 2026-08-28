@@ -430,6 +430,14 @@ bump into a compatibility event for a promise nobody made. `completion
 --no-descriptions` is cobra's flag and is recorded in the surface golden as a
 fact about the current library, not as a contract.
 
+A duration on the runner CLI, in the runner config, and in pack action YAML is
+ONE spelling: Go's syntax extended with whole-value `d` and `w` suffixes, plus
+`y` where `signing --ttl` accepts it. `--ttl` and the config used to be parsed by
+two different functions that happened to support different units, so `2w` was
+valid in `cancel_grace` and rejected by `--ttl`. They share one parser now.
+`action run --timeout` remains stdlib-only, because it is a per-execution bound
+where days and weeks are not a sensible value.
+
 `signing new-cert` takes the CA private key as `--ca-key-file` (preferred) or
 `--ca-key` (the material itself). The argv form is what existed, and it puts the
 root of trust for signed dispatch into shell history and the process table where

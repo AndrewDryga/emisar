@@ -182,7 +182,7 @@ func TestParseExtendedDuration(t *testing.T) {
 		{"", 0, false}, // UnmarshalYAML handles this case; parser sees empty → stdlib errors
 	}
 	for _, c := range cases {
-		got, err := parseExtendedDuration(c.in)
+		got, err := ParseExtendedDuration(c.in)
 		if c.in == "" {
 			// Empty input is rejected by stdlib but our YAML unmarshaler
 			// handles it earlier. We don't exercise that here.
@@ -190,16 +190,16 @@ func TestParseExtendedDuration(t *testing.T) {
 		}
 		if c.wantErr {
 			if err == nil {
-				t.Errorf("parseExtendedDuration(%q) should fail", c.in)
+				t.Errorf("ParseExtendedDuration(%q) should fail", c.in)
 			}
 			continue
 		}
 		if err != nil {
-			t.Errorf("parseExtendedDuration(%q): %v", c.in, err)
+			t.Errorf("ParseExtendedDuration(%q): %v", c.in, err)
 			continue
 		}
 		if got != c.want {
-			t.Errorf("parseExtendedDuration(%q) = %v, want %v", c.in, got, c.want)
+			t.Errorf("ParseExtendedDuration(%q) = %v, want %v", c.in, got, c.want)
 		}
 	}
 }

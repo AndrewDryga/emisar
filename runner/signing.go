@@ -23,6 +23,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/andrewdryga/emisar/runner/internal/attest"
+	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
 // The signing CLI is OFFLINE by design: every key it mints is printed locally
@@ -163,18 +164,15 @@ func parseTTL(s string) (time.Duration, error) {
 		// not-after was in the PAST — an "unusable forever" cert that reads as a
 		// long-lived one.
 		if err != nil || yrs <= 0 || yrs > maxCertTTLYears {
-			return 0, fmt.Errorf("invalid ttl %q (try e.g. 24h, 30d, 1y; max %dy)", s, maxCertTTLYears)
+			return 0, fmt.Errorf("invalid ttl %q (try e.g. 24h, 30d, 2w, 1y; max %dy)", s, maxCertTTLYears)
 		}
 		return time.Duration(yrs) * 365 * 24 * time.Hour, nil
 	}
-	if n, ok := strings.CutSuffix(s, "d"); ok {
-		days, err := strconv.Atoi(n)
-		if err != nil || days <= 0 {
-			return 0, fmt.Errorf("invalid ttl %q (try e.g. 24h, 30d, 1y)", s)
-		}
-		return time.Duration(days) * 24 * time.Hour, nil
-	}
-	d, err := time.ParseDuration(s)
+	// Everything below "y" is the SHARED spelling — the same parser the runner
+	// config and pack action YAML use, so `2w` cannot be valid in one place and
+	// rejected in the other. It was: this function knew d and y, that one knows
+	// d and w, and neither knew what the other accepted.
+	d, err := actionspec.ParseExtendedDuration(s)
 	if err != nil {
 		return 0, fmt.Errorf("invalid ttl %q: %w", s, err)
 	}
