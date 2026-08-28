@@ -150,8 +150,12 @@ func ReadRuntimeStatus(path string) (*RuntimeStatus, error) {
 		return nil, fmt.Errorf("cloud: runtime status exceeds %d bytes", maxRuntimeStatusBytes)
 	}
 
+	// This file is written by the daemon and read back by whatever `emisar
+	// status` binary the host has, so the two versions routinely differ. Unknown
+	// fields are therefore ignored and schema_version is the real gate: rejecting
+	// an added field turned a newer daemon into "PID N is running, but this file
+	// is unusable" for an older status command, which reads as a broken daemon.
 	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
 	var status RuntimeStatus
 	if err := decoder.Decode(&status); err != nil {
 		return nil, fmt.Errorf("cloud: decode runtime status: %w", err)

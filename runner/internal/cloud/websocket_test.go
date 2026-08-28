@@ -661,9 +661,29 @@ func TestWebsocketDialerRefusesAuthenticatedRedirects(t *testing.T) {
 	}
 }
 
+// A registration body that grows a field must not strand deployed runners: a
+// fresh host has no cached token, so a rejection here is an enrollment that
+// cannot happen at all. The size cap and the trailing-document check still
+// bound the input — see the rejection table below.
+func TestWebsocketDialerRegistrationAcceptsAnAddedField(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"token":"rnrtok-ok","refresh_after":"2030-01-01T00:00:00Z","plan":"team","limit":5}`)
+	}))
+	defer srv.Close()
+
+	d := &WebsocketDialer{URL: srv.URL, EnrollmentKey: "key", ExternalID: "stable-id"}
+	token, err := d.register(context.Background())
+	if err != nil {
+		t.Fatalf("register rejected an additive response: %v", err)
+	}
+	if token.Raw != "rnrtok-ok" {
+		t.Errorf("token = %q, want rnrtok-ok", token.Raw)
+	}
+}
+
 func TestWebsocketDialerRegistrationResponseIsBoundedAndExact(t *testing.T) {
 	tests := map[string]string{
-		"unknown field":     `{"token":"rnrtok-ok","extra":true}`,
 		"trailing document": `{"token":"rnrtok-ok"} {"token":"other"}`,
 		"whitespace token":  `{"token":" rnrtok-ok"}`,
 		"oversized body":    `{"token":"` + strings.Repeat("x", maxRegistrationResponseBytes) + `"}`,

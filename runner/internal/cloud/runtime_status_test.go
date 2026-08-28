@@ -85,7 +85,6 @@ func TestReadRuntimeStatusRejectsAmbiguousFiles(t *testing.T) {
 		mode os.FileMode
 		want string
 	}{
-		"unknown field": {string(valid[:len(valid)-1]) + `,"secret":"must-not-pass"}`, 0o600, "unknown field"},
 		"trailing JSON": {string(valid) + `{}`, 0o600, "trailing JSON"},
 		"malformed":     {`{"schema_version":`, 0o600, "decode runtime status"},
 		"loose mode":    {string(valid), 0o640, "insecure permissions"},
@@ -105,6 +104,25 @@ func TestReadRuntimeStatusRejectsAmbiguousFiles(t *testing.T) {
 			}
 		})
 	}
+
+	// The daemon writes this file and whatever `emisar status` binary the host
+	// has reads it back, so the two versions routinely differ. An added field
+	// must not turn a newer daemon into "this file is unusable"; schema_version
+	// is what gates a real incompatibility.
+	t.Run("added field from a newer daemon", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "runtime-status.json")
+		body := string(valid[:len(valid)-1]) + `,"queued_runs":3}`
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		status, err := ReadRuntimeStatus(path)
+		if err != nil {
+			t.Fatalf("ReadRuntimeStatus rejected an additive field: %v", err)
+		}
+		if status.SchemaVersion != 1 {
+			t.Errorf("schema_version = %d, want 1", status.SchemaVersion)
+		}
+	})
 
 	t.Run("symlink", func(t *testing.T) {
 		dir := t.TempDir()

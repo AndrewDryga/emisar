@@ -291,8 +291,10 @@ func (d *WebsocketDialer) maybeRefreshToken(ctx context.Context, current runnerT
 		Token        string `json:"token"`
 		RefreshAfter string `json:"refresh_after"`
 	}
+	// Additive-safe for the same reason as the register body above. This one
+	// degrades softly — an undecodable response keeps the current token — but a
+	// runner that stops refreshing eventually runs one out.
 	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&parsed); err != nil || strings.TrimSpace(parsed.Token) == "" {
 		d.logger().Debug("cloud.token_refresh_skipped", "detail", "malformed refresh response")
 		return current
@@ -498,8 +500,13 @@ func (d *WebsocketDialer) register(ctx context.Context) (runnerToken, error) {
 		// simply means this token is never due for rotation.
 		RefreshAfter string `json:"refresh_after"`
 	}
+	// Unknown fields are ignored, matching the additive-safety the wire contract
+	// promises for every other frame. This body bootstraps the connection and a
+	// fresh host has no cached token to fall back on, so rejecting an added
+	// field here would strand every deployed runner on the next portal that
+	// grows one — and the 402 body already carries fields the runner ignores.
+	// The size cap and the trailing-JSON check below still bound the input.
 	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&parsed); err != nil {
 		return runnerToken{}, fmt.Errorf("cloud: register response decode: %w", err)
 	}

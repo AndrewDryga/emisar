@@ -45,6 +45,13 @@ per-runner token, which is persisted owner-only. Every websocket upgrade then
 uses that bearer token. Revoking the key or token makes the next registration or
 upgrade fail.
 
+Both HTTP bodies obey the same additive rule as the websocket frames: the runner
+ignores fields it does not know, so the portal may grow either response without
+coordinating a runner release. That is load-bearing for `register` in particular
+— a host reaching it has no cached token to fall back on, so a rejected response
+is an enrollment that cannot complete at all. A bounded body and exactly one
+JSON document are still required.
+
 **Token rotation.** A token carries a 90-day life and a `refresh_after` the
 runner persists beside it. Once that passes, the runner exchanges the token for
 a successor over `POST /runner/token/refresh`, authenticated by the token
