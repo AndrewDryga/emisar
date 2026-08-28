@@ -47,14 +47,12 @@ RELEASE_BASE_URL="https://emisar.dev/releases/mcp"
 # lowercase spelling REPO uses. Deriving this from REPO reads as obviously
 # correct and fails every verification, so it is written out. A fork gets no
 # default: pinning ours would fail their install, so they set their own or the
-# checksum stands alone.
-# The reusable workflow that actually attests: mcp-release.yml is a thin
-# caller, so the job that mints the Sigstore provenance runs inside
-# mcp-release-trusted.yml and its ref is what the certificate SAN carries.
+# checksum stands alone. The official default depends on the resolved release
+# tag and is selected below.
 ATTESTATION_WORKFLOW="${EMISAR_ATTESTATION_WORKFLOW:-}"
-if [ -z "${ATTESTATION_WORKFLOW}" ] && [ "${REPO}" = "andrewdryga/emisar" ]; then
-  ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"
-fi
+ATTESTATION_SIGNER_DIGEST=""
+ATTESTATION_SOURCE_REF=""
+ATTESTATION_DENY_SELF_HOSTED=0
 # The portal this bridge talks to. A self-hosted or dev portal's install
 # command overrides it (the client configs written below carry it).
 EMISAR_URL="${EMISAR_URL:-https://emisar.dev}"
@@ -145,6 +143,26 @@ normalize_version() {
     v*)     printf 'mcp-%s\n' "$1";;
     *)      printf 'mcp-v%s\n' "$1";;
   esac
+}
+
+# The supported pre-split release tip keeps its immutable original provenance.
+# Pin that exact tag to its workflow commit;
+# every other official tag uses the trusted workflow, with no fallback.
+select_attestation_policy() {
+  ATTESTATION_SIGNER_DIGEST=""
+  ATTESTATION_SOURCE_REF=""
+  ATTESTATION_DENY_SELF_HOSTED=0
+  if [ -n "${ATTESTATION_WORKFLOW}" ] || [ "${REPO}" != "${OFFICIAL_REPO}" ]; then
+    return 0
+  fi
+
+  ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"
+  ATTESTATION_SOURCE_REF="refs/tags/${VERSION}"
+  ATTESTATION_DENY_SELF_HOSTED=1
+  if [ "${VERSION}" = "mcp-v0.10.1" ]; then
+    ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/mcp-release.yml"
+    ATTESTATION_SIGNER_DIGEST="642128eb48205405fd44ce845118e6a68737eea2"
+  fi
 }
 
 while [ $# -gt 0 ]; do
@@ -358,6 +376,45 @@ make_temp_dir() {
   mktemp -d "${parent%/}/emisar-mcp-install.XXXXXX"
 }
 
+verify_attestation() {
+  local path="$1" name="$2"
+  if [ -z "${ATTESTATION_WORKFLOW}" ]; then
+    warn "no attestation workflow configured for ${REPO} — skipping provenance check"
+    return 0
+  fi
+  local hint="gh attestation verify <file> --repo ${REPO} --signer-workflow ${ATTESTATION_WORKFLOW}"
+  [ -z "${ATTESTATION_SOURCE_REF}" ] || hint="${hint} --source-ref ${ATTESTATION_SOURCE_REF}"
+  [ -z "${ATTESTATION_SIGNER_DIGEST}" ] || hint="${hint} --signer-digest ${ATTESTATION_SIGNER_DIGEST}"
+  [ "${ATTESTATION_DENY_SELF_HOSTED}" = "0" ] || hint="${hint} --deny-self-hosted-runners"
+  if ! command -v gh >/dev/null 2>&1; then
+    warn "gh not installed — skipping release attestation check"
+    warn "verify it yourself: ${hint}"
+    return 0
+  fi
+  # gh refuses the attestation API unauthenticated — it exits 4 telling you to
+  # run `gh auth login` without checking anything. Treating that as a failed
+  # verification would make a GitHub login a prerequisite for installing the
+  # bridge, so an unauthenticated CLI skips exactly like a missing one.
+  if ! gh auth status >/dev/null 2>&1; then
+    warn "gh is not authenticated — skipping release attestation check"
+    warn "verify it yourself: ${hint}"
+    return 0
+  fi
+  log "verifying release attestation"
+  local -a verify_args=(
+    attestation verify "${path}"
+    --repo "${REPO}"
+    --signer-workflow "${ATTESTATION_WORKFLOW}"
+  )
+  [ -z "${ATTESTATION_SOURCE_REF}" ] || verify_args+=(--source-ref "${ATTESTATION_SOURCE_REF}")
+  [ -z "${ATTESTATION_SIGNER_DIGEST}" ] || verify_args+=(--signer-digest "${ATTESTATION_SIGNER_DIGEST}")
+  [ "${ATTESTATION_DENY_SELF_HOSTED}" = "0" ] || verify_args+=(--deny-self-hosted-runners)
+  if ! gh "${verify_args[@]}" >/dev/null 2>&1; then
+    die "release attestation for ${name} did not verify against ${ATTESTATION_WORKFLOW} — refusing to install"
+  fi
+  log "attestation verified  ${ATTESTATION_WORKFLOW}"
+}
+
 # ---------------------------------------------------------------------
 # Uninstall
 # ---------------------------------------------------------------------
@@ -482,6 +539,7 @@ else
 fi
 [[ "${VERSION}" =~ ^mcp-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
   die "release version must match mcp-vMAJOR.MINOR.PATCH (got '${VERSION}')"
+select_attestation_policy
 
 VERSION_NUM="${VERSION#mcp-v}"
 TAR_NAME="emisar-mcp-${VERSION_NUM}-${OS}-${ARCH}"
@@ -621,29 +679,7 @@ fi
 # GitHub-hosted runner. Pinning the signer workflow is what makes that a real
 # check — without it, any attestation from any workflow in the repo passes.
 #
-# Verification runs only when a verifier is installed. Requiring one would break
-# installing on a bare machine, which is the common case, so a missing verifier
-# warns and continues on the checksum alone. A verifier that IS present and says
-# no fails the install.
-if [ -z "${ATTESTATION_WORKFLOW}" ]; then
-  warn "no attestation workflow configured for ${REPO} — skipping provenance check"
-elif ! command -v gh >/dev/null 2>&1; then
-  warn "gh not installed — skipping release attestation check"
-  warn "verify it yourself: gh attestation verify <file> --repo ${REPO} --signer-workflow ${ATTESTATION_WORKFLOW}"
-# gh refuses the attestation API unauthenticated — it exits 4 telling you to run
-# `gh auth login` without checking anything. Treating that as a failed
-# verification would make a GitHub login a prerequisite for installing the
-# bridge, so an unauthenticated CLI skips exactly like a missing one.
-elif ! gh auth status >/dev/null 2>&1; then
-  warn "gh is not authenticated — skipping release attestation check"
-  warn "verify it yourself: gh attestation verify <file> --repo ${REPO} --signer-workflow ${ATTESTATION_WORKFLOW}"
-else
-  log "verifying release attestation"
-  gh attestation verify "${tmp}/${TARBALL}" --repo "${REPO}" \
-    --signer-workflow "${ATTESTATION_WORKFLOW}" >/dev/null 2>&1 \
-    || die "release attestation for ${TARBALL} did not verify against ${ATTESTATION_WORKFLOW} — refusing to install"
-  log "attestation verified  ${ATTESTATION_WORKFLOW}"
-fi
+verify_attestation "${tmp}/${TARBALL}" "${TARBALL}"
 
 log "extracting"
 # --no-same-owner/--no-same-permissions: the archive's recorded uid/gid and mode

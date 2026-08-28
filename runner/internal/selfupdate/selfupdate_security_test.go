@@ -154,23 +154,52 @@ func TestExtractBundleRejectsExecutableLinksAndDuplicateFiles(t *testing.T) {
 	}
 }
 
-func TestVerifyProvenanceFailsClosedWhenAuthenticatedVerifierRejects(t *testing.T) {
-	deps := testDependencies("/unused")
-	deps.lookPath = func(string) (string, error) { return "/usr/bin/gh", nil }
-	var calls int
-	deps.runCommand = func(_ context.Context, _ string, args, _ []string, _, _ io.Writer) error {
-		calls++
-		if strings.Join(args, " ") == "auth status" {
-			return nil
-		}
-		return errors.New("bad provenance")
+func TestVerifyProvenanceUsesTargetReleasePolicyAndFailsClosed(t *testing.T) {
+	tests := []struct {
+		name     string
+		tag      string
+		workflow string
+		digest   string
+	}{
+		{name: "supported pre-split release", tag: legacyRunnerTag, workflow: legacySignerWorkflow, digest: legacySignerDigest},
+		{name: "future trusted release", tag: "runner-v0.23.0", workflow: signerWorkflow},
+		{name: "unused older tag", tag: "runner-v0.21.99", workflow: signerWorkflow},
 	}
-	err := verifyProvenance(context.Background(), "/verified/archive", deps, io.Discard, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "did not verify") {
-		t.Fatalf("error = %v", err)
-	}
-	if calls != 2 {
-		t.Fatalf("command calls = %d, want 2", calls)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			deps := testDependencies("/unused")
+			deps.lookPath = func(string) (string, error) { return "/usr/bin/gh", nil }
+			var calls int
+			var verifyArgs []string
+			deps.runCommand = func(_ context.Context, _ string, args, _ []string, _, _ io.Writer) error {
+				calls++
+				if strings.Join(args, " ") == "auth status" {
+					return nil
+				}
+				verifyArgs = append([]string(nil), args...)
+				return errors.New("bad provenance")
+			}
+			err := verifyProvenance(context.Background(), "/verified/archive", test.tag, deps, io.Discard, io.Discard)
+			if err == nil || !strings.Contains(err.Error(), "did not verify") {
+				t.Fatalf("error = %v", err)
+			}
+			if calls != 2 {
+				t.Fatalf("command calls = %d, want 2", calls)
+			}
+			wantArgs := []string{
+				"attestation", "verify", "/verified/archive",
+				"--repo", officialRepository,
+				"--signer-workflow", test.workflow,
+				"--source-ref", "refs/tags/" + test.tag,
+			}
+			if test.digest != "" {
+				wantArgs = append(wantArgs, "--signer-digest", test.digest)
+			}
+			wantArgs = append(wantArgs, "--deny-self-hosted-runners")
+			if strings.Join(verifyArgs, "\n") != strings.Join(wantArgs, "\n") {
+				t.Fatalf("verify args = %q, want %q", verifyArgs, wantArgs)
+			}
+		})
 	}
 }
 
@@ -191,7 +220,7 @@ func TestVerifyProvenanceUsesUpdateTokenWithoutPuttingItInArguments(t *testing.T
 		}
 		return nil
 	}
-	if err := verifyProvenance(context.Background(), "/verified/archive", deps, io.Discard, io.Discard); err != nil {
+	if err := verifyProvenance(context.Background(), "/verified/archive", "runner-v0.23.0", deps, io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 2 {

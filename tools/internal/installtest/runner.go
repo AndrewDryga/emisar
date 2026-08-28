@@ -53,6 +53,7 @@ func runnerChecks() []runnerCheck {
 		{"unattended pack selection", false, runnerUnattendedPacks},
 		{"owned directory validation", false, runnerOwnedDirectoryValidation},
 		{"GitHub token argv hygiene", false, func(h *harness) error { return githubTokenHygiene(h, "install.sh") }},
+		{"attestation release epochs", false, runnerAttestationReleaseEpochs},
 		{"enrollment state transitions", true, runnerEnrollmentState},
 		{"binary installation rollback", true, runnerInstallRollback},
 		{"signal-interrupted rollback", false, runnerSignalRollback},
@@ -65,6 +66,70 @@ func runnerChecks() []runnerCheck {
 		{"config value validation", false, runnerConfigValueValidation},
 		{"runner id override in config skeleton", false, runnerIDOverride},
 	}
+}
+
+func runnerAttestationReleaseEpochs(h *harness) error {
+	trace := h.path("runner-attestation-argv")
+	result := h.functions(h.repoPath("install.sh"), []string{"select_attestation_policy", "verify_attestation"}, `
+log() { :; }
+warn() { :; }
+die() { printf '%s\n' "$*" >&2; exit 1; }
+gh() {
+  if [ "${1:-}" = "auth" ]; then
+    return 0
+  fi
+  printf '%s' "$1" >>"$TRACE"
+  shift
+  printf '|%s' "$@" >>"$TRACE"
+  printf '\n' >>"$TRACE"
+}
+
+OFFICIAL_REPO=andrewdryga/emisar
+REPO=$OFFICIAL_REPO
+for VERSION in runner-v0.22.1 runner-v0.22.2 runner-v0.21.99; do
+  ATTESTATION_WORKFLOW=
+  select_attestation_policy
+  printf '%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED"
+done
+REPO=example/emisar
+VERSION=runner-v0.22.1
+ATTESTATION_WORKFLOW=
+select_attestation_policy
+printf '%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED"
+
+VERSION=runner-v0.22.1
+ATTESTATION_WORKFLOW=example/emisar/.github/workflows/release.yml
+select_attestation_policy
+printf '%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED"
+
+REPO=$OFFICIAL_REPO
+for VERSION in runner-v0.22.1 runner-v0.22.2; do
+  ATTESTATION_WORKFLOW=
+  select_attestation_policy
+  verify_attestation /verified/runner.tar.gz runner.tar.gz
+done
+REPO=example/emisar
+VERSION=runner-v0.22.1
+ATTESTATION_WORKFLOW=example/emisar/.github/workflows/release.yml
+select_attestation_policy
+verify_attestation /verified/runner.tar.gz runner.tar.gz
+`, map[string]string{"TRACE": trace})
+	output, err := requireOutput(result)
+	if err != nil {
+		return err
+	}
+	const expected = "AndrewDryga/emisar/.github/workflows/runner-release.yml|642128eb48205405fd44ce845118e6a68737eea2|refs/tags/runner-v0.22.1|1\n" +
+		"AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml||refs/tags/runner-v0.22.2|1\n" +
+		"AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml||refs/tags/runner-v0.21.99|1\n" +
+		"|||0\n" +
+		"example/emisar/.github/workflows/release.yml|||0\n"
+	if string(output) != expected {
+		return fmt.Errorf("attestation policies = %q, want %q", output, expected)
+	}
+	const expectedTrace = "attestation|verify|/verified/runner.tar.gz|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/runner-release.yml|--source-ref|refs/tags/runner-v0.22.1|--signer-digest|642128eb48205405fd44ce845118e6a68737eea2|--deny-self-hosted-runners\n" +
+		"attestation|verify|/verified/runner.tar.gz|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml|--source-ref|refs/tags/runner-v0.22.2|--deny-self-hosted-runners\n" +
+		"attestation|verify|/verified/runner.tar.gz|--repo|example/emisar|--signer-workflow|example/emisar/.github/workflows/release.yml\n"
+	return exactFile(trace, expectedTrace)
 }
 
 func runnerOwnedDirectoryValidation(h *harness) error {

@@ -49,15 +49,12 @@ RELEASE_BASE_URL="https://emisar.dev/releases/runner"
 #
 # A fork or mirror gets no default: we cannot vouch for a workflow we do not
 # know, and pinning ours would fail their install outright. They set this
-# themselves, or the check is skipped and the checksum stands alone.
-# The reusable workflow that actually attests: the tag-triggered
-# runner-release.yml is a thin caller, so the job that mints the Sigstore
-# provenance runs inside runner-release-trusted.yml and its ref is what the
-# certificate SubjectAlternativeName carries.
+# themselves, or the check is skipped and the checksum stands alone. The
+# official default depends on the resolved release tag and is selected below.
 ATTESTATION_WORKFLOW="${EMISAR_ATTESTATION_WORKFLOW:-}"
-if [ -z "${ATTESTATION_WORKFLOW}" ] && [ "${REPO}" = "andrewdryga/emisar" ]; then
-  ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
-fi
+ATTESTATION_SIGNER_DIGEST=""
+ATTESTATION_SOURCE_REF=""
+ATTESTATION_DENY_SELF_HOSTED=0
 VERSION="${VERSION:-}"            # empty = latest stable
 BIN_DIR="${BIN_DIR:-/usr/local/bin}"
 ETC_DIR="${ETC_DIR:-/etc/emisar}"
@@ -169,6 +166,27 @@ normalize_version() {
     v*)        printf 'runner-%s\n' "$1";;
     *)         printf 'runner-v%s\n' "$1";;
   esac
+}
+
+# The supported pre-split release tip retains its immutable original
+# provenance. Admit only that exact tag, pinned to its
+# workflow commit and source tag. Every other official tag must come from the
+# trusted workflow; never retry the legacy signer after a trusted failure.
+select_attestation_policy() {
+  ATTESTATION_SIGNER_DIGEST=""
+  ATTESTATION_SOURCE_REF=""
+  ATTESTATION_DENY_SELF_HOSTED=0
+  if [ -n "${ATTESTATION_WORKFLOW}" ] || [ "${REPO}" != "${OFFICIAL_REPO}" ]; then
+    return 0
+  fi
+
+  ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
+  ATTESTATION_SOURCE_REF="refs/tags/${VERSION}"
+  ATTESTATION_DENY_SELF_HOSTED=1
+  if [ "${VERSION}" = "runner-v0.22.1" ]; then
+    ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/runner-release.yml"
+    ATTESTATION_SIGNER_DIGEST="642128eb48205405fd44ce845118e6a68737eea2"
+  fi
 }
 
 # A flag whose value is missing must say so, not die on `set -u` with a raw
@@ -1043,9 +1061,13 @@ verify_attestation() {
     warn "no attestation workflow configured for ${REPO} — skipping provenance check for ${name}"
     return 0
   fi
+  local hint="gh attestation verify <file> --repo ${REPO} --signer-workflow ${ATTESTATION_WORKFLOW}"
+  [ -z "${ATTESTATION_SOURCE_REF}" ] || hint="${hint} --source-ref ${ATTESTATION_SOURCE_REF}"
+  [ -z "${ATTESTATION_SIGNER_DIGEST}" ] || hint="${hint} --signer-digest ${ATTESTATION_SIGNER_DIGEST}"
+  [ "${ATTESTATION_DENY_SELF_HOSTED}" = "0" ] || hint="${hint} --deny-self-hosted-runners"
   if ! command -v gh >/dev/null 2>&1; then
     warn "gh not installed — skipping release attestation check for ${name}"
-    warn "verify it yourself: gh attestation verify <file> --repo ${REPO} --signer-workflow ${ATTESTATION_WORKFLOW}"
+    warn "verify it yourself: ${hint}"
     return 0
   fi
   # gh refuses the attestation API unauthenticated — it exits 4 telling you to
@@ -1054,12 +1076,19 @@ verify_attestation() {
   # runner, so an unauthenticated CLI skips exactly like a missing one.
   if ! gh auth status >/dev/null 2>&1; then
     warn "gh is not authenticated — skipping release attestation check for ${name}"
-    warn "verify it yourself: gh attestation verify <file> --repo ${REPO} --signer-workflow ${ATTESTATION_WORKFLOW}"
+    warn "verify it yourself: ${hint}"
     return 0
   fi
   log "verifying release attestation"
-  if ! gh attestation verify "${path}" --repo "${REPO}" \
-    --signer-workflow "${ATTESTATION_WORKFLOW}" >/dev/null 2>&1; then
+  local -a verify_args=(
+    attestation verify "${path}"
+    --repo "${REPO}"
+    --signer-workflow "${ATTESTATION_WORKFLOW}"
+  )
+  [ -z "${ATTESTATION_SOURCE_REF}" ] || verify_args+=(--source-ref "${ATTESTATION_SOURCE_REF}")
+  [ -z "${ATTESTATION_SIGNER_DIGEST}" ] || verify_args+=(--signer-digest "${ATTESTATION_SIGNER_DIGEST}")
+  [ "${ATTESTATION_DENY_SELF_HOSTED}" = "0" ] || verify_args+=(--deny-self-hosted-runners)
+  if ! gh "${verify_args[@]}" >/dev/null 2>&1; then
     die "release attestation for ${name} did not verify against ${ATTESTATION_WORKFLOW} — refusing to install"
   fi
   log "attestation verified  ${ATTESTATION_WORKFLOW}"
@@ -1752,6 +1781,7 @@ do_install() {
   fi
   [[ "${VERSION}" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
     die "release version must match runner-vMAJOR.MINOR.PATCH (got '${VERSION}')"
+  select_attestation_policy
   local prompt
   if [ "${INIT}" = "none" ]; then
     prompt="install emisar ${VERSION} to ${BIN_DIR}/emisar (binary only, no service)?"

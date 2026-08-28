@@ -27,19 +27,21 @@ import (
 
 const (
 	officialRepository = "andrewdryga/emisar"
-	// The reusable workflow that actually attests: runner-release.yml is a thin
-	// caller, so the provenance-minting job runs inside runner-release-trusted.yml
-	// and its ref is what the Sigstore certificate SAN carries.
-	signerWorkflow    = "AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
-	releaseBaseURL    = "https://emisar.dev/releases/runner"
-	apiBaseURL        = "https://api.github.com"
-	downloadBaseURL   = "https://github.com"
-	maxAPIBytes       = 4 << 20
-	maxManifestBytes  = 1 << 20
-	maxChecksumsBytes = 1 << 20
-	maxArchiveBytes   = 256 << 20
-	maxInstallerBytes = 512 << 10
-	maxBinaryBytes    = 128 << 20
+	// Post-split releases are attested by the reusable trusted workflow; the
+	// certificate SAN carries that workflow rather than its thin caller.
+	signerWorkflow       = "AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
+	legacyRunnerTag      = "runner-v0.22.1"
+	legacySignerWorkflow = "AndrewDryga/emisar/.github/workflows/runner-release.yml"
+	legacySignerDigest   = "642128eb48205405fd44ce845118e6a68737eea2"
+	releaseBaseURL       = "https://emisar.dev/releases/runner"
+	apiBaseURL           = "https://api.github.com"
+	downloadBaseURL      = "https://github.com"
+	maxAPIBytes          = 4 << 20
+	maxManifestBytes     = 1 << 20
+	maxChecksumsBytes    = 1 << 20
+	maxArchiveBytes      = 256 << 20
+	maxInstallerBytes    = 512 << 10
+	maxBinaryBytes       = 128 << 20
 )
 
 // Options are the operator choices and output streams for one update.
@@ -186,7 +188,7 @@ func run(ctx context.Context, opts Options, deps dependencies) error {
 	}
 	fmt.Fprintf(opts.Stdout, "Verified checksum sha256:%s…\n", digest[:16])
 
-	if err := verifyProvenance(ctx, archivePath, deps, opts.Stdout, opts.Stderr); err != nil {
+	if err := verifyProvenance(ctx, archivePath, target.TagName, deps, opts.Stdout, opts.Stderr); err != nil {
 		return err
 	}
 	bundle, err := extractBundle(archivePath, temp, name)
@@ -493,7 +495,7 @@ func verifyChecksum(archivePath, checksumsPath, archiveName string) (string, err
 	return actual, nil
 }
 
-func verifyProvenance(ctx context.Context, archive string, deps dependencies, stdout, stderr io.Writer) error {
+func verifyProvenance(ctx context.Context, archive, tag string, deps dependencies, stdout, stderr io.Writer) error {
 	gh, err := deps.lookPath("gh")
 	if err != nil {
 		fmt.Fprintln(stderr, "warning: gh is not installed; release provenance was not checked")
@@ -504,13 +506,24 @@ func verifyProvenance(ctx context.Context, archive string, deps dependencies, st
 		fmt.Fprintln(stderr, "warning: gh is not authenticated; release provenance was not checked")
 		return nil
 	}
+	workflow := signerWorkflow
+	signerDigest := ""
+	if tag == legacyRunnerTag {
+		workflow = legacySignerWorkflow
+		signerDigest = legacySignerDigest
+	}
 	args := []string{
 		"attestation", "verify", archive,
 		"--repo", officialRepository,
-		"--signer-workflow", signerWorkflow,
+		"--signer-workflow", workflow,
+		"--source-ref", "refs/tags/" + tag,
 	}
+	if signerDigest != "" {
+		args = append(args, "--signer-digest", signerDigest)
+	}
+	args = append(args, "--deny-self-hosted-runners")
 	if err := deps.runCommand(ctx, gh, args, env, io.Discard, io.Discard); err != nil {
-		return fmt.Errorf("release attestation did not verify against %s: %w", signerWorkflow, err)
+		return fmt.Errorf("release attestation did not verify against %s: %w", workflow, err)
 	}
 	fmt.Fprintln(stdout, "Verified GitHub build provenance.")
 	return nil

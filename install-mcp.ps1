@@ -34,13 +34,11 @@ $script:PortalOrigin = if ($PortalOrigin) {
     "https://emisar.dev"
 }
 $script:ReleaseMirror = "https://emisar.dev/releases/mcp"
-$script:AttestationWorkflow = if ($env:EMISAR_ATTESTATION_WORKFLOW) {
-    $env:EMISAR_ATTESTATION_WORKFLOW
-} elseif ($script:Repository -eq $script:OfficialRepository) {
-    "AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"
-} else {
-    ""
-}
+$script:AttestationWorkflowOverride = if ($env:EMISAR_ATTESTATION_WORKFLOW) { $env:EMISAR_ATTESTATION_WORKFLOW } else { "" }
+$script:AttestationWorkflow = ""
+$script:AttestationSignerDigest = ""
+$script:AttestationSourceRef = ""
+$script:AttestationDenySelfHosted = $false
 $script:Utf8NoBom = New-Object Text.UTF8Encoding($false)
 
 function Write-Info([string]$Message) {
@@ -86,6 +84,41 @@ function Normalize-Version([string]$Value) {
     if ($Value -match '^mcp-v') { return $Value }
     if ($Value -match '^v') { return "mcp-$Value" }
     return "mcp-v$Value"
+}
+
+# The supported pre-split release tip keeps its immutable original provenance.
+# Every other official tag uses the trusted
+# workflow; an explicit fork/operator override keeps its existing semantics.
+function Get-AttestationPolicy([string]$Repository, [string]$Tag, [string]$WorkflowOverride) {
+    if ($WorkflowOverride) {
+        return [pscustomobject]@{
+            Workflow = $WorkflowOverride
+            SignerDigest = ""
+            SourceRef = ""
+            DenySelfHosted = $false
+        }
+    }
+    if ($Repository -ne "andrewdryga/emisar") {
+        return [pscustomobject]@{
+            Workflow = ""
+            SignerDigest = ""
+            SourceRef = ""
+            DenySelfHosted = $false
+        }
+    }
+
+    $workflow = "AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"
+    $signerDigest = ""
+    if ($Tag -ceq "mcp-v0.10.1") {
+        $workflow = "AndrewDryga/emisar/.github/workflows/mcp-release.yml"
+        $signerDigest = "642128eb48205405fd44ce845118e6a68737eea2"
+    }
+    return [pscustomobject]@{
+        Workflow = $workflow
+        SignerDigest = $signerDigest
+        SourceRef = "refs/tags/$Tag"
+        DenySelfHosted = $true
+    }
 }
 
 function Test-TrustedWebUri([Uri]$Uri) {
@@ -338,7 +371,15 @@ function Test-Attestation([string]$ArchivePath, [bool]$TestRelease) {
         Write-WarningLine "gh is not authenticated; skipping release attestation check"
         return
     }
-    & gh attestation verify $ArchivePath --repo $script:Repository --signer-workflow $script:AttestationWorkflow *> $null
+    $arguments = @(
+        "attestation", "verify", $ArchivePath,
+        "--repo", $script:Repository,
+        "--signer-workflow", $script:AttestationWorkflow
+    )
+    if ($script:AttestationSourceRef) { $arguments += @("--source-ref", $script:AttestationSourceRef) }
+    if ($script:AttestationSignerDigest) { $arguments += @("--signer-digest", $script:AttestationSignerDigest) }
+    if ($script:AttestationDenySelfHosted) { $arguments += "--deny-self-hosted-runners" }
+    & gh @arguments *> $null
     if ($LASTEXITCODE -ne 0) {
         Stop-Install "release attestation did not verify against $($script:AttestationWorkflow)"
     }
@@ -445,6 +486,11 @@ if ($Uninstall) {
 
 if ($Version) { $Version = Normalize-Version $Version }
 $release = Resolve-Release $Version
+$attestationPolicy = Get-AttestationPolicy $script:Repository $release.Tag $script:AttestationWorkflowOverride
+$script:AttestationWorkflow = $attestationPolicy.Workflow
+$script:AttestationSignerDigest = $attestationPolicy.SignerDigest
+$script:AttestationSourceRef = $attestationPolicy.SourceRef
+$script:AttestationDenySelfHosted = $attestationPolicy.DenySelfHosted
 $versionNumber = $release.Tag.Substring(5)
 $archiveRoot = "emisar-mcp-$versionNumber-windows-$releaseArchitecture"
 $archiveName = "$archiveRoot.zip"

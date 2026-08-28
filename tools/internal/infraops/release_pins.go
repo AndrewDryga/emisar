@@ -102,45 +102,7 @@ func (a *App) checkTrustedReleasePins(ctx context.Context) error {
 				relative, trusted[:12])
 		}
 	}
-	if err := a.checkInstallerSignerWorkflows(); err != nil {
-		return err
-	}
 	fmt.Fprintf(a.Out, "verified: %d trusted release workflow(s) pinned at %s in the shims and infra/github_oidc.tf\n",
 		len(pinned), trusted[:12])
-	return nil
-}
-
-// The attesting job runs inside the -trusted reusable workflow, so the Sigstore
-// certificate SAN carries that ref — not the thin caller. Every consumer that
-// verifies release provenance (the two installers, the PowerShell installer,
-// and the self-updater) must therefore name a *-release-trusted.yml signer, or
-// the first release after a workflow split refuses to install on exactly the
-// security-conscious hosts that check provenance. This is a plain string check,
-// independent of the pin rotation above.
-func (a *App) checkInstallerSignerWorkflows() error {
-	// path -> regex capturing the workflow ref the file names as its signer.
-	signerRefs := map[string]*regexp.Regexp{
-		"install.sh":      regexp.MustCompile(`AndrewDryga/emisar/\.github/workflows/(\S+?\.yml)`),
-		"install-mcp.sh":  regexp.MustCompile(`AndrewDryga/emisar/\.github/workflows/(\S+?\.yml)`),
-		"install-mcp.ps1": regexp.MustCompile(`AndrewDryga/emisar/\.github/workflows/(\S+?\.yml)`),
-		"runner/internal/selfupdate/selfupdate.go": regexp.MustCompile(`AndrewDryga/emisar/\.github/workflows/(\S+?\.yml)`),
-	}
-	for rel, pattern := range signerRefs {
-		body, err := os.ReadFile(filepath.Join(a.Root, filepath.FromSlash(rel)))
-		if err != nil {
-			return err
-		}
-		matches := pattern.FindAllSubmatch(body, -1)
-		if len(matches) == 0 {
-			return fmt.Errorf("%s names no release signer workflow — provenance verification cannot resolve", rel)
-		}
-		for _, m := range matches {
-			ref := string(m[1])
-			if !strings.HasSuffix(ref, "-trusted.yml") {
-				return fmt.Errorf("%s verifies against %s, but the attesting job runs inside the -trusted reusable workflow; "+
-					"point it at the *-release-trusted.yml signer or the next signed release is refused", rel, ref)
-			}
-		}
-	}
 	return nil
 }

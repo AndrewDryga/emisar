@@ -29,6 +29,7 @@ func MCP(root string, out io.Writer) error {
 		{"install directory discovery", mcpInstallDirs},
 		{"install confirmation prompt", mcpConfirmPrompt},
 		{"GitHub token argv hygiene", func(h *harness) error { return githubTokenHygiene(h, "install-mcp.sh") }},
+		{"attestation release epochs", mcpAttestationReleaseEpochs},
 		{"latest release resolution", mcpLatestRelease},
 		{"installation and rollback", mcpInstallRollback},
 		{"staging integrity", mcpStagingIntegrity},
@@ -45,6 +46,70 @@ func MCP(root string, out io.Writer) error {
 	}
 	fmt.Fprintln(out, "ok: mcp installer smoke test passed")
 	return nil
+}
+
+func mcpAttestationReleaseEpochs(h *harness) error {
+	trace := h.path("mcp-attestation-argv")
+	result := h.functions(h.repoPath("install-mcp.sh"), []string{"select_attestation_policy", "verify_attestation"}, `
+log() { :; }
+warn() { :; }
+die() { printf '%s\n' "$*" >&2; exit 1; }
+gh() {
+  if [ "${1:-}" = "auth" ]; then
+    return 0
+  fi
+  printf '%s' "$1" >>"$TRACE"
+  shift
+  printf '|%s' "$@" >>"$TRACE"
+  printf '\n' >>"$TRACE"
+}
+
+OFFICIAL_REPO=andrewdryga/emisar
+REPO=$OFFICIAL_REPO
+for VERSION in mcp-v0.10.1 mcp-v0.10.2 mcp-v0.9.99; do
+  ATTESTATION_WORKFLOW=
+  select_attestation_policy
+  printf '%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED"
+done
+REPO=example/emisar
+VERSION=mcp-v0.10.1
+ATTESTATION_WORKFLOW=
+select_attestation_policy
+printf '%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED"
+
+VERSION=mcp-v0.10.1
+ATTESTATION_WORKFLOW=example/emisar/.github/workflows/release.yml
+select_attestation_policy
+printf '%s|%s|%s|%s\n' "$ATTESTATION_WORKFLOW" "$ATTESTATION_SIGNER_DIGEST" "$ATTESTATION_SOURCE_REF" "$ATTESTATION_DENY_SELF_HOSTED"
+
+REPO=$OFFICIAL_REPO
+for VERSION in mcp-v0.10.1 mcp-v0.10.2; do
+  ATTESTATION_WORKFLOW=
+  select_attestation_policy
+  verify_attestation /verified/mcp.tar.gz mcp.tar.gz
+done
+REPO=example/emisar
+VERSION=mcp-v0.10.1
+ATTESTATION_WORKFLOW=example/emisar/.github/workflows/release.yml
+select_attestation_policy
+verify_attestation /verified/mcp.tar.gz mcp.tar.gz
+`, map[string]string{"TRACE": trace})
+	output, err := requireOutput(result)
+	if err != nil {
+		return err
+	}
+	const expected = "AndrewDryga/emisar/.github/workflows/mcp-release.yml|642128eb48205405fd44ce845118e6a68737eea2|refs/tags/mcp-v0.10.1|1\n" +
+		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml||refs/tags/mcp-v0.10.2|1\n" +
+		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml||refs/tags/mcp-v0.9.99|1\n" +
+		"|||0\n" +
+		"example/emisar/.github/workflows/release.yml|||0\n"
+	if string(output) != expected {
+		return fmt.Errorf("attestation policies = %q, want %q", output, expected)
+	}
+	const expectedTrace = "attestation|verify|/verified/mcp.tar.gz|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release.yml|--source-ref|refs/tags/mcp-v0.10.1|--signer-digest|642128eb48205405fd44ce845118e6a68737eea2|--deny-self-hosted-runners\n" +
+		"attestation|verify|/verified/mcp.tar.gz|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml|--source-ref|refs/tags/mcp-v0.10.2|--deny-self-hosted-runners\n" +
+		"attestation|verify|/verified/mcp.tar.gz|--repo|example/emisar|--signer-workflow|example/emisar/.github/workflows/release.yml\n"
+	return exactFile(trace, expectedTrace)
 }
 
 func mcpLatestRelease(h *harness) error {

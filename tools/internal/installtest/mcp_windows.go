@@ -106,6 +106,9 @@ func testWindowsMCPInstaller(root, shell string) error {
 		return err
 	}
 	defer os.RemoveAll(temp)
+	if err := testWindowsAttestationPolicies(root, shell, temp); err != nil {
+		return err
+	}
 
 	releaseDir := filepath.Join(temp, "release")
 	archiveRoot := "emisar-mcp-" + windowsMCPVersion + "-windows-" + runtime.GOARCH
@@ -407,6 +410,107 @@ func testWindowsMCPInstaller(root, shell string) error {
 		return fmt.Errorf("uninstall left CLI credentials: %v", err)
 	}
 	return nil
+}
+
+func testWindowsAttestationPolicies(root, shell, temp string) error {
+	installer := filepath.Join(root, "install-mcp.ps1")
+	policyFunction, err := powershellFunction(installer, "Get-AttestationPolicy")
+	if err != nil {
+		return err
+	}
+	verifyFunction, err := powershellFunction(installer, "Test-Attestation")
+	if err != nil {
+		return err
+	}
+	trace := filepath.Join(temp, "attestation-argv.txt")
+	script := policyFunction + verifyFunction + `
+function Write-WarningLine([string]$Message) {}
+function Write-Info([string]$Message) {}
+function Stop-Install([string]$Message) { throw $Message }
+function gh {
+    $commandArgs = @($args)
+    $global:LASTEXITCODE = 0
+    if ($commandArgs.Count -gt 0 -and $commandArgs[0] -eq "auth") { return }
+    [IO.File]::AppendAllText($env:EMISAR_ATTESTATION_TRACE, (($commandArgs -join "|") + [Environment]::NewLine))
+}
+function Set-TestAttestationPolicy($Policy) {
+    $script:AttestationWorkflow = $Policy.Workflow
+    $script:AttestationSignerDigest = $Policy.SignerDigest
+    $script:AttestationSourceRef = $Policy.SourceRef
+    $script:AttestationDenySelfHosted = $Policy.DenySelfHosted
+}
+
+$script:Repository = "andrewdryga/emisar"
+foreach ($tag in @("mcp-v0.10.1", "mcp-v0.10.2", "mcp-v0.9.99", "MCP-V0.10.1")) {
+    $policy = Get-AttestationPolicy "andrewdryga/emisar" $tag ""
+    Write-Output ("{0}|{1}|{2}|{3}" -f $policy.Workflow, $policy.SignerDigest, $policy.SourceRef, $policy.DenySelfHosted)
+}
+$policy = Get-AttestationPolicy "example/emisar" "mcp-v0.10.1" ""
+Write-Output ("{0}|{1}|{2}|{3}" -f $policy.Workflow, $policy.SignerDigest, $policy.SourceRef, $policy.DenySelfHosted)
+$policy = Get-AttestationPolicy "example/emisar" "mcp-v0.10.1" "example/emisar/.github/workflows/release.yml"
+Write-Output ("{0}|{1}|{2}|{3}" -f $policy.Workflow, $policy.SignerDigest, $policy.SourceRef, $policy.DenySelfHosted)
+
+foreach ($tag in @("mcp-v0.10.1", "mcp-v0.10.2")) {
+    Set-TestAttestationPolicy (Get-AttestationPolicy "andrewdryga/emisar" $tag "")
+    Test-Attestation "C:\verified\mcp.zip" $false
+}
+$script:Repository = "example/emisar"
+Set-TestAttestationPolicy (Get-AttestationPolicy "example/emisar" "mcp-v0.10.1" "example/emisar/.github/workflows/release.yml")
+Test-Attestation "C:\verified\mcp.zip" $false
+`
+	path := filepath.Join(temp, "attestation-policy.ps1")
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		return err
+	}
+	output, err := runPowerShellInstaller(shell, path, environment(map[string]string{"EMISAR_ATTESTATION_TRACE": trace}))
+	if err != nil {
+		return fmt.Errorf("attestation policy: %w\n%s", err, output)
+	}
+	expected := "AndrewDryga/emisar/.github/workflows/mcp-release.yml|642128eb48205405fd44ce845118e6a68737eea2|refs/tags/mcp-v0.10.1|True\n" +
+		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml||refs/tags/mcp-v0.10.2|True\n" +
+		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml||refs/tags/mcp-v0.9.99|True\n" +
+		"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml||refs/tags/MCP-V0.10.1|True\n" +
+		"|||False\n" +
+		"example/emisar/.github/workflows/release.yml|||False\n"
+	actual := strings.ReplaceAll(string(output), "\r\n", "\n")
+	if actual != expected {
+		return fmt.Errorf("attestation policies = %q, want %q", output, expected)
+	}
+	traceData, err := os.ReadFile(trace)
+	if err != nil {
+		return fmt.Errorf("read attestation argv: %w", err)
+	}
+	expectedTrace := "attestation|verify|C:\\verified\\mcp.zip|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release.yml|--source-ref|refs/tags/mcp-v0.10.1|--signer-digest|642128eb48205405fd44ce845118e6a68737eea2|--deny-self-hosted-runners\n" +
+		"attestation|verify|C:\\verified\\mcp.zip|--repo|andrewdryga/emisar|--signer-workflow|AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml|--source-ref|refs/tags/mcp-v0.10.2|--deny-self-hosted-runners\n" +
+		"attestation|verify|C:\\verified\\mcp.zip|--repo|example/emisar|--signer-workflow|example/emisar/.github/workflows/release.yml\n"
+	actualTrace := strings.ReplaceAll(string(traceData), "\r\n", "\n")
+	if actualTrace != expectedTrace {
+		return fmt.Errorf("attestation argv = %q, want %q", traceData, expectedTrace)
+	}
+	return nil
+}
+
+func powershellFunction(path, name string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Split(string(data), "\n")
+	start := -1
+	depth := 0
+	for index, line := range lines {
+		if start == -1 {
+			if !strings.HasPrefix(line, "function "+name+"(") {
+				continue
+			}
+			start = index
+		}
+		depth += strings.Count(line, "{") - strings.Count(line, "}")
+		if start >= 0 && depth == 0 {
+			return strings.Join(lines[start:index+1], "\n") + "\n", nil
+		}
+	}
+	return "", fmt.Errorf("%s does not define a complete %s function", path, name)
 }
 
 func outputContainsWindowsKey(output []byte, cliKey string, clientKeys map[string]string) bool {
