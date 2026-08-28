@@ -28,6 +28,8 @@ defmodule Emisar.Admin do
     Emisar.ApiKeys.Jobs.DeviceGrantCleanup,
     Emisar.Approvals.Jobs.ExpireOverdueRequests,
     Emisar.Audit.Jobs.Retention,
+    Emisar.Auth.Jobs.TokenRetention,
+    Emisar.Billing.Jobs.ProcessedEventRetention,
     Emisar.Billing.Jobs.SyncRunnerQuantities,
     Emisar.Billing.Jobs.SyncPaddleCustomers,
     Emisar.Billing.Jobs.SyncSubscriptions,

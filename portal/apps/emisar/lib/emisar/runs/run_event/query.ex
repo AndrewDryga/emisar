@@ -18,18 +18,22 @@ defmodule Emisar.Runs.RunEvent.Query do
 
   @doc """
   Restrict to events whose parent run reached a terminal state before
-  `cutoff`. The run's `finished_at` is the authoritative "this run is
-  old" signal; the event's own `inserted_at` only correlates. Used by
-  `Runs.Jobs.EventRetention` to prune progress chunks once the
-  run that produced them ages out of the account's retention window.
-  Pair with `by_account_id/2` so the account/run index carries the account scan.
+  `cutoff`, within `account_id`. The run's `finished_at` is the authoritative
+  "this run is old" signal; the event's own `inserted_at` only correlates. Used
+  by `Runs.Jobs.EventRetention` to prune progress chunks once the run that
+  produced them ages out of the account's retention window. Pair with
+  `by_account_id/2` so the account/run index carries the account scan.
+
+  The account is passed to the subquery too, not just the outer query — the
+  parent runs it enumerates are on the largest table in the schema, and without
+  it every account's sweep read every account's runs.
 
   A subquery (not a join) keeps this safe to compose into a bulk
   delete — Postgres `DELETE` with a correlated `IN` is unambiguous,
   whereas a join-delete leans on `USING` semantics.
   """
-  def by_run_finished_before(queryable, %DateTime{} = cutoff) do
-    finished_run_ids = Emisar.Runs.ActionRun.Query.finished_before_ids(cutoff)
+  def by_run_finished_before(queryable, account_id, %DateTime{} = cutoff) do
+    finished_run_ids = Emisar.Runs.ActionRun.Query.finished_before_ids(account_id, cutoff)
     where(queryable, [events: e], e.run_id in subquery(finished_run_ids))
   end
 
@@ -42,7 +46,7 @@ defmodule Emisar.Runs.RunEvent.Query do
   def prunable_ids(account_id, %DateTime{} = cutoff, limit) when is_integer(limit) do
     all()
     |> by_account_id(account_id)
-    |> by_run_finished_before(cutoff)
+    |> by_run_finished_before(account_id, cutoff)
     |> limit(^limit)
     |> select([events: e], e.id)
   end

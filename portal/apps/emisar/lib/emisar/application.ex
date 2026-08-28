@@ -47,6 +47,7 @@ defmodule Emisar.Application do
       Emisar.ApiKeys,
       Emisar.Approvals,
       Emisar.Audit,
+      Emisar.Auth,
       Emisar.Billing,
       Emisar.Catalog,
       Emisar.OAuth,

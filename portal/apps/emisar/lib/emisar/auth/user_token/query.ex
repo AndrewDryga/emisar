@@ -13,6 +13,11 @@ defmodule Emisar.Auth.UserToken.Query do
   @mfa_enrollment_validity_in_minutes 15
   @oidc_identity_step_up_validity_in_minutes 15
 
+  # Every context `validity_in_days/1` answers for. The retention sweep walks
+  # this list, so a new context must be added here as well as below — a context
+  # missing from it is treated as unrecognized and swept.
+  @contexts ~w(session confirm magic_link email_change mfa_enrollment oidc_identity_step_up)
+
   def all,
     do: from(t in UserToken, as: :tokens)
 
@@ -35,6 +40,9 @@ defmodule Emisar.Auth.UserToken.Query do
   def by_id(queryable \\ all(), id),
     do: where(queryable, [tokens: t], t.id == ^id)
 
+  def by_ids(queryable \\ all(), ids) when is_list(ids),
+    do: where(queryable, [tokens: t], t.id in ^ids)
+
   def by_token_digest(queryable \\ all(), digest) when is_binary(digest),
     do: where(queryable, [tokens: t], t.token == ^digest)
 
@@ -45,6 +53,32 @@ defmodule Emisar.Auth.UserToken.Query do
   @doc "Rows still inside `context`'s validity window."
   def not_expired(queryable, context),
     do: where(queryable, [tokens: t], t.inserted_at > ago(^validity_in_days(context), "day"))
+
+  @doc """
+  A bounded page of token ids past their own context's validity window — what
+  `Auth.Jobs.TokenRetention` deletes next.
+
+  Expiry was only ever enforced at read time, so an abandoned magic link or a
+  session nobody signed out of stayed forever. Each context carries a different
+  window, so the predicate is an OR per context rather than one cutoff; a row
+  whose context is no longer recognized is prunable too, since `not_expired/2`
+  cannot even evaluate it.
+  """
+  def prunable_ids(limit) when is_integer(limit) do
+    expired =
+      Enum.reduce(@contexts, dynamic([tokens: t], t.context not in ^@contexts), fn context, acc ->
+        dynamic(
+          [tokens: t],
+          ^acc or
+            (t.context == ^context and t.inserted_at <= ago(^validity_in_days(context), "day"))
+        )
+      end)
+
+    all()
+    |> where(^expired)
+    |> limit(^limit)
+    |> select([tokens: t], t.id)
+  end
 
   @doc "Typable code tokens that still have guess attempts left (locked at 0)."
   def with_attempts_remaining(queryable),

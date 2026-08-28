@@ -6,6 +6,7 @@ defmodule Emisar.Auth do
   All token types share `user_tokens` storage; `context` disambiguates
   semantics + validity window.
   """
+  use Supervisor
   alias Ecto.Multi
   alias Emisar.{Accounts, Audit, Mailers}
   alias Emisar.Auth.MfaFacts
@@ -21,6 +22,21 @@ defmodule Emisar.Auth do
   alias Emisar.Telemetry
   alias Emisar.Users
   require Logger
+
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
+  end
+
+  @impl Supervisor
+  def init(_opts) do
+    Supervisor.init([job_module("TokenRetention")], strategy: :one_for_one)
+  end
+
+  # Resolved at runtime, like every sibling context's job supervision: naming
+  # the module directly puts a compile edge from Auth — which most of the schema
+  # reaches — into the Jobs infrastructure, and `mix xref` fails the gate on the
+  # cycle it closes.
+  defp job_module(name), do: Module.safe_concat([__MODULE__, "Jobs", name])
 
   # -- Role vocabulary --------------------------------------------------
 

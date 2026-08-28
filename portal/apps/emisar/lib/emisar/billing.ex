@@ -87,6 +87,7 @@ defmodule Emisar.Billing do
   @impl Supervisor
   def init(_opts) do
     children = [
+      job_module("ProcessedEventRetention"),
       job_module("SyncPaddleCustomers"),
       job_module("SyncRunnerQuantities"),
       job_module("SyncSubscriptions")

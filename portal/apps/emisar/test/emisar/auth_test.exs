@@ -380,11 +380,9 @@ defmodule Emisar.AuthTest do
       user: user
     } do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      # A legacy `password` session from before the passwordless rework dropped
-      # that enum value. Written at the DB layer to bypass the enum cast —
-      # exactly how it lands in a real DB after the enum narrows. Loading it
-      # must resolve to :not_found, not raise ArgumentError and 500 the request.
-      Ecto.Adapters.SQL.query!(Repo, "UPDATE auth_user_tokens SET auth_method = 'password'", [])
+      # Loading a session whose enum value was removed must resolve to
+      # :not_found, not raise ArgumentError and 500 the request.
+      Fixtures.Auth.write_removed_auth_method!()
 
       assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
     end
@@ -542,7 +540,7 @@ defmodule Emisar.AuthTest do
     test "a session holding a removed auth_method is swept without an audit" do
       {user, _account, _subject} = Fixtures.Subjects.owner_subject()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      Ecto.Adapters.SQL.query!(Repo, "UPDATE auth_user_tokens SET auth_method = 'password'", [])
+      Fixtures.Auth.write_removed_auth_method!()
 
       assert Auth.complete_session_sign_out(token) == :ok
 
