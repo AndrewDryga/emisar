@@ -82,10 +82,10 @@ is the separate, credentials-gated deploy step.
    not a workspace variable; changing it requires a separately staged successor
    fleet and backend rather than an ordinary rollout.
 10. **The pack registry is one bucket.** Keep immutable packs, catalog snapshots,
-   schemas, and the two live pointers in the existing public registry bucket.
-   Enforce create-only immutable prefixes and pointer-only create/delete needed
-   for replacement through conditional IAM; do not add a history bucket, mirror
-   publisher, or route cutover.
+   schemas, and the live catalog/suggest documents plus their two facade aliases
+   in the existing public registry bucket. Enforce create-only immutable prefixes
+   and exact-pointer-only create/delete needed for replacement through conditional
+   IAM; do not add a history bucket, mirror publisher, or route cutover.
 11. **Infrastructure helpers stay out of the portal image.** Run the Cloud SQL
    Auth Proxy as a separately pinned, cloud-init-managed container. Install a
    host-native helper such as the private self-administration runner from its

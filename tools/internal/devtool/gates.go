@@ -589,6 +589,9 @@ func (a *App) checkCatalogReproduction(ctx context.Context) error {
 		"catalog", "build", "--packs", filepath.Join(a.Root, "packs"), "--out", output, "--previous", committed); err != nil {
 		return err
 	}
+	if err := checkPackRegistryPointerContract(a.Root, filepath.Join(output, "manifest.json")); err != nil {
+		return err
+	}
 	generated, err := os.ReadFile(filepath.Join(output, "v1", "catalog.json"))
 	if err != nil {
 		return err

@@ -375,7 +375,7 @@ func TestPublish_ExistingImmutableWithDifferentBytesFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "different bytes") {
 		t.Fatalf("expected immutable-byte mismatch, got %v", err)
 	}
-	assertMutablePointersUntouched(t, f)
+	assertMutablePointersUntouched(t, f, dir)
 }
 
 func TestPublish_ExistingImmutableThatCannotBeReadFails(t *testing.T) {
@@ -393,7 +393,7 @@ func TestPublish_ExistingImmutableThatCannotBeReadFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "verify existing immutable object") {
 		t.Fatalf("expected immutable verification failure, got %v", err)
 	}
-	assertMutablePointersUntouched(t, f)
+	assertMutablePointersUntouched(t, f, dir)
 }
 
 func TestPublish_OversizedExistingImmutableFails(t *testing.T) {
@@ -416,16 +416,19 @@ func TestPublish_OversizedExistingImmutableFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "exceeds expected size") {
 		t.Fatalf("expected oversized immutable failure, got %v", err)
 	}
-	assertMutablePointersUntouched(t, f)
+	assertMutablePointersUntouched(t, f, dir)
 }
 
-func assertMutablePointersUntouched(t *testing.T, f *fakeGCS) {
+func assertMutablePointersUntouched(t *testing.T, f *fakeGCS, dir string) {
 	t.Helper()
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for _, name := range []string{"v1/catalog.json", "v1/suggest.json"} {
-		if _, ok := f.requests[name]; ok {
-			t.Errorf("mutable pointer %s was published after immutable verification failed", name)
+	for _, object := range readManifest(t, dir).Objects {
+		if object.Immutable {
+			continue
+		}
+		if _, ok := f.requests[object.Path]; ok {
+			t.Errorf("mutable pointer %s was published after immutable verification failed", object.Path)
 		}
 	}
 }

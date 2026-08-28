@@ -20,6 +20,8 @@ the host `emisar` binary, which ships operator verbs only.
 v1/catalog.json                                  latest catalog (mutable pointer)
 v1/catalog/<sha256>.json                         immutable catalog snapshot (content-addressed)
 v1/suggest.json                                  lean suggest index (mutable pointer)
+packs.json                                       catalog facade alias (mutable pointer)
+packs/suggest.json                               suggest facade alias (mutable pointer)
 v1/schemas/{catalog,pack,action}.vN.schema.json  immutable versioned JSON schemas
 v1/packs/<id>/<version>/<sha256>/pack.tar.gz     immutable pack tarball (content-addressed)
 ```
@@ -29,8 +31,9 @@ Immutability falls out of content-addressing: a tarball lives under its
 change without a version bump lands at a different path. JSON schemas use an
 explicit suite version in both their filename and `$id`; changing any schema
 requires bumping `SchemaArtifactVersion`, so published schema bytes are never
-replaced. The two mutable pointers are overwritten each publish; the bucket's
-**object versioning** keeps every prior generation fetchable.
+replaced. The four mutable pointer objects carry two byte-identical documents at
+their versioned and facade paths. They are overwritten each publish; the bucket's
+**object versioning** keeps a bounded window of recent generations fetchable.
 
 `content_hash` is the runner's load-time hash (`emisar pack validate` prints the
 same value). It binds an expected value to exact bytes; it does not authenticate
@@ -82,15 +85,16 @@ packctl catalog publish --dir ./dist/packs --bucket emisar-pack-registry --dry-r
 # Upload. Immutable objects use an if-generation-match:0 precondition, so an
 # existing object is never overwritten (a precondition failure = identical bytes
 # already published = skipped). The mutable pointers are overwritten last —
-# catalog.json last of all: it is the release-completion marker CD's drift
+# v1/catalog.json last of all: it is the release-completion marker CD's drift
 # probe compares, so a partial publish reads as unpublished and is retried.
 packctl catalog publish --dir ./dist/packs --bucket emisar-pack-registry
 ```
 
 The publisher service account (`emisar-pack-publisher`) holds **`objectCreator`
-only** — it can append new artifacts and cut a new catalog generation but cannot
-delete or mutate history. The append-only guarantee is IAM-enforced, not
-conventional.
+only** on the immutable prefixes, plus create/delete on the four exact mutable
+pointer names above. It can append new artifacts and cut new pointer generations
+but cannot delete or mutate history. The append-only guarantee is IAM-enforced,
+not conventional.
 
 ## When CD publishes
 
@@ -260,13 +264,20 @@ not hand-edit catalog URLs.
 ## Rollback
 
 Immutable objects are never rolled back — they are content-addressed and
-permanent. Only the mutable pointers can regress, and every prior generation is
-retained by bucket versioning:
+permanent. Only the mutable pointers can regress, and bucket versioning retains
+a bounded window of recent generations. Restore each document and its facade
+alias from the same chosen generation. Restore the facade first and
+`v1/catalog.json` last so the completion marker cannot advertise a half-restored
+registry:
 
 ```bash
 gcloud storage ls -a gs://emisar-pack-registry/v1/catalog.json      # list generations
-gcloud storage cp gs://emisar-pack-registry/v1/catalog.json#<generation> \
-                  gs://emisar-pack-registry/v1/catalog.json         # restore one
+gcloud storage cp 'gs://emisar-pack-registry/v1/catalog.json#<generation>' \
+  gs://emisar-pack-registry/packs.json
+gcloud storage cp 'gs://emisar-pack-registry/v1/catalog.json#<generation>' \
+  gs://emisar-pack-registry/v1/catalog.json
 ```
 
-Do the same for `v1/suggest.json` if a bad suggest index shipped.
+If a bad suggest index shipped, restore `packs/suggest.json` before
+`v1/suggest.json`; when restoring both documents, restore the suggest pair
+before the catalog pair so `v1/catalog.json` remains the last write.

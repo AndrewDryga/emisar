@@ -434,14 +434,18 @@ new child key is active, and remove the old DS only after resolver convergence.
 `registry.emisar.dev` terminates at the shared load balancer and routes directly
 to one public-read GCS bucket. The publisher can create, but cannot replace or
 delete, objects under `v1/packs/`, `v1/catalog/`, and `v1/schemas/`. It can
-replace or delete only `catalog.json` and `suggest.json`; GCS requires delete
+replace or delete only the four exact live pointers: `v1/catalog.json`,
+`v1/suggest.json`, `packs.json`, and `packs/suggest.json`. The latter two are
+byte-identical facade aliases for bucket-only registries; GCS requires delete
 permission to replace an object. A repeated immutable publication fetches the
 existing object and verifies its bytes before treating the collision as
-idempotent. Bucket versioning retains previous pointer generations.
+idempotent. Bucket versioning retains recent previous generations of all four
+pointers.
 
 ```sh
 curl -fsS https://registry.emisar.dev/v1/catalog.json | jq '.schema_version'
 gcloud storage ls -a gs://$(terraform output -raw pack_registry_bucket)/v1/catalog.json
+gcloud storage ls -a gs://$(terraform output -raw pack_registry_bucket)/packs.json
 ```
 
 Pack publication has a separate GitHub environment approval and is serialized

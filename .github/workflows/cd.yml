@@ -326,31 +326,51 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Verify published catalog
+      - name: Verify published registry
         run: |
           set -euo pipefail
-          metadata_url="https://storage.googleapis.com/storage/v1/b/emisar-pack-registry/o/v1%2Fcatalog.json"
-          for attempt in $(seq 1 5); do
-            curl -fsS "$metadata_url" -o /tmp/catalog-metadata.json
-            media_url=$(jq -er .mediaLink /tmp/catalog-metadata.json)
-            curl -fsS "$media_url" -o /tmp/gcs-catalog.json
-            cmp dist/packs/v1/catalog.json /tmp/gcs-catalog.json && break
-            [ "$attempt" = 5 ] && { echo "::error::published catalog bytes did not converge"; exit 1; }
-            sleep 2
-          done
-          cmp dist/packs/v1/catalog.json /tmp/gcs-catalog.json
-          test "$(jq -r .cacheControl /tmp/catalog-metadata.json)" = no-store || {
-            echo "::error::mutable catalog must publish with Cache-Control: no-store"
-            exit 1
-          }
+          mutable_paths=$(jq -er '
+            [.objects[] | select(.immutable == false) | .path]
+            | if length > 0 then .[] else error("manifest lists no mutable objects") end
+          ' dist/packs/manifest.json)
+          while IFS= read -r path; do
+            encoded_path=$(jq -rn --arg path "$path" '$path | @uri')
+            safe_path=${path//\//-}
+            metadata_file="/tmp/metadata-${safe_path}"
+            gcs_file="/tmp/gcs-${safe_path}"
+            canonical_file="/tmp/canonical-${safe_path}"
+            metadata_url="https://storage.googleapis.com/storage/v1/b/emisar-pack-registry/o/${encoded_path}"
+
+            for attempt in $(seq 1 5); do
+              if curl -fsS "$metadata_url" -o "$metadata_file" &&
+                 media_url=$(jq -er .mediaLink "$metadata_file") &&
+                 curl -fsS "$media_url" -o "$gcs_file" &&
+                 cmp -s "dist/packs/${path}" "$gcs_file"; then
+                break
+              fi
+              [ "$attempt" = 5 ] && {
+                echo "::error::published ${path} bytes did not converge"
+                exit 1
+              }
+              sleep 2
+            done
+            cmp "dist/packs/${path}" "$gcs_file"
+            test "$(jq -er .cacheControl "$metadata_file")" = no-store || {
+              echo "::error::mutable object ${path} must publish with Cache-Control: no-store"
+              exit 1
+            }
+            curl -fsS --retry 5 --retry-delay 2 --retry-all-errors \
+              "https://registry.emisar.dev/${path}" -o "$canonical_file"
+            cmp "dist/packs/${path}" "$canonical_file"
+          done <<<"$mutable_paths"
+
+          cmp /tmp/canonical-packs.json /tmp/canonical-v1-catalog.json
+          cmp /tmp/canonical-packs-suggest.json /tmp/canonical-v1-suggest.json
+
           pack_object=$(jq -er '.objects[] | select(.path | startswith("v1/packs/linux-core/")) | .path' dist/packs/manifest.json)
           curl -fsS --retry 3 --retry-delay 2 \
             "${REGISTRY_BASE}/${pack_object}" -o /tmp/gcs-linux-core.tar.gz
           cmp "dist/packs/${pack_object}" /tmp/gcs-linux-core.tar.gz
-
-          curl -fsS --retry 5 --retry-delay 2 \
-            "https://registry.emisar.dev/v1/catalog.json" -o /tmp/canonical-catalog.json
-          cmp dist/packs/v1/catalog.json /tmp/canonical-catalog.json
 
           # Collected into a variable, not piped through process substitution: a
           # `done < <(jq ...)` hides jq's exit status, so a manifest this build
@@ -368,7 +388,7 @@ jobs:
             cmp "dist/packs/${path}" "$published"
           done <<<"$tarball_paths"
 
-          tarball_urls=$(jq -er '.packs[] | .tarball_url, (.previous_versions[]?.tarball_url)' /tmp/canonical-catalog.json | sort -u)
+          tarball_urls=$(jq -er '.packs[] | .tarball_url, (.previous_versions[]?.tarball_url)' /tmp/canonical-v1-catalog.json | sort -u)
           test -n "$tarball_urls" || {
             echo "::error::published catalog lists no tarball URLs to verify"; exit 1
           }

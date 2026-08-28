@@ -21,8 +21,8 @@ type Object struct {
 	// Immutable objects use non-colliding paths: content hashes for pack and
 	// catalog artifacts, explicit suite versions for schemas. They upload with
 	// an if-generation-match:0 precondition (never overwritten). Mutable
-	// pointers (the latest catalog.json/suggest.json) are overwritten, relying
-	// on bucket versioning to retain prior generations.
+	// pointers (the versioned catalog/suggest paths and their facade aliases)
+	// are overwritten, relying on bucket versioning to retain prior generations.
 	Immutable   bool   `json:"immutable"`
 	ContentType string `json:"content_type"`
 	// ContentEncoding is the transport encoding the object uploads with

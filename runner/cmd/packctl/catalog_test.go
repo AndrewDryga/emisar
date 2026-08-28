@@ -35,7 +35,12 @@ func TestPackCatalogBuildCmd(t *testing.T) {
 	if m.CatalogHash == "" || len(m.Objects) == 0 {
 		t.Fatalf("empty manifest: %+v", m)
 	}
-	for _, want := range []string{"v1/catalog.json", "v1/suggest.json"} {
+	for _, want := range []string{
+		"v1/catalog.json",
+		"v1/suggest.json",
+		"packs.json",
+		"packs/suggest.json",
+	} {
 		if _, err := os.Stat(filepath.Join(out, want)); err != nil {
 			t.Errorf("missing %s: %v", want, err)
 		}

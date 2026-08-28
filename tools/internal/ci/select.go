@@ -111,6 +111,7 @@ func (selection *Selection) include(file string) {
 	}
 
 	packFile := isPackFile(file)
+	packRegistryPointerContract := file == "infra/pack_registry_mutable_pointers.json"
 	packRuntimeSource := packFile && !isPackTestFile(file)
 	goCheckoutContract := file == ".gitattributes"
 	if strings.HasPrefix(file, "portal/") || member(file, ".dockerignore", "install.sh", "install-mcp.sh", "install-mcp.ps1", ".tool-versions") {
@@ -171,7 +172,7 @@ func (selection *Selection) include(file string) {
 	// artifacts. Every runtime input below deliberately matches PacksRelease:
 	// validatePacks ends in checkCatalogReproduction, so code that BUILDS the
 	// catalog must run the job that proves the committed catalog still reproduces.
-	if packFile || hasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {
+	if packFile || packRegistryPointerContract || hasAnyPrefix(file, "runner/internal/packs/", "runner/internal/catalog/", "runner/cmd/packctl/", "runner/pkg/packspec/", "runner/pkg/actionspec/") || member(file, "runner/pack.go", "runner/main.go", "runner/go.mod", "runner/go.sum", "go.work", "go.work.sum") {
 		selection.Packs = true
 	}
 	if hasAnyPrefix(file, "dev/test-host-access/", "tools/internal/hostaccess/") {

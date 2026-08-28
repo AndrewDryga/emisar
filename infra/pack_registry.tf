@@ -1,4 +1,11 @@
 # ── Public artifacts: the one deliberate public-read bucket ──────────────
+locals {
+  # ./run check packs compares this contract with packctl's built manifest.
+  # Reading it here also keeps Terraform's lifecycle and exact-object IAM grant
+  # from drifting from each other.
+  pack_registry_mutable_pointers = jsondecode(file("${path.module}/pack_registry_mutable_pointers.json"))
+}
+
 resource "google_storage_bucket" "pack_registry" {
   depends_on = [google_project_service.apis]
 
@@ -16,11 +23,11 @@ resource "google_storage_bucket" "pack_registry" {
 
   # Versioning exists so the mutable pointers can be rolled back, but nothing
   # pruned the noncurrent generations they leave behind — every publish added
-  # one, forever. Bound only the two pointers; the immutable content-addressed
+  # one, forever. Bound only the live pointers; the immutable content-addressed
   # prefixes are never overwritten and have no noncurrent versions to collect.
   lifecycle_rule {
     condition {
-      matches_prefix     = ["v1/catalog.json", "v1/suggest.json"]
+      matches_prefix     = local.pack_registry_mutable_pointers
       num_newer_versions = 10
     }
     action {
@@ -101,10 +108,9 @@ resource "google_storage_bucket_iam_member" "pack_registry_publisher" {
 
   condition {
     title       = "replace-live-registry-pointers"
-    description = "Replace or delete only the two live registry pointers; all other published objects are create-only."
-    expression = join(" || ", [
-      "resource.name == 'projects/_/buckets/${google_storage_bucket.pack_registry.name}/objects/v1/catalog.json'",
-      "resource.name == 'projects/_/buckets/${google_storage_bucket.pack_registry.name}/objects/v1/suggest.json'",
+    description = "Replace or delete only the four live registry pointers; all other published objects are create-only."
+    expression = join(" || ", [for object in local.pack_registry_mutable_pointers :
+      "resource.name == 'projects/_/buckets/${google_storage_bucket.pack_registry.name}/objects/${object}'"
     ])
   }
 }
@@ -191,11 +197,11 @@ resource "google_compute_backend_bucket" "pack_registry" {
   # (runner/internal/catalog/publish.go): the immutable, content-addressed
   # objects — v1/packs/**, the v1/catalog/<hash>.json snapshots, and the
   # versioned v1/schemas/** — carry `public, max-age=31536000, immutable` and
-  # cache at the edge; the two live pointers (v1/catalog.json, v1/suggest.json)
-  # carry `no-store` and are never edge-cached, so a fresh publish is visible
-  # immediately. USE_ORIGIN_HEADERS is what makes that split hold — the edge
-  # caches strictly per object, never a blanket default_ttl that would pin the
-  # mutable pack or release pointers.
+  # cache at the edge; the four live pointers in
+  # pack_registry_mutable_pointers.json carry `no-store` and are never
+  # edge-cached, so a fresh publish is visible immediately. USE_ORIGIN_HEADERS
+  # is what makes that split hold — the edge caches strictly per object, never a
+  # blanket default_ttl that would pin the mutable pack or release pointers.
   enable_cdn = true
   cdn_policy {
     cache_mode = "USE_ORIGIN_HEADERS"

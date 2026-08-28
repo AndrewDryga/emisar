@@ -502,6 +502,19 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
+	t.Run("pack registry IAM contract selects infra and pack validation", func(t *testing.T) {
+		writeFixture(t, root, "infra/pack_registry_mutable_pointers.json", "[]\n")
+		commitAll(t, root, "pack registry contract")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.Infra || !selection.Packs || selection.PacksRelease {
+			t.Fatalf("pack registry IAM contract selection = %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
 	t.Run("installer selects portal not infra", func(t *testing.T) {
 		writeFixture(t, root, "install.sh", "#!/bin/sh\n")
 		commitAll(t, root, "installer")

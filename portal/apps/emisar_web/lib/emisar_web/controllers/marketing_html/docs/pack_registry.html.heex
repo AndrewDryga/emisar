@@ -99,29 +99,37 @@ cd emisar-src/runner && go build -o ~/.local/bin/packctl ./cmd/packctl</.docs_co
   --base-url https://packs.acme.internal</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The output is the whole registry: immutable versioned and content-addressed
-        artifacts, plus two mutable pointers:
+        artifacts, plus four mutable pointer objects. The facade aliases let the
+        runner's name-based commands use a static host:
       </p>
       <.docs_code phx-no-format>v1/catalog.json                                  latest catalog (mutable pointer)
 v1/catalog/&lt;sha256&gt;.json                         immutable catalog snapshot
 v1/suggest.json                                  lean suggest index (mutable pointer)
+packs.json                                       catalog facade alias (mutable pointer)
+packs/suggest.json                               suggest facade alias (mutable pointer)
 v1/schemas/*.vN.schema.json                      immutable versioned schemas
 v1/packs/&lt;id&gt;/&lt;version&gt;/&lt;sha256&gt;/pack.tar.gz     immutable pack tarball</.docs_code>
 
       <.docs_h2 id="host">3. Host it anywhere</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code>packctl</code> can publish directly to GCS. It protects immutable objects with
-        upload preconditions, so existing objects are never overwritten, and it updates the
-        two mutable pointers last:
+        upload preconditions, so existing objects are never overwritten. It updates the four
+        mutable objects afterward and writes <code>v1/catalog.json</code> last:
       </p>
       <.docs_code phx-no-format label="shell">GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token) \
   packctl catalog publish --dir ./dist --bucket acme-pack-registry</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         For S3, MinIO, nginx, or another static host, sync the plain file tree with your
-        preferred tool. Upload immutable objects first, then the two mutable pointers:
+        preferred tool. Keep the upload plan private, upload immutable objects first, and
+        write <code>v1/catalog.json</code> last:
       </p>
       <.docs_code phx-no-format label="shell">aws s3 sync ./dist s3://acme-pack-registry \
-  --exclude "v1/catalog.json" --exclude "v1/suggest.json"
+  --exclude "manifest.json" \
+  --exclude "v1/catalog.json" --exclude "v1/suggest.json" \
+  --exclude "packs.json" --exclude "packs/suggest.json"
 aws s3 cp ./dist/v1/suggest.json s3://acme-pack-registry/v1/suggest.json
+aws s3 cp ./dist/packs.json s3://acme-pack-registry/packs.json
+aws s3 cp ./dist/packs/suggest.json s3://acme-pack-registry/packs/suggest.json
 aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</.docs_code>
 
       <.docs_h2 id="install">4. Install fleet-wide</.docs_h2>

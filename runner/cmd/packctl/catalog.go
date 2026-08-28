@@ -68,6 +68,8 @@ publishable artifact tree to --out:
   v1/catalog.json                                  latest catalog (mutable pointer)
   v1/catalog/<sha256>.json                         immutable catalog snapshot
   v1/suggest.json                                  lean suggest index (mutable pointer)
+  packs.json                                       catalog facade alias (mutable pointer)
+  packs/suggest.json                               suggest facade alias (mutable pointer)
   v1/schemas/*.vN.schema.json                      immutable versioned schemas
   v1/packs/<id>/<version>/<sha256>/pack.tar.gz     immutable pack tarball
   manifest.json                                    upload plan (not published)
@@ -139,13 +141,15 @@ func packCatalogPublishCmd() *cobra.Command {
 public one or your own. Immutable objects (tarballs, catalog snapshots,
 schemas) are uploaded with an if-generation-match:0 precondition, so an
 existing object is never overwritten — a precondition failure means the
-identical bytes are already published and the object is skipped. The mutable
-pointers (catalog.json, suggest.json) are overwritten; enable object
-versioning on the bucket to retain every prior generation.
+identical bytes are already published and the object is skipped. The four
+mutable pointer objects (the catalog and suggest documents at their versioned
+and facade paths) are overwritten; enable object versioning on the bucket to
+retain prior generations.
 
-Hosting somewhere else (S3, MinIO, plain nginx)? Skip 'publish' and sync the
-built --out tree there with any tool — it is plain static files; just upload
-immutable objects before the two mutable pointers.
+Hosting somewhere else (S3, MinIO, plain nginx)? Skip 'publish' and upload the
+objects listed in manifest.json with any tool. Upload immutable objects before
+the four mutable pointers, keep v1/catalog.json last, and do not publish the
+manifest itself.
 
 Authentication uses an OAuth2 access token from GOOGLE_OAUTH_ACCESS_TOKEN
 (in CI from Workload Identity; locally 'gcloud auth print-access-token').

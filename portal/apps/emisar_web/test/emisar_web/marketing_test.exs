@@ -1628,6 +1628,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "--base-url"
       assert html =~ "--previous"
       assert html =~ "/v1/packs/"
+      assert html =~ "packs/suggest.json"
+      assert html =~ ~s(--exclude "packs.json")
       assert html =~ "--hash sha256:"
       assert html =~ "aws s3 sync"
 
