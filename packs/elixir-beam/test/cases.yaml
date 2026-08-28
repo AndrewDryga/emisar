@@ -6,3 +6,8 @@ risk_accountability:
   mode: complete
   exceptions:
     beam.recon_trace_calls: requires_privileged_host
+redaction_accountability:
+  exceptions:
+    # Tracing a live BEAM node's calls — the same limit its risk exception
+    # records, and the terms it masks only appear in a real trace.
+    beam.recon_trace_calls: requires_privileged_host

@@ -9,3 +9,9 @@ risk_accountability:
     wg.quick_down: requires_privileged_host
     wg.quick_up: requires_privileged_host
     wg.set_peer_remove: requires_privileged_host
+redaction_accountability:
+  exceptions:
+    # showconf needs a real interface up, which needs the kernel module this
+    # workstation does not carry — the same limit the risk exceptions record.
+    # The rule matters: the defaults catch PrivateKey and NOT PresharedKey.
+    wg.showconf: requires_privileged_host

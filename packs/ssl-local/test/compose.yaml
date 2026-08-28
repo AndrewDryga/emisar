@@ -1,0 +1,52 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/ssl-local/test
+      dockerfile: Dockerfile
+      args:
+        PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+    image: emisar-packtest-ssl-local-tools:latest
+    volumes:
+      - ssl-material:/etc/ssl/packtest:ro
+    depends_on:
+      ssl-material:
+        condition: service_healthy
+
+  # Mints the material into a volume both containers share, then stays up so
+  # the harness can wait on it like any other SUT — a one-shot service would
+  # exit, and `services:` waits for HEALTHY, not for completion. The healthcheck
+  # is the generated bundle existing, so no case can read a half-written file.
+  ssl-material:
+    image: debian:${PACKTEST_VERSION:-13-slim}${PACKTEST_DIGEST-}
+    volumes:
+      - ssl-material:/out
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        apt-get update >/dev/null 2>&1
+        apt-get install -y --no-install-recommends openssl >/dev/null 2>&1
+        cd /out
+        openssl req -x509 -newkey rsa:2048 -nodes -keyout ca.key -out ca.crt \
+          -days 3650 -subj "/CN=packtest-ca" >/dev/null 2>&1
+        openssl req -newkey rsa:2048 -nodes -keyout leaf.key -out leaf.csr \
+          -subj "/CN=packtest.invalid" >/dev/null 2>&1
+        openssl x509 -req -in leaf.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+          -out leaf.crt -days 365 >/dev/null 2>&1
+        # A combined PEM holding the leaf certificate AND its private key. This
+        # is the shape the redaction rule exists for — an operator reading a
+        # bundle must not get the key back through the model.
+        cat leaf.crt leaf.key >combined.pem
+        openssl pkcs12 -export -inkey leaf.key -in leaf.crt -out leaf.p12 \
+          -passout pass:packtest-p12-pass >/dev/null 2>&1
+        chmod 0644 ca.crt ca.key leaf.crt leaf.key combined.pem leaf.p12
+        exec sleep infinity
+    healthcheck:
+      test: [CMD-SHELL, "test -s /out/combined.pem && test -s /out/leaf.p12"]
+      interval: 2s
+      start_period: 60s
+      start_interval: 1s
+      retries: 20
+
+volumes:
+  ssl-material:

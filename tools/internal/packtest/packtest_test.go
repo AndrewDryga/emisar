@@ -828,3 +828,61 @@ func TestResolveArgsRejectsTypesTheRuntimeCannotProduce(t *testing.T) {
 		t.Errorf("the error does not name the resolvable types: %v", err)
 	}
 }
+
+// The gate validated that a redaction rule COMPILED and never that it matched —
+// which is how redis.acl_getuser shipped, at risk low, with a rule that could
+// not fire. An action declaring one now needs a case or a written reason.
+func TestRedactionAccountability(t *testing.T) {
+	redacting := actionDefinition{ID: "example.read", Risk: "low"}
+	redacting.Output.Redact = []struct {
+		Name string `yaml:"name"`
+	}{{Name: "example-secret"}}
+	actions := map[string]actionDefinition{
+		"example.read":  redacting,
+		"example.plain": {ID: "example.plain", Risk: "low"},
+	}
+
+	err := validateRedactionAccountability(RedactionExceptions{}, actions, map[string]bool{})
+	if err == nil || !strings.Contains(err.Error(), "nothing proving it fires") {
+		t.Fatalf("an unproven redaction rule was accepted: %v", err)
+	}
+
+	if err := validateRedactionAccountability(RedactionExceptions{}, actions,
+		map[string]bool{"example.read": true}); err != nil {
+		t.Errorf("a proven rule was rejected: %v", err)
+	}
+
+	except := func(reason string) RedactionExceptions {
+		return RedactionExceptions{Exceptions: map[string]string{"example.read": reason}}
+	}
+	if err := validateRedactionAccountability(except("unreachable_by_construction"), actions,
+		map[string]bool{}); err != nil {
+		t.Errorf("a reasoned exception was rejected: %v", err)
+	}
+
+	for name, tc := range map[string]struct {
+		exceptions RedactionExceptions
+		successful map[string]bool
+		want       string
+	}{
+		"an unknown reason": {except("because"), map[string]bool{}, "unknown reason"},
+		"an action that declares no rule": {
+			RedactionExceptions{Exceptions: map[string]string{"example.plain": "requires_hardware"}},
+			map[string]bool{}, "declares no redaction rule"},
+		"an action that does not exist": {
+			RedactionExceptions{Exceptions: map[string]string{"example.gone": "requires_hardware"}},
+			map[string]bool{}, "does not exist"},
+		// A stale exception beside a real case reads as "still unproven", which
+		// is the shape that let the risk exceptions rot.
+		"an exception the case already covers": {
+			except("requires_hardware"), map[string]bool{"example.read": true},
+			"already has a successful behavior case"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := validateRedactionAccountability(tc.exceptions, actions, tc.successful)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}

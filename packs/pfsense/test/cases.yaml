@@ -32,6 +32,12 @@ risk_accountability:
 # field, so it cannot be emitted; these cases prove that against a body which
 # actually carries one. The canary is what must not appear — asserting the safe
 # fields alone would pass even if the secret leaked alongside them.
+redaction_accountability:
+  exceptions:
+    # Both read a pfSense appliance's configuration. The fixture is a recorded
+    # shape, not a firewall that can hold an interface or CARP password.
+    pfsense.interface_config: requires_external_service
+    pfsense.virtual_ips: requires_external_service
 cases:
   - action: pfsense.certificates
     expect:

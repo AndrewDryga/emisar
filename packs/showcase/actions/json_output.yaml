@@ -58,6 +58,11 @@ output:
   max_stdout_bytes: 4096
   max_stderr_bytes: 1024
   redact:
+    # Measured by removing this rule and re-running the behavior case: it
+    # still passed, because the runner's DEFAULT rules already mask any value
+    # under a `*_token` JSON key. This one narrows the mask to the sk_live
+    # shape wherever it appears, and — being the reference pack — shows an
+    # author what an action-local rule looks like.
     - name: sk_live_token
       type: regex
       pattern: 'sk_live_[A-Za-z0-9]+'

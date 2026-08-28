@@ -1,0 +1,18 @@
+services:
+  runner-tools:
+    depends_on:
+      showcase-target:
+        condition: service_healthy
+
+  # showcase's actions are `echo` and a small script — they need no service at
+  # all. This exists only because a plan with cases needs somewhere to run, and
+  # the reference pack's redaction rule is a feature it must be seen doing.
+  showcase-target:
+    image: debian:${PACKTEST_VERSION:-13-slim}${PACKTEST_DIGEST-}
+    command: [sleep, infinity]
+    healthcheck:
+      test: [CMD, "true"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10

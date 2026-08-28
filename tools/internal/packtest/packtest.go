@@ -82,17 +82,26 @@ type RiskAccountability struct {
 	Exceptions map[string]string `yaml:"exceptions,omitempty"`
 }
 
+// RedactionExceptions records why an action that declares a redaction rule has
+// no behavior case exercising it. Declaring a rule only proves it COMPILES —
+// which is exactly how redis.acl_getuser shipped a rule that could not fire,
+// at risk low, for weeks. An action without a case now needs a written reason.
+type RedactionExceptions struct {
+	Exceptions map[string]string `yaml:"exceptions,omitempty"`
+}
+
 type Plan struct {
-	Services           []string           `yaml:"services"`
-	Versions           []Version          `yaml:"versions"`
-	Runner             Runner             `yaml:"runner,omitempty"`
-	RiskAccountability RiskAccountability `yaml:"risk_accountability,omitempty"`
-	SecretEnv          []string           `yaml:"secret_env,omitempty"`
-	Env                map[string]string  `yaml:"env,omitempty"`
-	Defaults           Defaults           `yaml:"defaults,omitempty"`
-	Shards             int                `yaml:"shards,omitempty"`
-	Workers            int                `yaml:"workers,omitempty"`
-	Cases              []Case             `yaml:"cases"`
+	Services                []string            `yaml:"services"`
+	Versions                []Version           `yaml:"versions"`
+	Runner                  Runner              `yaml:"runner,omitempty"`
+	RiskAccountability      RiskAccountability  `yaml:"risk_accountability,omitempty"`
+	RedactionAccountability RedactionExceptions `yaml:"redaction_accountability,omitempty"`
+	SecretEnv               []string            `yaml:"secret_env,omitempty"`
+	Env                     map[string]string   `yaml:"env,omitempty"`
+	Defaults                Defaults            `yaml:"defaults,omitempty"`
+	Shards                  int                 `yaml:"shards,omitempty"`
+	Workers                 int                 `yaml:"workers,omitempty"`
+	Cases                   []Case              `yaml:"cases"`
 }
 
 // DeclarationOnly reports whether this plan exists solely to record risk
@@ -167,8 +176,13 @@ type actionDefinition struct {
 	Args        []actionArgument `yaml:"args"`
 	Output      struct {
 		Parser string `yaml:"parser"`
+		Redact []struct {
+			Name string `yaml:"name"`
+		} `yaml:"redact"`
 	} `yaml:"output"`
 }
+
+func (a actionDefinition) redacts() bool { return len(a.Output.Redact) > 0 }
 
 type commandResult struct {
 	exitCode int
@@ -675,7 +689,10 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 	// backwards — and demanding them is why 78 risky actions across 22 packs
 	// were silently uncovered instead of declared.
 	if plan.DeclarationOnly() {
-		return validateRiskAccountability(plan.RiskAccountability, actions, map[string]bool{})
+		if err := validateRiskAccountability(plan.RiskAccountability, actions, map[string]bool{}); err != nil {
+			return err
+		}
+		return validateRedactionAccountability(plan.RedactionAccountability, actions, map[string]bool{})
 	}
 	if err := validateVersions(plan.Versions); err != nil {
 		return err
@@ -779,7 +796,10 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 			return fmt.Errorf("%s cumulative action %q needs arrange state in its isolated case", location, test.Action)
 		}
 	}
-	return validateRiskAccountability(plan.RiskAccountability, actions, successfulActions)
+	if err := validateRiskAccountability(plan.RiskAccountability, actions, successfulActions); err != nil {
+		return err
+	}
+	return validateRedactionAccountability(plan.RedactionAccountability, actions, successfulActions)
 }
 
 func actionNeedsArrangedState(action string) bool {
@@ -898,6 +918,20 @@ var (
 	ipv4Pattern    = regexp.MustCompile(`(?:[0-9]{1,3}\.){3}[0-9]{1,3}`)
 )
 
+// Why an action that declares redaction can have no case proving it fires.
+// `unreachable_by_construction` is the honest answer when the COMMAND is the
+// boundary — `openssl x509 -text -noout` cannot print a private key however
+// adversarial its input, so the rule is a backstop against a future edit that
+// drops the flag, not the thing doing the work today. The other three mirror
+// the risk vocabulary: no SUT can produce the secret to mask.
+var redactionExceptionReasons = map[string]bool{
+	"unreachable_by_construction": true,
+	"requires_dynamic_fixture":    true,
+	"requires_external_service":   true,
+	"requires_hardware":           true,
+	"requires_privileged_host":    true,
+}
+
 var riskExceptionReasons = map[string]bool{
 	"requires_cluster":            true,
 	"requires_concurrent_session": true,
@@ -999,6 +1033,35 @@ func validateRiskAccountability(accountability RiskAccountability, actions map[s
 	for id, action := range actions {
 		if action.risky() && !successful[id] && accountability.Exceptions[id] == "" {
 			return fmt.Errorf("high/critical action %q needs a successful behavior case or risk exception", id)
+		}
+	}
+	return nil
+}
+
+// validateRedactionAccountability closes F-5's root cause: the gate validated
+// that a redaction rule compiled and never that it MATCHED. Every action
+// declaring one now needs a successful behavior case or a written reason.
+func validateRedactionAccountability(accountability RedactionExceptions, actions map[string]actionDefinition, successful map[string]bool) error {
+	for id, reason := range accountability.Exceptions {
+		action, ok := actions[id]
+		if !ok {
+			return fmt.Errorf("redaction exception action %q does not exist", id)
+		}
+		if !action.redacts() {
+			return fmt.Errorf("redaction exception action %q declares no redaction rule", id)
+		}
+		if successful[id] {
+			return fmt.Errorf("redaction exception action %q already has a successful behavior case", id)
+		}
+		if !redactionExceptionReasons[reason] {
+			return fmt.Errorf("redaction exception action %q has unknown reason %q", id, reason)
+		}
+	}
+	for id, action := range actions {
+		if action.redacts() && !successful[id] && accountability.Exceptions[id] == "" {
+			return fmt.Errorf("action %q declares a redaction rule with nothing proving it fires: "+
+				"add a behavior case asserting the placeholder AND the secret's absence, or a "+
+				"redaction_accountability exception saying why one cannot exist", id)
 		}
 	}
 	return nil

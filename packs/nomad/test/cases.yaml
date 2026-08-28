@@ -30,6 +30,12 @@ env:
   # Mirrors the PACKTEST_DB_PASSWORD literal in test/fixtures/inspect.nomad.hcl —
   # declaring it here makes the harness fail any surface that leaks it unredacted.
   NOMAD_PACKTEST_CANARY: packtest-canary-nomad-e57d31
+redaction_accountability:
+  exceptions:
+    # The SUT runs with ACLs off, so `acl token self` has no token to print.
+    # Turning ACLs on means bootstrapping one and threading NOMAD_TOKEN through
+    # every other case here — a fixture change, not a missing assertion.
+    nomad.acl_token_self: requires_dynamic_fixture
 cases:
   - action: nomad.agent_info
     expect:

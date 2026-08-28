@@ -1,0 +1,20 @@
+# showcase is the synthetic reference pack — it exists so a pack author can see
+# every schema feature working. Its redaction rule is one of those features, so
+# it has to be DEMONSTRABLY working rather than merely present: the action
+# echoes a fake sk_live token, and the case asserts the placeholder is there and
+# the token's own bytes are not.
+services: [showcase-target]
+versions:
+  - version: "13-slim"
+    digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
+    default: true
+defaults:
+  expect:
+    stdout_not_empty: true
+cases:
+  - name: showcase.json-output-redacts-the-demonstration-token
+    action: showcase.json_output
+    args: {name: packtest}
+    expect:
+      stdout_contains: ["[REDACTED]", packtest, '"status"']
+      stdout_not_contains: ["sk_live_abcd1234"]

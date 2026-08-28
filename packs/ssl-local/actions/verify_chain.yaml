@@ -49,6 +49,11 @@ output:
   max_stdout_bytes: 4096
   max_stderr_bytes: 8192
   redact:
+    # BACKSTOP, not the active defence. Measured by removing this rule and
+    # re-running the behavior case: it still passed, because `-noout`/`-nokeys`
+    # means openssl never prints a PEM private key however adversarial the
+    # input. The rule earns its place against a future edit that drops that
+    # flag — it does fire when a key block really is in the output.
     - name: private-key-pem
       type: regex
       pattern: '(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----'

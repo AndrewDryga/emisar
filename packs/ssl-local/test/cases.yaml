@@ -1,0 +1,67 @@
+# Every action here declares a `private-key-pem` redaction rule, and until now
+# nothing proved any of them MATCHED — the pack had no cases.yaml at all. The
+# gate validates that a rule compiles, which is exactly how redis.acl_getuser
+# shipped a rule that could not fire.
+#
+# The fixture mints a real CA, leaf, and PKCS#12 bundle, plus a combined.pem
+# holding the leaf certificate AND its private key. That combined file is the
+# shape the rule exists for: an operator reading a bundle must not get the key
+# back through the model. Each case asserts the placeholder is present AND the
+# key's own bytes are gone.
+services: [ssl-material]
+versions:
+  - version: "13-slim"
+    digest: "@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd"
+    default: true
+env:
+  PK12_PASSWORD: packtest-p12-pass
+defaults:
+  expect:
+    stdout_not_empty: true
+cases:
+  # The load-bearing case: a file that really does carry a PRIVATE KEY block.
+  - name: ssl.cert-text-masks-a-key-in-a-combined-bundle
+    action: ssl.cert_text
+    args: {path: /etc/ssl/packtest/combined.pem}
+    expect:
+      stdout_contains: ["packtest.invalid", "Signature Algorithm"]
+      stdout_not_contains: ["-----BEGIN PRIVATE KEY-----", "-----BEGIN RSA PRIVATE KEY-----"]
+
+  - action: ssl.cert_expiry
+    args: {path: /etc/ssl/packtest/leaf.crt}
+    expect:
+      stdout_contains: ["packtest.invalid", "notAfter"]
+      stdout_not_contains: ["-----BEGIN PRIVATE KEY-----"]
+
+  - action: ssl.cert_fingerprint
+    args: {path: /etc/ssl/packtest/leaf.crt}
+    expect:
+      stdout_contains: ["Fingerprint"]
+      stdout_not_contains: ["-----BEGIN PRIVATE KEY-----"]
+
+  - action: ssl.find_certs
+    args: {path: /etc/ssl/packtest}
+    expect:
+      stdout_contains: ["leaf.crt", "ca.crt"]
+      stdout_not_contains: ["-----BEGIN PRIVATE KEY-----"]
+
+  # key_modulus prints a SHA-256 OF the modulus on purpose — it exists to match
+  # a key to a certificate without printing the modulus itself. The assertion is
+  # that it is a bare digest and no PEM block came with it.
+  - action: ssl.key_modulus
+    args: {path: /etc/ssl/packtest/leaf.key}
+    expect:
+      stdout_contains: ["  -"]
+      stdout_not_contains: ["-----BEGIN PRIVATE KEY-----", "-----BEGIN RSA PRIVATE KEY-----"]
+
+  - action: ssl.verify_chain
+    args: {cert: /etc/ssl/packtest/leaf.crt, ca_bundle: /etc/ssl/packtest/ca.crt}
+    expect:
+      stdout_contains: ["OK"]
+      stdout_not_contains: ["-----BEGIN PRIVATE KEY-----"]
+
+  - action: ssl.pkcs12_info
+    args: {path: /etc/ssl/packtest/leaf.p12}
+    expect:
+      stdout_contains: ["Bag Attributes"]
+      stdout_not_contains: ["-----BEGIN PRIVATE KEY-----", "-----BEGIN ENCRYPTED PRIVATE KEY-----"]

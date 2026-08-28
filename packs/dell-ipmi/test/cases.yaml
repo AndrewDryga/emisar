@@ -20,6 +20,10 @@ defaults:
     stderr_not_contains: [packtest-canary-ipmi-password-1a74]
 # The versioned HTTP service only keeps the harness lifecycle realistic. The
 # mounted ipmitool spy proves wrapper argv and refusal order, not BMC behavior.
+redaction_accountability:
+  exceptions:
+    # lan_print reads a BMC's LAN channel, including its SNMP community.
+    ipmi.lan_print: requires_hardware
 cases:
   - name: ipmi.chassis_status-uses-allowed-host
     action: ipmi.chassis_status
