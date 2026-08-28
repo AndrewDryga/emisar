@@ -3026,8 +3026,6 @@ defmodule Emisar.Runs do
       exit_code: payload["exit_code"],
       duration_ms: payload["duration_ms"],
       timed_out: payload["timed_out"] || false,
-      emitted_stdout_sha256: payload["emitted_stdout_sha256"],
-      emitted_stderr_sha256: payload["emitted_stderr_sha256"],
       emitted_stdout_bytes: payload["emitted_stdout_bytes"],
       emitted_stderr_bytes: payload["emitted_stderr_bytes"],
       output_complete: output_complete?(current, payload),

@@ -2,10 +2,8 @@ package cloud
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -587,9 +585,8 @@ func TestClient_Result_OmitsStdoutStderrContent(t *testing.T) {
 	}
 	// Emitted-output metadata is present instead. It describes the runner's
 	// complete bounded stream; delivery completeness is a separate field.
-	if _, ok := res["emitted_stdout_sha256"]; !ok {
-		t.Fatalf("result should carry emitted_stdout_sha256: %s", raw)
-	}
+	// (The stream digests that used to ride here fed portal columns nothing
+	// read; the verifier was decided against and the fields dropped.)
 	if _, ok := res["emitted_stdout_bytes"]; !ok {
 		t.Fatalf("result should carry emitted_stdout_bytes: %s", raw)
 	}
@@ -618,10 +615,6 @@ func TestClient_EmittedMetadataCoversNormalizedRedactedChunks(t *testing.T) {
 		if progress["request_id"] == testRequestID("req_integrity") && progress["stream"] == "stdout" {
 			stdout += progress["chunk"].(string)
 		}
-	}
-	wantHash := sha256.Sum256([]byte(stdout))
-	if got := res["emitted_stdout_sha256"]; got != fmt.Sprintf("%x", wantHash) {
-		t.Fatalf("emitted_stdout_sha256=%v, want digest of emitted chunks %x", got, wantHash)
 	}
 	if got := res["emitted_stdout_bytes"]; got != float64(len(stdout)) {
 		t.Fatalf("emitted_stdout_bytes=%v, emitted chunk bytes=%d", got, len(stdout))

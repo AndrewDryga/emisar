@@ -168,9 +168,6 @@ func TestExecutor_StreamingChunks(t *testing.T) {
 	if res.StdoutBytes != 14 { // "one\n" + "two\n" + "three\n"
 		t.Fatalf("StdoutBytes = %d", res.StdoutBytes)
 	}
-	if res.StdoutSHA256 == "" {
-		t.Fatal("StdoutSHA256 should be set even when streaming")
-	}
 }
 
 func TestExecutor_GracefulCancelSIGTERMThenSIGKILL(t *testing.T) {

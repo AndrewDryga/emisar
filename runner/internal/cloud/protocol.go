@@ -436,8 +436,6 @@ type ActionResultMsg struct {
 	ExitCode              int             `json:"exit_code"`
 	DurationMS            int64           `json:"duration_ms"`
 	TimedOut              bool            `json:"timed_out,omitempty"`
-	EmittedStdoutSHA256   string          `json:"emitted_stdout_sha256,omitempty"`
-	EmittedStderrSHA256   string          `json:"emitted_stderr_sha256,omitempty"`
 	EmittedStdoutBytes    int             `json:"emitted_stdout_bytes"`
 	EmittedStderrBytes    int             `json:"emitted_stderr_bytes"`
 	ProgressChunks        int             `json:"progress_chunks"`

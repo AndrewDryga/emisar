@@ -919,8 +919,6 @@ func (c *Client) handleRun(ctx context.Context, s *runState, m RunActionMsg) {
 			ExitCode:                 res.ExitCode,
 			DurationMS:               res.DurationMS,
 			TimedOut:                 res.TimedOut,
-			EmittedStdoutSHA256:      res.StdoutSHA256,
-			EmittedStderrSHA256:      res.StderrSHA256,
 			EmittedStdoutBytes:       res.StdoutBytes,
 			EmittedStderrBytes:       res.StderrBytes,
 			ProgressChunks:           progressChunks,

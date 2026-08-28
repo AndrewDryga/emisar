@@ -17,7 +17,7 @@ defmodule Emisar.Runs.ActionRun.Changeset do
   @transition_fields ~w[
     runner_connection_generation queued_at sent_at started_at finished_at cancelled_at
     exit_code duration_ms timed_out
-    emitted_stdout_sha256 emitted_stderr_sha256 emitted_stdout_bytes emitted_stderr_bytes
+    emitted_stdout_bytes emitted_stderr_bytes
     output_complete stdout_truncated stderr_truncated event_id local_audit_failed reason_text error_message
     executed_command executed_command_truncated
     structured_output
@@ -211,8 +211,6 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     # so it never reached the socket's {:error, _} branch. The socket died, the
     # result stayed unacked, and the runner's dedup ring replayed it on every
     # reconnect: a permanent loop from one crafted result.
-    |> validate_length(:emitted_stdout_sha256, max: @max_db_string_length, count: :codepoints)
-    |> validate_length(:emitted_stderr_sha256, max: @max_db_string_length, count: :codepoints)
     |> validate_length(:event_id, max: @max_db_string_length, count: :codepoints)
     |> validate_structured_output()
     |> validate_number(:exit_code,

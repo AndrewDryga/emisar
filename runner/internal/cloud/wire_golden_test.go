@@ -40,6 +40,13 @@ var reviewedNonAdditiveChanges = map[string]bool{
 	// dispatch sets it; an un-upgraded runner finds no certificate and refuses
 	// that dispatch as signature_required rather than misreading one.
 	"attestation-cert-chain-x509": true,
+	// action_result.emitted_std{out,err}_sha256 fed two portal columns that
+	// nothing ever read; the verifier they were for was decided against
+	// (founder, 2026-08-28) and the columns are dropped. The host journal
+	// keeps its own digests of the redacted output — that record is the
+	// tamper-evidence story. Dropping fields the receiver no longer stores
+	// cannot be misread by an un-upgraded peer in either direction.
+	"action-result-drop-unverified-output-digests": true,
 	// heartbeat.time was runner-stamped decoration the portal never read: it
 	// stamps last_heartbeat_at server-side on receipt (the honest clock) and
 	// consumes action_load alone. Dropping an unread, runner-supplied field
@@ -271,8 +278,6 @@ func canonicalWireFrames() []wireFrameCase {
 					ExitCode:                 23,
 					DurationMS:               12875,
 					TimedOut:                 true,
-					EmittedStdoutSHA256:      repeated("c", 64),
-					EmittedStderrSHA256:      repeated("d", 64),
 					EmittedStdoutBytes:       4096,
 					EmittedStderrBytes:       512,
 					ProgressChunks:           9,

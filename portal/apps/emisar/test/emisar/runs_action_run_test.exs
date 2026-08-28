@@ -288,9 +288,7 @@ defmodule Emisar.Runs.ActionRunTest do
           error_message: "exit status 1",
           executed_command: "uptime -p",
           event_id: "evt_123",
-          local_audit_failed: true,
-          emitted_stdout_sha256: String.duplicate("a", 64),
-          emitted_stderr_sha256: String.duplicate("b", 64)
+          local_audit_failed: true
         })
 
       assert changeset.valid?
@@ -331,7 +329,7 @@ defmodule Emisar.Runs.ActionRunTest do
     end
 
     test "rejects oversized runner result string fields before the DB does" do
-      fields = [:reason_text, :event_id, :emitted_stdout_sha256, :emitted_stderr_sha256]
+      fields = [:reason_text, :event_id]
 
       for field <- fields do
         changeset =

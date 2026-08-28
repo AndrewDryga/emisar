@@ -3,11 +3,8 @@ package executor
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"os"
 	"os/exec"
@@ -223,8 +220,6 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 	res.Stderr = string(errResult.captured)
 	res.StdoutBytes = outResult.totalBytes
 	res.StderrBytes = errResult.totalBytes
-	res.StdoutSHA256 = outResult.sha256
-	res.StderrSHA256 = errResult.sha256
 	res.Truncated = Truncated{Stdout: outResult.truncated, Stderr: errResult.truncated}
 	res.DurationMS = elapsed.Milliseconds()
 	res.TimedOut = timedOut
@@ -310,7 +305,6 @@ func envKeys(env []string) []string {
 type streamResult struct {
 	captured   []byte
 	totalBytes int
-	sha256     string
 	truncated  bool
 }
 
@@ -331,7 +325,6 @@ const streamReaderBuf = 64 * 1024
 // emitting a huge newline-free blob can't force one unbounded allocation.
 func streamPipe(r io.Reader, limit int, stream Stream, onChunk func(Stream, []byte)) (streamResult, error) {
 	br := bufio.NewReaderSize(r, streamReaderBuf)
-	h := sha256.New()
 	var captured []byte
 	if onChunk == nil {
 		captured = make([]byte, 0, 4096)
@@ -349,7 +342,6 @@ func streamPipe(r io.Reader, limit int, stream Stream, onChunk func(Stream, []by
 			err = nil
 		}
 		if len(line) > 0 {
-			h.Write(line)
 			total += len(line)
 			remaining := limit - written
 			switch {
@@ -371,7 +363,6 @@ func streamPipe(r io.Reader, limit int, stream Stream, onChunk func(Stream, []by
 			return streamResult{
 				captured:   captured,
 				totalBytes: total,
-				sha256:     hashHex(h),
 				truncated:  truncated,
 			}, err
 		}
@@ -379,7 +370,6 @@ func streamPipe(r io.Reader, limit int, stream Stream, onChunk func(Stream, []by
 	return streamResult{
 		captured:   captured,
 		totalBytes: total,
-		sha256:     hashHex(h),
 		truncated:  truncated,
 	}, nil
 }
@@ -393,5 +383,3 @@ func ship(line []byte, stream Stream, onChunk func(Stream, []byte), captured *[]
 	}
 	*captured = append(*captured, line...)
 }
-
-func hashHex(h hash.Hash) string { return hex.EncodeToString(h.Sum(nil)) }

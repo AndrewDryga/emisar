@@ -28,8 +28,6 @@ type Result struct {
 	Stderr       string    `json:"stderr"`
 	StdoutBytes  int       `json:"stdout_bytes"`
 	StderrBytes  int       `json:"stderr_bytes"`
-	StdoutSHA256 string    `json:"stdout_sha256,omitempty"`
-	StderrSHA256 string    `json:"stderr_sha256,omitempty"`
 	ExitCode     int       `json:"exit_code"`
 	DurationMS   int64     `json:"duration_ms"`
 	TimedOut     bool      `json:"timed_out"`

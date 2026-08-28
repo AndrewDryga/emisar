@@ -22,8 +22,6 @@
       "exit_code": 23,
       "duration_ms": 12875,
       "timed_out": true,
-      "emitted_stdout_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "emitted_stderr_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "emitted_stdout_bytes": 4096,
       "emitted_stderr_bytes": 512,
       "progress_chunks": 9,
