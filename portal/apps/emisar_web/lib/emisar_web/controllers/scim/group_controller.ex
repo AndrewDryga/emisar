@@ -195,6 +195,8 @@ defmodule EmisarWeb.SCIM.GroupController do
 
   defp render_error(conn, :not_found), do: not_found(conn, nil)
 
+  defp render_error(conn, :directory_sync_disabled), do: Response.revoked(conn)
+
   defp render_error(conn, :unsupported_scim_patch), do: unsupported_patch(conn)
 
   defp render_error(conn, _reason),
