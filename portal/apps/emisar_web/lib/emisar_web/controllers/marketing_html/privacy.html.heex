@@ -108,6 +108,12 @@
       — error monitoring, hosted in the United States. Before transmission, we remove request
       bodies, parameters, user email and IP fields, and redact values under our secret-key list.
     </li>
+    <li>
+      <strong>X Corp</strong>
+      — advertising attribution for signups that arrive from an X ad. Server-side; we send
+      only the ad's own click identifier, the signup time, and an opaque one-way hash that
+      lets X discard duplicates. No name, email, account, or product activity.
+    </li>
   </ul>
   <p>
     We will update this list before adding new subprocessors. If you are on a paid

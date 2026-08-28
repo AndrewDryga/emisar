@@ -3167,6 +3167,10 @@ defmodule EmisarWeb.MarketingTest do
         assert html =~ "Mixpanel", "missing Mixpanel disclosure on #{route}"
         assert html =~ "Sentry", "missing Sentry disclosure on #{route}"
         assert html =~ "Paddle Retain", "missing Paddle Retain disclosure on #{route}"
+        # X receives a click id, a signup time, and a dedup hash whenever the ad
+        # conversion reporting is configured. It was on none of these three
+        # pages while the integration shipped and a campaign was queued.
+        assert html =~ "X Corp", "missing X Corp disclosure on #{route}"
       end
 
       privacy = conn |> get(~p"/privacy") |> html_response(200)

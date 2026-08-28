@@ -1,6 +1,13 @@
 defmodule EmisarWeb.Gettext do
   @moduledoc """
-  A module providing Internationalization with a gettext-based API.
+  Kept deliberately, with zero translations and one English catalog: this is
+  not idle scaffolding. `CoreComponents.translate_error/1` routes EVERY
+  changeset error through `dngettext`, so this layer does the `%{count}`
+  interpolation and plural selection for every form error in the product.
+  Removing it means hand-rolling both to drop a dependency Phoenix ships by
+  default.
+
+  Internationalization with a gettext-based API.
 
   By using [Gettext](https://hexdocs.pm/gettext), your module compiles translations
   that you can use in your application. To use this Gettext backend module,
