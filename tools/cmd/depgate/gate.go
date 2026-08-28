@@ -349,7 +349,16 @@ func evaluate(candidates []candidate, ages map[allowKey]time.Time, allowed map[a
 			continue
 		}
 		window := windows[kind]
-		pub := ages[key]
+		pub, dated := ages[key]
+		if !dated || pub.IsZero() {
+			// The caller already fails closed when it cannot fetch a publish
+			// date, so this cannot fire through `check`. It stays because a zero
+			// time here computes an age of two thousand years and PASSES: the
+			// policy engine has its own tests, and one that answers "old enough"
+			// for a date it never had is answering the wrong question.
+			out = append(out, violation{eco: c.eco, pkg: c.pkg, version: c.new, bump: kind, windowDays: window})
+			continue
+		}
 		ageDays := now.Sub(pub).Hours() / 24
 		if ageDays < float64(window) {
 			out = append(out, violation{

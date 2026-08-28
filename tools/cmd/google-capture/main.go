@@ -6,19 +6,19 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/chromedp/cdproto/network"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/chromedp/cdproto/network"
 
 	"github.com/andrewdryga/emisar/tools/internal/idpcapture"
 	"github.com/chromedp/cdproto/emulation"
@@ -92,27 +92,10 @@ func fail(err error) {
 	os.Exit(1)
 }
 
+// readEnv loads this rig's credentials, letting the process environment win
+// for its per-run keys. The parser is shared so the four rigs cannot drift.
 func readEnv(path string) (map[string]string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	env := map[string]string{}
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		if !found {
-			return nil, fmt.Errorf("invalid env line")
-		}
-		env[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(value), `'"`)
-	}
-	return env, scanner.Err()
+	return capturekit.ReadEnv(path)
 }
 
 func run(env map[string]string, outDir string, headless, cleanupOnly bool, freshProject string, listProjects, acceptCloudTOS bool, project, deleteProjects, certifyRedirect, certifyCredentials, certifyLogin string) error {

@@ -32,7 +32,7 @@ page it links to.
   current="integrations-okta"
   updated="July 31, 2026"
   evidence="Verified against a live Okta Integrator org on July 27, 2026."
-  source_path="…/docs_sso_okta.html.heex"
+  source_path="…/docs/integrations/okta.html.heex"
 >
 ```
 
@@ -41,7 +41,7 @@ page it links to.
   current="integrations-keycloak"
   updated="July 31, 2026"
   evidence="Guide reviewed July 31, 2026."
-  source_path="…/docs_sso_keycloak.html.heex"
+  source_path="…/docs/integrations/keycloak.html.heex"
 >
 ```
 
@@ -64,7 +64,8 @@ footer only claims a review.
 
 `portal/apps/emisar_web/test/emisar_web/marketing_test.exs` maps each provider
 route to its exact evidence sentence, so a reworded or re-dated footer fails the
-suite. Sweep target when a claim changes: the five provider pages
-(`docs_sso_okta`, `docs_sso_jumpcloud`, `docs_sso_entra`,
-`docs_sso_google_workspace`, `docs_sso_keycloak` `.html.heex`), the provider
-guides list in `docs_sso.html.heex`, and that route map in `marketing_test.exs`.
+suite. Sweep target when a claim changes: the five provider guides under
+`controllers/marketing_html/docs/integrations/` (`okta`, `jumpcloud`, `entra`,
+`google_workspace`, `keycloak` `.html.heex`), served at `/docs/integrations/*`;
+the guides list in `docs/sso.html.heex`; and that route map in
+`marketing_test.exs`.

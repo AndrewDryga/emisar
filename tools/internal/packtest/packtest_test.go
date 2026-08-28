@@ -786,3 +786,45 @@ func TestEventsPathComesFromTheHarnessConfig(t *testing.T) {
 		t.Errorf("a config with no journal path must fail, got %v", err)
 	}
 }
+
+// resolveArgument reads one line of stdout, so only an integer or a string can
+// come out of it. Authoring checked existence alone, so every other type passed
+// validation and failed after the SUT had booted.
+func TestResolveArgsRejectsTypesTheRuntimeCannotProduce(t *testing.T) {
+	actions := map[string]actionDefinition{
+		"example.read": {
+			ID:   "example.read",
+			Risk: "low",
+			Args: []actionArgument{
+				{Name: "count", Type: "integer"},
+				{Name: "name", Type: "string"},
+				{Name: "target", Type: "path"},
+			},
+		},
+	}
+	plan := func(argument string) Plan {
+		return Plan{
+			Services: []string{"sut"},
+			Versions: testVersions(),
+			Cases: []Case{{
+				Action:      "example.read",
+				ResolveArgs: map[string]Step{argument: {Argv: []string{"echo", "1"}}},
+				Expect:      Expectation{StdoutContains: []string{"present"}},
+			}},
+		}
+	}
+
+	for _, argument := range []string{"count", "name"} {
+		if err := validatePlan("example", plan(argument), actions); err != nil {
+			t.Errorf("resolvable %s argument rejected: %v", argument, err)
+		}
+	}
+
+	err := validatePlan("example", plan("target"), actions)
+	if err == nil || !strings.Contains(err.Error(), "is a path argument") {
+		t.Fatalf("a path argument passed authoring: %v", err)
+	}
+	if !strings.Contains(err.Error(), "integer and string") {
+		t.Errorf("the error does not name the resolvable types: %v", err)
+	}
+}

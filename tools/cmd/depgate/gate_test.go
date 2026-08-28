@@ -197,3 +197,15 @@ func TestLoadAllowlist_RequiresAReasonAndAnUnexpiredDate(t *testing.T) {
 		t.Errorf("expired entry not reported: %v", expired)
 	}
 }
+
+// A zero publish date computes an age of two thousand years, so the window
+// check passed for a release whose date was never known.
+func TestEvaluateRejectsAnUndatedRelease(t *testing.T) {
+	now := time.Date(2026, 7, 12, 0, 0, 0, 0, time.UTC)
+	candidates := []candidate{{"hex", "mystery", "1.2.3", "1.2.4"}}
+
+	got := evaluate(candidates, map[allowKey]time.Time{}, map[allowKey]bool{}, now)
+	if len(got) != 1 || got[0].pkg != "mystery" {
+		t.Fatalf("an undated release was accepted: %v", got)
+	}
+}

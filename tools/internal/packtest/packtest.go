@@ -750,8 +750,18 @@ func validatePlan(pack string, plan Plan, actions map[string]actionDefinition) e
 			if _, exists := test.Args[name]; exists {
 				return fmt.Errorf("%s resolve_args.%s duplicates a static argument", location, name)
 			}
-			if action.argumentType(name) == "" {
+			argumentType := action.argumentType(name)
+			if argumentType == "" {
 				return fmt.Errorf("%s resolve_args.%s does not name an action argument", location, name)
+			}
+			// resolveArgument reads one line of stdout, so it can only produce an
+			// integer or a string. Checking existence alone let a path, boolean,
+			// object, array, regex, duration, or number argument pass authoring
+			// and fail at "argument type %q cannot be resolved dynamically" —
+			// after the SUT had booted and the case was already running.
+			if !resolvableArgumentTypes[argumentType] {
+				return fmt.Errorf("%s resolve_args.%s is a %s argument; only %s can be resolved from a command",
+					location, name, argumentType, strings.Join(sortedResolvableTypes(), " and "))
 			}
 			if !reflect.DeepEqual(resolver.Expect, Expectation{}) {
 				return fmt.Errorf("%s resolve_args.%s cannot declare expect", location, name)
@@ -1272,6 +1282,21 @@ func runCase(config Config, plan Plan, test Case, action actionDefinition, env [
 		return errors.New(strings.Join(failures, "\n"))
 	}
 	return nil
+}
+
+// The argument types resolveArgument can produce from one line of stdout. The
+// authoring check reads this set, so adding a case below without adding it here
+// keeps failing at run time — and removing one starts failing at authoring time,
+// which is where the pack author is.
+var resolvableArgumentTypes = map[string]bool{"integer": true, "string": true}
+
+func sortedResolvableTypes() []string {
+	types := make([]string, 0, len(resolvableArgumentTypes))
+	for name := range resolvableArgumentTypes {
+		types = append(types, name)
+	}
+	sort.Strings(types)
+	return types
 }
 
 func resolveArgument(step Step, baseEnv []string, argumentType string) (any, error) {

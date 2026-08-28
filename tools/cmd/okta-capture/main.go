@@ -13,14 +13,12 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/chromedp/cdproto/runtime"
 	"io"
 	"net/http"
 	"net/url"
@@ -28,6 +26,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/chromedp/cdproto/runtime"
 
 	"github.com/andrewdryga/emisar/tools/internal/idpcapture"
 	"github.com/chromedp/chromedp"
@@ -121,37 +121,10 @@ func fail(err error) {
 	os.Exit(1)
 }
 
+// readEnv loads this rig's credentials, letting the process environment win
+// for its per-run keys. The parser is shared so the four rigs cannot drift.
 func readEnv(path string) (map[string]string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	env := map[string]string{}
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		if !found {
-			continue
-		}
-		env[strings.TrimSpace(key)] = strings.TrimSpace(value)
-	}
-	// The tunnel URL and SCIM token are per-run inputs. Process values must win
-	// over the durable provider credentials file, just as they do in the
-	// JumpCloud rig.
-	for _, key := range []string{
-		"EMISAR_PUBLIC_URL", "EMISAR_SCIM_TOKEN", "EMISAR_DOCS_HOST", "OKTA_SCIM_APP_ID",
-		"OKTA_OIDC_APP_NAME",
-	} {
-		if value, present := os.LookupEnv(key); present {
-			env[key] = value
-		}
-	}
-	return env, scanner.Err()
+	return capture.ReadEnv(path, "EMISAR_PUBLIC_URL", "EMISAR_SCIM_TOKEN", "EMISAR_DOCS_HOST", "OKTA_SCIM_APP_ID", "OKTA_OIDC_APP_NAME")
 }
 
 // sessionToken trades username+password for a one-shot session token.
@@ -292,10 +265,10 @@ func auditTenant(ctx context.Context, env map[string]string, remove bool) error 
   // here — it pushes accounts to emisar, so nothing it does adds one back.
   //
   // Matching /emisar/ against an email therefore found no leftover of ours; it
-  // found andrew@emisar.dev, the tenant's only account and the one this rig
-  // signs in WITH. A cleanup run would have deactivated and deleted the admin
-  // that owns the tenant. Match only an address this rig demonstrably generates,
-  // and never the signed-in account, whatever it is called.
+  // found the tenant's only account, at our own domain, which is the one this
+  // rig signs in WITH. A cleanup run would have deactivated and deleted the
+  // admin that owns the tenant. Match only an address this rig demonstrably
+  // generates, and never the signed-in account, whatever it is called.
   const oursUser = u =>
     u.id !== (me && me.id) && /scim-probe|okta-capture-probe/i.test((u.profile && u.profile.email) || '');
 

@@ -10,7 +10,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,6 +22,8 @@ import (
 
 	"github.com/andrewdryga/emisar/tools/internal/idpcapture"
 	"github.com/chromedp/chromedp"
+
+	capturekit "github.com/andrewdryga/emisar/tools/internal/capture"
 )
 
 func main() {
@@ -60,31 +61,10 @@ func main() {
 	}
 }
 
+// readEnv loads this rig's credentials, letting the process environment win
+// for its per-run keys. The parser is shared so the four rigs cannot drift.
 func readEnv(path string) (map[string]string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	env := map[string]string{}
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if key, value, found := strings.Cut(line, "="); found {
-			env[strings.TrimSpace(key)] = strings.TrimSpace(value)
-		}
-	}
-	// The process environment wins. The tunnel URL and SCIM token change on every
-	// run — they belong to the moment, not in a credentials file that outlives it.
-	for _, key := range []string{"EMISAR_PUBLIC_URL", "EMISAR_SCIM_TOKEN", "EMISAR_DOCS_HOST"} {
-		if value := os.Getenv(key); value != "" {
-			env[key] = value
-		}
-	}
-	return env, scanner.Err()
+	return capturekit.ReadEnv(path, "EMISAR_PUBLIC_URL", "EMISAR_SCIM_TOKEN", "EMISAR_DOCS_HOST")
 }
 
 // focusField puts the cursor in a field so chromedp.KeyEvent types with real key
