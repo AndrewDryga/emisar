@@ -1365,8 +1365,14 @@ func (b *bridge) forwardRequestContext(
 			result, err = b.forwardAttempt(retry, meta)
 			if err == nil && (result.status >= 200 && result.status < 500) &&
 				result.status != http.StatusUnauthorized {
-				if recoveryErr := b.adoptRecoveryKey(recoveryKey); recoveryErr != nil {
-					return nil, localBridge(fmt.Errorf("persist recovered credential state: %w", recoveryErr))
+				// The portal already accepted this frame under the recovered key and
+				// dispatched it. Discarding that successful response over a failed
+				// persist would tell the model "could not be sent" and have it retry an
+				// action that is already running. The successor is usable in memory and
+				// the next process re-derives durable state, so a persist failure here
+				// is a stderr warning, not a request failure.
+				if adoptErr := b.adoptRecoveryKey(recoveryKey); adoptErr != nil {
+					b.diagnose("recovered the account credential but could not persist it (the request succeeded): %v", adoptErr)
 				}
 			}
 		}

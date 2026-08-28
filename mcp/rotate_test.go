@@ -866,6 +866,46 @@ func TestForward_ReadOnlyCredentialRetriesSuccessorAfterUnauthorized(t *testing.
 	}
 }
 
+// A persist failure while adopting the recovered key must not discard the
+// portal's already-dispatched response: the model would be told "could not be
+// sent" and retry an action that is already running.
+func TestForward_PersistFailureAfterRecoveryStillReturnsBody(t *testing.T) {
+	current := testAPIKey(44)
+	successor := testAPIKey(45)
+	store := newCredentialStoreAt(t.TempDir(), testEndpointOrigin, keyPrefix(current))
+	if err := store.persist(testCredentialState(current, successor)); err != nil {
+		t.Fatal(err)
+	}
+
+	b := newRotationTestBridge(store, current)
+	diagnostics := &bytes.Buffer{}
+	b.diagnostics = diagnostics
+	if readOnly, err := b.initializeCredentialState(); err != nil || readOnly {
+		t.Fatalf("initialize writable state: readOnly=%t err=%v", readOnly, err)
+	}
+	// Reads keep working so the recovery key is found; only the durable adoption
+	// write fails, mimicking a peer winning the persist race.
+	store.ops.write = func(*os.File, []byte) (int, error) { return 0, os.ErrPermission }
+
+	b.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Header.Get("Authorization") == "Bearer "+current {
+			return unauthorizedResponse(), nil
+		}
+		return jsonRPCResponse(""), nil
+	})}
+
+	body, err := b.forward([]byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+	if err != nil {
+		t.Fatalf("forward must return the dispatched response, not a bridge error: %v", err)
+	}
+	if !bytes.Contains(body, []byte(`"result"`)) {
+		t.Fatalf("forward returned %q, want the portal's successful response body", body)
+	}
+	if diagnostics.Len() == 0 {
+		t.Fatal("persist failure after a successful forward must be warned on stderr")
+	}
+}
+
 func TestForward_ReadOnlyCredentialDoesNotRaceVisiblePeerPromotion(t *testing.T) {
 	current := testAPIKey(40)
 	successor := testAPIKey(41)
