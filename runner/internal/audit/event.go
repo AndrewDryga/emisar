@@ -6,9 +6,9 @@
 package audit
 
 import (
+	"crypto/rand"
+	"math/big"
 	"time"
-
-	"github.com/oklog/ulid/v2"
 )
 
 // EventType is the set of event types written to the journal.
@@ -106,11 +106,51 @@ type Event struct {
 	Error      string             `json:"error,omitempty"`
 }
 
-// NewID returns a fresh prefixed ULID for the given prefix.
+// crockford is ULID's alphabet: base32 without I, L, O or U, so a
+// transcribed id cannot be confused with 1, 0 or V.
+const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+// NewID returns a fresh prefixed, lexicographically sortable id.
+//
+// This is ULID's layout — 48-bit big-endian millisecond timestamp then 80 bits
+// of randomness, Crockford base32, 26 characters — implemented here rather than
+// pulled from a dependency. It was the runner module's only use of
+// github.com/oklog/ulid/v2, for one expression, and this module is
+// CLIENT-SHIPPED: self-hosters build it and audit its go.sum, so a dependency
+// carried for one line is their supply-chain surface, not just ours.
+//
+// The layout is kept rather than simplified to random bytes: the sort order is
+// free here, and a journal id that sorts by creation time is worth having even
+// though nothing in the runner currently relies on it.
 func NewID(prefix string) string {
-	id := ulid.Make().String()
-	if prefix == "" {
-		return id
+	var raw [16]byte
+	millis := uint64(time.Now().UnixMilli())
+	raw[0] = byte(millis >> 40)
+	raw[1] = byte(millis >> 32)
+	raw[2] = byte(millis >> 24)
+	raw[3] = byte(millis >> 16)
+	raw[4] = byte(millis >> 8)
+	raw[5] = byte(millis)
+	// crypto/rand, not math/rand: these land in an append-only security
+	// journal, and a predictable suffix would let a forged line be addressed
+	// before it is written. Read never fails per its contract.
+	if _, err := rand.Read(raw[6:]); err != nil {
+		panic("audit: entropy source unavailable: " + err.Error())
 	}
-	return prefix + "_" + id
+
+	// 128 bits into 26 base32 characters: the first holds the top 2 bits, the
+	// remaining 25 take 5 each.
+	id := make([]byte, 26)
+	id[0] = crockford[(raw[0]&224)>>5]
+	bits := new(big.Int).SetBytes(raw[:])
+	mask := big.NewInt(31)
+	for i := 25; i >= 1; i-- {
+		id[i] = crockford[new(big.Int).And(bits, mask).Int64()]
+		bits.Rsh(bits, 5)
+	}
+
+	if prefix == "" {
+		return string(id)
+	}
+	return prefix + "_" + string(id)
 }
