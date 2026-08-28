@@ -153,7 +153,14 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 		return usageError{err}
 	})
 	root.PersistentFlags().StringVar(&flagConfig, "config", "", "path to config.yaml (default: $EMISAR_CONFIG, else /etc/emisar/config.yaml)")
-	root.PersistentFlags().StringSliceVar(&flagPacksDir, "packs-dir", nil, "extra pack search dirs (overrides config)")
+	// "extra ... dirs" was wrong twice: it REPLACES the configured list rather
+	// than extending it, and it is not only a search path — `pack install`
+	// writes into its first entry and `pack uninstall` does a recursive delete
+	// under it. A flag whose help says "search" while it names the delete
+	// target is the safer-sounding of the two spellings, and `--dest` already
+	// exists for the write path.
+	root.PersistentFlags().StringSliceVar(&flagPacksDir, "packs-dir", nil,
+		"pack dirs to use instead of the configured ones; also the install/uninstall target when --dest is absent")
 	root.PersistentFlags().BoolVar(&flagJSONOut, "json", false, "emit JSON output where applicable")
 
 	// --json is persistent so it can precede the subcommand, which means cobra

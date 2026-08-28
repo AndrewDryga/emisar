@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -385,7 +387,10 @@ func looksLikeLocalPath(arg string) bool {
 }
 
 func packUninstallCmd() *cobra.Command {
-	var dest string
+	var (
+		dest      string
+		assumeYes bool
+	)
 	cmd := &cobra.Command{
 		Use:     "uninstall <name>",
 		Aliases: []string{"remove", "rm", "delete"},
@@ -440,6 +445,17 @@ advertised catalog; without one, reload manually: systemctl reload emisar.
 				return fmt.Errorf("%s has no pack.yaml — refusing to delete (not a pack)", target)
 			}
 
+			// This recursively deletes a tree, and every sibling asks first:
+			// `pack install` demands --force merely to OVERWRITE, install.sh
+			// prompts before uninstalling, and `emisar-mcp disconnect` refuses
+			// without confirmation. Only this one — aliased rm, remove and
+			// delete — went straight to RemoveAll. Adding the friction is
+			// itself breaking for an unattended caller, which is exactly why it
+			// has to happen before these flags freeze.
+			if err := confirmRemoval(cmd, target, assumeYes); err != nil {
+				return err
+			}
+
 			if err := os.RemoveAll(target); err != nil {
 				return fmt.Errorf("remove %s: %w", target, err)
 			}
@@ -450,7 +466,53 @@ advertised catalog; without one, reload manually: systemctl reload emisar.
 		},
 	}
 	cmd.Flags().StringVar(&dest, "dest", "", "packs dir the pack lives in (default: config paths.packs[0])")
+	cmd.Flags().BoolVarP(&assumeYes, "yes", "y", false, "remove without confirmation")
 	return cmd
+}
+
+// confirmRemoval asks before a recursive delete, and REFUSES rather than hangs
+// when there is nothing to ask: a runner runs from scripts, systemd units and
+// CI far more often than from a terminal, and a prompt that blocks forever
+// there is worse than one that never appeared. Same shape install.sh already
+// uses — a caller without a controlling terminal is refused without --yes.
+func confirmRemoval(cmd *cobra.Command, target string, assumeYes bool) error {
+	if assumeYes {
+		return nil
+	}
+	unattended := fmt.Errorf(
+		"refusing to delete %s without confirmation; pass --yes to remove it unattended", target)
+
+	if !isTerminal(cmd.InOrStdin()) {
+		return usageError{unattended}
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Delete %s and everything under it? [y/N]: ", target)
+	answer, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+	// EOF is "the operator gave no answer", not a read failure — a closed or
+	// exhausted input must never be read as consent.
+	if err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("reading confirmation: %w", err)
+	}
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "y", "yes":
+		return nil
+	default:
+		return errors.New("aborted")
+	}
+}
+
+// isTerminal reports whether r is an operator at a keyboard, as opposed to a
+// pipe, a file, a unit, or a test buffer. Reading os.Stdin directly would have
+// been wrong twice: it ignores a caller that redirected the command's input,
+// and under `go test` the process still holds the terminal, so every test would
+// have taken the interactive path.
+func isTerminal(r io.Reader) bool {
+	file, ok := r.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 // safePackName reports whether name is a single path segment safe to

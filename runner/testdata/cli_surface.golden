@@ -23,7 +23,7 @@ emisar pack info
 emisar pack install --dest --force --hash --no-verify --registry
 emisar pack list
 emisar pack suggest --catalog --names-only --registry
-emisar pack uninstall --dest
+emisar pack uninstall --dest --yes
 emisar pack update --dry-run --registry
 emisar pack validate
 emisar pack verify --arg

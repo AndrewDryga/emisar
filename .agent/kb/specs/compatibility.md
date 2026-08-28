@@ -437,7 +437,7 @@ The runner's global flags are `--config`, `--json`, `--packs-dir`, and
 above is frozen with its command** — the list is deliberately not enumerated
 here, because an enumeration drifts silently as verbs gain flags and then reads
 as permission to rename the ones it forgot. `action run --arg/--reason/
---timeout/--stream`, `pack install --hash/--dest/--force`, `pack suggest
+--timeout/--stream`, `pack install --hash/--dest/--force`, `pack uninstall --dest/--yes`, `pack suggest
 --catalog/--names-only`, `pack update --dry-run`, `pack diff
 --to/--stat/--registry`, `pack verify --arg`, `audit verify --all`, `events
 tail --lines/-f`, `events grep --action/--type/--event-id/--request-id`, `state

@@ -461,7 +461,9 @@ func TestPackUninstall_RemovesAndReminds(t *testing.T) {
 
 	cmd := packUninstallCmd()
 	cmd.SilenceUsage, cmd.SilenceErrors = true, true
-	cmd.SetArgs([]string{"redis", "--dest", dest})
+	// --yes: uninstall confirms before deleting, and this test is not an
+	// operator at a keyboard.
+	cmd.SetArgs([]string{"redis", "--dest", dest, "--yes"})
 
 	var runErr error
 	out := captureStdout(t, func() { runErr = cmd.Execute() })
