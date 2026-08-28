@@ -439,11 +439,25 @@ func (a *App) portalGate(ctx context.Context) error {
 			return err
 		}
 	}
+	// Compile under MIX_ENV=test so test/support is in the compile path with
+	// --warnings-as-errors, exactly as CI (which sets MIX_ENV: test at the job
+	// level) does. The local env from a.up() carries no MIX_ENV, so this phase
+	// ran in :dev and skipped test/support entirely — a warning there passed a
+	// green local gate and failed the identical CI phase.
+	compileEnv := map[string]string{"MIX_ENV": "test"}
+	for k, v := range env {
+		compileEnv[k] = v
+	}
+	compileEnv["MIX_ENV"] = "test"
+	if err := a.gatePhase("portal compile", func() error {
+		return a.run(ctx, a.Portal, compileEnv, "mix", "compile", "--warnings-as-errors")
+	}); err != nil {
+		return err
+	}
 	for _, check := range []struct {
 		label string
 		args  []string
 	}{
-		{"portal compile", []string{"compile", "--warnings-as-errors"}},
 		{"portal Credo", []string{"credo"}},
 		{"portal dependency audit", []string{"deps.audit"}},
 		// A different class from deps.audit: only hex.audit reports a package the
@@ -610,9 +624,23 @@ func (a *App) packsGate(ctx context.Context) error {
 		if err := a.run(ctx, a.Portal, env, "mix", "deps.get", "--check-locked"); err != nil {
 			return err
 		}
-		if err := a.warmPortalTestDependencies(ctx, env); err != nil {
-			return err
-		}
+		return a.warmPortalTestDependencies(ctx, env)
+	}); err != nil {
+		return err
+	}
+	// The migration's ACCESS EXCLUSIVE DDL cancels a concurrent portal run's
+	// queries, and the lock dir is user-scoped so two checkouts share one
+	// database. Take the lock after the warm-up (which touches no database) and
+	// hold it across the migration and all three suites — the same window
+	// portalTests protects. Without it, `gate packs` and `gate portal` in two
+	// checkouts poisoned each other with query_canceled, and the failure named
+	// whichever tests happened to be running.
+	lock, err := a.portalTestLock(env)
+	if err != nil {
+		return err
+	}
+	defer releasePortalTestLock(lock)
+	if err := a.gatePhase("pack test database", func() error {
 		return a.ensurePortalTestDatabase(ctx, env)
 	}); err != nil {
 		return err

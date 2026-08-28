@@ -41,6 +41,28 @@ func (a *App) checkReleaseToolchainPins() error {
 				"what the release actually builds from", pin.arg, got, pin.want)
 		}
 	}
-	fmt.Fprintln(a.Out, "verified: the portal release image defaults to the .tool-versions toolchain")
+	// The ARG defaults only feed the release build if BUILDER_IMAGE's tag is
+	// interpolated FROM them. A hardcoded tag would pass the checks above while
+	// building a different toolchain, so require the ${…} references and a pinned
+	// @sha256 digest. Docker resolves the digest and ignores the tag, so the tag
+	// is documentation and the digest is the real pin — this cannot prove the
+	// digest matches the version (that needs a registry lookup at bump time), only
+	// that the human-readable tag can never silently diverge from the ARGs.
+	builder := firstSubmatch(dockerfile, `(?m)^ARG BUILDER_IMAGE="([^"]+)"`)
+	if builder == "" {
+		return fmt.Errorf("portal/Dockerfile does not define ARG BUILDER_IMAGE")
+	}
+	for _, ref := range []string{"${ELIXIR_VERSION}", "${OTP_VERSION}"} {
+		if !strings.Contains(builder, ref) {
+			return fmt.Errorf("portal/Dockerfile BUILDER_IMAGE does not interpolate %s; a hardcoded "+
+				"tag lets the release toolchain drift from the ARG defaults this check verifies", ref)
+		}
+	}
+	if firstSubmatch([]byte(builder), `@sha256:([0-9a-f]{64})`) == "" {
+		return fmt.Errorf("portal/Dockerfile BUILDER_IMAGE is not digest-pinned (@sha256:<64 hex>); " +
+			"the tag alone is mutable and is not what the release builds from")
+	}
+	fmt.Fprintln(a.Out, "verified: BUILDER_IMAGE's tag derives from the .tool-versions toolchain and is digest-pinned "+
+		"(digest-to-version correctness is confirmed against the registry at bump time)")
 	return nil
 }
