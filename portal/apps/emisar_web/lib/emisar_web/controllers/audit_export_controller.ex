@@ -41,9 +41,8 @@ defmodule EmisarWeb.AuditExportController do
   """
 
   use EmisarWeb, :controller
-  alias Emisar.{Accounts, ApiKeys, Audit, Billing, PublicUrl}
-  alias Emisar.Auth.Subject
-  alias EmisarWeb.RequestContext
+  alias Emisar.{Audit, Billing, PublicUrl}
+  alias EmisarWeb.BearerAuth
 
   plug EmisarWeb.Plugs.RateLimit,
     bucket: "audit_export",
@@ -246,14 +245,8 @@ defmodule EmisarWeb.AuditExportController do
 
   defp authenticate(conn, _opts) do
     with ["Bearer " <> raw] <- get_req_header(conn, "authorization"),
-         %{} = key <- ApiKeys.peek_api_key_by_secret(raw),
-         {:ok, account} <- Accounts.fetch_account_by_id(key.account_id) do
-      conn
-      |> assign(:api_key, key)
-      |> assign(
-        :current_subject,
-        Subject.for_api_key(key, account, RequestContext.from_conn(conn))
-      )
+         {:ok, key, account} <- BearerAuth.resolve_static_key(raw) do
+      BearerAuth.assign_api_key(conn, key, account)
     else
       _ ->
         conn

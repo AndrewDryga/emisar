@@ -8,9 +8,8 @@ defmodule EmisarWeb.MCP.Auth do
   authorization server and start the OAuth flow.
   """
   import Plug.Conn
-  alias Emisar.{Accounts, ApiKeys, OAuth}
-  alias Emisar.Auth.Subject
-  alias EmisarWeb.RequestContext
+  alias Emisar.OAuth
+  alias EmisarWeb.BearerAuth
 
   @doc """
   Resolves the request's bearer. On success assigns `:api_key` +
@@ -21,13 +20,7 @@ defmodule EmisarWeb.MCP.Auth do
   def authenticate(conn) do
     case resolve_bearer(conn) do
       {:ok, key, account} ->
-        {:ok,
-         conn
-         |> assign(:api_key, key)
-         |> assign(
-           :current_subject,
-           Subject.for_api_key(key, account, RequestContext.from_conn(conn))
-         )}
+        {:ok, BearerAuth.assign_api_key(conn, key, account)}
 
       :error ->
         {:error, put_resp_header(conn, "www-authenticate", challenge())}
@@ -51,14 +44,7 @@ defmodule EmisarWeb.MCP.Auth do
     end
   end
 
-  defp resolve_token(raw) do
-    with %{} = key <- ApiKeys.peek_api_key_by_secret(raw),
-         {:ok, account} <- Accounts.fetch_account_by_id(key.account_id) do
-      {:ok, key, account}
-    else
-      _ -> :error
-    end
-  end
+  defp resolve_token(raw), do: BearerAuth.resolve_static_key(raw)
 
   # RFC 9728 §5.1 — point unauthenticated clients at the protected-resource
   # metadata and advertise `scope="mcp"`, the single scope every MCP access
