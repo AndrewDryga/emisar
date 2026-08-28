@@ -17,9 +17,34 @@ secret_env: [REDISCLI_AUTH]
 env:
   REDISCLI_AUTH: packtest-canary-redis-c08d17
 cases:
+  # Both ACL reads emit SHA-256 password hashes, so each case provisions a user
+  # with a known password and asserts its exact digest never reaches stdout.
+  # Declaring a redaction rule only proves it compiles; nothing proved either
+  # rule MATCHED, and acl_getuser's could not — ACL GETUSER returns a bare
+  # digest while the rule required ACL LIST's `#` prefix.
+  #
+  # The digest is sha256("packtest-acl-secret"), computed outside the harness so
+  # the assertion cannot be satisfied by the same code path that produces it.
   - action: redis.acl_list
+    arrange:
+      - name: provision an ACL user with a known password
+        argv: [redis-cli, ACL, SETUSER, packtestacl, "on", ">packtest-acl-secret", "~t:*", +get]
     expect:
-      stdout_contains: [user, default, "+@all"]
+      stdout_contains: [user, default, "+@all", packtestacl, "[REDACTED ACL HASH]"]
+      stdout_not_contains:
+        - "7bb607cb8cb03eea0d0537e206a660fcddca975a24e72aee45a8c733aa63bcb1"
+
+  - name: redis.acl-getuser-redacts-the-password-hash
+    action: redis.acl_getuser
+    args: {username: packtestacl}
+    arrange:
+      - name: provision an ACL user with a known password
+        argv: [redis-cli, ACL, SETUSER, packtestacl, "on", ">packtest-acl-secret", "~t:*", +get]
+    expect:
+      stdout_contains: [passwords, "[REDACTED ACL HASH]", commands]
+      stdout_not_contains:
+        - "7bb607cb8cb03eea0d0537e206a660fcddca975a24e72aee45a8c733aa63bcb1"
+
   - action: redis.acl_whoami
     expect:
       stdout_contains: [default]

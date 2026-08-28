@@ -2,9 +2,9 @@ schema_version: 1
 
 id: redis
 name: Redis operations pack
-version: 0.3.14
+version: 0.3.15
 # Older versions allowed credential redirection or caller-controlled Sentinel votes.
-retired_below: 0.3.14
+retired_below: 0.3.15
 description: >
   Deep Redis ops — INFO + memory accounting, slowlog + per-event
   latency, command stats, client list/kill/pause, keyspace introspection

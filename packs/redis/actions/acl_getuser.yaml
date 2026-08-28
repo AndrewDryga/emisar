@@ -2,7 +2,7 @@ schema_version: 1
 id: redis.acl_getuser
 title: ACL GETUSER
 kind: exec
-risk: low
+risk: medium
 description: >
   Get the full rule listing for one ACL user — categories, commands, key
   patterns, channel patterns, flags. Read-only.
@@ -26,9 +26,13 @@ output:
   max_stdout_bytes: 16384
   max_stderr_bytes: 8192
   redact:
+    # ACL GETUSER returns each hash as a BARE 64-hex digest on its own line under
+    # `passwords`. The `#` prefix is ACL rule-DSL syntax and appears only in ACL
+    # LIST, so a rule requiring it never fired here. Verified against redis
+    # 8.8.0. Optional `#` so both replies are covered by one rule.
     - name: redis-acl-password-hash
       type: regex
-      pattern: '#[0-9A-Fa-f]{64}'
+      pattern: '#?\b[0-9A-Fa-f]{64}\b'
       replacement: '[REDACTED ACL HASH]'
 examples:
   - title: Inspect "metrics" user

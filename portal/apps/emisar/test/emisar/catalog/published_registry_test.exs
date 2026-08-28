@@ -41,7 +41,7 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
     # the pair covers both hash code paths.
     test "content_hash matches the Go runner byte-for-byte (golden values)" do
       assert PublishedRegistry.get("redis").content_hash ==
-               "sha256:8fa6df8f97427529f796469d7c7c40e10eb3ade7f441402150f1c8a8552c8ccf"
+               "sha256:820273fdbf1ed46d311a11f1fe36ecbed4366f157508c4f09802903e29afa2e6"
 
       assert PublishedRegistry.get("cassandra").content_hash ==
                "sha256:5733af7e5b44a25ebfd277e6f14bae7612ecf3c11544f74dd406e445bdec3a8a"
@@ -195,7 +195,10 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
                ]
              }
 
-      assert pack.retired_below == "0.3.14"
+      # Raised to 0.3.15 with the ACL redaction fix: acl_getuser's rule required
+      # ACL LIST's `#` prefix, which ACL GETUSER never emits, so every pinned
+      # runner below this floor serves password hashes unmasked at risk: low.
+      assert pack.retired_below == "0.3.15"
     end
 
     test "a script-kind action carries no command template" do
