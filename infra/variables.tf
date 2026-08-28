@@ -354,8 +354,12 @@ variable "mixpanel_token" {
 }
 
 variable "x_ads_conversions_json" {
-  type        = string
-  description = "One-line JSON credentials for server-side X signup conversion reporting. Empty keeps reporting off."
+  type = string
+  # Populating this starts sending signup conversions to X Corp, which is named
+  # on none of /privacy, /trust, or /dpa — the three pages carrying the one
+  # processor list we publish. Disclose X there in the same change, or those
+  # pages are false from the moment this is set.
+  description = "One-line JSON credentials for server-side X signup conversion reporting. Empty keeps reporting off. Populating it REQUIRES disclosing X as a processor on /privacy, /trust and /dpa."
   sensitive   = true
   default     = ""
 }

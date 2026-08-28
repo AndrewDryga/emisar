@@ -365,6 +365,11 @@ if config_env() == :prod do
   end
 
   # -- X Ads conversions ----------------------------------------------
+  # DISCLOSURE GATE: setting this starts sending a click id, a timestamp, and an
+  # opaque dedup hash to X Corp — a processor named on NONE of /privacy, /trust,
+  # or /dpa, which between them carry the one processor list we publish. Add X to
+  # all three (and the marketing test that pins them) in the same change that
+  # populates this variable, or the pages become false the moment it is set.
   if encoded = System.get_env("X_ADS_CONVERSIONS_JSON") do
     credentials = Jason.decode!(encoded)
 
