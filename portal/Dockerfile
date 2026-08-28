@@ -99,6 +99,14 @@ RUN mix assets.deploy
 
 # Compile + release
 RUN mix compile
+# Sentry reads source context from a PACKAGED sentry.map, not from
+# root_source_code_paths at runtime — so without this task every production
+# stack frame ships with no surrounding source, while config.exs claims
+# enable_source_code_context: true. It has to run after compile (the task
+# compiles the project anyway) and before `mix release`, so the map is inside
+# the release. Source-context config lives in config.exs rather than
+# runtime.exs, so `mix app.config` is not needed first.
+RUN mix sentry.package_source_code
 # Runtime configuration is evaluated by the assembled release, so changing it
 # should invalidate release assembly without rebuilding assets or application
 # bytecode.

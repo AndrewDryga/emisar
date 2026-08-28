@@ -305,6 +305,20 @@ jobs:
             -e EMISAR_DISABLE_BILLING -e EMISAR_PACK_CATALOG_URL -e FORCE_SSL \
             emisar/portal:ci /app/bin/emisar eval 'Emisar.Release.migrate()'
 
+          # config.exs sets enable_source_code_context, but Sentry reads a
+          # PACKAGED sentry.map rather than root_source_code_paths at runtime.
+          # The Dockerfile task that writes it is easy to drop, and the symptom
+          # is silent: every stack frame simply arrives with no source. Assert
+          # the release can actually load the map, not just that a file exists.
+          docker run --rm --network host \
+            -e DATABASE_URL -e SECRET_KEY_BASE -e PHX_HOST \
+            -e EMISAR_DISABLE_BILLING -e EMISAR_PACK_CATALOG_URL -e FORCE_SSL \
+            emisar/portal:ci /app/bin/emisar eval '
+              case Sentry.Sources.load_source_code_map_if_present() do
+                {:loaded, map} when map_size(map) > 0 -> :ok
+                other -> raise "Sentry source map missing from the release: #{inspect(other)}"
+              end'
+
           cid=$(docker run -d --network host \
             -e DATABASE_URL -e SECRET_KEY_BASE -e PHX_HOST -e PORT \
             -e EMISAR_DISABLE_BILLING -e EMISAR_PACK_CATALOG_URL \
