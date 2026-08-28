@@ -272,6 +272,9 @@ func (a *App) toolingGate(ctx context.Context, coverage string) error {
 	if err := a.gatePhase("tooling e2e stack versions", a.checkComposeVersionsMatchCompat); err != nil {
 		return err
 	}
+	if err := a.gatePhase("tooling release toolchain", a.checkReleaseToolchainPins); err != nil {
+		return err
+	}
 	// dep-age is a required check, so it belongs here rather than only in a CI
 	// step: it already defaults its base to origin/main because it was written to
 	// run on a workstation, and it reads immutable publish dates, not a live

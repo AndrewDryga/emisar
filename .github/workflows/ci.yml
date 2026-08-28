@@ -246,18 +246,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Read release toolchain
-        id: release-toolchain
-        run: |
-          elixir_version=$(awk '$1=="elixir"{split($2,a,"-otp-"); print a[1]}' .tool-versions)
-          otp_version=$(awk '$1=="erlang"{print $2}' .tool-versions)
-          if [ -z "$elixir_version" ] || [ -z "$otp_version" ]; then
-            echo "::error::Could not parse Elixir and OTP versions from .tool-versions"
-            exit 1
-          fi
-          echo "elixir=${elixir_version}" >> "$GITHUB_OUTPUT"
-          echo "otp=${otp_version}" >> "$GITHUB_OUTPUT"
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
@@ -269,8 +257,6 @@ jobs:
           load: true
           tags: emisar/portal:ci
           build-args: |
-            ELIXIR_VERSION=${{ steps.release-toolchain.outputs.elixir }}
-            OTP_VERSION=${{ steps.release-toolchain.outputs.otp }}
             SOURCE_REVISION=${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
