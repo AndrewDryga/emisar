@@ -492,7 +492,7 @@ func newBridgeFromEnv(defaultClient string, allowStoredCLI bool, account string,
 	// ships the Bearer API key (and every request) in plaintext, inviting
 	// credential theft and MITM. Mirror the runner's cloud.allow_insecure
 	// opt-in so a localhost dev endpoint still works.
-	base, err := parseEndpoint(rawBase, os.Getenv("EMISAR_ALLOW_INSECURE") == "1")
+	base, err := parseEndpoint(rawBase, allowInsecureEndpoints())
 	if err != nil {
 		return nil, err
 	}
@@ -1879,4 +1879,19 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// allowInsecureEndpoints reports whether the operator opted out of the HTTPS
+// requirement. It accepts the spellings people actually type: requiring the
+// literal "1" meant EMISAR_ALLOW_INSECURE=true silently left the safety ON,
+// which is the safe direction but tells the operator nothing — they set the
+// variable and it did not take. The runner's own config spells this as a YAML
+// boolean, so `true` is the spelling they arrive with.
+func allowInsecureEndpoints() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("EMISAR_ALLOW_INSECURE"))) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
 }

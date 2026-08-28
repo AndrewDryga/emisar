@@ -193,7 +193,7 @@ func showCLIAuthStatus(account, expectedOrigin string, stdout, stderr io.Writer)
 		)
 	}
 	if expectedOrigin != "" {
-		expected, err := parseEndpoint(expectedOrigin, os.Getenv("EMISAR_ALLOW_INSECURE") == "1")
+		expected, err := parseEndpoint(expectedOrigin, allowInsecureEndpoints())
 		if err != nil {
 			return cliCommandError(
 				stderr,
@@ -333,7 +333,7 @@ func storeCLIAccountCredential(
 
 func resolveCLIAuthOrigin(account, rawOrigin string) (string, error) {
 	if rawOrigin != "" {
-		return parseEndpoint(rawOrigin, os.Getenv("EMISAR_ALLOW_INSECURE") == "1")
+		return parseEndpoint(rawOrigin, allowInsecureEndpoints())
 	}
 	_, state, err := loadCLICredential(account)
 	switch {
@@ -413,7 +413,7 @@ func loadStoredCLIAccounts() ([]storedCLIAccount, error) {
 		if err != nil {
 			return nil, fmt.Errorf("stored account %s: %w", entry.Name(), err)
 		}
-		origin, err := parseEndpoint(state.EndpointOrigin, os.Getenv("EMISAR_ALLOW_INSECURE") == "1")
+		origin, err := parseEndpoint(state.EndpointOrigin, allowInsecureEndpoints())
 		if err != nil {
 			return nil, fmt.Errorf("stored account %s endpoint: %w", entry.Name(), err)
 		}
@@ -529,7 +529,7 @@ func readAccountSelection() (accountSelection, error) {
 	if selection.Version != accountSelectionVersion || !validAccountID(selection.AccountID) {
 		return accountSelection{}, errors.New("invalid account selection")
 	}
-	origin, err := parseEndpoint(selection.EndpointOrigin, os.Getenv("EMISAR_ALLOW_INSECURE") == "1")
+	origin, err := parseEndpoint(selection.EndpointOrigin, allowInsecureEndpoints())
 	if err != nil || origin != selection.EndpointOrigin {
 		return accountSelection{}, errors.New("invalid account selection endpoint")
 	}
@@ -540,7 +540,7 @@ func writeAccountSelection(selection accountSelection) error {
 	if selection.Version != accountSelectionVersion || !validAccountID(selection.AccountID) {
 		return errors.New("invalid account selection")
 	}
-	origin, err := parseEndpoint(selection.EndpointOrigin, os.Getenv("EMISAR_ALLOW_INSECURE") == "1")
+	origin, err := parseEndpoint(selection.EndpointOrigin, allowInsecureEndpoints())
 	if err != nil || origin != selection.EndpointOrigin {
 		return errors.New("invalid account selection endpoint")
 	}

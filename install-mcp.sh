@@ -108,6 +108,17 @@ https://emisar.dev — a self-hosted portal's install command sets it).
 USAGE
 }
 
+# A yes/no environment variable accepts the spellings people actually type.
+# These used to require the literal "1", so `ASSUME_YES=true curl | sudo bash`
+# silently stayed interactive, hit a prompt with no terminal, and died — the
+# operator asked for unattended and got the opposite. The flags still set 1.
+truthy() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1 | true | yes | y | on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 ASSUME_YES="${ASSUME_YES:-0}"
 
 # Config writers stage through mktemp, not a predictable "${file}.emisar-new.$$".
@@ -263,7 +274,7 @@ fetch_release_files() {
 # stdin the script content, not a terminal, so a plain `read` consumes
 # the next line of the script. See install.sh for the longer rationale.
 confirm() {
-  if [ "$ASSUME_YES" = "1" ]; then return 0; fi
+  if truthy "$ASSUME_YES"; then return 0; fi
   if [ -t 0 ]; then
     printf '%s [y/N] ' "$1"
     read -r reply || reply=""

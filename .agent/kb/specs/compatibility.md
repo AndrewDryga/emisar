@@ -616,7 +616,14 @@ environment is `VERSION`, `BIN_DIR`, `ETC_DIR`, `DATA_DIR`, `LOG_DIR`,
 `EMISAR_RUNNER_LABEL_<KEY>`, `EMISAR_ATTESTATION_WORKFLOW`, and
 `QUARANTINE_DISPATCH_LOG`. Every one is named rather than summarized, because a
 variable this inventory does not name is a variable nobody reviews before it
-freezes. `EMISAR_ATTESTATION_WORKFLOW` is the supply-chain-relevant one: it
+freezes.
+
+A yes/no variable here — `ASSUME_YES`, `NO_START`, `NO_SERVICE`, and the
+bridge's `EMISAR_ALLOW_INSECURE` — accepts `1`, `true`, `yes`, `y` or `on`, in
+any case. They previously required the literal `1`, so `ASSUME_YES=true` left
+the installer interactive, hit a prompt with no terminal and died, and
+`EMISAR_ALLOW_INSECURE=true` silently kept the safety on. Anything unrecognised
+is false, so an unknown value never fails open. `EMISAR_ATTESTATION_WORKFLOW` is the supply-chain-relevant one: it
 selects the workflow identity Sigstore provenance is matched against, and a fork
 or mirror must set it or fall back to the checksum alone.
 `QUARANTINE_DISPATCH_LOG` is advertised in the installer's own output, not its

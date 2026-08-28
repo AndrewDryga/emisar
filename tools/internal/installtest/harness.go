@@ -296,6 +296,14 @@ func heredocBody(file, function, marker string) (string, error) {
 func (h *harness) functions(file string, names []string, body string, env map[string]string) commandResult {
 	var script strings.Builder
 	script.WriteString("set -euo pipefail\n")
+	// `truthy` is a shared primitive of both installers — every yes/no
+	// environment variable goes through it — so an extracted function that
+	// reads one would otherwise fail with "truthy: command not found" and each
+	// case would have to remember to list it. Pulled from the same file the
+	// case names, so it is the real definition, never a stub.
+	if function, err := shellFunction(file, "truthy"); err == nil {
+		script.WriteString(function)
+	}
 	for _, name := range names {
 		function, err := shellFunction(file, name)
 		if err != nil {

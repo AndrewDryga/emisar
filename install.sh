@@ -57,6 +57,17 @@ fi
 VERSION="${VERSION:-}"            # empty = latest stable
 BIN_DIR="${BIN_DIR:-/usr/local/bin}"
 ETC_DIR="${ETC_DIR:-/etc/emisar}"
+# A yes/no environment variable accepts the spellings people actually type.
+# These used to require the literal "1", so `ASSUME_YES=true curl | sudo bash`
+# silently stayed interactive, hit a prompt with no terminal, and died — the
+# operator asked for unattended and got the opposite. The flags still set 1.
+truthy() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1 | true | yes | y | on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 DATA_DIR="${DATA_DIR:-/var/lib/emisar}"
 LOG_DIR="${LOG_DIR:-/var/log/emisar}"
 SERVICE_USER="${SERVICE_USER:-emisar}"
@@ -289,7 +300,7 @@ If you are reusing a portal-generated one-liner, keep its EMISAR_ENROLLMENT_KEY/
 # A stdout-bound log() would leak into command substitutions and corrupt
 # the captured value — caused a "binary missing" misreport in 0.1.0.
 confirm() {
-  if [ "$ASSUME_YES" = "1" ]; then return 0; fi
+  if truthy "$ASSUME_YES"; then return 0; fi
 
   # `curl | bash` makes stdin the script content, not a terminal — so a
   # plain `read` consumes the NEXT LINE of the script and reports an
@@ -321,7 +332,7 @@ tty_available() {
 }
 
 require_explicit_unattended_packs() {
-  if [ "$ASSUME_YES" = "1" ]; then
+  if truthy "$ASSUME_YES"; then
     [ "$PACKS_EXPLICIT" = "1" ] || \
       die "--yes requires an explicit pack set. Pass --packs <ids> or set EMISAR_PACKS (an empty value installs no new packs)."
     return 0
@@ -429,7 +440,7 @@ detect_target() {
   # --no-service path) could not be removed with the very command this script
   # prints on success — it failed with an error about INSTALLING. Detection
   # still RUNS, so a real systemd or launchd host removes its unit as before.
-  if [ "${NO_SERVICE}" = "1" ]; then
+  if truthy "${NO_SERVICE}"; then
     INIT="none"
   elif [ "${MODE}" = "uninstall" ]; then
     INIT="$(detect_init 2>/dev/null)" || INIT="none"
@@ -1605,7 +1616,7 @@ start_service() {
     warn "skipping service start — edit ${ETC_DIR}/config.yaml and ${ETC_DIR}/runner.env first"
     return 0
   fi
-  if [ "${NO_START}" = "1" ]; then
+  if truthy "${NO_START}"; then
     log "--no-start: not starting service"
     return 0
   fi

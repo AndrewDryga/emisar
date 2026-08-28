@@ -487,7 +487,7 @@ func resolveConnectOrigin(raw string) (string, error) {
 	_ = os.Unsetenv("EMISAR_URL")
 	_ = os.Unsetenv("EMISAR_API_KEY")
 	if raw != "" {
-		return parseEndpoint(raw, os.Getenv("EMISAR_ALLOW_INSECURE") == "1")
+		return parseEndpoint(raw, allowInsecureEndpoints())
 	}
 	return resolveCLIAuthOrigin("", "")
 }
