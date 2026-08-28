@@ -43,6 +43,11 @@ func writeTrustedReleaseRepo(t *testing.T, trustedBody string) (root, sha string
 	git("init", "--quiet")
 	write(".github/workflows/runner-release-trusted.yml", trustedBody)
 	write(".github/actions/verify-release-tag/action.yml", "name: verify\nruns:\n  using: composite\n")
+	// The four release-provenance consumers, each naming a -trusted signer.
+	write("install.sh", "ATTESTATION_WORKFLOW=\"AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml\"\n")
+	write("install-mcp.sh", "ATTESTATION_WORKFLOW=\"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml\"\n")
+	write("install-mcp.ps1", "\"AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml\"\n")
+	write("runner/internal/selfupdate/selfupdate.go", "const signerWorkflow = \"AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml\"\n")
 	git("add", "-A")
 	git("commit", "--quiet", "-m", "trusted workflow")
 	sha = git("rev-parse", "HEAD")
@@ -117,6 +122,23 @@ func TestCheckTrustedReleasePins(t *testing.T) {
 		err := app.checkTrustedReleasePins(context.Background())
 		if err == nil || !strings.Contains(err.Error(), "silently run the old steps") {
 			t.Fatalf("stale composite pin not reported: %v", err)
+		}
+	})
+
+	// The consumer side of the split: a release is signed under the -trusted
+	// workflow, so an installer still naming the pre-split caller refuses to
+	// install the next release.
+	t.Run("an installer naming the pre-split workflow fails", func(t *testing.T) {
+		root, _ := writeTrustedReleaseRepo(t, trusted)
+		path := filepath.Join(root, "install.sh")
+		if err := os.WriteFile(path, []byte("ATTESTATION_WORKFLOW=\"AndrewDryga/emisar/.github/workflows/runner-release.yml\"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		app := New(root, strings.NewReader(""), &out, &out)
+		err := app.checkTrustedReleasePins(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "point it at the *-release-trusted.yml signer") {
+			t.Fatalf("pre-split installer signer not reported: %v", err)
 		}
 	})
 

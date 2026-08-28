@@ -27,16 +27,19 @@ import (
 
 const (
 	officialRepository = "andrewdryga/emisar"
-	signerWorkflow     = "AndrewDryga/emisar/.github/workflows/runner-release.yml"
-	releaseBaseURL     = "https://emisar.dev/releases/runner"
-	apiBaseURL         = "https://api.github.com"
-	downloadBaseURL    = "https://github.com"
-	maxAPIBytes        = 4 << 20
-	maxManifestBytes   = 1 << 20
-	maxChecksumsBytes  = 1 << 20
-	maxArchiveBytes    = 256 << 20
-	maxInstallerBytes  = 512 << 10
-	maxBinaryBytes     = 128 << 20
+	// The reusable workflow that actually attests: runner-release.yml is a thin
+	// caller, so the provenance-minting job runs inside runner-release-trusted.yml
+	// and its ref is what the Sigstore certificate SAN carries.
+	signerWorkflow    = "AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
+	releaseBaseURL    = "https://emisar.dev/releases/runner"
+	apiBaseURL        = "https://api.github.com"
+	downloadBaseURL   = "https://github.com"
+	maxAPIBytes       = 4 << 20
+	maxManifestBytes  = 1 << 20
+	maxChecksumsBytes = 1 << 20
+	maxArchiveBytes   = 256 << 20
+	maxInstallerBytes = 512 << 10
+	maxBinaryBytes    = 128 << 20
 )
 
 // Options are the operator choices and output streams for one update.

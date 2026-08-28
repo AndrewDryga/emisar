@@ -37,7 +37,7 @@ $script:ReleaseMirror = "https://emisar.dev/releases/mcp"
 $script:AttestationWorkflow = if ($env:EMISAR_ATTESTATION_WORKFLOW) {
     $env:EMISAR_ATTESTATION_WORKFLOW
 } elseif ($script:Repository -eq $script:OfficialRepository) {
-    "AndrewDryga/emisar/.github/workflows/mcp-release.yml"
+    "AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"
 } else {
     ""
 }

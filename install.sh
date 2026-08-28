@@ -50,9 +50,13 @@ RELEASE_BASE_URL="https://emisar.dev/releases/runner"
 # A fork or mirror gets no default: we cannot vouch for a workflow we do not
 # know, and pinning ours would fail their install outright. They set this
 # themselves, or the check is skipped and the checksum stands alone.
+# The reusable workflow that actually attests: the tag-triggered
+# runner-release.yml is a thin caller, so the job that mints the Sigstore
+# provenance runs inside runner-release-trusted.yml and its ref is what the
+# certificate SubjectAlternativeName carries.
 ATTESTATION_WORKFLOW="${EMISAR_ATTESTATION_WORKFLOW:-}"
 if [ -z "${ATTESTATION_WORKFLOW}" ] && [ "${REPO}" = "andrewdryga/emisar" ]; then
-  ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/runner-release.yml"
+  ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml"
 fi
 VERSION="${VERSION:-}"            # empty = latest stable
 BIN_DIR="${BIN_DIR:-/usr/local/bin}"

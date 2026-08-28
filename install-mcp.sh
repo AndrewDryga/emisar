@@ -48,9 +48,12 @@ RELEASE_BASE_URL="https://emisar.dev/releases/mcp"
 # correct and fails every verification, so it is written out. A fork gets no
 # default: pinning ours would fail their install, so they set their own or the
 # checksum stands alone.
+# The reusable workflow that actually attests: mcp-release.yml is a thin
+# caller, so the job that mints the Sigstore provenance runs inside
+# mcp-release-trusted.yml and its ref is what the certificate SAN carries.
 ATTESTATION_WORKFLOW="${EMISAR_ATTESTATION_WORKFLOW:-}"
 if [ -z "${ATTESTATION_WORKFLOW}" ] && [ "${REPO}" = "andrewdryga/emisar" ]; then
-  ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/mcp-release.yml"
+  ATTESTATION_WORKFLOW="AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml"
 fi
 # The portal this bridge talks to. A self-hosted or dev portal's install
 # command overrides it (the client configs written below carry it).

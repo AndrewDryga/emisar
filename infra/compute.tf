@@ -9,10 +9,14 @@ locals {
   #
   #   gh attestation verify emisar-<version>-linux-amd64.tar.gz \
   #     --repo andrewdryga/emisar \
-  #     --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release.yml \
-  #     --signer-digest e616b4c8d8dcd828c9c86724676c711126e25e77
+  #     --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml \
+  #     --signer-digest <trusted_job_workflow_sha from github_oidc.tf>
   #
-  # (the owner casing is the certificate's, not the lowercase repo spelling).
+  # (the owner casing is the certificate's, not the lowercase repo spelling; the
+  # attesting job runs inside the -trusted reusable workflow, so that ref — not
+  # the thin runner-release.yml caller — is what the certificate SAN carries.
+  # The --signer-digest is the reviewed trusted_job_workflow_sha in
+  # github_oidc.tf; read it from there rather than pinning a copy that rots.)
   # That is what makes the pin a reviewed decision rather than a checksum
   # chasing whatever the release currently holds.
   # runtime/admin-runner/runner-version.txt and pack-pins.txt are the single
