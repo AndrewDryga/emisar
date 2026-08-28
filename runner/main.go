@@ -185,8 +185,14 @@ authoring, approval workflow, and audit storage live in the cloud.`,
 	add("actions", packCmd())
 	add("diag", emitsJSON(doctorCmd()))
 	add("diag", emitsJSON(statusCmd()))
-	add("diag", stateCmd())
-	add("diag", eventsCmd())
+	// These emit nothing BUT JSON — state and action describe print one
+	// document, the events readers stream JSONL — yet they refused --json while
+	// root help advertised it as a global flag on every command. A `| jq`
+	// pipeline that has to know which JSON-only commands reject the JSON flag is
+	// the opposite of the annotation's purpose. Accepting it is a no-op here,
+	// which is exactly right: it states what the command already does.
+	add("diag", emitsJSON(stateCmd()))
+	add("diag", emitsJSON(eventsCmd()))
 	add("diag", auditCmd())
 	add("maintain", updateCmd())
 	add("signing", signingCmd())

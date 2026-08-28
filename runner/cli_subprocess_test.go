@@ -1048,7 +1048,12 @@ func mutate(t *testing.T, path string, fn func(lines [][]byte) [][]byte) {
 // covered by TestCLI_JSONFlagPayloads; this covers the other half — the ones
 // that must refuse rather than accept and do nothing.
 func TestCLI_JSONFlagRefusedWhereUnsupported(t *testing.T) {
-	for _, args := range [][]string{{"connect"}, {"state"}, {"events"}, {"pack"}, {"audit"}} {
+	// `state` and `events` were here and should not have been: both emit
+	// nothing but JSON, so refusing the JSON flag made a `| jq` pipeline have to
+	// know which JSON-only commands reject it. They accept it now — a no-op that
+	// states what they already do. What remains are the genuine non-emitters and
+	// the parent groups that only print help.
+	for _, args := range [][]string{{"connect"}, {"pack"}, {"audit"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			_, stderr, code := runCLI(t, append(args, "--json"), nil)
 			if code == 0 {
@@ -1215,5 +1220,22 @@ func TestCLI_InterruptTerminatesLocalActionProcessGroup(t *testing.T) {
 		if !json.Valid([]byte(line)) {
 			t.Fatalf("torn journal line %q", line)
 		}
+	}
+}
+
+// --names-only and --json are two output modes, and --names-only silently won:
+// a `| jq` pipeline asking for both got bare ids and exit 0. That is the exact
+// failure the --json annotation exists to prevent, one flag away from the
+// commands that refuse the flag outright.
+func TestCLI_SuggestRefusesContradictoryOutputModes(t *testing.T) {
+	stdout, stderr, code := runCLI(t, []string{"pack", "suggest", "--names-only", "--json"}, nil)
+	if code != 2 {
+		t.Errorf("exit = %d, want 2 (a usage mistake); stderr=%q", code, stderr)
+	}
+	if !strings.Contains(stderr, "different output modes") {
+		t.Errorf("stderr should explain the contradiction, got %q", stderr)
+	}
+	if stdout != "" {
+		t.Errorf("nothing should reach stdout, got %q", stdout)
 	}
 }

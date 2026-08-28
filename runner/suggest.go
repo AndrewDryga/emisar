@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -109,6 +110,15 @@ never treated as evidence. Packs already installed are left out.
   emisar pack suggest --catalog https://packs.acme.internal/v1/catalog.json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Two output modes, and --names-only silently won. A `| jq` pipeline
+			// asking for both got bare ids and exit 0 — the exact failure the
+			// --json annotation exists to prevent, one flag away from the
+			// commands that refuse the flag outright. Refuse the contradiction
+			// instead of picking a winner.
+			if namesOnly && flagJSONOut {
+				return usageError{errors.New("--names-only and --json are different output modes; choose one")}
+			}
+
 			catalog, err := loadCatalog(cmd.Context(), catalogSrc, registry)
 			if err != nil {
 				return err

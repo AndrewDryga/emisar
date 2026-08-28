@@ -25,9 +25,9 @@ use the console.`,
 		Args: cobra.NoArgs,
 		RunE: showHelp,
 	}
-	cmd.AddCommand(eventsTailCmd())
-	cmd.AddCommand(eventsCatCmd())
-	cmd.AddCommand(eventsGrepCmd())
+	cmd.AddCommand(emitsJSON(eventsTailCmd()))
+	cmd.AddCommand(emitsJSON(eventsCatCmd()))
+	cmd.AddCommand(emitsJSON(eventsGrepCmd()))
 	return cmd
 }
 

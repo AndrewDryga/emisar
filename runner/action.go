@@ -21,7 +21,7 @@ func actionCmd() *cobra.Command {
 		RunE:    showHelp,
 	}
 	cmd.AddCommand(emitsJSON(actionListCmd()))
-	cmd.AddCommand(actionDescribeCmd())
+	cmd.AddCommand(emitsJSON(actionDescribeCmd()))
 	cmd.AddCommand(actionRunCmd())
 	return cmd
 }
