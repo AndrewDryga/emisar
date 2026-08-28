@@ -54,8 +54,12 @@ boundary.
   on external bytes.
 - IDs from requests are validated (`Repo.valid_uuid?`) and re-scoped, never trusted
   as "the user owns this".
-- MCP requests honor idempotency keys (see `controllers/mcp/idempotency.ex`) so a
-  retried action doesn't double-execute.
+- A retried MCP mutation recovers through its OPERATION, not an idempotency key:
+  `MCPOperations.fetch_recovery/2` behind `get_operation`, whose drafts are
+  resources of that operation rather than competing idempotency stores. The
+  idempotency column and its module were removed (migration
+  `20260811000000`); a reviewer looking for that guard will not find it, and
+  should check the operation contract instead.
 
 **Secrets & tokens:**
 - Auth keys / API keys / runner tokens are hashed at rest, compared in constant time,

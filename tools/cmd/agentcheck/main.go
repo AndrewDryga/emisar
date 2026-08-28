@@ -730,6 +730,8 @@ func (c *checker) checkDistributionLayout() {
 		}
 	}
 
+	c.checkChatGPTSubmissionAnnotations()
+
 	// `go install …@latest` pins nothing and builds whatever the default
 	// branch holds; customer-facing guidance must build packctl from the
 	// signed release tag instead.
@@ -753,6 +755,77 @@ func (c *checker) checkDistributionLayout() {
 			return nil
 		})
 	}
+}
+
+// The OpenAI submission hand-mirrors every tool's behavior hints, and OpenAI
+// reviews the app against what it declares. Flipping destructiveHint in the
+// portal without editing the submission leaves a destructive tool listed as
+// safe — the same hand-copy failure the Cursor mirror above already suffered,
+// one file over. The submission omits idempotentHint (OpenAI's shape has no
+// such field), so only the three it does carry are compared.
+func (c *checker) checkChatGPTSubmissionAnnotations() {
+	const (
+		schemaPath     = "portal/apps/emisar_web/priv/mcp/api-schemas.json"
+		submissionPath = "dist/chatgpt-plugin/chatgpt-app-submission.json"
+	)
+	type annotated struct {
+		Annotations map[string]bool `json:"annotations"`
+	}
+	load := func(path string) map[string]annotated {
+		data, err := os.ReadFile(c.path(path))
+		if err != nil {
+			c.fail("reading %s: %v", path, err)
+			return nil
+		}
+		var doc struct {
+			Tools map[string]annotated `json:"tools"`
+		}
+		if err := json.Unmarshal(data, &doc); err != nil {
+			c.fail("parsing %s: %v", path, err)
+			return nil
+		}
+		if len(doc.Tools) == 0 {
+			c.fail("%s declares no tools", path)
+			return nil
+		}
+		return doc.Tools
+	}
+
+	schema, submission := load(schemaPath), load(submissionPath)
+	if schema == nil || submission == nil {
+		return
+	}
+	for _, name := range sortedKeys(schema) {
+		listed, ok := submission[name]
+		if !ok {
+			c.fail("%s omits MCP tool %q; the OpenAI listing must describe every shipped tool", submissionPath, name)
+			continue
+		}
+		for _, hint := range []string{"readOnlyHint", "destructiveHint", "openWorldHint"} {
+			want, declared := schema[name].Annotations[hint]
+			if !declared {
+				c.fail("%s: tool %q declares no %s", schemaPath, name, hint)
+				continue
+			}
+			if got, ok := listed.Annotations[hint]; !ok || got != want {
+				c.fail("%s: tool %q has %s=%t, but the portal declares %t", submissionPath, name, hint, got, want)
+			}
+		}
+	}
+	for _, name := range sortedKeys(submission) {
+		if _, ok := schema[name]; !ok {
+			c.fail("%s lists tool %q that the portal does not ship", submissionPath, name)
+		}
+	}
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (c *checker) checkCommandSurface() {

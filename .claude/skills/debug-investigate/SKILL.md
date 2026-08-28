@@ -41,8 +41,10 @@ line that's wrong and say why. Never edit a test to make a real failure pass.
   it polls; a job that isn't idempotent (IL-13) corrupts state when a tick repeats.
 - **LiveView** — value missing/doubled on load → `mount` runs twice (IL-18); a
   silent form failure → check the `{:error, changeset}` branch is handled, not the UI.
-- **MCP** — a doubled action → idempotency key (see `controllers/mcp/idempotency.ex`);
-  an auth error → the subject built at the MCP boundary.
+- **MCP** — a doubled action → the operation-id recovery path
+  (`get_operation` / `MCPOperations.fetch_recovery`), not an idempotency key:
+  that column and module were dropped in migration `20260811000000`.
+  An auth error → the subject built at the MCP boundary.
 - **Runner socket** — state not updating → the `Runners.apply_state/mark_*` path
   (§1.4); a crash shouldn't take down other runners (IL-17).
 - **Flaky test** — a cross-process race: `$callers` not inherited, or async side

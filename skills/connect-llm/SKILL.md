@@ -68,8 +68,9 @@ Establish, asking only for what cannot be discovered safely:
 
 - Which client the operator uses. Cloud clients (Claude.ai, ChatGPT) use the
   remote MCP connector over OAuth and need no local bridge. Local and IDE
-  clients (Claude Code, Claude Desktop, Cursor, Windsurf, Zed, OpenClaw,
-  OpenCode, Pi, Copilot CLI, Gemini CLI, Codex CLI, Goose, Hermes, Grok CLI)
+  clients (Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Zed,
+  OpenClaw, OpenCode, Pi, Copilot CLI, Gemini CLI, Codex CLI, Goose, Hermes,
+  Grok CLI)
   use the `emisar-mcp` stdio bridge.
 - Whether `emisar-mcp` is already installed (`command -v emisar-mcp`,
   `emisar-mcp --version`) and where the client keeps its config.

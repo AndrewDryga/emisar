@@ -11,10 +11,12 @@ allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 Sell the wedge honestly and make it findable. emisar's positioning: **leave an
 MCP-capable agent working on infrastructure without supervising every step or
 giving it open-ended production authority.** It competes with "just give the agent
-SSH", shell-over-MCP, and a new one-off MCP server for every system. The marketing
-site already has home, pricing, security, use-cases (cassandra/postgres),
-`compare_raw_ssh`, `connect_llm`, docs, and packs pages, plus a
-`sitemap_controller`.
+SSH", shell-over-MCP, and a new one-off MCP server for every system.
+
+Read `router.ex` for the pages that exist — the `MarketingController` routes are
+the inventory, with templates under `marketing_html/` and the sitemap beside
+them. This file used to list them by hand and the list rotted: it named two
+pages that had never existed and missed eleven that did.
 
 ## Positioning hierarchy
 

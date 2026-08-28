@@ -255,6 +255,7 @@ func TestCheckDistributionLayoutUsesGitIgnorePolicy(t *testing.T) {
 		writeTestFile(t, check.root, "skills/"+skill+"/SKILL.md", "# "+skill+"\n")
 		writeTestFile(t, check.root, "dist/cursor-plugin/skills/"+skill+"/SKILL.md", "# "+skill+"\n")
 	}
+	writeSubmissionFixtures(t, check.root, false)
 
 	check.checkDistributionLayout()
 
@@ -335,5 +336,62 @@ func TestCheckManualExamplesIgnoresNonElixirFences(t *testing.T) {
 
 	if len(check.failures) != 0 {
 		t.Fatalf("failures = %#v", check.failures)
+	}
+}
+
+// The submission's hints are hand-copied from the portal's schema, so both
+// directions matter: a hint that disagrees, a shipped tool the listing omits,
+// and a listed tool the portal does not ship.
+func writeSubmissionFixtures(t *testing.T, root string, drifted bool) {
+	t.Helper()
+	destructive := "true"
+	if drifted {
+		destructive = "false"
+	}
+	writeTestFile(t, root, "portal/apps/emisar_web/priv/mcp/api-schemas.json", `{"tools":{
+		"list_packs":{"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}},
+		"run_action":{"annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":true}}}}`)
+	writeTestFile(t, root, "dist/chatgpt-plugin/chatgpt-app-submission.json", `{"tools":{
+		"list_packs":{"annotations":{"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false}},
+		"run_action":{"annotations":{"readOnlyHint":false,"openWorldHint":true,"destructiveHint":`+destructive+`}}}}`)
+}
+
+func TestCheckChatGPTSubmissionAnnotationsCatchesEveryDirectionOfDrift(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		arrange func(t *testing.T, root string)
+		want    string
+	}{
+		{"a hint that disagrees with the portal", func(t *testing.T, root string) {
+			writeSubmissionFixtures(t, root, true)
+		}, `tool "run_action" has destructiveHint=false, but the portal declares true`},
+
+		{"a shipped tool the listing omits", func(t *testing.T, root string) {
+			writeSubmissionFixtures(t, root, false)
+			writeTestFile(t, root, "dist/chatgpt-plugin/chatgpt-app-submission.json",
+				`{"tools":{"list_packs":{"annotations":{"readOnlyHint":true,"openWorldHint":false,"destructiveHint":false}}}}`)
+		}, `omits MCP tool "run_action"`},
+
+		{"a listed tool the portal does not ship", func(t *testing.T, root string) {
+			writeSubmissionFixtures(t, root, false)
+			writeTestFile(t, root, "portal/apps/emisar_web/priv/mcp/api-schemas.json",
+				`{"tools":{"list_packs":{"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}}}`)
+		}, `lists tool "run_action" that the portal does not ship`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			check := testChecker(t)
+			tc.arrange(t, check.root)
+			check.checkChatGPTSubmissionAnnotations()
+			if !hasFailure(check, tc.want) {
+				t.Fatalf("failures = %#v", check.failures)
+			}
+		})
+	}
+
+	check := testChecker(t)
+	writeSubmissionFixtures(t, check.root, false)
+	check.checkChatGPTSubmissionAnnotations()
+	if len(check.failures) != 0 {
+		t.Fatalf("matching annotations reported failures: %#v", check.failures)
 	}
 }
