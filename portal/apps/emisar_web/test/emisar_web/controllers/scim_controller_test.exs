@@ -1626,6 +1626,29 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["scimType"] == "invalidFilter"
     end
 
+    test "GET /Users declines a compound filter instead of answering it empty",
+         %{conn: conn, token: token, provider: provider} do
+      {:ok, _} = SSO.scim_provision_user(provider, %{external_id: "a@acme.test"})
+
+      # The unquoted value must not span whitespace. It used to, so this parsed
+      # as the literal username "a@acme.test and active eq true" and answered 200
+      # with zero results — and an IdP whose reconcile is filter-then-create-if-
+      # empty responds to that by creating a duplicate identity. Groups already
+      # declined the same shape, so the two routes disagreed about one filter.
+      for filter <- [
+            ~s|userName eq a@acme.test and active eq true|,
+            ~s|userName eq "a@acme.test" and active eq true|
+          ] do
+        body =
+          conn
+          |> auth(token)
+          |> get(~p"/scim/v2/Users?filter=#{filter}")
+          |> json_response(400)
+
+        assert body["scimType"] == "invalidFilter"
+      end
+    end
+
     test "GET /Users filter finds a user beyond the first page (the match runs in the query)",
          %{conn: conn, token: token, provider: provider} do
       # Provision the target first (so it's the oldest identity), then push it

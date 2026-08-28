@@ -155,13 +155,26 @@ defmodule EmisarWeb.SCIM.UserController do
   defp parse_filter(nil), do: nil
 
   defp parse_filter(filter) when is_binary(filter) do
-    case Regex.run(~r/^\s*(\w+)\s+eq\s+"?([^"]*)"?\s*$/i, filter) do
+    case Regex.run(~r/^\s*(\w+)\s+eq\s+"([^"]*)"\s*$/i, filter) do
       [_, attr, value] -> filter_for(String.downcase(attr), value)
-      _ -> :unsupported
+      _ -> unquoted_filter(filter)
     end
   end
 
   defp parse_filter(_filter), do: nil
+
+  # The unquoted value may not contain whitespace, matching Groups. A single
+  # permissive `"?([^"]*)"?` accepted both forms in one pass, but its value group
+  # spans spaces: `userName eq foo and active eq true` parsed as the literal
+  # username `foo and active eq true` and answered 200 with zero results. An
+  # IdP's reconcile is filter-then-create-if-empty, so that answer makes it
+  # create a DUPLICATE identity — where a 400 would have stopped it.
+  defp unquoted_filter(filter) do
+    case Regex.run(~r/^\s*(\w+)\s+eq\s+([^\s"]+)\s*$/i, filter) do
+      [_, attr, value] -> filter_for(String.downcase(attr), value)
+      _ -> :unsupported
+    end
+  end
 
   defp filter_for("username", value), do: {:user_name, value}
   defp filter_for("externalid", value), do: {:external_id, value}
