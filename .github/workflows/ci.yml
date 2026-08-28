@@ -661,184 +661,13 @@ jobs:
       - name: Prove every published host-access recipe
         run: ./run test pack-access
 
-  pack-tools:
-    name: Packs - Behavior client image
+  pack-behavior:
+    name: Packs - Behavior
     needs: changes
     if: needs.changes.outputs.pack_behavior != '[]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    outputs:
-      mirror_registry: ${{ steps.mirrors.outputs.registry }}
-      max_parallel: ${{ steps.mirrors.outputs.max_parallel }}
-    env:
-      GOTOOLCHAIN: local
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: runner/go.mod
-          cache: false
-
-      # setup-go's cache is keyed on go.sum alone and shared with every other
-      # Go job, so whichever saves it first decides which build flags the
-      # restored objects carry. The behavior rows want these ones.
-      - name: Cache the behavior build objects
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: packtest-go-${{ runner.os }}-${{ hashFiles('runner/go.sum', 'tools/go.sum') }}
-
-      - name: Warm the behavior build objects
-        env:
-          GOOS: linux
-          CGO_ENABLED: "0"
-        run: |
-          go -C runner build -trimpath -o /dev/null .
-          go -C tools build -trimpath -o /dev/null ./cmd/packtest
-
-      - id: tools
-        name: Resolve the shared client image
-        run: |
-          # Empty output is a MEANINGFUL answer here (no tools image needed), so a
-          # swallowed failure was indistinguishable from a legitimate skip.
-          image=$(./run pack tools-image)
-          echo "image=$image" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-
-      - id: mirrors
-        name: Resolve public SUT mirrors
-        env:
-          REGISTRY: ghcr.io/andrewdryga/emisar-packtest-suts
-        run: |
-          set -euo pipefail
-          rows="${RUNNER_TEMP}/pack-sut-mirrors.json"
-          ./run pack mirrors --registry "$REGISTRY" > "$rows"
-          ready=true
-          while IFS=$'\t' read -r ref digest; do
-            actual=$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}' 2>/dev/null || true)
-            if [ "$actual" != "${digest#@}" ]; then
-              echo "::warning::SUT mirror unavailable or changed: ${ref} (got ${actual:-unavailable})"
-              ready=false
-            fi
-          done < <(jq -r '.[] | [.mirror_ref, .digest] | @tsv' "$rows")
-          if $ready; then
-            echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
-            echo "max_parallel=12" >> "$GITHUB_OUTPUT"
-            echo "All five immutable SUT mirrors are public; behavior width is 12."
-          else
-            echo "registry=" >> "$GITHUB_OUTPUT"
-            echo "max_parallel=8" >> "$GITHUB_OUTPUT"
-            echo "Mirror bootstrap/fallback is active; source pulls stay capped at 8."
-          fi
-
-      # One writer for the whole matrix. Every behavior row restores this entry
-      # instead of pulling eight servers to extract one binary from each, and
-      # letting the rows write it back would mean dozens of concurrent uploads
-      # of the same 2GB image the first time the Dockerfile changes.
-      - name: Populate the shared client image cache
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: dev/test-packs
-          load: true
-          tags: ${{ steps.tools.outputs.image }}
-          cache-from: type=gha,scope=packtest-tools
-          cache-to: type=gha,mode=min,scope=packtest-tools
-
-  pack-behavior:
-    name: Packs - Behavior (${{ matrix.pack }} ${{ matrix.version }}${{ matrix.shards > 1 && format(' shard {0}/{1}', matrix.shard, matrix.shards) || '' }})
-    needs: [changes, pack-tools]
-    if: needs.changes.outputs.pack_behavior != '[]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      # Twelve is safe once the repeated heavyweight pulls resolve through the
-      # public GHCR mirror. Bootstrap or a mirror outage falls back to the
-      # source registry at the last known-safe width of eight.
-      max-parallel: ${{ fromJSON(needs.pack-tools.outputs.max_parallel) }}
-      matrix:
-        include: ${{ fromJSON(needs.changes.outputs.pack_behavior) }}
-    env:
-      GOTOOLCHAIN: local
-      PACK: ${{ matrix.pack }}
-      PACKTEST_VERSION: ${{ matrix.version }}
-      PACKTEST_DIGEST: ${{ matrix.digest }}
-      PACKTEST_MIRROR_REGISTRY: ${{ needs.pack-tools.outputs.mirror_registry }}
-      SHARD: ${{ matrix.shard }}/${{ matrix.shards }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: runner/go.mod
-          cache: false
-
-      # Read-only: pack-tools wrote this entry with the flags packTest's
-      # preflight cross-compiles under, so the rows link rather than rebuild.
-      - name: Restore the behavior build objects
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: packtest-go-${{ runner.os }}-${{ hashFiles('runner/go.sum', 'tools/go.sum') }}
-
-      # Empty for a pack that ships its own client image, which then needs
-      # neither the builder nor the restore.
-      - id: tools
-        name: Resolve the shared client image
-        run: |
-          image=$(./run pack tools-image "$PACK")
-          echo "image=$image" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        if: steps.tools.outputs.image != ''
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-
-      - name: Restore the shared client image
-        if: steps.tools.outputs.image != ''
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: dev/test-packs
-          load: true
-          tags: ${{ steps.tools.outputs.image }}
-          cache-from: type=gha,scope=packtest-tools
-
-      # setup-buildx-action leaves its container-driver builder selected for the
-      # rest of the job, and that builder has its own image store. A pack whose
-      # client image starts FROM the shared one would resolve that base against
-      # the registry and fail; the daemon is where the restore just loaded it.
-      - name: Build against the daemon's image store
-        if: steps.tools.outputs.image != ''
-        run: docker buildx use default
-
-      - name: Exercise pack behavior
-        # Resource pressure reproduces runner-shaped starvation; the Linux host
-        # still remains the authority for uid ownership and AppArmor.
-        run: ./run test packs "$PACK" --shard "$SHARD" --hostile
-
-      - name: Upload failed pack report
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: pack-behavior-${{ matrix.pack }}-${{ matrix.version }}-${{ matrix.shard }}
-          path: dev/test-packs/reports
-          if-no-files-found: warn
-          retention-days: 7
-          overwrite: true
+    uses: ./.github/workflows/pack-behavior-rows.yml
+    with:
+      matrix: ${{ needs.changes.outputs.pack_behavior }}
 
   signing-e2e:
     name: E2E - Signed dispatch
@@ -998,7 +827,7 @@ jobs:
   ci-gate:
     name: Required - CI
     if: always()
-    needs: [changes, portal, portal-image, mcp-listing, go, mcp-windows, packs, runner-image, pack-tools, pack-behavior, signing-e2e, sso-e2e, infra, dep-age]
+    needs: [changes, portal, portal-image, mcp-listing, go, mcp-windows, packs, runner-image, pack-behavior, signing-e2e, sso-e2e, infra, dep-age]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -1016,7 +845,6 @@ jobs:
       SELECT_PACKS: ${{ needs.changes.outputs.packs }}
       RUNNER_IMAGE: ${{ needs.runner-image.result }}
       SELECT_RUNNER_IMAGE: ${{ needs.changes.outputs.runner_image }}
-      PACK_TOOLS: ${{ needs.pack-tools.result }}
       PACK_BEHAVIOR: ${{ needs.pack-behavior.result }}
       SELECT_PACK_BEHAVIOR: ${{ needs.changes.outputs.pack_behavior }}
       SIGNING_E2E: ${{ needs.signing-e2e.result }}
@@ -1068,10 +896,8 @@ jobs:
           require_selected PACKS "$SELECT_PACKS"
           require_selected RUNNER_IMAGE "$SELECT_RUNNER_IMAGE"
           if [ "$SELECT_PACK_BEHAVIOR" = '[]' ]; then
-            require_selected PACK_TOOLS false
             require_selected PACK_BEHAVIOR false
           else
-            require_selected PACK_TOOLS true
             require_selected PACK_BEHAVIOR true
           fi
           require_selected SIGNING_E2E "$SELECT_SIGNING_E2E"
