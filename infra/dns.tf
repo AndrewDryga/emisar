@@ -314,3 +314,16 @@ resource "google_dns_record_set" "status" {
   ttl          = 3600
   rrdatas      = ["statuspage.betteruptime.com."]
 }
+
+# ── GitHub organization domain verification ───────────────────────────────────
+# Proves EmisarHQ controls emisar.dev, which puts the verified badge on the org
+# profile and lets GitHub restrict email notifications to the domain. The record
+# is permanent, not a one-off challenge: deleting it after verification drops
+# the domain back to unverified.
+resource "google_dns_record_set" "github_org_verification" {
+  name         = "_gh-EmisarHQ-o.${var.domain}."
+  managed_zone = google_dns_managed_zone.emisar.name
+  type         = "TXT"
+  ttl          = 3600
+  rrdatas      = ["\"080664a769\""]
+}
