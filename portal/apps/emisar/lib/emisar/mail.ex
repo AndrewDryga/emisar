@@ -26,6 +26,18 @@ defmodule Emisar.Mail do
   def suppressed?(_), do: false
 
   @doc """
+  Internal — the suppression row for `email`, or nil. The mailer reads it when
+  it skips a send, so the skip log says WHY mail stopped (hard bounce vs spam
+  complaint, plus the provider's detail) — the first question an operator asks,
+  and until now the answer sat in two columns nothing read.
+  """
+  def suppression_for(email) when is_binary(email) do
+    email |> String.trim() |> Suppression.Query.by_email() |> Repo.peek()
+  end
+
+  def suppression_for(_), do: nil
+
+  @doc """
   Internal — of the given `emails`, the subset that is suppressed, returned as
   the CALLER's own strings. Called by `Accounts.suppressed_member_emails/2` to
   flag bouncing member/invite addresses on the Team page. The caller supplies

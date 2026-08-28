@@ -38,12 +38,14 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
     do: change(provider, deleted_at: DateTime.utc_now())
 
   @doc "Record a completed administrator sign-in against this exact configuration."
-  def verify_sign_in(%IdentityProvider{} = provider, user_id, identity_id, configuration_digest)
-      when is_binary(user_id) and is_binary(identity_id) and is_binary(configuration_digest) do
+  # No identity id in the receipt: a user holds exactly one live identity per
+  # provider (20260826), so (provider, verified_by_user_id) already names it,
+  # and the audit event records the act.
+  def verify_sign_in(%IdentityProvider{} = provider, user_id, configuration_digest)
+      when is_binary(user_id) and is_binary(configuration_digest) do
     change(provider,
       sign_in_verified_at: DateTime.utc_now(),
       sign_in_verified_by_user_id: user_id,
-      sign_in_verified_identity_id: identity_id,
       sign_in_verified_configuration_digest: configuration_digest
     )
   end

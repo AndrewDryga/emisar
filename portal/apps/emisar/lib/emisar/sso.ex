@@ -744,7 +744,6 @@ defmodule Emisar.SSO do
 
   defp provider_verification_writes(changes, :verify_provider) do
     provider = changes.provider
-    identity = changes.identity
     current_subject = changes.actor.subject
 
     Multi.new()
@@ -753,7 +752,6 @@ defmodule Emisar.SSO do
       IdentityProvider.Changeset.verify_sign_in(
         provider,
         current_subject.actor.id,
-        identity.id,
         provider_sign_in_configuration_digest(provider)
       )
     )

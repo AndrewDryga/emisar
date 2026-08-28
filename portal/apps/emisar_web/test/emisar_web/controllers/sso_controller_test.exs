@@ -766,7 +766,6 @@ defmodule EmisarWeb.SSOControllerTest do
       assert reloaded.enabled == false
       assert %DateTime{} = reloaded.sign_in_verified_at
       assert reloaded.sign_in_verified_by_user_id == verification.user.id
-      assert is_binary(reloaded.sign_in_verified_identity_id)
     end
   end
 

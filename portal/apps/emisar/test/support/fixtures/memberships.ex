@@ -34,7 +34,6 @@ defmodule Emisar.Fixtures.Memberships do
           :directory_managed,
           :runner_access_directory_managed,
           :directory_provider_id,
-          :directory_authorization_version,
           :directory_authorization_pending_version
         ])
       )

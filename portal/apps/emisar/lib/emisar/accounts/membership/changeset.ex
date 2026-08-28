@@ -4,7 +4,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
 
   @create_fields ~w[account_id user_id role directory_managed runner_access_mode runner_access_directory_managed
                     pack_access_mode pack_scope_pack_ids
-                    directory_provider_id directory_authorization_version directory_authorization_pending_version
+                    directory_provider_id directory_authorization_pending_version
                     invited_by_id invitation_token_digest invitation_sent_to
                     invitation_email_changed_at invitation_accepted_at]a
   @update_fields ~w[role invitation_accepted_at]a
@@ -52,25 +52,23 @@ defmodule Emisar.Accounts.Membership.Changeset do
         %Membership{} = membership,
         role,
         %RunnerAccess{} = access,
-        provider_id,
-        version
+        provider_id
       ) do
     membership
     |> change(role: role, directory_managed: true)
     |> put_runner_access(access)
-    |> put_directory_authorization(provider_id, version)
+    |> put_directory_authorization(provider_id)
     |> put_access_the_role_carries()
   end
 
   def sync_runner_authorization(
         %Membership{} = membership,
         %RunnerAccess{} = access,
-        provider_id,
-        version
+        provider_id
       ) do
     membership
     |> put_runner_access(access)
-    |> put_directory_authorization(provider_id, version)
+    |> put_directory_authorization(provider_id)
     |> put_access_the_role_carries()
   end
 
@@ -148,11 +146,13 @@ defmodule Emisar.Accounts.Membership.Changeset do
     )
   end
 
-  defp put_directory_authorization(changeset, provider_id, version) do
+  # Applying a sync clears the fail-closed marker; "authorization is current"
+  # IS "pending is nil". The applied-version receipt this used to write was
+  # compared by nothing and is gone.
+  defp put_directory_authorization(changeset, provider_id) do
     change(changeset,
       runner_access_directory_managed: true,
       directory_provider_id: provider_id,
-      directory_authorization_version: version,
       directory_authorization_pending_version: nil
     )
   end

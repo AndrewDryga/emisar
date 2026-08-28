@@ -1660,9 +1660,7 @@ defmodule Emisar.Accounts do
       pack_access_mode: access.pack_mode,
       pack_scope_pack_ids: access.pack_ids,
       runner_access_directory_managed: directory_managed?,
-      directory_provider_id: directory_provider_id(directory_provider, directory_managed?),
-      directory_authorization_version:
-        directory_provider_version(directory_provider, directory_managed?)
+      directory_provider_id: directory_provider_id(directory_provider, directory_managed?)
     }
 
     multi
@@ -1688,11 +1686,6 @@ defmodule Emisar.Accounts do
 
   defp directory_provider_id(%SSO.IdentityProvider{id: id}, true), do: id
   defp directory_provider_id(_provider, _managed?), do: nil
-
-  defp directory_provider_version(%SSO.IdentityProvider{authorization_version: version}, true),
-    do: version
-
-  defp directory_provider_version(_provider, _managed?), do: 0
 
   @doc """
   Canonical runner access for a picker's explicit mode plus the raw
@@ -2998,20 +2991,9 @@ defmodule Emisar.Accounts do
     end)
     |> Multi.update(:membership, fn %{target: target, granted_access: access} ->
       if target.role == :owner do
-        Membership.Changeset.sync_runner_authorization(
-          target,
-          access,
-          provider.id,
-          provider.authorization_version
-        )
+        Membership.Changeset.sync_runner_authorization(target, access, provider.id)
       else
-        Membership.Changeset.sync_authorization(
-          target,
-          role,
-          access,
-          provider.id,
-          provider.authorization_version
-        )
+        Membership.Changeset.sync_authorization(target, role, access, provider.id)
       end
     end)
     |> Multi.run(:runner_access, fn repo, %{membership: updated, granted_access: access} ->

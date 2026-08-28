@@ -910,11 +910,16 @@ defmodule Emisar.Mailers.UserNotifier do
   end
 
   defp deliver(to, subject, body, opts) do
-    if Mail.suppressed?(to) do
+    if suppression = Mail.suppression_for(to) do
       # `to` hard-bounced or filed a spam complaint (recorded from the
-      # Postmark webhook). Sending again only degrades sender reputation,
-      # so skip it. The {:ok, _} shape keeps callers' success match intact.
-      Logger.info("mail_suppressed recipient=#{redact_email(to)} subject=#{inspect(subject)}")
+      # Postmark webhook). Sending again only degrades sender reputation, so
+      # skip it — and say WHY, because "why did mail stop" is the operator's
+      # first question. The {:ok, _} shape keeps callers' success match intact.
+      Logger.info(
+        "mail_suppressed recipient=#{redact_email(to)} subject=#{inspect(subject)} " <>
+          "reason=#{suppression.reason} detail=#{inspect(suppression.detail)}"
+      )
+
       {:ok, %{suppressed: true}}
     else
       new()

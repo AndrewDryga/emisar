@@ -239,8 +239,10 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
           assert {:ok, %{membership: updated}} = Task.await(mutation, 30_000)
           assert updated.role == :operator
 
-          assert updated.directory_authorization_version ==
-                   current_provider.authorization_version
+          # Applying the sync clears the fail-closed marker — "authorization is
+          # current" IS "pending is nil"; the applied-version receipt is gone.
+          assert updated.directory_authorization_pending_version == nil
+          assert %IdentityProvider{} = current_provider
 
           assert Accounts.runner_access_for_membership(context.account.id, updated.id) ==
                    %RunnerAccess{
@@ -369,8 +371,8 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
           assert {:ok, %{membership: membership}} = Task.await(mutation, 30_000)
           assert membership.role == :operator
 
-          assert membership.directory_authorization_version ==
-                   current_provider.authorization_version
+          assert membership.directory_authorization_pending_version == nil
+          assert %IdentityProvider{} = current_provider
 
           assert Accounts.runner_access_for_membership(context.account.id, membership.id) ==
                    %RunnerAccess{

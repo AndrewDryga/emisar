@@ -32,6 +32,21 @@ defmodule Emisar.MailTest do
     end
   end
 
+  describe "suppression_for/1" do
+    test "returns the row so the skip log can say WHY mail stopped" do
+      {:ok, _} = Mail.suppress("why@example.com", :spam_complaint, "SpamComplaint")
+
+      suppression = Mail.suppression_for("  why@example.com  ")
+      assert suppression.reason == :spam_complaint
+      assert suppression.detail == "SpamComplaint"
+    end
+
+    test "nil for an unsuppressed address and for a non-binary" do
+      assert Mail.suppression_for("clean@example.com") == nil
+      assert Mail.suppression_for(nil) == nil
+    end
+  end
+
   describe "suppressed_emails/1" do
     test "returns the suppressed subset, keyed to the caller's strings" do
       {:ok, _} = Mail.suppress("bounced@example.com", :hard_bounce, "bounce")

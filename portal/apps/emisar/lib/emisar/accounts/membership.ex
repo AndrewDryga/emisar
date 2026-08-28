@@ -20,7 +20,6 @@ defmodule Emisar.Accounts.Membership do
     field :pack_scope_pack_ids, {:array, :string}, default: []
     field :runner_access_directory_managed, :boolean, default: false
     field :directory_provider_id, Ecto.UUID
-    field :directory_authorization_version, :integer, default: 0
     field :directory_authorization_pending_version, :integer
     # True when a directory sync (SCIM group->role recompute) owns this role, so
     # the operator role-change path (`Accounts.update_membership_role`) rejects a
