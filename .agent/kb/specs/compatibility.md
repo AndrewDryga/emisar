@@ -430,6 +430,18 @@ bump into a compatibility event for a promise nobody made. `completion
 --no-descriptions` is cobra's flag and is recorded in the surface golden as a
 fact about the current library, not as a contract.
 
+`signing new-cert` takes the CA private key as `--ca-key-file` (preferred) or
+`--ca-key` (the material itself). The argv form is what existed, and it puts the
+root of trust for signed dispatch into shell history and the process table where
+any other user on the host can read it while the command runs; the file form is
+the way out and there was none. Passing both is refused rather than resolved,
+since silently preferring one is how an operator signs with a key they did not
+think they passed.
+
+Note also that three flags in this group contain "key" and mean three different
+things: `--key` is an ALGORITHM, `--ca-key`/`--ca-key-file` are key MATERIAL,
+and `--key-name` is a certificate common name. They freeze as they are.
+
 The runner BINARY reads exactly `EMISAR_CONFIG` (selects the config file),
 `EMISAR_URL`, `EMISAR_GROUP`, `EMISAR_RUNNER_ID`, `EMISAR_PACKS_REGISTRY`, and
 `EMISAR_GITHUB_TOKEN`, which `emisar update` sends with its release lookups.
@@ -468,8 +480,7 @@ as permission to rename the ones it forgot. `action run --arg/--reason/
 --to/--stat/--registry`, `pack verify --arg`, `audit verify --all`, `events
 tail --lines/-f`, `events grep --action/--type/--event-id/--request-id`, `state
 check-dispatch-log --data-dir`, `signing init --ca-name/--scope/--ttl/--key`,
-`signing new-ca --ca-name/--ttl/--key`, and `signing new-cert
---ca-key/--ca-cert/--key-name/--scope/--ttl/--key` are all inside the freeze.
+`signing new-ca --ca-name/--ttl/--key`, and `signing new-cert --ca-key-file/--ca-key/--ca-cert/--key-name/--scope/--ttl/--key` are all inside the freeze.
 These command names and flags, including the documented aliases, are public
 inputs. The complete tree is pinned mechanically:
 `runner/testdata/cli_surface.golden` (checked by `TestCLISurfaceGolden` inside

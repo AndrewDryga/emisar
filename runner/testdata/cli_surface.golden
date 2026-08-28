@@ -30,7 +30,7 @@ emisar pack verify --arg:stringArray [+json]
 emisar signing
 emisar signing init --ca-name:string --key:string --scope:string --ttl:string [+json]
 emisar signing new-ca --ca-name:string --key:string --ttl:string [+json]
-emisar signing new-cert --ca-cert:string --ca-key:string --key:string --key-name:string --scope:string --ttl:string [+json]
+emisar signing new-cert --ca-cert:string --ca-key:string --ca-key-file:string --key:string --key-name:string --scope:string --ttl:string [+json]
 emisar state [+json]
 emisar state check-dispatch-log --data-dir:string
 emisar status [+json]

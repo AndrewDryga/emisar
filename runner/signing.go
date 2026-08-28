@@ -11,9 +11,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -223,6 +225,34 @@ func mintCA(key crypto.Signer, name string, ttl time.Duration) ([]byte, error) {
 // mintLeaf issues a dispatch-signing certificate carrying the scope as its one
 // emisar URI SAN. That SAN is what makes the certificate recognisable as ours;
 // without it an enforcing runner refuses the dispatch as cert_profile.
+// caKeyMaterial resolves the CA private key from a file or from argv.
+//
+// --ca-key takes the key MATERIAL, so the root of trust for signed dispatch
+// lands in shell history and in the process table, where every other user on
+// the host can read it while the command runs. --ca-key-file is the way to
+// avoid that, and there was none. The argv form stays — scripts use it, and
+// removing it now would break them — but the file form is what the help
+// recommends.
+//
+// Exactly one, because silently preferring one over the other is how an
+// operator ends up signing with a key they did not think they passed.
+func caKeyMaterial(inline, file string) (string, error) {
+	switch {
+	case inline == "" && file == "":
+		return "", usageError{errors.New("provide --ca-key-file (preferred) or --ca-key")}
+	case inline != "" && file != "":
+		return "", usageError{errors.New("--ca-key and --ca-key-file are alternatives; pass one")}
+	case file != "":
+		material, err := os.ReadFile(file)
+		if err != nil {
+			return "", fmt.Errorf("read CA key: %w", err)
+		}
+		return strings.TrimSpace(string(material)), nil
+	default:
+		return inline, nil
+	}
+}
+
 func mintLeaf(caKey crypto.Signer, caCert *x509.Certificate, leafPub crypto.PublicKey, name string, scope attest.Scope, ttl time.Duration) ([]byte, error) {
 	scopeURI, err := attest.EncodeScopeURI(scope)
 	if err != nil {
@@ -338,7 +368,7 @@ https://emisar.dev/docs/signed-dispatch.`,
 // signingNewCertCmd issues a certificate for a leaf key. It mints the leaf
 // keypair too, printing both MCP env vars.
 func signingNewCertCmd() *cobra.Command {
-	var caKey, caCertPEM, keyName, scopeStr, ttlStr, keyAlg string
+	var caKey, caKeyFile, caCertPEM, keyName, scopeStr, ttlStr, keyAlg string
 	cmd := &cobra.Command{
 		Use:   "new-cert",
 		Short: "Mint a short-lived operator certificate (routinely, as certs expire)",
@@ -351,7 +381,11 @@ never transmitted. Prefer short --ttl values (24h): expiry is the only
 revocation, so a long TTL keeps a leaked certificate usable longer.`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			signer, err := parsePrivateKey(caKey)
+			material, err := caKeyMaterial(caKey, caKeyFile)
+			if err != nil {
+				return err
+			}
+			signer, err := parsePrivateKey(material)
 			if err != nil {
 				return err
 			}
@@ -404,13 +438,13 @@ revocation, so a long TTL keeps a leaked certificate usable longer.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&caKey, "ca-key", "", "CA PRIVATE key from `signing new-ca` [required]")
+	cmd.Flags().StringVar(&caKey, "ca-key", "", "CA PRIVATE key material from `signing new-ca` (prefer --ca-key-file)")
+	cmd.Flags().StringVar(&caKeyFile, "ca-key-file", "", "file holding the CA private key from `signing new-ca`")
 	cmd.Flags().StringVar(&caCertPEM, "ca-cert", "", "CA certificate PEM from `signing new-ca` [required]")
 	cmd.Flags().StringVar(&keyName, "key-name", "", "leaf common name (default: emisar-operator)")
 	cmd.Flags().StringVar(&scopeStr, "scope", "", "cert scope, e.g. group=edge,env=prod (empty = any runner)")
 	cmd.Flags().StringVar(&ttlStr, "ttl", "24h", "validity duration: 24h, 30d, 1y")
 	cmd.Flags().StringVar(&keyAlg, "key", string(algEd25519), "key algorithm: ed25519 or p256")
-	_ = cmd.MarkFlagRequired("ca-key")
 	_ = cmd.MarkFlagRequired("ca-cert")
 	return cmd
 }
