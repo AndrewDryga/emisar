@@ -1,0 +1,97 @@
+name: Verify release tag
+description: >
+  The shared verify prologue of both trusted release workflows: the exact
+  signed annotated tag on current main, the tagged commit's green Required -
+  CI, and a release-time advisory scan. This file executes at the trusted
+  workflow's pinned commit (a repo-local action resolves in the called
+  workflow's own tree), and `./run ops verify-release-pins` diffs it against
+  that pin the same way it diffs the workflows — editing it requires the same
+  two-commit SHA rotation.
+
+inputs:
+  module:
+    description: The Go module directory this release builds (runner or mcp).
+    required: true
+  tag-prefix:
+    description: The release tag prefix (runner-v or mcp-v).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: ${{ inputs.module }}/go.mod
+        cache: true
+        cache-dependency-path: ${{ inputs.module }}/go.sum
+
+    - name: Verify exact signed annotated tag
+      shell: bash
+      env:
+        TAG_PREFIX: ${{ inputs.tag-prefix }}
+      run: |
+        set -euo pipefail
+        [[ "$RELEASE_TAG" =~ ^${TAG_PREFIX}[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+          echo "::error::tag must exactly match ${TAG_PREFIX}MAJOR.MINOR.PATCH"; exit 1; }
+        ref=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")
+        test "$(jq -r '.object.type' <<< "$ref")" = tag || {
+          echo "::error::release tags must be signed annotated tags"; exit 1; }
+        tag=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$(jq -r '.object.sha' <<< "$ref")")
+        test "$(jq -r '.verification.verified' <<< "$tag")" = true || {
+          echo "::error::GitHub could not verify the release tag signature"; exit 1; }
+        test "$(jq -r '.object.sha' <<< "$tag")" = "$(git rev-parse HEAD)" || {
+          echo "::error::tag target does not match the checked-out commit"; exit 1; }
+        git merge-base --is-ancestor HEAD origin/main || {
+          echo "::error::release tag target is not on main"; exit 1; }
+        test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || {
+          echo "::error::release tags must target current main; after a successful verification, recover downstream failures by rerunning failed jobs only"; exit 1; }
+
+    - name: Require successful CI for tagged commit
+      # The release process tags only after the commit's Required - CI
+      # aggregate reports green; this enforces it. Content-stable checks
+      # (vet, staticcheck, race tests, per-module lint and validation)
+      # were enforced by CI when this exact tree last changed — force
+      # pushes to main are disabled, so the history is append-only and a
+      # green check cannot be rewritten out from under the tag.
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Under the job's 20-minute timeout, with room for checkout and setup
+        # first: at 1500s the job was killed before this loop could report WHY
+        # it gave up, so a CI run that never finished looked like an
+        # infrastructure timeout instead of a named wait.
+        deadline=$((SECONDS + 900))
+        while true; do
+          result=$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/${GITHUB_REPOSITORY}/commits/$(git rev-parse HEAD)/check-runs?per_page=100" \
+            --jq '[.check_runs[] | select((.name == "Required - CI" or .name == "CI / Required - CI") and .app.id == 15368)] | sort_by(.id) | last | [(.status // "missing"), (.conclusion // "pending")] | @tsv')
+          IFS=$'\t' read -r status conclusion <<< "$result"
+
+          if [ "$status" = completed ]; then
+            test "$conclusion" = success || {
+              echo "::error::tagged commit's Required - CI check ended '$conclusion'"
+              exit 1
+            }
+            break
+          fi
+
+          if ((SECONDS >= deadline)); then
+            echo "::error::timed out waiting for the tagged commit's Required - CI check (last status '$status')"
+            exit 1
+          fi
+
+          echo "Required - CI is ${status}; checking again in 15 seconds"
+          sleep 15
+        done
+
+    - name: Scan current advisories
+      # The one release-time re-check: govulncheck consults today's
+      # vulnerability database, which moves independently of the source —
+      # a tag can land on a tree whose last Go change predates a fresh
+      # advisory. Everything content-stable already rode Required - CI.
+      shell: bash
+      working-directory: ${{ inputs.module }}
+      run: |
+        go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+        govulncheck ./...

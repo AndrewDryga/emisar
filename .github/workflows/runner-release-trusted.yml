@@ -57,77 +57,14 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      # The shared prologue of both trusted releases — the signed-tag check,
+      # the Required - CI wait, and the advisory scan — lives once in the
+      # repo-local composite, which executes at this workflow's pinned commit
+      # and is covered by the same drift check as this file.
+      - uses: ./.github/actions/verify-release-tag
         with:
-          go-version-file: runner/go.mod
-          cache: true
-          cache-dependency-path: runner/go.sum
-
-      - name: Verify exact signed annotated tag
-        run: |
-          set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^runner-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-            echo "::error::tag must exactly match runner-vMAJOR.MINOR.PATCH"; exit 1; }
-          ref=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")
-          test "$(jq -r '.object.type' <<< "$ref")" = tag || {
-            echo "::error::release tags must be signed annotated tags"; exit 1; }
-          tag=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$(jq -r '.object.sha' <<< "$ref")")
-          test "$(jq -r '.verification.verified' <<< "$tag")" = true || {
-            echo "::error::GitHub could not verify the release tag signature"; exit 1; }
-          test "$(jq -r '.object.sha' <<< "$tag")" = "$(git rev-parse HEAD)" || {
-            echo "::error::tag target does not match the checked-out commit"; exit 1; }
-          git merge-base --is-ancestor HEAD origin/main || {
-            echo "::error::release tag target is not on main"; exit 1; }
-          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || {
-            echo "::error::release tags must target current main; after a successful verification, recover downstream failures by rerunning failed jobs only"; exit 1; }
-
-      - name: Require successful CI for tagged commit
-        # The release process tags only after the commit's Required - CI
-        # aggregate reports green; this enforces it. Content-stable checks
-        # (vet, staticcheck, race tests, pack validation, installer lint)
-        # were enforced by CI when this exact tree last changed — force
-        # pushes to main are disabled, so the history is append-only and a
-        # green check cannot be rewritten out from under the tag.
-        run: |
-          set -euo pipefail
-          # Under the job's 20-minute timeout, with room for checkout and setup
-          # first: at 1500s the job was killed before this loop could report WHY
-          # it gave up, so a CI run that never finished looked like an
-          # infrastructure timeout instead of a named wait.
-          deadline=$((SECONDS + 900))
-          while true; do
-            result=$(gh api \
-              -H 'Accept: application/vnd.github+json' \
-              "repos/${GITHUB_REPOSITORY}/commits/$(git rev-parse HEAD)/check-runs?per_page=100" \
-              --jq '[.check_runs[] | select((.name == "Required - CI" or .name == "CI / Required - CI") and .app.id == 15368)] | sort_by(.id) | last | [(.status // "missing"), (.conclusion // "pending")] | @tsv')
-            IFS=$'\t' read -r status conclusion <<< "$result"
-
-            if [ "$status" = completed ]; then
-              test "$conclusion" = success || {
-                echo "::error::tagged commit's Required - CI check ended '$conclusion'"
-                exit 1
-              }
-              break
-            fi
-
-            if ((SECONDS >= deadline)); then
-              echo "::error::timed out waiting for the tagged commit's Required - CI check (last status '$status')"
-              exit 1
-            fi
-
-            echo "Required - CI is ${status}; checking again in 15 seconds"
-            sleep 15
-          done
-
-      - name: Scan current advisories
-        # The one release-time re-check: govulncheck consults today's
-        # vulnerability database, which moves independently of the source —
-        # a tag can land on a tree whose last Go change predates a fresh
-        # advisory. Everything content-stable already rode Required - CI.
-        working-directory: runner
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
-          govulncheck ./...
+          module: runner
+          tag-prefix: runner-v
 
   build:
     name: Build ${{ matrix.os }}/${{ matrix.arch }}

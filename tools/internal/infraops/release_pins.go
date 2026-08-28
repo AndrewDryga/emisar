@@ -72,6 +72,36 @@ func (a *App) checkTrustedReleasePins(ctx context.Context) error {
 				workflow, trusted[:12], shim)
 		}
 	}
+
+	// Repo-local composite actions execute at the same pinned commit (a
+	// `uses: ./.github/actions/...` inside a reusable workflow resolves in the
+	// CALLED workflow's tree), so an edited composite with a stale pin is the
+	// same silent failure one directory over: the release runs the OLD steps,
+	// green, and the change ships nothing.
+	actions, err := filepath.Glob(filepath.Join(a.Root, ".github", "actions", "*", "*.yml"))
+	if err != nil {
+		return err
+	}
+	for _, path := range actions {
+		relative, err := filepath.Rel(a.Root, path)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+		current, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		at, err := a.output(ctx, a.Root, nil, "git", "show", trusted+":"+relative)
+		if err != nil {
+			return fmt.Errorf("%s does not exist at the pinned commit %s — commit it and re-pin the shims and infra/github_oidc.tf", relative, trusted[:12])
+		}
+		if !strings.EqualFold(string(current), string(at)) {
+			return fmt.Errorf("%s changed since %s, but the shims and infra/github_oidc.tf still pin that commit — "+
+				"the release would silently run the old steps; re-pin all three to the new SHA",
+				relative, trusted[:12])
+		}
+	}
 	fmt.Fprintf(a.Out, "verified: %d trusted release workflow(s) pinned at %s in the shims and infra/github_oidc.tf\n",
 		len(pinned), trusted[:12])
 	return nil

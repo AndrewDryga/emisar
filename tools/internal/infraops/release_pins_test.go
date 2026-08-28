@@ -42,6 +42,7 @@ func writeTrustedReleaseRepo(t *testing.T, trustedBody string) (root, sha string
 
 	git("init", "--quiet")
 	write(".github/workflows/runner-release-trusted.yml", trustedBody)
+	write(".github/actions/verify-release-tag/action.yml", "name: verify\nruns:\n  using: composite\n")
 	git("add", "-A")
 	git("commit", "--quiet", "-m", "trusted workflow")
 	sha = git("rev-parse", "HEAD")
@@ -100,6 +101,22 @@ func TestCheckTrustedReleasePins(t *testing.T) {
 		err = app.checkTrustedReleasePins(context.Background())
 		if err == nil || !strings.Contains(err.Error(), "would fail OIDC") {
 			t.Fatalf("mismatched pin not reported: %v", err)
+		}
+	})
+
+	// A repo-local composite executes at the pinned commit too, so editing one
+	// without re-pinning is the same silent failure one directory over.
+	t.Run("an edited composite with a stale pin fails", func(t *testing.T) {
+		root, _ := writeTrustedReleaseRepo(t, trusted)
+		path := filepath.Join(root, ".github", "actions", "verify-release-tag", "action.yml")
+		if err := os.WriteFile(path, []byte("name: verify\nruns:\n  using: composite\n# drift\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		app := New(root, strings.NewReader(""), &out, &out)
+		err := app.checkTrustedReleasePins(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "silently run the old steps") {
+			t.Fatalf("stale composite pin not reported: %v", err)
 		}
 	})
 
