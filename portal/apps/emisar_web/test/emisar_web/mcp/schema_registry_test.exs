@@ -21,6 +21,41 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     update_runbook_draft
   )
 
+  # `error.code` freezes at 1.0 and was an open string, so at the moment of the
+  # freeze we would not have known what we were freezing — worse, issue_error/1
+  # lifts a DOMAIN issue code straight into it, so the domain could mint a new
+  # member of a frozen contract without anyone noticing. It is now an enum, and
+  # this asserts the enum still covers every code the controllers can emit: add
+  # one without declaring it and this fails, which is the point.
+  test "every error code the MCP controllers emit is in the published enum" do
+    declared =
+      @schema_path
+      |> File.read!()
+      |> Jason.decode!()
+      |> get_in(["$defs", "error", "properties", "code", "enum"])
+      |> MapSet.new()
+
+    emitted =
+      "../../../lib/emisar_web/controllers/mcp"
+      |> Path.expand(__DIR__)
+      |> Path.join("*.ex")
+      |> Path.wildcard()
+      |> Enum.flat_map(fn file ->
+        source = File.read!(file)
+
+        Regex.scan(~r/\berror\(\s*"([a-z_]+)"/, source, capture: :all_but_first) ++
+          Regex.scan(~r/\bcode:\s*"([a-z_]+)"/, source, capture: :all_but_first)
+      end)
+      |> List.flatten()
+      |> MapSet.new()
+
+    undeclared = MapSet.difference(emitted, declared)
+
+    assert MapSet.size(undeclared) == 0,
+           "these error codes are emitted but absent from the published enum: " <>
+             Enum.join(Enum.sort(undeclared), ", ")
+  end
+
   test "publishes exactly the thirteen normative descriptors in contract order" do
     tools = SchemaRegistry.tools()
 

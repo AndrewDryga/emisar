@@ -578,7 +578,7 @@
       "required": ["code", "message", "retryable"],
       "additionalProperties": false,
       "properties": {
-        "code": {"type": "string", "minLength": 1, "maxLength": 80},
+        "code": {"enum": ["action_unavailable", "dispatch_failed", "draft_changed", "draft_not_found", "execution_failed", "invalid_args", "invalid_attestation", "invalid_cursor", "invalid_definition", "invalid_draft", "invalid_input", "invalid_runbook", "not_allowed", "not_live", "operation_conflict", "operation_incomplete", "operation_not_found", "pack_unavailable", "response_too_large", "run_not_found", "runbook_not_found", "runbook_too_large", "signature_required", "signed_runbook_unsupported", "target_contract_changed"]},
         "message": {"type": "string", "minLength": 1, "maxLength": 512},
         "retryable": {"type": "boolean"},
         "path": {
