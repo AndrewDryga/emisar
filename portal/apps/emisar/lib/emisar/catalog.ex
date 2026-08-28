@@ -33,7 +33,7 @@ defmodule Emisar.Catalog do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, ActionContract, Audit, Auth, Repo, Runners}
+  alias Emisar.{Accounts, ActionContract, Audit, Auth, Repo, Runners, Telemetry}
   alias Emisar.Auth.Subject
   alias Emisar.Catalog.{Authorizer, ConsoleProjection, EditorProjection}
   alias Emisar.Catalog.{MCPProjection, PackBaseline, PackRetentionInput}
@@ -1463,12 +1463,52 @@ defmodule Emisar.Catalog do
   defp observe_actions(%Runners.Runner{} = runner, actions, packs, now) do
     actions
     |> Enum.map(&observe_action(runner, &1, packs, now))
+    |> report_rejected_descriptors(runner)
     |> Enum.filter(&match?(%Ecto.Changeset{valid?: true}, &1))
     |> Enum.map(&upsert_entry(&1, now))
     |> dedupe_by_action_id()
     |> Enum.chunk_every(@upsert_chunk_size)
     |> Enum.flat_map(&upsert_action_chunk/1)
   end
+
+  # A descriptor the catalog cannot accept is DROPPED — `kind` and `risk` are
+  # closed Ecto.Enums, so a value outside the set invalidates the changeset and
+  # the action never appears. That is the right outcome (we will not persist a
+  # descriptor we cannot interpret) but it used to be silent: no log, no metric,
+  # no audit row, and the wire has a channel for "a pack failed to LOAD"
+  # (degraded_packs) and none for "I advertised a descriptor you could not
+  # parse". To an operator, an action missing from the catalog and one the
+  # runner never offered look identical — a bad pair to confuse on a security
+  # product, since the visible effect is a capability quietly disappearing.
+  #
+  # So say so. Fleet-wide counter for alerting, and a log line naming the action
+  # and the fields that failed, because "which one and why" is the question that
+  # follows.
+  defp report_rejected_descriptors(entries, %Runners.Runner{} = runner) do
+    rejected = Enum.reject(entries, &match?(%Ecto.Changeset{valid?: true}, &1))
+
+    if rejected != [] do
+      Telemetry.catalog_descriptors_rejected(length(rejected))
+
+      Logger.warning(
+        "Catalog: runner #{runner.id} advertised #{length(rejected)} descriptor(s) the " <>
+          "catalog cannot accept, so they are absent from its action list: " <>
+          Enum.map_join(rejected, "; ", &describe_rejected_descriptor/1)
+      )
+    end
+
+    entries
+  end
+
+  defp describe_rejected_descriptor(%Ecto.Changeset{} = changeset) do
+    action_id = Ecto.Changeset.get_field(changeset, :action_id) || "<no action_id>"
+    fields = changeset.errors |> Keyword.keys() |> Enum.uniq() |> Enum.join(", ")
+    "#{action_id} (#{fields})"
+  end
+
+  # A descriptor rejected before a changeset existed — an unresolvable pack_id,
+  # or not a map at all.
+  defp describe_rejected_descriptor(_other), do: "<unparseable descriptor>"
 
   # A runner may advertise the same action id twice. Postgres refuses to let one
   # ON CONFLICT statement touch a row twice, so collapse duplicates here, last

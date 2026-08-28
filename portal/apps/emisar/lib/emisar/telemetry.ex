@@ -111,6 +111,22 @@ defmodule Emisar.Telemetry do
     )
   end
 
+  @doc """
+  A runner advertised descriptors the catalog could not accept, so they are
+  absent from its action list. Emits `[:emisar, :catalog, :descriptor_rejected]`
+  with a `:count`.
+
+  Untagged: the reason is a changeset field set, which is neither a bounded enum
+  nor safe label cardinality. The log line beside the emit names the action and
+  the fields; this is the alertable signal that any are being dropped at all —
+  previously nothing said so, and a missing action is indistinguishable from one
+  a runner never offered.
+  """
+  @spec catalog_descriptors_rejected(pos_integer()) :: :ok
+  def catalog_descriptors_rejected(count) when is_integer(count) and count > 0 do
+    :telemetry.execute([:emisar, :catalog, :descriptor_rejected], %{count: count})
+  end
+
   # -- Periodic gauges (poller-invoked samplers) ------------------------
 
   @doc """

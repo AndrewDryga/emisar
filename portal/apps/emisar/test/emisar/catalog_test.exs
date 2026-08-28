@@ -313,6 +313,44 @@ defmodule Emisar.CatalogTest do
       %{runner: runner, account: account, subject: subject}
     end
 
+    # `kind` and `risk` are closed Ecto.Enums, so an unknown value invalidates
+    # the changeset and the action is dropped. Dropping it is right — we will
+    # not persist a descriptor we cannot interpret — but it used to be SILENT:
+    # to an operator, an action missing from the catalog and one the runner
+    # never offered look identical, and the visible effect is a capability
+    # quietly disappearing. The wire even has a channel for "a pack failed to
+    # load" and none for this. So it must announce itself.
+    test "an unknown risk drops the action AND says so", %{runner: runner, subject: subject} do
+      handler_id = "catalog-rejected-#{System.unique_integer([:positive])}"
+      test_pid = self()
+
+      :ok =
+        :telemetry.attach(
+          handler_id,
+          [:emisar, :catalog, :descriptor_rejected],
+          fn _event, measurements, _meta, _config ->
+            send(test_pid, {:rejected, measurements})
+          end,
+          nil
+        )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      payload =
+        state_payload(
+          actions: [action("linux.uptime"), action("linux.doom", risk: "apocalyptic")]
+        )
+
+      assert {:ok, _runner} = Catalog.observe_state(runner, payload)
+
+      # The good one lands; the unreadable one does not.
+      {:ok, actions, _} = Catalog.list_actions_for_runner(runner.id, subject)
+      assert Enum.map(actions, & &1.action_id) == ["linux.uptime"]
+
+      # And the drop is reported rather than swallowed.
+      assert_receive {:rejected, %{count: 1}}, 500
+    end
+
     test "upserts runner_actions", %{runner: runner, subject: subject} do
       payload =
         state_payload(actions: [action("linux.uptime"), action("linux.df", risk: "medium")])

@@ -220,6 +220,11 @@ defmodule EmisarWeb.Telemetry do
           "Seconds since the published catalog last validated; a rising value means " <>
             "auto-trust is frozen on the last-good document (gauge)"
       ),
+      counter("emisar.catalog.descriptor_rejected.count",
+        description:
+          "Runner-advertised action descriptors the catalog refused, so the action is " <>
+            "absent from that runner's list"
+      ),
       last_value("emisar.catalog.published.packs",
         description: "Packs in the catalog currently served (gauge)"
       ),
