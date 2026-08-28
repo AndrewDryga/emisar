@@ -156,7 +156,15 @@ func (selection *Selection) include(file string) {
 	// printed "Actions - Validate workflows | run". .githooks and .gitignore
 	// selected no job at all, though agentcheck asserts the commit-msg hook and
 	// the distribution ignore policy from inside that same gate.
-	if hasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", ".github/workflows/", ".githooks/") || strings.Contains(file, "/.agent/") || member(file, "run", "go.work", "go.work.sum", ".gitattributes", ".gitignore", ".tool-versions") || filepath.Ext(file) == ".md" {
+	// .github/actions holds the release-authority composite (verify-release-tag);
+	// its stale-pin drift check runs inside the tooling/infra gates, and actionlint
+	// covers it there. Without this a composite-only change selected no job and
+	// "Required - CI" went green having validated release control code with nothing.
+	// dist/ carries the tracked Cursor/ChatGPT integration packages agentcheck
+	// validates. docker-compose.yml + config.exs are the two sides of the tooling
+	// gate's e2e-stack-version check; neither selected Tools before, so editing
+	// either re-introduced the drift that check exists to catch.
+	if hasAnyPrefix(file, "tools/", "dev/", ".agent/", ".claude/", ".codex/", ".gemini/", "skills/", "dist/", ".github/workflows/", ".github/actions/", ".githooks/") || strings.Contains(file, "/.agent/") || member(file, "run", "go.work", "go.work.sum", ".gitattributes", ".gitignore", ".tool-versions", "docker-compose.yml", "portal/config/config.exs") || filepath.Ext(file) == ".md" {
 		selection.Tools = true
 	}
 	// Pack behavior plans are validation inputs but are not loaded into registry
@@ -180,7 +188,7 @@ func (selection *Selection) include(file string) {
 	}
 	// The selector is workflow control code: validate every branch it can route
 	// whenever its implementation or command entrypoint changes.
-	if hasAnyPrefix(file, ".github/workflows/", "tools/cmd/ci/", "tools/internal/ci/") || file == ".github/dependabot.yml" {
+	if hasAnyPrefix(file, ".github/workflows/", ".github/actions/", "tools/cmd/ci/", "tools/internal/ci/") || file == ".github/dependabot.yml" {
 		selection.Workflows = true
 	}
 	// Both halves of the signer↔verifier contract, because the e2e drives the
@@ -203,7 +211,9 @@ func (selection *Selection) include(file string) {
 		"tools/cmd/sso-e2e/",
 		"dev/keycloak/",
 		"portal/apps/emisar/lib/emisar/sso/",
-		"portal/apps/emisar_web/lib/emisar_web/controllers/auth",
+		"portal/apps/emisar_web/lib/emisar_web/controllers/sso",
+		"portal/apps/emisar_web/lib/emisar_web/controllers/oauth",
+		"portal/apps/emisar_web/lib/emisar_web/controllers/scim/",
 		"portal/apps/emisar_web/lib/emisar_web/live/sso",
 	) || member(file, "docker-compose.yml", "tools/internal/devtool/e2e.go") {
 		selection.SSOE2E = true
@@ -369,16 +379,29 @@ func packBehaviorSharedPath(file string) bool {
 		"dev/test-packs/",
 		"tools/cmd/packtest/",
 		"tools/internal/packtest/",
+		// The harness runs the real runner binary, so every package the action
+		// pipeline links is a behavior input — not just the executor and loader.
+		// A redaction, path-containment, or output-schema regression must run the
+		// behavior rows that pin it.
+		"runner/internal/engine/",
 		"runner/internal/executor/",
 		"runner/internal/packs/",
+		"runner/internal/redact/",
+		"runner/internal/validation/",
+		"runner/internal/expressions/",
+		"runner/internal/admission/",
+		"runner/internal/audit/",
+		"runner/internal/config/",
+		"runner/internal/outputschema/",
 		"runner/pkg/actionspec/",
 		"runner/pkg/packspec/",
 	) || member(
 		file,
 		".github/workflows/ci.yml",
+		".github/workflows/pack-behavior-rows.yml",
 		"tools/internal/devtool/pack.go",
 		"runner/action.go",
-		"runner/config.go",
+		"runner/common.go",
 		"runner/go.mod",
 		"runner/go.sum",
 		"tools/go.mod",

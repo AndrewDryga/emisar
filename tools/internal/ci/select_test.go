@@ -98,6 +98,71 @@ func TestSelectAndFrozenMigrations(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
+	t.Run("release-authority composite selects tools and workflows", func(t *testing.T) {
+		writeFixture(t, root, ".github/actions/verify-release-tag/action.yml", "name: verify\n")
+		commitAll(t, root, "composite edit")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.Tools || !selection.Workflows {
+			t.Fatalf("composite-only change validated nothing: %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("tracked dist integration file selects tools", func(t *testing.T) {
+		writeFixture(t, root, "dist/cursor-plugin/mcp.json", "{}\n")
+		commitAll(t, root, "dist edit")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.Tools {
+			t.Fatalf("dist change did not select tools: %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("a runner pipeline package selects pack behavior", func(t *testing.T) {
+		writeFixture(t, root, "runner/internal/redact/rules.go", "package redact\n")
+		commitAll(t, root, "redact edit")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(selection.PackBehavior) != 3 {
+			t.Fatalf("redact change did not select pack behavior: %+v", selection.PackBehavior)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("an SSO controller selects the SSO e2e", func(t *testing.T) {
+		writeFixture(t, root, "portal/apps/emisar_web/lib/emisar_web/controllers/sso_controller.ex", "defmodule X do\nend\n")
+		commitAll(t, root, "sso controller")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.SSOE2E {
+			t.Fatalf("SSO controller change did not select the SSO e2e: %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
+	t.Run("the e2e stack compose selects tools", func(t *testing.T) {
+		writeFixture(t, root, "docker-compose.yml", "services: {}\n")
+		commitAll(t, root, "compose edit")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.Tools {
+			t.Fatalf("compose change did not select tools: %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
 	t.Run("unrelated workflow does not select pack behavior", func(t *testing.T) {
 		writeFixture(t, root, ".github/workflows/mcp-eval.yml", "name: MCP eval\n")
 		commitAll(t, root, "MCP eval workflow")
