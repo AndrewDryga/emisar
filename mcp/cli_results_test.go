@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestCLIFixedToolsHavePurposeBuiltHumanOutput(t *testing.T) {
@@ -537,6 +538,32 @@ func TestCLIToolErrorIssuesAreBoundedAndTerminalSafe(t *testing.T) {
 		if strings.Contains(output, unsafe) {
 			t.Fatalf("output retained unsafe terminal text %q:\n%s", unsafe, output)
 		}
+	}
+}
+
+// A self-referential array-of-array $defs shape once spun cliSchemaAtPath's
+// array-unwrap loop forever (fresh seen map + depth 0 each pass). It must now
+// terminate and report no schema rather than hang the CLI at 100% CPU.
+func TestCLISchemaAtPathBoundsRecursiveArraySchema(t *testing.T) {
+	root := cliDecodedSchema(json.RawMessage(`{
+		"type":"object",
+		"properties":{"nodes":{"$ref":"#/$defs/node"}},
+		"$defs":{"node":{"type":"array","items":{"$ref":"#/$defs/node"}}}
+	}`))
+	if root == nil {
+		t.Fatal("schema failed to decode")
+	}
+	// A path that steps past the recursive array forces the array-unwrap loop to
+	// resolve items → node → array → items … which is where it used to spin.
+	done := make(chan map[string]any, 1)
+	go func() { done <- cliSchemaAtPath(root, "$.nodes.child") }()
+	select {
+	case got := <-done:
+		if got != nil {
+			t.Fatalf("recursive array schema resolved to %#v, want nil", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cliSchemaAtPath did not terminate on a recursive array schema")
 	}
 }
 

@@ -277,24 +277,34 @@ func cliSchemaAtPath(root map[string]any, path string) map[string]any {
 	if root == nil || path == "" || path == "$" || len(path) > 1024 || !strings.HasPrefix(path, "$.") {
 		return nil
 	}
+	// A recursive $defs shape (node → array of node) makes the array unwrap loop
+	// below re-enter forever with a fresh seen map and depth 0 each pass. Thread a
+	// shared seen map and a growing depth so a self-referential items schema bails
+	// at maxCLISchemaRenderDepth instead of spinning the CLI at 100% CPU.
 	current := root
+	seen := map[string]bool{}
+	depth := 0
 	for _, segment := range strings.Split(strings.TrimPrefix(path, "$."), ".") {
-		resolved, ok := resolveSchema(current, root, map[string]bool{}, 0)
+		resolved, ok := resolveSchema(current, root, seen, depth)
 		if !ok {
 			return nil
 		}
 		for typeValue(resolved["type"]) == "array" {
+			depth++
+			if depth > maxCLISchemaRenderDepth {
+				return nil
+			}
 			items, ok := resolved["items"].(map[string]any)
 			if !ok {
 				return nil
 			}
-			resolved, ok = resolveSchema(items, root, map[string]bool{}, 0)
+			resolved, ok = resolveSchema(items, root, seen, depth)
 			if !ok {
 				return nil
 			}
 		}
 		properties := make(map[string]any)
-		if !collectTopLevelSchema(resolved, root, properties, map[string]bool{}, map[string]bool{}, 0) {
+		if !collectTopLevelSchema(resolved, root, properties, map[string]bool{}, map[string]bool{}, depth) {
 			return nil
 		}
 		next, ok := properties[segment].(map[string]any)
@@ -303,7 +313,7 @@ func cliSchemaAtPath(root map[string]any, path string) map[string]any {
 		}
 		current = next
 	}
-	resolved, ok := resolveSchema(current, root, map[string]bool{}, 0)
+	resolved, ok := resolveSchema(current, root, seen, depth)
 	if !ok {
 		return nil
 	}
