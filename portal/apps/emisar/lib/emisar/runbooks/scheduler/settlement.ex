@@ -49,7 +49,7 @@ defmodule Emisar.Runbooks.Scheduler.Settlement do
     |> Multi.run(:active_account, fn repo, _changes ->
       Accounts.fetch_and_lock_account(run.account_id, repo: repo)
     end)
-    |> Multi.run(:execution, &lock_execution(&1, &2, run.runbook_execution_id))
+    |> Multi.run(:execution, &Scheduler.lock_execution(&1, &2, run.runbook_execution_id))
     |> Multi.run(:stage, fn repo, _changes ->
       stage =
         ExecutionStage.Query.by_id(stage_id)
@@ -81,23 +81,6 @@ defmodule Emisar.Runbooks.Scheduler.Settlement do
       {:ok, %{item_settlement: :stale}} -> {:ok, false}
       {:ok, _changes} -> {:ok, true}
       {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp lock_execution(repo, _changes, execution_id) do
-    execution =
-      RunbookExecution.Query.by_id(execution_id)
-      |> RunbookExecution.Query.lock_for_update()
-      |> repo.one()
-
-    case execution do
-      %RunbookExecution{status: :active} = execution ->
-        execution
-        |> RunbookExecution.Changeset.mark_advanced(DateTime.utc_now())
-        |> repo.update()
-
-      execution ->
-        {:ok, execution}
     end
   end
 

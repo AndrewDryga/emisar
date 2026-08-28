@@ -274,7 +274,12 @@ defmodule Emisar.Runbooks.Scheduler do
     end)
   end
 
-  defp maybe_lock_execution_account(multi, execution_id) do
+  @doc """
+  Internal — shared with the scheduler's satellites (Recovery, Settlement),
+  which used to carry byte-identical copies. Locks the execution's account row
+  first so every scheduler transaction takes its locks in the same order.
+  """
+  def maybe_lock_execution_account(multi, execution_id) do
     execution = RunbookExecution.Query.by_id(execution_id) |> Repo.peek()
 
     case execution do
@@ -288,7 +293,15 @@ defmodule Emisar.Runbooks.Scheduler do
     end
   end
 
-  defp lock_execution(repo, _changes, execution_id) do
+  @doc """
+  Internal — the ADVANCING lock, shared with Settlement, which used to carry a
+  byte-identical copy. Locks the execution and stamps `last_advanced_at` on an
+  active row, because both callers lock an execution that is about to make
+  progress and that stamp is what orders `recover_due`'s starvation queue.
+  Recovery's scrub path keeps its own non-advancing variant deliberately — see
+  the comment there before unifying anything further.
+  """
+  def lock_execution(repo, _changes, execution_id) do
     execution =
       RunbookExecution.Query.by_id(execution_id)
       |> RunbookExecution.Query.lock_for_update()

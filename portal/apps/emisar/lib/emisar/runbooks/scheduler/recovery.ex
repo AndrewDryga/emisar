@@ -2,7 +2,7 @@ defmodule Emisar.Runbooks.Scheduler.Recovery do
   @moduledoc false
 
   alias Ecto.Multi
-  alias Emisar.{Accounts, Repo, Runs}
+  alias Emisar.{Repo, Runs}
   alias Emisar.Runbooks.{ExecutionItem, RunbookExecution, Scheduler}
   require Logger
 
@@ -79,7 +79,7 @@ defmodule Emisar.Runbooks.Scheduler.Recovery do
   def scrub_terminal_execution(execution_id) when is_binary(execution_id) do
     multi =
       Multi.new()
-      |> maybe_lock_execution_account(execution_id)
+      |> Scheduler.maybe_lock_execution_account(execution_id)
       |> Multi.run(:execution, &lock_execution(&1, &2, execution_id))
       |> Multi.run(:items, &lock_execution_items/2)
       |> Multi.run(:scrubbed, &scrub_terminal_payloads/2)
@@ -90,22 +90,8 @@ defmodule Emisar.Runbooks.Scheduler.Recovery do
     end
   end
 
-  defp maybe_lock_execution_account(multi, execution_id) do
-    execution = RunbookExecution.Query.by_id(execution_id) |> Repo.peek()
-
-    case execution do
-      %RunbookExecution{account_id: account_id} ->
-        Multi.run(multi, :active_account, fn repo, _changes ->
-          Accounts.fetch_and_lock_account(account_id, repo: repo)
-        end)
-
-      nil ->
-        multi
-    end
-  end
-
-  # Deliberately does NOT mark the execution advanced, unlike the same-named
-  # helpers in Scheduler and Settlement. Those two lock an execution that is
+  # Deliberately does NOT mark the execution advanced, unlike
+  # Scheduler.lock_execution/3 (which Settlement also uses). That one locks an execution that is
   # about to make progress, and `last_advanced_at` is what orders `recover_due`
   # so a stalled execution is picked up before a busy one. This one is reached
   # only from scrub_terminal_execution/1, which walks TERMINAL rows: there is no
