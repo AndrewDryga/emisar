@@ -973,6 +973,9 @@ func (a *App) pack(ctx context.Context, args []string) error {
 		if err := validatePackInterpreterBinaries(filepath.Join(a.Root, "packs", name)); err != nil {
 			return err
 		}
+		if err := validatePackVersions(filepath.Join(a.Root, "packs", name)); err != nil {
+			return err
+		}
 		if name == "redis" || name == "cassandra" {
 			return packhash.Check(a.Root, filepath.Join(a.Root, "bin", "emisar"), false, a.Out)
 		}
