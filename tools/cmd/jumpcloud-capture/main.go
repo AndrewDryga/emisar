@@ -1555,13 +1555,18 @@ func reopenSavedApp(ctx context.Context, env map[string]string, outDir string) e
 		return err
 	}
 
-	return openProvisioningTab(ctx)
+	_, err := openProvisioningTab(ctx)
+	return err
 }
 
 // openProvisioningTab clicks the app's own Provisioning tab, scoped to the tab
 // strip — "Provisioning" also names a badge in the applications list, and
-// matching that navigated back to the list while reporting success.
-func openProvisioningTab(ctx context.Context) error {
+// matching that navigated back to the list while reporting success. It returns
+// the tab label it clicked, or "" when the page has no such tab: the empty
+// result used to be swallowed here and re-bound to a literal at the call site,
+// so "no Provisioning tab" was unreachable and the run carried on into a page
+// it had never opened.
+func openProvisioningTab(ctx context.Context) (string, error) {
 	const openTab = `(() => {
   const visible = el => el.offsetWidth > 0 || el.offsetHeight > 0;
   // Already there? Clicking the tab again toggles it back off, which is exactly
@@ -1586,13 +1591,14 @@ func openProvisioningTab(ctx context.Context) error {
 })()`
 	var opened string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(openTab, &opened)); err != nil {
-		return err
+		return "", err
 	}
-	if opened != "" {
-		fmt.Printf("  opened %q tab\n", opened)
+	if opened == "" {
+		return "", nil
 	}
+	fmt.Printf("  opened %q tab\n", opened)
 
-	return chromedp.Run(ctx, chromedp.Sleep(8*time.Second))
+	return opened, chromedp.Run(ctx, chromedp.Sleep(8*time.Second))
 }
 
 // provisioningTabFlow opens the app's provisioning tab and reports its fields.
@@ -1603,10 +1609,10 @@ func provisioningTabFlow(ctx context.Context, env map[string]string, outDir stri
 	// product area entirely, and reported success for opening the wrong page.
 	// The tab is opened by reopenSavedApp, which is also what the retry below
 	// calls — opening it a second time here toggled back off.
-	if err := openProvisioningTab(ctx); err != nil {
+	opened, err := openProvisioningTab(ctx)
+	if err != nil {
 		return err
 	}
-	opened := "Provisioning"
 	if opened == "" {
 		_ = idpcapture.Screenshot(ctx, outDir, "jc-09-no-provisioning-tab")
 		_ = describePage(ctx)

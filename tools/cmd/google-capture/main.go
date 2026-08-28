@@ -397,9 +397,23 @@ func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) err
 		); err != nil {
 			return err
 		}
+		// Probed once, up front, so a page we cannot read aborts the loop
+		// instead of falling through every branch as "nothing is on screen".
+		identifierShown, err := visible(ctx, `#identifierId`)
+		if err != nil {
+			return err
+		}
+		passwordShown, err := visible(ctx, `input[name="Passwd"]`)
+		if err != nil {
+			return err
+		}
+		totp, err := totpField(ctx)
+		if err != nil {
+			return err
+		}
 
 		switch {
-		case strings.Contains(location, "accounts.google.com") && visible(ctx, `#identifierId`) && !submittedUser:
+		case strings.Contains(location, "accounts.google.com") && identifierShown && !submittedUser:
 			if err := typeRealKeys(ctx, `#identifierId`, env["GOOGLE_TEST_USER"]); err != nil {
 				return fmt.Errorf("filling the Google account identifier: %w", err)
 			}
@@ -412,7 +426,7 @@ func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) err
 			submittedUser = true
 			fmt.Println("  submitted Google account identifier")
 
-		case strings.Contains(location, "accounts.google.com") && visible(ctx, `input[name="Passwd"]`) && !submittedPassword:
+		case strings.Contains(location, "accounts.google.com") && passwordShown && !submittedPassword:
 			if err := typeRealKeys(ctx, `input[name="Passwd"]`, env["GOOGLE_TEST_PASSWORD"]); err != nil {
 				return fmt.Errorf("filling the Google account password: %w", err)
 			}
@@ -425,7 +439,7 @@ func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) err
 			submittedPassword = true
 			fmt.Println("  submitted Google account password")
 
-		case strings.Contains(location, "accounts.google.com") && totpField(ctx) != "" && !submittedTOTP:
+		case strings.Contains(location, "accounts.google.com") && totp != "" && !submittedTOTP:
 			if env["GOOGLE_TEST_TOTP_SECRET"] == "" {
 				return errors.New("an authenticator code was requested but GOOGLE_TEST_TOTP_SECRET is empty")
 			}
@@ -438,7 +452,7 @@ func signIn(ctx context.Context, env map[string]string, acceptCloudTOS bool) err
 			if err != nil {
 				return err
 			}
-			if err := typeRealKeys(ctx, totpField(ctx), code); err != nil {
+			if err := typeRealKeys(ctx, totp, code); err != nil {
 				return err
 			}
 			if err := clickFirstText(ctx, "Next", "Continue"); err != nil {
@@ -897,7 +911,15 @@ func clickPrimaryButton(ctx context.Context) error {
   return true;
 })()`
 	var clicked bool
-	return chromedp.Run(ctx, chromedp.Evaluate(script, &clicked))
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &clicked)); err != nil {
+		return err
+	}
+	// The script's own answer was discarded, so "this page has no enabled
+	// button" was indistinguishable from a click.
+	if !clicked {
+		return errors.New("the page offered no enabled primary button")
+	}
+	return nil
 }
 
 func firstLine(text string) string {
@@ -1891,23 +1913,34 @@ func chooseOption(ctx context.Context, label, option string) error {
 	return chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
 }
 
-func visible(ctx context.Context, selector string) bool {
+// visible separates "the element is not there" from "the page could not be
+// asked". Swallowing the evaluate error collapsed the two, so a detached frame
+// or a mid-navigation page read as every selector being absent — which drove
+// the sign-in state machine past the identifier, password, and TOTP steps
+// without submitting any of them.
+func visible(ctx context.Context, selector string) (bool, error) {
 	script := fmt.Sprintf(`(() => {
   const el = document.querySelector(%q);
   return !!el && (el.offsetWidth > 0 || el.offsetHeight > 0);
 })()`, selector)
 	var ok bool
-	_ = chromedp.Run(ctx, chromedp.Evaluate(script, &ok))
-	return ok
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &ok)); err != nil {
+		return false, fmt.Errorf("checking whether %s is visible: %w", selector, err)
+	}
+	return ok, nil
 }
 
-func totpField(ctx context.Context) string {
+func totpField(ctx context.Context) (string, error) {
 	for _, selector := range []string{`input[name="totpPin"]`, `#totpPin`, `input[type="tel"]`} {
-		if visible(ctx, selector) {
-			return selector
+		shown, err := visible(ctx, selector)
+		if err != nil {
+			return "", err
+		}
+		if shown {
+			return selector, nil
 		}
 	}
-	return ""
+	return "", nil
 }
 
 func describePage(ctx context.Context, env map[string]string) error {

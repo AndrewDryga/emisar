@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -139,14 +140,18 @@ func TestEvaluate_RejectsDowngradeUnlessAllowlisted(t *testing.T) {
 		t.Fatalf("downgrade violations = %v, want one downgrade", got)
 	}
 
+	// A patched older line is a real answer to an urgent advisory, so an
+	// exemption still covers a downgrade — loadAllowlist's expiry is what stops
+	// that from being permanent.
 	allowed := map[allowKey]bool{{"go", "example.com/module", "v2.3.9"}: true}
 	if got := evaluate(candidates, map[allowKey]time.Time{}, allowed, now); len(got) != 0 {
 		t.Fatalf("allowlisted downgrade violations = %v, want none", got)
 	}
 }
 
-func TestLoadAllowlist_RequiresAReason(t *testing.T) {
+func TestLoadAllowlist_RequiresAReasonAndAnUnexpiredDate(t *testing.T) {
 	dir := t.TempDir()
+	now := time.Date(2026, 7, 12, 0, 0, 0, 0, time.UTC)
 
 	writeAllow := func(content string) {
 		t.Helper()
@@ -155,17 +160,40 @@ func TestLoadAllowlist_RequiresAReason(t *testing.T) {
 		}
 	}
 
-	writeAllow("# comment\nhex plug 1.18.0 GHSA-xxxx urgent fix\n")
-	allowed, err := loadAllowlist(dir)
+	writeAllow("# comment\nhex plug 1.18.0 2026-08-01 GHSA-xxxx urgent fix\n")
+	allowed, expired, err := loadAllowlist(dir, now)
 	if err != nil {
 		t.Fatalf("loadAllowlist: %v", err)
 	}
 	if !allowed[allowKey{"hex", "plug", "1.18.0"}] {
 		t.Errorf("entry not loaded: %v", allowed)
 	}
+	if len(expired) != 0 {
+		t.Errorf("live entry reported expired: %v", expired)
+	}
 
-	writeAllow("hex plug 1.18.0\n") // no reason
-	if _, err := loadAllowlist(dir); err == nil {
+	writeAllow("hex plug 1.18.0 2026-08-01\n") // no reason
+	if _, _, err := loadAllowlist(dir, now); err == nil {
 		t.Error("a reason-less entry must be a hard error")
+	}
+
+	writeAllow("hex plug 1.18.0 GHSA-xxxx urgent fix\n") // no date
+	if _, _, err := loadAllowlist(dir, now); err == nil {
+		t.Error("a date-less entry must be a hard error")
+	}
+
+	// The defect this closes: the file promised an entry would be removed once
+	// it stopped applying, and nothing read the date. Its one live entry named
+	// a date that had already passed and was still exempting.
+	writeAllow("hex plug 1.18.0 2026-07-11 GHSA-xxxx urgent fix\n")
+	allowed, expired, err = loadAllowlist(dir, now)
+	if err != nil {
+		t.Fatalf("loadAllowlist: %v", err)
+	}
+	if allowed[allowKey{"hex", "plug", "1.18.0"}] {
+		t.Error("an expired entry still exempts")
+	}
+	if len(expired) != 1 || !strings.Contains(expired[0], "expired 2026-07-11") {
+		t.Errorf("expired entry not reported: %v", expired)
 	}
 }

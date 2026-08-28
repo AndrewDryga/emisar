@@ -637,9 +637,15 @@ func placeholderReason(reason, actionID string) bool {
 	if normalized == strings.ToLower(actionID) {
 		return true
 	}
+	// Only phrases the length gate above does NOT already reject belong here.
+	// Eleven of the twelve this list used to carry were shorter than 12
+	// characters, so exactly one of them could ever match and the rest read as
+	// coverage that did not exist.
 	for _, filler := range []string{
-		"test", "testing", "test run", "run action", "running action",
-		"because", "reason", "no reason", "checking", "check", "demo", "example",
+		"running action", "running the action", "run the action",
+		"testing the action", "just testing this", "no particular reason",
+		"checking the output", "checking something", "for demonstration",
+		"as an example", "because i was asked", "because i need to",
 	} {
 		if normalized == filler {
 			return true

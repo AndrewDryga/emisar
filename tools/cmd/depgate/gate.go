@@ -275,14 +275,21 @@ type allowKey struct{ eco, pkg, version string }
 // loadAllowlist parses .dep-age-allow. A line must carry a non-empty reason
 // after the version or it is rejected — the whole point is an auditable
 // justification, so a bare exemption is a hard error.
-func loadAllowlist(root string) (map[allowKey]bool, error) {
+// loadAllowlist reads the exemptions and DROPS the expired ones, so an entry
+// left behind stops exempting anything. The file always promised an entry would
+// be removed once its version aged out, but nothing read the date it was
+// removed by: its one live entry named a removal date that had already passed,
+// and an exemption granted for an urgent age bump also silenced the downgrade
+// rejection forever, which is a different decision entirely.
+func loadAllowlist(root string, now time.Time) (map[allowKey]bool, []string, error) {
 	allowed := map[allowKey]bool{}
+	var expired []string
 	data, err := os.ReadFile(filepath.Join(root, allowlistPath))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return allowed, nil
+			return allowed, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	for n, raw := range strings.Split(string(data), "\n") {
 		line, _, _ := strings.Cut(raw, "#")
@@ -291,12 +298,22 @@ func loadAllowlist(root string) (map[allowKey]bool, error) {
 			continue
 		}
 		parts := strings.Fields(line)
-		if len(parts) < 4 {
-			return nil, fmt.Errorf("%s:%d: expected `ecosystem package version reason`, got: %q", allowlistPath, n+1, strings.TrimSpace(raw))
+		if len(parts) < 5 {
+			return nil, nil, fmt.Errorf("%s:%d: expected `ecosystem package version expires reason`, got: %q", allowlistPath, n+1, strings.TrimSpace(raw))
 		}
-		allowed[allowKey{parts[0], parts[1], parts[2]}] = true
+		expires, err := time.Parse(time.DateOnly, parts[3])
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s:%d: expires must be YYYY-MM-DD, got %q", allowlistPath, n+1, parts[3])
+		}
+		key := allowKey{parts[0], parts[1], parts[2]}
+		if now.After(expires) {
+			expired = append(expired, fmt.Sprintf("%s:%d: %s %s %s expired %s — remove it or set a new date with a fresh reason",
+				allowlistPath, n+1, key.eco, key.pkg, key.version, parts[3]))
+			continue
+		}
+		allowed[key] = true
 	}
-	return allowed, nil
+	return allowed, expired, nil
 }
 
 // --------------------------------------------------------------------------
@@ -319,10 +336,14 @@ func evaluate(candidates []candidate, ages map[allowKey]time.Time, allowed map[a
 	var out []violation
 	for _, c := range candidates {
 		key := allowKey{c.eco, c.pkg, c.new}
+		kind := bumpType(c.old, c.new)
 		if allowed[key] {
+			// A patched older line is a real reason to move backwards under an
+			// urgent advisory, so the exemption still covers a downgrade — but
+			// it now expires, which is what makes it a decision rather than a
+			// permanent hole.
 			continue
 		}
-		kind := bumpType(c.old, c.new)
 		if kind == "downgrade" {
 			out = append(out, violation{eco: c.eco, pkg: c.pkg, version: c.new, bump: kind, downgrade: true})
 			continue
@@ -430,9 +451,17 @@ func runCheck(baseRef string) int {
 		return 0
 	}
 
-	allowed, err := loadAllowlist(root)
+	now := time.Now().UTC()
+	allowed, expired, err := loadAllowlist(root, now)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "::error::dep-age-gate: %v\n", err)
+		return 2
+	}
+	// An expired exemption fails the gate rather than quietly reverting to the
+	// normal rule: the entry documents a decision someone made, and leaving it
+	// in the file after it stops applying is how it reads as still in force.
+	if len(expired) > 0 {
+		fmt.Fprintf(os.Stderr, "::error::dep-age-gate: expired allowlist entries\n%s\n", strings.Join(expired, "\n"))
 		return 2
 	}
 
@@ -514,7 +543,7 @@ func runCheck(baseRef string) int {
 		ages[key] = pub
 	}
 
-	violations := evaluate(candidates, ages, allowed, time.Now().UTC())
+	violations := evaluate(candidates, ages, allowed, now)
 	if len(violations) == 0 {
 		skipped := 0
 		for _, c := range candidates {

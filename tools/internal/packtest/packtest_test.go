@@ -50,7 +50,7 @@ cases:
 	writeExecutable(t, filepath.Join(root, "cleanup"), "#!/bin/sh\nprintf cleaned > \""+filepath.Join(root, "state")+"\"\n")
 
 	harnessConfig := filepath.Join(root, "test-config.yaml")
-	write(t, harnessConfig, "env_allowlist: []\n")
+	write(t, harnessConfig, "env_allowlist: []\nevents:\n  jsonl_path: "+filepath.Join(root, "events.jsonl")+"\n")
 
 	var output bytes.Buffer
 	totals, err := Run(Config{
@@ -642,7 +642,7 @@ func TestRunReportsMalformedPlan(t *testing.T) {
 	emisar := filepath.Join(root, "emisar")
 	writeExecutable(t, emisar, "#!/bin/sh\nexit 0\n")
 	harnessConfig := filepath.Join(root, "test-config.yaml")
-	write(t, harnessConfig, "env_allowlist: []\n")
+	write(t, harnessConfig, "env_allowlist: []\nevents:\n  jsonl_path: "+filepath.Join(root, "events.jsonl")+"\n")
 	var output bytes.Buffer
 	_, err := Run(Config{
 		Emisar: emisar, PacksDir: filepath.Join(root, "packs"), Config: harnessConfig,
@@ -760,5 +760,29 @@ func TestDeclarationOnlyPlanRecordsRiskWithoutASUT(t *testing.T) {
 	err = ValidateDeclarations(packs)
 	if err == nil || !strings.Contains(err.Error(), "unknown reason") {
 		t.Fatalf("error = %v, want an unknown-reason rejection", err)
+	}
+}
+
+// The secret-canary check reads the audit journal to prove a secret never
+// reached it. Its path used to be a literal in this package, so renaming the
+// key in the harness config would have failed every case in 45 of 84 packs with
+// a read error naming a path nothing writes.
+func TestEventsPathComesFromTheHarnessConfig(t *testing.T) {
+	root := t.TempDir()
+	config := filepath.Join(root, "test-config.yaml")
+
+	write(t, config, "events:\n  jsonl_path: /var/log/emisar/events.jsonl\n")
+	path, err := eventsPathFrom(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/var/log/emisar/events.jsonl" {
+		t.Errorf("eventsPathFrom = %q", path)
+	}
+
+	write(t, config, "env_allowlist: []\n")
+	if _, err := eventsPathFrom(config); err == nil ||
+		!strings.Contains(err.Error(), "no events.jsonl_path") {
+		t.Errorf("a config with no journal path must fail, got %v", err)
 	}
 }

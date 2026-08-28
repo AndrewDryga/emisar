@@ -378,6 +378,15 @@ func TestPlaceholderReasonFlagsFillerAndAcceptsHonestSentences(t *testing.T) {
 		"check":        true,
 		"linux.uptime": true,
 		"short":        true,
+
+		// Filler long enough to clear the 12-character gate. The list used to
+		// hold eleven phrases shorter than that gate, so deleting it entirely
+		// left this test passing — the reason these cases exist.
+		"running action":       true,
+		"No particular reason": true,
+		"Checking the output":  true,
+		"as an example":        true,
+
 		"Check uptime and load before the maintenance window": false,
 		"verify replication catch-up after failover":          false,
 		"Collect disk usage for the capacity report":          false,

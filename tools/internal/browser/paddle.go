@@ -200,12 +200,16 @@ func clickPaddle(targets *paddleTargetSet, selectors []string, label string) err
 	return fmt.Errorf("%s: no selector matched", label)
 }
 
-func paddlePresent(targets *paddleTargetSet, selector string) bool {
-	found, _ := targets.run(func(frameContext context.Context, executionContext cdpruntime.ExecutionContextID) (bool, error) {
+// paddlePresent reports whether the selector is on the checkout, and surfaces
+// the failure to ASK separately. Discarding that error made a detached frame
+// answer "not present" — which reads as the step having completed: the identity
+// loop exited and the run advanced to the card fields on a checkout it had
+// stopped being able to see.
+func paddlePresent(targets *paddleTargetSet, selector string) (bool, error) {
+	return targets.run(func(frameContext context.Context, executionContext cdpruntime.ExecutionContextID) (bool, error) {
 		selectorJSON, _ := json.Marshal(selector)
 		return evaluatePaddleBool(frameContext, executionContext, `!!document.querySelector(`+string(selectorJSON)+`)`)
 	})
-	return found
 }
 
 func selectPaddleCountry(targets *paddleTargetSet) error {
@@ -382,8 +386,19 @@ func PaddlePurchase(ctx context.Context, manager *Manager, config PaddleConfig) 
 	if err := selectPaddleCountry(targets); err != nil {
 		return err
 	}
-	for round := 0; round < 4 && paddlePresent(targets, `[data-testid="authenticationEmailInput"]`); round++ {
-		if paddlePresent(targets, `[data-testid="postcodeInput"]`) {
+	for round := 0; round < 4; round++ {
+		onIdentityStep, err := paddlePresent(targets, `[data-testid="authenticationEmailInput"]`)
+		if err != nil {
+			return err
+		}
+		if !onIdentityStep {
+			break
+		}
+		needsPostcode, err := paddlePresent(targets, `[data-testid="postcodeInput"]`)
+		if err != nil {
+			return err
+		}
+		if needsPostcode {
 			if err := fillPaddle(targets, []string{`[data-testid="postcodeInput"]`}, "90210", "postcode"); err != nil {
 				return err
 			}
@@ -393,7 +408,11 @@ func PaddlePurchase(ctx context.Context, manager *Manager, config PaddleConfig) 
 		}
 		time.Sleep(6 * time.Second)
 	}
-	if paddlePresent(targets, `[data-testid="authenticationEmailInput"]`) {
+	stillOnIdentityStep, err := paddlePresent(targets, `[data-testid="authenticationEmailInput"]`)
+	if err != nil {
+		return err
+	}
+	if stillOnIdentityStep {
 		return fmt.Errorf("the Paddle identity step did not advance")
 	}
 	logf("billing e2e: identity accepted")
@@ -415,7 +434,11 @@ func PaddlePurchase(ctx context.Context, manager *Manager, config PaddleConfig) 
 			return err
 		}
 	}
-	if paddlePresent(targets, `[data-testid="postcodeInput"]`) {
+	cardStepPostcode, err := paddlePresent(targets, `[data-testid="postcodeInput"]`)
+	if err != nil {
+		return err
+	}
+	if cardStepPostcode {
 		if err := fillPaddle(targets, []string{`[data-testid="postcodeInput"]`}, "90210", "postcode (card step)"); err != nil {
 			return err
 		}

@@ -1134,8 +1134,13 @@ func CaptureDocs(ctx context.Context, manager *Manager, config DocsConfig) error
 			return err
 		}
 	}
+	// A skipped shot leaves the PREVIOUS .webp in the tree, and these are
+	// committed product images — so a run where every anchor broke wrote nothing
+	// and still exited 0, which reads as "the docs images are current". The
+	// console capture beside this one already fails on its skips.
 	if len(failed) > 0 {
 		fmt.Fprintf(manager.Out, "  %d shot(s) skipped: %s\n", len(failed), strings.Join(failed, "; "))
+		return fmt.Errorf("%d docs shot(s) failed; the committed images for them are unchanged", len(failed))
 	}
 	return nil
 }

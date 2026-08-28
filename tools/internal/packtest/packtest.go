@@ -139,6 +139,12 @@ type Config struct {
 	Case     string
 	Out      io.Writer
 	BaseEnv  []string
+
+	// Read out of the harness config at startup rather than restated here: the
+	// secret-canary check used to name /tmp/emisar-test/events.jsonl literally,
+	// so renaming the key in test-config.yaml would have failed every case in
+	// 45 of 84 packs with a read error that named a path nothing wrote.
+	eventsPath string
 }
 
 type Totals struct {
@@ -497,7 +503,14 @@ func Run(config Config) (Totals, error) {
 	if err != nil {
 		return Totals{}, err
 	}
+	// The staged copy is a 0600 runner config in a private temp directory. Only
+	// the test cleaned it up, so every real invocation left one behind.
+	defer os.RemoveAll(filepath.Dir(staged))
 	config.Config = staged
+	config.eventsPath, err = eventsPathFrom(config.Config)
+	if err != nil {
+		return Totals{}, err
+	}
 	if err := os.MkdirAll(config.Reports, 0o755); err != nil {
 		return Totals{}, err
 	}
@@ -591,6 +604,29 @@ func stageConfig(path string) (string, error) {
 		return "", fmt.Errorf("stage harness config at %s: %w", staged, err)
 	}
 	return staged, nil
+}
+
+// eventsPathFrom reads the audit journal path out of the harness config, which
+// is the file that decides it. A missing key is an error, not a fallback: the
+// secret-canary check proves a secret never reached the journal, and a check
+// that reads nothing passes for the wrong reason.
+func eventsPathFrom(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read harness config %s: %w", path, err)
+	}
+	var config struct {
+		Events struct {
+			JSONLPath string `yaml:"jsonl_path"`
+		} `yaml:"events"`
+	}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return "", fmt.Errorf("parse harness config %s: %w", path, err)
+	}
+	if config.Events.JSONLPath == "" {
+		return "", fmt.Errorf("harness config %s sets no events.jsonl_path for the secret-canary check", path)
+	}
+	return config.Events.JSONLPath, nil
 }
 
 func loadPlan(path string) (Plan, error) {
@@ -773,8 +809,13 @@ func validateFixturePlan(pack string, plan Plan, data []byte) error {
 	if err := yaml.Unmarshal(data, &compose); err != nil {
 		return fmt.Errorf("parse compose.yaml: %w", err)
 	}
+	// validatePlan already rejects an empty service list, and a declaration-only
+	// plan never reaches here, so this cannot fire through Validate. It stays as
+	// a guard against indexing an empty slice on a direct call — but it FAILS
+	// rather than returning nil, since a silent pass on an unvalidated plan is
+	// what makes a check stop being a check.
 	if len(plan.Services) == 0 {
-		return nil
+		return fmt.Errorf("plan names no service, so no primary SUT can be checked against compose.yaml")
 	}
 	primaryName := plan.Services[0]
 	primary, exists := compose.Services[primaryName]
@@ -1199,7 +1240,7 @@ func runCase(config Config, plan Plan, test Case, action actionDefinition, env [
 					plan.SecretEnv,
 					environmentMap(env),
 					result,
-					"/tmp/emisar-test/events.jsonl",
+					config.eventsPath,
 				)
 				err = errors.Join(resultErr, secretErr)
 			}

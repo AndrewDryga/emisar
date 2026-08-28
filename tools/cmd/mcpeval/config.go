@@ -136,9 +136,13 @@ func validateScenario(item scenario, heldOut bool) error {
 	allowedActions := stringSet(item.AllowedActions)
 	switch item.ExpectedOutcome {
 	case outcomePositive:
-		if len(item.AllowedActions) == 0 || len(item.RequiredActions) == 0 ||
-			len(item.RequiredSearchActions) == 0 {
-			return fmt.Errorf("positive scenario %q has no action, completion, or bounded-recall evidence", item.ID)
+		// No bounded-recall clause here: normalizedScenario/1 runs first and
+		// copies RequiredActions into an empty RequiredSearchActions for a
+		// positive scenario, so the recall list is empty only when the
+		// completion list is — which the second clause already rejects. Stating
+		// it anyway read as a third guarantee that could never fire.
+		if len(item.AllowedActions) == 0 || len(item.RequiredActions) == 0 {
+			return fmt.Errorf("positive scenario %q has no action or completion evidence", item.ID)
 		}
 		if heldOut && (len(item.AllowedPackRefs) == 0 || len(item.AllowedRunnerRefs) == 0) {
 			return fmt.Errorf("held_out positive scenario %q has no exact pack or runner ref allowlist", item.ID)

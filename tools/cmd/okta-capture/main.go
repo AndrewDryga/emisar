@@ -1391,14 +1391,22 @@ func deactivateGroupPush(ctx context.Context, settle func(int) error, group stri
 	if err := settle(2); err != nil {
 		return err
 	}
+	// Every other step here fails when its control is missing; this loop did
+	// not, so a confirm dialog whose button was worded differently left the
+	// mapping ACTIVE and the run printed that it had been deactivated.
+	var confirmed bool
 	for _, label := range []string{"Deactivate", "Confirm"} {
-		confirmed, err := clickText(ctx, label)
+		clicked, err := clickText(ctx, label)
 		if err != nil {
 			return err
 		}
-		if confirmed {
+		if clicked {
+			confirmed = true
 			break
 		}
+	}
+	if !confirmed {
+		return errors.New("the group push deactivation was never confirmed")
 	}
 	fmt.Printf("  deactivated group push for %q\n", group)
 	return settle(8)

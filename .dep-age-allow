@@ -8,15 +8,18 @@
 # deliberate, reviewable decision, so it leaves a paper trail here rather than a
 # silent flag or a CI override.
 #
-# One entry per line:  <ecosystem> <package> <version> <reason>
+# One entry per line:  <ecosystem> <package> <version> <expires> <reason>
 #   ecosystem  hex | go | npm
 #   package    exact package/module name as it appears in the lockfile
 #   version    exact version being allowed (hex/npm: "1.2.3", go: "v1.2.3")
+#   expires    REQUIRED, YYYY-MM-DD — the last day this exemption applies
 #   reason     REQUIRED, non-empty — the CVE / advisory id and why it can't wait
 #
-# The reason is mandatory: a bare exemption is a hard error. Remove the entry
-# once the version has aged past its window (the gate would pass on its own then).
+# Both are mandatory: a bare exemption is a hard error, and so is an entry whose
+# date has passed — the gate fails until you remove it or set a new date with a
+# fresh reason. An exemption also covers a DOWNGRADE, because a patched older
+# line is a real answer to an urgent advisory; the date is what keeps that a
+# decision rather than a permanent hole.
 #
 # Example (delete once real entries exist):
-#   hex plug 1.99.1 GHSA-xxxx-yyyy-zzzz — RCE in Plug.Conn, patched only in 1.99.1, actively exploited
-hex bandit 1.12.5 EEF-CVE-2026-74836 / EEF-CVE-2026-75484 — bounds blocked HTTP/2 sends and rejects CR/LF/NUL header values; both advisories fail mix hex.audit on 1.12.4, so the patch cannot wait out its window; remove after 2026-08-27
+#   hex plug 1.99.1 2026-01-31 GHSA-xxxx-yyyy-zzzz — RCE in Plug.Conn, patched only in 1.99.1, actively exploited
