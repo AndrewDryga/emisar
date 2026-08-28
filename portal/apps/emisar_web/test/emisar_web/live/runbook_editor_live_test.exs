@@ -2036,6 +2036,75 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         assert render_click(lv, event, %{}) =~ "You don&#39;t have permission to do that."
       end
 
+      # Every STRUCTURAL mutation funnels through mutate/2, whose head refuses
+      # on read_only?. Exercise each with a crafted event and prove the
+      # rendered draft did not move — the flash text may differ per event
+      # (add_target validates its target first), but no event may mutate.
+      structural = %{
+        "draft_changed" => %{"draft" => %{"title" => "Hijacked"}},
+        "add_input" => %{},
+        "remove_input" => %{"index" => "0"},
+        "add_enum_value" => %{"index" => "0"},
+        "toggle_enum_default" => %{"input" => "0", "enum" => "0"},
+        "remove_enum_value" => %{"input" => "0", "enum" => "0"},
+        "add_stage" => %{},
+        "remove_stage" => %{"index" => "0"},
+        "move_stage" => %{"index" => "0", "direction" => "down"},
+        "add_step" => %{"stage" => "0"},
+        "add_target" => %{
+          "stage" => "0",
+          "step" => "0",
+          "target" => "group:default",
+          "selection" => "all"
+        },
+        "remove_target" => %{"stage" => "0", "step" => "0", "target" => "group:default"},
+        "remove_step" => %{"stage" => "0", "step" => "0"},
+        "move_step" => %{"stage" => "0", "step" => "0", "direction" => "down"},
+        "add_output" => %{"stage" => "0", "step" => "0"},
+        "remove_output" => %{"stage" => "0", "step" => "0", "index" => "0"},
+        "add_success" => %{"stage" => "0", "step" => "0"},
+        "remove_success" => %{"stage" => "0", "step" => "0", "index" => "0"}
+      }
+
+      # Compare the FORM subtree, not the whole page: the refusal itself puts
+      # up a flash, so whole-page equality would fail on the very guard working.
+      form_render = fn -> lv |> element("#runbook-editor-form") |> render() end
+      before_render = form_render.()
+
+      for {event, params} <- structural do
+        render_click(lv, event, params)
+      end
+
+      assert form_render.() == before_render,
+             "a structural event mutated a read-only editor"
+
+      # Completeness: the table above must cover every handler the module
+      # defines, minus the persistence events asserted above and the three
+      # UI-only ones. A 24th handler added without a read_only? guard fails
+      # here until it is classified.
+      source =
+        File.read!(
+          Path.join([
+            File.cwd!(),
+            "lib/emisar_web/live/runbook_editor_live.ex"
+          ])
+        )
+
+      declared =
+        Regex.scan(~r/def handle_event\(\s*"([a-z_]+)"/, source)
+        |> Enum.map(fn [_, name] -> name end)
+        |> MapSet.new()
+
+      classified =
+        MapSet.new(
+          Map.keys(structural) ++
+            ["save", "review_publish", "publish", "discard_draft", "delete"] ++
+            ["cancel_publish", "toggle_panel", "toggle_step"]
+        )
+
+      assert MapSet.equal?(declared, classified),
+             "unclassified editor events: #{inspect(MapSet.difference(declared, classified) |> MapSet.to_list())}"
+
       assert %Runbook{live_version: 1, deleted_at: nil} = Repo.one!(Runbook)
     end
   end
