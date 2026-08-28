@@ -1697,11 +1697,11 @@ defmodule EmisarWeb.CoreComponents do
   attr :current_user, :map, required: true
   attr :current_account, :map, required: true
   attr :current_subject, :map, required: true
-  # The membership, so the person's name is the one THIS account knows them by. A
-  # directory can rename a member per account, and `users.full_name` is
-  # cross-account — a multi-account synced member was called two different things
-  # depending on which surface you looked at. Defaults to nil so a unit test
-  # rendering the shell without the on_mount hook still works.
+  # `chrome.membership` is what names the person, not `current_user`: a directory
+  # can rename a member per account, and `users.full_name` is cross-account, so a
+  # multi-account synced member was called two different things depending on the
+  # surface. The struct defaults throughout, so a unit test can render the shell
+  # without the on_mount hooks that seed it.
   attr :current_membership, :map, default: nil
 
   attr :chrome, EmisarWeb.ShellChrome,

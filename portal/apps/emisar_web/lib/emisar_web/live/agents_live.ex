@@ -1501,8 +1501,9 @@ defmodule EmisarWeb.AgentsLive do
       <p>
         An agent is any LLM client — <span class="text-zinc-200">Claude, ChatGPT, Cursor,
         Codex</span>
-        — connected to emisar over <span class="text-zinc-200">MCP</span>, the Model Context
-        Protocol.
+        — connected to emisar as an <span class="text-zinc-200">MCP</span>
+        or as a <span class="text-zinc-200">CLI</span>
+        tool.
       </p>
       <p>
         emisar exposes your runners and their action catalog as an MCP server, so an agent can

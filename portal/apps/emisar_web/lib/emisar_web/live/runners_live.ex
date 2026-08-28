@@ -613,9 +613,7 @@ defmodule EmisarWeb.RunnersLive do
                 <div id="runners-cleanup" class="mt-3 rounded-xl border border-zinc-800/80 p-4">
                   <h4 class="text-sm font-medium text-zinc-100">Automatic cleanup</h4>
                   <p class="mt-1 text-xs leading-relaxed text-zinc-400">
-                    Remove runners that have been disconnected for the selected period. An hourly
-                    sweep deletes them; a host that comes back online re-enrolls as a fresh
-                    runner. Currently-connected and disabled runners are never touched.
+                    Remove runners that have been disconnected for the selected period. A host that comes back online re-enrolls as a fresh runner. Currently-connected and disabled runners are skipped.
                   </p>
                   <.gated_setting
                     id="runner-retention"
