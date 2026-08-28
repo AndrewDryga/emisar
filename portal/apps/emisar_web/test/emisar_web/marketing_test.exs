@@ -2706,7 +2706,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "account-wide for every role with audit access"
       assert html =~ "Billing managers see only billing events"
 
-      # The CSV cap mirrors AuditDownloadController's audit_download_max_rows
+      # The CSV cap mirrors Audit.CSVExport's audit_csv_max_rows
       # default; the plan gate renders through the shared plan_note.
       assert html =~ "100,000 events"
       assert html =~ "256 MiB"

@@ -1622,6 +1622,49 @@ defmodule Emisar.AuditTest do
     end
   end
 
+  describe "prepare_csv_export/2" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Accounts.create_subscription(account, "team")
+      %{account: account, subject: subject}
+    end
+
+    test "materializes the bounded file and hands the caller the path to delete", %{
+      account: account,
+      subject: subject
+    } do
+      {:ok, event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
+
+      # The fixtures already logged their own events, so count is the view's
+      # total, not 1 — the assertion that matters is the logged event's row.
+      assert {:ok, %{path: path, count: count}} = Audit.prepare_csv_export(subject, [])
+      assert count >= 1
+      contents = File.read!(path)
+      assert String.starts_with?(contents, "id,occurred_at_utc,event_type,")
+      assert contents =~ event.id
+      File.rm!(path)
+    end
+
+    test "an over-cap view is refused with the probed count, and no file survives", %{
+      account: account,
+      subject: subject
+    } do
+      {:ok, _event} = Audit.log(account.id, "user.signed_in", actor_kind: "user")
+      Emisar.Config.put_override(:emisar, :audit_csv_max_rows, 0)
+
+      assert {:error, {:too_many_rows, %{count: count, max: 0}}} =
+               Audit.prepare_csv_export(subject, [])
+
+      assert count >= 1
+    end
+
+    test "an empty view refuses rather than producing a headers-only file", %{subject: subject} do
+      # A window before the account existed matches nothing.
+      opts = [filter: [to: ~U[2000-01-01 00:00:00Z]]]
+      assert Audit.prepare_csv_export(subject, opts) == {:error, :nothing_to_export}
+    end
+  end
+
   describe "record_export/3" do
     test "count > 0 records one audit.exported attributed to the exporter, with the count" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()

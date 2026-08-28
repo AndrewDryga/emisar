@@ -27,7 +27,7 @@ defmodule Emisar.Audit do
   engine origin) carries no request metadata, by construction.
   """
   use Supervisor
-  alias Emisar.Audit.{Authorizer, Event, Events}
+  alias Emisar.Audit.{Authorizer, CSVExport, Event, Events}
   alias Emisar.Auth
   alias Emisar.Auth.Subject
   alias Emisar.{Billing, Crypto, Repo, RequestContext, Runs}
@@ -602,6 +602,17 @@ defmodule Emisar.Audit do
       list_events(subject, opts)
     end
   end
+
+  @doc """
+  Materializes the operator-facing audit CSV into a temp file the CALLER must
+  delete after sending. Requires view-audit permission and the plan gate, both
+  enforced by `list_events_for_export/2` on every read. Returns
+  `{:ok, %{path: path, count: count}}` or `{:error, reason}` —
+  see `Audit.CSVExport.export/2` for the reason vocabulary; an over-cap
+  refusal carries `%{count: count, max: max}`.
+  """
+  def prepare_csv_export(%Subject{} = subject, opts) when is_list(opts),
+    do: CSVExport.export(subject, opts)
 
   @doc """
   Internal — the export controller calls this after a successful page to

@@ -78,7 +78,7 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
       {conn, _user, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
 
-      Emisar.Config.put_override(:emisar_web, :audit_download_max_rows, 2)
+      Emisar.Config.put_override(:emisar, :audit_csv_max_rows, 2)
       # Ordinary audit reads now use a planner estimate. Export preflight must
       # still count exactly before deciding the bounded CSV can be downloaded.
       Emisar.Config.put_override(:emisar, :exact_count_ceiling, -1)
@@ -105,7 +105,7 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
       {:ok, _} =
         Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "alice")
 
-      Emisar.Config.put_override(:emisar_web, :audit_download_max_bytes, 32)
+      Emisar.Config.put_override(:emisar, :audit_csv_max_bytes, 32)
       conn = get(conn, ~p"/app/#{account}/audit/download")
 
       assert redirected_to(conn) == ~p"/app/#{account}/audit"
