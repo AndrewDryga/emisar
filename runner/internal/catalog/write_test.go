@@ -135,6 +135,28 @@ func TestWrite_ObjectSetAndImmutability(t *testing.T) {
 		}
 	}
 
+	// Facade aliases so a bucket-only private registry answers the runner's
+	// name-based commands. `/packs.json` and `/packs/suggest.json` are portal
+	// ROUTES on emisar.dev, so without these a customer pointing --registry at
+	// their own bucket got a 404 from `pack list`, `pack suggest` and
+	// `pack update`. Both halves freeze at 1.0.
+	for _, alias := range []struct{ path, mirrors string }{
+		{"packs.json", "v1/catalog.json"},
+		{"packs/suggest.json", "v1/suggest.json"},
+	} {
+		o, ok := byPath[alias.path]
+		if !ok {
+			t.Fatalf("missing facade alias %s", alias.path)
+		}
+		if o.Immutable {
+			t.Errorf("%s is a mutable pointer, like the object it mirrors", alias.path)
+		}
+		// Same bytes as the versioned object, not a re-render that could drift.
+		if o.SHA256 != byPath[alias.mirrors].SHA256 {
+			t.Errorf("%s does not carry the same bytes as %s", alias.path, alias.mirrors)
+		}
+	}
+
 	// Mutable pointers.
 	for _, p := range []string{"v1/catalog.json", "v1/suggest.json"} {
 		o, ok := byPath[p]

@@ -102,6 +102,25 @@ func Write(reg *packs.Registry, cat *Catalog, outDir string) (*Manifest, error) 
 		return nil, err
 	}
 
+	// Facade aliases. The runner's name-based commands read `/packs.json` and
+	// `/packs/suggest.json`, which on emisar.dev are portal routes — so a
+	// customer pointing --registry at a bucket this tool built got a 404 from
+	// `pack list`, `pack suggest` and `pack update`, and only the direct-URL
+	// install form worked. Both halves freeze at 1.0, so publishing the same
+	// bytes under the facade names now is what keeps a private registry usable
+	// with the ordinary commands.
+	//
+	// Only the two JSON documents are aliased. The tarball facade
+	// (`/packs/<id>/pack.tar.gz`) is a portal REDIRECT to the content-addressed
+	// object, which a bucket cannot express without duplicating every archive;
+	// `pack install <url> --hash` is the supported shape there.
+	if err := add("packs.json", false, contentTypeJSON, catalogBytes); err != nil {
+		return nil, err
+	}
+	if err := add("packs/suggest.json", false, contentTypeJSON, suggestBytes); err != nil {
+		return nil, err
+	}
+
 	// Schemas are immutable; their filename and $id carry the suite version.
 	for _, name := range sortedKeys(Schemas()) {
 		if err := add("v1/schemas/"+name, true, contentTypeJSON, Schemas()[name]); err != nil {

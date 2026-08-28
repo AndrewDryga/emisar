@@ -730,6 +730,16 @@ name or a major release, following the deprecation path.
   `/packs/suggest.json`, `/packs/<id>/pack.tar.gz`, and
   `/packs/<id>/versions/<version>/pack.tar.gz`.
 
+  On emisar.dev those are portal ROUTES, and the two tarball paths redirect to
+  the content-addressed CDN object. A private registry is a bucket with no
+  portal in front of it, so `packctl catalog build` also writes `packs.json`
+  and `packs/suggest.json` as byte-identical aliases of their `v1/` originals —
+  without them a customer pointing `--registry` at their own bucket got a 404
+  from `pack list`, `pack suggest` and `pack update`. The tarball facade is NOT
+  aliased: a bucket cannot express a redirect without duplicating every
+  archive, so `pack install <url> --hash` is the supported shape for a private
+  registry. Both halves freeze at 1.0, which is why the aliases exist now.
+
 **How it is versioned today.** The CDN's `/v1/` prefix, content addressing,
 append-only pack history, and written stability promise are the versioned
 part of the current publishing contract. The runner's facade is intentionally

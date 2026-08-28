@@ -173,16 +173,30 @@ func TestPublish_PreconditionsPerObjectKind(t *testing.T) {
 		t.Errorf("expected no skips, got %v", res.Skipped)
 	}
 
+	m := readManifest(t, dir)
+
+	// Which objects are mutable is the MANIFEST's answer, not a list repeated
+	// here: hard-coding the two v1/ pointers meant every later mutable object —
+	// the packs.json / packs/suggest.json facade aliases — was silently asserted
+	// to be immutable, and the test failed for being out of date rather than for
+	// finding anything.
+	mutable := map[string]bool{}
+	for _, o := range m.Objects {
+		if !o.Immutable {
+			mutable[o.Path] = true
+		}
+	}
+	if len(mutable) == 0 {
+		t.Fatal("expected at least one mutable pointer")
+	}
+
 	// Immutable objects carry ifGenerationMatch=0; mutable pointers don't.
-	if got := f.requests["v1/catalog.json"]; got != "" {
-		t.Errorf("mutable catalog.json sent ifGenerationMatch=%q, want none", got)
-	}
-	if got := f.requests["v1/suggest.json"]; got != "" {
-		t.Errorf("mutable suggest.json sent ifGenerationMatch=%q, want none", got)
-	}
 	sawImmutable := false
 	for name, igm := range f.requests {
-		if name == "v1/catalog.json" || name == "v1/suggest.json" {
+		if mutable[name] {
+			if igm != "" {
+				t.Errorf("mutable %s sent ifGenerationMatch=%q, want none", name, igm)
+			}
 			continue
 		}
 		sawImmutable = true
@@ -200,7 +214,10 @@ func TestPublish_PreconditionsPerObjectKind(t *testing.T) {
 		t.Errorf("mutable catalog Cache-Control = %q, want no-store", got)
 	}
 	for name, cacheControl := range f.cache {
-		if name == "v1/catalog.json" || name == "v1/suggest.json" {
+		if mutable[name] {
+			if cacheControl != "no-store" {
+				t.Errorf("mutable %s Cache-Control = %q, want no-store", name, cacheControl)
+			}
 			continue
 		}
 		if cacheControl != "public, max-age=31536000, immutable" {
