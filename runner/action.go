@@ -115,12 +115,14 @@ func actionRunCmd() *cobra.Command {
 				req.Opts.Timeout = timeout
 			}
 			if stream {
-				req.OnProgress = func(s executor.Stream, line []byte) {
-					if s == executor.StreamStderr {
-						os.Stderr.Write(line)
-					} else {
-						os.Stdout.Write(line)
-					}
+				// Both streams go to STDERR, so stdout carries only the result
+				// JSON. Writing the action's stdout here too meant
+				// `action run --stream | jq` received unbounded action output
+				// followed by the document — unparseable, and this command's
+				// structured output is a frozen contract. A human still sees
+				// the live output; a pipeline still gets one clean JSON value.
+				req.OnProgress = func(_ executor.Stream, line []byte) {
+					os.Stderr.Write(line)
 				}
 			}
 			res, err := rt.engine.Run(cmd.Context(), req)

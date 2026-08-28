@@ -674,16 +674,27 @@ func TestCLI_ActionRunSuccessAndStream(t *testing.T) {
 		}
 	})
 
-	t.Run("--stream interleaves live output then Result", func(t *testing.T) {
+	t.Run("--stream keeps stdout parseable, live output on stderr", func(t *testing.T) {
 		stdout, stderr, code := runCLI(t, []string{"--config", cfg, "action", "run", "linux.ping", "--reason", "why", "--stream"}, nil)
 		if code != 0 {
 			t.Fatalf("exit = %d, want 0; stderr=%q", code, stderr)
 		}
-		// The streamed stdout line ("hi") must appear BEFORE the JSON result object.
-		live := strings.Index(stdout, "hi")
-		result := strings.Index(stdout, `"status": "success"`)
-		if live < 0 || result < 0 || live > result {
-			t.Errorf("expected live output before the Result JSON; live=%d result=%d:\n%s", live, result, stdout)
+		// The live line goes to stderr so stdout carries ONE JSON document.
+		// Both used to share stdout, which made `--stream | jq` unparseable —
+		// unbounded action output followed by the result — on a command whose
+		// structured output is a frozen contract.
+		if !strings.Contains(stderr, "hi") {
+			t.Errorf("live output should stream to stderr, got %q", stderr)
+		}
+		// stdout is not asserted to LACK "hi" — the result document legitimately
+		// carries the action's captured output. The contract is that stdout is
+		// exactly one JSON value, which is what the live copy broke.
+		var result map[string]any
+		if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+			t.Fatalf("stdout must be exactly one JSON document: %v\n%s", err, stdout)
+		}
+		if result["status"] != "success" {
+			t.Errorf("status = %v, want success", result["status"])
 		}
 	})
 }
