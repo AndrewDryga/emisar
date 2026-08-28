@@ -239,7 +239,8 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert get_in(body, ["result", "structuredContent", "error", "code"]) == "unknown_tool"
 
       assert get_in(body, ["result", "structuredContent", "error", "message"]) ==
-               "Unknown tool. Emisar exposes only its thirteen fixed API tools; an action id like 'postgres.restart' is not a tool. Discover with find_actions/get_action, then dispatch via run_action."
+               "Unknown tool. Emisar exposes only its #{SchemaRegistry.tool_count()} fixed API tools; " <>
+                 "an action id like 'postgres.restart' is not a tool. Discover with find_actions/get_action, then dispatch via run_action."
     end
 
     test "unknown tool telemetry correlates calls without logging their contents", %{raw: raw} do
@@ -282,7 +283,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       refute log =~ raw
     end
 
-    test "all thirteen tools return the exact validation details contract", %{raw: raw} do
+    test "every tool returns the exact validation details contract", %{raw: raw} do
       Enum.each(SchemaRegistry.tool_names(), fn tool ->
         body =
           build_conn()

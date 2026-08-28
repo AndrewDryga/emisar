@@ -56,7 +56,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
              Enum.join(Enum.sort(undeclared), ", ")
   end
 
-  test "publishes exactly the thirteen normative descriptors in contract order" do
+  test "publishes exactly the normative descriptors in contract order" do
     tools = SchemaRegistry.tools()
 
     assert length(tools) == 13

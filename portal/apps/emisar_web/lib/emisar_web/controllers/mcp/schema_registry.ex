@@ -303,6 +303,14 @@ defmodule EmisarWeb.MCP.SchemaRegistry do
   @spec tool_names() :: [String.t()]
   def tool_names, do: @tool_names
 
+  @doc """
+  How many tools the MCP surface exposes. Any prose stating the count — the
+  model-facing unknown-tool error included — calls this rather than spelling a
+  number that goes stale on the next tool.
+  """
+  @spec tool_count() :: pos_integer()
+  def tool_count, do: length(@tool_names)
+
   @spec schema_version() :: pos_integer()
   def schema_version, do: @schema_version
 end

@@ -42,23 +42,15 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-400">
-            <tr>
-              <td class="px-4 py-3 align-top font-medium text-zinc-200">Free</td>
-              <td class="px-4 py-3 align-top text-zinc-300">3</td>
-              <td class="px-4 py-3 align-top text-zinc-300">1</td>
-              <td class="px-4 py-3 align-top text-zinc-300">7 days</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3 align-top font-medium text-zinc-200">Team</td>
-              <td class="px-4 py-3 align-top text-zinc-300">100</td>
-              <td class="px-4 py-3 align-top text-zinc-300">Unlimited</td>
-              <td class="px-4 py-3 align-top text-zinc-300">90 days</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3 align-top font-medium text-zinc-200">Enterprise</td>
-              <td class="px-4 py-3 align-top text-zinc-300">Unlimited</td>
-              <td class="px-4 py-3 align-top text-zinc-300">Unlimited</td>
-              <td class="px-4 py-3 align-top text-zinc-300">365 days</td>
+            <tr :for={plan <- EmisarWeb.MarketingHTML.plan_limits()}>
+              <td class="px-4 py-3 align-top font-medium text-zinc-200">{plan.name}</td>
+              <td class="px-4 py-3 align-top text-zinc-300">
+                {EmisarWeb.MarketingHTML.plan_limit(plan.runners)}
+              </td>
+              <td class="px-4 py-3 align-top text-zinc-300">
+                {EmisarWeb.MarketingHTML.plan_limit(plan.members)}
+              </td>
+              <td class="px-4 py-3 align-top text-zinc-300">{plan.retention_days} days</td>
             </tr>
           </tbody>
         </table>

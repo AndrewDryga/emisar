@@ -127,14 +127,32 @@ defmodule EmisarWeb.MarketingHTML do
   # `spin`/`spin-wait` are JS-only animated spinners — rendered `hidden`
   # so no-JS visitors and crawlers skip them; their text is the gerund the
   # spinner shows.
-  @mcp_tool_count length(EmisarWeb.MCP.SchemaRegistry.tool_names())
+  @mcp_tool_count EmisarWeb.MCP.SchemaRegistry.tool_count()
+
+  @doc "How many tools the MCP surface exposes. See `SchemaRegistry.tool_count/0`."
+  def mcp_tool_count, do: @mcp_tool_count
+
+  @plan_limits Enum.map(~w(free team enterprise), fn slug ->
+                 plan = Emisar.Billing.plan(slug)
+
+                 %{
+                   name: plan.name,
+                   runners: plan.runners_limit,
+                   members: plan.members_limit,
+                   retention_days: plan.audit_retention_days
+                 }
+               end)
 
   @doc """
-  How many tools the MCP surface exposes, from the compiled schema registry.
-  Prose that states the count calls this rather than spelling a number that
-  goes stale on the next tool.
+  Each plan's limits, in plan order, from the billing catalog that enforces
+  them. A reference table restating these by hand drifts the moment a limit
+  moves; `:unlimited` renders through `plan_limit/1`.
   """
-  def mcp_tool_count, do: @mcp_tool_count
+  def plan_limits, do: @plan_limits
+
+  @doc "Renders one plan limit — an integer, or the word for no limit."
+  def plan_limit(:unlimited), do: "Unlimited"
+  def plan_limit(count) when is_integer(count), do: Integer.to_string(count)
 
   @demo_lines [
     # --- Host: a storage node on the fleet, one curl to connect ------

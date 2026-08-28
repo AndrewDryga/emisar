@@ -389,7 +389,8 @@ defmodule EmisarWeb.MCPRpcController do
             error: %{
               code: "unknown_tool",
               message:
-                "Unknown tool. Emisar exposes only its thirteen fixed API tools; an action id like 'postgres.restart' is not a tool. Discover with find_actions/get_action, then dispatch via run_action.",
+                "Unknown tool. Emisar exposes only its #{SchemaRegistry.tool_count()} fixed API tools; " <>
+                  "an action id like 'postgres.restart' is not a tool. Discover with find_actions/get_action, then dispatch via run_action.",
               retryable: false
             },
             dispatch_started: false

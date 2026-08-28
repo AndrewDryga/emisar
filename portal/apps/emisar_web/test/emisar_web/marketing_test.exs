@@ -2020,10 +2020,19 @@ defmodule EmisarWeb.MarketingTest do
       assert billing =~ "365 days"
       assert billing =~ ~s(href="/docs/audit-and-siem#retention")
       assert billing =~ "Paddle"
-      assert billing =~ ~r/>Free<\/td> <td[^>]*>3<\/td> <td[^>]*>1<\/td> <td[^>]*>7 days<\/td>/
+      # The row VALUES, from the catalog that enforces them — the table used to
+      # be hand-typed here and pinned by its exact markup spacing, which made
+      # the assertion about the layout rather than the numbers.
+      for plan <- EmisarWeb.MarketingHTML.plan_limits() do
+        row =
+          Regex.compile!(
+            ">#{plan.name}</td>\\s*<td[^>]*>\\s*#{EmisarWeb.MarketingHTML.plan_limit(plan.runners)}" <>
+              "\\s*</td>\\s*<td[^>]*>\\s*#{EmisarWeb.MarketingHTML.plan_limit(plan.members)}" <>
+              "\\s*</td>\\s*<td[^>]*>#{plan.retention_days} days</td>"
+          )
 
-      assert billing =~
-               ~r/>Team<\/td> <td[^>]*>100<\/td> <td[^>]*>Unlimited<\/td> <td[^>]*>90 days<\/td>/
+        assert billing =~ row, "the #{plan.name} row does not match the billing catalog"
+      end
 
       refute billing =~ "how many people you can invite"
     end

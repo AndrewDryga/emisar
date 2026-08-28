@@ -486,4 +486,31 @@ defmodule EmisarWeb.MarketingStructuralTest do
     end)
     |> Enum.find(&(&1["@type"] == "BreadcrumbList"))
   end
+
+  describe "plan limits stated in prose" do
+    # /docs/billing renders its table from Emisar.Billing, but four more pages
+    # — two of them legal — state the Free limits as sentences. Deriving those
+    # would let a plan-catalog edit silently rewrite the Terms, so they stay
+    # hand-written and this pins them instead: change a limit and the wording
+    # fails here, to be updated deliberately.
+    test "the pages that spell the Free limits agree with the billing catalog", %{conn: conn} do
+      free = Emisar.Billing.plan("free")
+      runners = Integer.to_string(free.runners_limit)
+      members = Integer.to_string(free.members_limit)
+      retention = Integer.to_string(free.audit_retention_days)
+
+      for {path, expected} <- [
+            {"/about", ["Free forever for #{runners} runners."]},
+            {"/terms", ["#{members} user, #{runners} runners, #{retention}-day audit retention"]},
+            {"/privacy", ["#{retention} days of audit history"]},
+            {"/refund-policy", ["#{members} user, #{runners} runners, #{retention}-day"]}
+          ],
+          claim <- expected do
+        html = conn |> get(path) |> html_response(200)
+
+        assert html =~ claim,
+               "#{path} no longer states the Free plan's own limits: expected #{inspect(claim)}"
+      end
+    end
+  end
 end
