@@ -99,12 +99,7 @@ allowlist, symlinks enabled, or a newly required setup variable.
 			if to != "" && !packspec.ValidVersion(to) {
 				return fmt.Errorf("invalid version %q", to)
 			}
-			if registry == "" {
-				registry = os.Getenv("EMISAR_PACKS_REGISTRY")
-			}
-			if registry == "" {
-				registry = defaultRegistry
-			}
+			registry = resolveRegistry(registry)
 
 			dirs, err := resolvePackDirs()
 			if err != nil {

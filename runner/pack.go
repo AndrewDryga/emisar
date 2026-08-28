@@ -87,6 +87,23 @@ func configInheritEnv() (env []string, ok bool) {
 	return cfg.Execution.InheritEnv, true
 }
 
+// resolveRegistry picks the pack registry base: the --registry flag, else
+// $EMISAR_PACKS_REGISTRY, else the default.
+//
+// One definition because this precedence was copy-pasted at four call sites,
+// and EMISAR_PACKS_REGISTRY is on the frozen environment inventory — a fifth
+// pack verb that forgot the env-var line would silently ignore an operator's
+// private registry, which is exactly the kind of omission a reader cannot see.
+func resolveRegistry(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if env := os.Getenv("EMISAR_PACKS_REGISTRY"); env != "" {
+		return env
+	}
+	return defaultRegistry
+}
+
 // resolvePackDirs picks the pack search dirs for read-only pack commands.
 // `--packs-dir` wins so `emisar pack list --packs-dir ...` works without a
 // full config; otherwise we read config.Paths.Packs.
@@ -262,12 +279,7 @@ on disk either way; fix the host's environment and re-run 'pack verify'.
 		Args: requireOne("<name|path|url>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			arg := args[0]
-			if registry == "" {
-				registry = os.Getenv("EMISAR_PACKS_REGISTRY")
-			}
-			if registry == "" {
-				registry = defaultRegistry
-			}
+			registry = resolveRegistry(registry)
 
 			src, cleanup, err := resolvePackSource(cmd.Context(), arg, registry)
 			if err != nil {

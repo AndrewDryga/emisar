@@ -118,6 +118,9 @@ Related rule: `rules/<domain>-<slug>.md` <!-- link the real rule when applicable
 
 ### Runbooks
 
+- [BEAM introspection](runbooks/beam-introspection.md) — read-only ways to ask a
+  live portal node what it is doing, when metrics say something is wrong without
+  saying what
 - [key-compromise response](runbooks/key-compromise.md) — containment and
   rotation procedures by credential class
 - [release](runbooks/release.md) — canonical product and component release

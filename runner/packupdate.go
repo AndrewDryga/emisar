@@ -122,12 +122,7 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 				return err
 			}
 
-			if registry == "" {
-				registry = os.Getenv("EMISAR_PACKS_REGISTRY")
-			}
-			if registry == "" {
-				registry = defaultRegistry
-			}
+			registry = resolveRegistry(registry)
 
 			dirs, err := resolvePackDirs()
 			if err != nil {

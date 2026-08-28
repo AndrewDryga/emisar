@@ -53,6 +53,9 @@ defmodule Emisar.MixProject do
       # `bin/emisar remote` always has them: recon for safe
       # introspection (recon:proc_count, bin_leak), observer_cli for
       # the live top-style dashboard (:observer_cli.start()).
+      # The calls worth making are written down in
+      # .agent/kb/runbooks/beam-introspection.md — an operator tool nobody
+      # recorded is one nobody reaches for at 3am.
       {:recon, "~> 2.5"},
       {:observer_cli, "~> 2.0"},
 

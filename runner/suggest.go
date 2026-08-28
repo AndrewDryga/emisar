@@ -229,12 +229,7 @@ func loadCatalog(ctx context.Context, src, registry string) (catalogSet, error) 
 		}
 		return catalogFromFile(src)
 	}
-	if registry == "" {
-		registry = os.Getenv("EMISAR_PACKS_REGISTRY")
-	}
-	if registry == "" {
-		registry = defaultRegistry
-	}
+	registry = resolveRegistry(registry)
 	return fetchCatalog(ctx, strings.TrimRight(registry, "/")+"/packs/suggest.json")
 }
 
