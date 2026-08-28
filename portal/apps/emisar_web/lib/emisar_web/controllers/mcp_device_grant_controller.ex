@@ -10,10 +10,15 @@ defmodule EmisarWeb.MCPDeviceGrantController do
   shepherd the grant, and the context functions they call own every state
   transition. Field names and poll-error semantics follow RFC 8628. The success
   payload is emisar's per-client key map, which is why this is NOT the OAuth AS's
-  token endpoint (whose advertised contract stays standard OAuth). Abusive
-  polling is cut by the IP rate limits — there is no distinct `slow_down`
-  signal; the CLI and both installers treat any non-terminal response as
-  retry-after-interval.
+  token endpoint (whose advertised contract stays standard OAuth).
+
+  There is no distinct `slow_down` signal, and at 1.0 there cannot be one: the
+  poll contract freezes, and a new retryable code would need a whole new
+  contract because deployed installers abort on a code they do not know. The
+  CLI and both installers treat any non-terminal response as
+  retry-after-interval and ignore `Retry-After`. So the throttle is shaped to
+  keep the condition UNREACHABLE for legitimate use — the poll is bucketed per
+  device code, not per IP — rather than to report it.
   """
   use EmisarWeb, :controller
   alias Emisar.ApiKeys
@@ -25,8 +30,19 @@ defmodule EmisarWeb.MCPDeviceGrantController do
        [bucket: "mcp_device_authorize", limit: 10, window_ms: 60_000, by: :ip]
        when action == :authorize
 
+  # Per DEVICE CODE, not per IP. Each pending authorization is its own poll
+  # stream, and an installer polls every 5s (12/min) — so a 60/min IP bucket was
+  # exhausted by about five concurrent installs behind one NAT, VPN or CI
+  # egress, and every one of them then sat at "Waiting for approval" until the
+  # grant expired. A wider IP bucket rides alongside as the anti-abuse backstop:
+  # it has to admit many legitimate simultaneous installs, so it bounds a
+  # scanner rather than a fleet.
   plug EmisarWeb.Plugs.RateLimit,
-       [bucket: "mcp_device_token", limit: 60, window_ms: 60_000, by: :ip]
+       [bucket: "mcp_device_token", limit: 24, window_ms: 60_000, by: :device_code]
+       when action == :token
+
+  plug EmisarWeb.Plugs.RateLimit,
+       [bucket: "mcp_device_token_ip", limit: 600, window_ms: 60_000, by: :ip]
        when action == :token
 
   def authorize(conn, params) do

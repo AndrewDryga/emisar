@@ -291,7 +291,15 @@ proxy responses, and blips on any other status keep polling), retries only
 `authorization_pending`, and fails cleanly on every other or unknown 400
 code — so a new terminal poll error is an additive change. The breaking
 direction is a new retryable code: a deployed installer would abort on it,
-so `slow_down` or any other retry signal needs a new poll contract. Already-issued `emk-` keys and
+so `slow_down` or any other retry signal needs a new poll contract. Because
+that door is shut, the poll's throttle is shaped to keep the condition
+UNREACHABLE for legitimate use rather than reportable: it buckets per
+`device_code`, so each pending authorization has its own allowance and
+concurrent installs behind one NAT, VPN or CI egress cannot exhaust each
+other's. A wider per-IP bucket rides alongside purely as the anti-abuse
+backstop. Narrowing that back to a per-IP poll limit re-opens a failure with
+no wire signal to report it: the installer retries, ignores `Retry-After`,
+and the operator waits at "Waiting for approval" until the grant expires. Already-issued `emk-` keys and
 live refresh tokens are saved customer credentials and must keep authenticating. Replaying a
 still-unexpired refresh token that rotation already spent revokes its backing OAuth connection and
 every active successor; the operator must reconnect the client to establish a fresh grant.

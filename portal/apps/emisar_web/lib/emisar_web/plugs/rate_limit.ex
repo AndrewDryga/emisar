@@ -14,6 +14,9 @@ defmodule EmisarWeb.Plugs.RateLimit do
       to `remote_ip` for direct connections. Use for unauthenticated routes.
     * `:bearer` — a SHA-256 of the `Authorization: Bearer` token, so a leaked
       key is capped across IPs. Falls back to the IP when no bearer is present.
+    * `:device_code` — a SHA-256 of the posted `device_code`, so each pending
+      device authorization gets its own poll allowance. Falls back to the IP
+      when the parameter is missing, which is the shape a scanner sends.
 
   `:on_reject` may be an `{module, function}` callback invoked with the conn and
   integer `Retry-After` seconds. It lets protocol endpoints shape their own
@@ -90,6 +93,29 @@ defmodule EmisarWeb.Plugs.RateLimit do
     case EmisarWeb.SCIM.Auth.credential(get_req_header(conn, "authorization")) do
       {:ok, token} -> "key:" <> Emisar.Crypto.hash_hex(token)
       :error -> RequestContext.client_ip(conn)
+    end
+  end
+
+  # One device authorization is one poll stream, so it gets its own allowance.
+  # Bucketing this route by IP instead meant concurrent installs behind one
+  # NAT, VPN or CI egress ate each other's budget: an installer polls every 5s
+  # (12/min), so about five at once saturated a 60/min IP bucket and every one
+  # of them started getting 429s. They retry but ignore Retry-After, so the
+  # bucket stayed saturated and each operator watched "Waiting for approval"
+  # until the grant expired.
+  #
+  # That mattered more than an ordinary limit because the fix on the wire is
+  # shut: compatibility.md freezes the poll contract at 1.0, and a new retryable
+  # code such as RFC 8628's `slow_down` would need a whole new one, since
+  # deployed installers abort on a code they do not know. So the condition has
+  # to be unreachable rather than reportable.
+  #
+  # A missing device_code falls back to the IP: that request cannot be a real
+  # poll, and it must not mint a fresh unlimited bucket.
+  defp key_for(conn, :device_code) do
+    case conn.params["device_code"] do
+      code when is_binary(code) and code != "" -> "device:" <> Emisar.Crypto.hash_hex(code)
+      _ -> RequestContext.client_ip(conn)
     end
   end
 

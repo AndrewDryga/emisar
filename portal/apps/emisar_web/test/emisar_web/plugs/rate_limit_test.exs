@@ -40,6 +40,36 @@ defmodule EmisarWeb.Plugs.RateLimitTest do
     assert %{halted: false} = RateLimit.call(second, opts)
   end
 
+  # The device poll is per authorization, not per IP. Bucketing it by IP meant
+  # concurrent installs behind one NAT, VPN or CI egress ate each other's budget
+  # and every one of them sat at "Waiting for approval" until the grant expired.
+  # That could not be reported either: the poll contract freezes at 1.0, and a
+  # `slow_down` code would need a whole new contract because deployed installers
+  # abort on one they do not know. So the condition has to be unreachable.
+  test ":device_code gives each pending authorization its own window", %{conn: conn} do
+    enable_rate_limiting()
+    opts = RateLimit.init(bucket: unique_bucket(), limit: 1, window_ms: 60_000, by: :device_code)
+
+    one = %{conn | params: %{"device_code" => "dev-one"}}
+    two = %{conn | params: %{"device_code" => "dev-two"}}
+
+    assert %{halted: false} = RateLimit.call(one, opts)
+    assert %{halted: true} = RateLimit.call(one, opts)
+    # Same IP, different authorization — untouched by the first one's polling.
+    assert %{halted: false} = RateLimit.call(two, opts)
+  end
+
+  # A request with no device_code cannot be a real poll, and must not mint a
+  # fresh unlimited bucket per attempt.
+  test ":device_code falls back to the IP when the parameter is absent", %{conn: conn} do
+    enable_rate_limiting()
+    opts = RateLimit.init(bucket: unique_bucket(), limit: 1, window_ms: 60_000, by: :device_code)
+
+    bare = %{conn | params: %{}}
+    assert %{halted: false} = RateLimit.call(bare, opts)
+    assert %{halted: true} = RateLimit.call(bare, opts)
+  end
+
   test ":bearer keys on the token digest and caps it across IPs", %{conn: conn} do
     enable_rate_limiting()
     opts = RateLimit.init(bucket: unique_bucket(), limit: 1, window_ms: 60_000, by: :bearer)
